@@ -10,12 +10,14 @@ import os
 from pathlib import Path
 from typing import Any, Callable
 
-from dotenv import dotenv_values, set_key, unset_key
+from dotenv import set_key
+
+from server.config_contract import SUPPORTED_DATA_SOURCES
 
 Provider = str
 TokenReader = Callable[[], str]
 
-SUPPORTED_PROVIDERS = ("akshare", "tushare")
+SUPPORTED_PROVIDERS = tuple(sorted(SUPPORTED_DATA_SOURCES))
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -54,15 +56,9 @@ def save_config(config_path: Path, config: dict[str, Any]) -> None:
     config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n")
 
 
-def save_tushare_environment_token(env_path: Path, token: str | None) -> None:
-    """Persist or remove the TuShare credential without placing it in JSON."""
+def save_tushare_environment_token(env_path: Path, token: str) -> None:
+    """Persist the TuShare credential without placing it in JSON."""
     env_path.parent.mkdir(parents=True, exist_ok=True)
-    if token is None:
-        if env_path.exists():
-            if "TUSHARE_TOKEN" in dotenv_values(env_path):
-                unset_key(str(env_path), "TUSHARE_TOKEN")
-            env_path.chmod(0o600)
-        return
     if not env_path.exists():
         env_path.touch(mode=0o600)
     set_key(str(env_path), "TUSHARE_TOKEN", token, quote_mode="always")
@@ -98,7 +94,8 @@ def save_data_source_config(
     data_source["provider"] = provider
 
     if provider == "akshare":
-        save_tushare_environment_token(env_path, None)
+        if env_path.exists():
+            env_path.chmod(0o600)
     else:
         token = token_reader().strip()
         if not token:

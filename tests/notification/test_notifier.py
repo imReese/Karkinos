@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from notification.console import ConsoleNotifier
-from notification.notifier import build_notifier, format_signal_message
+from notification.notifier import (
+    build_notifier,
+    format_signal_message,
+    notification_configuration_status,
+)
 from notification.telegram import TelegramNotifier
 from notification.wechat import WeChatNotifier
 
@@ -53,22 +57,36 @@ class TestBuildNotifier:
 
     def test_telegram_type(self):
         notifier = build_notifier(
-            {
-                "type": "telegram",
-                "telegram_bot_token": "test",
-                "telegram_chat_id": "123",
-            }
+            {"type": "telegram"},
+            environ={
+                "KARKINOS_TELEGRAM_BOT_TOKEN": "test",
+                "KARKINOS_TELEGRAM_CHAT_ID": "123",
+            },
         )
         assert isinstance(notifier, TelegramNotifier)
+        assert notifier.bot_token == "test"
+        assert notifier.chat_id == "123"
 
     def test_wechat_type(self):
         notifier = build_notifier(
-            {
-                "type": "wechat",
-                "wechat_sendkey": "test_key",
-            }
+            {"type": "wechat"},
+            environ={"KARKINOS_WECHAT_SENDKEY": "test_key"},
         )
         assert isinstance(notifier, WeChatNotifier)
+        assert notifier.sendkey == "test_key"
+
+    def test_public_status_reports_only_type_and_configuration_state(self):
+        status = notification_configuration_status(
+            {"type": "telegram", "telegram_bot_token": "must-be-ignored"},
+            environ={
+                "KARKINOS_TELEGRAM_BOT_TOKEN": "environment-token",
+                "KARKINOS_TELEGRAM_CHAT_ID": "environment-chat",
+            },
+        )
+
+        assert status == {"type": "telegram", "configured": True}
+        assert "environment-token" not in repr(status)
+        assert "must-be-ignored" not in repr(status)
 
 
 class TestFormatSignalMessage:

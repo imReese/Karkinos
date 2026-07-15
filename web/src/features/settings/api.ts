@@ -37,7 +37,10 @@ export type SettingsResponse = {
   long_period: number;
   data_source: string;
   tushare_token_configured: boolean;
-  notification: Record<string, unknown>;
+  notification: {
+    type: string;
+    configured: boolean;
+  };
   live_poll_interval: number;
   account_commission_rate: number;
   account_min_commission: number;

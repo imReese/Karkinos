@@ -27,7 +27,7 @@ const defaultSettings = {
   long_period: 20,
   data_source: 'akshare',
   tushare_token_configured: true,
-  notification: { type: 'console' },
+  notification: { type: 'console', configured: true },
   live_poll_interval: 60,
   account_commission_rate: 0.0001,
   account_min_commission: 5,
@@ -625,4 +625,24 @@ test('handles missing backend status without crashing', async () => {
   expect(
     await screen.findByText('No notification channel configured'),
   ).toBeTruthy();
+});
+
+test('disables notification tests when environment credentials are missing', async () => {
+  renderSettingsPage({
+    settings: {
+      ...defaultSettings,
+      notification: { type: 'telegram', configured: false },
+    },
+  });
+
+  expect(
+    await screen.findByText('Required environment values are missing'),
+  ).toBeTruthy();
+  expect(
+    (
+      screen.getByRole('button', {
+        name: 'Send test notification',
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
 });

@@ -12,6 +12,10 @@ from core.types import AssetClass, Symbol
 from data.manager import DataManager, build_sources
 from data.store import DataStore
 from server.config import BacktestConfig
+from server.config_contract import (
+    MIN_LIVE_POLL_INTERVAL_SECONDS,
+    SUPPORTED_DATA_SOURCES,
+)
 
 _ASSET_CLASS_MAP = {
     "stock": AssetClass.STOCK,
@@ -56,9 +60,13 @@ _RUNTIME_ENV_FIELDS = {
 }
 _EMPTY_ENV_MEANS_UNSET = {
     "TUSHARE_TOKEN",
+    "KARKINOS_AI_API_KEY",
     "KARKINOS_AI_PROVIDER",
     "KARKINOS_AI_MODEL",
     "KARKINOS_AI_BASE_URL",
+    "KARKINOS_TELEGRAM_BOT_TOKEN",
+    "KARKINOS_TELEGRAM_CHAT_ID",
+    "KARKINOS_WECHAT_SENDKEY",
 }
 
 
@@ -106,7 +114,13 @@ def load_runtime_environment_file(
     for name, value in values.items():
         if value is None:
             raise ValueError(f"environment file variable has no value: {name}")
-        target.setdefault(name, value)
+        current_value = target.get(name)
+        if name not in target or (
+            name in _EMPTY_ENV_MEANS_UNSET
+            and isinstance(current_value, str)
+            and not current_value.strip()
+        ):
+            target[name] = value
     return True
 
 
@@ -168,7 +182,12 @@ def _parse_runtime_environment_value(env_name: str, raw_value: str) -> Any:
         except ValueError as exc:
             raise ValueError(f"{env_name} must be an integer") from exc
         upper_bound = 65_535 if env_name == "KARKINOS_PORT" else None
-        if parsed <= 0 or (upper_bound is not None and parsed > upper_bound):
+        lower_bound = (
+            MIN_LIVE_POLL_INTERVAL_SECONDS
+            if env_name == "KARKINOS_LIVE_POLL_INTERVAL"
+            else 1
+        )
+        if parsed < lower_bound or (upper_bound is not None and parsed > upper_bound):
             raise ValueError(f"{env_name} is outside the supported range")
         return parsed
     if env_name == "KARKINOS_AI_TIMEOUT_SECONDS":
@@ -190,7 +209,7 @@ def _parse_runtime_environment_value(env_name: str, raw_value: str) -> Any:
         return list(origins)
     if env_name == "KARKINOS_DATA_SOURCE":
         provider = value.lower()
-        if provider not in {"akshare", "tushare"}:
+        if provider not in SUPPORTED_DATA_SOURCES:
             raise ValueError(f"{env_name} must be akshare or tushare")
         return provider
     if not value:

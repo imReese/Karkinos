@@ -4090,7 +4090,7 @@ def test_update_data_source_settings_persists_runtime_config_only(monkeypatch):
     }
 
 
-def test_settings_payloads_reject_credential_fields():
+def test_settings_payloads_reject_credentials_and_invalid_data_source_values():
     from pydantic import ValidationError
 
     from server.models import DataSourceSettingsUpdate, SettingsResponse
@@ -4105,6 +4105,87 @@ def test_settings_payloads_reject_credential_fields():
         )
     with pytest.raises(ValidationError, match="tushare_token"):
         SettingsResponse.model_validate({"tushare_token": "must-not-enter-api"})
+    with pytest.raises(ValidationError, match="telegram_bot_token"):
+        SettingsResponse.model_validate(
+            {
+                "notification": {
+                    "type": "telegram",
+                    "configured": True,
+                    "telegram_bot_token": "must-not-enter-api",
+                }
+            }
+        )
+    with pytest.raises(ValidationError, match="data_source"):
+        DataSourceSettingsUpdate.model_validate(
+            {"data_source": "unsupported", "live_poll_interval": 60}
+        )
+    with pytest.raises(ValidationError, match="live_poll_interval"):
+        DataSourceSettingsUpdate.model_validate(
+            {"data_source": "akshare", "live_poll_interval": 0}
+        )
+
+
+def test_settings_response_reports_notification_status_without_credentials(
+    monkeypatch,
+):
+    from server.config import ServerConfig
+    from server.routes import settings as settings_routes
+
+    monkeypatch.setenv("KARKINOS_TELEGRAM_BOT_TOKEN", "environment-token")
+    monkeypatch.setenv("KARKINOS_TELEGRAM_CHAT_ID", "environment-chat")
+    config = ServerConfig(
+        notification={
+            "type": "telegram",
+            "telegram_bot_token": "legacy-json-token-must-be-ignored",
+        }
+    )
+
+    response = settings_routes._settings_response(SimpleNamespace(config=config))
+
+    assert response.notification.model_dump() == {
+        "type": "telegram",
+        "configured": True,
+    }
+    assert "environment-token" not in repr(response)
+    assert "legacy-json-token-must-be-ignored" not in repr(response)
+
+
+def test_notification_probe_blocks_missing_environment_credentials(monkeypatch):
+    from server.routes import settings as settings_routes
+
+    router = settings_routes.create_router()
+    notification_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/settings/notification/test"
+        and "POST" in route.methods
+    )
+
+    class FakeNotifier:
+        called = False
+
+        def send(self, *, title, message):
+            self.called = True
+
+    notifier = FakeNotifier()
+    monkeypatch.delenv("KARKINOS_TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("KARKINOS_TELEGRAM_CHAT_ID", raising=False)
+    monkeypatch.setattr(
+        "server.app.get_app_state",
+        lambda: SimpleNamespace(
+            config=SimpleNamespace(notification={"type": "telegram"}),
+            notifier=notifier,
+        ),
+    )
+
+    response = asyncio.run(notification_route.endpoint())
+
+    assert response == {
+        "status": "error",
+        "message": "Notification environment credentials are missing",
+    }
+    assert notifier.called is False
 
 
 def test_update_settings_persists_account_commission_without_credentials(
@@ -4135,7 +4216,7 @@ def test_update_settings_persists_account_commission_without_credentials(
         long_period=20,
         data_source="akshare",
         tushare_token="environment-secret-token",
-        notification={"type": "console"},
+        notification={"type": "telegram"},
         live_poll_interval=60,
         account_commission_rate=Decimal("0.0001"),
         account_min_commission=Decimal("5"),
@@ -4179,7 +4260,7 @@ def test_update_settings_persists_account_commission_without_credentials(
                 long_period=20,
                 data_source="akshare",
                 tushare_token_configured=True,
-                notification={"type": "console"},
+                notification={"type": "console", "configured": True},
                 live_poll_interval=60,
                 account_commission_rate=0.00015,
                 account_min_commission=5.0,
@@ -4197,6 +4278,7 @@ def test_update_settings_persists_account_commission_without_credentials(
     assert persisted["data_source"] == "akshare"
     assert "tushare_token" not in persisted
     assert persisted["sentinel"] == "preserve-me"
+    assert config.notification == {"type": "telegram"}
 
 
 def test_full_settings_update_blocks_tushare_without_environment_credential(

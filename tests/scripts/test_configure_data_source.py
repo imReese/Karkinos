@@ -19,7 +19,7 @@ def _load_script_module():
     return module
 
 
-def test_configure_akshare_keeps_existing_config_without_credentials(tmp_path):
+def test_configure_akshare_preserves_existing_environment_credential(tmp_path):
     module = _load_script_module()
     config_path = tmp_path / "config.json"
     env_path = tmp_path / ".env"
@@ -37,7 +37,7 @@ def test_configure_akshare_keeps_existing_config_without_credentials(tmp_path):
         "initial_cash": 0,
         "data_source": {"provider": "akshare"},
     }
-    assert "TUSHARE_TOKEN" not in dotenv_values(env_path)
+    assert dotenv_values(env_path)["TUSHARE_TOKEN"] == "old-environment-token"
     assert stat.S_IMODE(env_path.stat().st_mode) == 0o600
 
 

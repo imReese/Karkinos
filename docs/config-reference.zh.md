@@ -59,14 +59,14 @@ python -m server
 | `port` | integer | `8000` | API 监听端口。 |
 | `live_auto_start` | boolean | `true` | 是否随 Web 服务启动内建行情调度器；不会自动授予下单权限。 |
 | `cors_allowed_origins` | string[] | 本机前端地址 | 允许访问 API 的浏览器 origin。 |
-| `notification` | object | `{"type":"console"}` | 通知器配置。 |
+| `notification` | object | `{"type":"console"}` | 只保存通知通道类型：`console`、`telegram` 或 `wechat`；凭证和目标字段会被拒绝。 |
 
 ### data_source
 
 | 字段 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `provider` | string | `akshare` | `akshare` 或 `tushare`。 |
-| `live_poll_interval` | integer | `60` | 行情和调度轮询间隔，单位秒。 |
+| `live_poll_interval` | integer | `60` | 行情和调度轮询间隔，单位秒，最少 `15`。 |
 
 交互式配置脚本会保留分组结构：
 
@@ -75,7 +75,7 @@ uv run python scripts/configure_data_source.py --provider akshare
 uv run python scripts/configure_data_source.py --provider tushare
 ```
 
-TuShare token 通过隐藏输入读取，不接受命令行参数。脚本只把 provider 和轮询参数写入已被 Git 忽略的 `config.json`，把 Token 写入权限为 `0600` 的 `.env`（或 `--env-file` / `KARKINOS_ENV_FILE` 指定文件）。Settings API 和 Web 页面不接收凭证，只展示是否已配置。`config.json` 中出现顶层或分组内 `tushare_token` 会阻止启动，配置脚本也会直接拒绝，不做自动凭证迁移。
+TuShare token 通过隐藏输入读取，不接受命令行参数。脚本只把 provider 和轮询参数写入已被 Git 忽略的 `config.json`，把 Token 写入权限为 `0600` 的 `.env`（或 `--env-file` / `KARKINOS_ENV_FILE` 指定文件）。切换到 AkShare 会保留已有环境凭证；删除凭证必须是显式操作。Settings API 和 Web 页面不接收凭证，只展示是否已配置。`config.json` 中出现顶层或分组内 `tushare_token` 会阻止启动，配置脚本也会直接拒绝，不做自动凭证迁移。
 
 ### broker_fee
 
@@ -147,8 +147,11 @@ AI 凭证解析顺序为：
 | `KARKINOS_DATA_SOURCE` | `data_source.provider` |
 | `KARKINOS_LIVE_POLL_INTERVAL` | `data_source.live_poll_interval` |
 | `TUSHARE_TOKEN` | TuShare 边缘适配器凭证；不会进入 `config.json` 或 Settings API |
+| `KARKINOS_TELEGRAM_BOT_TOKEN` | Telegram Bot 凭证；仅限环境变量 |
+| `KARKINOS_TELEGRAM_CHAT_ID` | Telegram 目标；仅限环境变量 |
+| `KARKINOS_WECHAT_SENDKEY` | Server酱凭证；仅限环境变量 |
 
-运行时与 AI 覆盖由同一个启动加载器处理。布尔值接受 `true/false`、`1/0`、`yes/no` 和 `on/off`；拼写错误会阻止启动。Port、轮询间隔、AI timeout、HTTPS base URL 和 CORS 空列表同样会被校验。
+运行时与 AI 覆盖由同一个启动加载器处理。已存在的非空进程环境值优先于 `.env`；对白名单内的空凭证值，允许由选定的 `.env` 回填。布尔值接受 `true/false`、`1/0`、`yes/no` 和 `on/off`；拼写错误会阻止启动。Port、轮询间隔（最少 15 秒）、AI timeout、HTTPS base URL 和 CORS 空列表同样会被校验。
 
 ### AI
 

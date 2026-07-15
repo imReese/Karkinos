@@ -154,6 +154,9 @@ export function SettingsPage() {
   const notificationType = String(
     settings.data?.notification?.type ?? copy.settings.notificationUnavailable,
   );
+  const notificationConfigured = Boolean(
+    settings.data?.notification?.configured,
+  );
   const trackedAssets = settings.data?.assets.length ?? 0;
   const statusLoadFailed =
     settings.isError ||
@@ -1138,10 +1141,19 @@ export function SettingsPage() {
                   : 'success'
               }
             />
+            <RegisterRow
+              label={copy.settings.notificationStatus}
+              value={
+                notificationConfigured
+                  ? copy.settings.notificationConfigured
+                  : copy.settings.notificationMissingCredential
+              }
+              tone={notificationConfigured ? 'success' : 'warning'}
+            />
             <button
               type="button"
               className="app-button-secondary rounded-2xl px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={testNotification.isPending}
+              disabled={testNotification.isPending || !notificationConfigured}
               aria-busy={testNotification.isPending}
               onClick={() => void testNotification.mutateAsync()}
             >
