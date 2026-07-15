@@ -381,3 +381,38 @@ def test_financial_read_fails_closed_when_facts_are_newer_than_publication(tmp_p
 
     assert exc_info.value.status_code == 503
     assert db.get_valuation_snapshot_sync(published["snapshot_id"]) is not None
+
+
+def test_market_context_index_does_not_invalidate_account_valuation(tmp_path):
+    from server.routes.portfolio import _current_valuation_snapshot
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.save_quote_snapshot_sync(
+        symbol="603659",
+        asset_class="stock",
+        price=24.6,
+        volume=1000.0,
+        timestamp="2026-07-10T14:57:03+08:00",
+    )
+    published = db.publish_current_valuation_snapshot_sync()
+
+    db.upsert_latest_quote_sync(
+        symbol="000001",
+        asset_type="index",
+        price=3524.3,
+        volume=0.0,
+        quote_timestamp="2026-07-10T14:58:03+08:00",
+        quote_source="fixture",
+        provider_name="fixture",
+        provider_status="live",
+        quote_status="live",
+        captured_at="2026-07-10T14:58:03+08:00",
+        captured_reason="scheduler_market_index_sync",
+    )
+
+    current = _current_valuation_snapshot(SimpleNamespace(db=db))
+
+    assert current["snapshot_id"] == published["snapshot_id"]
+    assert current["valuation_policy"] == "karkinos.persisted_valuation.v3"
+    assert [quote["symbol"] for quote in current["quotes"]] == ["603659"]

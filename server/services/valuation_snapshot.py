@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
-VALUATION_POLICY_VERSION = "karkinos.persisted_valuation.v2"
+VALUATION_POLICY_VERSION = "karkinos.persisted_valuation.v3"
 _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 _MIN_TIMESTAMP = datetime.min.replace(tzinfo=timezone.utc)
 
@@ -86,6 +86,20 @@ def select_authoritative_quote_rows(
         if existing is None or _quote_rank(row) > _quote_rank(existing):
             selected[identity] = dict(row)
     return [selected[key] for key in sorted(selected)]
+
+
+def _account_valuation_quote_rows(
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Exclude non-investable market context from account valuation facts."""
+    return [
+        row
+        for row in rows
+        if str(row.get("asset_type") or row.get("asset_class") or "stock")
+        .strip()
+        .lower()
+        != "index"
+    ]
 
 
 def _freeze_previous_close_evidence(
@@ -242,7 +256,9 @@ def build_current_valuation_snapshot(
     """Build and persist an immutable valuation identity from database facts."""
     quotes = _freeze_previous_close_evidence(
         db,
-        select_authoritative_quote_rows(load_persisted_quote_rows(db)),
+        select_authoritative_quote_rows(
+            _account_valuation_quote_rows(load_persisted_quote_rows(db))
+        ),
     )
     ledger_rows = _load_ledger_rows(db)
     quote_set_fingerprint = _fingerprint(quotes)

@@ -249,6 +249,7 @@ def refresh_fund_nav_quotes(
             )
         return result
 
+    pending_quotes: dict[str, dict[str, Any]] = {}
     for symbol in due_symbols:
         last_error: str | None = None
         for source_name, source in sources:
@@ -260,28 +261,7 @@ def refresh_fund_nav_quotes(
                     source_name=source_name,
                     now=current,
                 )
-                if db is not None:
-                    _persist_fund_quote(
-                        db,
-                        quote,
-                        now=current,
-                        fetch_run_id=run_id,
-                    )
-                cached_quote = {
-                    "price": quote["price"],
-                    "volume": quote["volume"],
-                    "timestamp": quote["timestamp"],
-                    "asset_class": quote["asset_class"],
-                    "quote_source": quote["quote_source"],
-                    "provider_name": quote["provider_name"],
-                    "quote_status": quote["quote_status"],
-                    "provider_status": quote["provider_status"],
-                    "captured_reason": quote["captured_reason"],
-                    "nav_date": quote["nav_date"],
-                }
-                latest_quotes[symbol] = cached_quote
-                result.quotes[symbol] = cached_quote
-                result.refreshed.append(symbol)
+                pending_quotes[symbol] = quote
                 last_error = None
                 break
             except Exception as exc:
@@ -295,10 +275,46 @@ def refresh_fund_nav_quotes(
         if last_error is not None:
             result.failed[symbol] = last_error
 
+    # External provider I/O completes before any account valuation input is
+    # changed. This keeps a slow or partially fetched batch from exposing a
+    # long-lived, unpublished quote set to financial reads.
+    for symbol, quote in pending_quotes.items():
+        try:
+            if db is not None:
+                _persist_fund_quote(
+                    db,
+                    quote,
+                    now=current,
+                    fetch_run_id=run_id,
+                )
+            cached_quote = {
+                "price": quote["price"],
+                "volume": quote["volume"],
+                "timestamp": quote["timestamp"],
+                "asset_class": quote["asset_class"],
+                "quote_source": quote["quote_source"],
+                "provider_name": quote["provider_name"],
+                "quote_status": quote["quote_status"],
+                "provider_status": quote["provider_status"],
+                "captured_reason": quote["captured_reason"],
+                "nav_date": quote["nav_date"],
+            }
+            latest_quotes[symbol] = cached_quote
+            result.quotes[symbol] = cached_quote
+            result.refreshed.append(symbol)
+        except Exception as exc:
+            result.failed[symbol] = str(exc)
+            logger.exception("Failed to persist fund NAV quote for %s", symbol)
+
     valuation_snapshot_id: str | None = None
     publication_error: str | None = None
     try:
-        valuation_snapshot = build_current_valuation_snapshot(db, persist=True)
+        publish_snapshot = getattr(db, "publish_current_valuation_snapshot_sync", None)
+        valuation_snapshot = (
+            publish_snapshot()
+            if callable(publish_snapshot)
+            else build_current_valuation_snapshot(db, persist=True)
+        )
         valuation_snapshot_id = str(valuation_snapshot["snapshot_id"])
     except Exception as exc:
         publication_error = "valuation_snapshot_persistence_failed"
