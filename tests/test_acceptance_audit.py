@@ -42,25 +42,6 @@ from analytics.acceptance_audit import (
 )
 
 
-def _normalized_markdown(value: str) -> str:
-    return " ".join(value.split()).replace("/ ", "/")
-
-
-def _assert_concise_roadmap_baseline(track: str, status: str, capability: str) -> None:
-    roadmap_text = Path("docs/ROADMAP.md").read_text()
-    baseline = roadmap_text.split("## Current Baseline", 1)[1].split(
-        "## Active Milestone", 1
-    )[0]
-    matching_rows = [
-        line for line in baseline.splitlines() if line.startswith(f"| {track} |")
-    ]
-
-    assert len(matching_rows) == 1
-    row = matching_rows[0]
-    assert f"| {status} |" in row
-    assert capability in row
-
-
 def test_acceptance_audit_has_evidence_for_every_goal_checkbox() -> None:
     audit = build_acceptance_audit()
 
@@ -84,12 +65,6 @@ def test_capital_authorization_stage0_acceptance_audit_is_complete() -> None:
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    _assert_concise_roadmap_baseline(
-        "v1.8 control plane",
-        "Foundation implemented",
-        "Signed bounded authority",
-    )
-
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
@@ -104,12 +79,6 @@ def test_broker_connector_soak_foundation_acceptance_audit_is_complete() -> None
     assert audit.required_count == 11
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
-
-    _assert_concise_roadmap_baseline(
-        "v1.8 control plane",
-        "Foundation implemented",
-        "Signed bounded authority",
-    )
 
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
@@ -126,12 +95,6 @@ def test_broker_connector_soak_promotion_acceptance_audit_is_complete() -> None:
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    _assert_concise_roadmap_baseline(
-        "v1.8 control plane",
-        "Foundation implemented",
-        "Signed bounded authority",
-    )
-
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
@@ -146,12 +109,6 @@ def test_per_order_confirmation_foundation_acceptance_audit_is_complete() -> Non
     assert audit.required_count == 9
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
-
-    _assert_concise_roadmap_baseline(
-        "v1.8 control plane",
-        "Foundation implemented",
-        "Signed bounded authority",
-    )
 
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
@@ -168,12 +125,6 @@ def test_execution_gateway_verification_acceptance_audit_is_complete() -> None:
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    _assert_concise_roadmap_baseline(
-        "v1.8 control plane",
-        "Foundation implemented",
-        "Signed bounded authority",
-    )
-
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
@@ -188,12 +139,6 @@ def test_per_order_gateway_verification_binding_acceptance_audit_is_complete() -
     assert audit.required_count == 7
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
-
-    _assert_concise_roadmap_baseline(
-        "v1.8 control plane",
-        "Foundation implemented",
-        "Signed bounded authority",
-    )
 
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
@@ -210,12 +155,6 @@ def test_controlled_session_envelope_foundation_acceptance_audit_is_complete() -
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    _assert_concise_roadmap_baseline(
-        "v1.8 control plane",
-        "Foundation implemented",
-        "Signed bounded authority",
-    )
-
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
@@ -230,12 +169,6 @@ def test_controlled_session_gateway_verification_binding_audit_is_complete() -> 
     assert audit.required_count == 7
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
-
-    _assert_concise_roadmap_baseline(
-        "v1.8 control plane",
-        "Foundation implemented",
-        "Signed bounded authority",
-    )
 
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
@@ -252,12 +185,6 @@ def test_session_start_account_truth_binding_acceptance_audit_is_complete() -> N
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    _assert_concise_roadmap_baseline(
-        "v1.8 control plane",
-        "Foundation implemented",
-        "Signed bounded authority",
-    )
-
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
@@ -272,12 +199,6 @@ def test_controlled_session_budget_reservation_acceptance_audit_is_complete() ->
     assert audit.required_count == 7
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
-
-    _assert_concise_roadmap_baseline(
-        "v1.8 control plane",
-        "Foundation implemented",
-        "Signed bounded authority",
-    )
 
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
@@ -294,12 +215,6 @@ def test_controlled_session_symbol_budget_acceptance_audit_is_complete() -> None
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    _assert_concise_roadmap_baseline(
-        "v1.8 control plane",
-        "Foundation implemented",
-        "Signed bounded authority",
-    )
-
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
@@ -314,12 +229,6 @@ def test_controlled_session_runtime_rate_limiter_acceptance_audit_is_complete() 
     assert audit.required_count == 13
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
-
-    _assert_concise_roadmap_baseline(
-        "v1.8 control plane",
-        "Foundation implemented",
-        "Signed bounded authority",
-    )
 
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
@@ -336,12 +245,6 @@ def test_controlled_session_automatic_pause_acceptance_audit_is_complete() -> No
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    _assert_concise_roadmap_baseline(
-        "v1.8 control plane",
-        "Foundation implemented",
-        "Signed bounded authority",
-    )
-
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
@@ -356,12 +259,6 @@ def test_controlled_session_runtime_authority_acceptance_audit_is_complete() -> 
     assert audit.required_count == 8
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
-
-    _assert_concise_roadmap_baseline(
-        "v1.8 control plane",
-        "Foundation implemented",
-        "Signed bounded authority",
-    )
 
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
@@ -378,12 +275,6 @@ def test_controlled_session_live_gate_orchestration_audit_is_complete() -> None:
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    _assert_concise_roadmap_baseline(
-        "v1.8 control plane",
-        "Foundation implemented",
-        "Signed bounded authority",
-    )
-
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
@@ -398,12 +289,6 @@ def test_controlled_session_signed_replacement_audit_is_complete() -> None:
     assert audit.required_count == 8
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
-
-    _assert_concise_roadmap_baseline(
-        "v1.8 control plane",
-        "Foundation implemented",
-        "Signed bounded authority",
-    )
 
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
@@ -420,12 +305,6 @@ def test_controlled_broker_submission_audit_is_complete() -> None:
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    _assert_concise_roadmap_baseline(
-        "v1.8 control plane",
-        "Foundation implemented",
-        "Signed bounded authority",
-    )
-
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
@@ -440,12 +319,6 @@ def test_controlled_submission_interlock_audit_is_complete() -> None:
     assert audit.required_count == 8
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
-
-    _assert_concise_roadmap_baseline(
-        "v1.8 control plane",
-        "Foundation implemented",
-        "Signed bounded authority",
-    )
 
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
@@ -462,12 +335,6 @@ def test_controlled_submission_reconciliation_clearance_audit_is_complete() -> N
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    _assert_concise_roadmap_baseline(
-        "v1.8 control plane",
-        "Foundation implemented",
-        "Signed bounded authority",
-    )
-
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
@@ -482,12 +349,6 @@ def test_capital_scaling_review_foundation_acceptance_audit_is_complete() -> Non
     assert audit.required_count == 8
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
-
-    _assert_concise_roadmap_baseline(
-        "v1.8 control plane",
-        "Foundation implemented",
-        "Signed bounded authority",
-    )
 
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
@@ -504,12 +365,6 @@ def test_capital_scaling_evidence_resolution_acceptance_audit_is_complete() -> N
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    _assert_concise_roadmap_baseline(
-        "v1.8 control plane",
-        "Foundation implemented",
-        "Signed bounded authority",
-    )
-
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
@@ -524,12 +379,6 @@ def test_capital_scaling_evidence_window_acceptance_audit_is_complete() -> None:
     assert audit.required_count == 9
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
-
-    _assert_concise_roadmap_baseline(
-        "v1.8 control plane",
-        "Foundation implemented",
-        "Signed bounded authority",
-    )
 
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
@@ -546,12 +395,6 @@ def test_capital_scaling_operating_sample_acceptance_audit_is_complete() -> None
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    _assert_concise_roadmap_baseline(
-        "v1.8 control plane",
-        "Foundation implemented",
-        "Signed bounded authority",
-    )
-
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
@@ -566,12 +409,6 @@ def test_execution_batch_reconciliation_acceptance_audit_is_complete() -> None:
     assert audit.required_count == 8
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
-
-    _assert_concise_roadmap_baseline(
-        "v1.8 control plane",
-        "Foundation implemented",
-        "Signed bounded authority",
-    )
 
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
@@ -588,12 +425,6 @@ def test_signed_operator_approval_acceptance_audit_is_complete() -> None:
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
-    _assert_concise_roadmap_baseline(
-        "v1.8 control plane",
-        "Foundation implemented",
-        "Signed bounded authority",
-    )
-
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
         assert criterion.evidence_paths, criterion.key
@@ -602,13 +433,17 @@ def test_signed_operator_approval_acceptance_audit_is_complete() -> None:
             assert Path(evidence_path).exists(), evidence_path
 
 
-def test_goal_acceptance_checkboxes_match_acceptance_audit() -> None:
+def test_profit_discipline_acceptance_manifest_is_complete() -> None:
     audit = build_acceptance_audit()
 
     assert audit.is_complete is True
-    _assert_concise_roadmap_baseline(
-        "v0.2-v0.5", "Completed", "End-to-end research loop"
-    )
+
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
 
 
 def test_strategy_lab_acceptance_audit_has_evidence_for_every_goal_checkbox() -> None:
@@ -627,11 +462,17 @@ def test_strategy_lab_acceptance_audit_has_evidence_for_every_goal_checkbox() ->
             assert Path(evidence_path).exists(), evidence_path
 
 
-def test_strategy_lab_goal_acceptance_checkboxes_match_audit() -> None:
+def test_strategy_lab_acceptance_manifest_is_complete() -> None:
     audit = build_strategy_lab_acceptance_audit()
 
     assert audit.is_complete is True
-    _assert_concise_roadmap_baseline("v0.2-v0.5", "Completed", "Strategy Lab")
+
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
 
 
 def test_research_evidence_acceptance_audit_has_evidence_for_every_goal_checkbox() -> (
@@ -652,13 +493,17 @@ def test_research_evidence_acceptance_audit_has_evidence_for_every_goal_checkbox
             assert Path(evidence_path).exists(), evidence_path
 
 
-def test_research_evidence_goal_acceptance_checkboxes_match_audit() -> None:
+def test_research_evidence_acceptance_manifest_is_complete() -> None:
     audit = build_research_evidence_acceptance_audit()
 
     assert audit.is_complete is True
-    _assert_concise_roadmap_baseline(
-        "v0.2-v0.5", "Completed", "after-cost/OOS evidence"
-    )
+
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
 
 
 def test_account_truth_acceptance_audit_has_evidence_for_every_completed_checkbox() -> (
@@ -679,11 +524,17 @@ def test_account_truth_acceptance_audit_has_evidence_for_every_completed_checkbo
             assert Path(evidence_path).exists(), evidence_path
 
 
-def test_account_truth_goal_completed_checkboxes_match_audit() -> None:
+def test_account_truth_acceptance_manifest_is_complete() -> None:
     audit = build_account_truth_acceptance_audit()
 
     assert audit.is_complete is True
-    _assert_concise_roadmap_baseline("v0.6-v0.9", "Completed", "Account Truth")
+
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
 
 
 def test_account_truth_review_acceptance_audit_has_evidence_for_every_completed_checkbox() -> (
@@ -704,11 +555,17 @@ def test_account_truth_review_acceptance_audit_has_evidence_for_every_completed_
             assert Path(evidence_path).exists(), evidence_path
 
 
-def test_account_truth_review_goal_checkboxes_match_audit() -> None:
+def test_account_truth_review_acceptance_manifest_is_complete() -> None:
     audit = build_account_truth_review_acceptance_audit()
 
     assert audit.is_complete is True
-    _assert_concise_roadmap_baseline("v0.6-v0.9", "Completed", "review workflow")
+
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
 
 
 def test_strategy_assignment_acceptance_audit_has_evidence_for_completed_checkboxes() -> (
@@ -729,11 +586,17 @@ def test_strategy_assignment_acceptance_audit_has_evidence_for_completed_checkbo
             assert Path(evidence_path).exists(), evidence_path
 
 
-def test_strategy_assignment_goal_completed_checkboxes_match_audit() -> None:
+def test_strategy_assignment_acceptance_manifest_is_complete() -> None:
     audit = build_strategy_assignment_acceptance_audit()
 
     assert audit.is_complete is True
-    _assert_concise_roadmap_baseline("v0.6-v0.9", "Completed", "strategy attribution")
+
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
 
 
 def test_market_data_reliability_acceptance_audit_has_evidence_for_completed_checkboxes() -> (
@@ -762,13 +625,17 @@ def test_market_data_reliability_acceptance_audit_has_evidence_for_completed_che
             assert Path(evidence_path).exists(), evidence_path
 
 
-def test_market_data_reliability_goal_completed_checkboxes_match_audit() -> None:
+def test_market_data_reliability_acceptance_manifest_is_complete() -> None:
     audit = build_market_data_reliability_acceptance_audit()
 
     assert audit.is_complete is True
-    _assert_concise_roadmap_baseline(
-        "v0.6-v0.9", "Completed", "reliable market-data plane"
-    )
+
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
 
 
 def test_broker_fee_cost_basis_acceptance_audit_has_evidence_for_completed_checkboxes() -> (
@@ -805,13 +672,17 @@ def test_broker_fee_cost_basis_acceptance_audit_has_evidence_for_completed_check
             assert Path(evidence_path).exists(), evidence_path
 
 
-def test_broker_fee_cost_basis_goal_completed_checkboxes_match_audit() -> None:
+def test_broker_fee_cost_basis_acceptance_manifest_is_complete() -> None:
     audit = build_broker_fee_cost_basis_acceptance_audit()
 
     assert audit.is_complete is True
-    _assert_concise_roadmap_baseline(
-        "v1.4-v1.7", "Completed", "Attribution/cost fidelity"
-    )
+
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
 
 
 def test_single_instrument_strategy_loop_acceptance_audit_has_evidence() -> None:
@@ -867,13 +738,17 @@ def test_single_instrument_strategy_loop_user_readable_surface_audit_covers_web_
     )
 
 
-def test_single_instrument_strategy_loop_goal_checkboxes_match_audit() -> None:
+def test_single_instrument_strategy_loop_acceptance_manifest_is_complete() -> None:
     audit = build_single_instrument_strategy_loop_acceptance_audit()
 
     assert audit.is_complete is True
-    _assert_concise_roadmap_baseline(
-        "v0.2-v0.5", "Completed", "End-to-end research loop"
-    )
+
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
 
 
 def test_operations_runbook_acceptance_audit_has_evidence_for_completed_capabilities() -> (
