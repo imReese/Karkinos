@@ -104,6 +104,69 @@ def test_server_config_rejects_grouped_and_flat_field_conflicts(tmp_path):
         ServerConfig.from_json(config_path)
 
 
+def test_server_config_rejects_unknown_top_level_and_ai_fields(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text('{"server": {}, "typo_port": 9000}', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="unsupported top-level fields: typo_port"):
+        ServerConfig.from_json(config_path)
+
+    config_path.write_text(
+        '{"ai": {"enabled": false, "modle": "typo"}}',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unsupported fields: modle"):
+        ServerConfig.from_json(config_path)
+
+
+def test_runtime_environment_overrides_file_and_explicit_values_win(
+    tmp_path,
+    monkeypatch,
+):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "server": {"host": "file-host", "port": 8000},
+                "data_source": {"provider": "akshare", "live_poll_interval": 60},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("KARKINOS_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("KARKINOS_HOST", "env-host")
+    monkeypatch.setenv("KARKINOS_PORT", "9000")
+    monkeypatch.setenv("KARKINOS_LIVE_AUTO_START", "false")
+    monkeypatch.setenv(
+        "KARKINOS_CORS_ALLOWED_ORIGINS",
+        "https://one.example, https://two.example",
+    )
+    monkeypatch.setenv("KARKINOS_DATA_SOURCE", "tushare")
+    monkeypatch.setenv("KARKINOS_LIVE_POLL_INTERVAL", "120")
+    monkeypatch.setenv("TUSHARE_TOKEN", "env-token")
+
+    config = load_runtime_config(ServerConfig, host="cli-host")
+
+    assert config.host == "cli-host"
+    assert config.port == 9000
+    assert config.live_auto_start is False
+    assert config.cors_allowed_origins == [
+        "https://one.example",
+        "https://two.example",
+    ]
+    assert config.data_source == "tushare"
+    assert config.live_poll_interval == 120
+    assert config.tushare_token == "env-token"
+
+
+def test_runtime_environment_rejects_invalid_values(monkeypatch):
+    monkeypatch.setenv("KARKINOS_LIVE_AUTO_START", "treu")
+
+    with pytest.raises(ValueError, match="KARKINOS_LIVE_AUTO_START"):
+        load_runtime_config(ServerConfig)
+
+
 def test_build_watchlist_maps_asset_classes():
     config = BacktestConfig(
         assets=[
@@ -776,13 +839,55 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
         "enabled": False,
         "provider": "",
         "model": "",
-        "api_keys": {},
-        "allow_financial_context": False,
+        "base_url": "",
+        "adapter_kind": "openai_compatible_https",
+        "timeout_seconds": 20,
+        "api_key_env": "KARKINOS_AI_API_KEY",
     }
     assert set(example) == {"server", "data_source", "broker_fee", "ai"}
     assert "schema_version" not in example["broker_fee"]
     assert not _contains_sensitive_key(example["broker_fee"])
-    assert example["ai"]["api_keys"] == {}
+    assert "api_keys" not in example["ai"]
+
+    environment_template = Path(".env.example").read_text(encoding="utf-8")
+    for env_name in (
+        "TUSHARE_TOKEN",
+        "KARKINOS_HOST",
+        "KARKINOS_PORT",
+        "KARKINOS_LIVE_AUTO_START",
+        "KARKINOS_CORS_ALLOWED_ORIGINS",
+        "KARKINOS_CONFIG_PATH",
+        "KARKINOS_DATA_DIR",
+        "KARKINOS_DATA_SOURCE",
+        "KARKINOS_LIVE_POLL_INTERVAL",
+        "KARKINOS_AI_ENABLED",
+        "KARKINOS_AI_PROVIDER",
+        "KARKINOS_AI_MODEL",
+        "KARKINOS_AI_BASE_URL",
+        "KARKINOS_AI_ADAPTER_KIND",
+        "KARKINOS_AI_TIMEOUT_SECONDS",
+        "KARKINOS_AI_API_KEY",
+    ):
+        assert f"{env_name}=" in environment_template
+
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    for env_name in (
+        "TUSHARE_TOKEN",
+        "KARKINOS_HOST",
+        "KARKINOS_PORT",
+        "KARKINOS_LIVE_AUTO_START",
+        "KARKINOS_CORS_ALLOWED_ORIGINS",
+        "KARKINOS_DATA_SOURCE",
+        "KARKINOS_LIVE_POLL_INTERVAL",
+        "KARKINOS_AI_ENABLED",
+        "KARKINOS_AI_PROVIDER",
+        "KARKINOS_AI_MODEL",
+        "KARKINOS_AI_BASE_URL",
+        "KARKINOS_AI_ADAPTER_KIND",
+        "KARKINOS_AI_TIMEOUT_SECONDS",
+        "KARKINOS_AI_API_KEY",
+    ):
+        assert f"{env_name}=" in compose
 
 
 def test_server_main_preserves_live_auto_start_env_for_reload(monkeypatch):

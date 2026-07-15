@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -29,13 +28,6 @@ _DEFAULT_CORS_ALLOWED_ORIGINS = [
 ]
 
 
-def _env_flag(name: str) -> bool | None:
-    value = os.environ.get(name)
-    if value is None:
-        return None
-    return value.strip().lower() in {"1", "true", "yes", "on"}
-
-
 def _normalize_cors_allowed_origins(value: object) -> list[str]:
     if value is None:
         return list(_DEFAULT_CORS_ALLOWED_ORIGINS)
@@ -56,10 +48,8 @@ def _resolve_cors_allowed_origins(
     configured = (
         overrides["cors_allowed_origins"]
         if "cors_allowed_origins" in overrides
-        else os.environ.get("KARKINOS_CORS_ALLOWED_ORIGINS")
+        else configured_default
     )
-    if configured is None:
-        configured = configured_default
     return _normalize_cors_allowed_origins(configured)
 
 
@@ -280,9 +270,6 @@ async def lifespan(app: FastAPI):
 def create_app(config_overrides: dict[str, Any] | None = None) -> FastAPI:
     """创建 FastAPI 应用实例。"""
     effective_overrides = dict(config_overrides or {})
-    env_live_auto_start = _env_flag("KARKINOS_LIVE_AUTO_START")
-    if env_live_auto_start is not None:
-        effective_overrides.setdefault("live_auto_start", env_live_auto_start)
     from server.bootstrap import load_runtime_config
     from server.config import ServerConfig
 

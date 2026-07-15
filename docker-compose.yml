@@ -10,10 +10,21 @@ services:
     environment:
       - TZ=Asia/Shanghai
       - TUSHARE_TOKEN=${TUSHARE_TOKEN:-}
-      - KARKINOS_HOST=0.0.0.0
-      - KARKINOS_PORT=8000
+      - KARKINOS_HOST=${KARKINOS_HOST:-0.0.0.0}
+      - KARKINOS_PORT=${KARKINOS_PORT:-8000}
+      - KARKINOS_LIVE_AUTO_START=${KARKINOS_LIVE_AUTO_START:-true}
+      - KARKINOS_CORS_ALLOWED_ORIGINS=${KARKINOS_CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
       - KARKINOS_CONFIG_PATH=/app/config.json
       - KARKINOS_DATA_DIR=/app/data/store
+      - KARKINOS_DATA_SOURCE=${KARKINOS_DATA_SOURCE:-akshare}
+      - KARKINOS_LIVE_POLL_INTERVAL=${KARKINOS_LIVE_POLL_INTERVAL:-60}
+      - KARKINOS_AI_ENABLED=${KARKINOS_AI_ENABLED:-false}
+      - KARKINOS_AI_PROVIDER=${KARKINOS_AI_PROVIDER:-}
+      - KARKINOS_AI_MODEL=${KARKINOS_AI_MODEL:-}
+      - KARKINOS_AI_BASE_URL=${KARKINOS_AI_BASE_URL:-}
+      - KARKINOS_AI_ADAPTER_KIND=${KARKINOS_AI_ADAPTER_KIND:-openai_compatible_https}
+      - KARKINOS_AI_TIMEOUT_SECONDS=${KARKINOS_AI_TIMEOUT_SECONDS:-20}
+      - KARKINOS_AI_API_KEY=${KARKINOS_AI_API_KEY:-}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/settings', timeout=5).read()"]

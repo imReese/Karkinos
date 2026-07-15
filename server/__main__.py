@@ -10,7 +10,10 @@ def main() -> None:
         "--host", default=None, help="监听地址 (默认读 config.json 或 0.0.0.0)"
     )
     parser.add_argument(
-        "--port", type=int, default=None, help="监听端口 (默认读 config.json 或 8000)"
+        "--port",
+        type=int,
+        default=None,
+        help="监听端口 (默认读 config.json 或 8000)",
     )
     parser.add_argument("--reload", action="store_true", help="开发模式热重载")
     parser.add_argument(
@@ -18,43 +21,56 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # 尝试从 config.json 读取默认值
-    try:
-        from server.bootstrap import load_runtime_config
-        from server.config import ServerConfig
+    from server.bootstrap import load_runtime_config
+    from server.config import ServerConfig
 
-        config = load_runtime_config(
-            ServerConfig,
-            **({"live_auto_start": False} if args.no_live else {}),
-        )
-    except Exception:
-        config = None
+    config_overrides = {}
+    if args.host is not None:
+        config_overrides["host"] = args.host
+    if args.port is not None:
+        config_overrides["port"] = args.port
+    if args.no_live:
+        config_overrides["live_auto_start"] = False
 
-    # 优先级：CLI 参数 > 环境变量 > config.json > 默认值
-    env_host = os.environ.get("KARKINOS_HOST") or None
-    env_port = int(os.environ.get("KARKINOS_PORT", "0")) or None
-    host = args.host or env_host or (config.host if config else "0.0.0.0")
-    port = args.port or env_port or (config.port if config else 8000)
+    # 优先级：CLI 参数 > 环境变量 > config.json > 默认值。
+    # 配置错误直接阻止启动。
+    config = load_runtime_config(ServerConfig, **config_overrides)
+    host = config.host
+    port = config.port
     reload = args.reload
 
     import uvicorn
     from server.app import create_app
 
-    if args.no_live:
-        os.environ["KARKINOS_LIVE_AUTO_START"] = "false"
-
     if reload:
-        uvicorn.run(
-            "server.app:create_app",
-            host=host,
-            port=port,
-            reload=True,
-            factory=True,
-        )
+        # Reload starts a child process, so forward only explicit CLI values.
+        forwarded = {}
+        if args.host is not None:
+            forwarded["KARKINOS_HOST"] = args.host
+        if args.port is not None:
+            forwarded["KARKINOS_PORT"] = str(args.port)
+        if args.no_live:
+            forwarded["KARKINOS_LIVE_AUTO_START"] = "false"
+        previous = {name: os.environ.get(name) for name in forwarded}
+        os.environ.update(forwarded)
+        try:
+            uvicorn.run(
+                "server.app:create_app",
+                host=host,
+                port=port,
+                reload=True,
+                factory=True,
+            )
+        finally:
+            for name, value in previous.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
         return
 
     uvicorn.run(
-        create_app(config_overrides={"live_auto_start": False} if args.no_live else {}),
+        create_app(config_overrides=config_overrides),
         host=host,
         port=port,
         reload=False,

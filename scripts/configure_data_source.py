@@ -56,16 +56,28 @@ def save_data_source_config(
         raise ValueError(f"Unsupported data source provider: {provider}")
 
     config = load_config(config_path)
-    config["data_source"] = provider
+    raw_data_source = config.get("data_source")
+    if isinstance(raw_data_source, dict):
+        data_source = dict(raw_data_source)
+    elif isinstance(raw_data_source, str):
+        data_source = {"provider": raw_data_source}
+    else:
+        data_source = {}
+
+    for legacy_field in ("tushare_token", "live_poll_interval"):
+        if legacy_field in config:
+            data_source[legacy_field] = config.pop(legacy_field)
+    data_source["provider"] = provider
 
     if provider == "akshare":
-        config.pop("tushare_token", None)
+        data_source.pop("tushare_token", None)
     else:
         token = token_reader().strip()
         if not token:
             raise ValueError("TuShare token is required when provider is tushare")
-        config["tushare_token"] = token
+        data_source["tushare_token"] = token
 
+    config["data_source"] = data_source
     save_config(config_path, config)
     return config
 
