@@ -1,5 +1,7 @@
 # config.json 配置字段参考
 
+[English](config-reference.en.md) | [中文文档](README.zh.md)
+
 `config.json` 是本机运行配置，默认已被 Git 忽略。它不应该保存完整资金账号、券商密码、券商登录凭证、截图、交割单、真实账户导出或运行时数据库。
 
 JSON 标准不支持注释，因此不要在 `config.json` 里写 `//` 或 `/* ... */`。字段说明放在本文档，安全示例放在项目根目录的 `config.example.json`。
