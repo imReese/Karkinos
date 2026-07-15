@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 CORE_DOC_BUDGETS = {
@@ -33,8 +32,7 @@ def _check_core_doc(path_text: str, line_budget: int) -> list[str]:
     line_count = len(text.splitlines())
     if line_count > line_budget:
         errors.append(
-            f"{path_text} has {line_count} lines; ownership budget is "
-            f"{line_budget}"
+            f"{path_text} has {line_count} lines; ownership budget is " f"{line_budget}"
         )
 
     for raw_target in MARKDOWN_LINK.findall(text):
@@ -88,4 +86,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
