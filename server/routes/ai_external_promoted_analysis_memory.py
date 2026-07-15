@@ -50,6 +50,15 @@ class ExternalPromotedAnalysisMemoryRevocationPayload(BaseModel):
 def create_router() -> APIRouter:
     router = APIRouter(tags=["ai-research"])
 
+    # Phase 1.17 retrieves this exact memory type through a new, isolated
+    # current-evidence rebinding contract. The child route is local-only and
+    # does not load provider configuration or credentials.
+    from server.routes.ai_external_promoted_analysis_memory_retrievals import (
+        create_router as create_external_promoted_analysis_memory_retrieval_router,
+    )
+
+    router.include_router(create_external_promoted_analysis_memory_retrieval_router())
+
     @router.post(
         "/api/ai/external-promoted-memory-analysis-reviews/{review_id}/"
         "memory-promotions"
@@ -115,7 +124,10 @@ def create_router() -> APIRouter:
             "promotions": [item.to_dict() for item in results],
             "explicit_human_promotion_required": True,
             "automatic_recall_enabled": False,
-            "retrieval_contract_available": False,
+            "retrieval_contract_available": True,
+            "retrieval_contract_version": (
+                "karkinos.ai.external_promoted_analysis_memory_retrieval.v1"
+            ),
             "legacy_phase_1_12_contract_modified": False,
             "provider_invocation_count": 0,
             "decision_handoff_enabled": False,

@@ -138,7 +138,10 @@ async def test_promotes_exact_reviewed_analysis_without_authority_or_legacy_muta
     )
     assert payload["automatic_memory_promotion_enabled"] is False
     assert payload["automatic_recall_enabled"] is False
-    assert payload["retrieval_contract_available"] is False
+    assert payload["retrieval_contract_available"] is True
+    assert payload["retrieval_contract_version"] == (
+        "karkinos.ai.external_promoted_analysis_memory_retrieval.v1"
+    )
     assert payload["legacy_phase_1_12_contract_modified"] is False
     assert payload["external_model_invocation_count"] == 0
     assert payload["provider_promotion_eligible"] is False

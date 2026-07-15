@@ -267,7 +267,10 @@ class ExternalPromotedAnalysisMemoryReplay:
             "last_event_hash": self.last_event_hash,
             "errors": list(self.errors),
             "automatic_recall_enabled": False,
-            "retrieval_contract_available": False,
+            "retrieval_contract_available": True,
+            "retrieval_contract_version": (
+                "karkinos.ai.external_promoted_analysis_memory_retrieval.v1"
+            ),
             "legacy_phase_1_12_contract_modified": False,
             "provider_invocation_count": 0,
             "decision_handoff_enabled": False,
@@ -498,7 +501,10 @@ class ExternalPromotedAnalysisMemoryPromotionResult:
             "explicit_human_promotion_required": True,
             "automatic_memory_promotion_enabled": False,
             "automatic_recall_enabled": False,
-            "retrieval_contract_available": False,
+            "retrieval_contract_available": True,
+            "retrieval_contract_version": (
+                "karkinos.ai.external_promoted_analysis_memory_retrieval.v1"
+            ),
             "legacy_phase_1_12_contract_modified": False,
             "external_model_invocation_count": 0,
             "research_output_is_account_fact": False,

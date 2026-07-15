@@ -6,6 +6,29 @@ roadmap promises.
 
 ## Cross-Cutting Reliability
 
+- 2026-07-15: AI-native Phase 1.17 adds the separately versioned, explicit
+  current-evidence retrieval required for Phase 1.16 promoted-analysis memory.
+  Assumptions: recall eligibility is not automatic recall; historical research
+  is not a current fact; retrieval is not model-consumption or data-export
+  permission; and Phase 1.13 must remain immutable. A human request names exact
+  Phase 1.16 promotion ids and one already-persisted current context. The
+  service replays each promotion, report/review lineage, memory artifact, and
+  audit chain, then maps every source canonical tool and kind to exactly one
+  current `complete` record under the context's valuation snapshot and ledger
+  cutoff/fingerprint. Isolated request/event tables bind the request, current
+  context, composed target, and evidence rebindings; concurrent/restart
+  duplicates reuse one record. Revocation, partial/missing/duplicate current
+  evidence, kind or identity drift, source drift, and audit drift hide selected
+  content without deleting history. GET/list/replay initialize no schema and
+  load no credentials. Deterministic validation covers 10 Phase 1.17 domain/
+  route cases, all 251 AI runtime/route tests, all 1,595 backend tests, and 99
+  trading-safety tests. Under Node 24.14.0 all 420 Web tests, Prettier format
+  check, and production build pass; changed Python files pass Black and isort.
+  The boundary performs no semantic search, automatic prompt injection,
+  provider/model call, Decision handoff, trade-plan creation, OMS/ledger/risk
+  write, broker action, permission change, capital change, or execution-
+  authority grant.
+
 - 2026-07-14: AI-native Phase 1.16 adds the separate, explicit, revocable
   historical-memory promotion required after Phase 1.15. Assumptions: human
   acceptance is not memory permission; historical conclusions are not current

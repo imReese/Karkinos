@@ -281,6 +281,16 @@ Active planning target:
   Phase 1.12 remains unchanged, and the new artifact has no retrieval contract,
   automatic recall, current-fact status, Decision input, provider promotion,
   financial mutation, broker action, capital change, or execution authority.
+  Phase 1.17 adds that missing retrieval as a new, isolated contract rather
+  than widening Phase 1.13. A human must name exact Phase 1.16 promotion ids
+  and one already-persisted current context. Every promotion and audit chain is
+  replayed, and each source canonical evidence tool must map to exactly one
+  current `complete` record under the same valuation/ledger identity. Source,
+  current-evidence, request, target, or audit drift hides content without
+  deleting history. The new retrieval is not automatic recall or export
+  permission: it performs no semantic search, prompt injection, model call,
+  Decision handoff, trade-plan creation, financial mutation, broker action,
+  capital change, or execution-authority grant.
 
 * **v1.8 — Capital-Bounded Controlled Execution** starts with non-submitting
   policy contracts and a real read-only broker soak, then advances through a

@@ -749,7 +749,7 @@ currently eligible Phase 1.15 accepted review + exact human confirmation
 -> append one promotion event
 -> optionally append one terminal revocation event
 -> revalidate every binding on GET/list/replay
--> provide no retrieval, model call, Decision input, financial write, or authority
+-> provide no automatic retrieval, model call, Decision input, financial write, or authority
 ```
 
 `ai_external_promoted_analysis_memory_promotions` owns the new immutable
@@ -766,13 +766,49 @@ concurrency-idempotent; a second final promotion fails closed. Revocation is
 append-only and deletes nothing. Every read recomputes the Phase 1.15 review,
 report, Phase 1.13 retrieval, source-memory lineage, evidence, and audit target.
 Any drift hides content and removes recall eligibility. Even a valid artifact
-has no retrieval contract in this phase; consuming it requires a future,
+is not automatically retrievable or injectable. Phase 1.17 supplies a
 separately versioned explicit retrieval and current-evidence rebinding review.
 
 Promotion/revocation load no provider credentials, invoke no model, and cannot
 create a current fact, semantic search result, automatic prompt injection,
 provider promotion, Decision handoff, trade plan, OMS/ledger/risk write, broker
 submit/cancel, permission, capital change, or execution authority.
+
+### Current-Evidence Retrieval for Promoted-Analysis Memory
+
+Phase 1.17 consumes only the recall eligibility established by Phase 1.16:
+
+```text
+exact Phase 1.16 promotion-id allowlist + persisted current context
+-> exact human confirmation, identity, purpose, and idempotency key
+-> replay every promotion, memory artifact, report/review lineage, and audit chain
+-> validate the current context's valuation snapshot and ledger cutoff/fingerprint
+-> map every source canonical tool/kind to exactly one current complete record
+-> bind source/current reference ids and fingerprints into a composed target
+-> persist one isolated retrieval request and one hash-chained start event
+-> revalidate source, current evidence, request, target, and event chain on reads
+-> expose historical research input only; provide no model call or authority
+```
+
+`ai_external_promoted_analysis_memory_retrievals` owns the immutable request,
+current-context identity, request fingerprint, and composed retrieval-target
+fingerprint. `ai_external_promoted_analysis_memory_retrieval_events` stores the
+single start event. These Phase 1.17 tables neither modify nor replace the
+Phase 1.8 or Phase 1.13 retrieval tables, schemas, fingerprints, or replay.
+
+The start transaction is restart- and concurrency-idempotent. A reused key
+with changed input fails closed. Every GET/list/replay reconstructs the target;
+revocation, partial/missing/duplicate current evidence, kind mismatch,
+valuation/ledger drift, source artifact drift, or audit drift makes the result
+ineligible and hides memory content without deleting history. Read paths do
+not initialize schema, load provider credentials, contact a provider, or write
+financial state.
+
+This retrieval is not automatic recall, semantic search, prompt injection, or
+data-export permission. It creates no model call, provider promotion, Decision
+input, trade plan, OMS/ledger/risk mutation, broker submit/cancel, capital
+change, or execution authority. Any future consumer must be a new explicit
+workflow with its own evidence-export review.
 
 ## Financial Data Integrity and Valuation
 
