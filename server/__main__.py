@@ -40,6 +40,7 @@ def main() -> None:
     reload = args.reload
 
     import uvicorn
+
     from server.app import create_app
 
     if reload:
