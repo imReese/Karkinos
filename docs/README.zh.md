@@ -30,21 +30,26 @@ npm --prefix web run test
 更完整的运行参数、通知、数据目录和本地配置见配置参考：
 [中文](config-reference.zh.md) / [English](config-reference.en.md)。
 
-## 从哪里开始
+## 文档导航
 
-| 主题 | 语言版本 |
-| --- | --- |
-| 产品介绍、安装与工作流入口 | [中文](README.zh.md) / [English](README.en.md) |
-| 产品定位和长期边界 | [中文](KARKINOS_GOAL.zh.md) / [English](KARKINOS_GOAL.md) |
-| 当前优先级、里程碑和验收门禁 | [中文](ROADMAP.zh.md) / [English](ROADMAP.md) |
-| 系统分层、流程和权限边界 | [中文](ARCHITECTURE.zh.md) / [English](ARCHITECTURE.md) |
-| 本地服务、通知和数据配置 | [中文](config-reference.zh.md) / [English](config-reference.en.md) |
-| Account Truth 导入与复核契约 | [中文](account-truth-import.zh.md) / [English](account-truth-import.en.md) |
-| 组合收益和成本口径 | [中文](return-accounting.zh.md) / [English](return-accounting.en.md) |
-| 券商订单生命周期采集 | [中文](broker-order-lifecycle-ingestion.zh.md) / [English](broker-order-lifecycle-ingestion.en.md) |
-| 受控执行安全门 | [中文](CONTROLLED_EXECUTION_PLAN.zh.md) / [English](CONTROLLED_EXECUTION_PLAN.md) |
-| 已完成版本和验证摘要 | [中文](IMPLEMENTATION_LOG.zh.md) / [English](IMPLEMENTATION_LOG.md) |
-| 外部项目参考边界 | [中文](BENCHMARKS.zh.md) / [English](BENCHMARKS.md) |
+### 核心文档
+
+- [产品目标](KARKINOS_GOAL.zh.md) — 产品北极星、长期承诺和不可跨越的边界。
+- [路线图](ROADMAP.zh.md) — 当前优先级、里程碑、验收标准和开发顺序。
+- [架构](ARCHITECTURE.zh.md) — 系统分层、核心流程、权限边界和失败语义。
+
+### 操作指南
+
+- [Account Truth 导入与复核](account-truth-import.zh.md) — 预览、证据暂存、对账和人工处置。
+- [收益与成本口径](return-accounting.zh.md) — 今日、浮动和已实现收益的统一计算规则。
+- [券商订单生命周期](broker-order-lifecycle-ingestion.zh.md) — 只读 lifecycle evidence 与 collector ingestion。
+- [受控执行](CONTROLLED_EXECUTION_PLAN.zh.md) — 人工权限、运行门禁、恢复和资本扩容规则。
+
+### 参考资料
+
+- [配置参考](config-reference.zh.md) — 本地运行、数据源、费用、connector 与 authority 字段。
+- [实现记录](IMPLEMENTATION_LOG.zh.md) — 已完成版本的发布级成果和验证归属。
+- [外部项目参考](BENCHMARKS.zh.md) — 可借鉴的设计主题及禁止形成的产品绑定。
 
 ## 日常工作流
 
