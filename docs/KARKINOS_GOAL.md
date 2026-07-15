@@ -1,6 +1,6 @@
 # Karkinos Goal
 
-[Roadmap](ROADMAP.md) | [Architecture](ARCHITECTURE.md) | [中文文档](README.zh.md)
+[中文](KARKINOS_GOAL.zh.md) | [Roadmap](ROADMAP.md) | [Architecture](ARCHITECTURE.md) | [Documentation](README.en.md)
 
 ## North Star
 
