@@ -167,6 +167,42 @@ roadmap promises.
   route/application imports, with only its route builder and test helper as
   direct callers. No HIGH/CRITICAL impact or execution process was reported.
 
+- 2026-07-15: AI-native Phase 1.7 upgrades the real-model edge to prompt v4
+  after a current prompt-v3 trial over saved backtest #5 reached the old
+  60-second limit and two pre-hard-deadline v4 trials eventually timed out
+  without a report, showing that urllib's socket timeout was not an end-to-end
+  wall-clock deadline. Assumptions: reasoning remains useful and
+  must not be disabled merely to make JSON validation pass; the existing local
+  `research_evidence.read` is the only tool needed because provider-side tools
+  would widen the trust boundary without adding evidence; and this compact
+  report needs a bounded final budget rather than an open-ended reasoning run.
+  DeepSeek-compatible requests now explicitly set `thinking=enabled` and
+  `reasoning_effort=high`, omit unsupported sampling controls, cap completion
+  output at 4,096 tokens, place the exact schema/example/self-check in the
+  trusted system contract, and use a 180-second cancellable end-to-end HTTPS
+  deadline. Non-DeepSeek OpenAI-compatible edges retain deterministic
+  `temperature=0`. The new async transport closes the request on deadline and
+  still caps response bodies at 1 MiB; there is no automatic retry. Validation:
+  34 provider-connectivity/external-report/route tests and 197 AI/runtime-route
+  tests passed, including
+  deterministic cancellation, response parsing, explicit thinking options,
+  local-tool evidence export, prompt contract, restart/concurrency, raw
+  reasoning exclusion, and unchanged protected financial/authority tables.
+  The complete backend suite passed 1,585 tests at 86.47% coverage, the
+  trading-safety marker passed 98 tests, and Node 24.14.0 passed all 420 Web
+  tests, formatting, and the production build; Black, isort, and diff checks
+  also passed.
+  After the hard-deadline implementation loaded, the next production v4 request
+  was blocked before provider I/O because the current immutable valuation
+  snapshot was unavailable, as required. A separate
+  frozen-evidence smoke was not executed because local safety policy requires
+  a new informed owner approval before private strategy/performance evidence
+  may be sent to DeepSeek; therefore this change does not claim a successful
+  live v4 report yet. Risk impact: GitNexus rated the provider and service
+  classes MEDIUM (route builder and focused tests are the direct consumers),
+  with no HIGH/CRITICAL result and no Portfolio, Decision, OMS, ledger, risk,
+  broker, capital, or execution process in the affected flow.
+
 - 2026-07-14: AI-native Phase 1.7 adds one human-started,
   provider-neutral saved-backtest external-report boundary at
   `POST /api/ai/external-research/backtest-reports`. Assumptions: selecting a

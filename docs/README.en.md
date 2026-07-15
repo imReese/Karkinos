@@ -23,10 +23,13 @@ Key Features:
   execution-authority facts are excluded; the result remains a
   non-authoritative report requiring human review. The configured reasoning
   mode remains available, while a versioned JSON-only prompt supplies an exact
-  structural example and evidence-review rubric. Raw reasoning is never stored,
-  and provider-side tools remain disabled. A separately reviewed result may be
-  promoted only through an explicit, revocable, versioned historical-memory
-  boundary. The artifact binds exact report, review, retrieval, source-memory,
+  structural example, evidence-review rubric, and final self-check. A
+  DeepSeek-compatible edge explicitly keeps thinking/high effort within a 4K
+  output budget and a cancellable 180-second end-to-end deadline. Raw reasoning
+  is never stored, and provider-side tools remain disabled. A separately
+  reviewed result may be promoted only through an explicit, revocable,
+  versioned historical-memory boundary. The artifact binds exact report,
+  review, retrieval, source-memory,
   context, evidence, provider/model/prompt, quality/cost, and audit identities;
   it is not a current fact and must rebind current evidence before future use.
   Phase 1.12 remains unchanged, and Phase 1.16 adds no retrieval, automatic

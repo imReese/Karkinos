@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import sqlite3
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
+import httpx
 import pytest
 
 from server.ai_runtime.contracts import ProviderRegistration
@@ -15,9 +17,11 @@ from server.ai_runtime.provider_connectivity import (
     ConnectivityConfigurationError,
     ConnectivityStatus,
     HttpJsonResponse,
+    HttpxDeadlineJsonTransport,
     ProviderConnectivityAuditStore,
     ProviderConnectivityService,
     ProviderConnectivitySettings,
+    ProviderProbeError,
     load_provider_connectivity_settings,
 )
 from server.ai_runtime.store import AiAuditStore, IdempotencyConflict
@@ -353,3 +357,53 @@ def test_settings_fail_closed_when_disabled_missing_secret_or_not_https(tmp_path
 
     with pytest.raises(ConnectivityConfigurationError):
         load_provider_connectivity_settings(config_path, environ={})
+
+
+@pytest.mark.unit
+def test_httpx_transport_enforces_end_to_end_deadline_and_closes_request():
+    closed = threading.Event()
+
+    async def slow_handler(request: httpx.Request) -> httpx.Response:
+        try:
+            await asyncio.sleep(0.2)
+            return httpx.Response(200, json={"ok": True})
+        finally:
+            closed.set()
+
+    transport = HttpxDeadlineJsonTransport(transport=httpx.MockTransport(slow_handler))
+
+    with pytest.raises(ProviderProbeError, match="provider_timeout"):
+        transport.post_json(
+            url="https://ai.example.test/chat/completions",
+            headers={"Authorization": "Bearer fixture-secret"},
+            payload={"model": "fixture-model"},
+            timeout_seconds=0.01,
+        )
+
+    assert closed.wait(timeout=0.2)
+
+
+@pytest.mark.unit
+def test_httpx_transport_returns_bounded_json_without_following_redirects():
+    observed = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        observed["url"] = str(request.url)
+        observed["body"] = json.loads((await request.aread()).decode("utf-8"))
+        return httpx.Response(200, json={"model": "fixture-model", "choices": []})
+
+    transport = HttpxDeadlineJsonTransport(transport=httpx.MockTransport(handler))
+
+    response = transport.post_json(
+        url="https://ai.example.test/chat/completions",
+        headers={"Content-Type": "application/json"},
+        payload={"model": "fixture-model", "stream": False},
+        timeout_seconds=1.0,
+    )
+
+    assert response.status_code == 200
+    assert response.payload == {"model": "fixture-model", "choices": []}
+    assert observed == {
+        "url": "https://ai.example.test/chat/completions",
+        "body": {"model": "fixture-model", "stream": False},
+    }
