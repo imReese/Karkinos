@@ -1,6 +1,6 @@
 # Controlled Capital Execution Plan
 
-[Goal](KARKINOS_GOAL.md) | [Roadmap](ROADMAP.md) | [Architecture](ARCHITECTURE.md)
+[中文](CONTROLLED_EXECUTION_PLAN.zh.md) | [Goal](KARKINOS_GOAL.md) | [Roadmap](ROADMAP.md) | [Architecture](ARCHITECTURE.md)
 
 ## Objective
 
@@ -191,4 +191,3 @@ operate under explicit, bounded, expiring human authority; every order can be
 recovered, reconciled, and posted from durable evidence; and authority can be
 paused, reduced, expired, or revoked safely. Permanently authorized unattended
 full-account execution remains a non-goal.
-
