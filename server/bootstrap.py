@@ -33,6 +33,7 @@ _NON_STRATEGY_FIELDS = {
     "assets",
     "instruments",
     "data_source",
+    "data_source_provider_config",
     "notification",
     "live_poll_interval",
     "strategy",
@@ -50,7 +51,6 @@ _RUNTIME_ENV_FIELDS = {
     "KARKINOS_CORS_ALLOWED_ORIGINS": "cors_allowed_origins",
     "KARKINOS_DATA_SOURCE": "data_source",
     "KARKINOS_LIVE_POLL_INTERVAL": "live_poll_interval",
-    "TUSHARE_TOKEN": "tushare_token",
     "KARKINOS_AI_ENABLED": "ai.enabled",
     "KARKINOS_AI_PROVIDER": "ai.provider",
     "KARKINOS_AI_MODEL": "ai.model",
@@ -59,7 +59,7 @@ _RUNTIME_ENV_FIELDS = {
     "KARKINOS_AI_TIMEOUT_SECONDS": "ai.timeout_seconds",
 }
 _EMPTY_ENV_MEANS_UNSET = {
-    "TUSHARE_TOKEN",
+    "KARKINOS_TUSHARE_TOKEN",
     "KARKINOS_AI_API_KEY",
     "KARKINOS_AI_PROVIDER",
     "KARKINOS_AI_MODEL",
@@ -164,6 +164,18 @@ def _runtime_environment_overrides(config: BacktestConfig) -> dict[str, Any]:
         if env_name in _EMPTY_ENV_MEANS_UNSET and not raw_value.strip():
             continue
         resolved[field_name] = _parse_runtime_environment_value(env_name, raw_value)
+    provider_config = getattr(config, "data_source_provider_config", None)
+    token_env_name = str(
+        getattr(
+            provider_config,
+            "tushare_token_env",
+            "KARKINOS_TUSHARE_TOKEN",
+        )
+        or "KARKINOS_TUSHARE_TOKEN"
+    )
+    token_value = os.environ.get(token_env_name)
+    if token_value is not None and token_value.strip():
+        resolved["tushare_token"] = token_value
     return resolved
 
 
@@ -290,7 +302,7 @@ def create_runtime_context(config: BacktestConfig) -> RuntimeContext:
     """Build shared runtime wiring for data-backed entrypoints."""
     sources = build_sources(
         data_source=config.data_source,
-        tushare_token=os.environ.get("TUSHARE_TOKEN") or config.tushare_token,
+        tushare_token=config.tushare_token,
     )
     store = DataStore(resolve_data_dir())
     data_manager = DataManager(

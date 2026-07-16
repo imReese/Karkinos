@@ -7,6 +7,7 @@ import argparse
 import getpass
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any, Callable
 
@@ -18,6 +19,8 @@ Provider = str
 TokenReader = Callable[[], str]
 
 SUPPORTED_PROVIDERS = tuple(sorted(SUPPORTED_DATA_SOURCES))
+_ENV_NAME_PATTERN = re.compile(r"^[A-Z_][A-Z0-9_]*$")
+_DEFAULT_TUSHARE_TOKEN_ENV = "KARKINOS_TUSHARE_TOKEN"
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -56,12 +59,19 @@ def save_config(config_path: Path, config: dict[str, Any]) -> None:
     config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n")
 
 
-def save_tushare_environment_token(env_path: Path, token: str) -> None:
+def save_tushare_environment_token(
+    env_path: Path,
+    token: str,
+    *,
+    env_name: str = _DEFAULT_TUSHARE_TOKEN_ENV,
+) -> None:
     """Persist the TuShare credential without placing it in JSON."""
+    if not _ENV_NAME_PATTERN.fullmatch(env_name):
+        raise ValueError("TuShare token environment variable name is invalid")
     env_path.parent.mkdir(parents=True, exist_ok=True)
     if not env_path.exists():
         env_path.touch(mode=0o600)
-    set_key(str(env_path), "TUSHARE_TOKEN", token, quote_mode="always")
+    set_key(str(env_path), env_name, token, quote_mode="always")
     env_path.chmod(0o600)
 
 
@@ -84,10 +94,32 @@ def save_data_source_config(
     else:
         data_source = {}
 
+    raw_provider_config = data_source.get("provider_config")
+    if raw_provider_config is None:
+        provider_config: dict[str, Any] = {}
+    elif isinstance(raw_provider_config, dict):
+        provider_config = dict(raw_provider_config)
+    else:
+        raise ValueError("data_source.provider_config must be an object")
+    unknown_provider_fields = sorted(set(provider_config) - {"tushare_token_env"})
+    if unknown_provider_fields:
+        raise ValueError(
+            "data_source.provider_config contains unsupported fields: "
+            + ", ".join(unknown_provider_fields)
+        )
+    tushare_token_env = str(
+        provider_config.get("tushare_token_env") or _DEFAULT_TUSHARE_TOKEN_ENV
+    )
+    if not _ENV_NAME_PATTERN.fullmatch(tushare_token_env):
+        raise ValueError(
+            "data_source.provider_config.tushare_token_env name is invalid"
+        )
+
     if "tushare_token" in config or "tushare_token" in data_source:
         raise ValueError(
             "tushare_token is not accepted in config.json; remove it and use "
-            "TUSHARE_TOKEN in the selected environment file"
+            "the environment variable named by "
+            "data_source.provider_config.tushare_token_env"
         )
     if "live_poll_interval" in config:
         data_source["live_poll_interval"] = config.pop("live_poll_interval")
@@ -100,7 +132,11 @@ def save_data_source_config(
         token = token_reader().strip()
         if not token:
             raise ValueError("TuShare token is required when provider is tushare")
-        save_tushare_environment_token(env_path, token)
+        save_tushare_environment_token(
+            env_path,
+            token,
+            env_name=tushare_token_env,
+        )
 
     config["data_source"] = data_source
     save_config(config_path, config)

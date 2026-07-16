@@ -13,7 +13,10 @@
     },
     "data_source": {
         "provider": "akshare",
-        "live_poll_interval": 60
+        "live_poll_interval": 60,
+        "provider_config": {
+            "tushare_token_env": "KARKINOS_TUSHARE_TOKEN"
+        }
     },
     "broker_fee": {
         "account_profile_id": "primary-broker-account",

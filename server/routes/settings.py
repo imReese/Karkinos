@@ -33,10 +33,16 @@ def _provider_requires_token(provider_name: str) -> bool:
 
 def _require_configured_provider_credential(provider_name: str, config) -> None:
     if provider_name == "tushare" and not config.tushare_token:
+        provider_config = getattr(config, "data_source_provider_config", None)
+        token_env_name = getattr(
+            provider_config,
+            "tushare_token_env",
+            "KARKINOS_TUSHARE_TOKEN",
+        )
         raise HTTPException(
             status_code=422,
             detail=(
-                "TUSHARE_TOKEN is not configured; set it in the selected "
+                f"{token_env_name} is not configured; set it in the selected "
                 "environment file and restart Karkinos before enabling TuShare"
             ),
         )
