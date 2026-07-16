@@ -218,14 +218,6 @@ class AiAuditStore:
         payload_json = canonical_json(payload)
         fingerprint = content_fingerprint(payload)
         with self._connection() as conn:
-            existing = conn.execute(
-                f"SELECT payload_fingerprint FROM {table} WHERE {id_column} = ?",
-                (identity,),
-            ).fetchone()
-            if existing is not None:
-                if str(existing["payload_fingerprint"]) != fingerprint:
-                    raise IdempotencyConflict(f"conflicting registration: {identity}")
-                return
             columns = [id_column, *(extra_columns or {}), "payload_json"]
             columns.extend(["payload_fingerprint", "created_at"])
             values = [identity, *(extra_columns or {}).values(), payload_json]
@@ -233,9 +225,16 @@ class AiAuditStore:
             placeholders = ", ".join("?" for _ in values)
             conn.execute(
                 f"INSERT INTO {table} ({', '.join(columns)}) "
-                f"VALUES ({placeholders})",
+                f"VALUES ({placeholders}) "
+                f"ON CONFLICT({id_column}) DO NOTHING",
                 values,
             )
+            existing = conn.execute(
+                f"SELECT payload_fingerprint FROM {table} WHERE {id_column} = ?",
+                (identity,),
+            ).fetchone()
+            if existing is None or str(existing["payload_fingerprint"]) != fingerprint:
+                raise IdempotencyConflict(f"conflicting registration: {identity}")
 
     def register_provider(
         self, registration: ProviderRegistration, *, created_at: str | None = None
