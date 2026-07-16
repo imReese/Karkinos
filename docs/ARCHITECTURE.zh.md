@@ -172,6 +172,13 @@ acceptance 不再匹配。
 策略代码不能接触 gateway。Prepared、accepted-but-unreconciled 或 unknown intent 会阻断不同
 订单。Unknown 结果只能查询，绝不自动重提。
 
+终态 rejected intent 可通过 `karkinos.controlled_broker_rejection_evidence.v1` 复核。该只读契约
+绑定 canonical OMS order fingerprint、controlled intent、精确 gateway/account/client-order/operator
+身份以及白名单净化结果，并区分网关调用前本地阻断与网关明确拒绝；证据缺失或歧义时 fail closed。
+Export 会重新 preview 并拒绝 drift。Artifact 明确禁止重试同一 intent 或 client order id，且不能
+记录 review、查询或联系 provider、创建或重试订单、修改 OMS/ledger/Account Truth/risk/kill switch、
+解除 interlock 或改变资本/执行权限。任何后续订单都必须从新 Decision 开始并重新通过全部门禁。
+
 精确持久化且仍开放的 lifecycle 可通过
 `karkinos.manual_broker_cancellation_ticket.v1` 投影。该 provider-neutral 边界根据 persisted
 controlled intent、OMS order fingerprint、broker/client 双重订单 ID 与最新 lifecycle observation

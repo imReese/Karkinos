@@ -118,10 +118,38 @@ class FakeManualBrokerCancellationEvidenceService:
         }
 
 
+class FakeControlledBrokerRejectionEvidenceService:
+    def preview(self, **kwargs):
+        return {
+            **kwargs,
+            "status": "ready_for_human_review",
+            "review_fingerprint": "9" * 64,
+            "ready": True,
+            "safety": {
+                "provider_contact_performed": False,
+                "broker_retry_performed": False,
+                "oms_mutated": False,
+            },
+        }
+
+    def export(self, **kwargs):
+        return {
+            **kwargs,
+            "status": "export_ready",
+            "content": "{}",
+            "safety": {
+                "provider_contact_performed": False,
+                "broker_retry_performed": False,
+                "oms_mutated": False,
+            },
+        }
+
+
 def _client(monkeypatch):
     service = FakeControlledBrokerSubmissionService()
     clearance_service = FakeControlledSubmissionClearanceService()
     cancellation_service = FakeManualBrokerCancellationEvidenceService()
+    rejection_service = FakeControlledBrokerRejectionEvidenceService()
     monkeypatch.setattr(route_module, "_service", lambda: service)
     monkeypatch.setattr(route_module, "_clearance_service", lambda: clearance_service)
     monkeypatch.setattr(
@@ -129,15 +157,26 @@ def _client(monkeypatch):
         "_manual_cancellation_service",
         lambda: cancellation_service,
     )
+    monkeypatch.setattr(
+        route_module,
+        "_rejection_evidence_service",
+        lambda: rejection_service,
+    )
     app = FastAPI()
     app.include_router(create_router())
-    return TestClient(app), service, clearance_service, cancellation_service
+    return (
+        TestClient(app),
+        service,
+        clearance_service,
+        cancellation_service,
+        rejection_service,
+    )
 
 
 def test_routes_require_strict_final_signature_and_expose_query_recovery(
     monkeypatch,
 ) -> None:
-    client, _, _, _ = _client(monkeypatch)
+    client, _, _, _, _ = _client(monkeypatch)
     prefix = "/api/automation/controlled-broker-submission"
     order_id = "OMS-1"
     confirmation_id = "c" * 64
@@ -215,7 +254,7 @@ def test_routes_require_strict_final_signature_and_expose_query_recovery(
 def test_clearance_routes_require_separate_signature_and_forbid_credentials(
     monkeypatch,
 ) -> None:
-    client, _, _, _ = _client(monkeypatch)
+    client, _, _, _, _ = _client(monkeypatch)
     prefix = "/api/automation/controlled-broker-submission"
     intent_id = "1" * 64
     run_id = "reconciliation-run-1"
@@ -286,7 +325,7 @@ def test_clearance_routes_require_separate_signature_and_forbid_credentials(
 def test_manual_cancellation_ticket_routes_never_expose_broker_cancel(
     monkeypatch,
 ) -> None:
-    client, _, _, _ = _client(monkeypatch)
+    client, _, _, _, _ = _client(monkeypatch)
     prefix = "/api/automation/controlled-broker-submission"
     intent_id = "1" * 64
 
@@ -324,6 +363,50 @@ def test_manual_cancellation_ticket_routes_never_expose_broker_cancel(
                 "prepare_manual_broker_cancellation_ticket_without_broker_contact"
             ),
             "broker_password": "must-not-be-accepted",
+        },
+    )
+    assert unknown_field.status_code == 422
+
+
+def test_rejection_evidence_routes_never_retry_or_mutate_order(
+    monkeypatch,
+) -> None:
+    client, _, _, _, _ = _client(monkeypatch)
+    prefix = "/api/automation/controlled-broker-submission"
+    intent_id = "1" * 64
+
+    preview = client.post(f"{prefix}/intents/{intent_id}/rejection-evidence/preview")
+    assert preview.status_code == 200
+    assert preview.json()["safety"] == {
+        "provider_contact_performed": False,
+        "broker_retry_performed": False,
+        "oms_mutated": False,
+    }
+    exported = client.post(
+        f"{prefix}/intents/{intent_id}/rejection-evidence/export",
+        json={
+            "review_fingerprint": "9" * 64,
+            "acknowledgement": (
+                "export_exact_rejection_evidence_without_retry_or_authority_change"
+            ),
+        },
+    )
+    assert exported.status_code == 200
+    assert exported.json()["status"] == "export_ready"
+    assert exported.json()["safety"]["broker_retry_performed"] is False
+    missing_acknowledgement = client.post(
+        f"{prefix}/intents/{intent_id}/rejection-evidence/export",
+        json={"review_fingerprint": "9" * 64},
+    )
+    assert missing_acknowledgement.status_code == 422
+    unknown_field = client.post(
+        f"{prefix}/intents/{intent_id}/rejection-evidence/export",
+        json={
+            "review_fingerprint": "9" * 64,
+            "acknowledgement": (
+                "export_exact_rejection_evidence_without_retry_or_authority_change"
+            ),
+            "retry": True,
         },
     )
     assert unknown_field.status_code == 422
@@ -380,6 +463,12 @@ def test_create_app_registers_controlled_submission_without_strategy_endpoint() 
         "/api/automation/controlled-broker-submission/intents": {"GET"},
         "/api/automation/controlled-broker-submission/intents/{submit_intent_id}": {
             "GET"
+        },
+        "/api/automation/controlled-broker-submission/intents/{submit_intent_id}/rejection-evidence/preview": {
+            "POST"
+        },
+        "/api/automation/controlled-broker-submission/intents/{submit_intent_id}/rejection-evidence/export": {
+            "POST"
         },
         "/api/automation/controlled-broker-submission/intents/{submit_intent_id}/manual-cancellation-ticket/preview": {
             "POST"

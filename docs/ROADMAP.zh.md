@@ -162,8 +162,9 @@ reconciliation-to-terminal-clearance 与 terminal-clearance-to-ledger-posting：
 签名、原子 claim、只查询且防重复点击/restart 的 operator action。可选 correction 也已经具备
 独立的签名 preview/proof/apply 复核，且不接受操作员输入财务 delta。精确持久化 open lifecycle
 现在还提供无需手改数据库的人工撤单资料 preview/export；UI 明确要求在 Karkinos 外完成人工操作并
-重新导入证据，也没有 cancel endpoint。签名式 submission、真实的签名撤单命令、真实 adapter
-recovery 证据，以及完整的无需手改数据库旅程仍未完成。
+重新导入证据，也没有 cancel endpoint。Rejected intent 还会提供 drift-checked、已净化且仅供复制
+的复核资料，并禁止重试同一 intent/client id。签名式 submission、真实的签名撤单命令、真实
+adapter recovery 证据，以及完整的无需手改数据库旅程仍未完成。
 
 **退出门：** 操作者无需手改数据库即可完成正常和恢复流程；刷新、重复点击和服务重启不会重复
 side effect；所有提交门禁在写事务内重新检查，而不是只依赖 UI 预览。
