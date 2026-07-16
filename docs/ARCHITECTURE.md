@@ -217,9 +217,28 @@ event with immutable clearance/import lineage, partial-cancel posts only actual
 fills, and no-fill cancel produces an applied zero-entry posting. The posting
 record and all ledger events commit together and are unique by posting,
 clearance, intent, order, fill, and settlement evidence. History cannot be
-deleted; future corrections must be compensating events. Posting never contacts
-a provider and has no submit, cancel, strategy, AI, risk-decision, kill-switch,
-or capital-authority capability.
+deleted. Posting never contacts a provider and has no submit, cancel, strategy,
+AI, risk-decision, kill-switch, or capital-authority capability.
+
+Corrections use the separate
+`karkinos.controlled_submission_ledger_correction.v1` contract. The request
+contains only the immutable posting id, an allowlisted reason, and operator
+identity; it cannot supply cash, quantity, cost, fee, or P/L values. Preview
+replays the canonical ledger twice—once with every fact and once excluding only
+the exact original posting entry ids—and derives the compensating cash and full
+position-accounting state from that difference. It binds the original entry
+fingerprint, Account Truth import and review, valuation snapshot, ledger cutoff
+and fingerprint, derived plan, and a new short-lived operator signature. Apply
+repeats the derivation under `BEGIN IMMEDIATE` and appends exactly one protected
+`controlled_projection_correction` event plus its immutable correction record.
+The original trades, fees, and posting record remain queryable. Zero-entry
+postings have no financial fact to correct; an invalid replay, dependent trade,
+identity drift, duplicate conflicting request, or tampered before-state fails
+closed. After apply, Ledger, Holdings, Allocation, Equity, Overview, Cockpit,
+and Account State read the same canonical projection and snapshot identity.
+Account Truth deliberately becomes stale until newer broker evidence covers the
+correction. The correction boundary cannot touch OMS, provider, submit/cancel,
+risk, kill switch, strategy/AI, or capital authority.
 
 Account Truth may permit the pre-posting clearance mismatch only when every
 non-pass reconciliation item is mathematically identical to that single

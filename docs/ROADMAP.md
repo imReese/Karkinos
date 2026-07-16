@@ -161,9 +161,15 @@ ledger cutoff/fingerprint inside the write transaction. Full fills,
 partial-fill-then-cancel, zero-fill cancel, duplicate retry, evidence drift, and
 ledger-race fixtures are deterministic. Posting cannot contact a provider or
 grant submit, cancel, strategy, AI, risk, kill-switch, or capital authority.
-Operational UI, compensating-correction commands, exhaustive cross-surface
-acceptance, and real-provider evidence remain open, so M3 is not yet a release
-claim.
+The provider-neutral `karkinos.controlled_submission_ledger_correction.v1`
+boundary now derives one append-only correction from canonical replay, requires
+a separate signature, rechecks all identities in the write transaction,
+preserves original trades and fees, and is exactly once across retry, restart,
+and concurrency. Deterministic acceptance covers Ledger, Holdings, Allocation,
+Equity, Overview, Cockpit, Account State, realized P/L, valuation/ledger
+identity, and the intentional post-correction Account Truth stale gate.
+Operational UI, broader fault-injection acceptance, and real-provider evidence
+remain open, so M3 is not yet a release claim.
 
 ### M4 — Operator Journey
 
@@ -204,8 +210,8 @@ incident returns the system to `disabled`.
    exact-terminal full/partial-cancel/no-fill-cancel reconciliation; real
    cancel/unknown recovery remains.
 5. Default-closed write adapter and per-order submit/cancel gates.
-6. **Foundation implemented:** signed, exactly-once reconciled ledger posting;
-   next add compensating-correction operations and cross-surface acceptance.
+6. **Foundation implemented:** signed, exactly-once reconciled ledger posting,
+   append-only compensating correction, and core cross-surface acceptance.
 7. Operations/Trading end-to-end UX and alerts.
 8. Deployment, rollback, fault drills, and controlled pilot release.
 

@@ -40,6 +40,7 @@ OPERATOR_APPROVAL_ACTIONS = frozenset(
         "submit_confirmed_broker_order",
         "clear_controlled_submission_reconciliation",
         "post_controlled_submission_ledger",
+        "reverse_controlled_submission_ledger_posting",
     }
 )
 OPERATOR_APPROVAL_ARTIFACT_TYPES = frozenset(
@@ -53,6 +54,7 @@ OPERATOR_APPROVAL_ARTIFACT_TYPES = frozenset(
         "controlled_broker_submission",
         "controlled_submission_reconciliation_clearance",
         "controlled_submission_ledger_posting",
+        "controlled_submission_ledger_correction",
     }
 )
 OPERATOR_APPROVAL_ACTION_ARTIFACT_TYPES = {
@@ -69,6 +71,9 @@ OPERATOR_APPROVAL_ACTION_ARTIFACT_TYPES = {
         "controlled_submission_reconciliation_clearance"
     ),
     "post_controlled_submission_ledger": "controlled_submission_ledger_posting",
+    "reverse_controlled_submission_ledger_posting": (
+        "controlled_submission_ledger_correction"
+    ),
 }
 
 DEFAULT_CHALLENGE_TTL_SECONDS = 180

@@ -68,6 +68,11 @@ Implemented foundation:
   valuation, and ledger-identity rechecks; exact fills commit once in one
   transaction, partial-cancel posts only actual fills, and no-fill cancel is an
   explicit zero-entry posting;
+- separately signed append-only correction derived only by canonical replay;
+  the write transaction re-derives the plan, preserves original trades and
+  fees, rejects zero-fill/dependent/drifted/tampered cases, and deterministic
+  acceptance binds Ledger, Holdings, Allocation, Equity, Overview, Cockpit,
+  Account State, realized P/L, valuation identity, and Account Truth staleness;
 - versioned adapter capability/boundary manifests and revocable release review
   gates for live collector ingestion;
 - deterministic local adapter conformance evidence bound to release review and
@@ -75,10 +80,29 @@ Implemented foundation:
 - connector-scoped, latest-result-wins recovery-drill gates for soak promotion;
 - persisted operator projection and evidence-based scale review.
 
+M3 correction assumptions and risk record:
+
+- A non-empty controlled posting represents actual fills for one instrument;
+  the applied zero-entry cancel is an auditable no-op and has no financial fact
+  to reverse. A correction is local ledger recovery, not replacement broker
+  truth, so a newer Account Truth import is mandatory afterward.
+- Validation commands are `uv run python -m pytest`,
+  `uv run python -m pytest -m trading_safety`, CI-equivalent coverage, and the
+  Node 24 `npm run test`, `npm run format:check`, and `npm run build` commands
+  under `web/`.
+- Risk impact is high because the canonical ledger projector feeds cash,
+  positions, costs, realized P/L, equity, Overview, Cockpit, Account State, and
+  risk inputs. The boundary mitigates this by rejecting operator-supplied
+  financial values, deriving both buy and sell reversal state from canonical
+  replay, binding valuation/ledger/Account Truth identities, re-deriving under
+  the write lock, verifying before-state on every replay, preserving history,
+  and granting no OMS, broker, risk, kill-switch, AI/strategy, or capital
+  capability.
+
 Remaining release work is owned by the roadmap: one real adapter, read-only
-soak, real cancel/unknown recovery, compensating-correction operations,
-cross-surface posting acceptance, operator journey, and controlled per-order
-pilot.
+soak, real cancel/unknown recovery, correction/operator UI, broader fault
+injection and real-evidence acceptance, operator journey, and controlled
+per-order pilot.
 
 ### v1.7 — Controlled Broker Bridge Foundation
 

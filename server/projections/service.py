@@ -20,6 +20,11 @@ _DIVIDEND_TYPES = {"dividend"}
 _CASH_INTEREST_TYPES = {"cash_interest", "interest_income"}
 _FEE_TYPES = {"fee"}
 _MANUAL_ADJUSTMENT_TYPES = {"manual_adjustment"}
+_CONTROLLED_CORRECTION_TYPES = {"controlled_projection_correction"}
+_CONTROLLED_CORRECTION_SOURCE = "controlled_submission_ledger_correction"
+_CONTROLLED_CORRECTION_PLAN_SCHEMA_VERSION = (
+    "karkinos.controlled_submission_ledger_correction_plan.v1"
+)
 _ADDITIONAL_TRADE_FEE_KEYS = (
     ("subscription_fee",),
     ("redemption_fee",),
@@ -249,6 +254,10 @@ def _apply_ledger_entry(projection: PortfolioProjection, entry: LedgerEntry) -> 
         _apply_manual_adjustment(projection, entry)
         return
 
+    if entry_type in _CONTROLLED_CORRECTION_TYPES:
+        _apply_controlled_projection_correction(projection, entry)
+        return
+
     raise ValueError(f"Unsupported ledger entry_type: {entry.entry_type!r}")
 
 
@@ -405,6 +414,116 @@ def _apply_manual_adjustment(
     if position.quantity == ZERO:
         position.avg_cost = ZERO
     position.sync_available_qty()
+
+
+def _apply_controlled_projection_correction(
+    projection: PortfolioProjection,
+    entry: LedgerEntry,
+) -> None:
+    """Apply a protected, canonical-replay-derived compensating event."""
+    if entry.source != _CONTROLLED_CORRECTION_SOURCE:
+        raise ValueError("Controlled ledger correction source is invalid")
+    payload = entry.correction_payload
+    if not isinstance(payload, dict):
+        raise ValueError("Controlled ledger correction payload is missing")
+    if payload.get("schema_version") != _CONTROLLED_CORRECTION_PLAN_SCHEMA_VERSION:
+        raise ValueError("Controlled ledger correction schema is invalid")
+    if payload.get("arbitrary_financial_input_used") is not False:
+        raise ValueError("Controlled ledger correction derivation is invalid")
+
+    symbol = _require_text(str(payload.get("symbol") or ""), "symbol")
+    if (entry.symbol or "") != symbol:
+        raise ValueError("Controlled ledger correction symbol is invalid")
+    before = payload.get("position_before")
+    after = payload.get("position_after")
+    if not isinstance(before, Mapping) or not isinstance(after, Mapping):
+        raise ValueError("Controlled ledger correction position state is invalid")
+
+    position = projection.positions.get(symbol)
+    if position is None:
+        position = ProjectedPosition(symbol=symbol)
+    if _projected_position_accounting_state(position) != _normalized_position_state(
+        before
+    ):
+        raise ValueError(
+            f"Controlled ledger correction position evidence drifted for {symbol}"
+        )
+
+    projection.cash += _as_decimal(payload.get("cash_delta", "0"))
+    deposits_delta = _as_decimal(payload.get("total_deposits_delta", "0"))
+    if deposits_delta != ZERO:
+        raise ValueError("Controlled ledger correction cannot change deposits")
+    projection.total_deposits += deposits_delta
+
+    normalized_after = _normalized_position_state(after)
+    position.quantity = normalized_after["quantity"]
+    position.available_qty = normalized_after["available_qty"]
+    position.frozen_qty = normalized_after["frozen_qty"]
+    position.avg_cost = normalized_after["avg_cost"]
+    position.realized_pnl = normalized_after["realized_pnl"]
+    position.commission_paid = normalized_after["commission_paid"]
+    position.broker_displayed_cost_basis = normalized_after[
+        "broker_displayed_cost_basis"
+    ]
+    position.broker_displayed_unit_cost = normalized_after["broker_displayed_unit_cost"]
+    position.broker_cost_basis_difference = normalized_after[
+        "broker_cost_basis_difference"
+    ]
+    position.broker_cost_basis_method = normalized_after["broker_cost_basis_method"]
+    position.broker_cost_basis_status = normalized_after["broker_cost_basis_status"]
+    if position.available_qty != position.quantity - position.frozen_qty:
+        raise ValueError("Controlled ledger correction availability is invalid")
+    projection.positions[symbol] = position
+
+
+def _projected_position_accounting_state(
+    position: ProjectedPosition,
+) -> dict[str, Decimal | str | None]:
+    return {
+        "quantity": position.quantity,
+        "available_qty": position.available_qty,
+        "frozen_qty": position.frozen_qty,
+        "avg_cost": position.avg_cost,
+        "realized_pnl": position.realized_pnl,
+        "commission_paid": position.commission_paid,
+        "broker_displayed_cost_basis": position.broker_displayed_cost_basis,
+        "broker_displayed_unit_cost": position.broker_displayed_unit_cost,
+        "broker_cost_basis_difference": position.broker_cost_basis_difference,
+        "broker_cost_basis_method": position.broker_cost_basis_method,
+        "broker_cost_basis_status": position.broker_cost_basis_status,
+    }
+
+
+def _normalized_position_state(
+    raw: Mapping[str, Any],
+) -> dict[str, Decimal | str | None]:
+    decimal_fields = (
+        "quantity",
+        "available_qty",
+        "frozen_qty",
+        "avg_cost",
+        "realized_pnl",
+        "commission_paid",
+        "broker_displayed_cost_basis",
+        "broker_displayed_unit_cost",
+        "broker_cost_basis_difference",
+    )
+    required = {*decimal_fields, "broker_cost_basis_method", "broker_cost_basis_status"}
+    if set(raw) != required:
+        raise ValueError("Controlled ledger correction position fields are invalid")
+    return {
+        **{field: _as_decimal(raw[field]) for field in decimal_fields},
+        "broker_cost_basis_method": (
+            None
+            if raw["broker_cost_basis_method"] is None
+            else str(raw["broker_cost_basis_method"])
+        ),
+        "broker_cost_basis_status": (
+            None
+            if raw["broker_cost_basis_status"] is None
+            else str(raw["broker_cost_basis_status"])
+        ),
+    }
 
 
 def _apply_valuations(
