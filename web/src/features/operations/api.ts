@@ -568,6 +568,131 @@ export type ControlledExecutionOperatorView = {
   limitations: string[];
 };
 
+export type TrustedOperatorIdentity = {
+  operator_id: string;
+  key_id: string;
+  algorithm: 'ed25519';
+  enabled: boolean;
+  public_key_fingerprint: string;
+};
+
+export type OperatorApprovalStatus = {
+  schema_version: string;
+  contract_status: string;
+  trusted_identity_count: number;
+  enabled_identity_count: number;
+  trusted_identities: TrustedOperatorIdentity[];
+  private_key_storage_enabled: false;
+  runtime_execution_authority: 'disabled';
+  broker_submission_enabled: false;
+};
+
+export type ControlledLedgerPostingEntry = {
+  fill_id: string;
+  broker_event_id: string;
+  entry_type: string;
+  timestamp: string;
+  settled_at: string;
+  symbol: string;
+  direction: string;
+  quantity: string;
+  price: string;
+  amount: string;
+  commission: string;
+  gross_amount: string;
+  net_cash_impact: string;
+  fee_breakdown: {
+    commission: string;
+    stamp_tax: string;
+    transfer_fee: string;
+    other_fees: string;
+    total_fee: string;
+    confirmation_source: string;
+  };
+  asset_class: string;
+  source: string;
+  source_ref: string;
+  settlement_status: string;
+  settlement_source: string;
+  account_truth_import_run_id: string;
+};
+
+export type ControlledLedgerPostingPreview = {
+  schema_version: string;
+  posting_id: string;
+  posting_fingerprint: string;
+  clearance_id: string;
+  submit_intent_id: string;
+  order_id: string;
+  broker_order_id: string;
+  terminal_status: string;
+  operator_id: string;
+  ledger_entry_count: number;
+  ledger_entries: ControlledLedgerPostingEntry[];
+  pre_valuation_snapshot_id: string;
+  pre_ledger_cutoff_id: number;
+  account_truth_import_run_id: string;
+  review_status: string;
+  review_ready: boolean;
+  blockers: string[];
+  required_operator_approval?: {
+    action: 'post_controlled_submission_ledger';
+    artifact_type: 'controlled_submission_ledger_posting';
+    artifact_fingerprint: string;
+  };
+  production_ledger_mutated: false;
+};
+
+export type OperatorApprovalChallenge = {
+  challenge_id: string;
+  challenge_status: string;
+  signing_payload_base64: string;
+  operator_id: string;
+  key_id: string;
+  action: string;
+  artifact_type: string;
+  artifact_fingerprint: string;
+  issued_at: string;
+  expires_at: string;
+  reused: boolean;
+  operator_identity_verified: false;
+  authorizes_execution: false;
+};
+
+export type VerifiedOperatorApproval = {
+  approval_id: string;
+  approval_status: 'verified';
+  operator_id: string;
+  key_id: string;
+  action: string;
+  artifact_type: string;
+  artifact_fingerprint: string;
+  expires_at: string;
+  operator_identity_verified: true;
+  authorizes_execution: false;
+  reused: boolean;
+};
+
+export type ControlledLedgerPostingResult = {
+  posting_id: string;
+  posting_fingerprint: string;
+  clearance_id: string;
+  order_id: string;
+  status: 'applied';
+  ledger_entry_count: number;
+  ledger_entry_ids: number[];
+  pre_ledger_cutoff_id: number;
+  post_ledger_cutoff_id: number;
+  applied_at: string;
+  persisted: true;
+  reused: boolean;
+  production_ledger_mutated: boolean;
+  automatic_posting_enabled: false;
+  broker_submission_enabled: false;
+  broker_cancel_enabled: false;
+  capital_authority_changed: false;
+};
+
 export type BrokerGatewayCapability = {
   gateway_id: string;
   display_name?: string | null;
@@ -904,6 +1029,111 @@ export function useReviewPaperShadowRunMutation() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['operations', 'today'] }),
         queryClient.invalidateQueries({ queryKey: ['trading-order-facts'] }),
+      ]);
+    },
+  });
+}
+
+async function postJson<T>(path: string, body?: unknown): Promise<T> {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  if (!response.ok) {
+    const raw = await response.text();
+    let detail = raw;
+    try {
+      const parsed = JSON.parse(raw) as { detail?: unknown };
+      if (typeof parsed.detail === 'string') {
+        detail = parsed.detail;
+      } else if (parsed.detail !== undefined) {
+        detail = JSON.stringify(parsed.detail);
+      }
+    } catch {
+      // Preserve the server body when it is not JSON.
+    }
+    throw new Error(detail || `Request failed: ${response.status}`);
+  }
+  return (await response.json()) as T;
+}
+
+export function useOperatorApprovalStatusQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: ['automation', 'operator-approvals', 'status'],
+    queryFn: () =>
+      apiClient<OperatorApprovalStatus>(
+        '/api/automation/capital-authority/operator-approvals/status',
+      ),
+    enabled,
+    staleTime: 5_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useControlledLedgerPostingPreviewMutation() {
+  return useMutation({
+    mutationFn: ({ clearanceId }: { clearanceId: string }) =>
+      postJson<ControlledLedgerPostingPreview>(
+        `/api/automation/controlled-ledger-posting/clearances/${encodeURIComponent(
+          clearanceId,
+        )}/preview`,
+      ),
+  });
+}
+
+export function useOperatorApprovalChallengeMutation() {
+  return useMutation({
+    mutationFn: (request: {
+      operator_id: string;
+      key_id: string;
+      action: 'post_controlled_submission_ledger';
+      artifact_type: 'controlled_submission_ledger_posting';
+      artifact_fingerprint: string;
+      ttl_seconds: number;
+    }) =>
+      postJson<OperatorApprovalChallenge>(
+        '/api/automation/capital-authority/operator-approvals/challenges',
+        request,
+      ),
+  });
+}
+
+export function useOperatorApprovalVerificationMutation() {
+  return useMutation({
+    mutationFn: (request: { challenge_id: string; signature_base64: string }) =>
+      postJson<VerifiedOperatorApproval>(
+        '/api/automation/capital-authority/operator-approvals/verifications',
+        request,
+      ),
+  });
+}
+
+export function useControlledLedgerPostingApplyMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: {
+      clearanceId: string;
+      posting_fingerprint: string;
+      operator_approval_id: string;
+      operator_proof_signature_base64: string;
+      acknowledgement: 'apply_exact_reconciled_ledger_posting_once';
+    }) => {
+      const { clearanceId, ...body } = request;
+      return postJson<ControlledLedgerPostingResult>(
+        `/api/automation/controlled-ledger-posting/clearances/${encodeURIComponent(
+          clearanceId,
+        )}/postings`,
+        body,
+      );
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['automation', 'cockpit'] }),
+        queryClient.invalidateQueries({ queryKey: ['operations', 'today'] }),
       ]);
     },
   });

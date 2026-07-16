@@ -57,6 +57,9 @@ settings: [中文](config-reference.zh.md) / [English](config-reference.en.md).
   explicit human acceptance evidence.
 - [Controlled execution](CONTROLLED_EXECUTION_PLAN.md) — human authority,
   runtime gates, recovery, and capital-scaling rules.
+- [Offline operator approval signing](operator-approval-signing.md) — local
+  Ed25519 provisioning and short-lived signed mutation reviews without private
+  key storage.
 
 ### Reference
 
@@ -103,6 +106,9 @@ Posting and append-only correction require separate signatures; correction is
 derived only from canonical ledger replay, preserves the original facts, and
 requires newer Account Truth evidence afterward. Neither boundary can contact
 a provider, submit or cancel an order, or change capital authority.
+The terminal-clearance-to-posting step is available as an explicitly opened
+operator review with a deterministic preview, short-lived offline signature,
+and final acknowledgement; no trusted public identity keeps it disabled.
 
 ### AI research
 

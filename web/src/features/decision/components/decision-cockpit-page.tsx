@@ -44,6 +44,7 @@ import {
   type PaperShadowDivergenceSummary,
   type PaperShadowReviewQueueItem,
 } from '../../operations/api';
+import { ControlledLedgerPostingOperatorPanel } from '../../operations/controlled-ledger-posting-operator-panel';
 import {
   useCreateManualOrderFromActionMutation,
   useDailyTradingPlanQuery,
@@ -3219,6 +3220,10 @@ function AutomationCockpitPanel({
                     ? '该旅程只投影持久化证据；本次读取未联系券商、未提交或撤单、未修改账本，也未改变任何资本或执行权限。'
                     : 'This journey projects persisted evidence only. This read contacted no broker, submitted or cancelled no order, mutated no ledger, and changed no capital or execution authority.'}
                 </div>
+                <ControlledLedgerPostingOperatorPanel
+                  journey={latestControlledOrderJourney}
+                  locale={locale}
+                />
               </div>
             ) : null}
 

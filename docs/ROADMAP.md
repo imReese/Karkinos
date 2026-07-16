@@ -168,8 +168,8 @@ preserves original trades and fees, and is exactly once across retry, restart,
 and concurrency. Deterministic acceptance covers Ledger, Holdings, Allocation,
 Equity, Overview, Cockpit, Account State, realized P/L, valuation/ledger
 identity, and the intentional post-correction Account Truth stale gate.
-Operational UI, broader fault-injection acceptance, and real-provider evidence
-remain open, so M3 is not yet a release claim.
+Operations/Decision now exposes a signed, exactly-once posting review with offline proof.
+Correction UI, broader fault injection, and real-provider evidence remain open.
 
 ### M4 — Operator Journey
 
@@ -180,9 +180,9 @@ Trading. Every blocked state must expose its evidence and one safe next action.
 **Implemented foundation:** the canonical persisted-only controlled-execution operator
 projection links each recent intent through reconciliation, terminal clearance,
 ledger posting, and append-only correction. It exposes one safe human next step
-and treats unknown outcomes as query-only. It performs no provider contact,
-ledger mutation, or authority change; signed mutation, cancel/recovery, and the
-no-database-edit journey remain open.
+and treats unknown outcomes as query-only. Its signed ledger-posting review completes
+that step without database edits and grants no authority. Signed submission,
+clearance/correction UI, cancel/recovery, and the complete journey remain open.
 
 **Exit gate:** an operator can complete every normal and recovery flow without
 editing the database. Refresh, duplicate clicks, and service restart do not
