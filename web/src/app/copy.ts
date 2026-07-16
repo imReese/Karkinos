@@ -239,6 +239,7 @@ export const copy = {
             ? `${manualReady} ready · ${candidates} pool · ${blockers} blocked`
             : `${manualReady} ready · ${candidates} pool · ${blockers}`,
         strategyEvidenceLinked: 'Strategy contribution is evidence-linked',
+        strategyNoLinkedFills: 'No attributable strategy fills yet',
         strategyEvidenceRequired: 'Strategy contribution needs linked evidence',
         strategyUnavailable: 'Strategy contribution is temporarily unavailable',
         viewData: 'View data status',
@@ -2710,6 +2711,7 @@ export const copy = {
             ? `${manualReady} 待确认 · ${candidates} 候选池 · ${blockers} 阻断`
             : `${manualReady} 待确认 · ${candidates} 候选池 · ${blockers}`,
         strategyEvidenceLinked: '策略贡献已连接证据',
+        strategyNoLinkedFills: '策略尚无可归属成交',
         strategyEvidenceRequired: '策略贡献需要补充证据',
         strategyUnavailable: '策略贡献暂不可用',
         viewData: '查看数据状态',

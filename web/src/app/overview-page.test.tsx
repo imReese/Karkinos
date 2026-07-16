@@ -2710,7 +2710,7 @@ test('shows evidence-gated strategy contribution on overview', async () => {
   expect(await screen.findByText('¥122.00')).toBeTruthy();
 });
 
-test('keeps unsupported strategy contribution as a workbench task instead of a large overview card', async () => {
+test('treats zero linked strategy fills as a normal evidence-bound state', async () => {
   installOverviewFetchMock(
     {},
     {
@@ -2750,11 +2750,59 @@ test('keeps unsupported strategy contribution as a workbench task instead of a l
 
   const workbench = await screen.findByTestId('overview-daily-workbench');
   expect(
-    within(workbench).getByText('Strategy contribution needs linked evidence'),
+    within(workbench).getByText('No attributable strategy fills yet'),
+  ).toBeTruthy();
+  expect(
+    within(workbench).queryByText(
+      'Strategy contribution needs linked evidence',
+    ),
+  ).toBeNull();
+  expect(
+    within(await screen.findByTestId('overview-today-queue-normal')).getByText(
+      'No attributable strategy fills yet',
+    ),
   ).toBeTruthy();
   const reviewStrip = await screen.findByTestId('overview-review-strip');
   expect(reviewStrip.className).not.toContain('xl:grid-cols-2');
   expect(screen.queryByTestId('strategy-contribution-gate-card')).toBeNull();
+});
+
+test('counts duplicate portfolio and market diagnostics once per instrument', async () => {
+  installOverviewFetchMock(
+    {},
+    {
+      snapshot: {
+        ...portfolioSnapshot,
+        positions: [
+          {
+            symbol: '600003',
+            display_name: '示例制造',
+            asset_class: 'stock',
+            quantity: 200,
+            quote_status: 'stale',
+            quote_source: 'persisted_cache',
+            stale_reason: 'quote_stale',
+          },
+        ],
+      },
+      marketQuotes: [
+        {
+          symbol: '600003',
+          display_name: '示例制造',
+          asset_class: 'stock',
+          quote_status: 'stale',
+          quote_source: 'persisted_cache',
+          stale_reason: 'quote_stale',
+        },
+      ],
+    },
+  );
+
+  renderOverviewPage({ installFetch: false });
+
+  const queue = await screen.findByTestId('overview-today-queue');
+  expect(within(queue).getByText('1 holdings need review')).toBeTruthy();
+  expect(within(queue).queryByText('2 holdings need review')).toBeNull();
 });
 
 test('keeps the return calendar inside the performance analysis card', async () => {
