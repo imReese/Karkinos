@@ -180,9 +180,9 @@ Trading. Every blocked state must expose its evidence and one safe next action.
 **Implemented foundation:** the canonical persisted-only controlled-execution operator
 projection links each recent intent through reconciliation, terminal clearance,
 ledger posting, and append-only correction. It exposes one safe human next step
-and treats unknown outcomes as query-only. Its signed ledger-posting review completes
-that step without database edits and grants no authority. Signed submission,
-clearance/correction UI, cancel/recovery, and the complete journey remain open.
+and treats unknown outcomes as query-only. Separate signed reviews now complete
+reconciliation-to-terminal-clearance and terminal-clearance-to-ledger-posting without
+database edits or authority grants. Signed submission, correction UI, cancel/recovery, and the complete journey remain open.
 
 **Exit gate:** an operator can complete every normal and recovery flow without
 editing the database. Refresh, duplicate clicks, and service restart do not

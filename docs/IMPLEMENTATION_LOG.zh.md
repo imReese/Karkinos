@@ -72,6 +72,20 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
 - terminal-clearance 到 ledger-posting 步骤现可由操作员无需修改数据库完成；deterministic UI
   测试覆盖 canonical action eligibility、blocker、缺失身份、精确 request body 与无 broker call；
   本地 signer 拒绝覆盖密钥、强制私钥文件权限，并且只签署输入的 challenge payload，不执行网络 I/O。
+- 单独的 terminal-clearance 复核只在 canonical `preview_terminal_clearance` action 下出现，绑定精确
+  persisted reconciliation run、Account Truth import、lifecycle/broker-evidence fingerprint、终态数量与
+  fills；只有另一份离线签名通过后才记录终态并解除 interlock，全程无需手改数据库。
+
+M4 terminal-clearance UI 的假设与风险记录：
+
+- Operator journey 负责提供可操作的 submission 与 reconciliation identity；Web 不选择任意财务
+  事实，也不重算数量、费用、终态或 clearance eligibility。只有 full fill、no-fill cancel 与
+  partial-fill-then-cancel 可进入 clearance；open 或冲突证据继续由 canonical service 阻断。
+- 验证包括 exact preview、challenge、proof、apply 序列的 deterministic component fixture，以及
+  Node 24 全量 Web test、format、production build、后端 safety suite 与 CI。
+- 执行证据层风险为 high：clearance 会记录真实 fills、把 OMS 转到已复核终态，并解除 cross-order
+  interlock。既有写事务会重新核验最新 reconciliation、lifecycle、Account Truth、order、intent、
+  signature 与 fingerprint；UI 不能提供财务数值、写 ledger、联系 provider、提交/撤单或改变权限。
 
 M3 纠正的假设与风险记录：
 
@@ -88,7 +102,7 @@ M3 纠正的假设与风险记录：
   AI/strategy 或 capital 能力。
 
 剩余发布工作由路线图负责：一个真实 adapter、只读 soak、真实 cancel/unknown recovery、签名式
-submission/clearance/correction UI、更广的 fault injection 与真实证据验收、operator journey 的其余
+submission/correction UI、更广的 fault injection 与真实证据验收、operator journey 的其余
 步骤与受控逐单 pilot。
 
 ### v1.7 — 受控券商 Bridge 基础
