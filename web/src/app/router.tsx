@@ -727,15 +727,25 @@ function canUseStrategyContribution(
 }
 
 function actionableQuoteDiagnostics(items: QuoteDiagnosticItem[]) {
+  const seenInstruments = new Set<string>();
   return items.filter((item) => {
     const quoteStatus = item.quote_status?.toLowerCase();
     const quoteSource = item.quote_source?.toLowerCase();
-    return (
+    const actionable =
       (!quoteStatus && Boolean(item.stale_reason)) ||
       isUnconfirmedMarketDataStatus(quoteStatus) ||
       quoteStatus === 'error' ||
-      quoteSource === 'eastmoney_fund_estimate'
-    );
+      quoteSource === 'eastmoney_fund_estimate';
+    if (!actionable) {
+      return false;
+    }
+
+    const instrumentKey = `${item.asset_class ?? 'unknown'}:${item.symbol}`;
+    if (seenInstruments.has(instrumentKey)) {
+      return false;
+    }
+    seenInstruments.add(instrumentKey);
+    return true;
   });
 }
 
@@ -2037,6 +2047,9 @@ function DashboardTodayQueue({
       : readableStaleReason
     : formatPublicStatus(quoteStatus, locale);
   const strategyReady = canUseStrategyContribution(strategyContribution);
+  const strategyHasNoLinkedFills =
+    strategyContribution?.contribution_status === 'no_linked_fills' &&
+    strategyContribution.linked_fill_count === 0;
   const strategyStatus = strategyContribution?.contribution_status
     ? (copy.backtest.page.accountStrategyContributionStatusMap[
         strategyContribution.contribution_status as keyof typeof copy.backtest.page.accountStrategyContributionStatusMap
@@ -2266,7 +2279,9 @@ function DashboardTodayQueue({
         ? labels.strategyUnavailable
         : strategyReady
           ? labels.strategyEvidenceLinked
-          : labels.strategyEvidenceRequired,
+          : strategyHasNoLinkedFills
+            ? labels.strategyNoLinkedFills
+            : labels.strategyEvidenceRequired,
       detail: strategyContributionLoading
         ? copy.backtest.page.accountStrategyContributionLoading
         : strategyReady && strategyContribution
@@ -2279,12 +2294,12 @@ function DashboardTodayQueue({
       actionLabel: labels.viewStrategy,
       tone: strategyContributionError
         ? 'danger'
-        : strategyReady
+        : strategyReady || strategyHasNoLinkedFills
           ? 'success'
           : 'warning',
       priority: strategyContributionError
         ? 'watch'
-        : strategyReady
+        : strategyReady || strategyHasNoLinkedFills
           ? 'normal'
           : 'watch',
     },

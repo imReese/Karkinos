@@ -77,6 +77,50 @@ def test_operations_today_requires_shadow_run_for_order_intents() -> None:
     assert summary["health"]["manual_action_required"] == 2
 
 
+def test_operations_today_treats_no_manual_action_scheduler_as_skipped() -> None:
+    no_action_operations = _operations(manual_ready_count=0).model_copy(
+        update={
+            "candidate_pool_count": 0,
+            "evidence_passed_count": 0,
+            "risk_checked_count": 0,
+            "risk_passed_count": 0,
+            "paper_shadow_review_count": 0,
+            "conclusion_status": "no_manual_action",
+            "primary_target": "decision",
+        }
+    )
+    summary = build_operations_today_summary(
+        decision_payload={
+            **_decision(),
+            "summary": {
+                **_decision()["summary"],
+                "candidate_count": 0,
+            },
+        },
+        trading_plan={
+            **_plan(order_intent_count=0),
+            "candidate_pool_count": 0,
+            "manual_ready_count": 0,
+            "conclusion_status": "no_manual_action",
+        },
+        daily_operations=no_action_operations,
+        order_facts=[],
+        fill_facts=[],
+        automation_runs=[],
+        generated_at="2026-07-01T09:32:00+08:00",
+    )
+
+    subsystem = next(
+        item for item in summary["subsystems"] if item["id"] == "scheduler"
+    )
+
+    assert summary["scheduler"]["status"] == "no_manual_action"
+    assert subsystem["status"] == "skipped"
+    assert subsystem["next_action"] == "none"
+    assert summary["health"]["degraded"] == 0
+    assert summary["conclusion_status"] == "healthy"
+
+
 def test_operations_today_acceptance_audit_subsystem_uses_audit_export() -> None:
     summary = build_operations_today_summary(
         decision_payload=_decision(),

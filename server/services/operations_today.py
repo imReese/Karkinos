@@ -1111,7 +1111,7 @@ def _scheduler_operation_state(run_status: str) -> tuple[str, str]:
         return "blocked", "inspect_scheduler_failure"
     if status == "blocked_by_kill_switch":
         return "blocked", "resolve_kill_switch"
-    if status in {"skipped_non_trading_session", "skipped"}:
+    if status in {"no_manual_action", "skipped_non_trading_session", "skipped"}:
         return "skipped", "none"
     if status in {"paper_shadow_completed", "completed", "success", "pass"}:
         return "pass", "none"
@@ -1140,7 +1140,7 @@ def _scheduler_suggested_action(
         return "inspect_scheduler_failure"
     if _scheduler_run_failed(value):
         return "inspect_failed_automation_run"
-    if value in {"skipped_non_trading_session", "skipped"}:
+    if value in {"no_manual_action", "skipped_non_trading_session", "skipped"}:
         return "none"
     if value in {"paper_shadow_completed", "completed", "success", "pass"}:
         return "none"
