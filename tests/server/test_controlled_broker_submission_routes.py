@@ -43,6 +43,16 @@ class FakeControlledBrokerSubmissionService:
             "recovery_resubmission_enabled": False,
         }
 
+    def preview_recovery(self, **kwargs):
+        return {
+            **kwargs,
+            "review_status": "ready_for_final_signature",
+            "review_ready": True,
+            "recovery_fingerprint": "6" * 64,
+            "provider_contact_performed": False,
+            "broker_query_performed": False,
+        }
+
     def list_intents(self, *, limit: int):
         return [{"submit_intent_id": "1" * 64, "limit": limit}]
 
@@ -126,7 +136,18 @@ def test_routes_require_strict_final_signature_and_expose_query_recovery(
     assert submitted.status_code == 200
     assert submitted.json()["submitted_to_broker"] is True
     assert submitted.json()["production_ledger_mutated"] is False
-    recovered = client.post(f"{prefix}/intents/{intent_id}/recover")
+    recovery_preview = client.post(f"{prefix}/intents/{intent_id}/recovery/preview")
+    assert recovery_preview.status_code == 200
+    assert recovery_preview.json()["provider_contact_performed"] is False
+    recovered = client.post(
+        f"{prefix}/intents/{intent_id}/recoveries",
+        json={
+            "recovery_fingerprint": "6" * 64,
+            "operator_approval_id": "7" * 64,
+            "operator_proof_signature_base64": "A" * 88,
+            "acknowledgement": ("query_exact_unknown_submission_once_without_resubmit"),
+        },
+    )
     assert recovered.status_code == 200
     assert recovered.json()["recovery_resubmission_enabled"] is False
     assert client.get(f"{prefix}/intents?limit=7").json()[0]["limit"] == 7
@@ -271,7 +292,10 @@ def test_create_app_registers_controlled_submission_without_strategy_endpoint() 
         "/api/automation/controlled-broker-submission/orders/{order_id}/submissions": {
             "POST"
         },
-        "/api/automation/controlled-broker-submission/intents/{submit_intent_id}/recover": {
+        "/api/automation/controlled-broker-submission/intents/{submit_intent_id}/recovery/preview": {
+            "POST"
+        },
+        "/api/automation/controlled-broker-submission/intents/{submit_intent_id}/recoveries": {
             "POST"
         },
         "/api/automation/controlled-broker-submission/intents": {"GET"},

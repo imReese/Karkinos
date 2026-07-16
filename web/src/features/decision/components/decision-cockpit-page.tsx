@@ -44,6 +44,7 @@ import {
   type PaperShadowDivergenceSummary,
   type PaperShadowReviewQueueItem,
 } from '../../operations/api';
+import { ControlledBrokerRecoveryOperatorPanel } from '../../operations/controlled-broker-recovery-operator-panel';
 import { ControlledLedgerPostingOperatorPanel } from '../../operations/controlled-ledger-posting-operator-panel';
 import { ControlledTerminalClearanceOperatorPanel } from '../../operations/controlled-terminal-clearance-operator-panel';
 import {
@@ -3221,6 +3222,10 @@ function AutomationCockpitPanel({
                     ? '该旅程只投影持久化证据；本次读取未联系券商、未提交或撤单、未修改账本，也未改变任何资本或执行权限。'
                     : 'This journey projects persisted evidence only. This read contacted no broker, submitted or cancelled no order, mutated no ledger, and changed no capital or execution authority.'}
                 </div>
+                <ControlledBrokerRecoveryOperatorPanel
+                  journey={latestControlledOrderJourney}
+                  locale={locale}
+                />
                 <ControlledTerminalClearanceOperatorPanel
                   journey={latestControlledOrderJourney}
                   locale={locale}
@@ -3238,7 +3243,9 @@ function AutomationCockpitPanel({
                 locale === 'zh' ? '未联系 provider' : 'No provider contact',
                 locale === 'zh' ? '提交关闭' : 'Submission off',
                 locale === 'zh' ? '撤单关闭' : 'Cancellation off',
-                locale === 'zh' ? '无恢复操作' : 'No resume action',
+                locale === 'zh'
+                  ? '无权限自动恢复'
+                  : 'No automatic authority resume',
                 locale === 'zh' ? '禁止自动扩容' : 'No automatic scale-up',
               ].map((label) => (
                 <span className="app-chip" key={label}>
