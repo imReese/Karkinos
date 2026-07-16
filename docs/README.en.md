@@ -106,9 +106,12 @@ Posting and append-only correction require separate signatures; correction is
 derived only from canonical ledger replay, preserves the original facts, and
 requires newer Account Truth evidence afterward. Neither boundary can contact
 a provider, submit or cancel an order, or change capital authority.
-The terminal-clearance-to-posting step is available as an explicitly opened
-operator review with a deterministic preview, short-lived offline signature,
-and final acknowledgement; no trusted public identity keeps it disabled.
+The reconciliation-to-terminal-clearance and terminal-clearance-to-posting
+steps are available as separately opened operator reviews with deterministic
+previews, short-lived offline signatures, and final acknowledgements. Clearance
+records exact terminal fills and releases only that order's interlock without
+posting the ledger. No matching trusted public identity keeps either action
+disabled.
 
 ### AI research
 

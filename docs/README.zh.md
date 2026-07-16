@@ -96,9 +96,11 @@ Operations 展示数据、计划、paper/shadow、OMS、对账、告警和恢复
 保留原交易与费用，并在完成后要求更新的 Account Truth import。详细门禁和发布条件见
 [路线图](ROADMAP.zh.md)。
 
-Terminal clearance 到 posting 的步骤现在可在显式打开的操作员复核中完成：先查看 deterministic
-preview，再使用短时离线签名并执行最终确认；未配置匹配可信公钥时保持禁用。该路径不需要修改
-数据库，也不能提交或撤销券商订单、改变资本权限。
+Execution reconciliation 到 terminal clearance、以及 clearance 到 posting 的步骤现在都可在各自
+显式打开的操作员复核中完成：先查看 deterministic preview，再使用短时离线签名并执行最终确认；
+未配置匹配可信公钥时保持禁用。Clearance 只记录精确终态与真实 fills、解除该订单的 cross-order
+interlock，不写生产账本；posting 仍是另一份签名的 exactly-once 事务。两条路径都不能提交或撤销
+券商订单、联系 provider 或改变资本权限。
 
 ### AI 研究
 

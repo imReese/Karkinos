@@ -36,6 +36,41 @@ evidence. Back up the private key using the owner's normal encrypted secret
 backup procedure. Disabling or removing its public identity prevents new
 approvals; it does not delete audit history.
 
+## Complete a terminal-clearance review
+
+The Operations/Decision controlled-order journey exposes this action only when
+the canonical next step is `preview_terminal_clearance`:
+
+1. Open **Review signed terminal clearance**.
+2. Generate the read-only preview and review the exact reconciliation run,
+   terminal status, filled/cancelled quantities, Account Truth import,
+   lifecycle and broker-evidence fingerprints, fills, costs, and clearance
+   fingerprint. Any blocker stops the workflow.
+3. Create the three-minute challenge for the matching trusted identity and
+   copy its Base64 signing payload.
+4. Run the local signer and end stdin after pasting only the payload:
+
+   ```bash
+   uv run python scripts/operator_signer.py sign \
+     --private-key ~/.config/karkinos/operator-owner.pem \
+     --operator-id local-owner \
+     --key-id owner-key-1 \
+     --expected-action clear_controlled_submission_reconciliation \
+     --expected-artifact-type controlled_submission_reconciliation_clearance
+   ```
+
+5. Paste and verify only the detached Base64 signature, read the final
+   acknowledgement, and record the exact terminal outcome once.
+6. Continue to the separately signed ledger-posting review. Clearance records
+   actual fill evidence, transitions the OMS to the reviewed terminal state,
+   and releases this order's cross-order interlock. It does not post the
+   production ledger, call a provider, or create submission/cancel authority.
+
+Open partial fills, stale Account Truth, a non-latest reconciliation run,
+identity drift, quantity mismatch, partial batches, or conflicting lifecycle
+and statement evidence remain blocked. Refresh the canonical evidence and
+generate a new preview/challenge; do not reuse a stale signature.
+
 ## Complete a ledger-posting review
 
 The Operations/Decision controlled-order journey exposes this action only when

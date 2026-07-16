@@ -91,6 +91,29 @@ Implemented foundation:
   missing identities, exact request bodies, and absence of broker calls; the
   local signer refuses key overwrite, enforces private-file permissions, and
   signs only the supplied challenge payload without network I/O.
+- a separate no-database-edit terminal-clearance review that appears only for
+  the canonical `preview_terminal_clearance` action, binds the exact persisted
+  reconciliation run, Account Truth import, lifecycle and broker-evidence
+  fingerprints, terminal quantities, and fills, and requires its own offline
+  signature before recording the terminal outcome and releasing the interlock.
+
+M4 terminal-clearance UI assumptions and risk record:
+
+- The operator journey owns the actionable submission and reconciliation
+  identities; the Web client neither chooses arbitrary financial facts nor
+  recalculates quantities, fees, terminal state, or clearance eligibility.
+  Full fill, no-fill cancel, and partial-fill-then-cancel are the only
+  clearable outcomes; open or conflicting evidence remains blocked by the
+  canonical service.
+- Validation uses deterministic component fixtures for the exact preview,
+  challenge, proof, and apply sequence plus the full Node 24 Web suite,
+  formatting, production build, backend safety suite, and CI.
+- Risk impact is high at the execution-evidence layer because clearance records
+  real fills, transitions the OMS to the reviewed terminal state, and releases
+  the cross-order interlock. The existing write transaction rechecks the latest
+  reconciliation, lifecycle, Account Truth, order, intent, signature, and
+  fingerprint; the UI cannot supply financial values, post the ledger, contact
+  a provider, submit/cancel an order, or change authority.
 
 M3 correction assumptions and risk record:
 
@@ -112,7 +135,7 @@ M3 correction assumptions and risk record:
   capability.
 
 Remaining release work is owned by the roadmap: one real adapter, read-only
-soak, real cancel/unknown recovery, signed submission/clearance/correction UI,
+soak, real cancel/unknown recovery, signed submission/correction UI,
 broader fault injection and real-evidence acceptance, the rest of the operator
 journey, and the controlled per-order pilot.
 

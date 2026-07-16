@@ -64,12 +64,14 @@ and requiring a newer Account Truth import afterward. Selecting or implementing
 one real broker edge still requires explicit owner confirmation before any
 read-only soak or human-confirmed per-order pilot.
 
-For a terminal-cleared order, the Operations/Decision journey can now complete
-the existing reconciled-ledger posting boundary without database edits: the
-operator reviews the canonical delta, signs a three-minute challenge with a
-local-only Ed25519 key, verifies the detached proof, and explicitly confirms the
-exactly-once apply. The private key never enters Karkinos, and this path cannot
-submit or cancel broker orders or change capital authority.
+For a reconciled controlled order, the Operations/Decision journey can now
+complete both signed terminal clearance and the following reconciled-ledger
+posting without database edits. Each step has its own canonical preview,
+three-minute offline Ed25519 challenge, detached-proof verification, and final
+acknowledgement. Clearance records only exact terminal fills and releases the
+cross-order interlock without posting the ledger; posting remains a separate
+exactly-once transaction. The private key never enters Karkinos, and neither
+path can submit or cancel broker orders or change capital authority.
 
 See [the roadmap](docs/ROADMAP.md) for priorities and release gates. Completed
 implementation evidence lives in
