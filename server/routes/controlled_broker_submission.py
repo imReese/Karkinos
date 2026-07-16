@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from server.services.controlled_broker_submission import (
+    CONTROLLED_BROKER_RECOVERY_ACKNOWLEDGEMENT,
     CONTROLLED_BROKER_SUBMISSION_ACKNOWLEDGEMENT,
     ControlledBrokerSubmissionRejected,
     ControlledBrokerSubmissionService,
@@ -49,6 +50,25 @@ class ControlledBrokerSubmissionRequest(ControlledBrokerSubmissionPreviewRequest
     operator_proof_signature_base64: str = Field(min_length=80, max_length=128)
     acknowledgement: Literal["submit_one_exact_manually_confirmed_order_once"] = (
         CONTROLLED_BROKER_SUBMISSION_ACKNOWLEDGEMENT
+    )
+
+
+class ControlledBrokerRecoveryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    recovery_fingerprint: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    operator_approval_id: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    operator_proof_signature_base64: str = Field(min_length=80, max_length=128)
+    acknowledgement: Literal["query_exact_unknown_submission_once_without_resubmit"] = (
+        CONTROLLED_BROKER_RECOVERY_ACKNOWLEDGEMENT
     )
 
 
@@ -120,12 +140,27 @@ def create_router() -> APIRouter:
         except ControlledBrokerSubmissionRejected as exc:
             raise HTTPException(status_code=409, detail=exc.evidence) from exc
 
-    @router.post("/intents/{submit_intent_id}/recover")
-    async def recover_controlled_broker_submission(
+    @router.post("/intents/{submit_intent_id}/recovery/preview")
+    async def preview_controlled_broker_submission_recovery(
         submit_intent_id: str,
     ) -> dict[str, Any]:
+        return _service().preview_recovery(submit_intent_id=submit_intent_id)
+
+    @router.post("/intents/{submit_intent_id}/recoveries")
+    async def recover_controlled_broker_submission(
+        submit_intent_id: str,
+        request: ControlledBrokerRecoveryRequest,
+    ) -> dict[str, Any]:
         try:
-            return _service().recover(submit_intent_id=submit_intent_id)
+            return _service().recover(
+                submit_intent_id=submit_intent_id,
+                recovery_fingerprint=request.recovery_fingerprint,
+                operator_approval_id=request.operator_approval_id,
+                operator_proof_signature_base64=(
+                    request.operator_proof_signature_base64
+                ),
+                acknowledgement=request.acknowledgement,
+            )
         except ControlledBrokerSubmissionRejected as exc:
             raise HTTPException(status_code=409, detail=exc.evidence) from exc
 

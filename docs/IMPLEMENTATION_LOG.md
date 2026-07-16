@@ -36,6 +36,14 @@ The latest completed cross-cutting work includes:
   delta preview to a matching trusted public identity, short-lived offline
   Ed25519 proof, final acknowledgement, and exactly-once apply, while keeping
   private keys, broker actions, and authority changes outside the Web path;
+- a separately signed unknown-submission recovery review that binds the
+  persisted intent, exact client order id, prior gateway-result fingerprint,
+  operator identity, and a short-lived offline proof before atomically
+  admitting one query-only gateway call; duplicate clicks and immediate
+  restart retries cannot repeat the query, and submit, cancel, ledger, risk,
+  kill-switch, and authority paths remain unavailable; only the existing
+  controlled-intent/OMS result status may be resolved from definitive query
+  evidence;
 - provider-neutral adapter release manifests with append-only human
   accept/reject/revoke evidence and exact live collector prepare/commit
   binding, without selecting or registering a real provider.
@@ -96,6 +104,29 @@ Implemented foundation:
   reconciliation run, Account Truth import, lifecycle and broker-evidence
   fingerprints, terminal quantities, and fills, and requires its own offline
   signature before recording the terminal outcome and releasing the interlock.
+- a no-database-edit unknown-outcome recovery review for the canonical
+  query-only journey action. The old unsigned naked POST is no longer a route;
+  preview is provider-free, apply requires an exact recovery fingerprint,
+  matching offline Ed25519 proof and acknowledgement, and the database records
+  the atomic query claim before any external call.
+
+M4 query-only recovery assumptions and risk record:
+
+- Broker order query by the persisted idempotent client order id is assumed to
+  be read-only and bounded by the registered edge gateway. A failed or unknown
+  query remains `submission_unknown`; it never authorizes resubmission. A
+  persisted 30-second claim window prevents duplicate clicks and immediate
+  restart retries while allowing a later explicitly signed query after a lost
+  process or disconnected gateway.
+- Deterministic validation covers early preview blocking, exact signature
+  domain, duplicate apply, restart, query failure, definitive not-found,
+  successful recovery, audit claims, route schemas, Web request bodies, and
+  absence of submit/cancel/ledger paths.
+- Risk impact is medium: this adds one explicit external read to a previously
+  unknown execution state, but cannot alter the production ledger, capital or
+  execution authority and never calls broker submit or cancel. The query result
+  is sanitized and persisted through the existing controlled-intent/OMS result
+  transition; ambiguity continues to fail closed.
 
 M4 terminal-clearance UI assumptions and risk record:
 

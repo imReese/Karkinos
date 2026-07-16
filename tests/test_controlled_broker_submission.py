@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from server.config import TrustedOperatorIdentityConfig
 from server.db import AppDatabase
 from server.services.controlled_broker_submission import (
+    CONTROLLED_BROKER_RECOVERY_ACKNOWLEDGEMENT,
     CONTROLLED_BROKER_SUBMISSION_ACKNOWLEDGEMENT,
     ControlledBrokerSubmissionRejected,
     ControlledBrokerSubmissionService,
@@ -275,6 +276,35 @@ def _approval(env: dict, fingerprint: str) -> dict:
     return {**approval, "proof_signature_base64": signature_base64}
 
 
+def _recovery_approval(env: dict, fingerprint: str) -> dict:
+    challenge = env["approvals"].create_challenge(
+        operator_id="local-submit-owner",
+        key_id="submit-owner-key-1",
+        action="query_unknown_controlled_broker_submission",
+        artifact_type="controlled_broker_submission_recovery",
+        artifact_fingerprint=fingerprint,
+    )
+    signature = env["private_key"].sign(
+        base64.b64decode(challenge["signing_payload_base64"])
+    )
+    signature_base64 = base64.b64encode(signature).decode("ascii")
+    approval = env["approvals"].verify_signature(
+        challenge_id=challenge["challenge_id"],
+        signature_base64=signature_base64,
+    )
+    return {**approval, "proof_signature_base64": signature_base64}
+
+
+def _recover(env: dict, recovery_preview: dict, approval: dict) -> dict:
+    return env["service"].recover(
+        submit_intent_id=recovery_preview["submit_intent_id"],
+        recovery_fingerprint=recovery_preview["recovery_fingerprint"],
+        operator_approval_id=approval["approval_id"],
+        operator_proof_signature_base64=approval["proof_signature_base64"],
+        acknowledgement=CONTROLLED_BROKER_RECOVERY_ACKNOWLEDGEMENT,
+    )
+
+
 def _preview(env: dict) -> dict:
     return env["service"].preview(
         order_id=env["order"]["order_id"],
@@ -460,22 +490,33 @@ def test_unknown_submit_never_resubmits_and_recovers_by_query_after_wait(
 
     unknown = _submit(env, preview, approval)
     retry = _submit(env, preview, approval)
-    too_early = env["service"].recover(submit_intent_id=unknown["submit_intent_id"])
+    too_early = env["service"].preview_recovery(
+        submit_intent_id=unknown["submit_intent_id"]
+    )
 
     assert unknown["status"] == "submission_unknown"
     assert unknown["submission_outcome_unknown"] is True
     assert retry["status"] == "submission_unknown"
     assert retry["external_call_performed"] is False
-    assert too_early["status"] == "recovery_wait_required"
+    assert too_early["review_status"] == "blocked"
+    assert "controlled_broker_recovery_query_wait_required" in too_early["blockers"]
+    assert too_early["provider_contact_performed"] is False
     assert env["gateway"].submit_calls == 1
     assert env["gateway"].query_calls == 0
 
     env["clock"][0] = NOW + timedelta(seconds=31)
-    recovered = env["service"].recover(submit_intent_id=unknown["submit_intent_id"])
+    recovery_preview = env["service"].preview_recovery(
+        submit_intent_id=unknown["submit_intent_id"]
+    )
+    recovery_approval = _recovery_approval(
+        env, recovery_preview["recovery_fingerprint"]
+    )
+    recovered = _recover(env, recovery_preview, recovery_approval)
 
     assert recovered["status"] == "submitted"
     assert recovered["broker_order_id"] == "BROKER-ORDER-RECOVERED"
-    assert recovered["external_call_performed"] is False
+    assert recovered["external_call_performed"] is True
+    assert recovered["recovery_query_performed"] is True
     assert env["gateway"].submit_calls == 1
     assert env["gateway"].query_calls == 1
     assert env["db"].get_oms_order_sync(env["order"]["order_id"])["status"] == (
@@ -502,11 +543,113 @@ def test_definitive_not_found_after_wait_closes_unknown_without_resubmit(
         "broker_order_id": "",
     }
 
-    recovered = env["service"].recover(submit_intent_id=unknown["submit_intent_id"])
+    recovery_preview = env["service"].preview_recovery(
+        submit_intent_id=unknown["submit_intent_id"]
+    )
+    recovery_approval = _recovery_approval(
+        env, recovery_preview["recovery_fingerprint"]
+    )
+    recovered = _recover(env, recovery_preview, recovery_approval)
 
     assert recovered["status"] == "rejected"
     assert env["gateway"].submit_calls == 1
     assert env["gateway"].query_calls == 1
+    assert env["db"].get_ledger_entries_sync() == []
+
+
+def test_recovery_requires_exact_signed_fingerprint_and_duplicate_is_query_free(
+    tmp_path,
+) -> None:
+    env = _environment(tmp_path)
+    preview = _preview(env)
+    env["gateway"].submit_result = TimeoutError("timeout")
+    submit_approval = _approval(env, preview["submit_fingerprint"])
+    unknown = _submit(env, preview, submit_approval)
+    env["clock"][0] = NOW + timedelta(seconds=31)
+    recovery_preview = env["service"].preview_recovery(
+        submit_intent_id=unknown["submit_intent_id"]
+    )
+
+    with pytest.raises(ControlledBrokerSubmissionRejected) as wrong_domain:
+        env["service"].recover(
+            submit_intent_id=unknown["submit_intent_id"],
+            recovery_fingerprint=recovery_preview["recovery_fingerprint"],
+            operator_approval_id=submit_approval["approval_id"],
+            operator_proof_signature_base64=submit_approval["proof_signature_base64"],
+            acknowledgement=CONTROLLED_BROKER_RECOVERY_ACKNOWLEDGEMENT,
+        )
+
+    assert (
+        "controlled_broker_recovery_query_operator_approval_blocked"
+        in wrong_domain.value.evidence["rejection_reasons"]
+    )
+    assert env["gateway"].query_calls == 0
+
+    recovery_approval = _recovery_approval(
+        env, recovery_preview["recovery_fingerprint"]
+    )
+    recovered = _recover(env, recovery_preview, recovery_approval)
+    with pytest.raises(ControlledBrokerSubmissionRejected):
+        _recover(env, recovery_preview, recovery_approval)
+
+    assert recovered["status"] == "submitted"
+    assert env["gateway"].submit_calls == 1
+    assert env["gateway"].query_calls == 1
+    assert env["db"].get_ledger_entries_sync() == []
+
+
+def test_restart_keeps_recovery_query_rate_limited_and_auditable(tmp_path) -> None:
+    env = _environment(tmp_path)
+    preview = _preview(env)
+    env["gateway"].submit_result = TimeoutError("submit timeout")
+    unknown = _submit(env, preview, _approval(env, preview["submit_fingerprint"]))
+    env["clock"][0] = NOW + timedelta(seconds=31)
+    recovery_preview = env["service"].preview_recovery(
+        submit_intent_id=unknown["submit_intent_id"]
+    )
+    env["gateway"].query_result = TimeoutError("query timeout")
+    first = _recover(
+        env,
+        recovery_preview,
+        _recovery_approval(env, recovery_preview["recovery_fingerprint"]),
+    )
+
+    restarted = ControlledBrokerSubmissionService(
+        db=env["db"],
+        gateways=[env["gateway"]],
+        trusted_operator_identities=[env["identity"]],
+        clock=lambda: env["clock"][0],
+    )
+    env["service"] = restarted
+    immediate = restarted.preview_recovery(submit_intent_id=unknown["submit_intent_id"])
+
+    assert first["status"] == "submission_unknown"
+    assert immediate["review_ready"] is False
+    assert immediate["recovery_wait_remaining_seconds"] == 30
+    assert env["gateway"].submit_calls == 1
+    assert env["gateway"].query_calls == 1
+
+    env["clock"][0] = NOW + timedelta(seconds=62)
+    env["gateway"].query_result = None
+    retry_preview = restarted.preview_recovery(
+        submit_intent_id=unknown["submit_intent_id"]
+    )
+    recovered = _recover(
+        env,
+        retry_preview,
+        _recovery_approval(env, retry_preview["recovery_fingerprint"]),
+    )
+    claim_events = env["db"].list_events_sync(
+        event_type="controlled_broker.recovery_query_claimed"
+    )
+
+    assert recovered["status"] == "submitted"
+    assert env["gateway"].submit_calls == 1
+    assert env["gateway"].query_calls == 2
+    assert len(claim_events) == 2
+    assert all(
+        json.loads(item["payload_json"])["query_only"] is True for item in claim_events
+    )
     assert env["db"].get_ledger_entries_sync() == []
 
 

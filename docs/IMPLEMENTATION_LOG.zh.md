@@ -29,6 +29,11 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
 - 显式打开的 ledger-posting 操作员复核，将 canonical delta preview 与匹配的可信公钥身份、短时
   离线 Ed25519 proof、最终确认和 exactly-once apply 绑定，同时使私钥、broker action 与 authority
   change 留在 Web 路径之外；
+- 单独签名的 unknown-submission 恢复复核：先绑定 persisted intent、精确 client order id、既有
+  gateway result fingerprint、operator identity 与短时离线 proof，再原子放行一次 query-only
+  gateway call；重复点击和服务刚重启后的重复操作不会再次查询，submit、cancel、ledger、risk、
+  kill switch 与 authority 路径均不可用；仅允许以确定查询证据收敛既有 controlled intent/OMS
+  结果状态；
 - provider-neutral adapter release manifest、append-only 人工 accept/reject/revoke 证据，以及
   live collector prepare/commit 的精确绑定；没有选择或注册真实 provider。
 - provider-neutral deterministic conformance fixture、append-only report、精确 manifest/review
@@ -75,6 +80,22 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
 - 单独的 terminal-clearance 复核只在 canonical `preview_terminal_clearance` action 下出现，绑定精确
   persisted reconciliation run、Account Truth import、lifecycle/broker-evidence fingerprint、终态数量与
   fills；只有另一份离线签名通过后才记录终态并解除 interlock，全程无需手改数据库。
+- canonical query-only journey action 现提供无需改数据库的 unknown-outcome 恢复复核；旧的无签名
+  naked POST 不再注册。Preview 不联系 provider，apply 必须携带精确 recovery fingerprint、匹配的
+  离线 Ed25519 proof 与最终确认，而且数据库会在任何外部调用前先原子记录 query claim。
+
+M4 query-only recovery 的假设与风险记录：
+
+- 假设注册的 edge gateway 按 persisted idempotent client order id 执行只读、有界的 broker order
+  query。查询失败或仍不确定时继续保持 `submission_unknown`，绝不授权重提。持久化的 30 秒 claim
+  窗口会阻止重复点击与刚重启后的重复查询；进程丢失或 gateway 断连后，只能等窗口结束并重新签名
+  才能再次查询。
+- 确定性验证覆盖过早 preview 阻断、精确签名 domain、重复 apply、restart、query failure、
+  definitive not-found、成功恢复、audit claim、route schema、Web 精确 request body，以及不存在
+  submit/cancel/ledger 调用。
+- 风险影响为 medium：这会对未知执行状态增加一次显式外部读取，但不能修改生产账本、资本或执行
+  权限，也绝不调用 broker submit/cancel。查询结果会先脱敏，再通过既有 controlled intent/OMS
+  result transition 持久化；仍有歧义时继续 fail closed。
 
 M4 terminal-clearance UI 的假设与风险记录：
 

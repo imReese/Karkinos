@@ -182,7 +182,10 @@ projection links each recent intent through reconciliation, terminal clearance,
 ledger posting, and append-only correction. It exposes one safe human next step
 and treats unknown outcomes as query-only. Separate signed reviews now complete
 reconciliation-to-terminal-clearance and terminal-clearance-to-ledger-posting without
-database edits or authority grants. Signed submission, correction UI, cancel/recovery, and the complete journey remain open.
+database edits or authority grants. Unknown outcomes now also have a separately
+signed, atomically claimed, query-only operator action with duplicate/restart
+protection. Signed submission, correction UI, real cancel, real-adapter recovery
+evidence, and the complete journey remain open.
 
 **Exit gate:** an operator can complete every normal and recovery flow without
 editing the database. Refresh, duplicate clicks, and service restart do not
@@ -215,7 +218,7 @@ incident returns the system to `disabled`.
 3. **Next after explicit provider approval:** provider read-only adapter, collector integration, health, and soak.
 4. **Foundation partially implemented:** query/callback lifecycle and signed
    exact-terminal full/partial-cancel/no-fill-cancel reconciliation; real
-   cancel/unknown recovery remains.
+   real cancel and real-adapter recovery evidence remain.
 5. Default-closed write adapter and per-order submit/cancel gates.
 6. **Foundation implemented:** signed, exactly-once reconciled ledger posting,
    append-only compensating correction, and core cross-surface acceptance.

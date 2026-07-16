@@ -21,6 +21,18 @@ CONTROLLED_BROKER_SUBMISSION_STATUS_SCHEMA_VERSION = (
 CONTROLLED_BROKER_SUBMISSION_ACKNOWLEDGEMENT = (
     "submit_one_exact_manually_confirmed_order_once"
 )
+CONTROLLED_BROKER_RECOVERY_SCHEMA_VERSION = (
+    "karkinos.controlled_broker_submission_recovery.v1"
+)
+CONTROLLED_BROKER_RECOVERY_ACKNOWLEDGEMENT = (
+    "query_exact_unknown_submission_once_without_resubmit"
+)
+CONTROLLED_BROKER_RECOVERY_REJECTION_EVENT_TYPE = (
+    "controlled_broker.recovery_query_rejected"
+)
+CONTROLLED_BROKER_RECOVERY_REJECTION_ENTITY_TYPE = (
+    "controlled_broker_submission_recovery_rejection"
+)
 CONTROLLED_BROKER_SUBMISSION_REJECTION_EVENT_TYPE = (
     "controlled_broker.submission_rejected"
 )
@@ -531,56 +543,201 @@ class ControlledBrokerSubmissionService:
             external_call_performed=external_call_performed,
         )
 
-    def recover(self, *, submit_intent_id: str) -> dict[str, Any]:
-        """Recover only by broker query; never call submit again."""
+    def preview_recovery(self, *, submit_intent_id: str) -> dict[str, Any]:
+        """Build a persisted-evidence-bound preview without contacting a gateway."""
         normalized = str(submit_intent_id or "").strip().lower()
-        if not _FINGERPRINT_PATTERN.fullmatch(normalized):
-            raise ControlledBrokerSubmissionRejected(
-                "controlled broker recovery id invalid",
-                evidence={
-                    "status": "rejected",
-                    "submit_intent_id": normalized,
-                    "blockers": ["controlled_broker_submit_intent_id_invalid"],
-                },
-            )
-        row = self._db.get_controlled_broker_submit_intent_sync(normalized)
-        if row is None:
-            raise ControlledBrokerSubmissionRejected(
-                "controlled broker recovery intent not found",
-                evidence={
-                    "status": "rejected",
-                    "submit_intent_id": normalized,
-                    "blockers": ["controlled_broker_submit_intent_not_found"],
-                },
-            )
-        if row.get("status") in {"submitted", "rejected"}:
-            return _intent_response(
-                row,
-                reused=True,
-                external_call_performed=False,
-            )
         now = _aware_utc(self._clock())
-        age_seconds = max(
-            0,
-            int(now.timestamp()) - int(row.get("prepared_at_epoch_ms") or 0) // 1000,
+        blockers: list[str] = []
+        if not _FINGERPRINT_PATTERN.fullmatch(normalized):
+            blockers.append("controlled_broker_submit_intent_id_invalid")
+        row = self._db.get_controlled_broker_submit_intent_sync(normalized) or {}
+        if not row:
+            blockers.append("controlled_broker_submit_intent_not_found")
+        source_status = str(row.get("status") or "not_found")
+        if row and source_status not in {"prepared", "submission_unknown"}:
+            blockers.append("controlled_broker_recovery_query_not_required")
+        previous_attempt_epoch_ms = max(
+            int(row.get("prepared_at_epoch_ms") or 0),
+            int(row.get("last_recovery_at_epoch_ms") or 0),
         )
-        if age_seconds < CONTROLLED_BROKER_RECOVERY_MINIMUM_WAIT_SECONDS:
+        elapsed_seconds = max(
+            0,
+            int(now.timestamp()) - previous_attempt_epoch_ms // 1000,
+        )
+        recovery_wait_remaining_seconds = max(
+            0,
+            CONTROLLED_BROKER_RECOVERY_MINIMUM_WAIT_SECONDS - elapsed_seconds,
+        )
+        if row and recovery_wait_remaining_seconds:
+            blockers.append("controlled_broker_recovery_query_wait_required")
+        gateway, gateway_blockers = self._gateway(str(row.get("gateway_id") or ""))
+        blockers.extend(gateway_blockers)
+        raw_capabilities = (
+            getattr(gateway, "capabilities", {}) if gateway is not None else {}
+        )
+        can_query_orders = bool(
+            raw_capabilities.get("can_query_orders")
+            if isinstance(raw_capabilities, dict)
+            else getattr(raw_capabilities, "can_query_orders", False)
+        )
+        if gateway is not None and not can_query_orders:
+            blockers.append("controlled_broker_recovery_query_capability_missing")
+        if gateway is not None and not callable(getattr(gateway, "query_order", None)):
+            blockers.append("controlled_broker_recovery_query_method_unavailable")
+        persisted_gateway_result = _sanitize_gateway_result(
+            _json_object(row.get("result_json"))
+        )
+        recovery_contract = {
+            "schema_version": CONTROLLED_BROKER_RECOVERY_SCHEMA_VERSION,
+            "action": "query_unknown_controlled_broker_submission",
+            "submit_intent_id": normalized,
+            "submit_fingerprint": str(row.get("submit_fingerprint") or ""),
+            "order_id": str(row.get("order_id") or ""),
+            "order_fingerprint": str(row.get("order_fingerprint") or ""),
+            "gateway_id": str(row.get("gateway_id") or ""),
+            "client_order_id": str(row.get("client_order_id") or ""),
+            "operator_id": str(row.get("operator_id") or ""),
+            "source_status": source_status,
+            "source_result_fingerprint": _fingerprint(persisted_gateway_result),
+            "prepared_at": str(row.get("prepared_at") or ""),
+            "last_recovery_at": str(row.get("last_recovery_at") or ""),
+            "last_recovery_at_epoch_ms": int(row.get("last_recovery_at_epoch_ms") or 0),
+            "query_contract": "query_order_by_exact_client_order_id",
+            "resubmission_allowed": False,
+        }
+        recovery_fingerprint = _fingerprint(recovery_contract)
+        unique_blockers = list(dict.fromkeys(blockers))
+        return {
+            **recovery_contract,
+            "recovery_fingerprint": recovery_fingerprint,
+            "generated_at": now.isoformat(),
+            "review_status": (
+                "ready_for_final_signature" if not unique_blockers else "blocked"
+            ),
+            "review_ready": not unique_blockers,
+            "blockers": unique_blockers,
+            "recovery_wait_remaining_seconds": recovery_wait_remaining_seconds,
+            "gateway_query_capability": can_query_orders,
+            "persisted_gateway_result": persisted_gateway_result,
+            "required_operator_approval": {
+                "action": "query_unknown_controlled_broker_submission",
+                "artifact_type": "controlled_broker_submission_recovery",
+                "artifact_fingerprint": recovery_fingerprint,
+            },
+            "reads_persisted_facts_only": True,
+            "provider_contact_performed": False,
+            "broker_query_performed": False,
+            "broker_submission_performed": False,
+            "broker_cancel_performed": False,
+            "production_ledger_mutated": False,
+            "authority_changed": False,
+            "safety": _safety_flags(),
+        }
+
+    def recover(
+        self,
+        *,
+        submit_intent_id: str,
+        recovery_fingerprint: str,
+        operator_approval_id: str,
+        operator_proof_signature_base64: str,
+        acknowledgement: str,
+    ) -> dict[str, Any]:
+        """Run one signed query-only recovery attempt; never call submit or cancel."""
+        normalized = str(submit_intent_id or "").strip().lower()
+        submitted_fingerprint = str(recovery_fingerprint or "").strip().lower()
+        preview = self.preview_recovery(submit_intent_id=normalized)
+        rejection_reasons: list[str] = []
+        if submitted_fingerprint != preview["recovery_fingerprint"]:
+            rejection_reasons.append(
+                "controlled_broker_recovery_query_fingerprint_mismatch"
+            )
+        if acknowledgement != CONTROLLED_BROKER_RECOVERY_ACKNOWLEDGEMENT:
+            rejection_reasons.append(
+                "controlled_broker_recovery_query_acknowledgement_mismatch"
+            )
+        if preview["blockers"]:
+            rejection_reasons.append("controlled_broker_recovery_query_review_blocked")
+        approval, approval_blockers = resolve_operator_approval_with_proof(
+            db=self._db,
+            trusted_identities=self._trusted_operator_identities,
+            approval_id=operator_approval_id,
+            proof_signature_base64=operator_proof_signature_base64,
+            expected_action="query_unknown_controlled_broker_submission",
+            expected_artifact_type="controlled_broker_submission_recovery",
+            expected_artifact_fingerprint=preview["recovery_fingerprint"],
+            clock=self._clock,
+        )
+        if approval_blockers:
+            rejection_reasons.append(
+                "controlled_broker_recovery_query_operator_approval_blocked"
+            )
+        elif str(approval.get("operator_id") or "") != preview["operator_id"]:
+            rejection_reasons.append(
+                "controlled_broker_recovery_query_operator_mismatch"
+            )
+        if rejection_reasons:
+            evidence = self._record_recovery_rejection(
+                preview=preview,
+                submitted_fingerprint=submitted_fingerprint,
+                operator_approval_id=operator_approval_id,
+                rejection_reasons=rejection_reasons,
+                transaction_blockers=[],
+            )
+            raise ControlledBrokerSubmissionRejected(
+                "controlled broker recovery query rejected",
+                evidence=evidence,
+            )
+
+        now = _aware_utc(self._clock())
+        transaction = self._db.claim_controlled_broker_recovery_query_sync(
+            submit_intent_id=normalized,
+            recovery_fingerprint=preview["recovery_fingerprint"],
+            operator_approval_id=operator_approval_id,
+            claimed_at_epoch_ms=int(now.timestamp() * 1000),
+            claimed_at=now.isoformat(),
+            minimum_wait_seconds=CONTROLLED_BROKER_RECOVERY_MINIMUM_WAIT_SECONDS,
+        )
+        if transaction.get("status") == "rejected":
+            evidence = self._record_recovery_rejection(
+                preview=preview,
+                submitted_fingerprint=submitted_fingerprint,
+                operator_approval_id=operator_approval_id,
+                rejection_reasons=["controlled_broker_recovery_query_claim_rejected"],
+                transaction_blockers=[
+                    str(item) for item in transaction.get("blockers") or []
+                ],
+            )
+            raise ControlledBrokerSubmissionRejected(
+                "controlled broker recovery query claim rejected",
+                evidence=evidence,
+            )
+        if not transaction.get("external_call_permitted"):
+            row = transaction.get("intent") or {}
             return {
                 **_intent_response(
                     row,
                     reused=True,
                     external_call_performed=False,
                 ),
-                "status": "recovery_wait_required",
-                "recovery_wait_remaining_seconds": (
-                    CONTROLLED_BROKER_RECOVERY_MINIMUM_WAIT_SECONDS - age_seconds
+                "status": str(transaction.get("status") or row.get("status") or ""),
+                "recovery_fingerprint": preview["recovery_fingerprint"],
+                "recovery_operator_approval_id": operator_approval_id,
+                "recovery_query_performed": False,
+                "recovery_wait_remaining_seconds": int(
+                    transaction.get("recovery_wait_remaining_seconds") or 0
                 ),
             }
-        gateway, gateway_blockers = self._gateway(str(row.get("gateway_id") or ""))
+
+        claimed = transaction.get("intent") or {}
+        gateway, gateway_blockers = self._gateway(str(claimed.get("gateway_id") or ""))
         query = getattr(gateway, "query_order", None) if not gateway_blockers else None
+        external_call_performed = callable(query)
         try:
             raw_result = (
-                query(str(row.get("client_order_id") or "")) if callable(query) else {}
+                query(str(claimed.get("client_order_id") or ""))
+                if callable(query)
+                else {}
             )
             raw_result = raw_result if isinstance(raw_result, dict) else {}
         except Exception as exc:
@@ -591,8 +748,8 @@ class ControlledBrokerSubmissionService:
             }
         classification = _classify_gateway_result(
             raw_result,
-            client_order_id=str(row.get("client_order_id") or ""),
-            order_fingerprint=str(row.get("order_fingerprint") or ""),
+            client_order_id=str(claimed.get("client_order_id") or ""),
+            order_fingerprint=str(claimed.get("order_fingerprint") or ""),
             allow_definitive_not_found=True,
         )
         finalized = self._finalize(
@@ -601,11 +758,17 @@ class ControlledBrokerSubmissionService:
             result=_sanitize_gateway_result(raw_result),
             recovered=True,
         )
-        return _intent_response(
-            finalized.get("intent") or {},
-            reused=False,
-            external_call_performed=False,
-        )
+        return {
+            **_intent_response(
+                finalized.get("intent") or {},
+                reused=False,
+                external_call_performed=external_call_performed,
+            ),
+            "recovery_fingerprint": preview["recovery_fingerprint"],
+            "recovery_operator_approval_id": operator_approval_id,
+            "recovery_claim_id": str(transaction.get("claim_id") or ""),
+            "recovery_query_performed": external_call_performed,
+        }
 
     def list_intents(self, *, limit: int = 100) -> list[dict[str, Any]]:
         rows = self._db.list_controlled_broker_submit_intents_sync(
@@ -848,6 +1011,52 @@ class ControlledBrokerSubmissionService:
             event_type=CONTROLLED_BROKER_SUBMISSION_REJECTION_EVENT_TYPE,
             timestamp=now.isoformat(),
             entity_type=CONTROLLED_BROKER_SUBMISSION_REJECTION_ENTITY_TYPE,
+            entity_id=attempt_id,
+            source=CONTROLLED_BROKER_SUBMISSION_EVENT_SOURCE,
+            source_ref=payload["expected_fingerprint"],
+            payload={"attempt_id": attempt_id, **payload},
+        )
+        return {
+            "event_id": event_id,
+            "attempt_id": attempt_id,
+            "recorded_at": now.isoformat(),
+            "persisted": True,
+            **payload,
+        }
+
+    def _record_recovery_rejection(
+        self,
+        *,
+        preview: dict[str, Any],
+        submitted_fingerprint: str,
+        operator_approval_id: str,
+        rejection_reasons: list[str],
+        transaction_blockers: list[str],
+    ) -> dict[str, Any]:
+        now = _aware_utc(self._clock())
+        payload = {
+            "schema_version": CONTROLLED_BROKER_RECOVERY_SCHEMA_VERSION,
+            "status": "rejected",
+            "submit_intent_id": str(preview.get("submit_intent_id") or ""),
+            "order_id": str(preview.get("order_id") or ""),
+            "expected_fingerprint": str(preview.get("recovery_fingerprint") or ""),
+            "submitted_fingerprint": str(submitted_fingerprint or ""),
+            "operator_approval_id": str(operator_approval_id or ""),
+            "review_blockers": [str(item) for item in preview.get("blockers") or []],
+            "rejection_reasons": list(dict.fromkeys(rejection_reasons)),
+            "transaction_blockers": list(dict.fromkeys(transaction_blockers)),
+            "query_only": True,
+            "broker_query_performed": False,
+            "broker_submission_performed": False,
+            "broker_cancel_performed": False,
+            "production_ledger_mutated": False,
+            "authority_changed": False,
+        }
+        attempt_id = _fingerprint({**payload, "attempted_at": now.isoformat()})
+        event_id = self._db.append_event_sync(
+            event_type=CONTROLLED_BROKER_RECOVERY_REJECTION_EVENT_TYPE,
+            timestamp=now.isoformat(),
+            entity_type=CONTROLLED_BROKER_RECOVERY_REJECTION_ENTITY_TYPE,
             entity_id=attempt_id,
             source=CONTROLLED_BROKER_SUBMISSION_EVENT_SOURCE,
             source_ref=payload["expected_fingerprint"],

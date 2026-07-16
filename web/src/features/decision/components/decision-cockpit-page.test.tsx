@@ -2286,7 +2286,7 @@ test('surfaces bounded controlled execution evidence without live actions', asyn
   expect(operatorView.textContent).toContain('No provider contact');
   expect(operatorView.textContent).toContain('Submission off');
   expect(operatorView.textContent).toContain('Cancellation off');
-  expect(operatorView.textContent).toContain('No resume action');
+  expect(operatorView.textContent).toContain('No automatic authority resume');
   expect(operatorView.textContent).toContain('No automatic scale-up');
   expect(within(operatorView).queryAllByRole('button')).toHaveLength(0);
 

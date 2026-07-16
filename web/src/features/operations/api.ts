@@ -587,6 +587,53 @@ export type OperatorApprovalStatus = {
   broker_submission_enabled: false;
 };
 
+export type ControlledBrokerRecoveryPreview = {
+  schema_version: string;
+  submit_intent_id: string;
+  submit_fingerprint: string;
+  recovery_fingerprint: string;
+  order_id: string;
+  order_fingerprint: string;
+  gateway_id: string;
+  client_order_id: string;
+  operator_id: string;
+  source_status: string;
+  source_result_fingerprint: string;
+  prepared_at: string;
+  last_recovery_at: string;
+  review_status: string;
+  review_ready: boolean;
+  blockers: string[];
+  recovery_wait_remaining_seconds: number;
+  gateway_query_capability: boolean;
+  required_operator_approval?: {
+    action: 'query_unknown_controlled_broker_submission';
+    artifact_type: 'controlled_broker_submission_recovery';
+    artifact_fingerprint: string;
+  };
+  reads_persisted_facts_only: true;
+  provider_contact_performed: false;
+  broker_query_performed: false;
+  broker_submission_performed: false;
+  broker_cancel_performed: false;
+  production_ledger_mutated: false;
+  authority_changed: false;
+};
+
+export type ControlledBrokerRecoveryResult = {
+  submit_intent_id: string;
+  recovery_fingerprint: string;
+  recovery_operator_approval_id: string;
+  recovery_claim_id: string;
+  status: string;
+  broker_order_id: string;
+  broker_status: string;
+  recovery_query_performed: boolean;
+  external_call_performed: boolean;
+  recovery_resubmission_enabled: false;
+  production_ledger_mutated: false;
+};
+
 export type ControlledSubmissionClearanceFill = {
   fill_id: string;
   broker_event_id: string;
@@ -1169,6 +1216,64 @@ export function useControlledSubmissionClearancePreviewMutation() {
         )}/reconciliation-clearance/preview`,
         body,
       );
+    },
+  });
+}
+
+export function useControlledBrokerRecoveryPreviewMutation() {
+  return useMutation({
+    mutationFn: ({ submitIntentId }: { submitIntentId: string }) =>
+      postJson<ControlledBrokerRecoveryPreview>(
+        `/api/automation/controlled-broker-submission/intents/${encodeURIComponent(
+          submitIntentId,
+        )}/recovery/preview`,
+      ),
+  });
+}
+
+export function useControlledBrokerRecoveryApprovalChallengeMutation() {
+  return useMutation({
+    mutationFn: (request: {
+      operator_id: string;
+      key_id: string;
+      action: 'query_unknown_controlled_broker_submission';
+      artifact_type: 'controlled_broker_submission_recovery';
+      artifact_fingerprint: string;
+      ttl_seconds: number;
+    }) =>
+      postJson<OperatorApprovalChallenge>(
+        '/api/automation/capital-authority/operator-approvals/challenges',
+        request,
+      ),
+  });
+}
+
+export function useControlledBrokerRecoveryApplyMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: {
+      submitIntentId: string;
+      recovery_fingerprint: string;
+      operator_approval_id: string;
+      operator_proof_signature_base64: string;
+      acknowledgement: 'query_exact_unknown_submission_once_without_resubmit';
+    }) => {
+      const { submitIntentId, ...body } = request;
+      return postJson<ControlledBrokerRecoveryResult>(
+        `/api/automation/controlled-broker-submission/intents/${encodeURIComponent(
+          submitIntentId,
+        )}/recoveries`,
+        body,
+      );
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['automation', 'cockpit'] }),
+        queryClient.invalidateQueries({ queryKey: ['operations', 'today'] }),
+        queryClient.invalidateQueries({
+          queryKey: ['execution-reconciliation', 'runs'],
+        }),
+      ]);
     },
   });
 }

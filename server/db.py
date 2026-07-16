@@ -1986,6 +1986,176 @@ class AppDatabase:
                     ["controlled_broker_submit_prepare_transaction_unavailable"],
                 )
 
+    def claim_controlled_broker_recovery_query_sync(
+        self,
+        *,
+        submit_intent_id: str,
+        recovery_fingerprint: str,
+        operator_approval_id: str,
+        claimed_at_epoch_ms: int,
+        claimed_at: str,
+        minimum_wait_seconds: int,
+    ) -> dict[str, Any]:
+        """Atomically admit one query-only recovery attempt and audit its identity."""
+        requested = {
+            "submit_intent_id": str(submit_intent_id or ""),
+            "recovery_fingerprint": str(recovery_fingerprint or ""),
+            "operator_approval_id": str(operator_approval_id or ""),
+        }
+        if (
+            len(requested["recovery_fingerprint"]) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in requested["recovery_fingerprint"]
+            )
+            or len(requested["operator_approval_id"]) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in requested["operator_approval_id"]
+            )
+            or int(claimed_at_epoch_ms) < 0
+            or int(minimum_wait_seconds) < 1
+        ):
+            return _controlled_broker_submit_rejection(
+                requested,
+                ["controlled_broker_recovery_query_claim_invalid"],
+            )
+        with sqlite3.connect(self._path, timeout=2) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA busy_timeout=2000")
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                intent = conn.execute(
+                    """
+                    SELECT * FROM controlled_broker_submit_intents
+                    WHERE submit_intent_id = ? LIMIT 1
+                    """,
+                    (requested["submit_intent_id"],),
+                ).fetchone()
+                if intent is None:
+                    conn.rollback()
+                    return _controlled_broker_submit_rejection(
+                        requested,
+                        ["controlled_broker_submit_intent_not_found"],
+                    )
+                current_status = str(intent["status"])
+                if current_status in {"submitted", "rejected"}:
+                    conn.commit()
+                    return {
+                        "status": current_status,
+                        "blockers": [],
+                        "reused": True,
+                        "external_call_permitted": False,
+                        "intent": dict(intent),
+                    }
+                if current_status not in {"prepared", "submission_unknown"}:
+                    conn.rollback()
+                    return _controlled_broker_submit_rejection(
+                        dict(intent),
+                        ["controlled_broker_recovery_query_state_invalid"],
+                    )
+                previous_attempt_epoch_ms = max(
+                    int(intent["prepared_at_epoch_ms"] or 0),
+                    int(intent["last_recovery_at_epoch_ms"] or 0),
+                )
+                minimum_wait_ms = int(minimum_wait_seconds) * 1000
+                elapsed_ms = max(
+                    0,
+                    int(claimed_at_epoch_ms) - previous_attempt_epoch_ms,
+                )
+                if elapsed_ms < minimum_wait_ms:
+                    conn.commit()
+                    return {
+                        "status": "recovery_wait_required",
+                        "blockers": ["controlled_broker_recovery_query_wait_required"],
+                        "reused": True,
+                        "external_call_permitted": False,
+                        "recovery_wait_remaining_seconds": max(
+                            1,
+                            (minimum_wait_ms - elapsed_ms + 999) // 1000,
+                        ),
+                        "intent": dict(intent),
+                    }
+                claim_id = hashlib.sha256(
+                    json.dumps(
+                        {
+                            "domain": "karkinos.controlled_broker.recovery_query_claim.v1",
+                            **requested,
+                            "claimed_at_epoch_ms": int(claimed_at_epoch_ms),
+                        },
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode()
+                ).hexdigest()
+                conn.execute(
+                    """
+                    UPDATE controlled_broker_submit_intents
+                    SET last_recovery_at_epoch_ms = ?, last_recovery_at = ?,
+                        updated_at = ?
+                    WHERE submit_intent_id = ?
+                    """,
+                    (
+                        int(claimed_at_epoch_ms),
+                        claimed_at,
+                        claimed_at,
+                        requested["submit_intent_id"],
+                    ),
+                )
+                event = {
+                    "schema_version": "karkinos.controlled_broker_recovery_query_claim.v1",
+                    "claim_id": claim_id,
+                    **requested,
+                    "source_status": current_status,
+                    "client_order_id": str(intent["client_order_id"] or ""),
+                    "gateway_id": str(intent["gateway_id"] or ""),
+                    "query_only": True,
+                    "broker_submit_enabled": False,
+                    "broker_cancel_enabled": False,
+                    "production_ledger_mutated": False,
+                    "authority_changed": False,
+                    "claimed_at_epoch_ms": int(claimed_at_epoch_ms),
+                    "claimed_at": claimed_at,
+                }
+                cursor = _insert_event_sync(
+                    conn,
+                    event_type="controlled_broker.recovery_query_claimed",
+                    timestamp=claimed_at,
+                    entity_type="controlled_broker_submission_recovery",
+                    entity_id=claim_id,
+                    source="controlled_broker_submission",
+                    source_ref=requested["recovery_fingerprint"],
+                    payload=event,
+                )
+                saved = conn.execute(
+                    """
+                    SELECT * FROM controlled_broker_submit_intents
+                    WHERE submit_intent_id = ? LIMIT 1
+                    """,
+                    (requested["submit_intent_id"],),
+                ).fetchone()
+                conn.commit()
+                return {
+                    "status": "recovery_query_claimed",
+                    "blockers": [],
+                    "reused": False,
+                    "external_call_permitted": True,
+                    "claim_id": claim_id,
+                    "event_id": cursor.lastrowid or 0,
+                    "intent": dict(saved) if saved is not None else {},
+                }
+            except (
+                sqlite3.IntegrityError,
+                sqlite3.OperationalError,
+                KeyError,
+                TypeError,
+                ValueError,
+            ):
+                conn.rollback()
+                return _controlled_broker_submit_rejection(
+                    requested,
+                    ["controlled_broker_recovery_query_claim_transaction_unavailable"],
+                )
+
     def finalize_controlled_broker_submit_intent_sync(
         self,
         *,
