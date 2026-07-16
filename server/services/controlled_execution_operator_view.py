@@ -12,12 +12,13 @@ from server.services.controlled_session_gate_contract import (
 )
 
 CONTROLLED_EXECUTION_OPERATOR_VIEW_SCHEMA_VERSION = (
-    "karkinos.controlled_execution_operator_view.v1"
+    "karkinos.controlled_execution_operator_view.v2"
 )
 
 MAX_CONTROLLED_EXECUTION_SOURCE_ROWS = 500
 MAX_RECONCILIATION_RUNS = 100
 MAX_VISIBLE_SESSIONS = 50
+MAX_VISIBLE_ORDER_JOURNEYS = 20
 
 _UNRECONCILED_SUBMISSION_STATUSES = frozenset(
     {"prepared", "submitted", "submission_unknown"}
@@ -69,6 +70,24 @@ class ControlledExecutionOperatorViewService:
             blocker_prefix="controlled_submission",
             blockers=source_blockers,
         )
+        clearances = self._read_rows(
+            "list_controlled_submission_reconciliation_clearances_sync",
+            limit=MAX_CONTROLLED_EXECUTION_SOURCE_ROWS,
+            blocker_prefix="terminal_clearance",
+            blockers=source_blockers,
+        )
+        ledger_postings = self._read_rows(
+            "list_controlled_submission_ledger_postings_sync",
+            limit=MAX_CONTROLLED_EXECUTION_SOURCE_ROWS,
+            blocker_prefix="controlled_ledger_posting",
+            blockers=source_blockers,
+        )
+        ledger_corrections = self._read_rows(
+            "list_controlled_submission_ledger_corrections_sync",
+            limit=MAX_CONTROLLED_EXECUTION_SOURCE_ROWS,
+            blocker_prefix="controlled_ledger_correction",
+            blockers=source_blockers,
+        )
         reconciliation_runs = self._read_rows(
             "list_execution_reconciliation_runs_sync",
             limit=MAX_RECONCILIATION_RUNS,
@@ -84,10 +103,31 @@ class ControlledExecutionOperatorViewService:
         admissions_by_session = _group_rows(admissions, "session_id")
         latest_gate_by_session = _first_row_by_key(gate_snapshots, "session_id")
         intents_by_order = _group_rows(submission_intents, "order_id")
+        clearance_by_intent = _first_row_by_key(clearances, "submit_intent_id")
+        posting_by_clearance = _first_row_by_key(ledger_postings, "clearance_id")
+        correction_by_posting = _first_row_by_key(
+            ledger_corrections,
+            "posting_id",
+        )
         reconciliation_by_order = self._reconciliation_by_order(
             reconciliation_runs,
             blockers=source_blockers,
         )
+
+        recent_order_journeys = [
+            _order_journey_summary(
+                intent=intent,
+                reconciliation=reconciliation_by_order.get(
+                    str(intent.get("order_id") or ""), {}
+                ),
+                clearance=clearance_by_intent.get(
+                    str(intent.get("submit_intent_id") or ""), {}
+                ),
+                posting_by_clearance=posting_by_clearance,
+                correction_by_posting=correction_by_posting,
+            )
+            for intent in submission_intents[:MAX_VISIBLE_ORDER_JOURNEYS]
+        ]
 
         projected_sessions = [
             self._session_summary(
@@ -102,6 +142,7 @@ class ControlledExecutionOperatorViewService:
                     str(row.get("session_id") or ""), {}
                 ),
                 intents_by_order=intents_by_order,
+                cleared_intent_ids=frozenset(clearance_by_intent),
                 reconciliation_by_order=reconciliation_by_order,
                 as_of=as_of,
                 source_blockers=source_blockers,
@@ -117,16 +158,22 @@ class ControlledExecutionOperatorViewService:
         latest_reconciliation = _reconciliation_run_summary(
             reconciliation_runs[0] if reconciliation_runs else {}
         )
+        latest_order_journey = (
+            recent_order_journeys[0] if recent_order_journeys else None
+        )
         unique_source_blockers = list(dict.fromkeys(source_blockers))
         if unique_source_blockers:
             status = "blocked"
             next_action = "review_controlled_execution_blockers"
-        elif not projected_sessions:
-            status = "no_session_evidence"
-            next_action = "no_action_default_disabled"
         elif blocked:
             status = "blocked"
             next_action = "review_controlled_execution_blockers"
+        elif latest_order_journey is not None:
+            status = "order_journey_review_required"
+            next_action = str(latest_order_journey["next_operator_action"])
+        elif not projected_sessions:
+            status = "no_session_evidence"
+            next_action = "no_action_default_disabled"
         elif active:
             status = "clear_read_only_evidence"
             next_action = "monitor_only_no_broker_submission"
@@ -146,6 +193,10 @@ class ControlledExecutionOperatorViewService:
             "sessions": projected_sessions,
             "latest_submission": latest_intent,
             "latest_reconciliation": latest_reconciliation,
+            "order_journey_count": len(submission_intents),
+            "visible_order_journey_count": len(recent_order_journeys),
+            "latest_order_journey": latest_order_journey,
+            "recent_order_journeys": recent_order_journeys,
             "source_blockers": unique_source_blockers,
             "reads_persisted_facts_only": True,
             "provider_contact_performed": False,
@@ -163,6 +214,7 @@ class ControlledExecutionOperatorViewService:
                 "This view projects persisted evidence and never contacts a broker or provider.",
                 "Current-window status is not runtime authentication and does not authorize submission or cancellation.",
                 "Remaining capital values are reservation headroom; remaining order slots count persisted admissions only.",
+                "Order journeys project persisted submission, reconciliation, terminal-clearance, ledger-posting, and correction facts without applying any transition.",
                 "A paused session has no resume action; recovery requires a separate signed equal-or-narrower replacement.",
             ],
         }
@@ -227,6 +279,7 @@ class ControlledExecutionOperatorViewService:
         admissions: list[dict[str, Any]],
         gate_snapshot: dict[str, Any],
         intents_by_order: dict[str, list[dict[str, Any]]],
+        cleared_intent_ids: frozenset[str],
         reconciliation_by_order: dict[str, dict[str, Any]],
         as_of: datetime,
         source_blockers: list[str],
@@ -311,6 +364,7 @@ class ControlledExecutionOperatorViewService:
         ]
         if any(
             str(item.get("status") or "") in _UNRECONCILED_SUBMISSION_STATUSES
+            and str(item.get("submit_intent_id") or "") not in cleared_intent_ids
             for item in relevant_intents
         ):
             blockers.append("unreconciled_controlled_submission_present")
@@ -490,6 +544,142 @@ def _reconciliation_run_summary(row: dict[str, Any]) -> dict[str, Any] | None:
         "item_count": int(row.get("item_count") or 0),
         "open_item_count": int(row.get("open_item_count") or 0),
         "updated_at": str(row.get("updated_at") or ""),
+    }
+
+
+def _order_journey_summary(
+    *,
+    intent: dict[str, Any],
+    reconciliation: dict[str, Any],
+    clearance: dict[str, Any],
+    posting_by_clearance: dict[str, dict[str, Any]],
+    correction_by_posting: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    submit_intent_id = str(intent.get("submit_intent_id") or "")
+    order_id = str(intent.get("order_id") or "")
+    submission_status = str(intent.get("status") or "")
+    reconciliation_item = _json_object(reconciliation.get("item"))
+    reconciliation_run = _json_object(reconciliation.get("run"))
+    clearance_id = str(clearance.get("clearance_id") or "")
+    posting = posting_by_clearance.get(clearance_id, {}) if clearance_id else {}
+    posting_id = str(posting.get("posting_id") or "")
+    correction = correction_by_posting.get(posting_id, {}) if posting_id else {}
+
+    suggested_action = str(reconciliation_item.get("suggested_action") or "")
+    submitted = submission_status == "submitted"
+    if correction:
+        status = "ledger_corrected_account_truth_review_required"
+        next_action = "review_account_truth_after_ledger_correction"
+    elif posting:
+        status = "ledger_posted_account_truth_review_required"
+        next_action = "review_account_truth_after_ledger_posting"
+    elif clearance:
+        status = "terminal_cleared_posting_review_required"
+        next_action = "preview_reconciled_ledger_posting"
+    elif submission_status == "submission_unknown":
+        status = "submission_unknown"
+        next_action = "query_submission_outcome_without_resubmit"
+    elif submission_status == "prepared":
+        status = "prepared_outcome_review_required"
+        next_action = "query_prepared_submission_outcome_without_resubmit"
+    elif submission_status == "rejected":
+        status = "submission_rejected"
+        next_action = "review_rejection_evidence_without_retry"
+    elif not reconciliation_item:
+        status = "execution_reconciliation_required"
+        next_action = "run_or_review_execution_reconciliation"
+    elif suggested_action and suggested_action != "no_action":
+        status = "execution_reconciliation_review_required"
+        next_action = "review_execution_reconciliation"
+    else:
+        status = "terminal_clearance_review_required"
+        next_action = "preview_terminal_reconciliation_clearance"
+
+    reconciliation_status = str(
+        reconciliation_item.get("item_status")
+        or reconciliation_item.get("status")
+        or (
+            "missing"
+            if submitted and not reconciliation_item
+            else ("not_applicable" if not reconciliation_item else "recorded")
+        )
+    )
+    correction_status = (
+        str(correction.get("status") or "recorded")
+        if correction
+        else ("not_required" if posting else "not_applicable")
+    )
+    return {
+        "submit_intent_id": submit_intent_id,
+        "order_id": order_id,
+        "broker_order_id": str(intent.get("broker_order_id") or ""),
+        "client_order_id": str(intent.get("client_order_id") or ""),
+        "gateway_id": str(intent.get("gateway_id") or ""),
+        "status": status,
+        "next_operator_action": next_action,
+        "prepared_at": str(intent.get("prepared_at") or ""),
+        "updated_at": str(intent.get("updated_at") or ""),
+        "last_recovery_at": str(intent.get("last_recovery_at") or ""),
+        "stages": [
+            {
+                "key": "controlled_submission",
+                "status": submission_status or "missing",
+                "evidence_id": submit_intent_id,
+                "complete": submission_status in {"submitted", "rejected"},
+                "required": True,
+            },
+            {
+                "key": "execution_reconciliation",
+                "status": reconciliation_status,
+                "evidence_id": str(reconciliation_run.get("run_id") or ""),
+                "complete": bool(reconciliation_item)
+                and suggested_action == "no_action",
+                "required": submitted,
+            },
+            {
+                "key": "terminal_reconciliation_clearance",
+                "status": str(
+                    clearance.get("status")
+                    or ("missing" if submitted else "not_applicable")
+                ),
+                "evidence_id": clearance_id,
+                "complete": bool(clearance),
+                "required": submitted,
+                "terminal_status": str(clearance.get("terminal_status") or ""),
+                "fill_count": int(clearance.get("fill_count") or 0),
+                "fill_quantity": str(clearance.get("fill_quantity") or ""),
+                "cancelled_quantity": str(clearance.get("cancelled_quantity") or ""),
+            },
+            {
+                "key": "reconciled_ledger_posting",
+                "status": str(
+                    posting.get("status")
+                    or ("not_applied" if clearance else "not_applicable")
+                ),
+                "evidence_id": posting_id,
+                "complete": bool(posting),
+                "required": bool(clearance),
+                "ledger_entry_count": int(posting.get("ledger_entry_count") or 0),
+                "post_ledger_cutoff_id": int(posting.get("post_ledger_cutoff_id") or 0),
+            },
+            {
+                "key": "append_only_ledger_correction",
+                "status": correction_status,
+                "evidence_id": str(correction.get("correction_id") or ""),
+                "complete": bool(correction),
+                "required": False,
+                "reason_code": str(correction.get("reason_code") or ""),
+                "post_ledger_cutoff_id": int(
+                    correction.get("post_ledger_cutoff_id") or 0
+                ),
+            },
+        ],
+        "reads_persisted_facts_only": True,
+        "provider_contact_performed": False,
+        "broker_submission_performed": False,
+        "broker_cancel_performed": False,
+        "ledger_mutation_performed": False,
+        "authority_changed": False,
     }
 
 

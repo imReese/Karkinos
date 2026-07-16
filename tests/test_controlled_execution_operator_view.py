@@ -98,6 +98,18 @@ class _PersistedFactFixture:
         self.calls.append("submission_intents")
         return []
 
+    def list_controlled_submission_reconciliation_clearances_sync(self, *, limit: int):
+        self.calls.append("terminal_clearances")
+        return []
+
+    def list_controlled_submission_ledger_postings_sync(self, *, limit: int):
+        self.calls.append("ledger_postings")
+        return []
+
+    def list_controlled_submission_ledger_corrections_sync(self, *, limit: int):
+        self.calls.append("ledger_corrections")
+        return []
+
     def list_execution_reconciliation_runs_sync(self, *, limit: int):
         self.calls.append("reconciliation_runs")
         return [
@@ -170,6 +182,9 @@ def test_operator_view_projects_bounded_capital_and_remaining_slots_without_prov
         "admissions",
         "gate_snapshots",
         "submission_intents",
+        "terminal_clearances",
+        "ledger_postings",
+        "ledger_corrections",
         "reconciliation_runs",
         "reconciliation_items:execution-reconciliation:2026-07-13",
         f"pause_state:{db.session_id}",
@@ -206,6 +221,143 @@ def test_operator_view_empty_database_stays_default_closed(tmp_path):
     assert summary["broker_submission_enabled"] is False
     assert summary["broker_cancel_enabled"] is False
     assert summary["automatic_scale_up_enabled"] is False
+
+
+class _PostedOrderJourneyFixture(_PersistedFactFixture):
+    submit_intent_id = "1" * 64
+    clearance_id = "2" * 64
+    posting_id = "3" * 64
+
+    def list_controlled_broker_submit_intents_sync(self, *, limit: int):
+        self.calls.append("submission_intents")
+        return [
+            {
+                "submit_intent_id": self.submit_intent_id,
+                "order_id": "OMS-FIXTURE-1",
+                "gateway_id": "fixture-write-edge",
+                "client_order_id": "KARKINOS-FIXTURE-1",
+                "status": "submitted",
+                "prepared_at": "2026-07-13T09:58:00+00:00",
+                "updated_at": "2026-07-13T09:58:02+00:00",
+            }
+        ]
+
+    def list_controlled_submission_reconciliation_clearances_sync(self, *, limit: int):
+        self.calls.append("terminal_clearances")
+        return [
+            {
+                "clearance_id": self.clearance_id,
+                "submit_intent_id": self.submit_intent_id,
+                "order_id": "OMS-FIXTURE-1",
+                "status": "cleared",
+                "terminal_status": "filled",
+                "fill_count": 1,
+                "fill_quantity": "100",
+                "cancelled_quantity": "0",
+                "cleared_at": "2026-07-13T09:59:00+00:00",
+            }
+        ]
+
+    def list_controlled_submission_ledger_postings_sync(self, *, limit: int):
+        self.calls.append("ledger_postings")
+        return [
+            {
+                "posting_id": self.posting_id,
+                "clearance_id": self.clearance_id,
+                "submit_intent_id": self.submit_intent_id,
+                "order_id": "OMS-FIXTURE-1",
+                "status": "applied",
+                "ledger_entry_count": 2,
+                "post_ledger_cutoff_id": 42,
+                "applied_at": "2026-07-13T09:59:30+00:00",
+            }
+        ]
+
+
+def test_operator_view_unifies_terminal_order_journey_without_reopening_cleared_intent():
+    db = _PostedOrderJourneyFixture()
+
+    summary = ControlledExecutionOperatorViewService(
+        db=db,
+        clock=lambda: datetime(2026, 7, 13, 10, 0, tzinfo=timezone.utc),
+    ).summary()
+
+    assert summary["schema_version"] == (
+        "karkinos.controlled_execution_operator_view.v2"
+    )
+    assert summary["status"] == "order_journey_review_required"
+    assert summary["next_operator_action"] == (
+        "review_account_truth_after_ledger_posting"
+    )
+    assert summary["order_journey_count"] == 1
+    journey = summary["latest_order_journey"]
+    assert journey["status"] == "ledger_posted_account_truth_review_required"
+    assert [stage["complete"] for stage in journey["stages"]] == [
+        True,
+        True,
+        True,
+        True,
+        False,
+    ]
+    assert [stage["required"] for stage in journey["stages"]] == [
+        True,
+        True,
+        True,
+        True,
+        False,
+    ]
+    assert journey["stages"][2]["terminal_status"] == "filled"
+    assert journey["stages"][3]["ledger_entry_count"] == 2
+    assert journey["stages"][3]["post_ledger_cutoff_id"] == 42
+    assert journey["ledger_mutation_performed"] is False
+    assert journey["provider_contact_performed"] is False
+    assert summary["sessions"][0]["status"] == "current_clear_evidence"
+    assert (
+        "unreconciled_controlled_submission_present"
+        not in summary["sessions"][0]["blockers"]
+    )
+
+
+class _UnknownOrderJourneyFixture(_PersistedFactFixture):
+    def list_controlled_broker_submit_intents_sync(self, *, limit: int):
+        self.calls.append("submission_intents")
+        return [
+            {
+                "submit_intent_id": "4" * 64,
+                "order_id": "OMS-FIXTURE-1",
+                "gateway_id": "fixture-write-edge",
+                "status": "submission_unknown",
+                "prepared_at": "2026-07-13T09:58:00+00:00",
+            }
+        ]
+
+
+def test_operator_view_unknown_outcome_requires_query_only_recovery():
+    summary = ControlledExecutionOperatorViewService(
+        db=_UnknownOrderJourneyFixture(),
+        clock=lambda: datetime(2026, 7, 13, 10, 0, tzinfo=timezone.utc),
+    ).summary()
+
+    journey = summary["latest_order_journey"]
+    assert journey["status"] == "submission_unknown"
+    assert journey["next_operator_action"] == (
+        "query_submission_outcome_without_resubmit"
+    )
+    assert journey["broker_submission_performed"] is False
+    assert journey["broker_cancel_performed"] is False
+    assert journey["authority_changed"] is False
+    assert [stage["status"] for stage in journey["stages"][1:]] == [
+        "matched",
+        "not_applicable",
+        "not_applicable",
+        "not_applicable",
+    ]
+    assert [stage["required"] for stage in journey["stages"][1:]] == [
+        False,
+        False,
+        False,
+        False,
+    ]
 
 
 def test_operator_view_unavailable_persisted_sources_fail_closed():
