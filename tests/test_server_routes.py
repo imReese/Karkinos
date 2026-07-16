@@ -1419,6 +1419,36 @@ def test_load_latest_snapshot_marks_tushare_fund_permission_fallback(monkeypatch
     assert payload["stale_reason"] == "tushare_fund_nav_permission_denied"
 
 
+def test_load_latest_snapshot_propagates_the_final_fallback_error(monkeypatch):
+    from core.types import AssetClass
+    from server.routes import market as market_routes
+
+    class TushareWithoutIndexSupport:
+        def fetch_latest(self, symbol, asset_class):
+            return None
+
+    class AkshareTimeout:
+        def fetch_latest(self, symbol, asset_class):
+            raise TimeoutError("provider fetch_latest timed out after 3.0s")
+
+    monkeypatch.setattr(
+        "data.manager.build_sources",
+        lambda data_source, tushare_token: {
+            "tushare": TushareWithoutIndexSupport(),
+            "akshare": AkshareTimeout(),
+        },
+    )
+
+    with pytest.raises(TimeoutError, match="timed out after 3.0s"):
+        market_routes._load_latest_snapshot_from_provider(
+            SimpleNamespace(
+                config=SimpleNamespace(data_source="tushare", tushare_token="token")
+            ),
+            "399001",
+            AssetClass.INDEX,
+        )
+
+
 def test_market_data_health_includes_ledger_holdings_not_in_scheduler(monkeypatch):
     from server.routes import market as market_routes
 

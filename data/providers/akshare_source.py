@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
-import re
 import logging
 import os
+import re
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
@@ -705,7 +705,13 @@ class AKShareSource(DataSource):
                 )
 
             elif asset_class == AssetClass.INDEX:
-                df = self._call_with_retry(ak.stock_zh_index_spot_em)
+                index_series = (
+                    "深证系列指数" if str(symbol).startswith("399") else "上证系列指数"
+                )
+                df = self._call_with_retry(
+                    ak.stock_zh_index_spot_em,
+                    symbol=index_series,
+                )
                 row = df[df["代码"] == str(symbol)]
                 if row.empty:
                     return None

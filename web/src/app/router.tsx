@@ -749,6 +749,78 @@ function actionableQuoteDiagnostics(items: QuoteDiagnosticItem[]) {
   });
 }
 
+function quoteDiagnosticReviewSummary(
+  diagnostics: QuoteDiagnosticItem[],
+  locale: 'en' | 'zh',
+) {
+  const fundNavCount = diagnostics.filter((item) => {
+    const status = normalizeMarketDataStatus(item.quote_status);
+    const staleReason = normalizeMarketDataStatus(item.stale_reason);
+    return (
+      item.asset_class === 'fund' &&
+      (item.quote_source?.toLowerCase() === 'eastmoney_fund_estimate' ||
+        status === 'confirmed_nav_missing' ||
+        status === 'estimated' ||
+        staleReason === 'confirmed_nav_missing')
+    );
+  }).length;
+  const indexQuoteCount = diagnostics.filter((item) => {
+    const status = normalizeMarketDataStatus(item.quote_status);
+    return (
+      item.asset_class === 'index' &&
+      (!status || ['error', 'missing', 'unknown'].includes(status))
+    );
+  }).length;
+  const otherCount = Math.max(
+    diagnostics.length - fundNavCount - indexQuoteCount,
+    0,
+  );
+
+  if (locale === 'zh') {
+    const detail = [
+      fundNavCount > 0
+        ? `${fundNavCount} 只基金当前仅有盘中估值；等待确认净值发布后再显式同步。`
+        : null,
+      indexQuoteCount > 0
+        ? `${indexQuoteCount} 个指数缺少持久化行情；在 Market 显式刷新并检查失败批次。`
+        : null,
+      otherCount > 0 ? `${otherCount} 个其他数据状态需要复核。` : null,
+    ]
+      .filter(Boolean)
+      .join(' ');
+    const meta = [
+      fundNavCount > 0 ? `${fundNavCount} 基金净值` : null,
+      indexQuoteCount > 0 ? `${indexQuoteCount} 指数行情` : null,
+      otherCount > 0 ? `${otherCount} 其他` : null,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    return { detail, meta };
+  }
+
+  const detail = [
+    fundNavCount > 0
+      ? `${fundNavCount} funds have intraday estimates only; wait for confirmed NAV, then run an explicit sync.`
+      : null,
+    indexQuoteCount > 0
+      ? `${indexQuoteCount} indices lack persisted quotes; run an explicit refresh in Market and review failed batches.`
+      : null,
+    otherCount > 0
+      ? `${otherCount} other data state${otherCount === 1 ? ' needs' : 's need'} review.`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(' ');
+  const meta = [
+    fundNavCount > 0 ? `${fundNavCount} fund NAV` : null,
+    indexQuoteCount > 0 ? `${indexQuoteCount} index quotes` : null,
+    otherCount > 0 ? `${otherCount} other` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  return { detail, meta };
+}
+
 function decisionCandidateDisplayName(candidate: DecisionCandidate) {
   return (
     candidate.display_name ??
@@ -2021,6 +2093,7 @@ function DashboardTodayQueue({
   const labels = copy.overview.dashboard;
   const quoteStatus = overview.quote_status ?? marketHealth?.source_health;
   const diagnostics = actionableQuoteDiagnostics(quoteDiagnostics);
+  const diagnosticSummary = quoteDiagnosticReviewSummary(diagnostics, locale);
   const dataNeedsReview =
     diagnostics.length > 0 ||
     isUnconfirmedMarketDataStatus(quoteStatus) ||
@@ -2043,7 +2116,7 @@ function DashboardTodayQueue({
   );
   const dataMeta = dataNeedsReview
     ? diagnostics.length > 0
-      ? labels.affectedCount(diagnostics.length)
+      ? diagnosticSummary.meta
       : readableStaleReason
     : formatPublicStatus(quoteStatus, locale);
   const strategyReady = canUseStrategyContribution(strategyContribution);
@@ -2220,7 +2293,9 @@ function DashboardTodayQueue({
       key: 'data',
       title: dataNeedsReview ? labels.dataNeedsReview : labels.dataUsable,
       detail: dataNeedsReview
-        ? marketDataNextAction
+        ? diagnostics.length > 0
+          ? diagnosticSummary.detail
+          : marketDataNextAction
         : `${labels.valuationTime}: ${formatTimestamp(
             overview.valuation_timestamp,
           )}`,

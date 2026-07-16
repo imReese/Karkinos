@@ -2801,8 +2801,60 @@ test('counts duplicate portfolio and market diagnostics once per instrument', as
   renderOverviewPage({ installFetch: false });
 
   const queue = await screen.findByTestId('overview-today-queue');
-  expect(within(queue).getByText('1 holdings need review')).toBeTruthy();
-  expect(within(queue).queryByText('2 holdings need review')).toBeNull();
+  expect(
+    within(queue).getByText('1 other data state needs review.'),
+  ).toBeTruthy();
+  expect(within(queue).getByText('1 other')).toBeTruthy();
+  expect(within(queue).queryByText('2 other')).toBeNull();
+});
+
+test('explains fund NAV and missing index remediation separately', async () => {
+  window.localStorage.setItem('karkinos.locale', 'zh');
+  installOverviewFetchMock(
+    {},
+    {
+      snapshot: {
+        ...portfolioSnapshot,
+        positions: ['018125', '012710', '026539'].map((symbol) => ({
+          symbol,
+          display_name: `Fund ${symbol}`,
+          asset_class: 'fund',
+          quantity: 100,
+          quote_status: 'stale',
+          quote_source: 'eastmoney_fund_estimate',
+          stale_reason: 'confirmed_fund_nav_missing_estimate_only',
+        })),
+      },
+      marketQuotes: ['399001', '399006'].map((symbol) => ({
+        symbol,
+        display_name: `Index ${symbol}`,
+        asset_class: 'index',
+        timestamp: null,
+        price: null,
+        quote_status: 'missing',
+        quote_source: null,
+        quote_age_seconds: null,
+        stale_reason: 'no_real_data_available',
+        last_refresh_attempt: null,
+        last_refresh_error: null,
+      })),
+    },
+  );
+
+  renderOverviewPage({ installFetch: false });
+
+  const queue = await screen.findByTestId('overview-today-queue');
+  expect(
+    within(queue).getByText(
+      /3 只基金当前仅有盘中估值；等待确认净值发布后再显式同步。/,
+    ),
+  ).toBeTruthy();
+  expect(
+    within(queue).getByText(
+      /2 个指数缺少持久化行情；在 Market 显式刷新并检查失败批次。/,
+    ),
+  ).toBeTruthy();
+  expect(within(queue).getByText('3 基金净值 · 2 指数行情')).toBeTruthy();
 });
 
 test('keeps the return calendar inside the performance analysis card', async () => {
