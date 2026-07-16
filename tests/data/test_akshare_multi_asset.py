@@ -315,15 +315,18 @@ class TestAKShareFetchLatest:
             ("399006", "深证系列指数"),
         ],
     )
+    @patch("akshare.stock_zh_index_spot_sina")
     @patch("akshare.stock_zh_index_spot_em")
     def test_fetch_latest_index_selects_the_matching_exchange_series(
         self,
         mock_ak,
+        mock_sina,
         symbol,
         series_name,
         source,
     ):
         """深市指数不能继续从 AKShare 默认的上证指数列表中查找。"""
+        mock_sina.return_value = pd.DataFrame({"代码": []})
         mock_ak.return_value = pd.DataFrame(
             {
                 "代码": [symbol],
@@ -340,6 +343,80 @@ class TestAKShareFetchLatest:
         assert result["price"] == 1234.56
         assert result["display_name"] == "测试指数"
         mock_ak.assert_called_once_with(symbol=series_name)
+
+    @patch("akshare.stock_zh_index_daily_tx")
+    @patch("akshare.stock_zh_index_spot_sina")
+    @patch("akshare.stock_zh_index_spot_em")
+    def test_fetch_latest_index_uses_sina_with_explicit_daily_provenance(
+        self,
+        mock_eastmoney,
+        mock_sina,
+        mock_daily,
+        source,
+    ):
+        mock_sina.return_value = pd.DataFrame(
+            {
+                "代码": ["sz399001"],
+                "名称": ["深证成指"],
+                "最新价": [14488.654],
+                "涨跌额": [-290.742],
+                "涨跌幅": [-1.967],
+                "昨收": [14779.396],
+                "成交量": [66586933111.0],
+                "成交额": [1279353199758.0],
+            }
+        )
+        mock_daily.return_value = pd.DataFrame(
+            {
+                "date": pd.to_datetime(["2026-01-14", "2026-01-15"]).date,
+                "close": [14779.396, 14488.654],
+                "amount": [688984096.0, 665968453.0],
+            }
+        )
+
+        result = source.fetch_latest(Symbol("399001"), AssetClass.INDEX)
+
+        assert result is not None
+        assert result["price"] == pytest.approx(14488.654)
+        assert result["previous_close"] == pytest.approx(14779.396)
+        assert result["change"] == pytest.approx(-290.742)
+        assert result["change_percent"] == pytest.approx(-290.742 / 14779.396)
+        assert result["timestamp"] == "2026-01-15T15:00:00+08:00"
+        assert result["quote_source"] == "akshare_index_daily_tx"
+        assert result["display_name"] == "深证成指"
+        mock_eastmoney.assert_not_called()
+        mock_sina.assert_called_once_with()
+        mock_daily.assert_called_once()
+
+    @patch("akshare.stock_zh_index_daily_tx")
+    def test_index_daily_fallback_does_not_publish_an_incomplete_session(
+        self,
+        mock_daily,
+        source,
+    ):
+        mock_daily.return_value = pd.DataFrame(
+            {
+                "date": pd.to_datetime(["2026-07-15", "2026-07-16"]).date,
+                "close": [14779.396, 14488.654],
+                "amount": [688984096.0, 665968453.0],
+            }
+        )
+
+        row = source._latest_completed_index_daily_row(
+            __import__("akshare"),
+            Symbol("399001"),
+            display_name="深证成指",
+            now=datetime.fromisoformat("2026-07-16T10:30:00+08:00"),
+        )
+
+        assert row is not None
+        assert row["最新价"] == pytest.approx(14779.396)
+        assert row["时间"] == "2026-07-15T15:00:00+08:00"
+        mock_daily.assert_called_once_with(
+            symbol="sz399001",
+            start_date="20260701",
+            end_date="20260715",
+        )
 
     @patch("akshare.fund_etf_spot_em")
     @patch("data.providers.akshare_source.AKShareSource._open_end_fund_name_map")

@@ -165,6 +165,26 @@ M3 correction assumptions and risk record:
   and granting no OMS, broker, risk, kill-switch, AI/strategy, or capital
   capability.
 
+Market-review remediation assumptions and risk record:
+
+- The configured default data source is not assumed to support every asset
+  class. TuShare latest quotes remain limited to stocks and open-end funds;
+  index refreshes route directly to the already registered AKShare edge source.
+  AKShare's documented Sina index feed is preferred when the Eastmoney feed is
+  unavailable, but a persisted close is published only after the same adapter's
+  daily feed supplies a completed trading date. Intraday rows without a
+  trustworthy as-of remain provisional/stale.
+- Deterministic validation covers capability-aware source selection, bounded
+  timeouts, Shanghai 15:00 completion, previous-close/change derivation, Sina
+  code prefixes, Eastmoney fallback, and explicit quote-source provenance.
+  Local acceptance additionally used auditable manual refresh runs for 399001
+  and 399006 and verified persisted `2026-07-16T15:00:00+08:00` closes.
+- Risk impact is medium at the market-evidence boundary: the change can publish
+  valuation inputs, but it never changes ledger, OMS, risk, kill switch,
+  capital, or broker permissions. Missing timestamps, incomplete sessions, and
+  provider failures continue to fail closed; fund estimates remain explicitly
+  unconfirmed until a confirmed NAV is persisted.
+
 Remaining release work is owned by the roadmap: one real adapter, read-only
 soak, real cancel/unknown recovery, signed submission/correction UI,
 broader fault injection and real-evidence acceptance, the rest of the operator

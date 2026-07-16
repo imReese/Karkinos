@@ -55,6 +55,7 @@ _QUOTE_REFRESH_ATTEMPTS: dict[tuple[str, str], datetime] = {}
 _QUOTE_REFRESH_ERRORS: dict[tuple[str, str], str | None] = {}
 _MANUAL_REFRESH_TIMEOUT_SECONDS = 8.0
 _PROVIDER_REFRESH_TIMEOUT_SECONDS = 3.0
+_INDEX_PROVIDER_REFRESH_TIMEOUT_SECONDS = 7.0
 _KLINE_FETCH_TIMEOUT_SECONDS = 3.0
 _BAR_BACKFILL_TIMEOUT_SECONDS = 60.0
 _BLOCKING_FETCH_EXECUTOR = ThreadPoolExecutor(
@@ -1492,12 +1493,25 @@ def _load_latest_snapshot_from_provider(
         data_source=data_source,
         tushare_token=tushare_token,
     )
-    preferred = sources.get(data_source, sources["akshare"])
-    source_chain = [(data_source if data_source in sources else "akshare", preferred)]
-    if data_source != "akshare":
+    configured_source_name = data_source if data_source in sources else "akshare"
+    preferred = sources.get(configured_source_name, sources["akshare"])
+    source_chain = [(configured_source_name, preferred)]
+    if configured_source_name != "akshare":
         akshare = sources.get("akshare")
         if akshare is not None and akshare is not preferred:
             source_chain.append(("akshare", akshare))
+
+    # TuShare's latest-quote adapter supports stocks and open-end funds only.
+    # Route unsupported asset classes directly to the registered AKShare edge
+    # source so one manual refresh does not spend its bounded time budget on a
+    # provider that cannot return the requested instrument type.
+    if configured_source_name == "tushare" and asset_class in {
+        AssetClass.INDEX,
+        AssetClass.GOLD,
+        AssetClass.BOND,
+    }:
+        akshare = sources.get("akshare")
+        source_chain = [("akshare", akshare)] if akshare is not None else []
 
     snapshot = None
     selected_source_name = data_source
@@ -1510,7 +1524,11 @@ def _load_latest_snapshot_from_provider(
                 source,
                 symbol,
                 asset_class,
-                timeout_seconds=_PROVIDER_REFRESH_TIMEOUT_SECONDS,
+                timeout_seconds=(
+                    _INDEX_PROVIDER_REFRESH_TIMEOUT_SECONDS
+                    if asset_class == AssetClass.INDEX
+                    else _PROVIDER_REFRESH_TIMEOUT_SECONDS
+                ),
             )
             last_error = None
         except Exception as exc:
@@ -1548,7 +1566,7 @@ def _load_latest_snapshot_from_provider(
         "market": snapshot.get("market"),
         "quote_status": "live",
         "provider_status": (
-            "fallback" if selected_source_name != primary_source_name else "live"
+            "fallback" if selected_source_name != configured_source_name else "live"
         ),
         "stale_reason": fallback_reason_code,
         "nav_date": snapshot.get("nav_date")

@@ -1439,7 +1439,7 @@ def test_load_latest_snapshot_propagates_the_final_fallback_error(monkeypatch):
         },
     )
 
-    with pytest.raises(TimeoutError, match="timed out after 3.0s"):
+    with pytest.raises(TimeoutError, match="timed out after 7.0s"):
         market_routes._load_latest_snapshot_from_provider(
             SimpleNamespace(
                 config=SimpleNamespace(data_source="tushare", tushare_token="token")
@@ -1447,6 +1447,72 @@ def test_load_latest_snapshot_propagates_the_final_fallback_error(monkeypatch):
             "399001",
             AssetClass.INDEX,
         )
+
+
+def test_load_latest_snapshot_routes_index_to_capable_source_with_bounded_timeout(
+    monkeypatch,
+):
+    from core.types import AssetClass
+    from server.routes import market as market_routes
+
+    class UnsupportedTushare:
+        def fetch_latest(self, symbol, asset_class):
+            raise AssertionError("unsupported provider must not receive index request")
+
+    class AkshareIndex:
+        def fetch_latest(self, symbol, asset_class):
+            assert symbol == "399001"
+            assert asset_class == AssetClass.INDEX
+            return {
+                "price": 11234.5,
+                "volume": 123456.0,
+                "timestamp": "2026-07-16T15:00:00+08:00",
+                "quote_source": "akshare_index_spot",
+                "provider_name": "akshare",
+            }
+
+    tushare = UnsupportedTushare()
+    akshare = AkshareIndex()
+    provider_calls: list[tuple[object, str, AssetClass, float]] = []
+
+    monkeypatch.setattr(
+        "data.manager.build_sources",
+        lambda data_source, tushare_token: {
+            "tushare": tushare,
+            "akshare": akshare,
+        },
+    )
+
+    def fake_fetch(source, symbol, asset_class, *, timeout_seconds):
+        provider_calls.append((source, symbol, asset_class, timeout_seconds))
+        return source.fetch_latest(symbol, asset_class)
+
+    monkeypatch.setattr(
+        market_routes,
+        "_fetch_provider_latest_with_timeout",
+        fake_fetch,
+    )
+
+    payload = market_routes._load_latest_snapshot_from_provider(
+        SimpleNamespace(
+            config=SimpleNamespace(data_source="tushare", tushare_token="token")
+        ),
+        "399001",
+        AssetClass.INDEX,
+    )
+
+    assert provider_calls == [
+        (
+            akshare,
+            "399001",
+            AssetClass.INDEX,
+            market_routes._INDEX_PROVIDER_REFRESH_TIMEOUT_SECONDS,
+        )
+    ]
+    assert payload is not None
+    assert payload["provider_name"] == "akshare"
+    assert payload["provider_status"] == "fallback"
+    assert payload["quote_source"] == "akshare_index_spot"
 
 
 def test_market_data_health_includes_ledger_holdings_not_in_scheduler(monkeypatch):
