@@ -76,6 +76,14 @@ cross-order interlock without posting the ledger; posting remains a separate
 exactly-once transaction. The private key never enters Karkinos, and neither
 path can submit or cancel broker orders or change capital authority.
 
+For a controlled order whose latest exact persisted lifecycle is still open or
+partially filled, the same journey can prepare a provider-neutral manual
+cancellation evidence package. It binds both broker/client order ids and the
+latest lifecycle fingerprint, rechecks evidence at export, and remains a
+copy-only human handoff. Karkinos does not contact the broker or expose a cancel
+action; a newer ingested lifecycle observation is required before cancellation
+can be treated as fact.
+
 See [the roadmap](docs/ROADMAP.md) for priorities and release gates. Completed
 implementation evidence lives in
 [the implementation log](docs/IMPLEMENTATION_LOG.md), not in this README.

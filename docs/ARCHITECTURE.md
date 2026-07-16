@@ -192,6 +192,18 @@ Strategy code cannot reach the gateway. A prepared, accepted-but-unreconciled,
 or unknown intent blocks a different order. Unknown outcomes are query-only and
 are never automatically resubmitted.
 
+An open exact-identity lifecycle may be projected through
+`karkinos.manual_broker_cancellation_ticket.v1`. This provider-neutral boundary
+prepares a copyable human action package from the persisted controlled intent,
+OMS order fingerprint, broker/client order ids, and latest lifecycle
+observation. Export re-runs the preview and rejects a stale fingerprint. It
+does not register or call an adapter, issue a cancellation, mutate OMS/ledger,
+or change risk, kill switch, interlock, or capital authority. The operator must
+act in a separately reviewed broker interface; only a newer ingested lifecycle
+observation plus Account Truth/reconciliation evidence can prove cancellation.
+The existing live-cancel endpoint remains disabled, so this package is not the
+M2 explicit-cancel command or a claim of provider support.
+
 Reconciliation clearance uses
 `karkinos.controlled_submission_reconciliation_clearance.v3` as the canonical
 exact-terminal contract. A signed command may record a full fill, a no-fill

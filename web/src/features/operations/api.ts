@@ -636,6 +636,82 @@ export type ControlledBrokerRecoveryResult = {
   production_ledger_mutated: false;
 };
 
+export type ManualBrokerCancellationSafety = {
+  reads_persisted_facts_only: true;
+  provider_contact_performed: false;
+  broker_submission_performed: false;
+  broker_cancel_performed: false;
+  cancellation_proven: false;
+  oms_mutated: false;
+  production_ledger_mutated: false;
+  risk_state_mutated: false;
+  kill_switch_mutated: false;
+  capital_authority_changed: false;
+  authorizes_submission: false;
+  authorizes_cancellation: false;
+  releases_submission_interlock: false;
+};
+
+export type ManualBrokerCancellationTicketPreview = {
+  schema_version: 'karkinos.manual_broker_cancellation_ticket.v1';
+  submit_intent_id: string;
+  submit_fingerprint: string;
+  order_id: string;
+  order_fingerprint: string;
+  provider: string;
+  identity: {
+    gateway_id: string;
+    account_alias: string;
+    broker_order_id: string;
+    client_order_id: string;
+  };
+  order: {
+    symbol: string;
+    side: string;
+    asset_class: string;
+    order_type: string;
+    limit_price: string | null;
+    order_quantity: string;
+    lifecycle_status: string;
+    filled_quantity: string;
+    cancelled_quantity: string;
+    remaining_quantity: string;
+  };
+  lifecycle_evidence: {
+    observation_id: string;
+    evidence_fingerprint: string;
+    source_sequence: number;
+    captured_at: string;
+    source_name: string;
+    collector_run_id: string;
+    collector_status: string;
+  };
+  ticket_fingerprint: string;
+  generated_at: string;
+  status: string;
+  ready: boolean;
+  blockers: string[];
+  required_acknowledgement: 'prepare_manual_broker_cancellation_ticket_without_broker_contact';
+  human_steps: string[];
+  assumptions: string[];
+  risk_impact: string;
+  safety: ManualBrokerCancellationSafety;
+  limitations: string[];
+};
+
+export type ManualBrokerCancellationTicketExport = {
+  schema_version: 'karkinos.manual_broker_cancellation_ticket_export.v1';
+  status: 'export_ready';
+  ticket_fingerprint: string;
+  export_fingerprint: string;
+  filename: string;
+  content_type: 'application/json';
+  content: string;
+  artifact: Record<string, unknown>;
+  export_performed: true;
+  safety: ManualBrokerCancellationSafety;
+};
+
 export type ControlledSubmissionClearanceFill = {
   fill_id: string;
   broker_event_id: string;
@@ -1335,6 +1411,35 @@ export function useControlledBrokerRecoveryPreviewMutation() {
           submitIntentId,
         )}/recovery/preview`,
       ),
+  });
+}
+
+export function useManualBrokerCancellationTicketPreviewMutation() {
+  return useMutation({
+    mutationFn: ({ submitIntentId }: { submitIntentId: string }) =>
+      postJson<ManualBrokerCancellationTicketPreview>(
+        `/api/automation/controlled-broker-submission/intents/${encodeURIComponent(
+          submitIntentId,
+        )}/manual-cancellation-ticket/preview`,
+      ),
+  });
+}
+
+export function useManualBrokerCancellationTicketExportMutation() {
+  return useMutation({
+    mutationFn: (request: {
+      submitIntentId: string;
+      ticket_fingerprint: string;
+      acknowledgement: 'prepare_manual_broker_cancellation_ticket_without_broker_contact';
+    }) => {
+      const { submitIntentId, ...body } = request;
+      return postJson<ManualBrokerCancellationTicketExport>(
+        `/api/automation/controlled-broker-submission/intents/${encodeURIComponent(
+          submitIntentId,
+        )}/manual-cancellation-ticket/export`,
+        body,
+      );
+    },
   });
 }
 

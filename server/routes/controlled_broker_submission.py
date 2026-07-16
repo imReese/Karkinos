@@ -19,6 +19,10 @@ from server.services.controlled_submission_reconciliation_clearance import (
     ControlledSubmissionReconciliationClearanceRejected,
     ControlledSubmissionReconciliationClearanceService,
 )
+from server.services.manual_broker_cancellation_evidence import (
+    ManualBrokerCancellationEvidenceRejected,
+    ManualBrokerCancellationEvidenceService,
+)
 
 
 class ControlledBrokerSubmissionPreviewRequest(BaseModel):
@@ -99,6 +103,19 @@ class ControlledSubmissionClearanceRequest(ControlledSubmissionClearancePreviewR
     ] = CONTROLLED_SUBMISSION_CLEARANCE_ACKNOWLEDGEMENT
 
 
+class ManualBrokerCancellationExportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticket_fingerprint: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    acknowledgement: Literal[
+        "prepare_manual_broker_cancellation_ticket_without_broker_contact"
+    ]
+
+
 def create_router() -> APIRouter:
     router = APIRouter(
         prefix="/api/automation/controlled-broker-submission",
@@ -175,6 +192,28 @@ def create_router() -> APIRouter:
         submit_intent_id: str,
     ) -> dict[str, Any]:
         return _service().get_intent(submit_intent_id)
+
+    @router.post("/intents/{submit_intent_id}/manual-cancellation-ticket/preview")
+    async def preview_manual_broker_cancellation_ticket(
+        submit_intent_id: str,
+    ) -> dict[str, Any]:
+        return _manual_cancellation_service().preview(
+            submit_intent_id=submit_intent_id,
+        )
+
+    @router.post("/intents/{submit_intent_id}/manual-cancellation-ticket/export")
+    async def export_manual_broker_cancellation_ticket(
+        submit_intent_id: str,
+        request: ManualBrokerCancellationExportRequest,
+    ) -> dict[str, Any]:
+        try:
+            return _manual_cancellation_service().export(
+                submit_intent_id=submit_intent_id,
+                ticket_fingerprint=request.ticket_fingerprint,
+                acknowledgement=request.acknowledgement,
+            )
+        except ManualBrokerCancellationEvidenceRejected as exc:
+            raise HTTPException(status_code=409, detail=exc.evidence) from exc
 
     @router.get("/reconciliation-clearance/status")
     async def get_controlled_submission_clearance_status() -> dict[str, Any]:
@@ -268,3 +307,9 @@ def _clearance_service() -> ControlledSubmissionReconciliationClearanceService:
             getattr(config, "trusted_operator_identities", []) or []
         ),
     )
+
+
+def _manual_cancellation_service() -> ManualBrokerCancellationEvidenceService:
+    from server.app import get_app_state
+
+    return ManualBrokerCancellationEvidenceService(db=get_app_state().db)

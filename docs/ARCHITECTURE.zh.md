@@ -172,6 +172,15 @@ acceptance 不再匹配。
 策略代码不能接触 gateway。Prepared、accepted-but-unreconciled 或 unknown intent 会阻断不同
 订单。Unknown 结果只能查询，绝不自动重提。
 
+精确持久化且仍开放的 lifecycle 可通过
+`karkinos.manual_broker_cancellation_ticket.v1` 投影。该 provider-neutral 边界根据 persisted
+controlled intent、OMS order fingerprint、broker/client 双重订单 ID 与最新 lifecycle observation
+生成可复制的人工操作资料；导出时会重新执行 preview 并拒绝已漂移 fingerprint。它不注册或调用
+adapter，不签发撤单，也不修改 OMS/ledger、risk、kill switch、interlock 或 capital authority。
+操作员必须在单独复核的券商界面完成人工动作；只有更新导入的 lifecycle observation 加上 Account
+Truth/reconciliation 证据才能证明撤单。既有 live-cancel endpoint 继续保持禁用，因此该资料包
+不是 M2 显式撤单命令，也不构成任何 provider 支持声明。
+
 Reconciliation clearance 以
 `karkinos.controlled_submission_reconciliation_clearance.v3` 作为 canonical 精确终态契约。
 签名命令可以记录完整成交、零成交撤单或部分成交后撤单；仍处于开放状态的 partial fill 继续

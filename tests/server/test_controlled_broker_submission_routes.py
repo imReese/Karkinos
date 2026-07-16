@@ -91,20 +91,53 @@ class FakeControlledSubmissionClearanceService:
         return {"clearance_id": clearance_id, "status": "cleared"}
 
 
+class FakeManualBrokerCancellationEvidenceService:
+    def preview(self, **kwargs):
+        return {
+            **kwargs,
+            "status": "ready_for_manual_broker_action",
+            "ticket_fingerprint": "8" * 64,
+            "ready": True,
+            "safety": {
+                "provider_contact_performed": False,
+                "broker_cancel_performed": False,
+                "oms_mutated": False,
+            },
+        }
+
+    def export(self, **kwargs):
+        return {
+            **kwargs,
+            "status": "export_ready",
+            "content": "{}",
+            "safety": {
+                "provider_contact_performed": False,
+                "broker_cancel_performed": False,
+                "oms_mutated": False,
+            },
+        }
+
+
 def _client(monkeypatch):
     service = FakeControlledBrokerSubmissionService()
     clearance_service = FakeControlledSubmissionClearanceService()
+    cancellation_service = FakeManualBrokerCancellationEvidenceService()
     monkeypatch.setattr(route_module, "_service", lambda: service)
     monkeypatch.setattr(route_module, "_clearance_service", lambda: clearance_service)
+    monkeypatch.setattr(
+        route_module,
+        "_manual_cancellation_service",
+        lambda: cancellation_service,
+    )
     app = FastAPI()
     app.include_router(create_router())
-    return TestClient(app), service, clearance_service
+    return TestClient(app), service, clearance_service, cancellation_service
 
 
 def test_routes_require_strict_final_signature_and_expose_query_recovery(
     monkeypatch,
 ) -> None:
-    client, _, _ = _client(monkeypatch)
+    client, _, _, _ = _client(monkeypatch)
     prefix = "/api/automation/controlled-broker-submission"
     order_id = "OMS-1"
     confirmation_id = "c" * 64
@@ -182,7 +215,7 @@ def test_routes_require_strict_final_signature_and_expose_query_recovery(
 def test_clearance_routes_require_separate_signature_and_forbid_credentials(
     monkeypatch,
 ) -> None:
-    client, _, _ = _client(monkeypatch)
+    client, _, _, _ = _client(monkeypatch)
     prefix = "/api/automation/controlled-broker-submission"
     intent_id = "1" * 64
     run_id = "reconciliation-run-1"
@@ -250,6 +283,52 @@ def test_clearance_routes_require_separate_signature_and_forbid_credentials(
     assert credential.status_code == 422
 
 
+def test_manual_cancellation_ticket_routes_never_expose_broker_cancel(
+    monkeypatch,
+) -> None:
+    client, _, _, _ = _client(monkeypatch)
+    prefix = "/api/automation/controlled-broker-submission"
+    intent_id = "1" * 64
+
+    preview = client.post(
+        f"{prefix}/intents/{intent_id}/manual-cancellation-ticket/preview"
+    )
+    assert preview.status_code == 200
+    assert preview.json()["safety"] == {
+        "provider_contact_performed": False,
+        "broker_cancel_performed": False,
+        "oms_mutated": False,
+    }
+    exported = client.post(
+        f"{prefix}/intents/{intent_id}/manual-cancellation-ticket/export",
+        json={
+            "ticket_fingerprint": "8" * 64,
+            "acknowledgement": (
+                "prepare_manual_broker_cancellation_ticket_without_broker_contact"
+            ),
+        },
+    )
+    assert exported.status_code == 200
+    assert exported.json()["status"] == "export_ready"
+    assert exported.json()["safety"]["broker_cancel_performed"] is False
+    missing_acknowledgement = client.post(
+        f"{prefix}/intents/{intent_id}/manual-cancellation-ticket/export",
+        json={"ticket_fingerprint": "8" * 64},
+    )
+    assert missing_acknowledgement.status_code == 422
+    unknown_field = client.post(
+        f"{prefix}/intents/{intent_id}/manual-cancellation-ticket/export",
+        json={
+            "ticket_fingerprint": "8" * 64,
+            "acknowledgement": (
+                "prepare_manual_broker_cancellation_ticket_without_broker_contact"
+            ),
+            "broker_password": "must-not-be-accepted",
+        },
+    )
+    assert unknown_field.status_code == 422
+
+
 def test_route_service_is_default_closed_without_injected_release_provider(
     monkeypatch,
 ) -> None:
@@ -301,6 +380,12 @@ def test_create_app_registers_controlled_submission_without_strategy_endpoint() 
         "/api/automation/controlled-broker-submission/intents": {"GET"},
         "/api/automation/controlled-broker-submission/intents/{submit_intent_id}": {
             "GET"
+        },
+        "/api/automation/controlled-broker-submission/intents/{submit_intent_id}/manual-cancellation-ticket/preview": {
+            "POST"
+        },
+        "/api/automation/controlled-broker-submission/intents/{submit_intent_id}/manual-cancellation-ticket/export": {
+            "POST"
         },
         "/api/automation/controlled-broker-submission/reconciliation-clearance/status": {
             "GET"

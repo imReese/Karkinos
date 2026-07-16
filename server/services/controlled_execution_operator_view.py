@@ -588,6 +588,12 @@ def _order_journey_summary(
     elif not reconciliation_item:
         status = "execution_reconciliation_required"
         next_action = "run_or_review_execution_reconciliation"
+    elif suggested_action in {
+        "poll_or_import_controlled_submission_lifecycle_evidence",
+        "review_partial_fill_and_import_account_truth",
+    }:
+        status = "open_broker_order_review_required"
+        next_action = "review_open_order_or_prepare_manual_cancel_ticket"
     elif suggested_action and suggested_action != "no_action":
         status = "execution_reconciliation_review_required"
         next_action = "review_execution_reconciliation"

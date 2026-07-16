@@ -44,6 +44,11 @@ The latest completed cross-cutting work includes:
   kill-switch, and authority paths remain unavailable; only the existing
   controlled-intent/OMS result status may be resolved from definitive query
   evidence;
+- a provider-neutral manual cancellation evidence package for exact persisted
+  open/partial lifecycle states; preview/export binds both order ids and the
+  latest observation, rejects drift, performs no broker call or state change,
+  and requires newer ingested evidence before cancellation can be treated as
+  fact;
 - provider-neutral adapter release manifests with append-only human
   accept/reject/revoke evidence and exact live collector prepare/commit
   binding, without selecting or registering a real provider.
@@ -109,6 +114,23 @@ Implemented foundation:
   preview is provider-free, apply requires an exact recovery fingerprint,
   matching offline Ed25519 proof and acknowledgement, and the database records
   the atomic query claim before any external call.
+- a no-database-edit manual cancellation package for the canonical open-order
+  journey action. It exports only a fingerprinted human handoff from persisted
+  evidence; it cannot call cancel, change OMS/ledger/authority, release the
+  interlock, or prove the broker outcome.
+
+M4 manual cancellation package assumptions and risk record:
+
+- The latest exact-identity persisted lifecycle observation is assumed to be
+  the only broker-order evidence available to the preview. The operator must
+  independently verify broker/client order ids, status, and remaining quantity
+  in a separately reviewed broker interface.
+- Deterministic validation covers open and partial states, terminal blocking,
+  restart-stable fingerprints, duplicate export, evidence drift, strict route
+  payloads, UI acknowledgement, and absence of submit/cancel/ledger calls.
+- Risk impact is low: the feature is read-only and non-authorizing. Export is a
+  copy operation, not cancellation evidence; OMS, ledger, risk, kill switch,
+  capital authority, and the unresolved-submission interlock remain unchanged.
 
 M4 query-only recovery assumptions and risk record:
 

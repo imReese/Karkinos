@@ -360,6 +360,49 @@ def test_operator_view_unknown_outcome_requires_query_only_recovery():
     ]
 
 
+class _OpenOrderJourneyFixture(_PersistedFactFixture):
+    def list_controlled_broker_submit_intents_sync(self, *, limit: int):
+        self.calls.append("submission_intents")
+        return [
+            {
+                "submit_intent_id": "5" * 64,
+                "order_id": "OMS-FIXTURE-1",
+                "gateway_id": "fixture-write-edge",
+                "broker_order_id": "BROKER-OPEN-1",
+                "client_order_id": "KARKINOS-OPEN-1",
+                "status": "submitted",
+                "prepared_at": "2026-07-13T09:58:00+00:00",
+            }
+        ]
+
+    def list_execution_reconciliation_items_sync(self, run_id: str):
+        self.calls.append(f"reconciliation_items:{run_id}")
+        return [
+            {
+                "order_id": "OMS-FIXTURE-1",
+                "item_status": ("controlled_submission_order_open_evidence_available"),
+                "suggested_action": (
+                    "poll_or_import_controlled_submission_lifecycle_evidence"
+                ),
+            }
+        ]
+
+
+def test_operator_view_exposes_manual_cancel_ticket_as_non_authorizing_option():
+    summary = ControlledExecutionOperatorViewService(
+        db=_OpenOrderJourneyFixture(),
+        clock=lambda: datetime(2026, 7, 13, 10, 0, tzinfo=timezone.utc),
+    ).summary()
+
+    journey = summary["latest_order_journey"]
+    assert journey["status"] == "open_broker_order_review_required"
+    assert journey["next_operator_action"] == (
+        "review_open_order_or_prepare_manual_cancel_ticket"
+    )
+    assert journey["broker_cancel_performed"] is False
+    assert summary["broker_cancel_enabled"] is False
+
+
 def test_operator_view_unavailable_persisted_sources_fail_closed():
     summary = ControlledExecutionOperatorViewService(db=object()).summary()
 
