@@ -67,6 +67,7 @@ python -m server
 | --- | --- | --- | --- |
 | `provider` | string | `akshare` | `akshare` 或 `tushare`。 |
 | `live_poll_interval` | integer | `60` | 行情和调度轮询间隔，单位秒，最少 `15`。 |
+| `provider_config.tushare_token_env` | string | `KARKINOS_TUSHARE_TOKEN` | 保存 TuShare Token 的环境变量名；这是元数据，不是 Token 本身。 |
 
 交互式配置脚本会保留分组结构：
 
@@ -75,7 +76,7 @@ uv run python scripts/configure_data_source.py --provider akshare
 uv run python scripts/configure_data_source.py --provider tushare
 ```
 
-TuShare token 通过隐藏输入读取，不接受命令行参数。脚本只把 provider 和轮询参数写入已被 Git 忽略的 `config.json`，把 Token 写入权限为 `0600` 的 `.env`（或 `--env-file` / `KARKINOS_ENV_FILE` 指定文件）。切换到 AkShare 会保留已有环境凭证；删除凭证必须是显式操作。Settings API 和 Web 页面不接收凭证，只展示是否已配置。`config.json` 中出现顶层或分组内 `tushare_token` 会阻止启动，配置脚本也会直接拒绝，不做自动凭证迁移。
+TuShare token 通过隐藏输入读取，不接受命令行参数。脚本会保留 `provider_config.tushare_token_env`，只把无凭证的 provider、轮询和环境变量名元数据写入已被 Git 忽略的 `config.json`，并把 Token 写入该变量名对应的、权限为 `0600` 的 `.env`（或 `--env-file` / `KARKINOS_ENV_FILE` 指定文件）。切换到 AkShare 会保留已有环境凭证；删除凭证必须是显式操作。Settings API 和 Web 页面不接收凭证，只展示是否已配置。`config.json` 中出现顶层或分组内 `tushare_token` 会阻止启动，配置脚本也会直接拒绝，不做自动凭证迁移。
 
 ### broker_fee
 
@@ -146,7 +147,7 @@ AI 凭证解析顺序为：
 | `KARKINOS_CORS_ALLOWED_ORIGINS` | `server.cors_allowed_origins`，逗号分隔 |
 | `KARKINOS_DATA_SOURCE` | `data_source.provider` |
 | `KARKINOS_LIVE_POLL_INTERVAL` | `data_source.live_poll_interval` |
-| `TUSHARE_TOKEN` | TuShare 边缘适配器凭证；不会进入 `config.json` 或 Settings API |
+| `KARKINOS_TUSHARE_TOKEN` | 默认的 TuShare 边缘适配器凭证变量；可由 `data_source.provider_config.tushare_token_env` 选择其他大写环境变量名。变量值不会进入 `config.json` 或 Settings API。 |
 | `KARKINOS_TELEGRAM_BOT_TOKEN` | Telegram Bot 凭证；仅限环境变量 |
 | `KARKINOS_TELEGRAM_CHAT_ID` | Telegram 目标；仅限环境变量 |
 | `KARKINOS_WECHAT_SENDKEY` | Server酱凭证；仅限环境变量 |

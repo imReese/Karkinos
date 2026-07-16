@@ -4302,7 +4302,7 @@ def test_full_settings_update_blocks_tushare_without_environment_credential(
 
     with pytest.raises(
         settings_routes.HTTPException,
-        match="TUSHARE_TOKEN is not configured",
+        match="KARKINOS_TUSHARE_TOKEN is not configured",
     ):
         asyncio.run(
             update_route.endpoint(

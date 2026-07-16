@@ -69,7 +69,7 @@ ensure_frontend_dependencies() {
 guide_data_source_configuration() {
 	local config_path="${KARKINOS_CONFIG_PATH:-config.json}"
 
-	if [[ -f "${config_path}" || -n "${TUSHARE_TOKEN:-}" ]]; then
+	if [[ -f "${config_path}" || -n "${KARKINOS_TUSHARE_TOKEN:-}" ]]; then
 		return
 	fi
 

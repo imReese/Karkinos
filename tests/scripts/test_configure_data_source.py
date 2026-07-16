@@ -24,7 +24,10 @@ def test_configure_akshare_preserves_existing_environment_credential(tmp_path):
     config_path = tmp_path / "config.json"
     env_path = tmp_path / ".env"
     config_path.write_text('{"initial_cash": 0}\n')
-    env_path.write_text("TUSHARE_TOKEN='old-environment-token'\n", encoding="utf-8")
+    env_path.write_text(
+        "KARKINOS_TUSHARE_TOKEN='old-environment-token'\n",
+        encoding="utf-8",
+    )
 
     saved = module.save_data_source_config(
         config_path=config_path,
@@ -37,7 +40,7 @@ def test_configure_akshare_preserves_existing_environment_credential(tmp_path):
         "initial_cash": 0,
         "data_source": {"provider": "akshare"},
     }
-    assert dotenv_values(env_path)["TUSHARE_TOKEN"] == "old-environment-token"
+    assert dotenv_values(env_path)["KARKINOS_TUSHARE_TOKEN"] == "old-environment-token"
     assert stat.S_IMODE(env_path.stat().st_mode) == 0o600
 
 
@@ -78,7 +81,7 @@ def test_configure_tushare_prompts_for_token_without_printing_it(tmp_path, capsy
     assert saved["data_source"] == {"provider": "tushare"}
     assert "unit-secret-token" not in captured.out
     assert "unit-secret-token" not in config_path.read_text()
-    assert dotenv_values(env_path)["TUSHARE_TOKEN"] == "unit-secret-token"
+    assert dotenv_values(env_path)["KARKINOS_TUSHARE_TOKEN"] == "unit-secret-token"
     assert stat.S_IMODE(env_path.stat().st_mode) == 0o600
 
 
@@ -116,7 +119,32 @@ def test_migrates_legacy_data_source_fields_without_losing_poll_interval(tmp_pat
             "live_poll_interval": 90,
         }
     }
-    assert dotenv_values(env_path)["TUSHARE_TOKEN"] == "unit-secret-token"
+    assert dotenv_values(env_path)["KARKINOS_TUSHARE_TOKEN"] == "unit-secret-token"
+
+
+def test_configure_tushare_preserves_custom_credential_environment_name(tmp_path):
+    module = _load_script_module()
+    config_path = tmp_path / "config.json"
+    env_path = tmp_path / ".env"
+    config_path.write_text(
+        '{"data_source":{"provider":"tushare","provider_config":'
+        '{"tushare_token_env":"LOCAL_TUSHARE_TOKEN"}}}',
+        encoding="utf-8",
+    )
+
+    saved = module.save_data_source_config(
+        config_path=config_path,
+        env_path=env_path,
+        provider="tushare",
+        token_reader=lambda: "unit-secret-token",
+    )
+
+    assert saved["data_source"]["provider_config"] == {
+        "tushare_token_env": "LOCAL_TUSHARE_TOKEN"
+    }
+    environment = dotenv_values(env_path)
+    assert environment["LOCAL_TUSHARE_TOKEN"] == "unit-secret-token"
+    assert "KARKINOS_TUSHARE_TOKEN" not in environment
 
 
 def test_cli_does_not_accept_token_argument():

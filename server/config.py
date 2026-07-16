@@ -106,7 +106,9 @@ _EXCHANGE_ALIASES = {
 _SERVER_CONFIG_GROUP_FIELDS = frozenset(
     {"host", "port", "live_auto_start", "cors_allowed_origins", "notification"}
 )
-_DATA_SOURCE_CONFIG_GROUP_FIELDS = frozenset({"provider", "live_poll_interval"})
+_DATA_SOURCE_CONFIG_GROUP_FIELDS = frozenset(
+    {"provider", "live_poll_interval", "provider_config"}
+)
 _AI_CONFIG_GROUP_FIELDS = frozenset(
     {
         "enabled",
@@ -150,7 +152,8 @@ def _normalize_grouped_config_payload(raw: object) -> dict:
         if "tushare_token" in group:
             raise ValueError(
                 "data_source.tushare_token is not accepted in config.json; "
-                "set TUSHARE_TOKEN in the environment"
+                "set the environment variable named by "
+                "data_source.provider_config.tushare_token_env"
             )
         unknown = sorted(set(group) - _DATA_SOURCE_CONFIG_GROUP_FIELDS)
         if unknown:
@@ -162,6 +165,7 @@ def _normalize_grouped_config_payload(raw: object) -> dict:
         field_mapping = {
             "provider": "data_source",
             "live_poll_interval": "live_poll_interval",
+            "provider_config": "data_source_provider_config",
         }
         for grouped_field, value in group.items():
             runtime_field = field_mapping[grouped_field]
@@ -319,6 +323,20 @@ class AIProviderConfig:
             )
 
 
+@dataclass(frozen=True)
+class DataSourceProviderConfig:
+    """Credential-free provider edge settings for market-data startup."""
+
+    tushare_token_env: str = "KARKINOS_TUSHARE_TOKEN"
+
+    def __post_init__(self) -> None:
+        if not _ENV_NAME_PATTERN.fullmatch(self.tushare_token_env):
+            raise ValueError(
+                "data_source.provider_config.tushare_token_env must be an "
+                "uppercase environment variable name"
+            )
+
+
 @dataclass
 class BacktestConfig:
     """回测配置。"""
@@ -337,6 +355,9 @@ class BacktestConfig:
     account_commission_rate: Decimal = Decimal("0.0001")
     account_min_commission: Decimal = Decimal("5")
     data_source: str = "akshare"
+    data_source_provider_config: DataSourceProviderConfig = field(
+        default_factory=DataSourceProviderConfig
+    )
     tushare_token: str = ""
     notification: dict = field(default_factory=lambda: {"type": "console"})
     live_poll_interval: int = 60
@@ -380,6 +401,10 @@ class BacktestConfig:
         if "broker_connectors" in data:
             data["broker_connectors"] = _parse_broker_connector_configs(
                 data["broker_connectors"]
+            )
+        if "data_source_provider_config" in data:
+            data["data_source_provider_config"] = _parse_data_source_provider_config(
+                data["data_source_provider_config"]
             )
         if "ai" in data:
             data["ai"] = _parse_ai_provider_config(data["ai"])
@@ -446,8 +471,8 @@ def _validate_runtime_config_fields(data: dict) -> None:
 
     if "tushare_token" in data:
         raise ValueError(
-            "tushare_token is not accepted in config.json; set TUSHARE_TOKEN "
-            "in the environment"
+            "tushare_token is not accepted in config.json; set the environment "
+            "variable named by data_source.provider_config.tushare_token_env"
         )
     allowed_fields = set(ServerConfig.__dataclass_fields__)
     unknown = sorted(set(data) - allowed_fields)
@@ -477,6 +502,26 @@ def _parse_ai_provider_config(value: object) -> AIProviderConfig:
         adapter_kind=value.get("adapter_kind", "openai_compatible_https"),
         timeout_seconds=timeout_seconds,
         api_key_env=value.get("api_key_env") or "KARKINOS_AI_API_KEY",
+    )
+
+
+def _parse_data_source_provider_config(
+    value: object,
+) -> DataSourceProviderConfig:
+    if value is None:
+        return DataSourceProviderConfig()
+    if not isinstance(value, dict):
+        raise ValueError("data_source.provider_config must be an object")
+    unknown = sorted(set(value) - {"tushare_token_env"})
+    if unknown:
+        raise ValueError(
+            "data_source.provider_config contains unsupported fields: "
+            + ", ".join(unknown)
+        )
+    return DataSourceProviderConfig(
+        tushare_token_env=str(
+            value.get("tushare_token_env") or "KARKINOS_TUSHARE_TOKEN"
+        )
     )
 
 

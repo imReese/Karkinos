@@ -26,6 +26,7 @@ from server.config import (
     BrokerConnectorConfig,
     BrokerFeeScheduleConfig,
     ControlledBridgePolicyConfig,
+    DataSourceProviderConfig,
     ServerConfig,
     TrustedOperatorIdentityConfig,
 )
@@ -60,6 +61,7 @@ def test_server_config_loads_grouped_runtime_sections(tmp_path):
                 "data_source": {
                     "provider": "tushare",
                     "live_poll_interval": 120,
+                    "provider_config": {"tushare_token_env": "LOCAL_TUSHARE_TOKEN"},
                 },
                 "broker_fee": {
                     "schedule_id": "grouped-fee-schedule",
@@ -83,6 +85,9 @@ def test_server_config_loads_grouped_runtime_sections(tmp_path):
     assert config.live_auto_start is False
     assert config.data_source == "tushare"
     assert config.tushare_token == ""
+    assert config.data_source_provider_config == DataSourceProviderConfig(
+        tushare_token_env="LOCAL_TUSHARE_TOKEN"
+    )
     assert config.live_poll_interval == 120
     assert config.broker_fee_schedule.schedule_id == "grouped-fee-schedule"
     assert config.broker_fee_schedule.stock_a_commission_rate == Decimal("0.00015")
@@ -190,6 +195,24 @@ def test_server_config_rejects_credentials_in_json(tmp_path, payload, message):
         ),
         (
             {
+                "data_source": {
+                    "provider": "tushare",
+                    "provider_config": {"tushare_token_env": "not-valid"},
+                }
+            },
+            "tushare_token_env",
+        ),
+        (
+            {
+                "data_source": {
+                    "provider": "tushare",
+                    "provider_config": {"credential": "secret"},
+                }
+            },
+            "unsupported fields: credential",
+        ),
+        (
+            {
                 "ai": {
                     "enabled": False,
                     "base_url": "http://insecure.example",
@@ -282,13 +305,13 @@ def test_dotenv_loader_preserves_process_precedence_and_can_require_file(tmp_pat
 def test_dotenv_loader_fills_allowlisted_empty_process_credentials(tmp_path):
     env_file = tmp_path / ".env"
     env_file.write_text(
-        "TUSHARE_TOKEN=dotenv-token\n"
+        "KARKINOS_TUSHARE_TOKEN=dotenv-token\n"
         "KARKINOS_AI_API_KEY=dotenv-ai-key\n"
         "KARKINOS_TELEGRAM_BOT_TOKEN=dotenv-telegram-token\n",
         encoding="utf-8",
     )
     environment = {
-        "TUSHARE_TOKEN": "",
+        "KARKINOS_TUSHARE_TOKEN": "",
         "KARKINOS_AI_API_KEY": "  ",
         "KARKINOS_TELEGRAM_BOT_TOKEN": "",
     }
@@ -296,7 +319,7 @@ def test_dotenv_loader_fills_allowlisted_empty_process_credentials(tmp_path):
     load_runtime_environment_file(env_file, environ=environment)
 
     assert environment == {
-        "TUSHARE_TOKEN": "dotenv-token",
+        "KARKINOS_TUSHARE_TOKEN": "dotenv-token",
         "KARKINOS_AI_API_KEY": "dotenv-ai-key",
         "KARKINOS_TELEGRAM_BOT_TOKEN": "dotenv-telegram-token",
     }
@@ -365,7 +388,7 @@ def test_runtime_environment_overrides_file_and_explicit_values_win(
     )
     monkeypatch.setenv("KARKINOS_DATA_SOURCE", "tushare")
     monkeypatch.setenv("KARKINOS_LIVE_POLL_INTERVAL", "120")
-    monkeypatch.setenv("TUSHARE_TOKEN", "env-token")
+    monkeypatch.setenv("KARKINOS_TUSHARE_TOKEN", "env-token")
 
     config = load_runtime_config(ServerConfig, host="cli-host")
 
@@ -379,6 +402,35 @@ def test_runtime_environment_overrides_file_and_explicit_values_win(
     assert config.data_source == "tushare"
     assert config.live_poll_interval == 120
     assert config.tushare_token == "env-token"
+
+
+def test_runtime_environment_uses_configured_tushare_credential_name(
+    tmp_path,
+    monkeypatch,
+):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "data_source": {
+                    "provider": "tushare",
+                    "provider_config": {"tushare_token_env": "LOCAL_TUSHARE_TOKEN"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("KARKINOS_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("LOCAL_TUSHARE_TOKEN", "configured-token")
+    monkeypatch.setenv("KARKINOS_TUSHARE_TOKEN", "wrong-default-token")
+    monkeypatch.setenv("TUSHARE_TOKEN", "obsolete-token")
+
+    config = load_runtime_config(ServerConfig)
+
+    assert config.data_source_provider_config.tushare_token_env == (
+        "LOCAL_TUSHARE_TOKEN"
+    )
+    assert config.tushare_token == "configured-token"
 
 
 def test_runtime_environment_rejects_invalid_values(monkeypatch):
@@ -1054,6 +1106,9 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
     assert example["data_source"] == {
         "provider": "akshare",
         "live_poll_interval": 60,
+        "provider_config": {
+            "tushare_token_env": "KARKINOS_TUSHARE_TOKEN",
+        },
     }
     assert example["ai"] == {
         "enabled": False,
@@ -1071,7 +1126,7 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
 
     environment_template = Path(".env.example").read_text(encoding="utf-8")
     for env_name in (
-        "TUSHARE_TOKEN",
+        "KARKINOS_TUSHARE_TOKEN",
         "KARKINOS_HOST",
         "KARKINOS_PORT",
         "KARKINOS_LIVE_AUTO_START",
@@ -1095,7 +1150,7 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
 
     compose = Path("docker-compose.yml").read_text(encoding="utf-8")
     for env_name in (
-        "TUSHARE_TOKEN",
+        "KARKINOS_TUSHARE_TOKEN",
         "KARKINOS_HOST",
         "KARKINOS_PORT",
         "KARKINOS_LIVE_AUTO_START",

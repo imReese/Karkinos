@@ -9,7 +9,7 @@ services:
       - ./config.json:/app/config.json:ro
     environment:
       - TZ=Asia/Shanghai
-      - TUSHARE_TOKEN=${TUSHARE_TOKEN:-}
+      - KARKINOS_TUSHARE_TOKEN=${KARKINOS_TUSHARE_TOKEN:-}
       - KARKINOS_HOST=${KARKINOS_HOST:-0.0.0.0}
       - KARKINOS_PORT=${KARKINOS_PORT:-8000}
       - KARKINOS_LIVE_AUTO_START=${KARKINOS_LIVE_AUTO_START:-true}

@@ -67,6 +67,7 @@ Unknown top-level fields, unknown group fields, wrong field types, and fields su
 | --- | --- | --- | --- |
 | `provider` | string | `akshare` | `akshare` or `tushare`. |
 | `live_poll_interval` | integer | `60` | Market and scheduler polling interval in seconds; minimum `15`. |
+| `provider_config.tushare_token_env` | string | `KARKINOS_TUSHARE_TOKEN` | Name of the environment variable holding the TuShare token; this is metadata, not the token. |
 
 The interactive setup script preserves the grouped shape:
 
@@ -75,7 +76,7 @@ uv run python scripts/configure_data_source.py --provider akshare
 uv run python scripts/configure_data_source.py --provider tushare
 ```
 
-The TuShare token is read through a hidden prompt and is never accepted as a CLI argument. The script writes only provider/polling settings to the Git-ignored `config.json`, and writes the token to a mode-`0600` `.env` file (or the file selected by `--env-file` / `KARKINOS_ENV_FILE`). Switching to AkShare preserves an existing environment credential; credential removal must be explicit. The Settings API and Web page never accept credentials; they expose configuration status only. A top-level or grouped `tushare_token` in `config.json` stops startup and is also rejected by the setup script; there is no automatic credential migration.
+The TuShare token is read through a hidden prompt and is never accepted as a CLI argument. The script preserves `provider_config.tushare_token_env`, writes only credential-free provider/polling metadata to the Git-ignored `config.json`, and writes the token to that named variable in a mode-`0600` `.env` file (or the file selected by `--env-file` / `KARKINOS_ENV_FILE`). Switching to AkShare preserves an existing environment credential; credential removal must be explicit. The Settings API and Web page never accept credentials; they expose configuration status only. A top-level or grouped `tushare_token` in `config.json` stops startup and is also rejected by the setup script; there is no automatic credential migration.
 
 ### broker_fee
 
@@ -146,7 +147,7 @@ AI credentials resolve in this order:
 | `KARKINOS_CORS_ALLOWED_ORIGINS` | comma-separated `server.cors_allowed_origins` |
 | `KARKINOS_DATA_SOURCE` | `data_source.provider` |
 | `KARKINOS_LIVE_POLL_INTERVAL` | `data_source.live_poll_interval` |
-| `TUSHARE_TOKEN` | TuShare edge credential; never enters `config.json` or the Settings API |
+| `KARKINOS_TUSHARE_TOKEN` | Default TuShare edge credential variable; `data_source.provider_config.tushare_token_env` may select another uppercase environment name. The value never enters `config.json` or the Settings API. |
 | `KARKINOS_TELEGRAM_BOT_TOKEN` | Telegram bot credential; environment-only |
 | `KARKINOS_TELEGRAM_CHAT_ID` | Telegram destination; environment-only |
 | `KARKINOS_WECHAT_SENDKEY` | ServerChan credential; environment-only |
