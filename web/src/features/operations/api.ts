@@ -712,6 +712,90 @@ export type ManualBrokerCancellationTicketExport = {
   safety: ManualBrokerCancellationSafety;
 };
 
+export type ControlledBrokerRejectionSafety = {
+  reads_persisted_facts_only: true;
+  provider_contact_performed: false;
+  broker_query_performed: false;
+  broker_submission_performed: false;
+  broker_retry_performed: false;
+  broker_cancel_performed: false;
+  oms_mutated: false;
+  production_ledger_mutated: false;
+  account_truth_mutated: false;
+  risk_state_mutated: false;
+  kill_switch_mutated: false;
+  capital_authority_changed: false;
+  authorizes_submission: false;
+  authorizes_retry: false;
+  authorizes_cancellation: false;
+  releases_submission_interlock: false;
+};
+
+export type ControlledBrokerRejectionEvidencePreview = {
+  schema_version: 'karkinos.controlled_broker_rejection_evidence.v1';
+  submit_intent_id: string;
+  submit_fingerprint: string;
+  order_id: string;
+  order_fingerprint: string;
+  identity: {
+    gateway_id: string;
+    account_alias: string;
+    client_order_id: string;
+    operator_id: string;
+  };
+  order: {
+    symbol: string;
+    side: string;
+    asset_class: string;
+    quantity: string;
+    order_type: string;
+    limit_price: string | null;
+  };
+  rejection_evidence: {
+    classification: string;
+    intent_status: string;
+    broker_status: string;
+    result_status: string;
+    submitted: boolean | null;
+    definitive: boolean;
+    error_type: string;
+    reason_codes: string[];
+    result_fingerprint: string;
+    prepared_at: string;
+    evidence_as_of: string;
+  };
+  retry_policy: {
+    same_intent_retry_allowed: false;
+    same_client_order_id_retry_allowed: false;
+    automatic_retry_allowed: false;
+    new_order_requires_new_decision_and_all_gates: true;
+  };
+  review_fingerprint: string;
+  generated_at: string;
+  status: string;
+  ready: boolean;
+  blockers: string[];
+  required_acknowledgement: 'export_exact_rejection_evidence_without_retry_or_authority_change';
+  human_steps: string[];
+  assumptions: string[];
+  risk_impact: string;
+  safety: ControlledBrokerRejectionSafety;
+  limitations: string[];
+};
+
+export type ControlledBrokerRejectionEvidenceExport = {
+  schema_version: 'karkinos.controlled_broker_rejection_evidence_export.v1';
+  status: 'export_ready';
+  review_fingerprint: string;
+  export_fingerprint: string;
+  filename: string;
+  content_type: 'application/json';
+  content: string;
+  artifact: Record<string, unknown>;
+  export_performed: true;
+  safety: ControlledBrokerRejectionSafety;
+};
+
 export type ControlledSubmissionClearanceFill = {
   fill_id: string;
   broker_event_id: string;
@@ -1437,6 +1521,35 @@ export function useManualBrokerCancellationTicketExportMutation() {
         `/api/automation/controlled-broker-submission/intents/${encodeURIComponent(
           submitIntentId,
         )}/manual-cancellation-ticket/export`,
+        body,
+      );
+    },
+  });
+}
+
+export function useControlledBrokerRejectionEvidencePreviewMutation() {
+  return useMutation({
+    mutationFn: ({ submitIntentId }: { submitIntentId: string }) =>
+      postJson<ControlledBrokerRejectionEvidencePreview>(
+        `/api/automation/controlled-broker-submission/intents/${encodeURIComponent(
+          submitIntentId,
+        )}/rejection-evidence/preview`,
+      ),
+  });
+}
+
+export function useControlledBrokerRejectionEvidenceExportMutation() {
+  return useMutation({
+    mutationFn: (request: {
+      submitIntentId: string;
+      review_fingerprint: string;
+      acknowledgement: 'export_exact_rejection_evidence_without_retry_or_authority_change';
+    }) => {
+      const { submitIntentId, ...body } = request;
+      return postJson<ControlledBrokerRejectionEvidenceExport>(
+        `/api/automation/controlled-broker-submission/intents/${encodeURIComponent(
+          submitIntentId,
+        )}/rejection-evidence/export`,
         body,
       );
     },

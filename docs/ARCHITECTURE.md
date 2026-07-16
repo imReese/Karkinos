@@ -192,6 +192,18 @@ Strategy code cannot reach the gateway. A prepared, accepted-but-unreconciled,
 or unknown intent blocks a different order. Unknown outcomes are query-only and
 are never automatically resubmitted.
 
+A terminal rejected intent may be reviewed through
+`karkinos.controlled_broker_rejection_evidence.v1`. This read-only contract
+binds the canonical OMS order fingerprint, controlled intent, exact gateway,
+account, client-order and operator identities, and an allowlisted sanitized
+result. It distinguishes a local pre-gateway block from a definitive gateway
+rejection; missing or ambiguous evidence fails closed. Export re-runs preview
+and rejects drift. The artifact explicitly forbids retrying the same intent or
+client order id and cannot record a review, query or contact a provider, create
+or retry an order, mutate OMS/ledger/Account Truth/risk/kill switch, release the
+interlock, or change capital or execution authority. Any later order starts as
+a new Decision and must pass every gate again.
+
 An open exact-identity lifecycle may be projected through
 `karkinos.manual_broker_cancellation_ticket.v1`. This provider-neutral boundary
 prepares a copyable human action package from the persisted controlled intent,

@@ -34,9 +34,9 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
   gateway call；重复点击和服务刚重启后的重复操作不会再次查询，submit、cancel、ledger、risk、
   kill switch 与 authority 路径均不可用；仅允许以确定查询证据收敛既有 controlled intent/OMS
   结果状态；
-- 面向精确持久化 open/partial lifecycle 的 provider-neutral 人工撤单证据包；preview/export
-  绑定双重订单 ID 与最新 observation，拒绝 drift，不联系券商、不修改状态，并要求更新的导入证据
-  才能把撤单当作事实；
+- 面向精确 open/partial lifecycle 撤单 handoff 与终态拒绝复核的 provider-neutral、copy-only
+  操作资料；两者都会重检 fingerprint drift、不联系券商、不修改状态，拒绝资料还禁止重试同一
+  intent/client id；
 - provider-neutral adapter release manifest、append-only 人工 accept/reject/revoke 证据，以及
   live collector prepare/commit 的精确绑定；没有选择或注册真实 provider。
 - provider-neutral deterministic conformance fixture、append-only report、精确 manifest/review
@@ -86,18 +86,19 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
 - canonical query-only journey action 现提供无需改数据库的 unknown-outcome 恢复复核；旧的无签名
   naked POST 不再注册。Preview 不联系 provider，apply 必须携带精确 recovery fingerprint、匹配的
   离线 Ed25519 proof 与最终确认，而且数据库会在任何外部调用前先原子记录 query claim。
-- canonical open-order journey action 现提供无需改数据库的人工撤单资料包。它只从持久化证据导出
-  带 fingerprint 的人工 handoff，不能调用 cancel、修改 OMS/ledger/authority、解除 interlock 或
-  证明券商结果。
+- canonical open-order 与 rejected-order journey action 现提供无需改数据库的资料包，只导出带
+  fingerprint 的持久化 handoff；两者都不能 query/retry/submit/cancel、修改 OMS/ledger/authority、
+  解除 interlock 或证明后续券商结果。
 
-M4 人工撤单资料包的假设与风险记录：
+M4 非授权操作资料包的假设与风险记录：
 
 - 假设 preview 时最新的 exact-identity 持久化 lifecycle observation 是当前可用的订单证据；操作员
-  必须在单独复核的券商界面独立核对 broker/client order ID、状态和剩余数量。
-- 确定性验证覆盖 open/partial、终态阻断、restart-stable fingerprint、重复导出、证据 drift、严格
-  route payload、UI acknowledgement，以及不存在 submit/cancel/ledger 调用。
-- 风险影响为 low：该功能只读且不授权。Export 只是复制操作，不是撤单证据；OMS、ledger、risk、
-  kill switch、capital authority 与 unresolved-submission interlock 全部保持不变。
+  仍须独立核对 broker/client id 与剩余数量；拒绝复核只承认净化后的持久化结果，artifact 绝不构成
+  retry 权限。
+- 确定性验证覆盖 open/partial、本地/明确拒绝、歧义阻断、restart-stable fingerprint、重复导出、
+  drift、严格 route、UI acknowledgement，以及不存在 query/submit/cancel/ledger 调用。
+- 风险影响为 low：两者都只读、不授权且仅复制；OMS、ledger、Account Truth、risk、kill switch、
+  capital authority 与 unresolved-submission interlock 全部保持不变。
 
 M4 query-only recovery 的假设与风险记录：
 

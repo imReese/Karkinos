@@ -7,6 +7,10 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
+from server.services.controlled_broker_rejection_evidence import (
+    ControlledBrokerRejectionEvidenceRejected,
+    ControlledBrokerRejectionEvidenceService,
+)
 from server.services.controlled_broker_submission import (
     CONTROLLED_BROKER_RECOVERY_ACKNOWLEDGEMENT,
     CONTROLLED_BROKER_SUBMISSION_ACKNOWLEDGEMENT,
@@ -116,6 +120,19 @@ class ManualBrokerCancellationExportRequest(BaseModel):
     ]
 
 
+class ControlledBrokerRejectionEvidenceExportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    review_fingerprint: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    acknowledgement: Literal[
+        "export_exact_rejection_evidence_without_retry_or_authority_change"
+    ]
+
+
 def create_router() -> APIRouter:
     router = APIRouter(
         prefix="/api/automation/controlled-broker-submission",
@@ -192,6 +209,28 @@ def create_router() -> APIRouter:
         submit_intent_id: str,
     ) -> dict[str, Any]:
         return _service().get_intent(submit_intent_id)
+
+    @router.post("/intents/{submit_intent_id}/rejection-evidence/preview")
+    async def preview_controlled_broker_rejection_evidence(
+        submit_intent_id: str,
+    ) -> dict[str, Any]:
+        return _rejection_evidence_service().preview(
+            submit_intent_id=submit_intent_id,
+        )
+
+    @router.post("/intents/{submit_intent_id}/rejection-evidence/export")
+    async def export_controlled_broker_rejection_evidence(
+        submit_intent_id: str,
+        request: ControlledBrokerRejectionEvidenceExportRequest,
+    ) -> dict[str, Any]:
+        try:
+            return _rejection_evidence_service().export(
+                submit_intent_id=submit_intent_id,
+                review_fingerprint=request.review_fingerprint,
+                acknowledgement=request.acknowledgement,
+            )
+        except ControlledBrokerRejectionEvidenceRejected as exc:
+            raise HTTPException(status_code=409, detail=exc.evidence) from exc
 
     @router.post("/intents/{submit_intent_id}/manual-cancellation-ticket/preview")
     async def preview_manual_broker_cancellation_ticket(
@@ -313,3 +352,9 @@ def _manual_cancellation_service() -> ManualBrokerCancellationEvidenceService:
     from server.app import get_app_state
 
     return ManualBrokerCancellationEvidenceService(db=get_app_state().db)
+
+
+def _rejection_evidence_service() -> ControlledBrokerRejectionEvidenceService:
+    from server.app import get_app_state
+
+    return ControlledBrokerRejectionEvidenceService(db=get_app_state().db)

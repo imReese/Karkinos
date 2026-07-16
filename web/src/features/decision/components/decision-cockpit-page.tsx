@@ -45,6 +45,7 @@ import {
   type PaperShadowReviewQueueItem,
 } from '../../operations/api';
 import { ControlledBrokerRecoveryOperatorPanel } from '../../operations/controlled-broker-recovery-operator-panel';
+import { ControlledBrokerRejectionEvidencePanel } from '../../operations/controlled-broker-rejection-evidence-panel';
 import { ControlledLedgerPostingOperatorPanel } from '../../operations/controlled-ledger-posting-operator-panel';
 import { ControlledLedgerCorrectionOperatorPanel } from '../../operations/controlled-ledger-correction-operator-panel';
 import { ControlledTerminalClearanceOperatorPanel } from '../../operations/controlled-terminal-clearance-operator-panel';
@@ -3229,6 +3230,10 @@ function AutomationCockpitPanel({
                     : 'This journey projects persisted evidence only. This read contacted no broker, submitted or cancelled no order, mutated no ledger, and changed no capital or execution authority.'}
                 </div>
                 <ControlledBrokerRecoveryOperatorPanel
+                  journey={latestControlledOrderJourney}
+                  locale={locale}
+                />
+                <ControlledBrokerRejectionEvidencePanel
                   journey={latestControlledOrderJourney}
                   locale={locale}
                 />
