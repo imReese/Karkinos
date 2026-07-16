@@ -8,6 +8,8 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from server.services.controlled_broker_rejection_evidence import (
+    CONTROLLED_BROKER_REJECTION_REVIEW_ACKNOWLEDGEMENT,
+    CONTROLLED_BROKER_REJECTION_REVIEW_DISPOSITION,
     ControlledBrokerRejectionEvidenceRejected,
     ControlledBrokerRejectionEvidenceService,
 )
@@ -133,6 +135,27 @@ class ControlledBrokerRejectionEvidenceExportRequest(BaseModel):
     ]
 
 
+class ControlledBrokerRejectionReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    review_fingerprint: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    reviewer_id: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+    )
+    disposition: Literal["acknowledged_no_retry"] = (
+        CONTROLLED_BROKER_REJECTION_REVIEW_DISPOSITION
+    )
+    acknowledgement: Literal[
+        "record_exact_rejection_review_without_retry_or_authority_change"
+    ] = CONTROLLED_BROKER_REJECTION_REVIEW_ACKNOWLEDGEMENT
+
+
 def create_router() -> APIRouter:
     router = APIRouter(
         prefix="/api/automation/controlled-broker-submission",
@@ -227,6 +250,22 @@ def create_router() -> APIRouter:
             return _rejection_evidence_service().export(
                 submit_intent_id=submit_intent_id,
                 review_fingerprint=request.review_fingerprint,
+                acknowledgement=request.acknowledgement,
+            )
+        except ControlledBrokerRejectionEvidenceRejected as exc:
+            raise HTTPException(status_code=409, detail=exc.evidence) from exc
+
+    @router.post("/intents/{submit_intent_id}/rejection-reviews")
+    async def record_controlled_broker_rejection_review(
+        submit_intent_id: str,
+        request: ControlledBrokerRejectionReviewRequest,
+    ) -> dict[str, Any]:
+        try:
+            return _rejection_evidence_service().record_review(
+                submit_intent_id=submit_intent_id,
+                review_fingerprint=request.review_fingerprint,
+                reviewer_id=request.reviewer_id,
+                disposition=request.disposition,
                 acknowledgement=request.acknowledgement,
             )
         except ControlledBrokerRejectionEvidenceRejected as exc:

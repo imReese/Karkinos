@@ -7,6 +7,10 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable
 
+from server.services.controlled_broker_rejection_evidence import (
+    controlled_broker_rejection_review_binding_blockers,
+    list_controlled_broker_rejection_reviews,
+)
 from server.services.controlled_session_gate_contract import (
     CONTROLLED_SESSION_LIVE_GATE_MAX_AGE_SECONDS,
 )
@@ -88,6 +92,16 @@ class ControlledExecutionOperatorViewService:
             blocker_prefix="controlled_ledger_correction",
             blockers=source_blockers,
         )
+        try:
+            rejection_reviews = list_controlled_broker_rejection_reviews(
+                self._db,
+                limit=MAX_CONTROLLED_EXECUTION_SOURCE_ROWS,
+            )
+        except Exception:
+            rejection_reviews = []
+            source_blockers.append("controlled_rejection_review_source_failed")
+        if len(rejection_reviews) >= MAX_CONTROLLED_EXECUTION_SOURCE_ROWS:
+            source_blockers.append("controlled_rejection_review_scan_truncated")
         reconciliation_runs = self._read_rows(
             "list_execution_reconciliation_runs_sync",
             limit=MAX_RECONCILIATION_RUNS,
@@ -109,6 +123,22 @@ class ControlledExecutionOperatorViewService:
             ledger_corrections,
             "posting_id",
         )
+        persisted_rejection_review_by_intent = _first_row_by_key(
+            rejection_reviews,
+            "submit_intent_id",
+        )
+        rejection_review_by_intent: dict[str, dict[str, Any]] = {}
+        for intent in submission_intents:
+            submit_intent_id = str(intent.get("submit_intent_id") or "")
+            review = persisted_rejection_review_by_intent.get(submit_intent_id, {})
+            review_blockers = controlled_broker_rejection_review_binding_blockers(
+                review=review,
+                intent=intent,
+            )
+            if review_blockers:
+                source_blockers.extend(review_blockers)
+            elif review:
+                rejection_review_by_intent[submit_intent_id] = review
         reconciliation_by_order = self._reconciliation_by_order(
             reconciliation_runs,
             blockers=source_blockers,
@@ -125,6 +155,9 @@ class ControlledExecutionOperatorViewService:
                 ),
                 posting_by_clearance=posting_by_clearance,
                 correction_by_posting=correction_by_posting,
+                rejection_review=rejection_review_by_intent.get(
+                    str(intent.get("submit_intent_id") or ""), {}
+                ),
             )
             for intent in submission_intents[:MAX_VISIBLE_ORDER_JOURNEYS]
         ]
@@ -169,8 +202,12 @@ class ControlledExecutionOperatorViewService:
             status = "blocked"
             next_action = "review_controlled_execution_blockers"
         elif latest_order_journey is not None:
-            status = "order_journey_review_required"
             next_action = str(latest_order_journey["next_operator_action"])
+            status = (
+                "order_journey_closed"
+                if next_action == "no_retry_create_new_decision_if_needed"
+                else "order_journey_review_required"
+            )
         elif not projected_sessions:
             status = "no_session_evidence"
             next_action = "no_action_default_disabled"
@@ -214,7 +251,7 @@ class ControlledExecutionOperatorViewService:
                 "This view projects persisted evidence and never contacts a broker or provider.",
                 "Current-window status is not runtime authentication and does not authorize submission or cancellation.",
                 "Remaining capital values are reservation headroom; remaining order slots count persisted admissions only.",
-                "Order journeys project persisted submission, reconciliation, terminal-clearance, ledger-posting, and correction facts without applying any transition.",
+                "Order journeys project persisted submission, rejection-review, reconciliation, terminal-clearance, ledger-posting, and correction facts without applying any transition.",
                 "A paused session has no resume action; recovery requires a separate signed equal-or-narrower replacement.",
             ],
         }
@@ -554,6 +591,7 @@ def _order_journey_summary(
     clearance: dict[str, Any],
     posting_by_clearance: dict[str, dict[str, Any]],
     correction_by_posting: dict[str, dict[str, Any]],
+    rejection_review: dict[str, Any],
 ) -> dict[str, Any]:
     submit_intent_id = str(intent.get("submit_intent_id") or "")
     order_id = str(intent.get("order_id") or "")
@@ -582,6 +620,9 @@ def _order_journey_summary(
     elif submission_status == "prepared":
         status = "prepared_outcome_review_required"
         next_action = "query_prepared_submission_outcome_without_resubmit"
+    elif submission_status == "rejected" and rejection_review:
+        status = "submission_rejection_reviewed"
+        next_action = "no_retry_create_new_decision_if_needed"
     elif submission_status == "rejected":
         status = "submission_rejected"
         next_action = "review_rejection_evidence_without_retry"
@@ -634,6 +675,26 @@ def _order_journey_summary(
                 "complete": submission_status in {"submitted", "rejected"},
                 "required": True,
             },
+            *(
+                [
+                    {
+                        "key": "controlled_submission_rejection_review",
+                        "status": str(
+                            rejection_review.get("disposition") or "not_recorded"
+                        ),
+                        "evidence_id": str(rejection_review.get("review_id") or ""),
+                        "complete": bool(rejection_review),
+                        "required": True,
+                        "reviewer_id": str(rejection_review.get("reviewer_id") or ""),
+                        "reviewed_at": str(rejection_review.get("recorded_at") or ""),
+                        "review_fingerprint": str(
+                            rejection_review.get("review_fingerprint") or ""
+                        ),
+                    }
+                ]
+                if submission_status == "rejected"
+                else []
+            ),
             {
                 "key": "execution_reconciliation",
                 "status": reconciliation_status,

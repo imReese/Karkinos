@@ -9503,6 +9503,38 @@ CREATE TABLE IF NOT EXISTS controlled_broker_submit_intents (
 CREATE INDEX IF NOT EXISTS idx_controlled_broker_submit_status_time
 ON controlled_broker_submit_intents(status, prepared_at_epoch_ms DESC);
 
+CREATE TABLE IF NOT EXISTS controlled_broker_rejection_reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    review_id TEXT NOT NULL UNIQUE,
+    review_fingerprint TEXT NOT NULL UNIQUE,
+    submit_intent_id TEXT NOT NULL UNIQUE,
+    submit_fingerprint TEXT NOT NULL,
+    order_id TEXT NOT NULL UNIQUE,
+    order_fingerprint TEXT NOT NULL,
+    result_fingerprint TEXT NOT NULL,
+    gateway_id TEXT NOT NULL,
+    account_alias TEXT NOT NULL,
+    client_order_id TEXT NOT NULL UNIQUE,
+    submission_operator_id TEXT NOT NULL,
+    reviewer_id TEXT NOT NULL,
+    disposition TEXT NOT NULL CHECK(disposition = 'acknowledged_no_retry'),
+    rejection_classification TEXT NOT NULL CHECK(rejection_classification IN (
+        'local_pre_gateway_rejection',
+        'definitive_gateway_rejection'
+    )),
+    evidence_as_of TEXT NOT NULL,
+    recorded_at_epoch_ms INTEGER NOT NULL CHECK(recorded_at_epoch_ms >= 0),
+    recorded_at TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(submit_intent_id)
+        REFERENCES controlled_broker_submit_intents(submit_intent_id),
+    FOREIGN KEY(order_id) REFERENCES oms_orders(order_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_controlled_broker_rejection_review_time
+ON controlled_broker_rejection_reviews(recorded_at_epoch_ms DESC, id DESC);
+
 CREATE TABLE IF NOT EXISTS broker_gateway_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     gateway_id TEXT NOT NULL,

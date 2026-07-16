@@ -5,9 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sqlite3
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
-from typing import Any, Callable
+from typing import Any, Callable, NoReturn
 
 from server.services.per_order_confirmation import build_order_fingerprint
 
@@ -20,6 +21,13 @@ CONTROLLED_BROKER_REJECTION_EXPORT_SCHEMA_VERSION = (
 CONTROLLED_BROKER_REJECTION_EXPORT_ACKNOWLEDGEMENT = (
     "export_exact_rejection_evidence_without_retry_or_authority_change"
 )
+CONTROLLED_BROKER_REJECTION_REVIEW_SCHEMA_VERSION = (
+    "karkinos.controlled_broker_rejection_review.v1"
+)
+CONTROLLED_BROKER_REJECTION_REVIEW_ACKNOWLEDGEMENT = (
+    "record_exact_rejection_review_without_retry_or_authority_change"
+)
+CONTROLLED_BROKER_REJECTION_REVIEW_DISPOSITION = "acknowledged_no_retry"
 
 _FINGERPRINT_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 _ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
@@ -282,6 +290,350 @@ class ControlledBrokerRejectionEvidenceService:
             "export_performed": True,
             "safety": _safety_flags(),
         }
+
+    def record_review(
+        self,
+        *,
+        submit_intent_id: str,
+        review_fingerprint: str,
+        reviewer_id: str,
+        disposition: str,
+        acknowledgement: str,
+    ) -> dict[str, Any]:
+        """Record one exact human no-retry acknowledgement append-only."""
+
+        normalized_intent_id = str(submit_intent_id or "").strip().lower()
+        normalized_review_fingerprint = str(review_fingerprint or "").strip().lower()
+        normalized_reviewer_id = str(reviewer_id or "").strip()
+        normalized_disposition = str(disposition or "").strip().lower()
+        blockers: list[str] = []
+        if not _FINGERPRINT_PATTERN.fullmatch(normalized_intent_id):
+            blockers.append("controlled_broker_rejection_submit_intent_id_invalid")
+        if not _FINGERPRINT_PATTERN.fullmatch(normalized_review_fingerprint):
+            blockers.append("controlled_broker_rejection_fingerprint_invalid")
+        if not _ID_PATTERN.fullmatch(normalized_reviewer_id):
+            blockers.append("controlled_broker_rejection_reviewer_id_invalid")
+        if normalized_disposition != CONTROLLED_BROKER_REJECTION_REVIEW_DISPOSITION:
+            blockers.append("controlled_broker_rejection_review_disposition_invalid")
+        if acknowledgement != CONTROLLED_BROKER_REJECTION_REVIEW_ACKNOWLEDGEMENT:
+            blockers.append(
+                "controlled_broker_rejection_review_acknowledgement_mismatch"
+            )
+        db_path = getattr(self._db, "_path", None)
+        if db_path is None:
+            blockers.append("controlled_broker_rejection_review_store_unavailable")
+        if blockers:
+            _raise_review_rejected(blockers=blockers)
+
+        now = _aware_utc(self._clock())
+        with sqlite3.connect(db_path, timeout=2) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA busy_timeout=2000")
+            conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute("BEGIN IMMEDIATE")
+            existing = conn.execute(
+                """
+                SELECT * FROM controlled_broker_rejection_reviews
+                WHERE submit_intent_id = ?
+                LIMIT 1
+                """,
+                (normalized_intent_id,),
+            ).fetchone()
+            if existing is not None:
+                row = dict(existing)
+                if (
+                    str(row.get("review_fingerprint") or "")
+                    == normalized_review_fingerprint
+                    and str(row.get("reviewer_id") or "") == normalized_reviewer_id
+                    and str(row.get("disposition") or "") == normalized_disposition
+                ):
+                    return _rejection_review_response(row, reused=True)
+                _raise_review_rejected(
+                    blockers=["controlled_broker_rejection_review_already_recorded"],
+                    existing_review=row,
+                )
+
+            preview = self.preview(submit_intent_id=normalized_intent_id)
+            current_blockers = [str(item) for item in preview.get("blockers") or []]
+            if normalized_review_fingerprint != str(
+                preview.get("review_fingerprint") or ""
+            ):
+                current_blockers.append(
+                    "controlled_broker_rejection_fingerprint_mismatch"
+                )
+            if current_blockers:
+                _raise_review_rejected(
+                    blockers=current_blockers,
+                    preview=preview,
+                )
+
+            review_id = _fingerprint(
+                {
+                    "domain": CONTROLLED_BROKER_REJECTION_REVIEW_SCHEMA_VERSION,
+                    "submit_intent_id": normalized_intent_id,
+                    "review_fingerprint": normalized_review_fingerprint,
+                    "reviewer_id": normalized_reviewer_id,
+                    "disposition": normalized_disposition,
+                }
+            )
+            recorded_at = now.isoformat()
+            result_fingerprint = str(
+                preview["rejection_evidence"]["result_fingerprint"]
+            )
+            review_payload = {
+                "schema_version": CONTROLLED_BROKER_REJECTION_REVIEW_SCHEMA_VERSION,
+                "review_id": review_id,
+                "review_fingerprint": normalized_review_fingerprint,
+                "submit_intent_id": normalized_intent_id,
+                "submit_fingerprint": str(preview["submit_fingerprint"]),
+                "order_id": str(preview["order_id"]),
+                "order_fingerprint": str(preview["order_fingerprint"]),
+                "result_fingerprint": result_fingerprint,
+                "identity": dict(preview["identity"]),
+                "reviewer_id": normalized_reviewer_id,
+                "disposition": normalized_disposition,
+                "rejection_classification": str(
+                    preview["rejection_evidence"]["classification"]
+                ),
+                "evidence_as_of": str(preview["rejection_evidence"]["evidence_as_of"]),
+                "recorded_at": recorded_at,
+                "operator_acknowledgement": acknowledgement,
+                "retry_policy": dict(preview["retry_policy"]),
+            }
+            conn.execute(
+                """
+                INSERT INTO controlled_broker_rejection_reviews (
+                    review_id, review_fingerprint, submit_intent_id,
+                    submit_fingerprint, order_id, order_fingerprint,
+                    result_fingerprint, gateway_id, account_alias,
+                    client_order_id, submission_operator_id, reviewer_id,
+                    disposition, rejection_classification, evidence_as_of,
+                    recorded_at_epoch_ms, recorded_at, payload_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    review_id,
+                    normalized_review_fingerprint,
+                    normalized_intent_id,
+                    str(preview["submit_fingerprint"]),
+                    str(preview["order_id"]),
+                    str(preview["order_fingerprint"]),
+                    result_fingerprint,
+                    str(preview["identity"]["gateway_id"]),
+                    str(preview["identity"]["account_alias"]),
+                    str(preview["identity"]["client_order_id"]),
+                    str(preview["identity"]["operator_id"]),
+                    normalized_reviewer_id,
+                    normalized_disposition,
+                    str(preview["rejection_evidence"]["classification"]),
+                    str(preview["rejection_evidence"]["evidence_as_of"]),
+                    int(now.timestamp() * 1000),
+                    recorded_at,
+                    json.dumps(
+                        review_payload,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                    recorded_at,
+                ),
+            )
+            recorded = conn.execute(
+                """
+                SELECT * FROM controlled_broker_rejection_reviews
+                WHERE review_id = ?
+                LIMIT 1
+                """,
+                (review_id,),
+            ).fetchone()
+            conn.commit()
+        if recorded is None:
+            raise RuntimeError("controlled broker rejection review insert disappeared")
+        return _rejection_review_response(dict(recorded), reused=False)
+
+
+def list_controlled_broker_rejection_reviews(
+    db: Any,
+    *,
+    limit: int = 500,
+) -> list[dict[str, Any]]:
+    """Read append-only rejection reviews for the persisted operator view."""
+
+    db_path = getattr(db, "_path", None)
+    if db_path is None:
+        return []
+    bounded_limit = max(1, min(int(limit), 500))
+    with sqlite3.connect(db_path, timeout=2) as conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout=2000")
+        rows = conn.execute(
+            """
+            SELECT * FROM controlled_broker_rejection_reviews
+            ORDER BY recorded_at_epoch_ms DESC, id DESC
+            LIMIT ?
+            """,
+            (bounded_limit,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def controlled_broker_rejection_review_binding_blockers(
+    *,
+    review: dict[str, Any],
+    intent: dict[str, Any],
+) -> list[str]:
+    """Validate one stored review against its current terminal intent facts."""
+
+    if not review:
+        return []
+    blockers: list[str] = []
+    intent_payload = _json_object(intent.get("payload_json"))
+    review_payload = _json_object(review.get("payload_json"))
+    result = _sanitize_persisted_result(_json_object(intent.get("result_json")))
+    current_account_alias = str(
+        intent.get("account_alias") or intent_payload.get("account_alias") or ""
+    )
+    current_fields = {
+        "submit_intent_id": str(intent.get("submit_intent_id") or ""),
+        "submit_fingerprint": str(intent.get("submit_fingerprint") or ""),
+        "order_id": str(intent.get("order_id") or ""),
+        "order_fingerprint": str(intent.get("order_fingerprint") or ""),
+        "gateway_id": str(intent.get("gateway_id") or ""),
+        "account_alias": current_account_alias,
+        "client_order_id": str(intent.get("client_order_id") or ""),
+        "submission_operator_id": str(intent.get("operator_id") or ""),
+        "result_fingerprint": _fingerprint(result),
+        "evidence_as_of": str(intent.get("updated_at") or ""),
+    }
+    for field, expected in current_fields.items():
+        if str(review.get(field) or "") != expected:
+            blockers.append(f"controlled_broker_rejection_review_{field}_changed")
+    if str(intent.get("status") or "") != "rejected":
+        blockers.append("controlled_broker_rejection_review_intent_status_changed")
+    result_status = str(result.get("status") or "")
+    expected_classification = (
+        "local_pre_gateway_rejection"
+        if result_status in _LOCAL_REJECTION_STATUSES
+        else (
+            "definitive_gateway_rejection"
+            if result_status in _DEFINITIVE_GATEWAY_REJECTION_STATUSES
+            else ""
+        )
+    )
+    if str(review.get("rejection_classification") or "") != expected_classification:
+        blockers.append("controlled_broker_rejection_review_classification_changed")
+    review_fingerprint = str(review.get("review_fingerprint") or "")
+    reviewer_id = str(review.get("reviewer_id") or "")
+    disposition = str(review.get("disposition") or "")
+    if not _FINGERPRINT_PATTERN.fullmatch(review_fingerprint):
+        blockers.append("controlled_broker_rejection_review_fingerprint_invalid")
+    if not _ID_PATTERN.fullmatch(reviewer_id):
+        blockers.append("controlled_broker_rejection_review_reviewer_id_invalid")
+    if disposition != CONTROLLED_BROKER_REJECTION_REVIEW_DISPOSITION:
+        blockers.append("controlled_broker_rejection_review_disposition_changed")
+    expected_review_id = _fingerprint(
+        {
+            "domain": CONTROLLED_BROKER_REJECTION_REVIEW_SCHEMA_VERSION,
+            "submit_intent_id": str(review.get("submit_intent_id") or ""),
+            "review_fingerprint": review_fingerprint,
+            "reviewer_id": reviewer_id,
+            "disposition": disposition,
+        }
+    )
+    if str(review.get("review_id") or "") != expected_review_id:
+        blockers.append("controlled_broker_rejection_review_id_invalid")
+    if _parse_timestamp(str(review.get("recorded_at") or "")) is None:
+        blockers.append("controlled_broker_rejection_review_recorded_at_invalid")
+
+    for field in (
+        "review_id",
+        "review_fingerprint",
+        "submit_intent_id",
+        "submit_fingerprint",
+        "order_id",
+        "order_fingerprint",
+        "result_fingerprint",
+        "reviewer_id",
+        "disposition",
+        "rejection_classification",
+        "evidence_as_of",
+        "recorded_at",
+    ):
+        if str(review_payload.get(field) or "") != str(review.get(field) or ""):
+            blockers.append(
+                f"controlled_broker_rejection_review_payload_{field}_mismatch"
+            )
+    payload_identity = _json_object(review_payload.get("identity"))
+    identity_fields = {
+        "gateway_id": "gateway_id",
+        "account_alias": "account_alias",
+        "client_order_id": "client_order_id",
+        "operator_id": "submission_operator_id",
+    }
+    for payload_field, row_field in identity_fields.items():
+        if str(payload_identity.get(payload_field) or "") != str(
+            review.get(row_field) or ""
+        ):
+            blockers.append(
+                f"controlled_broker_rejection_review_payload_{payload_field}_mismatch"
+            )
+    return list(dict.fromkeys(blockers))
+
+
+def _raise_review_rejected(
+    *,
+    blockers: list[str],
+    preview: dict[str, Any] | None = None,
+    existing_review: dict[str, Any] | None = None,
+) -> NoReturn:
+    existing = existing_review or {}
+    evidence = {
+        **(preview or {}),
+        "schema_version": CONTROLLED_BROKER_REJECTION_REVIEW_SCHEMA_VERSION,
+        "status": "rejected",
+        "ready": False,
+        "blockers": list(dict.fromkeys(str(item) for item in blockers)),
+        "review_recorded": bool(existing),
+        "record_performed": False,
+        "existing_review": (
+            {
+                "review_id": str(existing.get("review_id") or ""),
+                "review_fingerprint": str(existing.get("review_fingerprint") or ""),
+                "reviewer_id": str(existing.get("reviewer_id") or ""),
+                "disposition": str(existing.get("disposition") or ""),
+                "recorded_at": str(existing.get("recorded_at") or ""),
+            }
+            if existing
+            else None
+        ),
+        "safety": _safety_flags(),
+    }
+    raise ControlledBrokerRejectionEvidenceRejected(
+        "controlled broker rejection review rejected",
+        evidence=evidence,
+    )
+
+
+def _rejection_review_response(
+    row: dict[str, Any],
+    *,
+    reused: bool,
+) -> dict[str, Any]:
+    payload = _json_object(row.get("payload_json"))
+    return {
+        **payload,
+        "schema_version": CONTROLLED_BROKER_REJECTION_REVIEW_SCHEMA_VERSION,
+        "status": "already_recorded" if reused else "recorded",
+        "reused": reused,
+        "review_recorded": True,
+        "record_performed": not reused,
+        "safety": _safety_flags(),
+        "limitations": [
+            "This record acknowledges one exact persisted rejection and cannot retry or replace the order.",
+            "Any later order requires a new Decision and every current account, risk, confirmation, and authority gate.",
+            "Recording changes only this append-only review store; OMS, ledger, Account Truth, risk, kill switch, interlock, and capital authority remain unchanged.",
+        ],
+    }
 
 
 def _sanitize_persisted_result(raw: dict[str, Any]) -> dict[str, Any]:

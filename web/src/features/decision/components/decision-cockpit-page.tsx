@@ -2022,6 +2022,10 @@ function controlledOrderJourneyStageLabel(value: string, locale: Locale) {
       en: 'Controlled submission',
       zh: '受控提交',
     },
+    controlled_submission_rejection_review: {
+      en: 'Rejection review',
+      zh: '拒绝人工复核',
+    },
     execution_reconciliation: {
       en: 'Execution reconciliation',
       zh: '执行对账',
@@ -2067,6 +2071,10 @@ function controlledOrderJourneyNextActionLabel(value: string, locale: Locale) {
     review_rejection_evidence_without_retry: {
       en: 'review rejection evidence; no automatic retry',
       zh: '复核拒绝证据，不自动重试',
+    },
+    no_retry_create_new_decision_if_needed: {
+      en: 'no retry; create a new Decision if the trade is still needed',
+      zh: '不得重试；如仍需交易则新建 Decision',
     },
     run_or_review_execution_reconciliation: {
       en: 'run or review execution reconciliation',

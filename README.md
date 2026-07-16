@@ -87,8 +87,12 @@ can be treated as fact.
 For a rejected controlled submission, the journey can also prepare a sanitized,
 fingerprinted rejection-review package. It distinguishes a local pre-gateway
 block from a definitive gateway rejection and explicitly forbids retrying the
-same intent or client order id. It is copy-only: no query, retry, submit, cancel,
-OMS, ledger, risk, Account Truth, interlock, or authority side effect occurs.
+same intent or client order id. The package remains copy-only; a separate
+append-only review records exactly who acknowledged which fingerprint and when,
+then closes the journey as no-retry. Duplicate/restart replay is idempotent and
+conflicting reviewers or evidence drift fail closed. Only that audit store is
+written: no query, retry, submit, cancel, OMS, ledger, risk, Account Truth,
+interlock, or authority side effect occurs.
 
 See [the roadmap](docs/ROADMAP.md) for priorities and release gates. Completed
 implementation evidence lives in

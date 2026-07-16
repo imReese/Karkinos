@@ -198,11 +198,16 @@ binds the canonical OMS order fingerprint, controlled intent, exact gateway,
 account, client-order and operator identities, and an allowlisted sanitized
 result. It distinguishes a local pre-gateway block from a definitive gateway
 rejection; missing or ambiguous evidence fails closed. Export re-runs preview
-and rejects drift. The artifact explicitly forbids retrying the same intent or
-client order id and cannot record a review, query or contact a provider, create
-or retry an order, mutate OMS/ledger/Account Truth/risk/kill switch, release the
-interlock, or change capital or execution authority. Any later order starts as
-a new Decision and must pass every gate again.
+and rejects drift. The artifact remains copy-only. A separate
+`karkinos.controlled_broker_rejection_review.v1` record is inserted under
+`BEGIN IMMEDIATE` only after rechecking the exact preview fingerprint. It binds
+one reviewer, disposition, evidence time, sanitized result fingerprint, and all
+submission identities; the submit intent is unique, so identical restart replay
+returns the original record while conflicting reviewers fail closed. The
+operator journey then closes as no-retry. Neither boundary can query or contact
+a provider, create/retry/cancel an order, mutate OMS/ledger/Account Truth/risk/
+kill switch/interlock, or change capital or execution authority. Any later order
+starts as a new Decision and must pass every gate again.
 
 An open exact-identity lifecycle may be projected through
 `karkinos.manual_broker_cancellation_ticket.v1`. This provider-neutral boundary
