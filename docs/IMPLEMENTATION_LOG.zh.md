@@ -122,6 +122,19 @@ M3 纠正的假设与风险记录：
   重算、每次重放核验 before-state、保留历史，并且不授予 OMS、broker、risk、kill switch、
   AI/strategy 或 capital 能力。
 
+行情复核修复的假设与风险记录：
+
+- 不假设默认数据源支持全部资产类别。TuShare latest quote 继续只覆盖股票与开放式基金；指数刷新会
+  直接路由到已经注册的 AKShare 边缘数据源。东方财富接口不可用时优先使用 AKShare 官方文档列出的
+  新浪指数接口，但只有同一适配器的日线接口给出已完成交易日后，才发布持久化收盘价；没有可信
+  as-of 的盘中行继续保持 provisional/stale。
+- 确定性验证覆盖能力感知的来源选择、有界超时、上海时区 15:00 完成边界、昨收/涨跌推导、Sina
+  代码前缀、Eastmoney fallback 与明确 quote-source provenance。本机验收另外通过可审计的手工刷新
+  批次验证 399001、399006，并确认两者持久化 as-of 均为 `2026-07-16T15:00:00+08:00`。
+- 行情证据边界的风险影响为 medium：该变更可以发布估值输入，但不能修改 ledger、OMS、risk、
+  kill switch、capital 或 broker 权限。缺少时间、交易时段未完成或 provider 失败时继续 fail
+  closed；基金盘中估值仍明确保持未确认，直到 confirmed NAV 被持久化。
+
 剩余发布工作由路线图负责：一个真实 adapter、只读 soak、真实 cancel/unknown recovery、签名式
 submission/correction UI、更广的 fault injection 与真实证据验收、operator journey 的其余
 步骤与受控逐单 pilot。

@@ -600,6 +600,115 @@ class AKShareSource(DataSource):
             df = ak.stock_zh_a_spot_em()
         return [Symbol(str(code)) for code in df["代码"].tolist()]
 
+    @staticmethod
+    def _latest_completed_index_daily_row(
+        ak,
+        symbol: Symbol,
+        *,
+        display_name: str | None,
+        now: datetime | None = None,
+    ):
+        current = now or datetime.now(_CHINA_MARKET_TZ)
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=_CHINA_MARKET_TZ)
+        completed_date = current.date()
+        if (current.hour, current.minute) < (15, 0):
+            completed_date -= timedelta(days=1)
+        provider_symbol = (
+            f"sz{symbol}" if str(symbol).startswith("399") else f"sh{symbol}"
+        )
+        start_date = (completed_date - timedelta(days=14)).strftime("%Y%m%d")
+        end_date = completed_date.strftime("%Y%m%d")
+        with _provider_network_env():
+            daily = ak.stock_zh_index_daily_tx(
+                symbol=provider_symbol,
+                start_date=start_date,
+                end_date=end_date,
+            )
+        if daily.empty or not {"date", "close"}.issubset(daily.columns):
+            return None
+        rows = daily.copy()
+        rows["date"] = pd.to_datetime(rows["date"], errors="coerce").dt.date
+        rows = rows[rows["date"] <= completed_date].sort_values("date")
+        if rows.empty:
+            return None
+        latest = rows.iloc[-1]
+        previous = rows.iloc[-2] if len(rows) > 1 else None
+        latest_close = float(latest["close"])
+        previous_close = None if previous is None else float(previous["close"])
+        payload = {
+            "代码": provider_symbol,
+            "名称": display_name,
+            "最新价": latest_close,
+            "成交额": _row_float(latest, "amount", "volume"),
+            "时间": datetime.combine(
+                latest["date"],
+                datetime.min.time().replace(hour=15),
+                tzinfo=_CHINA_MARKET_TZ,
+            ).isoformat(),
+        }
+        if previous_close is not None:
+            change = latest_close - previous_close
+            payload.update(
+                {
+                    "昨收": previous_close,
+                    "涨跌额": change,
+                    "涨跌幅": (
+                        0.0 if previous_close == 0 else change / previous_close * 100
+                    ),
+                }
+            )
+        return pd.Series(payload)
+
+    @classmethod
+    def _fetch_index_latest_row(cls, ak, symbol: Symbol):
+        """Return one index row from bounded, vendor-diverse AKShare feeds."""
+        symbol_text = str(symbol)
+        provider_symbol = (
+            f"sz{symbol_text}" if symbol_text.startswith("399") else f"sh{symbol_text}"
+        )
+        provisional_sina_row = None
+        try:
+            with _provider_network_env():
+                sina = ak.stock_zh_index_spot_sina()
+            rows = sina[sina["代码"].astype(str) == provider_symbol]
+            if not rows.empty:
+                provisional_sina_row = rows.iloc[0]
+                daily_row = cls._latest_completed_index_daily_row(
+                    ak,
+                    symbol,
+                    display_name=(
+                        str(provisional_sina_row.get("名称") or "").strip() or None
+                    ),
+                )
+                if daily_row is not None:
+                    return daily_row, "akshare_index_daily_tx"
+        except Exception as exc:
+            logger.warning(
+                "AKShare Sina index evidence failed for %s; trying Eastmoney: %s",
+                symbol_text,
+                exc,
+            )
+
+        index_series = (
+            "深证系列指数" if symbol_text.startswith("399") else "上证系列指数"
+        )
+        try:
+            with _provider_network_env():
+                eastmoney = ak.stock_zh_index_spot_em(symbol=index_series)
+            rows = eastmoney[eastmoney["代码"].astype(str) == symbol_text]
+            if not rows.empty:
+                return rows.iloc[0], "akshare_index_spot_em"
+        except Exception as exc:
+            logger.warning(
+                "AKShare Eastmoney index spot failed for %s: %s",
+                symbol_text,
+                exc,
+            )
+        if provisional_sina_row is not None:
+            return provisional_sina_row, "akshare_index_spot_sina"
+        return None
+
     def fetch_latest(
         self,
         symbol: Symbol,
@@ -705,22 +814,15 @@ class AKShareSource(DataSource):
                 )
 
             elif asset_class == AssetClass.INDEX:
-                index_series = (
-                    "深证系列指数" if str(symbol).startswith("399") else "上证系列指数"
-                )
-                df = self._call_with_retry(
-                    ak.stock_zh_index_spot_em,
-                    symbol=index_series,
-                )
-                row = df[df["代码"] == str(symbol)]
-                if row.empty:
+                index_result = self._fetch_index_latest_row(ak, symbol)
+                if index_result is None:
                     return None
-                row = row.iloc[0]
+                row, quote_source = index_result
                 payload = {
                     "price": float(row["最新价"]),
                     "volume": _row_float(row, "成交额", "成交量"),
                     "timestamp": str(row.get("时间", "")),
-                    "quote_source": "akshare_index_spot",
+                    "quote_source": quote_source,
                 }
                 previous_close = _row_float(row, "昨收", "昨收价", "昨日收盘")
                 change = _row_float(row, "涨跌额")
