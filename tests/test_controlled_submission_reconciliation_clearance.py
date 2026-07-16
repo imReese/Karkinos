@@ -1604,12 +1604,16 @@ def test_account_truth_coverage_accepts_only_same_import_controlled_posting(
         clock=lambda: NOW,
         max_age_seconds=120,
     )
+    import_created_at = datetime.fromisoformat(
+        str(covered["ledger_coverage"]["import_created_at"])
+    )
     env["db"].insert_ledger_entry_sync(
         entry_type="fee",
         timestamp=NOW.isoformat(),
         amount=1,
         source="unrelated_manual_fact",
         source_ref="unrelated-late-fee",
+        created_at=(import_created_at + timedelta(seconds=1)).isoformat(),
     )
     stale = build_latest_account_truth_promotion_evidence(
         state,
