@@ -54,14 +54,32 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
 - 单独签名、provider-neutral 的 reconciled-ledger posting，在写事务内重新核验 OMS、intent、
   lifecycle、券商证据、Account Truth、valuation 与 ledger identity；精确 fills 在一个事务内只提交
   一次，partial-cancel 只写实际 fills，no-fill cancel 是显式零 entry posting；
+- 单独签名且只能由 canonical replay 推导的 append-only correction；写事务会重新推导 plan，保留
+  原交易与费用，拒绝 zero-fill、依赖交易、drift 或 tamper，并以 deterministic acceptance 绑定
+  Ledger、Holdings、Allocation、Equity、Overview、Cockpit、Account State、realized P/L、valuation
+  identity 与 Account Truth stale gate；
 - 版本化 adapter capability/boundary manifest 与可撤销的 live collector release review gate；
 - 与 release review 绑定并在 live collector prepare/commit 前复核的 deterministic local adapter
   conformance 证据；
 - connector-scoped、latest-result-wins 的 soak promotion recovery-drill gate；
 - 已持久化 operator projection 与 evidence-based scale review。
 
-剩余发布工作由路线图负责：一个真实 adapter、只读 soak、真实 cancel/unknown recovery、补偿纠错
-操作、跨页面 posting 验收、operator journey 与受控逐单 pilot。
+M3 纠正的假设与风险记录：
+
+- 非空 controlled posting 表示同一标的的真实 fills；零 entry cancel 是可审计 no-op，没有可反向的
+  财务事实。Correction 只用于本地 ledger recovery，不替代券商事实，因此完成后必须重新导入更新的
+  Account Truth。
+- 验证命令为 `uv run python -m pytest`、`uv run python -m pytest -m trading_safety`、CI 同款
+  coverage，以及在 `web/` 下使用 Node 24 执行 `npm run test`、`npm run format:check` 与
+  `npm run build`。
+- 风险影响为 high：canonical ledger projector 会影响 cash、position、cost、realized P/L、equity、
+  Overview、Cockpit、Account State 与风控输入。缓解措施包括拒绝 operator 输入财务数值、通过
+  canonical replay 推导买卖两类 reversal、绑定 valuation/ledger/Account Truth identity、在写锁内
+  重算、每次重放核验 before-state、保留历史，并且不授予 OMS、broker、risk、kill switch、
+  AI/strategy 或 capital 能力。
+
+剩余发布工作由路线图负责：一个真实 adapter、只读 soak、真实 cancel/unknown recovery、纠正的
+operator UI、更广的 fault injection 与真实证据验收、operator journey 与受控逐单 pilot。
 
 ### v1.7 — 受控券商 Bridge 基础
 

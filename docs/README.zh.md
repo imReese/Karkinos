@@ -90,7 +90,9 @@ Operations 展示数据、计划、paper/shadow、OMS、对账、告警和恢复
 的精确终态 clearance；随后还需要另一份最终操作员签名，才可在单一事务内 exactly once 地把
 实际 fills 写入生产账本。零成交撤单只记录 no-op posting。入账边界会重新核验 OMS、lifecycle、
 券商证据、Account Truth 与 ledger identity，不能提交或撤销券商订单、联系 provider 或改变资本
-权限。详细门禁和发布条件见[路线图](ROADMAP.zh.md)。
+权限。单独签名的 append-only correction 现在可仅根据 canonical replay 反向纠正一个 posting，
+保留原交易与费用，并在完成后要求更新的 Account Truth import。详细门禁和发布条件见
+[路线图](ROADMAP.zh.md)。
 
 ### AI 研究
 

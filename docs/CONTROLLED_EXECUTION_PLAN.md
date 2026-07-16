@@ -177,7 +177,14 @@ disable; it never scales up automatically.
   bindings before committing all entries and the posting record together.
 - Partial-cancel posts only actual fills; no-fill cancel records a zero-entry
   no-op. Duplicate retry reuses the immutable posting. Evidence or ledger drift
-  rejects the whole transaction, and corrections require compensating events.
+  rejects the whole transaction.
+- Correction uses a separate
+  `karkinos.controlled_submission_ledger_correction.v1` preview and signature.
+  It accepts no financial values, derives the exact compensating event by
+  canonical replay excluding the original posting entries, re-derives under
+  the write lock, preserves all original facts, and requires a newer Account
+  Truth import after apply. Zero-fill postings and dependent/invalid replays
+  remain blocked.
 - Posting has no provider contact, submit, cancel, strategy/AI, risk-decision,
   kill-switch, or capital-authority capability.
 - GET, alerts, reports, and UI rendering never contact the gateway implicitly.

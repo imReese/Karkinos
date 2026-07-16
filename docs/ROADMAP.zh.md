@@ -133,7 +133,12 @@ apply。写事务内会重新核验精确终态 clearance、OMS 与 controlled i
 证据、fills 与成本、Account Truth identity、valuation snapshot 以及 ledger cutoff/fingerprint。
 完整成交、部分成交后撤单、零成交撤单、重复重试、证据 drift 与 ledger race 均有 deterministic
 fixture。Posting 不能联系 provider，也不能授予 submit、cancel、strategy、AI、risk、kill switch
-或 capital authority。Operator UI、补偿纠错命令、完整跨页面验收与真实 provider 证据仍未完成，
+或 capital authority。Provider-neutral 的
+`karkinos.controlled_submission_ledger_correction.v1` 现可从 canonical replay 推导唯一的 append-only
+纠正，要求独立签名，在写事务中复核全部 identity，保留原交易与费用，并在重试、重启和并发下
+exactly once。Deterministic acceptance 已覆盖 Ledger、Holdings、Allocation、Equity、Overview、
+Cockpit、Account State、realized P/L、valuation/ledger identity，以及纠正后刻意触发的 Account
+Truth stale gate。Operator UI、更广的 fault-injection acceptance 与真实 provider 证据仍未完成，
 因此 M3 尚不是发布完成声明。
 
 ### M4 — Operator Journey
@@ -169,8 +174,8 @@ rate 和 expiry 上限。任一 critical incident 立即退回 `disabled`。
 4. **基础部分已实现：** query/callback 生命周期，以及签名的完整成交/partial-cancel/零成交撤单
    精确终态对账；真实 cancel/unknown recovery 仍待完成。
 5. 默认关闭的 write adapter 与逐单 submit/cancel gate。
-6. **基础已实现：** 单独签名、exactly-once 的 reconciled ledger posting；下一步补齐补偿纠错操作
-   与跨页面验收。
+6. **基础已实现：** 单独签名、exactly-once 的 reconciled ledger posting、append-only 补偿纠正与
+   核心跨页面验收。
 7. Operations/Trading 端到端 UX 与告警。
 8. 部署、回滚、故障演练和受控试点发布。
 

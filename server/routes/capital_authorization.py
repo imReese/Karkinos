@@ -170,6 +170,7 @@ class OperatorApprovalChallengeRequest(BaseModel):
         "submit_confirmed_broker_order",
         "clear_controlled_submission_reconciliation",
         "post_controlled_submission_ledger",
+        "reverse_controlled_submission_ledger_posting",
     ]
     artifact_type: Literal[
         "per_order_dossier",
@@ -181,6 +182,7 @@ class OperatorApprovalChallengeRequest(BaseModel):
         "controlled_broker_submission",
         "controlled_submission_reconciliation_clearance",
         "controlled_submission_ledger_posting",
+        "controlled_submission_ledger_correction",
     ]
     artifact_fingerprint: str = Field(
         min_length=64,

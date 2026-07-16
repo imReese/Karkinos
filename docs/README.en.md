@@ -99,6 +99,10 @@ facts do not silently rewrite the ledger.
 Real-money capability is disabled by default. The active milestone validates
 one provider through read-only soak, per-order human approval, bounded capital,
 complete lifecycle recovery, execution reconciliation, and explicit posting.
+Posting and append-only correction require separate signatures; correction is
+derived only from canonical ledger replay, preserves the original facts, and
+requires newer Account Truth evidence afterward. Neither boundary can contact
+a provider, submit or cancel an order, or change capital authority.
 
 ### AI research
 

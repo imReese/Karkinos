@@ -151,7 +151,11 @@ pause 或 disable；绝不会自动 scale up。
   最终操作员签名。写事务会重新核验精确 OMS/intent、lifecycle、statement/fill/cost、Account
   Truth、valuation 与 ledger identity binding，再把所有 entries 与 posting record 一起提交。
 - Partial-cancel 只写实际 fills；no-fill cancel 记录零 entry no-op。重复重试复用 immutable posting；
-  evidence 或 ledger drift 会拒绝整个事务，纠错必须使用补偿事件。
+  evidence 或 ledger drift 会拒绝整个事务。
+- 纠错使用独立的 `karkinos.controlled_submission_ledger_correction.v1` preview 与签名；它不接受财务
+  数值，只能通过排除原 posting entries 的 canonical replay 推导精确补偿事件，在写锁内重新推导，
+  保留全部原始事实，并在 apply 后要求更新的 Account Truth import。零 fill posting、依赖交易或
+  无效重放继续阻断。
 - Posting 不具备 provider contact、submit、cancel、strategy/AI、risk decision、kill switch 或
   capital authority 能力。
 - GET、告警、报告与 UI rendering 不会隐式联系 gateway。

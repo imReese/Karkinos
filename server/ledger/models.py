@@ -35,6 +35,7 @@ class LedgerEntry:
     settlement_source_ref: str | None = None
     settlement_note: str = ""
     cost_basis_method: str | None = None
+    correction_payload: dict[str, Any] | None = None
     asset_class: str = "stock"
     note: str = ""
     source: str = "manual"
@@ -72,6 +73,7 @@ class LedgerEntry:
             settlement_source_ref=row.get("settlement_source_ref"),
             settlement_note=str(row.get("settlement_note") or ""),
             cost_basis_method=row.get("cost_basis_method"),
+            correction_payload=_as_json_object(row.get("correction_payload_json")),
             asset_class=str(row.get("asset_class") or "stock"),
             note=str(row.get("note") or ""),
             source=str(row.get("source") or "manual"),
@@ -97,3 +99,14 @@ def _as_fee_breakdown(value: object | None) -> dict[str, Any] | None:
     if not isinstance(parsed, dict):
         return None
     return parsed
+
+
+def _as_json_object(value: object | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return value
+    if not isinstance(value, str) or not value.strip():
+        return None
+    parsed = json.loads(value)
+    return parsed if isinstance(parsed, dict) else None

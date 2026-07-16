@@ -836,6 +836,7 @@ class LedgerEntryResponse(BaseModel):
     settlement_source_ref: str | None = None
     settlement_note: str = ""
     cost_basis_method: str | None = None
+    correction_payload: dict[str, Any] | None = None
     asset_class: str = "stock"
     note: str = ""
     source: str = "manual"

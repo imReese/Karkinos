@@ -189,8 +189,21 @@ identity、valuation snapshot、ledger cutoff/fingerprint 和短期 operator app
 每个真实 fill 只生成一个带 immutable clearance/import lineage 的 confirmed ledger event；
 partial-cancel 只写实际 fills，零成交撤单产生 applied 的零 entry posting。Posting record 与全部
 ledger events 同事务提交，并在 posting、clearance、intent、order、fill 与 settlement evidence
-维度 exactly once。历史不可删除，后续纠错只能使用补偿事件。该边界不联系 provider，也不具备
-submit、cancel、strategy、AI、risk decision、kill switch 或 capital authority 能力。
+维度 exactly once。历史不可删除。该边界不联系 provider，也不具备 submit、cancel、strategy、
+AI、risk decision、kill switch 或 capital authority 能力。
+
+纠错使用独立的 `karkinos.controlled_submission_ledger_correction.v1` 契约。请求只能包含 immutable
+posting id、白名单原因和 operator identity，不能提交 cash、quantity、cost、fee 或 P/L 数值。
+Preview 使用 canonical ledger projector 重放两次：一次保留全部事实，另一次只排除原 posting 的
+精确 entry ids；补偿现金和完整持仓会计状态只能由两次结果之差生成。Artifact 绑定原 entry
+fingerprint、Account Truth import/review、valuation snapshot、ledger cutoff/fingerprint、derived plan
+与一份新的短期 operator signature。Apply 在 `BEGIN IMMEDIATE` 内重新推导，并只追加一个受保护的
+`controlled_projection_correction` event 和 immutable correction record；原交易、费用与 posting
+record 始终可查询。零 entry posting 没有可纠正的财务事实；重放无效、存在依赖交易、identity
+drift、冲突重试或 before-state 被篡改时均 fail closed。Apply 后 Ledger、Holdings、Allocation、
+Equity、Overview、Cockpit 与 Account State 读取同一个 canonical projection 和 snapshot identity；
+Account Truth 会刻意变为 stale，直到更新的券商证据覆盖该纠正。纠错边界不能修改 OMS、联系
+provider、submit/cancel、risk、kill switch、strategy/AI 或 capital authority。
 
 入账前 Account Truth 只有在每个 non-pass reconciliation item 都能数学上精确归因于这一笔受控
 订单尚未入账的 cash、position、gross、net、fee、tax、transfer fee 与 cost basis delta 时，才可

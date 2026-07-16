@@ -58,9 +58,11 @@ operator signature can now post the exact cleared fills to the production
 ledger once, in one transaction, while zero-fill cancel remains a recorded
 no-op. The posting boundary rechecks OMS, lifecycle, broker evidence, Account
 Truth, and ledger identity; it cannot submit, cancel, contact a provider, or
-change capital authority. Selecting or implementing one real broker edge still
-requires explicit owner confirmation before any read-only soak or
-human-confirmed per-order pilot.
+change capital authority. A separately signed append-only correction can now
+reverse one posting only from canonical replay, preserving the original trades
+and requiring a newer Account Truth import afterward. Selecting or implementing
+one real broker edge still requires explicit owner confirmation before any
+read-only soak or human-confirmed per-order pilot.
 
 See [the roadmap](docs/ROADMAP.md) for priorities and release gates. Completed
 implementation evidence lives in
