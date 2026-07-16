@@ -146,6 +146,13 @@ Truth stale gate。Operator UI、更广的 fault-injection acceptance 与真实 
 在 Operations/Trading 中统一 preflight、确认、资金风险、阻断、提交状态、unknown recovery、
 cancel、reconciliation、posting 和 kill switch。每个阻断状态必须显示证据和唯一安全下一步。
 
+**已实现基础：** canonical、persisted-only 的 controlled-execution operator projection 现会把
+每个近期 controlled intent 与 execution reconciliation、exact-terminal clearance、reconciled
+ledger posting 以及任何 append-only correction 串成一条证据链，并给出唯一安全的人工下一步。
+Unknown outcome 只允许查询；该投影不联系 provider、不修改账本，也不授予 submit、cancel、resume
+或 capital authority。带签名的 mutation control、cancel/recovery action，以及完整的无需手改数据库
+旅程仍未完成。
+
 **退出门：** 操作者无需手改数据库即可完成正常和恢复流程；刷新、重复点击和服务重启不会重复
 side effect；所有提交门禁在写事务内重新检查，而不是只依赖 UI 预览。
 

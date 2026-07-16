@@ -495,8 +495,48 @@ export type ControlledExecutionOperatorSession = {
   broker_submission_enabled: false;
 };
 
+export type ControlledOrderJourneyStage = {
+  key:
+    | 'controlled_submission'
+    | 'execution_reconciliation'
+    | 'terminal_reconciliation_clearance'
+    | 'reconciled_ledger_posting'
+    | 'append_only_ledger_correction';
+  status: string;
+  evidence_id: string;
+  complete: boolean;
+  required: boolean;
+  terminal_status?: string;
+  fill_count?: number;
+  fill_quantity?: string;
+  cancelled_quantity?: string;
+  ledger_entry_count?: number;
+  post_ledger_cutoff_id?: number;
+  reason_code?: string;
+};
+
+export type ControlledOrderJourney = {
+  submit_intent_id: string;
+  order_id: string;
+  broker_order_id: string;
+  client_order_id: string;
+  gateway_id: string;
+  status: string;
+  next_operator_action: string;
+  prepared_at: string;
+  updated_at: string;
+  last_recovery_at: string;
+  stages: ControlledOrderJourneyStage[];
+  reads_persisted_facts_only: true;
+  provider_contact_performed: false;
+  broker_submission_performed: false;
+  broker_cancel_performed: false;
+  ledger_mutation_performed: false;
+  authority_changed: false;
+};
+
 export type ControlledExecutionOperatorView = {
-  schema_version: 'karkinos.controlled_execution_operator_view.v1';
+  schema_version: 'karkinos.controlled_execution_operator_view.v2';
   as_of: string;
   status: string;
   next_operator_action: string;
@@ -508,6 +548,10 @@ export type ControlledExecutionOperatorView = {
   sessions: ControlledExecutionOperatorSession[];
   latest_submission: Record<string, unknown> | null;
   latest_reconciliation: Record<string, unknown> | null;
+  order_journey_count: number;
+  visible_order_journey_count: number;
+  latest_order_journey: ControlledOrderJourney | null;
+  recent_order_journeys: ControlledOrderJourney[];
   source_blockers: string[];
   reads_persisted_facts_only: true;
   provider_contact_performed: false;

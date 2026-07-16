@@ -177,6 +177,13 @@ Unify preflight, approval, capital at risk, blockers, submission state, unknown
 recovery, cancel, reconciliation, posting, and kill switch in Operations and
 Trading. Every blocked state must expose its evidence and one safe next action.
 
+**Implemented foundation:** the canonical persisted-only controlled-execution operator
+projection links each recent intent through reconciliation, terminal clearance,
+ledger posting, and append-only correction. It exposes one safe human next step
+and treats unknown outcomes as query-only. It performs no provider contact,
+ledger mutation, or authority change; signed mutation, cancel/recovery, and the
+no-database-edit journey remain open.
+
 **Exit gate:** an operator can complete every normal and recovery flow without
 editing the database. Refresh, duplicate clicks, and service restart do not
 repeat a side effect. Submission gates are rechecked inside the write

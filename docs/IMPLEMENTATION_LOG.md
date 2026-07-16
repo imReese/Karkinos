@@ -29,6 +29,9 @@ The latest completed cross-cutting work includes:
 - signed bounded execution policy, atomic budgets, runtime sessions, live
   gates, pause/replacement, submission interlock, lifecycle evidence, operator
   projection, and capital-scaling review.
+- a canonical persisted-only controlled-order journey from submission through
+  reconciliation, terminal clearance, ledger posting, and append-only
+  correction, with one safe human next step and no read-side authority;
 - provider-neutral adapter release manifests with append-only human
   accept/reject/revoke evidence and exact live collector prepare/commit
   binding, without selecting or registering a real provider.

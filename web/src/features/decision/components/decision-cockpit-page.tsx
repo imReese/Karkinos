@@ -1703,6 +1703,11 @@ function automationNextAction(
   if (cockpit.open_alert_count > 0) {
     return locale === 'zh' ? '复核自动化告警' : 'review automation alerts';
   }
+  const controlledOrderAction =
+    cockpit.controlled_execution?.latest_order_journey?.next_operator_action;
+  if (controlledOrderAction) {
+    return controlledOrderJourneyNextActionLabel(controlledOrderAction, locale);
+  }
   if (cockpit.automation_status.next_action) {
     return automationRecommendedActionLabel(
       cockpit.automation_status.next_action,
@@ -1984,6 +1989,10 @@ function controlledExecutionStatusLabel(status: string, locale: Locale) {
       en: 'Read-only evidence clear',
       zh: '只读证据清晰',
     },
+    order_journey_review_required: {
+      en: 'Order journey review required',
+      zh: '订单旅程需要复核',
+    },
     blocked: { en: 'Blocked', zh: '已阻断' },
     historical_sessions_only: {
       en: 'Historical sessions only',
@@ -1999,6 +2008,74 @@ function controlledExecutionStatusLabel(status: string, locale: Locale) {
     scheduled: { en: 'Scheduled', zh: '待生效' },
   };
   return labels[status]?.[locale] ?? formatPublicStatus(status, locale);
+}
+
+function controlledOrderJourneyStageLabel(value: string, locale: Locale) {
+  const labels: Record<string, { en: string; zh: string }> = {
+    controlled_submission: {
+      en: 'Controlled submission',
+      zh: '受控提交',
+    },
+    execution_reconciliation: {
+      en: 'Execution reconciliation',
+      zh: '执行对账',
+    },
+    terminal_reconciliation_clearance: {
+      en: 'Terminal clearance',
+      zh: '终态清算',
+    },
+    reconciled_ledger_posting: {
+      en: 'Reconciled ledger posting',
+      zh: '对账后账本入账',
+    },
+    append_only_ledger_correction: {
+      en: 'Append-only correction',
+      zh: '追加式校正',
+    },
+  };
+  return labels[value]?.[locale] ?? formatPublicStatus(value, locale);
+}
+
+function controlledOrderJourneyNextActionLabel(value: string, locale: Locale) {
+  const labels: Record<string, { en: string; zh: string }> = {
+    review_account_truth_after_ledger_correction: {
+      en: 'review Account Truth after correction',
+      zh: '校正后复核账户事实',
+    },
+    review_account_truth_after_ledger_posting: {
+      en: 'review Account Truth after ledger posting',
+      zh: '入账后复核账户事实',
+    },
+    preview_reconciled_ledger_posting: {
+      en: 'preview the separately signed ledger posting',
+      zh: '预览需单独签名的账本入账',
+    },
+    query_submission_outcome_without_resubmit: {
+      en: 'query the unknown outcome; do not resubmit',
+      zh: '只查询未知结果，不得重提',
+    },
+    query_prepared_submission_outcome_without_resubmit: {
+      en: 'query the prepared outcome; do not resubmit',
+      zh: '查询已准备结果，不得重提',
+    },
+    review_rejection_evidence_without_retry: {
+      en: 'review rejection evidence; no automatic retry',
+      zh: '复核拒绝证据，不自动重试',
+    },
+    run_or_review_execution_reconciliation: {
+      en: 'run or review execution reconciliation',
+      zh: '运行或复核执行对账',
+    },
+    review_execution_reconciliation: {
+      en: 'review execution reconciliation',
+      zh: '复核执行对账',
+    },
+    preview_terminal_reconciliation_clearance: {
+      en: 'preview the separately signed terminal clearance',
+      zh: '预览需单独签名的终态清算',
+    },
+  };
+  return labels[value]?.[locale] ?? formatPublicStatus(value, locale);
 }
 
 function controlledExecutionCurrency(value: string | null | undefined) {
@@ -2769,6 +2846,8 @@ function AutomationCockpitPanel({
     controlledExecution?.sessions.find(
       (session) => session.is_current_window,
     ) ?? controlledExecution?.sessions[0];
+  const latestControlledOrderJourney =
+    controlledExecution?.latest_order_journey;
   const showAccountFacts =
     brokerAccountFactsLoading ||
     brokerAccountFactsError ||
@@ -3054,6 +3133,94 @@ function AutomationCockpitPanel({
                   : 'No persisted controlled-execution session; live submission remains off.'}
               </div>
             )}
+
+            {latestControlledOrderJourney ? (
+              <div
+                data-testid="controlled-order-journey"
+                className="mt-4 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-accent)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-accent)_7%,transparent)] px-3 py-3"
+              >
+                <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-[var(--app-text)]">
+                      {locale === 'zh'
+                        ? '受控订单证据旅程'
+                        : 'Controlled order evidence journey'}
+                    </div>
+                    <div className="app-muted mt-1 break-words text-xs leading-5">
+                      {latestControlledOrderJourney.order_id || '—'} ·{' '}
+                      {latestControlledOrderJourney.gateway_id || '—'}
+                    </div>
+                  </div>
+                  <span className="app-chip max-w-full break-words text-left">
+                    {locale === 'zh' ? '下一步：' : 'Next: '}
+                    {controlledOrderJourneyNextActionLabel(
+                      latestControlledOrderJourney.next_operator_action,
+                      locale,
+                    )}
+                  </span>
+                </div>
+
+                <div className="mt-3 grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                  {latestControlledOrderJourney.stages.map((stage) => {
+                    const optionalStageNotApplied =
+                      !stage.required && !stage.complete;
+                    return (
+                      <div
+                        className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3 py-2.5"
+                        key={stage.key}
+                      >
+                        <div className="app-muted text-[11px]">
+                          {controlledOrderJourneyStageLabel(stage.key, locale)}
+                        </div>
+                        <div className="mt-1 break-words text-sm font-semibold text-[var(--app-text)]">
+                          {formatPublicStatus(stage.status, locale)}
+                        </div>
+                        <div className="app-muted mt-1 text-[11px]">
+                          {stage.complete
+                            ? locale === 'zh'
+                              ? '证据已记录'
+                              : 'Evidence recorded'
+                            : optionalStageNotApplied
+                              ? locale === 'zh'
+                                ? '仅在发现错误时使用'
+                                : 'Only used when an error is confirmed'
+                              : locale === 'zh'
+                                ? '等待单独人工步骤'
+                                : 'Separate human step pending'}
+                        </div>
+                        {stage.evidence_id ? (
+                          <div
+                            className="app-muted mt-1 truncate font-mono text-[10px]"
+                            title={stage.evidence_id}
+                          >
+                            {stage.evidence_id}
+                          </div>
+                        ) : null}
+                        {stage.terminal_status ? (
+                          <div className="app-muted mt-1 text-[10px]">
+                            {locale === 'zh' ? '终态' : 'Terminal'}:{' '}
+                            {formatPublicStatus(stage.terminal_status, locale)}{' '}
+                            · {locale === 'zh' ? '成交笔数' : 'Fills'}{' '}
+                            {stage.fill_count ?? 0}
+                          </div>
+                        ) : null}
+                        {(stage.post_ledger_cutoff_id ?? 0) > 0 ? (
+                          <div className="app-muted mt-1 text-[10px]">
+                            ledger cutoff #{stage.post_ledger_cutoff_id}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="app-muted mt-3 break-words text-xs leading-5">
+                  {locale === 'zh'
+                    ? '该旅程只投影持久化证据；本次读取未联系券商、未提交或撤单、未修改账本，也未改变任何资本或执行权限。'
+                    : 'This journey projects persisted evidence only. This read contacted no broker, submitted or cancelled no order, mutated no ledger, and changed no capital or execution authority.'}
+                </div>
+              </div>
+            ) : null}
 
             <div className="mt-3 flex min-w-0 flex-wrap gap-2">
               {[

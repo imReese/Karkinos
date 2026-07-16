@@ -9,6 +9,7 @@ import {
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { PreferencesProvider } from '../../../app/preferences';
+import type { ControlledOrderJourney } from '../../operations/api';
 import type { DecisionResponse } from '../api';
 import { DecisionCockpitPage } from './decision-cockpit-page';
 
@@ -19,6 +20,68 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
     ...init,
   });
 }
+
+const controlledOrderJourneyFixture: ControlledOrderJourney = {
+  submit_intent_id: '1'.repeat(64),
+  order_id: 'OMS-FIXTURE-1',
+  broker_order_id: 'BROKER-FIXTURE-1',
+  client_order_id: 'KARKINOS-FIXTURE-1',
+  gateway_id: 'fixture-write-edge',
+  status: 'ledger_posted_account_truth_review_required',
+  next_operator_action: 'review_account_truth_after_ledger_posting',
+  prepared_at: '2026-07-13T07:45:00+00:00',
+  updated_at: '2026-07-13T07:45:02+00:00',
+  last_recovery_at: '',
+  stages: [
+    {
+      key: 'controlled_submission',
+      status: 'submitted',
+      evidence_id: '1'.repeat(64),
+      complete: true,
+      required: true,
+    },
+    {
+      key: 'execution_reconciliation',
+      status: 'matched',
+      evidence_id: 'recon-fixture-1',
+      complete: true,
+      required: true,
+    },
+    {
+      key: 'terminal_reconciliation_clearance',
+      status: 'cleared',
+      evidence_id: '2'.repeat(64),
+      complete: true,
+      required: true,
+      terminal_status: 'filled',
+      fill_count: 1,
+      fill_quantity: '100',
+      cancelled_quantity: '0',
+    },
+    {
+      key: 'reconciled_ledger_posting',
+      status: 'applied',
+      evidence_id: '3'.repeat(64),
+      complete: true,
+      required: true,
+      ledger_entry_count: 2,
+      post_ledger_cutoff_id: 42,
+    },
+    {
+      key: 'append_only_ledger_correction',
+      status: 'not_required',
+      evidence_id: '',
+      complete: false,
+      required: false,
+    },
+  ],
+  reads_persisted_facts_only: true,
+  provider_contact_performed: false,
+  broker_submission_performed: false,
+  broker_cancel_performed: false,
+  ledger_mutation_performed: false,
+  authority_changed: false,
+};
 
 const dailyDecision: DecisionResponse = {
   lane: 'daily',
@@ -465,7 +528,7 @@ function installDecisionFetchMock({
       },
     ],
     controlled_execution: {
-      schema_version: 'karkinos.controlled_execution_operator_view.v1',
+      schema_version: 'karkinos.controlled_execution_operator_view.v2',
       as_of: '2026-06-12T09:33:00+08:00',
       status: 'no_session_evidence',
       next_operator_action: 'no_action_default_disabled',
@@ -477,6 +540,10 @@ function installDecisionFetchMock({
       sessions: [],
       latest_submission: null,
       latest_reconciliation: null,
+      order_journey_count: 0,
+      visible_order_journey_count: 0,
+      latest_order_journey: null,
+      recent_order_journeys: [],
       source_blockers: [],
       reads_persisted_facts_only: true,
       provider_contact_performed: false,
@@ -2107,7 +2174,7 @@ test('surfaces bounded controlled execution evidence without live actions', asyn
       promotion_states: [],
       execution_reconciliation_open_items: [],
       controlled_execution: {
-        schema_version: 'karkinos.controlled_execution_operator_view.v1',
+        schema_version: 'karkinos.controlled_execution_operator_view.v2',
         as_of: '2026-07-13T08:00:00+00:00',
         status: 'blocked',
         next_operator_action: 'review_controlled_execution_blockers',
@@ -2175,6 +2242,10 @@ test('surfaces bounded controlled execution evidence without live actions', asyn
         ],
         latest_submission: { order_id: 'OMS-FIXTURE-1', status: 'accepted' },
         latest_reconciliation: { run_id: 'recon-fixture-1', status: 'clear' },
+        order_journey_count: 1,
+        visible_order_journey_count: 1,
+        latest_order_journey: controlledOrderJourneyFixture,
+        recent_order_journeys: [controlledOrderJourneyFixture],
         source_blockers: [],
         reads_persisted_facts_only: true,
         provider_contact_performed: false,
@@ -2218,6 +2289,27 @@ test('surfaces bounded controlled execution evidence without live actions', asyn
   expect(operatorView.textContent).toContain('No resume action');
   expect(operatorView.textContent).toContain('No automatic scale-up');
   expect(within(operatorView).queryAllByRole('button')).toHaveLength(0);
+
+  const orderJourney = within(operatorView).getByTestId(
+    'controlled-order-journey',
+  );
+  expect(orderJourney.textContent).toContain(
+    'Controlled order evidence journey',
+  );
+  expect(orderJourney.textContent).toContain(
+    'review Account Truth after ledger posting',
+  );
+  expect(orderJourney.textContent).toContain('Controlled submission');
+  expect(orderJourney.textContent).toContain('Execution reconciliation');
+  expect(orderJourney.textContent).toContain('Terminal clearance');
+  expect(orderJourney.textContent).toContain('Reconciled ledger posting');
+  expect(orderJourney.textContent).toContain('Append-only correction');
+  expect(orderJourney.textContent).toContain('Terminal: Filled · Fills 1');
+  expect(orderJourney.textContent).toContain('ledger cutoff #42');
+  expect(orderJourney.textContent).toContain(
+    'This read contacted no broker, submitted or cancelled no order, mutated no ledger, and changed no capital or execution authority.',
+  );
+  expect(within(orderJourney).queryAllByRole('button')).toHaveLength(0);
 });
 
 test('surfaces strategy promotion state as paper shadow only without live promotion controls', async () => {

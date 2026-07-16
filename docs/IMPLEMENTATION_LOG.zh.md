@@ -23,6 +23,9 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
   Settings 写入契约，以及 Server 与旧 CLI 共用的 dotenv 选择路径；
 - 已签名有界执行 policy、原子预算、runtime session、live gate、pause/replacement、submission
   interlock、lifecycle evidence、operator projection 与 capital-scaling review。
+- canonical、persisted-only 的 controlled-order journey，将 submission、reconciliation、
+  terminal clearance、ledger posting 与 append-only correction 串成一条证据链，并只给出安全
+  人工下一步，不产生 read-side authority；
 - provider-neutral adapter release manifest、append-only 人工 accept/reject/revoke 证据，以及
   live collector prepare/commit 的精确绑定；没有选择或注册真实 provider。
 - provider-neutral deterministic conformance fixture、append-only report、精确 manifest/review
