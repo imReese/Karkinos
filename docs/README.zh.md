@@ -87,8 +87,10 @@ Operations 展示数据、计划、paper/shadow、OMS、对账、告警和恢复
 
 真实资金能力默认关闭。当前目标是一个 provider、逐单人工确认、明确资金边界、完整生命周期、
 执行对账和显式入账。当前已能基于持久证据对完整成交、零成交撤单和部分成交后撤单执行单独签名
-的精确终态 clearance，但它不会写生产账本或签发撤单。详细门禁和发布条件见
-[路线图](ROADMAP.zh.md)。
+的精确终态 clearance；随后还需要另一份最终操作员签名，才可在单一事务内 exactly once 地把
+实际 fills 写入生产账本。零成交撤单只记录 no-op posting。入账边界会重新核验 OMS、lifecycle、
+券商证据、Account Truth 与 ledger identity，不能提交或撤销券商订单、联系 provider 或改变资本
+权限。详细门禁和发布条件见[路线图](ROADMAP.zh.md)。
 
 ### AI 研究
 

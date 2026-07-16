@@ -175,6 +175,8 @@ def build_latest_account_truth_promotion_evidence(
                 "category": item.category,
                 "symbol": item.symbol,
                 "status": item.status,
+                "broker_value": item.broker_value,
+                "karkinos_value": item.karkinos_value,
                 "difference": item.difference,
                 "detail_code": item.detail_code,
                 "review_status": str(
@@ -228,6 +230,8 @@ def build_latest_account_truth_promotion_evidence(
         "file_fingerprint": import_run.file_fingerprint,
         "source_type": import_run.source_type,
         "captured_at": import_run.created_at,
+        "import_validation_status": import_run.validation_status,
+        "import_valid_row_count": import_run.valid_row_count,
         "current_age_seconds": age_seconds,
         "max_age_seconds": effective_max_age,
         "data_freshness_status": freshness_status,
@@ -241,6 +245,7 @@ def build_latest_account_truth_promotion_evidence(
         "cost_basis_status": score.cost_basis_status,
         "unresolved_mismatch_count": score.unresolved_mismatch_count,
         "resolved_review_count": score.resolved_review_count,
+        "reconciliation_items": report_items,
         "blockers": unique_blockers,
         "does_not_mutate_production_ledger": True,
         "does_not_issue_execution_authority": True,
@@ -386,6 +391,10 @@ def _ledger_coverage_for_import(
             "latest_ledger_created_at": None,
         }
     rows = list(reader(limit=1000, offset=0) or [])
+    posting_covered_entry_ids = _posting_covered_ledger_entry_ids(
+        db,
+        import_run_id=import_run.import_run_id,
+    )
     ledger_created_timestamps = [
         _parse_fact_timestamp(row.get("created_at"))
         for row in rows
@@ -417,17 +426,25 @@ def _ledger_coverage_for_import(
             default=None,
         )
     stale_reasons: list[str] = []
-    if (
-        latest_ledger_created is not None
+    uncovered_created_after_import = any(
+        (created_at := _parse_fact_timestamp(row.get("created_at"))) is not None
         and import_timestamp is not None
-        and latest_ledger_created > import_timestamp
-    ):
+        and created_at > import_timestamp
+        and int(row.get("id") or 0) not in posting_covered_entry_ids
+        for row in rows
+        if isinstance(row, dict)
+    )
+    if uncovered_created_after_import:
         stale_reasons.append("ledger_was_revised_after_broker_import")
-    if (
-        latest_ledger_event is not None
+    uncovered_event_after_evidence = any(
+        (event_at := _parse_fact_timestamp(row.get("timestamp"))) is not None
         and broker_evidence_as_of is not None
-        and latest_ledger_event > broker_evidence_as_of
-    ):
+        and event_at > broker_evidence_as_of
+        and int(row.get("id") or 0) not in posting_covered_entry_ids
+        for row in rows
+        if isinstance(row, dict)
+    )
+    if uncovered_event_after_evidence:
         stale_reasons.append("broker_evidence_does_not_cover_latest_ledger_event")
     if stale_reasons:
         status = "stale"
@@ -452,6 +469,45 @@ def _ledger_coverage_for_import(
             if broker_evidence_as_of is not None
             else None
         ),
+        "controlled_posting_lineage_entry_count": len(posting_covered_entry_ids),
+    }
+
+
+def _posting_covered_ledger_entry_ids(
+    db: Any,
+    *,
+    import_run_id: str,
+) -> set[int]:
+    """Return immutable ledger rows proven to originate from one broker import."""
+
+    reader = getattr(db, "list_controlled_submission_ledger_postings_sync", None)
+    if not callable(reader):
+        return set()
+    covered: set[int] = set()
+    for posting in reader(limit=1000) or []:
+        if (
+            not isinstance(posting, dict)
+            or posting.get("status") != "applied"
+            or str(posting.get("account_truth_import_run_id") or "") != import_run_id
+        ):
+            continue
+        try:
+            entry_ids = json.loads(posting.get("ledger_entry_ids_json") or "[]")
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(entry_ids, list):
+            continue
+        covered.update(
+            int(entry_id)
+            for entry_id in entry_ids
+            if isinstance(entry_id, int) and entry_id > 0
+        )
+    return {
+        int(row.get("id") or 0)
+        for row in (getattr(db, "get_ledger_entries_sync")(limit=1000, offset=0) or [])
+        if isinstance(row, dict)
+        and int(row.get("id") or 0) in covered
+        and str(row.get("source") or "") == "controlled_submission_ledger_posting"
     }
 
 

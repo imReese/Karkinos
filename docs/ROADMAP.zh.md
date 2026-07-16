@@ -127,6 +127,15 @@ lifecycle、fills、fees、taxes、reconciliation、Account Truth、ledger cutof
 **退出门：** 入账 exactly once；partial+cancelled 只按实际成交入账；不完整或冲突证据 fail
 closed；入账后 Ledger、Holdings、Equity Curve、Overview、realized P/L 和 Account Truth 一致。
 
+**已实现基础：** provider-neutral 的
+`karkinos.controlled_submission_ledger_posting.v1` 已提供单独签名的 preview 与 exactly-once 原子
+apply。写事务内会重新核验精确终态 clearance、OMS 与 controlled intent、lifecycle 与 statement
+证据、fills 与成本、Account Truth identity、valuation snapshot 以及 ledger cutoff/fingerprint。
+完整成交、部分成交后撤单、零成交撤单、重复重试、证据 drift 与 ledger race 均有 deterministic
+fixture。Posting 不能联系 provider，也不能授予 submit、cancel、strategy、AI、risk、kill switch
+或 capital authority。Operator UI、补偿纠错命令、完整跨页面验收与真实 provider 证据仍未完成，
+因此 M3 尚不是发布完成声明。
+
 ### M4 — Operator Journey
 
 在 Operations/Trading 中统一 preflight、确认、资金风险、阻断、提交状态、unknown recovery、
@@ -160,7 +169,8 @@ rate 和 expiry 上限。任一 critical incident 立即退回 `disabled`。
 4. **基础部分已实现：** query/callback 生命周期，以及签名的完整成交/partial-cancel/零成交撤单
    精确终态对账；真实 cancel/unknown recovery 仍待完成。
 5. 默认关闭的 write adapter 与逐单 submit/cancel gate。
-6. Reconciled ledger posting 与跨页面财务一致性。
+6. **基础已实现：** 单独签名、exactly-once 的 reconciled ledger posting；下一步补齐补偿纠错操作
+   与跨页面验收。
 7. Operations/Trading 端到端 UX 与告警。
 8. 部署、回滚、故障演练和受控试点发布。
 

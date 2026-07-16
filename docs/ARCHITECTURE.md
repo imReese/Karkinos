@@ -205,6 +205,32 @@ interlock. It never posts the production ledger, contacts a provider, issues a
 cancel, or grants submission/capital authority. A later lifecycle or collector
 drift invalidates the clearance and re-blocks the interlock.
 
+Reconciled posting is a separate
+`karkinos.controlled_submission_ledger_posting.v1` preview-confirm-apply
+contract. Its preview binds the cleared intent and OMS terminal state, exact
+broker/client order identities, lifecycle observation, statement rows, fills,
+fees/taxes/transfer fees, Account Truth identity, valuation snapshot, ledger
+cutoff/fingerprint, and a short-lived operator approval. The write transaction
+re-reads those facts and the canonical ledger identity under `BEGIN IMMEDIATE`;
+any drift rejects the whole batch. Each real fill produces one confirmed ledger
+event with immutable clearance/import lineage, partial-cancel posts only actual
+fills, and no-fill cancel produces an applied zero-entry posting. The posting
+record and all ledger events commit together and are unique by posting,
+clearance, intent, order, fill, and settlement evidence. History cannot be
+deleted; future corrections must be compensating events. Posting never contacts
+a provider and has no submit, cancel, strategy, AI, risk-decision, kill-switch,
+or capital-authority capability.
+
+Account Truth may permit the pre-posting clearance mismatch only when every
+non-pass reconciliation item is mathematically identical to that single
+controlled order's unposted cash, position, gross, net, fee, tax, transfer-fee,
+and cost-basis delta. Missing snapshots or any unrelated delta still block. On
+posting, ledger-coverage logic recognizes only ledger rows whose immutable
+posting lineage points to the same broker import; any unrelated later ledger
+fact makes the evidence stale. The post-apply result publishes a new valuation
+snapshot and requires Account Truth to reconcile again; otherwise it reports
+manual review required rather than silently claiming success.
+
 ### AI research
 
 ```text

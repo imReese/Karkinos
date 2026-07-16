@@ -362,6 +362,9 @@ def create_app(
     from server.routes.controlled_session_runtime_rate_limiter import (
         create_router as controlled_session_runtime_rate_limiter_router,
     )
+    from server.routes.controlled_submission_ledger_posting import (
+        create_router as controlled_submission_ledger_posting_router,
+    )
     from server.routes.decision import create_router as decision_router
     from server.routes.execution_gateway_verification import (
         create_router as execution_gateway_verification_router,
@@ -405,6 +408,7 @@ def create_app(
     app.include_router(capital_authorization_router())
     app.include_router(capital_scaling_review_router())
     app.include_router(controlled_broker_submission_router())
+    app.include_router(controlled_submission_ledger_posting_router())
     app.include_router(controlled_session_envelope_router())
     app.include_router(controlled_session_budget_reservation_router())
     app.include_router(controlled_session_runtime_authority_router())
