@@ -293,17 +293,6 @@ class AiAuditStore:
     def save_context(self, context: EvidenceBoundContextSnapshot) -> None:
         payload_json = canonical_json(context.to_dict())
         with self._connection() as conn:
-            existing = conn.execute(
-                "SELECT context_fingerprint FROM ai_context_snapshots "
-                "WHERE snapshot_id = ?",
-                (context.snapshot_id,),
-            ).fetchone()
-            if existing is not None:
-                if str(existing["context_fingerprint"]) != context.fingerprint:
-                    raise IdempotencyConflict(
-                        f"conflicting context snapshot: {context.snapshot_id}"
-                    )
-                return
             conn.execute(
                 """
                 INSERT INTO ai_context_snapshots (
@@ -311,6 +300,7 @@ class AiAuditStore:
                     ledger_cutoff_id, ledger_fingerprint,
                     persisted_facts_only, payload_json, created_at
                 ) VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+                ON CONFLICT(snapshot_id) DO NOTHING
                 """,
                 (
                     context.snapshot_id,
@@ -322,6 +312,18 @@ class AiAuditStore:
                     context.created_at,
                 ),
             )
+            existing = conn.execute(
+                "SELECT context_fingerprint FROM ai_context_snapshots "
+                "WHERE snapshot_id = ?",
+                (context.snapshot_id,),
+            ).fetchone()
+            if (
+                existing is None
+                or str(existing["context_fingerprint"]) != context.fingerprint
+            ):
+                raise IdempotencyConflict(
+                    f"conflicting context snapshot: {context.snapshot_id}"
+                )
 
     def get_context(self, snapshot_id: str) -> EvidenceBoundContextSnapshot:
         with self._connection() as conn:
@@ -352,20 +354,7 @@ class AiAuditStore:
         workflow_id = f"ai-workflow-{content_fingerprint(workflow_identity)[:24]}"
         definition_json = canonical_json(definition.to_dict())
         with self._connection() as conn:
-            existing = conn.execute(
-                "SELECT * FROM ai_workflows WHERE idempotency_key = ?",
-                (idempotency_key,),
-            ).fetchone()
-            if existing is not None:
-                if (
-                    str(existing["definition_fingerprint"]) != definition.fingerprint
-                    or str(existing["context_fingerprint"]) != context.fingerprint
-                ):
-                    raise IdempotencyConflict(
-                        "workflow idempotency key was reused with different input"
-                    )
-                return _workflow_from_row(existing), True
-            conn.execute(
+            insert = conn.execute(
                 """
                 INSERT INTO ai_workflows (
                     workflow_id, idempotency_key, definition_id,
@@ -374,6 +363,7 @@ class AiAuditStore:
                     current_stage_index, partial_result, failure_code,
                     created_at, updated_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, ?, ?)
+                ON CONFLICT(idempotency_key) DO NOTHING
                 """,
                 (
                     workflow_id,
@@ -389,10 +379,18 @@ class AiAuditStore:
                 ),
             )
             row = conn.execute(
-                "SELECT * FROM ai_workflows WHERE workflow_id = ?", (workflow_id,)
+                "SELECT * FROM ai_workflows WHERE idempotency_key = ?",
+                (idempotency_key,),
             ).fetchone()
-        assert row is not None
-        return _workflow_from_row(row), False
+            if (
+                row is None
+                or str(row["definition_fingerprint"]) != definition.fingerprint
+                or str(row["context_fingerprint"]) != context.fingerprint
+            ):
+                raise IdempotencyConflict(
+                    "workflow idempotency key was reused with different input"
+                )
+        return _workflow_from_row(row), insert.rowcount == 0
 
     def get_workflow(self, workflow_id: str) -> ResearchWorkflow:
         with self._connection() as conn:

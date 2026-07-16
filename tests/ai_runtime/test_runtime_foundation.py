@@ -4,6 +4,7 @@ import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from pathlib import Path
+from threading import Barrier
 
 import pytest
 
@@ -295,6 +296,41 @@ def test_duplicate_workflow_run_is_idempotent_and_conflicting_input_is_rejected(
                 ledger_fingerprint="ledger-fingerprint-002",
             ),
             idempotency_key="duplicate-case",
+        )
+
+
+@pytest.mark.unit
+def test_concurrent_workflow_creation_reuses_one_atomic_audit_record(tmp_path):
+    store, _, runtime = _runtime(
+        tmp_path / "app.db",
+        responses={"evidence": (ProviderResponse(artifacts=(_claim(),)),)},
+    )
+    definition = _definition(_stage("evidence"))
+    context = _context()
+    workers = 8
+    barrier = Barrier(workers)
+
+    def create_workflow(_):
+        barrier.wait()
+        return runtime.create_workflow(
+            definition=definition,
+            context=context,
+            idempotency_key="concurrent-duplicate-case",
+        )
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        workflows = tuple(executor.map(create_workflow, range(workers)))
+
+    assert len({workflow.workflow_id for workflow in workflows}) == 1
+    workflow_id = workflows[0].workflow_id
+    assert store.get_workflow(workflow_id).workflow_id == workflow_id
+    with closing(sqlite3.connect(tmp_path / "app.db")) as conn:
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM ai_workflows WHERE idempotency_key = ?",
+                ("concurrent-duplicate-case",),
+            ).fetchone()[0]
+            == 1
         )
 
 
