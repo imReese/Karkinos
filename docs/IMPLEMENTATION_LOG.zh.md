@@ -26,6 +26,9 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
 - canonical、persisted-only 的 controlled-order journey，将 submission、reconciliation、
   terminal clearance、ledger posting 与 append-only correction 串成一条证据链，并只给出安全
   人工下一步，不产生 read-side authority；
+- 显式打开的 ledger-posting 操作员复核，将 canonical delta preview 与匹配的可信公钥身份、短时
+  离线 Ed25519 proof、最终确认和 exactly-once apply 绑定，同时使私钥、broker action 与 authority
+  change 留在 Web 路径之外；
 - provider-neutral adapter release manifest、append-only 人工 accept/reject/revoke 证据，以及
   live collector prepare/commit 的精确绑定；没有选择或注册真实 provider。
 - provider-neutral deterministic conformance fixture、append-only report、精确 manifest/review
@@ -65,7 +68,10 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
 - 与 release review 绑定并在 live collector prepare/commit 前复核的 deterministic local adapter
   conformance 证据；
 - connector-scoped、latest-result-wins 的 soak promotion recovery-drill gate；
-- 已持久化 operator projection 与 evidence-based scale review。
+- 已持久化 operator projection 与 evidence-based scale review；
+- terminal-clearance 到 ledger-posting 步骤现可由操作员无需修改数据库完成；deterministic UI
+  测试覆盖 canonical action eligibility、blocker、缺失身份、精确 request body 与无 broker call；
+  本地 signer 拒绝覆盖密钥、强制私钥文件权限，并且只签署输入的 challenge payload，不执行网络 I/O。
 
 M3 纠正的假设与风险记录：
 
@@ -81,8 +87,9 @@ M3 纠正的假设与风险记录：
   重算、每次重放核验 before-state、保留历史，并且不授予 OMS、broker、risk、kill switch、
   AI/strategy 或 capital 能力。
 
-剩余发布工作由路线图负责：一个真实 adapter、只读 soak、真实 cancel/unknown recovery、纠正的
-operator UI、更广的 fault injection 与真实证据验收、operator journey 与受控逐单 pilot。
+剩余发布工作由路线图负责：一个真实 adapter、只读 soak、真实 cancel/unknown recovery、签名式
+submission/clearance/correction UI、更广的 fault injection 与真实证据验收、operator journey 的其余
+步骤与受控逐单 pilot。
 
 ### v1.7 — 受控券商 Bridge 基础
 

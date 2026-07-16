@@ -32,6 +32,10 @@ The latest completed cross-cutting work includes:
 - a canonical persisted-only controlled-order journey from submission through
   reconciliation, terminal clearance, ledger posting, and append-only
   correction, with one safe human next step and no read-side authority;
+- an explicitly opened ledger-posting operator review that binds the canonical
+  delta preview to a matching trusted public identity, short-lived offline
+  Ed25519 proof, final acknowledgement, and exactly-once apply, while keeping
+  private keys, broker actions, and authority changes outside the Web path;
 - provider-neutral adapter release manifests with append-only human
   accept/reject/revoke evidence and exact live collector prepare/commit
   binding, without selecting or registering a real provider.
@@ -81,7 +85,12 @@ Implemented foundation:
 - deterministic local adapter conformance evidence bound to release review and
   rechecked before live collector prepare/commit;
 - connector-scoped, latest-result-wins recovery-drill gates for soak promotion;
-- persisted operator projection and evidence-based scale review.
+- persisted operator projection and evidence-based scale review;
+- a no-database-edit operator path for the terminal-clearance-to-ledger-posting
+  step, with deterministic UI tests for canonical action eligibility, blockers,
+  missing identities, exact request bodies, and absence of broker calls; the
+  local signer refuses key overwrite, enforces private-file permissions, and
+  signs only the supplied challenge payload without network I/O.
 
 M3 correction assumptions and risk record:
 
@@ -103,9 +112,9 @@ M3 correction assumptions and risk record:
   capability.
 
 Remaining release work is owned by the roadmap: one real adapter, read-only
-soak, real cancel/unknown recovery, correction/operator UI, broader fault
-injection and real-evidence acceptance, operator journey, and controlled
-per-order pilot.
+soak, real cancel/unknown recovery, signed submission/clearance/correction UI,
+broader fault injection and real-evidence acceptance, the rest of the operator
+journey, and the controlled per-order pilot.
 
 ### v1.7 — Controlled Broker Bridge Foundation
 

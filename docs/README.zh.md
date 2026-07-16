@@ -51,6 +51,8 @@ npm --prefix web run test
 - [券商适配器发布审查](broker-adapter-release-review.zh.md) — provider-neutral capability、威胁、
   部署、回滚、隐私与显式人工 acceptance 证据。
 - [受控执行](CONTROLLED_EXECUTION_PLAN.zh.md) — 人工权限、运行门禁、恢复和资本扩容规则。
+- [操作员批准的离线签名](operator-approval-signing.zh.md) — 本地 Ed25519 身份配置与不保存私钥的
+  短时签名 mutation 复核。
 
 ### 参考资料
 
@@ -93,6 +95,10 @@ Operations 展示数据、计划、paper/shadow、OMS、对账、告警和恢复
 权限。单独签名的 append-only correction 现在可仅根据 canonical replay 反向纠正一个 posting，
 保留原交易与费用，并在完成后要求更新的 Account Truth import。详细门禁和发布条件见
 [路线图](ROADMAP.zh.md)。
+
+Terminal clearance 到 posting 的步骤现在可在显式打开的操作员复核中完成：先查看 deterministic
+preview，再使用短时离线签名并执行最终确认；未配置匹配可信公钥时保持禁用。该路径不需要修改
+数据库，也不能提交或撤销券商订单、改变资本权限。
 
 ### AI 研究
 
