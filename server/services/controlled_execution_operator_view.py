@@ -16,17 +16,31 @@ from server.services.controlled_session_gate_contract import (
 )
 
 CONTROLLED_EXECUTION_OPERATOR_VIEW_SCHEMA_VERSION = (
-    "karkinos.controlled_execution_operator_view.v2"
+    "karkinos.controlled_execution_operator_view.v3"
 )
 
 MAX_CONTROLLED_EXECUTION_SOURCE_ROWS = 500
 MAX_RECONCILIATION_RUNS = 100
 MAX_VISIBLE_SESSIONS = 50
 MAX_VISIBLE_ORDER_JOURNEYS = 20
+MAX_VISIBLE_ORDER_ATTENTION_ITEMS = 20
 
 _UNRECONCILED_SUBMISSION_STATUSES = frozenset(
     {"prepared", "submitted", "submission_unknown"}
 )
+
+_ORDER_JOURNEY_ATTENTION = {
+    "submission_unknown": (0, "critical"),
+    "prepared_outcome_review_required": (1, "critical"),
+    "open_broker_order_review_required": (2, "critical"),
+    "execution_reconciliation_required": (10, "warning"),
+    "submission_rejected": (20, "warning"),
+    "execution_reconciliation_review_required": (30, "warning"),
+    "terminal_clearance_review_required": (40, "warning"),
+    "terminal_cleared_posting_review_required": (50, "warning"),
+    "ledger_posted_account_truth_review_required": (60, "warning"),
+    "ledger_corrected_account_truth_review_required": (60, "warning"),
+}
 
 
 class ControlledExecutionOperatorViewService:
@@ -144,7 +158,7 @@ class ControlledExecutionOperatorViewService:
             blockers=source_blockers,
         )
 
-        recent_order_journeys = [
+        all_order_journeys = [
             _order_journey_summary(
                 intent=intent,
                 reconciliation=reconciliation_by_order.get(
@@ -159,7 +173,12 @@ class ControlledExecutionOperatorViewService:
                     str(intent.get("submit_intent_id") or ""), {}
                 ),
             )
-            for intent in submission_intents[:MAX_VISIBLE_ORDER_JOURNEYS]
+            for intent in submission_intents
+        ]
+        recent_order_journeys = all_order_journeys[:MAX_VISIBLE_ORDER_JOURNEYS]
+        all_attention_journeys = _prioritize_order_journey_attention(all_order_journeys)
+        attention_order_journeys = all_attention_journeys[
+            :MAX_VISIBLE_ORDER_ATTENTION_ITEMS
         ]
 
         projected_sessions = [
@@ -194,20 +213,26 @@ class ControlledExecutionOperatorViewService:
         latest_order_journey = (
             recent_order_journeys[0] if recent_order_journeys else None
         )
+        primary_attention_order_journey = (
+            attention_order_journeys[0] if attention_order_journeys else None
+        )
         unique_source_blockers = list(dict.fromkeys(source_blockers))
         if unique_source_blockers:
             status = "blocked"
             next_action = "review_controlled_execution_blockers"
+        elif primary_attention_order_journey is not None:
+            next_action = str(primary_attention_order_journey["next_operator_action"])
+            status = (
+                "blocked_order_journey_attention_required"
+                if blocked
+                else "order_journey_attention_required"
+            )
         elif blocked:
             status = "blocked"
             next_action = "review_controlled_execution_blockers"
         elif latest_order_journey is not None:
             next_action = str(latest_order_journey["next_operator_action"])
-            status = (
-                "order_journey_closed"
-                if next_action == "no_retry_create_new_decision_if_needed"
-                else "order_journey_review_required"
-            )
+            status = "order_journey_closed"
         elif not projected_sessions:
             status = "no_session_evidence"
             next_action = "no_action_default_disabled"
@@ -234,6 +259,13 @@ class ControlledExecutionOperatorViewService:
             "visible_order_journey_count": len(recent_order_journeys),
             "latest_order_journey": latest_order_journey,
             "recent_order_journeys": recent_order_journeys,
+            "attention_order_journey_count": len(all_attention_journeys),
+            "visible_attention_order_journey_count": len(attention_order_journeys),
+            "attention_queue_truncated": (
+                len(all_attention_journeys) > len(attention_order_journeys)
+            ),
+            "primary_attention_order_journey": (primary_attention_order_journey),
+            "attention_order_journeys": attention_order_journeys,
             "source_blockers": unique_source_blockers,
             "reads_persisted_facts_only": True,
             "provider_contact_performed": False,
@@ -252,6 +284,7 @@ class ControlledExecutionOperatorViewService:
                 "Current-window status is not runtime authentication and does not authorize submission or cancellation.",
                 "Remaining capital values are reservation headroom; remaining order slots count persisted admissions only.",
                 "Order journeys project persisted submission, rejection-review, reconciliation, terminal-clearance, ledger-posting, and correction facts without applying any transition.",
+                "The attention queue evaluates every bounded source row and prioritizes unresolved critical outcomes before newer lower-risk or closed journeys.",
                 "A paused session has no resume action; recovery requires a separate signed equal-or-narrower replacement.",
             ],
         }
@@ -656,6 +689,7 @@ def _order_journey_summary(
         if correction
         else ("not_required" if posting else "not_applicable")
     )
+    attention = _ORDER_JOURNEY_ATTENTION.get(status)
     return {
         "submit_intent_id": submit_intent_id,
         "order_id": order_id,
@@ -664,6 +698,11 @@ def _order_journey_summary(
         "gateway_id": str(intent.get("gateway_id") or ""),
         "status": status,
         "next_operator_action": next_action,
+        "attention_required": attention is not None,
+        "attention_severity": attention[1] if attention is not None else "none",
+        "blocks_new_submissions": bool(
+            not clearance and submission_status in _UNRECONCILED_SUBMISSION_STATUSES
+        ),
         "prepared_at": str(intent.get("prepared_at") or ""),
         "updated_at": str(intent.get("updated_at") or ""),
         "last_recovery_at": str(intent.get("last_recovery_at") or ""),
@@ -748,6 +787,28 @@ def _order_journey_summary(
         "ledger_mutation_performed": False,
         "authority_changed": False,
     }
+
+
+def _prioritize_order_journey_attention(
+    journeys: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Keep unresolved journeys visible even when newer journeys are closed."""
+
+    indexed_attention = [
+        (index, journey)
+        for index, journey in enumerate(journeys)
+        if journey.get("attention_required") is True
+    ]
+    indexed_attention.sort(
+        key=lambda item: (
+            _ORDER_JOURNEY_ATTENTION.get(
+                str(item[1].get("status") or ""),
+                (999, "warning"),
+            )[0],
+            -item[0],
+        )
+    )
+    return [journey for _, journey in indexed_attention]
 
 
 def _aware_utc(value: datetime) -> datetime:

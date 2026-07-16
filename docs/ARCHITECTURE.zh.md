@@ -182,6 +182,12 @@ identity；相同请求在重复/重启后返回原记录，冲突复核人会 f
 重试。两条边界都不能查询或联系 provider、创建/重试/撤销订单、修改 OMS/ledger/Account Truth/
 risk/kill switch/interlock 或改变资本/执行权限。任何后续订单必须从新 Decision 开始并重过全部门禁。
 
+`karkinos.controlled_execution_operator_view.v3` 会在选择操作员下一步之前检查有界范围内的全部
+persisted controlled intent。按时间最新的 journey 继续保留用于审计兼容，但首要关注项按照
+fail-closed 严重度选择：unknown/prepared 结果与开放券商订单优先于对账、clearance、posting、
+Account Truth 后续复核及已经闭环的拒单。紧凑关注队列会让较早但未完成的旅程在出现更新旅程后仍
+保持可见。该 GET 只读持久化事实，不能查询 gateway、提交、撤单、写账本或改变任何权限。
+
 精确持久化且仍开放的 lifecycle 可通过
 `karkinos.manual_broker_cancellation_ticket.v1` 投影。该 provider-neutral 边界根据 persisted
 controlled intent、OMS order fingerprint、broker/client 双重订单 ID 与最新 lifecycle observation

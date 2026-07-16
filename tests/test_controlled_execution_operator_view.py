@@ -283,15 +283,22 @@ def test_operator_view_unifies_terminal_order_journey_without_reopening_cleared_
     ).summary()
 
     assert summary["schema_version"] == (
-        "karkinos.controlled_execution_operator_view.v2"
+        "karkinos.controlled_execution_operator_view.v3"
     )
-    assert summary["status"] == "order_journey_review_required"
+    assert summary["status"] == "order_journey_attention_required"
     assert summary["next_operator_action"] == (
         "review_account_truth_after_ledger_posting"
     )
     assert summary["order_journey_count"] == 1
+    assert summary["attention_order_journey_count"] == 1
+    assert summary["primary_attention_order_journey"] == (
+        summary["latest_order_journey"]
+    )
     journey = summary["latest_order_journey"]
     assert journey["status"] == "ledger_posted_account_truth_review_required"
+    assert journey["attention_required"] is True
+    assert journey["attention_severity"] == "warning"
+    assert journey["blocks_new_submissions"] is False
     assert [stage["complete"] for stage in journey["stages"]] == [
         True,
         True,
@@ -339,6 +346,7 @@ def test_operator_view_unknown_outcome_requires_query_only_recovery():
     ).summary()
 
     journey = summary["latest_order_journey"]
+    assert summary["primary_attention_order_journey"] == journey
     assert journey["status"] == "submission_unknown"
     assert journey["next_operator_action"] == (
         "query_submission_outcome_without_resubmit"
@@ -346,6 +354,9 @@ def test_operator_view_unknown_outcome_requires_query_only_recovery():
     assert journey["broker_submission_performed"] is False
     assert journey["broker_cancel_performed"] is False
     assert journey["authority_changed"] is False
+    assert journey["attention_required"] is True
+    assert journey["attention_severity"] == "critical"
+    assert journey["blocks_new_submissions"] is True
     assert [stage["status"] for stage in journey["stages"][1:]] == [
         "matched",
         "not_applicable",
@@ -401,6 +412,54 @@ def test_operator_view_exposes_manual_cancel_ticket_as_non_authorizing_option():
     )
     assert journey["broker_cancel_performed"] is False
     assert summary["broker_cancel_enabled"] is False
+
+
+class _MixedPriorityOrderJourneyFixture(_PersistedFactFixture):
+    def list_controlled_broker_submit_intents_sync(self, *, limit: int):
+        self.calls.append("submission_intents")
+        return [
+            {
+                "submit_intent_id": "7" * 64,
+                "order_id": "OMS-RECENT-REJECTED",
+                "gateway_id": "fixture-write-edge",
+                "status": "rejected",
+                "prepared_at": "2026-07-13T09:59:00+00:00",
+                "updated_at": "2026-07-13T09:59:01+00:00",
+            },
+            {
+                "submit_intent_id": "6" * 64,
+                "order_id": "OMS-FIXTURE-1",
+                "gateway_id": "fixture-write-edge",
+                "status": "submission_unknown",
+                "prepared_at": "2026-07-13T09:58:00+00:00",
+                "updated_at": "2026-07-13T09:58:01+00:00",
+            },
+        ]
+
+
+def test_operator_view_prioritizes_older_unknown_outcome_over_newer_lower_risk_journey():
+    summary = ControlledExecutionOperatorViewService(
+        db=_MixedPriorityOrderJourneyFixture(),
+        clock=lambda: datetime(2026, 7, 13, 10, 0, tzinfo=timezone.utc),
+    ).summary()
+
+    assert summary["status"] == "blocked_order_journey_attention_required"
+    assert summary["order_journey_count"] == 2
+    assert summary["attention_order_journey_count"] == 2
+    assert summary["latest_order_journey"]["order_id"] == "OMS-RECENT-REJECTED"
+    assert summary["primary_attention_order_journey"]["order_id"] == ("OMS-FIXTURE-1")
+    assert summary["next_operator_action"] == (
+        "query_submission_outcome_without_resubmit"
+    )
+    assert [journey["order_id"] for journey in summary["attention_order_journeys"]] == [
+        "OMS-FIXTURE-1",
+        "OMS-RECENT-REJECTED",
+    ]
+    assert summary["attention_order_journeys"][0]["attention_severity"] == ("critical")
+    assert summary["reads_persisted_facts_only"] is True
+    assert summary["provider_contact_performed"] is False
+    assert summary["does_not_mutate_oms"] is True
+    assert summary["does_not_mutate_production_ledger"] is True
 
 
 def test_operator_view_unavailable_persisted_sources_fail_closed():

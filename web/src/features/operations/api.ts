@@ -529,6 +529,9 @@ export type ControlledOrderJourney = {
   gateway_id: string;
   status: string;
   next_operator_action: string;
+  attention_required: boolean;
+  attention_severity: 'critical' | 'warning' | 'none';
+  blocks_new_submissions: boolean;
   prepared_at: string;
   updated_at: string;
   last_recovery_at: string;
@@ -542,7 +545,7 @@ export type ControlledOrderJourney = {
 };
 
 export type ControlledExecutionOperatorView = {
-  schema_version: 'karkinos.controlled_execution_operator_view.v2';
+  schema_version: 'karkinos.controlled_execution_operator_view.v3';
   as_of: string;
   status: string;
   next_operator_action: string;
@@ -558,6 +561,11 @@ export type ControlledExecutionOperatorView = {
   visible_order_journey_count: number;
   latest_order_journey: ControlledOrderJourney | null;
   recent_order_journeys: ControlledOrderJourney[];
+  attention_order_journey_count: number;
+  visible_attention_order_journey_count: number;
+  attention_queue_truncated: boolean;
+  primary_attention_order_journey: ControlledOrderJourney | null;
+  attention_order_journeys: ControlledOrderJourney[];
   source_blockers: string[];
   reads_persisted_facts_only: true;
   provider_contact_performed: false;

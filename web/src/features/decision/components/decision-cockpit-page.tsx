@@ -1710,6 +1710,8 @@ function automationNextAction(
     return locale === 'zh' ? '复核自动化告警' : 'review automation alerts';
   }
   const controlledOrderAction =
+    cockpit.controlled_execution?.primary_attention_order_journey
+      ?.next_operator_action ??
     cockpit.controlled_execution?.latest_order_journey?.next_operator_action;
   if (controlledOrderAction) {
     return controlledOrderJourneyNextActionLabel(controlledOrderAction, locale);
@@ -1998,6 +2000,18 @@ function controlledExecutionStatusLabel(status: string, locale: Locale) {
     order_journey_review_required: {
       en: 'Order journey review required',
       zh: '订单旅程需要复核',
+    },
+    order_journey_attention_required: {
+      en: 'Order journey attention required',
+      zh: '订单旅程需要优先处理',
+    },
+    blocked_order_journey_attention_required: {
+      en: 'Session blocked · order evidence needs attention',
+      zh: '会话已阻断 · 订单证据需要处理',
+    },
+    order_journey_closed: {
+      en: 'Order journeys closed',
+      zh: '订单旅程已闭环',
     },
     blocked: { en: 'Blocked', zh: '已阻断' },
     historical_sessions_only: {
@@ -2866,6 +2880,11 @@ function AutomationCockpitPanel({
     ) ?? controlledExecution?.sessions[0];
   const latestControlledOrderJourney =
     controlledExecution?.latest_order_journey;
+  const primaryControlledOrderJourney =
+    controlledExecution?.primary_attention_order_journey ??
+    latestControlledOrderJourney;
+  const controlledOrderAttentionQueue =
+    controlledExecution?.attention_order_journeys ?? [];
   const showAccountFacts =
     brokerAccountFactsLoading ||
     brokerAccountFactsError ||
@@ -3152,7 +3171,7 @@ function AutomationCockpitPanel({
               </div>
             )}
 
-            {latestControlledOrderJourney ? (
+            {primaryControlledOrderJourney ? (
               <div
                 data-testid="controlled-order-journey"
                 className="mt-4 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-accent)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-accent)_7%,transparent)] px-3 py-3"
@@ -3160,26 +3179,30 @@ function AutomationCockpitPanel({
                 <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <div className="text-sm font-semibold text-[var(--app-text)]">
-                      {locale === 'zh'
-                        ? '受控订单证据旅程'
-                        : 'Controlled order evidence journey'}
+                      {controlledExecution.primary_attention_order_journey
+                        ? locale === 'zh'
+                          ? '优先处理的受控订单证据旅程'
+                          : 'Priority controlled order evidence journey'
+                        : locale === 'zh'
+                          ? '最近受控订单证据旅程'
+                          : 'Latest controlled order evidence journey'}
                     </div>
                     <div className="app-muted mt-1 break-words text-xs leading-5">
-                      {latestControlledOrderJourney.order_id || '—'} ·{' '}
-                      {latestControlledOrderJourney.gateway_id || '—'}
+                      {primaryControlledOrderJourney.order_id || '—'} ·{' '}
+                      {primaryControlledOrderJourney.gateway_id || '—'}
                     </div>
                   </div>
                   <span className="app-chip max-w-full break-words text-left">
                     {locale === 'zh' ? '下一步：' : 'Next: '}
                     {controlledOrderJourneyNextActionLabel(
-                      latestControlledOrderJourney.next_operator_action,
+                      primaryControlledOrderJourney.next_operator_action,
                       locale,
                     )}
                   </span>
                 </div>
 
                 <div className="mt-3 grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-5">
-                  {latestControlledOrderJourney.stages.map((stage) => {
+                  {primaryControlledOrderJourney.stages.map((stage) => {
                     const optionalStageNotApplied =
                       !stage.required && !stage.complete;
                     return (
@@ -3237,28 +3260,82 @@ function AutomationCockpitPanel({
                     ? '该旅程只投影持久化证据；本次读取未联系券商、未提交或撤单、未修改账本，也未改变任何资本或执行权限。'
                     : 'This journey projects persisted evidence only. This read contacted no broker, submitted or cancelled no order, mutated no ledger, and changed no capital or execution authority.'}
                 </div>
+                {controlledOrderAttentionQueue.length > 1 ? (
+                  <details
+                    data-testid="controlled-order-attention-queue"
+                    className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_30%,transparent)] px-3 py-2.5"
+                  >
+                    <summary className="cursor-pointer text-xs font-semibold text-[var(--app-warning)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)]">
+                      {locale === 'zh'
+                        ? `全部人工关注队列 · ${controlledExecution.attention_order_journey_count} 笔`
+                        : `Full operator attention queue · ${controlledExecution.attention_order_journey_count}`}
+                    </summary>
+                    <div className="mt-2 grid gap-2">
+                      {controlledOrderAttentionQueue.map((journey, index) => (
+                        <div
+                          className="grid min-w-0 gap-1 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-2.5 py-2 text-xs sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]"
+                          key={journey.submit_intent_id}
+                        >
+                          <div className="min-w-0 break-words font-semibold text-[var(--app-text)]">
+                            {index === 0
+                              ? locale === 'zh'
+                                ? '当前优先 · '
+                                : 'Current priority · '
+                              : ''}
+                            {journey.order_id || '—'} ·{' '}
+                            {journey.attention_severity === 'critical'
+                              ? locale === 'zh'
+                                ? '关键'
+                                : 'Critical'
+                              : locale === 'zh'
+                                ? '警告'
+                                : 'Warning'}
+                          </div>
+                          <div className="app-muted min-w-0 break-words">
+                            {controlledOrderJourneyNextActionLabel(
+                              journey.next_operator_action,
+                              locale,
+                            )}
+                            {journey.blocks_new_submissions
+                              ? locale === 'zh'
+                                ? ' · 阻断新的受控提交'
+                                : ' · blocks new controlled submissions'
+                              : ''}
+                          </div>
+                        </div>
+                      ))}
+                      {controlledExecution.attention_queue_truncated ? (
+                        <div className="app-muted text-xs">
+                          {locale === 'zh'
+                            ? '队列显示已达到上限；请先处理当前可见项。'
+                            : 'The visible queue reached its limit; review the current items first.'}
+                        </div>
+                      ) : null}
+                    </div>
+                  </details>
+                ) : null}
                 <ControlledBrokerRecoveryOperatorPanel
-                  journey={latestControlledOrderJourney}
+                  journey={primaryControlledOrderJourney}
                   locale={locale}
                 />
                 <ControlledBrokerRejectionEvidencePanel
-                  journey={latestControlledOrderJourney}
+                  journey={primaryControlledOrderJourney}
                   locale={locale}
                 />
                 <ManualBrokerCancellationTicketPanel
-                  journey={latestControlledOrderJourney}
+                  journey={primaryControlledOrderJourney}
                   locale={locale}
                 />
                 <ControlledTerminalClearanceOperatorPanel
-                  journey={latestControlledOrderJourney}
+                  journey={primaryControlledOrderJourney}
                   locale={locale}
                 />
                 <ControlledLedgerPostingOperatorPanel
-                  journey={latestControlledOrderJourney}
+                  journey={primaryControlledOrderJourney}
                   locale={locale}
                 />
                 <ControlledLedgerCorrectionOperatorPanel
-                  journey={latestControlledOrderJourney}
+                  journey={primaryControlledOrderJourney}
                   locale={locale}
                 />
               </div>
