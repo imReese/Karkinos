@@ -15,6 +15,9 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
 
 - 将 persisted observations 作为权威读取来源；
 - 不可变 valuation snapshot 与 ledger identity；
+- evidence-bound 策略贡献 v2，假设受控入账契约以不可变的
+  `ledger_entries.source_ref = fill_id` 作为成交身份；关联成交只有在生产账本和估值快照可精确
+  重放后才展示收益，读取路径不联系 provider、不写数据库，也不具备交易或资本权限；
 - Holdings、Equity Curve、Overview 与 explainability 界面使用一致的 canonical daily performance；
 - provider-neutral、evidence-bound 的 AI 研究、复核与 memory lineage；
 - 基于精确保存数据集、人工门禁和 allowlisted Formula DSL 的研究，由 canonical backtest engine
@@ -194,6 +197,9 @@ submission UI、更广的 fault injection 与真实证据验收、operator journ
 ### v1.4 — 归因与成本基础保真
 
 - 增加订单、成交、费用、税、已实现/未实现 P/L 与 unattributed effects 的策略贡献证据。
+- 使用 `karkinos.account_strategy_contribution.v2` 替换 latest-quote 估算：只有已写入生产账本且
+  绑定同一持久化估值快照的成交才能展示收益；证据缺失、陈旧、漂移或策略库存来源不完整时
+  fail closed，并给出明确人工下一步。
 - 对齐券商费用、成本基础、proceeds 与公开账本格式。
 
 ### v1.3 — 专业决策工作流

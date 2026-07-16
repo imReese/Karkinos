@@ -37,7 +37,7 @@ authority, bypass risk, or call a broker directly.
 | v0.2-v0.5 | Completed | End-to-end research loop, Strategy Lab, reproducible after-cost/OOS evidence, data-quality gates |
 | v0.6-v0.9 | Completed | Account Truth, review workflow, strategy attribution, reliable market-data plane |
 | v1.0-v1.3 | Completed | Strategy runtime, Paper Broker/OMS, broker evidence, professional Decision workflow |
-| v1.4-v1.7 | Completed | Attribution/cost fidelity, Daily Trading Plan, Operations runbook, non-submitting controlled bridge |
+| v1.4-v1.7 | Completed | Ledger/snapshot-bound contribution and cost fidelity, Daily Trading Plan, Operations runbook, non-submitting controlled bridge |
 | v1.8 control plane | Foundation implemented | Signed bounded authority, atomic budgets, sessions, live gates, pause/replacement, one-shot submit boundary, interlock, broker-neutral lifecycle evidence, exact-terminal full/partial-cancel/no-fill-cancel clearance, capital-scaling review |
 | v1.8 adapter acceptance | Provider-neutral foundation implemented | Versioned manifest, deterministic local conformance evidence, capability/boundary matrix, append-only accept/reject/revoke review, exact live collector binding, and persisted-only operator readiness visibility; no real provider selected or registered |
 | AI-native Phase 1-1.18 | Formula research vertical implemented | Provider-neutral, evidence-bound, human-reviewed research, memory, allowlisted Formula DSL, canonical after-cost backtest, and critique workflows without trading authority |

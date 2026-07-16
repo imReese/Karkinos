@@ -279,6 +279,32 @@ fact makes the evidence stale. The post-apply result publishes a new valuation
 snapshot and requires Account Truth to reconcile again; otherwise it reports
 manual review required rather than silently claiming success.
 
+### Evidence-bound strategy contribution
+
+`karkinos.account_strategy_contribution.v2` is the canonical account-strategy
+contribution projection. A strategy-linked fill is eligible only after exactly
+one production-ledger trade entry binds the same fill id, symbol, asset class,
+direction, quantity, price, and commission. Linked-but-unposted fills,
+ambiguous entries, identity mismatches, or sells whose strategy-owned inventory
+origin cannot be replayed block contribution instead of producing estimated
+P/L.
+
+Open strategy inventory is valued only from the exact persisted valuation
+snapshot named by the report. The projection binds snapshot id, valuation
+as-of, ledger cutoff/fingerprint, quote-set fingerprint, fill and ledger-entry
+references, and a contribution fingerprint. Missing, stale, estimated, invalid,
+or drifted evidence makes all contribution amounts unavailable. Actual fill
+price already contains execution slippage, so slippage is disclosed but is not
+deducted a second time; fees and taxes come from the posted ledger fact.
+
+The projection is read-only: it contacts no provider, performs no database
+write, and grants no OMS, broker, risk, kill-switch, execution, or capital
+authority. An assigned strategy with no linked or unattributed fills has no
+contribution due and therefore does not create a circular Decision blocker.
+Once a fill exists, incomplete ledger, valuation, or lineage evidence fails
+closed and supplies one explicit manual next action to Overview, Decision,
+Operations, and Strategy Lab.
+
 ### AI research
 
 ```text

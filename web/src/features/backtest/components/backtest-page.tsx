@@ -505,25 +505,41 @@ function accountStrategyPnlAttributionTier(
     (contribution?.linked_fill_count ?? 0);
   const hasMissingValuation =
     contributionStatus === 'valuation_missing' ||
+    contributionStatus === 'valuation_snapshot_missing' ||
     Boolean(contribution?.missing_valuation_symbols.length);
+  const hasBoundContribution =
+    contributionStatus === 'evidence_bound_from_posted_fills' &&
+    contribution?.evidence_binding_status === 'bound' &&
+    Boolean(contribution.valuation_snapshot_id) &&
+    (contribution.ledger_cutoff_id ?? 0) > 0 &&
+    Boolean(contribution.contribution_fingerprint);
+  const hasBlockingEvidenceStatus = [
+    'ledger_posting_pending',
+    'ledger_evidence_drift',
+    'valuation_snapshot_invalid',
+    'valuation_identity_drift',
+    'inventory_lineage_incomplete',
+  ].includes(contributionStatus);
 
   if (
     attributionStatus === 'blocked' ||
     attributionStatus === 'failed' ||
     contributionStatus === 'blocked' ||
-    contributionStatus === 'failed'
+    contributionStatus === 'failed' ||
+    hasBlockingEvidenceStatus
   ) {
     return 'blocked';
   }
   if (hasMissingValuation) {
     return 'stale';
   }
-  if (attributionStatus === 'complete' || attributionStatus === 'attributed') {
+  if (hasBoundContribution) {
     return 'complete';
   }
   if (
-    linkedEvidenceCount === 0 &&
-    ['not_started', 'assignment_only'].includes(attributionStatus)
+    contributionStatus === 'no_linked_fills' ||
+    (linkedEvidenceCount === 0 &&
+      ['not_started', 'assignment_only'].includes(attributionStatus))
   ) {
     return 'not_started';
   }
@@ -2000,33 +2016,52 @@ function AccountStrategyPanel({
                   )}
                 />
                 <StatusTile
-                  label={labels.accountStrategyGrossRealizedPnl}
-                  value={formatCurrency(contribution.gross_realized_pnl)}
+                  label={labels.accountStrategyEvidenceBinding}
+                  value={lookupLabel(
+                    labels.accountStrategyEvidenceBindingStatusMap,
+                    contribution.evidence_binding_status ?? 'blocked',
+                    formatPublicCode(
+                      contribution.evidence_binding_status,
+                      locale,
+                    ),
+                  )}
                 />
                 <StatusTile
-                  label={labels.accountStrategyGrossUnrealizedPnl}
-                  value={formatCurrency(contribution.gross_unrealized_pnl)}
+                  label={labels.accountStrategyLedgerPostedFills}
+                  value={`${contribution.ledger_posted_fill_count ?? 0} / ${contribution.linked_fill_count}`}
                 />
                 <StatusTile
-                  label={labels.accountStrategyCommissionSlippage}
-                  value={`${formatCurrency(contribution.total_commission)} / ${formatCurrency(contribution.total_slippage)}`}
+                  label={labels.accountStrategyValuationSnapshot}
+                  value={contribution.valuation_snapshot_id ?? '--'}
                 />
-                <StatusTile
-                  label={labels.accountStrategyTax}
-                  value={formatCurrency(contribution.total_tax)}
-                />
-                <StatusTile
-                  label={labels.accountStrategyManualCashFlowMovement}
-                  value={`${formatCurrency(contribution.manual_unattributed_pnl)} / ${formatCurrency(contribution.cash_flow_pnl)}`}
-                />
-                <StatusTile
-                  label={labels.accountStrategyTaxExcludedMovement}
-                  value={`${formatCurrency(contribution.total_tax)} / ${formatCurrency(contribution.unattributed_account_pnl)}`}
-                />
-                <StatusTile
-                  label={labels.accountStrategyNetContribution}
-                  value={formatCurrency(contribution.net_contribution)}
-                />
+                {pnlAttributionTier === 'complete' ? (
+                  <>
+                    <StatusTile
+                      label={labels.accountStrategyGrossRealizedPnl}
+                      value={formatCurrency(contribution.gross_realized_pnl)}
+                    />
+                    <StatusTile
+                      label={labels.accountStrategyGrossUnrealizedPnl}
+                      value={formatCurrency(contribution.gross_unrealized_pnl)}
+                    />
+                    <StatusTile
+                      label={labels.accountStrategyCommissionSlippage}
+                      value={`${formatCurrency(contribution.total_commission)} / ${formatCurrency(contribution.total_slippage)}`}
+                    />
+                    <StatusTile
+                      label={labels.accountStrategyTax}
+                      value={formatCurrency(contribution.total_tax)}
+                    />
+                    <StatusTile
+                      label={labels.accountStrategyNetContribution}
+                      value={formatCurrency(contribution.net_contribution)}
+                    />
+                    <StatusTile
+                      label={labels.accountStrategyLedgerCutoff}
+                      value={String(contribution.ledger_cutoff_id ?? '--')}
+                    />
+                  </>
+                ) : null}
               </div>
               {contribution.missing_valuation_symbols.length ? (
                 <p className="mt-3 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3 text-sm text-[var(--app-warning)]">
@@ -2037,6 +2072,37 @@ function AccountStrategyPanel({
                     ),
                   )}
                 </p>
+              ) : null}
+              {pnlAttributionTier === 'complete' ? null : (
+                <div className="mt-3 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3 text-sm leading-6 text-[var(--app-text)]">
+                  <div className="text-xs font-semibold text-[var(--app-warning)]">
+                    {labels.accountStrategyNextManualAction}
+                  </div>
+                  <p className="mt-1">
+                    {contribution.next_manual_action
+                      ? lookupLabel(
+                          labels.accountStrategyNextActionMap,
+                          contribution.next_manual_action,
+                          formatPublicCode(
+                            contribution.next_manual_action,
+                            locale,
+                          ),
+                        )
+                      : labels.accountStrategyContributionHiddenUntilEvidence}
+                  </p>
+                </div>
+              )}
+              {contribution.blockers?.length ? (
+                <div className="mt-3 space-y-1 text-xs text-[var(--app-soft)]">
+                  <div className="font-semibold">
+                    {labels.accountStrategyBlockers}
+                  </div>
+                  {contribution.blockers.map((blocker) => (
+                    <div className="break-words" key={blocker}>
+                      {formatPublicNote(blocker, locale)}
+                    </div>
+                  ))}
+                </div>
               ) : null}
               {contribution.limitations.length ? (
                 <div className="mt-3 grid gap-2">

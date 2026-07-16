@@ -26,10 +26,21 @@ function canShowContribution(
 ) {
   return Boolean(
     report &&
-    report.contribution_status === 'estimated_from_linked_fills' &&
+    report.schema_version === 'karkinos.account_strategy_contribution.v2' &&
+    report.contribution_status === 'evidence_bound_from_posted_fills' &&
+    report.evidence_binding_status === 'bound' &&
     report.linked_fill_count > 0 &&
+    report.ledger_posted_fill_count === report.linked_fill_count &&
+    report.unposted_linked_fill_count === 0 &&
+    Boolean(report.valuation_snapshot_id) &&
+    (report.ledger_cutoff_id ?? 0) > 0 &&
+    Boolean(report.contribution_fingerprint) &&
     report.evidence_refs.length > 0 &&
-    report.missing_valuation_symbols.length === 0,
+    report.missing_valuation_symbols.length === 0 &&
+    report.persisted_facts_only === true &&
+    report.provider_contacted === false &&
+    report.database_writes_performed === false &&
+    report.authorizes_execution === false,
   );
 }
 
@@ -46,6 +57,10 @@ export function StrategyContributionGateCard({
   const labels = copy.backtest.page;
   const isCompact = variant === 'compact';
   const isSupported = canShowContribution(report);
+  const isNotApplicable =
+    report?.contribution_status === 'no_linked_fills' &&
+    report.linked_fill_count === 0 &&
+    (report.unattributed_fill_count ?? 0) === 0;
   const contributionStatus = (report?.contribution_status ??
     'no_linked_fills') as keyof typeof labels.accountStrategyContributionStatusMap;
   const statusLabel =
@@ -56,6 +71,16 @@ export function StrategyContributionGateCard({
   const healthLabel =
     labels.accountStrategyHealthStatusMap[healthStatus] ??
     formatPublicCode(report?.strategy_health_status, locale);
+  const bindingStatus = (report?.evidence_binding_status ??
+    'blocked') as keyof typeof labels.accountStrategyEvidenceBindingStatusMap;
+  const bindingLabel =
+    labels.accountStrategyEvidenceBindingStatusMap[bindingStatus] ??
+    formatPublicCode(report?.evidence_binding_status, locale);
+  const nextAction = report?.next_manual_action
+    ? (labels.accountStrategyNextActionMap[
+        report.next_manual_action as keyof typeof labels.accountStrategyNextActionMap
+      ] ?? formatPublicCode(report.next_manual_action, locale))
+    : labels.accountStrategyContributionHiddenUntilEvidence;
   const strategyLabel = formatStrategyDisplayName(
     { strategy_id: report?.strategy_id },
     labels.strategyNames,
@@ -98,12 +123,16 @@ export function StrategyContributionGateCard({
             className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${
               isSupported
                 ? 'border-[color-mix(in_srgb,var(--app-positive)_45%,transparent)] bg-[color-mix(in_srgb,var(--app-positive)_16%,transparent)] text-[var(--app-positive)]'
-                : 'border-[color-mix(in_srgb,var(--app-warning)_45%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_16%,transparent)] text-[var(--app-warning)]'
+                : isNotApplicable
+                  ? 'border-[color-mix(in_srgb,var(--app-border)_55%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_24%,transparent)] text-[var(--app-soft)]'
+                  : 'border-[color-mix(in_srgb,var(--app-warning)_45%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_16%,transparent)] text-[var(--app-warning)]'
             }`}
           >
             {isSupported
               ? labels.accountStrategyEvidenceLinked
-              : labels.accountStrategyEvidenceRequired}
+              : isNotApplicable
+                ? labels.accountStrategyEvidenceNotApplicable
+                : labels.accountStrategyEvidenceRequired}
           </span>
         </div>
 
@@ -155,19 +184,25 @@ export function StrategyContributionGateCard({
                     value={formatCurrency(report.total_tax)}
                   />
                   <Metric
-                    label={labels.accountStrategyManualCashFlowMovement}
-                    value={`${formatCurrency(report.manual_unattributed_pnl)} / ${formatCurrency(report.cash_flow_pnl)}`}
+                    label={labels.accountStrategyValuationSnapshot}
+                    value={report.valuation_snapshot_id ?? '--'}
                   />
                   <Metric
-                    label={labels.accountStrategyTaxExcludedMovement}
-                    value={`${formatCurrency(report.total_tax)} / ${formatCurrency(report.unattributed_account_pnl)}`}
+                    label={labels.accountStrategyLedgerCutoff}
+                    value={String(report.ledger_cutoff_id ?? '--')}
                   />
                 </>
               )}
               <Metric
                 label={labels.accountStrategyNetContribution}
                 value={formatCurrency(report.net_contribution)}
-                tone={report.net_contribution >= 0 ? 'positive' : 'negative'}
+                tone={
+                  report.net_contribution === null
+                    ? 'neutral'
+                    : report.net_contribution >= 0
+                      ? 'positive'
+                      : 'negative'
+                }
               />
               <Metric
                 label={labels.accountStrategyContributionStatus}
@@ -178,8 +213,8 @@ export function StrategyContributionGateCard({
                 value={healthLabel}
               />
               <Metric
-                label={labels.accountStrategyOrdersFills}
-                value={String(report.linked_fill_count)}
+                label={labels.accountStrategyLedgerPostedFills}
+                value={`${report.ledger_posted_fill_count ?? 0} / ${report.linked_fill_count}`}
               />
               {isCompact ? null : (
                 <Metric
@@ -217,6 +252,18 @@ export function StrategyContributionGateCard({
                 label={labels.accountStrategyOrdersFills}
                 value={String(report?.linked_fill_count ?? 0)}
               />
+              <Metric
+                label={labels.accountStrategyEvidenceBinding}
+                value={bindingLabel}
+              />
+              <Metric
+                label={labels.accountStrategyLedgerPostedFills}
+                value={`${report?.ledger_posted_fill_count ?? 0} / ${report?.linked_fill_count ?? 0}`}
+              />
+              <Metric
+                label={labels.accountStrategyValuationSnapshot}
+                value={report?.valuation_snapshot_id ?? '--'}
+              />
             </div>
             {strategyAuditId ? (
               <div className="app-muted text-xs font-semibold">
@@ -232,6 +279,24 @@ export function StrategyContributionGateCard({
                   ),
                 )}
               </p>
+            ) : null}
+            <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_9%,transparent)] px-3 py-3 text-sm leading-6 text-[var(--app-soft)]">
+              <div className="text-xs font-semibold text-[var(--app-warning)]">
+                {labels.accountStrategyNextManualAction}
+              </div>
+              <p className="mt-1">{nextAction}</p>
+            </div>
+            {report?.blockers?.length ? (
+              <div className="space-y-1 text-xs text-[var(--app-soft)]">
+                <div className="font-semibold">
+                  {labels.accountStrategyBlockers}
+                </div>
+                {report.blockers.map((blocker) => (
+                  <div className="break-words" key={blocker}>
+                    {formatPublicNote(blocker, locale)}
+                  </div>
+                ))}
+              </div>
             ) : null}
             <ContributionLimitations
               limitations={report?.limitations ?? []}

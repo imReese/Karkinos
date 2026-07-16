@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException
 from core.types import Symbol
 
 _ACCOUNT_STRATEGY_CONTROL_KEY = "account_strategy_assignment"
-_STRATEGY_ATTRIBUTION_READY_STATUSES = {"estimated_from_linked_fills"}
+_STRATEGY_ATTRIBUTION_READY_STATUSES = {"evidence_bound_from_posted_fills"}
 _READY_MANUAL_CONFIRMATION_STATUS = "ready_for_manual_confirmation"
 _TRUSTED_DATA_STATUSES = {"complete", "confirmed", "fresh", "live", "pass"}
 _REVIEW_DATA_STATUSES = {
@@ -1339,7 +1339,33 @@ def _strategy_attribution_gate_evidence(
     attribution = _build_attribution_summary(db, assignment)
     contribution = _build_contribution_report(db, assignment)
     contribution_status = contribution.contribution_status
-    is_ready = contribution_status in _STRATEGY_ATTRIBUTION_READY_STATUSES
+    is_ready = (
+        contribution_status in _STRATEGY_ATTRIBUTION_READY_STATUSES
+        and contribution.evidence_binding_status == "bound"
+        and bool(contribution.valuation_snapshot_id)
+        and contribution.ledger_cutoff_id > 0
+        and bool(contribution.contribution_fingerprint)
+    )
+    attributed_signal_refs = {
+        ref for ref in attribution.evidence_refs if ref.startswith("signal:")
+    }
+    assigned_candidate_actions = [
+        action
+        for action in actions
+        if str(action.get("strategy_id") or assignment.strategy_id)
+        == assignment.strategy_id
+    ]
+    candidate_lineage_missing = any(
+        not action.get("source_signal_id")
+        or f"signal:{action['source_signal_id']}" not in attributed_signal_refs
+        for action in assigned_candidate_actions
+    )
+    is_not_applicable = (
+        contribution_status == "no_linked_fills"
+        and contribution.linked_fill_count == 0
+        and contribution.unattributed_fill_count == 0
+        and not candidate_lineage_missing
+    )
     has_linked_evidence = any(
         [
             attribution.signal_count,
@@ -1348,9 +1374,20 @@ def _strategy_attribution_gate_evidence(
             contribution.linked_fill_count,
         ]
     )
-    gate_status = (
-        "pass" if is_ready else "degraded" if has_linked_evidence else "blocked"
-    )
+    if is_ready or is_not_applicable:
+        gate_status = "pass"
+    elif contribution.evidence_binding_status == "blocked":
+        gate_status = "blocked"
+    elif has_linked_evidence:
+        gate_status = "degraded"
+    else:
+        gate_status = "blocked"
+    if is_ready or is_not_applicable:
+        required_actions = []
+    elif candidate_lineage_missing:
+        required_actions = ["link_strategy_signals_orders_fills_and_contribution"]
+    else:
+        required_actions = [contribution.next_manual_action]
     return {
         "status": "available",
         "gate_status": gate_status,
@@ -1358,16 +1395,29 @@ def _strategy_attribution_gate_evidence(
         "assignment_status": assignment.status,
         "attribution_status": attribution.attribution_status,
         "contribution_status": contribution_status,
-        "has_evidence": is_ready,
+        "has_evidence": is_ready or is_not_applicable,
         "signal_count": attribution.signal_count,
         "order_count": attribution.order_count,
         "fill_count": attribution.fill_count,
         "linked_fill_count": contribution.linked_fill_count,
+        "ledger_posted_fill_count": contribution.ledger_posted_fill_count,
+        "unposted_linked_fill_count": contribution.unposted_linked_fill_count,
+        "unattributed_fill_count": contribution.unattributed_fill_count,
+        "evidence_binding_status": contribution.evidence_binding_status,
+        "valuation_snapshot_id": contribution.valuation_snapshot_id,
+        "ledger_cutoff_id": contribution.ledger_cutoff_id,
+        "contribution_fingerprint": contribution.contribution_fingerprint,
         "net_contribution": contribution.net_contribution,
-        "required_actions": (
-            [] if is_ready else ["link_strategy_signals_orders_fills_and_contribution"]
+        "required_actions": required_actions,
+        "blocking_reasons": (
+            []
+            if is_ready or is_not_applicable
+            else (
+                ["strategy_attribution_not_ready"]
+                if candidate_lineage_missing
+                else list(contribution.blockers) or ["strategy_attribution_not_ready"]
+            )
         ),
-        "blocking_reasons": ([] if is_ready else ["strategy_attribution_not_ready"]),
         "limitations": [
             *list(attribution.limitations),
             *list(contribution.limitations),

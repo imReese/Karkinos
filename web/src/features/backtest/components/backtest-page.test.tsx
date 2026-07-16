@@ -1010,9 +1010,18 @@ function installBacktestFetchMock({
     ],
   },
   accountStrategyContribution = {
+    schema_version: 'karkinos.account_strategy_contribution.v2',
     strategy_id: 'dual_ma',
-    contribution_status: 'estimated_from_linked_fills',
+    contribution_status: 'evidence_bound_from_posted_fills',
+    evidence_binding_status: 'bound',
+    next_manual_action: 'review_evidence_bound_strategy_contribution',
+    blockers: [],
+    strategy_health_status: 'healthy',
+    strategy_health_reasons: ['posted_fill_and_valuation_evidence_bound'],
     linked_fill_count: 1,
+    ledger_posted_fill_count: 1,
+    unposted_linked_fill_count: 0,
+    unattributed_fill_count: 0,
     gross_realized_pnl: 8,
     gross_unrealized_pnl: 23,
     total_commission: 5,
@@ -1023,9 +1032,22 @@ function installBacktestFetchMock({
     manual_unattributed_pnl: 12,
     cash_flow_pnl: 3,
     missing_valuation_symbols: [],
-    evidence_refs: ['fill:FILL-ATTR-1'],
+    valuation_snapshot_id: 'valuation-backtest-fixture',
+    valuation_status: 'complete',
+    valuation_scope_status: 'complete',
+    ledger_cutoff_id: 12,
+    contribution_fingerprint: 'contribution-backtest-fixture',
+    evidence_refs: [
+      'fill:FILL-ATTR-1',
+      'ledger_entry:12',
+      'valuation_snapshot:valuation-backtest-fixture',
+    ],
+    persisted_facts_only: true,
+    provider_contacted: false,
+    database_writes_performed: false,
+    authorizes_execution: false,
     limitations: [
-      'Contribution is estimated only from linked strategy fills and latest local quotes; manual trades and cash flows are excluded.',
+      'Only strategy-linked fills posted to the production ledger are eligible for contribution.',
     ],
   },
   strategyPromotionReadinessResponse = strategyPromotionReadiness,
@@ -1369,7 +1391,9 @@ test('shows account strategy attribution evidence without claiming pnl', async (
   expect(await screen.findByText('Signal / action / risk')).toBeTruthy();
   expect(await screen.findByText('1 / 1 / 1')).toBeTruthy();
   expect(await screen.findByText('Orders / fills')).toBeTruthy();
-  expect(await screen.findByText('1 / 1')).toBeTruthy();
+  expect((await screen.findAllByText('1 / 1')).length).toBeGreaterThanOrEqual(
+    2,
+  );
   expect(
     (await screen.findAllByText('Evidence linked, P/L pending')).length,
   ).toBeGreaterThan(0);
@@ -1381,7 +1405,7 @@ test('shows account strategy attribution evidence without claiming pnl', async (
   ).toBeTruthy();
 });
 
-test('shows account strategy contribution estimates with explicit exclusions', async () => {
+test('shows ledger and valuation bound account strategy contribution', async () => {
   renderBacktestPage({ results: [] });
 
   expect(await screen.findByText('Contribution report')).toBeTruthy();
@@ -1392,18 +1416,20 @@ test('shows account strategy contribution estimates with explicit exclusions', a
   expect(await screen.findByText('Commission / slippage')).toBeTruthy();
   expect(await screen.findByText(/5\.00 \/ .*1\.50/)).toBeTruthy();
   expect(await screen.findByText('Tax')).toBeTruthy();
-  expect((await screen.findAllByText(/0\.50/)).length).toBeGreaterThanOrEqual(
+  expect(await screen.findByText(/0\.50/)).toBeTruthy();
+  expect(await screen.findByText('Valuation snapshot')).toBeTruthy();
+  expect(await screen.findByText('valuation-backtest-fixture')).toBeTruthy();
+  expect(await screen.findByText('Ledger cutoff')).toBeTruthy();
+  expect(await screen.findByText('12')).toBeTruthy();
+  expect(await screen.findByText('Posted / linked fills')).toBeTruthy();
+  expect((await screen.findAllByText('1 / 1')).length).toBeGreaterThanOrEqual(
     2,
   );
-  expect(await screen.findByText('Manual / cash-flow movement')).toBeTruthy();
-  expect(await screen.findByText(/12\.00 \/ .*3\.00/)).toBeTruthy();
-  expect(await screen.findByText('Tax / excluded movement')).toBeTruthy();
-  expect(await screen.findByText(/0\.50 \/ .*4\.00/)).toBeTruthy();
   expect(await screen.findByText('Net contribution')).toBeTruthy();
   expect(await screen.findByText(/24\.00/)).toBeTruthy();
   expect(
     await screen.findByText(
-      'Contribution is estimated from linked strategy fills and latest local quotes; manual trades and cash flows are excluded.',
+      'Only strategy-linked fills posted to the production ledger are eligible for contribution.',
     ),
   ).toBeTruthy();
 });

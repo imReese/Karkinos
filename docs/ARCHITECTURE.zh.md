@@ -231,6 +231,23 @@ immutable posting lineage 指向同一 broker import 的 ledger rows；任何其
 stale。Post-apply 会发布新 valuation snapshot 并要求 Account Truth 再次一致，否则显式进入人工
 复核，不能静默宣称完成。
 
+### 证据绑定的策略贡献
+
+`karkinos.account_strategy_contribution.v2` 是账户策略贡献的 canonical projection。一个策略关联
+成交只有在生产账本中存在唯一 trade entry，并且 fill id、标的、资产类型、方向、数量、价格与
+佣金完全匹配后才可进入归因。关联但未入账、重复账本记录、身份不一致，或卖出无法从策略自有
+买入库存重放时都会阻断贡献，不能输出估算收益。
+
+策略未平库存只能使用报告指明的精确持久化估值快照计价。投影会绑定 snapshot id、valuation
+as-of、ledger cutoff/fingerprint、quote-set fingerprint、成交与账本引用及 contribution
+fingerprint。证据缺失、陈旧、估算、无效或漂移时，全部贡献金额保持不可用。实际成交价格已经
+包含执行滑点，因此滑点只披露、不重复扣减；费用和税来自已入账的 ledger fact。
+
+该投影完全只读：不联系 provider、不写数据库，也不授予 OMS、券商、风控、kill switch、执行
+或资本权限。账户只绑定策略但尚无关联或归属不明成交时，当前没有应归因贡献，因此不会形成
+Decision 的循环阻断；一旦存在成交，账本、估值或来源证据不完整就会 fail closed，并向
+Overview、Decision、Operations 与 Strategy Lab 提供唯一明确的下一步人工操作。
+
 ### AI 研究
 
 ```text

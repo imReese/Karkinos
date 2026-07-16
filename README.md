@@ -67,6 +67,13 @@ cannot supply financial deltas. Selecting or implementing one real broker edge
 still requires explicit owner confirmation before any read-only soak or
 human-confirmed per-order pilot.
 
+Account-strategy contribution is now a persisted-facts-only projection: a fill
+must be posted to the production ledger and bound to one exact valuation
+snapshot and ledger cutoff before P/L is visible. Missing or drifted evidence
+produces an explicit manual review step, while a strategy with no fills creates
+no artificial blocker. This projection cannot contact a provider, write the
+ledger, or grant execution or capital authority.
+
 For a reconciled controlled order, the Operations/Decision journey can now
 complete both signed terminal clearance and the following reconciled-ledger
 posting without database edits. Each step has its own canonical preview,

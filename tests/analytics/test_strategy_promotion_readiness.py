@@ -266,7 +266,7 @@ def test_strategy_promotion_readiness_allows_assigned_strategy_when_contribution
             {
                 "strategy_id": "dual_ma",
                 "attribution_status": "evidence_linked_pnl_pending",
-                "contribution_status": "estimated_from_linked_fills",
+                "contribution_status": "evidence_bound_from_posted_fills",
                 "linked_fill_count": 1,
             }
         ],
@@ -275,6 +275,6 @@ def test_strategy_promotion_readiness_allows_assigned_strategy_when_contribution
     row = {item.strategy_id: item for item in readiness.rows}["dual_ma"]
 
     assert row.has_strategy_attribution_evidence is True
-    assert row.strategy_attribution_status == "estimated_from_linked_fills"
+    assert row.strategy_attribution_status == "evidence_bound_from_posted_fills"
     assert row.missing_requirements == []
     assert row.promotion_status == "promotable_for_paper_review"

@@ -37,11 +37,18 @@ function renderCard(
 
 test('shows strategy contribution only when linked-fill evidence supports it', () => {
   renderCard({
+    schema_version: 'karkinos.account_strategy_contribution.v2',
     strategy_id: 'dual_ma',
-    contribution_status: 'estimated_from_linked_fills',
+    contribution_status: 'evidence_bound_from_posted_fills',
+    evidence_binding_status: 'bound',
+    next_manual_action: 'review_evidence_bound_strategy_contribution',
+    blockers: [],
     strategy_health_status: 'healthy',
-    strategy_health_reasons: ['linked_fill_evidence_available'],
+    strategy_health_reasons: ['posted_fill_and_valuation_evidence_bound'],
     linked_fill_count: 2,
+    ledger_posted_fill_count: 2,
+    unposted_linked_fill_count: 0,
+    unattributed_fill_count: 0,
     gross_realized_pnl: 8,
     gross_unrealized_pnl: 128.5,
     total_commission: 5,
@@ -52,16 +59,31 @@ test('shows strategy contribution only when linked-fill evidence supports it', (
     manual_unattributed_pnl: 12,
     cash_flow_pnl: 3,
     missing_valuation_symbols: [],
-    evidence_refs: ['fill:FILL-1', 'fill:FILL-2'],
+    valuation_snapshot_id: 'valuation-fixture-1',
+    valuation_status: 'complete',
+    valuation_scope_status: 'complete',
+    ledger_cutoff_id: 42,
+    contribution_fingerprint: 'contribution-fixture-1',
+    evidence_refs: [
+      'fill:FILL-1',
+      'fill:FILL-2',
+      'ledger_entry:41',
+      'ledger_entry:42',
+      'valuation_snapshot:valuation-fixture-1',
+    ],
+    persisted_facts_only: true,
+    provider_contacted: false,
+    database_writes_performed: false,
+    authorizes_execution: false,
     limitations: [
-      'Contribution is estimated only from linked strategy fills and latest local quotes; manual trades and cash flows are excluded.',
+      'Only strategy-linked fills posted to the production ledger are eligible for contribution.',
     ],
   });
 
   expect(screen.getByText('Strategy contribution')).toBeTruthy();
   expect(
     screen.getByText(
-      'Only linked signal, review, order, and fill evidence is counted here; manual trades and cash flows stay separate.',
+      'Contribution is shown only for strategy fills posted to the production ledger and bound to one persisted valuation snapshot. Manual trades and cash flows stay separate.',
     ),
   ).toBeTruthy();
   expect(screen.getByText('Evidence-linked')).toBeTruthy();
@@ -77,17 +99,17 @@ test('shows strategy contribution only when linked-fill evidence supports it', (
   expect(screen.getByText('Commission / slippage')).toBeTruthy();
   expect(screen.getByText('¥5.00 / ¥1.50')).toBeTruthy();
   expect(screen.getByText('Tax')).toBeTruthy();
-  expect(screen.getAllByText(/0\.50/).length).toBeGreaterThanOrEqual(2);
-  expect(screen.getByText('Manual / cash-flow movement')).toBeTruthy();
-  expect(screen.getByText('¥12.00 / ¥3.00')).toBeTruthy();
-  expect(screen.getByText('Tax / excluded movement')).toBeTruthy();
-  expect(screen.getByText('¥0.50 / ¥4.00')).toBeTruthy();
+  expect(screen.getByText('¥0.50')).toBeTruthy();
+  expect(screen.getByText('Valuation snapshot')).toBeTruthy();
+  expect(screen.getByText('valuation-fixture-1')).toBeTruthy();
+  expect(screen.getByText('Ledger cutoff')).toBeTruthy();
+  expect(screen.getByText('42')).toBeTruthy();
   expect(screen.getByText('Net contribution')).toBeTruthy();
   expect(screen.getByText('¥129.50')).toBeTruthy();
   expect(screen.getByText('Evidence refs')).toBeTruthy();
   expect(
     screen.getByText(
-      'Contribution is estimated from linked strategy fills and latest local quotes; manual trades and cash flows are excluded.',
+      'Only strategy-linked fills posted to the production ledger are eligible for contribution.',
     ),
   ).toBeTruthy();
   expect(
@@ -100,11 +122,18 @@ test('shows strategy contribution only when linked-fill evidence supports it', (
 test('localizes the contribution explanation before showing estimates', () => {
   renderCard(
     {
+      schema_version: 'karkinos.account_strategy_contribution.v2',
       strategy_id: 'dual_ma',
-      contribution_status: 'estimated_from_linked_fills',
+      contribution_status: 'evidence_bound_from_posted_fills',
+      evidence_binding_status: 'bound',
+      next_manual_action: 'review_evidence_bound_strategy_contribution',
+      blockers: [],
       strategy_health_status: 'healthy',
-      strategy_health_reasons: ['linked_fill_evidence_available'],
+      strategy_health_reasons: ['posted_fill_and_valuation_evidence_bound'],
       linked_fill_count: 1,
+      ledger_posted_fill_count: 1,
+      unposted_linked_fill_count: 0,
+      unattributed_fill_count: 0,
       gross_realized_pnl: 0,
       gross_unrealized_pnl: 16,
       total_commission: 5,
@@ -115,7 +144,20 @@ test('localizes the contribution explanation before showing estimates', () => {
       manual_unattributed_pnl: 0,
       cash_flow_pnl: 0,
       missing_valuation_symbols: [],
-      evidence_refs: ['fill:FILL-1'],
+      valuation_snapshot_id: 'valuation-fixture-zh',
+      valuation_status: 'complete',
+      valuation_scope_status: 'complete',
+      ledger_cutoff_id: 7,
+      contribution_fingerprint: 'contribution-fixture-zh',
+      evidence_refs: [
+        'fill:FILL-1',
+        'ledger_entry:7',
+        'valuation_snapshot:valuation-fixture-zh',
+      ],
+      persisted_facts_only: true,
+      provider_contacted: false,
+      database_writes_performed: false,
+      authorizes_execution: false,
       limitations: [],
     },
     'zh',
@@ -124,7 +166,7 @@ test('localizes the contribution explanation before showing estimates', () => {
   expect(screen.getByText('策略贡献')).toBeTruthy();
   expect(
     screen.getByText(
-      '这里只统计当前已经可追溯到策略的信号、复核、订单与成交证据；手工交易和现金流会单独列出。',
+      '只有已记入生产账本并绑定同一持久化估值快照的策略成交才会展示贡献；手工交易和现金流会单独列出。',
     ),
   ).toBeTruthy();
   expect(screen.getByText('证据链已连接')).toBeTruthy();
@@ -135,15 +177,21 @@ test('does not expose contribution amount when evidence chain is unsupported', (
   renderCard({
     strategy_id: 'dual_ma',
     contribution_status: 'no_linked_fills',
-    strategy_health_status: 'needs_review',
-    strategy_health_reasons: ['linked_fill_evidence_missing'],
+    evidence_binding_status: 'not_applicable',
+    next_manual_action: 'no_action_until_strategy_linked_fill_exists',
+    blockers: [],
+    strategy_health_status: 'not_applicable',
+    strategy_health_reasons: ['no_strategy_linked_fills_yet'],
     linked_fill_count: 0,
-    gross_realized_pnl: 0,
-    gross_unrealized_pnl: 0,
-    total_commission: 0,
-    total_slippage: 0,
-    total_tax: 0,
-    net_contribution: 999,
+    ledger_posted_fill_count: 0,
+    unposted_linked_fill_count: 0,
+    unattributed_fill_count: 0,
+    gross_realized_pnl: null,
+    gross_unrealized_pnl: null,
+    total_commission: null,
+    total_slippage: null,
+    total_tax: null,
+    net_contribution: null,
     unattributed_account_pnl: null,
     manual_unattributed_pnl: null,
     cash_flow_pnl: null,
@@ -153,15 +201,15 @@ test('does not expose contribution amount when evidence chain is unsupported', (
   });
 
   expect(screen.getByText('Strategy contribution')).toBeTruthy();
-  expect(screen.getByText('Evidence required')).toBeTruthy();
+  expect(screen.getByText('No contribution due yet')).toBeTruthy();
   expect(screen.getByText('Strategy health')).toBeTruthy();
-  expect(screen.getByText('Needs review')).toBeTruthy();
+  expect(screen.getAllByText('Not applicable yet')).toHaveLength(2);
   expect(
     screen.getByText(
-      'Contribution is hidden until signals, reviews, orders, and fills are linked.',
+      'Contribution stays hidden until the listed ledger and valuation evidence is complete.',
     ),
   ).toBeTruthy();
-  expect(screen.queryByText('¥999.00')).toBeNull();
+  expect(screen.queryByText(/¥999/)).toBeNull();
 });
 
 test('shows readable instrument labels for missing valuation warnings', () => {
@@ -171,6 +219,9 @@ test('shows readable instrument labels for missing valuation warnings', () => {
         report={{
           strategy_id: 'dual_ma',
           contribution_status: 'valuation_missing',
+          evidence_binding_status: 'blocked',
+          next_manual_action: 'sync_confirmed_market_or_nav_evidence',
+          blockers: ['strategy_contribution_valuation_not_confirmed:600519'],
           strategy_health_status: 'stale',
           strategy_health_reasons: ['local_valuation_missing'],
           linked_fill_count: 1,
