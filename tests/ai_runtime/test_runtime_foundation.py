@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from pathlib import Path
 
@@ -183,6 +184,38 @@ def _runtime(
         now=lambda: NOW,
     )
     return store, provider, orchestrator
+
+
+@pytest.mark.unit
+def test_runtime_registration_is_atomic_across_concurrent_store_instances(tmp_path):
+    db_path = tmp_path / "concurrent-registration.db"
+    seed_store = AiAuditStore(db_path)
+    seed_store.init()
+    registration = ProviderRegistration(
+        provider_id=PROVIDER_ID,
+        display_name="Deterministic local fixture",
+        adapter_kind="fixture",
+        enabled=True,
+        capabilities=("research",),
+    )
+
+    def register_exact_duplicate(_: int) -> None:
+        AiAuditStore(db_path).register_provider(registration, created_at=NOW)
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        list(executor.map(register_exact_duplicate, range(32)))
+
+    assert seed_store.list_providers() == (registration,)
+    with pytest.raises(IdempotencyConflict, match="conflicting registration"):
+        seed_store.register_provider(
+            ProviderRegistration(
+                provider_id=PROVIDER_ID,
+                display_name="Conflicting provider",
+                adapter_kind="different-adapter",
+                enabled=True,
+            ),
+            created_at=NOW,
+        )
 
 
 @pytest.mark.unit
