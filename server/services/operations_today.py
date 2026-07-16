@@ -85,6 +85,7 @@ def build_operations_today_summary(
         "primary_target": primary_target,
         "health": health,
         "subsystems": subsystems,
+        "daily_operations": daily_operations.model_dump(),
         "daily_plan": {
             "candidate_pool_count": _int(trading_plan.get("candidate_pool_count")),
             "manual_ready_count": _int(trading_plan.get("manual_ready_count")),

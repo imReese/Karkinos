@@ -122,6 +122,19 @@ M3 纠正的假设与风险记录：
   重算、每次重放核验 before-state、保留历史，并且不授予 OMS、broker、risk、kill switch、
   AI/strategy 或 capital 能力。
 
+M3/M4 纠正操作员旅程的假设与风险记录：
+
+- Correction 只是在非空 posting 已应用后、人工确认错误时使用的可选 recovery，不是日常默认下一步。
+  操作员必须选择一个后端 allowlisted reason；Web 不能提交 cash、quantity、price、cost、fee 或
+  ledger-entry delta。Preview 与 apply 继续只调用 canonical replay 服务。
+- 操作员流程固定为 preview → 3 分钟离线 Ed25519 challenge → detached proof 验证 → 显式
+  append-only acknowledgement → exactly-once apply。缺少可信公钥、canonical blocker、fingerprint
+  漂移、重复纠正或 Account Truth 陈旧都会使 apply 禁用或被拒绝；成功后会失效所有受影响的
+  persisted projection 查询，并明确要求重新导入 Account Truth。
+- 风险影响为 high，因为最终签名动作会修改生产账本。缓解措施仍由后端拥有：事务内 replay 与
+  identity 重检、append-only 历史、精确 posting scope、禁止任意财务输入、禁止 provider contact，
+  且不授予 OMS、broker submit/cancel、risk、kill switch、strategy/AI 或 capital authority 能力。
+
 行情复核修复的假设与风险记录：
 
 - 不假设默认数据源支持全部资产类别。TuShare latest quote 继续只覆盖股票与开放式基金；指数刷新会
@@ -133,10 +146,13 @@ M3 纠正的假设与风险记录：
   批次验证 399001、399006，并确认两者持久化 as-of 均为 `2026-07-16T15:00:00+08:00`。
 - 行情证据边界的风险影响为 medium：该变更可以发布估值输入，但不能修改 ledger、OMS、risk、
   kill switch、capital 或 broker 权限。缺少时间、交易时段未完成或 provider 失败时继续 fail
-  closed；基金盘中估值仍明确保持未确认，直到 confirmed NAV 被持久化。
+  closed。基金盘中估值继续明确标记为 provisional；收盘确认只接受目标交易日已经发布的
+  confirmed NAV，旧日期净值不能覆盖当天估值，也不能解除复核门禁。
+- Overview 复核队列与 Operations 塔台现在消费同一 canonical daily-operations projection；旧的
+  Overview 投影只保留为滚动升级 fallback，不能覆盖当前 Operations 响应。
 
 剩余发布工作由路线图负责：一个真实 adapter、只读 soak、真实 cancel/unknown recovery、签名式
-submission/correction UI、更广的 fault injection 与真实证据验收、operator journey 的其余
+submission UI、更广的 fault injection 与真实证据验收、operator journey 的其余
 步骤与受控逐单 pilot。
 
 ### v1.7 — 受控券商 Bridge 基础

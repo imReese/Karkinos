@@ -1969,6 +1969,96 @@ test('renders daily operations tower without treating 50 candidates as manual wo
   expect(tower.textContent).not.toContain('50 个待确认');
 });
 
+test('uses the canonical operations summary for the daily operations tower', async () => {
+  window.localStorage.setItem('karkinos.locale', 'zh');
+  installOverviewFetchMock(
+    {
+      daily_operations: {
+        candidate_pool_count: 50,
+        evidence_passed_count: 6,
+        risk_checked_count: 6,
+        risk_passed_count: 6,
+        risk_blocked_count: 0,
+        paper_shadow_review_count: 50,
+        manual_ready_count: 6,
+        pending_manual_order_count: 0,
+        execution_record_count: 50,
+        fill_record_count: 0,
+        ledger_review_count: 0,
+        execution_exception_count: 0,
+        default_execution_mode: 'manual_confirmation',
+        broker_bridge_status: 'disabled',
+        conclusion_status: 'pending_manual_confirmation',
+        primary_target: 'trading',
+        limitations: [],
+      },
+    },
+    {
+      operationsToday: {
+        schema_version: 'karkinos.operations_today.v1',
+        operations_date: '2026-07-16',
+        generated_at: '2026-07-16T19:30:00+08:00',
+        conclusion_status: 'healthy',
+        primary_target: 'decision',
+        health: {
+          total: 10,
+          pass: 5,
+          degraded: 0,
+          blocked: 0,
+          manual_action_required: 0,
+          skipped: 5,
+        },
+        subsystems: [],
+        daily_operations: {
+          candidate_pool_count: 0,
+          evidence_passed_count: 0,
+          risk_checked_count: 0,
+          risk_passed_count: 0,
+          risk_blocked_count: 0,
+          paper_shadow_review_count: 0,
+          manual_ready_count: 0,
+          pending_manual_order_count: 0,
+          execution_record_count: 50,
+          fill_record_count: 0,
+          ledger_review_count: 0,
+          execution_exception_count: 0,
+          default_execution_mode: 'manual_confirmation',
+          broker_bridge_status: 'disabled',
+          conclusion_status: 'no_manual_action',
+          primary_target: 'decision',
+          limitations: [],
+        },
+        daily_plan: {
+          candidate_pool_count: 0,
+          manual_ready_count: 0,
+          blocked_count: 0,
+          order_intent_count: 0,
+          conclusion_status: 'no_manual_action',
+        },
+        paper_shadow: {
+          status: 'not_required',
+          run_id: null,
+          order_intent_count: 0,
+          simulated_order_count: 0,
+          simulated_fill_count: 0,
+          divergence_reviewed_count: 0,
+          divergence_status: 'not_required',
+          next_manual_review_step: 'none',
+          last_run_at: null,
+          orders: [],
+        },
+        limitations: [],
+      },
+    },
+  );
+
+  renderOverviewPage({ installFetch: false });
+
+  const tower = await screen.findByTestId('daily-operations-tower');
+  expect(within(tower).getByText('今日无需手动交易')).toBeTruthy();
+  expect(tower.textContent).not.toContain('6 项待人工确认');
+});
+
 test('routes daily operations tower primary action to Trading for pending manual orders', async () => {
   installOverviewFetchMock({
     daily_operations: {

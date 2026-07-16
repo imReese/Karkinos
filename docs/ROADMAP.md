@@ -163,11 +163,10 @@ The provider-neutral `karkinos.controlled_submission_ledger_correction.v1`
 boundary now derives one append-only correction from canonical replay, requires
 a separate signature, rechecks all identities in the write transaction,
 preserves original trades and fees, and is exactly once across retry, restart,
-and concurrency. Deterministic acceptance covers Ledger, Holdings, Allocation,
-Equity, Overview, Cockpit, Account State, realized P/L, valuation/ledger
-identity, and the intentional post-correction Account Truth stale gate.
-Operations/Decision now exposes a signed, exactly-once posting review with offline proof.
-Correction UI, broader fault injection, and real-provider evidence remain open.
+and concurrency. Operations/Decision exposes an optional persisted-journey
+review: select an allowlisted reason, review the replay-derived delta, verify an
+offline proof, then apply once. Acceptance covers every account projection and
+identity/stale gate; broader fault injection and real-provider evidence remain.
 
 ### M4 — Operator Journey
 
@@ -180,9 +179,10 @@ projection links each recent intent through reconciliation, terminal clearance, 
 posting, and append-only correction. It exposes one safe human next step and treats
 unknown outcomes as query-only. Separate signed reviews now complete reconciliation to
 terminal clearance and ledger posting without database edits or authority grants.
-Unknown outcomes now have signed, atomically claimed query-only recovery with
-duplicate/restart protection. Signed submission, correction UI, real cancel,
-real-adapter recovery evidence, and the complete journey remain open.
+Unknown outcomes have signed, atomically claimed query-only recovery with
+duplicate/restart protection. Optional correction uses a signed preview/proof/apply
+review and rejects operator-supplied financial deltas. Signed submission, real
+cancel, real-adapter recovery evidence, and the complete journey remain open.
 
 **Exit gate:** an operator can complete every normal and recovery flow without
 editing the database. Refresh, duplicate clicks, and service restart do not

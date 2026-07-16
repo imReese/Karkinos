@@ -46,6 +46,7 @@ import {
 } from '../../operations/api';
 import { ControlledBrokerRecoveryOperatorPanel } from '../../operations/controlled-broker-recovery-operator-panel';
 import { ControlledLedgerPostingOperatorPanel } from '../../operations/controlled-ledger-posting-operator-panel';
+import { ControlledLedgerCorrectionOperatorPanel } from '../../operations/controlled-ledger-correction-operator-panel';
 import { ControlledTerminalClearanceOperatorPanel } from '../../operations/controlled-terminal-clearance-operator-panel';
 import {
   useCreateManualOrderFromActionMutation,
@@ -3231,6 +3232,10 @@ function AutomationCockpitPanel({
                   locale={locale}
                 />
                 <ControlledLedgerPostingOperatorPanel
+                  journey={latestControlledOrderJourney}
+                  locale={locale}
+                />
+                <ControlledLedgerCorrectionOperatorPanel
                   journey={latestControlledOrderJourney}
                   locale={locale}
                 />

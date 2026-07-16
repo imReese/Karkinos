@@ -60,9 +60,12 @@ no-op. The posting boundary rechecks OMS, lifecycle, broker evidence, Account
 Truth, and ledger identity; it cannot submit, cancel, contact a provider, or
 change capital authority. A separately signed append-only correction can now
 reverse one posting only from canonical replay, preserving the original trades
-and requiring a newer Account Truth import afterward. Selecting or implementing
-one real broker edge still requires explicit owner confirmation before any
-read-only soak or human-confirmed per-order pilot.
+and requiring a newer Account Truth import afterward. That optional correction
+is available from the existing order journey as a reason-selected deterministic
+preview, offline-signature verification, and final exactly-once apply; the UI
+cannot supply financial deltas. Selecting or implementing one real broker edge
+still requires explicit owner confirmation before any read-only soak or
+human-confirmed per-order pilot.
 
 For a reconciled controlled order, the Operations/Decision journey can now
 complete both signed terminal clearance and the following reconciled-ledger

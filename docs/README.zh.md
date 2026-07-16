@@ -93,8 +93,9 @@ Operations 展示数据、计划、paper/shadow、OMS、对账、告警和恢复
 实际 fills 写入生产账本。零成交撤单只记录 no-op posting。入账边界会重新核验 OMS、lifecycle、
 券商证据、Account Truth 与 ledger identity，不能提交或撤销券商订单、联系 provider 或改变资本
 权限。单独签名的 append-only correction 现在可仅根据 canonical replay 反向纠正一个 posting，
-保留原交易与费用，并在完成后要求更新的 Account Truth import。详细门禁和发布条件见
-[路线图](ROADMAP.zh.md)。
+保留原交易与费用，并在完成后要求更新的 Account Truth import。该可选纠正现在可以从既有 order
+journey 显式打开：选择 allowlisted 原因、复核确定性 delta、验证离线签名，再 exactly once 地追加
+补偿事件；UI 不能输入现金、数量或价格。详细门禁和发布条件见 [路线图](ROADMAP.zh.md)。
 
 Execution reconciliation 到 terminal clearance、以及 clearance 到 posting 的步骤现在都可在各自
 显式打开的操作员复核中完成：先查看 deterministic preview，再使用短时离线签名并执行最终确认；

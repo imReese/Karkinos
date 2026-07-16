@@ -2288,7 +2288,7 @@ test('surfaces bounded controlled execution evidence without live actions', asyn
   expect(operatorView.textContent).toContain('Cancellation off');
   expect(operatorView.textContent).toContain('No automatic authority resume');
   expect(operatorView.textContent).toContain('No automatic scale-up');
-  expect(within(operatorView).queryAllByRole('button')).toHaveLength(0);
+  expect(within(operatorView).queryAllByRole('button')).toHaveLength(1);
 
   const orderJourney = within(operatorView).getByTestId(
     'controlled-order-journey',
@@ -2309,7 +2309,11 @@ test('surfaces bounded controlled execution evidence without live actions', asyn
   expect(orderJourney.textContent).toContain(
     'This read contacted no broker, submitted or cancelled no order, mutated no ledger, and changed no capital or execution authority.',
   );
-  expect(within(orderJourney).queryAllByRole('button')).toHaveLength(0);
+  expect(
+    within(orderJourney).getByRole('button', {
+      name: 'Posting error? Review append-only correction',
+    }),
+  ).toBeTruthy();
 });
 
 test('surfaces strategy promotion state as paper shadow only without live promotion controls', async () => {

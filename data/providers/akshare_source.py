@@ -454,6 +454,42 @@ class AKShareSource(DataSource):
             payload["day_change_pct"] = growth_rate / 100
         return payload
 
+    def fetch_confirmed_fund_nav(self, symbol: Symbol) -> dict | None:
+        """Fetch the latest published open-end fund NAV, never an estimate."""
+        fund_code = self._resolve_open_end_fund_code(symbol)
+        if not fund_code:
+            return None
+
+        snapshot = self._fetch_open_end_fund_latest_from_page(fund_code)
+        if snapshot is None:
+            return None
+
+        nav_date = str(snapshot.get("timestamp") or "").strip()
+        try:
+            published_date = datetime.fromisoformat(
+                nav_date.replace("Z", "+00:00")
+            ).date()
+        except ValueError:
+            return None
+        snapshot["timestamp"] = datetime.combine(
+            published_date,
+            datetime.min.time().replace(hour=15),
+            tzinfo=_CHINA_MARKET_TZ,
+        ).isoformat()
+        snapshot["nav_date"] = published_date.isoformat()
+        snapshot["source"] = "akshare"
+        snapshot["quote_source"] = "eastmoney_fund_page"
+
+        normalized = self._normalize_latest_quote(
+            symbol,
+            AssetClass.FUND,
+            snapshot,
+            provider_symbol=fund_code,
+        )
+        if normalized is not None:
+            normalized["nav_date"] = published_date.isoformat()
+        return normalized
+
     def _call_with_retry(self, func, **kwargs):
         """带重试的 AKShare API 调用。"""
         import time

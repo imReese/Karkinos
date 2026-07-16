@@ -77,6 +77,32 @@ def test_operations_today_requires_shadow_run_for_order_intents() -> None:
     assert summary["health"]["manual_action_required"] == 2
 
 
+def test_operations_today_projects_the_canonical_daily_operations_summary() -> None:
+    daily_operations = _operations(manual_ready_count=0).model_copy(
+        update={
+            "candidate_pool_count": 0,
+            "conclusion_status": "no_manual_action",
+            "primary_target": "decision",
+        }
+    )
+
+    summary = build_operations_today_summary(
+        decision_payload=_decision(),
+        trading_plan={
+            **_plan(order_intent_count=0),
+            "candidate_pool_count": 0,
+            "manual_ready_count": 0,
+            "conclusion_status": "no_manual_action",
+        },
+        daily_operations=daily_operations,
+        order_facts=[],
+        fill_facts=[],
+        generated_at="2026-07-01T09:32:00+08:00",
+    )
+
+    assert summary["daily_operations"] == daily_operations.model_dump()
+
+
 def test_operations_today_treats_no_manual_action_scheduler_as_skipped() -> None:
     no_action_operations = _operations(manual_ready_count=0).model_copy(
         update={

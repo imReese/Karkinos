@@ -165,6 +165,24 @@ M3 correction assumptions and risk record:
   and granting no OMS, broker, risk, kill-switch, AI/strategy, or capital
   capability.
 
+M3/M4 correction operator-journey assumptions and risk record:
+
+- Correction is optional recovery after an applied non-empty posting, never the
+  routine next action. The operator must select one server-allowlisted reason;
+  the Web client cannot submit cash, quantity, price, cost, fee, or ledger-entry
+  deltas. Preview and apply continue to use the canonical replay service.
+- The operator flow is preview -> three-minute offline Ed25519 challenge ->
+  detached-proof verification -> explicit append-only acknowledgement ->
+  exactly-once apply. Missing trusted keys, canonical blockers, changed
+  fingerprint, duplicate correction, or stale Account Truth keep apply disabled
+  or rejected. Success invalidates all affected persisted projection queries and
+  makes the required Account Truth re-import visible.
+- Risk impact is high because the final signed action mutates the production
+  ledger. Mitigations remain server-owned: transaction-time replay and identity
+  rechecks, append-only history, exact posting scope, no arbitrary financial
+  input, no provider contact, and no OMS, broker submit/cancel, risk, kill
+  switch, strategy/AI, or capital-authority capability.
+
 Market-review remediation assumptions and risk record:
 
 - The configured default data source is not assumed to support every asset
@@ -182,11 +200,16 @@ Market-review remediation assumptions and risk record:
 - Risk impact is medium at the market-evidence boundary: the change can publish
   valuation inputs, but it never changes ledger, OMS, risk, kill switch,
   capital, or broker permissions. Missing timestamps, incomplete sessions, and
-  provider failures continue to fail closed; fund estimates remain explicitly
-  unconfirmed until a confirmed NAV is persisted.
+  provider failures continue to fail closed. Intraday fund estimates remain
+  explicitly provisional; post-close confirmation accepts only a confirmed NAV
+  published for the target trading date, so an older NAV cannot overwrite the
+  current estimate or clear the review gate.
+- The Overview review queue and Operations tower now consume the same canonical
+  daily-operations projection. The older Overview projection remains only as a
+  rolling-upgrade fallback and cannot override a current Operations response.
 
 Remaining release work is owned by the roadmap: one real adapter, read-only
-soak, real cancel/unknown recovery, signed submission/correction UI,
+soak, real cancel/unknown recovery, signed submission UI,
 broader fault injection and real-evidence acceptance, the rest of the operator
 journey, and the controlled per-order pilot.
 
