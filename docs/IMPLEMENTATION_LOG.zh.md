@@ -28,7 +28,8 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
   interlock、lifecycle evidence、operator projection 与 capital-scaling review。
 - canonical、persisted-only 的 controlled-order journey，将 submission、reconciliation、
   terminal clearance、ledger posting 与 append-only correction 串成一条证据链，并只给出安全
-  人工下一步，不产生 read-side authority；
+  人工下一步，不产生 read-side authority；v3 会检查有界范围内的全部持久化 intent，使较早的
+  关键未完成旅程不会被较新的低风险或已闭环旅程遮蔽；
 - 显式打开的 ledger-posting 操作员复核，将 canonical delta preview 与匹配的可信公钥身份、短时
   离线 Ed25519 proof、最终确认和 exactly-once apply 绑定，同时使私钥、broker action 与 authority
   change 留在 Web 路径之外；
@@ -80,6 +81,8 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
   conformance 证据；
 - connector-scoped、latest-result-wins 的 soak promotion recovery-drill gate；
 - 已持久化 operator projection 与 evidence-based scale review；
+- 跨订单 operator attention 覆盖完整的有界 intent 集合，同时另行保留按时间最新的 journey
+  用于审计；
 - terminal-clearance 到 ledger-posting 步骤现可由操作员无需修改数据库完成；deterministic UI
   测试覆盖 canonical action eligibility、blocker、缺失身份、精确 request body 与无 broker call；
   本地 signer 拒绝覆盖密钥、强制私钥文件权限，并且只签署输入的 challenge payload，不执行网络 I/O。
@@ -95,6 +98,14 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
   authority、解除 interlock 或证明后续券商结果。
 
 M4 非授权操作资料包的假设与风险记录：
+
+- canonical source list 仍按时间从新到旧，但人工关注项先按严重度排序，同严重度内优先较旧项。
+  Unknown、prepared 与 open-order 证据优先于 reconciliation、clearance、posting 和 Account Truth
+  后续复核；已完成拒单复核不进入关注队列。测试覆盖“较新 rejected journey 与较早 unknown
+  outcome 并存”，并证明 query-only、禁止重提的操作仍保持第一优先级。
+- 风险影响为 medium：该变更会改变 Automation Cockpit 与 Decision/Operations 首先展示的人工
+  复核项，但它仍是只读投影；没有新增 provider query、submit、cancel、OMS/ledger mutation、
+  risk decision、kill-switch change 或 authority change。
 
 - 假设 preview 时最新的 exact-identity 持久化 lifecycle observation 是当前可用的订单证据；操作员
   仍须独立核对 broker/client id 与剩余数量；拒绝复核只承认净化后的持久化结果，artifact 绝不构成

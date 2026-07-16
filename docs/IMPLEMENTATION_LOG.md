@@ -36,7 +36,9 @@ The latest completed cross-cutting work includes:
   projection, and capital-scaling review.
 - a canonical persisted-only controlled-order journey from submission through
   reconciliation, terminal clearance, ledger posting, and append-only
-  correction, with one safe human next step and no read-side authority;
+  correction, with one safe human next step and no read-side authority; v3
+  checks every bounded persisted intent so an older critical unfinished
+  journey cannot be masked by a newer lower-risk or closed journey;
 - an explicitly opened ledger-posting operator review that binds the canonical
   delta preview to a matching trusted public identity, short-lived offline
   Ed25519 proof, final acknowledgement, and exactly-once apply, while keeping
@@ -103,6 +105,8 @@ Implemented foundation:
   rechecked before live collector prepare/commit;
 - connector-scoped, latest-result-wins recovery-drill gates for soak promotion;
 - persisted operator projection and evidence-based scale review;
+- cross-order operator attention prioritization over the full bounded intent
+  set, while retaining the chronological latest journey separately for audit;
 - a no-database-edit operator path for the terminal-clearance-to-ledger-posting
   step, with deterministic UI tests for canonical action eligibility, blockers,
   missing identities, exact request bodies, and absence of broker calls; the
@@ -126,6 +130,18 @@ Implemented foundation:
   or prove a later broker outcome.
 
 M4 non-authorizing operator-package assumptions and risk record:
+
+- The canonical source list remains newest-first, but operator attention is
+  severity-first and oldest-first within the same severity. Unknown, prepared,
+  and open-order evidence precedes reconciliation, clearance, posting, and
+  Account Truth follow-up; closed rejection reviews are excluded. Tests cover a
+  newer rejected journey coexisting with an older unknown outcome and prove
+  that the query-only, no-resubmit action remains primary.
+- Risk impact is medium because this changes which existing human review is
+  shown first across Automation Cockpit and Decision/Operations. It remains a
+  read-only projection: no provider query, submission, cancellation, OMS or
+  ledger mutation, risk decision, kill-switch change, or authority change is
+  introduced.
 
 - The latest exact-identity persisted lifecycle observation is assumed to be
   the only broker-order evidence available to the preview. The operator must

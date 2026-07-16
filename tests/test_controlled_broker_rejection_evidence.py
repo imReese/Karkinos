@@ -347,7 +347,11 @@ def test_review_record_is_append_only_exactly_once_and_closes_order_journey(
     ).summary()
     journey = operator_view["latest_order_journey"]
     assert operator_view["status"] == "order_journey_closed"
+    assert operator_view["attention_order_journey_count"] == 0
+    assert operator_view["primary_attention_order_journey"] is None
     assert journey["status"] == "submission_rejection_reviewed"
+    assert journey["attention_required"] is False
+    assert journey["attention_severity"] == "none"
     assert journey["next_operator_action"] == ("no_retry_create_new_decision_if_needed")
     review_stage = next(
         stage

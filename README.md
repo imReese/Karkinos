@@ -83,6 +83,13 @@ cross-order interlock without posting the ledger; posting remains a separate
 exactly-once transaction. The private key never enters Karkinos, and neither
 path can submit or cancel broker orders or change capital authority.
 
+Operations now keeps chronological history separate from operator priority.
+Every bounded persisted controlled-order journey is evaluated, and an older
+unknown, prepared, or open-order outcome remains ahead of a newer lower-risk or
+closed journey. The compact attention queue shows the exact safe next action
+for each item. It is a read-only projection and cannot contact a provider or
+perform any trading, ledger, risk, kill-switch, or authority mutation.
+
 For a controlled order whose latest exact persisted lifecycle is still open or
 partially filled, the same journey can prepare a provider-neutral manual
 cancellation evidence package. It binds both broker/client order ids and the
