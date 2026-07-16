@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import sqlite3
@@ -75,6 +76,55 @@ CREATE TABLE IF NOT EXISTS controlled_submission_reconciliation_clearances (
         REFERENCES controlled_broker_submit_intents(submit_intent_id),
     FOREIGN KEY(order_id) REFERENCES oms_orders(order_id)
 );
+"""
+
+
+_CONTROLLED_SUBMISSION_LEDGER_POSTING_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS controlled_submission_ledger_postings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    posting_id TEXT NOT NULL UNIQUE,
+    posting_fingerprint TEXT NOT NULL UNIQUE,
+    clearance_id TEXT NOT NULL UNIQUE,
+    clearance_fingerprint TEXT NOT NULL,
+    submit_intent_id TEXT NOT NULL UNIQUE,
+    order_id TEXT NOT NULL UNIQUE,
+    broker_order_id TEXT NOT NULL,
+    client_order_id TEXT NOT NULL,
+    terminal_status TEXT NOT NULL CHECK(terminal_status IN ('filled', 'cancelled')),
+    clearance_reconciliation_run_id TEXT NOT NULL,
+    broker_evidence_fingerprint TEXT NOT NULL,
+    account_truth_import_run_id TEXT NOT NULL,
+    account_truth_file_fingerprint TEXT NOT NULL,
+    account_truth_source_fingerprint TEXT NOT NULL,
+    account_truth_review_fingerprint TEXT NOT NULL,
+    lifecycle_observation_id TEXT NOT NULL DEFAULT '',
+    lifecycle_evidence_fingerprint TEXT NOT NULL DEFAULT '',
+    lifecycle_source_sequence INTEGER NOT NULL DEFAULT 0,
+    pre_valuation_snapshot_id TEXT NOT NULL,
+    pre_valuation_as_of TEXT NOT NULL,
+    pre_valuation_status TEXT NOT NULL,
+    pre_ledger_cutoff_id INTEGER NOT NULL CHECK(pre_ledger_cutoff_id >= 0),
+    pre_ledger_fingerprint TEXT NOT NULL,
+    operator_id TEXT NOT NULL,
+    operator_approval_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status = 'applied'),
+    ledger_entry_count INTEGER NOT NULL CHECK(ledger_entry_count >= 0),
+    ledger_entry_fingerprint TEXT NOT NULL,
+    ledger_entry_ids_json TEXT NOT NULL DEFAULT '[]',
+    post_ledger_cutoff_id INTEGER NOT NULL CHECK(post_ledger_cutoff_id >= 0),
+    applied_at_epoch_ms INTEGER NOT NULL CHECK(applied_at_epoch_ms >= 0),
+    applied_at TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(clearance_id)
+        REFERENCES controlled_submission_reconciliation_clearances(clearance_id),
+    FOREIGN KEY(submit_intent_id)
+        REFERENCES controlled_broker_submit_intents(submit_intent_id),
+    FOREIGN KEY(order_id) REFERENCES oms_orders(order_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_controlled_submission_ledger_posting_time
+ON controlled_submission_ledger_postings(applied_at_epoch_ms DESC, id DESC);
 """
 
 
@@ -280,6 +330,7 @@ class AppDatabase:
                 conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(_SCHEMA)
             _ensure_controlled_submission_clearance_terminal_schema(conn)
+            conn.executescript(_CONTROLLED_SUBMISSION_LEDGER_POSTING_TABLE_SQL)
             _ensure_column(conn, "backtest_results", "metrics_json", "TEXT")
             _ensure_column(conn, "backtest_results", "cost_summary_json", "TEXT")
             _ensure_column(conn, "quote_snapshots", "quote_source", "TEXT")
@@ -2181,6 +2232,484 @@ class AppDatabase:
                 (max(1, min(int(limit), 500)),),
             ).fetchall()
             return [dict(row) for row in rows]
+
+    def get_controlled_submission_ledger_posting_sync(
+        self,
+        posting_id: str,
+    ) -> dict[str, Any] | None:
+        """Read one immutable controlled-order ledger posting."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                SELECT * FROM controlled_submission_ledger_postings
+                WHERE posting_id = ? LIMIT 1
+                """,
+                (posting_id,),
+            ).fetchone()
+            return dict(row) if row is not None else None
+
+    def get_account_truth_review_identity_sync(
+        self,
+        import_run_id: str,
+    ) -> dict[str, Any]:
+        """Fingerprint current manual-review decisions for one broker import."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            return _account_truth_review_identity_from_connection(
+                conn,
+                import_run_id=import_run_id,
+            )
+
+    def get_controlled_submission_ledger_posting_for_clearance_sync(
+        self,
+        clearance_id: str,
+    ) -> dict[str, Any] | None:
+        """Read the exactly-once posting associated with one clearance."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                SELECT * FROM controlled_submission_ledger_postings
+                WHERE clearance_id = ? LIMIT 1
+                """,
+                (clearance_id,),
+            ).fetchone()
+            return dict(row) if row is not None else None
+
+    def list_controlled_submission_ledger_postings_sync(
+        self,
+        *,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """List immutable controlled-order ledger postings, newest first."""
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT * FROM controlled_submission_ledger_postings
+                ORDER BY applied_at_epoch_ms DESC, id DESC
+                LIMIT ?
+                """,
+                (max(1, min(int(limit), 500)),),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def record_controlled_submission_ledger_posting_sync(
+        self,
+        *,
+        posting: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Verify and atomically post exact cleared fills to the ledger once."""
+        requested = dict(posting)
+        with sqlite3.connect(self._path, timeout=2) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA busy_timeout=2000")
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                existing = conn.execute(
+                    """
+                    SELECT * FROM controlled_submission_ledger_postings
+                    WHERE posting_id = ? OR clearance_id = ?
+                       OR submit_intent_id = ? OR order_id = ?
+                    ORDER BY id ASC LIMIT 1
+                    """,
+                    (
+                        requested["posting_id"],
+                        requested["clearance_id"],
+                        requested["submit_intent_id"],
+                        requested["order_id"],
+                    ),
+                ).fetchone()
+                if existing is not None:
+                    if (
+                        str(existing["posting_id"]) == requested["posting_id"]
+                        and str(existing["posting_fingerprint"])
+                        == requested["posting_fingerprint"]
+                        and str(existing["clearance_id"]) == requested["clearance_id"]
+                    ):
+                        conn.commit()
+                        return {
+                            "status": "applied",
+                            "blockers": [],
+                            "reused": True,
+                            "posting": dict(existing),
+                        }
+                    conn.rollback()
+                    return _controlled_submission_ledger_posting_rejection(
+                        requested,
+                        ["controlled_ledger_posting_conflict"],
+                    )
+
+                clearance = conn.execute(
+                    """
+                    SELECT * FROM controlled_submission_reconciliation_clearances
+                    WHERE clearance_id = ? LIMIT 1
+                    """,
+                    (requested["clearance_id"],),
+                ).fetchone()
+                intent = conn.execute(
+                    """
+                    SELECT * FROM controlled_broker_submit_intents
+                    WHERE submit_intent_id = ? LIMIT 1
+                    """,
+                    (requested["submit_intent_id"],),
+                ).fetchone()
+                order = conn.execute(
+                    "SELECT * FROM oms_orders WHERE order_id = ? LIMIT 1",
+                    (requested["order_id"],),
+                ).fetchone()
+                latest_item = conn.execute(
+                    """
+                    SELECT * FROM execution_reconciliation_items
+                    WHERE order_id = ? ORDER BY id DESC LIMIT 1
+                    """,
+                    (requested["order_id"],),
+                ).fetchone()
+                blockers: list[str] = []
+                if clearance is None:
+                    blockers.append("controlled_ledger_posting_clearance_missing")
+                else:
+                    clearance_fields = {
+                        "clearance_fingerprint": "clearance_fingerprint",
+                        "submit_intent_id": "submit_intent_id",
+                        "order_id": "order_id",
+                        "broker_order_id": "broker_order_id",
+                        "terminal_status": "terminal_status",
+                        "clearance_reconciliation_run_id": (
+                            "clearance_reconciliation_run_id"
+                        ),
+                        "broker_evidence_fingerprint": ("broker_evidence_fingerprint"),
+                        "account_truth_import_run_id": ("account_truth_import_run_id"),
+                        "account_truth_file_fingerprint": (
+                            "account_truth_file_fingerprint"
+                        ),
+                        "account_truth_source_fingerprint": (
+                            "account_truth_source_fingerprint"
+                        ),
+                        "lifecycle_observation_id": "lifecycle_observation_id",
+                        "lifecycle_evidence_fingerprint": (
+                            "lifecycle_evidence_fingerprint"
+                        ),
+                        "lifecycle_source_sequence": "lifecycle_source_sequence",
+                        "operator_id": "operator_id",
+                    }
+                    for request_field, clearance_field in clearance_fields.items():
+                        if str(requested.get(request_field) or "") != str(
+                            clearance[clearance_field] or ""
+                        ):
+                            blockers.append(
+                                "controlled_ledger_posting_clearance_"
+                                f"{request_field}_changed"
+                            )
+                    if str(clearance["status"]) != "cleared":
+                        blockers.append(
+                            "controlled_ledger_posting_clearance_not_cleared"
+                        )
+                if intent is None:
+                    blockers.append("controlled_ledger_posting_intent_missing")
+                else:
+                    if str(intent["status"]) != "submitted":
+                        blockers.append("controlled_ledger_posting_intent_changed")
+                    if str(intent["order_id"]) != requested["order_id"]:
+                        blockers.append(
+                            "controlled_ledger_posting_intent_order_changed"
+                        )
+                    if str(intent["broker_order_id"]) != requested["broker_order_id"]:
+                        blockers.append(
+                            "controlled_ledger_posting_intent_broker_order_changed"
+                        )
+                    if str(intent["client_order_id"]) != requested["client_order_id"]:
+                        blockers.append(
+                            "controlled_ledger_posting_intent_client_order_changed"
+                        )
+                if order is None:
+                    blockers.append("controlled_ledger_posting_order_missing")
+                elif str(order["status"]) != requested["terminal_status"]:
+                    blockers.append("controlled_ledger_posting_order_status_changed")
+                if latest_item is None:
+                    blockers.append("controlled_ledger_posting_reconciliation_missing")
+                else:
+                    if (
+                        str(latest_item["run_id"])
+                        != requested["clearance_reconciliation_run_id"]
+                    ):
+                        blockers.append(
+                            "controlled_ledger_posting_reconciliation_superseded"
+                        )
+                    if str(latest_item["item_status"]) != (
+                        "controlled_submission_reconciliation_cleared"
+                    ):
+                        blockers.append(
+                            "controlled_ledger_posting_reconciliation_changed"
+                        )
+
+                invalidated = _controlled_lifecycle_invalidated_clearance_rows(conn)
+                if any(
+                    str(item.get("order_id") or "") == requested["order_id"]
+                    for item in invalidated
+                ):
+                    blockers.append(
+                        "controlled_ledger_posting_lifecycle_clearance_invalidated"
+                    )
+
+                import_row = conn.execute(
+                    """
+                    SELECT * FROM broker_import_runs
+                    WHERE import_run_id = ? LIMIT 1
+                    """,
+                    (requested["account_truth_import_run_id"],),
+                ).fetchone()
+                if import_row is None:
+                    blockers.append("controlled_ledger_posting_import_missing")
+                else:
+                    if str(import_row["validation_status"]) != "pass":
+                        blockers.append("controlled_ledger_posting_import_not_pass")
+                    if (
+                        str(import_row["file_fingerprint"])
+                        != requested["account_truth_file_fingerprint"]
+                    ):
+                        blockers.append(
+                            "controlled_ledger_posting_import_fingerprint_changed"
+                        )
+                review_identity = _account_truth_review_identity_from_connection(
+                    conn,
+                    import_run_id=requested["account_truth_import_run_id"],
+                )
+                if (
+                    review_identity["fingerprint"]
+                    != requested["account_truth_review_fingerprint"]
+                ):
+                    blockers.append(
+                        "controlled_ledger_posting_account_truth_review_changed"
+                    )
+
+                from server.services.valuation_snapshot import (
+                    ledger_identity_from_rows,
+                )
+
+                ledger_rows = [
+                    dict(row)
+                    for row in conn.execute(
+                        "SELECT * FROM ledger_entries ORDER BY id ASC"
+                    ).fetchall()
+                ]
+                ledger_identity = ledger_identity_from_rows(ledger_rows)
+                if int(ledger_identity["ledger_cutoff_id"]) != int(
+                    requested["pre_ledger_cutoff_id"]
+                ):
+                    blockers.append(
+                        "controlled_ledger_posting_pre_ledger_cutoff_changed"
+                    )
+                if (
+                    str(ledger_identity["ledger_fingerprint"])
+                    != requested["pre_ledger_fingerprint"]
+                ):
+                    blockers.append(
+                        "controlled_ledger_posting_pre_ledger_fingerprint_changed"
+                    )
+
+                entries = requested.get("ledger_entries")
+                entries = entries if isinstance(entries, list) else []
+                if len(entries) != int(requested["ledger_entry_count"]):
+                    blockers.append("controlled_ledger_posting_entry_count_changed")
+                if (
+                    _stable_json_fingerprint(entries)
+                    != requested["ledger_entry_fingerprint"]
+                ):
+                    blockers.append(
+                        "controlled_ledger_posting_entry_fingerprint_changed"
+                    )
+                clearance_fill_count = (
+                    int(clearance["fill_count"]) if clearance is not None else -1
+                )
+                if len(entries) != clearance_fill_count:
+                    blockers.append("controlled_ledger_posting_clearance_fill_changed")
+                if requested["terminal_status"] == "filled" and not entries:
+                    blockers.append("controlled_ledger_posting_filled_without_entries")
+
+                verified_entries: list[dict[str, Any]] = []
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        blockers.append("controlled_ledger_posting_entry_invalid")
+                        continue
+                    entry_blockers = _verify_controlled_ledger_entry(
+                        conn,
+                        entry=entry,
+                        request=requested,
+                    )
+                    blockers.extend(entry_blockers)
+                    verified_entries.append(entry)
+                if blockers:
+                    conn.rollback()
+                    return _controlled_submission_ledger_posting_rejection(
+                        requested,
+                        blockers,
+                    )
+
+                ledger_entry_ids: list[int] = []
+                for entry in verified_entries:
+                    normalized_timestamp = _normalize_timestamp(entry["timestamp"])
+                    cursor = conn.execute(
+                        """
+                        INSERT INTO ledger_entries (
+                            entry_type, timestamp, amount, symbol, direction,
+                            quantity, price, commission, gross_amount,
+                            net_cash_impact, fee_breakdown_json, fee_rule_id,
+                            fee_rule_version, settlement_status, settled_at,
+                            settlement_source, settlement_source_ref,
+                            settlement_note, cost_basis_method, asset_class,
+                            note, source, source_ref, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            entry["entry_type"],
+                            normalized_timestamp,
+                            float(Decimal(entry["amount"])),
+                            entry["symbol"],
+                            entry["direction"],
+                            float(Decimal(entry["quantity"])),
+                            float(Decimal(entry["price"])),
+                            float(Decimal(entry["commission"])),
+                            float(Decimal(entry["gross_amount"])),
+                            float(Decimal(entry["net_cash_impact"])),
+                            _serialize_metadata_json(entry["fee_breakdown"]),
+                            entry["fee_rule_id"],
+                            entry["fee_rule_version"],
+                            entry["settlement_status"],
+                            _normalize_timestamp(entry["settled_at"]),
+                            entry["settlement_source"],
+                            entry["settlement_source_ref"],
+                            entry["settlement_note"],
+                            entry["cost_basis_method"],
+                            entry["asset_class"],
+                            entry["note"],
+                            entry["source"],
+                            entry["source_ref"],
+                            requested["applied_at"],
+                        ),
+                    )
+                    entry_id = int(cursor.lastrowid or 0)
+                    ledger_entry_ids.append(entry_id)
+                    _insert_event_sync(
+                        conn,
+                        event_type="portfolio.ledger_entry.recorded",
+                        timestamp=normalized_timestamp,
+                        entity_type="portfolio",
+                        entity_id="default",
+                        source="ledger_entries",
+                        source_ref=str(entry_id),
+                        payload={"entry_id": entry_id, **entry},
+                    )
+
+                post_cutoff_id = (
+                    ledger_entry_ids[-1]
+                    if ledger_entry_ids
+                    else int(requested["pre_ledger_cutoff_id"])
+                )
+                stored_payload = dict(requested.get("payload") or {})
+                stored_payload.update(
+                    {
+                        "ledger_entry_ids": ledger_entry_ids,
+                        "post_ledger_cutoff_id": post_cutoff_id,
+                    }
+                )
+                conn.execute(
+                    """
+                    INSERT INTO controlled_submission_ledger_postings (
+                        posting_id, posting_fingerprint, clearance_id,
+                        clearance_fingerprint, submit_intent_id, order_id,
+                        broker_order_id, client_order_id, terminal_status,
+                        clearance_reconciliation_run_id,
+                        broker_evidence_fingerprint,
+                        account_truth_import_run_id,
+                        account_truth_file_fingerprint,
+                        account_truth_source_fingerprint,
+                        account_truth_review_fingerprint,
+                        lifecycle_observation_id,
+                        lifecycle_evidence_fingerprint,
+                        lifecycle_source_sequence, pre_valuation_snapshot_id,
+                        pre_valuation_as_of, pre_valuation_status,
+                        pre_ledger_cutoff_id, pre_ledger_fingerprint,
+                        operator_id, operator_approval_id, status,
+                        ledger_entry_count, ledger_entry_fingerprint,
+                        ledger_entry_ids_json, post_ledger_cutoff_id,
+                        applied_at_epoch_ms, applied_at, payload_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'applied', ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        requested["posting_id"],
+                        requested["posting_fingerprint"],
+                        requested["clearance_id"],
+                        requested["clearance_fingerprint"],
+                        requested["submit_intent_id"],
+                        requested["order_id"],
+                        requested["broker_order_id"],
+                        requested["client_order_id"],
+                        requested["terminal_status"],
+                        requested["clearance_reconciliation_run_id"],
+                        requested["broker_evidence_fingerprint"],
+                        requested["account_truth_import_run_id"],
+                        requested["account_truth_file_fingerprint"],
+                        requested["account_truth_source_fingerprint"],
+                        requested["account_truth_review_fingerprint"],
+                        requested["lifecycle_observation_id"],
+                        requested["lifecycle_evidence_fingerprint"],
+                        int(requested["lifecycle_source_sequence"]),
+                        requested["pre_valuation_snapshot_id"],
+                        requested["pre_valuation_as_of"],
+                        requested["pre_valuation_status"],
+                        int(requested["pre_ledger_cutoff_id"]),
+                        requested["pre_ledger_fingerprint"],
+                        requested["operator_id"],
+                        requested["operator_approval_id"],
+                        len(ledger_entry_ids),
+                        requested["ledger_entry_fingerprint"],
+                        _serialize_event_payload_json(ledger_entry_ids),
+                        post_cutoff_id,
+                        int(requested["applied_at_epoch_ms"]),
+                        requested["applied_at"],
+                        _serialize_event_payload_json(stored_payload),
+                        requested["applied_at"],
+                    ),
+                )
+                _insert_event_sync(
+                    conn,
+                    event_type="controlled_broker.ledger_posted",
+                    timestamp=requested["applied_at"],
+                    entity_type="controlled_submission_ledger_posting",
+                    entity_id=requested["posting_id"],
+                    source="controlled_submission_ledger_posting",
+                    source_ref=requested["clearance_id"],
+                    payload=stored_payload,
+                )
+                saved = conn.execute(
+                    """
+                    SELECT * FROM controlled_submission_ledger_postings
+                    WHERE posting_id = ? LIMIT 1
+                    """,
+                    (requested["posting_id"],),
+                ).fetchone()
+                conn.commit()
+                return {
+                    "status": "applied",
+                    "blockers": [],
+                    "reused": False,
+                    "posting": dict(saved) if saved is not None else {},
+                }
+            except (
+                sqlite3.IntegrityError,
+                sqlite3.OperationalError,
+                KeyError,
+                TypeError,
+                ValueError,
+                ArithmeticError,
+            ):
+                conn.rollback()
+                return _controlled_submission_ledger_posting_rejection(
+                    requested,
+                    ["controlled_ledger_posting_transaction_unavailable"],
+                )
 
     def record_controlled_submission_reconciliation_clearance_sync(
         self,
@@ -9012,6 +9541,219 @@ def _controlled_lifecycle_invalidated_clearance_rows(
             )
             invalidated.append(intent)
     return invalidated
+
+
+def _verify_controlled_ledger_entry(
+    conn: sqlite3.Connection,
+    *,
+    entry: dict[str, Any],
+    request: dict[str, Any],
+) -> list[str]:
+    """Re-check one proposed entry against immutable fill and broker evidence."""
+    blockers: list[str] = []
+    fill_id = str(entry.get("fill_id") or "")
+    event_id = str(entry.get("broker_event_id") or "")
+    row_fingerprint = str(entry.get("broker_row_fingerprint") or "")
+    fill = conn.execute(
+        "SELECT * FROM fills WHERE fill_id = ? LIMIT 1",
+        (fill_id,),
+    ).fetchone()
+    event = conn.execute(
+        """
+        SELECT * FROM broker_evidence_events
+        WHERE import_run_id = ? AND event_id = ? AND row_fingerprint = ?
+        LIMIT 1
+        """,
+        (
+            request["account_truth_import_run_id"],
+            event_id,
+            row_fingerprint,
+        ),
+    ).fetchone()
+    if fill is None:
+        blockers.append("controlled_ledger_posting_fill_missing")
+    else:
+        metadata = _json_dict(fill["metadata_json"])
+        fill_fields = {
+            "order_id": request["order_id"],
+            "execution_mode": "controlled_live",
+            "source": "controlled_submission_clearance",
+            "fill_id": fill_id,
+        }
+        for field, expected in fill_fields.items():
+            if str(fill[field] or "") != str(expected or ""):
+                blockers.append(f"controlled_ledger_posting_fill_{field}_changed")
+        if str(metadata.get("clearance_id") or "") != request["clearance_id"]:
+            blockers.append("controlled_ledger_posting_fill_clearance_changed")
+        if str(metadata.get("broker_event_id") or "") != event_id:
+            blockers.append("controlled_ledger_posting_fill_event_changed")
+        if str(metadata.get("broker_row_fingerprint") or "") != row_fingerprint:
+            blockers.append("controlled_ledger_posting_fill_row_changed")
+    if event is None:
+        blockers.append("controlled_ledger_posting_broker_event_missing")
+        return blockers
+
+    direction = str(entry.get("direction") or "")
+    if direction not in {"buy", "sell"}:
+        blockers.append("controlled_ledger_posting_entry_direction_invalid")
+    expected_entry_type = f"trade_{direction}"
+    textual_expectations = {
+        "entry_type": expected_entry_type,
+        "symbol": str(event["symbol"] or ""),
+        "asset_class": str(event["asset_class"] or "stock"),
+        "source": "controlled_submission_ledger_posting",
+        "source_ref": fill_id,
+        "settlement_status": "confirmed",
+        "settlement_source": "broker_statement",
+        "settlement_source_ref": (
+            f"{request['account_truth_import_run_id']}:{event_id}"
+        ),
+        "fee_rule_id": "broker_statement_exact",
+        "fee_rule_version": "broker_statement_exact.v1",
+        "cost_basis_method": "broker_remaining_cost",
+    }
+    for field, expected in textual_expectations.items():
+        if str(entry.get(field) or "") != expected:
+            blockers.append(f"controlled_ledger_posting_entry_{field}_changed")
+    if str(event["broker_order_id"] or "") != request["broker_order_id"]:
+        blockers.append("controlled_ledger_posting_event_broker_order_changed")
+    if str(event["client_order_id"] or "") != request["client_order_id"]:
+        blockers.append("controlled_ledger_posting_event_client_order_changed")
+    if str(event["event_type"] or "") != expected_entry_type:
+        blockers.append("controlled_ledger_posting_event_type_changed")
+
+    numeric_expectations = {
+        "quantity": event["quantity"],
+        "price": event["price"],
+        "amount": event["gross_amount"],
+        "gross_amount": event["gross_amount"],
+        "commission": event["fee"],
+        "net_cash_impact": event["net_amount"],
+    }
+    for field, expected in numeric_expectations.items():
+        if not _decimal_values_equal(entry.get(field), expected):
+            blockers.append(f"controlled_ledger_posting_entry_{field}_changed")
+    if fill is not None:
+        for entry_field, fill_field in (
+            ("quantity", "fill_quantity"),
+            ("price", "fill_price"),
+            ("commission", "commission"),
+        ):
+            if not _decimal_values_equal(entry.get(entry_field), fill[fill_field]):
+                blockers.append(f"controlled_ledger_posting_fill_{fill_field}_changed")
+    fee_breakdown = entry.get("fee_breakdown")
+    fee_breakdown = fee_breakdown if isinstance(fee_breakdown, dict) else {}
+    fee_expectations = {
+        "commission": event["fee"],
+        "stamp_tax": event["tax"],
+        "transfer_fee": event["transfer_fee"],
+        "other_fees": "0",
+    }
+    for field, expected in fee_expectations.items():
+        if not _decimal_values_equal(fee_breakdown.get(field), expected):
+            blockers.append(f"controlled_ledger_posting_fee_{field}_changed")
+    expected_total_fee = sum(
+        (Decimal(str(event[field] or "0")) for field in ("fee", "tax", "transfer_fee")),
+        Decimal("0"),
+    )
+    if not _decimal_values_equal(fee_breakdown.get("total_fee"), expected_total_fee):
+        blockers.append("controlled_ledger_posting_fee_total_changed")
+    try:
+        if _normalize_timestamp(str(entry.get("timestamp") or "")) != (
+            _normalize_timestamp(str(event["occurred_at"] or ""))
+        ):
+            blockers.append("controlled_ledger_posting_entry_timestamp_changed")
+        expected_settled_at = str(event["settled_at"] or event["occurred_at"] or "")
+        if _normalize_timestamp(str(entry.get("settled_at") or "")) != (
+            _normalize_timestamp(expected_settled_at)
+        ):
+            blockers.append("controlled_ledger_posting_entry_settlement_time_changed")
+    except ValueError:
+        blockers.append("controlled_ledger_posting_entry_timestamp_invalid")
+
+    source_conflict = conn.execute(
+        """
+        SELECT id FROM ledger_entries
+        WHERE (source = ? AND source_ref = ?)
+           OR (settlement_source = ? AND settlement_source_ref = ?)
+        LIMIT 1
+        """,
+        (
+            entry.get("source"),
+            entry.get("source_ref"),
+            entry.get("settlement_source"),
+            entry.get("settlement_source_ref"),
+        ),
+    ).fetchone()
+    if source_conflict is not None:
+        blockers.append("controlled_ledger_posting_entry_already_exists")
+    return list(dict.fromkeys(blockers))
+
+
+def _account_truth_review_identity_from_connection(
+    conn: sqlite3.Connection,
+    *,
+    import_run_id: str,
+) -> dict[str, Any]:
+    """Build a stable identity for current Account Truth review decisions."""
+    table_exists = conn.execute("""
+        SELECT 1 FROM sqlite_master
+        WHERE type = 'table' AND name = 'reconciliation_review_decisions'
+        """).fetchone()
+    if table_exists is None:
+        rows: list[dict[str, Any]] = []
+    else:
+        rows = [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT import_run_id, item_key, category, symbol,
+                       review_status, evidence_fingerprint, schema_version,
+                       created_at, updated_at
+                FROM reconciliation_review_decisions
+                WHERE import_run_id = ?
+                ORDER BY item_key ASC, id ASC
+                """,
+                (import_run_id,),
+            ).fetchall()
+        ]
+    return {
+        "import_run_id": import_run_id,
+        "decision_count": len(rows),
+        "fingerprint": _stable_json_fingerprint(rows),
+    }
+
+
+def _decimal_values_equal(left: Any, right: Any) -> bool:
+    try:
+        return Decimal(str(left)) == Decimal(str(right))
+    except (ArithmeticError, TypeError, ValueError):
+        return False
+
+
+def _stable_json_fingerprint(value: Any) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _controlled_submission_ledger_posting_rejection(
+    requested: dict[str, Any],
+    blockers: list[str],
+) -> dict[str, Any]:
+    return {
+        "status": "rejected",
+        "posting_id": str(requested.get("posting_id") or ""),
+        "clearance_id": str(requested.get("clearance_id") or ""),
+        "blockers": list(dict.fromkeys(blockers)),
+        "reused": False,
+        "production_ledger_mutated": False,
+    }
 
 
 def _json_dict(value) -> dict[str, Any]:

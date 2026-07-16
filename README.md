@@ -53,9 +53,13 @@ reconciliation, and the non-submitting controlled-execution foundation are
 implemented. The active milestone is v1.8. Provider-neutral release and local
 conformance foundations and their persisted-only Operations readiness view are
 in place. Signed exact-terminal reconciliation now covers full fill, no-fill
-cancel, and partial-fill-then-cancel from persisted evidence while keeping
-ledger posting separate and disabled. Selecting or implementing one real broker
-edge still requires explicit owner confirmation before any read-only soak or
+cancel, and partial-fill-then-cancel from persisted evidence. A separate final
+operator signature can now post the exact cleared fills to the production
+ledger once, in one transaction, while zero-fill cancel remains a recorded
+no-op. The posting boundary rechecks OMS, lifecycle, broker evidence, Account
+Truth, and ledger identity; it cannot submit, cancel, contact a provider, or
+change capital authority. Selecting or implementing one real broker edge still
+requires explicit owner confirmation before any read-only soak or
 human-confirmed per-order pilot.
 
 See [the roadmap](docs/ROADMAP.md) for priorities and release gates. Completed

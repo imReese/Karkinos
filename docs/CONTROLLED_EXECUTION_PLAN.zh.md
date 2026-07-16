@@ -147,6 +147,13 @@ pause 或 disable；绝不会自动 scale up。
 - 签名的精确终态 clearance 覆盖完整成交、零成交撤单和部分成交后撤单；仍开放的 partial fill
   继续阻断，终态撤单只记录实际 fills，绝不签发券商撤单。
 - Reconciliation clearance 与 ledger posting 是两个独立事务和批准。
+- Ledger posting 使用版本化 `karkinos.controlled_submission_ledger_posting.v1` artifact 和新鲜的
+  最终操作员签名。写事务会重新核验精确 OMS/intent、lifecycle、statement/fill/cost、Account
+  Truth、valuation 与 ledger identity binding，再把所有 entries 与 posting record 一起提交。
+- Partial-cancel 只写实际 fills；no-fill cancel 记录零 entry no-op。重复重试复用 immutable posting；
+  evidence 或 ledger drift 会拒绝整个事务，纠错必须使用补偿事件。
+- Posting 不具备 provider contact、submit、cancel、strategy/AI、risk decision、kill switch 或
+  capital authority 能力。
 - GET、告警、报告与 UI rendering 不会隐式联系 gateway。
 - 在写事务中，较新的 blocked fact 优先于较旧的 clear preview。
 

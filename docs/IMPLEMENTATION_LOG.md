@@ -8,7 +8,7 @@ in Git commits and pull requests.
 
 ## Current Baseline
 
-As of 2026-07-15, v0.2 through v1.7 are complete. The v1.8 control-plane
+As of 2026-07-16, v0.2 through v1.7 are complete. The v1.8 control-plane
 foundation and AI-native research foundation through Phase 1.18 are
 implemented. The active product milestone is the broker-connected controlled
 per-order pilot described in [ROADMAP.md](ROADMAP.md).
@@ -62,7 +62,12 @@ Implemented foundation:
   interlock;
 - signed exact-terminal clearance for full fill, no-fill cancel, and
   partial-fill-then-cancel, plus broker-neutral lifecycle ingestion; open
-  partial fills remain blocked and clearance still cannot post the ledger;
+  partial fills remain blocked and clearance itself cannot post the ledger;
+- separately signed, provider-neutral reconciled-ledger posting with
+  transaction-time OMS, intent, lifecycle, broker-evidence, Account Truth,
+  valuation, and ledger-identity rechecks; exact fills commit once in one
+  transaction, partial-cancel posts only actual fills, and no-fill cancel is an
+  explicit zero-entry posting;
 - versioned adapter capability/boundary manifests and revocable release review
   gates for live collector ingestion;
 - deterministic local adapter conformance evidence bound to release review and
@@ -71,8 +76,9 @@ Implemented foundation:
 - persisted operator projection and evidence-based scale review.
 
 Remaining release work is owned by the roadmap: one real adapter, read-only
-soak, real cancel/unknown recovery, reconciled ledger posting, operator journey,
-and controlled per-order pilot.
+soak, real cancel/unknown recovery, compensating-correction operations,
+cross-surface posting acceptance, operator journey, and controlled per-order
+pilot.
 
 ### v1.7 — Controlled Broker Bridge Foundation
 

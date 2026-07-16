@@ -170,6 +170,16 @@ disable; it never scales up automatically.
   records only actual fills and never issues a broker cancel.
 - Reconciliation clearance and ledger posting are separate transactions and
   approvals.
+- Ledger posting uses the versioned
+  `karkinos.controlled_submission_ledger_posting.v1` artifact and a fresh final
+  operator signature. The write transaction rechecks exact OMS/intent,
+  lifecycle, statement/fill/cost, Account Truth, valuation, and ledger identity
+  bindings before committing all entries and the posting record together.
+- Partial-cancel posts only actual fills; no-fill cancel records a zero-entry
+  no-op. Duplicate retry reuses the immutable posting. Evidence or ledger drift
+  rejects the whole transaction, and corrections require compensating events.
+- Posting has no provider contact, submit, cancel, strategy/AI, risk-decision,
+  kill-switch, or capital-authority capability.
 - GET, alerts, reports, and UI rendering never contact the gateway implicitly.
 - A newer blocked fact wins over an older clear preview inside the write
   transaction.

@@ -6,7 +6,9 @@ import json
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from cryptography.hazmat.primitives import serialization
@@ -24,10 +26,18 @@ from account_truth.broker_order_lifecycle_collector import (
     preview_broker_order_lifecycle_collector_batch,
 )
 from account_truth.broker_statement import parse_broker_statement_csv
+from account_truth.manual_review import ManualReviewRepository
+from server.account_truth_gate import build_latest_account_truth_promotion_evidence
 from server.config import TrustedOperatorIdentityConfig
 from server.db import AppDatabase
+from server.projections.service import build_portfolio_projection_from_db
 from server.services.controlled_broker_submission import (
     ControlledBrokerSubmissionService,
+)
+from server.services.controlled_submission_ledger_posting import (
+    CONTROLLED_SUBMISSION_LEDGER_POSTING_ACKNOWLEDGEMENT,
+    ControlledSubmissionLedgerPostingRejected,
+    ControlledSubmissionLedgerPostingService,
 )
 from server.services.controlled_submission_reconciliation_clearance import (
     CONTROLLED_SUBMISSION_CLEARANCE_ACKNOWLEDGEMENT,
@@ -1265,5 +1275,443 @@ def test_concurrent_exact_clearance_is_atomic_and_idempotent(tmp_path) -> None:
     assert [item["to_status"] for item in transitions].count("filled") == 1
     assert (
         len(env["db"].list_controlled_submission_reconciliation_clearances_sync()) == 1
+    )
+    assert env["db"].get_ledger_entries_sync() == []
+
+
+def _ledger_posting_service(env: dict) -> ControlledSubmissionLedgerPostingService:
+    return ControlledSubmissionLedgerPostingService(
+        db=env["db"],
+        account_truth_provider=lambda: env["account_truth"],
+        trusted_operator_identities=[_identity(env["private_key"])],
+        clock=lambda: env["clock"][0],
+    )
+
+
+def _ledger_posting_approval(env: dict, fingerprint: str) -> dict:
+    challenge = env["approvals"].create_challenge(
+        operator_id="local-clearance-owner",
+        key_id="clearance-key-1",
+        action="post_controlled_submission_ledger",
+        artifact_type="controlled_submission_ledger_posting",
+        artifact_fingerprint=fingerprint,
+    )
+    signature = env["private_key"].sign(
+        base64.b64decode(challenge["signing_payload_base64"])
+    )
+    signature_base64 = base64.b64encode(signature).decode("ascii")
+    approval = env["approvals"].verify_signature(
+        challenge_id=challenge["challenge_id"],
+        signature_base64=signature_base64,
+    )
+    return {**approval, "proof_signature_base64": signature_base64}
+
+
+def _apply_ledger_posting(
+    env: dict,
+    *,
+    service: ControlledSubmissionLedgerPostingService,
+    preview: dict,
+) -> dict:
+    approval = _ledger_posting_approval(env, preview["posting_fingerprint"])
+    return service.apply(
+        clearance_id=preview["clearance_id"],
+        posting_fingerprint=preview["posting_fingerprint"],
+        operator_approval_id=approval["approval_id"],
+        operator_proof_signature_base64=approval["proof_signature_base64"],
+        acknowledgement=CONTROLLED_SUBMISSION_LEDGER_POSTING_ACKNOWLEDGEMENT,
+    )
+
+
+def test_signed_exact_terminal_fills_post_once_and_reconcile_projection(
+    tmp_path,
+) -> None:
+    env = _environment(tmp_path)
+    clearance_preview = _preview(env)
+    clearance = _record(
+        env,
+        clearance_preview,
+        _approval(env, clearance_preview["clearance_fingerprint"]),
+    )
+    service = _ledger_posting_service(env)
+    preview = service.preview(clearance_id=clearance["clearance_id"])
+
+    posted = _apply_ledger_posting(env, service=service, preview=preview)
+    retry = _ledger_posting_service(env).apply(
+        clearance_id=preview["clearance_id"],
+        posting_fingerprint=preview["posting_fingerprint"],
+        operator_approval_id=posted["operator_approval_id"],
+        operator_proof_signature_base64="unused-on-exact-retry",
+        acknowledgement=CONTROLLED_SUBMISSION_LEDGER_POSTING_ACKNOWLEDGEMENT,
+    )
+
+    assert preview["review_status"] == "ready_for_final_signature", preview["blockers"]
+    assert preview["ledger_entry_count"] == 2
+    assert posted["status"] == "applied"
+    assert posted["post_apply_status"] == "reconciled"
+    assert posted["production_ledger_mutated"] is True
+    assert retry["reused"] is True
+    ledger = env["db"].get_ledger_entries_sync(limit=10)
+    assert len(ledger) == 2
+    assert {row["source"] for row in ledger} == {"controlled_submission_ledger_posting"}
+    assert sum(row["quantity"] for row in ledger) == 100
+    assert sum(row["gross_amount"] for row in ledger) == 1000
+    assert sum(row["commission"] for row in ledger) == 2
+    assert all(row["settlement_status"] == "confirmed" for row in ledger)
+    projection = build_portfolio_projection_from_db(env["db"])
+    assert projection.positions["600519"].quantity == 100
+    assert projection.positions["600519"].avg_cost == Decimal("10.02")
+    assert projection.cash == Decimal("-1002")
+    assert len(env["db"].list_controlled_submission_ledger_postings_sync()) == 1
+
+
+def test_concurrent_signed_ledger_posting_commits_one_batch(tmp_path) -> None:
+    env = _environment(tmp_path)
+    clearance_preview = _preview(env)
+    clearance = _record(
+        env,
+        clearance_preview,
+        _approval(env, clearance_preview["clearance_fingerprint"]),
+    )
+    service = _ledger_posting_service(env)
+    preview = service.preview(clearance_id=clearance["clearance_id"])
+    approval = _ledger_posting_approval(env, preview["posting_fingerprint"])
+
+    def apply_once(_: int) -> dict:
+        return service.apply(
+            clearance_id=preview["clearance_id"],
+            posting_fingerprint=preview["posting_fingerprint"],
+            operator_approval_id=approval["approval_id"],
+            operator_proof_signature_base64=approval["proof_signature_base64"],
+            acknowledgement=CONTROLLED_SUBMISSION_LEDGER_POSTING_ACKNOWLEDGEMENT,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(apply_once, range(2)))
+
+    assert {item["status"] for item in results} == {"applied"}
+    assert sum(1 for item in results if item["reused"]) == 1
+    assert len(env["db"].get_ledger_entries_sync(limit=10)) == 2
+    assert len(env["db"].list_controlled_submission_ledger_postings_sync()) == 1
+
+
+def test_signed_partial_cancel_posts_actual_fill_only(tmp_path) -> None:
+    env = _environment(tmp_path, quantities=(40,))
+    _bind_controlled_account_alias(env)
+    _record_cancelled_lifecycle(env, filled_quantity=40, cancelled_quantity=60)
+    run = ExecutionReconciliationService(db=env["db"]).run_reconciliation(
+        run_date="2026-07-14"
+    )
+    clearance_preview = env["service"].preview(
+        submit_intent_id=env["submit_intent_id"],
+        reconciliation_run_id=run["run_id"],
+    )
+    clearance = env["service"].record(
+        submit_intent_id=env["submit_intent_id"],
+        reconciliation_run_id=run["run_id"],
+        clearance_fingerprint=clearance_preview["clearance_fingerprint"],
+        operator_approval_id=(
+            approval := _approval(env, clearance_preview["clearance_fingerprint"])
+        )["approval_id"],
+        operator_proof_signature_base64=approval["proof_signature_base64"],
+        acknowledgement=CONTROLLED_SUBMISSION_CLEARANCE_ACKNOWLEDGEMENT,
+    )
+    service = _ledger_posting_service(env)
+    preview = service.preview(clearance_id=clearance["clearance_id"])
+
+    posted = _apply_ledger_posting(env, service=service, preview=preview)
+
+    ledger = env["db"].get_ledger_entries_sync(limit=10)
+    assert posted["ledger_entry_count"] == 1
+    assert len(ledger) == 1
+    assert ledger[0]["quantity"] == 40
+    assert env["db"].get_oms_order_sync(env["order"]["order_id"])["status"] == (
+        "cancelled"
+    )
+
+
+def test_signed_no_fill_cancel_records_noop_posting_without_trade_entry(
+    tmp_path,
+) -> None:
+    env = _environment(tmp_path, quantities=())
+    _bind_controlled_account_alias(env)
+    _record_cancelled_lifecycle(env, filled_quantity=0, cancelled_quantity=100)
+    run = ExecutionReconciliationService(db=env["db"]).run_reconciliation(
+        run_date="2026-07-14"
+    )
+    clearance_preview = env["service"].preview(
+        submit_intent_id=env["submit_intent_id"],
+        reconciliation_run_id=run["run_id"],
+    )
+    approval = _approval(env, clearance_preview["clearance_fingerprint"])
+    clearance = env["service"].record(
+        submit_intent_id=env["submit_intent_id"],
+        reconciliation_run_id=run["run_id"],
+        clearance_fingerprint=clearance_preview["clearance_fingerprint"],
+        operator_approval_id=approval["approval_id"],
+        operator_proof_signature_base64=approval["proof_signature_base64"],
+        acknowledgement=CONTROLLED_SUBMISSION_CLEARANCE_ACKNOWLEDGEMENT,
+    )
+    service = _ledger_posting_service(env)
+    preview = service.preview(clearance_id=clearance["clearance_id"])
+
+    posted = _apply_ledger_posting(env, service=service, preview=preview)
+
+    assert preview["ledger_entry_count"] == 0
+    assert posted["production_ledger_mutated"] is False
+    assert posted["post_ledger_cutoff_id"] == preview["pre_ledger_cutoff_id"]
+    assert env["db"].get_ledger_entries_sync() == []
+    assert len(env["db"].list_controlled_submission_ledger_postings_sync()) == 1
+
+
+def test_ledger_identity_race_rejects_whole_posting_transaction(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    env = _environment(tmp_path)
+    clearance_preview = _preview(env)
+    clearance = _record(
+        env,
+        clearance_preview,
+        _approval(env, clearance_preview["clearance_fingerprint"]),
+    )
+    service = _ledger_posting_service(env)
+    preview = service.preview(clearance_id=clearance["clearance_id"])
+    approval = _ledger_posting_approval(env, preview["posting_fingerprint"])
+    original_record = env["db"].record_controlled_submission_ledger_posting_sync
+
+    def record_after_ledger_drift(*, posting: dict) -> dict:
+        env["db"].insert_ledger_entry_sync(
+            entry_type="cash_deposit",
+            timestamp=NOW.isoformat(),
+            amount=1,
+            source="deterministic_race_fixture",
+            source_ref="race-deposit-1",
+        )
+        return original_record(posting=posting)
+
+    monkeypatch.setattr(
+        env["db"],
+        "record_controlled_submission_ledger_posting_sync",
+        record_after_ledger_drift,
+    )
+
+    with pytest.raises(ControlledSubmissionLedgerPostingRejected) as exc:
+        service.apply(
+            clearance_id=preview["clearance_id"],
+            posting_fingerprint=preview["posting_fingerprint"],
+            operator_approval_id=approval["approval_id"],
+            operator_proof_signature_base64=approval["proof_signature_base64"],
+            acknowledgement=CONTROLLED_SUBMISSION_LEDGER_POSTING_ACKNOWLEDGEMENT,
+        )
+
+    assert "controlled_ledger_posting_transaction_rejected" in (
+        exc.value.evidence["rejection_reasons"]
+    )
+    assert "controlled_ledger_posting_pre_ledger_cutoff_changed" in (
+        exc.value.evidence["transaction_blockers"]
+    )
+    assert all(
+        row["source"] != "controlled_submission_ledger_posting"
+        for row in env["db"].get_ledger_entries_sync(limit=10)
+    )
+    assert env["db"].list_controlled_submission_ledger_postings_sync() == []
+
+
+def test_account_truth_review_race_rejects_whole_posting_transaction(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    env = _environment(tmp_path)
+    clearance_preview = _preview(env)
+    clearance = _record(
+        env,
+        clearance_preview,
+        _approval(env, clearance_preview["clearance_fingerprint"]),
+    )
+    ManualReviewRepository(Path(env["db"]._path))
+    service = _ledger_posting_service(env)
+    preview = service.preview(clearance_id=clearance["clearance_id"])
+    approval = _ledger_posting_approval(env, preview["posting_fingerprint"])
+    original_record = env["db"].record_controlled_submission_ledger_posting_sync
+
+    def record_after_review_drift(*, posting: dict) -> dict:
+        with sqlite3.connect(env["db"]._path) as conn:
+            conn.execute(
+                """
+                INSERT INTO reconciliation_review_decisions (
+                    import_run_id, item_key, category, symbol, review_status,
+                    note, reviewer, evidence_fingerprint, schema_version,
+                    created_at, updated_at
+                ) VALUES (?, 'cash', 'cash', '', 'accepted', '', 'fixture', ?,
+                          'karkinos.account_truth.manual_review.v3', ?, ?)
+                """,
+                (
+                    env["import_run"].import_run_id,
+                    "9" * 64,
+                    NOW.isoformat(),
+                    NOW.isoformat(),
+                ),
+            )
+            conn.commit()
+        return original_record(posting=posting)
+
+    monkeypatch.setattr(
+        env["db"],
+        "record_controlled_submission_ledger_posting_sync",
+        record_after_review_drift,
+    )
+
+    with pytest.raises(ControlledSubmissionLedgerPostingRejected) as exc:
+        service.apply(
+            clearance_id=preview["clearance_id"],
+            posting_fingerprint=preview["posting_fingerprint"],
+            operator_approval_id=approval["approval_id"],
+            operator_proof_signature_base64=approval["proof_signature_base64"],
+            acknowledgement=CONTROLLED_SUBMISSION_LEDGER_POSTING_ACKNOWLEDGEMENT,
+        )
+
+    assert "controlled_ledger_posting_account_truth_review_changed" in (
+        exc.value.evidence["transaction_blockers"]
+    )
+    assert all(
+        row["source"] != "controlled_submission_ledger_posting"
+        for row in env["db"].get_ledger_entries_sync(limit=10)
+    )
+    assert env["db"].list_controlled_submission_ledger_postings_sync() == []
+
+
+def test_account_truth_coverage_accepts_only_same_import_controlled_posting(
+    tmp_path,
+) -> None:
+    env = _environment(tmp_path)
+    clearance_preview = _preview(env)
+    clearance = _record(
+        env,
+        clearance_preview,
+        _approval(env, clearance_preview["clearance_fingerprint"]),
+    )
+    service = _ledger_posting_service(env)
+    posting_preview = service.preview(clearance_id=clearance["clearance_id"])
+    _apply_ledger_posting(env, service=service, preview=posting_preview)
+    state = SimpleNamespace(
+        db=env["db"],
+        config=SimpleNamespace(initial_cash="0"),
+    )
+
+    covered = build_latest_account_truth_promotion_evidence(
+        state,
+        clock=lambda: NOW,
+        max_age_seconds=120,
+    )
+    env["db"].insert_ledger_entry_sync(
+        entry_type="fee",
+        timestamp=NOW.isoformat(),
+        amount=1,
+        source="unrelated_manual_fact",
+        source_ref="unrelated-late-fee",
+    )
+    stale = build_latest_account_truth_promotion_evidence(
+        state,
+        clock=lambda: NOW,
+        max_age_seconds=120,
+    )
+
+    assert covered["ledger_coverage"]["status"] == "covered"
+    assert covered["ledger_coverage"]["controlled_posting_lineage_entry_count"] == 2
+    assert stale["ledger_coverage"]["status"] == "stale"
+    assert (
+        "ledger_was_revised_after_broker_import" in stale["ledger_coverage"]["reasons"]
+    )
+
+
+def test_clearance_allows_only_exact_unposted_controlled_order_delta(tmp_path) -> None:
+    env = _environment(tmp_path)
+    env["account_truth"].update(
+        {
+            "status": "blocked",
+            "gate_status": "blocked",
+            "reconciliation_status": "mismatch",
+            "unresolved_mismatch_count": 7,
+            "reconciliation_items": [
+                {
+                    "item_key": "cash",
+                    "category": "cash",
+                    "status": "mismatch",
+                    "broker_value": "-1002",
+                    "karkinos_value": "0",
+                    "difference": "-1002",
+                },
+                {
+                    "item_key": "position:600519",
+                    "category": "position",
+                    "status": "mismatch",
+                    "broker_value": "100",
+                    "karkinos_value": "0",
+                    "difference": "100",
+                },
+                {
+                    "item_key": "cost_basis:600519",
+                    "category": "cost_basis",
+                    "status": "mismatch",
+                    "broker_value": "10.02",
+                    "karkinos_value": "0",
+                    "difference": "10.02",
+                },
+                {
+                    "item_key": "trade_gross_amount:600519",
+                    "category": "trade_component",
+                    "status": "mismatch",
+                    "broker_value": "1000",
+                    "karkinos_value": "0",
+                    "difference": "1000",
+                },
+                {
+                    "item_key": "net_cash_impact:600519",
+                    "category": "trade_component",
+                    "status": "mismatch",
+                    "broker_value": "-1002",
+                    "karkinos_value": "0",
+                    "difference": "-1002",
+                },
+                {
+                    "item_key": "fee:600519",
+                    "category": "trade_component",
+                    "status": "mismatch",
+                    "broker_value": "2",
+                    "karkinos_value": "0",
+                    "difference": "2",
+                },
+                {
+                    "item_key": "fee",
+                    "category": "fee",
+                    "status": "mismatch",
+                    "broker_value": "2",
+                    "karkinos_value": "0",
+                    "difference": "2",
+                },
+            ],
+        }
+    )
+
+    exact = _preview(env)
+    env["account_truth"]["reconciliation_items"].append(
+        {
+            "item_key": "position:510300",
+            "category": "position",
+            "status": "mismatch",
+            "broker_value": "1",
+            "karkinos_value": "0",
+            "difference": "1",
+        }
+    )
+    unrelated = _preview(env)
+
+    assert exact["review_ready"] is True, exact["blockers"]
+    assert exact["account_truth"]["status"] == "expected_controlled_ledger_delta"
+    assert len(exact["expected_ledger_delta_fingerprint"]) == 64
+    assert unrelated["review_ready"] is False
+    assert "controlled_submission_clearance_account_truth_status_invalid" in (
+        unrelated["blockers"]
     )
     assert env["db"].get_ledger_entries_sync() == []

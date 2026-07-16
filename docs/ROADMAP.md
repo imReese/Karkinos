@@ -152,6 +152,19 @@ post only actual fills; incomplete or conflicting evidence fails closed; and
 Ledger, Holdings, Equity Curve, Overview, realized P/L, and Account Truth
 reconcile after posting.
 
+**Implemented foundation:** the provider-neutral
+`karkinos.controlled_submission_ledger_posting.v1` boundary now provides a
+separately signed preview and exactly-once atomic apply. It rechecks the exact
+terminal clearance, OMS and controlled intent, lifecycle and statement
+evidence, fills and costs, Account Truth identity, valuation snapshot, and
+ledger cutoff/fingerprint inside the write transaction. Full fills,
+partial-fill-then-cancel, zero-fill cancel, duplicate retry, evidence drift, and
+ledger-race fixtures are deterministic. Posting cannot contact a provider or
+grant submit, cancel, strategy, AI, risk, kill-switch, or capital authority.
+Operational UI, compensating-correction commands, exhaustive cross-surface
+acceptance, and real-provider evidence remain open, so M3 is not yet a release
+claim.
+
 ### M4 — Operator Journey
 
 Unify preflight, approval, capital at risk, blockers, submission state, unknown
@@ -191,7 +204,8 @@ incident returns the system to `disabled`.
    exact-terminal full/partial-cancel/no-fill-cancel reconciliation; real
    cancel/unknown recovery remains.
 5. Default-closed write adapter and per-order submit/cancel gates.
-6. Reconciled ledger posting and financial invariants.
+6. **Foundation implemented:** signed, exactly-once reconciled ledger posting;
+   next add compensating-correction operations and cross-surface acceptance.
 7. Operations/Trading end-to-end UX and alerts.
 8. Deployment, rollback, fault drills, and controlled pilot release.
 

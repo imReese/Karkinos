@@ -203,13 +203,27 @@ def _load_ledger_rows(db: Any, batch_size: int = 500) -> list[dict[str, Any]]:
         if len(batch) < batch_size:
             break
         offset += batch_size
-    return sorted(
-        rows,
+    return ledger_identity_from_rows(rows)["rows"]
+
+
+def ledger_identity_from_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Build the canonical ledger cutoff/fingerprint from persisted rows."""
+
+    normalized_rows = sorted(
+        (dict(row) for row in rows),
         key=lambda row: (
             int(row.get("id") or 0),
             _parse_timestamp(row.get("timestamp")),
         ),
     )
+    ledger_ids = [
+        int(row["id"]) for row in normalized_rows if row.get("id") is not None
+    ]
+    return {
+        "rows": normalized_rows,
+        "ledger_cutoff_id": max(ledger_ids, default=0),
+        "ledger_fingerprint": _fingerprint(normalized_rows),
+    }
 
 
 def _snapshot_status(quotes: list[dict[str, Any]]) -> str:
@@ -260,11 +274,11 @@ def build_current_valuation_snapshot(
             _account_valuation_quote_rows(load_persisted_quote_rows(db))
         ),
     )
-    ledger_rows = _load_ledger_rows(db)
+    ledger_identity = ledger_identity_from_rows(_load_ledger_rows(db))
+    ledger_rows = ledger_identity["rows"]
     quote_set_fingerprint = _fingerprint(quotes)
-    ledger_fingerprint = _fingerprint(ledger_rows)
-    ledger_ids = [int(row["id"]) for row in ledger_rows if row.get("id") is not None]
-    ledger_cutoff_id = max(ledger_ids, default=0)
+    ledger_fingerprint = ledger_identity["ledger_fingerprint"]
+    ledger_cutoff_id = ledger_identity["ledger_cutoff_id"]
     as_of = _snapshot_as_of(quotes, ledger_rows)
     trade_date = _snapshot_trade_date(quotes, as_of)
     identity_payload = {

@@ -216,7 +216,11 @@ class ControlledSubmissionReconciliationClearanceService:
                 "controlled_submission_clearance_broker_fingerprint_invalid"
             )
 
-        account_truth = self._resolve_account_truth(now=now)
+        account_truth = self._resolve_account_truth(
+            now=now,
+            broker_evidence=broker_evidence,
+            order=order,
+        )
         blockers.extend(account_truth["blockers"])
         terminal_lifecycle = self._resolve_terminal_lifecycle(
             intent=intent,
@@ -346,6 +350,10 @@ class ControlledSubmissionReconciliationClearanceService:
             "account_truth_file_fingerprint": account_truth["file_fingerprint"],
             "account_truth_source_fingerprint": account_truth["source_fingerprint"],
             "account_truth_captured_at": account_truth["captured_at"],
+            "account_truth_resolution_status": account_truth["status"],
+            "expected_ledger_delta_fingerprint": str(
+                account_truth.get("expected_ledger_delta", {}).get("fingerprint") or ""
+            ),
             "terminal_status": terminal_status,
             "terminal_evidence_source": str(
                 terminal_lifecycle.get("terminal_evidence_source")
@@ -547,6 +555,8 @@ class ControlledSubmissionReconciliationClearanceService:
                 "account_truth_import_run_id",
                 "account_truth_file_fingerprint",
                 "account_truth_source_fingerprint",
+                "account_truth_resolution_status",
+                "expected_ledger_delta_fingerprint",
                 "clearance_reconciliation_run_id",
                 "terminal_status",
                 "terminal_evidence_source",
@@ -731,7 +741,13 @@ class ControlledSubmissionReconciliationClearanceService:
             ],
         }
 
-    def _resolve_account_truth(self, *, now: datetime) -> dict[str, Any]:
+    def _resolve_account_truth(
+        self,
+        *,
+        now: datetime,
+        broker_evidence: list[dict[str, Any]],
+        order: dict[str, Any],
+    ) -> dict[str, Any]:
         blockers: list[str] = []
         raw: dict[str, Any] = {}
         if not callable(self._account_truth_provider):
@@ -757,20 +773,43 @@ class ControlledSubmissionReconciliationClearanceService:
             elif age > CONTROLLED_SUBMISSION_CLEARANCE_MAX_ACCOUNT_TRUTH_AGE_SECONDS:
                 blockers.append("controlled_submission_clearance_account_truth_stale")
         ledger_coverage = _mapping(raw.get("ledger_coverage"))
-        required = {
-            "status": "clear",
-            "gate_status": "pass",
-            "data_freshness_status": "fresh",
-            "unresolved_mismatch_count": 0,
-        }
+        expected_delta = _controlled_post_trade_account_truth_delta(
+            raw,
+            broker_evidence=broker_evidence,
+            order=order,
+        )
+        exact_expected_delta = expected_delta["status"] == "exact"
+        required = {"data_freshness_status": "fresh"}
         for field, expected in required.items():
             if raw.get(field) != expected:
                 blockers.append(
                     f"controlled_submission_clearance_account_truth_{field}_invalid"
                 )
-        if raw.get("reconciliation_status") not in {"clear", "pass"}:
+        if raw.get("status") != "clear" and not exact_expected_delta:
+            blockers.append(
+                "controlled_submission_clearance_account_truth_status_invalid"
+            )
+        if raw.get("gate_status") != "pass" and not exact_expected_delta:
+            blockers.append(
+                "controlled_submission_clearance_account_truth_gate_status_invalid"
+            )
+        if (
+            int(raw.get("unresolved_mismatch_count") or 0) != 0
+            and not exact_expected_delta
+        ):
+            blockers.append(
+                "controlled_submission_clearance_account_truth_unresolved_mismatch_count_invalid"
+            )
+        if (
+            raw.get("reconciliation_status") not in {"clear", "pass"}
+            and not exact_expected_delta
+        ):
             blockers.append(
                 "controlled_submission_clearance_account_truth_reconciliation_status_invalid"
+            )
+        if str(raw.get("import_validation_status") or "pass") != "pass":
+            blockers.append(
+                "controlled_submission_clearance_account_truth_import_not_pass"
             )
         if ledger_coverage.get("status") != "covered":
             blockers.append(
@@ -791,7 +830,15 @@ class ControlledSubmissionReconciliationClearanceService:
                 "controlled_submission_clearance_account_truth_ledger_boundary_invalid"
             )
         return {
-            "status": "clear" if not blockers else "blocked",
+            "status": (
+                "blocked"
+                if blockers
+                else (
+                    "expected_controlled_ledger_delta"
+                    if exact_expected_delta
+                    else "clear"
+                )
+            ),
             "source_fingerprint": source_fingerprint,
             "import_run_id": str(raw.get("import_run_id") or ""),
             "file_fingerprint": file_fingerprint,
@@ -802,6 +849,7 @@ class ControlledSubmissionReconciliationClearanceService:
             "reconciliation_status": str(raw.get("reconciliation_status") or ""),
             "gate_status": str(raw.get("gate_status") or ""),
             "unresolved_mismatch_count": int(raw.get("unresolved_mismatch_count") or 0),
+            "expected_ledger_delta": expected_delta,
             "blockers": list(dict.fromkeys(blockers)),
         }
 
@@ -848,6 +896,160 @@ class ControlledSubmissionReconciliationClearanceService:
             "persisted": True,
             **payload,
         }
+
+
+def _controlled_post_trade_account_truth_delta(
+    raw: dict[str, Any],
+    *,
+    broker_evidence: list[dict[str, Any]],
+    order: dict[str, Any],
+) -> dict[str, Any]:
+    """Prove that every Account Truth delta is this one unposted order."""
+
+    if not broker_evidence:
+        return {"status": "not_required", "fingerprint": "", "blockers": []}
+    items = [
+        _mapping(item)
+        for item in raw.get("reconciliation_items") or []
+        if isinstance(item, dict)
+    ]
+    if not items:
+        return {
+            "status": "unavailable",
+            "fingerprint": "",
+            "blockers": ["account_truth_reconciliation_items_missing"],
+        }
+
+    symbol = str(order.get("symbol") or "")
+    side = str(order.get("side") or "").lower()
+    if side not in {"buy", "sell"}:
+        return {
+            "status": "blocked",
+            "fingerprint": "",
+            "blockers": ["account_truth_controlled_order_side_invalid"],
+        }
+    signed_quantity = Decimal("1") if side == "buy" else Decimal("-1")
+    quantity = sum(
+        (
+            abs(_decimal(item.get("quantity")) or Decimal("0"))
+            for item in broker_evidence
+        ),
+        Decimal("0"),
+    )
+    gross = sum(
+        (
+            abs(_decimal(item.get("gross_amount")) or Decimal("0"))
+            for item in broker_evidence
+        ),
+        Decimal("0"),
+    )
+    fee = sum(
+        (abs(_decimal(item.get("fee")) or Decimal("0")) for item in broker_evidence),
+        Decimal("0"),
+    )
+    tax = sum(
+        (abs(_decimal(item.get("tax")) or Decimal("0")) for item in broker_evidence),
+        Decimal("0"),
+    )
+    transfer_fee = sum(
+        (
+            abs(_decimal(item.get("transfer_fee")) or Decimal("0"))
+            for item in broker_evidence
+        ),
+        Decimal("0"),
+    )
+    net_amount = sum(
+        (_decimal(item.get("net_amount")) or Decimal("0") for item in broker_evidence),
+        Decimal("0"),
+    )
+    expected = {
+        "cash": net_amount,
+        f"position:{symbol}": signed_quantity * quantity,
+        f"trade_gross_amount:{symbol}": gross,
+        f"net_cash_impact:{symbol}": net_amount,
+        f"fee:{symbol}": fee,
+        f"tax:{symbol}": tax,
+        f"transfer_fee:{symbol}": transfer_fee,
+        "fee": fee,
+        "tax": tax,
+    }
+    money_tolerance = Decimal("0.005")
+    quantity_tolerance = Decimal("0.00000001")
+    non_pass = [item for item in items if str(item.get("status") or "") != "pass"]
+    blockers: list[str] = []
+    seen: set[str] = set()
+    for item in non_pass:
+        item_key = str(item.get("item_key") or "")
+        category = str(item.get("category") or "")
+        if category == "cost_basis":
+            continue
+        if item_key not in expected:
+            blockers.append(f"unexpected_account_truth_delta:{item_key or category}")
+            continue
+        actual = _decimal(item.get("difference"))
+        tolerance = quantity_tolerance if category == "position" else money_tolerance
+        if actual is None or abs(actual - expected[item_key]) > tolerance:
+            blockers.append(f"account_truth_delta_mismatch:{item_key}")
+        seen.add(item_key)
+
+    required_keys = {key for key, value in expected.items() if value != 0}
+    for item_key in sorted(required_keys - seen):
+        blockers.append(f"account_truth_expected_delta_missing:{item_key}")
+
+    position_item = next(
+        (item for item in items if item.get("item_key") == f"position:{symbol}"),
+        None,
+    )
+    cost_item = next(
+        (item for item in items if item.get("item_key") == f"cost_basis:{symbol}"),
+        None,
+    )
+    if position_item is None or cost_item is None:
+        blockers.append("account_truth_position_or_cost_basis_snapshot_missing")
+    else:
+        current_quantity = _decimal(position_item.get("karkinos_value"))
+        broker_quantity = _decimal(position_item.get("broker_value"))
+        current_cost = _decimal(cost_item.get("karkinos_value"))
+        broker_cost = _decimal(cost_item.get("broker_value"))
+        if current_quantity is None or broker_quantity is None or broker_cost is None:
+            blockers.append("account_truth_position_or_cost_basis_value_missing")
+        elif current_quantity != 0 and current_cost is None:
+            blockers.append("account_truth_current_cost_basis_missing")
+        else:
+            current_cost = current_cost or Decimal("0")
+            if side == "buy" and broker_quantity > 0:
+                expected_cost = (
+                    current_quantity * current_cost + gross + fee + tax + transfer_fee
+                ) / broker_quantity
+            elif side == "sell" and broker_quantity > 0:
+                expected_cost = (
+                    current_quantity * current_cost - net_amount
+                ) / broker_quantity
+            else:
+                expected_cost = Decimal("0")
+            if abs(broker_cost - expected_cost) > money_tolerance:
+                blockers.append("account_truth_post_trade_cost_basis_mismatch")
+
+    expected_contract = {
+        "symbol": symbol,
+        "side": side,
+        "quantity": _decimal_string(quantity),
+        "gross_amount": _decimal_string(gross),
+        "fee": _decimal_string(fee),
+        "tax": _decimal_string(tax),
+        "transfer_fee": _decimal_string(transfer_fee),
+        "net_amount": _decimal_string(net_amount),
+        "account_truth_source_fingerprint": str(raw.get("source_fingerprint") or ""),
+        "non_pass_item_keys": sorted(
+            str(item.get("item_key") or "") for item in non_pass
+        ),
+    }
+    return {
+        "status": "exact" if not blockers else "blocked",
+        "fingerprint": _fingerprint(expected_contract),
+        "expected": expected_contract,
+        "blockers": list(dict.fromkeys(blockers)),
+    }
 
 
 def _fill_descriptor(
