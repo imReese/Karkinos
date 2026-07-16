@@ -498,7 +498,10 @@ export function OverviewPage() {
             <div className="min-w-0 space-y-5">
               <DashboardTodayQueue
                 overview={overview.data}
-                dailyOperations={overview.data.daily_operations}
+                dailyOperations={
+                  operationsToday.data?.daily_operations ??
+                  overview.data.daily_operations
+                }
                 marketHealth={marketHealth.data}
                 quoteDiagnostics={[
                   ...positions,

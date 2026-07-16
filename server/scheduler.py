@@ -300,7 +300,7 @@ class TradingScheduler:
             refreshed = True
 
         if self._should_refresh_post_close_fund_nav_data(current):
-            self._sync_fund_nav_quotes()
+            self._sync_fund_nav_quotes(confirmation_only=True)
             self._last_post_close_fund_nav_refresh_date = run_date
             logger.info(
                 "收盘后基金净值确认刷新完成: date=%s, scheduled_time=%s",
@@ -485,7 +485,7 @@ class TradingScheduler:
             metadata=metadata,
         )
 
-    def _sync_fund_nav_quotes(self) -> None:
+    def _sync_fund_nav_quotes(self, *, confirmation_only: bool = False) -> None:
         """Refresh fund NAV/estimate quotes independently from stock quote polling."""
         if self._db is None:
             return
@@ -496,11 +496,13 @@ class TradingScheduler:
             return
 
         try:
+            refresh_kwargs = {"confirmation_only": True} if confirmation_only else {}
             result = refresh_fund_nav_quotes(
                 self._config,
                 self._db,
                 watchlist,
                 latest_quotes,
+                **refresh_kwargs,
             )
         except Exception:
             logger.warning("基金净值/估值同步失败，将保留已有快照", exc_info=True)

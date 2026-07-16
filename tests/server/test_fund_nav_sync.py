@@ -48,6 +48,22 @@ class BatchInspectingFundSource:
         }
 
 
+class ConfirmedFundSource:
+    def __init__(self) -> None:
+        self.calls: list[tuple[Symbol, AssetClass]] = []
+
+    def fetch_latest(self, symbol: Symbol, asset_class: AssetClass = AssetClass.STOCK):
+        self.calls.append((symbol, asset_class))
+        return {
+            "price": 2.5,
+            "timestamp": "2026-06-12T15:00:00+08:00",
+            "source": "tushare",
+            "quote_source": "tushare_fund_nav",
+            "provider_name": "tushare",
+            "provider_symbol": "019999.OF",
+        }
+
+
 def test_refresh_fund_nav_quotes_persists_only_fund_symbols(monkeypatch, tmp_path):
     from server.services import fund_nav_sync
 
@@ -167,3 +183,133 @@ def test_refresh_fund_nav_quotes_fetches_complete_batch_before_persisting(
     assert db.get_latest_quote_sync("019998", asset_type="fund") is not None
     publication = db.get_runtime_control_sync("valuation_snapshot_publication")
     assert publication["status"] == "ready"
+
+
+def test_confirmation_only_supersedes_same_day_estimate_with_confirmed_nav(
+    monkeypatch, tmp_path
+):
+    from server.services import fund_nav_sync
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.save_quote_snapshot_sync(
+        symbol="019999",
+        asset_class="fund",
+        price=2.5123,
+        volume=None,
+        timestamp="2026-06-12 15:00",
+        quote_source="eastmoney_fund_estimate",
+        provider_name="akshare",
+        quote_status="live",
+        captured_reason="live_poll",
+        nav_date="2026-06-11",
+    )
+    estimate_source = FakeFundSource()
+    confirmed_source = ConfirmedFundSource()
+    monkeypatch.setattr(
+        fund_nav_sync,
+        "build_sources",
+        lambda data_source, tushare_token: {
+            "akshare": estimate_source,
+            "tushare": confirmed_source,
+        },
+    )
+
+    result = fund_nav_sync.refresh_fund_nav_quotes(
+        SimpleNamespace(data_source="tushare", tushare_token="unit-token"),
+        db,
+        watchlist=[(Symbol("019999"), AssetClass.FUND)],
+        latest_quotes={
+            "019999": {
+                "price": 2.5123,
+                "timestamp": "2026-06-12 15:00",
+                "quote_source": "eastmoney_fund_estimate",
+                "nav_date": "2026-06-11",
+            }
+        },
+        now=datetime(2026, 6, 12, 21, 30),
+        ttl_seconds=900,
+        confirmation_only=True,
+    )
+
+    latest = db.get_latest_quote_sync("019999", asset_type="fund")
+    restored = {row["symbol"]: row for row in db.get_latest_quotes_sync()}["019999"]
+    assert result.refreshed == ["019999"]
+    assert result.failed == {}
+    assert confirmed_source.calls == [(Symbol("019999"), AssetClass.FUND)]
+    assert estimate_source.calls == []
+    assert latest is not None
+    assert latest["quote_source"] == "tushare_fund_nav"
+    assert latest["nav_date"] == "2026-06-12"
+    assert latest["fetch_run_id"] == result.run_id
+    assert restored["quote_source"] == "tushare_fund_nav"
+
+
+def test_confirmation_only_rejects_intraday_estimate(monkeypatch, tmp_path):
+    from server.services import fund_nav_sync
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    estimate_source = FakeFundSource()
+    monkeypatch.setattr(
+        fund_nav_sync,
+        "build_sources",
+        lambda data_source, tushare_token: {"akshare": estimate_source},
+    )
+
+    result = fund_nav_sync.refresh_fund_nav_quotes(
+        SimpleNamespace(data_source="akshare", tushare_token=""),
+        db,
+        watchlist=[(Symbol("019999"), AssetClass.FUND)],
+        latest_quotes={},
+        now=datetime(2026, 6, 12, 21, 30),
+        ttl_seconds=0,
+        confirmation_only=True,
+    )
+
+    assert result.refreshed == []
+    assert result.failed == {
+        "019999": "fund source returned an unconfirmed NAV estimate"
+    }
+    assert db.get_latest_quote_sync("019999", asset_type="fund") is None
+
+
+def test_confirmation_only_rejects_previous_day_confirmed_nav(monkeypatch, tmp_path):
+    from server.services import fund_nav_sync
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    confirmed_source = ConfirmedFundSource()
+    monkeypatch.setattr(
+        confirmed_source,
+        "fetch_latest",
+        lambda symbol, asset_class=AssetClass.STOCK: {
+            "price": 2.5,
+            "timestamp": "2026-06-11T15:00:00+08:00",
+            "source": "tushare",
+            "quote_source": "tushare_fund_nav",
+            "provider_name": "tushare",
+            "provider_symbol": "019999.OF",
+        },
+    )
+    monkeypatch.setattr(
+        fund_nav_sync,
+        "build_sources",
+        lambda data_source, tushare_token: {"tushare": confirmed_source},
+    )
+
+    result = fund_nav_sync.refresh_fund_nav_quotes(
+        SimpleNamespace(data_source="tushare", tushare_token="unit-token"),
+        db,
+        watchlist=[(Symbol("019999"), AssetClass.FUND)],
+        latest_quotes={},
+        now=datetime(2026, 6, 12, 21, 30),
+        ttl_seconds=0,
+        confirmation_only=True,
+    )
+
+    assert result.refreshed == []
+    assert result.failed == {
+        "019999": "confirmed fund NAV is not published for the target date"
+    }
+    assert db.get_latest_quote_sync("019999", asset_type="fund") is None

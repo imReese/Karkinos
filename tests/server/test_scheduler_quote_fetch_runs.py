@@ -554,8 +554,17 @@ def test_scheduler_post_close_valuation_refresh_runs_once_per_trade_date(
     fund_sync_calls = []
     bar_calls = []
 
-    def fake_refresh_fund_nav_quotes(config, db, watchlist, latest_quotes):
-        fund_sync_calls.append((list(watchlist), dict(latest_quotes)))
+    def fake_refresh_fund_nav_quotes(
+        config,
+        db,
+        watchlist,
+        latest_quotes,
+        *,
+        confirmation_only=False,
+    ):
+        fund_sync_calls.append(
+            (list(watchlist), dict(latest_quotes), confirmation_only)
+        )
         return SimpleNamespace(
             refreshed=["019999"],
             skipped=[],
@@ -615,6 +624,7 @@ def test_scheduler_post_close_valuation_refresh_runs_once_per_trade_date(
     )
 
     assert len(fund_sync_calls) == 1
+    assert fund_sync_calls[0][2] is True
     assert len(bar_calls) == 2
     assert {call[0][0] for call in bar_calls} == {
         Symbol("600001"),

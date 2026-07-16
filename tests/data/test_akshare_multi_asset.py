@@ -562,6 +562,44 @@ class TestAKShareFetchLatest:
         assert mock_get.call_count == 2
         mock_etf.assert_not_called()
 
+    def test_fetch_confirmed_fund_nav_never_uses_intraday_estimate(
+        self, monkeypatch, source
+    ):
+        monkeypatch.setattr(
+            source,
+            "_resolve_open_end_fund_code",
+            lambda symbol: "019999",
+        )
+        monkeypatch.setattr(
+            source,
+            "_fetch_open_end_fund_latest_from_estimate",
+            lambda fund_code: (_ for _ in ()).throw(
+                AssertionError("confirmed NAV must not use an estimate")
+            ),
+        )
+        monkeypatch.setattr(
+            source,
+            "_fetch_open_end_fund_latest_from_page",
+            lambda fund_code: {
+                "price": 2.5123,
+                "timestamp": "2026-06-04",
+                "quote_source": "eastmoney_fund_page",
+                "display_name": "示例成长混合C",
+                "previous_close": 2.5,
+                "previous_close_date": "2026-06-03",
+            },
+        )
+
+        result = source.fetch_confirmed_fund_nav(Symbol("019999"))
+
+        assert result is not None
+        assert result["price"] == 2.5123
+        assert result["timestamp"] == "2026-06-04T15:00:00+08:00"
+        assert result["nav_date"] == "2026-06-04"
+        assert result["quote_source"] == "eastmoney_fund_page"
+        assert result["provider_name"] == "akshare"
+        assert result["provider_symbol"] == "019999"
+
     @patch("data.providers.akshare_source.AKShareSource._open_end_fund_name_map")
     def test_resolve_open_end_fund_code_accepts_alias_name(self, mock_name_map, source):
         """缺少“发起/发起式”的输入别名也应解析到标准基金代码。"""

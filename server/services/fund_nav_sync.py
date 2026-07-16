@@ -15,6 +15,10 @@ from server.services.valuation_snapshot import build_current_valuation_snapshot
 logger = logging.getLogger(__name__)
 
 FUND_NAV_SYNC_TTL_SECONDS = 15 * 60
+_CONFIRMED_FUND_NAV_SOURCES = {
+    "eastmoney_fund_page",
+    "tushare_fund_nav",
+}
 
 
 @dataclass(slots=True)
@@ -51,11 +55,25 @@ def _fund_quote_due(
     *,
     now: datetime,
     ttl_seconds: int,
+    confirmation_only: bool = False,
 ) -> bool:
     if ttl_seconds <= 0:
         return True
     if not quote:
         return True
+    if confirmation_only:
+        quote_source = (
+            str(quote.get("quote_source") or quote.get("source") or "").strip().lower()
+        )
+        if quote_source not in _CONFIRMED_FUND_NAV_SOURCES:
+            return True
+        nav_timestamp = _parse_timestamp(
+            quote.get("nav_date")
+            or quote.get("timestamp")
+            or quote.get("quote_timestamp")
+        )
+        if nav_timestamp is None or nav_timestamp.date() != now.date():
+            return True
     timestamp = _parse_timestamp(
         quote.get("timestamp")
         or quote.get("quote_timestamp")
@@ -68,14 +86,21 @@ def _fund_quote_due(
     return (now - timestamp).total_seconds() >= ttl_seconds
 
 
-def _source_chain(config: Any) -> list[tuple[str, Any]]:
+def _source_chain(
+    config: Any,
+    *,
+    confirmation_only: bool = False,
+) -> list[tuple[str, Any]]:
     data_source = str(getattr(config, "data_source", "akshare") or "akshare")
     sources = build_sources(
         data_source=data_source,
         tushare_token=str(getattr(config, "tushare_token", "") or ""),
     )
     ordered: list[tuple[str, Any]] = []
-    for name in ("akshare", data_source):
+    source_order = (
+        (data_source, "akshare") if confirmation_only else ("akshare", data_source)
+    )
+    for name in source_order:
         source = sources.get(name)
         if source is not None and all(
             existing is not source for _, existing in ordered
@@ -101,6 +126,14 @@ def _normalize_snapshot(
         snapshot.get("provider_name") or snapshot.get("provider") or source_name
     )
     timestamp = str(snapshot.get("timestamp") or now.isoformat())
+    nav_date = snapshot.get("nav_date")
+    if not nav_date and quote_source.strip().lower() in _CONFIRMED_FUND_NAV_SOURCES:
+        parsed_timestamp = _parse_timestamp(timestamp)
+        nav_date = (
+            parsed_timestamp.date().isoformat()
+            if parsed_timestamp is not None
+            else None
+        )
     return {
         "symbol": symbol,
         "asset_class": AssetClass.FUND.value,
@@ -116,7 +149,7 @@ def _normalize_snapshot(
         "provider_status": "live",
         "quote_status": "live",
         "captured_reason": "fund_nav_sync",
-        "nav_date": snapshot.get("nav_date"),
+        "nav_date": nav_date,
         "display_name": snapshot.get("display_name")
         or snapshot.get("name")
         or snapshot.get("asset_name"),
@@ -193,6 +226,7 @@ def refresh_fund_nav_quotes(
     *,
     now: datetime | None = None,
     ttl_seconds: int = FUND_NAV_SYNC_TTL_SECONDS,
+    confirmation_only: bool = False,
 ) -> FundNavSyncResult:
     """Refresh open-end fund NAV/estimate quotes and materialize latest prices."""
     current = now or datetime.now()
@@ -211,6 +245,7 @@ def refresh_fund_nav_quotes(
             latest_quotes.get(symbol),
             now=current,
             ttl_seconds=ttl_seconds,
+            confirmation_only=confirmation_only,
         ):
             due_symbols.append(symbol)
         else:
@@ -231,10 +266,13 @@ def refresh_fund_nav_quotes(
             asset_type=AssetClass.FUND.value,
             symbol_count=len(due_symbols),
             status="running",
-            metadata={"requested_symbols": due_symbols},
+            metadata={
+                "requested_symbols": due_symbols,
+                "confirmation_only": confirmation_only,
+            },
         )
 
-    sources = _source_chain(config)
+    sources = _source_chain(config, confirmation_only=confirmation_only)
     if not sources:
         for symbol in due_symbols:
             result.failed[symbol] = "no fund quote source configured"
@@ -245,7 +283,10 @@ def refresh_fund_nav_quotes(
                 status="failed",
                 failure_count=len(due_symbols),
                 error_message="no fund quote source configured",
-                metadata={"requested_symbols": due_symbols},
+                metadata={
+                    "requested_symbols": due_symbols,
+                    "confirmation_only": confirmation_only,
+                },
             )
         return result
 
@@ -254,7 +295,35 @@ def refresh_fund_nav_quotes(
         last_error: str | None = None
         for source_name, source in sources:
             try:
-                snapshot = source.fetch_latest(Symbol(symbol), AssetClass.FUND)
+                fetch_confirmed = getattr(source, "fetch_confirmed_fund_nav", None)
+                snapshot = (
+                    fetch_confirmed(Symbol(symbol))
+                    if confirmation_only and callable(fetch_confirmed)
+                    else source.fetch_latest(Symbol(symbol), AssetClass.FUND)
+                )
+                if snapshot is None:
+                    raise ValueError("fund source returned no snapshot")
+                quote_source = (
+                    str(snapshot.get("quote_source") or snapshot.get("source") or "")
+                    .strip()
+                    .lower()
+                )
+                if (
+                    confirmation_only
+                    and quote_source not in _CONFIRMED_FUND_NAV_SOURCES
+                ):
+                    raise ValueError("fund source returned an unconfirmed NAV estimate")
+                if confirmation_only:
+                    confirmed_timestamp = _parse_timestamp(
+                        snapshot.get("nav_date") or snapshot.get("timestamp")
+                    )
+                    if (
+                        confirmed_timestamp is None
+                        or confirmed_timestamp.date() != current.date()
+                    ):
+                        raise ValueError(
+                            "confirmed fund NAV is not published for the target date"
+                        )
                 quote = _normalize_snapshot(
                     symbol=symbol,
                     snapshot=dict(snapshot),
@@ -348,6 +417,7 @@ def refresh_fund_nav_quotes(
                 ),
                 "valuation_snapshot_id": valuation_snapshot_id,
                 "facts_persisted_only": True,
+                "confirmation_only": confirmation_only,
             },
         )
     return result
