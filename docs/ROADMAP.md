@@ -132,10 +132,11 @@ reordering, partial fill, cancel race, disconnect, rejection, and broker
 not-found tests cannot create duplicate submissions, fills, cancels, or false
 terminal states. Any unresolved order continues to block a different order.
 
-**Implemented foundation:** deterministic evidence now reaches separately signed exact-terminal
-clearance for full fill, no-fill cancel, and partial-fill-then-cancel. It records only actual
-fills and never mutates the production ledger. Open partial fills remain blocked. Real provider
-conformance, explicit cancel, and real-environment recovery evidence remain release work.
+**Implemented foundation:** deterministic evidence reaches separately signed exact-terminal clearance
+for full fill, no-fill cancel, and partial-fill-then-cancel without ledger mutation. An exact persisted
+open/partial lifecycle can produce a provider-neutral manual cancellation package bound to both order
+ids and the latest observation, with no broker call or state mutation; newer evidence must still prove
+cancellation. Real provider conformance, signed explicit cancel, and real recovery remain release work.
 
 ### M3 — Reconciled Ledger Posting
 
@@ -174,15 +175,13 @@ Unify preflight, approval, capital at risk, blockers, submission state, unknown
 recovery, cancel, reconciliation, posting, and kill switch in Operations and
 Trading. Every blocked state must expose its evidence and one safe next action.
 
-**Implemented foundation:** the canonical persisted-only controlled-execution operator
-projection links each recent intent through reconciliation, terminal clearance, ledger
-posting, and append-only correction. It exposes one safe human next step and treats
-unknown outcomes as query-only. Separate signed reviews now complete reconciliation to
-terminal clearance and ledger posting without database edits or authority grants.
-Unknown outcomes have signed, atomically claimed query-only recovery with
-duplicate/restart protection. Optional correction uses a signed preview/proof/apply
-review and rejects operator-supplied financial deltas. Signed submission, real
-cancel, real-adapter recovery evidence, and the complete journey remain open.
+**Implemented foundation:** the persisted-only operator projection links each intent through
+reconciliation, terminal clearance, ledger posting, and append-only correction, exposing one safe
+human next step. Signed reviews cover query-only unknown recovery, terminal clearance, posting, and
+optional correction without operator-supplied financial deltas. An exact open lifecycle can also
+produce a no-database-edit manual cancellation package; the UI requires external human action and
+new evidence, and exposes no cancel endpoint. Signed submission, real signed cancel, real-adapter
+recovery evidence, and the complete journey remain open.
 
 **Exit gate:** an operator can complete every normal and recovery flow without
 editing the database. Refresh, duplicate clicks, and service restart do not

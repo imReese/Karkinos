@@ -48,6 +48,7 @@ import { ControlledBrokerRecoveryOperatorPanel } from '../../operations/controll
 import { ControlledLedgerPostingOperatorPanel } from '../../operations/controlled-ledger-posting-operator-panel';
 import { ControlledLedgerCorrectionOperatorPanel } from '../../operations/controlled-ledger-correction-operator-panel';
 import { ControlledTerminalClearanceOperatorPanel } from '../../operations/controlled-terminal-clearance-operator-panel';
+import { ManualBrokerCancellationTicketPanel } from '../../operations/manual-broker-cancellation-ticket-panel';
 import {
   useCreateManualOrderFromActionMutation,
   useDailyTradingPlanQuery,
@@ -2074,6 +2075,10 @@ function controlledOrderJourneyNextActionLabel(value: string, locale: Locale) {
       en: 'review execution reconciliation',
       zh: '复核执行对账',
     },
+    review_open_order_or_prepare_manual_cancel_ticket: {
+      en: 'review the open order or prepare a human cancellation package',
+      zh: '复核未终态订单，或准备人工撤单证据包',
+    },
     preview_terminal_reconciliation_clearance: {
       en: 'preview the separately signed terminal clearance',
       zh: '预览需单独签名的终态清算',
@@ -3224,6 +3229,10 @@ function AutomationCockpitPanel({
                     : 'This journey projects persisted evidence only. This read contacted no broker, submitted or cancelled no order, mutated no ledger, and changed no capital or execution authority.'}
                 </div>
                 <ControlledBrokerRecoveryOperatorPanel
+                  journey={latestControlledOrderJourney}
+                  locale={locale}
+                />
+                <ManualBrokerCancellationTicketPanel
                   journey={latestControlledOrderJourney}
                   locale={locale}
                 />
