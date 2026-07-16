@@ -722,11 +722,35 @@ function canUseStrategyContribution(
 ) {
   return Boolean(
     report &&
-    report.contribution_status === 'estimated_from_linked_fills' &&
+    report.schema_version === 'karkinos.account_strategy_contribution.v2' &&
+    report.contribution_status === 'evidence_bound_from_posted_fills' &&
+    report.evidence_binding_status === 'bound' &&
     report.linked_fill_count > 0 &&
+    report.ledger_posted_fill_count === report.linked_fill_count &&
+    report.unposted_linked_fill_count === 0 &&
+    Boolean(report.valuation_snapshot_id) &&
+    (report.ledger_cutoff_id ?? 0) > 0 &&
+    Boolean(report.contribution_fingerprint) &&
     report.evidence_refs.length > 0 &&
-    report.missing_valuation_symbols.length === 0,
+    report.missing_valuation_symbols.length === 0 &&
+    report.persisted_facts_only === true &&
+    report.provider_contacted === false &&
+    report.database_writes_performed === false &&
+    report.authorizes_execution === false,
   );
+}
+
+function strategyContributionReviewHref(
+  report?: AccountStrategyContributionReport | null,
+) {
+  const status = report?.contribution_status ?? '';
+  if (status.startsWith('valuation_')) {
+    return '/market';
+  }
+  if (status.startsWith('ledger_')) {
+    return '/operations';
+  }
+  return '/backtest';
 }
 
 function actionableQuoteDiagnostics(items: QuoteDiagnosticItem[]) {
@@ -2125,12 +2149,24 @@ function DashboardTodayQueue({
   const strategyReady = canUseStrategyContribution(strategyContribution);
   const strategyHasNoLinkedFills =
     strategyContribution?.contribution_status === 'no_linked_fills' &&
-    strategyContribution.linked_fill_count === 0;
+    strategyContribution.linked_fill_count === 0 &&
+    (strategyContribution.unattributed_fill_count ?? 0) === 0;
   const strategyStatus = strategyContribution?.contribution_status
     ? (copy.backtest.page.accountStrategyContributionStatusMap[
         strategyContribution.contribution_status as keyof typeof copy.backtest.page.accountStrategyContributionStatusMap
       ] ?? formatPublicStatus(strategyContribution.contribution_status, locale))
     : copy.backtest.page.accountStrategyContributionStatusMap.no_linked_fills;
+  const strategyNextAction = strategyContribution?.next_manual_action
+    ? (copy.backtest.page.accountStrategyNextActionMap[
+        strategyContribution.next_manual_action as keyof typeof copy.backtest.page.accountStrategyNextActionMap
+      ] ?? formatPublicStatus(strategyContribution.next_manual_action, locale))
+    : copy.backtest.page.accountStrategyContributionHiddenUntilEvidence;
+  const strategyHref = strategyContributionReviewHref(strategyContribution);
+  const strategyActionLabel = strategyHref.startsWith('/market')
+    ? labels.viewData
+    : strategyHref.startsWith('/operations')
+      ? labels.viewOperations
+      : labels.viewStrategy;
   const candidates = todayDecision?.candidates ?? [];
   const leadingCandidate = candidates[0];
   const decisionActionLabel = leadingCandidate
@@ -2366,10 +2402,10 @@ function DashboardTodayQueue({
           ? `${copy.backtest.page.accountStrategyNetContribution}: ${formatCurrencyValue(
               strategyContribution.net_contribution,
             )}`
-          : copy.backtest.page.accountStrategyContributionHiddenUntilEvidence,
+          : strategyNextAction,
       meta: strategyContributionLoading ? copy.states.loading : strategyStatus,
-      href: '/backtest',
-      actionLabel: labels.viewStrategy,
+      href: strategyHref,
+      actionLabel: strategyActionLabel,
       tone: strategyContributionError
         ? 'danger'
         : strategyReady || strategyHasNoLinkedFills

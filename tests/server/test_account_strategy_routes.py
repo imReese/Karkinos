@@ -150,34 +150,34 @@ async def test_account_strategy_contribution_marks_strategy_health_states(monkey
     cases = [
         (
             StrategyHealthFakeDb(linked_fill=True),
-            "healthy",
-            ["linked_fill_evidence_available"],
+            "ledger_posting_pending",
+            "needs_review",
+            ["ledger_posting_pending"],
         ),
         (
             StrategyHealthFakeDb(linked_fill=True, unattributed_fill=True),
+            "ledger_posting_pending",
             "degraded",
             ["unattributed_strategy_movement"],
         ),
         (
-            StrategyHealthFakeDb(linked_fill=True, valuation_available=False),
-            "stale",
-            ["valuation_missing"],
-        ),
-        (
             StrategyHealthFakeDb(assignment_status="paused", linked_fill=True),
+            "ledger_posting_pending",
             "paused",
             ["assignment_paused"],
         ),
         (
             StrategyHealthFakeDb(linked_fill=False),
-            "needs_review",
-            ["linked_fill_evidence_missing"],
+            "no_linked_fills",
+            "not_applicable",
+            ["no_strategy_linked_fills_yet"],
         ),
     ]
 
-    for db, expected_status, expected_reasons in cases:
+    for db, contribution_status, expected_status, expected_reasons in cases:
         response = await _strategy_contribution_response(monkeypatch, db)
 
+        assert response.contribution_status == contribution_status
         assert response.strategy_health_status == expected_status
         assert response.strategy_health_reasons == expected_reasons
 
@@ -479,7 +479,6 @@ async def test_account_strategy_attribution_links_signal_order_and_fill_without_
         source_ref="FILL-ATTR-1",
         metadata={"strategy_id": "dual_ma", "source_signal_id": 1},
     )
-
     state = SimpleNamespace(config=SimpleNamespace(strategy="dual_ma"), db=db)
     monkeypatch.setattr("server.app.get_app_state", lambda: state)
     router = account_strategy_routes.create_router()
@@ -783,6 +782,23 @@ async def test_account_strategy_contribution_separates_unrealized_pnl_and_costs(
         source_ref="FILL-CONTRIB-1",
         metadata={"strategy_id": "dual_ma", "source_signal_id": 1},
     )
+    db.insert_ledger_entry_sync(
+        entry_type="trade_buy",
+        timestamp="2026-06-18T09:35:00",
+        amount=457,
+        symbol="510300",
+        direction="buy",
+        quantity=100,
+        price=4.57,
+        commission=5,
+        gross_amount=457,
+        net_cash_impact=-462,
+        fee_breakdown_json='{"commission":"5","stamp_tax":"0"}',
+        asset_class="fund",
+        note="posted strategy fill fixture",
+        source="controlled_submission_ledger_posting",
+        source_ref="FILL-CONTRIB-1",
+    )
     db.upsert_latest_quote_sync(
         symbol="510300",
         asset_type="fund",
@@ -793,6 +809,7 @@ async def test_account_strategy_contribution_separates_unrealized_pnl_and_costs(
         provider_status="ok",
         quote_status="confirmed",
     )
+    published = db.publish_current_valuation_snapshot_sync()
 
     state = SimpleNamespace(config=SimpleNamespace(strategy="dual_ma"), db=db)
     monkeypatch.setattr("server.app.get_app_state", lambda: state)
@@ -802,21 +819,30 @@ async def test_account_strategy_contribution_separates_unrealized_pnl_and_costs(
     response = await endpoint()
 
     assert response.strategy_id == "dual_ma"
-    assert response.contribution_status == "estimated_from_linked_fills"
+    assert response.schema_version == "karkinos.account_strategy_contribution.v2"
+    assert response.contribution_status == "evidence_bound_from_posted_fills"
+    assert response.evidence_binding_status == "bound"
     assert response.linked_fill_count == 1
+    assert response.ledger_posted_fill_count == 1
+    assert response.unposted_linked_fill_count == 0
     assert response.gross_realized_pnl == 0
     assert response.gross_unrealized_pnl == 23
     assert response.total_commission == 5
     assert response.total_slippage == 1.5
     assert response.total_tax == 0
-    assert response.net_contribution == 16.5
+    assert response.net_contribution == 18
     assert response.unattributed_account_pnl is None
     assert response.manual_unattributed_pnl is None
     assert response.cash_flow_pnl is None
     assert response.missing_valuation_symbols == []
-    assert response.limitations == [
-        "Contribution is estimated only from fully linked strategy fills and latest local quotes; manual, cash-flow, and missing-evidence movements are separated and excluded from net contribution."
-    ]
+    assert response.valuation_snapshot_id == published["snapshot_id"]
+    assert response.ledger_cutoff_id == published["ledger_cutoff_id"]
+    assert response.ledger_fingerprint == published["ledger_fingerprint"]
+    assert response.contribution_fingerprint
+    assert response.persisted_facts_only is True
+    assert response.provider_contacted is False
+    assert response.database_writes_performed is False
+    assert response.authorizes_execution is False
 
 
 @pytest.mark.asyncio
@@ -937,6 +963,23 @@ async def test_account_strategy_contribution_separates_tax_manual_cash_and_missi
     )
     db.insert_ledger_entry_sync(
         entry_type="trade_buy",
+        timestamp="2026-06-18T09:35:00",
+        amount=457,
+        symbol="510300",
+        direction="buy",
+        quantity=100,
+        price=4.57,
+        commission=5.4,
+        gross_amount=457,
+        net_cash_impact=-464.4,
+        fee_breakdown_json=('{"commission":"5","transfer_fee":"0.4","stamp_tax":"2"}'),
+        asset_class="fund",
+        note="posted strategy fill fixture",
+        source="controlled_submission_ledger_posting",
+        source_ref="FILL-COMPONENTS-1",
+    )
+    db.insert_ledger_entry_sync(
+        entry_type="trade_buy",
         timestamp="2026-06-18T10:30:00",
         amount=60,
         symbol="600001",
@@ -992,6 +1035,7 @@ async def test_account_strategy_contribution_separates_tax_manual_cash_and_missi
         provider_status="ok",
         quote_status="confirmed",
     )
+    db.publish_current_valuation_snapshot_sync()
 
     state = SimpleNamespace(config=SimpleNamespace(strategy="dual_ma"), db=db)
     monkeypatch.setattr("server.app.get_app_state", lambda: state)
@@ -1000,14 +1044,20 @@ async def test_account_strategy_contribution_separates_tax_manual_cash_and_missi
 
     response = await endpoint()
 
-    assert response.contribution_status == "estimated_from_linked_fills"
+    assert response.contribution_status == "evidence_bound_from_posted_fills"
     assert response.linked_fill_count == 1
+    assert response.ledger_posted_fill_count == 1
+    assert response.unattributed_fill_count == 1
     assert response.gross_unrealized_pnl == 23
     assert response.total_commission == 5.4
     assert response.total_tax == 2
     assert response.total_slippage == 1.5
-    assert response.net_contribution == 14.1
-    assert response.unattributed_account_pnl == 8.5
-    assert response.manual_unattributed_pnl == 19.8
-    assert response.cash_flow_pnl == 800
-    assert response.evidence_refs == ["fill:FILL-COMPONENTS-1"]
+    assert response.net_contribution == 15.6
+    assert response.unattributed_account_pnl is None
+    assert response.manual_unattributed_pnl is None
+    assert response.cash_flow_pnl is None
+    assert response.strategy_health_status == "degraded"
+    assert response.strategy_health_reasons == ["unattributed_strategy_movement"]
+    assert response.evidence_refs[0] == "fill:FILL-COMPONENTS-1"
+    assert any(ref.startswith("ledger_entry:") for ref in response.evidence_refs)
+    assert any(ref.startswith("valuation_snapshot:") for ref in response.evidence_refs)

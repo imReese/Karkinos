@@ -54,7 +54,7 @@ export type DatasetSnapshotSymbol = {
 };
 
 export type DatasetSnapshot = {
-  schema_version: string;
+  schema_version?: string;
   snapshot_id: string;
   provider: {
     configured_source?: string | null;
@@ -548,20 +548,41 @@ export type AccountStrategyAttributionSummary = {
 };
 
 export type AccountStrategyContributionReport = {
+  schema_version: string;
   strategy_id: string;
   contribution_status: string;
+  evidence_binding_status?: string;
+  next_manual_action?: string;
+  blockers?: string[];
+  strategy_health_status?: string;
+  strategy_health_reasons?: string[];
   linked_fill_count: number;
-  gross_realized_pnl: number;
-  gross_unrealized_pnl: number;
-  total_commission: number;
-  total_slippage: number;
-  total_tax: number;
-  net_contribution: number;
+  ledger_posted_fill_count?: number;
+  unposted_linked_fill_count?: number;
+  unattributed_fill_count?: number;
+  gross_realized_pnl: number | null;
+  gross_unrealized_pnl: number | null;
+  total_commission: number | null;
+  total_slippage: number | null;
+  total_tax: number | null;
+  net_contribution: number | null;
   unattributed_account_pnl?: number | null;
   manual_unattributed_pnl?: number | null;
   cash_flow_pnl?: number | null;
   missing_valuation_symbols: string[];
+  valuation_snapshot_id?: string | null;
+  valuation_as_of?: string | null;
+  valuation_status?: string;
+  valuation_scope_status?: string;
+  ledger_cutoff_id?: number;
+  ledger_fingerprint?: string | null;
+  quote_set_fingerprint?: string | null;
+  contribution_fingerprint?: string | null;
   evidence_refs: string[];
+  persisted_facts_only?: boolean;
+  provider_contacted?: boolean;
+  database_writes_performed?: boolean;
+  authorizes_execution?: boolean;
   limitations: string[];
 };
 

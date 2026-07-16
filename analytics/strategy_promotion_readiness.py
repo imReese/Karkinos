@@ -17,7 +17,7 @@ _ATTRIBUTION_READY_STATUSES = {
     "partial",
     "complete",
     "attributed",
-    "estimated_from_linked_fills",
+    "evidence_bound_from_posted_fills",
 }
 
 

@@ -92,6 +92,13 @@ export type StrategyAttributionGateEvidence = {
   order_count?: number;
   fill_count?: number;
   linked_fill_count?: number;
+  ledger_posted_fill_count?: number;
+  unposted_linked_fill_count?: number;
+  unattributed_fill_count?: number;
+  evidence_binding_status?: string;
+  valuation_snapshot_id?: string | null;
+  ledger_cutoff_id?: number;
+  contribution_fingerprint?: string | null;
   net_contribution?: number | null;
   gross_realized_pnl?: number | null;
   gross_unrealized_pnl?: number | null;

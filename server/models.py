@@ -1120,22 +1120,41 @@ class AccountStrategyAttributionSummary(BaseModel):
 
 
 class AccountStrategyContributionReport(BaseModel):
+    schema_version: str = "karkinos.account_strategy_contribution.v2"
     strategy_id: str
     contribution_status: str
+    evidence_binding_status: str = "blocked"
+    next_manual_action: str = "review_strategy_contribution_evidence"
+    blockers: list[str] = Field(default_factory=list)
     strategy_health_status: str = "needs_review"
     strategy_health_reasons: list[str] = Field(default_factory=list)
     linked_fill_count: int = 0
-    gross_realized_pnl: float = 0.0
-    gross_unrealized_pnl: float = 0.0
-    total_commission: float = 0.0
-    total_slippage: float = 0.0
-    total_tax: float = 0.0
-    net_contribution: float = 0.0
+    ledger_posted_fill_count: int = 0
+    unposted_linked_fill_count: int = 0
+    unattributed_fill_count: int = 0
+    gross_realized_pnl: float | None = None
+    gross_unrealized_pnl: float | None = None
+    total_commission: float | None = None
+    total_slippage: float | None = None
+    total_tax: float | None = None
+    net_contribution: float | None = None
     unattributed_account_pnl: float | None = None
     manual_unattributed_pnl: float | None = None
     cash_flow_pnl: float | None = None
     missing_valuation_symbols: list[str] = Field(default_factory=list)
+    valuation_snapshot_id: str | None = None
+    valuation_as_of: str | None = None
+    valuation_status: str = "unavailable"
+    valuation_scope_status: str = "blocked"
+    ledger_cutoff_id: int = 0
+    ledger_fingerprint: str | None = None
+    quote_set_fingerprint: str | None = None
+    contribution_fingerprint: str | None = None
     evidence_refs: list[str] = Field(default_factory=list)
+    persisted_facts_only: bool = True
+    provider_contacted: bool = False
+    database_writes_performed: bool = False
+    authorizes_execution: bool = False
     limitations: list[str] = Field(default_factory=list)
 
 

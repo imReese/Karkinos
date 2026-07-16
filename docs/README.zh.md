@@ -74,6 +74,10 @@ Decision 与 Daily Trading Plan 汇总组合、行情、策略、信号、风险
 paper/shadow 证据，输出 buy、sell、hold、rebalance、no-action 或 review-required。任何阻断
 都应展示原因和下一步，而不是生成看似确定的建议。
 
+账户策略贡献现在只投影持久化事实：成交必须已写入生产账本，并绑定同一精确估值快照与 ledger
+cutoff 后才可展示收益。证据缺失或漂移会给出明确人工复核步骤；策略尚无成交时不会制造虚假
+阻断。该投影不能联系 provider、写账本或授予执行与资本权限。
+
 ### Paper/Shadow 与 Operations
 
 Operations 展示数据、计划、paper/shadow、OMS、对账、告警和恢复任务。Paper/shadow 可以

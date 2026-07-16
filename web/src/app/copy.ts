@@ -244,6 +244,7 @@ export const copy = {
         strategyUnavailable: 'Strategy contribution is temporarily unavailable',
         viewData: 'View data status',
         viewDecision: 'Review decision evidence',
+        viewOperations: 'Review operations evidence',
         viewTrading: 'Review trading queue',
         viewStrategy: 'Review strategy evidence',
         candidateCount: (count: number) =>
@@ -1365,14 +1366,21 @@ export const copy = {
         accountStrategyContributionUnavailable:
           'Contribution report is unavailable.',
         accountStrategyContributionExplanation:
-          'Only linked signal, review, order, and fill evidence is counted here; manual trades and cash flows stay separate.',
+          'Contribution is shown only for strategy fills posted to the production ledger and bound to one persisted valuation snapshot. Manual trades and cash flows stay separate.',
         accountStrategyEvidenceLinked: 'Evidence-linked',
         accountStrategyEvidenceRequired: 'Evidence required',
+        accountStrategyEvidenceNotApplicable: 'No contribution due yet',
         accountStrategyContributionHiddenUntilEvidence:
-          'Contribution is hidden until signals, reviews, orders, and fills are linked.',
+          'Contribution stays hidden until the listed ledger and valuation evidence is complete.',
         accountStrategyEvidenceRefs: 'Evidence refs',
         accountStrategyAuditId: 'Audit id',
         accountStrategyContributionStatus: 'Contribution status',
+        accountStrategyEvidenceBinding: 'Evidence binding',
+        accountStrategyLedgerPostedFills: 'Posted / linked fills',
+        accountStrategyValuationSnapshot: 'Valuation snapshot',
+        accountStrategyLedgerCutoff: 'Ledger cutoff',
+        accountStrategyNextManualAction: 'Next manual action',
+        accountStrategyBlockers: 'Blocking evidence',
         accountStrategyHealthStatus: 'Strategy health',
         accountStrategyHealthStatusMap: {
           healthy: 'Healthy',
@@ -1380,11 +1388,45 @@ export const copy = {
           stale: 'Stale',
           paused: 'Paused',
           needs_review: 'Needs review',
+          not_applicable: 'Not applicable yet',
+        },
+        accountStrategyEvidenceBindingStatusMap: {
+          bound: 'Bound and replayable',
+          blocked: 'Blocked',
+          not_applicable: 'Not applicable yet',
         },
         accountStrategyContributionStatusMap: {
           no_linked_fills: 'No linked fills',
           valuation_missing: 'Valuation missing',
-          estimated_from_linked_fills: 'Estimated from linked fills',
+          evidence_bound_from_posted_fills: 'Ledger and valuation bound',
+          ledger_posting_pending: 'Ledger posting pending',
+          ledger_evidence_drift: 'Fill / ledger mismatch',
+          valuation_snapshot_missing: 'Valuation snapshot missing',
+          valuation_snapshot_invalid: 'Valuation snapshot invalid',
+          valuation_identity_drift: 'Valuation identity drift',
+          inventory_lineage_incomplete: 'Inventory lineage incomplete',
+        },
+        accountStrategyNextActionMap: {
+          no_action_until_strategy_linked_fill_exists:
+            'No action is needed until a strategy-linked fill exists.',
+          review_unattributed_strategy_fill_lineage:
+            'Review fills that name the strategy but lack a complete signal/order lineage.',
+          complete_execution_reconciliation_and_explicit_ledger_posting:
+            'Complete execution reconciliation and explicitly post the fill to the production ledger.',
+          review_strategy_fill_and_ledger_identity:
+            'Compare the fill with its production-ledger entry and repair the identity mismatch.',
+          publish_or_repair_persisted_valuation_snapshot:
+            'Review persisted market/NAV facts, then publish or repair the valuation snapshot.',
+          publish_persisted_valuation_snapshot:
+            'Publish a persisted valuation snapshot after market/NAV evidence is confirmed.',
+          repair_persisted_valuation_snapshot:
+            'Repair the invalid persisted valuation snapshot before retrying attribution.',
+          review_strategy_inventory_lineage:
+            'Review the strategy-owned buy/sell inventory lineage.',
+          sync_confirmed_market_or_nav_evidence:
+            'Ingest and confirm persisted market or NAV evidence, then publish a new snapshot.',
+          review_evidence_bound_strategy_contribution:
+            'Review the replayable strategy contribution evidence.',
         },
         accountStrategyGrossRealizedPnl: 'Gross realized P/L',
         accountStrategyGrossUnrealizedPnl: 'Gross unrealized P/L',
@@ -2716,6 +2758,7 @@ export const copy = {
         strategyUnavailable: '策略贡献暂不可用',
         viewData: '查看数据状态',
         viewDecision: '查看决策证据',
+        viewOperations: '查看运行证据',
         viewTrading: '复核交易队列',
         viewStrategy: '查看策略证据',
         candidateCount: (count: number) => `${count} 个候选信号`,
@@ -3776,14 +3819,21 @@ export const copy = {
         accountStrategyContributionLoading: '正在加载策略贡献报告。',
         accountStrategyContributionUnavailable: '策略贡献报告暂不可用。',
         accountStrategyContributionExplanation:
-          '这里只统计当前已经可追溯到策略的信号、复核、订单与成交证据；手工交易和现金流会单独列出。',
+          '只有已记入生产账本并绑定同一持久化估值快照的策略成交才会展示贡献；手工交易和现金流会单独列出。',
         accountStrategyEvidenceLinked: '证据链已连接',
         accountStrategyEvidenceRequired: '需要补齐证据',
+        accountStrategyEvidenceNotApplicable: '暂未产生应归因成交',
         accountStrategyContributionHiddenUntilEvidence:
-          '策略贡献会在当前账户具备可追溯的信号、复核、订单与成交引用后展示。',
+          '在所列账本与估值证据完整前，策略贡献会保持隐藏。',
         accountStrategyEvidenceRefs: '证据引用',
         accountStrategyAuditId: '审计 ID',
         accountStrategyContributionStatus: '贡献状态',
+        accountStrategyEvidenceBinding: '证据绑定',
+        accountStrategyLedgerPostedFills: '已入账 / 已关联成交',
+        accountStrategyValuationSnapshot: '估值快照',
+        accountStrategyLedgerCutoff: '账本截止点',
+        accountStrategyNextManualAction: '下一步人工操作',
+        accountStrategyBlockers: '阻断证据',
         accountStrategyHealthStatus: '策略健康',
         accountStrategyHealthStatusMap: {
           healthy: '健康',
@@ -3791,11 +3841,44 @@ export const copy = {
           stale: '证据陈旧',
           paused: '已暂停',
           needs_review: '需要复核',
+          not_applicable: '暂不适用',
+        },
+        accountStrategyEvidenceBindingStatusMap: {
+          bound: '已绑定且可重放',
+          blocked: '已阻断',
+          not_applicable: '暂不适用',
         },
         accountStrategyContributionStatusMap: {
           no_linked_fills: '暂无可归属成交',
           valuation_missing: '缺少估值',
-          estimated_from_linked_fills: '基于已归属成交估算',
+          evidence_bound_from_posted_fills: '账本与估值证据已绑定',
+          ledger_posting_pending: '成交尚未记入生产账本',
+          ledger_evidence_drift: '成交与账本记录不一致',
+          valuation_snapshot_missing: '缺少持久化估值快照',
+          valuation_snapshot_invalid: '持久化估值快照无效',
+          valuation_identity_drift: '估值身份已漂移',
+          inventory_lineage_incomplete: '策略持仓来源不完整',
+        },
+        accountStrategyNextActionMap: {
+          no_action_until_strategy_linked_fill_exists:
+            '策略尚未产生关联成交，当前无需处理。',
+          review_unattributed_strategy_fill_lineage:
+            '复核声明属于该策略、但缺少完整信号与订单链路的成交。',
+          complete_execution_reconciliation_and_explicit_ledger_posting:
+            '完成执行对账，并将成交明确记入生产账本。',
+          review_strategy_fill_and_ledger_identity:
+            '逐项核对成交与生产账本记录，修复身份不一致。',
+          publish_or_repair_persisted_valuation_snapshot:
+            '核对持久化行情或净值事实后，发布或修复估值快照。',
+          publish_persisted_valuation_snapshot:
+            '确认行情或净值证据后，发布持久化估值快照。',
+          repair_persisted_valuation_snapshot:
+            '先修复无效的持久化估值快照，再重试归因。',
+          review_strategy_inventory_lineage: '复核策略自有买卖持仓来源链路。',
+          sync_confirmed_market_or_nav_evidence:
+            '显式采集并确认行情或净值证据，再发布新快照。',
+          review_evidence_bound_strategy_contribution:
+            '复核当前可重放的策略贡献证据。',
         },
         accountStrategyGrossRealizedPnl: '毛已实现收益',
         accountStrategyGrossUnrealizedPnl: '毛未实现收益',

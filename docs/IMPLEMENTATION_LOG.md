@@ -17,6 +17,11 @@ The latest completed cross-cutting work includes:
 
 - persisted observations as the authoritative read source;
 - immutable valuation snapshots and ledger identity;
+- evidence-bound strategy contribution v2, assuming the controlled posting
+  contract's immutable `ledger_entries.source_ref = fill_id` identity; linked
+  fills expose P/L only after exact production-ledger and valuation-snapshot
+  replay, while the read path remains provider-free, write-free, and without
+  trading or capital authority;
 - canonical daily performance across Holdings, Equity Curve, Overview, and
   explainability surfaces;
 - provider-neutral evidence-bound AI research, review, and memory lineage;
@@ -264,6 +269,11 @@ journey, and the controlled per-order pilot.
 
 - Added strategy contribution evidence across orders, fills, fees, taxes,
   realized/unrealized P/L, and unattributed effects.
+- Replaced latest-quote contribution estimates with
+  `karkinos.account_strategy_contribution.v2`: only production-ledger-posted
+  fills bound to one persisted valuation snapshot can expose P/L; missing,
+  stale, drifted, or incomplete inventory evidence fails closed with an
+  explicit manual next action.
 - Aligned broker fees, cost basis, proceeds, and public ledger formatting.
 
 ### v1.3 — Professional Decision Workflow
