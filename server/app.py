@@ -362,11 +362,11 @@ def create_app(
     from server.routes.controlled_session_runtime_rate_limiter import (
         create_router as controlled_session_runtime_rate_limiter_router,
     )
-    from server.routes.controlled_submission_ledger_posting import (
-        create_router as controlled_submission_ledger_posting_router,
-    )
     from server.routes.controlled_submission_ledger_correction import (
         create_router as controlled_submission_ledger_correction_router,
+    )
+    from server.routes.controlled_submission_ledger_posting import (
+        create_router as controlled_submission_ledger_posting_router,
     )
     from server.routes.decision import create_router as decision_router
     from server.routes.execution_gateway_verification import (
