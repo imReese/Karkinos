@@ -132,12 +132,10 @@ reordering, partial fill, cancel race, disconnect, rejection, and broker
 not-found tests cannot create duplicate submissions, fills, cancels, or false
 terminal states. Any unresolved order continues to block a different order.
 
-**Implemented foundation:** deterministic evidence can now reach a separately
-signed exact-terminal clearance for full fill, no-fill cancel, and
-partial-fill-then-cancel. It records only actual fills and never mutates the
-production ledger. Open partial fills remain blocked. Real provider
-conformance, an explicit cancel command, and real-environment recovery evidence
-remain release work.
+**Implemented foundation:** deterministic evidence now reaches separately signed exact-terminal
+clearance for full fill, no-fill cancel, and partial-fill-then-cancel. It records only actual
+fills and never mutates the production ledger. Open partial fills remain blocked. Real provider
+conformance, explicit cancel, and real-environment recovery evidence remain release work.
 
 ### M3 — Reconciled Ledger Posting
 
@@ -178,14 +176,13 @@ recovery, cancel, reconciliation, posting, and kill switch in Operations and
 Trading. Every blocked state must expose its evidence and one safe next action.
 
 **Implemented foundation:** the canonical persisted-only controlled-execution operator
-projection links each recent intent through reconciliation, terminal clearance,
-ledger posting, and append-only correction. It exposes one safe human next step
-and treats unknown outcomes as query-only. Separate signed reviews now complete
-reconciliation-to-terminal-clearance and terminal-clearance-to-ledger-posting without
-database edits or authority grants. Unknown outcomes now also have a separately
-signed, atomically claimed, query-only operator action with duplicate/restart
-protection. Signed submission, correction UI, real cancel, real-adapter recovery
-evidence, and the complete journey remain open.
+projection links each recent intent through reconciliation, terminal clearance, ledger
+posting, and append-only correction. It exposes one safe human next step and treats
+unknown outcomes as query-only. Separate signed reviews now complete reconciliation to
+terminal clearance and ledger posting without database edits or authority grants.
+Unknown outcomes now have signed, atomically claimed query-only recovery with
+duplicate/restart protection. Signed submission, correction UI, real cancel,
+real-adapter recovery evidence, and the complete journey remain open.
 
 **Exit gate:** an operator can complete every normal and recovery flow without
 editing the database. Refresh, duplicate clicks, and service restart do not
