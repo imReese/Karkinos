@@ -1503,7 +1503,6 @@ def _load_latest_snapshot_from_provider(
     selected_source_name = data_source
     last_error: Exception | None = None
     fallback_reason_code: str | None = None
-    saw_provider_response = False
     primary_source_name = source_chain[0][0]
     for source_name, source in source_chain:
         try:
@@ -1513,7 +1512,7 @@ def _load_latest_snapshot_from_provider(
                 asset_class,
                 timeout_seconds=_PROVIDER_REFRESH_TIMEOUT_SECONDS,
             )
-            saw_provider_response = True
+            last_error = None
         except Exception as exc:
             logger.warning(
                 "Latest quote provider failed: %s %s (%s)",
@@ -1530,7 +1529,7 @@ def _load_latest_snapshot_from_provider(
             selected_source_name = source_name
             break
     if not snapshot:
-        if last_error is not None and not saw_provider_response:
+        if last_error is not None:
             raise last_error
         return None
     payload = {

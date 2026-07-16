@@ -277,9 +277,7 @@ class TestAKShareMultiAsset:
             import os
 
             observed["HTTP_PROXY"] = os.environ.get("HTTP_PROXY")
-            return pd.DataFrame(
-                [{"基金简称": "示例成长混合C", "基金代码": "019999"}]
-            )
+            return pd.DataFrame([{"基金简称": "示例成长混合C", "基金代码": "019999"}])
 
         monkeypatch.setattr(ak, "fund_name_em", fake_fund_name_em)
 
@@ -308,6 +306,40 @@ class TestAKShareFetchLatest:
         assert result is not None
         assert result["price"] == 1850.0
         assert result["display_name"] == "贵州茅台"
+
+    @pytest.mark.parametrize(
+        ("symbol", "series_name"),
+        [
+            ("000001", "上证系列指数"),
+            ("399001", "深证系列指数"),
+            ("399006", "深证系列指数"),
+        ],
+    )
+    @patch("akshare.stock_zh_index_spot_em")
+    def test_fetch_latest_index_selects_the_matching_exchange_series(
+        self,
+        mock_ak,
+        symbol,
+        series_name,
+        source,
+    ):
+        """深市指数不能继续从 AKShare 默认的上证指数列表中查找。"""
+        mock_ak.return_value = pd.DataFrame(
+            {
+                "代码": [symbol],
+                "名称": ["测试指数"],
+                "最新价": [1234.56],
+                "成交额": [5000000.0],
+                "时间": ["14:55:00"],
+            }
+        )
+
+        result = source.fetch_latest(Symbol(symbol), AssetClass.INDEX)
+
+        assert result is not None
+        assert result["price"] == 1234.56
+        assert result["display_name"] == "测试指数"
+        mock_ak.assert_called_once_with(symbol=series_name)
 
     @patch("akshare.fund_etf_spot_em")
     @patch("data.providers.akshare_source.AKShareSource._open_end_fund_name_map")
@@ -461,13 +493,8 @@ class TestAKShareFetchLatest:
             "示例科技混合C": "029999",
         }
 
-        assert (
-            source._resolve_open_end_fund_code(Symbol("示例成长混合C"))
-            == "019999"
-        )
-        assert (
-            source._resolve_open_end_fund_code(Symbol("示例科技混合C")) == "029999"
-        )
+        assert source._resolve_open_end_fund_code(Symbol("示例成长混合C")) == "019999"
+        assert source._resolve_open_end_fund_code(Symbol("示例科技混合C")) == "029999"
 
     @patch("akshare.stock_zh_a_spot_em")
     def test_fetch_latest_stock_includes_previous_close_and_change(
