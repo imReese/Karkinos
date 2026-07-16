@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -11,8 +12,13 @@ import pytest
 from server.db import AppDatabase
 from server.services.controlled_broker_rejection_evidence import (
     CONTROLLED_BROKER_REJECTION_EXPORT_ACKNOWLEDGEMENT,
+    CONTROLLED_BROKER_REJECTION_REVIEW_ACKNOWLEDGEMENT,
+    CONTROLLED_BROKER_REJECTION_REVIEW_DISPOSITION,
     ControlledBrokerRejectionEvidenceRejected,
     ControlledBrokerRejectionEvidenceService,
+)
+from server.services.controlled_execution_operator_view import (
+    ControlledExecutionOperatorViewService,
 )
 from server.services.oms import OmsService
 from server.services.per_order_confirmation import build_order_fingerprint
@@ -290,3 +296,219 @@ def test_restart_and_duplicate_export_are_deterministic(tmp_path: Path) -> None:
 
     assert first_export["content"] == duplicate_export["content"]
     assert first_export["export_fingerprint"] == duplicate_export["export_fingerprint"]
+
+
+def test_review_record_is_append_only_exactly_once_and_closes_order_journey(
+    tmp_path: Path,
+) -> None:
+    env = _environment(tmp_path)
+    service = ControlledBrokerRejectionEvidenceService(
+        db=env["db"],
+        clock=lambda: NOW + timedelta(minutes=2),
+    )
+    preview = service.preview(submit_intent_id=env["submit_intent_id"])
+    protected_before = _protected_counts(env["db"])
+    request = {
+        "submit_intent_id": env["submit_intent_id"],
+        "review_fingerprint": preview["review_fingerprint"],
+        "reviewer_id": "local-operator",
+        "disposition": CONTROLLED_BROKER_REJECTION_REVIEW_DISPOSITION,
+        "acknowledgement": CONTROLLED_BROKER_REJECTION_REVIEW_ACKNOWLEDGEMENT,
+    }
+
+    recorded = service.record_review(**request)
+    restarted = ControlledBrokerRejectionEvidenceService(
+        db=env["db"],
+        clock=lambda: NOW + timedelta(days=1),
+    ).record_review(**request)
+
+    assert recorded["status"] == "recorded"
+    assert recorded["record_performed"] is True
+    assert recorded["reviewer_id"] == "local-operator"
+    assert recorded["disposition"] == "acknowledged_no_retry"
+    assert restarted["status"] == "already_recorded"
+    assert restarted["reused"] is True
+    assert restarted["review_id"] == recorded["review_id"]
+    assert restarted["recorded_at"] == recorded["recorded_at"]
+    assert recorded["safety"]["broker_retry_performed"] is False
+    assert _protected_counts(env["db"]) == protected_before
+
+    with sqlite3.connect(env["db"]._path) as conn:
+        rows = conn.execute(
+            "SELECT payload_json FROM controlled_broker_rejection_reviews"
+        ).fetchall()
+    assert len(rows) == 1
+    assert "private raw provider text" not in str(rows[0][0])
+    assert "must-not-leak" not in str(rows[0][0])
+
+    operator_view = ControlledExecutionOperatorViewService(
+        db=env["db"],
+        clock=lambda: NOW + timedelta(minutes=3),
+    ).summary()
+    journey = operator_view["latest_order_journey"]
+    assert operator_view["status"] == "order_journey_closed"
+    assert journey["status"] == "submission_rejection_reviewed"
+    assert journey["next_operator_action"] == ("no_retry_create_new_decision_if_needed")
+    review_stage = next(
+        stage
+        for stage in journey["stages"]
+        if stage["key"] == "controlled_submission_rejection_review"
+    )
+    assert review_stage["complete"] is True
+    assert review_stage["reviewer_id"] == "local-operator"
+    assert operator_view["provider_contact_performed"] is False
+    assert operator_view["broker_submission_enabled"] is False
+    assert operator_view["broker_cancel_enabled"] is False
+
+
+def test_review_record_rejects_conflicting_second_reviewer(tmp_path: Path) -> None:
+    env = _environment(tmp_path)
+    service = ControlledBrokerRejectionEvidenceService(db=env["db"], clock=lambda: NOW)
+    preview = service.preview(submit_intent_id=env["submit_intent_id"])
+    base_request = {
+        "submit_intent_id": env["submit_intent_id"],
+        "review_fingerprint": preview["review_fingerprint"],
+        "disposition": CONTROLLED_BROKER_REJECTION_REVIEW_DISPOSITION,
+        "acknowledgement": CONTROLLED_BROKER_REJECTION_REVIEW_ACKNOWLEDGEMENT,
+    }
+    service.record_review(**base_request, reviewer_id="operator-a")
+
+    with pytest.raises(ControlledBrokerRejectionEvidenceRejected) as exc_info:
+        service.record_review(**base_request, reviewer_id="operator-b")
+
+    assert exc_info.value.evidence["blockers"] == [
+        "controlled_broker_rejection_review_already_recorded"
+    ]
+    assert exc_info.value.evidence["review_recorded"] is True
+    with sqlite3.connect(env["db"]._path) as conn:
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM controlled_broker_rejection_reviews"
+            ).fetchone()[0]
+            == 1
+        )
+
+
+def test_concurrent_duplicate_review_records_once(tmp_path: Path) -> None:
+    env = _environment(tmp_path)
+    preview = ControlledBrokerRejectionEvidenceService(db=env["db"]).preview(
+        submit_intent_id=env["submit_intent_id"]
+    )
+    request = {
+        "submit_intent_id": env["submit_intent_id"],
+        "review_fingerprint": preview["review_fingerprint"],
+        "reviewer_id": "local-operator",
+        "disposition": CONTROLLED_BROKER_REJECTION_REVIEW_DISPOSITION,
+        "acknowledgement": CONTROLLED_BROKER_REJECTION_REVIEW_ACKNOWLEDGEMENT,
+    }
+
+    def record() -> dict:
+        return ControlledBrokerRejectionEvidenceService(
+            db=env["db"],
+            clock=lambda: NOW + timedelta(minutes=4),
+        ).record_review(**request)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _: record(), range(2)))
+
+    assert sorted(result["status"] for result in results) == [
+        "already_recorded",
+        "recorded",
+    ]
+    assert len({result["review_id"] for result in results}) == 1
+    with sqlite3.connect(env["db"]._path) as conn:
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM controlled_broker_rejection_reviews"
+            ).fetchone()[0]
+            == 1
+        )
+
+
+def test_review_record_rechecks_evidence_under_write_lock(tmp_path: Path) -> None:
+    env = _environment(tmp_path)
+    service = ControlledBrokerRejectionEvidenceService(db=env["db"], clock=lambda: NOW)
+    preview = service.preview(submit_intent_id=env["submit_intent_id"])
+    with sqlite3.connect(env["db"]._path) as conn:
+        row = conn.execute(
+            "SELECT result_json FROM controlled_broker_submit_intents WHERE submit_intent_id = ?",
+            (env["submit_intent_id"],),
+        ).fetchone()
+        result = json.loads(str(row[0]))
+        result["reason_codes"] = ["controlled_broker_submit_new_rejection_reason"]
+        conn.execute(
+            "UPDATE controlled_broker_submit_intents SET result_json = ? WHERE submit_intent_id = ?",
+            (
+                json.dumps(result, sort_keys=True, separators=(",", ":")),
+                env["submit_intent_id"],
+            ),
+        )
+        conn.commit()
+
+    with pytest.raises(ControlledBrokerRejectionEvidenceRejected) as exc_info:
+        service.record_review(
+            submit_intent_id=env["submit_intent_id"],
+            review_fingerprint=preview["review_fingerprint"],
+            reviewer_id="local-operator",
+            disposition=CONTROLLED_BROKER_REJECTION_REVIEW_DISPOSITION,
+            acknowledgement=CONTROLLED_BROKER_REJECTION_REVIEW_ACKNOWLEDGEMENT,
+        )
+
+    assert "controlled_broker_rejection_fingerprint_mismatch" in (
+        exc_info.value.evidence["blockers"]
+    )
+    with sqlite3.connect(env["db"]._path) as conn:
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM controlled_broker_rejection_reviews"
+            ).fetchone()[0]
+            == 0
+        )
+
+
+def test_operator_view_blocks_if_recorded_rejection_evidence_later_drifts(
+    tmp_path: Path,
+) -> None:
+    env = _environment(tmp_path)
+    service = ControlledBrokerRejectionEvidenceService(db=env["db"], clock=lambda: NOW)
+    preview = service.preview(submit_intent_id=env["submit_intent_id"])
+    service.record_review(
+        submit_intent_id=env["submit_intent_id"],
+        review_fingerprint=preview["review_fingerprint"],
+        reviewer_id="local-operator",
+        disposition=CONTROLLED_BROKER_REJECTION_REVIEW_DISPOSITION,
+        acknowledgement=CONTROLLED_BROKER_REJECTION_REVIEW_ACKNOWLEDGEMENT,
+    )
+    with sqlite3.connect(env["db"]._path) as conn:
+        row = conn.execute(
+            "SELECT result_json FROM controlled_broker_submit_intents WHERE submit_intent_id = ?",
+            (env["submit_intent_id"],),
+        ).fetchone()
+        result = json.loads(str(row[0]))
+        result["reason_codes"] = ["controlled_broker_submit_post_review_drift"]
+        conn.execute(
+            "UPDATE controlled_broker_submit_intents SET result_json = ? WHERE submit_intent_id = ?",
+            (
+                json.dumps(result, sort_keys=True, separators=(",", ":")),
+                env["submit_intent_id"],
+            ),
+        )
+        conn.commit()
+
+    operator_view = ControlledExecutionOperatorViewService(
+        db=env["db"],
+        clock=lambda: NOW + timedelta(minutes=1),
+    ).summary()
+
+    assert operator_view["status"] == "blocked"
+    assert (
+        "controlled_broker_rejection_review_result_fingerprint_changed"
+        in operator_view["source_blockers"]
+    )
+    assert operator_view["latest_order_journey"]["status"] == "submission_rejected"
+    review_stage = next(
+        stage
+        for stage in operator_view["latest_order_journey"]["stages"]
+        if stage["key"] == "controlled_submission_rejection_review"
+    )
+    assert review_stage["complete"] is False

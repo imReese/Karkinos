@@ -6,6 +6,7 @@ import { ControlledBrokerRejectionEvidencePanel } from './controlled-broker-reje
 import type {
   ControlledBrokerRejectionEvidenceExport,
   ControlledBrokerRejectionEvidencePreview,
+  ControlledBrokerRejectionReview,
   ControlledOrderJourney,
 } from './api';
 
@@ -125,6 +126,32 @@ const exported: ControlledBrokerRejectionEvidenceExport = {
   safety,
 };
 
+const recordedReview: ControlledBrokerRejectionReview = {
+  schema_version: 'karkinos.controlled_broker_rejection_review.v1',
+  review_id: '7'.repeat(64),
+  review_fingerprint: reviewFingerprint,
+  submit_intent_id: submitIntentId,
+  submit_fingerprint: preview.submit_fingerprint,
+  order_id: journey.order_id,
+  order_fingerprint: preview.order_fingerprint,
+  result_fingerprint: preview.rejection_evidence.result_fingerprint,
+  identity: preview.identity,
+  reviewer_id: 'local-operator',
+  disposition: 'acknowledged_no_retry',
+  rejection_classification: 'definitive_gateway_rejection',
+  evidence_as_of: preview.rejection_evidence.evidence_as_of,
+  recorded_at: '2026-07-16T08:47:00+00:00',
+  operator_acknowledgement:
+    'record_exact_rejection_review_without_retry_or_authority_change',
+  retry_policy: preview.retry_policy,
+  status: 'recorded',
+  reused: false,
+  review_recorded: true,
+  record_performed: true,
+  safety,
+  limitations: [],
+};
+
 type RecordedRequest = {
   url: string;
   method: string;
@@ -151,6 +178,45 @@ function renderPanel(
       }
       if (url.endsWith('/rejection-evidence/export')) {
         return jsonResponse(exported);
+      }
+      return jsonResponse(
+        { detail: `unexpected request: ${url}` },
+        { status: 404 },
+      );
+    }),
+  );
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <ControlledBrokerRejectionEvidencePanel journey={journey} locale="en" />
+    </QueryClientProvider>,
+  );
+  return requests;
+}
+
+function renderReviewPanel() {
+  const requests: RecordedRequest[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      requests.push({
+        url,
+        method: init?.method ?? 'GET',
+        body: init?.body
+          ? (JSON.parse(String(init.body)) as Record<string, unknown>)
+          : null,
+      });
+      if (url.endsWith('/rejection-evidence/preview')) {
+        return jsonResponse(preview);
+      }
+      if (url.endsWith('/rejection-reviews')) {
+        return jsonResponse(recordedReview);
       }
       return jsonResponse(
         { detail: `unexpected request: ${url}` },
@@ -233,6 +299,47 @@ test('blocked rejection evidence cannot be exported', async () => {
       .disabled,
   ).toBe(true);
   expect(requests).toHaveLength(1);
+});
+
+test('records an explicit reviewer-bound no-retry acknowledgement', async () => {
+  const requests = renderReviewPanel();
+
+  fireEvent.click(screen.getByText('Review rejection evidence'));
+  expect(await screen.findByText('Definitive gateway rejection')).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('Reviewer ID'), {
+    target: { value: 'local-operator' },
+  });
+  fireEvent.click(
+    screen.getByLabelText(/persisted submit intent and client order id/),
+  );
+  fireEvent.click(screen.getByText('Record no-retry review'));
+
+  expect(
+    await screen.findByText(
+      'Rejection review recorded; the original intent must not be retried.',
+    ),
+  ).toBeTruthy();
+  await waitFor(() => expect(requests).toHaveLength(2));
+  expect(requests[1]).toEqual({
+    url: `/api/automation/controlled-broker-submission/intents/${submitIntentId}/rejection-reviews`,
+    method: 'POST',
+    body: {
+      review_fingerprint: reviewFingerprint,
+      reviewer_id: 'local-operator',
+      disposition: 'acknowledged_no_retry',
+      acknowledgement:
+        'record_exact_rejection_review_without_retry_or_authority_change',
+    },
+  });
+  expect(
+    requests.every(
+      (request) =>
+        !request.url.endsWith('/recoveries') &&
+        !request.url.endsWith('/submissions') &&
+        !request.url.includes('/broker-cancel') &&
+        !request.url.includes('/ledger'),
+    ),
+  ).toBe(true);
 });
 
 test('does not render outside the exact persisted rejected-order action', () => {

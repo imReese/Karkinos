@@ -175,9 +175,12 @@ acceptance 不再匹配。
 终态 rejected intent 可通过 `karkinos.controlled_broker_rejection_evidence.v1` 复核。该只读契约
 绑定 canonical OMS order fingerprint、controlled intent、精确 gateway/account/client-order/operator
 身份以及白名单净化结果，并区分网关调用前本地阻断与网关明确拒绝；证据缺失或歧义时 fail closed。
-Export 会重新 preview 并拒绝 drift。Artifact 明确禁止重试同一 intent 或 client order id，且不能
-记录 review、查询或联系 provider、创建或重试订单、修改 OMS/ledger/Account Truth/risk/kill switch、
-解除 interlock 或改变资本/执行权限。任何后续订单都必须从新 Decision 开始并重新通过全部门禁。
+Export 会重新 preview 并拒绝 drift，artifact 仍然只读、仅供复制。单独的
+`karkinos.controlled_broker_rejection_review.v1` 会在 `BEGIN IMMEDIATE` 内重检精确 preview
+fingerprint 后才追加记录，绑定唯一复核人、处置、证据时间、净化结果 fingerprint 与全部 submission
+identity；相同请求在重复/重启后返回原记录，冲突复核人会 fail closed。订单旅程随后收敛为不得
+重试。两条边界都不能查询或联系 provider、创建/重试/撤销订单、修改 OMS/ledger/Account Truth/
+risk/kill switch/interlock 或改变资本/执行权限。任何后续订单必须从新 Decision 开始并重过全部门禁。
 
 精确持久化且仍开放的 lifecycle 可通过
 `karkinos.manual_broker_cancellation_ticket.v1` 投影。该 provider-neutral 边界根据 persisted

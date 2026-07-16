@@ -44,10 +44,10 @@ The latest completed cross-cutting work includes:
   kill-switch, and authority paths remain unavailable; only the existing
   controlled-intent/OMS result status may be resolved from definitive query
   evidence;
-- provider-neutral copy-only operator packages for exact open/partial lifecycle
+- provider-neutral operator packages for exact open/partial lifecycle
   cancellation handoff and terminal rejection review; both recheck fingerprint
-  drift, perform no broker call or state change, and the rejection package
-  forbids retrying the same intent/client id;
+  drift and perform no broker call, while rejection review can append one exact,
+  reviewer-bound no-retry audit fact without changing execution authority;
 - provider-neutral adapter release manifests with append-only human
   accept/reject/revoke evidence and exact live collector prepare/commit
   binding, without selecting or registering a real provider.
@@ -115,21 +115,24 @@ Implemented foundation:
   the atomic query claim before any external call.
 - no-database-edit packages for the canonical open-order and rejected-order
   journey actions. They export only fingerprinted persisted-evidence handoffs;
-  neither can query/retry/submit/cancel, change OMS/ledger/authority, release
-  the interlock, or prove a later broker outcome.
+  the rejected journey can separately append one exactly-once reviewer/time/
+  fingerprint acknowledgement and then closes as no-retry. Neither path can
+  query/retry/submit/cancel, change OMS/ledger/authority, release the interlock,
+  or prove a later broker outcome.
 
 M4 non-authorizing operator-package assumptions and risk record:
 
 - The latest exact-identity persisted lifecycle observation is assumed to be
   the only broker-order evidence available to the preview. The operator must
   independently verify broker/client ids and remaining quantity. Rejection
-  review assumes only sanitized persisted results are reviewable and never
-  treats an artifact as permission to retry.
+  review assumes only sanitized persisted results are reviewable; its audit
+  record binds the exact fingerprint and never becomes permission to retry.
 - Deterministic validation covers open/partial and local/definitive rejection,
   blocked or ambiguous evidence, restart-stable fingerprints, duplicate export,
-  drift, strict routes, UI acknowledgement, and no query/submit/cancel/ledger calls.
-- Risk impact is low: both features are read-only and non-authorizing copy
-  operations; OMS, ledger, Account Truth, risk, kill switch, capital authority,
+  exactly-once concurrent/restart replay, conflicting reviewer, transaction-time drift,
+  strict routes, UI acknowledgement, and no query/submit/cancel/ledger calls.
+- Risk impact is low: only the dedicated append-only review audit store is
+  written. OMS, ledger, Account Truth, risk, kill switch, capital authority,
   and the unresolved-submission interlock remain unchanged.
 
 M4 query-only recovery assumptions and risk record:

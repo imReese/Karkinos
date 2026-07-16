@@ -113,6 +113,12 @@ records exact terminal fills and releases only that order's interlock without
 posting the ledger. No matching trusted public identity keeps either action
 disabled.
 
+A rejected controlled intent exposes a sanitized, fingerprinted copy package
+and a separate append-only human review. The review records one exact reviewer,
+evidence fingerprint, disposition, and time exactly once; it grants no retry or
+authority and closes the journey with “create a new Decision if still needed.”
+Evidence drift or a conflicting second reviewer fails closed.
+
 ### AI research
 
 AI workflows read persisted evidence through deny-by-default tools. Model

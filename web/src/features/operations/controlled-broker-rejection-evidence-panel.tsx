@@ -7,6 +7,7 @@ import {
 import {
   useControlledBrokerRejectionEvidenceExportMutation,
   useControlledBrokerRejectionEvidencePreviewMutation,
+  useControlledBrokerRejectionReviewMutation,
   type ControlledOrderJourney,
 } from './api';
 
@@ -67,8 +68,10 @@ export function ControlledBrokerRejectionEvidencePanel({
   const [open, setOpen] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [reviewerId, setReviewerId] = useState('');
   const preview = useControlledBrokerRejectionEvidencePreviewMutation();
   const exportEvidence = useControlledBrokerRejectionEvidenceExportMutation();
+  const recordReview = useControlledBrokerRejectionReviewMutation();
   const actionable =
     journey.next_operator_action ===
       'review_rejection_evidence_without_retry' &&
@@ -82,15 +85,19 @@ export function ControlledBrokerRejectionEvidencePanel({
     setOpen(false);
     setAcknowledged(false);
     setCopied(false);
+    setReviewerId('');
     preview.reset();
     exportEvidence.reset();
+    recordReview.reset();
   };
 
   const loadPreview = () => {
     setOpen(true);
     setAcknowledged(false);
     setCopied(false);
+    setReviewerId('');
     exportEvidence.reset();
+    recordReview.reset();
     preview.mutate({ submitIntentId: journey.submit_intent_id });
   };
 
@@ -114,6 +121,21 @@ export function ControlledBrokerRejectionEvidencePanel({
     }
     await navigator.clipboard.writeText(content);
     setCopied(true);
+  };
+
+  const submitReview = () => {
+    const reviewer = reviewerId.trim();
+    if (!preview.data?.ready || !acknowledged || !reviewer) {
+      return;
+    }
+    recordReview.mutate({
+      submitIntentId: journey.submit_intent_id,
+      review_fingerprint: preview.data.review_fingerprint,
+      reviewer_id: reviewer,
+      disposition: 'acknowledged_no_retry',
+      acknowledgement:
+        'record_exact_rejection_review_without_retry_or_authority_change',
+    });
   };
 
   return (
@@ -247,24 +269,44 @@ export function ControlledBrokerRejectionEvidencePanel({
                     .join(' · ')}
                 </div>
               ) : (
-                <label className="mt-3 flex items-start gap-2 text-xs leading-5 text-[var(--app-text)]">
-                  <input
-                    checked={acknowledged}
-                    className="mt-1"
-                    type="checkbox"
-                    onChange={(event) => setAcknowledged(event.target.checked)}
-                  />
-                  <span>
-                    {locale === 'zh'
-                      ? '我理解：原 submit intent 与 client order id 不得重试；若仍需交易，必须从新的 Decision、账户事实、风控、逐单确认与授权证据重新开始。'
-                      : 'I understand the persisted submit intent and client order id must not be retried. Any later order starts again from a new Decision, Account Truth, risk, per-order confirmation, and authority review.'}
-                  </span>
-                </label>
+                <div className="mt-3 grid gap-3">
+                  <label className="flex items-start gap-2 text-xs leading-5 text-[var(--app-text)]">
+                    <input
+                      checked={acknowledged}
+                      className="mt-1"
+                      type="checkbox"
+                      onChange={(event) =>
+                        setAcknowledged(event.target.checked)
+                      }
+                    />
+                    <span>
+                      {locale === 'zh'
+                        ? '我理解：原 submit intent 与 client order id 不得重试；若仍需交易，必须从新的 Decision、账户事实、风控、逐单确认与授权证据重新开始。'
+                        : 'I understand the persisted submit intent and client order id must not be retried. Any later order starts again from a new Decision, Account Truth, risk, per-order confirmation, and authority review.'}
+                    </span>
+                  </label>
+                  <label
+                    className="grid max-w-sm gap-1 text-xs text-[var(--app-text)]"
+                    htmlFor="controlled-rejection-reviewer-id"
+                  >
+                    <span>{locale === 'zh' ? '复核人 ID' : 'Reviewer ID'}</span>
+                    <input
+                      id="controlled-rejection-reviewer-id"
+                      autoComplete="off"
+                      className="app-input"
+                      maxLength={128}
+                      pattern="[A-Za-z0-9][A-Za-z0-9._:-]{0,127}"
+                      placeholder="local-operator"
+                      value={reviewerId}
+                      onChange={(event) => setReviewerId(event.target.value)}
+                    />
+                  </label>
+                </div>
               )}
 
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <button
-                  className="app-button-primary"
+                  className="app-button-secondary"
                   type="button"
                   disabled={
                     !preview.data.ready ||
@@ -281,6 +323,25 @@ export function ControlledBrokerRejectionEvidencePanel({
                       ? '生成可复制复核资料'
                       : 'Create copyable review package'}
                 </button>
+                <button
+                  className="app-button-primary"
+                  type="button"
+                  disabled={
+                    !preview.data.ready ||
+                    !acknowledged ||
+                    !reviewerId.trim() ||
+                    recordReview.isPending
+                  }
+                  onClick={submitReview}
+                >
+                  {recordReview.isPending
+                    ? locale === 'zh'
+                      ? '记录中…'
+                      : 'Recording…'
+                    : locale === 'zh'
+                      ? '记录不得重试复核'
+                      : 'Record no-retry review'}
+                </button>
                 <span className="app-muted text-[11px]">
                   {locale === 'zh'
                     ? '无查询、重试、提交、撤单、账本或权限副作用'
@@ -295,6 +356,34 @@ export function ControlledBrokerRejectionEvidencePanel({
               {locale === 'zh' ? '导出被阻断：' : 'Export blocked: '}
               {mutationError(exportEvidence.error)}
             </p>
+          ) : null}
+          {recordReview.isError ? (
+            <p className="mt-2 text-xs text-[var(--app-danger)]" role="alert">
+              {locale === 'zh' ? '复核记录被阻断：' : 'Review record blocked: '}
+              {mutationError(recordReview.error)}
+            </p>
+          ) : null}
+          {recordReview.data ? (
+            <div
+              className="mt-3 rounded-xl border border-[color-mix(in_srgb,var(--app-success)_35%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_8%,transparent)] px-3 py-2 text-xs text-[var(--app-text)]"
+              role="status"
+            >
+              <div className="font-semibold">
+                {locale === 'zh'
+                  ? '拒绝已复核并记录；不得重试原 intent。'
+                  : 'Rejection review recorded; the original intent must not be retried.'}
+              </div>
+              <div className="app-muted mt-1 break-all font-mono text-[11px]">
+                {shortenedIdentity(recordReview.data.review_id)} ·{' '}
+                {recordReview.data.reviewer_id} ·{' '}
+                {recordReview.data.recorded_at}
+              </div>
+              <div className="app-muted mt-1 text-[11px]">
+                {locale === 'zh'
+                  ? '如仍需交易，请新建 Decision 并重新通过账户事实、风控、逐单确认和授权门禁。'
+                  : 'If the trade is still needed, create a new Decision and pass Account Truth, risk, per-order confirmation, and authority gates again.'}
+              </div>
+            </div>
           ) : null}
           {exportEvidence.data ? (
             <div className="mt-3">

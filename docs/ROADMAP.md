@@ -181,7 +181,7 @@ human next step. Signed reviews cover query-only unknown recovery, terminal clea
 optional correction without operator-supplied financial deltas. An exact open lifecycle can also
 produce a no-database-edit manual cancellation package; the UI requires external human action and
 new evidence, and exposes no cancel endpoint. A rejected intent now exposes a drift-checked,
-sanitized copy-only review package that forbids retry of the same intent/client id. Signed submission,
+sanitized copy-only package plus an append-only, exactly-once reviewer acknowledgement that closes the journey as no-retry without changing authority. Signed submission,
 real signed cancel, real-adapter recovery evidence, and the complete journey remain open.
 
 **Exit gate:** an operator can complete every normal and recovery flow without

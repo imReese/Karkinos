@@ -500,6 +500,7 @@ export type ControlledExecutionOperatorSession = {
 export type ControlledOrderJourneyStage = {
   key:
     | 'controlled_submission'
+    | 'controlled_submission_rejection_review'
     | 'execution_reconciliation'
     | 'terminal_reconciliation_clearance'
     | 'reconciled_ledger_posting'
@@ -515,6 +516,9 @@ export type ControlledOrderJourneyStage = {
   ledger_entry_count?: number;
   post_ledger_cutoff_id?: number;
   reason_code?: string;
+  reviewer_id?: string;
+  reviewed_at?: string;
+  review_fingerprint?: string;
 };
 
 export type ControlledOrderJourney = {
@@ -794,6 +798,41 @@ export type ControlledBrokerRejectionEvidenceExport = {
   artifact: Record<string, unknown>;
   export_performed: true;
   safety: ControlledBrokerRejectionSafety;
+};
+
+export type ControlledBrokerRejectionReview = {
+  schema_version: 'karkinos.controlled_broker_rejection_review.v1';
+  review_id: string;
+  review_fingerprint: string;
+  submit_intent_id: string;
+  submit_fingerprint: string;
+  order_id: string;
+  order_fingerprint: string;
+  result_fingerprint: string;
+  identity: {
+    gateway_id: string;
+    account_alias: string;
+    client_order_id: string;
+    operator_id: string;
+  };
+  reviewer_id: string;
+  disposition: 'acknowledged_no_retry';
+  rejection_classification: string;
+  evidence_as_of: string;
+  recorded_at: string;
+  operator_acknowledgement: 'record_exact_rejection_review_without_retry_or_authority_change';
+  retry_policy: {
+    same_intent_retry_allowed: false;
+    same_client_order_id_retry_allowed: false;
+    automatic_retry_allowed: false;
+    new_order_requires_new_decision_and_all_gates: true;
+  };
+  status: 'recorded' | 'already_recorded';
+  reused: boolean;
+  review_recorded: true;
+  record_performed: boolean;
+  safety: ControlledBrokerRejectionSafety;
+  limitations: string[];
 };
 
 export type ControlledSubmissionClearanceFill = {
@@ -1552,6 +1591,32 @@ export function useControlledBrokerRejectionEvidenceExportMutation() {
         )}/rejection-evidence/export`,
         body,
       );
+    },
+  });
+}
+
+export function useControlledBrokerRejectionReviewMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: {
+      submitIntentId: string;
+      review_fingerprint: string;
+      reviewer_id: string;
+      disposition: 'acknowledged_no_retry';
+      acknowledgement: 'record_exact_rejection_review_without_retry_or_authority_change';
+    }) => {
+      const { submitIntentId, ...body } = request;
+      return postJson<ControlledBrokerRejectionReview>(
+        `/api/automation/controlled-broker-submission/intents/${encodeURIComponent(
+          submitIntentId,
+        )}/rejection-reviews`,
+        body,
+      );
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ['automation', 'cockpit'],
+      });
     },
   });
 }

@@ -110,8 +110,10 @@ fingerprint，并在导出时重新核验证据；结果只是供人工复制的
 
 对于 rejected controlled submission，同一 journey 还可准备已净化、带 fingerprint 的拒绝复核
 资料，区分网关调用前本地阻断与网关明确拒绝，并明确禁止重试同一 intent 或 client order id。
-该资料仅供复制，不会查询、重试、提交、撤单，也不会修改 OMS、ledger、risk、Account Truth、
-interlock 或任何权限。
+资料仍仅供复制；单独的 append-only 人工复核会 exactly once 地记录复核人、精确 fingerprint、
+处置与时间，并把旅程收敛为“不得重试；如仍需交易则新建 Decision”。重复/重启会复用原记录，
+冲突复核人或证据 drift 会 fail closed。该审计写入不会查询、重试、提交、撤单，也不会修改 OMS、
+ledger、risk、Account Truth、interlock 或任何权限。
 
 ### AI 研究
 

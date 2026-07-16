@@ -412,6 +412,95 @@ def test_rejection_evidence_routes_never_retry_or_mutate_order(
     assert unknown_field.status_code == 422
 
 
+def test_rejection_review_route_is_strict_and_records_no_retry_only(
+    monkeypatch,
+) -> None:
+    client, _, _, _, _ = _client(monkeypatch)
+    calls: list[dict[str, str]] = []
+
+    def record_review(**kwargs):
+        calls.append(kwargs)
+        return {
+            **kwargs,
+            "schema_version": "karkinos.controlled_broker_rejection_review.v1",
+            "review_id": "7" * 64,
+            "status": "recorded",
+            "review_recorded": True,
+            "record_performed": True,
+            "safety": {
+                "provider_contact_performed": False,
+                "broker_retry_performed": False,
+                "broker_submission_performed": False,
+                "broker_cancel_performed": False,
+                "oms_mutated": False,
+                "production_ledger_mutated": False,
+                "capital_authority_changed": False,
+            },
+        }
+
+    monkeypatch.setattr(
+        route_module,
+        "_rejection_evidence_service",
+        lambda: SimpleNamespace(record_review=record_review),
+    )
+    prefix = "/api/automation/controlled-broker-submission"
+    intent_id = "1" * 64
+    response = client.post(
+        f"{prefix}/intents/{intent_id}/rejection-reviews",
+        json={
+            "review_fingerprint": "9" * 64,
+            "reviewer_id": "local-operator",
+            "disposition": "acknowledged_no_retry",
+            "acknowledgement": (
+                "record_exact_rejection_review_without_retry_or_authority_change"
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["review_recorded"] is True
+    assert response.json()["safety"]["broker_retry_performed"] is False
+    assert calls == [
+        {
+            "submit_intent_id": intent_id,
+            "review_fingerprint": "9" * 64,
+            "reviewer_id": "local-operator",
+            "disposition": "acknowledged_no_retry",
+            "acknowledgement": (
+                "record_exact_rejection_review_without_retry_or_authority_change"
+            ),
+        }
+    ]
+    assert (
+        client.post(
+            f"{prefix}/intents/{intent_id}/rejection-reviews",
+            json={
+                "review_fingerprint": "9" * 64,
+                "disposition": "acknowledged_no_retry",
+                "acknowledgement": (
+                    "record_exact_rejection_review_without_retry_or_authority_change"
+                ),
+            },
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            f"{prefix}/intents/{intent_id}/rejection-reviews",
+            json={
+                "review_fingerprint": "9" * 64,
+                "reviewer_id": "local-operator",
+                "disposition": "acknowledged_no_retry",
+                "acknowledgement": (
+                    "record_exact_rejection_review_without_retry_or_authority_change"
+                ),
+                "retry": True,
+            },
+        ).status_code
+        == 422
+    )
+
+
 def test_route_service_is_default_closed_without_injected_release_provider(
     monkeypatch,
 ) -> None:
@@ -468,6 +557,9 @@ def test_create_app_registers_controlled_submission_without_strategy_endpoint() 
             "POST"
         },
         "/api/automation/controlled-broker-submission/intents/{submit_intent_id}/rejection-evidence/export": {
+            "POST"
+        },
+        "/api/automation/controlled-broker-submission/intents/{submit_intent_id}/rejection-reviews": {
             "POST"
         },
         "/api/automation/controlled-broker-submission/intents/{submit_intent_id}/manual-cancellation-ticket/preview": {
