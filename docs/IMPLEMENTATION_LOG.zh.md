@@ -38,6 +38,9 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
   以 next-bar 语义执行，不产生生产策略或交易权限副作用；
 - fail-fast 分组运行配置、仅限环境变量的 TuShare/AI/通知凭证、已校验的
   Settings 写入契约，以及 Server 与旧 CLI 共用的 dotenv 选择路径；
+- 显式启用的本地 broker-statement collector：等待 CSV 完整稳定后再读取，按文件 fingerprint
+  在重复轮询和重启间幂等暂存 Account Truth 证据，文件消失时保留既有证据，并只读展示状态；
+  它不联系 provider，也不修改 ledger、portfolio、OMS、risk、kill switch 或资本权限；
 - 已签名有界执行 policy、原子预算、runtime session、live gate、pause/replacement、submission
   interlock、lifecycle evidence、operator projection 与 capital-scaling review。
 - canonical、persisted-only 的 controlled-order journey，将 submission、reconciliation、

@@ -107,6 +107,41 @@ def test_account_truth_broker_statement_preview_is_read_only(tmp_path, monkeypat
     assert _ledger_entry_count(db._path) == ledger_count_before
 
 
+def test_account_truth_collector_status_is_read_only(tmp_path, monkeypatch):
+    from server.routes import account_truth as account_truth_routes
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    payload = {
+        "schema_version": (
+            "karkinos.account_truth.local_broker_statement_collector.v1"
+        ),
+        "enabled": True,
+        "state": "imported",
+        "configured_path": "broker_statement.csv",
+        "source_name": "broker_statement.csv",
+        "file_present": True,
+        "import_run_id": "import-local-1",
+        "does_not_mutate_production_ledger": True,
+        "does_not_contact_provider": True,
+        "does_not_change_execution_authority": True,
+    }
+    status = SimpleNamespace(to_dict=lambda: dict(payload))
+    collector = SimpleNamespace(status=lambda: status)
+    fake_state = SimpleNamespace(db=db, broker_statement_collector=collector)
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    endpoint = _route(
+        account_truth_routes.create_router(),
+        "/api/account-truth/broker-statement/collector",
+    ).endpoint
+    ledger_count_before = _ledger_entry_count(db._path)
+
+    response = asyncio.run(endpoint())
+
+    assert response == payload
+    assert _ledger_entry_count(db._path) == ledger_count_before
+
+
 def test_account_truth_broker_statement_import_stages_evidence_only(
     tmp_path,
     monkeypatch,

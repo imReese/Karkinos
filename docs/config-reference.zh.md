@@ -40,12 +40,13 @@ python -m server
 
 ## config.json 结构
 
-推荐配置只保留四个分组，完整安全示例见仓库根目录的 [`config.example.json`](../config.example.json)。
+推荐配置只保留五个分组，完整安全示例见仓库根目录的 [`config.example.json`](../config.example.json)。
 
 | 分组 | 用途 |
 | --- | --- |
 | `server` | Web 服务、CORS、调度器和通知 |
 | `data_source` | 行情提供方和轮询间隔；凭证只能来自环境变量 |
+| `account_truth` | 显式启用的本地只读账户证据采集边界 |
 | `broker_fee` | 券商费用建模 |
 | `ai` | 外部模型连接参数；密钥默认来自环境变量 |
 
@@ -77,6 +78,26 @@ uv run python scripts/configure_data_source.py --provider tushare
 ```
 
 TuShare token 通过隐藏输入读取，不接受命令行参数。脚本会保留 `provider_config.tushare_token_env`，只把无凭证的 provider、轮询和环境变量名元数据写入已被 Git 忽略的 `config.json`，并把 Token 写入该变量名对应的、权限为 `0600` 的 `.env`（或 `--env-file` / `KARKINOS_ENV_FILE` 指定文件）。切换到 AkShare 会保留已有环境凭证；删除凭证必须是显式操作。Settings API 和 Web 页面不接收凭证，只展示是否已配置。`config.json` 中出现顶层或分组内 `tushare_token` 会阻止启动，配置脚本也会直接拒绝，不做自动凭证迁移。
+
+### account_truth
+
+`account_truth.broker_statement_collector` 是启动时显式启用的本地文件采集器。它只读取一份
+canonical CSV、等待文件稳定、按 fingerprint 幂等暂存 broker evidence，并让既有 Account Truth
+对账投影读取该批次。它不联系券商或行情 provider，也不会写生产账本、修改持仓、OMS、风控、
+kill switch 或资本权限。
+
+| 字段 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `enabled` | boolean | `false` | 是否随服务器启动只读 collector；必须显式开启。 |
+| `path` | string | `broker_statement.csv` | 本地 CSV 路径；相对路径以服务进程工作目录解析。 |
+| `poll_interval_seconds` | number | `5` | 文件轮询间隔，范围 `0.5`–`3600` 秒。 |
+| `stability_delay_seconds` | number | `2` | 同一文件 size/mtime 保持稳定后才读取，范围 `0`–`60` 秒。 |
+| `max_file_bytes` | integer | `10485760` | 只读大小上限，范围 1 KiB–100 MiB。 |
+
+文件缺失时 collector 等待；写入中、超限、非 UTF-8 或 schema 被阻断时 fail closed，不会暂存
+不完整事件。相同 fingerprint 在重复轮询或重启后复用既有 import run，不产生重复 Account Truth
+事件。状态可从 `GET /api/account-truth/broker-statement/collector` 查看。手工上传仍作为显式
+fallback，但不再是已启用本地 collector 的日常必需步骤。
 
 ### broker_fee
 

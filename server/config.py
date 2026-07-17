@@ -120,6 +120,16 @@ _AI_CONFIG_GROUP_FIELDS = frozenset(
         "api_key_env",
     }
 )
+_ACCOUNT_TRUTH_CONFIG_GROUP_FIELDS = frozenset({"broker_statement_collector"})
+_BROKER_STATEMENT_COLLECTOR_ALLOWED_FIELDS = frozenset(
+    {
+        "enabled",
+        "path",
+        "poll_interval_seconds",
+        "stability_delay_seconds",
+        "max_file_bytes",
+    }
+)
 _ENV_NAME_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
 
 
@@ -203,6 +213,25 @@ def _normalize_grouped_config_payload(raw: object) -> dict:
                 "ai config group contains unsupported fields: " + ", ".join(unknown)
             )
         data["ai"] = dict(ai)
+
+    account_truth = data.pop("account_truth", None)
+    if account_truth is not None:
+        if not isinstance(account_truth, dict):
+            raise ValueError("account_truth config group must be an object")
+        unknown = sorted(set(account_truth) - _ACCOUNT_TRUTH_CONFIG_GROUP_FIELDS)
+        if unknown:
+            raise ValueError(
+                "account_truth config group contains unsupported fields: "
+                + ", ".join(unknown)
+            )
+        collector = account_truth.get("broker_statement_collector")
+        if collector is not None:
+            if "broker_statement_collector" in data:
+                raise ValueError(
+                    "broker statement collector config cannot appear both grouped "
+                    "and flat"
+                )
+            data["broker_statement_collector"] = collector
 
     return data
 
@@ -324,6 +353,62 @@ class AIProviderConfig:
 
 
 @dataclass(frozen=True)
+class BrokerStatementCollectorConfig:
+    """Explicitly enabled local-file ingestion with evidence-only authority."""
+
+    enabled: bool = False
+    path: str = "broker_statement.csv"
+    poll_interval_seconds: float = 5.0
+    stability_delay_seconds: float = 2.0
+    max_file_bytes: int = 10 * 1024 * 1024
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.enabled, bool):
+            raise ValueError(
+                "account_truth.broker_statement_collector.enabled must be boolean"
+            )
+        if not isinstance(self.path, str) or not self.path.strip():
+            raise ValueError(
+                "account_truth.broker_statement_collector.path must be a "
+                "non-empty string"
+            )
+        for field_name, value, minimum, maximum in (
+            (
+                "poll_interval_seconds",
+                self.poll_interval_seconds,
+                0.5,
+                3600.0,
+            ),
+            (
+                "stability_delay_seconds",
+                self.stability_delay_seconds,
+                0.0,
+                60.0,
+            ),
+        ):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int | float)
+                or value < minimum
+                or value > maximum
+            ):
+                raise ValueError(
+                    "account_truth.broker_statement_collector."
+                    f"{field_name} must be numeric within [{minimum}, {maximum}]"
+                )
+        if (
+            isinstance(self.max_file_bytes, bool)
+            or not isinstance(self.max_file_bytes, int)
+            or self.max_file_bytes < 1024
+            or self.max_file_bytes > 100 * 1024 * 1024
+        ):
+            raise ValueError(
+                "account_truth.broker_statement_collector.max_file_bytes must be "
+                "an integer within [1024, 104857600]"
+            )
+
+
+@dataclass(frozen=True)
 class DataSourceProviderConfig:
     """Credential-free provider edge settings for market-data startup."""
 
@@ -408,6 +493,12 @@ class BacktestConfig:
             )
         if "ai" in data:
             data["ai"] = _parse_ai_provider_config(data["ai"])
+        if "broker_statement_collector" in data:
+            data["broker_statement_collector"] = (
+                _parse_broker_statement_collector_config(
+                    data["broker_statement_collector"]
+                )
+            )
         _validate_core_runtime_values(data)
         if "controlled_bridge_policy" in data:
             data["controlled_bridge_policy"] = _parse_controlled_bridge_policy_config(
@@ -458,6 +549,9 @@ class ServerConfig(BacktestConfig):
             "http://127.0.0.1:5173",
         ]
     )
+    broker_statement_collector: BrokerStatementCollectorConfig = field(
+        default_factory=BrokerStatementCollectorConfig
+    )
     controlled_bridge_policy: ControlledBridgePolicyConfig = field(
         default_factory=ControlledBridgePolicyConfig
     )
@@ -502,6 +596,28 @@ def _parse_ai_provider_config(value: object) -> AIProviderConfig:
         adapter_kind=value.get("adapter_kind", "openai_compatible_https"),
         timeout_seconds=timeout_seconds,
         api_key_env=value.get("api_key_env") or "KARKINOS_AI_API_KEY",
+    )
+
+
+def _parse_broker_statement_collector_config(
+    value: object,
+) -> BrokerStatementCollectorConfig:
+    if value is None:
+        return BrokerStatementCollectorConfig()
+    if not isinstance(value, dict):
+        raise ValueError("account_truth.broker_statement_collector must be an object")
+    unknown = sorted(set(value) - _BROKER_STATEMENT_COLLECTOR_ALLOWED_FIELDS)
+    if unknown:
+        raise ValueError(
+            "account_truth.broker_statement_collector contains unsupported fields: "
+            + ", ".join(unknown)
+        )
+    return BrokerStatementCollectorConfig(
+        enabled=value.get("enabled", False),
+        path=value.get("path", "broker_statement.csv"),
+        poll_interval_seconds=value.get("poll_interval_seconds", 5.0),
+        stability_delay_seconds=value.get("stability_delay_seconds", 2.0),
+        max_file_bytes=value.get("max_file_bytes", 10 * 1024 * 1024),
     )
 
 

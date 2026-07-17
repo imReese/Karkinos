@@ -88,6 +88,43 @@ def create_router() -> APIRouter:
             "does_not_mutate_production_ledger": True,
         }
 
+    @r.get("/broker-statement/collector")
+    async def get_broker_statement_collector_status() -> dict[str, object]:
+        from server.app import get_app_state
+
+        collector = getattr(get_app_state(), "broker_statement_collector", None)
+        if collector is None:
+            return {
+                "schema_version": (
+                    "karkinos.account_truth.local_broker_statement_collector.v1"
+                ),
+                "enabled": False,
+                "state": "disabled",
+                "configured_path": "",
+                "source_name": "",
+                "file_present": False,
+                "poll_interval_seconds": 0,
+                "stability_delay_seconds": 0,
+                "max_file_bytes": 0,
+                "last_observed_at": None,
+                "last_processed_at": None,
+                "last_success_at": None,
+                "file_fingerprint": None,
+                "import_run_id": None,
+                "validation_status": None,
+                "row_count": None,
+                "valid_row_count": None,
+                "invalid_row_count": None,
+                "duplicate_row_count": None,
+                "error_code": "collector_not_initialized",
+                "message": "Local broker-statement collector is not initialized.",
+                "source_kind": "local_file_readonly",
+                "does_not_mutate_production_ledger": True,
+                "does_not_contact_provider": True,
+                "does_not_change_execution_authority": True,
+            }
+        return collector.status().to_dict()
+
     @r.get("/import-runs")
     async def list_import_runs(limit: int = 50) -> list[dict[str, object]]:
         from server.app import get_app_state

@@ -15,6 +15,32 @@ canonical broker statement CSV 的只读导入预览，以及 staged broker evid
 - 导入预览会计算文件级 SHA-256 指纹和行级 SHA-256 指纹，用于审计和去重。
 - 预览和 staged broker evidence 是审计材料，不是投资建议，也不是自动交易授权。
 
+## 本地自动读取
+
+日常本机运行可以显式启用只读 collector，避免每次在浏览器重新选择同一文件：
+
+```json
+{
+  "account_truth": {
+    "broker_statement_collector": {
+      "enabled": true,
+      "path": "broker_statement.csv",
+      "poll_interval_seconds": 5,
+      "stability_delay_seconds": 2,
+      "max_file_bytes": 10485760
+    }
+  }
+}
+```
+
+collector 只在启动配置明确开启后运行。它等待 size/mtime 稳定，再完整读取、校验并按文件
+fingerprint 暂存证据；相同内容的重复轮询和进程重启复用同一个 import run。文件消失、写入中、
+超限、编码错误或 schema 阻断时保持 fail closed，并保留此前已暂存证据。状态由
+`GET /api/account-truth/broker-statement/collector` 只读返回。
+
+这不是自动入账：collector 不联系 provider，不修改生产 ledger、持仓、OMS、风控、kill switch
+或资本授权。差异仍需在 Account Truth 中人工复核，手工上传继续作为 fallback。
+
 ## Canonical CSV 列
 
 CSV 必须包含以下列。未涉及的字段保留为空字符串，不要删除列。
@@ -132,8 +158,7 @@ import_run = repository.save_preview(preview, source_name="local-statement.csv")
   row fingerprint、数量、价格、税费前金额、佣金/费用、税费、过户费、现金净影响、
   快照字段、券商成本价口径、可选 broker/client order identity 和行级重复信息。
 
-如果同一 `file_fingerprint` 已经导入过，新 import run 会记录
-`file_duplicate_count=1` 与 `duplicate_of_import_run_id`，并且不会再次写入
+如果同一 `file_fingerprint` 已经导入过，会复用原 `import_run_id`，并且不会再次写入
 broker evidence events。这个阶段仍然不会写入或修改 `ledger_entries`；后续对账
 和人工确认流程会决定哪些差异需要处理。
 

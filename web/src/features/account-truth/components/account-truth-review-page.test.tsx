@@ -136,6 +136,34 @@ const brokerStatementPreview = {
   does_not_mutate_production_ledger: true,
 };
 
+const collectorStatus = {
+  schema_version: 'karkinos.account_truth.local_broker_statement_collector.v1',
+  enabled: true,
+  state: 'unchanged',
+  configured_path: 'broker_statement.csv',
+  source_name: 'broker_statement.csv',
+  file_present: true,
+  poll_interval_seconds: 5,
+  stability_delay_seconds: 2,
+  max_file_bytes: 10485760,
+  last_observed_at: '2026-07-17T14:30:00Z',
+  last_processed_at: '2026-07-17T14:29:58Z',
+  last_success_at: '2026-07-17T14:29:58Z',
+  file_fingerprint: 'sha256-local',
+  import_run_id: 'import-run-1',
+  validation_status: 'pass',
+  row_count: 3,
+  valid_row_count: 3,
+  invalid_row_count: 0,
+  duplicate_row_count: 0,
+  error_code: null,
+  message: 'unchanged',
+  source_kind: 'local_file_readonly',
+  does_not_mutate_production_ledger: true,
+  does_not_contact_provider: true,
+  does_not_change_execution_authority: true,
+};
+
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -148,11 +176,13 @@ function installFetchMock({
   importRunResponse = importRuns,
   reportSummaryResponse = reportSummaries,
   reportDetailResponse = reportDetail,
+  collectorStatusResponse = collectorStatus,
 }: {
   scoreResponse?: unknown;
   importRunResponse?: unknown;
   reportSummaryResponse?: unknown;
   reportDetailResponse?: unknown;
+  collectorStatusResponse?: unknown;
 } = {}) {
   const fetchMock = vi.fn(
     async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -164,6 +194,9 @@ function installFetchMock({
             : input.toString();
       if (url.includes('/api/account-truth/score')) {
         return jsonResponse(scoreResponse);
+      }
+      if (url.includes('/api/account-truth/broker-statement/collector')) {
+        return jsonResponse(collectorStatusResponse);
       }
       if (url.includes('/api/account-truth/broker-statement/preview')) {
         return jsonResponse(brokerStatementPreview);
@@ -345,6 +378,25 @@ test('renders Account Truth score, import runs, reconciliation detail, and revie
     await screen.findByText('Review saved: Known difference'),
   ).toBeTruthy();
   expect(screen.queryByText('Review saved: known_difference')).toBeNull();
+});
+
+test('shows the enabled local collector as evidence-only automatic reading', async () => {
+  renderAccountTruthReviewPage();
+
+  const status = await screen.findByTestId('broker-statement-collector-status');
+
+  expect(within(status).getByText('Automatic local reader')).toBeTruthy();
+  expect(await within(status).findByText('Up to date')).toBeTruthy();
+  expect(
+    within(status).getByText(
+      'The fingerprint is unchanged; no duplicate run was created.',
+    ),
+  ).toBeTruthy();
+  expect(status.textContent).toContain('Path: broker_statement.csv');
+  expect(status.textContent).toContain('Import run: import-run-1');
+  expect(status.textContent).toContain(
+    'Automatic reading never posts the ledger.',
+  );
 });
 
 test('previews and stages broker evidence from pasted CSV', async () => {

@@ -25,6 +25,7 @@ from server.config import (
     BacktestConfig,
     BrokerConnectorConfig,
     BrokerFeeScheduleConfig,
+    BrokerStatementCollectorConfig,
     ControlledBridgePolicyConfig,
     DataSourceProviderConfig,
     ServerConfig,
@@ -108,6 +109,62 @@ def test_server_config_rejects_grouped_and_flat_field_conflicts(tmp_path):
     )
 
     with pytest.raises(ValueError, match="both grouped and flat"):
+        ServerConfig.from_json(config_path)
+
+
+def test_server_config_loads_explicit_local_broker_statement_collector(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "account_truth": {
+                    "broker_statement_collector": {
+                        "enabled": True,
+                        "path": "private/account.csv",
+                        "poll_interval_seconds": 7,
+                        "stability_delay_seconds": 3,
+                        "max_file_bytes": 4096,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = ServerConfig.from_json(config_path)
+
+    assert config.broker_statement_collector == BrokerStatementCollectorConfig(
+        enabled=True,
+        path="private/account.csv",
+        poll_interval_seconds=7,
+        stability_delay_seconds=3,
+        max_file_bytes=4096,
+    )
+
+
+@pytest.mark.parametrize(
+    ("collector", "message"),
+    [
+        ({"enabled": "true"}, "enabled must be boolean"),
+        ({"path": ""}, "path must be a non-empty string"),
+        ({"poll_interval_seconds": 0.1}, "poll_interval_seconds"),
+        ({"stability_delay_seconds": 61}, "stability_delay_seconds"),
+        ({"max_file_bytes": 512}, "max_file_bytes"),
+        ({"watch": True}, "unsupported fields: watch"),
+    ],
+)
+def test_server_config_rejects_unsafe_broker_statement_collector(
+    tmp_path,
+    collector,
+    message,
+):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps({"account_truth": {"broker_statement_collector": collector}}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=message):
         ServerConfig.from_json(config_path)
 
 
@@ -1110,6 +1167,15 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
             "tushare_token_env": "KARKINOS_TUSHARE_TOKEN",
         },
     }
+    assert example["account_truth"] == {
+        "broker_statement_collector": {
+            "enabled": False,
+            "path": "broker_statement.csv",
+            "poll_interval_seconds": 5,
+            "stability_delay_seconds": 2,
+            "max_file_bytes": 10485760,
+        }
+    }
     assert example["ai"] == {
         "enabled": False,
         "provider": "",
@@ -1119,7 +1185,13 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
         "timeout_seconds": 20,
         "api_key_env": "KARKINOS_AI_API_KEY",
     }
-    assert set(example) == {"server", "data_source", "broker_fee", "ai"}
+    assert set(example) == {
+        "server",
+        "data_source",
+        "account_truth",
+        "broker_fee",
+        "ai",
+    }
     assert "schema_version" not in example["broker_fee"]
     assert not _contains_sensitive_key(example["broker_fee"])
     assert "api_keys" not in example["ai"]

@@ -46,6 +46,11 @@ The latest completed cross-cutting work includes:
 - fail-fast grouped runtime configuration, environment-only TuShare/AI and
   notification credentials, validated Settings write contracts, and one
   dotenv-selection path shared by server and legacy CLI entrypoints;
+- an explicitly enabled local broker-statement collector that waits for a
+  stable complete CSV, stages Account Truth evidence idempotently by file
+  fingerprint across polling and restart, preserves prior evidence on file
+  loss, and exposes read-only status without contacting a provider or changing
+  ledger, portfolio, OMS, risk, kill switch, or capital authority;
 - signed bounded execution policy, atomic budgets, runtime sessions, live
   gates, pause/replacement, submission interlock, lifecycle evidence, operator
   projection, and capital-scaling review.

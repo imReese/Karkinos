@@ -18,6 +18,15 @@
             "tushare_token_env": "KARKINOS_TUSHARE_TOKEN"
         }
     },
+    "account_truth": {
+        "broker_statement_collector": {
+            "enabled": false,
+            "path": "broker_statement.csv",
+            "poll_interval_seconds": 5,
+            "stability_delay_seconds": 2,
+            "max_file_bytes": 10485760
+        }
+    },
     "broker_fee": {
         "account_profile_id": "primary-broker-account",
         "broker_name": "示例券商",
