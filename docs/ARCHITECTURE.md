@@ -88,6 +88,21 @@ refer to the same canonical identity when they claim to describe the same point
 in time. Historical reconstruction cannot use future prices or unrelated
 current quotes.
 
+`karkinos.persisted_valuation.v4` keeps an intraday fund estimate available as
+explicit non-authoritative evidence, but marks it `confirmed_nav_missing` until
+a same-day persisted confirmed NAV exists. Such a snapshot is degraded and
+cannot satisfy authoritative Decision, risk, or Decision Quality completeness
+gates. This classification is performed from persisted facts only and never
+causes a GET path to contact a provider.
+
+The batch pre-trade risk boundary is fail-closed on that same identity. It
+requires a complete persisted valuation snapshot, a positive ledger cutoff,
+and complete persisted market evidence for every candidate before any risk
+decision is written. A rejected batch returns an explainable zero-write result;
+an accepted batch embeds the exact snapshot and cutoff in every persisted risk
+decision. Neither branch creates orders, submits to a broker, or writes the
+ledger.
+
 ## Core Flows
 
 ### Research
@@ -363,6 +378,31 @@ canonical write contract. Preview is database-write-free and provider-free;
 confirmation writes only review audit evidence and cannot modify OMS, orders,
 fills, ledger, Account Truth, risk, kill switch, broker submit/cancel, AI
 memory, model prompts, or capital authority.
+
+### Decision Quality Score evidence
+
+`karkinos.decision_quality_target.v1` is the canonical daily process-quality
+projection. It reuses the current Decision payload and evaluates five fixed
+dimensions: persisted valuation and Account Truth completeness, deterministic
+risk checks, benchmark-aware backtest evidence, signal journaling, and stable
+post-decision review identity. A risk-rejected decision may qualify when the
+check is complete; benchmark awareness requires an explicit benchmark but does
+not require benchmark outperformance. A no-action day records risk and
+benchmark as not applicable instead of inventing evidence.
+
+The diagnostic percentage is the number of satisfied dimensions out of five;
+the daily North Star result remains binary `qualified` or `blocked`. An
+operator must explicitly append a `karkinos.decision_quality_capture.v1`
+against the exact target fingerprint. Captures are idempotent, restart-safe,
+and protected by a per-capture event hash chain. The longitudinal report uses
+the latest valid capture for each decision date and labels its coverage as
+explicitly captured days only; uncaptured days are never silently counted.
+
+GET projection and replay are provider-free and database-write-free. Capture
+writes audit evidence only and cannot invoke AI, recalculate financial facts,
+modify risk decisions, OMS, orders, fills, ledger, Account Truth, kill switch,
+broker submit/cancel, model memory, or capital authority. The score measures
+decision-process evidence, not investment return, advice, or permission.
 
 ### AI research
 

@@ -31,6 +31,15 @@ The latest completed cross-cutting work includes:
   signal/action/risk/order/fill chain together with the canonical strategy
   contribution snapshot, rejects drift, records idempotently with a replayable
   append-only audit chain, and cannot mutate financial facts or authority;
+- a canonical five-dimension Decision Quality Score over persisted Decision,
+  with idempotent daily capture, tamper-evident replay, longitudinal coverage,
+  and no AI, financial, risk, execution, or authority side effects;
+- Overview data review counts current holdings only; Market retains other quote facts;
+- persisted valuation v4, which keeps fund estimates visible but non-authoritative
+  until a same-day confirmed NAV exists, so Decision and risk fail closed;
+- a zero-write fail-closed batch-risk boundary for incomplete valuation or
+  candidate evidence; accepted decisions bind the exact snapshot and ledger
+  cutoff without creating orders or touching the ledger;
 - human-gated allowlisted Formula DSL research over exact saved datasets,
   executed by the canonical backtest engine with next-bar semantics and no
   production-strategy or trading-authority side effects;

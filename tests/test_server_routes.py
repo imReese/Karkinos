@@ -8730,7 +8730,7 @@ def test_decision_today_summary_aggregates_portfolio_market_and_audit_state(
         "paper_shadow_review",
         "manual_confirmation",
     ]
-    assert workflow_tasks[0]["status"] == "degraded"
+    assert workflow_tasks[0]["status"] == "blocked"
     assert workflow_tasks[0]["required_actions"] == ["refresh_or_confirm_market_data"]
     assert workflow_tasks[1]["status"] == "blocked"
     assert workflow_tasks[1]["required_actions"] == [

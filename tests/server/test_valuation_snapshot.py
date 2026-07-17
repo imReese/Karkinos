@@ -178,6 +178,73 @@ def test_valuation_snapshot_freezes_confirmed_same_day_close():
     assert first["snapshot_id"] != second["snapshot_id"]
 
 
+def test_valuation_snapshot_keeps_unconfirmed_fund_estimate_non_authoritative(
+    tmp_path,
+):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.upsert_latest_quote_sync(
+        symbol="019999",
+        asset_type="fund",
+        price=2.2527,
+        quote_timestamp="2026-07-10T14:57:03+08:00",
+        quote_source="eastmoney_fund_estimate",
+        provider_name="akshare",
+        quote_status="live",
+    )
+
+    snapshot = build_current_valuation_snapshot(db, persist=False)
+    quote = snapshot["quotes"][0]
+
+    assert snapshot["status"] == "degraded"
+    assert quote["price"] == 2.2527
+    assert quote["quote_status"] == "confirmed_nav_missing"
+    assert quote["observed_quote_status"] == "live"
+    assert quote["stale_reason"] == "confirmed_fund_nav_missing_estimate_only"
+    assert quote["valuation_evidence_status"] == "unconfirmed_estimate"
+    assert snapshot["metadata"]["provider_fetch_used"] is False
+
+
+def test_valuation_snapshot_promotes_same_day_confirmed_fund_nav():
+    class FakeDb:
+        def list_latest_quotes_sync(self):
+            return [
+                {
+                    "id": 1,
+                    "symbol": "019999",
+                    "asset_type": "fund",
+                    "price": 2.2527,
+                    "quote_timestamp": "2026-07-10T14:57:03+08:00",
+                    "quote_source": "eastmoney_fund_estimate",
+                    "quote_status": "live",
+                }
+            ]
+
+        def list_quote_snapshots_sync(self):
+            return []
+
+        def get_ledger_entries_sync(self, limit=500, offset=0):
+            return []
+
+        def get_market_bar_on_date_sync(self, symbol, trade_date):
+            assert symbol == "019999"
+            assert trade_date == "2026-07-10"
+            return {"close": 2.2411, "source": "confirmed_fund_nav"}
+
+        def get_latest_market_bar_before_date_sync(self, symbol, trade_date):
+            return {"close": 2.22, "trade_date": "2026-07-09"}
+
+    snapshot = build_current_valuation_snapshot(FakeDb(), persist=False)
+    quote = snapshot["quotes"][0]
+
+    assert snapshot["status"] == "complete"
+    assert quote["price"] == 2.2411
+    assert quote["quote_source"] == "market_bar_close"
+    assert quote["quote_status"] == "confirmed"
+    assert "stale_reason" not in quote
+    assert "valuation_evidence_status" not in quote
+
+
 def test_valuation_snapshot_orders_mixed_timezone_timestamps_by_instant(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -414,5 +481,5 @@ def test_market_context_index_does_not_invalidate_account_valuation(tmp_path):
     current = _current_valuation_snapshot(SimpleNamespace(db=db))
 
     assert current["snapshot_id"] == published["snapshot_id"]
-    assert current["valuation_policy"] == "karkinos.persisted_valuation.v3"
+    assert current["valuation_policy"] == "karkinos.persisted_valuation.v4"
     assert [quote["symbol"] for quote in current["quotes"]] == ["603659"]

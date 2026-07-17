@@ -77,6 +77,41 @@ def test_operations_today_requires_shadow_run_for_order_intents() -> None:
     assert summary["health"]["manual_action_required"] == 2
 
 
+def test_operations_today_puts_incomplete_market_evidence_before_risk_work() -> None:
+    decision = _decision()
+    decision["summary"]["market_data"] = {
+        "source_health": "partial",
+        "latest_quote_timestamp": "2026-07-01T09:30:00+08:00",
+    }
+
+    summary = build_operations_today_summary(
+        decision_payload=decision,
+        trading_plan={
+            **_plan(order_intent_count=0),
+            "manual_ready_count": 0,
+            "blocked_count": 1,
+            "conclusion_status": "evidence_not_ready",
+        },
+        daily_operations=_operations(manual_ready_count=0).model_copy(
+            update={
+                "risk_checked_count": 0,
+                "risk_passed_count": 0,
+                "conclusion_status": "review_required",
+                "primary_target": "risk",
+            }
+        ),
+        order_facts=[],
+        fill_facts=[],
+        generated_at="2026-07-01T09:32:00+08:00",
+    )
+
+    market = next(item for item in summary["subsystems"] if item["id"] == "market_data")
+    assert market["status"] == "blocked"
+    assert market["next_action"] == "review_market_data_freshness"
+    assert summary["conclusion_status"] == "blocked"
+    assert summary["primary_target"] == "market"
+
+
 def test_operations_today_projects_the_canonical_daily_operations_summary() -> None:
     daily_operations = _operations(manual_ready_count=0).model_copy(
         update={

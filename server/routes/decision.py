@@ -2,16 +2,27 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timezone
+from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, ConfigDict, Field
 
 from core.types import Symbol
+from server.ai_runtime.store import IdempotencyConflict
+from server.services.decision_quality import (
+    DecisionQualityCaptureRejected,
+    DecisionQualityCaptureRequest,
+    DecisionQualityService,
+    DecisionQualityStore,
+    DecisionQualityTargetDrift,
+)
 
 _ACCOUNT_STRATEGY_CONTROL_KEY = "account_strategy_assignment"
 _STRATEGY_ATTRIBUTION_READY_STATUSES = {"evidence_bound_from_posted_fills"}
@@ -30,6 +41,17 @@ _BLOCKING_DATA_STATUSES = {"blocked", "error", "missing", "unavailable"}
 _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 
 
+class DecisionQualityCaptureBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    idempotency_key: str = Field(min_length=1, max_length=256)
+    captured_by: str = Field(min_length=1, max_length=128)
+    expected_target_fingerprint: str = Field(min_length=64, max_length=64)
+    confirmation: Literal[
+        "capture_decision_quality_evidence_without_financial_or_trading_authority"
+    ]
+
+
 def create_router() -> APIRouter:
     r = APIRouter(prefix="/api/decision", tags=["decision"])
 
@@ -39,6 +61,68 @@ def create_router() -> APIRouter:
 
         state = get_app_state()
         return await _today_decision_payload(state)
+
+    @r.get("/quality")
+    async def get_decision_quality() -> dict[str, Any]:
+        """Project the current target and captured North Star history."""
+        from server.app import get_app_state
+
+        try:
+            state = get_app_state()
+            payload = await _today_decision_payload(state)
+            service = _decision_quality_service(state)
+            view = await asyncio.to_thread(service.view, payload)
+            return view.to_dict()
+        except Exception as exc:
+            _raise_decision_quality_http_error(exc)
+
+    @r.post("/quality/capture")
+    async def capture_decision_quality(
+        body: DecisionQualityCaptureBody,
+    ) -> dict[str, Any]:
+        """Append one evidence-bound daily quality snapshot."""
+        from server.app import get_app_state
+
+        try:
+            state = get_app_state()
+            payload = await _today_decision_payload(state)
+            service = _decision_quality_service(state)
+            result = await asyncio.to_thread(
+                service.capture,
+                payload,
+                DecisionQualityCaptureRequest(
+                    idempotency_key=body.idempotency_key,
+                    captured_by=body.captured_by,
+                    expected_target_fingerprint=body.expected_target_fingerprint,
+                    confirmation=body.confirmation,
+                ),
+            )
+            return result.to_dict()
+        except Exception as exc:
+            _raise_decision_quality_http_error(exc)
+
+    @r.get("/quality/snapshots/{snapshot_id}")
+    async def get_decision_quality_snapshot(snapshot_id: str) -> dict[str, Any]:
+        """Read one immutable capture together with its audit replay."""
+        from server.app import get_app_state
+
+        try:
+            service = _decision_quality_service(get_app_state())
+            return await asyncio.to_thread(service.get, snapshot_id)
+        except Exception as exc:
+            _raise_decision_quality_http_error(exc)
+
+    @r.get("/quality/snapshots/{snapshot_id}/replay")
+    async def replay_decision_quality_snapshot(snapshot_id: str) -> dict[str, Any]:
+        """Verify the append-only capture event chain."""
+        from server.app import get_app_state
+
+        try:
+            service = _decision_quality_service(get_app_state())
+            replay = await asyncio.to_thread(service.replay, snapshot_id)
+            return replay.to_dict()
+        except Exception as exc:
+            _raise_decision_quality_http_error(exc)
 
     @r.get("/trading-plan")
     async def get_daily_trading_plan() -> dict[str, Any]:
@@ -75,6 +159,20 @@ def create_router() -> APIRouter:
                 detail="trading controls are unavailable",
             )
         portfolio_context = _decision_portfolio_context(state)
+        tasks = _read_action_tasks(
+            state.db,
+            decision_date=_action_filter_date(portfolio_context),
+        )
+        evidence_gate = _batch_pre_trade_risk_evidence_gate(
+            state.db,
+            portfolio_context=portfolio_context,
+            tasks=tasks,
+        )
+        if not evidence_gate["ready"]:
+            return _blocked_batch_pre_trade_risk_response(
+                tasks=tasks,
+                evidence_gate=evidence_gate,
+            )
         portfolio = portfolio_context.get("portfolio")
         positions = getattr(portfolio, "positions", {}) if portfolio is not None else {}
         risk_portfolio = SimpleNamespace(
@@ -89,19 +187,23 @@ def create_router() -> APIRouter:
             portfolio_getter=lambda: risk_portfolio,
             controls=state.trading_controls,
         )
-        return run_pre_trade_risk_batch(
+        result = run_pre_trade_risk_batch(
             db=state.db,
             context_provider=context_provider,
             config=getattr(state, "config", None),
             tasks=_allocate_decision_actions(
                 state,
                 portfolio_context,
-                _read_action_tasks(
-                    state.db,
-                    decision_date=_action_filter_date(portfolio_context),
-                ),
+                tasks,
             ),
+            evidence_binding=evidence_gate["evidence_binding"],
         )
+        return {
+            **result,
+            **evidence_gate["evidence_binding"],
+            "blockers": [],
+            "persisted_facts_only": True,
+        }
 
     @r.get("/intraday")
     async def get_intraday_decision() -> dict[str, Any]:
@@ -181,6 +283,27 @@ def create_router() -> APIRouter:
         }
 
     return r
+
+
+def _decision_quality_service(state: Any) -> DecisionQualityService:
+    db = getattr(state, "db", None)
+    path = getattr(db, "_path", None)
+    if db is None or path is None:
+        raise DecisionQualityCaptureRejected("database is not initialized")
+    return DecisionQualityService(
+        store=DecisionQualityStore(Path(path)),
+        now=lambda: datetime.now(timezone.utc).isoformat(),
+    )
+
+
+def _raise_decision_quality_http_error(exc: Exception) -> None:
+    if isinstance(exc, LookupError):
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if isinstance(exc, (IdempotencyConflict, DecisionQualityTargetDrift)):
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if isinstance(exc, (DecisionQualityCaptureRejected, ValueError)):
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    raise exc
 
 
 async def _today_decision_payload(
@@ -324,6 +447,125 @@ def _allocate_decision_actions(
         quotes=dict(portfolio_context.get("quotes") or {}),
         config=getattr(state, "config", None),
     )
+
+
+def _batch_pre_trade_risk_evidence_gate(
+    db: Any,
+    *,
+    portfolio_context: dict[str, Any],
+    tasks: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Require one complete persisted valuation identity before risk writes."""
+
+    snapshot = portfolio_context.get("valuation_snapshot")
+    authority = str(portfolio_context.get("authority") or "unknown")
+    snapshot_payload = snapshot if isinstance(snapshot, dict) else {}
+    valuation_status = str(snapshot_payload.get("status") or "missing").lower()
+    snapshot_id = str(snapshot_payload.get("snapshot_id") or "") or None
+    ledger_cutoff_id = _int_or_none(snapshot_payload.get("ledger_cutoff_id")) or 0
+    evidence_binding = {
+        "valuation_snapshot_id": snapshot_id,
+        "ledger_cutoff_id": ledger_cutoff_id,
+        "valuation_status": valuation_status,
+        "fact_authority": authority,
+    }
+    blockers: list[dict[str, Any]] = []
+
+    if authority != "persisted_valuation_snapshot":
+        blockers.append(
+            {
+                "code": "persisted_valuation_snapshot_required",
+                "status": authority,
+            }
+        )
+    if not snapshot_id:
+        blockers.append({"code": "valuation_snapshot_identity_missing"})
+    if valuation_status != "complete":
+        blockers.append(
+            {
+                "code": "valuation_snapshot_not_complete",
+                "status": valuation_status,
+            }
+        )
+    if ledger_cutoff_id <= 0:
+        blockers.append({"code": "ledger_cutoff_missing"})
+
+    quotes = dict(portfolio_context.get("quotes") or {})
+    for task in tasks:
+        freshness = _data_freshness_evidence(
+            task,
+            db,
+            quotes=quotes,
+            allow_direct_quote_fallback=False,
+        )
+        quote_source = str(freshness.get("quote_source") or "").lower()
+        status = str(freshness.get("status") or "unknown").lower()
+        if quote_source == "eastmoney_fund_estimate":
+            status = "confirmed_nav_missing"
+        if status in _TRUSTED_DATA_STATUSES:
+            continue
+        blockers.append(
+            {
+                "code": "candidate_market_data_not_complete",
+                "symbol": str(task.get("symbol") or ""),
+                "status": status,
+                "quote_source": freshness.get("quote_source"),
+                "stale_reason": freshness.get("stale_reason"),
+            }
+        )
+
+    return {
+        "ready": not blockers,
+        "evidence_binding": evidence_binding,
+        "blockers": blockers,
+    }
+
+
+def _blocked_batch_pre_trade_risk_response(
+    *,
+    tasks: list[dict[str, Any]],
+    evidence_gate: dict[str, Any],
+) -> dict[str, Any]:
+    """Return an explainable, zero-write batch result for incomplete evidence."""
+
+    binding = dict(evidence_gate.get("evidence_binding") or {})
+    blockers = list(evidence_gate.get("blockers") or [])
+    blocker_codes = list(
+        dict.fromkeys(
+            str(blocker.get("code") or "valuation_evidence_not_ready")
+            for blocker in blockers
+        )
+    )
+    return {
+        "schema_version": "karkinos.pre_trade_risk_batch.v1",
+        "status": "blocked_by_data_quality",
+        "processed_count": 0,
+        "passed_count": 0,
+        "blocked_count": 0,
+        "skipped_count": len(tasks),
+        "candidate_count": len(tasks),
+        "does_not_create_order": True,
+        "does_not_submit_broker_order": True,
+        "does_not_write_ledger": True,
+        "risk_decision_writes_performed": False,
+        "database_writes_performed": False,
+        "default_execution_mode": "manual_confirmation",
+        "persisted_facts_only": True,
+        **binding,
+        "evidence_binding": binding,
+        "blockers": blockers,
+        "results": [
+            {
+                "action_id": task.get("id"),
+                "symbol": task.get("symbol"),
+                "status": "skipped",
+                "passed": None,
+                "decision_id": None,
+                "reasons": blocker_codes,
+            }
+            for task in tasks
+        ],
+    }
 
 
 def _decision_portfolio_context(state: Any) -> dict[str, Any]:
@@ -819,11 +1061,12 @@ def _data_refresh_workflow_task(market_data: dict[str, Any]) -> dict[str, Any]:
         blocking_reasons = ["market_data_missing"]
         description = "Decision data is missing for the selected universe."
     else:
-        status = "degraded"
+        status = "blocked"
         required_actions = ["refresh_or_confirm_market_data"]
         blocking_reasons = ["market_data_not_fully_live"]
         description = (
-            "Some decision quotes are stale, cached, or only partially available."
+            "Decision risk writes are blocked while quotes are stale, cached, "
+            "estimated, or only partially available."
         )
     return _workflow_task(
         task_id="data_refresh",

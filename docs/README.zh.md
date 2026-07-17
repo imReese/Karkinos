@@ -89,6 +89,14 @@ fingerprint。只有具备成交、估值快照与 ledger cutoff 的完整绑定
 append-only 和审计重放，后续证据漂移会使旧结论显式失去当前绑定。该路径不调用 AI、不联系
 provider、不修改财务事实，也不授予交易或资本权限。
 
+Decision 还提供证据绑定的北极星“决策质量分数”。当前投影固定检查数据与 Account Truth 完整、
+确定性风控、基准对照、日志和后续复盘身份；操作员可以针对精确每日 fingerprint 显式固化为
+append-only、可重放的捕获。纵向覆盖只统计已显式捕获日期；该分数衡量过程证据，不衡量收益，
+也不构成建议或权限。
+
+Overview 的行情/净值复核计数只统计 canonical 当前非零持仓。观察列表、大盘指数和已清仓标的
+行情仍保留在 Market 或历史事实中，但不能抬高“当前持仓需要复核”的数量。
+
 ### Paper/Shadow 与 Operations
 
 Operations 展示数据、计划、paper/shadow、OMS、对账、告警和恢复任务。Paper/shadow 可以

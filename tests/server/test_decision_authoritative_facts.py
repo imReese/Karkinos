@@ -141,3 +141,70 @@ def test_decision_uses_persisted_portfolio_and_current_deduplicated_batch(
     assert response["summary"]["market_data"]["latest_quote_timestamp"] == (
         "2026-07-10T15:00:00+08:00"
     )
+
+
+def test_decision_blocks_unconfirmed_fund_estimate_as_persisted_evidence(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    signal_id = db.save_signal_sync(
+        timestamp="2026-07-10T14:57:03+08:00",
+        strategy_id="fund_rotation",
+        symbol="019999",
+        direction="buy",
+        target_weight=0.1,
+        price=2.2527,
+        asset_class="fund",
+    )
+    db.upsert_action_task_sync(
+        source_signal_id=signal_id,
+        symbol="019999",
+        title="候选买入 019999",
+        detail="unconfirmed fund estimate fixture",
+        direction="buy",
+        urgency="normal",
+        target_weight=0.1,
+        price=2.2527,
+        strategy_id="fund_rotation",
+        timestamp="2026-07-10T14:57:03+08:00",
+        asset_class="fund",
+    )
+    db.upsert_latest_quote_sync(
+        symbol="019999",
+        asset_type="fund",
+        price=2.2527,
+        quote_timestamp="2026-07-10T14:57:03+08:00",
+        quote_source="eastmoney_fund_estimate",
+        provider_name="akshare",
+        quote_status="live",
+    )
+    published = db.publish_current_valuation_snapshot_sync()
+    state = SimpleNamespace(
+        db=db,
+        config=SimpleNamespace(initial_cash=0.0, assets=[]),
+        scheduler=SimpleNamespace(
+            portfolio=None,
+            instruments={},
+            watchlist=[],
+            latest_quotes={},
+        ),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+
+    response = asyncio.run(_endpoint("/api/decision/today")())
+    candidate = response["candidates"][0]
+
+    assert published["status"] == "degraded"
+    assert candidate["evidence"]["data_freshness"] == {
+        "status": "confirmed_nav_missing",
+        "quote_timestamp": "2026-07-10T14:57:03+08:00",
+        "quote_source": "eastmoney_fund_estimate",
+        "price": 2.2527,
+        "stale_reason": "confirmed_fund_nav_missing_estimate_only",
+    }
+    assert candidate["manual_confirmation_status"] != ("ready_for_manual_confirmation")
+    assert response["summary"]["market_data"]["source_health"] == "stale"
+    assert response["summary"]["market_data"]["trusted_quote_count"] == 0
+    assert response["summary"]["market_data"]["stale_quote_count"] == 1

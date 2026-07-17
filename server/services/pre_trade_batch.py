@@ -30,6 +30,7 @@ def run_pre_trade_risk_batch(
     statuses: list[str] | None = None,
     limit: int = 50,
     tasks: list[dict[str, Any]] | None = None,
+    evidence_binding: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run mandatory pre-trade risk checks for unchecked action tasks.
 
@@ -49,6 +50,7 @@ def run_pre_trade_risk_batch(
     )
     context = context_provider.snapshot()
     resolved_policy = policy or default_pre_trade_batch_policy(context, config=config)
+    bound_evidence = dict(evidence_binding or {})
     results: list[dict[str, Any]] = []
     skipped_count = 0
 
@@ -95,6 +97,7 @@ def run_pre_trade_risk_batch(
                 "batch_runner": "decision_pre_trade_batch",
                 "does_not_create_order": True,
                 "default_execution_mode": "manual_confirmation",
+                "evidence_binding": bound_evidence,
             },
         )
         db.save_risk_decision_sync(intent=intent, decision=decision)
@@ -114,6 +117,7 @@ def run_pre_trade_risk_batch(
     processed_count = passed_count + blocked_count
     return {
         "schema_version": "karkinos.pre_trade_risk_batch.v1",
+        "status": "completed",
         "processed_count": processed_count,
         "passed_count": passed_count,
         "blocked_count": blocked_count,
@@ -122,7 +126,9 @@ def run_pre_trade_risk_batch(
         "does_not_create_order": True,
         "does_not_submit_broker_order": True,
         "does_not_write_ledger": True,
+        "risk_decision_writes_performed": processed_count > 0,
         "default_execution_mode": "manual_confirmation",
+        "evidence_binding": bound_evidence,
         "results": results,
     }
 

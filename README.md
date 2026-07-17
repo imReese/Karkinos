@@ -90,6 +90,18 @@ non-financial outcomes. Reviews are idempotent, append-only, replayable, and
 become visibly stale after evidence drift. This path does not invoke AI, contact
 a provider, change financial facts, or grant trading or capital authority.
 
+Decision also exposes the evidence-bound North Star Decision Quality Score.
+The current projection checks data and Account Truth completeness,
+deterministic risk, benchmark awareness, journaling, and later reviewability.
+An operator may explicitly freeze the exact daily fingerprint into an
+append-only, replayable capture; longitudinal coverage includes captured days
+only. The score measures process evidence, not return, advice, or authority.
+
+On Overview, the market/NAV review count is scoped to canonical current
+non-zero holdings. Watchlist instruments, market indices, and closed-position
+quotes remain visible in Market or history but cannot inflate the current
+holding review queue.
+
 For a reconciled controlled order, the Operations/Decision journey can now
 complete both signed terminal clearance and the following reconciled-ledger
 posting without database edits. Each step has its own canonical preview,

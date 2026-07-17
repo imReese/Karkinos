@@ -2727,6 +2727,86 @@ test('keeps user-readable data work items on stale homepage status', async () =>
   ).toBeNull();
 });
 
+test('shows the market evidence repair once before an awaiting risk gate', async () => {
+  installOverviewFetchMock(
+    {
+      quote_status: 'stale',
+      stale_reason: 'quote_older_than_expected_session',
+    },
+    {
+      operationsToday: {
+        schema_version: 'karkinos.operations_today.v1',
+        operations_date: '2026-02-10',
+        generated_at: '2026-02-10T10:00:00+08:00',
+        conclusion_status: 'blocked',
+        primary_target: 'market',
+        health: {
+          total: 8,
+          pass: 4,
+          degraded: 0,
+          blocked: 2,
+          manual_action_required: 0,
+          skipped: 2,
+        },
+        subsystems: [
+          {
+            id: 'market_data',
+            status: 'blocked',
+            tone: 'danger',
+            target: 'market',
+            last_run_at: '2026-02-10T10:00:00+08:00',
+            next_action: 'review_market_data_freshness',
+            limitations: [],
+            detail_status: 'partial',
+          },
+        ],
+        daily_plan: {
+          candidate_pool_count: 3,
+          manual_ready_count: 0,
+          blocked_count: 3,
+          order_intent_count: 0,
+          conclusion_status: 'evidence_not_ready',
+          blocker_summary: [
+            {
+              category: 'evidence_not_ready',
+              target: 'risk',
+              count: 3,
+              reasons: ['awaiting_risk_gate'],
+              symbols: ['600519'],
+            },
+          ],
+        },
+        paper_shadow: {
+          status: 'not_required',
+          run_id: null,
+          order_intent_count: 0,
+          simulated_order_count: 0,
+          simulated_fill_count: 0,
+          divergence_reviewed_count: 0,
+          divergence_status: 'not_required',
+          next_manual_review_step: 'none',
+          last_run_at: null,
+          orders: [],
+        },
+        limitations: [],
+      },
+    },
+  );
+
+  renderOverviewPage({ installFetch: false });
+
+  const firstGroup = await screen.findByTestId('overview-today-queue-first');
+  expect(
+    within(firstGroup).getByText('Market data or NAV needs review.'),
+  ).toBeTruthy();
+  expect(within(firstGroup).queryByText('Risk gate checks pending')).toBeNull();
+  expect(
+    within(firstGroup)
+      .getAllByRole('link')
+      .filter((link) => link.getAttribute('href')?.startsWith('/market')),
+  ).toHaveLength(1);
+});
+
 test('renders overview ledger cards with shared public ledger formatting', async () => {
   renderOverviewPage();
 
@@ -2885,7 +2965,7 @@ test('treats zero linked strategy fills as a normal evidence-bound state', async
   expect(screen.queryByTestId('strategy-contribution-gate-card')).toBeNull();
 });
 
-test('counts duplicate portfolio and market diagnostics once per instrument', async () => {
+test('scopes the homepage data review count to canonical current holdings', async () => {
   installOverviewFetchMock(
     {},
     {
@@ -2912,6 +2992,22 @@ test('counts duplicate portfolio and market diagnostics once per instrument', as
           quote_source: 'persisted_cache',
           stale_reason: 'quote_stale',
         },
+        {
+          symbol: '600066',
+          display_name: 'Closed fixture holding',
+          asset_class: 'stock',
+          quote_status: 'stale',
+          quote_source: 'persisted_cache',
+          stale_reason: 'quote_stale',
+        },
+        {
+          symbol: '000001',
+          display_name: 'Shanghai Composite',
+          asset_class: 'index',
+          quote_status: 'stale',
+          quote_source: 'persisted_cache',
+          stale_reason: 'quote_stale',
+        },
       ],
     },
   );
@@ -2924,9 +3020,10 @@ test('counts duplicate portfolio and market diagnostics once per instrument', as
   ).toBeTruthy();
   expect(within(queue).getByText('1 other')).toBeTruthy();
   expect(within(queue).queryByText('2 other')).toBeNull();
+  expect(queue.textContent).not.toContain('Closed fixture holding');
 });
 
-test('explains fund NAV and missing index remediation separately', async () => {
+test('keeps market index diagnostics out of the current-holding review count', async () => {
   window.localStorage.setItem('karkinos.locale', 'zh');
   installOverviewFetchMock(
     {},
@@ -2968,11 +3065,12 @@ test('explains fund NAV and missing index remediation separately', async () => {
     ),
   ).toBeTruthy();
   expect(
-    within(queue).getByText(
-      /2 个指数缺少持久化行情；在 Market 显式刷新并检查失败批次。/,
+    within(queue).queryByText(
+      /个指数缺少持久化行情；在 Market 显式刷新并检查失败批次。/,
     ),
-  ).toBeTruthy();
-  expect(within(queue).getByText('3 基金净值 · 2 指数行情')).toBeTruthy();
+  ).toBeNull();
+  expect(within(queue).getByText('3 基金净值')).toBeTruthy();
+  expect(within(queue).queryByText(/指数行情/)).toBeNull();
 });
 
 test('keeps the return calendar inside the performance analysis card', async () => {

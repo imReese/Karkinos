@@ -24,6 +24,15 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
 - evidence-bound 的人工决策后复盘，将一条持久化 signal/action/risk/order/fill 链与 canonical
   策略贡献快照一起冻结，拒绝证据漂移，以幂等、append-only、可重放方式记录，且不能修改财务
   事实或权限；
+- 基于当前持久化 Decision 投影的 canonical 五维 Decision Quality Score，支持人工显式、幂等的
+  每日捕获、tamper-evident replay 与 latest-per-day 纵向覆盖，不调用 AI，也不修改财务、风控、
+  执行或权限状态；
+- Overview 的数据复核范围只统计 canonical 当前非零持仓；观察列表、大盘指数与已清仓行情事实
+  继续保留在 Market 或历史中，但不会抬高当前持仓复核数；
+- persisted valuation v4 仍展示盘中基金估算值，但在同日确认净值持久化前不把它视为权威事实，
+  Decision 与风控完整性门禁会 fail closed，而不会把估算值当作 live；
+- 批量风控在估值或候选行情证据不完整时返回可解释的零写入阻断；合格批次的每条风控决策均绑定
+  精确 persisted valuation snapshot 与 ledger cutoff，且不会创建订单、写账本或接触券商；
 - 基于精确保存数据集、人工门禁和 allowlisted Formula DSL 的研究，由 canonical backtest engine
   以 next-bar 语义执行，不产生生产策略或交易权限副作用；
 - fail-fast 分组运行配置、仅限环境变量的 TuShare/AI/通知凭证、已校验的
