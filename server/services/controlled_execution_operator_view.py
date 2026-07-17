@@ -16,7 +16,7 @@ from server.services.controlled_session_gate_contract import (
 )
 
 CONTROLLED_EXECUTION_OPERATOR_VIEW_SCHEMA_VERSION = (
-    "karkinos.controlled_execution_operator_view.v3"
+    "karkinos.controlled_execution_operator_view.v4"
 )
 
 MAX_CONTROLLED_EXECUTION_SOURCE_ROWS = 500
@@ -50,9 +50,11 @@ class ControlledExecutionOperatorViewService:
         self,
         *,
         db: Any,
+        account_truth_evidence_reader: Callable[[], dict[str, Any]] | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._db = db
+        self._account_truth_evidence_reader = account_truth_evidence_reader
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def summary(self) -> dict[str, Any]:
@@ -122,6 +124,10 @@ class ControlledExecutionOperatorViewService:
             blocker_prefix="execution_reconciliation",
             blockers=source_blockers,
         )
+        account_truth_evidence = self._read_account_truth_evidence(
+            required=bool(ledger_postings),
+            blockers=source_blockers,
+        )
 
         reservations_by_id = {
             str(row.get("reservation_id") or ""): row
@@ -172,6 +178,7 @@ class ControlledExecutionOperatorViewService:
                 rejection_review=rejection_review_by_intent.get(
                     str(intent.get("submit_intent_id") or ""), {}
                 ),
+                account_truth_evidence=account_truth_evidence,
             )
             for intent in submission_intents
         ]
@@ -284,10 +291,29 @@ class ControlledExecutionOperatorViewService:
                 "Current-window status is not runtime authentication and does not authorize submission or cancellation.",
                 "Remaining capital values are reservation headroom; remaining order slots count persisted admissions only.",
                 "Order journeys project persisted submission, rejection-review, reconciliation, terminal-clearance, ledger-posting, and correction facts without applying any transition.",
+                "A post-ledger journey closes only when canonical Account Truth evidence covers the current ledger and remains bound to the applicable posting or a newer correction review.",
                 "The attention queue evaluates every bounded source row and prioritizes unresolved critical outcomes before newer lower-risk or closed journeys.",
                 "A paused session has no resume action; recovery requires a separate signed equal-or-narrower replacement.",
             ],
         }
+
+    def _read_account_truth_evidence(
+        self,
+        *,
+        required: bool,
+        blockers: list[str],
+    ) -> dict[str, Any]:
+        if not required or not callable(self._account_truth_evidence_reader):
+            return {}
+        try:
+            evidence = self._account_truth_evidence_reader() or {}
+        except Exception:
+            blockers.append("post_ledger_account_truth_source_failed")
+            return {}
+        if not isinstance(evidence, dict):
+            blockers.append("post_ledger_account_truth_source_invalid")
+            return {}
+        return dict(evidence)
 
     def _read_rows(
         self,
@@ -625,6 +651,7 @@ def _order_journey_summary(
     posting_by_clearance: dict[str, dict[str, Any]],
     correction_by_posting: dict[str, dict[str, Any]],
     rejection_review: dict[str, Any],
+    account_truth_evidence: dict[str, Any],
 ) -> dict[str, Any]:
     submit_intent_id = str(intent.get("submit_intent_id") or "")
     order_id = str(intent.get("order_id") or "")
@@ -635,12 +662,23 @@ def _order_journey_summary(
     posting = posting_by_clearance.get(clearance_id, {}) if clearance_id else {}
     posting_id = str(posting.get("posting_id") or "")
     correction = correction_by_posting.get(posting_id, {}) if posting_id else {}
+    account_truth_review = _post_ledger_account_truth_review(
+        posting=posting,
+        correction=correction,
+        evidence=account_truth_evidence,
+    )
 
     suggested_action = str(reconciliation_item.get("suggested_action") or "")
     submitted = submission_status == "submitted"
-    if correction:
+    if correction and account_truth_review["complete"]:
+        status = "ledger_corrected_account_truth_confirmed"
+        next_action = "no_action_order_journey_complete"
+    elif correction:
         status = "ledger_corrected_account_truth_review_required"
         next_action = "review_account_truth_after_ledger_correction"
+    elif posting and account_truth_review["complete"]:
+        status = "ledger_posted_account_truth_confirmed"
+        next_action = "no_action_order_journey_complete"
     elif posting:
         status = "ledger_posted_account_truth_review_required"
         next_action = "review_account_truth_after_ledger_posting"
@@ -779,6 +817,7 @@ def _order_journey_summary(
                     correction.get("post_ledger_cutoff_id") or 0
                 ),
             },
+            account_truth_review,
         ],
         "reads_persisted_facts_only": True,
         "provider_contact_performed": False,
@@ -786,6 +825,102 @@ def _order_journey_summary(
         "broker_cancel_performed": False,
         "ledger_mutation_performed": False,
         "authority_changed": False,
+    }
+
+
+def _post_ledger_account_truth_review(
+    *,
+    posting: dict[str, Any],
+    correction: dict[str, Any],
+    evidence: dict[str, Any],
+) -> dict[str, Any]:
+    required = bool(posting)
+    if not required:
+        return {
+            "key": "post_ledger_account_truth",
+            "status": "not_applicable",
+            "evidence_id": "",
+            "complete": False,
+            "required": False,
+            "account_truth_gate_status": "not_evaluated",
+            "ledger_coverage_status": "not_evaluated",
+            "post_ledger_cutoff_id": 0,
+            "blockers": [],
+        }
+
+    blockers: list[str] = []
+    ledger_coverage = _json_object(evidence.get("ledger_coverage"))
+    if evidence.get("status") != "clear":
+        blockers.append("post_ledger_account_truth_not_clear")
+    if evidence.get("gate_status") != "pass":
+        blockers.append("post_ledger_account_truth_gate_not_pass")
+    if evidence.get("reconciliation_status") not in {"clear", "pass"}:
+        blockers.append("post_ledger_account_truth_reconciliation_not_clear")
+    unresolved_mismatch_count = _integer(evidence.get("unresolved_mismatch_count"))
+    if unresolved_mismatch_count is None:
+        blockers.append("post_ledger_account_truth_mismatch_count_invalid")
+    elif unresolved_mismatch_count != 0:
+        blockers.append("post_ledger_account_truth_mismatch_unresolved")
+    if evidence.get("data_freshness_status") != "fresh":
+        blockers.append("post_ledger_account_truth_not_fresh")
+    if ledger_coverage.get("status") != "covered":
+        blockers.append("post_ledger_account_truth_ledger_not_covered")
+    if not str(evidence.get("import_run_id") or ""):
+        blockers.append("post_ledger_account_truth_import_identity_missing")
+    if not str(evidence.get("source_fingerprint") or ""):
+        blockers.append("post_ledger_account_truth_fingerprint_missing")
+    if evidence.get("does_not_mutate_production_ledger") is not True:
+        blockers.append("post_ledger_account_truth_ledger_boundary_invalid")
+    if evidence.get("does_not_issue_execution_authority") is not True:
+        blockers.append("post_ledger_account_truth_authority_boundary_invalid")
+    if evidence.get("broker_submission_enabled") is not False:
+        blockers.append("post_ledger_account_truth_submission_boundary_invalid")
+
+    captured_at = _parse_datetime(str(evidence.get("captured_at") or ""))
+    latest_fact = correction or posting
+    latest_fact_at = _parse_datetime(
+        str(
+            latest_fact.get("applied_at")
+            or latest_fact.get("recorded_at")
+            or latest_fact.get("created_at")
+            or ""
+        )
+    )
+    same_posting_import = bool(
+        not correction
+        and str(posting.get("account_truth_import_run_id") or "")
+        and str(posting.get("account_truth_import_run_id") or "")
+        == str(evidence.get("import_run_id") or "")
+    )
+    if captured_at is None:
+        blockers.append("post_ledger_account_truth_timestamp_invalid")
+    elif latest_fact_at is None:
+        if not same_posting_import:
+            blockers.append("post_ledger_fact_timestamp_invalid")
+    elif captured_at <= latest_fact_at and not same_posting_import:
+        blockers.append("post_ledger_account_truth_predates_latest_fact")
+
+    cutoff = _integer(
+        (correction or posting).get("post_ledger_cutoff_id")
+        or posting.get("post_ledger_cutoff_id")
+        or 0
+    )
+    if cutoff is None or (correction and cutoff <= 0):
+        blockers.append("post_ledger_cutoff_invalid")
+        cutoff = 0
+    unique_blockers = list(dict.fromkeys(blockers))
+    return {
+        "key": "post_ledger_account_truth",
+        "status": "pass" if not unique_blockers else "blocked",
+        "evidence_id": str(evidence.get("import_run_id") or ""),
+        "complete": not unique_blockers,
+        "required": True,
+        "account_truth_gate_status": str(evidence.get("gate_status") or "missing"),
+        "ledger_coverage_status": str(ledger_coverage.get("status") or "missing"),
+        "source_fingerprint": str(evidence.get("source_fingerprint") or ""),
+        "captured_at": str(evidence.get("captured_at") or ""),
+        "post_ledger_cutoff_id": cutoff,
+        "blockers": unique_blockers,
     }
 
 
@@ -823,6 +958,13 @@ def _parse_datetime(value: str) -> datetime | None:
     except (TypeError, ValueError):
         return None
     return _aware_utc(parsed)
+
+
+def _integer(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _json_object(value: Any) -> dict[str, Any]:

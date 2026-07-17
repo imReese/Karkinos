@@ -52,6 +52,9 @@ def create_router() -> APIRouter:
 
     @r.get("/cockpit")
     async def get_automation_cockpit() -> dict[str, Any]:
+        from server.account_truth_gate import (
+            build_latest_account_truth_promotion_evidence,
+        )
         from server.app import get_app_state
         from server.services.automation_cockpit import AutomationCockpitService
 
@@ -60,6 +63,9 @@ def create_router() -> APIRouter:
             db=state.db,
             trading_controls=getattr(state, "trading_controls", None),
             broker_connectors=_broker_connectors(state),
+            account_truth_evidence_reader=(
+                lambda: build_latest_account_truth_promotion_evidence(state)
+            ),
         ).summary()
 
     @r.get("/policies")

@@ -124,6 +124,12 @@ fingerprint，并在导出时重新核验证据；结果只是供人工复制的
 冲突复核人或证据 drift 会 fail closed。该审计写入不会查询、重试、提交、撤单，也不会修改 OMS、
 ledger、risk、Account Truth、interlock 或任何权限。
 
+Operations 的订单旅程现在以 canonical Account Truth 作为入账后的最终证据阶段：只有新鲜、完整、
+无未解决差异且覆盖当前 ledger 的对账结果才会闭环；部分、降级、陈旧或早于 append-only correction
+的证据继续进入人工复核队列。同一 import 的不可变 posting lineage 可以证明对应入账，但不能掩盖
+之后无关的 ledger drift。该 GET 投影不会联系 provider，也不会修改 Account Truth、OMS、ledger、
+risk、kill switch、broker 或资本权限。
+
 ### AI 研究
 
 AI workflow 只能读取已持久化、证据绑定的只读投影。模型输出是带引用的非权威研究，不能成为

@@ -77,6 +77,19 @@ const controlledOrderJourneyFixture: ControlledOrderJourney = {
       complete: false,
       required: false,
     },
+    {
+      key: 'post_ledger_account_truth',
+      status: 'blocked',
+      evidence_id: 'account-truth-import-fixture',
+      complete: false,
+      required: true,
+      account_truth_gate_status: 'degraded',
+      ledger_coverage_status: 'covered',
+      source_fingerprint: 'a'.repeat(64),
+      captured_at: '2026-07-13T07:59:30+00:00',
+      post_ledger_cutoff_id: 42,
+      blockers: ['post_ledger_account_truth_gate_not_pass'],
+    },
   ],
   reads_persisted_facts_only: true,
   provider_contact_performed: false,
@@ -2377,6 +2390,13 @@ test('surfaces bounded controlled execution evidence without live actions', asyn
   expect(orderJourney.textContent).toContain('Terminal clearance');
   expect(orderJourney.textContent).toContain('Reconciled ledger posting');
   expect(orderJourney.textContent).toContain('Append-only correction');
+  expect(orderJourney.textContent).toContain('Post-ledger Account Truth');
+  expect(orderJourney.textContent).toContain(
+    'Account Truth: Degraded · Ledger coverage: Covered',
+  );
+  expect(orderJourney.textContent).toContain(
+    'Review reason: Account Truth gate did not pass',
+  );
   expect(orderJourney.textContent).toContain('Terminal: Filled · Fills 1');
   expect(orderJourney.textContent).toContain('ledger cutoff #42');
   expect(orderJourney.textContent).toContain(

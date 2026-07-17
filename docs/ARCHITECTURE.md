@@ -209,7 +209,7 @@ a provider, create/retry/cancel an order, mutate OMS/ledger/Account Truth/risk/
 kill switch/interlock, or change capital or execution authority. Any later order
 starts as a new Decision and must pass every gate again.
 
-`karkinos.controlled_execution_operator_view.v3` evaluates every bounded
+`karkinos.controlled_execution_operator_view.v4` evaluates every bounded
 persisted controlled intent before selecting the operator's next action. The
 chronologically latest journey remains available for audit compatibility, but
 the primary attention journey is selected by fail-closed severity: unknown or
@@ -218,6 +218,15 @@ posting, Account Truth follow-up, and already closed rejection reviews. The
 compact attention queue makes older unfinished journeys visible even after a
 newer journey is recorded. Its GET path reads persisted facts only and cannot
 query a gateway, submit, cancel, post a ledger event, or change authority.
+The final `post_ledger_account_truth` stage consumes the canonical Account
+Truth promotion evidence rather than recomputing reconciliation. It closes a
+posted journey only when the gate passes, evidence is fresh, reconciliation is
+clear, no mismatch remains, and current-ledger coverage is `covered`. Immutable
+same-import posting lineage may satisfy that coverage; an append-only
+correction always requires evidence captured after the correction. Missing,
+partial, degraded, stale, or boundary-invalid evidence remains in the attention
+queue. This read-side closure changes no Account Truth, ledger, OMS, risk,
+kill-switch, broker, or capital-authority state.
 
 An open exact-identity lifecycle may be projected through
 `karkinos.manual_broker_cancellation_ticket.v1`. This provider-neutral boundary
@@ -286,8 +295,11 @@ and cost-basis delta. Missing snapshots or any unrelated delta still block. On
 posting, ledger-coverage logic recognizes only ledger rows whose immutable
 posting lineage points to the same broker import; any unrelated later ledger
 fact makes the evidence stale. The post-apply result publishes a new valuation
-snapshot and requires Account Truth to reconcile again; otherwise it reports
-manual review required rather than silently claiming success.
+snapshot. The operator journey then consumes canonical Account Truth evidence:
+exact same-import posting lineage may already reconcile, while correction or
+unrelated later-ledger drift requires a newer complete import. Any non-pass or
+partial result reports manual review required rather than silently claiming
+success.
 
 ### Evidence-bound strategy contribution
 

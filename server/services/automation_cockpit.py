@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 from server.services.automation_alerts import AutomationAlertService
 from server.services.automation_control import AutomationControlService
@@ -24,10 +24,12 @@ class AutomationCockpitService:
         db: Any,
         trading_controls: Any | None,
         broker_connectors: list[Any] | None = None,
+        account_truth_evidence_reader: Callable[[], dict[str, Any]] | None = None,
     ) -> None:
         self._db = db
         self._trading_controls = trading_controls
         self._broker_connectors = broker_connectors or []
+        self._account_truth_evidence_reader = account_truth_evidence_reader
 
     def summary(self) -> dict[str, Any]:
         automation_status = AutomationControlService(
@@ -58,7 +60,8 @@ class AutomationCockpitService:
             "gateways": gateways,
             "connector_registrations": connector_registrations,
             "controlled_execution": ControlledExecutionOperatorViewService(
-                db=self._db
+                db=self._db,
+                account_truth_evidence_reader=self._account_truth_evidence_reader,
             ).summary(),
             "open_alert_count": len(open_alerts),
             "open_alerts": open_alerts,

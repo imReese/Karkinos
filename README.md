@@ -87,8 +87,11 @@ Operations now keeps chronological history separate from operator priority.
 Every bounded persisted controlled-order journey is evaluated, and an older
 unknown, prepared, or open-order outcome remains ahead of a newer lower-risk or
 closed journey. The compact attention queue shows the exact safe next action
-for each item. It is a read-only projection and cannot contact a provider or
-perform any trading, ledger, risk, kill-switch, or authority mutation.
+for each item. Its final Account Truth stage now closes only from the canonical
+fresh, complete, current-ledger-covered reconciliation; partial, degraded,
+stale, or pre-correction evidence stays open for review. It is a read-only
+projection and cannot contact a provider or perform any trading, ledger, risk,
+kill-switch, or authority mutation.
 
 For a controlled order whose latest exact persisted lifecycle is still open or
 partially filled, the same journey can prepare a provider-neutral manual
