@@ -220,15 +220,17 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="app-root min-h-[100dvh] w-full">
       <div className="app-shell-frame flex h-[100dvh] min-h-[100dvh] min-w-0 w-full">
         <div
-          className={`fixed inset-0 z-30 bg-[color-mix(in_srgb,var(--app-mantle)_54%,transparent)] transition lg:hidden ${
+          className={`fixed inset-0 z-[90] bg-[color-mix(in_srgb,var(--app-mantle)_54%,transparent)] transition lg:hidden ${
             mobileNavOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
           }`}
+          data-testid="mobile-navigation-backdrop"
           aria-hidden={!mobileNavOpen}
           onClick={() => setMobileNavOpen(false)}
         />
 
         <aside
-          className={`app-shell-sidebar fixed inset-y-0 left-0 z-40 flex w-[min(84vw,320px)] flex-col border-r border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[var(--app-mantle)] px-5 py-6 transition-[width,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] lg:relative lg:h-full ${desktopNavExpanded ? 'lg:w-[252px] lg:px-5' : 'lg:w-[68px] lg:px-3'} lg:translate-x-0 ${
+          id="app-shell-navigation"
+          className={`app-shell-sidebar fixed inset-y-0 left-0 z-[100] flex w-[min(84vw,320px)] flex-col border-r border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[var(--app-mantle)] px-5 py-6 transition-[width,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] lg:relative lg:h-full ${desktopNavExpanded ? 'lg:w-[252px] lg:px-5' : 'lg:w-[68px] lg:px-3'} lg:translate-x-0 ${
             mobileNavOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
           aria-label={copy.shell.navigation}
@@ -432,19 +434,37 @@ export function AppShell({ children }: { children: ReactNode }) {
                 />
               </div>
 
-              <div className="flex min-w-0 shrink-0 flex-row items-center justify-end gap-3 self-center whitespace-nowrap sm:gap-4">
+              <div className="ml-auto flex min-w-0 shrink-0 flex-row items-center justify-end gap-3 self-center whitespace-nowrap sm:gap-4">
                 <button
                   type="button"
-                  className="app-button-secondary hidden h-8 rounded-2xl px-3 text-sm sm:inline-flex lg:hidden"
+                  className="app-button-secondary inline-flex h-8 w-8 items-center justify-center rounded-2xl p-0 text-sm sm:w-auto sm:px-3 lg:hidden"
+                  data-testid="mobile-navigation-toggle"
                   aria-label={
                     mobileNavOpen
                       ? copy.shell.closeNavigation
                       : copy.shell.openNavigation
                   }
+                  aria-controls="app-shell-navigation"
                   aria-expanded={mobileNavOpen}
                   onClick={() => setMobileNavOpen((open) => !open)}
                 >
-                  {copy.shell.navigation}
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    aria-hidden="true"
+                    className="h-4 w-4 sm:hidden"
+                    data-testid="mobile-navigation-icon"
+                  >
+                    <path d="M4 7h16" />
+                    <path d="M4 12h16" />
+                    <path d="M4 17h16" />
+                  </svg>
+                  <span className="hidden sm:inline">
+                    {copy.shell.navigation}
+                  </span>
                 </button>
 
                 <div className="flex min-w-0 flex-row items-center gap-2 sm:gap-3">
