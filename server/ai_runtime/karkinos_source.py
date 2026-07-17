@@ -118,6 +118,17 @@ class PersistedKarkinosCaptureSource:
                         run_id=str(request.paper_shadow_run_id or ""),
                     )
                 )
+            elif evidence_type == CaptureEvidenceType.STRATEGY_CONTRIBUTION:
+                projections.append(
+                    _strategy_contribution_projection(
+                        self._state,
+                        db=db,
+                        tool_name=tool_name,
+                        strategy_id=str(request.strategy_id or ""),
+                        identity=identity,
+                        fallback_as_of=str(portfolio.valuation_as_of),
+                    )
+                )
             else:  # pragma: no cover - enum construction prevents this path
                 raise CaptureSelectionError(
                     f"unsupported evidence type: {evidence_type}"
@@ -215,6 +226,114 @@ def _operations_evidence_status(
         if int(health.get("degraded") or 0) > 0:
             return "degraded"
     return "complete"
+
+
+def _strategy_contribution_projection(
+    state: Any,
+    *,
+    db: Any,
+    tool_name: str,
+    strategy_id: str,
+    identity: tuple[str, int, str],
+    fallback_as_of: str,
+) -> CapturedProjection:
+    """Wrap the existing contribution projection without recalculating it."""
+    from server.routes.account_strategy import (
+        _CONTROL_KEY,
+        _assignment_from_payload,
+        _build_contribution_report,
+        _default_assignment,
+    )
+
+    reader = getattr(db, "get_runtime_control_sync", None)
+    assignment_payload = reader(_CONTROL_KEY) if callable(reader) else None
+    assignment = (
+        _assignment_from_payload(
+            assignment_payload,
+            fallback_config=state.config,
+        )
+        if isinstance(assignment_payload, dict)
+        else _default_assignment(state.config)
+    )
+    if assignment.strategy_id != strategy_id:
+        raise CaptureSelectionError(
+            "selected strategy changed before contribution evidence capture"
+        )
+
+    report = _build_contribution_report(db, assignment)
+    report_payload = report.model_dump(mode="json")
+    status = _strategy_contribution_evidence_status(report_payload)
+    _require_strategy_contribution_identity(
+        report_payload,
+        expected=identity,
+        require_bound=status == "complete",
+    )
+    return CapturedProjection(
+        tool_name=tool_name,
+        status=status,
+        as_of=str(report_payload.get("valuation_as_of") or fallback_as_of),
+        source_schema_version="karkinos.ai.strategy_contribution_evidence.v1",
+        payload={
+            "schema_version": "karkinos.ai.strategy_contribution_evidence.v1",
+            "strategy_id": strategy_id,
+            "valuation_snapshot_id": identity[0],
+            "ledger_cutoff_id": identity[1],
+            "ledger_fingerprint": identity[2],
+            "strategy_contribution_report": report_payload,
+            "persisted_facts_only": True,
+            "provider_contacted": False,
+            "database_writes_performed": False,
+            "authorizes_execution": False,
+        },
+    )
+
+
+def _strategy_contribution_evidence_status(report: dict[str, Any]) -> str:
+    blockers = report.get("blockers")
+    has_blockers = isinstance(blockers, list) and bool(blockers)
+    if (
+        report.get("contribution_status") == "evidence_bound_from_posted_fills"
+        and report.get("evidence_binding_status") == "bound"
+        and report.get("valuation_scope_status") == "complete"
+        and report.get("contribution_fingerprint")
+        and not has_blockers
+    ):
+        return "complete"
+    if (
+        has_blockers
+        or report.get("evidence_binding_status") == "blocked"
+        or report.get("valuation_scope_status") == "blocked"
+    ):
+        return "blocked"
+    return "degraded"
+
+
+def _require_strategy_contribution_identity(
+    report: dict[str, Any],
+    *,
+    expected: tuple[str, int, str],
+    require_bound: bool,
+) -> None:
+    fields = (
+        ("valuation_snapshot_id", expected[0]),
+        ("ledger_cutoff_id", expected[1]),
+        ("ledger_fingerprint", expected[2]),
+    )
+    missing_fields: list[str] = []
+    for field_name, expected_value in fields:
+        actual = report.get(field_name)
+        if actual in (None, "", 0):
+            missing_fields.append(field_name)
+            continue
+        if actual != expected_value:
+            raise EvidenceIdentityMismatch(
+                f"strategy contribution {field_name} drifted from capture context"
+            )
+    if require_bound and missing_fields:
+        raise EvidenceIdentityMismatch(
+            "complete strategy contribution is missing valuation identity: "
+            + ", ".join(missing_fields)
+        )
 
 
 async def _research_evidence_projection(

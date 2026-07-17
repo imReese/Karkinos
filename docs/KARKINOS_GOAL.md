@@ -65,6 +65,9 @@ action is allowed, blocked, or requires review.
 - Provider, model, agent role, workflow, tool, evidence, and memory identities
   remain separate.
 - AI tools are deny-by-default and read-only over persisted evidence.
+- Post-decision AI review may read only explicitly selected canonical outcome
+  projections bound to the same valuation snapshot and ledger cutoff; it never
+  recalculates P/L or turns a reviewed observation into authority.
 - Model output is a cited, non-authoritative research artifact. It is not an
   account fact, risk decision, capital authorization, OMS transition, broker
   instruction, or permission.

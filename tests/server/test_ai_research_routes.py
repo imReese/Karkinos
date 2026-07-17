@@ -102,6 +102,21 @@ def test_capture_route_starts_only_a_model_free_read_only_capture(monkeypatch):
 
 
 @pytest.mark.unit
+def test_capture_route_passes_exact_strategy_contribution_selection(monkeypatch):
+    service = FixtureService()
+    client = _client(monkeypatch, service)
+    payload = _payload()
+    payload["evidence_types"] = ["strategy_contribution"]
+    payload["strategy_id"] = "dual_ma"
+
+    response = client.post("/api/ai/research-contexts/capture", json=payload)
+
+    assert response.status_code == 200
+    assert service.requests[0].strategy_id == "dual_ma"
+    assert service.requests[0].requested_tools == ("strategy_contribution.read",)
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize(
     ("error", "status_code"),
     [

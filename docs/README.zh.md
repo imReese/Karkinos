@@ -78,6 +78,10 @@ paper/shadow 证据，输出 buy、sell、hold、rebalance、no-action 或 revie
 cutoff 后才可展示收益。证据缺失或漂移会给出明确人工复核步骤；策略尚无成交时不会制造虚假
 阻断。该投影不能联系 provider、写账本或授予执行与资本权限。
 
+在 Strategy Lab 中，人工可以选择把精确的当前 strategy id 与这份 canonical contribution report
+冻结进 AI 研究上下文。策略选择或 valuation/ledger identity 漂移会被拒绝；不完整的贡献证据继续
+保持 blocked，不能启动权威分析。捕获不会重算收益，也不会自行调用模型。
+
 ### Paper/Shadow 与 Operations
 
 Operations 展示数据、计划、paper/shadow、OMS、对账、告警和恢复任务。Paper/shadow 可以

@@ -145,11 +145,13 @@ function renderPanel({
   analyses = [],
   analysisReviews = [],
   backtestResultId = 7,
+  strategyId = 'dual_ma',
   tasks = [],
 }: {
   analyses?: Array<Record<string, unknown>>;
   analysisReviews?: Array<Record<string, unknown>>;
   backtestResultId?: number | null;
+  strategyId?: string | null;
   tasks?: Array<Record<string, unknown>>;
 } = {}) {
   window.localStorage.clear();
@@ -248,7 +250,10 @@ function renderPanel({
   render(
     <PreferencesProvider>
       <QueryClientProvider client={queryClient}>
-        <ResearchTaskPanel backtestResultId={backtestResultId} />
+        <ResearchTaskPanel
+          backtestResultId={backtestResultId}
+          strategyId={strategyId}
+        />
       </QueryClientProvider>
     </PreferencesProvider>,
   );
@@ -317,6 +322,58 @@ test('captures exact persisted context before recording a task', async () => {
   });
   expect(JSON.stringify(postRequests)).not.toContain('model_id');
   expect(JSON.stringify(postRequests)).not.toContain('provider_id');
+});
+
+test('explicitly binds current strategy outcome evidence by exact strategy id', async () => {
+  const { requests } = renderPanel();
+  fireEvent.click(screen.getByRole('button', { name: 'Open research tasks' }));
+  await screen.findByText('No human research task has been recorded yet.');
+  fireEvent.change(screen.getByLabelText('Research question'), {
+    target: { value: 'Review actual strategy outcomes and limitations.' },
+  });
+  fireEvent.click(
+    screen.getByRole('checkbox', {
+      name: /Bind current strategy outcome evidence/,
+    }),
+  );
+  fireEvent.click(
+    screen.getByRole('button', {
+      name: 'Capture evidence and record task',
+    }),
+  );
+
+  await screen.findByText(
+    'The task was recorded without starting model execution.',
+  );
+  const capture = requests.find((request) =>
+    request.url.includes('/api/ai/research-contexts/capture'),
+  );
+  expect(capture?.body).toMatchObject({
+    evidence_types: [
+      'portfolio',
+      'account_state',
+      'operations',
+      'account_truth',
+      'strategy_contribution',
+    ],
+    strategy_id: 'dual_ma',
+  });
+});
+
+test('does not offer strategy outcome capture without an exact strategy id', async () => {
+  renderPanel({ strategyId: null });
+  fireEvent.click(screen.getByRole('button', { name: 'Open research tasks' }));
+  await screen.findByText('No human research task has been recorded yet.');
+
+  const contributionCheckbox = screen.getByRole('checkbox', {
+    name: /Bind current strategy outcome evidence/,
+  }) as HTMLInputElement;
+  expect(contributionCheckbox.disabled).toBe(true);
+  expect(
+    screen.getByText(
+      'No exact current strategy is available for contribution capture.',
+    ),
+  ).toBeTruthy();
 });
 
 test('blocks acceptance for incomplete evidence and records revision only', async () => {

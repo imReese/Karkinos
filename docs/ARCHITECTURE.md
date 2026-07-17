@@ -327,6 +327,14 @@ Once a fill exists, incomplete ledger, valuation, or lineage evidence fails
 closed and supplies one explicit manual next action to Overview, Decision,
 Operations, and Strategy Lab.
 
+An operator may explicitly freeze this projection for AI-assisted outcome
+review through `strategy_contribution.read`. The capture request names the
+exact current `strategy_id`; the adapter reuses the canonical report, wraps it
+in the capture valuation/ledger identity, and rejects assignment or identity
+drift. Only a fully bound contribution is authoritative. No-fill, missing, or
+unreconciled results remain degraded or blocked evidence, and the capture
+performs no provider call, financial recomputation, or authority mutation.
+
 ### AI research
 
 ```text

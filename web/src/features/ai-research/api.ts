@@ -7,7 +7,8 @@ export type ResearchEvidenceType =
   | 'account_state'
   | 'operations'
   | 'research_evidence'
-  | 'account_truth';
+  | 'account_truth'
+  | 'strategy_contribution';
 
 export type ResearchTaskEvidence = {
   evidence_reference_id: string;
@@ -83,6 +84,7 @@ export type CreateHumanResearchTaskInput = {
   research_question: string;
   evidence_types: ResearchEvidenceType[];
   backtest_result_id: number | null;
+  strategy_id: string | null;
 };
 
 export type ReviewResearchTaskInput = {
@@ -225,6 +227,9 @@ export function useCreateHumanResearchTaskMutation() {
           confirmation: 'capture_read_only_research_context',
           backtest_result_id: input.evidence_types.includes('research_evidence')
             ? input.backtest_result_id
+            : null,
+          strategy_id: input.evidence_types.includes('strategy_contribution')
+            ? input.strategy_id
             : null,
         },
       );

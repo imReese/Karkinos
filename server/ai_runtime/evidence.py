@@ -40,6 +40,7 @@ CANONICAL_EVIDENCE_KINDS: Mapping[str, str] = {
     "research_evidence.read": "research_evidence_bundle",
     "account_truth.read": "account_truth_evidence",
     "paper_shadow_evidence.read": "paper_shadow_evidence",
+    "strategy_contribution.read": "strategy_contribution_evidence",
 }
 
 _EVIDENCE_STATUSES = frozenset(
