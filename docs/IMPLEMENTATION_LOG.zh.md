@@ -123,9 +123,10 @@ M4 当前逐单 dossier 的假设与风险记录：
   引用；格式错误、歧义、缺失或扫描截断都 fail closed。
 - 确定性验证覆盖无需操作员输入 fingerprint 的当前解析、最新阻断优先、歧义引用、精确 replay、
   append-only 幂等、OMS 不变、严格请求 schema、面板折叠时零读取、empty/blocked 状态、
-  Automation/Decision ready/blocked 下钻、来源漂移/失败、离线签名，以及不存在 submit/cancel 请求。
-- 风险影响为 low：Automation/Decision 仅增加 fail-closed 投影和 Trading 链接；列表与 preview
-  只读持久化事实，最终写入仍是既有逐单 confirmation 审计事实，
+  Automation/Decision ready/blocked 下钻、来源漂移/失败、显式 scan 阻断告警的重启幂等、离线签名，
+  以及不存在 submit/cancel 请求。
+- 风险影响为 low：GET 仅增加 fail-closed 投影和 Trading 链接；显式 scan 可写入幂等 automation
+  alert 行，逐单 confirmation 写入仍不授权执行，
   且不具备授权能力。OMS、ledger、Account Truth、risk、kill switch、provider、submit、cancel 与
   capital authority 均不改变；没有选择、注册或宣称支持任何 provider/adapter。
 

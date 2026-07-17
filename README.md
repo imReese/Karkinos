@@ -112,6 +112,8 @@ risk, kill switch, or capital authority. Missing, ambiguous, newer blocked, or
 bounded-scan-incomplete evidence remains blocked.
 Automation Cockpit and Decision project the same persisted-only candidates as a
 ready/blocked summary and provide only a non-submitting handoff to Trading.
+Only an explicit alert scan records idempotent warnings for source or candidate
+blockers; review-ready candidates remain normal tasks rather than incidents.
 
 For a reconciled controlled order, the Operations/Decision journey can now
 complete both signed terminal clearance and the following reconciled-ledger

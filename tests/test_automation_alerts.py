@@ -31,6 +31,26 @@ def _required_gateway_evidence() -> dict:
     }
 
 
+def _current_per_order_source(candidates: list[dict]) -> dict:
+    return {
+        "schema_version": "karkinos.current_per_order_confirmation_candidates.v1",
+        "candidate_count": len(candidates),
+        "candidates": candidates,
+        "truncated": False,
+        "reads_persisted_facts_only": True,
+        "provider_contact_performed": False,
+        "runtime_connector_query_performed": False,
+        "does_not_mutate_oms": True,
+        "does_not_mutate_production_ledger": True,
+        "does_not_mutate_risk": True,
+        "does_not_mutate_kill_switch": True,
+        "does_not_change_capital_authority": True,
+        "broker_submission_enabled": False,
+        "broker_cancel_enabled": False,
+        "authorizes_execution": False,
+    }
+
+
 def _confirmed_order(
     db: AppDatabase,
     *,
@@ -673,6 +693,177 @@ def test_alert_scan_records_paper_shadow_order_divergence(tmp_path) -> None:
     assert alert["payload"]["does_not_submit_broker_order"] is True
     assert alert["payload"]["does_not_mutate_production_ledger"] is True
     assert alert["payload"]["requires_manual_review"] is True
+
+
+def test_alert_scan_records_blocked_current_per_order_evidence_once_after_restart(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "alerts.db")
+    db.init_sync()
+    reader_calls: list[str] = []
+    source = _current_per_order_source(
+        [
+            {
+                "order_id": "OMS-READY-1",
+                "symbol": "510300.SH",
+                "side": "buy",
+                "quantity": "100",
+                "order_fingerprint": "a" * 64,
+                "dossier_fingerprint": "b" * 64,
+                "review_status": "review_ready_non_submitting",
+                "review_ready": True,
+                "review_blockers": [],
+                "evidence_resolution_status": "resolved",
+                "confirmation_status": "missing",
+                "authorizes_execution": False,
+            },
+            {
+                "order_id": "OMS-BLOCKED-1",
+                "symbol": "600519.SH",
+                "side": "sell",
+                "quantity": "10",
+                "order_fingerprint": "c" * 64,
+                "dossier_fingerprint": "d" * 64,
+                "review_status": "blocked_review",
+                "review_ready": False,
+                "review_blockers": ["current_capital_evaluation_not_found"],
+                "evidence_resolution_status": "missing",
+                "confirmation_status": "missing",
+                "authorizes_execution": False,
+            },
+        ]
+    )
+
+    def reader() -> dict:
+        reader_calls.append("read")
+        return source
+
+    first = AutomationAlertService(
+        db=db,
+        trading_controls=None,
+        current_per_order_dossier_reader=reader,
+    ).scan()
+    restarted = AutomationAlertService(
+        db=db,
+        trading_controls=None,
+        current_per_order_dossier_reader=reader,
+    ).scan()
+
+    assert reader_calls == ["read", "read"]
+    assert first["generated_alert_count"] == 1
+    assert restarted["generated_alert_count"] == 1
+    assert first["open_alert_count"] == 1
+    assert restarted["open_alert_count"] == 1
+    assert first["alerts"][0]["id"] == restarted["alerts"][0]["id"]
+    alert = restarted["alerts"][0]
+    assert alert["category"] == "per_order_evidence_review"
+    assert alert["source_ref"] == "OMS-BLOCKED-1"
+    assert alert["payload"]["order_id"] == "OMS-BLOCKED-1"
+    assert alert["payload"]["suggested_action"] == (
+        "resolve_current_per_order_evidence_blockers"
+    )
+    assert alert["payload"]["review_blockers"] == [
+        "current_capital_evaluation_not_found"
+    ]
+    assert alert["payload"]["reads_persisted_facts_only"] is True
+    assert alert["payload"]["provider_contact_performed"] is False
+    assert alert["payload"]["runtime_connector_query_performed"] is False
+    assert alert["payload"]["does_not_submit_broker_order"] is True
+    assert alert["payload"]["does_not_cancel_broker_order"] is True
+    assert alert["payload"]["does_not_mutate_oms"] is True
+    assert alert["payload"]["does_not_mutate_production_ledger"] is True
+    assert alert["payload"]["does_not_change_capital_authority"] is True
+    assert alert["payload"]["authorizes_execution"] is False
+    assert db.list_oms_orders_sync(limit=10) == []
+
+    AutomationAlertService(db=db, trading_controls=None).acknowledge(
+        alert["id"], actor="operator-review"
+    )
+    after_acknowledgement = AutomationAlertService(
+        db=db,
+        trading_controls=None,
+        current_per_order_dossier_reader=reader,
+    ).scan()
+    assert reader_calls == ["read", "read", "read"]
+    assert after_acknowledgement["generated_alert_count"] == 1
+    assert after_acknowledgement["open_alert_count"] == 0
+    assert after_acknowledgement["alerts"] == []
+    acknowledged = db.list_automation_alerts_sync(status="acknowledged")
+    assert len(acknowledged) == 1
+    assert acknowledged[0]["acknowledged_by"] == "operator-review"
+
+
+def test_alert_scan_blocks_untrusted_current_per_order_source_without_candidates(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "alerts.db")
+    db.init_sync()
+    source = _current_per_order_source(
+        [
+            {
+                "order_id": "OMS-UNTRUSTED-1",
+                "symbol": "510300.SH",
+                "side": "buy",
+                "quantity": "100",
+                "review_status": "review_ready_non_submitting",
+                "review_ready": True,
+                "review_blockers": [],
+                "authorizes_execution": False,
+            }
+        ]
+    )
+    source["schema_version"] = "karkinos.current_per_order_confirmation_candidates.v0"
+
+    result = AutomationAlertService(
+        db=db,
+        trading_controls=None,
+        current_per_order_dossier_reader=lambda: source,
+    ).scan()
+
+    assert result["open_alert_count"] == 1
+    alert = result["alerts"][0]
+    assert alert["alert_key"].startswith("current_per_order_review:source:")
+    assert alert["source_ref"] == "current_per_order_source"
+    assert alert["payload"]["source_blockers"] == [
+        "current_per_order_source_schema_invalid"
+    ]
+    assert alert["payload"]["suggested_action"] == (
+        "review_current_per_order_source_blockers"
+    )
+    assert "order_id" not in alert["payload"]
+    assert alert["payload"]["provider_contact_performed"] is False
+    assert alert["payload"]["authorizes_execution"] is False
+
+
+def test_alert_scan_does_not_alert_for_ready_current_per_order_review(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "alerts.db")
+    db.init_sync()
+    source = _current_per_order_source(
+        [
+            {
+                "order_id": "OMS-READY-1",
+                "symbol": "510300.SH",
+                "side": "buy",
+                "quantity": "100",
+                "review_status": "review_ready_non_submitting",
+                "review_ready": True,
+                "review_blockers": [],
+                "authorizes_execution": False,
+            }
+        ]
+    )
+
+    result = AutomationAlertService(
+        db=db,
+        trading_controls=None,
+        current_per_order_dossier_reader=lambda: source,
+    ).scan()
+
+    assert result["generated_alert_count"] == 0
+    assert result["open_alert_count"] == 0
+    assert result["alerts"] == []
 
 
 def test_alert_acknowledgement_marks_alert_acknowledged(tmp_path) -> None:

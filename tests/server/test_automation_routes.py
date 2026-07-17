@@ -81,6 +81,44 @@ def test_automation_cockpit_route_includes_runtime_connector_snapshot(
     assert db.list_broker_gateway_events_sync() == []
 
 
+def test_automation_cockpit_get_projects_blocked_current_review_without_alert_write(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    db = AppDatabase(tmp_path / "automation.db")
+    db.init_sync()
+    client = _client_for_db(monkeypatch, db)
+    oms = OmsService(db=db)
+    order = oms.create_order_intent(
+        intent_key="daily:2026-07-17:510300:buy",
+        symbol="510300.SH",
+        side="buy",
+        asset_class="fund",
+        quantity=100,
+        order_type="market",
+        limit_price=None,
+        source="daily_trading_plan",
+        source_ref="shadow:2026-07-17:fixture",
+    )
+    oms.transition_order(
+        order["order_id"],
+        to_status="manually_confirmed",
+        reason="operator confirmed fixture evidence",
+        actor="test",
+    )
+
+    response = client.get("/api/automation/cockpit")
+
+    assert response.status_code == 200
+    current = response.json()["current_per_order_reviews"]
+    assert current["status"] == "blocked_review"
+    assert current["candidate_count"] == 1
+    assert current["blocked_review_count"] == 1
+    assert current["provider_contact_performed"] is False
+    assert current["authorizes_execution"] is False
+    assert db.list_automation_alerts_sync() == []
+
+
 def test_automation_policy_route_rejects_live_mode(tmp_path, monkeypatch) -> None:
     db = AppDatabase(tmp_path / "automation.db")
     db.init_sync()
@@ -168,7 +206,19 @@ def test_automation_alert_routes_scan_list_and_ack(tmp_path, monkeypatch) -> Non
 
     scan = client.post("/api/automation/alerts/scan")
     assert scan.status_code == 200
-    assert scan.json()["open_alert_count"] == 2
+    assert scan.json()["open_alert_count"] == 3
+    current_alert = next(
+        alert
+        for alert in scan.json()["alerts"]
+        if alert["category"] == "per_order_evidence_review"
+    )
+    assert current_alert["source_ref"] == order["order_id"]
+    assert current_alert["payload"]["provider_contact_performed"] is False
+    assert current_alert["payload"]["does_not_submit_broker_order"] is True
+    assert current_alert["payload"]["does_not_cancel_broker_order"] is True
+    assert current_alert["payload"]["does_not_mutate_oms"] is True
+    assert current_alert["payload"]["does_not_mutate_production_ledger"] is True
+    assert current_alert["payload"]["authorizes_execution"] is False
 
     listed = client.get("/api/automation/alerts")
     assert listed.status_code == 200

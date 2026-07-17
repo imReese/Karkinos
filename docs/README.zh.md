@@ -130,8 +130,8 @@ Trading 现在还提供默认折叠、非提交的逐单证据复核：只列出
 fingerprint。三分钟离线签名只能追加一条精确复核事实，不能 submit/cancel、联系 provider，或修改
 OMS、ledger、risk、kill switch 与 capital authority；缺失、歧义、较新阻断或有界扫描不完整时
 继续 blocked。
-Automation Cockpit 与 Decision 只投影同一批 persisted-only 候选的 ready/blocked 摘要，并仅
-提供回到 Trading 的非提交下钻，不生成任何券商动作。
+Automation Cockpit 与 Decision 投影同一批 persisted-only 候选；只有显式 alert scan 才为来源或
+候选阻断写入幂等告警，ready 候选不伪装异常，且仅提供回到 Trading 的非提交下钻。
 
 Execution reconciliation 到 terminal clearance、以及 clearance 到 posting 的步骤现在都可在各自
 显式打开的操作员复核中完成：先查看 deterministic preview，再使用短时离线签名并执行最终确认；
