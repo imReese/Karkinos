@@ -159,8 +159,12 @@ def create_router() -> APIRouter:
     ) -> dict[str, Any]:
         from server.app import get_app_state
         from server.services.automation_alerts import AutomationAlertService
+        from server.services.current_per_order_dossier_factory import (
+            build_current_per_order_dossier_service,
+        )
 
         state = get_app_state()
+        current_per_order_dossiers = build_current_per_order_dossier_service(state)
         return AutomationAlertService(
             db=state.db,
             trading_controls=getattr(state, "trading_controls", None),
@@ -173,6 +177,9 @@ def create_router() -> APIRouter:
             account_truth=request.account_truth if request is not None else None,
             paper_shadow_run=(
                 request.paper_shadow_run if request is not None else None
+            ),
+            current_per_order_dossier_reader=(
+                lambda: current_per_order_dossiers.list_candidates(limit=20)
             ),
         ).scan()
 

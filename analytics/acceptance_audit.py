@@ -6898,11 +6898,13 @@ def build_persisted_controlled_execution_operator_view_acceptance_audit() -> (
                 key="operator_and_alert_read_only_surfaces",
                 checkbox_text=(
                     "* [x] Decision Cockpit and automation alerts expose sanitized "
-                    "persisted evidence and safety flags without submit, cancel, "
-                    "resume, ledger-sync, OMS mutation, or capital-expansion controls."
+                    "persisted evidence and safety flags; an explicit scan records "
+                    "idempotent current per-order source/candidate blockers without "
+                    "submit, cancel, ledger, OMS, risk, or authority mutation."
                 ),
                 evidence_paths=(
                     "server/services/automation_alerts.py",
+                    "server/services/current_per_order_review_projection.py",
                     "web/src/features/decision/components/decision-cockpit-page.tsx",
                     "tests/test_automation_alerts.py",
                     "web/src/features/decision/components/decision-cockpit-page.test.tsx",
@@ -6917,8 +6919,9 @@ def build_persisted_controlled_execution_operator_view_acceptance_audit() -> (
                 checkbox_text=(
                     "* [x] Deterministic fake/fixture tests cover empty defaults, "
                     "restart-safe persisted evidence, missing/blocked collector "
-                    "state, adapter-call rejection, pause and reconciliation "
-                    "visibility, and zero broker or financial-state side effects."
+                    "state, current-review source drift, idempotent blocker alerts, "
+                    "adapter-call rejection, and zero broker or financial-state "
+                    "side effects."
                 ),
                 evidence_paths=(
                     "tests/test_controlled_execution_operator_view.py",

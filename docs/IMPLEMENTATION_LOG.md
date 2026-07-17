@@ -140,8 +140,8 @@ Implemented foundation:
 M4 current per-order dossier assumptions and risk record:
 
 - The newest exact order-matching capital evaluation is authoritative even when blocked; unique prior-batch/gateway references are mandatory, and malformed, ambiguous, missing, or scan-truncated evidence fails closed.
-- Deterministic tests cover server-side resolution, newer-blocked precedence, replay/idempotence, unchanged OMS, strict schemas, collapsed/empty/blocked UI, Automation/Decision ready/blocked handoff, source drift/failure, offline proof, and no submit/cancel requests.
-- Risk is low: Automation/Decision add only a fail-closed projection and Trading link; reads use persisted facts and the only write remains the existing non-authorizing audit fact. No provider/adapter is selected and OMS, ledger, Account Truth, risk, kill switch, broker actions, and capital authority remain unchanged.
+- Deterministic tests cover server-side resolution, newer-blocked precedence, replay/idempotence, unchanged OMS, strict schemas, collapsed/empty/blocked UI, Automation/Decision handoff, source drift/failure, explicit-scan blocker-alert restart idempotence, offline proof, and no submit/cancel requests.
+- Risk is low: GET adds only a fail-closed projection and Trading link; explicit scan may write an idempotent automation-alert row, while the only confirmation write remains non-authorizing. No provider/adapter is selected and OMS, ledger, Account Truth, risk, kill switch, broker actions, and capital authority remain unchanged.
 
 M4 non-authorizing operator-package assumptions and risk record:
 

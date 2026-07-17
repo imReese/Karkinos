@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
-from typing import Any
+from typing import Any, Callable
+
+from server.services.current_per_order_review_projection import (
+    build_current_per_order_review_summary,
+)
 
 AUTOMATION_ALERT_SCHEMA_VERSION = "karkinos.automation_alert.v1"
 _FAILED_AUTOMATION_RUN_STATUSES = {
@@ -64,6 +69,7 @@ class AutomationAlertService:
         market_health: dict[str, Any] | None = None,
         account_truth: dict[str, Any] | None = None,
         paper_shadow_run: dict[str, Any] | None = None,
+        current_per_order_dossier_reader: Callable[[], dict[str, Any]] | None = None,
     ) -> None:
         self._db = db
         self._trading_controls = trading_controls
@@ -75,6 +81,7 @@ class AutomationAlertService:
         self._market_health = _object_dict(market_health)
         self._account_truth = _object_dict(account_truth)
         self._paper_shadow_run = _object_dict(paper_shadow_run)
+        self._current_per_order_dossier_reader = current_per_order_dossier_reader
 
     def scan(self) -> dict[str, Any]:
         alerts: list[dict[str, Any]] = []
@@ -86,6 +93,7 @@ class AutomationAlertService:
         alerts.extend(self._scan_market_data_health())
         alerts.extend(self._scan_account_truth())
         alerts.extend(self._scan_paper_shadow_divergence())
+        alerts.extend(self._scan_current_per_order_reviews())
         open_alerts = self.list_alerts(status="open")
         return {
             "schema_version": "karkinos.automation_alert_scan.v1",
@@ -647,6 +655,105 @@ class AutomationAlertService:
         )
         return [self._normalize_alert(alert)]
 
+    def _scan_current_per_order_reviews(self) -> list[dict[str, Any]]:
+        if self._current_per_order_dossier_reader is None:
+            return []
+        summary = build_current_per_order_review_summary(
+            self._current_per_order_dossier_reader
+        )
+        source_blockers = [str(item) for item in summary.get("source_blockers") or []]
+        if source_blockers:
+            fingerprint = _stable_fingerprint(
+                {
+                    "source_schema_version": summary.get("source_schema_version"),
+                    "source_truncated": summary.get("source_truncated"),
+                    "source_blockers": source_blockers,
+                }
+            )
+            alert = self._db.upsert_automation_alert_sync(
+                alert_key=f"current_per_order_review:source:{fingerprint}",
+                severity="warning",
+                category="per_order_evidence_review",
+                title="Current per-order review source is blocked",
+                detail=(
+                    "The persisted current per-order evidence contract cannot be "
+                    f"trusted. Blockers: {', '.join(source_blockers)}."
+                ),
+                source="current_per_order_confirmation_dossier",
+                source_ref="current_per_order_source",
+                payload={
+                    "schema_version": AUTOMATION_ALERT_SCHEMA_VERSION,
+                    "review_projection_schema_version": summary.get("schema_version"),
+                    "source_schema_version": summary.get("source_schema_version"),
+                    "source_truncated": bool(summary.get("source_truncated")),
+                    "source_blockers": source_blockers,
+                    "suggested_action": "review_current_per_order_source_blockers",
+                    "requires_manual_review": True,
+                    "alert_fingerprint": fingerprint,
+                    **_current_review_alert_boundary(summary),
+                },
+            )
+            return [self._normalize_alert(alert)]
+
+        alerts: list[dict[str, Any]] = []
+        for candidate in summary.get("candidates") or []:
+            if not isinstance(candidate, dict) or candidate.get("review_ready") is True:
+                continue
+            order_id = str(candidate.get("order_id") or "")
+            if not order_id:
+                continue
+            review_blockers = [
+                str(item) for item in candidate.get("review_blockers") or []
+            ]
+            fingerprint = _stable_fingerprint(
+                {
+                    "order_id": order_id,
+                    "order_fingerprint": candidate.get("order_fingerprint"),
+                    "dossier_fingerprint": candidate.get("dossier_fingerprint"),
+                    "review_status": candidate.get("review_status"),
+                    "review_blockers": review_blockers,
+                    "evidence_resolution_status": candidate.get(
+                        "evidence_resolution_status"
+                    ),
+                    "confirmation_status": candidate.get("confirmation_status"),
+                }
+            )
+            alert = self._db.upsert_automation_alert_sync(
+                alert_key=f"current_per_order_review:{order_id}:{fingerprint}",
+                severity="warning",
+                category="per_order_evidence_review",
+                title="Current per-order evidence requires review",
+                detail=(
+                    f"OMS order {order_id} is blocked before non-submitting "
+                    f"per-order review. Blockers: {', '.join(review_blockers)}."
+                ),
+                source="current_per_order_confirmation_dossier",
+                source_ref=order_id,
+                payload={
+                    "schema_version": AUTOMATION_ALERT_SCHEMA_VERSION,
+                    "review_projection_schema_version": summary.get("schema_version"),
+                    "source_schema_version": summary.get("source_schema_version"),
+                    "order_id": order_id,
+                    "symbol": candidate.get("symbol"),
+                    "side": candidate.get("side"),
+                    "quantity": candidate.get("quantity"),
+                    "order_fingerprint": candidate.get("order_fingerprint"),
+                    "dossier_fingerprint": candidate.get("dossier_fingerprint"),
+                    "review_status": candidate.get("review_status"),
+                    "review_blockers": review_blockers,
+                    "evidence_resolution_status": candidate.get(
+                        "evidence_resolution_status"
+                    ),
+                    "confirmation_status": candidate.get("confirmation_status"),
+                    "suggested_action": ("resolve_current_per_order_evidence_blockers"),
+                    "requires_manual_review": True,
+                    "alert_fingerprint": fingerprint,
+                    **_current_review_alert_boundary(summary),
+                },
+            )
+            alerts.append(self._normalize_alert(alert))
+        return alerts
+
     def _kill_switch_snapshot(self) -> Any | None:
         if self._trading_controls is None:
             return None
@@ -679,6 +786,32 @@ def _automation_run_suggested_action(
     ):
         return "inspect_failed_paper_shadow_run"
     return "inspect_failed_automation_run"
+
+
+def _current_review_alert_boundary(summary: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "reads_persisted_facts_only": summary.get("reads_persisted_facts_only") is True,
+        "provider_contact_performed": False,
+        "runtime_connector_query_performed": False,
+        "does_not_submit_broker_order": True,
+        "does_not_cancel_broker_order": True,
+        "does_not_mutate_oms": True,
+        "does_not_mutate_production_ledger": True,
+        "does_not_mutate_risk": True,
+        "does_not_mutate_kill_switch": True,
+        "does_not_change_capital_authority": True,
+        "authorizes_execution": False,
+    }
+
+
+def _stable_fingerprint(payload: dict[str, Any]) -> str:
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _json_object(value: Any) -> dict[str, Any]:

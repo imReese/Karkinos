@@ -2333,8 +2333,24 @@ test('hands off exact current per-order evidence to Trading without broker actio
         kill_switch_enabled: false,
       },
       gateways: [],
-      open_alert_count: 0,
-      open_alerts: [],
+      open_alert_count: 1,
+      open_alerts: [
+        {
+          id: 41,
+          alert_type: 'per_order_evidence_review',
+          severity: 'warning',
+          status: 'open',
+          title: 'Current per-order evidence requires review',
+          detail: 'OMS-CURRENT-BLOCKED-1 is blocked.',
+          created_at: '2026-07-17T16:30:00+08:00',
+          payload: {
+            suggested_action: 'resolve_current_per_order_evidence_blockers',
+            requires_manual_review: true,
+            does_not_submit_broker_order: true,
+            does_not_mutate_production_ledger: true,
+          },
+        },
+      ],
       recent_runs: [],
       promotion_states: [],
       execution_reconciliation_open_items: [],
@@ -2361,6 +2377,9 @@ test('hands off exact current per-order evidence to Trading without broker actio
   expect(handoff.textContent).not.toContain('Submit broker order');
   expect(handoff.textContent).not.toContain('Cancel broker order');
   expect(within(handoff).queryByRole('button')).toBeNull();
+  expect(
+    screen.getByTestId('decision-automation-cockpit').textContent,
+  ).toContain('Next: resolve current per-order evidence blockers');
 });
 
 test('blocks the Trading handoff when the current per-order source drifts', async () => {
@@ -2376,8 +2395,24 @@ test('blocks the Trading handoff when the current per-order source drifts', asyn
         kill_switch_enabled: false,
       },
       gateways: [],
-      open_alert_count: 0,
-      open_alerts: [],
+      open_alert_count: 1,
+      open_alerts: [
+        {
+          id: 42,
+          alert_type: 'per_order_evidence_review',
+          severity: 'warning',
+          status: 'open',
+          title: 'Current per-order review source is blocked',
+          detail: 'The persisted source contract cannot be trusted.',
+          created_at: '2026-07-17T16:31:00+08:00',
+          payload: {
+            suggested_action: 'review_current_per_order_source_blockers',
+            requires_manual_review: true,
+            does_not_submit_broker_order: true,
+            does_not_mutate_production_ledger: true,
+          },
+        },
+      ],
       recent_runs: [],
       promotion_states: [],
       execution_reconciliation_open_items: [],
@@ -2430,6 +2465,9 @@ test('blocks the Trading handoff when the current per-order source drifts', asyn
     }),
   ).toBeNull();
   expect(within(handoff).queryByRole('button')).toBeNull();
+  expect(
+    screen.getByTestId('decision-automation-cockpit').textContent,
+  ).toContain('Next: review current per-order evidence source');
 });
 
 test('surfaces broker gateway status without execution controls', async () => {

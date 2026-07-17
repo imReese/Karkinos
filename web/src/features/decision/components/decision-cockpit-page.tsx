@@ -1677,6 +1677,14 @@ function automationRecommendedActionLabel(value: string, locale: Locale) {
       en: 'review broker evidence mismatch',
       zh: '复核券商证据不匹配',
     },
+    review_current_per_order_source_blockers: {
+      en: 'review current per-order evidence source',
+      zh: '复核当前逐单证据来源',
+    },
+    resolve_current_per_order_evidence_blockers: {
+      en: 'resolve current per-order evidence blockers',
+      zh: '处理当前逐单证据阻断',
+    },
     paper_shadow_available: {
       en: 'run intraday paper/shadow',
       zh: '运行盘中 paper/shadow',

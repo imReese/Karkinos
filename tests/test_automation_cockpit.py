@@ -100,6 +100,7 @@ def test_automation_cockpit_projects_current_per_order_reviews_without_authority
                     "review_ready": True,
                     "review_blockers": [],
                     "authorizes_execution": False,
+                    "credential": "must-not-leave-source-boundary",
                 },
                 {
                     "order_id": "OMS-BLOCKED-1",
@@ -149,6 +150,7 @@ def test_automation_cockpit_projects_current_per_order_reviews_without_authority
     assert current["review_ready_count"] == 1
     assert current["blocked_review_count"] == 2
     assert current["primary_candidate"]["order_id"] == "OMS-READY"
+    assert "credential" not in current["primary_candidate"]
     assert current["next_operator_action"] == ("open_trading_current_per_order_review")
     assert current["reads_persisted_facts_only"] is True
     assert current["provider_contact_performed"] is False
