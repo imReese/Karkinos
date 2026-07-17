@@ -1949,6 +1949,16 @@ export const copy = {
       quoteRefreshStale: 'Quote source returned cached quotes',
       quoteRefreshFailed: 'Quote refresh failed',
       refreshResult: 'Refresh result',
+      refreshConfirmedFundNav: 'Sync confirmed NAV',
+      refreshingConfirmedFundNav: 'Syncing confirmed NAV',
+      confirmedFundNavRefreshComplete: (count: number) =>
+        `${count} confirmed fund NAV${count === 1 ? '' : 's'} persisted`,
+      confirmedFundNavRefreshPartial: (refreshed: number, failed: number) =>
+        `${refreshed} confirmed, ${failed} still need review`,
+      confirmedFundNavRefreshUnavailable:
+        'No same-day confirmed NAV was published; the review items remain.',
+      confirmedFundNavRefreshFailed: 'Confirmed NAV ingestion failed',
+      confirmedFundNavAuditRun: 'Audit run',
       holdingEvidenceReview: 'Current holding evidence review',
       holdingEvidenceReviewDetail:
         'Only canonical non-zero holdings are included. A review clears only after newer persisted quote or NAV evidence is confirmed.',
@@ -1965,6 +1975,8 @@ export const copy = {
         `${count} confirmed holding${count === 1 ? '' : 's'}`,
       holdingEvidenceExplicitRefresh:
         'This button performs an explicit ingestion run. It may contact the configured market-data source, records the batch, and does not change ledger, OMS, risk, or authority.',
+      holdingEvidenceConfirmedNavRefresh:
+        'Fund NAV uses a separate confirmation-only ingestion run. Estimates and previous-day NAV cannot clear review; every attempt is audited and cannot change trading authority.',
       holdingEvidenceSnapshot: 'Valuation snapshot',
       holdingEvidenceLedgerCutoff: 'Ledger cutoff',
       holdingEvidenceFingerprint: 'Review fingerprint',
@@ -4444,6 +4456,16 @@ export const copy = {
       quoteRefreshStale: '行情源返回缓存行情',
       quoteRefreshFailed: '行情刷新失败',
       refreshResult: '刷新结果',
+      refreshConfirmedFundNav: '同步确认净值',
+      refreshingConfirmedFundNav: '正在同步确认净值',
+      confirmedFundNavRefreshComplete: (count: number) =>
+        `已持久化 ${count} 个基金的确认净值`,
+      confirmedFundNavRefreshPartial: (refreshed: number, failed: number) =>
+        `${refreshed} 个已确认，${failed} 个仍需复核`,
+      confirmedFundNavRefreshUnavailable:
+        '暂未取得当日确认净值，复核项继续保留。',
+      confirmedFundNavRefreshFailed: '确认净值采集失败',
+      confirmedFundNavAuditRun: '审计批次',
       holdingEvidenceReview: '当前持仓证据复核',
       holdingEvidenceReviewDetail:
         '仅纳入 canonical 非零当前持仓；只有更新且已确认的持久化行情或净值证据才能清除复核项。',
@@ -4458,6 +4480,8 @@ export const copy = {
         `${count} 个当前持仓已确认`,
       holdingEvidenceExplicitRefresh:
         '该按钮会执行显式 ingestion：可能联系已配置的行情源并记录批次，但不会修改账本、OMS、风控或任何权限。',
+      holdingEvidenceConfirmedNavRefresh:
+        '基金净值使用独立的 confirmation-only 采集批次；估值与前一日净值不能清除复核，每次尝试均留存审计且不会改变交易权限。',
       holdingEvidenceSnapshot: '估值快照',
       holdingEvidenceLedgerCutoff: '账本截止',
       holdingEvidenceFingerprint: '复核指纹',

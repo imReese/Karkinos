@@ -155,6 +155,26 @@ export type QuoteFetchRun = {
   metadata: Record<string, unknown> | null;
 };
 
+export type ConfirmedFundNavRefreshResponse = {
+  schema_version: 'karkinos.confirmed_fund_nav_refresh.v1';
+  status: string;
+  next_manual_action: string;
+  requested_symbols: string[];
+  refreshed_symbols: string[];
+  skipped_symbols: string[];
+  failed_symbols: Record<string, string>;
+  run: QuoteFetchRun;
+  valuation_snapshot_id: string | null;
+  provider_contact_performed: boolean;
+  writes_market_data_only: boolean;
+  does_not_mutate_oms: boolean;
+  does_not_mutate_production_ledger: boolean;
+  does_not_mutate_risk: boolean;
+  does_not_mutate_kill_switch: boolean;
+  does_not_change_capital_authority: boolean;
+  authorizes_execution: boolean;
+};
+
 export type MarketCalendarDay = {
   schema_version: string;
   date: string;
@@ -331,6 +351,42 @@ export function useRefreshMarketQuotesMutation() {
         queryClient.invalidateQueries({
           queryKey: ['current-holding-market-evidence-review'],
         }),
+      ]);
+    },
+  });
+}
+
+export function useRefreshConfirmedFundNavMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { symbols: string[] }) =>
+      postJson<ConfirmedFundNavRefreshResponse>(
+        '/api/market/fund-nav/confirmed/refresh',
+        payload,
+      ),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['market-data-health'] }),
+        queryClient.invalidateQueries({ queryKey: ['market-research-board'] }),
+        queryClient.invalidateQueries({
+          queryKey: ['market-quote-fetch-runs'],
+        }),
+        queryClient.invalidateQueries({ queryKey: ['portfolio-snapshot'] }),
+        queryClient.invalidateQueries({ queryKey: ['portfolio-positions'] }),
+        queryClient.invalidateQueries({ queryKey: ['portfolio-allocation'] }),
+        queryClient.invalidateQueries({
+          queryKey: ['portfolio-live-holdings'],
+        }),
+        queryClient.invalidateQueries({ queryKey: ['account-overview'] }),
+        queryClient.invalidateQueries({ queryKey: ['account-state'] }),
+        queryClient.invalidateQueries({
+          queryKey: ['current-holding-market-evidence-review'],
+        }),
+        queryClient.invalidateQueries({ queryKey: ['decision', 'today'] }),
+        queryClient.invalidateQueries({
+          queryKey: ['decision', 'trading-plan'],
+        }),
+        queryClient.invalidateQueries({ queryKey: ['operations', 'today'] }),
       ]);
     },
   });

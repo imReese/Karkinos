@@ -134,6 +134,20 @@ function installMarketFetchMock(
           overrides.marketEvidenceReview ?? currentHoldingMarketEvidenceReview,
         );
       }
+      if (url.includes('/api/market/fund-nav/confirmed/refresh')) {
+        return jsonResponse({
+          schema_version: 'karkinos.confirmed_fund_nav_refresh.v1',
+          status: 'success',
+          requested_symbols: ['FUND-A'],
+          refreshed_symbols: ['FUND-A'],
+          skipped_symbols: [],
+          failed_symbols: {},
+          run: {
+            run_id: 'fund-nav-confirmed-fixture',
+          },
+          valuation_snapshot_id: 'valuation-market-fixture-next',
+        });
+      }
       if (url.includes('/api/market/quotes/refresh')) {
         return jsonResponse({
           quote_status: 'live',
@@ -307,7 +321,7 @@ test('surfaces selected symbol next action without leaking raw data status codes
   ).toBeNull();
 });
 
-test('renders exact current-holding evidence blockers and refreshes only affected symbols', async () => {
+test('routes confirmed NAV blockers through confirmation-only ingestion', async () => {
   const user = userEvent.setup();
   const { fetchMock } = renderMarketPage({
     marketEvidenceReview: {
@@ -349,19 +363,24 @@ test('renders exact current-holding evidence blockers and refreshes only affecte
     within(panel).getByText('1 current holding needs review'),
   ).toBeTruthy();
   expect(within(panel).getByTitle('valuation-market-fixture')).toBeTruthy();
+  expect(
+    within(panel).queryByRole('button', { name: 'Refresh quotes' }),
+  ).toBeNull();
 
   await user.click(
-    within(panel).getByRole('button', { name: 'Refresh quotes' }),
+    within(panel).getByRole('button', { name: 'Sync confirmed NAV' }),
   );
 
   await waitFor(() => {
     const refreshCall = fetchMock.mock.calls.find(([input]) =>
-      String(input).includes('/api/market/quotes/refresh'),
+      String(input).includes('/api/market/fund-nav/confirmed/refresh'),
     );
     expect(refreshCall).toBeTruthy();
     expect(JSON.parse(String(refreshCall?.[1]?.body))).toEqual({
       symbols: ['FUND-A'],
-      force: true,
     });
   });
+  expect(
+    await within(panel).findByText('1 confirmed fund NAV persisted'),
+  ).toBeTruthy();
 });

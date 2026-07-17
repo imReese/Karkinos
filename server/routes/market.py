@@ -112,6 +112,30 @@ class QuoteRefreshResponse(BaseModel):
     has_persistent_cache: bool = False
 
 
+class ConfirmedFundNavRefreshRequest(BaseModel):
+    symbols: list[str] = Field(min_length=1, max_length=50)
+
+
+class ConfirmedFundNavRefreshResponse(BaseModel):
+    schema_version: str = "karkinos.confirmed_fund_nav_refresh.v1"
+    status: str
+    next_manual_action: str
+    requested_symbols: list[str]
+    refreshed_symbols: list[str] = Field(default_factory=list)
+    skipped_symbols: list[str] = Field(default_factory=list)
+    failed_symbols: dict[str, str] = Field(default_factory=dict)
+    run: QuoteFetchRunResponse
+    valuation_snapshot_id: str | None = None
+    provider_contact_performed: bool = True
+    writes_market_data_only: bool = True
+    does_not_mutate_oms: bool = True
+    does_not_mutate_production_ledger: bool = True
+    does_not_mutate_risk: bool = True
+    does_not_mutate_kill_switch: bool = True
+    does_not_change_capital_authority: bool = True
+    authorizes_execution: bool = False
+
+
 class InstrumentMetadataBackfillRequest(BaseModel):
     symbols: list[str] | None = None
     force: bool = False
@@ -1357,6 +1381,101 @@ async def _run_blocking_fetch(func, *args):
     )
 
 
+async def _refresh_confirmed_fund_nav(
+    state,
+    request: ConfirmedFundNavRefreshRequest,
+) -> ConfirmedFundNavRefreshResponse:
+    """Run an explicit, audited, confirmation-only fund NAV ingestion batch."""
+    from server.services.fund_nav_sync import refresh_fund_nav_quotes
+
+    db = getattr(state, "db", None)
+    required_audit_methods = (
+        "create_quote_fetch_run",
+        "finish_quote_fetch_run",
+        "get_quote_fetch_run",
+    )
+    if db is None or any(
+        not callable(getattr(db, method_name, None))
+        for method_name in required_audit_methods
+    ):
+        raise HTTPException(
+            status_code=503,
+            detail="confirmed fund NAV audit storage unavailable",
+        )
+
+    requested_symbols = _normalize_refresh_symbols(request.symbols)
+    if not requested_symbols:
+        raise HTTPException(status_code=422, detail="at least one symbol is required")
+
+    assets_by_symbol = {
+        asset["symbol"]: asset for asset in _merged_watchlist_assets(state)
+    }
+    invalid_symbols = [
+        symbol
+        for symbol in requested_symbols
+        if symbol not in assets_by_symbol
+        or _ASSET_CLASS_MAP.get(assets_by_symbol[symbol]["asset_class"])
+        is not AssetClass.FUND
+    ]
+    if invalid_symbols:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "reason": "confirmed_fund_nav_requires_known_fund_symbols",
+                "symbols": invalid_symbols,
+            },
+        )
+
+    _, _, _, latest_quotes = _extract_runtime_portfolio(state)
+    watchlist = [(Symbol(symbol), AssetClass.FUND) for symbol in requested_symbols]
+    result = await _run_blocking_fetch(
+        partial(
+            refresh_fund_nav_quotes,
+            state.config,
+            db,
+            watchlist,
+            latest_quotes,
+            now=_shanghai_now(),
+            ttl_seconds=0,
+            confirmation_only=True,
+        )
+    )
+    if not result.run_id:
+        raise HTTPException(
+            status_code=503,
+            detail="confirmed fund NAV ingestion did not create an audit run",
+        )
+    run_row = db.get_quote_fetch_run(result.run_id)
+    if run_row is None:
+        raise HTTPException(
+            status_code=503,
+            detail="confirmed fund NAV audit run is unavailable",
+        )
+
+    run = _quote_fetch_run_response(run_row)
+    metadata = run.metadata or {}
+    valuation_snapshot_id = metadata.get("valuation_snapshot_id")
+    if run.status == "success":
+        next_manual_action = "review_refreshed_current_holding_evidence"
+    elif run.status in {"partial", "partial_success"}:
+        next_manual_action = "review_partial_confirmed_fund_nav_refresh"
+    else:
+        next_manual_action = "wait_for_confirmed_nav_then_retry"
+
+    return ConfirmedFundNavRefreshResponse(
+        status=run.status,
+        next_manual_action=next_manual_action,
+        requested_symbols=requested_symbols,
+        refreshed_symbols=list(result.refreshed),
+        skipped_symbols=list(result.skipped),
+        failed_symbols=dict(result.failed),
+        run=run,
+        valuation_snapshot_id=(
+            str(valuation_snapshot_id) if valuation_snapshot_id else None
+        ),
+    )
+
+
 def _upsert_instrument_metadata_from_quote(
     state,
     *,
@@ -2405,6 +2524,19 @@ def create_router() -> APIRouter:
 
         state = get_app_state()
         return await _backfill_market_bars(state, request)
+
+    @r.post(
+        "/fund-nav/confirmed/refresh",
+        response_model=ConfirmedFundNavRefreshResponse,
+    )
+    async def refresh_confirmed_fund_nav(
+        request: ConfirmedFundNavRefreshRequest,
+    ) -> ConfirmedFundNavRefreshResponse:
+        """Ingest confirmed fund NAV evidence without changing account authority."""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        return await _refresh_confirmed_fund_nav(state, request)
 
     @r.post("/quotes/refresh", response_model=QuoteRefreshResponse)
     async def refresh_quotes(request: QuoteRefreshRequest) -> QuoteRefreshResponse:
