@@ -27,9 +27,11 @@ import {
 import { KillSwitchPanel } from './kill-switch-panel';
 import { CurrentPerOrderDossierOperatorPanel } from '../../operations/current-per-order-dossier-operator-panel';
 import {
+  useBrokerConnectorSoakPromotionStatusQuery,
   useOperationsTodayQuery,
   useReviewPaperShadowRunMutation,
   type BrokerAdapterReadiness,
+  type BrokerConnectorSoakPromotionStatus,
   type OperationsTodayResponse,
   type PaperShadowRunReviewResponse,
 } from '../../operations/api';
@@ -787,6 +789,7 @@ export function TradingPage() {
   const fillFacts = useFillFactsQuery();
   const positions = usePositionsQuery();
   const operationsToday = useOperationsTodayQuery();
+  const brokerSoakPromotion = useBrokerConnectorSoakPromotionStatusQuery();
   const shadowRun = useDailyShadowRunMutation();
   const reviewShadowRun = useReviewPaperShadowRunMutation();
   const confirmOrder = useConfirmManualOrderMutation();
@@ -996,6 +999,9 @@ export function TradingPage() {
         readiness={brokerAdapterReadiness}
         loading={operationsToday.isLoading}
         error={operationsToday.isError}
+        soak={brokerSoakPromotion.data ?? null}
+        soakLoading={brokerSoakPromotion.isLoading}
+        soakError={brokerSoakPromotion.isError}
       />
 
       <CurrentPerOrderDossierOperatorPanel locale={locale} />
@@ -1170,10 +1176,16 @@ function BrokerAdapterReadinessPanel({
   readiness,
   loading,
   error,
+  soak,
+  soakLoading,
+  soakError,
 }: {
   readiness: BrokerAdapterReadiness | null;
   loading: boolean;
   error: boolean;
+  soak: BrokerConnectorSoakPromotionStatus | null;
+  soakLoading: boolean;
+  soakError: boolean;
 }) {
   const { locale } = usePreferences();
   const latest = readiness?.latest_release ?? null;
@@ -1187,6 +1199,31 @@ function BrokerAdapterReadinessPanel({
           readiness?.subsystem_status === 'degraded'
         ? 'border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] text-[var(--app-warning)]'
         : 'border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] text-[var(--app-soft)]';
+  const matchedSoak = selectSoakPromotionConnector(
+    soak,
+    latest?.collector_id ?? '',
+  );
+  const operational = matchedSoak?.operational_evidence;
+  const phaseCoverage = ['startup', 'intraday', 'end_of_day'].map(
+    (phase) => operational?.phase_coverage[phase] ?? [],
+  );
+  const drillCoverage = [
+    'disconnect',
+    'schema_drift',
+    'stale_data',
+    'duplicate_evidence',
+    'restart_recovery',
+  ].map((drill) => operational?.drill_coverage[drill] === true);
+  const soakBlockers = matchedSoak?.promotion_blockers ?? [];
+  const soakStatus = soakLoading
+    ? copy.loading
+    : soakError
+      ? copy.unavailable
+      : matchedSoak?.promotion_ready
+        ? copy.soakReady
+        : matchedSoak
+          ? copy.soakReviewRequired
+          : copy.soakNotConfigured;
 
   return (
     <section
@@ -1287,10 +1324,104 @@ function BrokerAdapterReadinessPanel({
           </div>
         ) : null}
 
+        <div
+          className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] p-4"
+          data-testid="broker-soak-promotion-readiness"
+        >
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold text-[var(--app-text)]">
+                {copy.soakTitle}
+              </h3>
+              <p className="app-muted mt-1 text-xs leading-5">
+                {copy.soakDetail}
+              </p>
+            </div>
+            <span className="w-fit shrink-0 text-xs font-semibold text-[var(--app-soft)]">
+              {soakStatus}
+            </span>
+          </div>
+
+          <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <BrokerReadinessMetric
+              label={copy.soakDays}
+              value={
+                operational
+                  ? `${operational.selected_trading_day_count}/${operational.target_trading_day_count}`
+                  : '--'
+              }
+            />
+            <BrokerReadinessMetric
+              label={copy.soakPhases}
+              value={
+                operational
+                  ? `${phaseCoverage.filter((days) => days.length >= operational.target_trading_day_count).length}/${phaseCoverage.length}`
+                  : '--'
+              }
+            />
+            <BrokerReadinessMetric
+              label={copy.soakDrills}
+              value={
+                operational
+                  ? `${drillCoverage.filter(Boolean).length}/${drillCoverage.length}`
+                  : '--'
+              }
+            />
+            <BrokerReadinessMetric
+              label={copy.accountTruthBinding}
+              value={
+                matchedSoak?.account_truth_reconciliation_linked
+                  ? copy.accountTruthLinked
+                  : matchedSoak
+                    ? copy.accountTruthMissing
+                    : '--'
+              }
+            />
+            <BrokerReadinessMetric
+              label={copy.ownerAcceptance}
+              value={
+                matchedSoak?.owner_acceptance_recorded
+                  ? copy.ownerAcceptanceRecorded
+                  : matchedSoak
+                    ? copy.ownerAcceptanceMissing
+                    : '--'
+              }
+            />
+          </div>
+
+          {!soakLoading && !soakError && soakBlockers.length ? (
+            <div className="app-muted mt-3 text-xs leading-5">
+              {copy.soakBlockers(soakBlockers.length)}{' '}
+              {soakBlockers
+                .slice(0, 2)
+                .map((blocker) => formatPublicOperationalNote(blocker, locale))
+                .join(' · ')}
+            </div>
+          ) : null}
+        </div>
+
         <p className="app-muted mt-3 text-xs leading-5">{copy.boundary}</p>
       </div>
     </section>
   );
+}
+
+function selectSoakPromotionConnector(
+  status: BrokerConnectorSoakPromotionStatus | null,
+  collectorId: string,
+) {
+  if (!status?.connectors.length) {
+    return null;
+  }
+  const exact = status.connectors.find(
+    (connector) => connector.connector_id === collectorId,
+  );
+  if (exact) {
+    return exact;
+  }
+  return !collectorId && status.connectors.length === 1
+    ? status.connectors[0]
+    : null;
 }
 
 function BrokerReadinessMetric({
@@ -1330,6 +1461,22 @@ function brokerAdapterReadinessCopy(locale: Locale) {
       releaseReview: 'Release 审查',
       conformance: '一致性验证',
       collector: 'Collector 证据',
+      soakTitle: '只读券商试运行门禁',
+      soakDetail:
+        '核对 20 个交易日、每日三阶段、恢复演练、Account Truth 与签名 owner acceptance；这里只展示证据，不执行 promotion。',
+      soakDays: '合格交易日',
+      soakPhases: '运行阶段',
+      soakDrills: '恢复演练',
+      accountTruthBinding: 'Account Truth',
+      accountTruthLinked: '已绑定并通过',
+      accountTruthMissing: '尚未绑定通过',
+      ownerAcceptance: '所有者验收',
+      ownerAcceptanceRecorded: '签名验收已记录',
+      ownerAcceptanceMissing: '等待签名验收',
+      soakReady: '证据齐备，仍无执行权限',
+      soakReviewRequired: '证据未齐，需复核',
+      soakNotConfigured: '尚无只读试运行证据',
+      soakBlockers: (count: number) => `${count} 项试运行阻断：`,
       nextAction: '下一步：',
       lastEvidence: '最近证据',
       noCollectorRun: '尚无 collector 运行',
@@ -1361,6 +1508,23 @@ function brokerAdapterReadinessCopy(locale: Locale) {
     releaseReview: 'Release review',
     conformance: 'Conformance',
     collector: 'Collector evidence',
+    soakTitle: 'Read-only broker pilot gate',
+    soakDetail:
+      'Verify 20 trading days, all daily phases, recovery drills, Account Truth, and signed owner acceptance. This surface displays evidence and never performs promotion.',
+    soakDays: 'Qualified days',
+    soakPhases: 'Run phases',
+    soakDrills: 'Recovery drills',
+    accountTruthBinding: 'Account Truth',
+    accountTruthLinked: 'Linked and clear',
+    accountTruthMissing: 'Not linked and clear',
+    ownerAcceptance: 'Owner acceptance',
+    ownerAcceptanceRecorded: 'Signed acceptance recorded',
+    ownerAcceptanceMissing: 'Signed acceptance missing',
+    soakReady: 'Evidence complete, authority still disabled',
+    soakReviewRequired: 'Evidence incomplete, review required',
+    soakNotConfigured: 'No read-only soak evidence',
+    soakBlockers: (count: number) =>
+      `${count} soak blocker${count === 1 ? ':' : 's:'}`,
     nextAction: 'Next: ',
     lastEvidence: 'Latest evidence',
     noCollectorRun: 'No collector run',

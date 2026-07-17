@@ -52,8 +52,8 @@ Historical results and AI-generated research do not guarantee future returns.
 Research, daily planning, paper/shadow operations, OMS, Account Truth,
 reconciliation, and the non-submitting controlled-execution foundation are
 implemented. The active milestone is v1.8. Provider-neutral release and local
-read-only conformance foundations and their persisted-only Operations readiness
-view are in place. A separate default-closed execution-edge fixture suite now
+read-only conformance foundations and persisted-only Operations/Trading readiness
+views are in place, including a read-only soak-promotion gate. A separate default-closed execution-edge fixture suite now
 proves the M2 dry-run/submit/query/cancel/idempotency contract without loading or
 registering an adapter. Signed exact-terminal reconciliation now covers full fill, no-fill
 cancel, and partial-fill-then-cancel from persisted evidence. A separate final

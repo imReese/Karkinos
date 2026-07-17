@@ -68,6 +68,8 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
   绑定、最新结果优先与 prepare/commit 复核；不宣称支持真实 adapter。
 - connector-scoped soak recovery evidence：无 scope、无关或混合 connector 的 drill 不能满足
   promotion，同 scope 的最新失败会使旧 pass 与其签名 dossier acceptance 失效。
+- Trading 只读投影精确 connector 的 20 日覆盖、每日三阶段、恢复演练、Account Truth 绑定与签名
+  owner acceptance；不提供 promotion、注册、submit 或 cancel 动作。
 
 本文故意不维护历史测试总数，因为每次变更都会使其过期。CI artifact 与 acceptance-audit export
 负责当前数量和证据。
@@ -76,7 +78,7 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
 
 ### v1.8 — 资本有界的受控执行
 
-状态：基础已实现；券商连接 pilot 进行中。
+状态：provider-neutral 基础已实现；真实 provider pilot 等待所有者批准。
 
 已实现基础：
 
