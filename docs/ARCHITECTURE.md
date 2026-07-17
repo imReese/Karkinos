@@ -297,6 +297,12 @@ fingerprint; evidence-status drift changes it. Viewing or acknowledging an item 
 read-only payload may enter an explicit AI context capture, but it performs no
 provider contact or database write and grants no execution authority.
 
+The `/operations` workbench is the read-side operator surface for this contract.
+It validates the top-level schema and every attention-item non-authority flag
+before rendering any drill-down, then shows source evidence, deterministic
+fingerprint, safe next action, and exact resolution condition. A boundary
+violation blocks the projection; the page has no mutation or broker capability.
+
 An open exact-identity lifecycle may be projected through
 `karkinos.manual_broker_cancellation_ticket.v1`. This provider-neutral boundary
 prepares a copyable human action package from the persisted controlled intent,

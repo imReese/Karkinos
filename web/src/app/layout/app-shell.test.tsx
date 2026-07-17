@@ -232,6 +232,7 @@ test('renders portfolio workspace navigation', async () => {
   expect(await within(navigation).findByText('Risk')).toBeTruthy();
   expect(within(navigation).queryByText('Account Truth')).toBeNull();
   expect(await within(navigation).findByText('Decision')).toBeTruthy();
+  expect(await within(navigation).findByText('Operations')).toBeTruthy();
   expect(await within(navigation).findByText('Execution')).toBeTruthy();
   expect(await screen.findByText('Overview page')).toBeTruthy();
   expect(await screen.findByText('Workspace toolbar')).toBeTruthy();
@@ -250,6 +251,7 @@ test('renders portfolio workspace navigation', async () => {
     'sidebar-nav-backtest',
     'sidebar-nav-risk',
     'sidebar-nav-decision',
+    'sidebar-nav-operations',
     'sidebar-nav-trading',
     'sidebar-nav-settings',
   ]);
@@ -295,6 +297,7 @@ test('switches interface language from english to chinese', async () => {
   expect(await within(navigation).findByText('风控')).toBeTruthy();
   expect(within(navigation).queryByText('账户事实')).toBeNull();
   expect(await within(navigation).findByText('决策')).toBeTruthy();
+  expect(await within(navigation).findByText('运营')).toBeTruthy();
   expect(await within(navigation).findByText('执行')).toBeTruthy();
   expect(await screen.findByText('全局工具栏')).toBeTruthy();
   expect(window.localStorage.getItem('karkinos.locale')).toBe('zh');
