@@ -25,6 +25,7 @@ import {
   type PublicLedgerEntry,
 } from '../../../shared/ledger-format';
 import { KillSwitchPanel } from './kill-switch-panel';
+import { CurrentPerOrderDossierOperatorPanel } from '../../operations/current-per-order-dossier-operator-panel';
 import {
   useOperationsTodayQuery,
   useReviewPaperShadowRunMutation,
@@ -996,6 +997,8 @@ export function TradingPage() {
         loading={operationsToday.isLoading}
         error={operationsToday.isError}
       />
+
+      <CurrentPerOrderDossierOperatorPanel locale={locale} />
 
       <ExecutionAuditPanel
         orders={orderFacts.data ?? []}

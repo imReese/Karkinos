@@ -43,6 +43,10 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
   terminal clearance、ledger posting 与 append-only correction 串成一条证据链，并只给出安全
   人工下一步，不产生 read-side authority；v3 会检查有界范围内的全部持久化 intent，使较早的
   关键未完成旅程不会被较新的低风险或已闭环旅程遮蔽；
+- Trading 侧 persisted-only 的当前逐单 dossier resolver：只列出 canonical
+  `manually_confirmed` OMS 候选，选择最新精确 capital evaluation，解析唯一前序批次对账与网关
+  验证引用，并支持离线签名的 append-only 复核；Web 不暴露 broker submit/cancel，也不要求人工
+  输入三组财务证据 fingerprint；
 - 显式打开的 ledger-posting 操作员复核绑定可信离线 proof 与 exactly-once apply；第二笔成交、
   posting 记录、完成事件三个 checkpoint 的确定性故障都会回滚全部财务与完成审计事实，并允许
   重启后的进程安全重试一次；私钥、broker action 与 authority change 仍留在 Web 路径之外；
@@ -75,6 +79,8 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
 - 有版本的 capital policy 与 append-only evaluation evidence；
 - 独立的只读 evidence connector 与 execution gateway 身份；
 - 已签名的逐单和 session attestation；
+- 当前证据逐单入口：先在服务端解析精确 append-only capital、前序批次与网关验证引用，再进入既有
+  已签名、非授权的 dossier confirmation；
 - gateway verification 与精确 evidence binding；
 - session-start Account Truth、原子 account/symbol budget 与 rate limit；
 - 已签名且会过期的 runtime session、live gate、pause、revocation 与 equal-or-narrower replacement；
@@ -109,6 +115,18 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
   fingerprint 的持久化 handoff；rejected journey 还可单独追加一条 exactly-once 的复核人/时间/
   fingerprint 确认并收敛为不得重试。两者都不能 query/retry/submit/cancel、修改 OMS/ledger/
   authority、解除 interlock 或证明后续券商结果。
+
+M4 当前逐单 dossier 的假设与风险记录：
+
+- 与精确 OMS order fingerprint 或 manual-confirmation fingerprint 匹配的最新 capital evaluation
+  是权威证据，即使它已阻断也绝不回退到旧 pass。必须恰好存在一条有效前序批次引用与一条网关验证
+  引用；格式错误、歧义、缺失或扫描截断都 fail closed。
+- 确定性验证覆盖无需操作员输入 fingerprint 的当前解析、最新阻断优先、歧义引用、精确 replay、
+  append-only 幂等、OMS 不变、严格请求 schema、面板折叠时零读取、empty/blocked 状态、离线签名
+  验证，以及不存在 submit/cancel 请求。
+- 风险影响为 low：列表与 preview 只读持久化事实；最终写入仍是既有逐单 confirmation 审计事实，
+  且不具备授权能力。OMS、ledger、Account Truth、risk、kill switch、provider、submit、cancel 与
+  capital authority 均不改变；没有选择、注册或宣称支持任何 provider/adapter。
 
 M4 非授权操作资料包的假设与风险记录：
 
