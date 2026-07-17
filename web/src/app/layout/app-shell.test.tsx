@@ -270,6 +270,29 @@ test('uses minimalist sidebar active styling and subtext icons', async () => {
   expect(inactiveIcon.getAttribute('class')).toContain('app-nav-icon');
 });
 
+test('keeps a compact mobile navigation control visible in the header', async () => {
+  renderShell();
+  const user = userEvent.setup();
+
+  const toggle = await screen.findByTestId('mobile-navigation-toggle');
+  expect(toggle.className).toContain('inline-flex');
+  expect(toggle.className.split(/\s+/)).not.toContain('hidden');
+  expect(toggle.getAttribute('aria-controls')).toBe('app-shell-navigation');
+  expect(toggle.getAttribute('aria-expanded')).toBe('false');
+  expect(await screen.findByTestId('mobile-navigation-icon')).toBeTruthy();
+
+  await user.click(toggle);
+
+  expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  expect(toggle.getAttribute('aria-label')).toBe('Close navigation');
+  const navigation = await screen.findByLabelText('Navigation');
+  expect(navigation).toHaveProperty('id', 'app-shell-navigation');
+  expect(navigation.className).toContain('z-[100]');
+  expect(
+    (await screen.findByTestId('mobile-navigation-backdrop')).className,
+  ).toContain('z-[90]');
+});
+
 test('keeps the KARKINOS brand mark unwrapped in the sidebar header', async () => {
   renderShell();
 
