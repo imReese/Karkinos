@@ -484,6 +484,25 @@ def test_today_operations_route_surfaces_scheduler_run_evidence(monkeypatch):
     assert scheduler["status"] == "blocked"
     assert scheduler["next_action"] == "inspect_scheduler_failure"
     assert response["conclusion_status"] == "blocked"
+    attention = next(
+        item
+        for item in response["attention_items"]
+        if item["subsystem_id"] == "scheduler"
+    )
+    assert attention["evidence"] == {
+        "status": "paper_shadow_failed",
+        "observed_at": f"{plan_date}T10:00:01+08:00",
+    }
+    assert attention["resolution_condition"] == (
+        "new_recognized_terminal_scheduler_run_required"
+    )
+    assert attention["manual_acknowledgement_clears_status"] is False
+    assert attention["provider_contacted"] is False
+    assert attention["database_writes_performed"] is False
+    assert attention["authorizes_execution"] is False
+    assert fake_db.saved_manual_orders == []
+    assert fake_db.recorded_orders == []
+    assert fake_db.ledger_writes == []
 
 
 def test_paper_shadow_run_route_creates_idempotent_simulation_evidence(monkeypatch):

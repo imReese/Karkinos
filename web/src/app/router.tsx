@@ -676,6 +676,7 @@ type TodayQueueItem = {
   actionLabel: string;
   tone: TodayQueueTone;
   priority: TodayQueuePriority;
+  resolution?: string;
 };
 
 const TODAY_QUEUE_PRIORITY_ORDER: TodayQueuePriority[] = [
@@ -1925,6 +1926,76 @@ function operationsNextActionLabel(value: string | undefined, locale: Locale) {
   return labels[key]?.[locale] ?? formatPublicStatus(key, locale);
 }
 
+function operationsAttentionResolutionLabel(condition: string, locale: Locale) {
+  const labels: Record<string, { en: string; zh: string }> = {
+    new_complete_market_evidence_required: {
+      en: 'new complete market evidence is persisted',
+      zh: '新的完整行情证据已持久化',
+    },
+    new_complete_account_truth_evidence_required: {
+      en: 'new complete Account Truth evidence is persisted',
+      zh: '新的完整 Account Truth 证据已持久化',
+    },
+    candidate_strategy_evidence_must_pass: {
+      en: 'candidate strategy evidence passes the canonical gate',
+      zh: '候选策略证据通过 canonical 门禁',
+    },
+    new_daily_plan_with_deterministic_risk_pass_required: {
+      en: 'a new daily plan passes deterministic risk gates',
+      zh: '新的日度计划通过确定性风控门禁',
+    },
+    new_daily_plan_without_blockers_required: {
+      en: 'a new daily plan has no unresolved blockers',
+      zh: '新的日度计划不再包含未解决阻断',
+    },
+    explicit_manual_order_review_evidence_required: {
+      en: 'explicit manual order review evidence is recorded',
+      zh: '显式人工订单复核证据已记录',
+    },
+    new_paper_shadow_run_evidence_required: {
+      en: 'a new paper/shadow run is persisted',
+      zh: '新的 paper/shadow 运行证据已持久化',
+    },
+    current_paper_shadow_run_must_reach_terminal_evidence: {
+      en: 'the current paper/shadow run reaches a terminal evidence state',
+      zh: '当前 paper/shadow 运行形成终态证据',
+    },
+    accepted_paper_shadow_review_evidence_required: {
+      en: 'accepted paper/shadow review evidence is recorded',
+      zh: 'paper/shadow 复核形成明确的接受证据',
+    },
+    new_terminal_paper_shadow_run_evidence_required: {
+      en: 'a new terminal paper/shadow run is persisted',
+      zh: '新的 paper/shadow 终态运行证据已持久化',
+    },
+    new_recognized_terminal_scheduler_run_required: {
+      en: 'a new scheduler run reaches a recognized terminal status',
+      zh: '新的调度运行形成可识别的终态证据',
+    },
+    kill_switch_clear_and_new_scheduler_evidence_required: {
+      en: 'the kill switch is explicitly cleared and a new scheduler run is persisted',
+      zh: 'kill switch 经显式处理且新的调度运行证据已持久化',
+    },
+    canonical_execution_reconciliation_must_close: {
+      en: 'canonical execution reconciliation has no open item',
+      zh: 'canonical 执行对账不再有未关闭事项',
+    },
+    complete_acceptance_audit_evidence_required: {
+      en: 'the required acceptance audit is complete',
+      zh: '所需 acceptance audit 证据完整',
+    },
+    explicit_provider_authorization_and_new_release_evidence_required: {
+      en: 'explicit provider authorization and new release evidence exist',
+      zh: '存在明确 provider 授权与新的 release 证据',
+    },
+    new_canonical_evidence_required: {
+      en: 'new canonical evidence resolves the source status',
+      zh: '新的 canonical 证据解除源状态',
+    },
+  };
+  return labels[condition]?.[locale] ?? formatPublicStatus(condition, locale);
+}
+
 function operationsStatusMeta(
   operations: OperationsTodayResponse,
   locale: Locale,
@@ -2276,6 +2347,36 @@ function DashboardTodayQueue({
     operationsToday,
     operationsPrimarySubsystem,
   );
+  const operationsPrimaryAttention =
+    operationsToday?.attention_items?.find(
+      (item) => item.subsystem_id === operationsPrimarySubsystem?.id,
+    ) ??
+    operationsToday?.attention_items?.find(
+      (item) => item.target === operationsPrimaryTarget,
+    );
+  const operationsResolution = operationsPrimaryAttention
+    ? labels.resolutionCondition(
+        operationsAttentionResolutionLabel(
+          operationsPrimaryAttention.resolution_condition,
+          locale,
+        ),
+      )
+    : undefined;
+  const decisionAttention =
+    operationsToday?.attention_items?.find(
+      (item) => item.subsystem_id === 'daily_trading_plan',
+    ) ??
+    operationsToday?.attention_items?.find(
+      (item) => item.subsystem_id === 'strategy_candidates',
+    );
+  const decisionResolution = decisionAttention
+    ? labels.resolutionCondition(
+        operationsAttentionResolutionLabel(
+          decisionAttention.resolution_condition,
+          locale,
+        ),
+      )
+    : undefined;
   const operationsTone: TodayQueueTone = operationsTodayError
     ? 'danger'
     : operationsToday?.conclusion_status === 'blocked'
@@ -2337,6 +2438,7 @@ function DashboardTodayQueue({
       ),
       tone: operationsTone,
       priority: operationsPriority,
+      resolution: operationsResolution,
     },
     {
       key: 'data',
@@ -2351,6 +2453,10 @@ function DashboardTodayQueue({
       actionLabel: labels.viewData,
       tone: dataTone,
       priority: dataPriority,
+      resolution:
+        dataNeedsReview && !marketEvidenceReviewLoading
+          ? labels.dataResolutionCondition
+          : undefined,
     },
     {
       key: 'decision',
@@ -2369,6 +2475,10 @@ function DashboardTodayQueue({
       actionLabel: labels.viewDecision,
       tone: todayDecisionError ? 'danger' : tradingPlanTone,
       priority: todayDecisionError ? 'watch' : tradingPlanPriority,
+      resolution:
+        todayDecisionLoading || tradingPlanLoading
+          ? undefined
+          : decisionResolution,
     },
     {
       key: 'orders',
@@ -2424,6 +2534,13 @@ function DashboardTodayQueue({
         : strategyReady || strategyHasNoLinkedFills
           ? 'normal'
           : 'watch',
+      resolution: strategyContributionLoading
+        ? undefined
+        : strategyHasNoLinkedFills
+          ? labels.strategyNoLinkedFillsResolution
+          : strategyReady
+            ? undefined
+            : labels.strategyEvidenceResolution,
     },
   ];
   const items = allItems.filter(
@@ -2503,6 +2620,11 @@ function DashboardTodayQueue({
                           <div className="app-muted mt-2 text-xs leading-5">
                             {item.detail}
                           </div>
+                          {item.resolution ? (
+                            <div className="mt-2 text-[11px] leading-5 text-[var(--app-subtext-1)]">
+                              {item.resolution}
+                            </div>
+                          ) : null}
                         </div>
                         <span
                           className={`shrink-0 rounded-full border border-current/25 px-2.5 py-1 text-[10px] font-semibold ${tone.text}`}

@@ -282,9 +282,7 @@ Market-review remediation assumptions and risk record:
 - The evidence-review GET has zero connector contact/writes, uses canonical quantity tolerance, preserves negative positions, excludes closed/history-only assets, and fails closed on identity gaps.
   Acknowledgement cannot clear it; only newer confirmed persisted evidence and a new canonical snapshot can. No migration, dependency, broker adapter, OMS/risk/ledger mutation,
   or authority change was introduced.
-- The Overview review queue and Operations tower now consume the same canonical
-  daily-operations projection. The older Overview projection remains only as a
-  rolling-upgrade fallback and cannot override a current Operations response.
+- The Overview review queue and Operations tower consume the same canonical daily-operations projection; each non-normal subsystem now has a deterministic, drift-sensitive attention fingerprint, safe next action, and evidence-based resolution condition that acknowledgement cannot clear. AI capture receives the same read-only payload. Risk impact is high because the canonical builder feeds the route and AI context, but the new fields are derived-only, backward compatible, provider-free, write-free, and non-authorizing; the older Overview projection remains only a rolling-upgrade fallback.
 
 Remaining release work is owned by the roadmap: one real adapter, read-only
 soak, real cancel/unknown recovery, signed submission UI, broader end-to-end and

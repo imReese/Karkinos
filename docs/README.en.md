@@ -94,6 +94,9 @@ sell, hold, rebalance, no action, or review required.
 Operations exposes data, plan, paper/shadow, OMS, reconciliation, alert, and
 recovery state. Simulation may create paper orders and fills but never submits
 to a real broker or silently mutates the production ledger.
+Each non-normal Operations subsystem also exposes a deterministic attention
+fingerprint, the safe next action, and the exact evidence condition that clears
+it. Viewing or acknowledging the item alone cannot change its status.
 
 ### Account Truth and reconciliation
 

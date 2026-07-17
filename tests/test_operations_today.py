@@ -112,6 +112,120 @@ def test_operations_today_puts_incomplete_market_evidence_before_risk_work() -> 
     assert summary["primary_target"] == "market"
 
 
+def test_operations_today_attention_items_are_deterministic_read_only_tasks() -> None:
+    decision = _decision()
+    decision["summary"]["market_data"] = {
+        "source_health": "partial",
+        "latest_quote_timestamp": "2026-07-01T09:30:00+08:00",
+    }
+    plan = {
+        **_plan(order_intent_count=0),
+        "manual_ready_count": 0,
+        "blocked_count": 1,
+        "conclusion_status": "evidence_not_ready",
+    }
+    daily_operations = _operations(manual_ready_count=0).model_copy(
+        update={
+            "evidence_passed_count": 0,
+            "risk_checked_count": 0,
+            "risk_passed_count": 0,
+            "conclusion_status": "review_required",
+            "primary_target": "risk",
+        }
+    )
+
+    first = build_operations_today_summary(
+        decision_payload=decision,
+        trading_plan=plan,
+        daily_operations=daily_operations,
+        order_facts=[],
+        fill_facts=[],
+        generated_at="2026-07-01T09:32:00+08:00",
+    )
+    replayed_decision = {
+        **decision,
+        "generated_at": "2026-07-01T09:33:00+08:00",
+    }
+    replayed_plan = {
+        **plan,
+        "generated_at": "2026-07-01T09:33:00+08:00",
+    }
+    replay = build_operations_today_summary(
+        decision_payload=replayed_decision,
+        trading_plan=replayed_plan,
+        daily_operations=daily_operations,
+        order_facts=[],
+        fill_facts=[],
+        generated_at="2026-07-01T09:33:00+08:00",
+    )
+    drifted_decision = {
+        **decision,
+        "summary": {
+            **decision["summary"],
+            "market_data": {
+                "source_health": "missing",
+                "latest_quote_timestamp": "2026-07-01T09:31:00+08:00",
+            },
+        },
+    }
+    drifted = build_operations_today_summary(
+        decision_payload=drifted_decision,
+        trading_plan=plan,
+        daily_operations=daily_operations,
+        order_facts=[],
+        fill_facts=[],
+        generated_at="2026-07-01T09:34:00+08:00",
+    )
+
+    market = next(
+        item
+        for item in first["attention_items"]
+        if item["subsystem_id"] == "market_data"
+    )
+    replay_market = next(
+        item
+        for item in replay["attention_items"]
+        if item["subsystem_id"] == "market_data"
+    )
+    assert market == {
+        "schema_version": "karkinos.operations_attention_item.v1",
+        "subsystem_id": "market_data",
+        "status": "blocked",
+        "target": "market",
+        "evidence": {
+            "status": "partial",
+            "observed_at": "2026-07-01T09:30:00+08:00",
+        },
+        "next_action": "review_market_data_freshness",
+        "resolution_condition": "new_complete_market_evidence_required",
+        "task_fingerprint": market["task_fingerprint"],
+        "manual_acknowledgement_clears_status": False,
+        "read_only_projection": True,
+        "provider_contacted": False,
+        "database_writes_performed": False,
+        "authorizes_execution": False,
+    }
+    assert market["task_fingerprint"].startswith("sha256:")
+    assert replay_market["task_fingerprint"] == market["task_fingerprint"]
+    assert {
+        item["subsystem_id"]: item["task_fingerprint"]
+        for item in replay["attention_items"]
+    } == {
+        item["subsystem_id"]: item["task_fingerprint"]
+        for item in first["attention_items"]
+    }
+    drifted_market = next(
+        item
+        for item in drifted["attention_items"]
+        if item["subsystem_id"] == "market_data"
+    )
+    assert drifted_market["task_fingerprint"] != market["task_fingerprint"]
+    assert all(
+        item["subsystem_id"] not in {"account_truth", "broker_adapter_evidence"}
+        for item in first["attention_items"]
+    )
+
+
 def test_operations_today_projects_the_canonical_daily_operations_summary() -> None:
     daily_operations = _operations(manual_ready_count=0).model_copy(
         update={

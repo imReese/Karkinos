@@ -148,6 +148,25 @@ async def test_production_source_reuses_canonical_builders_and_exact_persisted_r
         return {
             "schema_version": "karkinos.operations_today.v1",
             "generated_at": NOW,
+            "conclusion_status": "degraded",
+            "health": {"degraded": 1, "blocked": 0},
+            "attention_items": [
+                {
+                    "schema_version": "karkinos.operations_attention_item.v1",
+                    "subsystem_id": "strategy_candidates",
+                    "status": "degraded",
+                    "target": "decision",
+                    "evidence": {"status": "0/1", "observed_at": NOW},
+                    "next_action": "review_strategy_evidence",
+                    "resolution_condition": "candidate_strategy_evidence_must_pass",
+                    "task_fingerprint": "sha256:attention-fixture",
+                    "manual_acknowledgement_clears_status": False,
+                    "read_only_projection": True,
+                    "provider_contacted": False,
+                    "database_writes_performed": False,
+                    "authorizes_execution": False,
+                }
+            ],
             "default_execution_mode": "manual_confirmation",
         }
 
@@ -233,13 +252,17 @@ async def test_production_source_reuses_canonical_builders_and_exact_persisted_r
     assert [projection.status for projection in batch.projections] == [
         "complete",
         "complete",
-        "complete",
+        "degraded",
         "degraded",
         "complete",
         "complete",
         "complete",
     ]
     assert batch.projections[3].payload["backtest_result_id"] == 17
+    operations_attention = batch.projections[2].payload["attention_items"][0]
+    assert operations_attention["task_fingerprint"] == "sha256:attention-fixture"
+    assert operations_attention["manual_acknowledgement_clears_status"] is False
+    assert operations_attention["authorizes_execution"] is False
     assert batch.projections[5].payload["persisted_run"]["run_id"] == "shadow-17"
     contribution = batch.projections[6].payload
     assert contribution["strategy_id"] == "dual_ma"

@@ -1813,6 +1813,27 @@ test('surfaces failed scheduler run recovery in today todos', async () => {
             detail_status: 'paper_shadow_failed',
           },
         ],
+        attention_items: [
+          {
+            schema_version: 'karkinos.operations_attention_item.v1',
+            subsystem_id: 'scheduler',
+            status: 'blocked',
+            target: 'scheduler',
+            evidence: {
+              status: 'paper_shadow_failed',
+              observed_at: '2026-02-10T10:00:01+08:00',
+            },
+            next_action: 'inspect_scheduler_failure',
+            resolution_condition:
+              'new_recognized_terminal_scheduler_run_required',
+            task_fingerprint: 'sha256:scheduler-attention-fixture',
+            manual_acknowledgement_clears_status: false,
+            read_only_projection: true,
+            provider_contacted: false,
+            database_writes_performed: false,
+            authorizes_execution: false,
+          },
+        ],
         daily_plan: {
           candidate_pool_count: 1,
           manual_ready_count: 1,
@@ -1885,7 +1906,13 @@ test('surfaces failed scheduler run recovery in today todos', async () => {
   expect(todayQueue.textContent).toContain('Retry 2/2; previous attempts 1');
   expect(todayQueue.textContent).toContain('RuntimeError: fixture');
   expect(todayQueue.textContent).toContain('No broker submission');
+  expect(todayQueue.textContent).toContain(
+    'Clears when: a new scheduler run reaches a recognized terminal status. Viewing or acknowledging alone does not clear it.',
+  );
   expect(todayQueue.textContent).not.toContain('inspect_scheduler_failure');
+  expect(todayQueue.textContent).not.toContain(
+    'new_recognized_terminal_scheduler_run_required',
+  );
   expect(todayQueue.textContent).not.toContain('input_snapshot');
   expect(todayQueue.textContent).not.toContain('idempotency_key');
   expect(todayQueue.textContent).not.toContain('broker order');
@@ -2563,6 +2590,26 @@ test('explains operations blockers when candidates are waiting for risk gate', a
             detail_status: 'no_manual_action',
           },
         ],
+        attention_items: [
+          {
+            schema_version: 'karkinos.operations_attention_item.v1',
+            subsystem_id: 'daily_trading_plan',
+            status: 'blocked',
+            target: 'trading',
+            evidence: {
+              status: 'no_manual_action',
+              observed_at: '2026-02-10T10:00:00+08:00',
+            },
+            next_action: 'resolve_daily_plan_blockers',
+            resolution_condition: 'new_daily_plan_without_blockers_required',
+            task_fingerprint: 'sha256:daily-plan-attention-fixture',
+            manual_acknowledgement_clears_status: false,
+            read_only_projection: true,
+            provider_contacted: false,
+            database_writes_performed: false,
+            authorizes_execution: false,
+          },
+        ],
         daily_plan: {
           candidate_pool_count: 50,
           manual_ready_count: 0,
@@ -2609,6 +2656,9 @@ test('explains operations blockers when candidates are waiting for risk gate', a
   ).toBeTruthy();
   expect(within(firstGroup).getByText('50 待检查')).toBeTruthy();
   expect(within(firstGroup).getByText('查看风控原因')).toBeTruthy();
+  expect(firstGroup.textContent).toContain(
+    '解除条件：新的日度计划不再包含未解决阻断。仅查看或确认不会清除此状态。',
+  );
   expect(queue.textContent).not.toContain('今日待办存在阻断');
   expect(queue.textContent).not.toContain('处理日度交易计划阻断项');
   expect(queue.textContent).not.toContain('1 阻断');
@@ -3036,6 +3086,9 @@ test('treats zero linked strategy fills as a normal evidence-bound state', async
       'No attributable strategy fills yet',
     ),
   ).toBeTruthy();
+  expect(workbench.textContent).toContain(
+    'No action required: contribution appears only after a production-ledger fill is explicitly linked to strategy evidence.',
+  );
   const reviewStrip = await screen.findByTestId('overview-review-strip');
   expect(reviewStrip.className).not.toContain('xl:grid-cols-2');
   expect(screen.queryByTestId('strategy-contribution-gate-card')).toBeNull();
@@ -3119,6 +3172,9 @@ test('scopes the homepage data review count to canonical current holdings', asyn
   const queue = await screen.findByTestId('overview-today-queue');
   expect(within(queue).getByText('1 stale/cache')).toBeTruthy();
   expect(within(queue).getByText('1 holding needs review')).toBeTruthy();
+  expect(queue.textContent).toContain(
+    'Clears only after newer confirmed evidence produces a complete current-holding projection bound to one consistent valuation snapshot and ledger cutoff.',
+  );
   expect(within(queue).queryByText('2 holdings need review')).toBeNull();
   expect(queue.textContent).not.toContain('Closed fixture holding');
 });

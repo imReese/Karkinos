@@ -36,6 +36,25 @@ export type OperationsSubsystem = {
   detail_status: string;
 };
 
+export type OperationsAttentionItem = {
+  schema_version: 'karkinos.operations_attention_item.v1';
+  subsystem_id: string;
+  status: OperationsStatus;
+  target: string;
+  evidence: {
+    status: string;
+    observed_at: string | null;
+  };
+  next_action: string;
+  resolution_condition: string;
+  task_fingerprint: string;
+  manual_acknowledgement_clears_status: false;
+  read_only_projection: true;
+  provider_contacted: false;
+  database_writes_performed: false;
+  authorizes_execution: false;
+};
+
 export type PaperShadowCostSummary = {
   estimated_total_fee?: number | string | null;
   simulated_fee_tax_cost?: number | string | null;
@@ -322,6 +341,7 @@ export type OperationsTodayResponse = {
     skipped: number;
   };
   subsystems: OperationsSubsystem[];
+  attention_items?: OperationsAttentionItem[];
   daily_operations: DailyOperationsSummary;
   broker_adapter_readiness?: BrokerAdapterReadiness;
   daily_plan: {
