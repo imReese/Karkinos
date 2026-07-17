@@ -56,10 +56,10 @@ The latest completed cross-cutting work includes:
   journey cannot be masked by a newer lower-risk or closed journey, and a
   post-ledger journey closes only from complete canonical Account Truth
   coverage;
-- an explicitly opened ledger-posting operator review that binds the canonical
-  delta preview to a matching trusted public identity, short-lived offline
-  Ed25519 proof, final acknowledgement, and exactly-once apply, while keeping
-  private keys, broker actions, and authority changes outside the Web path;
+- an explicitly opened ledger-posting operator review with trusted offline proof
+  and exactly-once apply. Faults at the second fill, posting row, and completion
+  event roll back every financial/completion fact and a restarted process can
+  retry once; private keys, broker actions, and authority stay outside the Web path;
 - a separately signed unknown-submission recovery review that binds the
   persisted intent, exact client order id, prior gateway-result fingerprint,
   operator identity, and a short-lived offline proof before atomically
@@ -288,8 +288,8 @@ Market-review remediation assumptions and risk record:
   rolling-upgrade fallback and cannot override a current Operations response.
 
 Remaining release work is owned by the roadmap: one real adapter, read-only
-soak, real cancel/unknown recovery, signed submission UI,
-broader fault injection and real-evidence acceptance, the rest of the operator
+soak, real cancel/unknown recovery, signed submission UI, broader end-to-end and
+provider fault injection, real-evidence acceptance, the rest of the operator
 journey, and the controlled per-order pilot.
 
 ### v1.7 — Controlled Broker Bridge Foundation
