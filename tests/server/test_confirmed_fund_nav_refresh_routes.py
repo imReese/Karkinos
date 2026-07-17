@@ -112,14 +112,22 @@ def test_confirmed_fund_nav_refresh_persists_audited_evidence_only(
     state = _state(db)
     monkeypatch.setattr("server.app.get_app_state", lambda: state)
     ledger_before = db.get_ledger_entries_sync(limit=100)
+    request_id = "confirmed-nav-route-0001"
 
     response = asyncio.run(
-        _route_endpoint()(ConfirmedFundNavRefreshRequest(symbols=["FUND-A"]))
+        _route_endpoint()(
+            ConfirmedFundNavRefreshRequest(
+                symbols=["FUND-A"],
+                request_id=request_id,
+            )
+        )
     )
 
     latest = db.get_latest_quote_sync("FUND-A", asset_type="fund")
     assert source.calls == ["FUND-A"]
     assert response.status == "success"
+    assert response.request_id == request_id
+    assert response.idempotent_replay is False
     assert response.requested_symbols == ["FUND-A"]
     assert response.refreshed_symbols == ["FUND-A"]
     assert response.failed_symbols == {}
@@ -139,6 +147,81 @@ def test_confirmed_fund_nav_refresh_persists_audited_evidence_only(
     assert latest["nav_date"] == "2026-06-17"
     assert latest["fetch_run_id"] == response.run.run_id
     assert db.get_ledger_entries_sync(limit=100) == ledger_before
+
+
+def test_confirmed_fund_nav_refresh_replays_same_request_without_provider_contact(
+    monkeypatch,
+    tmp_path,
+    inline_market_fetch,
+):
+    from server.routes.market import ConfirmedFundNavRefreshRequest
+    from server.services import fund_nav_sync
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    source = DeterministicConfirmedFundNavSource()
+    monkeypatch.setattr(
+        fund_nav_sync,
+        "build_sources",
+        lambda data_source, tushare_token: {
+            "deterministic_fixture": source,
+            "akshare": source,
+        },
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: _state(db))
+    request = ConfirmedFundNavRefreshRequest(
+        symbols=["FUND-A"],
+        request_id="confirmed-nav-route-replay-0001",
+    )
+
+    first = asyncio.run(_route_endpoint()(request))
+    replay = asyncio.run(_route_endpoint()(request))
+
+    assert source.calls == ["FUND-A"]
+    assert replay.request_id == request.request_id
+    assert replay.run.run_id == first.run.run_id
+    assert replay.status == "success"
+    assert replay.refreshed_symbols == ["FUND-A"]
+    assert replay.idempotent_replay is True
+    assert replay.provider_contact_performed is False
+    assert len(db.list_quote_fetch_runs(trigger="fund_nav_sync")) == 1
+    assert len(db.get_recent_quote_snapshots_sync("FUND-A", limit=10)) == 1
+
+
+def test_confirmed_fund_nav_refresh_maps_request_payload_drift_to_conflict(
+    monkeypatch,
+    tmp_path,
+    inline_market_fetch,
+):
+    from server.routes.market import ConfirmedFundNavRefreshRequest
+    from server.services import fund_nav_sync
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    monkeypatch.setattr("server.app.get_app_state", lambda: _state(db))
+
+    def reject_payload_drift(*args, **kwargs):
+        raise fund_nav_sync.FundNavSyncIdempotencyConflict("payload drift")
+
+    monkeypatch.setattr(
+        fund_nav_sync,
+        "refresh_fund_nav_quotes",
+        reject_payload_drift,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(
+            _route_endpoint()(
+                ConfirmedFundNavRefreshRequest(
+                    symbols=["FUND-A"],
+                    request_id="confirmed-nav-conflict-route-0001",
+                )
+            )
+        )
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == "confirmed fund NAV request id payload conflict"
+    assert db.list_quote_fetch_runs() == []
 
 
 def test_confirmed_fund_nav_refresh_rejects_estimate_and_keeps_review_open(

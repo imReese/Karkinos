@@ -95,7 +95,7 @@ append-only、可重放的捕获。纵向覆盖只统计已显式捕获日期；
 也不构成建议或权限。
 
 Overview 的行情/净值复核只消费绑定 valuation snapshot、quote-set fingerprint、ledger cutoff/fingerprint 的 canonical 当前非零持仓投影；观察列表、大盘指数和已清仓事实不能抬高数量。
-Market 会列出精确标的、原因和安全人工下一步；GET 不联系 provider、不写库。基金确认净值使用独立的 confirmation-only 可审计 ingestion，估值和前一日净值不能清除复核；只有更新且已确认的持久化证据生成新快照后才能清除复核项。
+Market 会列出精确标的、原因和安全人工下一步；GET 不联系 provider、不写库。基金确认净值使用独立、请求幂等的 confirmation-only 可审计 ingestion；同一请求只重放持久化批次且不再次联系 provider，估值和前一日净值不能清除复核。只有更新且已确认的持久化证据生成新快照后才能清除复核项。
 
 ### Paper/Shadow 与 Operations
 

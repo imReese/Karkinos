@@ -1957,6 +1957,10 @@ export const copy = {
         `${refreshed} confirmed, ${failed} still need review`,
       confirmedFundNavRefreshUnavailable:
         'No same-day confirmed NAV was published; the review items remain.',
+      confirmedFundNavRefreshInProgress:
+        'The same audited ingestion run is still in progress.',
+      confirmedFundNavIdempotentReplay:
+        'Repeated request: reused the persisted audit run without contacting the data source again.',
       confirmedFundNavRefreshFailed: 'Confirmed NAV ingestion failed',
       confirmedFundNavAuditRun: 'Audit run',
       holdingEvidenceReview: 'Current holding evidence review',
@@ -4464,6 +4468,9 @@ export const copy = {
         `${refreshed} 个已确认，${failed} 个仍需复核`,
       confirmedFundNavRefreshUnavailable:
         '暂未取得当日确认净值，复核项继续保留。',
+      confirmedFundNavRefreshInProgress: '同一审计采集批次仍在运行中。',
+      confirmedFundNavIdempotentReplay:
+        '重复请求已复用持久化审计批次，未再次联系数据源。',
       confirmedFundNavRefreshFailed: '确认净值采集失败',
       confirmedFundNavAuditRun: '审计批次',
       holdingEvidenceReview: '当前持仓证据复核',

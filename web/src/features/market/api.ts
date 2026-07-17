@@ -157,6 +157,8 @@ export type QuoteFetchRun = {
 
 export type ConfirmedFundNavRefreshResponse = {
   schema_version: 'karkinos.confirmed_fund_nav_refresh.v1';
+  request_id: string;
+  idempotent_replay: boolean;
   status: string;
   next_manual_action: string;
   requested_symbols: string[];
@@ -359,7 +361,7 @@ export function useRefreshMarketQuotesMutation() {
 export function useRefreshConfirmedFundNavMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { symbols: string[] }) =>
+    mutationFn: (payload: { symbols: string[]; request_id: string }) =>
       postJson<ConfirmedFundNavRefreshResponse>(
         '/api/market/fund-nav/confirmed/refresh',
         payload,

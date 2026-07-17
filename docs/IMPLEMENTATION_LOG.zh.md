@@ -219,8 +219,8 @@ M3/M4 纠正操作员旅程的假设与风险记录：
   批次验证 399001、399006，并确认两者持久化 as-of 均为 `2026-07-16T15:00:00+08:00`。
 - 行情证据边界的风险影响为 medium：该变更可以发布估值输入，但不能修改 ledger、OMS、risk、
   kill switch、capital 或 broker 权限。缺少时间、交易时段未完成或 provider 失败时继续 fail
-  closed。基金盘中估值继续明确标记为 provisional；收盘确认只接受目标交易日已经发布的
-  confirmed NAV，旧日期净值不能覆盖当天估值，也不能解除复核门禁。
+  closed。基金盘中估值继续明确标记为 provisional；收盘确认只接受当日 confirmed NAV，持久化
+  request id 使重复/重启重放不再联系 provider。旧净值不能覆盖当天估值或解除复核门禁。
 - 当前持仓证据复核 GET 不联系 provider/connector、也不写库；它复用 canonical 经济零数量规则，
   保留真实负仓、排除已清仓/仅历史资产，并在 valuation 或 ledger identity 不完整时 fail closed。
   人工确认不能清除复核项，只有更新且已确认的持久化 observation 与新 canonical 估值快照可以。

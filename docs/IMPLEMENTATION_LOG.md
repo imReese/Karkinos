@@ -276,9 +276,9 @@ Market-review remediation assumptions and risk record:
   valuation inputs, but it never changes ledger, OMS, risk, kill switch,
   capital, or broker permissions. Missing timestamps, incomplete sessions, and
   provider failures continue to fail closed. Intraday fund estimates remain
-  explicitly provisional; post-close confirmation accepts only a confirmed NAV
-  published for the target trading date, so an older NAV cannot overwrite the
-  current estimate or clear the review gate.
+  provisional; post-close confirmation accepts only same-day confirmed NAV,
+  while one persisted request id makes duplicate/restart replay provider-free.
+  An older NAV cannot overwrite the current estimate or clear the review gate.
 - The evidence-review GET has zero connector contact/writes, uses canonical quantity tolerance, preserves negative positions, excludes closed/history-only assets, and fails closed on identity gaps.
   Acknowledgement cannot clear it; only newer confirmed persisted evidence and a new canonical snapshot can. No migration, dependency, broker adapter, OMS/risk/ledger mutation,
   or authority change was introduced.

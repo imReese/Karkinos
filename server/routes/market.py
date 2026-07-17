@@ -114,10 +114,18 @@ class QuoteRefreshResponse(BaseModel):
 
 class ConfirmedFundNavRefreshRequest(BaseModel):
     symbols: list[str] = Field(min_length=1, max_length=50)
+    request_id: str = Field(
+        default_factory=lambda: uuid.uuid4().hex,
+        min_length=8,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$",
+    )
 
 
 class ConfirmedFundNavRefreshResponse(BaseModel):
     schema_version: str = "karkinos.confirmed_fund_nav_refresh.v1"
+    request_id: str
+    idempotent_replay: bool = False
     status: str
     next_manual_action: str
     requested_symbols: list[str]
@@ -1386,7 +1394,10 @@ async def _refresh_confirmed_fund_nav(
     request: ConfirmedFundNavRefreshRequest,
 ) -> ConfirmedFundNavRefreshResponse:
     """Run an explicit, audited, confirmation-only fund NAV ingestion batch."""
-    from server.services.fund_nav_sync import refresh_fund_nav_quotes
+    from server.services.fund_nav_sync import (
+        FundNavSyncIdempotencyConflict,
+        refresh_fund_nav_quotes,
+    )
 
     db = getattr(state, "db", None)
     required_audit_methods = (
@@ -1428,18 +1439,25 @@ async def _refresh_confirmed_fund_nav(
 
     _, _, _, latest_quotes = _extract_runtime_portfolio(state)
     watchlist = [(Symbol(symbol), AssetClass.FUND) for symbol in requested_symbols]
-    result = await _run_blocking_fetch(
-        partial(
-            refresh_fund_nav_quotes,
-            state.config,
-            db,
-            watchlist,
-            latest_quotes,
-            now=_shanghai_now(),
-            ttl_seconds=0,
-            confirmation_only=True,
+    try:
+        result = await _run_blocking_fetch(
+            partial(
+                refresh_fund_nav_quotes,
+                state.config,
+                db,
+                watchlist,
+                latest_quotes,
+                now=_shanghai_now(),
+                ttl_seconds=0,
+                confirmation_only=True,
+                request_id=request.request_id,
+            )
         )
-    )
+    except FundNavSyncIdempotencyConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="confirmed fund NAV request id payload conflict",
+        ) from exc
     if not result.run_id:
         raise HTTPException(
             status_code=503,
@@ -1459,10 +1477,14 @@ async def _refresh_confirmed_fund_nav(
         next_manual_action = "review_refreshed_current_holding_evidence"
     elif run.status in {"partial", "partial_success"}:
         next_manual_action = "review_partial_confirmed_fund_nav_refresh"
+    elif run.status == "running":
+        next_manual_action = "wait_for_existing_confirmed_fund_nav_run"
     else:
         next_manual_action = "wait_for_confirmed_nav_then_retry"
 
     return ConfirmedFundNavRefreshResponse(
+        request_id=request.request_id,
+        idempotent_replay=result.idempotent_replay,
         status=run.status,
         next_manual_action=next_manual_action,
         requested_symbols=requested_symbols,
@@ -1473,6 +1495,7 @@ async def _refresh_confirmed_fund_nav(
         valuation_snapshot_id=(
             str(valuation_snapshot_id) if valuation_snapshot_id else None
         ),
+        provider_contact_performed=not result.idempotent_replay,
     )
 
 
