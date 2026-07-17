@@ -14,9 +14,14 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
   });
 }
 
-function createResponse(status: 'success' | 'failed') {
+function createResponse(
+  status: 'success' | 'failed',
+  idempotentReplay = false,
+) {
   return {
     schema_version: 'karkinos.confirmed_fund_nav_refresh.v1',
+    request_id: '12345678-1234-4234-8234-123456789abc',
+    idempotent_replay: idempotentReplay,
     status,
     next_manual_action:
       status === 'success'
@@ -97,18 +102,38 @@ test('posts only requested funds and records the visible audit run', async () =>
   await user.click(screen.getByRole('button', { name: 'Sync confirmed NAV' }));
 
   await waitFor(() => {
-    expect(fetchMock).toHaveBeenCalledWith(
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
       '/api/market/fund-nav/confirmed/refresh',
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({ symbols: ['FUND-A'] }),
-      }),
+    );
+    const init = fetchMock.mock.calls[0]?.[1];
+    expect(init).toEqual(expect.objectContaining({ method: 'POST' }));
+    const body = JSON.parse(String(init?.body));
+    expect(body.symbols).toEqual(['FUND-A']);
+    expect(body.request_id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
   });
   expect(
     await screen.findByText('1 confirmed fund NAV persisted'),
   ).toBeTruthy();
   expect(screen.getByTitle('confirmed-nav-success-fixture')).toBeTruthy();
+});
+
+test('labels an idempotent replay without claiming another provider call', async () => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    jsonResponse(createResponse('success', true)),
+  );
+  const user = userEvent.setup();
+  renderButton();
+
+  await user.click(screen.getByRole('button', { name: 'Sync confirmed NAV' }));
+
+  expect(
+    await screen.findByText(
+      'Repeated request: reused the persisted audit run without contacting the data source again.',
+    ),
+  ).toBeTruthy();
 });
 
 test('keeps review explicit when same-day confirmed NAV is unavailable', async () => {

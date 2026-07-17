@@ -103,6 +103,11 @@ review fingerprint. Overview consumes only this report; Market may expose a
 targeted explicit ingestion command. Human acknowledgement cannot clear an
 item, and the read model cannot query a connector, write a database, or mutate
 OMS, production ledger, risk, kill switch, capital authority, or execution.
+The dedicated confirmed-fund-NAV command rejects estimates and previous-day
+NAV, binds one caller request id to the exact symbol scope, and uses the unique
+audit run identity as its restart-safe idempotency boundary. Replaying that id
+returns the persisted run without contacting a provider or publishing another
+snapshot; reusing it with different input fails closed.
 
 The batch pre-trade risk boundary is fail-closed on that same identity. It
 requires a complete persisted valuation snapshot, a positive ledger cutoff,

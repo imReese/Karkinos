@@ -37,7 +37,9 @@ export function ConfirmedFundNavRefreshButton({
             lastResponse.refreshed_symbols.length,
             failedCount,
           )
-        : copy.market.confirmedFundNavRefreshUnavailable;
+        : lastResponse.status === 'running'
+          ? copy.market.confirmedFundNavRefreshInProgress
+          : copy.market.confirmedFundNavRefreshUnavailable;
   const errorMessage =
     refreshNav.error instanceof Error
       ? refreshNav.error.message
@@ -52,7 +54,10 @@ export function ConfirmedFundNavRefreshButton({
         aria-busy={refreshNav.isPending}
         onClick={async () => {
           try {
-            const response = await refreshNav.mutateAsync({ symbols });
+            const response = await refreshNav.mutateAsync({
+              symbols,
+              request_id: globalThis.crypto.randomUUID(),
+            });
             setLastResponse(response);
           } catch {
             setLastResponse(null);
@@ -75,12 +80,17 @@ export function ConfirmedFundNavRefreshButton({
             : summary}
       </div>
       {lastResponse ? (
-        <div
-          className="max-w-[20rem] truncate font-mono text-[10px] tabular-nums text-[var(--app-muted)]"
-          title={lastResponse.run.run_id}
-        >
-          {copy.market.confirmedFundNavAuditRun}:{' '}
-          {shortRunId(lastResponse.run.run_id)}
+        <div className="grid max-w-[20rem] gap-1 text-right text-[10px] text-[var(--app-muted)]">
+          {lastResponse.idempotent_replay ? (
+            <span>{copy.market.confirmedFundNavIdempotentReplay}</span>
+          ) : null}
+          <span
+            className="truncate font-mono tabular-nums"
+            title={lastResponse.run.run_id}
+          >
+            {copy.market.confirmedFundNavAuditRun}:{' '}
+            {shortRunId(lastResponse.run.run_id)}
+          </span>
         </div>
       ) : null}
     </div>

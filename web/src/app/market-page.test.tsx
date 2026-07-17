@@ -137,6 +137,8 @@ function installMarketFetchMock(
       if (url.includes('/api/market/fund-nav/confirmed/refresh')) {
         return jsonResponse({
           schema_version: 'karkinos.confirmed_fund_nav_refresh.v1',
+          request_id: '12345678-1234-4234-8234-123456789abc',
+          idempotent_replay: false,
           status: 'success',
           requested_symbols: ['FUND-A'],
           refreshed_symbols: ['FUND-A'],
@@ -376,9 +378,9 @@ test('routes confirmed NAV blockers through confirmation-only ingestion', async 
       String(input).includes('/api/market/fund-nav/confirmed/refresh'),
     );
     expect(refreshCall).toBeTruthy();
-    expect(JSON.parse(String(refreshCall?.[1]?.body))).toEqual({
-      symbols: ['FUND-A'],
-    });
+    const requestBody = JSON.parse(String(refreshCall?.[1]?.body));
+    expect(requestBody.symbols).toEqual(['FUND-A']);
+    expect(requestBody.request_id).toEqual(expect.any(String));
   });
   expect(
     await within(panel).findByText('1 confirmed fund NAV persisted'),

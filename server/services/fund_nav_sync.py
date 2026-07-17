@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -28,6 +30,79 @@ class FundNavSyncResult:
     failed: dict[str, str] = field(default_factory=dict)
     quotes: dict[str, dict[str, Any]] = field(default_factory=dict)
     run_id: str | None = None
+    request_id: str | None = None
+    idempotent_replay: bool = False
+
+
+class FundNavSyncIdempotencyConflict(ValueError):
+    """Raised when one request id is reused with a different ingestion scope."""
+
+
+def _request_run_id(request_id: str | None) -> tuple[str | None, str | None]:
+    value = str(request_id or "").strip()
+    if not value:
+        return None, None
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{7,127}", value):
+        raise ValueError("invalid fund NAV ingestion request id")
+    return value, f"fund_nav_sync:request:{value}"
+
+
+def _run_metadata(row: dict[str, Any]) -> dict[str, Any]:
+    metadata = row.get("metadata")
+    if isinstance(metadata, dict):
+        return metadata
+    raw = row.get("metadata_json")
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(str(raw))
+    except (TypeError, ValueError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if str(item).strip()]
+
+
+def _replay_fund_nav_result(
+    row: dict[str, Any],
+    *,
+    request_id: str,
+    expected_symbols: list[str],
+    confirmation_only: bool,
+) -> FundNavSyncResult:
+    metadata = _run_metadata(row)
+    persisted_symbols = _string_list(
+        metadata.get("request_scope_symbols") or metadata.get("requested_symbols")
+    )
+    if (
+        persisted_symbols != expected_symbols
+        or bool(metadata.get("confirmation_only")) is not confirmation_only
+    ):
+        raise FundNavSyncIdempotencyConflict(
+            "fund NAV ingestion request id was reused with a different payload"
+        )
+
+    failed_details = metadata.get("failed_details")
+    failed = (
+        {str(key): str(value) for key, value in failed_details.items()}
+        if isinstance(failed_details, dict)
+        else {
+            symbol: str(row.get("error_message") or "previous ingestion failed")
+            for symbol in _string_list(metadata.get("failed_symbols"))
+        }
+    )
+    return FundNavSyncResult(
+        refreshed=_string_list(metadata.get("refreshed_symbols")),
+        skipped=_string_list(metadata.get("skipped_symbols")),
+        failed=failed,
+        run_id=str(row["run_id"]),
+        request_id=request_id,
+        idempotent_replay=True,
+    )
 
 
 def _is_fund_asset_class(asset_class: AssetClass | str) -> bool:
@@ -227,10 +302,12 @@ def refresh_fund_nav_quotes(
     now: datetime | None = None,
     ttl_seconds: int = FUND_NAV_SYNC_TTL_SECONDS,
     confirmation_only: bool = False,
+    request_id: str | None = None,
 ) -> FundNavSyncResult:
     """Refresh open-end fund NAV/estimate quotes and materialize latest prices."""
     current = now or datetime.now()
-    result = FundNavSyncResult()
+    normalized_request_id, request_run_id = _request_run_id(request_id)
+    result = FundNavSyncResult(request_id=normalized_request_id)
     fund_symbols = [
         str(symbol)
         for symbol, asset_class in watchlist
@@ -238,6 +315,19 @@ def refresh_fund_nav_quotes(
     ]
     if not fund_symbols:
         return result
+
+    get_run = getattr(db, "get_quote_fetch_run", None)
+    if request_run_id is not None and not callable(get_run):
+        raise RuntimeError("fund NAV idempotency storage unavailable")
+    if request_run_id is not None:
+        existing_run = get_run(request_run_id)
+        if existing_run is not None:
+            return _replay_fund_nav_result(
+                existing_run,
+                request_id=normalized_request_id or "",
+                expected_symbols=fund_symbols,
+                confirmation_only=confirmation_only,
+            )
 
     due_symbols = []
     for symbol in fund_symbols:
@@ -253,24 +343,39 @@ def refresh_fund_nav_quotes(
     if not due_symbols:
         return result
 
-    run_id = f"fund_nav_sync:{current.isoformat()}:{uuid.uuid4().hex}"
+    run_id = request_run_id or f"fund_nav_sync:{current.isoformat()}:{uuid.uuid4().hex}"
     result.run_id = run_id
     create_run = getattr(db, "create_quote_fetch_run", None)
     finish_run = getattr(db, "finish_quote_fetch_run", None)
+    if request_run_id is not None and not callable(create_run):
+        raise RuntimeError("fund NAV idempotency storage unavailable")
     if callable(create_run):
-        create_run(
-            run_id=run_id,
-            started_at=current.isoformat(),
-            trigger="fund_nav_sync",
-            provider=str(getattr(config, "data_source", "akshare") or "akshare"),
-            asset_type=AssetClass.FUND.value,
-            symbol_count=len(due_symbols),
-            status="running",
-            metadata={
-                "requested_symbols": due_symbols,
-                "confirmation_only": confirmation_only,
-            },
-        )
+        try:
+            create_run(
+                run_id=run_id,
+                started_at=current.isoformat(),
+                trigger="fund_nav_sync",
+                provider=str(getattr(config, "data_source", "akshare") or "akshare"),
+                asset_type=AssetClass.FUND.value,
+                symbol_count=len(due_symbols),
+                status="running",
+                metadata={
+                    "request_id": normalized_request_id,
+                    "request_scope_symbols": fund_symbols,
+                    "requested_symbols": due_symbols,
+                    "confirmation_only": confirmation_only,
+                },
+            )
+        except Exception:
+            existing_run = get_run(run_id) if callable(get_run) else None
+            if normalized_request_id and existing_run is not None:
+                return _replay_fund_nav_result(
+                    existing_run,
+                    request_id=normalized_request_id,
+                    expected_symbols=fund_symbols,
+                    confirmation_only=confirmation_only,
+                )
+            raise
 
     sources = _source_chain(config, confirmation_only=confirmation_only)
     if not sources:
@@ -284,7 +389,13 @@ def refresh_fund_nav_quotes(
                 failure_count=len(due_symbols),
                 error_message="no fund quote source configured",
                 metadata={
+                    "request_id": normalized_request_id,
+                    "request_scope_symbols": fund_symbols,
                     "requested_symbols": due_symbols,
+                    "refreshed_symbols": [],
+                    "skipped_symbols": result.skipped,
+                    "failed_symbols": sorted(result.failed),
+                    "failed_details": result.failed,
                     "confirmation_only": confirmation_only,
                 },
             )
@@ -410,11 +521,15 @@ def refresh_fund_nav_quotes(
             failure_count=failure_count,
             error_message=publication_error,
             metadata={
+                "request_id": normalized_request_id,
+                "request_scope_symbols": fund_symbols,
                 "requested_symbols": due_symbols,
                 "refreshed_symbols": result.refreshed,
+                "skipped_symbols": result.skipped,
                 "failed_symbols": sorted(
                     symbol for symbol in result.failed if not symbol.startswith("__")
                 ),
+                "failed_details": result.failed,
                 "valuation_snapshot_id": valuation_snapshot_id,
                 "facts_persisted_only": True,
                 "confirmation_only": confirmation_only,

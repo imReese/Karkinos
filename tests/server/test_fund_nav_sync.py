@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from threading import Barrier, Event, Lock
 from types import SimpleNamespace
+
+import pytest
 
 from core.types import AssetClass, Symbol
 from server.db import AppDatabase
@@ -313,3 +317,315 @@ def test_confirmation_only_rejects_previous_day_confirmed_nav(monkeypatch, tmp_p
         "019999": "confirmed fund NAV is not published for the target date"
     }
     assert db.get_latest_quote_sync("019999", asset_type="fund") is None
+
+
+def test_confirmation_only_request_replays_persisted_run_after_restart(
+    monkeypatch,
+    tmp_path,
+):
+    from server.services import fund_nav_sync
+
+    db_path = tmp_path / "app.db"
+    db = AppDatabase(db_path)
+    db.init_sync()
+    source = ConfirmedFundSource()
+    monkeypatch.setattr(
+        fund_nav_sync,
+        "build_sources",
+        lambda data_source, tushare_token: {"tushare": source},
+    )
+    request_id = "confirmed-nav-fixture-0001"
+    kwargs = {
+        "now": datetime(2026, 6, 12, 21, 30),
+        "ttl_seconds": 0,
+        "confirmation_only": True,
+        "request_id": request_id,
+    }
+
+    first = fund_nav_sync.refresh_fund_nav_quotes(
+        SimpleNamespace(data_source="tushare", tushare_token="unit-token"),
+        db,
+        watchlist=[(Symbol("019999"), AssetClass.FUND)],
+        latest_quotes={},
+        **kwargs,
+    )
+    restarted_db = AppDatabase(db_path)
+    restarted_db.init_sync()
+    replay = fund_nav_sync.refresh_fund_nav_quotes(
+        SimpleNamespace(data_source="tushare", tushare_token="unit-token"),
+        restarted_db,
+        watchlist=[(Symbol("019999"), AssetClass.FUND)],
+        latest_quotes={},
+        **kwargs,
+    )
+
+    assert source.calls == [(Symbol("019999"), AssetClass.FUND)]
+    assert first.run_id == f"fund_nav_sync:request:{request_id}"
+    assert replay.run_id == first.run_id
+    assert replay.request_id == request_id
+    assert replay.idempotent_replay is True
+    assert replay.refreshed == ["019999"]
+    assert replay.failed == {}
+    assert len(restarted_db.list_quote_fetch_runs(trigger="fund_nav_sync")) == 1
+    assert len(restarted_db.get_recent_quote_snapshots_sync("019999", limit=10)) == 1
+
+
+def test_confirmation_only_request_replays_running_run_without_provider_contact(
+    monkeypatch,
+    tmp_path,
+):
+    from server.services import fund_nav_sync
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    request_id = "confirmed-nav-running-0001"
+    db.create_quote_fetch_run(
+        run_id=f"fund_nav_sync:request:{request_id}",
+        started_at="2026-06-12T21:30:00+08:00",
+        trigger="fund_nav_sync",
+        provider="deterministic_fixture",
+        asset_type="fund",
+        symbol_count=1,
+        status="running",
+        metadata={
+            "request_id": request_id,
+            "request_scope_symbols": ["019999"],
+            "requested_symbols": ["019999"],
+            "confirmation_only": True,
+        },
+    )
+    monkeypatch.setattr(
+        fund_nav_sync,
+        "build_sources",
+        lambda data_source, tushare_token: pytest.fail(
+            "idempotent replay must not build or contact a provider"
+        ),
+    )
+
+    replay = fund_nav_sync.refresh_fund_nav_quotes(
+        SimpleNamespace(data_source="deterministic_fixture", tushare_token=""),
+        db,
+        watchlist=[(Symbol("019999"), AssetClass.FUND)],
+        latest_quotes={},
+        now=datetime(2026, 6, 12, 21, 30),
+        ttl_seconds=0,
+        confirmation_only=True,
+        request_id=request_id,
+    )
+
+    assert replay.idempotent_replay is True
+    assert replay.run_id == f"fund_nav_sync:request:{request_id}"
+    assert replay.refreshed == []
+    assert replay.failed == {}
+    assert len(db.list_quote_fetch_runs(trigger="fund_nav_sync")) == 1
+
+
+def test_confirmation_only_request_rejects_idempotency_payload_drift(
+    monkeypatch,
+    tmp_path,
+):
+    from server.services import fund_nav_sync
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    source = ConfirmedFundSource()
+    monkeypatch.setattr(
+        fund_nav_sync,
+        "build_sources",
+        lambda data_source, tushare_token: {"tushare": source},
+    )
+    request_id = "confirmed-nav-conflict-0001"
+    config = SimpleNamespace(data_source="tushare", tushare_token="unit-token")
+    fund_nav_sync.refresh_fund_nav_quotes(
+        config,
+        db,
+        watchlist=[(Symbol("019999"), AssetClass.FUND)],
+        latest_quotes={},
+        now=datetime(2026, 6, 12, 21, 30),
+        ttl_seconds=0,
+        confirmation_only=True,
+        request_id=request_id,
+    )
+
+    with pytest.raises(fund_nav_sync.FundNavSyncIdempotencyConflict):
+        fund_nav_sync.refresh_fund_nav_quotes(
+            config,
+            db,
+            watchlist=[(Symbol("019998"), AssetClass.FUND)],
+            latest_quotes={},
+            now=datetime(2026, 6, 12, 21, 30),
+            ttl_seconds=0,
+            confirmation_only=True,
+            request_id=request_id,
+        )
+
+    assert source.calls == [(Symbol("019999"), AssetClass.FUND)]
+    assert len(db.list_quote_fetch_runs(trigger="fund_nav_sync")) == 1
+
+
+def test_confirmation_only_duplicate_during_active_request_replays_running_run(
+    monkeypatch,
+    tmp_path,
+):
+    from server.services import fund_nav_sync
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    started = Event()
+    release = Event()
+    calls: list[str] = []
+
+    class BlockingConfirmedSource:
+        def fetch_latest(self, symbol, asset_class=AssetClass.STOCK):
+            calls.append(str(symbol))
+            started.set()
+            assert release.wait(timeout=3)
+            return {
+                "price": 2.5,
+                "timestamp": "2026-06-12T15:00:00+08:00",
+                "quote_source": "tushare_fund_nav",
+                "provider_name": "deterministic_fixture",
+            }
+
+    source = BlockingConfirmedSource()
+    monkeypatch.setattr(
+        fund_nav_sync,
+        "build_sources",
+        lambda data_source, tushare_token: {"tushare": source},
+    )
+    request_id = "confirmed-nav-concurrent-0001"
+    config = SimpleNamespace(data_source="tushare", tushare_token="unit-token")
+
+    def run_once():
+        return fund_nav_sync.refresh_fund_nav_quotes(
+            config,
+            db,
+            watchlist=[(Symbol("019999"), AssetClass.FUND)],
+            latest_quotes={},
+            now=datetime(2026, 6, 12, 21, 30),
+            ttl_seconds=0,
+            confirmation_only=True,
+            request_id=request_id,
+        )
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        first_future = executor.submit(run_once)
+        assert started.wait(timeout=3)
+        replay = run_once()
+        release.set()
+        first = first_future.result(timeout=3)
+
+    assert calls == ["019999"]
+    assert replay.idempotent_replay is True
+    assert replay.run_id == first.run_id
+    assert replay.refreshed == []
+    assert first.refreshed == ["019999"]
+    assert len(db.list_quote_fetch_runs(trigger="fund_nav_sync")) == 1
+    assert len(db.get_recent_quote_snapshots_sync("019999", limit=10)) == 1
+
+
+def test_confirmation_only_failed_request_replays_exact_failure_without_refetch(
+    monkeypatch,
+    tmp_path,
+):
+    from server.services import fund_nav_sync
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    source = FakeFundSource()
+    monkeypatch.setattr(
+        fund_nav_sync,
+        "build_sources",
+        lambda data_source, tushare_token: {"akshare": source},
+    )
+    request_id = "confirmed-nav-failed-0001"
+    kwargs = {
+        "now": datetime(2026, 6, 12, 21, 30),
+        "ttl_seconds": 0,
+        "confirmation_only": True,
+        "request_id": request_id,
+    }
+
+    first = fund_nav_sync.refresh_fund_nav_quotes(
+        SimpleNamespace(data_source="akshare", tushare_token=""),
+        db,
+        watchlist=[(Symbol("019999"), AssetClass.FUND)],
+        latest_quotes={},
+        **kwargs,
+    )
+    replay = fund_nav_sync.refresh_fund_nav_quotes(
+        SimpleNamespace(data_source="akshare", tushare_token=""),
+        db,
+        watchlist=[(Symbol("019999"), AssetClass.FUND)],
+        latest_quotes={},
+        **kwargs,
+    )
+
+    expected_failure = {"019999": "fund source returned an unconfirmed NAV estimate"}
+    assert source.calls == [(Symbol("019999"), AssetClass.FUND)]
+    assert first.failed == expected_failure
+    assert replay.failed == expected_failure
+    assert replay.idempotent_replay is True
+    assert replay.run_id == first.run_id
+    assert len(db.list_quote_fetch_runs(trigger="fund_nav_sync")) == 1
+    assert db.get_recent_quote_snapshots_sync("019999", limit=10) == []
+
+
+def test_confirmation_only_concurrent_create_race_admits_one_provider_effect(
+    monkeypatch,
+    tmp_path,
+):
+    from server.services import fund_nav_sync
+
+    base_db = AppDatabase(tmp_path / "app.db")
+    base_db.init_sync()
+    preflight_barrier = Barrier(2)
+    preflight_lock = Lock()
+
+    class PreflightRaceDatabase:
+        def __init__(self):
+            self.preflight_reads = 0
+
+        def get_quote_fetch_run(self, run_id):
+            with preflight_lock:
+                is_preflight = self.preflight_reads < 2
+                if is_preflight:
+                    self.preflight_reads += 1
+            if is_preflight:
+                preflight_barrier.wait(timeout=3)
+                return None
+            return base_db.get_quote_fetch_run(run_id)
+
+        def __getattr__(self, name):
+            return getattr(base_db, name)
+
+    db = PreflightRaceDatabase()
+    source = ConfirmedFundSource()
+    monkeypatch.setattr(
+        fund_nav_sync,
+        "build_sources",
+        lambda data_source, tushare_token: {"tushare": source},
+    )
+    request_id = "confirmed-nav-create-race-0001"
+    config = SimpleNamespace(data_source="tushare", tushare_token="unit-token")
+
+    def run_once():
+        return fund_nav_sync.refresh_fund_nav_quotes(
+            config,
+            db,
+            watchlist=[(Symbol("019999"), AssetClass.FUND)],
+            latest_quotes={},
+            now=datetime(2026, 6, 12, 21, 30),
+            ttl_seconds=0,
+            confirmation_only=True,
+            request_id=request_id,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _: run_once(), range(2)))
+
+    assert source.calls == [(Symbol("019999"), AssetClass.FUND)]
+    assert sorted(result.idempotent_replay for result in results) == [False, True]
+    assert len({result.run_id for result in results}) == 1
+    assert len(base_db.list_quote_fetch_runs(trigger="fund_nav_sync")) == 1
+    assert len(base_db.get_recent_quote_snapshots_sync("019999", limit=10)) == 1
