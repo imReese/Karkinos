@@ -54,8 +54,8 @@ def _identity(private_key: Ed25519PrivateKey) -> TrustedOperatorIdentityConfig:
 
 
 class FakeWriteGateway:
-    gateway_id = "qmt-controlled-write-1"
-    evidence_connector_id = "qmt-readonly-1"
+    gateway_id = "fixture-controlled-write-1"
+    evidence_connector_id = "fixture-readonly-1"
     account_alias = "primary-review"
     account_binding_status = "verified"
 
@@ -336,7 +336,7 @@ def _direct_submit_intent(order: dict, *, seed: str) -> dict:
         "order_fingerprint": fingerprint,
         "confirmation_id": hashlib.sha256(f"confirm:{seed}".encode()).hexdigest(),
         "dossier_fingerprint": hashlib.sha256(f"dossier:{seed}".encode()).hexdigest(),
-        "gateway_id": "qmt-controlled-write-1",
+        "gateway_id": "fixture-controlled-write-1",
         "gateway_verification_fingerprint": hashlib.sha256(
             f"gateway:{seed}".encode()
         ).hexdigest(),

@@ -48,8 +48,8 @@ npm --prefix web run test
 - [券商订单生命周期](broker-order-lifecycle-ingestion.zh.md) — 只读 lifecycle evidence 与 collector ingestion。
 - [券商适配器一致性验证](broker-adapter-conformance.zh.md) — 本地 deterministic fixture、精确
   release 绑定与 latest-result-wins 门禁。
-- [券商适配器发布审查](broker-adapter-release-review.zh.md) — provider-neutral capability、威胁、
-  部署、回滚、隐私与显式人工 acceptance 证据。
+- [券商执行边缘一致性验证](broker-execution-edge-conformance.zh.md) — default-closed 的 dry-run、submit、query、cancel 与幂等契约 fixture。
+- [券商适配器发布审查](broker-adapter-release-review.zh.md) — provider-neutral capability、威胁、部署、回滚、隐私与显式人工 acceptance 证据。
 - [受控执行](CONTROLLED_EXECUTION_PLAN.zh.md) — 人工权限、运行门禁、恢复和资本扩容规则。
 - [操作员批准的离线签名](operator-approval-signing.zh.md) — 本地 Ed25519 身份配置与不保存私钥的
   短时签名 mutation 复核。

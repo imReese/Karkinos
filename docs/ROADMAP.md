@@ -132,11 +132,11 @@ reordering, partial fill, cancel race, disconnect, rejection, and broker
 not-found tests cannot create duplicate submissions, fills, cancels, or false
 terminal states. Any unresolved order continues to block a different order.
 
-**Implemented foundation:** deterministic evidence reaches separately signed exact-terminal clearance
-for full fill, no-fill cancel, and partial-fill-then-cancel without ledger mutation. An exact persisted
-open/partial lifecycle can produce a provider-neutral manual cancellation package bound to both order
-ids and the latest observation, with no broker call or state mutation; newer evidence must still prove
-cancellation. Real provider conformance, signed explicit cancel, and real recovery remain release work.
+**Implemented foundation:** a separate default-closed local execution-edge suite now proves the fixed
+dry-run/submit/query/cancel/idempotency contract, including concurrency, timeout, restart, not-found,
+disconnect, and partial-fill/cancel races, without registering an adapter or contacting a provider.
+Deterministic evidence also reaches separately signed exact-terminal clearance, while an open lifecycle
+can produce a copy-only cancellation package. Real adapter conformance, signed explicit cancel, and real-environment recovery remain release work.
 
 ### M3 — Reconciled Ledger Posting
 

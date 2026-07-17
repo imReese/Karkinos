@@ -97,8 +97,8 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
   Ledger、Holdings、Allocation、Equity、Overview、Cockpit、Account State、realized P/L、valuation
   identity 与 Account Truth stale gate；
 - 版本化 adapter capability/boundary manifest 与可撤销的 live collector release review gate；
-- 与 release review 绑定并在 live collector prepare/commit 前复核的 deterministic local adapter
-  conformance 证据；
+- 与 release review 绑定的只读 adapter conformance，以及独立、无授权能力的 execution-edge
+  协议 fixture matrix；
 - connector-scoped、latest-result-wins 的 soak promotion recovery-drill gate；
 - 已持久化 operator projection 与 evidence-based scale review；
 - 跨订单 operator attention 覆盖完整的有界 intent 集合，同时另行保留按时间最新的 journey
