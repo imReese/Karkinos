@@ -289,6 +289,14 @@ partial, degraded, stale, or boundary-invalid evidence remains in the attention
 queue. This read-side closure changes no Account Truth, ledger, OMS, risk,
 kill-switch, broker, or capital-authority state.
 
+`karkinos.operations_today.v1` also derives one versioned attention item for
+each non-pass/non-skipped subsystem. The item fingerprints the source status,
+next action, and evidence-based resolution condition while excluding
+request-generated timestamps. A refresh with unchanged evidence reproduces the
+fingerprint; evidence-status drift changes it. Viewing or acknowledging an item never clears it. The same
+read-only payload may enter an explicit AI context capture, but it performs no
+provider contact or database write and grants no execution authority.
+
 An open exact-identity lifecycle may be projected through
 `karkinos.manual_broker_cancellation_ticket.v1`. This provider-neutral boundary
 prepares a copyable human action package from the persisted controlled intent,

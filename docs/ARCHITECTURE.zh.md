@@ -224,6 +224,11 @@ fail-closed 严重度选择：unknown/prepared 结果与开放券商订单优先
 Account Truth 后续复核及已经闭环的拒单。紧凑关注队列会让较早但未完成的旅程在出现更新旅程后仍
 保持可见。该 GET 只读持久化事实，不能查询 gateway、提交、撤单、写账本或改变任何权限。
 
+`karkinos.operations_today.v1` 还会为每个非 pass/non-skipped 子系统派生一个版本化 attention item。
+它把源状态、下一步与证据解除条件绑定为确定性 fingerprint，并排除请求生成时间；证据不变时刷新
+会得到相同 fingerprint，证据状态漂移时 fingerprint 随之变化。查看或确认本身不能清除任务。同一只读 payload
+可以进入人工显式创建的 AI context capture，但不会联系 provider、写数据库或授予执行权限。
+
 精确持久化且仍开放的 lifecycle 可通过
 `karkinos.manual_broker_cancellation_ticket.v1` 投影。该 provider-neutral 边界根据 persisted
 controlled intent、OMS order fingerprint、broker/client 双重订单 ID 与最新 lifecycle observation

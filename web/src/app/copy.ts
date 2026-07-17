@@ -196,6 +196,14 @@ export const copy = {
         queuePriorityFirst: 'Handle first',
         queuePriorityWatch: 'Watch today',
         queuePriorityNormal: 'Normal status',
+        resolutionCondition: (condition: string) =>
+          `Clears when: ${condition}. Viewing or acknowledging alone does not clear it.`,
+        dataResolutionCondition:
+          'Clears only after newer confirmed evidence produces a complete current-holding projection bound to one consistent valuation snapshot and ledger cutoff.',
+        strategyNoLinkedFillsResolution:
+          'No action required: contribution appears only after a production-ledger fill is explicitly linked to strategy evidence.',
+        strategyEvidenceResolution:
+          'Clears only after the missing signal, review, order, fill, ledger, and valuation references form one canonical evidence chain.',
         dataUsable: 'Market data and NAV are usable.',
         dataNeedsReview: 'Market data or NAV needs review.',
         dataReviewLoading: 'Loading the canonical holding evidence review.',
@@ -2787,6 +2795,14 @@ export const copy = {
         queuePriorityFirst: '先处理',
         queuePriorityWatch: '今日关注',
         queuePriorityNormal: '正常状态',
+        resolutionCondition: (condition: string) =>
+          `解除条件：${condition}。仅查看或确认不会清除此状态。`,
+        dataResolutionCondition:
+          '解除条件：更新且已确认的证据必须生成绑定同一 valuation snapshot 与 ledger cutoff 的完整当前持仓投影；仅查看不会清除。',
+        strategyNoLinkedFillsResolution:
+          '无需处理：只有生产账本成交被显式关联到策略证据后，系统才会展示策略贡献。',
+        strategyEvidenceResolution:
+          '解除条件：缺失的信号、复核、订单、成交、账本与估值引用形成同一条 canonical 证据链。',
         dataUsable: '行情与净值可用于解读。',
         dataNeedsReview: '行情或净值需要复核。',
         dataReviewLoading: '正在读取 canonical 当前持仓证据。',

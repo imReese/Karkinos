@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime
 from typing import Any, Iterable
@@ -76,6 +77,7 @@ def build_operations_today_summary(
     ]
     health = _health_summary(subsystems)
     conclusion_status, primary_target = _conclusion(subsystems)
+    attention_items = _attention_items(subsystems)
 
     return {
         "schema_version": "karkinos.operations_today.v1",
@@ -85,6 +87,7 @@ def build_operations_today_summary(
         "primary_target": primary_target,
         "health": health,
         "subsystems": subsystems,
+        "attention_items": attention_items,
         "daily_operations": daily_operations.model_dump(),
         "daily_plan": {
             "candidate_pool_count": _int(trading_plan.get("candidate_pool_count")),
@@ -1239,6 +1242,101 @@ def _subsystem(
         "limitations": limitations,
         "detail_status": detail_status,
     }
+
+
+def _attention_items(subsystems: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for subsystem in subsystems:
+        status = str(subsystem.get("status") or "unknown")
+        if status in {"pass", "skipped"}:
+            continue
+        subsystem_id = str(subsystem.get("id") or "unknown")
+        target = str(subsystem.get("target") or subsystem_id)
+        next_action = str(subsystem.get("next_action") or "none")
+        resolution_condition = _attention_resolution_condition(
+            subsystem_id=subsystem_id,
+            next_action=next_action,
+        )
+        evidence = {
+            "status": str(subsystem.get("detail_status") or "unknown"),
+            "observed_at": subsystem.get("last_run_at"),
+        }
+        fingerprint_payload = {
+            "schema_version": "karkinos.operations_attention_item.v1",
+            "subsystem_id": subsystem_id,
+            "status": status,
+            "target": target,
+            "evidence": evidence,
+            "next_action": next_action,
+            "resolution_condition": resolution_condition,
+        }
+        fingerprint_basis = {
+            **fingerprint_payload,
+            "evidence": {"status": evidence["status"]},
+        }
+        encoded = json.dumps(
+            fingerprint_basis,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        items.append(
+            {
+                **fingerprint_payload,
+                "task_fingerprint": f"sha256:{hashlib.sha256(encoded).hexdigest()}",
+                "manual_acknowledgement_clears_status": False,
+                "read_only_projection": True,
+                "provider_contacted": False,
+                "database_writes_performed": False,
+                "authorizes_execution": False,
+            }
+        )
+    return items
+
+
+def _attention_resolution_condition(
+    *,
+    subsystem_id: str,
+    next_action: str,
+) -> str:
+    by_action = {
+        "repair_market_data_source": "new_complete_market_evidence_required",
+        "review_market_data_freshness": "new_complete_market_evidence_required",
+        "resolve_account_truth_mismatch": "new_complete_account_truth_evidence_required",
+        "attach_account_truth_evidence": "new_complete_account_truth_evidence_required",
+        "review_strategy_evidence": "candidate_strategy_evidence_must_pass",
+        "review_risk_blocks": "new_daily_plan_with_deterministic_risk_pass_required",
+        "resolve_daily_plan_blockers": "new_daily_plan_without_blockers_required",
+        "review_manual_order_intents": "explicit_manual_order_review_evidence_required",
+        "run_paper_shadow_daily": "new_paper_shadow_run_evidence_required",
+        "wait_for_paper_shadow_run": "current_paper_shadow_run_must_reach_terminal_evidence",
+        "review_shadow_divergence": "accepted_paper_shadow_review_evidence_required",
+        "resolve_shadow_divergence": "accepted_paper_shadow_review_evidence_required",
+        "inspect_failed_run": "new_terminal_paper_shadow_run_evidence_required",
+        "inspect_scheduler_failure": "new_recognized_terminal_scheduler_run_required",
+        "review_scheduler_run": "new_recognized_terminal_scheduler_run_required",
+        "resolve_kill_switch": "kill_switch_clear_and_new_scheduler_evidence_required",
+        "review_acceptance_audit_gaps": "complete_acceptance_audit_evidence_required",
+        "export_acceptance_audit": "complete_acceptance_audit_evidence_required",
+    }
+    if next_action in by_action:
+        return by_action[next_action]
+    by_subsystem = {
+        "market_data": "new_complete_market_evidence_required",
+        "account_truth": "new_complete_account_truth_evidence_required",
+        "strategy_candidates": "candidate_strategy_evidence_must_pass",
+        "risk": "new_daily_plan_with_deterministic_risk_pass_required",
+        "daily_trading_plan": "new_daily_plan_without_blockers_required",
+        "paper_shadow": "new_terminal_paper_shadow_run_evidence_required",
+        "scheduler": "new_recognized_terminal_scheduler_run_required",
+        "execution_reconciliation": "canonical_execution_reconciliation_must_close",
+        "acceptance_audit": "complete_acceptance_audit_evidence_required",
+        "broker_adapter_evidence": "explicit_provider_authorization_and_new_release_evidence_required",
+    }
+    return by_subsystem.get(
+        subsystem_id,
+        "new_canonical_evidence_required",
+    )
 
 
 def _health_summary(subsystems: list[dict[str, Any]]) -> dict[str, int]:
