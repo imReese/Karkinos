@@ -36,6 +36,7 @@ class CaptureEvidenceType(StrEnum):
     RESEARCH_EVIDENCE = "research_evidence"
     ACCOUNT_TRUTH = "account_truth"
     PAPER_SHADOW = "paper_shadow"
+    STRATEGY_CONTRIBUTION = "strategy_contribution"
 
 
 CAPTURE_TOOL_BY_TYPE: Mapping[CaptureEvidenceType, str] = {
@@ -45,6 +46,7 @@ CAPTURE_TOOL_BY_TYPE: Mapping[CaptureEvidenceType, str] = {
     CaptureEvidenceType.RESEARCH_EVIDENCE: "research_evidence.read",
     CaptureEvidenceType.ACCOUNT_TRUTH: "account_truth.read",
     CaptureEvidenceType.PAPER_SHADOW: "paper_shadow_evidence.read",
+    CaptureEvidenceType.STRATEGY_CONTRIBUTION: "strategy_contribution.read",
 }
 
 
@@ -64,6 +66,7 @@ class HumanContextCaptureRequest:
     confirmation: str
     backtest_result_id: int | None = None
     paper_shadow_run_id: str | None = None
+    strategy_id: str | None = None
     schema_version: str = "karkinos.ai.context_capture_request.v1"
 
     def __post_init__(self) -> None:
@@ -90,6 +93,11 @@ class HumanContextCaptureRequest:
                 raise ValueError(
                     "paper_shadow_run_id is required for paper/shadow evidence"
                 )
+        if CaptureEvidenceType.STRATEGY_CONTRIBUTION in self.evidence_types:
+            if not str(self.strategy_id or "").strip():
+                raise ValueError(
+                    "strategy_id is required for strategy contribution evidence"
+                )
 
     @property
     def requested_tools(self) -> tuple[str, ...]:
@@ -100,7 +108,7 @@ class HumanContextCaptureRequest:
         return content_fingerprint(self.to_dict())
 
     def to_dict(self) -> JsonObject:
-        return {
+        payload: JsonObject = {
             "idempotency_key": self.idempotency_key,
             "requested_by": self.requested_by,
             "research_question": self.research_question,
@@ -111,6 +119,9 @@ class HumanContextCaptureRequest:
             "paper_shadow_run_id": self.paper_shadow_run_id,
             "schema_version": self.schema_version,
         }
+        if self.strategy_id is not None:
+            payload["strategy_id"] = self.strategy_id
+        return payload
 
 
 @dataclass(frozen=True)

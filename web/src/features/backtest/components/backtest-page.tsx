@@ -1191,7 +1191,10 @@ export function BacktestPage() {
         error={validation.isError || readiness.isError}
       />
 
-      <ResearchTaskPanel backtestResultId={latestReport?.id ?? null} />
+      <ResearchTaskPanel
+        backtestResultId={latestReport?.id ?? null}
+        strategyId={accountStrategy.data?.strategy_id ?? null}
+      />
 
       <BacktestReportView />
     </section>

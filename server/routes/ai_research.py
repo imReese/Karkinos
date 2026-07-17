@@ -33,10 +33,11 @@ class HumanResearchContextCaptureRequest(BaseModel):
     requested_by: str = Field(min_length=1, max_length=128)
     research_question: str = Field(min_length=1, max_length=4_000)
     account_alias: str = Field(min_length=1, max_length=128)
-    evidence_types: list[CaptureEvidenceType] = Field(min_length=1, max_length=6)
+    evidence_types: list[CaptureEvidenceType] = Field(min_length=1, max_length=7)
     confirmation: Literal["capture_read_only_research_context"]
     backtest_result_id: int | None = Field(default=None, gt=0)
     paper_shadow_run_id: str | None = Field(default=None, min_length=1, max_length=256)
+    strategy_id: str | None = Field(default=None, min_length=1, max_length=256)
 
 
 def create_router() -> APIRouter:
@@ -61,6 +62,7 @@ def create_router() -> APIRouter:
                 confirmation=payload.confirmation,
                 backtest_result_id=payload.backtest_result_id,
                 paper_shadow_run_id=payload.paper_shadow_run_id,
+                strategy_id=payload.strategy_id,
             )
             result = await build_human_context_capture_service(state).capture(request)
         except IdempotencyConflict as exc:

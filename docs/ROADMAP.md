@@ -40,14 +40,14 @@ authority, bypass risk, or call a broker directly.
 | v1.4-v1.7 | Completed | Ledger/snapshot-bound contribution and cost fidelity, Daily Trading Plan, Operations runbook, non-submitting controlled bridge |
 | v1.8 control plane | Foundation implemented | Signed bounded authority, atomic budgets, sessions, live gates, pause/replacement, one-shot submit boundary, interlock, broker-neutral lifecycle evidence, exact-terminal full/partial-cancel/no-fill-cancel clearance, capital-scaling review |
 | v1.8 adapter acceptance | Provider-neutral foundation implemented | Versioned manifest, deterministic local conformance evidence, capability/boundary matrix, append-only accept/reject/revoke review, exact live collector binding, and persisted-only operator readiness visibility; no real provider selected or registered |
-| AI-native Phase 1-1.18 | Formula research vertical implemented | Provider-neutral, evidence-bound, human-reviewed research, memory, allowlisted Formula DSL, canonical after-cost backtest, and critique workflows without trading authority |
+| AI-native Phase 1-1.18 + outcome bridge | Implemented | Provider-neutral, evidence-bound research, memory, Formula DSL/backtest/critique, plus explicit canonical strategy-contribution capture without trading authority |
 
 Account Truth and reconciliation remain mandatory safety gates, but they are
 not the next product mainline. Phase 1.18 was completed as one explicitly
 authorized formula-research vertical; v1.8 remains the active product milestone.
-Further AI Phase 1.19+, semantic-memory expansion, and automatic prompt
-injection remain deferred until the controlled-execution loop is operationally
-closed.
+The small read-only outcome bridge does not activate Phase 1.19: further AI,
+semantic-memory expansion, and automatic prompt injection remain deferred until
+the controlled-execution loop is operationally closed.
 
 ## Active Milestone: v1.8 — Broker-Connected Controlled Pilot
 

@@ -54,6 +54,11 @@ def _request(
             if CaptureEvidenceType.PAPER_SHADOW in evidence_types
             else None
         ),
+        strategy_id=(
+            "dual_ma"
+            if CaptureEvidenceType.STRATEGY_CONTRIBUTION in evidence_types
+            else None
+        ),
     )
 
 
@@ -164,6 +169,10 @@ def _service(db_path, source, *, context_store=None):
             {"evidence_types": (CaptureEvidenceType.PAPER_SHADOW,)},
             "paper_shadow_run_id is required",
         ),
+        (
+            {"evidence_types": (CaptureEvidenceType.STRATEGY_CONTRIBUTION,)},
+            "strategy_id is required",
+        ),
     ],
 )
 def test_capture_request_requires_explicit_bounded_selection(overrides, message):
@@ -179,6 +188,16 @@ def test_capture_request_requires_explicit_bounded_selection(overrides, message)
 
     with pytest.raises(ValueError, match=message):
         HumanContextCaptureRequest(**values)
+
+
+@pytest.mark.unit
+def test_legacy_capture_fingerprint_is_unchanged_without_new_strategy_selector():
+    request = _request()
+
+    assert "strategy_id" not in request.to_dict()
+
+    contribution = _request(evidence_types=(CaptureEvidenceType.STRATEGY_CONTRIBUTION,))
+    assert contribution.to_dict()["strategy_id"] == "dual_ma"
 
 
 @pytest.mark.unit

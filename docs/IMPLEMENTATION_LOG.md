@@ -24,7 +24,9 @@ The latest completed cross-cutting work includes:
   trading or capital authority;
 - canonical daily performance across Holdings, Equity Curve, Overview, and
   explainability surfaces;
-- provider-neutral evidence-bound AI research, review, and memory lineage;
+- provider-neutral evidence-bound AI research, review, and memory lineage,
+  including explicit exact-strategy capture of the canonical posted-fill and
+  valuation-bound contribution report without P/L recomputation or authority;
 - human-gated allowlisted Formula DSL research over exact saved datasets,
   executed by the canonical backtest engine with next-bar semantics and no
   production-strategy or trading-authority side effects;

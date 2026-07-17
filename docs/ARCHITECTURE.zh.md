@@ -254,6 +254,12 @@ fingerprint。证据缺失、陈旧、估算、无效或漂移时，全部贡献
 Decision 的循环阻断；一旦存在成交，账本、估值或来源证据不完整就会 fail closed，并向
 Overview、Decision、Operations 与 Strategy Lab 提供唯一明确的下一步人工操作。
 
+操作员可以通过 `strategy_contribution.read` 明确冻结该投影，用于 AI 辅助的结果复盘。捕获请求
+必须指定当前精确 `strategy_id`；适配器只复用 canonical report，并用捕获时的 valuation/ledger
+identity 包装，assignment 或 identity 漂移都会被拒绝。只有完全绑定的贡献才是 authoritative；
+无成交、缺失或未对账结果仍保持 degraded/blocked。该捕获不联系 provider、不重算财务概念，
+也不修改任何权限。
+
 ### AI 研究
 
 ```text

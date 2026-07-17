@@ -48,6 +48,9 @@ const COPY = {
     taskTitle: 'Task title',
     question: 'Research question',
     includeBacktest: 'Bind saved backtest evidence',
+    includeContribution: 'Bind current strategy outcome evidence',
+    noContribution:
+      'No exact current strategy is available for contribution capture.',
     noBacktest:
       'Run and save a backtest first to bind exact research evidence.',
     submit: 'Capture evidence and record task',
@@ -129,6 +132,8 @@ const COPY = {
     taskTitle: '任务标题',
     question: '研究问题',
     includeBacktest: '绑定已保存回测证据',
+    includeContribution: '绑定当前策略结果证据',
+    noContribution: '当前没有可供精确选择的策略贡献证据。',
     noBacktest: '请先运行并保存回测，才能绑定精确 research evidence。',
     submit: '冻结证据并记录任务',
     submitting: '记录中…',
@@ -198,8 +203,10 @@ const COPY = {
 
 export function ResearchTaskPanel({
   backtestResultId,
+  strategyId,
 }: {
   backtestResultId: number | null;
+  strategyId: string | null;
 }) {
   const { locale } = usePreferences();
   const copy = COPY[locale];
@@ -214,6 +221,7 @@ export function ResearchTaskPanel({
   const [title, setTitle] = useState('Review frozen investment evidence');
   const [question, setQuestion] = useState('');
   const [includeBacktest, setIncludeBacktest] = useState(false);
+  const [includeContribution, setIncludeContribution] = useState(false);
   const [reviewNote, setReviewNote] = useState('');
   const [captureKey, setCaptureKey] = useState(() =>
     newAuditKey('ai-context-capture'),
@@ -230,6 +238,9 @@ export function ResearchTaskPanel({
     if (includeBacktest && backtestResultId !== null) {
       evidenceTypes.push('research_evidence');
     }
+    if (includeContribution && strategyId !== null) {
+      evidenceTypes.push('strategy_contribution');
+    }
     try {
       await createTask.mutateAsync({
         capture_idempotency_key: captureKey,
@@ -240,6 +251,7 @@ export function ResearchTaskPanel({
         research_question: question.trim(),
         evidence_types: evidenceTypes,
         backtest_result_id: backtestResultId,
+        strategy_id: strategyId,
       });
       setCaptureKey(newAuditKey('ai-context-capture'));
       setTaskKey(newAuditKey('ai-research-task'));
@@ -390,10 +402,36 @@ export function ResearchTaskPanel({
                 )}
               </span>
             </label>
+            <label className="mt-3 flex items-start gap-2 text-sm text-[var(--app-text)]">
+              <input
+                checked={includeContribution}
+                className="mt-1"
+                disabled={strategyId === null}
+                onChange={(event) =>
+                  setIncludeContribution(event.target.checked)
+                }
+                type="checkbox"
+              />
+              <span>
+                {copy.includeContribution}
+                {strategyId === null ? (
+                  <span className="app-muted mt-1 block text-xs">
+                    {copy.noContribution}
+                  </span>
+                ) : (
+                  <span className="app-muted mt-1 block font-mono text-xs">
+                    strategy_id={strategyId}
+                  </span>
+                )}
+              </span>
+            </label>
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <button
                 className="app-button-primary px-4 py-2 text-sm font-semibold"
-                disabled={createTask.isPending}
+                disabled={
+                  createTask.isPending ||
+                  (includeContribution && strategyId === null)
+                }
                 type="submit"
               >
                 {createTask.isPending ? copy.submitting : copy.submit}

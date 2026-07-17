@@ -134,6 +134,12 @@ def default_tool_permission_registry() -> ToolPermissionRegistry:
                 "Read persisted paper/shadow evidence without starting a run.",
             ),
             ToolPermission(
+                "strategy_contribution.read",
+                ToolEffect.READ_PERSISTED,
+                True,
+                "Read canonical strategy contribution bound to posted ledger facts.",
+            ),
+            ToolPermission(
                 "calculator.evaluate",
                 ToolEffect.PURE_COMPUTE,
                 False,

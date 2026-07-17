@@ -54,6 +54,8 @@ Karkinos 连接完整的投资操作闭环：
 
 - Provider、model、agent role、workflow、tool、evidence 与 memory 身份彼此独立。
 - AI 工具默认拒绝，只能只读访问已持久化证据。
+- 决策后 AI 复盘只能读取人工明确选择、绑定同一 valuation snapshot 与 ledger cutoff 的
+  canonical 结果投影；不得重算收益，也不得把已复核观察转化为权限。
 - 模型输出是带引用的非权威研究产物，不是账户事实、风控决策、资本授权、OMS transition、
   券商指令或权限。
 - 在公式研究中，模型可以提出假设，但只有 allowlisted DSL 与 canonical backtest engine 可以

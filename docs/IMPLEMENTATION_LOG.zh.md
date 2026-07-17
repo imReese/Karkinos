@@ -7,7 +7,7 @@ commit 和 pull request。
 
 ## 当前基线
 
-截至 2026-07-16，v0.2 至 v1.7 已完成。v1.8 control-plane 基础以及截至 Phase 1.18 的
+截至 2026-07-17，v0.2 至 v1.7 已完成。v1.8 control-plane 基础以及截至 Phase 1.18 的
 AI-native research 基础已经实现。当前产品里程碑是[路线图](ROADMAP.zh.md)中的券商连接、逐单
 受控 pilot。
 
@@ -19,7 +19,8 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
   `ledger_entries.source_ref = fill_id` 作为成交身份；关联成交只有在生产账本和估值快照可精确
   重放后才展示收益，读取路径不联系 provider、不写数据库，也不具备交易或资本权限；
 - Holdings、Equity Curve、Overview 与 explainability 界面使用一致的 canonical daily performance；
-- provider-neutral、evidence-bound 的 AI 研究、复核与 memory lineage；
+- provider-neutral、evidence-bound 的 AI 研究、复核与 memory lineage，包括人工显式选择精确
+  strategy id 后捕获 canonical、已入账且估值绑定的贡献报告，不重算收益，也不产生权限；
 - 基于精确保存数据集、人工门禁和 allowlisted Formula DSL 的研究，由 canonical backtest engine
   以 next-bar 语义执行，不产生生产策略或交易权限副作用；
 - fail-fast 分组运行配置、仅限环境变量的 TuShare/AI/通知凭证、已校验的

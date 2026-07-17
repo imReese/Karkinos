@@ -8,6 +8,7 @@ import pytest
 from server.ai_runtime.capture import (
     CAPTURE_CONFIRMATION,
     CaptureEvidenceType,
+    CaptureSelectionError,
     HumanContextCaptureRequest,
 )
 from server.ai_runtime.evidence import EvidenceIdentityMismatch
@@ -31,6 +32,10 @@ class FixtureModel:
 
 
 class FixtureDatabase:
+    def get_runtime_control_sync(self, key: str):
+        assert key == "account_strategy_assignment"
+        return None
+
     def get_valuation_snapshot_sync(self, snapshot_id: str):
         if snapshot_id != VALUATION_ID:
             return None
@@ -87,6 +92,7 @@ def _request() -> HumanContextCaptureRequest:
         confirmation=CAPTURE_CONFIRMATION,
         backtest_result_id=17,
         paper_shadow_run_id="shadow-17",
+        strategy_id="dual_ma",
     )
 
 
@@ -145,6 +151,29 @@ async def test_production_source_reuses_canonical_builders_and_exact_persisted_r
             "default_execution_mode": "manual_confirmation",
         }
 
+    def build_contribution(db, assignment):
+        assert assignment.strategy_id == "dual_ma"
+        calls.append("strategy_contribution")
+        return FixtureModel(
+            {
+                "schema_version": "karkinos.account_strategy_contribution.v2",
+                "strategy_id": "dual_ma",
+                "contribution_status": "evidence_bound_from_posted_fills",
+                "evidence_binding_status": "bound",
+                "valuation_scope_status": "complete",
+                "blockers": [],
+                "valuation_snapshot_id": VALUATION_ID,
+                "valuation_as_of": NOW,
+                "ledger_cutoff_id": LEDGER_CUTOFF_ID,
+                "ledger_fingerprint": LEDGER_FINGERPRINT,
+                "contribution_fingerprint": "contribution-source-001",
+                "persisted_facts_only": True,
+                "provider_contacted": False,
+                "database_writes_performed": False,
+                "authorizes_execution": False,
+            }
+        )
+
     monkeypatch.setattr(
         "server.routes.portfolio.build_portfolio_snapshot", build_portfolio
     )
@@ -163,6 +192,10 @@ async def test_production_source_reuses_canonical_builders_and_exact_persisted_r
         "server.routes.operations.build_today_operations_payload", build_operations
     )
     monkeypatch.setattr(
+        "server.routes.account_strategy._build_contribution_report",
+        build_contribution,
+    )
+    monkeypatch.setattr(
         "server.account_truth_gate.build_latest_account_truth_score_payload",
         lambda state: {
             "schema_version": "karkinos.account_truth.score.v1",
@@ -172,14 +205,22 @@ async def test_production_source_reuses_canonical_builders_and_exact_persisted_r
             "created_at": NOW,
         },
     )
-    state = SimpleNamespace(db=FixtureDatabase())
+    state = SimpleNamespace(
+        db=FixtureDatabase(),
+        config=SimpleNamespace(strategy="dual_ma"),
+    )
 
     batch = await PersistedKarkinosCaptureSource(state).load(_request())
 
     assert batch.valuation_snapshot_id == VALUATION_ID
     assert batch.ledger_cutoff_id == LEDGER_CUTOFF_ID
     assert batch.ledger_fingerprint == LEDGER_FINGERPRINT
-    assert calls == ["portfolio", "account_state", "operations"]
+    assert calls == [
+        "portfolio",
+        "account_state",
+        "operations",
+        "strategy_contribution",
+    ]
     assert [projection.tool_name for projection in batch.projections] == [
         "portfolio_projection.read",
         "account_state_projection.read",
@@ -187,6 +228,7 @@ async def test_production_source_reuses_canonical_builders_and_exact_persisted_r
         "research_evidence.read",
         "account_truth.read",
         "paper_shadow_evidence.read",
+        "strategy_contribution.read",
     ]
     assert [projection.status for projection in batch.projections] == [
         "complete",
@@ -195,9 +237,17 @@ async def test_production_source_reuses_canonical_builders_and_exact_persisted_r
         "degraded",
         "complete",
         "complete",
+        "complete",
     ]
     assert batch.projections[3].payload["backtest_result_id"] == 17
     assert batch.projections[5].payload["persisted_run"]["run_id"] == "shadow-17"
+    contribution = batch.projections[6].payload
+    assert contribution["strategy_id"] == "dual_ma"
+    assert contribution["valuation_snapshot_id"] == VALUATION_ID
+    assert (
+        contribution["strategy_contribution_report"]["contribution_fingerprint"]
+        == "contribution-source-001"
+    )
 
 
 @pytest.mark.unit
@@ -253,3 +303,140 @@ async def test_production_source_requires_replayable_persisted_valuation(monkeyp
 
     with pytest.raises(EvidenceIdentityMismatch, match="not persisted"):
         await PersistedKarkinosCaptureSource(SimpleNamespace(db=db)).load(request)
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_strategy_contribution_capture_rejects_assignment_drift(monkeypatch):
+    async def build_portfolio(state):
+        return _portfolio()
+
+    monkeypatch.setattr(
+        "server.routes.portfolio.build_portfolio_snapshot", build_portfolio
+    )
+    request = HumanContextCaptureRequest(
+        idempotency_key="source-strategy-drift-001",
+        requested_by="human:reese",
+        research_question="Reject a changed strategy selection",
+        account_alias="primary",
+        evidence_types=(CaptureEvidenceType.STRATEGY_CONTRIBUTION,),
+        confirmation=CAPTURE_CONFIRMATION,
+        strategy_id="not-the-current-strategy",
+    )
+    state = SimpleNamespace(
+        db=FixtureDatabase(),
+        config=SimpleNamespace(strategy="dual_ma"),
+    )
+
+    with pytest.raises(CaptureSelectionError, match="selected strategy changed"):
+        await PersistedKarkinosCaptureSource(state).load(request)
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_strategy_contribution_capture_rejects_financial_identity_drift(
+    monkeypatch,
+):
+    async def build_portfolio(state):
+        return _portfolio()
+
+    monkeypatch.setattr(
+        "server.routes.portfolio.build_portfolio_snapshot", build_portfolio
+    )
+    monkeypatch.setattr(
+        "server.routes.account_strategy._build_contribution_report",
+        lambda db, assignment: FixtureModel(
+            {
+                "strategy_id": assignment.strategy_id,
+                "contribution_status": "evidence_bound_from_posted_fills",
+                "evidence_binding_status": "bound",
+                "valuation_scope_status": "complete",
+                "blockers": [],
+                "valuation_snapshot_id": "different-valuation",
+                "valuation_as_of": NOW,
+                "ledger_cutoff_id": LEDGER_CUTOFF_ID,
+                "ledger_fingerprint": LEDGER_FINGERPRINT,
+                "contribution_fingerprint": "contribution-drifted",
+            }
+        ),
+    )
+    request = HumanContextCaptureRequest(
+        idempotency_key="source-contribution-identity-drift-001",
+        requested_by="human:reese",
+        research_question="Reject contribution identity drift",
+        account_alias="primary",
+        evidence_types=(CaptureEvidenceType.STRATEGY_CONTRIBUTION,),
+        confirmation=CAPTURE_CONFIRMATION,
+        strategy_id="dual_ma",
+    )
+    state = SimpleNamespace(
+        db=FixtureDatabase(),
+        config=SimpleNamespace(strategy="dual_ma"),
+    )
+
+    with pytest.raises(EvidenceIdentityMismatch, match="valuation_snapshot_id"):
+        await PersistedKarkinosCaptureSource(state).load(request)
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_incomplete_strategy_contribution_remains_blocked_evidence(monkeypatch):
+    async def build_portfolio(state):
+        return _portfolio()
+
+    monkeypatch.setattr(
+        "server.routes.portfolio.build_portfolio_snapshot", build_portfolio
+    )
+    monkeypatch.setattr(
+        "server.routes.portfolio._current_valuation_snapshot",
+        lambda state: {
+            "snapshot_id": VALUATION_ID,
+            "ledger_cutoff_id": LEDGER_CUTOFF_ID,
+            "ledger_fingerprint": LEDGER_FINGERPRINT,
+        },
+    )
+    monkeypatch.setattr(
+        "server.routes.account_strategy._build_contribution_report",
+        lambda db, assignment: FixtureModel(
+            {
+                "strategy_id": assignment.strategy_id,
+                "contribution_status": "valuation_missing",
+                "evidence_binding_status": "blocked",
+                "valuation_scope_status": "blocked",
+                "blockers": ["strategy_contribution_valuation_snapshot_missing"],
+                "valuation_snapshot_id": None,
+                "valuation_as_of": None,
+                "ledger_cutoff_id": 0,
+                "ledger_fingerprint": None,
+                "contribution_fingerprint": None,
+                "persisted_facts_only": True,
+                "provider_contacted": False,
+                "database_writes_performed": False,
+                "authorizes_execution": False,
+            }
+        ),
+    )
+    request = HumanContextCaptureRequest(
+        idempotency_key="source-contribution-blocked-001",
+        requested_by="human:reese",
+        research_question="Preserve incomplete outcome evidence as blocked",
+        account_alias="primary",
+        evidence_types=(CaptureEvidenceType.STRATEGY_CONTRIBUTION,),
+        confirmation=CAPTURE_CONFIRMATION,
+        strategy_id="dual_ma",
+    )
+    state = SimpleNamespace(
+        db=FixtureDatabase(),
+        config=SimpleNamespace(strategy="dual_ma"),
+    )
+
+    batch = await PersistedKarkinosCaptureSource(state).load(request)
+
+    assert batch.projections[0].status == "blocked"
+    assert batch.projections[0].payload["valuation_snapshot_id"] == VALUATION_ID
+    report = batch.projections[0].payload["strategy_contribution_report"]
+    assert report["contribution_status"] == "valuation_missing"
+    assert report["authorizes_execution"] is False
