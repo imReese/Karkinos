@@ -230,6 +230,13 @@ adapter，不签发撤单，也不修改 OMS/ledger、risk、kill switch、inter
 Truth/reconciliation 证据才能证明撤单。既有 live-cancel endpoint 继续保持禁用，因此该资料包
 不是 M2 显式撤单命令，也不构成任何 provider 支持声明。
 
+M2 执行边缘语义使用另一套离线契约：`karkinos.broker_execution_edge_manifest.v1` 与
+`karkinos.broker_execution_edge_conformance_result.v1`。固定本地 suite 覆盖 default-closed
+capability、dry-run、精确及并发幂等 submit、timeout/unknown 的 query-only recovery、restart、
+独立 cancel identity、重复 cancel、partial-fill/cancel 竞态、not-found 与 disconnect。它只创建
+append-only conformance evidence，不能注册 adapter 或清除真实 provider gate。该 suite 验证的是
+Karkinos harness，不是第三方实现；真实 adapter 仍需要另行批准的 runner、ADR/威胁审查与部署授权。
+
 Reconciliation clearance 以
 `karkinos.controlled_submission_reconciliation_clearance.v3` 作为 canonical 精确终态契约。
 签名命令可以记录完整成交、零成交撤单或部分成交后撤单；仍处于开放状态的 partial fill 继续

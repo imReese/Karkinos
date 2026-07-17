@@ -292,6 +292,18 @@ observation plus Account Truth/reconciliation evidence can prove cancellation.
 The existing live-cancel endpoint remains disabled, so this package is not the
 M2 explicit-cancel command or a claim of provider support.
 
+M2 execution-edge semantics have a separate offline contract:
+`karkinos.broker_execution_edge_manifest.v1` and
+`karkinos.broker_execution_edge_conformance_result.v1`. The fixed local suite
+exercises default-closed capability declaration, dry-run, exact and concurrent
+idempotent submission, timeout/unknown query-only recovery, restart, explicit
+cancel identity, duplicate cancel, partial-fill/cancel race, not-found, and
+disconnect behavior. It creates only append-only conformance evidence and
+cannot register an adapter or clear a real-provider gate. The suite validates
+the Karkinos harness, not a third-party implementation; real adapter acceptance
+still requires a separately approved runner, ADR/threat review, and deployment
+authorization.
+
 Reconciliation clearance uses
 `karkinos.controlled_submission_reconciliation_clearance.v3` as the canonical
 exact-terminal contract. A signed command may record a full fill, a no-fill

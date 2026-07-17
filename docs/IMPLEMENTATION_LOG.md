@@ -109,8 +109,8 @@ Implemented foundation:
   Account State, realized P/L, valuation identity, and Account Truth staleness;
 - versioned adapter capability/boundary manifests and revocable release review
   gates for live collector ingestion;
-- deterministic local adapter conformance evidence bound to release review and
-  rechecked before live collector prepare/commit;
+- deterministic local read-only adapter conformance bound to release review,
+  plus a separate non-authorizing execution-edge protocol fixture matrix;
 - connector-scoped, latest-result-wins recovery-drill gates for soak promotion;
 - persisted operator projection and evidence-based scale review;
 - cross-order operator attention prioritization over the full bounded intent

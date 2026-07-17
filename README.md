@@ -52,8 +52,10 @@ Historical results and AI-generated research do not guarantee future returns.
 Research, daily planning, paper/shadow operations, OMS, Account Truth,
 reconciliation, and the non-submitting controlled-execution foundation are
 implemented. The active milestone is v1.8. Provider-neutral release and local
-conformance foundations and their persisted-only Operations readiness view are
-in place. Signed exact-terminal reconciliation now covers full fill, no-fill
+read-only conformance foundations and their persisted-only Operations readiness
+view are in place. A separate default-closed execution-edge fixture suite now
+proves the M2 dry-run/submit/query/cancel/idempotency contract without loading or
+registering an adapter. Signed exact-terminal reconciliation now covers full fill, no-fill
 cancel, and partial-fill-then-cancel from persisted evidence. A separate final
 operator signature can now post the exact cleared fills to the production
 ledger once, in one transaction, while zero-fill cancel remains a recorded

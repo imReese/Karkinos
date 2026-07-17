@@ -5545,6 +5545,27 @@ def build_controlled_broker_submission_acceptance_audit() -> AcceptanceAudit:
                     "uv run pytest tests/test_controlled_broker_submission.py tests/server/test_controlled_broker_submission_routes.py -q",
                 ),
             ),
+            AcceptanceCriterion(
+                key="broker_execution_edge_conformance_contract",
+                checkbox_text=(
+                    "* [x] A separate provider-neutral execution-edge fixture "
+                    "contract proves default-closed dry-run, submit, query-only "
+                    "unknown recovery, explicit cancel identity, concurrency, "
+                    "restart, idempotency, disconnect, and partial-cancel "
+                    "semantics without registering or contacting an adapter."
+                ),
+                evidence_paths=(
+                    "account_truth/broker_execution_edge_conformance.py",
+                    "account_truth/broker_execution_edge_conformance_fixtures.py",
+                    "scripts/run_broker_execution_edge_conformance.py",
+                    "tests/account_truth/test_broker_execution_edge_conformance.py",
+                    "tests/scripts/test_run_broker_execution_edge_conformance.py",
+                    "docs/broker-execution-edge-conformance.en.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/account_truth/test_broker_execution_edge_conformance.py tests/scripts/test_run_broker_execution_edge_conformance.py -q",
+                ),
+            ),
         )
     )
 
