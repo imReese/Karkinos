@@ -170,8 +170,8 @@ reconciliation-to-terminal-clearance 与 terminal-clearance-to-ledger-posting：
 `manually_confirmed` OMS 候选，并从持久化证据自动解析每个候选的最新精确资本评估、前序批次
 对账与网关验证引用；操作员无需抄写三组 fingerprint，即可记录一条经独立签名验证的 append-only
 逐单复核事实。缺失、歧义、较新阻断或扫描截断的证据一律 fail closed；Web 不暴露提交或撤单
-动作，也不能修改 OMS、账本、风控、kill switch 或资本授权。签名式 submission、真实的签名撤单
-命令、真实 adapter recovery 证据，以及完整的无需手改数据库旅程仍未完成。v4 operator view 会检查有界范围内的全部持久化 intent，并让较早的关键未完成旅程优先于较新的低风险或已闭环旅程。
+动作，也不能修改 OMS、账本、风控、kill switch 或资本授权。Automation Cockpit 与 Decision 会先
+fail-closed 核验并汇总同一 persisted-only 候选契约，再仅下钻到 Trading；来源漂移会阻断下钻。签名式 submission、真实的签名撤单命令、真实 adapter recovery 证据，以及完整的无需手改数据库旅程仍未完成。v4 operator view 会检查有界范围内的全部持久化 intent，并让较早的关键未完成旅程优先于较新的低风险或已闭环旅程。
 
 **退出门：** 操作者无需手改数据库即可完成正常和恢复流程；刷新、重复点击和服务重启不会重复
 side effect；所有提交门禁在写事务内重新检查，而不是只依赖 UI 预览。

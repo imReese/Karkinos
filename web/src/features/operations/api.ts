@@ -437,8 +437,52 @@ export type AutomationCockpitResponse = {
     can_submit_orders: boolean;
     can_cancel_orders: boolean;
   }>;
+  current_per_order_reviews: AutomationCurrentPerOrderReviews;
   controlled_execution?: ControlledExecutionOperatorView;
   limitations: string[];
+};
+
+export type AutomationCurrentPerOrderReviewCandidate = {
+  order_id: string;
+  symbol: string;
+  side: string;
+  quantity: string;
+  review_status: string;
+  review_ready: boolean;
+  review_blockers: string[];
+  evidence_resolution_status?: string;
+  confirmation_status?: string;
+  authorizes_execution: false;
+};
+
+export type AutomationCurrentPerOrderReviews = {
+  schema_version: 'karkinos.automation_current_per_order_reviews.v1';
+  source_schema_version: string;
+  status:
+    | 'unavailable'
+    | 'blocked_source'
+    | 'review_ready'
+    | 'blocked_review'
+    | 'no_current_candidates';
+  candidate_count: number;
+  review_ready_count: number;
+  blocked_review_count: number;
+  source_truncated: boolean;
+  next_operator_action: string;
+  primary_candidate: AutomationCurrentPerOrderReviewCandidate | null;
+  candidates: AutomationCurrentPerOrderReviewCandidate[];
+  source_blockers: string[];
+  reads_persisted_facts_only: true;
+  provider_contact_performed: false;
+  runtime_connector_query_performed: false;
+  does_not_mutate_oms: true;
+  does_not_mutate_production_ledger: true;
+  does_not_mutate_risk: true;
+  does_not_mutate_kill_switch: true;
+  does_not_change_capital_authority: true;
+  broker_submission_enabled: false;
+  broker_cancel_enabled: false;
+  authorizes_execution: false;
 };
 
 export type ControlledExecutionOperatorSession = {

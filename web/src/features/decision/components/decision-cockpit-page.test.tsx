@@ -669,6 +669,31 @@ function installDecisionFetchMock({
         recommended_action: 'import_broker_evidence',
       },
     ],
+    current_per_order_reviews: {
+      schema_version: 'karkinos.automation_current_per_order_reviews.v1',
+      source_schema_version:
+        'karkinos.current_per_order_confirmation_candidates.v1',
+      status: 'no_current_candidates',
+      candidate_count: 0,
+      review_ready_count: 0,
+      blocked_review_count: 0,
+      source_truncated: false,
+      next_operator_action: 'none_default_disabled',
+      primary_candidate: null,
+      candidates: [],
+      source_blockers: [],
+      reads_persisted_facts_only: true,
+      provider_contact_performed: false,
+      runtime_connector_query_performed: false,
+      does_not_mutate_oms: true,
+      does_not_mutate_production_ledger: true,
+      does_not_mutate_risk: true,
+      does_not_mutate_kill_switch: true,
+      does_not_change_capital_authority: true,
+      broker_submission_enabled: false,
+      broker_cancel_enabled: false,
+      authorizes_execution: false,
+    },
     controlled_execution: {
       schema_version: 'karkinos.controlled_execution_operator_view.v3',
       as_of: '2026-06-12T09:33:00+08:00',
@@ -2225,9 +2250,186 @@ test('summarizes controlled automation cockpit status in the decision page', asy
   expect(automation.textContent).toContain('Broker submission off');
   expect(automation.textContent).toContain('1 open alert');
   expect(automation.textContent).toContain('2 reconciliation reviews');
+  expect(automation.textContent).toContain('0 per-order reviews');
+  expect(automation.textContent).toContain(
+    'No current candidate · default off',
+  );
   expect(automation.textContent).toContain('Next: import broker evidence');
   expect(automation.textContent).toContain('paper/shadow only');
   expect(automation.textContent).not.toContain('execution_reconciliation_gap');
+});
+
+test('hands off exact current per-order evidence to Trading without broker actions', async () => {
+  const currentPerOrderReviews = {
+    schema_version: 'karkinos.automation_current_per_order_reviews.v1',
+    source_schema_version:
+      'karkinos.current_per_order_confirmation_candidates.v1',
+    status: 'review_ready',
+    candidate_count: 2,
+    review_ready_count: 1,
+    blocked_review_count: 1,
+    source_truncated: false,
+    next_operator_action: 'open_trading_current_per_order_review',
+    primary_candidate: {
+      order_id: 'OMS-CURRENT-READY-1',
+      symbol: '510300.SH',
+      side: 'buy',
+      quantity: '100',
+      review_status: 'review_ready_non_submitting',
+      review_ready: true,
+      review_blockers: [],
+      evidence_resolution_status: 'resolved',
+      confirmation_status: 'missing',
+      authorizes_execution: false,
+    },
+    candidates: [
+      {
+        order_id: 'OMS-CURRENT-READY-1',
+        symbol: '510300.SH',
+        side: 'buy',
+        quantity: '100',
+        review_status: 'review_ready_non_submitting',
+        review_ready: true,
+        review_blockers: [],
+        evidence_resolution_status: 'resolved',
+        confirmation_status: 'missing',
+        authorizes_execution: false,
+      },
+      {
+        order_id: 'OMS-CURRENT-BLOCKED-1',
+        symbol: '600519.SH',
+        side: 'sell',
+        quantity: '10',
+        review_status: 'blocked_review',
+        review_ready: false,
+        review_blockers: ['current_capital_evaluation_not_found'],
+        evidence_resolution_status: 'missing',
+        confirmation_status: 'missing',
+        authorizes_execution: false,
+      },
+    ],
+    source_blockers: [],
+    reads_persisted_facts_only: true,
+    provider_contact_performed: false,
+    runtime_connector_query_performed: false,
+    does_not_mutate_oms: true,
+    does_not_mutate_production_ledger: true,
+    does_not_mutate_risk: true,
+    does_not_mutate_kill_switch: true,
+    does_not_change_capital_authority: true,
+    broker_submission_enabled: false,
+    broker_cancel_enabled: false,
+    authorizes_execution: false,
+  };
+  renderDecisionCockpit({
+    automationCockpitResponse: {
+      schema_version: 'karkinos.automation_cockpit.v2',
+      broker_submission_enabled: false,
+      automation_status: {
+        schema_version: 'karkinos.automation_status.v1',
+        mode: 'paper_shadow',
+        broker_submission_enabled: false,
+        manual_confirmation_required: true,
+        kill_switch_enabled: false,
+      },
+      gateways: [],
+      open_alert_count: 0,
+      open_alerts: [],
+      recent_runs: [],
+      promotion_states: [],
+      execution_reconciliation_open_items: [],
+      current_per_order_reviews: currentPerOrderReviews,
+      limitations: [],
+    },
+  });
+
+  const handoff = await screen.findByTestId('current-per-order-review-handoff');
+  expect(handoff.textContent).toContain('Exact review ready');
+  expect(handoff.textContent).toContain('510300.SH · Buy 100');
+  expect(handoff.textContent).toContain('OMS-CURRENT-READY-1');
+  expect(handoff.textContent).toContain('2');
+  expect(handoff.textContent).toContain(
+    'Persisted facts · no provider contact',
+  );
+  expect(
+    within(handoff)
+      .getByRole('link', {
+        name: 'Open non-submitting per-order review',
+      })
+      .getAttribute('href'),
+  ).toBe('/trading');
+  expect(handoff.textContent).not.toContain('Submit broker order');
+  expect(handoff.textContent).not.toContain('Cancel broker order');
+  expect(within(handoff).queryByRole('button')).toBeNull();
+});
+
+test('blocks the Trading handoff when the current per-order source drifts', async () => {
+  renderDecisionCockpit({
+    automationCockpitResponse: {
+      schema_version: 'karkinos.automation_cockpit.v2',
+      broker_submission_enabled: false,
+      automation_status: {
+        schema_version: 'karkinos.automation_status.v1',
+        mode: 'paper_shadow',
+        broker_submission_enabled: false,
+        manual_confirmation_required: true,
+        kill_switch_enabled: false,
+      },
+      gateways: [],
+      open_alert_count: 0,
+      open_alerts: [],
+      recent_runs: [],
+      promotion_states: [],
+      execution_reconciliation_open_items: [],
+      current_per_order_reviews: {
+        schema_version: 'karkinos.automation_current_per_order_reviews.v1',
+        source_schema_version:
+          'karkinos.current_per_order_confirmation_candidates.v0',
+        status: 'blocked_source',
+        candidate_count: 1,
+        review_ready_count: 1,
+        blocked_review_count: 0,
+        source_truncated: false,
+        next_operator_action: 'review_current_per_order_source_blockers',
+        primary_candidate: null,
+        candidates: [
+          {
+            order_id: 'OMS-UNTRUSTED-1',
+            symbol: '510300.SH',
+            side: 'buy',
+            quantity: '100',
+            review_status: 'review_ready_non_submitting',
+            review_ready: true,
+            review_blockers: [],
+            authorizes_execution: false,
+          },
+        ],
+        source_blockers: ['current_per_order_source_schema_invalid'],
+        reads_persisted_facts_only: true,
+        provider_contact_performed: false,
+        runtime_connector_query_performed: false,
+        does_not_mutate_oms: true,
+        does_not_mutate_production_ledger: true,
+        does_not_mutate_risk: true,
+        does_not_mutate_kill_switch: true,
+        does_not_change_capital_authority: true,
+        broker_submission_enabled: false,
+        broker_cancel_enabled: false,
+        authorizes_execution: false,
+      },
+      limitations: [],
+    },
+  });
+
+  const handoff = await screen.findByTestId('current-per-order-review-handoff');
+  expect(handoff.textContent).toContain('Review source blocked');
+  expect(handoff.textContent).toContain('Source blockers: Review item');
+  expect(
+    within(handoff).queryByRole('link', {
+      name: 'Open non-submitting per-order review',
+    }),
+  ).toBeNull();
+  expect(within(handoff).queryByRole('button')).toBeNull();
 });
 
 test('surfaces broker gateway status without execution controls', async () => {

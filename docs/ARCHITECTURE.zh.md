@@ -191,6 +191,10 @@ evaluation，绑定精确 OMS order fingerprint，并要求唯一有效的前序
 只读持久化事实；它们和 confirmation 都不能联系 provider、修改 OMS/ledger/risk/kill switch/
 capital authority，也不能提交或撤销券商订单。Trading UI 刻意不为该边界提供 submit/cancel 控件。
 
+Automation Cockpit 通过 fail-closed application reader 消费同一候选契约，在向 Decision 投影
+ready/blocked 数量前核验来源 schema、计数、截断状态与非授权边界。任何来源漂移都会阻断下钻；
+UI 唯一的跳转只是打开 Trading，既不会创建券商动作，也不会产生第二套财务计算。
+
 终态 rejected intent 可通过 `karkinos.controlled_broker_rejection_evidence.v1` 复核。该只读契约
 绑定 canonical OMS order fingerprint、controlled intent、精确 gateway/account/client-order/operator
 身份以及白名单净化结果，并区分网关调用前本地阻断与网关明确拒绝；证据缺失或歧义时 fail closed。
