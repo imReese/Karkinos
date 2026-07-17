@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 
 import { usePreferences } from '../../../app/preferences';
 import {
@@ -18,12 +18,14 @@ import { formatLedgerEvidenceReference } from '../../../shared/ledger-format';
 import {
   useBrokerStatementImportMutation,
   useBrokerStatementPreviewMutation,
+  useBrokerStatementCollectorStatusQuery,
   useAccountTruthImportRunsQuery,
   useAccountTruthScoreQuery,
   useReconciliationReportDetailQuery,
   useReconciliationReportsQuery,
   useRecordReviewDecisionMutation,
   type BrokerStatementPreview,
+  type BrokerStatementCollectorStatus,
   type ReconciliationItem,
   type ReconciliationStatus,
   type ReviewStatus,
@@ -107,6 +109,13 @@ const labels = {
     eventPreview: 'Event preview',
     importBoundary:
       'This stages broker evidence only. It does not mutate the production ledger, positions, cash, or broker orders.',
+    collectorTitle: 'Automatic local reader',
+    collectorLoading: 'Checking the local collector.',
+    collectorUnavailable: 'Collector status is unavailable.',
+    collectorPath: 'Path',
+    collectorRun: 'Import run',
+    collectorFallback:
+      'Manual upload remains available as a fallback. Automatic reading never posts the ledger.',
     broker: 'Broker',
     karkinos: 'Karkinos',
     difference: 'Difference',
@@ -184,6 +193,12 @@ const labels = {
     eventPreview: '事件预览',
     importBoundary:
       '这里只暂存券商证据；不会修改生产账本、持仓、现金，也不会提交券商订单。',
+    collectorTitle: '本地自动读取',
+    collectorLoading: '正在检查本地 collector。',
+    collectorUnavailable: '暂时无法读取 collector 状态。',
+    collectorPath: '文件',
+    collectorRun: '导入批次',
+    collectorFallback: '手工上传仍作为 fallback；自动读取永远不会自动入账。',
     broker: '券商',
     karkinos: 'Karkinos',
     difference: '差异',
@@ -277,6 +292,23 @@ export function AccountTruthReviewPage() {
     selectedReport?.import_run_id ?? null,
   );
   const reviewMutation = useRecordReviewDecisionMutation();
+  const collector = useBrokerStatementCollectorStatusQuery();
+  const observedCollectorRunId = useRef<string | null>(null);
+
+  useEffect(() => {
+    const importRunId = collector.data?.import_run_id ?? null;
+    if (!importRunId || observedCollectorRunId.current === importRunId) {
+      return;
+    }
+    observedCollectorRunId.current = importRunId;
+    setSelectedImportRunId(importRunId);
+    setFilter('all');
+    void Promise.all([
+      score.refetch(),
+      importRuns.refetch(),
+      reports.refetch(),
+    ]);
+  }, [collector.data?.import_run_id, importRuns, reports, score]);
 
   useEffect(() => {
     if (!reports.data?.length) {
@@ -465,6 +497,8 @@ export function AccountTruthReviewPage() {
         <div className="grid min-w-0 content-start gap-5">
           <BrokerEvidenceImportWizard
             locale={locale}
+            collectorStatus={collector.data}
+            collectorStatusIsError={collector.isError}
             onImported={(importRunId) => {
               setSelectedImportRunId(importRunId);
               setFilter('all');
@@ -619,9 +653,13 @@ export function AccountTruthReviewPage() {
 
 function BrokerEvidenceImportWizard({
   locale,
+  collectorStatus,
+  collectorStatusIsError,
   onImported,
 }: {
   locale: 'en' | 'zh';
+  collectorStatus: BrokerStatementCollectorStatus | undefined;
+  collectorStatusIsError: boolean;
   onImported: (importRunId: string) => void;
 }) {
   const text = labels[locale];
@@ -693,6 +731,11 @@ function BrokerEvidenceImportWizard({
       <p className="app-muted mt-2 text-sm leading-6">
         {text.importWizardBody}
       </p>
+      <BrokerStatementCollectorCallout
+        locale={locale}
+        status={collectorStatus}
+        isError={collectorStatusIsError}
+      />
       <div className="mt-4 grid gap-3">
         <label className="grid gap-1 text-xs font-bold text-[var(--app-muted)]">
           {text.sourceName}
@@ -770,6 +813,127 @@ function BrokerEvidenceImportWizard({
       ) : null}
     </section>
   );
+}
+
+function BrokerStatementCollectorCallout({
+  locale,
+  status,
+  isError,
+}: {
+  locale: 'en' | 'zh';
+  status: BrokerStatementCollectorStatus | undefined;
+  isError: boolean;
+}) {
+  const text = labels[locale];
+  const tone =
+    status?.state === 'imported' || status?.state === 'unchanged'
+      ? 'var(--app-success)'
+      : status?.state === 'blocked' || status?.state === 'error' || isError
+        ? 'var(--app-danger)'
+        : 'var(--app-warning)';
+  const body = isError
+    ? text.collectorUnavailable
+    : status
+      ? collectorStateBody(status, locale)
+      : text.collectorLoading;
+
+  return (
+    <div
+      className="mt-4 rounded-2xl border px-4 py-3"
+      data-testid="broker-statement-collector-status"
+      style={{
+        borderColor: `color-mix(in srgb, ${tone} 42%, transparent)`,
+        background: `color-mix(in srgb, ${tone} 10%, transparent)`,
+      }}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs font-black text-[var(--app-text)]">
+          {text.collectorTitle}
+        </span>
+        <span className="rounded-full border border-[var(--app-border)] px-2.5 py-1 text-[11px] font-black text-[var(--app-muted)]">
+          {collectorStateLabel(status?.state, locale)}
+        </span>
+      </div>
+      <p className="mt-2 text-xs font-semibold leading-5 text-[var(--app-muted)]">
+        {body}
+      </p>
+      {status?.configured_path ? (
+        <div className="mt-2 break-all font-mono text-[11px] text-[var(--app-muted)]">
+          {text.collectorPath}: {status.configured_path}
+          {status.import_run_id
+            ? ` · ${text.collectorRun}: ${status.import_run_id}`
+            : ''}
+        </div>
+      ) : null}
+      <p className="mt-2 text-[11px] font-semibold leading-5 text-[var(--app-muted)]">
+        {text.collectorFallback}
+      </p>
+    </div>
+  );
+}
+
+function collectorStateLabel(
+  state: BrokerStatementCollectorStatus['state'] | undefined,
+  locale: 'en' | 'zh',
+) {
+  const values: Record<
+    BrokerStatementCollectorStatus['state'],
+    { en: string; zh: string }
+  > = {
+    disabled: { en: 'Disabled', zh: '未启用' },
+    waiting_for_file: { en: 'Waiting for file', zh: '等待文件' },
+    pending_stability: { en: 'Waiting for stable write', zh: '等待写入稳定' },
+    imported: { en: 'Evidence staged', zh: '证据已暂存' },
+    unchanged: { en: 'Up to date', zh: '已是最新' },
+    blocked: { en: 'Blocked', zh: '已阻断' },
+    error: { en: 'Error', zh: '异常' },
+  };
+  return state
+    ? values[state][locale]
+    : locale === 'zh'
+      ? '检查中'
+      : 'Checking';
+}
+
+function collectorStateBody(
+  status: BrokerStatementCollectorStatus,
+  locale: 'en' | 'zh',
+) {
+  const rows = status.row_count ?? 0;
+  const values: Record<
+    BrokerStatementCollectorStatus['state'],
+    { en: string; zh: string }
+  > = {
+    disabled: {
+      en: 'Disabled by startup configuration; no local file is read.',
+      zh: '启动配置未启用，不会读取任何本地文件。',
+    },
+    waiting_for_file: {
+      en: 'The configured file is absent; previous staged evidence is preserved.',
+      zh: '配置文件当前不存在；此前已暂存证据仍会保留。',
+    },
+    pending_stability: {
+      en: 'A change was detected. Collection waits for a complete stable file.',
+      zh: '检测到文件变化，正在等待完整写入并保持稳定。',
+    },
+    imported: {
+      en: `${rows} rows were staged for reconciliation review.`,
+      zh: `已暂存 ${rows} 行证据，等待对账复核。`,
+    },
+    unchanged: {
+      en: 'The fingerprint is unchanged; no duplicate run was created.',
+      zh: '文件指纹未变化，没有创建重复导入批次。',
+    },
+    blocked: {
+      en: 'Validation failed closed. No production account fact was changed.',
+      zh: '校验已 fail closed，生产账户事实没有被修改。',
+    },
+    error: {
+      en: 'The read-only collection attempt failed; no ledger action was taken.',
+      zh: '只读采集失败；未执行任何账本操作。',
+    },
+  };
+  return values[status.state][locale];
 }
 
 function BrokerStatementPreviewPanel({

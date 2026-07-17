@@ -40,12 +40,13 @@ CLI arguments > existing process environment > .env > config.json > program defa
 
 ## config.json structure
 
-The recommended configuration has four groups. See the repository-root [`config.example.json`](../config.example.json) for a safe complete example.
+The recommended configuration has five groups. See the repository-root [`config.example.json`](../config.example.json) for a safe complete example.
 
 | Group | Purpose |
 | --- | --- |
 | `server` | Web server, CORS, scheduler, and notification |
 | `data_source` | Market-data provider and polling; credentials are environment-only |
+| `account_truth` | Explicitly enabled local read-only account-evidence collection |
 | `broker_fee` | Broker fee modeling |
 | `ai` | External-model connection settings; credentials default to environment variables |
 
@@ -77,6 +78,29 @@ uv run python scripts/configure_data_source.py --provider tushare
 ```
 
 The TuShare token is read through a hidden prompt and is never accepted as a CLI argument. The script preserves `provider_config.tushare_token_env`, writes only credential-free provider/polling metadata to the Git-ignored `config.json`, and writes the token to that named variable in a mode-`0600` `.env` file (or the file selected by `--env-file` / `KARKINOS_ENV_FILE`). Switching to AkShare preserves an existing environment credential; credential removal must be explicit. The Settings API and Web page never accept credentials; they expose configuration status only. A top-level or grouped `tushare_token` in `config.json` stops startup and is also rejected by the setup script; there is no automatic credential migration.
+
+### account_truth
+
+`account_truth.broker_statement_collector` is an explicitly enabled startup
+boundary for one local canonical CSV. It waits for a stable file, stages broker
+evidence idempotently by fingerprint, and lets the existing Account Truth
+reconciliation projection consume that run. It never contacts a broker or
+market-data provider and cannot write the production ledger, positions, OMS,
+risk, kill switch, or capital authority.
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `enabled` | boolean | `false` | Starts the read-only collector with the server only when explicitly enabled. |
+| `path` | string | `broker_statement.csv` | Local CSV path; relative paths resolve from the server process working directory. |
+| `poll_interval_seconds` | number | `5` | Polling interval in the range 0.5–3600 seconds. |
+| `stability_delay_seconds` | number | `2` | Required stable size/mtime window before reading, in the range 0–60 seconds. |
+| `max_file_bytes` | integer | `10485760` | Read-only size limit in the range 1 KiB–100 MiB. |
+
+A missing file waits safely. A changing, oversized, non-UTF-8, or schema-blocked
+file fails closed without staging partial events. Repeated polling and restarts
+reuse the existing import run for the same fingerprint. Inspect status through
+`GET /api/account-truth/broker-statement/collector`. Manual upload remains an
+explicit fallback but is no longer required for the normal enabled local path.
 
 ### broker_fee
 

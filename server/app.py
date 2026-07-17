@@ -156,10 +156,15 @@ async def lifespan(app: FastAPI):
     state = get_app_state()
 
     # ---- Startup ----
+    from account_truth.broker_evidence import BrokerEvidenceRepository
+    from account_truth.broker_statement_collector import (
+        LocalBrokerStatementCollector,
+        run_local_broker_statement_collector,
+    )
     from core.event_bus import EventBus
     from notification.notifier import build_notifier
     from server.bootstrap import load_runtime_config
-    from server.config import ServerConfig
+    from server.config import BrokerStatementCollectorConfig, ServerConfig
 
     # create_app() loads the runtime config once and lifespan reuses the same
     # object so config.json remains a startup-only input.
@@ -237,8 +242,32 @@ async def lifespan(app: FastAPI):
     app.state.notifier = notifier
     app.state.trading_controls = trading_controls
 
+    collector_config = getattr(
+        config,
+        "broker_statement_collector",
+        BrokerStatementCollectorConfig(),
+    )
+    broker_statement_collector = LocalBrokerStatementCollector(
+        repository=(
+            BrokerEvidenceRepository(db._path) if collector_config.enabled else None
+        ),
+        path=collector_config.path,
+        enabled=collector_config.enabled,
+        poll_interval_seconds=float(collector_config.poll_interval_seconds),
+        stability_delay_seconds=float(collector_config.stability_delay_seconds),
+        max_file_bytes=collector_config.max_file_bytes,
+    )
+    state.broker_statement_collector = broker_statement_collector
+    app.state.broker_statement_collector = broker_statement_collector
+
     # 启动事件转发任务
     forward_task = asyncio.create_task(_forward_events(bridge, hub))
+    broker_statement_collector_task: asyncio.Task[None] | None = None
+    if collector_config.enabled:
+        broker_statement_collector_task = asyncio.create_task(
+            run_local_broker_statement_collector(broker_statement_collector),
+            name="local-broker-statement-collector",
+        )
     pending_confirm_thread = threading.Thread(
         target=_confirm_pending_fund_orders_on_startup,
         args=(state,),
@@ -256,6 +285,12 @@ async def lifespan(app: FastAPI):
     yield
 
     # ---- Shutdown ----
+    if broker_statement_collector_task is not None:
+        broker_statement_collector_task.cancel()
+        try:
+            await broker_statement_collector_task
+        except asyncio.CancelledError:
+            pass
     forward_task.cancel()
     try:
         await forward_task

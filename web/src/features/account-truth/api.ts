@@ -168,11 +168,58 @@ export type BrokerStatementImportResult = {
   does_not_mutate_production_ledger: boolean;
 };
 
+export type BrokerStatementCollectorStatus = {
+  schema_version: string;
+  enabled: boolean;
+  state:
+    | 'disabled'
+    | 'waiting_for_file'
+    | 'pending_stability'
+    | 'imported'
+    | 'unchanged'
+    | 'blocked'
+    | 'error';
+  configured_path: string;
+  source_name: string;
+  file_present: boolean;
+  poll_interval_seconds: number;
+  stability_delay_seconds: number;
+  max_file_bytes: number;
+  last_observed_at: string | null;
+  last_processed_at: string | null;
+  last_success_at: string | null;
+  file_fingerprint: string | null;
+  import_run_id: string | null;
+  validation_status: string | null;
+  row_count: number | null;
+  valid_row_count: number | null;
+  invalid_row_count: number | null;
+  duplicate_row_count: number | null;
+  error_code: string | null;
+  message: string;
+  source_kind: 'local_file_readonly';
+  does_not_mutate_production_ledger: true;
+  does_not_contact_provider: true;
+  does_not_change_execution_authority: true;
+};
+
 export function useAccountTruthScoreQuery() {
   return useQuery({
     queryKey: ['account-truth-score'],
     queryFn: () => apiClient<AccountTruthScore>('/api/account-truth/score'),
     staleTime: 10_000,
+  });
+}
+
+export function useBrokerStatementCollectorStatusQuery() {
+  return useQuery({
+    queryKey: ['broker-statement-collector-status'],
+    queryFn: () =>
+      apiClient<BrokerStatementCollectorStatus>(
+        '/api/account-truth/broker-statement/collector',
+      ),
+    staleTime: 1_000,
+    refetchInterval: 5_000,
   });
 }
 

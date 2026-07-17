@@ -19,6 +19,37 @@ broker login information.
 - Preview and staged evidence are audit material, not investment advice or
   automatic-trading authority.
 
+## Automatic local reading
+
+Local daily operation may explicitly enable a read-only collector so the same
+file does not need to be selected in the browser after every change:
+
+```json
+{
+  "account_truth": {
+    "broker_statement_collector": {
+      "enabled": true,
+      "path": "broker_statement.csv",
+      "poll_interval_seconds": 5,
+      "stability_delay_seconds": 2,
+      "max_file_bytes": 10485760
+    }
+  }
+}
+```
+
+The collector runs only when startup configuration enables it. It waits for a
+stable size/mtime, then reads and validates the complete file and stages it by
+fingerprint. Repeated polls and process restarts reuse the same import run for
+unchanged content. Missing, changing, oversized, incorrectly encoded, or
+schema-blocked files fail closed while previously staged evidence remains.
+`GET /api/account-truth/broker-statement/collector` exposes read-only status.
+
+This is not automatic ledger posting. The collector cannot contact a provider
+or modify the production ledger, positions, OMS, risk, kill switch, or capital
+authority. Differences still require Account Truth review; manual upload stays
+available as a fallback.
+
 ## Canonical CSV columns
 
 The CSV contains every required column below. Leave an unused value empty; do
@@ -132,9 +163,8 @@ import_run = repository.save_preview(preview, source_name="local-statement.csv")
   amounts, snapshot fields, broker basis convention, optional order identities,
   and row-duplicate evidence.
 
-If the file fingerprint already exists, the new run records
-`file_duplicate_count=1` and `duplicate_of_import_run_id` without inserting the
-events again. This stage never writes `ledger_entries`.
+If the file fingerprint already exists, the existing `import_run_id` is reused
+without inserting the events again. This stage never writes `ledger_entries`.
 
 ## Reconciliation report
 
