@@ -157,9 +157,9 @@ separately signed preview and exactly-once atomic apply. It rechecks the exact
 terminal clearance, OMS and controlled intent, lifecycle and statement
 evidence, fills and costs, Account Truth identity, valuation snapshot, and
 ledger cutoff/fingerprint inside the write transaction. Full fills,
-partial-fill-then-cancel, zero-fill cancel, duplicate retry, evidence drift, and
-ledger-race fixtures are deterministic. Posting cannot contact a provider or
-grant submit, cancel, strategy, AI, risk, kill-switch, or capital authority.
+partial-fill-then-cancel, zero-fill cancel, duplicate retry, evidence drift,
+ledger races, and forced failures at the second fill, posting record, or final
+event are deterministic and atomic. Posting cannot contact a provider or grant authority.
 The provider-neutral `karkinos.controlled_submission_ledger_correction.v1`
 boundary now derives one append-only correction from canonical replay, requires
 a separate signature, rechecks all identities in the write transaction,
@@ -167,7 +167,7 @@ preserves original trades and fees, and is exactly once across retry, restart,
 and concurrency. Operations/Decision exposes an optional persisted-journey
 review: select an allowlisted reason, review the replay-derived delta, verify an
 offline proof, then apply once. Acceptance covers every account projection and
-identity/stale gate; broader fault injection and real-provider evidence remain.
+identity/stale gate; atomic posting checkpoint injection is covered, while end-to-end real-provider fault evidence remains.
 
 ### M4 — Operator Journey
 

@@ -43,9 +43,9 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
   terminal clearance、ledger posting 与 append-only correction 串成一条证据链，并只给出安全
   人工下一步，不产生 read-side authority；v3 会检查有界范围内的全部持久化 intent，使较早的
   关键未完成旅程不会被较新的低风险或已闭环旅程遮蔽；
-- 显式打开的 ledger-posting 操作员复核，将 canonical delta preview 与匹配的可信公钥身份、短时
-  离线 Ed25519 proof、最终确认和 exactly-once apply 绑定，同时使私钥、broker action 与 authority
-  change 留在 Web 路径之外；
+- 显式打开的 ledger-posting 操作员复核绑定可信离线 proof 与 exactly-once apply；第二笔成交、
+  posting 记录、完成事件三个 checkpoint 的确定性故障都会回滚全部财务与完成审计事实，并允许
+  重启后的进程安全重试一次；私钥、broker action 与 authority change 仍留在 Web 路径之外；
 - 单独签名的 unknown-submission 恢复复核：先绑定 persisted intent、精确 client order id、既有
   gateway result fingerprint、operator identity 与短时离线 proof，再原子放行一次 query-only
   gateway call；重复点击和服务刚重启后的重复操作不会再次查询，submit、cancel、ledger、risk、
@@ -197,7 +197,7 @@ M3/M4 纠正操作员旅程的假设与风险记录：
   Overview 投影只保留为滚动升级 fallback，不能覆盖当前 Operations 响应。
 
 剩余发布工作由路线图负责：一个真实 adapter、只读 soak、真实 cancel/unknown recovery、签名式
-submission UI、更广的 fault injection 与真实证据验收、operator journey 的其余
+submission UI、更广的端到端/provider fault injection 与真实证据验收、operator journey 的其余
 步骤与受控逐单 pilot。
 
 ### v1.7 — 受控券商 Bridge 基础
