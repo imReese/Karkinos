@@ -504,7 +504,8 @@ export type ControlledOrderJourneyStage = {
     | 'execution_reconciliation'
     | 'terminal_reconciliation_clearance'
     | 'reconciled_ledger_posting'
-    | 'append_only_ledger_correction';
+    | 'append_only_ledger_correction'
+    | 'post_ledger_account_truth';
   status: string;
   evidence_id: string;
   complete: boolean;
@@ -519,6 +520,11 @@ export type ControlledOrderJourneyStage = {
   reviewer_id?: string;
   reviewed_at?: string;
   review_fingerprint?: string;
+  account_truth_gate_status?: string;
+  ledger_coverage_status?: string;
+  source_fingerprint?: string;
+  captured_at?: string;
+  blockers?: string[];
 };
 
 export type ControlledOrderJourney = {
@@ -545,7 +551,9 @@ export type ControlledOrderJourney = {
 };
 
 export type ControlledExecutionOperatorView = {
-  schema_version: 'karkinos.controlled_execution_operator_view.v3';
+  schema_version:
+    | 'karkinos.controlled_execution_operator_view.v3'
+    | 'karkinos.controlled_execution_operator_view.v4';
   as_of: string;
   status: string;
   next_operator_action: string;

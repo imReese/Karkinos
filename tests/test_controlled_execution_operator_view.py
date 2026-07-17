@@ -269,6 +269,7 @@ class _PostedOrderJourneyFixture(_PersistedFactFixture):
                 "status": "applied",
                 "ledger_entry_count": 2,
                 "post_ledger_cutoff_id": 42,
+                "account_truth_import_run_id": "account-truth-import-original",
                 "applied_at": "2026-07-13T09:59:30+00:00",
             }
         ]
@@ -283,7 +284,7 @@ def test_operator_view_unifies_terminal_order_journey_without_reopening_cleared_
     ).summary()
 
     assert summary["schema_version"] == (
-        "karkinos.controlled_execution_operator_view.v3"
+        "karkinos.controlled_execution_operator_view.v4"
     )
     assert summary["status"] == "order_journey_attention_required"
     assert summary["next_operator_action"] == (
@@ -305,6 +306,7 @@ def test_operator_view_unifies_terminal_order_journey_without_reopening_cleared_
         True,
         True,
         False,
+        False,
     ]
     assert [stage["required"] for stage in journey["stages"]] == [
         True,
@@ -312,10 +314,13 @@ def test_operator_view_unifies_terminal_order_journey_without_reopening_cleared_
         True,
         True,
         False,
+        True,
     ]
     assert journey["stages"][2]["terminal_status"] == "filled"
     assert journey["stages"][3]["ledger_entry_count"] == 2
     assert journey["stages"][3]["post_ledger_cutoff_id"] == 42
+    assert journey["stages"][5]["key"] == "post_ledger_account_truth"
+    assert journey["stages"][5]["status"] == "blocked"
     assert journey["ledger_mutation_performed"] is False
     assert journey["provider_contact_performed"] is False
     assert summary["sessions"][0]["status"] == "current_clear_evidence"
@@ -323,6 +328,137 @@ def test_operator_view_unifies_terminal_order_journey_without_reopening_cleared_
         "unreconciled_controlled_submission_present"
         not in summary["sessions"][0]["blockers"]
     )
+
+
+def _clear_account_truth_evidence(
+    *,
+    import_run_id: str = "account-truth-import-original",
+    captured_at: str = "2026-07-13T09:58:30+00:00",
+    ledger_coverage_status: str = "covered",
+) -> dict[str, object]:
+    return {
+        "status": "clear",
+        "source_fingerprint": "a" * 64,
+        "import_run_id": import_run_id,
+        "captured_at": captured_at,
+        "data_freshness_status": "fresh",
+        "ledger_coverage": {"status": ledger_coverage_status},
+        "reconciliation_status": "clear",
+        "gate_status": "pass",
+        "unresolved_mismatch_count": 0,
+        "does_not_mutate_production_ledger": True,
+        "does_not_issue_execution_authority": True,
+        "broker_submission_enabled": False,
+    }
+
+
+def test_operator_view_closes_posting_from_exact_lineage_bound_account_truth():
+    calls = 0
+
+    def read_account_truth() -> dict[str, object]:
+        nonlocal calls
+        calls += 1
+        return _clear_account_truth_evidence()
+
+    summary = ControlledExecutionOperatorViewService(
+        db=_PostedOrderJourneyFixture(),
+        account_truth_evidence_reader=read_account_truth,
+        clock=lambda: datetime(2026, 7, 13, 10, 0, tzinfo=timezone.utc),
+    ).summary()
+
+    journey = summary["latest_order_journey"]
+    assert calls == 1
+    assert summary["status"] == "order_journey_closed"
+    assert summary["attention_order_journey_count"] == 0
+    assert summary["primary_attention_order_journey"] is None
+    assert journey["status"] == "ledger_posted_account_truth_confirmed"
+    assert journey["next_operator_action"] == "no_action_order_journey_complete"
+    assert journey["attention_required"] is False
+    assert journey["stages"][5] == {
+        "key": "post_ledger_account_truth",
+        "status": "pass",
+        "evidence_id": "account-truth-import-original",
+        "complete": True,
+        "required": True,
+        "account_truth_gate_status": "pass",
+        "ledger_coverage_status": "covered",
+        "source_fingerprint": "a" * 64,
+        "captured_at": "2026-07-13T09:58:30+00:00",
+        "post_ledger_cutoff_id": 42,
+        "blockers": [],
+    }
+    assert summary["provider_contact_performed"] is False
+    assert summary["does_not_mutate_account_truth"] is True
+    assert summary["does_not_mutate_production_ledger"] is True
+
+
+class _CorrectedOrderJourneyFixture(_PostedOrderJourneyFixture):
+    def list_controlled_submission_ledger_corrections_sync(self, *, limit: int):
+        self.calls.append("ledger_corrections")
+        return [
+            {
+                "correction_id": "4" * 64,
+                "posting_id": self.posting_id,
+                "status": "applied",
+                "reason_code": "broker_evidence_superseded",
+                "post_ledger_cutoff_id": 43,
+                "applied_at": "2026-07-13T10:00:00+00:00",
+            }
+        ]
+
+
+def test_operator_view_keeps_correction_open_until_newer_covered_account_truth():
+    old_summary = ControlledExecutionOperatorViewService(
+        db=_CorrectedOrderJourneyFixture(),
+        account_truth_evidence_reader=_clear_account_truth_evidence,
+    ).summary()
+    stale_summary = ControlledExecutionOperatorViewService(
+        db=_CorrectedOrderJourneyFixture(),
+        account_truth_evidence_reader=lambda: _clear_account_truth_evidence(
+            import_run_id="account-truth-import-after-correction",
+            captured_at="2026-07-13T10:01:00+00:00",
+            ledger_coverage_status="stale",
+        ),
+    ).summary()
+    closed_summary = ControlledExecutionOperatorViewService(
+        db=_CorrectedOrderJourneyFixture(),
+        account_truth_evidence_reader=lambda: _clear_account_truth_evidence(
+            import_run_id="account-truth-import-after-correction",
+            captured_at="2026-07-13T10:01:00+00:00",
+        ),
+    ).summary()
+
+    old_stage = old_summary["latest_order_journey"]["stages"][5]
+    stale_stage = stale_summary["latest_order_journey"]["stages"][5]
+    assert old_summary["latest_order_journey"]["status"] == (
+        "ledger_corrected_account_truth_review_required"
+    )
+    assert "post_ledger_account_truth_predates_latest_fact" in old_stage["blockers"]
+    assert stale_summary["latest_order_journey"]["status"] == (
+        "ledger_corrected_account_truth_review_required"
+    )
+    assert "post_ledger_account_truth_ledger_not_covered" in stale_stage["blockers"]
+    assert closed_summary["status"] == "order_journey_closed"
+    assert closed_summary["attention_order_journey_count"] == 0
+    assert closed_summary["latest_order_journey"]["status"] == (
+        "ledger_corrected_account_truth_confirmed"
+    )
+    assert closed_summary["latest_order_journey"]["stages"][5]["complete"] is True
+
+
+def test_operator_view_malformed_account_truth_evidence_fails_closed():
+    evidence = _clear_account_truth_evidence()
+    evidence["unresolved_mismatch_count"] = "not-a-number"
+
+    summary = ControlledExecutionOperatorViewService(
+        db=_PostedOrderJourneyFixture(),
+        account_truth_evidence_reader=lambda: evidence,
+    ).summary()
+
+    stage = summary["latest_order_journey"]["stages"][5]
+    assert summary["status"] == "order_journey_attention_required"
+    assert stage["complete"] is False
+    assert "post_ledger_account_truth_mismatch_count_invalid" in stage["blockers"]
 
 
 class _UnknownOrderJourneyFixture(_PersistedFactFixture):
@@ -362,8 +498,10 @@ def test_operator_view_unknown_outcome_requires_query_only_recovery():
         "not_applicable",
         "not_applicable",
         "not_applicable",
+        "not_applicable",
     ]
     assert [stage["required"] for stage in journey["stages"][1:]] == [
+        False,
         False,
         False,
         False,

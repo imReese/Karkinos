@@ -34,6 +34,9 @@ from server.projections.service import build_portfolio_projection_from_db
 from server.services.controlled_broker_submission import (
     ControlledBrokerSubmissionService,
 )
+from server.services.controlled_execution_operator_view import (
+    ControlledExecutionOperatorViewService,
+)
 from server.services.controlled_submission_ledger_posting import (
     CONTROLLED_SUBMISSION_LEDGER_POSTING_ACKNOWLEDGEMENT,
     ControlledSubmissionLedgerPostingRejected,
@@ -1598,7 +1601,6 @@ def test_account_truth_coverage_accepts_only_same_import_controlled_posting(
         db=env["db"],
         config=SimpleNamespace(initial_cash="0"),
     )
-
     covered = build_latest_account_truth_promotion_evidence(
         state,
         clock=lambda: NOW,
@@ -1627,6 +1629,56 @@ def test_account_truth_coverage_accepts_only_same_import_controlled_posting(
     assert (
         "ledger_was_revised_after_broker_import" in stale["ledger_coverage"]["reasons"]
     )
+
+
+def test_operator_journey_does_not_close_on_partial_canonical_account_truth(
+    tmp_path,
+) -> None:
+    env = _environment(tmp_path)
+    clearance_preview = _preview(env)
+    clearance = _record(
+        env,
+        clearance_preview,
+        _approval(env, clearance_preview["clearance_fingerprint"]),
+    )
+    posting_service = _ledger_posting_service(env)
+    posting_preview = posting_service.preview(clearance_id=clearance["clearance_id"])
+    _apply_ledger_posting(env, service=posting_service, preview=posting_preview)
+    state = SimpleNamespace(
+        db=env["db"],
+        config=SimpleNamespace(initial_cash="0"),
+    )
+    import_created_at = datetime.fromisoformat(
+        BrokerEvidenceRepository(env["db"]._path)
+        .list_import_runs(limit=1)[0]
+        .created_at
+    )
+    account_truth = build_latest_account_truth_promotion_evidence(
+        state,
+        clock=lambda: import_created_at,
+        max_age_seconds=120,
+    )
+
+    summary = ControlledExecutionOperatorViewService(
+        db=env["db"],
+        account_truth_evidence_reader=lambda: account_truth,
+        clock=lambda: NOW,
+    ).summary()
+
+    journey = summary["latest_order_journey"]
+    account_truth_stage = journey["stages"][-1]
+    assert summary["status"] == "order_journey_attention_required"
+    assert summary["attention_order_journey_count"] == 1
+    assert journey["status"] == "ledger_posted_account_truth_review_required"
+    assert account_truth_stage["key"] == "post_ledger_account_truth"
+    assert account_truth_stage["account_truth_gate_status"] == "degraded"
+    assert account_truth_stage["ledger_coverage_status"] == "covered"
+    assert account_truth_stage["post_ledger_cutoff_id"] > 0
+    assert account_truth_stage["complete"] is False
+    assert "post_ledger_account_truth_not_clear" in account_truth_stage["blockers"]
+    assert "post_ledger_account_truth_gate_not_pass" in account_truth_stage["blockers"]
+    assert summary["provider_contact_performed"] is False
+    assert summary["does_not_mutate_production_ledger"] is True
 
 
 def test_clearance_allows_only_exact_unposted_controlled_order_delta(tmp_path) -> None:

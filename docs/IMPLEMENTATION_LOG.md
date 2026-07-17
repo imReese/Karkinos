@@ -8,7 +8,7 @@ in Git commits and pull requests.
 
 ## Current Baseline
 
-As of 2026-07-16, v0.2 through v1.7 are complete. The v1.8 control-plane
+As of 2026-07-17, v0.2 through v1.7 are complete. The v1.8 control-plane
 foundation and AI-native research foundation through Phase 1.18 are
 implemented. The active product milestone is the broker-connected controlled
 per-order pilot described in [ROADMAP.md](ROADMAP.md).
@@ -36,9 +36,11 @@ The latest completed cross-cutting work includes:
   projection, and capital-scaling review.
 - a canonical persisted-only controlled-order journey from submission through
   reconciliation, terminal clearance, ledger posting, and append-only
-  correction, with one safe human next step and no read-side authority; v3
+  correction, with one safe human next step and no read-side authority; v4
   checks every bounded persisted intent so an older critical unfinished
-  journey cannot be masked by a newer lower-risk or closed journey;
+  journey cannot be masked by a newer lower-risk or closed journey, and a
+  post-ledger journey closes only from complete canonical Account Truth
+  coverage;
 - an explicitly opened ledger-posting operator review that binds the canonical
   delta preview to a matching trusted public identity, short-lived offline
   Ed25519 proof, final acknowledgement, and exactly-once apply, while keeping
@@ -130,6 +132,22 @@ Implemented foundation:
   or prove a later broker outcome.
 
 M4 non-authorizing operator-package assumptions and risk record:
+
+- A posted journey may close from the same Account Truth import only when the
+  canonical coverage gate recognizes immutable posting lineage for that exact
+  import. A corrected journey requires evidence captured after the correction.
+  Complete means fresh, gate-pass, clear reconciliation, zero unresolved
+  mismatches, current-ledger coverage, and explicit no-ledger/no-authority/
+  no-submission boundaries. Partial or degraded evidence remains actionable
+  review even when ledger coverage alone is `covered`.
+- Deterministic validation covers same-import posting closure, correction
+  evidence ordering, stale coverage, partial canonical evidence, single-read
+  behavior, and unchanged provider/ledger/Account Truth/authority flags.
+- Risk impact is medium because the read-only Automation Cockpit can remove an
+  item from its attention queue once canonical evidence proves completion. No
+  financial calculation or transition moved into the UI; the projection cannot
+  refresh a provider, mutate account facts, or grant execution or capital
+  authority.
 
 - The canonical source list remains newest-first, but operator attention is
   severity-first and oldest-first within the same severity. Unknown, prepared,

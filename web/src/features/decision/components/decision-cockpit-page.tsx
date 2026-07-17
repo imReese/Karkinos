@@ -2056,6 +2056,10 @@ function controlledOrderJourneyStageLabel(value: string, locale: Locale) {
       en: 'Append-only correction',
       zh: '追加式校正',
     },
+    post_ledger_account_truth: {
+      en: 'Post-ledger Account Truth',
+      zh: '入账后账户事实',
+    },
   };
   return labels[value]?.[locale] ?? formatPublicStatus(value, locale);
 }
@@ -2069,6 +2073,10 @@ function controlledOrderJourneyNextActionLabel(value: string, locale: Locale) {
     review_account_truth_after_ledger_posting: {
       en: 'review Account Truth after ledger posting',
       zh: '入账后复核账户事实',
+    },
+    no_action_order_journey_complete: {
+      en: 'no action; order journey is evidence-complete',
+      zh: '无需操作；订单旅程证据已闭环',
     },
     preview_reconciled_ledger_posting: {
       en: 'preview the separately signed ledger posting',
@@ -2105,6 +2113,76 @@ function controlledOrderJourneyNextActionLabel(value: string, locale: Locale) {
     preview_terminal_reconciliation_clearance: {
       en: 'preview the separately signed terminal clearance',
       zh: '预览需单独签名的终态清算',
+    },
+  };
+  return labels[value]?.[locale] ?? formatPublicStatus(value, locale);
+}
+
+function controlledOrderJourneyBlockerLabel(value: string, locale: Locale) {
+  const labels: Record<string, { en: string; zh: string }> = {
+    post_ledger_account_truth_not_clear: {
+      en: 'Account Truth is not clear',
+      zh: '账户事实尚未清晰',
+    },
+    post_ledger_account_truth_gate_not_pass: {
+      en: 'Account Truth gate did not pass',
+      zh: '账户事实门禁未通过',
+    },
+    post_ledger_account_truth_reconciliation_not_clear: {
+      en: 'Account reconciliation is not clear',
+      zh: '账户对账尚未清晰',
+    },
+    post_ledger_account_truth_mismatch_count_invalid: {
+      en: 'Mismatch count is invalid',
+      zh: '差异数量无效',
+    },
+    post_ledger_account_truth_mismatch_unresolved: {
+      en: 'Account mismatches remain unresolved',
+      zh: '账户差异仍未解决',
+    },
+    post_ledger_account_truth_not_fresh: {
+      en: 'Account Truth evidence is not fresh',
+      zh: '账户事实证据不新鲜',
+    },
+    post_ledger_account_truth_ledger_not_covered: {
+      en: 'Current ledger is not covered',
+      zh: '当前账本尚未被覆盖',
+    },
+    post_ledger_account_truth_import_identity_missing: {
+      en: 'Account Truth import identity is missing',
+      zh: '缺少账户事实导入标识',
+    },
+    post_ledger_account_truth_fingerprint_missing: {
+      en: 'Account Truth fingerprint is missing',
+      zh: '缺少账户事实指纹',
+    },
+    post_ledger_account_truth_ledger_boundary_invalid: {
+      en: 'Account Truth ledger boundary is invalid',
+      zh: '账户事实账本边界无效',
+    },
+    post_ledger_account_truth_authority_boundary_invalid: {
+      en: 'Account Truth authority boundary is invalid',
+      zh: '账户事实权限边界无效',
+    },
+    post_ledger_account_truth_submission_boundary_invalid: {
+      en: 'Account Truth submission boundary is invalid',
+      zh: '账户事实提交边界无效',
+    },
+    post_ledger_account_truth_timestamp_invalid: {
+      en: 'Account Truth timestamp is invalid',
+      zh: '账户事实时间无效',
+    },
+    post_ledger_fact_timestamp_invalid: {
+      en: 'Post-ledger fact timestamp is invalid',
+      zh: '入账后事实时间无效',
+    },
+    post_ledger_account_truth_predates_latest_fact: {
+      en: 'Account Truth predates the latest ledger fact',
+      zh: '账户事实早于最新账本事实',
+    },
+    post_ledger_cutoff_invalid: {
+      en: 'Post-ledger cutoff is invalid',
+      zh: '入账后账本截止标识无效',
     },
   };
   return labels[value]?.[locale] ?? formatPublicStatus(value, locale);
@@ -3248,6 +3326,36 @@ function AutomationCockpitPanel({
                         {(stage.post_ledger_cutoff_id ?? 0) > 0 ? (
                           <div className="app-muted mt-1 text-[10px]">
                             ledger cutoff #{stage.post_ledger_cutoff_id}
+                          </div>
+                        ) : null}
+                        {stage.key === 'post_ledger_account_truth' ? (
+                          <div className="app-muted mt-1 break-words text-[10px]">
+                            {locale === 'zh' ? '账户事实' : 'Account Truth'}:{' '}
+                            {formatPublicStatus(
+                              stage.account_truth_gate_status ?? 'missing',
+                              locale,
+                            )}{' '}
+                            · {locale === 'zh' ? '账本覆盖' : 'Ledger coverage'}
+                            :{' '}
+                            {formatPublicStatus(
+                              stage.ledger_coverage_status ?? 'missing',
+                              locale,
+                            )}
+                          </div>
+                        ) : null}
+                        {(stage.blockers?.length ?? 0) > 0 ? (
+                          <div
+                            className="mt-1 break-words text-[10px] text-[var(--app-warning)]"
+                            title={stage.blockers?.join(', ')}
+                          >
+                            {locale === 'zh' ? '复核原因' : 'Review reason'}:{' '}
+                            {controlledOrderJourneyBlockerLabel(
+                              stage.blockers?.[0] ?? '',
+                              locale,
+                            )}
+                            {(stage.blockers?.length ?? 0) > 1
+                              ? ` +${(stage.blockers?.length ?? 1) - 1}`
+                              : ''}
                           </div>
                         ) : null}
                       </div>
