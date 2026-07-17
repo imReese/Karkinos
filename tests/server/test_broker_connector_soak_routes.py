@@ -236,12 +236,12 @@ def test_broker_soak_promotion_routes_preview_accept_list_and_status(
     status = client.get("/api/automation/broker-soak/promotion/status")
     preview = client.post(
         "/api/automation/broker-soak/promotion/dossiers/preview",
-        json={"connector_id": "qmt-readonly-promotion"},
+        json={"connector_id": "fixture-readonly-promotion"},
     )
     acceptance = client.post(
         "/api/automation/broker-soak/promotion/acceptances",
         json={
-            "connector_id": "qmt-readonly-promotion",
+            "connector_id": "fixture-readonly-promotion",
             "dossier_fingerprint": "d" * 64,
             "operator_label": "local-owner",
             "operator_approval_id": "a" * 64,
@@ -250,7 +250,7 @@ def test_broker_soak_promotion_routes_preview_accept_list_and_status(
     )
     listing = client.get(
         "/api/automation/broker-soak/promotion/acceptances"
-        "?connector_id=qmt-readonly-promotion&limit=10"
+        "?connector_id=fixture-readonly-promotion&limit=10"
     )
 
     assert status.status_code == 200
@@ -263,7 +263,7 @@ def test_broker_soak_promotion_routes_preview_accept_list_and_status(
     assert acceptance.json()["authorizes_execution"] is False
     assert listing.status_code == 200
     assert listing.json()[0]["authorizes_execution"] is False
-    assert ("list", ("qmt-readonly-promotion", 10)) in service.calls
+    assert ("list", ("fixture-readonly-promotion", 10)) in service.calls
 
 
 def test_broker_soak_promotion_routes_fail_closed_on_stale_or_credential_input(
@@ -278,7 +278,7 @@ def test_broker_soak_promotion_routes_fail_closed_on_stale_or_credential_input(
     app.include_router(create_router())
     client = TestClient(app)
     base = {
-        "connector_id": "qmt-readonly-promotion",
+        "connector_id": "fixture-readonly-promotion",
         "dossier_fingerprint": "d" * 64,
         "operator_label": "local-owner",
         "operator_approval_id": "a" * 64,

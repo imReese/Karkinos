@@ -86,7 +86,7 @@ def _db_with_resolvable_sources(tmp_path) -> AppDatabase:
         entity_type=BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
         entity_id=SOAK_ID,
         source=BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
-        source_ref="qmt-local",
+        source_ref="fixture-readonly",
         payload={
             "schema_version": "karkinos.broker_connector_soak_observation.v1",
             "observation_id": SOAK_ID,
@@ -293,7 +293,7 @@ def test_resolver_fails_closed_for_non_clear_or_out_of_window_source(tmp_path) -
         entity_type=BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
         entity_id=SOAK_ID,
         source=BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
-        source_ref="qmt-local",
+        source_ref="fixture-readonly",
         payload={
             "observation_id": SOAK_ID,
             "observed_at": old_at,
@@ -464,7 +464,7 @@ def test_resolution_fingerprint_is_deterministic_and_source_sensitive(
         entity_type=BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
         entity_id=SOAK_ID,
         source=BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
-        source_ref="qmt-local",
+        source_ref="fixture-readonly",
         payload={
             "observation_id": SOAK_ID,
             "observed_at": later_at,

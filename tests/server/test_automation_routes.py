@@ -288,8 +288,8 @@ def test_automation_alert_scan_route_records_runtime_connector_degradation_alert
         json={
             "connector_health": [
                 {
-                    "connector_id": "local-ptrade-readonly",
-                    "connector_type": "ptrade_readonly",
+                    "connector_id": "local-fixture-readonly",
+                    "connector_type": "deterministic_readonly",
                     "status": "runtime_degraded",
                     "enabled": True,
                     "message": "Read-only connector heartbeat is stale.",
@@ -320,7 +320,7 @@ def test_automation_alert_scan_route_records_runtime_connector_degradation_alert
     assert payload["open_alert_count"] == 1
     alert = payload["alerts"][0]
     assert alert["alert_key"] == (
-        "broker_connector:local-ptrade-readonly:runtime_degraded"
+        "broker_connector:local-fixture-readonly:runtime_degraded"
     )
     assert alert["category"] == "broker_connector_health"
     assert alert["payload"]["connector_status"] == "runtime_degraded"

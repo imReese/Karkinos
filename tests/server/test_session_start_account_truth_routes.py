@@ -78,8 +78,8 @@ def _client(monkeypatch) -> tuple[TestClient, FakeSessionStartAccountTruthServic
 
 def _preview_payload() -> dict:
     return {
-        "evidence_connector_id": "qmt-readonly-session",
-        "account_alias": "qmt-session-review",
+        "evidence_connector_id": "fixture-readonly-session",
+        "account_alias": "fixture-session-review",
     }
 
 

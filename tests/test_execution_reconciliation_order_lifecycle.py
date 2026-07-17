@@ -188,7 +188,7 @@ def _run_item(db: AppDatabase, order_id: str, run_date: str) -> tuple[dict, dict
 
 def _import_full_broker_statement(db: AppDatabase, intent: dict) -> None:
     content = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note,transfer_fee,broker_order_id,client_order_id
-qmt-trade-1,trade_buy,2026-07-13T12:00:00+08:00,2026-07-14,600519,贵州茅台,stock,CNY,100,10.5,1050,1.2,0,-1051.22,100000,100,10.5122,exact identity,0.02,{broker_order_id},{client_order_id}
+fixture-trade-1,trade_buy,2026-07-13T12:00:00+08:00,2026-07-14,600519,贵州茅台,stock,CNY,100,10.5,1050,1.2,0,-1051.22,100000,100,10.5122,exact identity,0.02,{broker_order_id},{client_order_id}
 """.format(
         broker_order_id=intent["broker_order_id"],
         client_order_id=intent["client_order_id"],

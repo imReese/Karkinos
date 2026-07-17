@@ -681,7 +681,7 @@ def test_server_config_loads_controlled_bridge_policy_whitelist(tmp_path):
                 "controlled_bridge_policy": {
                     "policy_id": "local-controlled-bridge-review",
                     "enabled": True,
-                    "allowed_connector_ids": ["local-qmt-readonly"],
+                    "allowed_connector_ids": ["local-fixture-readonly"],
                     "allowed_account_aliases": ["local-review"],
                     "allowed_strategy_ids": ["dual_ma"],
                     "allowed_symbols": ["600519"],
@@ -697,7 +697,7 @@ def test_server_config_loads_controlled_bridge_policy_whitelist(tmp_path):
     assert config.controlled_bridge_policy == ControlledBridgePolicyConfig(
         policy_id="local-controlled-bridge-review",
         enabled=True,
-        allowed_connector_ids=("local-qmt-readonly",),
+        allowed_connector_ids=("local-fixture-readonly",),
         allowed_account_aliases=("local-review",),
         allowed_strategy_ids=("dual_ma",),
         allowed_symbols=("600519",),
@@ -732,7 +732,7 @@ def test_server_config_rejects_controlled_bridge_policy_secret_fields(tmp_path):
             {
                 "controlled_bridge_policy": {
                     "enabled": True,
-                    "allowed_connector_ids": ["local-qmt-readonly"],
+                    "allowed_connector_ids": ["local-fixture-readonly"],
                     "broker_token": "do-not-store",
                 }
             }

@@ -19,7 +19,7 @@ from account_truth.broker_connector import (
 def test_read_only_broker_connector_reads_account_facts_without_submit() -> None:
     snapshot = BrokerConnectorSnapshot(
         connector_id="fake_qmt_readonly",
-        source_name="synthetic qmt readonly fixture",
+        source_name="synthetic deterministic readonly fixture",
         account_id="synthetic-account",
         account_alias="safe-local-alias",
         captured_at="2026-06-22T15:05:00+08:00",
@@ -122,12 +122,12 @@ def test_fake_broker_connector_exposes_diagnostic_health_states() -> None:
 
 
 def test_local_json_readonly_connector_reads_export_without_submit(tmp_path) -> None:
-    snapshot_path = tmp_path / "qmt-snapshot.json"
+    snapshot_path = tmp_path / "fixture-snapshot.json"
     snapshot_path.write_text(
         json.dumps(
             {
                 "schema_version": "karkinos.readonly_broker_snapshot_export.v1",
-                "source_name": "QMT local readonly export",
+                "source_name": "Deterministic local readonly export",
                 "account_id": "private-account-id",
                 "captured_at": "2026-07-03T15:01:00+08:00",
                 "health": {
@@ -182,7 +182,7 @@ def test_local_json_readonly_connector_reads_export_without_submit(tmp_path) -> 
         encoding="utf-8",
     )
     connector = LocalJsonReadOnlyBrokerConnector(
-        connector_id="local-qmt-export",
+        connector_id="local-fixture-export",
         snapshot_path=snapshot_path,
         account_alias="local-review",
     )
@@ -191,8 +191,8 @@ def test_local_json_readonly_connector_reads_export_without_submit(tmp_path) -> 
 
     assert connector.capabilities == BrokerConnectorCapabilities()
     assert not hasattr(connector, "submit_order")
-    assert snapshot.connector_id == "local-qmt-export"
-    assert snapshot.source_name == "QMT local readonly export"
+    assert snapshot.connector_id == "local-fixture-export"
+    assert snapshot.source_name == "Deterministic local readonly export"
     assert snapshot.account_id == "private-account-id"
     assert snapshot.account_alias == "local-review"
     assert snapshot.health.status == "healthy"
@@ -206,12 +206,12 @@ def test_local_json_readonly_connector_reads_export_without_submit(tmp_path) -> 
 def test_local_json_readonly_connector_degrades_invalid_export_without_submit(
     tmp_path,
 ) -> None:
-    snapshot_path = tmp_path / "qmt-snapshot-invalid.json"
+    snapshot_path = tmp_path / "fixture-snapshot-invalid.json"
     snapshot_path.write_text(
         json.dumps(
             {
                 "schema_version": "karkinos.readonly_broker_snapshot_export.v1",
-                "source_name": "QMT local readonly export",
+                "source_name": "Deterministic local readonly export",
                 "account_id": "private-account-id",
                 "captured_at": "2026-07-03T15:01:00+08:00",
                 "health": {
@@ -232,7 +232,7 @@ def test_local_json_readonly_connector_degrades_invalid_export_without_submit(
         encoding="utf-8",
     )
     connector = LocalJsonReadOnlyBrokerConnector(
-        connector_id="local-qmt-export",
+        connector_id="local-fixture-export",
         snapshot_path=snapshot_path,
         account_alias="local-review",
     )
@@ -240,7 +240,7 @@ def test_local_json_readonly_connector_degrades_invalid_export_without_submit(
     snapshot = connector.read_account_snapshot()
 
     assert not hasattr(connector, "submit_order")
-    assert snapshot.connector_id == "local-qmt-export"
+    assert snapshot.connector_id == "local-fixture-export"
     assert snapshot.source_name == "local readonly export"
     assert snapshot.account_id == ""
     assert snapshot.account_alias == "local-review"
@@ -265,12 +265,12 @@ def test_local_json_readonly_connector_degrades_invalid_export_without_submit(
 def test_local_json_readonly_connector_degrades_unsupported_schema_without_submit(
     tmp_path,
 ) -> None:
-    snapshot_path = tmp_path / "qmt-snapshot-wrong-schema.json"
+    snapshot_path = tmp_path / "fixture-snapshot-wrong-schema.json"
     snapshot_path.write_text(
         json.dumps(
             {
                 "schema_version": "other.app.account_snapshot.v1",
-                "source_name": "QMT local readonly export",
+                "source_name": "Deterministic local readonly export",
                 "account_id": "private-account-id",
                 "captured_at": "2026-07-03T15:01:00+08:00",
                 "health": {
@@ -288,7 +288,7 @@ def test_local_json_readonly_connector_degrades_unsupported_schema_without_submi
         encoding="utf-8",
     )
     connector = LocalJsonReadOnlyBrokerConnector(
-        connector_id="local-qmt-export",
+        connector_id="local-fixture-export",
         snapshot_path=snapshot_path,
         account_alias="local-review",
     )
@@ -296,7 +296,7 @@ def test_local_json_readonly_connector_degrades_unsupported_schema_without_submi
     snapshot = connector.read_account_snapshot()
 
     assert not hasattr(connector, "submit_order")
-    assert snapshot.connector_id == "local-qmt-export"
+    assert snapshot.connector_id == "local-fixture-export"
     assert snapshot.account_id == ""
     assert snapshot.account_alias == "local-review"
     assert snapshot.health.status == "incomplete"

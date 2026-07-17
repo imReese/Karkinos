@@ -24,8 +24,8 @@ def _fingerprint(value: object) -> str:
 
 
 class FakeExecutionGateway:
-    gateway_id = "qmt-execution-1"
-    evidence_connector_id = "qmt-readonly-1"
+    gateway_id = "fixture-execution-1"
+    evidence_connector_id = "fixture-readonly-1"
     account_alias = "primary-review"
     account_binding_status = "verified"
 
@@ -94,8 +94,8 @@ def _service(tmp_path, gateway: FakeExecutionGateway, current_time: list[datetim
 
 def _preview(service: ExecutionGatewayVerificationService) -> dict:
     return service.preview(
-        gateway_id="qmt-execution-1",
-        evidence_connector_id="qmt-readonly-1",
+        gateway_id="fixture-execution-1",
+        evidence_connector_id="fixture-readonly-1",
         account_alias="primary-review",
         order_id="OMS-1",
         order_fingerprint="a" * 64,
@@ -139,8 +139,8 @@ def test_gateway_verification_record_reuses_and_resolves_current_evidence(
     preview = _preview(service)
 
     first = service.record(
-        gateway_id="qmt-execution-1",
-        evidence_connector_id="qmt-readonly-1",
+        gateway_id="fixture-execution-1",
+        evidence_connector_id="fixture-readonly-1",
         account_alias="primary-review",
         order_id="OMS-1",
         order_fingerprint="a" * 64,
@@ -149,8 +149,8 @@ def test_gateway_verification_record_reuses_and_resolves_current_evidence(
         acknowledgement=EXECUTION_GATEWAY_VERIFICATION_ACKNOWLEDGEMENT,
     )
     rerun = service.record(
-        gateway_id="qmt-execution-1",
-        evidence_connector_id="qmt-readonly-1",
+        gateway_id="fixture-execution-1",
+        evidence_connector_id="fixture-readonly-1",
         account_alias="primary-review",
         order_id="OMS-1",
         order_fingerprint="a" * 64,
@@ -187,8 +187,8 @@ def test_gateway_verification_source_drift_and_expiry_fail_closed(tmp_path) -> N
     _, service = _service(tmp_path, gateway, current_time)
     preview = _preview(service)
     service.record(
-        gateway_id="qmt-execution-1",
-        evidence_connector_id="qmt-readonly-1",
+        gateway_id="fixture-execution-1",
+        evidence_connector_id="fixture-readonly-1",
         account_alias="primary-review",
         order_id="OMS-1",
         order_fingerprint="a" * 64,
@@ -249,8 +249,8 @@ def test_rejected_gateway_verification_is_audited_without_private_details(
 
     with pytest.raises(ExecutionGatewayVerificationRejected) as exc_info:
         service.record(
-            gateway_id="qmt-execution-1",
-            evidence_connector_id="qmt-readonly-1",
+            gateway_id="fixture-execution-1",
+            evidence_connector_id="fixture-readonly-1",
             account_alias="primary-review",
             order_id="OMS-1",
             order_fingerprint="a" * 64,
