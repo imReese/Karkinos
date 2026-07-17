@@ -207,6 +207,21 @@ Strategy code cannot reach the gateway. A prepared, accepted-but-unreconciled,
 or unknown intent blocks a different order. Unknown outcomes are query-only and
 are never automatically resubmitted.
 
+`karkinos.current_per_order_confirmation_dossier.v1` is the read-only operator
+entry boundary before any controlled intent exists. It selects only canonical
+`manually_confirmed` OMS orders, scans append-only capital evaluations newest
+first, binds the exact OMS order fingerprint, and requires exactly one valid
+prior-batch reconciliation reference and one gateway-verification reference.
+It never falls back from a newer matching blocked evaluation to an older pass;
+missing, malformed, ambiguous, or bounded-scan-incomplete evidence remains
+blocked. The resolved references feed the existing canonical per-order dossier,
+whose fingerprint is then used for a three-minute offline Ed25519 approval.
+The resulting confirmation is append-only, non-authorizing evidence. Listing
+and preview read persisted facts only; neither they nor the confirmation can
+contact a provider, mutate OMS/ledger/risk/kill switch/capital authority, or
+submit/cancel a broker order. The Trading UI deliberately has no submit or
+cancel control for this boundary.
+
 A terminal rejected intent may be reviewed through
 `karkinos.controlled_broker_rejection_evidence.v1`. This read-only contract
 binds the canonical OMS order fingerprint, controlled intent, exact gateway,

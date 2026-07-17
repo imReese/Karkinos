@@ -182,6 +182,15 @@ acceptance 不再匹配。
 策略代码不能接触 gateway。Prepared、accepted-but-unreconciled 或 unknown intent 会阻断不同
 订单。Unknown 结果只能查询，绝不自动重提。
 
+`karkinos.current_per_order_confirmation_dossier.v1` 是 controlled intent 出现前的只读操作员
+入口。它只选择 canonical `manually_confirmed` OMS 订单，按最新优先扫描 append-only capital
+evaluation，绑定精确 OMS order fingerprint，并要求唯一有效的前序批次对账引用和唯一网关验证
+引用。较新的匹配评估若已阻断，绝不回退使用较旧 pass；缺失、格式错误、歧义或有界扫描不完整的
+证据都继续 blocked。解析出的引用交给既有 canonical per-order dossier，其 fingerprint 再绑定一份
+三分钟离线 Ed25519 approval。最终 confirmation 只是 append-only、非授权证据。列表与 preview
+只读持久化事实；它们和 confirmation 都不能联系 provider、修改 OMS/ledger/risk/kill switch/
+capital authority，也不能提交或撤销券商订单。Trading UI 刻意不为该边界提供 submit/cancel 控件。
+
 终态 rejected intent 可通过 `karkinos.controlled_broker_rejection_evidence.v1` 复核。该只读契约
 绑定 canonical OMS order fingerprint、controlled intent、精确 gateway/account/client-order/operator
 身份以及白名单净化结果，并区分网关调用前本地阻断与网关明确拒绝；证据缺失或歧义时 fail closed。
@@ -192,7 +201,7 @@ identity；相同请求在重复/重启后返回原记录，冲突复核人会 f
 重试。两条边界都不能查询或联系 provider、创建/重试/撤销订单、修改 OMS/ledger/Account Truth/
 risk/kill switch/interlock 或改变资本/执行权限。任何后续订单必须从新 Decision 开始并重过全部门禁。
 
-`karkinos.controlled_execution_operator_view.v3` 会在选择操作员下一步之前检查有界范围内的全部
+`karkinos.controlled_execution_operator_view.v4` 会在选择操作员下一步之前检查有界范围内的全部
 persisted controlled intent。按时间最新的 journey 继续保留用于审计兼容，但首要关注项按照
 fail-closed 严重度选择：unknown/prepared 结果与开放券商订单优先于对账、clearance、posting、
 Account Truth 后续复核及已经闭环的拒单。紧凑关注队列会让较早但未完成的旅程在出现更新旅程后仍

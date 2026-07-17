@@ -49,17 +49,8 @@ The latest completed cross-cutting work includes:
 - signed bounded execution policy, atomic budgets, runtime sessions, live
   gates, pause/replacement, submission interlock, lifecycle evidence, operator
   projection, and capital-scaling review.
-- a canonical persisted-only controlled-order journey from submission through
-  reconciliation, terminal clearance, ledger posting, and append-only
-  correction, with one safe human next step and no read-side authority; v4
-  checks every bounded persisted intent so an older critical unfinished
-  journey cannot be masked by a newer lower-risk or closed journey, and a
-  post-ledger journey closes only from complete canonical Account Truth
-  coverage;
-- an explicitly opened ledger-posting operator review with trusted offline proof
-  and exactly-once apply. Faults at the second fill, posting row, and completion
-  event roll back every financial/completion fact and a restarted process can
-  retry once; private keys, broker actions, and authority stay outside the Web path;
+- a canonical persisted-only controlled-order journey through reconciliation, terminal clearance, ledger posting, and append-only correction; v4 checks every bounded intent so older critical work stays visible and requires complete Account Truth before closure;
+- an explicitly opened ledger-posting review with trusted offline proof and exactly-once apply; deterministic faults roll back every financial/completion fact, restart retry is safe, and private keys, broker actions, and authority stay outside Web;
 - a separately signed unknown-submission recovery review that binds the
   persisted intent, exact client order id, prior gateway-result fingerprint,
   operator identity, and a short-lived offline proof before atomically
@@ -145,6 +136,12 @@ Implemented foundation:
   fingerprint acknowledgement and then closes as no-retry. Neither path can
   query/retry/submit/cancel, change OMS/ledger/authority, release the interlock,
   or prove a later broker outcome.
+
+M4 current per-order dossier assumptions and risk record:
+
+- The newest exact order-matching capital evaluation is authoritative even when blocked; unique prior-batch/gateway references are mandatory, and malformed, ambiguous, missing, or scan-truncated evidence fails closed.
+- Deterministic tests cover server-side resolution, newer-blocked precedence, replay/idempotence, unchanged OMS, strict schemas, collapsed/empty/blocked UI, offline proof, and no submit/cancel requests.
+- Risk is low: reads use persisted facts and the only write is an existing non-authorizing audit fact; no provider/adapter is selected and OMS, ledger, Account Truth, risk, kill switch, broker actions, and capital authority remain unchanged.
 
 M4 non-authorizing operator-package assumptions and risk record:
 

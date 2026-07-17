@@ -182,7 +182,7 @@ optional correction without operator-supplied financial deltas. An exact open li
 produce a no-database-edit manual cancellation package; the UI requires external human action and
 new evidence, and exposes no cancel endpoint. A rejected intent now exposes a drift-checked,
 sanitized copy-only package plus an append-only, exactly-once no-retry acknowledgement. The v4 view prioritizes every unfinished journey and closes post-ledger follow-up only from complete canonical Account Truth evidence.
-Signed submission, real signed cancel, and real-adapter recovery evidence remain open.
+Trading can now resolve each canonical `manually_confirmed` OMS candidate's newest capital, prior-batch, and gateway evidence into a separately signed, append-only review without operator-supplied fingerprints. Missing, ambiguous, newer blocked, or scan-truncated evidence fails closed; Web cannot submit/cancel or mutate OMS, ledger, risk, kill switch, or capital authority. Signed submission, real signed cancel, and real-adapter recovery evidence remain open.
 
 **Exit gate:** an operator can complete every normal and recovery flow without
 editing the database. Refresh, duplicate clicks, and service restart do not

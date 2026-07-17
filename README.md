@@ -102,6 +102,15 @@ non-zero holdings. Watchlist instruments, market indices, and closed-position
 quotes remain visible in Market or history but cannot inflate the current
 holding review queue.
 
+Trading now provides a default-collapsed, non-submitting per-order evidence
+review. It lists only canonical `manually_confirmed` OMS candidates and resolves
+the newest exact capital evaluation, prior-batch reconciliation, and gateway
+verification from persisted facts, so the operator does not copy those
+fingerprints by hand. A three-minute offline signature can append one exact
+review fact; it cannot submit/cancel, contact a provider, or change OMS, ledger,
+risk, kill switch, or capital authority. Missing, ambiguous, newer blocked, or
+bounded-scan-incomplete evidence remains blocked.
+
 For a reconciled controlled order, the Operations/Decision journey can now
 complete both signed terminal clearance and the following reconciled-ledger
 posting without database edits. Each step has its own canonical preview,
