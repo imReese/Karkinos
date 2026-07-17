@@ -196,10 +196,18 @@ def test_broker_evidence_repository_reimports_same_file_idempotently(
     preview = parse_broker_statement_csv(ALL_EVENT_TYPES_STATEMENT)
 
     first_run = repository.save_preview(preview, source_name="first.csv")
+    first_seen_at = "2026-01-15T07:10:00+00:00"
+    with sqlite3.connect(repository._path) as conn:
+        conn.execute(
+            "UPDATE broker_import_runs SET created_at = ? WHERE import_run_id = ?",
+            (first_seen_at, first_run.import_run_id),
+        )
+        conn.commit()
     second_run = repository.save_preview(preview, source_name="second.csv")
     import_runs = repository.list_import_runs(limit=10)
 
     assert second_run.import_run_id == first_run.import_run_id
+    assert second_run.created_at == first_seen_at
     assert second_run.source_name == "second.csv"
     assert second_run.file_duplicate_count == 0
     assert second_run.duplicate_of_import_run_id is None

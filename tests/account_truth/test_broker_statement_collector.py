@@ -65,6 +65,7 @@ def test_local_collector_stages_complete_file_without_mutating_ledger(tmp_path):
 def test_local_collector_is_idempotent_across_polling_and_restart(tmp_path):
     collector, repository, db, statement_path = _collector(tmp_path)
     first = _collect_stable(collector)
+    first_seen_at = repository.get_import_run(first.import_run_id).created_at
 
     unchanged = collector.collect_once(observed_monotonic=12)
     assert unchanged.state == "unchanged"
@@ -83,6 +84,7 @@ def test_local_collector_is_idempotent_across_polling_and_restart(tmp_path):
 
     assert replay.state == "imported"
     assert replay.import_run_id == first.import_run_id
+    assert repository.get_import_run(first.import_run_id).created_at == first_seen_at
     assert len(repository.list_import_runs(limit=10)) == 1
     assert len(repository.list_events(first.import_run_id)) == 3
     assert _ledger_entry_count(db) == 0
