@@ -503,10 +503,7 @@ export function OverviewPage() {
                   overview.data.daily_operations
                 }
                 marketHealth={marketHealth.data}
-                quoteDiagnostics={[
-                  ...positions,
-                  ...(marketHealth.data?.quotes ?? []),
-                ]}
+                quoteDiagnostics={positions}
                 pendingOrders={pendingOrders.data ?? []}
                 pendingOrdersLoading={pendingOrders.isLoading}
                 pendingOrdersError={pendingOrders.isError}
@@ -979,11 +976,15 @@ function operationsQueueTarget(
   operations: OperationsTodayResponse | null | undefined,
   primarySubsystem: OperationsTodayResponse['subsystems'][number] | undefined,
 ) {
+  const primaryTarget = primarySubsystem?.target ?? operations?.primary_target;
+  if (primaryTarget === 'market' || primaryTarget === 'account-truth') {
+    return primaryTarget;
+  }
   const blocker = primaryOperationsDailyPlanBlocker(operations);
   if (isAwaitingRiskGateBlocker(blocker) || isRiskBlockedBlocker(blocker)) {
     return 'risk';
   }
-  return primarySubsystem?.target ?? operations?.primary_target;
+  return primaryTarget;
 }
 
 function operationsDuplicatesTradingPlanReview(
@@ -2120,6 +2121,10 @@ function DashboardTodayQueue({
   const labels = copy.overview.dashboard;
   const quoteStatus = overview.quote_status ?? marketHealth?.source_health;
   const diagnostics = actionableQuoteDiagnostics(quoteDiagnostics);
+  const instrumentDiagnostics = [
+    ...quoteDiagnostics,
+    ...(marketHealth?.quotes ?? []),
+  ];
   const diagnosticSummary = quoteDiagnosticReviewSummary(diagnostics, locale);
   const dataNeedsReview =
     diagnostics.length > 0 ||
@@ -2206,7 +2211,7 @@ function DashboardTodayQueue({
             ? tradingPlanManualIntentSummary(
                 tradingPlan,
                 candidates,
-                quoteDiagnostics,
+                instrumentDiagnostics,
                 locale,
               )
             : labels.tradingPlanManualReadyDetail(
@@ -2284,11 +2289,13 @@ function DashboardTodayQueue({
       : operationsToday?.conclusion_status === 'degraded'
         ? 'watch'
         : 'normal';
-  const hideDuplicateOperationsReview = operationsDuplicatesTradingPlanReview(
-    operationsToday,
-    tradingPlan,
-    operationsPrimarySubsystem,
-  );
+  const hideDuplicateOperationsReview =
+    (dataNeedsReview && operationsPrimaryTarget === 'market') ||
+    operationsDuplicatesTradingPlanReview(
+      operationsToday,
+      tradingPlan,
+      operationsPrimarySubsystem,
+    );
 
   const allItems: TodayQueueItem[] = [
     {
@@ -3353,6 +3360,9 @@ export function RiskPage() {
   const [timelineToDate, setTimelineToDate] = useState('');
   const [timelineEventKind, setTimelineEventKind] = useState('');
   const [batchRiskMessage, setBatchRiskMessage] = useState<string | null>(null);
+  const [batchRiskBlockedMessage, setBatchRiskBlockedMessage] = useState<
+    string | null
+  >(null);
   const [batchRiskError, setBatchRiskError] = useState<string | null>(null);
   const explainability = useExplainabilityQuery({
     from_date: timelineFromDate || undefined,
@@ -3411,9 +3421,18 @@ export function RiskPage() {
     (state.isError || risks.isError || workspace.isError);
   const runBatchRiskGate = async () => {
     setBatchRiskMessage(null);
+    setBatchRiskBlockedMessage(null);
     setBatchRiskError(null);
     try {
       const result = await batchPreTradeRisk.mutateAsync();
+      if (result.status === 'blocked_by_data_quality') {
+        setBatchRiskBlockedMessage(
+          locale === 'zh'
+            ? `批量风控未运行：估值或行情证据尚未完整，已跳过 ${result.skipped_count} 个候选。未写入风险决策、订单或账本；请先处理数据状态后重试。`
+            : `Batch risk did not run: valuation or market evidence is incomplete, so ${result.skipped_count} candidates were skipped. No risk decisions, orders, or ledger entries were written; resolve the data status before retrying.`,
+        );
+        return;
+      }
       setBatchRiskMessage(
         copy.riskPage.batchRiskGateDone(
           result.passed_count,
@@ -3517,6 +3536,14 @@ export function RiskPage() {
               {batchRiskMessage ? (
                 <div className="mt-3 rounded-2xl border border-[var(--app-success-border)] bg-[var(--app-success-bg)] px-3 py-2 text-sm font-semibold text-[var(--app-success)]">
                   {batchRiskMessage}
+                </div>
+              ) : null}
+              {batchRiskBlockedMessage ? (
+                <div
+                  role="status"
+                  className="mt-3 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-3 py-2 text-sm font-semibold leading-6 text-[var(--app-warning)]"
+                >
+                  {batchRiskBlockedMessage}
                 </div>
               ) : null}
               {batchRiskError ? (

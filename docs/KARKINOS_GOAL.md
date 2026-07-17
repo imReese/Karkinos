@@ -96,6 +96,8 @@ Karkinos succeeds when it provides:
 
 - reproducible and explainable research rather than headline backtest returns;
 - a useful daily plan that includes no-action and review-required outcomes;
+- a measurable share of daily decisions that are data-complete, risk-checked,
+  benchmark-aware, journaled, and later reviewable;
 - consistent portfolio and performance facts across every product surface;
 - reliable paper/shadow and operator runbooks;
 - explicit evidence and recovery for every live-like order state;

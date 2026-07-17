@@ -211,10 +211,12 @@ function installRiskFetchMock({
   manualOrders = [],
   riskAlertsResponse = riskAlerts,
   decisionResponse = decisionNeedsRiskGate,
+  batchRiskResponse,
 }: {
   manualOrders?: unknown[];
   riskAlertsResponse?: unknown[];
   decisionResponse?: unknown;
+  batchRiskResponse?: unknown;
 } = {}) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url =
@@ -225,16 +227,23 @@ function installRiskFetchMock({
           : input.toString();
 
     if (url.includes('/api/decision/pre-trade-risk/batch')) {
-      return jsonResponse({
-        schema_version: 'karkinos.pre_trade_risk_batch.v1',
-        processed_count: 50,
-        passed_count: 48,
-        blocked_count: 2,
-        skipped_count: 0,
-        does_not_create_order: true,
-        default_execution_mode: 'manual_confirmation',
-        results: [],
-      });
+      return jsonResponse(
+        batchRiskResponse ?? {
+          schema_version: 'karkinos.pre_trade_risk_batch.v1',
+          status: 'completed',
+          processed_count: 50,
+          passed_count: 48,
+          blocked_count: 2,
+          skipped_count: 0,
+          candidate_count: 50,
+          does_not_create_order: true,
+          does_not_submit_broker_order: true,
+          does_not_write_ledger: true,
+          risk_decision_writes_performed: true,
+          default_execution_mode: 'manual_confirmation',
+          results: [],
+        },
+      );
     }
     if (url.includes('/api/portfolio/state')) {
       return jsonResponse(accountState);
@@ -275,6 +284,7 @@ function renderRiskPage(options?: {
   manualOrders?: unknown[];
   riskAlertsResponse?: unknown[];
   decisionResponse?: unknown;
+  batchRiskResponse?: unknown;
 }) {
   window.localStorage.clear();
   if (options?.locale) {
@@ -284,6 +294,7 @@ function renderRiskPage(options?: {
     manualOrders: options?.manualOrders,
     riskAlertsResponse: options?.riskAlertsResponse,
     decisionResponse: options?.decisionResponse,
+    batchRiskResponse: options?.batchRiskResponse,
   });
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -426,6 +437,51 @@ test('runs batch pre-trade risk gate from the risk handoff panel', async () => {
   expect(
     await screen.findByText('批量风控完成：通过 48，阻断 2。'),
   ).toBeTruthy();
+});
+
+test('explains data-quality blocking without claiming that risk ran', async () => {
+  const user = userEvent.setup();
+  renderRiskPage({
+    locale: 'zh',
+    batchRiskResponse: {
+      schema_version: 'karkinos.pre_trade_risk_batch.v1',
+      status: 'blocked_by_data_quality',
+      processed_count: 0,
+      passed_count: 0,
+      blocked_count: 0,
+      skipped_count: 3,
+      candidate_count: 3,
+      does_not_create_order: true,
+      does_not_submit_broker_order: true,
+      does_not_write_ledger: true,
+      risk_decision_writes_performed: false,
+      database_writes_performed: false,
+      persisted_facts_only: true,
+      valuation_snapshot_id: 'valuation-fixture',
+      ledger_cutoff_id: 21,
+      valuation_status: 'degraded',
+      blockers: [
+        {
+          code: 'valuation_snapshot_not_complete',
+          status: 'degraded',
+        },
+      ],
+      default_execution_mode: 'manual_confirmation',
+      results: [],
+    },
+  });
+
+  const handoff = await screen.findByTestId('risk-decision-handoff');
+  await user.click(
+    within(handoff).getByRole('button', { name: '运行批量风控' }),
+  );
+
+  expect(
+    await within(handoff).findByText(
+      '批量风控未运行：估值或行情证据尚未完整，已跳过 3 个候选。未写入风险决策、订单或账本；请先处理数据状态后重试。',
+    ),
+  ).toBeTruthy();
+  expect(handoff.textContent).not.toContain('批量风控完成');
 });
 
 test('keeps the last persisted risk projection visible when a post-run refresh fails', async () => {

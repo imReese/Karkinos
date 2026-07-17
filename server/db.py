@@ -9234,6 +9234,34 @@ CREATE TABLE IF NOT EXISTS decision_outcome_review_events (
     FOREIGN KEY(review_id) REFERENCES decision_outcome_reviews(review_id)
 );
 
+CREATE TABLE IF NOT EXISTS decision_quality_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    decision_date TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    request_json TEXT NOT NULL,
+    request_fingerprint TEXT NOT NULL,
+    target_json TEXT NOT NULL,
+    target_fingerprint TEXT NOT NULL,
+    qualified INTEGER NOT NULL CHECK(qualified IN (0, 1)),
+    captured_by TEXT NOT NULL,
+    captured_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_decision_quality_snapshots_date
+ON decision_quality_snapshots(decision_date, captured_at DESC, snapshot_id DESC);
+
+CREATE TABLE IF NOT EXISTS decision_quality_snapshot_events (
+    snapshot_id TEXT NOT NULL,
+    sequence INTEGER NOT NULL CHECK(sequence > 0),
+    event_type TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    previous_hash TEXT,
+    event_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY(snapshot_id, sequence),
+    FOREIGN KEY(snapshot_id) REFERENCES decision_quality_snapshots(snapshot_id)
+);
+
 CREATE TABLE IF NOT EXISTS controlled_session_budget_reservations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     reservation_id TEXT NOT NULL UNIQUE,

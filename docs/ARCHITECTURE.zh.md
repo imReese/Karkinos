@@ -79,6 +79,16 @@ SQLite 保存 append-oriented 的财务、运营、执行与 AI 审计事实。C
 Holdings、Equity Curve、Overview、Decision、Account Truth 与 AI evidence 在声称描述同一时点
 时必须引用同一个 canonical identity。历史重建不能使用未来价格或不相关的当前报价。
 
+`karkinos.persisted_valuation.v4` 仍允许把盘中基金估算值作为明确的非权威证据展示，但在同日
+持久化确认净值出现前必须标记为 `confirmed_nav_missing`。这类快照为 degraded，不能满足
+Decision、风控或 Decision Quality 的权威完整性门禁。该分类只读取持久化事实，绝不会让 GET
+路径联系 provider。
+
+批量下单前风控边界对同一个 canonical identity 执行 fail-closed：只有完整的持久化估值快照、
+大于零的 ledger cutoff，以及每个候选完整的持久化行情证据同时成立，才允许写入风控决策。
+被拒绝的批次返回可解释的零写入结果；合格批次则把精确 snapshot 与 cutoff 写入每条风控审计。
+两条分支都不会创建订单、提交券商或写账本。
+
 ## 核心流程
 
 ### 研究
@@ -259,6 +269,34 @@ Overview、Decision、Operations 与 Strategy Lab 提供唯一明确的下一步
 identity 包装，assignment 或 identity 漂移都会被拒绝。只有完全绑定的贡献才是 authoritative；
 无成交、缺失或未对账结果仍保持 degraded/blocked。该捕获不联系 provider、不重算财务概念，
 也不修改任何权限。
+
+### 证据绑定的决策后复盘
+
+`karkinos.decision_outcome_review.v1` 是一条持久化 signal 结果的 canonical 人工处置。只读 preview
+绑定精确 signal、action/risk、订单/成交引用，以及同一标的的 canonical 策略贡献投影；不接受
+操作员输入收益，也不重新计算 P/L。记录必须带幂等键、精确 preview fingerprint、allowlisted
+结论、复核人、说明和显式无权限确认。证据漂移会拒绝新确认，并让旧结论显式失去当前绑定。
+
+复盘记录及事件 hash chain 均 append-only、可重启重放；写入只追加审计证据，不能修改 OMS、
+订单、成交、账本、Account Truth、风控、kill switch、broker submit/cancel、AI memory、prompt 或
+资本权限。
+
+### 决策质量北极星证据
+
+`karkinos.decision_quality_target.v1` 是每日决策过程质量的 canonical projection。它只复用当前
+Decision payload，固定检查五个维度：持久化估值与 Account Truth 完整、确定性风控已检查、
+具备基准对照的回测证据、signal 已入日志，以及稳定的决策后复盘身份。被风控拒绝的决策只要
+检查完整仍可合格；基准维度要求明确 benchmark，但不要求跑赢。No-action 日把风控与基准标记为
+not applicable，不伪造证据。
+
+诊断百分比是五个维度的满足比例；每日北极星结果仍只有 `qualified` 或 `blocked`。操作员必须
+针对精确 target fingerprint 显式追加 `karkinos.decision_quality_capture.v1`。捕获幂等、可重启，
+并由逐 capture 的事件 hash chain 保护。纵向报告对每个 decision date 只使用最新且审计有效的
+捕获，并明确覆盖范围仅为“显式捕获日期”；未捕获日期不得被静默计入。
+
+GET 投影与 replay 不联系 provider、也不写数据库。Capture 只写审计证据，不能调用 AI、重算
+财务事实，或修改 risk、OMS、订单、成交、账本、Account Truth、kill switch、broker
+submit/cancel、memory 与资本权限。该分数衡量决策过程证据，不衡量投资收益，也不构成建议或权限。
 
 ### AI 研究
 

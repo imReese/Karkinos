@@ -8,9 +8,11 @@ from datetime import datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
-VALUATION_POLICY_VERSION = "karkinos.persisted_valuation.v3"
+VALUATION_POLICY_VERSION = "karkinos.persisted_valuation.v4"
 _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 _MIN_TIMESTAMP = datetime.min.replace(tzinfo=timezone.utc)
+_UNCONFIRMED_FUND_ESTIMATE_SOURCE = "eastmoney_fund_estimate"
+_UNCONFIRMED_FUND_ESTIMATE_REASON = "confirmed_fund_nav_missing_estimate_only"
 
 
 def _canonical_json(value: Any) -> str:
@@ -188,8 +190,29 @@ def _freeze_previous_close_evidence(
             quote["valuation_baseline_status"] = "observed_without_close_row"
         else:
             quote["valuation_baseline_status"] = "missing"
+        _mark_unconfirmed_fund_estimate(quote)
         frozen.append(quote)
     return frozen
+
+
+def _mark_unconfirmed_fund_estimate(quote: dict[str, Any]) -> None:
+    """Keep an estimate visible while preventing it from becoming authoritative."""
+    asset_class = (
+        str(quote.get("asset_type") or quote.get("asset_class") or "").strip().lower()
+    )
+    source = str(quote.get("quote_source") or quote.get("source") or "").strip().lower()
+    if (
+        asset_class != "fund"
+        or source != _UNCONFIRMED_FUND_ESTIMATE_SOURCE
+        or quote.get("price") in {None, ""}
+    ):
+        return
+
+    quote.setdefault("observed_quote_status", quote.get("quote_status"))
+    quote["quote_status"] = "confirmed_nav_missing"
+    quote["stale_reason"] = _UNCONFIRMED_FUND_ESTIMATE_REASON
+    quote["valuation_price_source"] = _UNCONFIRMED_FUND_ESTIMATE_SOURCE
+    quote["valuation_evidence_status"] = "unconfirmed_estimate"
 
 
 def _load_ledger_rows(db: Any, batch_size: int = 500) -> list[dict[str, Any]]:

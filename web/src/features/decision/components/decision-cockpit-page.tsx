@@ -68,6 +68,7 @@ import {
   type StrategyAttributionGateEvidence,
 } from '../api';
 import { DecisionOutcomeReviewPanel } from './decision-outcome-review-panel';
+import { DecisionQualityPanel } from './decision-quality-panel';
 
 function normalizeStatus(value: string | null | undefined, locale: Locale) {
   return formatPublicStatus(value ?? 'unknown', locale);
@@ -4964,6 +4965,8 @@ export function DecisionCockpitPage() {
       <PageHeader title={labels.title} subtitle={labels.subtitle} />
 
       <DecisionNextActionGuidePanel lanes={lanes} />
+
+      <DecisionQualityPanel />
 
       <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]">
         <div className="app-terminal-inner min-w-0 rounded-[27px] p-4 sm:p-5">

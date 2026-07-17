@@ -10,7 +10,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 
 import { PreferencesProvider } from '../../../app/preferences';
 import type { ControlledOrderJourney } from '../../operations/api';
-import type { DecisionResponse } from '../api';
+import type { DecisionQualityView, DecisionResponse } from '../api';
 import { DecisionCockpitPage } from './decision-cockpit-page';
 
 function jsonResponse(body: unknown, init?: ResponseInit) {
@@ -328,6 +328,78 @@ const intradayDecision: DecisionResponse = {
   candidates: [],
   excluded_daily_symbols: ['019999'],
   no_action_reasons: ['no_intraday_stock_or_etf_action_tasks'],
+};
+
+const decisionQualityTarget = {
+  schema_version: 'karkinos.decision_quality_target.v1' as const,
+  decision_date: '2026-06-12',
+  decision: 'buy',
+  candidate_count: 1,
+  decision_fingerprint: 'a'.repeat(64),
+  dimensions: [
+    ['data_complete', 'pass'],
+    ['risk_checked', 'pass'],
+    ['benchmark_aware', 'pass'],
+    ['journaled', 'pass'],
+    ['later_reviewable', 'pass'],
+  ].map(([name, status]) => ({
+    name: name as
+      | 'data_complete'
+      | 'risk_checked'
+      | 'benchmark_aware'
+      | 'journaled'
+      | 'later_reviewable',
+    passed: true,
+    status,
+    evidence: {},
+    blockers: [],
+  })),
+  passed_dimension_count: 5,
+  dimension_count: 5,
+  diagnostic_score_percent: 100,
+  qualified: true,
+  qualification_status: 'qualified' as const,
+  blockers: [],
+  valuation_snapshot_id: 'valuation-decision-quality-fixture',
+  ledger_cutoff_id: 42,
+  ledger_fingerprint: 'ledger-decision-quality-fixture',
+  quote_set_fingerprint: 'quote-decision-quality-fixture',
+  target_fingerprint: 'b'.repeat(64),
+  persisted_facts_only: true as const,
+  runtime_cache_used: false as const,
+  provider_contacted: false as const,
+  database_writes_performed: false as const,
+  authorizes_execution: false as const,
+  authority_effect: 'none' as const,
+  limitations: [],
+};
+
+const decisionQualityResponse: DecisionQualityView = {
+  schema_version: 'karkinos.decision_quality_view.v1',
+  current_target: decisionQualityTarget,
+  report: {
+    schema_version: 'karkinos.decision_quality_report.v1',
+    status: 'empty',
+    score_percent: null,
+    evaluated_day_count: 0,
+    qualified_day_count: 0,
+    blocked_day_count: 0,
+    total_capture_count: 0,
+    coverage_start: null,
+    coverage_end: null,
+    latest_by_day: [],
+    blockers: ['no_captured_decision_days'],
+    coverage_scope: 'explicitly_captured_decision_days_only',
+    limitations: [],
+  },
+  current_day_capture: null,
+  current_day_captured: false,
+  current_binding_valid: null,
+  persisted_facts_only: true,
+  provider_contacted: false,
+  database_writes_performed: false,
+  authorizes_execution: false,
+  authority_effect: 'none',
 };
 
 function installDecisionFetchMock({
@@ -758,6 +830,7 @@ function installDecisionFetchMock({
     },
   ],
   journalSourceRef = 'RISK-1',
+  decisionQuality = decisionQualityResponse,
 }: {
   todayResponse?: DecisionResponse;
   intradayResponse?: DecisionResponse;
@@ -774,9 +847,11 @@ function installDecisionFetchMock({
   signalActionDetail?: string;
   signalActionsResponse?: unknown;
   journalSourceRef?: string | null;
+  decisionQuality?: DecisionQualityView;
 } = {}) {
+  let currentDecisionQuality = decisionQuality;
   const fetchMock = vi.fn(
-    async (input: RequestInfo | URL, _init?: RequestInit) => {
+    async (input: RequestInfo | URL, init?: RequestInit) => {
       const url =
         typeof input === 'string'
           ? input
@@ -784,6 +859,69 @@ function installDecisionFetchMock({
             ? input.url
             : input.toString();
 
+      if (url.includes('/api/decision/quality/capture')) {
+        const request = JSON.parse(String(init?.body ?? '{}')) as {
+          captured_by?: string;
+        };
+        const capture = {
+          schema_version: 'karkinos.decision_quality_capture.v1' as const,
+          snapshot_id: 'decision-quality-fixture',
+          decision_date: decisionQualityTarget.decision_date,
+          captured_at: '2026-07-17T12:00:00+00:00',
+          captured_by: request.captured_by ?? 'local-operator',
+          qualified: true,
+          request_fingerprint: 'c'.repeat(64),
+          stored_target_fingerprint: decisionQualityTarget.target_fingerprint,
+          stored_target: decisionQualityTarget,
+        };
+        const report = {
+          ...currentDecisionQuality.report,
+          status: 'complete' as const,
+          score_percent: 100,
+          evaluated_day_count: 1,
+          qualified_day_count: 1,
+          total_capture_count: 1,
+          coverage_start: decisionQualityTarget.decision_date,
+          coverage_end: decisionQualityTarget.decision_date,
+          blockers: [],
+          latest_by_day: [
+            {
+              snapshot_id: capture.snapshot_id,
+              decision_date: capture.decision_date,
+              captured_at: capture.captured_at,
+              qualified: true,
+              diagnostic_score_percent: 100,
+              target_fingerprint: decisionQualityTarget.target_fingerprint,
+              audit_valid: true,
+            },
+          ],
+        };
+        currentDecisionQuality = {
+          ...currentDecisionQuality,
+          report,
+          current_day_capture: capture,
+          current_day_captured: true,
+          current_binding_valid: true,
+        };
+        return jsonResponse({
+          schema_version: 'karkinos.decision_quality_capture.v1',
+          capture,
+          current_target: decisionQualityTarget,
+          target_binding_valid: true,
+          report,
+          audit_replay: { valid: true, event_count: 1, errors: [] },
+          reused: false,
+          persisted_facts_only: true,
+          provider_contacted: false,
+          database_writes_performed: true,
+          does_not_mutate_financial_state: true,
+          authorizes_execution: false,
+          authority_effect: 'none',
+        });
+      }
+      if (url.includes('/api/decision/quality')) {
+        return jsonResponse(currentDecisionQuality);
+      }
       if (url.includes('/api/decision/today')) {
         return jsonResponse(todayResponse);
       }
@@ -1375,6 +1513,47 @@ test('previews and records an evidence-bound decision outcome without authority 
   expect(payload.confirmation).toBe(
     'record_evidence_bound_decision_review_without_trade_or_capital_authority',
   );
+});
+
+test('captures the evidence-bound Decision Quality Score without authority controls', async () => {
+  const { fetchMock } = renderDecisionCockpit({ locale: 'zh' });
+
+  const panel = await screen.findByTestId('decision-quality-panel');
+  expect(await within(panel).findByText('数据与账户事实完整')).toBeTruthy();
+  expect(within(panel).getByText('决策质量证据')).toBeTruthy();
+  expect(within(panel).getByText('确定性风控已检查')).toBeTruthy();
+  expect(within(panel).getByText('具备基准对照证据')).toBeTruthy();
+  expect(within(panel).getByText('决策已入日志')).toBeTruthy();
+  expect(within(panel).getByText('后续可复盘')).toBeTruthy();
+  expect(panel.textContent).toContain('100%');
+  expect(panel.textContent).toContain('不会联系 provider');
+
+  fireEvent.click(
+    within(panel).getByRole('button', { name: '固化今日质量证据' }),
+  );
+
+  await waitFor(() => {
+    expect(
+      (
+        within(panel).getByRole('button', {
+          name: '当前证据已固化',
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+  });
+  const captureCall = fetchMock.mock.calls.find(([input]) =>
+    String(input).includes('/api/decision/quality/capture'),
+  );
+  expect(captureCall?.[1]).toEqual(expect.objectContaining({ method: 'POST' }));
+  const payload = JSON.parse(String(captureCall?.[1]?.body ?? '{}'));
+  expect(payload.captured_by).toBe('local-operator');
+  expect(payload.expected_target_fingerprint).toBe('b'.repeat(64));
+  expect(payload.confirmation).toBe(
+    'capture_decision_quality_evidence_without_financial_or_trading_authority',
+  );
+  expect(
+    within(panel).queryByRole('button', { name: /提交|撤单|恢复|扩容/ }),
+  ).toBeNull();
 });
 
 test('prepares manual orders with public notes instead of internal action ids', async () => {
@@ -4079,6 +4258,53 @@ test('surfaces the one next action before dense decision evidence', async () => 
   expect(guide.compareDocumentPosition(workflow)).toBe(
     Node.DOCUMENT_POSITION_FOLLOWING,
   );
+});
+
+test('puts blocked market evidence before an unchecked risk gate', async () => {
+  const workflowToday = {
+    ...dailyDecision,
+    decision: 'review_required',
+    requires_manual_confirmation: false,
+    summary: {
+      ...dailyDecision.summary,
+      candidate_count: 3,
+      ready_for_manual_confirmation_count: 0,
+      workflow_tasks: [
+        {
+          id: 'data_refresh',
+          priority: 10,
+          status: 'blocked',
+          title: 'Data refresh',
+          description: 'Decision risk writes are blocked by market evidence.',
+          required_actions: ['refresh_or_confirm_market_data'],
+          blocking_reasons: ['market_data_not_fully_live'],
+          evidence: { source_health: 'partial' },
+        },
+        {
+          id: 'risk_review',
+          priority: 30,
+          status: 'review_required',
+          title: 'Risk review',
+          description: 'Candidates have not passed the pre-trade risk gate.',
+          required_actions: ['run_pre_trade_risk_gate'],
+          blocking_reasons: ['risk_gate_not_checked'],
+          evidence: { risk_not_checked_count: 3 },
+        },
+      ],
+    },
+  } as DecisionResponse;
+
+  renderDecisionCockpit({ todayResponse: workflowToday, locale: 'zh' });
+
+  const guide = await screen.findByTestId('decision-next-action-guide');
+  expect(guide.textContent).toContain('先处理数据刷新');
+  expect(guide.textContent).toContain('刷新或确认行情');
+  expect(guide.textContent).not.toContain('先运行下单前风控');
+  expect(
+    within(guide)
+      .getByRole('link', { name: '打开行情中心：先处理数据刷新' })
+      .getAttribute('href'),
+  ).toBe('/market');
 });
 
 test('uses generic review labels for unknown decision workflow action codes', async () => {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from decimal import Decimal
 from types import SimpleNamespace
@@ -86,6 +87,12 @@ def test_batch_pre_trade_risk_persists_passed_and_blocked_action_results(
         db=db,
         context_provider=StaticContextProvider(_context()),
         policy=PreTradePolicy(execution_mode="manual"),
+        evidence_binding={
+            "valuation_snapshot_id": "valuation-fixture",
+            "ledger_cutoff_id": 7,
+            "valuation_status": "complete",
+            "fact_authority": "persisted_valuation_snapshot",
+        },
     )
 
     assert result["schema_version"] == "karkinos.pre_trade_risk_batch.v1"
@@ -94,6 +101,14 @@ def test_batch_pre_trade_risk_persists_passed_and_blocked_action_results(
     assert result["blocked_count"] == 1
     assert result["does_not_create_order"] is True
     assert result["default_execution_mode"] == "manual_confirmation"
+    stored_decision = db.get_risk_decisions_sync(limit=10)[0]
+    stored_payload = json.loads(stored_decision["payload_json"])
+    assert stored_payload["decision"]["metadata"]["evidence_binding"] == {
+        "valuation_snapshot_id": "valuation-fixture",
+        "ledger_cutoff_id": 7,
+        "valuation_status": "complete",
+        "fact_authority": "persisted_valuation_snapshot",
+    }
 
     tasks = {task["symbol"]: task for task in db.get_action_tasks_sync(limit=10)}
     assert tasks["510300"]["risk_gate_status"] == "passed"

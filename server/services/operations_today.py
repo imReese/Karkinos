@@ -164,7 +164,7 @@ def _market_subsystem(decision_payload: dict[str, Any]) -> dict[str, Any]:
         operation_status = "blocked"
         next_action = "repair_market_data_source"
     elif status in _DEGRADED_MARKET_STATUSES:
-        operation_status = "degraded"
+        operation_status = "blocked"
         next_action = "review_market_data_freshness"
     else:
         operation_status = "pass"
