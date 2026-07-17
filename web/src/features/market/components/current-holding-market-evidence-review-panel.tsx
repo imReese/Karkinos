@@ -6,6 +6,7 @@ import {
   formatPublicStatus,
 } from '../../../shared/public-labels';
 import type { CurrentHoldingMarketEvidenceReview } from '../../portfolio/api';
+import { ConfirmedFundNavRefreshButton } from './confirmed-fund-nav-refresh-button';
 import { MarketRefreshButton } from './market-refresh-button';
 
 type Props = {
@@ -40,6 +41,19 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
   const { locale } = usePreferences();
   const labels = copy.market;
   const actionLabels = labels.holdingEvidenceActions;
+  const confirmedNavSymbols =
+    report?.items
+      .filter(
+        (item) =>
+          item.review_reason === 'confirmed_nav_missing' &&
+          item.explicit_refresh_eligible,
+      )
+      .map((item) => item.symbol) ?? [];
+  const confirmedNavSymbolSet = new Set(confirmedNavSymbols);
+  const genericRefreshSymbols =
+    report?.refreshable_symbols.filter(
+      (symbol) => !confirmedNavSymbolSet.has(symbol),
+    ) ?? [];
   const title = loading
     ? copy.states.loading
     : error || !report
@@ -70,9 +84,14 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
             {labels.holdingEvidenceReviewDetail}
           </p>
         </div>
-        {report && report.refreshable_symbols.length > 0 ? (
-          <div className="shrink-0">
-            <MarketRefreshButton symbols={report.refreshable_symbols} />
+        {confirmedNavSymbols.length > 0 || genericRefreshSymbols.length > 0 ? (
+          <div className="flex shrink-0 flex-wrap justify-end gap-3">
+            {confirmedNavSymbols.length > 0 ? (
+              <ConfirmedFundNavRefreshButton symbols={confirmedNavSymbols} />
+            ) : null}
+            {genericRefreshSymbols.length > 0 ? (
+              <MarketRefreshButton symbols={genericRefreshSymbols} />
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -137,7 +156,12 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
             </div>
           ) : null}
 
-          {report.refreshable_symbols.length > 0 ? (
+          {confirmedNavSymbols.length > 0 ? (
+            <p className="app-muted mt-4 text-xs leading-5">
+              {labels.holdingEvidenceConfirmedNavRefresh}
+            </p>
+          ) : null}
+          {genericRefreshSymbols.length > 0 ? (
             <p className="app-muted mt-4 text-xs leading-5">
               {labels.holdingEvidenceExplicitRefresh}
             </p>

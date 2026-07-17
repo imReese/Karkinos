@@ -107,7 +107,7 @@ holding review queue. The queue is now projected by
 with the exact valuation snapshot, quote-set fingerprint, ledger cutoff, and
 ledger fingerprint attached. Market exposes the affected symbols, reasons, and
 safe manual next step. The GET path is read-only and provider-free; an explicit
-targeted refresh is a separately audited ingestion command and clears nothing
+targeted refresh is separately audited; fund NAV uses a confirmation-only command that rejects estimates and previous-day NAV. Neither path clears anything
 unless newer confirmed persisted evidence produces a new canonical snapshot.
 
 Trading now provides a default-collapsed, non-submitting per-order evidence
