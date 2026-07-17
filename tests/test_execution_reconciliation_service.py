@@ -87,7 +87,7 @@ def _record_controlled_intent(
             "order_fingerprint": order_fingerprint,
             "confirmation_id": "c" * 64,
             "dossier_fingerprint": "d" * 64,
-            "gateway_id": "qmt-controlled-write-1",
+            "gateway_id": "fixture-controlled-write-1",
             "gateway_verification_fingerprint": "e" * 64,
             "release_evidence_id": "f" * 64,
             "release_evidence_fingerprint": "a" * 64,

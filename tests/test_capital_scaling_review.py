@@ -70,7 +70,7 @@ def _evidence() -> CapitalScalingEvidence:
         broker_disconnect_count=0,
         evidence_refs=(
             "account_truth:account-window",
-            "broker_soak:qmt:20-days",
+            "broker_soak:fixture-soak-20-days",
             "execution_reconciliation:review-window",
             "paper_shadow:divergence-summary",
             "after_cost:execution-quality",

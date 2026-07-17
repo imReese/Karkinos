@@ -190,7 +190,7 @@ def _review_payload() -> dict:
             "liquidity_utilization_pct": "0.50",
             "paper_shadow_divergence_count": 0,
             "broker_disconnect_count": 1,
-            "evidence_refs": ["broker_soak:qmt:20-days"],
+            "evidence_refs": ["broker_soak:fixture-soak-20-days"],
         },
     }
 

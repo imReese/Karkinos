@@ -52,8 +52,8 @@ def _service(tmp_path, source: list[dict], current_time: list[datetime]):
 
 def _preview(service: SessionStartAccountTruthService) -> dict:
     return service.preview(
-        evidence_connector_id="qmt-readonly-session",
-        account_alias="qmt-session-review",
+        evidence_connector_id="fixture-readonly-session",
+        account_alias="fixture-session-review",
     )
 
 
@@ -65,7 +65,7 @@ def test_session_start_account_truth_preview_is_clear_sanitized_and_read_only(
 
     preview = _preview(service)
     localized_alias = service.preview(
-        evidence_connector_id="qmt-readonly-session",
+        evidence_connector_id="fixture-readonly-session",
         account_alias="中信证券88**16",
     )
 
@@ -90,14 +90,14 @@ def test_session_start_account_truth_record_reuses_and_resolves_current_source(
     preview = _preview(service)
 
     first = service.record(
-        evidence_connector_id="qmt-readonly-session",
-        account_alias="qmt-session-review",
+        evidence_connector_id="fixture-readonly-session",
+        account_alias="fixture-session-review",
         account_truth_fingerprint=preview["account_truth_fingerprint"],
         acknowledgement=SESSION_START_ACCOUNT_TRUTH_ACKNOWLEDGEMENT,
     )
     rerun = service.record(
-        evidence_connector_id="qmt-readonly-session",
-        account_alias="qmt-session-review",
+        evidence_connector_id="fixture-readonly-session",
+        account_alias="fixture-session-review",
         account_truth_fingerprint=preview["account_truth_fingerprint"],
         acknowledgement=SESSION_START_ACCOUNT_TRUTH_ACKNOWLEDGEMENT,
     )
@@ -124,8 +124,8 @@ def test_session_start_account_truth_source_drift_and_expiry_fail_closed(
     _, service = _service(tmp_path, source, current_time)
     preview = _preview(service)
     service.record(
-        evidence_connector_id="qmt-readonly-session",
-        account_alias="qmt-session-review",
+        evidence_connector_id="fixture-readonly-session",
+        account_alias="fixture-session-review",
         account_truth_fingerprint=preview["account_truth_fingerprint"],
         acknowledgement=SESSION_START_ACCOUNT_TRUTH_ACKNOWLEDGEMENT,
     )
@@ -193,8 +193,8 @@ def test_rejected_session_start_account_truth_attempt_is_audited(tmp_path) -> No
 
     with pytest.raises(SessionStartAccountTruthRejected) as exc_info:
         service.record(
-            evidence_connector_id="qmt-readonly-session",
-            account_alias="qmt-session-review",
+            evidence_connector_id="fixture-readonly-session",
+            account_alias="fixture-session-review",
             account_truth_fingerprint=preview["account_truth_fingerprint"],
             acknowledgement=SESSION_START_ACCOUNT_TRUTH_ACKNOWLEDGEMENT,
         )

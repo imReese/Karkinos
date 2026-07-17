@@ -38,7 +38,7 @@ def _controlled_bridge_policy() -> SimpleNamespace:
     return SimpleNamespace(
         policy_id="local-controlled-bridge-review",
         enabled=True,
-        allowed_connector_ids=["local-qmt-readonly"],
+        allowed_connector_ids=["local-fixture-readonly"],
         allowed_account_aliases=["local-review"],
         allowed_strategy_ids=["dual_ma"],
         allowed_symbols=["600519"],
@@ -210,7 +210,7 @@ def test_gateway_status_keeps_configured_bridge_policy_non_submitting(
     assert policy["live_submission_available"] is False
     assert policy["automation_allowed"] is False
     assert policy["per_order_confirmation_required"] is True
-    assert policy["allowed_connector_ids"] == ["local-qmt-readonly"]
+    assert policy["allowed_connector_ids"] == ["local-fixture-readonly"]
     assert policy["allowed_account_aliases"] == ["local-review"]
     assert policy["allowed_strategy_ids"] == ["dual_ma"]
     assert policy["allowed_symbols"] == ["600519"]

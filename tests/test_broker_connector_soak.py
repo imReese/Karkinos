@@ -24,10 +24,10 @@ from server.services.broker_connector_soak import (
 
 def _snapshot(captured_at: datetime) -> BrokerConnectorSnapshot:
     return BrokerConnectorSnapshot(
-        connector_id="qmt-readonly-soak",
-        source_name="synthetic QMT readonly export",
+        connector_id="fixture-readonly-soak",
+        source_name="synthetic deterministic readonly export",
         account_id="private-account-id-must-not-leak",
-        account_alias="qmt-primary",
+        account_alias="fixture-primary",
         captured_at=captured_at.isoformat(),
         health=BrokerConnectorHealth(
             status="healthy",

@@ -86,10 +86,10 @@ def _gateway_evidence() -> dict:
 def _connector(now: datetime = NOW) -> FakeReadOnlyBrokerConnector:
     return FakeReadOnlyBrokerConnector(
         BrokerConnectorSnapshot(
-            connector_id="qmt-readonly-session",
-            source_name="synthetic QMT readonly export",
+            connector_id="fixture-readonly-session",
+            source_name="synthetic deterministic readonly export",
             account_id="private-session-account-id-must-not-leak",
-            account_alias="qmt-session-review",
+            account_alias="fixture-session-review",
             captured_at=now.isoformat(),
             health=BrokerConnectorHealth(
                 status="healthy",
@@ -109,9 +109,9 @@ def _clear_gateway_verification(order: dict, fingerprint: str) -> dict:
         "status": "clear",
         "verification_fingerprint": fingerprint,
         "verification_id": fingerprint[::-1],
-        "gateway_id": "qmt-execution-session-disabled",
-        "evidence_connector_id": "qmt-readonly-session",
-        "account_alias": "qmt-session-review",
+        "gateway_id": "fixture-execution-session-disabled",
+        "evidence_connector_id": "fixture-readonly-session",
+        "account_alias": "fixture-session-review",
         "order_id": order["order_id"],
         "order_fingerprint": build_order_fingerprint(order),
         "order_contract": build_execution_gateway_order_contract(order),
@@ -130,8 +130,8 @@ def _clear_session_start_account_truth(fingerprint: str = "5" * 64) -> dict:
         "status": "clear",
         "record_id": "4" * 64,
         "account_truth_fingerprint": fingerprint,
-        "evidence_connector_id": "qmt-readonly-session",
-        "account_alias": "qmt-session-review",
+        "evidence_connector_id": "fixture-readonly-session",
+        "account_alias": "fixture-session-review",
         "source_fingerprint": "3" * 64,
         "import_run_id": "session-start-import-1",
         "source_captured_at": NOW.isoformat(),
@@ -167,9 +167,9 @@ def _session_start_account_truth_source() -> dict:
 
 
 class _RuntimeExecutionGateway:
-    gateway_id = "qmt-execution-session-disabled"
-    evidence_connector_id = "qmt-readonly-session"
-    account_alias = "qmt-session-review"
+    gateway_id = "fixture-execution-session-disabled"
+    evidence_connector_id = "fixture-readonly-session"
+    account_alias = "fixture-session-review"
     account_binding_status = "verified"
 
     def __init__(self) -> None:
@@ -331,10 +331,10 @@ def _ready_environment(tmp_path) -> dict:
         mode="session_bounded",
         enabled=True,
         authorized_by="local-unverified-session-owner",
-        connector_ids=("qmt-readonly-session",),
-        evidence_connector_ids=("qmt-readonly-session",),
-        execution_gateway_ids=("qmt-execution-session-disabled",),
-        account_aliases=("qmt-session-review",),
+        connector_ids=("fixture-readonly-session",),
+        evidence_connector_ids=("fixture-readonly-session",),
+        execution_gateway_ids=("fixture-execution-session-disabled",),
+        account_aliases=("fixture-session-review",),
         strategy_ids=("etf_rotation",),
         symbols=("510300.SH", "159915.SZ"),
         effective_at=NOW - timedelta(minutes=5),
@@ -353,8 +353,8 @@ def _ready_environment(tmp_path) -> dict:
     )
     context = CapitalAuthorizationContext(
         now=NOW,
-        connector_id="qmt-readonly-session",
-        account_alias="qmt-session-review",
+        connector_id="fixture-readonly-session",
+        account_alias="fixture-session-review",
         strategy_id="etf_rotation",
         symbol="510300.SH",
         order_value=Decimal("400"),
@@ -390,8 +390,8 @@ def _ready_environment(tmp_path) -> dict:
                 f"{session_start_account_truth_fingerprint}"
             ),
         ),
-        evidence_connector_id="qmt-readonly-session",
-        execution_gateway_id="qmt-execution-session-disabled",
+        evidence_connector_id="fixture-readonly-session",
+        execution_gateway_id="fixture-execution-session-disabled",
         evidence_connector_health_status="healthy",
         evidence_connector_can_submit=False,
         execution_gateway_health_status="healthy",
@@ -549,7 +549,7 @@ def test_session_envelope_projects_conservative_budget_and_stays_non_executing(
     )
     assert envelope["connector_soak"]["evidence_connector_can_submit"] is False
     assert envelope["execution_gateway"]["gateway_id"] == (
-        "qmt-execution-session-disabled"
+        "fixture-execution-session-disabled"
     )
     assert envelope["execution_gateway"]["runtime_gateway_verified"] is True
     assert envelope["execution_gateway"]["runtime_verification_status"] == (
@@ -1551,12 +1551,12 @@ def test_recorded_session_start_account_truth_binds_end_to_end(tmp_path) -> None
         clock=lambda: current_time[0],
     )
     preview = account_truth_service.preview(
-        evidence_connector_id="qmt-readonly-session",
-        account_alias="qmt-session-review",
+        evidence_connector_id="fixture-readonly-session",
+        account_alias="fixture-session-review",
     )
     record = account_truth_service.record(
-        evidence_connector_id="qmt-readonly-session",
-        account_alias="qmt-session-review",
+        evidence_connector_id="fixture-readonly-session",
+        account_alias="fixture-session-review",
         account_truth_fingerprint=preview["account_truth_fingerprint"],
         acknowledgement=SESSION_START_ACCOUNT_TRUTH_ACKNOWLEDGEMENT,
     )

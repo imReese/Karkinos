@@ -156,7 +156,7 @@ def _db_with_unresolved_connector_evidence(tmp_path) -> AppDatabase:
 def _connector_snapshot() -> BrokerConnectorSnapshot:
     return BrokerConnectorSnapshot(
         connector_id="fake_qmt_readonly",
-        source_name="synthetic qmt readonly fixture",
+        source_name="synthetic deterministic readonly fixture",
         account_id="synthetic-account",
         account_alias="safe-local-alias",
         captured_at="2026-06-22T15:05:00+08:00",

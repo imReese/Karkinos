@@ -3,14 +3,14 @@ from server.services.execution_gateway_binding import build_execution_gateway_bi
 
 def test_declared_execution_gateway_remains_runtime_unverified() -> None:
     binding, blockers = build_execution_gateway_binding(
-        gateway_id="qmt-execution-1",
+        gateway_id="fixture-execution-1",
         health_status="healthy",
         can_submit_orders=True,
         account_binding_status="verified",
     )
 
     assert blockers == ["execution_gateway_runtime_not_verified"]
-    assert binding["gateway_id"] == "qmt-execution-1"
+    assert binding["gateway_id"] == "fixture-execution-1"
     assert binding["declared_can_submit_orders"] is True
     assert binding["runtime_verification_status"] == "unverified"
     assert binding["broker_contacted"] is False

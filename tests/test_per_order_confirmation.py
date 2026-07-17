@@ -81,10 +81,10 @@ def _gateway_evidence() -> dict:
 def _connector(now: datetime = NOW) -> FakeReadOnlyBrokerConnector:
     return FakeReadOnlyBrokerConnector(
         BrokerConnectorSnapshot(
-            connector_id="qmt-readonly-confirmation",
-            source_name="synthetic QMT readonly export",
+            connector_id="fixture-readonly-confirmation",
+            source_name="synthetic deterministic readonly export",
             account_id="private-per-order-account-id-must-not-leak",
-            account_alias="qmt-review",
+            account_alias="fixture-review",
             captured_at=now.isoformat(),
             health=BrokerConnectorHealth(
                 status="healthy",
@@ -100,9 +100,9 @@ def _connector(now: datetime = NOW) -> FakeReadOnlyBrokerConnector:
 
 
 class _RuntimeExecutionGateway:
-    gateway_id = "qmt-execution-disabled"
-    evidence_connector_id = "qmt-readonly-confirmation"
-    account_alias = "qmt-review"
+    gateway_id = "fixture-execution-disabled"
+    evidence_connector_id = "fixture-readonly-confirmation"
+    account_alias = "fixture-review"
     account_binding_status = "verified"
 
     def __init__(self) -> None:
@@ -145,9 +145,9 @@ def _clear_gateway_verification(order: dict, *, version: int = 1) -> dict:
         "status": "clear",
         "verification_fingerprint": GATEWAY_VERIFICATION_FINGERPRINT,
         "verification_id": ("f" if version == 1 else "9") * 64,
-        "gateway_id": "qmt-execution-disabled",
-        "evidence_connector_id": "qmt-readonly-confirmation",
-        "account_alias": "qmt-review",
+        "gateway_id": "fixture-execution-disabled",
+        "evidence_connector_id": "fixture-readonly-confirmation",
+        "account_alias": "fixture-review",
         "order_id": order["order_id"],
         "order_fingerprint": build_order_fingerprint(order),
         "order_contract": {
@@ -280,10 +280,10 @@ def _ready_environment(tmp_path, *, now: datetime = NOW) -> dict:
         mode="manual_each_order",
         enabled=True,
         authorized_by="local-unverified-test",
-        connector_ids=("qmt-readonly-confirmation",),
-        evidence_connector_ids=("qmt-readonly-confirmation",),
-        execution_gateway_ids=("qmt-execution-disabled",),
-        account_aliases=("qmt-review",),
+        connector_ids=("fixture-readonly-confirmation",),
+        evidence_connector_ids=("fixture-readonly-confirmation",),
+        execution_gateway_ids=("fixture-execution-disabled",),
+        account_aliases=("fixture-review",),
         strategy_ids=("etf_rotation",),
         symbols=("510300.SH",),
         effective_at=now - timedelta(minutes=5),
@@ -302,8 +302,8 @@ def _ready_environment(tmp_path, *, now: datetime = NOW) -> dict:
     )
     context = CapitalAuthorizationContext(
         now=now,
-        connector_id="qmt-readonly-confirmation",
-        account_alias="qmt-review",
+        connector_id="fixture-readonly-confirmation",
+        account_alias="fixture-review",
         strategy_id="etf_rotation",
         symbol="510300.SH",
         order_value=Decimal("400"),
@@ -335,8 +335,8 @@ def _ready_environment(tmp_path, *, now: datetime = NOW) -> dict:
             batch_ref,
             ("execution_gateway_verification:" f"{GATEWAY_VERIFICATION_FINGERPRINT}"),
         ),
-        evidence_connector_id="qmt-readonly-confirmation",
-        execution_gateway_id="qmt-execution-disabled",
+        evidence_connector_id="fixture-readonly-confirmation",
+        execution_gateway_id="fixture-execution-disabled",
         evidence_connector_health_status="healthy",
         evidence_connector_can_submit=False,
         execution_gateway_health_status="healthy",
@@ -415,7 +415,7 @@ def _signed_stage1_promotion(version: int = 1) -> dict:
     )
     dossier, operational, account_truth, acceptance = fingerprints
     return {
-        "connector_id": "qmt-readonly-confirmation",
+        "connector_id": "fixture-readonly-confirmation",
         "dossier_fingerprint": dossier,
         "operational_evidence": {
             "status": "clear",
@@ -477,7 +477,7 @@ def test_dossier_binds_all_review_evidence_but_keeps_submission_blocked(
         not in dossier["hard_submission_blockers"]
     )
     assert dossier["connector_soak"]["evidence_connector_can_submit"] is False
-    assert dossier["execution_gateway"]["gateway_id"] == "qmt-execution-disabled"
+    assert dossier["execution_gateway"]["gateway_id"] == "fixture-execution-disabled"
     assert dossier["execution_gateway"]["runtime_gateway_verified"] is True
     assert dossier["execution_gateway"]["runtime_verification_status"] == (
         "verified_non_submitting_dry_run"
@@ -936,7 +936,7 @@ def test_signed_stage1_promotion_is_bound_but_does_not_remove_execution_blocks(
     assert promotion == {
         "schema_version": "karkinos.per_order_broker_soak_promotion_binding.v1",
         "status": "ready",
-        "connector_id": "qmt-readonly-confirmation",
+        "connector_id": "fixture-readonly-confirmation",
         "dossier_fingerprint": "a" * 64,
         "operational_source_fingerprint": "b" * 64,
         "account_truth_source_fingerprint": "c" * 64,
@@ -981,9 +981,9 @@ def test_recorded_confirmation_resolves_current_sources_for_submit_boundary(
             entity_type=BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
             entity_id=hashlib.sha256(f"resolver-soak-{offset}".encode()).hexdigest(),
             source=BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
-            source_ref="qmt-readonly-confirmation",
+            source_ref="fixture-readonly-confirmation",
             payload={
-                "connector_id": "qmt-readonly-confirmation",
+                "connector_id": "fixture-readonly-confirmation",
                 "trading_day": observed_at.date().isoformat(),
                 "observed_at": observed_at.isoformat(),
                 "soak_status": "healthy",
@@ -998,9 +998,9 @@ def test_recorded_confirmation_resolves_current_sources_for_submit_boundary(
         entity_type=BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
         entity_id=hashlib.sha256(b"resolver-soak-current").hexdigest(),
         source=BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
-        source_ref="qmt-readonly-confirmation",
+        source_ref="fixture-readonly-confirmation",
         payload={
-            "connector_id": "qmt-readonly-confirmation",
+            "connector_id": "fixture-readonly-confirmation",
             "trading_day": NOW.date().isoformat(),
             "observed_at": NOW.isoformat(),
             "source_captured_at": NOW.isoformat(),

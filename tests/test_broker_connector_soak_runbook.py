@@ -44,10 +44,10 @@ def _db(tmp_path) -> AppDatabase:
 
 def _snapshot(captured_at: datetime = OBSERVED_AT) -> BrokerConnectorSnapshot:
     return BrokerConnectorSnapshot(
-        connector_id="qmt-readonly-runbook",
-        source_name="synthetic QMT readonly export",
+        connector_id="fixture-readonly-runbook",
+        source_name="synthetic deterministic readonly export",
         account_id="private-runbook-account-id-must-not-leak",
-        account_alias="qmt-runbook",
+        account_alias="fixture-runbook",
         captured_at=captured_at.isoformat(),
         health=BrokerConnectorHealth(
             status="healthy",
@@ -107,7 +107,7 @@ def test_end_of_day_run_blocks_without_clear_execution_reconciliation(
 
     assert result["run_status"] == "blocked"
     assert result["blockers"] == [
-        "execution_reconciliation_not_clear:qmt-readonly-runbook"
+        "execution_reconciliation_not_clear:fixture-readonly-runbook"
     ]
     alerts = db.list_automation_alerts_sync(status="open")
     assert any(alert["category"] == "broker_connector_soak_runbook" for alert in alerts)
@@ -229,7 +229,7 @@ def test_failed_drill_is_audited_and_alerted_without_execution_authority(
 
     assert result["drill_status"] == "failed"
     assert result["blockers"] == [
-        "expected_safe_degradation_not_observed:qmt-readonly-runbook"
+        "expected_safe_degradation_not_observed:fixture-readonly-runbook"
     ]
     assert result["does_not_grant_capital_authority"] is True
     alerts = db.list_automation_alerts_sync(status="open")

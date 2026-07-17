@@ -550,7 +550,7 @@ def test_incident_fact_counts_persisted_critical_policy_and_disconnect_events(
         entity_type=BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
         entity_id="soak-disconnect",
         source=BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
-        source_ref="qmt-local",
+        source_ref="fixture-readonly",
         payload={
             "observed_at": observed_at.isoformat(),
             "soak_status": "blocked",

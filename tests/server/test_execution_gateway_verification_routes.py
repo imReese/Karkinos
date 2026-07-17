@@ -72,8 +72,8 @@ class FakeExecutionGatewayVerificationService:
 
 def _payload() -> dict:
     return {
-        "gateway_id": "qmt-execution-1",
-        "evidence_connector_id": "qmt-readonly-1",
+        "gateway_id": "fixture-execution-1",
+        "evidence_connector_id": "fixture-readonly-1",
         "account_alias": "primary-review",
         "order_id": "OMS-1",
         "order_fingerprint": "a" * 64,
