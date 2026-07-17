@@ -301,7 +301,7 @@ def test_controlled_session_signed_replacement_audit_is_complete() -> None:
 def test_controlled_broker_submission_audit_is_complete() -> None:
     audit = build_controlled_broker_submission_acceptance_audit()
 
-    assert audit.required_count == 9
+    assert audit.required_count == 11
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 

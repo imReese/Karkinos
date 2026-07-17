@@ -54,6 +54,8 @@ settings: [中文](config-reference.zh.md) / [English](config-reference.en.md).
   deterministic fixtures, exact release binding, and latest-result-wins gates.
 - [Broker execution-edge conformance](broker-execution-edge-conformance.en.md) —
   default-closed dry-run, submit, query, cancel, and idempotency contract fixtures.
+- [Controlled broker cancellation](controlled-broker-cancellation.en.md) — exact
+  signed one-shot cancellation, atomic idempotency, and query-only recovery.
 - [Broker adapter release review](broker-adapter-release-review.en.md) —
   provider-neutral capability, threat, deployment, rollback, privacy, and
   explicit human acceptance evidence.

@@ -208,3 +208,77 @@ def test_local_operator_signer_rejects_non_ed25519_key(tmp_path) -> None:
             expected_action="post_controlled_submission_ledger",
             expected_artifact_type="controlled_submission_ledger_posting",
         )
+
+
+@pytest.mark.parametrize(
+    ("action", "artifact_type"),
+    [
+        (
+            "cancel_exact_controlled_broker_order",
+            "controlled_broker_cancellation",
+        ),
+        (
+            "query_exact_broker_cancellation_outcome",
+            "controlled_broker_cancellation_recovery",
+        ),
+    ],
+)
+def test_local_operator_signer_accepts_controlled_cancellation_contracts(
+    tmp_path,
+    action: str,
+    artifact_type: str,
+) -> None:
+    private_key_path = tmp_path / "operator-owner.pem"
+    fragment = generate_identity(
+        private_key_path=private_key_path,
+        operator_id="local-owner",
+        key_id="owner-key-1",
+    )
+    public_key_base64 = fragment["trusted_operator_identities"][0]["public_key_base64"]
+    payload_base64 = _challenge_payload(
+        public_key_base64=public_key_base64,
+        overrides={"action": action, "artifact_type": artifact_type},
+    )
+
+    signature = sign_payload(
+        private_key_path=private_key_path,
+        payload_base64=payload_base64,
+        operator_id="local-owner",
+        key_id="owner-key-1",
+        expected_action=action,
+        expected_artifact_type=artifact_type,
+        clock=lambda: _NOW,
+    )
+
+    assert len(base64.b64decode(signature)) == 64
+
+
+def test_local_operator_signer_rejects_controlled_cancellation_pair_mismatch(
+    tmp_path,
+) -> None:
+    private_key_path = tmp_path / "operator-owner.pem"
+    fragment = generate_identity(
+        private_key_path=private_key_path,
+        operator_id="local-owner",
+        key_id="owner-key-1",
+    )
+    public_key_base64 = fragment["trusted_operator_identities"][0]["public_key_base64"]
+    action = "cancel_exact_controlled_broker_order"
+    mismatched_artifact = "controlled_broker_cancellation_recovery"
+
+    with pytest.raises(ValueError, match="not allowlisted"):
+        sign_payload(
+            private_key_path=private_key_path,
+            payload_base64=_challenge_payload(
+                public_key_base64=public_key_base64,
+                overrides={
+                    "action": action,
+                    "artifact_type": mismatched_artifact,
+                },
+            ),
+            operator_id="local-owner",
+            key_id="owner-key-1",
+            expected_action=action,
+            expected_artifact_type=mismatched_artifact,
+            clock=lambda: _NOW,
+        )

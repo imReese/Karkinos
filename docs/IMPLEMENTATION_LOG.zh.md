@@ -59,6 +59,9 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
 - 面向精确 open/partial lifecycle 撤单 handoff 与终态拒绝复核的 provider-neutral 操作资料；
   两者都会重检 fingerprint drift 且不联系券商，拒绝复核还可追加一条绑定复核人的精确 no-retry
   审计事实，而不改变执行权限；
+- provider-neutral、单独签名的精确撤单命令：绑定当前持久化 lifecycle 与剩余数量、当前 release
+  和已缓存 gateway health，原子放行最多一次 cancel effect，并使用单独签名的 query-only recovery；
+  任何 gateway 响应都不会成为 canonical lifecycle、OMS、ledger 或 authority 证据；
 - provider-neutral adapter release manifest、append-only 人工 accept/reject/revoke 证据，以及
   live collector prepare/commit 的精确绑定；没有选择或注册真实 provider。
 - provider-neutral deterministic conformance fixture、append-only report、精确 manifest/review
@@ -86,6 +89,8 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
 - session-start Account Truth、原子 account/symbol budget 与 rate limit；
 - 已签名且会过期的 runtime session、live gate、pause、revocation 与 equal-or-narrower replacement；
 - 默认关闭的 one-shot submission、unknown recovery 与 cross-order interlock；
+- 默认关闭、单独签名的精确撤单：通过原子 one-effect claim 和禁止再次撤单的 query recovery 保存
+  已净化、非权威的 gateway telemetry，且不修改 OMS/ledger/risk/kill switch/interlock/capital；
 - 已签名的 exact-terminal clearance，覆盖 full fill、no-fill cancel 与
   partial-fill-then-cancel，并包含 broker-neutral lifecycle ingestion；open partial fill 仍保持
   阻断，clearance 本身仍不能写入 ledger；

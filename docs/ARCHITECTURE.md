@@ -289,8 +289,25 @@ does not register or call an adapter, issue a cancellation, mutate OMS/ledger,
 or change risk, kill switch, interlock, or capital authority. The operator must
 act in a separately reviewed broker interface; only a newer ingested lifecycle
 observation plus Account Truth/reconciliation evidence can prove cancellation.
-The existing live-cancel endpoint remains disabled, so this package is not the
-M2 explicit-cancel command or a claim of provider support.
+The generic broker-gateway live-cancel endpoint remains disabled, so this
+package is not an execution command or a claim of provider support.
+
+M2 explicit cancellation is a separate
+`karkinos.controlled_broker_cancellation.v1` command. It reuses the exact manual
+ticket identity, then additionally binds the current signed release, cached
+gateway-health fingerprint, and short-lived
+`cancel_exact_controlled_broker_order` proof. A dedicated SQLite
+`BEGIN IMMEDIATE` claim admits at most one external cancel effect for an intent;
+exact duplicate, concurrency, and restart replay cannot call cancel twice.
+`prepared`, `cancel_requested`, `cancel_rejected`, and
+`cancellation_unknown` are command-audit states, never canonical broker facts.
+The separately signed `karkinos.controlled_broker_cancellation_recovery.v1`
+waits deterministically and may only query the exact client order id; it cannot
+re-cancel. Neither gateway response mutates lifecycle, OMS, ledger, risk, kill
+switch, interlock, or capital authority. Only newer explicit lifecycle
+ingestion and reconciliation prove the outcome. The production factory remains
+default-closed without an explicitly reviewed gateway/release, and no real
+adapter support is implied.
 
 M2 execution-edge semantics have a separate offline contract:
 `karkinos.broker_execution_edge_manifest.v1` and
