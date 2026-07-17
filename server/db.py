@@ -936,6 +936,7 @@ class AppDatabase:
                     'risk_decisions',
                     'manual_orders',
                     'orders',
+                    'decision_outcome_reviews',
                     'signal_reviews'
                 )
                 ORDER BY timestamp DESC, id DESC
@@ -967,6 +968,16 @@ class AppDatabase:
 
         latest_events = [_event_log_response(row) for row in event_rows]
         reviews_by_signal: dict[int, dict[str, Any]] = {}
+        for event in latest_events:
+            if event["source"] != "decision_outcome_reviews":
+                continue
+            payload = event.get("payload", {})
+            source_signal_id = payload.get("signal_id")
+            if source_signal_id is None:
+                continue
+            signal_id = int(source_signal_id)
+            if signal_id not in reviews_by_signal:
+                reviews_by_signal[signal_id] = payload
         for event in latest_events:
             if event["source"] != "signal_reviews":
                 continue
@@ -9187,6 +9198,42 @@ ON event_log(entity_type, entity_id, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_event_log_source
 ON event_log(source, source_ref);
 
+CREATE TABLE IF NOT EXISTS decision_outcome_reviews (
+    review_id TEXT PRIMARY KEY,
+    signal_id INTEGER NOT NULL,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    request_json TEXT NOT NULL,
+    request_fingerprint TEXT NOT NULL,
+    target_json TEXT NOT NULL,
+    target_fingerprint TEXT NOT NULL,
+    reviewed_by TEXT NOT NULL,
+    user_decision TEXT NOT NULL CHECK(user_decision IN (
+        'acted', 'ignored', 'deferred', 'blocked'
+    )),
+    outcome TEXT NOT NULL CHECK(outcome IN (
+        'evidence_supported', 'evidence_not_supported',
+        'risk_gate_validated', 'not_executed', 'inconclusive'
+    )),
+    note TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(signal_id) REFERENCES signals(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_decision_outcome_reviews_signal
+ON decision_outcome_reviews(signal_id, created_at DESC, review_id DESC);
+
+CREATE TABLE IF NOT EXISTS decision_outcome_review_events (
+    review_id TEXT NOT NULL,
+    sequence INTEGER NOT NULL CHECK(sequence > 0),
+    event_type TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    previous_hash TEXT,
+    event_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY(review_id, sequence),
+    FOREIGN KEY(review_id) REFERENCES decision_outcome_reviews(review_id)
+);
+
 CREATE TABLE IF NOT EXISTS controlled_session_budget_reservations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     reservation_id TEXT NOT NULL UNIQUE,
@@ -10024,6 +10071,12 @@ def _latest_signal_journal_event(
 ) -> dict[str, Any] | None:
     action_ref = str(action_task["id"]) if action_task is not None else None
     risk_ref = str(risk_decision["decision_id"]) if risk_decision is not None else None
+    for event in events:
+        if (
+            event["source"] == "decision_outcome_reviews"
+            and event.get("payload", {}).get("signal_id") == signal_id
+        ):
+            return event
     for event in events:
         if event["source"] == "signal_reviews" and event["source_ref"] == str(
             signal_id

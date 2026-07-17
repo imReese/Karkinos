@@ -836,6 +836,96 @@ function installDecisionFetchMock({
       if (url.includes('/api/signals/actions')) {
         return jsonResponse(signalActionsResponse);
       }
+      if (url.includes('/api/signals/journal/1/review/preview')) {
+        return jsonResponse({
+          schema_version: 'karkinos.decision_outcome_review_target.v1',
+          signal_id: 1,
+          signal_fingerprint: 'a'.repeat(64),
+          execution_evidence: {
+            status: 'not_executed',
+            order_count: 0,
+            fill_count: 0,
+          },
+          strategy_contribution_report: {
+            schema_version: 'karkinos.account_strategy_contribution.v2',
+            contribution_status: 'no_linked_fills',
+            evidence_binding_status: 'not_applicable',
+            net_contribution: null,
+            valuation_snapshot_id: null,
+            ledger_cutoff_id: 0,
+            contribution_fingerprint: null,
+          },
+          financial_evidence_status: 'not_applicable',
+          valuation_snapshot_id: null,
+          ledger_cutoff_id: 0,
+          contribution_fingerprint: null,
+          allowed_outcomes: ['inconclusive', 'not_executed'],
+          blockers: [],
+          limitations: [],
+          target_fingerprint: 'b'.repeat(64),
+          persisted_facts_only: true,
+          provider_contacted: false,
+          database_writes_performed: false,
+          authorizes_execution: false,
+          authority_effect: 'none',
+        });
+      }
+      if (url.endsWith('/api/signals/journal/1/review')) {
+        return jsonResponse({
+          schema_version: 'karkinos.decision_outcome_review.v1',
+          review: {
+            review_id: 'decision-review-fixture',
+            signal_id: 1,
+            reviewed_at: '2026-07-17T12:00:00+00:00',
+            reviewed_by: 'local-operator',
+            user_decision: 'ignored',
+            outcome: 'not_executed',
+            note: 'No order was created.',
+            stored_target_fingerprint: 'b'.repeat(64),
+          },
+          current_target: {
+            schema_version: 'karkinos.decision_outcome_review_target.v1',
+            signal_id: 1,
+            signal_fingerprint: 'a'.repeat(64),
+            execution_evidence: {
+              status: 'not_executed',
+              order_count: 0,
+              fill_count: 0,
+            },
+            strategy_contribution_report: {
+              schema_version: 'karkinos.account_strategy_contribution.v2',
+              contribution_status: 'no_linked_fills',
+              evidence_binding_status: 'not_applicable',
+              net_contribution: null,
+              valuation_snapshot_id: null,
+              ledger_cutoff_id: 0,
+              contribution_fingerprint: null,
+            },
+            financial_evidence_status: 'not_applicable',
+            valuation_snapshot_id: null,
+            ledger_cutoff_id: 0,
+            contribution_fingerprint: null,
+            allowed_outcomes: ['inconclusive', 'not_executed'],
+            blockers: [],
+            limitations: [],
+            target_fingerprint: 'b'.repeat(64),
+            persisted_facts_only: true,
+            provider_contacted: false,
+            database_writes_performed: false,
+            authorizes_execution: false,
+            authority_effect: 'none',
+          },
+          target_binding_valid: true,
+          audit_replay: { valid: true, event_count: 1, errors: [] },
+          reused: false,
+          persisted_facts_only: true,
+          provider_contacted: false,
+          database_writes_performed: true,
+          does_not_mutate_financial_state: true,
+          authorizes_execution: false,
+          authority_effect: 'none',
+        });
+      }
       if (url.includes('/api/signals/journal')) {
         return jsonResponse([
           {
@@ -1248,6 +1338,43 @@ test('links signal journal entries to single-instrument evidence surfaces with p
       .getByRole('link', { name: 'Open attribution review: 贵州茅台 600519' })
       .getAttribute('href'),
   ).toBe('/portfolio/600519#holding-strategy-attribution-boundary');
+});
+
+test('previews and records an evidence-bound decision outcome without authority controls', async () => {
+  const { fetchMock } = renderDecisionCockpit({ locale: 'zh' });
+
+  await screen.findByText('信号审计日志');
+  fireEvent.click(screen.getByRole('button', { name: '复盘决策结果' }));
+
+  const panel = await screen.findByTestId('decision-outcome-review-1');
+  expect(within(panel).getByText('执行证据')).toBeTruthy();
+  expect(
+    (within(panel).getByLabelText('结果结论') as HTMLSelectElement).value,
+  ).toBe('not_executed');
+  expect(panel.textContent).toContain('只追加审计证据');
+  expect(panel.textContent).not.toContain('提交券商订单');
+  expect(panel.textContent).not.toContain('撤单');
+
+  fireEvent.change(within(panel).getByLabelText('复核说明'), {
+    target: { value: '没有创建订单，保留该信号供后续证据复盘。' },
+  });
+  fireEvent.click(within(panel).getByRole('button', { name: '确认记录复盘' }));
+
+  expect(await within(panel).findByText(/复盘已记录/)).toBeTruthy();
+  const previewCall = fetchMock.mock.calls.find(([input]) =>
+    String(input).includes('/api/signals/journal/1/review/preview'),
+  );
+  expect(previewCall?.[1]).toEqual(expect.objectContaining({ method: 'POST' }));
+  const reviewCall = fetchMock.mock.calls.find(([input]) =>
+    String(input).endsWith('/api/signals/journal/1/review'),
+  );
+  expect(reviewCall).toBeTruthy();
+  const payload = JSON.parse(String(reviewCall?.[1]?.body));
+  expect(payload.expected_target_fingerprint).toBe('b'.repeat(64));
+  expect(payload.outcome).toBe('not_executed');
+  expect(payload.confirmation).toBe(
+    'record_evidence_bound_decision_review_without_trade_or_capital_authority',
+  );
 });
 
 test('prepares manual orders with public notes instead of internal action ids', async () => {

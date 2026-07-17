@@ -335,6 +335,35 @@ drift. Only a fully bound contribution is authoritative. No-fill, missing, or
 unreconciled results remain degraded or blocked evidence, and the capture
 performs no provider call, financial recomputation, or authority mutation.
 
+### Evidence-bound post-decision review
+
+`karkinos.decision_outcome_review.v1` is the canonical human disposition of one
+persisted signal outcome. Its preview binds the exact signal and action/risk
+chain, signal-specific order/fill references, and the existing symbol-scoped
+`karkinos.account_strategy_contribution.v2` report. Numeric P/L is never
+accepted from the operator and is never recalculated by the review boundary.
+The target fingerprint therefore includes the valuation snapshot id, ledger
+cutoff, contribution fingerprint, and the exact execution evidence available
+when the conclusion was made.
+
+Recording requires a caller-supplied idempotency key, the exact preview
+fingerprint, an allowlisted human decision/outcome pair, a reviewer, a note,
+and an explicit no-authority confirmation. Evidence-supported or
+evidence-not-supported conclusions are available only for acted signals with
+linked fills and a fully bound canonical contribution. Risk-blocked or
+unexecuted signals can be recorded only as the corresponding process outcome;
+otherwise the review remains inconclusive. Snapshot, ledger, action, risk,
+order, or fill drift rejects a new confirmation and makes a previously stored
+review visibly non-current without deleting it.
+
+The review and its tamper-evident event chain are append-only and restart-safe.
+One transaction records the review, hash-chain event, and shared signal-journal
+event. Legacy `signal_reviews` remain historical read evidence but are not the
+canonical write contract. Preview is database-write-free and provider-free;
+confirmation writes only review audit evidence and cannot modify OMS, orders,
+fills, ledger, Account Truth, risk, kill switch, broker submit/cancel, AI
+memory, model prompts, or capital authority.
+
 ### AI research
 
 ```text

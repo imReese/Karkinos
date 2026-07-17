@@ -399,6 +399,73 @@ export type SignalJournalEntry = {
   } | null;
 };
 
+export type DecisionOutcomeReviewTarget = {
+  schema_version: 'karkinos.decision_outcome_review_target.v1';
+  signal_id: number;
+  signal_fingerprint: string;
+  execution_evidence: {
+    status: string;
+    order_count: number;
+    fill_count: number;
+  };
+  strategy_contribution_report: {
+    schema_version: string;
+    contribution_status: string;
+    evidence_binding_status: string;
+    net_contribution: number | null;
+    valuation_snapshot_id: string | null;
+    ledger_cutoff_id: number;
+    contribution_fingerprint: string | null;
+  };
+  financial_evidence_status: 'bound' | 'blocked' | 'not_applicable';
+  valuation_snapshot_id: string | null;
+  ledger_cutoff_id: number;
+  contribution_fingerprint: string | null;
+  allowed_outcomes: Array<
+    | 'evidence_supported'
+    | 'evidence_not_supported'
+    | 'risk_gate_validated'
+    | 'not_executed'
+    | 'inconclusive'
+  >;
+  blockers: string[];
+  limitations: string[];
+  target_fingerprint: string;
+  persisted_facts_only: true;
+  provider_contacted: false;
+  database_writes_performed: false;
+  authorizes_execution: false;
+  authority_effect: 'none';
+};
+
+export type DecisionOutcomeReviewResult = {
+  schema_version: 'karkinos.decision_outcome_review.v1';
+  review: {
+    review_id: string;
+    signal_id: number;
+    reviewed_at: string;
+    reviewed_by: string;
+    user_decision: string;
+    outcome: string;
+    note: string;
+    stored_target_fingerprint: string;
+  };
+  current_target: DecisionOutcomeReviewTarget;
+  target_binding_valid: boolean;
+  audit_replay: {
+    valid: boolean;
+    event_count: number;
+    errors: string[];
+  };
+  reused: boolean;
+  persisted_facts_only: true;
+  provider_contacted: false;
+  database_writes_performed: true;
+  does_not_mutate_financial_state: true;
+  authorizes_execution: false;
+  authority_effect: 'none';
+};
+
 async function postJson<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(path, {
     method: 'POST',
@@ -485,6 +552,52 @@ export function useSignalJournalQuery() {
     staleTime: 10_000,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
+  });
+}
+
+export function useDecisionOutcomeReviewPreviewMutation() {
+  return useMutation({
+    mutationFn: (signalId: number) =>
+      postJson<DecisionOutcomeReviewTarget>(
+        `/api/signals/journal/${signalId}/review/preview`,
+        {},
+      ),
+  });
+}
+
+export function useRecordDecisionOutcomeReviewMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      signalId: number;
+      idempotency_key: string;
+      reviewed_by: string;
+      user_decision: 'acted' | 'ignored' | 'deferred' | 'blocked';
+      outcome:
+        | 'evidence_supported'
+        | 'evidence_not_supported'
+        | 'risk_gate_validated'
+        | 'not_executed'
+        | 'inconclusive';
+      note: string;
+      expected_target_fingerprint: string;
+    }) =>
+      postJson<DecisionOutcomeReviewResult>(
+        `/api/signals/journal/${payload.signalId}/review`,
+        {
+          idempotency_key: payload.idempotency_key,
+          reviewed_by: payload.reviewed_by,
+          user_decision: payload.user_decision,
+          outcome: payload.outcome,
+          note: payload.note,
+          expected_target_fingerprint: payload.expected_target_fingerprint,
+          confirmation:
+            'record_evidence_bound_decision_review_without_trade_or_capital_authority',
+        },
+      ),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['signal-journal'] });
+    },
   });
 }
 

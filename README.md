@@ -81,6 +81,15 @@ capture rejects strategy or valuation/ledger drift; incomplete contribution
 evidence stays blocked and cannot start authoritative analysis. It neither
 recalculates P/L nor invokes a model by itself.
 
+Decision's signal journal now supports an explicit post-decision review. It
+first previews the persisted signal/action/risk/order/fill chain and the same
+canonical contribution report, then records a human conclusion only against
+that exact fingerprint. Acted outcomes require bound fill, valuation-snapshot,
+and ledger-cutoff evidence; unexecuted or risk-blocked signals retain their own
+non-financial outcomes. Reviews are idempotent, append-only, replayable, and
+become visibly stale after evidence drift. This path does not invoke AI, contact
+a provider, change financial facts, or grant trading or capital authority.
+
 For a reconciled controlled order, the Operations/Decision journey can now
 complete both signed terminal clearance and the following reconciled-ledger
 posting without database edits. Each step has its own canonical preview,

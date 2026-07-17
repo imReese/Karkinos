@@ -27,6 +27,10 @@ The latest completed cross-cutting work includes:
 - provider-neutral evidence-bound AI research, review, and memory lineage,
   including explicit exact-strategy capture of the canonical posted-fill and
   valuation-bound contribution report without P/L recomputation or authority;
+- an evidence-bound human post-decision review that freezes one persisted
+  signal/action/risk/order/fill chain together with the canonical strategy
+  contribution snapshot, rejects drift, records idempotently with a replayable
+  append-only audit chain, and cannot mutate financial facts or authority;
 - human-gated allowlisted Formula DSL research over exact saved datasets,
   executed by the canonical backtest engine with next-bar semantics and no
   production-strategy or trading-authority side effects;
