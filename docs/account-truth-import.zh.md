@@ -35,7 +35,8 @@ canonical broker statement CSV 的只读导入预览，以及 staged broker evid
 
 collector 只在启动配置明确开启后运行。它等待 size/mtime 稳定，再完整读取、校验并按文件
 fingerprint 暂存证据；相同内容的重复轮询和进程重启复用同一个 import run。文件消失、写入中、
-超限、编码错误或 schema 阻断时保持 fail closed，并保留此前已暂存证据。状态由
+且保留首次 `created_at`，重放不能把旧证据伪装成新鲜证据。文件消失、写入中、超限、编码错误
+或 schema 阻断时保持 fail closed，并保留此前已暂存证据。状态由
 `GET /api/account-truth/broker-statement/collector` 只读返回。
 
 这不是自动入账：collector 不联系 provider，不修改生产 ledger、持仓、OMS、风控、kill switch
@@ -159,10 +160,15 @@ import_run = repository.save_preview(preview, source_name="local-statement.csv")
   快照字段、券商成本价口径、可选 broker/client order identity 和行级重复信息。
 
 如果同一 `file_fingerprint` 已经导入过，会复用原 `import_run_id`，并且不会再次写入
-broker evidence events。这个阶段仍然不会写入或修改 `ledger_entries`；后续对账
+broker evidence events，也不会刷新其证据年龄。这个阶段仍然不会写入或修改
+`ledger_entries`；后续对账
 和人工确认流程会决定哪些差异需要处理。
 
 ## Reconciliation report
+
+较早发生的券商分红，只能在代码、净现金金额完全匹配、同一 import 含有分红之后的现金快照、
+且该券商事件尚未覆盖其他账本行时，覆盖同一上海交易日稍后录入的账本事实。金额或代码冲突、
+缺少事后现金快照以及本地重复录入仍保持 stale/blocked。
 
 当前 reconciliation 核心入口：
 

@@ -173,6 +173,10 @@ class BrokerEvidenceRepository:
         source_name: str,
         updated_at: str,
     ) -> BrokerImportRun:
+        # The same file fingerprint is an idempotent replay, not new evidence.
+        # Preserve the first-seen timestamp so restart/polling cannot refresh
+        # Account Truth freshness without a changed evidence file.
+        del updated_at
         with sqlite3.connect(self._path) as conn:
             conn.execute(
                 """
@@ -186,8 +190,7 @@ class BrokerEvidenceRepository:
                     file_duplicate_count = 0,
                     validation_status = ?,
                     limitations_json = ?,
-                    duplicate_of_import_run_id = NULL,
-                    created_at = ?
+                    duplicate_of_import_run_id = NULL
                 WHERE import_run_id = ?
                 """,
                 (
@@ -199,7 +202,6 @@ class BrokerEvidenceRepository:
                     preview.duplicate_row_count,
                     preview.validation_status,
                     json.dumps(preview.limitations, ensure_ascii=False),
-                    updated_at,
                     import_run_id,
                 ),
             )

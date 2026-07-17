@@ -414,23 +414,29 @@ def _ledger_coverage_for_import(
         default=None,
     )
     broker_evidence_as_of: datetime | None = None
+    broker_events: list[StoredBrokerEvidenceEvent] = []
     db_path = _db_path_for_state(state)
     if db_path is not None:
         repository = BrokerEvidenceRepository(db_path)
+        broker_events = broker_events_for_import_run(repository, import_run)
         broker_timestamps = [
-            _parse_fact_timestamp(event.occurred_at)
-            for event in broker_events_for_import_run(repository, import_run)
+            _parse_fact_timestamp(event.occurred_at) for event in broker_events
         ]
         broker_evidence_as_of = max(
             (value for value in broker_timestamps if value is not None),
             default=None,
         )
+    broker_evidence_covered_entry_ids = _broker_evidence_covered_ledger_entry_ids(
+        rows,
+        broker_events,
+    )
+    covered_entry_ids = posting_covered_entry_ids | broker_evidence_covered_entry_ids
     stale_reasons: list[str] = []
     uncovered_created_after_import = any(
         (created_at := _parse_fact_timestamp(row.get("created_at"))) is not None
         and import_timestamp is not None
         and created_at > import_timestamp
-        and int(row.get("id") or 0) not in posting_covered_entry_ids
+        and int(row.get("id") or 0) not in covered_entry_ids
         for row in rows
         if isinstance(row, dict)
     )
@@ -440,7 +446,7 @@ def _ledger_coverage_for_import(
         (event_at := _parse_fact_timestamp(row.get("timestamp"))) is not None
         and broker_evidence_as_of is not None
         and event_at > broker_evidence_as_of
-        and int(row.get("id") or 0) not in posting_covered_entry_ids
+        and int(row.get("id") or 0) not in covered_entry_ids
         for row in rows
         if isinstance(row, dict)
     )
@@ -470,7 +476,69 @@ def _ledger_coverage_for_import(
             else None
         ),
         "controlled_posting_lineage_entry_count": len(posting_covered_entry_ids),
+        "broker_evidence_lineage_entry_count": len(broker_evidence_covered_entry_ids),
     }
+
+
+def _broker_evidence_covered_ledger_entry_ids(
+    rows: list[object],
+    broker_events: list[StoredBrokerEvidenceEvent],
+) -> set[int]:
+    """Match later local dividend capture to exact earlier broker evidence.
+
+    A broker dividend can cover a ledger row recorded later on the same
+    Shanghai date only when symbol and net cash impact match exactly and the
+    same import includes a non-duplicate cash snapshot at or after the broker
+    event. Events are consumed once so one broker row cannot excuse duplicate
+    ledger entries. Other event types remain fail-closed until they have an
+    equally strict identity contract.
+    """
+
+    available_dividends = sorted(
+        (
+            event
+            for event in broker_events
+            if event.event_type == "dividend" and not event.is_row_duplicate
+        ),
+        key=lambda event: (event.occurred_at, event.row_number),
+    )
+    cash_snapshot_times = [
+        timestamp
+        for event in broker_events
+        if event.event_type == "cash_snapshot" and not event.is_row_duplicate
+        if (timestamp := _parse_fact_timestamp(event.occurred_at)) is not None
+    ]
+    covered: set[int] = set()
+    for row in sorted(
+        (row for row in rows if isinstance(row, dict)),
+        key=lambda row: int(row.get("id") or 0),
+    ):
+        entry_id = int(row.get("id") or 0)
+        if entry_id <= 0 or str(row.get("entry_type") or "") != "dividend":
+            continue
+        ledger_at = _parse_fact_timestamp(row.get("timestamp"))
+        if ledger_at is None:
+            continue
+        ledger_fact = _ledger_fact_from_entry(LedgerEntry.from_row(row))
+        for index, event in enumerate(available_dividends):
+            broker_at = _parse_fact_timestamp(event.occurred_at)
+            if broker_at is None or broker_at > ledger_at:
+                continue
+            if (
+                broker_at.astimezone(_SHANGHAI_TZ).date()
+                != ledger_at.astimezone(_SHANGHAI_TZ).date()
+            ):
+                continue
+            if str(event.symbol or "").strip() != ledger_fact.symbol.strip():
+                continue
+            if Decimal(event.net_amount) != ledger_fact.net_amount:
+                continue
+            if not any(snapshot_at >= broker_at for snapshot_at in cash_snapshot_times):
+                continue
+            covered.add(entry_id)
+            del available_dividends[index]
+            break
+    return covered
 
 
 def _posting_covered_ledger_entry_ids(

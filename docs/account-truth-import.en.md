@@ -41,7 +41,8 @@ file does not need to be selected in the browser after every change:
 The collector runs only when startup configuration enables it. It waits for a
 stable size/mtime, then reads and validates the complete file and stages it by
 fingerprint. Repeated polls and process restarts reuse the same import run for
-unchanged content. Missing, changing, oversized, incorrectly encoded, or
+unchanged content and preserve its first-seen `created_at`; replay cannot make
+old evidence look fresh. Missing, changing, oversized, incorrectly encoded, or
 schema-blocked files fail closed while previously staged evidence remains.
 `GET /api/account-truth/broker-statement/collector` exposes read-only status.
 
@@ -164,9 +165,16 @@ import_run = repository.save_preview(preview, source_name="local-statement.csv")
   and row-duplicate evidence.
 
 If the file fingerprint already exists, the existing `import_run_id` is reused
-without inserting the events again. This stage never writes `ledger_entries`.
+without inserting the events again or refreshing its evidence age. This stage
+never writes `ledger_entries`.
 
 ## Reconciliation report
+
+A broker dividend that occurred earlier may cover a ledger entry captured
+later on the same Shanghai date only when symbol and net amount match exactly,
+the same import contains a cash snapshot at or after the dividend, and that
+broker event has not already covered another ledger row. Conflicts, missing
+post-event snapshots, and duplicate local capture remain stale and blocked.
 
 ```python
 from account_truth.reconciliation import (
