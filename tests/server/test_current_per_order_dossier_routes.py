@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import server.routes.per_order_confirmation as route_module
+import server.services.current_per_order_dossier_factory as factory_module
 from server.app import create_app
 from server.routes.per_order_confirmation import create_router
 from server.services.per_order_confirmation import (
@@ -207,7 +208,7 @@ def test_current_route_service_uses_persisted_verification_without_runtime_gatew
 
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
-        route_module,
+        factory_module,
         "resolve_persisted_execution_gateway_verification",
         persisted_resolver,
     )

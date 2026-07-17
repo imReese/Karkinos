@@ -110,6 +110,8 @@ fingerprints by hand. A three-minute offline signature can append one exact
 review fact; it cannot submit/cancel, contact a provider, or change OMS, ledger,
 risk, kill switch, or capital authority. Missing, ambiguous, newer blocked, or
 bounded-scan-incomplete evidence remains blocked.
+Automation Cockpit and Decision project the same persisted-only candidates as a
+ready/blocked summary and provide only a non-submitting handoff to Trading.
 
 For a reconciled controlled order, the Operations/Decision journey can now
 complete both signed terminal clearance and the following reconciled-ledger

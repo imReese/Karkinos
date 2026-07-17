@@ -12,9 +12,9 @@ from server.services.broker_connector_runtime import build_broker_connectors
 from server.services.broker_connector_soak_promotion import (
     BrokerConnectorSoakPromotionService,
 )
-from server.services.current_per_order_dossier import (
-    CurrentPerOrderDossierService,
-    resolve_persisted_execution_gateway_verification,
+from server.services.current_per_order_dossier import CurrentPerOrderDossierService
+from server.services.current_per_order_dossier_factory import (
+    build_current_per_order_dossier_service,
 )
 from server.services.execution_gateway_verification import (
     ExecutionGatewayVerificationService,
@@ -231,35 +231,4 @@ def _service() -> PerOrderConfirmationService:
 def _current_dossier_service() -> CurrentPerOrderDossierService:
     from server.app import get_app_state
 
-    state = get_app_state()
-    config = getattr(state, "config", None)
-    connectors = build_broker_connectors(getattr(config, "broker_connectors", []) or [])
-    trusted_operator_identities = (
-        getattr(config, "trusted_operator_identities", []) or []
-    )
-    dossier_service = PerOrderConfirmationService(
-        db=state.db,
-        connectors=connectors,
-        trusted_operator_identities=trusted_operator_identities,
-        trading_controls=getattr(state, "trading_controls", None),
-        broker_soak_promotion_evidence_provider=(
-            lambda connector_id: BrokerConnectorSoakPromotionService(
-                db=state.db,
-                connectors=connectors,
-                trusted_operator_identities=trusted_operator_identities,
-                account_truth_evidence_provider=(
-                    lambda: build_latest_account_truth_promotion_evidence(state)
-                ),
-            ).preview_dossier(connector_id)
-        ),
-        execution_gateway_verification_provider=(
-            lambda fingerprint: resolve_persisted_execution_gateway_verification(
-                state.db,
-                fingerprint,
-            )
-        ),
-    )
-    return CurrentPerOrderDossierService(
-        db=state.db,
-        dossier_service=dossier_service,
-    )
+    return build_current_per_order_dossier_service(get_app_state())

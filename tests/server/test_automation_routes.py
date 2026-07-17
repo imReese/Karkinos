@@ -471,3 +471,13 @@ def test_automation_cockpit_route_returns_read_only_summary(
     assert "runtime_connector_snapshot_status" not in payload
     assert payload["controlled_execution"]["reads_persisted_facts_only"] is True
     assert payload["controlled_execution"]["provider_contact_performed"] is False
+    current_reviews = payload["current_per_order_reviews"]
+    assert current_reviews["status"] == "no_current_candidates"
+    assert current_reviews["candidate_count"] == 0
+    assert current_reviews["review_ready_count"] == 0
+    assert current_reviews["blocked_review_count"] == 0
+    assert current_reviews["reads_persisted_facts_only"] is True
+    assert current_reviews["provider_contact_performed"] is False
+    assert current_reviews["broker_submission_enabled"] is False
+    assert current_reviews["broker_cancel_enabled"] is False
+    assert current_reviews["authorizes_execution"] is False

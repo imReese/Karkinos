@@ -222,6 +222,12 @@ contact a provider, mutate OMS/ledger/risk/kill switch/capital authority, or
 submit/cancel a broker order. The Trading UI deliberately has no submit or
 cancel control for this boundary.
 
+Automation Cockpit consumes that same candidate contract through a fail-closed
+application reader. It validates the source schema, count, truncation, and
+non-authorizing boundaries before projecting ready/blocked counts into Decision.
+Any source drift blocks the handoff; the only UI transition opens Trading and
+does not create a broker action or a second financial calculation.
+
 A terminal rejected intent may be reviewed through
 `karkinos.controlled_broker_rejection_evidence.v1`. This read-only contract
 binds the canonical OMS order fingerprint, controlled intent, exact gateway,

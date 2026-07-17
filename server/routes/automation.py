@@ -57,14 +57,21 @@ def create_router() -> APIRouter:
         )
         from server.app import get_app_state
         from server.services.automation_cockpit import AutomationCockpitService
+        from server.services.current_per_order_dossier_factory import (
+            build_current_per_order_dossier_service,
+        )
 
         state = get_app_state()
+        current_per_order_dossiers = build_current_per_order_dossier_service(state)
         return AutomationCockpitService(
             db=state.db,
             trading_controls=getattr(state, "trading_controls", None),
             broker_connectors=_broker_connectors(state),
             account_truth_evidence_reader=(
                 lambda: build_latest_account_truth_promotion_evidence(state)
+            ),
+            current_per_order_dossier_reader=(
+                lambda: current_per_order_dossiers.list_candidates(limit=20)
             ),
         ).summary()
 

@@ -1989,6 +1989,20 @@ function brokerConnectorStatusLabel(status: string, locale: Locale) {
   return formatPublicStatus(status, locale);
 }
 
+function currentPerOrderReviewStatusLabel(status: string, locale: Locale) {
+  const labels: Record<string, { en: string; zh: string }> = {
+    unavailable: { en: 'Review source unavailable', zh: '复核来源不可用' },
+    blocked_source: { en: 'Review source blocked', zh: '复核来源已阻断' },
+    review_ready: { en: 'Exact review ready', zh: '精确复核已就绪' },
+    blocked_review: { en: 'Evidence review blocked', zh: '证据复核已阻断' },
+    no_current_candidates: {
+      en: 'No current candidate · default off',
+      zh: '无当前候选 · 默认关闭',
+    },
+  };
+  return labels[status]?.[locale] ?? formatPublicStatus(status, locale);
+}
+
 function controlledExecutionStatusLabel(status: string, locale: Locale) {
   const labels: Record<string, { en: string; zh: string }> = {
     no_session_evidence: {
@@ -2923,6 +2937,14 @@ function AutomationCockpitPanel({
   const openAlerts = cockpit.open_alert_count;
   const reconciliationReviews =
     cockpit.execution_reconciliation_open_items.length;
+  const currentPerOrderReviews = cockpit.current_per_order_reviews;
+  const currentPerOrderReviewCount =
+    currentPerOrderReviews?.candidate_count ?? 0;
+  const primaryCurrentPerOrderReview =
+    currentPerOrderReviews?.primary_candidate;
+  const currentPerOrderHandoffEnabled =
+    currentPerOrderReviews?.status === 'review_ready' ||
+    currentPerOrderReviews?.status === 'blocked_review';
   const nextAction = automationNextAction(cockpit, locale);
   const manualDefault = cockpit.automation_status.manual_confirmation_required;
   const brokerOff =
@@ -3082,15 +3104,131 @@ function AutomationCockpitPanel({
             </div>
             <div className="mt-1 text-sm font-semibold text-[var(--app-text)]">
               {locale === 'zh'
-                ? `${openAlerts} 个开放告警 · ${reconciliationReviews} 个对账复核`
+                ? `${openAlerts} 个开放告警 · ${reconciliationReviews} 个对账复核 · ${currentPerOrderReviewCount} 个逐单复核`
                 : `${openAlerts} open alert${
                     openAlerts === 1 ? '' : 's'
                   } · ${reconciliationReviews} reconciliation review${
                     reconciliationReviews === 1 ? '' : 's'
+                  } · ${currentPerOrderReviewCount} per-order review${
+                    currentPerOrderReviewCount === 1 ? '' : 's'
                   }`}
             </div>
           </div>
         </div>
+
+        {currentPerOrderReviews ? (
+          <div
+            data-testid="current-per-order-review-handoff"
+            className="mt-4 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-accent)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-accent)_7%,transparent)] px-3 py-3"
+          >
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+                  {locale === 'zh'
+                    ? '当前逐单证据复核'
+                    : 'Current per-order evidence review'}
+                </div>
+                <div className="app-muted mt-1 break-words text-xs leading-5">
+                  {locale === 'zh'
+                    ? '只投影 canonical manually_confirmed OMS 订单与持久化证据；复核本身不提交或撤销券商订单。'
+                    : 'Canonical manually_confirmed OMS orders and persisted evidence only; review itself cannot submit or cancel a broker order.'}
+                </div>
+              </div>
+              <span className="app-chip">
+                {currentPerOrderReviewStatusLabel(
+                  currentPerOrderReviews.status,
+                  locale,
+                )}
+              </span>
+            </div>
+
+            <div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-3">
+              {[
+                {
+                  label: locale === 'zh' ? '当前候选' : 'Current candidates',
+                  value: currentPerOrderReviews.candidate_count,
+                },
+                {
+                  label: locale === 'zh' ? '可复核' : 'Review ready',
+                  value: currentPerOrderReviews.review_ready_count,
+                },
+                {
+                  label: locale === 'zh' ? '证据阻断' : 'Evidence blocked',
+                  value: currentPerOrderReviews.blocked_review_count,
+                },
+              ].map((item) => (
+                <div
+                  className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] px-3 py-2"
+                  key={item.label}
+                >
+                  <div className="app-muted text-xs">{item.label}</div>
+                  <div className="mt-1 font-semibold tabular-nums text-[var(--app-text)]">
+                    {item.value}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {primaryCurrentPerOrderReview ? (
+              <div className="mt-3 min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-3 py-2.5">
+                <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0 break-words text-sm font-semibold text-[var(--app-text)]">
+                    {primaryCurrentPerOrderReview.symbol} ·{' '}
+                    {formatPublicStatus(
+                      primaryCurrentPerOrderReview.side,
+                      locale,
+                    )}{' '}
+                    {primaryCurrentPerOrderReview.quantity}
+                  </div>
+                  <span className="app-chip">
+                    {formatPublicStatus(
+                      primaryCurrentPerOrderReview.review_status,
+                      locale,
+                    )}
+                  </span>
+                </div>
+                <div className="app-muted mt-1 break-words font-mono text-xs">
+                  {primaryCurrentPerOrderReview.order_id}
+                </div>
+                {primaryCurrentPerOrderReview.review_blockers.length ? (
+                  <div className="mt-2 break-words text-xs font-semibold text-[var(--app-warning)]">
+                    {locale === 'zh' ? '阻断项：' : 'Blockers: '}
+                    {primaryCurrentPerOrderReview.review_blockers
+                      .map((item) => formatPublicCode(item, locale))
+                      .join(' · ')}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {currentPerOrderReviews.source_blockers.length ? (
+              <div className="mt-2 break-words text-xs font-semibold text-[var(--app-warning)]">
+                {locale === 'zh' ? '来源阻断：' : 'Source blockers: '}
+                {currentPerOrderReviews.source_blockers
+                  .map((item) => formatPublicCode(item, locale))
+                  .join(' · ')}
+              </div>
+            ) : null}
+
+            <div className="mt-3 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="app-muted min-w-0 break-words text-xs leading-5">
+                {locale === 'zh'
+                  ? '持久化事实 · 不联系 provider · OMS/账本/风控/资本授权不变'
+                  : 'Persisted facts · no provider contact · OMS/ledger/risk/capital authority unchanged'}
+              </div>
+              {currentPerOrderHandoffEnabled ? (
+                <a
+                  className="inline-flex min-h-9 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+                  href="/trading"
+                >
+                  {locale === 'zh'
+                    ? '打开非提交逐单复核'
+                    : 'Open non-submitting per-order review'}
+                </a>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
 
         {controlledExecution ? (
           <div
