@@ -225,9 +225,9 @@ M3/M4 纠正操作员旅程的假设与风险记录：
   保留真实负仓、排除已清仓/仅历史资产，并在 valuation 或 ledger identity 不完整时 fail closed。
   人工确认不能清除复核项，只有更新且已确认的持久化 observation 与新 canonical 估值快照可以。
   本次没有 schema migration、新依赖、券商 adapter、OMS/风控/账本写入或权限变化。
-- Overview 复核队列与 Operations 塔台消费同一 canonical daily-operations projection；每个非正常
+- Overview 复核队列、Operations 塔台与专用 `/operations` 证据中心消费同一 canonical daily-operations projection；每个非正常
   子系统现有 deterministic、可感知 drift 的 attention fingerprint、安全下一步与证据解除条件，确认
-  本身不能清除，AI capture 只接收同一只读 payload。风险影响为 high，因为 canonical builder 同时
+  本身不能清除；证据中心先核验所有无权限标记再允许安全下钻，AI capture 只接收同一只读 payload。风险影响为 high，因为 canonical builder 同时
   服务 route 与 AI context；新增字段仅派生、向后兼容、不联系 provider、不写库且不授予权限。
 
 剩余发布工作由路线图负责：一个真实 adapter、只读 soak、真实 cancel/unknown recovery、签名式

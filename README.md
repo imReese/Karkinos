@@ -135,8 +135,8 @@ path can submit or cancel broker orders or change capital authority.
 Operations now keeps chronological history separate from operator priority.
 Every bounded persisted controlled-order journey is evaluated, and an older
 unknown, prepared, or open-order outcome remains ahead of a newer lower-risk or
-closed journey. The compact attention queue shows the exact safe next action
-for each item and now states the exact evidence condition that clears it; viewing alone never clears a status. Its final Account Truth stage now closes only from the canonical
+closed journey. The dedicated `/operations` read-only workbench and compact Overview queue show the exact safe next action and evidence condition
+that clears each item; viewing alone never clears a status. Its final Account Truth stage now closes only from the canonical
 fresh, complete, current-ledger-covered reconciliation; partial, degraded,
 stale, or pre-correction evidence stays open for review. It is a read-only
 projection and cannot contact a provider or perform any trading, ledger, risk,

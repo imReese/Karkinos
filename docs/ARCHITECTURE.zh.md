@@ -229,6 +229,10 @@ Account Truth 后续复核及已经闭环的拒单。紧凑关注队列会让较
 会得到相同 fingerprint，证据状态漂移时 fingerprint 随之变化。查看或确认本身不能清除任务。同一只读 payload
 可以进入人工显式创建的 AI context capture，但不会联系 provider、写数据库或授予执行权限。
 
+`/operations` 是该契约的只读操作员界面。它会在提供任何下钻之前核验顶层 schema 与每个
+attention item 的无权限标记，再展示来源证据、确定性 fingerprint、安全下一步和精确解除条件。
+任何边界违规都会阻断整份投影；页面不具备 mutation 或 broker 能力。
+
 精确持久化且仍开放的 lifecycle 可通过
 `karkinos.manual_broker_cancellation_ticket.v1` 投影。该 provider-neutral 边界根据 persisted
 controlled intent、OMS order fingerprint、broker/client 双重订单 ID 与最新 lifecycle observation

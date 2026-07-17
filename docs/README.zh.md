@@ -100,7 +100,7 @@ Market 会列出精确标的、原因和安全人工下一步；GET 不联系 pr
 ### Paper/Shadow 与 Operations
 
 Operations 展示数据、计划、paper/shadow、OMS、对账、告警和恢复任务。Paper/shadow 可以
-模拟订单、成交、费用和偏差，但不会提交真实券商订单或修改生产账本。每个非正常 Operations 子系统还会展示确定性 attention fingerprint、安全下一步和精确证据解除条件；仅查看或确认不能改变状态。
+模拟订单、成交、费用和偏差，但不会提交真实券商订单或修改生产账本。`/operations` 只读证据中心直接展示 canonical persisted-facts payload、子系统健康度、来源证据与安全下钻；它不联系 provider、不写库且无执行权限。每个非正常子系统还会展示确定性 attention fingerprint、安全下一步和精确证据解除条件；仅查看不能改变状态。
 
 受控订单会把按时间排列的审计历史与操作员优先级分开。系统检查有界范围内全部持久化 journey；
 较早的 unknown、prepared 或 open-order 结果不会被较新的低风险或已闭环旅程遮蔽。紧凑关注队列
