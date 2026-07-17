@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test, vi } from 'vitest';
@@ -139,6 +140,20 @@ const defaultOperationsToday = {
   limitations: [],
 };
 
+const defaultBrokerSoakPromotion = {
+  schema_version: 'karkinos.broker_connector_soak_promotion_status.v1',
+  contract_status: 'signed_promotion_evidence_only',
+  connector_count: 0,
+  connectors: [],
+  promotion_ready: false,
+  promotion_blockers: ['no_readonly_connector_observations'],
+  owner_acceptance_recorded: false,
+  account_truth_reconciliation_linked: false,
+  runtime_execution_authority: 'disabled',
+  broker_submission_enabled: false,
+  automatic_promotion_enabled: false,
+};
+
 function jsonResponse(body: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -153,6 +168,7 @@ function installTradingFetchMock({
   fillFacts = [fillFact],
   positions = positionRows,
   operationsToday = defaultOperationsToday,
+  brokerSoakPromotion = defaultBrokerSoakPromotion,
   rejectFails = false,
   ordersFail = false,
 }: {
@@ -161,6 +177,7 @@ function installTradingFetchMock({
   fillFacts?: unknown[];
   positions?: unknown[];
   operationsToday?: unknown;
+  brokerSoakPromotion?: unknown;
   rejectFails?: boolean;
   ordersFail?: boolean;
 } = {}) {
@@ -192,6 +209,9 @@ function installTradingFetchMock({
       }
       if (url.includes('/api/operations/today')) {
         return jsonResponse(operationsToday);
+      }
+      if (url.includes('/api/automation/broker-soak/promotion/status')) {
+        return jsonResponse(brokerSoakPromotion);
       }
       if (
         url.includes(
@@ -822,8 +842,172 @@ test('shows persisted broker adapter evidence without activation controls', asyn
   expect(screen.getByText('Clear')).toBeTruthy();
   expect(screen.getByText('Not started')).toBeTruthy();
   expect(screen.getByText('No collector run')).toBeTruthy();
+  const soakGate = screen.getByTestId('broker-soak-promotion-readiness');
+  expect(soakGate.textContent).toContain('No read-only soak evidence');
+  expect(soakGate.textContent).not.toContain('soak blocker');
   expect(
     screen.queryByRole('button', { name: /activate|register|submit|cancel/i }),
+  ).toBeNull();
+});
+
+test('shows exact read-only soak and signed owner-acceptance progress without promotion controls', async () => {
+  const tradingDays = Array.from(
+    { length: 20 },
+    (_, index) => `2026-06-${String(index + 1).padStart(2, '0')}`,
+  );
+  const { fetchMock } = renderTradingPage({
+    brokerSoakPromotion: {
+      schema_version: 'karkinos.broker_connector_soak_promotion_status.v1',
+      contract_status: 'signed_promotion_evidence_only',
+      connector_count: 1,
+      connectors: [
+        {
+          connector_id: 'fixture-collector',
+          account_alias: 'fixture-account',
+          review_status: 'ready_for_signed_owner_acceptance',
+          promotion_ready: true,
+          promotion_blockers: [],
+          owner_acceptance_recorded: true,
+          account_truth_reconciliation_linked: true,
+          operational_evidence: {
+            status: 'clear',
+            selected_trading_day_count: 20,
+            target_trading_day_count: 20,
+            phase_coverage: {
+              startup: tradingDays,
+              intraday: tradingDays,
+              end_of_day: tradingDays,
+            },
+            drill_coverage: {
+              disconnect: true,
+              schema_drift: true,
+              stale_data: true,
+              duplicate_evidence: true,
+              restart_recovery: true,
+            },
+            latest_soak_status: 'healthy',
+            blockers: [],
+          },
+          acceptance: {
+            status: 'recorded_verified_owner_acceptance',
+            acceptance_id: 'fixture-acceptance',
+            recorded_at: '2026-07-10T08:05:00+00:00',
+            operator_identity_verified: true,
+            authorizes_execution: false,
+          },
+          runtime_execution_authority: 'disabled',
+          broker_submission_enabled: false,
+          authorizes_execution: false,
+        },
+      ],
+      promotion_ready: true,
+      promotion_blockers: [],
+      owner_acceptance_recorded: true,
+      account_truth_reconciliation_linked: true,
+      runtime_execution_authority: 'disabled',
+      broker_submission_enabled: false,
+      automatic_promotion_enabled: false,
+    },
+  });
+
+  const gate = await screen.findByTestId('broker-soak-promotion-readiness');
+  expect(gate.textContent).toContain('Read-only broker pilot gate');
+  await waitFor(() => {
+    expect(gate.textContent).toContain('20/20');
+    expect(gate.textContent).toContain('3/3');
+    expect(gate.textContent).toContain('5/5');
+    expect(gate.textContent).toContain('Linked and clear');
+    expect(gate.textContent).toContain('Signed acceptance recorded');
+    expect(gate.textContent).toContain(
+      'Evidence complete, authority still disabled',
+    );
+  });
+  expect(fetchMock).toHaveBeenCalledWith(
+    '/api/automation/broker-soak/promotion/status',
+    expect.objectContaining({ headers: { Accept: 'application/json' } }),
+  );
+  expect(
+    within(gate).queryByRole('button', {
+      name: /promote|activate|register|submit|cancel/i,
+    }),
+  ).toBeNull();
+});
+
+test('keeps incomplete soak evidence visibly blocked without inventing readiness', async () => {
+  const observedDays = Array.from(
+    { length: 12 },
+    (_, index) => `2026-06-${String(index + 1).padStart(2, '0')}`,
+  );
+  renderTradingPage({
+    brokerSoakPromotion: {
+      ...defaultBrokerSoakPromotion,
+      connector_count: 1,
+      connectors: [
+        {
+          connector_id: 'fixture-incomplete-collector',
+          account_alias: 'fixture-account',
+          review_status: 'blocked_review',
+          promotion_ready: false,
+          promotion_blockers: [
+            'clear_reconciled_soak_days_incomplete:12/20',
+            'recovery_drill_missing:restart_recovery',
+            'account_truth:account_truth_not_clear',
+          ],
+          owner_acceptance_recorded: false,
+          account_truth_reconciliation_linked: false,
+          operational_evidence: {
+            status: 'blocked',
+            selected_trading_day_count: 12,
+            target_trading_day_count: 20,
+            phase_coverage: {
+              startup: observedDays,
+              intraday: observedDays,
+              end_of_day: observedDays,
+            },
+            drill_coverage: {
+              disconnect: true,
+              schema_drift: true,
+              stale_data: true,
+              duplicate_evidence: true,
+              restart_recovery: false,
+            },
+            latest_soak_status: 'healthy',
+            blockers: [
+              'clear_reconciled_soak_days_incomplete:12/20',
+              'recovery_drill_missing:restart_recovery',
+            ],
+          },
+          acceptance: {
+            status: 'missing',
+            operator_identity_verified: false,
+            authorizes_execution: false,
+          },
+          runtime_execution_authority: 'disabled',
+          broker_submission_enabled: false,
+          authorizes_execution: false,
+        },
+      ],
+      promotion_blockers: [
+        'clear_reconciled_soak_days_incomplete:12/20',
+        'recovery_drill_missing:restart_recovery',
+        'account_truth:account_truth_not_clear',
+      ],
+    },
+  });
+
+  const gate = await screen.findByTestId('broker-soak-promotion-readiness');
+  await waitFor(() => {
+    expect(gate.textContent).toContain('12/20');
+    expect(gate.textContent).toContain('0/3');
+    expect(gate.textContent).toContain('4/5');
+    expect(gate.textContent).toContain('Not linked and clear');
+    expect(gate.textContent).toContain('Signed acceptance missing');
+    expect(gate.textContent).toContain('Evidence incomplete, review required');
+  });
+  expect(
+    within(gate).queryByRole('button', {
+      name: /promote|activate|register|submit|cancel/i,
+    }),
   ).toBeNull();
 });
 

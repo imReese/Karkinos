@@ -264,6 +264,49 @@ export type BrokerAdapterReadiness = {
   authorizes_execution: boolean;
 };
 
+export type BrokerConnectorSoakPromotionConnector = {
+  connector_id: string;
+  account_alias: string;
+  review_status: string;
+  promotion_ready: boolean;
+  promotion_blockers: string[];
+  owner_acceptance_recorded: boolean;
+  account_truth_reconciliation_linked: boolean;
+  operational_evidence: {
+    status: string;
+    selected_trading_day_count: number;
+    target_trading_day_count: number;
+    phase_coverage: Record<string, string[]>;
+    drill_coverage: Record<string, boolean>;
+    latest_soak_status: string;
+    blockers: string[];
+  };
+  acceptance?: {
+    status?: string;
+    acceptance_id?: string | null;
+    recorded_at?: string | null;
+    operator_identity_verified?: boolean;
+    authorizes_execution?: boolean;
+  };
+  runtime_execution_authority: string;
+  broker_submission_enabled: boolean;
+  authorizes_execution: boolean;
+};
+
+export type BrokerConnectorSoakPromotionStatus = {
+  schema_version: 'karkinos.broker_connector_soak_promotion_status.v1';
+  contract_status: string;
+  connector_count: number;
+  connectors: BrokerConnectorSoakPromotionConnector[];
+  promotion_ready: boolean;
+  promotion_blockers: string[];
+  owner_acceptance_recorded: boolean;
+  account_truth_reconciliation_linked: boolean;
+  runtime_execution_authority: string;
+  broker_submission_enabled: boolean;
+  automatic_promotion_enabled: boolean;
+};
+
 export type OperationsTodayResponse = {
   schema_version: 'karkinos.operations_today.v1';
   operations_date: string;
@@ -1472,6 +1515,19 @@ export function useOperationsTodayQuery() {
   return useQuery({
     queryKey: ['operations', 'today'],
     queryFn: () => apiClient<OperationsTodayResponse>('/api/operations/today'),
+    staleTime: 5_000,
+    refetchInterval: liveRefetchInterval,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useBrokerConnectorSoakPromotionStatusQuery() {
+  return useQuery({
+    queryKey: ['broker-soak', 'promotion', 'status'],
+    queryFn: () =>
+      apiClient<BrokerConnectorSoakPromotionStatus>(
+        '/api/automation/broker-soak/promotion/status',
+      ),
     staleTime: 5_000,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,

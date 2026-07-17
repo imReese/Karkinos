@@ -125,8 +125,8 @@ kill switch 或任何权限。
 journey 显式打开：选择 allowlisted 原因、复核确定性 delta、验证离线签名，再 exactly once 地追加
 补偿事件；UI 不能输入现金、数量或价格。详细门禁和发布条件见 [路线图](ROADMAP.zh.md)。
 
-Trading 现在还提供默认折叠、非提交的逐单证据复核：只列出 canonical `manually_confirmed` OMS
-候选，并从持久化事实解析最新精确资本评估、前序批次对账与网关验证，避免人工抄写三组
+Trading 还会只读展示精确 connector 的 20 日 soak、三阶段、恢复演练、Account Truth 和签名 owner acceptance 门禁；未配置时保持中性且不执行 promotion。
+默认折叠、非提交的逐单证据复核只列出 canonical `manually_confirmed` OMS 候选，并从持久化事实解析最新精确资本评估、前序批次对账与网关验证，避免人工抄写三组
 fingerprint。三分钟离线签名只能追加一条精确复核事实，不能 submit/cancel、联系 provider，或修改
 OMS、ledger、risk、kill switch 与 capital authority；缺失、歧义、较新阻断或有界扫描不完整时
 继续 blocked。

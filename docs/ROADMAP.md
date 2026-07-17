@@ -216,7 +216,8 @@ incident returns the system to `disabled`.
 5. Default-closed real write-adapter integration and provider-approved per-order submit/cancel journey.
 6. **Foundation implemented:** signed, exactly-once reconciled ledger posting,
    append-only compensating correction, and core cross-surface acceptance.
-7. Operations/Trading end-to-end UX and alerts.
+7. **Foundation implemented:** Operations/Trading readiness, alerts, and a
+   read-only exact-connector soak gate; provider-approved journey remains open.
 8. Deployment, rollback, fault drills, and controlled pilot release.
 
 The 20-day soak is a release gate, not an idle development period. Later

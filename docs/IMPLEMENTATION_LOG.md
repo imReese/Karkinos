@@ -69,6 +69,9 @@ The latest completed cross-cutting work includes:
 - connector-scoped soak recovery evidence where unscoped, unrelated, or mixed
   drills cannot satisfy promotion, and the newest scoped failure invalidates an
   older pass and its signed dossier acceptance.
+- a read-only Trading projection of the exact connector's 20-day coverage,
+  three daily phases, recovery drills, Account Truth binding, and signed owner
+  acceptance; it exposes no promotion, registration, submit, or cancel action.
 
 Exact historical test totals are intentionally not maintained here because
 they become stale after every change. CI artifacts and the acceptance-audit
@@ -78,7 +81,7 @@ export own current counts and evidence.
 
 ### v1.8 — Capital-Bounded Controlled Execution
 
-Status: foundation implemented; broker-connected pilot active.
+Status: provider-neutral foundation implemented; real-provider pilot pending owner approval.
 
 Implemented foundation:
 

@@ -202,7 +202,8 @@ rate 和 expiry 上限。任一 critical incident 立即退回 `disabled`。
 5. 默认关闭的真实 write adapter integration 与经 provider 批准的逐单 submit/cancel operator journey。
 6. **基础已实现：** 单独签名、exactly-once 的 reconciled ledger posting、append-only 补偿纠正与
    核心跨页面验收。
-7. Operations/Trading 端到端 UX 与告警。
+7. **基础已实现：** Operations/Trading readiness、告警与精确 connector 的只读 soak 门禁；
+   经 provider 批准的完整旅程仍待完成。
 8. 部署、回滚、故障演练和受控试点发布。
 
 20 日 soak 是发布门槛，不是开发空窗。后续里程碑可以在 soak 期间使用 deterministic fixture 和

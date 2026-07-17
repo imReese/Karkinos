@@ -198,6 +198,10 @@ Unscoped, unrelated, or mixed-connector drills cannot satisfy another
 connector's dossier. For each drill type, the newest matching scoped result is
 authoritative; a later failure invalidates the earlier pass and changes the
 dossier fingerprint, so an old operator acceptance no longer matches.
+Trading projects that same persisted-only status as five operator-readable
+gates: qualified days, daily phases, recovery drills, Account Truth binding,
+and signed owner acceptance. Ambiguous connector identity fails closed, and the
+panel exposes no registration, promotion, submission, or cancellation action.
 
 ### Controlled execution
 
