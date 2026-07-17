@@ -1043,7 +1043,7 @@ test('deduplicates manual-plan review and trusts confirmed quotes over provider 
   renderOverviewPage({ installFetch: false });
 
   const todayQueue = await screen.findByTestId('overview-today-queue');
-  expect(within(todayQueue).getByText('5 个订单意图待人工确认')).toBeTruthy();
+  expect(within(todayQueue).getByText('5 个交易计划意图待复核')).toBeTruthy();
   expect(todayQueue.textContent).toContain('买入 · 宇通客车（600066） · 100');
   expect(todayQueue.textContent).toContain('买入 · 中国核电（601985） · 300');
   expect(todayQueue.textContent).toContain(
@@ -2055,11 +2055,11 @@ test('renders daily operations tower without treating 50 candidates as manual wo
   expect(within(tower).getByText('今日无需手动交易')).toBeTruthy();
   expect(within(tower).getByText('候选池')).toBeTruthy();
   expect(within(tower).getByText('50')).toBeTruthy();
-  expect(within(tower).getByText('待人工确认')).toBeTruthy();
+  expect(within(tower).getByText('计划意图待复核')).toBeTruthy();
   expect(within(tower).getAllByText('0').length).toBeGreaterThan(0);
   expect(within(tower).getByText('人工确认')).toBeTruthy();
   expect(within(tower).getByText('未启用')).toBeTruthy();
-  expect(within(tower).getByText('查看候选证据')).toBeTruthy();
+  expect(within(tower).getByText('复核交易计划')).toBeTruthy();
   expect(tower.textContent).not.toContain('50 项待人工确认');
   expect(tower.textContent).not.toContain('50 个待确认');
 });
@@ -2188,6 +2188,43 @@ test('routes daily operations tower primary action to Trading for pending manual
       .getByRole('link', { name: 'Enter manual confirmation' })
       .getAttribute('href'),
   ).toBe('/trading');
+});
+
+test('keeps plan intents in Decision until an OMS order awaits approval', async () => {
+  window.localStorage.setItem('karkinos.locale', 'zh');
+  installOverviewFetchMock({
+    daily_operations: {
+      candidate_pool_count: 3,
+      evidence_passed_count: 0,
+      risk_checked_count: 3,
+      risk_passed_count: 3,
+      risk_blocked_count: 0,
+      paper_shadow_review_count: 0,
+      manual_ready_count: 3,
+      pending_manual_order_count: 0,
+      execution_record_count: 0,
+      fill_record_count: 0,
+      ledger_review_count: 0,
+      execution_exception_count: 0,
+      default_execution_mode: 'manual_confirmation',
+      broker_bridge_status: 'disabled',
+      conclusion_status: 'pending_manual_confirmation',
+      primary_target: 'trading',
+      limitations: [],
+    },
+  });
+
+  renderOverviewPage({ installFetch: false });
+
+  const tower = await screen.findByTestId('daily-operations-tower');
+  expect(within(tower).getByText('3 个交易计划意图待复核')).toBeTruthy();
+  expect(within(tower).getByText('计划意图待复核')).toBeTruthy();
+  expect(
+    within(tower)
+      .getByRole('link', { name: '复核交易计划' })
+      .getAttribute('href'),
+  ).toBe('/decision');
+  expect(tower.textContent).not.toContain('3 项待人工确认');
 });
 
 test('routes daily operations tower primary action to Risk for risk blockers', async () => {
@@ -2381,7 +2418,7 @@ test('surfaces strategy candidate signals in the overview workbench', async () =
   expect(within(workbench).getByText('Strategy candidate signal')).toBeTruthy();
   expect(within(workbench).getByText('Buy candidate · 示例制造')).toBeTruthy();
   expect(
-    within(workbench).getByText('0 ready · 1 pool · 0 blocked'),
+    within(workbench).getByText('0 plan review · 1 pool · 0 blocked'),
   ).toBeTruthy();
   expect(within(workbench).getByText('Review decision evidence')).toBeTruthy();
 });
@@ -2466,7 +2503,7 @@ test('prioritizes daily trading plan cash shortfall on the overview workbench', 
     ),
   ).toBeTruthy();
   expect(
-    within(queue).getByText('0 ready · 1 pool · Portfolio constraints 1'),
+    within(queue).getByText('0 plan review · 1 pool · Portfolio constraints 1'),
   ).toBeTruthy();
 });
 
@@ -2553,10 +2590,10 @@ test('keeps large candidate pools separate from manual-ready work in Chinese', a
     ),
   ).toBeTruthy();
   expect(
-    within(workbench).getByText('0 待确认 · 50 候选池 · 证据未就绪 50'),
+    within(workbench).getByText('0 意图待复核 · 50 候选池 · 证据未就绪 50'),
   ).toBeTruthy();
   expect(within(workbench).queryByText('50 个候选动作')).toBeNull();
-  expect(within(workbench).queryByText('50 个订单意图待人工确认')).toBeNull();
+  expect(within(workbench).queryByText('50 个交易计划意图待复核')).toBeNull();
 });
 
 test('explains operations blockers when candidates are waiting for risk gate', async () => {

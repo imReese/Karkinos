@@ -205,6 +205,10 @@ export const copy = {
           count === 1
             ? '1 item needs manual confirmation'
             : `${count} items need manual confirmation`,
+        operationsPlanIntentsReady: (count: number) =>
+          count === 1
+            ? '1 plan intent needs decision review'
+            : `${count} plan intents need decision review`,
         operationsRiskBlocked: (count: number) =>
           count === 1
             ? '1 risk block needs review'
@@ -218,7 +222,7 @@ export const copy = {
         operationsCandidatePool: 'Candidate pool',
         operationsEvidencePassed: 'Evidence passed',
         operationsRiskPassed: 'Risk passed',
-        operationsManualReady: 'Manual ready',
+        operationsManualReady: 'Plan intents to review',
         operationsPendingOrders: 'Pending order intents',
         operationsExecutionRecords: 'Execution records',
         operationsLedgerReview: 'Ledger review',
@@ -226,7 +230,7 @@ export const copy = {
         operationsBrokerBridge: 'Broker bridge',
         operationsManualConfirmation: 'Manual confirmation',
         operationsBrokerDisabled: 'Disabled',
-        operationsViewCandidates: 'View candidate evidence',
+        operationsViewCandidates: 'Review decision plan',
         operationsViewRisk: 'View risk reasons',
         operationsViewTrading: 'Enter manual confirmation',
         operationsViewLedger: 'Review ledger',
@@ -284,8 +288,8 @@ export const copy = {
         tradingPlanCashShortfall: 'Cash shortfall blocks buy preview',
         tradingPlanManualReady: (count: number) =>
           count === 1
-            ? '1 order intent needs manual confirmation'
-            : `${count} order intents need manual confirmation`,
+            ? '1 plan intent needs decision review'
+            : `${count} plan intents need decision review`,
         tradingPlanManualReadyDetail: (count: number) =>
           count === 1
             ? 'Review the evidence-linked order intent before preparing a manual order.'
@@ -307,8 +311,8 @@ export const copy = {
           blockers: number | string,
         ) =>
           typeof blockers === 'number'
-            ? `${manualReady} ready · ${candidates} pool · ${blockers} blocked`
-            : `${manualReady} ready · ${candidates} pool · ${blockers}`,
+            ? `${manualReady} plan review · ${candidates} pool · ${blockers} blocked`
+            : `${manualReady} plan review · ${candidates} pool · ${blockers}`,
         strategyEvidenceLinked: 'Strategy contribution is evidence-linked',
         strategyNoLinkedFills: 'No attributable strategy fills yet',
         strategyEvidenceRequired: 'Strategy contribution needs linked evidence',
@@ -2848,6 +2852,8 @@ export const copy = {
         operationsConclusion: '今日状态',
         operationsNoManualAction: '今日无需手动交易',
         operationsPendingManual: (count: number) => `${count} 项待人工确认`,
+        operationsPlanIntentsReady: (count: number) =>
+          `${count} 个交易计划意图待复核`,
         operationsRiskBlocked: (count: number) => `${count} 项风控阻断需要复核`,
         operationsAccountTruthBlocked: '账户事实未通过，暂停执行复核',
         operationsDataUnavailable: '行情数据不可用，暂停候选复核',
@@ -2856,7 +2862,7 @@ export const copy = {
         operationsCandidatePool: '候选池',
         operationsEvidencePassed: '证据通过',
         operationsRiskPassed: '风控通过',
-        operationsManualReady: '待人工确认',
+        operationsManualReady: '计划意图待复核',
         operationsPendingOrders: '待确认订单意图',
         operationsExecutionRecords: '执行记录',
         operationsLedgerReview: '账本待复核',
@@ -2864,7 +2870,7 @@ export const copy = {
         operationsBrokerBridge: '券商桥接',
         operationsManualConfirmation: '人工确认',
         operationsBrokerDisabled: '未启用',
-        operationsViewCandidates: '查看候选证据',
+        operationsViewCandidates: '复核交易计划',
         operationsViewRisk: '查看风控原因',
         operationsViewTrading: '进入人工确认',
         operationsViewLedger: '核对账本',
@@ -2920,7 +2926,7 @@ export const copy = {
         tradingPlanNeedsReview: '今日交易计划需要复核',
         tradingPlanCashShortfall: '买入预览因现金不足阻断',
         tradingPlanManualReady: (count: number) =>
-          `${count} 个订单意图待人工确认`,
+          `${count} 个交易计划意图待复核`,
         tradingPlanManualReadyDetail: (count: number) =>
           `先复核 ${count} 个带证据引用的订单意图，再准备手工订单。`,
         tradingPlanManualIntentDetail: (
@@ -2938,8 +2944,8 @@ export const copy = {
           blockers: number | string,
         ) =>
           typeof blockers === 'number'
-            ? `${manualReady} 待确认 · ${candidates} 候选池 · ${blockers} 阻断`
-            : `${manualReady} 待确认 · ${candidates} 候选池 · ${blockers}`,
+            ? `${manualReady} 意图待复核 · ${candidates} 候选池 · ${blockers} 阻断`
+            : `${manualReady} 意图待复核 · ${candidates} 候选池 · ${blockers}`,
         strategyEvidenceLinked: '策略贡献已连接证据',
         strategyNoLinkedFills: '策略尚无可归属成交',
         strategyEvidenceRequired: '策略贡献需要补充证据',

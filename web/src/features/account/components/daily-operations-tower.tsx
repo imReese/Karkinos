@@ -14,9 +14,13 @@ function conclusionText(
   labels: DashboardLabels,
 ) {
   if (summary.conclusion_status === 'pending_manual_confirmation') {
-    return labels.operationsPendingManual(
-      Math.max(summary.pending_manual_order_count, summary.manual_ready_count),
-    );
+    if (
+      summary.pending_manual_order_count === 0 &&
+      summary.manual_ready_count > 0
+    ) {
+      return labels.operationsPlanIntentsReady(summary.manual_ready_count);
+    }
+    return labels.operationsPendingManual(summary.pending_manual_order_count);
   }
   if (summary.conclusion_status === 'risk_blocked') {
     return labels.operationsRiskBlocked(summary.risk_blocked_count);
@@ -39,6 +43,12 @@ function primaryTarget(
   summary: DailyOperationsSummary,
   labels: DashboardLabels,
 ): Target {
+  if (summary.pending_manual_order_count > 0) {
+    return { href: '/trading', label: labels.operationsViewTrading };
+  }
+  if (summary.manual_ready_count > 0) {
+    return { href: '/decision', label: labels.operationsViewCandidates };
+  }
   if (summary.primary_target === 'trading') {
     return { href: '/trading', label: labels.operationsViewTrading };
   }
