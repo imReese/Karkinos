@@ -198,6 +198,29 @@ export const copy = {
         queuePriorityNormal: 'Normal status',
         dataUsable: 'Market data and NAV are usable.',
         dataNeedsReview: 'Market data or NAV needs review.',
+        dataReviewLoading: 'Loading the canonical holding evidence review.',
+        dataReviewUnavailable:
+          'Canonical current-holding evidence is unavailable; authoritative interpretation stays blocked.',
+        dataReviewIdentityBlocked:
+          'Valuation snapshot or ledger identity is incomplete; restore the evidence binding first.',
+        dataReviewConfirmedCount: (count: number) =>
+          `${count} current holding${count === 1 ? '' : 's'} confirmed`,
+        dataReviewSummary: (
+          fundNav: number,
+          stale: number,
+          missing: number,
+          estimated: number,
+          unknown: number,
+        ) =>
+          [
+            fundNav > 0 ? `${fundNav} fund NAV` : null,
+            stale > 0 ? `${stale} stale/cache` : null,
+            missing > 0 ? `${missing} missing/error` : null,
+            estimated > 0 ? `${estimated} estimated` : null,
+            unknown > 0 ? `${unknown} unknown status` : null,
+          ]
+            .filter(Boolean)
+            .join(' · '),
         pendingOrdersReady: 'Orders awaiting manual confirmation',
         pendingOrdersClear: 'No orders awaiting confirmation',
         strategyCandidateAction: 'Strategy candidate signal',
@@ -305,7 +328,8 @@ export const copy = {
         refreshPolicy: 'Refresh policy',
         quoteSource: 'Quote source',
         affectedHoldings: 'Affected holdings',
-        affectedCount: (count: number) => `${count} holdings need review`,
+        affectedCount: (count: number) =>
+          `${count} holding${count === 1 ? ' needs' : 's need'} review`,
         usingEstimate: 'Using estimate',
         waitingConfirmedNav: 'Waiting for confirmed NAV',
         checkDataSource: 'Check data source',
@@ -1925,6 +1949,36 @@ export const copy = {
       quoteRefreshStale: 'Quote source returned cached quotes',
       quoteRefreshFailed: 'Quote refresh failed',
       refreshResult: 'Refresh result',
+      holdingEvidenceReview: 'Current holding evidence review',
+      holdingEvidenceReviewDetail:
+        'Only canonical non-zero holdings are included. A review clears only after newer persisted quote or NAV evidence is confirmed.',
+      holdingEvidenceReviewComplete:
+        'All current holdings have confirmed market evidence.',
+      holdingEvidenceReviewEmpty: 'There are no current holdings to review.',
+      holdingEvidenceReviewUnavailable:
+        'The canonical current-holding evidence report is unavailable.',
+      holdingEvidenceReviewBlocked:
+        'Valuation identity is incomplete; restore the snapshot binding before review.',
+      holdingEvidenceReviewCount: (count: number) =>
+        `${count} current holding${count === 1 ? ' needs' : 's need'} review`,
+      holdingEvidenceConfirmedCount: (count: number) =>
+        `${count} confirmed holding${count === 1 ? '' : 's'}`,
+      holdingEvidenceExplicitRefresh:
+        'This button performs an explicit ingestion run. It may contact the configured market-data source, records the batch, and does not change ledger, OMS, risk, or authority.',
+      holdingEvidenceSnapshot: 'Valuation snapshot',
+      holdingEvidenceLedgerCutoff: 'Ledger cutoff',
+      holdingEvidenceFingerprint: 'Review fingerprint',
+      holdingEvidenceActions: {
+        wait_for_confirmed_nav_then_run_explicit_refresh:
+          'Wait for confirmed NAV, then run explicit refresh',
+        wait_for_confirmed_data_then_run_explicit_refresh:
+          'Wait for confirmed data, then run explicit refresh',
+        run_explicit_quote_refresh: 'Run explicit quote refresh',
+        inspect_data_source_then_run_explicit_refresh:
+          'Inspect data source, then run explicit refresh',
+        review_unknown_quote_status_before_refresh:
+          'Review the unknown quote state before refresh',
+      },
       providerActions: {
         configure_data_source_token: 'Configure data source token',
         switch_to_fund_supported_provider: 'Switch to a fund-capable source',
@@ -2719,6 +2773,29 @@ export const copy = {
         queuePriorityNormal: '正常状态',
         dataUsable: '行情与净值可用于解读。',
         dataNeedsReview: '行情或净值需要复核。',
+        dataReviewLoading: '正在读取 canonical 当前持仓证据。',
+        dataReviewUnavailable:
+          '当前持仓 canonical 证据暂不可用；权威解读继续阻断。',
+        dataReviewIdentityBlocked:
+          '估值快照或 ledger identity 不完整；需要先恢复证据绑定。',
+        dataReviewConfirmedCount: (count: number) =>
+          `${count} 个当前持仓已确认`,
+        dataReviewSummary: (
+          fundNav: number,
+          stale: number,
+          missing: number,
+          estimated: number,
+          unknown: number,
+        ) =>
+          [
+            fundNav > 0 ? `${fundNav} 基金净值` : null,
+            stale > 0 ? `${stale} 陈旧/缓存` : null,
+            missing > 0 ? `${missing} 缺失/错误` : null,
+            estimated > 0 ? `${estimated} 估算` : null,
+            unknown > 0 ? `${unknown} 未知状态` : null,
+          ]
+            .filter(Boolean)
+            .join(' · '),
         pendingOrdersReady: '订单等待人工确认',
         pendingOrdersClear: '暂无待确认订单',
         strategyCandidateAction: '策略候选信号',
@@ -4367,6 +4444,33 @@ export const copy = {
       quoteRefreshStale: '行情源返回缓存行情',
       quoteRefreshFailed: '行情刷新失败',
       refreshResult: '刷新结果',
+      holdingEvidenceReview: '当前持仓证据复核',
+      holdingEvidenceReviewDetail:
+        '仅纳入 canonical 非零当前持仓；只有更新且已确认的持久化行情或净值证据才能清除复核项。',
+      holdingEvidenceReviewComplete: '所有当前持仓均已有确认行情证据。',
+      holdingEvidenceReviewEmpty: '当前没有需要复核的持仓。',
+      holdingEvidenceReviewUnavailable: '当前持仓 canonical 证据报告暂不可用。',
+      holdingEvidenceReviewBlocked:
+        '估值 identity 不完整；需要先恢复快照绑定，不能把该报告当作完整证据。',
+      holdingEvidenceReviewCount: (count: number) =>
+        `${count} 个当前持仓需要复核`,
+      holdingEvidenceConfirmedCount: (count: number) =>
+        `${count} 个当前持仓已确认`,
+      holdingEvidenceExplicitRefresh:
+        '该按钮会执行显式 ingestion：可能联系已配置的行情源并记录批次，但不会修改账本、OMS、风控或任何权限。',
+      holdingEvidenceSnapshot: '估值快照',
+      holdingEvidenceLedgerCutoff: '账本截止',
+      holdingEvidenceFingerprint: '复核指纹',
+      holdingEvidenceActions: {
+        wait_for_confirmed_nav_then_run_explicit_refresh:
+          '等待确认净值发布后，再显式刷新',
+        wait_for_confirmed_data_then_run_explicit_refresh:
+          '等待确认数据后，再显式刷新',
+        run_explicit_quote_refresh: '显式刷新该行情',
+        inspect_data_source_then_run_explicit_refresh:
+          '先检查数据源，再显式刷新',
+        review_unknown_quote_status_before_refresh: '刷新前先复核未知行情状态',
+      },
       providerActions: {
         configure_data_source_token: '配置数据源 token',
         switch_to_fund_supported_provider: '切换到支持基金的数据源',

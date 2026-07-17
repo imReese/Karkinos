@@ -23,6 +23,7 @@ from server.models import (
     AllocationItem,
     CashFlowCreate,
     CashFlowResponse,
+    CurrentHoldingMarketEvidenceReviewResponse,
     DailyOperationsSummary,
     EquityPoint,
     EquitySeriesPoint,
@@ -64,6 +65,9 @@ from server.projections.service import (
 )
 from server.services.account_state import build_account_state_projection
 from server.services.asset_metadata import resolve_asset_metadata
+from server.services.current_holding_market_evidence_review import (
+    build_current_holding_market_evidence_review,
+)
 from server.services.daily_operations import build_daily_operations_summary
 from server.services.daily_performance import (
     build_position_daily_context,
@@ -4083,6 +4087,19 @@ def create_router() -> APIRouter:
         from server.app import get_app_state
 
         return await build_portfolio_snapshot(get_app_state())
+
+    @r.get(
+        "/market-evidence-review",
+        response_model=CurrentHoldingMarketEvidenceReviewResponse,
+    )
+    async def get_current_holding_market_evidence_review() -> (
+        CurrentHoldingMarketEvidenceReviewResponse
+    ):
+        """Project current holding quote blockers from one persisted snapshot."""
+        from server.app import get_app_state
+
+        snapshot = await build_portfolio_snapshot(get_app_state())
+        return build_current_holding_market_evidence_review(snapshot)
 
     @r.get("/live-holdings", response_model=LiveHoldingsResponse)
     async def get_live_holdings() -> LiveHoldingsResponse:

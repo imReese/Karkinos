@@ -19,6 +19,47 @@ const portfolioSnapshot = {
   positions: [],
   allocation: [],
   allocation_grouped: [],
+  valuation_snapshot_id: 'valuation-overview-fixture',
+  valuation_as_of: '2026-02-10T15:00:00+08:00',
+  ledger_cutoff_id: 42,
+  ledger_fingerprint: 'ledger-overview-fixture',
+  quote_set_fingerprint: 'quotes-overview-fixture',
+};
+
+const currentHoldingMarketEvidenceReview = {
+  schema_version: 'karkinos.current_holding_market_evidence_review.v1',
+  status: 'no_current_holdings',
+  next_manual_action: 'none',
+  current_holding_count: 0,
+  confirmed_holding_count: 0,
+  review_required_count: 0,
+  fund_nav_review_count: 0,
+  estimated_review_count: 0,
+  stale_or_cached_review_count: 0,
+  missing_or_error_review_count: 0,
+  unknown_status_review_count: 0,
+  refreshable_symbols: [],
+  items: [],
+  source_blockers: [],
+  review_fingerprint: `sha256:${'a'.repeat(64)}`,
+  valuation_snapshot_id: 'valuation-overview-fixture',
+  valuation_as_of: '2026-02-10T15:00:00+08:00',
+  valuation_trade_date: '2026-02-10',
+  valuation_policy: 'karkinos.persisted_valuation.v4',
+  valuation_status: 'complete',
+  ledger_cutoff_id: 42,
+  ledger_fingerprint: 'ledger-overview-fixture',
+  quote_set_fingerprint: 'quotes-overview-fixture',
+  reads_persisted_facts_only: true,
+  provider_contact_performed: false,
+  runtime_connector_query_performed: false,
+  database_writes_performed: false,
+  does_not_mutate_oms: true,
+  does_not_mutate_production_ledger: true,
+  does_not_mutate_risk: true,
+  does_not_mutate_kill_switch: true,
+  does_not_change_capital_authority: true,
+  authorizes_execution: false,
 };
 
 const explainability = {
@@ -268,6 +309,7 @@ function installOverviewFetchMock(
         'Contribution is estimated only from linked strategy fills and latest local quotes.',
       ],
     },
+    marketEvidenceReview = currentHoldingMarketEvidenceReview,
   }: {
     snapshot?: Record<string, unknown>;
     activityEntries?: unknown[];
@@ -277,6 +319,7 @@ function installOverviewFetchMock(
     tradingPlan?: Record<string, unknown>;
     operationsToday?: Record<string, unknown>;
     strategyContribution?: Record<string, unknown>;
+    marketEvidenceReview?: Record<string, unknown>;
   } = {},
 ) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -338,6 +381,9 @@ function installOverviewFetchMock(
         },
         ...overviewOverrides,
       });
+    }
+    if (url.includes('/api/portfolio/market-evidence-review')) {
+      return jsonResponse(marketEvidenceReview);
     }
     if (url.endsWith('/api/portfolio')) {
       return jsonResponse(snapshot);
@@ -2211,6 +2257,16 @@ test('orders overview workbench items by user-facing priority', async () => {
         blockers: [],
         limitations: [],
       },
+      marketEvidenceReview: {
+        ...currentHoldingMarketEvidenceReview,
+        status: 'review_required',
+        next_manual_action: 'review_current_holding_market_evidence',
+        current_holding_count: 1,
+        review_required_count: 1,
+        stale_or_cached_review_count: 1,
+        refreshable_symbols: ['600003'],
+        items: [{ symbol: '600003' }],
+      },
     },
   );
 
@@ -2694,11 +2750,25 @@ test('shows missing market pulse move fields as explicit data gaps', async () =>
 });
 
 test('keeps user-readable data work items on stale homepage status', async () => {
-  installOverviewFetchMock({
-    quote_status: 'stale',
-    stale_reason: 'confirmed_fund_nav_missing_estimate_only',
-    refresh_policy: 'cache_only',
-  });
+  installOverviewFetchMock(
+    {
+      quote_status: 'stale',
+      stale_reason: 'confirmed_fund_nav_missing_estimate_only',
+      refresh_policy: 'cache_only',
+    },
+    {
+      marketEvidenceReview: {
+        ...currentHoldingMarketEvidenceReview,
+        status: 'review_required',
+        next_manual_action: 'review_current_holding_market_evidence',
+        current_holding_count: 1,
+        review_required_count: 1,
+        fund_nav_review_count: 1,
+        refreshable_symbols: ['FUND-A'],
+        items: [{ symbol: 'FUND-A' }],
+      },
+    },
+  );
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -2716,11 +2786,7 @@ test('keeps user-readable data work items on stale homepage status', async () =>
   expect(
     within(workbench).getByText('Market data or NAV needs review.'),
   ).toBeTruthy();
-  expect(
-    within(workbench).getAllByText(
-      'Wait for confirmed fund NAV or sync NAV data',
-    ).length,
-  ).toBeGreaterThan(0);
+  expect(within(workbench).getByText('1 fund NAV')).toBeTruthy();
   expect(within(workbench).queryByText('cache_only')).toBeNull();
   expect(
     within(workbench).queryByText('confirmed_fund_nav_missing_estimate_only'),
@@ -2789,6 +2855,16 @@ test('shows the market evidence repair once before an awaiting risk gate', async
           orders: [],
         },
         limitations: [],
+      },
+      marketEvidenceReview: {
+        ...currentHoldingMarketEvidenceReview,
+        status: 'review_required',
+        next_manual_action: 'review_current_holding_market_evidence',
+        current_holding_count: 1,
+        review_required_count: 1,
+        stale_or_cached_review_count: 1,
+        refreshable_symbols: ['600519'],
+        items: [{ symbol: '600519' }],
       },
     },
   );
@@ -3009,17 +3085,41 @@ test('scopes the homepage data review count to canonical current holdings', asyn
           stale_reason: 'quote_stale',
         },
       ],
+      marketEvidenceReview: {
+        ...currentHoldingMarketEvidenceReview,
+        status: 'review_required',
+        next_manual_action: 'review_current_holding_market_evidence',
+        current_holding_count: 1,
+        review_required_count: 1,
+        stale_or_cached_review_count: 1,
+        refreshable_symbols: ['600003'],
+        items: [
+          {
+            symbol: '600003',
+            name: '示例制造',
+            asset_class: 'stock',
+            quantity: 200,
+            quote_status: 'stale',
+            quote_source: 'persisted_cache',
+            quote_timestamp: '2026-02-10T14:30:00+08:00',
+            stale_reason: 'quote_stale',
+            nav_date: null,
+            review_reason: 'quote_stale_or_cached',
+            next_manual_action: 'run_explicit_quote_refresh',
+            explicit_refresh_eligible: true,
+            blocks_authoritative_decisions: true,
+          },
+        ],
+      },
     },
   );
 
   renderOverviewPage({ installFetch: false });
 
   const queue = await screen.findByTestId('overview-today-queue');
-  expect(
-    within(queue).getByText('1 other data state needs review.'),
-  ).toBeTruthy();
-  expect(within(queue).getByText('1 other')).toBeTruthy();
-  expect(within(queue).queryByText('2 other')).toBeNull();
+  expect(within(queue).getByText('1 stale/cache')).toBeTruthy();
+  expect(within(queue).getByText('1 holding needs review')).toBeTruthy();
+  expect(within(queue).queryByText('2 holdings need review')).toBeNull();
   expect(queue.textContent).not.toContain('Closed fixture holding');
 });
 
@@ -3053,6 +3153,55 @@ test('keeps market index diagnostics out of the current-holding review count', a
         last_refresh_attempt: null,
         last_refresh_error: null,
       })),
+      marketEvidenceReview: {
+        ...currentHoldingMarketEvidenceReview,
+        status: 'review_required',
+        next_manual_action: 'review_current_holding_market_evidence',
+        current_holding_count: 3,
+        review_required_count: 3,
+        fund_nav_review_count: 3,
+        refreshable_symbols: ['012710', '018125', '026539'],
+        items: ['012710', '018125', '026539'].map((symbol) => ({
+          symbol,
+          name: `Fund ${symbol}`,
+          asset_class: 'fund',
+          quantity: 100,
+          quote_status: 'confirmed_nav_missing',
+          quote_source: 'eastmoney_fund_estimate',
+          quote_timestamp: '2026-02-10T15:00:00+08:00',
+          stale_reason: 'confirmed_fund_nav_missing_estimate_only',
+          nav_date: null,
+          review_reason: 'confirmed_nav_missing',
+          next_manual_action:
+            'wait_for_confirmed_nav_then_run_explicit_refresh',
+          explicit_refresh_eligible: true,
+          blocks_authoritative_decisions: true,
+        })),
+      },
+    },
+  );
+
+  renderOverviewPage({ installFetch: false });
+
+  const queue = await screen.findByTestId('overview-today-queue');
+  expect(within(queue).getByText('3 基金净值')).toBeTruthy();
+  expect(
+    within(queue).queryByText(
+      /个指数缺少持久化行情；在 Market 显式刷新并检查失败批次。/,
+    ),
+  ).toBeNull();
+  expect(within(queue).getByText('3 个标的需要确认')).toBeTruthy();
+  expect(within(queue).queryByText(/指数行情/)).toBeNull();
+});
+
+test('fails closed when the holding review and portfolio snapshot identities drift', async () => {
+  installOverviewFetchMock(
+    {},
+    {
+      marketEvidenceReview: {
+        ...currentHoldingMarketEvidenceReview,
+        valuation_snapshot_id: 'valuation-drifted-fixture',
+      },
     },
   );
 
@@ -3061,16 +3210,12 @@ test('keeps market index diagnostics out of the current-holding review count', a
   const queue = await screen.findByTestId('overview-today-queue');
   expect(
     within(queue).getByText(
-      /3 只基金当前仅有盘中估值；等待确认净值发布后再显式同步。/,
+      'Canonical current-holding evidence is unavailable; authoritative interpretation stays blocked.',
     ),
   ).toBeTruthy();
   expect(
-    within(queue).queryByText(
-      /个指数缺少持久化行情；在 Market 显式刷新并检查失败批次。/,
-    ),
+    within(queue).queryByText('Market data and NAV are usable.'),
   ).toBeNull();
-  expect(within(queue).getByText('3 基金净值')).toBeTruthy();
-  expect(within(queue).queryByText(/指数行情/)).toBeNull();
 });
 
 test('keeps the return calendar inside the performance analysis card', async () => {

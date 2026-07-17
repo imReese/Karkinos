@@ -27,8 +27,9 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
 - 基于当前持久化 Decision 投影的 canonical 五维 Decision Quality Score，支持人工显式、幂等的
   每日捕获、tamper-evident replay 与 latest-per-day 纵向覆盖，不调用 AI，也不修改财务、风控、
   执行或权限状态；
-- Overview 的数据复核范围只统计 canonical 当前非零持仓；观察列表、大盘指数与已清仓行情事实
-  继续保留在 Market 或历史中，但不会抬高当前持仓复核数；
+- canonical 当前持仓行情证据复核绑定 valuation snapshot、quote-set fingerprint、ledger
+  cutoff/fingerprint 与确定性报告指纹；Overview 不再自行分类，Market 展示精确标的/原因且只提供
+  定向显式 ingestion；
 - persisted valuation v4 仍展示盘中基金估算值，但在同日确认净值持久化前不把它视为权威事实，
   Decision 与风控完整性门禁会 fail closed，而不会把估算值当作 live；
 - 批量风控在估值或候选行情证据不完整时返回可解释的零写入阻断；合格批次的每条风控决策均绑定
@@ -213,6 +214,10 @@ M3/M4 纠正操作员旅程的假设与风险记录：
   kill switch、capital 或 broker 权限。缺少时间、交易时段未完成或 provider 失败时继续 fail
   closed。基金盘中估值继续明确标记为 provisional；收盘确认只接受目标交易日已经发布的
   confirmed NAV，旧日期净值不能覆盖当天估值，也不能解除复核门禁。
+- 当前持仓证据复核 GET 不联系 provider/connector、也不写库；它复用 canonical 经济零数量规则，
+  保留真实负仓、排除已清仓/仅历史资产，并在 valuation 或 ledger identity 不完整时 fail closed。
+  人工确认不能清除复核项，只有更新且已确认的持久化 observation 与新 canonical 估值快照可以。
+  本次没有 schema migration、新依赖、券商 adapter、OMS/风控/账本写入或权限变化。
 - Overview 复核队列与 Operations 塔台现在消费同一 canonical daily-operations projection；旧的
   Overview 投影只保留为滚动升级 fallback，不能覆盖当前 Operations 响应。
 

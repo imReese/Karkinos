@@ -116,7 +116,10 @@ import {
 import {
   type AllocationGroup,
   type AllocationItem,
+  type CurrentHoldingMarketEvidenceReview,
+  type PortfolioSnapshot,
   type PositionEvidenceReview,
+  useCurrentHoldingMarketEvidenceReviewQuery,
   useLiveHoldingsQuery,
   usePortfolioCockpitQuery,
   usePortfolioSnapshotQuery,
@@ -154,6 +157,7 @@ import {
   useRemoveWatchlistItemMutation,
   type QuoteFetchRun,
 } from '../features/market/api';
+import { CurrentHoldingMarketEvidenceReviewPanel } from '../features/market/components/current-holding-market-evidence-review-panel';
 import { MarketRefreshButton } from '../features/market/components/market-refresh-button';
 import { PriceStructureChart } from '../features/market/components/price-structure-chart';
 import { SettingsPage } from '../features/settings/components/settings-page';
@@ -379,6 +383,8 @@ export function OverviewPage() {
   const ledgerEntries = useLedgerEntriesQuery(8);
   const pendingOrders = usePendingManualOrdersQuery();
   const marketHealth = useMarketDataHealthQuery();
+  const holdingMarketEvidenceReview =
+    useCurrentHoldingMarketEvidenceReviewQuery();
   const strategyContribution = useAccountStrategyContributionQuery();
   const todayDecision = useTodayDecisionQuery();
   const tradingPlan = useDailyTradingPlanQuery();
@@ -503,6 +509,12 @@ export function OverviewPage() {
                   overview.data.daily_operations
                 }
                 marketHealth={marketHealth.data}
+                portfolioSnapshot={snapshot.data}
+                marketEvidenceReview={holdingMarketEvidenceReview.data}
+                marketEvidenceReviewLoading={
+                  holdingMarketEvidenceReview.isLoading
+                }
+                marketEvidenceReviewError={holdingMarketEvidenceReview.isError}
                 quoteDiagnostics={positions}
                 pendingOrders={pendingOrders.data ?? []}
                 pendingOrdersLoading={pendingOrders.isLoading}
@@ -750,99 +762,62 @@ function strategyContributionReviewHref(
   return '/backtest';
 }
 
-function actionableQuoteDiagnostics(items: QuoteDiagnosticItem[]) {
-  const seenInstruments = new Set<string>();
-  return items.filter((item) => {
-    const quoteStatus = item.quote_status?.toLowerCase();
-    const quoteSource = item.quote_source?.toLowerCase();
-    const actionable =
-      (!quoteStatus && Boolean(item.stale_reason)) ||
-      isUnconfirmedMarketDataStatus(quoteStatus) ||
-      quoteStatus === 'error' ||
-      quoteSource === 'eastmoney_fund_estimate';
-    if (!actionable) {
-      return false;
-    }
-
-    const instrumentKey = `${item.asset_class ?? 'unknown'}:${item.symbol}`;
-    if (seenInstruments.has(instrumentKey)) {
-      return false;
-    }
-    seenInstruments.add(instrumentKey);
-    return true;
-  });
+function currentHoldingMarketReviewSummary(
+  report: CurrentHoldingMarketEvidenceReview,
+  labels: AppCopy['overview']['dashboard'],
+) {
+  return labels.dataReviewSummary(
+    report.fund_nav_review_count,
+    report.stale_or_cached_review_count,
+    report.missing_or_error_review_count,
+    report.estimated_review_count,
+    report.unknown_status_review_count,
+  );
 }
 
-function quoteDiagnosticReviewSummary(
-  diagnostics: QuoteDiagnosticItem[],
-  locale: 'en' | 'zh',
+function currentHoldingMarketReviewContractIsValid(
+  report?: CurrentHoldingMarketEvidenceReview | null,
+  portfolioSnapshot?: PortfolioSnapshot | null,
 ) {
-  const fundNavCount = diagnostics.filter((item) => {
-    const status = normalizeMarketDataStatus(item.quote_status);
-    const staleReason = normalizeMarketDataStatus(item.stale_reason);
-    return (
-      item.asset_class === 'fund' &&
-      (item.quote_source?.toLowerCase() === 'eastmoney_fund_estimate' ||
-        status === 'confirmed_nav_missing' ||
-        status === 'estimated' ||
-        staleReason === 'confirmed_nav_missing')
-    );
-  }).length;
-  const indexQuoteCount = diagnostics.filter((item) => {
-    const status = normalizeMarketDataStatus(item.quote_status);
-    return (
-      item.asset_class === 'index' &&
-      (!status || ['error', 'missing', 'unknown'].includes(status))
-    );
-  }).length;
-  const otherCount = Math.max(
-    diagnostics.length - fundNavCount - indexQuoteCount,
-    0,
-  );
-
-  if (locale === 'zh') {
-    const detail = [
-      fundNavCount > 0
-        ? `${fundNavCount} 只基金当前仅有盘中估值；等待确认净值发布后再显式同步。`
-        : null,
-      indexQuoteCount > 0
-        ? `${indexQuoteCount} 个指数缺少持久化行情；在 Market 显式刷新并检查失败批次。`
-        : null,
-      otherCount > 0 ? `${otherCount} 个其他数据状态需要复核。` : null,
-    ]
-      .filter(Boolean)
-      .join(' ');
-    const meta = [
-      fundNavCount > 0 ? `${fundNavCount} 基金净值` : null,
-      indexQuoteCount > 0 ? `${indexQuoteCount} 指数行情` : null,
-      otherCount > 0 ? `${otherCount} 其他` : null,
-    ]
-      .filter(Boolean)
-      .join(' · ');
-    return { detail, meta };
+  if (!report || !portfolioSnapshot) {
+    return false;
   }
-
-  const detail = [
-    fundNavCount > 0
-      ? `${fundNavCount} funds have intraday estimates only; wait for confirmed NAV, then run an explicit sync.`
-      : null,
-    indexQuoteCount > 0
-      ? `${indexQuoteCount} indices lack persisted quotes; run an explicit refresh in Market and review failed batches.`
-      : null,
-    otherCount > 0
-      ? `${otherCount} other data state${otherCount === 1 ? ' needs' : 's need'} review.`
-      : null,
-  ]
-    .filter(Boolean)
-    .join(' ');
-  const meta = [
-    fundNavCount > 0 ? `${fundNavCount} fund NAV` : null,
-    indexQuoteCount > 0 ? `${indexQuoteCount} index quotes` : null,
-    otherCount > 0 ? `${otherCount} other` : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
-  return { detail, meta };
+  const identityContractValid =
+    report.status === 'blocked_identity'
+      ? report.source_blockers.length > 0
+      : Boolean(
+          report.valuation_snapshot_id &&
+          report.ledger_fingerprint &&
+          report.quote_set_fingerprint,
+        );
+  const crossResponseIdentityValid = Boolean(
+    report.valuation_snapshot_id === portfolioSnapshot.valuation_snapshot_id &&
+    report.ledger_cutoff_id === portfolioSnapshot.ledger_cutoff_id &&
+    report.ledger_fingerprint === portfolioSnapshot.ledger_fingerprint &&
+    report.quote_set_fingerprint === portfolioSnapshot.quote_set_fingerprint,
+  );
+  return Boolean(
+    report.schema_version ===
+      'karkinos.current_holding_market_evidence_review.v1' &&
+    report.reads_persisted_facts_only === true &&
+    report.provider_contact_performed === false &&
+    report.runtime_connector_query_performed === false &&
+    report.database_writes_performed === false &&
+    report.does_not_mutate_oms === true &&
+    report.does_not_mutate_production_ledger === true &&
+    report.does_not_mutate_risk === true &&
+    report.does_not_mutate_kill_switch === true &&
+    report.does_not_change_capital_authority === true &&
+    report.authorizes_execution === false &&
+    report.review_fingerprint.startsWith('sha256:') &&
+    report.current_holding_count ===
+      report.confirmed_holding_count + report.review_required_count &&
+    report.items.length === report.review_required_count &&
+    identityContractValid &&
+    crossResponseIdentityValid &&
+    Number.isInteger(report.ledger_cutoff_id) &&
+    report.ledger_cutoff_id >= 0,
+  );
 }
 
 function decisionCandidateDisplayName(candidate: DecisionCandidate) {
@@ -2079,6 +2054,10 @@ function DashboardTodayQueue({
   overview,
   dailyOperations,
   marketHealth,
+  portfolioSnapshot,
+  marketEvidenceReview,
+  marketEvidenceReviewLoading,
+  marketEvidenceReviewError,
   quoteDiagnostics,
   pendingOrders,
   pendingOrdersLoading,
@@ -2099,6 +2078,10 @@ function DashboardTodayQueue({
   overview: AccountOverview;
   dailyOperations?: AccountOverview['daily_operations'];
   marketHealth?: MarketDataHealthResponse;
+  portfolioSnapshot: PortfolioSnapshot;
+  marketEvidenceReview?: CurrentHoldingMarketEvidenceReview | null;
+  marketEvidenceReviewLoading: boolean;
+  marketEvidenceReviewError: boolean;
   quoteDiagnostics: QuoteDiagnosticItem[];
   pendingOrders: ManualOrder[];
   pendingOrdersLoading: boolean;
@@ -2119,38 +2102,58 @@ function DashboardTodayQueue({
   const copy = useCopy();
   const { locale } = usePreferences();
   const labels = copy.overview.dashboard;
-  const quoteStatus = overview.quote_status ?? marketHealth?.source_health;
-  const diagnostics = actionableQuoteDiagnostics(quoteDiagnostics);
   const instrumentDiagnostics = [
     ...quoteDiagnostics,
     ...(marketHealth?.quotes ?? []),
   ];
-  const diagnosticSummary = quoteDiagnosticReviewSummary(diagnostics, locale);
-  const dataNeedsReview =
-    diagnostics.length > 0 ||
-    isUnconfirmedMarketDataStatus(quoteStatus) ||
-    isUnconfirmedMarketDataStatus(marketHealth?.source_health) ||
-    marketHealth?.persistent_cache_status === 'missing';
-  const marketDataNextAction =
-    formatMarketDataStatusNextAction(overview.stale_reason, locale) ??
-    formatMarketDataStatusNextAction(quoteStatus, locale) ??
-    formatMarketDataStatusNextAction(marketHealth?.source_health, locale) ??
-    formatMarketDataStatusNextAction(
-      marketHealth?.persistent_cache_status,
-      locale,
-    ) ??
-    labels.checkDataSource;
-  const readableStaleReason = formatStaleReason(
-    overview.stale_reason ??
-      marketHealth?.provider_last_error ??
-      marketHealth?.last_refresh_error,
-    copy.common.staleReasons,
+  const marketReviewContractValid = currentHoldingMarketReviewContractIsValid(
+    marketEvidenceReview,
+    portfolioSnapshot,
   );
-  const dataMeta = dataNeedsReview
-    ? diagnostics.length > 0
-      ? diagnosticSummary.meta
-      : readableStaleReason
-    : formatPublicStatus(quoteStatus, locale);
+  const marketReviewUnavailable =
+    marketEvidenceReviewError ||
+    (!marketEvidenceReviewLoading && !marketReviewContractValid);
+  const marketReviewIdentityBlocked =
+    marketReviewContractValid &&
+    marketEvidenceReview?.status === 'blocked_identity';
+  const dataNeedsReview = Boolean(
+    marketReviewUnavailable ||
+    marketReviewIdentityBlocked ||
+    marketEvidenceReview?.status === 'review_required',
+  );
+  const dataDetail = marketEvidenceReviewLoading
+    ? labels.dataReviewLoading
+    : marketReviewUnavailable
+      ? labels.dataReviewUnavailable
+      : marketReviewIdentityBlocked
+        ? labels.dataReviewIdentityBlocked
+        : marketEvidenceReview?.status === 'review_required'
+          ? currentHoldingMarketReviewSummary(marketEvidenceReview, labels)
+          : `${labels.valuationTime}: ${formatTimestamp(
+              marketEvidenceReview?.valuation_as_of ??
+                overview.valuation_timestamp,
+            )}`;
+  const dataMeta = marketEvidenceReviewLoading
+    ? copy.states.loading
+    : marketReviewUnavailable
+      ? '--'
+      : marketEvidenceReview?.status === 'review_required'
+        ? labels.affectedCount(marketEvidenceReview.review_required_count)
+        : labels.dataReviewConfirmedCount(
+            marketEvidenceReview?.confirmed_holding_count ?? 0,
+          );
+  const dataTone: TodayQueueTone = marketReviewUnavailable
+    ? 'danger'
+    : dataNeedsReview
+      ? 'warning'
+      : marketEvidenceReviewLoading
+        ? 'neutral'
+        : 'success';
+  const dataPriority: TodayQueuePriority = marketReviewUnavailable
+    ? 'first'
+    : dataNeedsReview
+      ? 'first'
+      : 'normal';
   const strategyReady = canUseStrategyContribution(strategyContribution);
   const strategyHasNoLinkedFills =
     strategyContribution?.contribution_status === 'no_linked_fills' &&
@@ -2337,19 +2340,17 @@ function DashboardTodayQueue({
     },
     {
       key: 'data',
-      title: dataNeedsReview ? labels.dataNeedsReview : labels.dataUsable,
-      detail: dataNeedsReview
-        ? diagnostics.length > 0
-          ? diagnosticSummary.detail
-          : marketDataNextAction
-        : `${labels.valuationTime}: ${formatTimestamp(
-            overview.valuation_timestamp,
-          )}`,
+      title: marketEvidenceReviewLoading
+        ? labels.dataReviewLoading
+        : dataNeedsReview
+          ? labels.dataNeedsReview
+          : labels.dataUsable,
+      detail: dataDetail,
       meta: dataMeta,
-      href: '/market',
+      href: '/market#current-holding-evidence-review',
       actionLabel: labels.viewData,
-      tone: dataNeedsReview ? 'warning' : 'success',
-      priority: dataNeedsReview ? 'first' : 'normal',
+      tone: dataTone,
+      priority: dataPriority,
     },
     {
       key: 'decision',
@@ -3813,6 +3814,8 @@ export function MarketPage() {
   const removeWatchlistItem = useRemoveWatchlistItemMutation();
   const createResearchNote = useCreateResearchNoteMutation();
   const quoteFetchRuns = useQuoteFetchRunsQuery();
+  const holdingMarketEvidenceReview =
+    useCurrentHoldingMarketEvidenceReviewQuery();
   const metadataBackfill = useInstrumentMetadataBackfillMutation();
   const barsBackfill = useMarketBarsBackfillMutation();
   const [selectedSymbol, setSelectedSymbol] = useState('');
@@ -4003,6 +4006,12 @@ export function MarketPage() {
                 </div>
               </div>
             </div>
+
+            <CurrentHoldingMarketEvidenceReviewPanel
+              report={holdingMarketEvidenceReview.data}
+              loading={holdingMarketEvidenceReview.isLoading}
+              error={holdingMarketEvidenceReview.isError}
+            />
 
             <div className="grid gap-5 xl:grid-cols-[minmax(0,1.18fr)_minmax(340px,0.82fr)]">
               <div className="app-panel rounded-2xl p-0">

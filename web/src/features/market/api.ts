@@ -328,6 +328,9 @@ export function useRefreshMarketQuotesMutation() {
           queryKey: ['account-equity-curve-series'],
         }),
         queryClient.invalidateQueries({ queryKey: ['account-state'] }),
+        queryClient.invalidateQueries({
+          queryKey: ['current-holding-market-evidence-review'],
+        }),
       ]);
     },
   });

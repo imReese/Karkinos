@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test, vi } from 'vitest';
 
@@ -49,10 +49,47 @@ const health = {
   stale_symbols_sample: [],
 };
 
+const currentHoldingMarketEvidenceReview = {
+  schema_version: 'karkinos.current_holding_market_evidence_review.v1',
+  status: 'complete',
+  next_manual_action: 'none',
+  current_holding_count: 1,
+  confirmed_holding_count: 1,
+  review_required_count: 0,
+  fund_nav_review_count: 0,
+  estimated_review_count: 0,
+  stale_or_cached_review_count: 0,
+  missing_or_error_review_count: 0,
+  unknown_status_review_count: 0,
+  refreshable_symbols: [],
+  items: [],
+  source_blockers: [],
+  review_fingerprint: `sha256:${'b'.repeat(64)}`,
+  valuation_snapshot_id: 'valuation-market-fixture',
+  valuation_as_of: '2026-06-17T14:10:00+08:00',
+  valuation_trade_date: '2026-06-17',
+  valuation_policy: 'karkinos.persisted_valuation.v4',
+  valuation_status: 'complete',
+  ledger_cutoff_id: 27,
+  ledger_fingerprint: 'ledger-market-fixture',
+  quote_set_fingerprint: 'quotes-market-fixture',
+  reads_persisted_facts_only: true,
+  provider_contact_performed: false,
+  runtime_connector_query_performed: false,
+  database_writes_performed: false,
+  does_not_mutate_oms: true,
+  does_not_mutate_production_ledger: true,
+  does_not_mutate_risk: true,
+  does_not_mutate_kill_switch: true,
+  does_not_change_capital_authority: true,
+  authorizes_execution: false,
+};
+
 function installMarketFetchMock(
   overrides: {
     health?: Record<string, unknown>;
     quotes?: Array<Record<string, unknown>>;
+    marketEvidenceReview?: Record<string, unknown>;
   } = {},
 ) {
   const boardHealth = {
@@ -90,6 +127,19 @@ function installMarketFetchMock(
               last_research_at: '2026-06-17T10:00:00+08:00',
             },
           ],
+        });
+      }
+      if (url.includes('/api/portfolio/market-evidence-review')) {
+        return jsonResponse(
+          overrides.marketEvidenceReview ?? currentHoldingMarketEvidenceReview,
+        );
+      }
+      if (url.includes('/api/market/quotes/refresh')) {
+        return jsonResponse({
+          quote_status: 'live',
+          refreshed: [],
+          skipped: [],
+          failed: [],
         });
       }
       if (url.includes('/api/market/quote-fetch-runs')) {
@@ -255,4 +305,63 @@ test('surfaces selected symbol next action without leaking raw data status codes
   expect(
     screen.queryByText('confirmed_fund_nav_missing_estimate_only'),
   ).toBeNull();
+});
+
+test('renders exact current-holding evidence blockers and refreshes only affected symbols', async () => {
+  const user = userEvent.setup();
+  const { fetchMock } = renderMarketPage({
+    marketEvidenceReview: {
+      ...currentHoldingMarketEvidenceReview,
+      status: 'review_required',
+      next_manual_action: 'review_current_holding_market_evidence',
+      current_holding_count: 2,
+      confirmed_holding_count: 1,
+      review_required_count: 1,
+      fund_nav_review_count: 1,
+      refreshable_symbols: ['FUND-A'],
+      items: [
+        {
+          symbol: 'FUND-A',
+          name: '证据基金',
+          asset_class: 'fund',
+          quantity: 1200,
+          quote_status: 'confirmed_nav_missing',
+          quote_source: 'eastmoney_fund_estimate',
+          quote_timestamp: '2026-06-17T14:10:00+08:00',
+          stale_reason: 'confirmed_fund_nav_missing_estimate_only',
+          nav_date: null,
+          review_reason: 'confirmed_nav_missing',
+          next_manual_action:
+            'wait_for_confirmed_nav_then_run_explicit_refresh',
+          explicit_refresh_eligible: true,
+          blocks_authoritative_decisions: true,
+        },
+      ],
+    },
+  });
+
+  const panel = await screen.findByTestId(
+    'current-holding-market-evidence-review',
+  );
+  expect(within(panel).getByText('证据基金')).toBeTruthy();
+  expect(within(panel).getByText(/FUND-A/)).toBeTruthy();
+  expect(
+    within(panel).getByText('1 current holding needs review'),
+  ).toBeTruthy();
+  expect(within(panel).getByTitle('valuation-market-fixture')).toBeTruthy();
+
+  await user.click(
+    within(panel).getByRole('button', { name: 'Refresh quotes' }),
+  );
+
+  await waitFor(() => {
+    const refreshCall = fetchMock.mock.calls.find(([input]) =>
+      String(input).includes('/api/market/quotes/refresh'),
+    );
+    expect(refreshCall).toBeTruthy();
+    expect(JSON.parse(String(refreshCall?.[1]?.body))).toEqual({
+      symbols: ['FUND-A'],
+      force: true,
+    });
+  });
 });
