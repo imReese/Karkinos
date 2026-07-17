@@ -7,6 +7,12 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
+from server.services.controlled_broker_cancellation import (
+    CONTROLLED_BROKER_CANCELLATION_ACKNOWLEDGEMENT,
+    CONTROLLED_BROKER_CANCELLATION_RECOVERY_ACKNOWLEDGEMENT,
+    ControlledBrokerCancellationRejected,
+    ControlledBrokerCancellationService,
+)
 from server.services.controlled_broker_rejection_evidence import (
     CONTROLLED_BROKER_REJECTION_REVIEW_ACKNOWLEDGEMENT,
     CONTROLLED_BROKER_REJECTION_REVIEW_DISPOSITION,
@@ -80,6 +86,44 @@ class ControlledBrokerRecoveryRequest(BaseModel):
     acknowledgement: Literal["query_exact_unknown_submission_once_without_resubmit"] = (
         CONTROLLED_BROKER_RECOVERY_ACKNOWLEDGEMENT
     )
+
+
+class ControlledBrokerCancellationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cancel_fingerprint: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    operator_approval_id: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    operator_proof_signature_base64: str = Field(min_length=80, max_length=128)
+    acknowledgement: Literal["request_one_exact_broker_cancellation_once"] = (
+        CONTROLLED_BROKER_CANCELLATION_ACKNOWLEDGEMENT
+    )
+
+
+class ControlledBrokerCancellationRecoveryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    recovery_fingerprint: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    operator_approval_id: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    operator_proof_signature_base64: str = Field(min_length=80, max_length=128)
+    acknowledgement: Literal[
+        "query_exact_broker_cancellation_outcome_once_without_recancel"
+    ] = CONTROLLED_BROKER_CANCELLATION_RECOVERY_ACKNOWLEDGEMENT
 
 
 class ControlledSubmissionClearancePreviewRequest(BaseModel):
@@ -293,6 +337,74 @@ def create_router() -> APIRouter:
         except ManualBrokerCancellationEvidenceRejected as exc:
             raise HTTPException(status_code=409, detail=exc.evidence) from exc
 
+    @router.get("/cancellation/status")
+    async def get_controlled_broker_cancellation_status() -> dict[str, Any]:
+        return _controlled_cancellation_service().get_status()
+
+    @router.post("/intents/{submit_intent_id}/cancellation/preview")
+    async def preview_controlled_broker_cancellation(
+        submit_intent_id: str,
+    ) -> dict[str, Any]:
+        return _controlled_cancellation_service().preview(
+            submit_intent_id=submit_intent_id,
+        )
+
+    @router.post("/intents/{submit_intent_id}/cancellations")
+    async def cancel_controlled_broker_order(
+        submit_intent_id: str,
+        request: ControlledBrokerCancellationRequest,
+    ) -> dict[str, Any]:
+        try:
+            return _controlled_cancellation_service().cancel(
+                submit_intent_id=submit_intent_id,
+                cancel_fingerprint=request.cancel_fingerprint,
+                operator_approval_id=request.operator_approval_id,
+                operator_proof_signature_base64=(
+                    request.operator_proof_signature_base64
+                ),
+                acknowledgement=request.acknowledgement,
+            )
+        except ControlledBrokerCancellationRejected as exc:
+            raise HTTPException(status_code=409, detail=exc.evidence) from exc
+
+    @router.post("/cancellations/{cancel_command_id}/recovery/preview")
+    async def preview_controlled_broker_cancellation_recovery(
+        cancel_command_id: str,
+    ) -> dict[str, Any]:
+        return _controlled_cancellation_service().preview_recovery(
+            cancel_command_id=cancel_command_id,
+        )
+
+    @router.post("/cancellations/{cancel_command_id}/recoveries")
+    async def recover_controlled_broker_cancellation(
+        cancel_command_id: str,
+        request: ControlledBrokerCancellationRecoveryRequest,
+    ) -> dict[str, Any]:
+        try:
+            return _controlled_cancellation_service().recover(
+                cancel_command_id=cancel_command_id,
+                recovery_fingerprint=request.recovery_fingerprint,
+                operator_approval_id=request.operator_approval_id,
+                operator_proof_signature_base64=(
+                    request.operator_proof_signature_base64
+                ),
+                acknowledgement=request.acknowledgement,
+            )
+        except ControlledBrokerCancellationRejected as exc:
+            raise HTTPException(status_code=409, detail=exc.evidence) from exc
+
+    @router.get("/cancellations")
+    async def list_controlled_broker_cancellations(
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> list[dict[str, Any]]:
+        return _controlled_cancellation_service().list_commands(limit=limit)
+
+    @router.get("/cancellations/{cancel_command_id}")
+    async def get_controlled_broker_cancellation(
+        cancel_command_id: str,
+    ) -> dict[str, Any]:
+        return _controlled_cancellation_service().get_command(cancel_command_id)
+
     @router.get("/reconciliation-clearance/status")
     async def get_controlled_submission_clearance_status() -> dict[str, Any]:
         return _clearance_service().get_status()
@@ -391,6 +503,25 @@ def _manual_cancellation_service() -> ManualBrokerCancellationEvidenceService:
     from server.app import get_app_state
 
     return ManualBrokerCancellationEvidenceService(db=get_app_state().db)
+
+
+def _controlled_cancellation_service() -> ControlledBrokerCancellationService:
+    from server.app import get_app_state
+
+    state = get_app_state()
+    config = getattr(state, "config", None)
+    return ControlledBrokerCancellationService(
+        db=state.db,
+        gateways=getattr(state, "execution_gateways", []) or [],
+        release_evidence_provider=getattr(
+            state,
+            "controlled_broker_release_evidence_provider",
+            None,
+        ),
+        trusted_operator_identities=(
+            getattr(config, "trusted_operator_identities", []) or []
+        ),
+    )
 
 
 def _rejection_evidence_service() -> ControlledBrokerRejectionEvidenceService:

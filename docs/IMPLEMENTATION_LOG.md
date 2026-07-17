@@ -59,10 +59,7 @@ The latest completed cross-cutting work includes:
   kill-switch, and authority paths remain unavailable; only the existing
   controlled-intent/OMS result status may be resolved from definitive query
   evidence;
-- provider-neutral operator packages for exact open/partial lifecycle
-  cancellation handoff and terminal rejection review; both recheck fingerprint
-  drift and perform no broker call, while rejection review can append one exact,
-  reviewer-bound no-retry audit fact without changing execution authority;
+- provider-neutral manual open/partial cancellation handoff and terminal rejection review; both recheck drift and perform no broker call, while a separate signed command binds lifecycle/release/gateway health, atomically admits one cancel effect, and permits only query recovery without making gateway responses canonical;
 - provider-neutral adapter release manifests with append-only human
   accept/reject/revoke evidence and exact live collector prepare/commit
   binding, without selecting or registering a real provider.
@@ -92,8 +89,7 @@ Implemented foundation:
 - session-start Account Truth, atomic account/symbol budgets, and rate limits;
 - signed expiring runtime sessions, live gates, pause, revocation, and
   equal-or-narrower replacement;
-- default-closed one-shot submission, unknown recovery, and cross-order
-  interlock;
+- default-closed one-shot submission, unknown recovery, cross-order interlock, and separately signed exact cancellation with an atomic one-effect claim plus no-recancel query recovery; gateway telemetry stays non-authoritative and cannot mutate OMS, ledger, risk, kill switch, interlock, or capital authority;
 - signed exact-terminal clearance for full fill, no-fill cancel, and
   partial-fill-then-cancel, plus broker-neutral lifecycle ingestion; open
   partial fills remain blocked and clearance itself cannot post the ledger;

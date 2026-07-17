@@ -135,8 +135,7 @@ terminal states. Any unresolved order continues to block a different order.
 **Implemented foundation:** a separate default-closed local execution-edge suite now proves the fixed
 dry-run/submit/query/cancel/idempotency contract, including concurrency, timeout, restart, not-found,
 disconnect, and partial-fill/cancel races, without registering an adapter or contacting a provider.
-Deterministic evidence also reaches separately signed exact-terminal clearance, while an open lifecycle
-can produce a copy-only cancellation package. Real adapter conformance, signed explicit cancel, and real-environment recovery remain release work.
+Deterministic evidence also reaches signed exact-terminal clearance and an open lifecycle can produce a copy-only package. A separate signed explicit-cancel foundation atomically admits at most one cancel effect and permits query-only recovery without making gateway responses canonical. Real-adapter integration and real-environment recovery evidence remain release work.
 
 ### M3 — Reconciled Ledger Posting
 
@@ -179,10 +178,10 @@ Trading. Every blocked state must expose its evidence and one safe next action.
 reconciliation, terminal clearance, ledger posting, and append-only correction, exposing one safe
 human next step. Signed reviews cover query-only unknown recovery, terminal clearance, posting, and
 optional correction without operator-supplied financial deltas. An exact open lifecycle can also
-produce a no-database-edit manual cancellation package; the UI requires external human action and
-new evidence, and exposes no cancel endpoint. A rejected intent now exposes a drift-checked,
+produce a no-database-edit manual cancellation package; the UI requires external human action and new evidence, and exposes no cancel endpoint. The backend signed-cancel contract remains default-closed and outside that Web journey until explicit provider acceptance.
+A rejected intent now exposes a drift-checked,
 sanitized copy-only package plus an append-only, exactly-once no-retry acknowledgement. The v4 view prioritizes every unfinished journey and closes post-ledger follow-up only from complete canonical Account Truth evidence.
-Trading can now resolve each canonical `manually_confirmed` OMS candidate's newest capital, prior-batch, and gateway evidence into a separately signed, append-only review without operator-supplied fingerprints. Missing, ambiguous, newer blocked, or scan-truncated evidence fails closed; Web cannot submit/cancel or mutate OMS, ledger, risk, kill switch, or capital authority. Automation Cockpit and Decision validate and summarize the same persisted-only contract, then provide only a non-submitting handoff to Trading; source drift blocks it. An explicit scan writes idempotent blocker alerts from that same projection while ready candidates remain normal tasks. Overview and Market also consume one valuation/ledger-bound current-holding market-evidence review; only explicit targeted ingestion with newer confirmed persisted evidence can clear it. Signed submission, real signed cancel, and real-adapter recovery evidence remain open.
+Trading can now resolve each canonical `manually_confirmed` OMS candidate's newest capital, prior-batch, and gateway evidence into a separately signed, append-only review without operator-supplied fingerprints. Missing, ambiguous, newer blocked, or scan-truncated evidence fails closed; Web cannot submit/cancel or mutate OMS, ledger, risk, kill switch, or capital authority. Automation Cockpit and Decision validate and summarize the same persisted-only contract, then provide only a non-submitting handoff to Trading; source drift blocks it. An explicit scan writes idempotent blocker alerts from that same projection while ready candidates remain normal tasks. Overview and Market also consume one valuation/ledger-bound current-holding market-evidence review; only explicit targeted ingestion with newer confirmed persisted evidence can clear it. Signed one-shot submission and broker-neutral signed-cancel foundations are implemented; real-adapter integration/recovery evidence and a complete provider-approved operator journey remain open.
 
 **Exit gate:** an operator can complete every normal and recovery flow without
 editing the database. Refresh, duplicate clicks, and service restart do not
@@ -213,10 +212,8 @@ incident returns the system to `disabled`.
 1. **Implemented foundation:** adapter ADR/capability/threat/deployment manifest contract.
 2. **Implemented foundation:** provider-neutral deterministic conformance fixtures and release binding.
 3. **Next after explicit provider approval:** provider read-only adapter, collector integration, health, and soak.
-4. **Foundation partially implemented:** query/callback lifecycle and signed
-   exact-terminal full/partial-cancel/no-fill-cancel reconciliation; real
-   real cancel and real-adapter recovery evidence remain.
-5. Default-closed write adapter and per-order submit/cancel gates.
+4. **Foundation implemented locally:** lifecycle, signed exact-terminal reconciliation, signed unknown recovery, and signed exact-cancel/query-only recovery with duplicate/restart protection; real-adapter recovery evidence remains.
+5. Default-closed real write-adapter integration and provider-approved per-order submit/cancel journey.
 6. **Foundation implemented:** signed, exactly-once reconciled ledger posting,
    append-only compensating correction, and core cross-surface acceptance.
 7. Operations/Trading end-to-end UX and alerts.

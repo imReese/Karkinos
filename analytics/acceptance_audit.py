@@ -5531,7 +5531,8 @@ def build_controlled_broker_submission_acceptance_audit() -> AcceptanceAudit:
                     "routes reject undeclared credentials and expose no "
                     "strategy submission, automatic execution, session-wide "
                     "submission, capital widening, broker cancel, fill apply, "
-                    "or ledger-sync action; deterministic tests cover terminal, "
+                    "or ledger-sync action outside the separately signed exact "
+                    "cancellation contract; deterministic tests cover terminal, "
                     "unknown, retry, concurrency, signature, and kill-switch "
                     "boundaries."
                 ),
@@ -5564,6 +5565,49 @@ def build_controlled_broker_submission_acceptance_audit() -> AcceptanceAudit:
                 ),
                 validation_commands=(
                     "uv run pytest tests/account_truth/test_broker_execution_edge_conformance.py tests/scripts/test_run_broker_execution_edge_conformance.py -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="broker_cancellation_exact_signed_atomic_command",
+                checkbox_text=(
+                    "* [x] Broker cancellation is a separate, default-closed "
+                    "command bound to one submitted intent, exact broker/client "
+                    "ids, current persisted lifecycle observation, remaining "
+                    "quantity, current signed release, fresh gateway health, "
+                    "and a short-lived `cancel_exact_controlled_broker_order` "
+                    "signature. `BEGIN IMMEDIATE` permits at most one external "
+                    "cancel effect across duplicates, concurrency, and restart."
+                ),
+                evidence_paths=(
+                    "server/services/operator_approval.py",
+                    "server/services/controlled_broker_cancellation.py",
+                    "server/routes/controlled_broker_submission.py",
+                    "tests/test_controlled_broker_cancellation.py",
+                    "tests/server/test_controlled_broker_submission_routes.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_broker_cancellation.py -k 'signed_exact or duplicate_restart or lifecycle_drift or definitive_gateway' -q",
+                    "uv run pytest tests/server/test_controlled_broker_submission_routes.py -k signed_cancellation -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="broker_cancellation_query_only_non_authoritative_recovery",
+                checkbox_text=(
+                    "* [x] A prepared, requested, rejected, or unknown cancel "
+                    "command is never re-cancelled. Recovery requires another "
+                    "exact short-lived signature and may only query after a "
+                    "deterministic wait; gateway responses remain sanitized, "
+                    "non-authoritative telemetry and cannot mutate lifecycle, "
+                    "OMS, ledger, risk, kill switch, interlock, or capital "
+                    "authority. Only newer explicit lifecycle ingestion proves "
+                    "cancellation."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_broker_cancellation.py",
+                    "tests/test_controlled_broker_cancellation.py",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_controlled_broker_cancellation.py -k 'timeout or restart_from_prepared or sensitive_gateway' -q",
                 ),
             ),
         )

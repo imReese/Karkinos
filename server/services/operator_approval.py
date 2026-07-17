@@ -39,6 +39,8 @@ OPERATOR_APPROVAL_ACTIONS = frozenset(
         "revoke_controlled_session",
         "submit_confirmed_broker_order",
         "query_unknown_controlled_broker_submission",
+        "cancel_exact_controlled_broker_order",
+        "query_exact_broker_cancellation_outcome",
         "clear_controlled_submission_reconciliation",
         "post_controlled_submission_ledger",
         "reverse_controlled_submission_ledger_posting",
@@ -54,6 +56,8 @@ OPERATOR_APPROVAL_ARTIFACT_TYPES = frozenset(
         "controlled_session_revocation",
         "controlled_broker_submission",
         "controlled_broker_submission_recovery",
+        "controlled_broker_cancellation",
+        "controlled_broker_cancellation_recovery",
         "controlled_submission_reconciliation_clearance",
         "controlled_submission_ledger_posting",
         "controlled_submission_ledger_correction",
@@ -71,6 +75,10 @@ OPERATOR_APPROVAL_ACTION_ARTIFACT_TYPES = {
     "submit_confirmed_broker_order": "controlled_broker_submission",
     "query_unknown_controlled_broker_submission": (
         "controlled_broker_submission_recovery"
+    ),
+    "cancel_exact_controlled_broker_order": "controlled_broker_cancellation",
+    "query_exact_broker_cancellation_outcome": (
+        "controlled_broker_cancellation_recovery"
     ),
     "clear_controlled_submission_reconciliation": (
         "controlled_submission_reconciliation_clearance"

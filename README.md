@@ -150,6 +150,11 @@ copy-only human handoff. Karkinos does not contact the broker or expose a cancel
 action; a newer ingested lifecycle observation is required before cancellation
 can be treated as fact.
 
+A separate backend-only, default-closed signed cancellation contract binds the exact open lifecycle, remaining quantity, signed release, cached gateway health,
+and a short-lived offline proof before atomically claiming at most one cancel
+effect. Recovery only queries and never re-cancels; gateway responses stay
+non-authoritative. No real adapter or Web cancel action is registered.
+
 For a rejected controlled submission, the journey can also prepare a sanitized,
 fingerprinted rejection-review package. It distinguishes a local pre-gateway
 block from a definitive gateway rejection and explicitly forbids retrying the

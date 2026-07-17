@@ -228,7 +228,18 @@ controlled intent、OMS order fingerprint、broker/client 双重订单 ID 与最
 adapter，不签发撤单，也不修改 OMS/ledger、risk、kill switch、interlock 或 capital authority。
 操作员必须在单独复核的券商界面完成人工动作；只有更新导入的 lifecycle observation 加上 Account
 Truth/reconciliation 证据才能证明撤单。既有 live-cancel endpoint 继续保持禁用，因此该资料包
-不是 M2 显式撤单命令，也不构成任何 provider 支持声明。
+不是执行命令，也不构成任何 provider 支持声明。
+
+M2 显式撤单使用独立的 `karkinos.controlled_broker_cancellation.v1` 命令。它复用人工 ticket 的
+精确身份，并额外绑定当前签名 release、已缓存 gateway-health fingerprint 与短时
+`cancel_exact_controlled_broker_order` proof。专用 SQLite `BEGIN IMMEDIATE` claim 对一个 intent
+最多放行一次外部 cancel effect；精确重复、并发和重启 replay 都不能二次撤单。`prepared`、
+`cancel_requested`、`cancel_rejected` 与 `cancellation_unknown` 只是命令审计状态，不是 canonical
+券商事实。另行签名的 `karkinos.controlled_broker_cancellation_recovery.v1` 会确定性等待且只能查询
+精确 client order id，不能再次撤单。两类 gateway 响应都不能修改 lifecycle、OMS、ledger、risk、
+kill switch、interlock 或 capital authority；只有更新的显式 lifecycle ingestion 与 reconciliation
+才能证明结果。生产 factory 在没有明确审查的 gateway/release 时保持默认关闭，也不表示支持任何
+真实 adapter。
 
 M2 执行边缘语义使用另一套离线契约：`karkinos.broker_execution_edge_manifest.v1` 与
 `karkinos.broker_execution_edge_conformance_result.v1`。固定本地 suite 覆盖 default-closed

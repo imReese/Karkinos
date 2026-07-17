@@ -145,6 +145,55 @@ class FakeControlledBrokerRejectionEvidenceService:
         }
 
 
+class FakeControlledBrokerCancellationService:
+    def get_status(self):
+        return {
+            "contract_status": "signed_exact_cancellation_available",
+            "default_broker_cancellation_enabled": False,
+        }
+
+    def preview(self, **kwargs):
+        return {
+            **kwargs,
+            "status": "ready_for_final_signature",
+            "cancel_fingerprint": "8" * 64,
+            "provider_contact_performed": False,
+        }
+
+    def cancel(self, **kwargs):
+        return {
+            **kwargs,
+            "status": "cancel_requested",
+            "cancel_command_id": "9" * 64,
+            "cancellation_proven": False,
+            "oms_mutated": False,
+        }
+
+    def preview_recovery(self, **kwargs):
+        return {
+            **kwargs,
+            "status": "ready_for_query_signature",
+            "recovery_fingerprint": "a" * 64,
+            "query_only": True,
+            "recancel_enabled": False,
+        }
+
+    def recover(self, **kwargs):
+        return {
+            **kwargs,
+            "status": "cancel_requested",
+            "recovery_query_performed": True,
+            "query_result_authoritative": False,
+            "recancel_enabled": False,
+        }
+
+    def list_commands(self, **kwargs):
+        return [{"status": "cancel_requested", **kwargs}]
+
+    def get_command(self, cancel_command_id: str):
+        return {"status": "cancel_requested", "cancel_command_id": cancel_command_id}
+
+
 def _client(monkeypatch):
     service = FakeControlledBrokerSubmissionService()
     clearance_service = FakeControlledSubmissionClearanceService()
@@ -368,6 +417,85 @@ def test_manual_cancellation_ticket_routes_never_expose_broker_cancel(
     assert unknown_field.status_code == 422
 
 
+def test_signed_cancellation_routes_require_exact_signature_and_query_only_recovery(
+    monkeypatch,
+) -> None:
+    service = FakeControlledBrokerCancellationService()
+    monkeypatch.setattr(
+        route_module,
+        "_controlled_cancellation_service",
+        lambda: service,
+    )
+    app = FastAPI()
+    app.include_router(create_router())
+    client = TestClient(app)
+    prefix = "/api/automation/controlled-broker-submission"
+    intent_id = "1" * 64
+    command_id = "9" * 64
+
+    status = client.get(f"{prefix}/cancellation/status")
+    assert status.status_code == 200
+    assert status.json()["default_broker_cancellation_enabled"] is False
+    preview = client.post(f"{prefix}/intents/{intent_id}/cancellation/preview")
+    assert preview.status_code == 200
+    assert preview.json()["provider_contact_performed"] is False
+    cancelled = client.post(
+        f"{prefix}/intents/{intent_id}/cancellations",
+        json={
+            "cancel_fingerprint": "8" * 64,
+            "operator_approval_id": "7" * 64,
+            "operator_proof_signature_base64": "A" * 88,
+            "acknowledgement": "request_one_exact_broker_cancellation_once",
+        },
+    )
+    assert cancelled.status_code == 200
+    assert cancelled.json()["cancellation_proven"] is False
+    assert cancelled.json()["oms_mutated"] is False
+
+    recovery_preview = client.post(
+        f"{prefix}/cancellations/{command_id}/recovery/preview"
+    )
+    assert recovery_preview.status_code == 200
+    assert recovery_preview.json()["query_only"] is True
+    recovered = client.post(
+        f"{prefix}/cancellations/{command_id}/recoveries",
+        json={
+            "recovery_fingerprint": "a" * 64,
+            "operator_approval_id": "b" * 64,
+            "operator_proof_signature_base64": "A" * 88,
+            "acknowledgement": (
+                "query_exact_broker_cancellation_outcome_once_without_recancel"
+            ),
+        },
+    )
+    assert recovered.status_code == 200
+    assert recovered.json()["recovery_query_performed"] is True
+    assert recovered.json()["query_result_authoritative"] is False
+    assert recovered.json()["recancel_enabled"] is False
+    assert client.get(f"{prefix}/cancellations?limit=7").json()[0]["limit"] == 7
+    assert client.get(f"{prefix}/cancellations/{command_id}").status_code == 200
+
+    missing_signature = client.post(
+        f"{prefix}/intents/{intent_id}/cancellations",
+        json={
+            "cancel_fingerprint": "8" * 64,
+            "acknowledgement": "request_one_exact_broker_cancellation_once",
+        },
+    )
+    unknown_secret = client.post(
+        f"{prefix}/intents/{intent_id}/cancellations",
+        json={
+            "cancel_fingerprint": "8" * 64,
+            "operator_approval_id": "7" * 64,
+            "operator_proof_signature_base64": "A" * 88,
+            "acknowledgement": "request_one_exact_broker_cancellation_once",
+            "broker_password": "must-not-be-accepted",
+        },
+    )
+    assert missing_signature.status_code == 422
+    assert unknown_secret.status_code == 422
+
+
 def test_rejection_evidence_routes_never_retry_or_mutate_order(
     monkeypatch,
 ) -> None:
@@ -528,6 +656,30 @@ def test_route_service_is_default_closed_without_injected_release_provider(
     assert service.get_status()["contract_status"].startswith("disabled_waiting")
 
 
+def test_cancellation_route_service_is_default_closed_without_release_provider(
+    monkeypatch,
+) -> None:
+    gateway = object()
+    state = SimpleNamespace(
+        db=object(),
+        config=SimpleNamespace(trusted_operator_identities=[]),
+        execution_gateways=[gateway],
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+
+    service = route_module._controlled_cancellation_service()
+
+    assert service._db is state.db
+    assert service._gateways == [gateway]
+    assert service._release_evidence_provider is None
+    status = service.get_status()
+    assert status["default_broker_cancellation_enabled"] is False
+    assert status["automatic_cancellation_enabled"] is False
+    assert status["strategy_direct_cancellation_enabled"] is False
+    assert status["ai_direct_cancellation_enabled"] is False
+    assert status["contract_status"].startswith("disabled_waiting")
+
+
 def test_create_app_registers_controlled_submission_without_strategy_endpoint() -> None:
     app = create_app({"live_auto_start": False})
     methods_by_path: dict[str, set[str]] = {}
@@ -567,6 +719,23 @@ def test_create_app_registers_controlled_submission_without_strategy_endpoint() 
         },
         "/api/automation/controlled-broker-submission/intents/{submit_intent_id}/manual-cancellation-ticket/export": {
             "POST"
+        },
+        "/api/automation/controlled-broker-submission/cancellation/status": {"GET"},
+        "/api/automation/controlled-broker-submission/intents/{submit_intent_id}/cancellation/preview": {
+            "POST"
+        },
+        "/api/automation/controlled-broker-submission/intents/{submit_intent_id}/cancellations": {
+            "POST"
+        },
+        "/api/automation/controlled-broker-submission/cancellations/{cancel_command_id}/recovery/preview": {
+            "POST"
+        },
+        "/api/automation/controlled-broker-submission/cancellations/{cancel_command_id}/recoveries": {
+            "POST"
+        },
+        "/api/automation/controlled-broker-submission/cancellations": {"GET"},
+        "/api/automation/controlled-broker-submission/cancellations/{cancel_command_id}": {
+            "GET"
         },
         "/api/automation/controlled-broker-submission/reconciliation-clearance/status": {
             "GET"
