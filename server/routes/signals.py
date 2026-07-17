@@ -2,17 +2,28 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
+from server.ai_runtime.store import IdempotencyConflict
 from server.models import (
     ActionCard,
     ActionTaskStatusUpdate,
-    SignalJournalEvent,
     SignalJournalEntry,
     SignalResponse,
+)
+from server.services.decision_outcome_review import (
+    DecisionOutcomeReviewRejected,
+    DecisionOutcomeReviewRequest,
+    DecisionOutcomeReviewService,
+    DecisionOutcomeReviewStore,
+    DecisionOutcomeReviewTargetDrift,
 )
 from server.services.recommendation_flow import build_recommendation_cycle
 
@@ -20,11 +31,23 @@ logger = logging.getLogger(__name__)
 
 
 class SignalJournalReviewRequest(BaseModel):
-    reviewed_at: str
-    user_decision: str
-    outcome: str
-    review_notes: str
-    reviewer: str | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    idempotency_key: str = Field(min_length=1, max_length=256)
+    reviewed_by: str = Field(min_length=1, max_length=128)
+    user_decision: Literal["acted", "ignored", "deferred", "blocked"]
+    outcome: Literal[
+        "evidence_supported",
+        "evidence_not_supported",
+        "risk_gate_validated",
+        "not_executed",
+        "inconclusive",
+    ]
+    note: str = Field(min_length=1, max_length=4_000)
+    expected_target_fingerprint: str = Field(min_length=64, max_length=64)
+    confirmation: Literal[
+        "record_evidence_bound_decision_review_without_trade_or_capital_authority"
+    ]
 
 
 def create_router() -> APIRouter:
@@ -132,29 +155,68 @@ def create_router() -> APIRouter:
         rows = await state.db.list_signal_journal(limit=limit, offset=offset)
         return [SignalJournalEntry(**row) for row in rows]
 
-    @r.post(
-        "/journal/{signal_id}/review",
-        response_model=SignalJournalEvent,
-    )
+    @r.post("/journal/{signal_id}/review/preview")
+    async def preview_signal_journal_review(signal_id: int) -> dict:
+        """Build a read-only review target from persisted evidence."""
+        from server.app import get_app_state
+
+        try:
+            service = _decision_outcome_review_service(get_app_state())
+            target = await asyncio.to_thread(service.preview, signal_id)
+            return target.to_dict()
+        except Exception as exc:
+            _raise_decision_outcome_review_http_error(exc)
+
+    @r.post("/journal/{signal_id}/review")
     async def record_signal_journal_review(
         signal_id: int,
         body: SignalJournalReviewRequest,
-    ) -> SignalJournalEvent:
-        """Record a post-decision signal review/outcome audit event."""
+    ) -> dict:
+        """Record an idempotent review bound to the exact previewed evidence."""
         from server.app import get_app_state
 
-        state = get_app_state()
-        event = await state.db.record_signal_review(
-            signal_id=signal_id,
-            reviewed_at=body.reviewed_at,
-            user_decision=body.user_decision,
-            outcome=body.outcome,
-            review_notes=body.review_notes,
-            reviewer=body.reviewer,
-        )
-        if event is None:
-            raise HTTPException(status_code=404, detail="Signal not found")
-        return SignalJournalEvent(**event)
+        try:
+            service = _decision_outcome_review_service(get_app_state())
+            result = await asyncio.to_thread(
+                service.review,
+                signal_id,
+                DecisionOutcomeReviewRequest(
+                    idempotency_key=body.idempotency_key,
+                    reviewed_by=body.reviewed_by,
+                    user_decision=body.user_decision,
+                    outcome=body.outcome,
+                    note=body.note,
+                    expected_target_fingerprint=body.expected_target_fingerprint,
+                    confirmation=body.confirmation,
+                ),
+            )
+            return result.to_dict()
+        except Exception as exc:
+            _raise_decision_outcome_review_http_error(exc)
+
+    @r.get("/journal/reviews/{review_id}")
+    async def get_signal_journal_review(review_id: str) -> dict:
+        """Revalidate one stored review against current persisted evidence."""
+        from server.app import get_app_state
+
+        try:
+            service = _decision_outcome_review_service(get_app_state())
+            result = await asyncio.to_thread(service.get, review_id)
+            return result.to_dict()
+        except Exception as exc:
+            _raise_decision_outcome_review_http_error(exc)
+
+    @r.get("/journal/reviews/{review_id}/replay")
+    async def replay_signal_journal_review(review_id: str) -> dict:
+        """Replay the append-only decision review audit chain."""
+        from server.app import get_app_state
+
+        try:
+            service = _decision_outcome_review_service(get_app_state())
+            replay = await asyncio.to_thread(service.replay, review_id)
+            return replay.to_dict()
+        except Exception as exc:
+            _raise_decision_outcome_review_http_error(exc)
 
     @r.patch("/actions/{action_id}", response_model=ActionCard)
     async def update_action_status(
@@ -170,3 +232,25 @@ def create_router() -> APIRouter:
         return ActionCard(**task)
 
     return r
+
+
+def _decision_outcome_review_service(state) -> DecisionOutcomeReviewService:
+    db = getattr(state, "db", None)
+    path = getattr(db, "_path", None)
+    if db is None or path is None:
+        raise DecisionOutcomeReviewRejected("database is not initialized")
+    return DecisionOutcomeReviewService(
+        db=db,
+        store=DecisionOutcomeReviewStore(Path(path)),
+        now=lambda: datetime.now(timezone.utc).isoformat(),
+    )
+
+
+def _raise_decision_outcome_review_http_error(exc: Exception) -> None:
+    if isinstance(exc, LookupError):
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if isinstance(exc, (IdempotencyConflict, DecisionOutcomeReviewTargetDrift)):
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if isinstance(exc, (DecisionOutcomeReviewRejected, ValueError)):
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    raise exc

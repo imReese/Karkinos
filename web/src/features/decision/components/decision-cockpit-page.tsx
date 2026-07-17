@@ -67,6 +67,7 @@ import {
   type SignalResponse,
   type StrategyAttributionGateEvidence,
 } from '../api';
+import { DecisionOutcomeReviewPanel } from './decision-outcome-review-panel';
 
 function normalizeStatus(value: string | null | undefined, locale: Locale) {
   return formatPublicStatus(value ?? 'unknown', locale);
@@ -5610,6 +5611,7 @@ function SignalQueuePanel({
                             {labels.openAttributionReview}
                           </a>
                         </div>
+                        <DecisionOutcomeReviewPanel entry={entry} />
                       </div>
                     );
                   })
