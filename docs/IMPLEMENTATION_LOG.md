@@ -34,7 +34,7 @@ The latest completed cross-cutting work includes:
 - a canonical five-dimension Decision Quality Score over persisted Decision,
   with idempotent daily capture, tamper-evident replay, longitudinal coverage,
   and no AI, financial, risk, execution, or authority side effects;
-- Overview data review counts current holdings only; Market retains other quote facts;
+- a valuation/ledger-bound canonical current-holding market-evidence review consumed unchanged by Overview, with exact blockers and targeted ingestion in Market;
 - persisted valuation v4, which keeps fund estimates visible but non-authoritative
   until a same-day confirmed NAV exists, so Decision and risk fail closed;
 - a zero-write fail-closed batch-risk boundary for incomplete valuation or
@@ -280,6 +280,9 @@ Market-review remediation assumptions and risk record:
   explicitly provisional; post-close confirmation accepts only a confirmed NAV
   published for the target trading date, so an older NAV cannot overwrite the
   current estimate or clear the review gate.
+- The evidence-review GET has zero connector contact/writes, uses canonical quantity tolerance, preserves negative positions, excludes closed/history-only assets, and fails closed on identity gaps.
+  Acknowledgement cannot clear it; only newer confirmed persisted evidence and a new canonical snapshot can. No migration, dependency, broker adapter, OMS/risk/ledger mutation,
+  or authority change was introduced.
 - The Overview review queue and Operations tower now consume the same canonical
   daily-operations projection. The older Overview projection remains only as a
   rolling-upgrade fallback and cannot override a current Operations response.

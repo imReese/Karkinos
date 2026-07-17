@@ -263,6 +263,62 @@ class PositionEvidenceReviewResponse(BaseModel):
     position: PositionResponse
 
 
+class CurrentHoldingMarketEvidenceReviewItem(BaseModel):
+    """One current holding whose persisted quote evidence is not authoritative."""
+
+    symbol: str
+    name: str
+    asset_class: str
+    quantity: float
+    quote_status: str
+    quote_source: str | None = None
+    quote_timestamp: str | None = None
+    stale_reason: str | None = None
+    nav_date: str | None = None
+    review_reason: str
+    next_manual_action: str
+    explicit_refresh_eligible: bool = True
+    blocks_authoritative_decisions: bool = True
+
+
+class CurrentHoldingMarketEvidenceReviewResponse(BaseModel):
+    """Evidence-bound review queue for canonical non-zero holdings."""
+
+    schema_version: str = "karkinos.current_holding_market_evidence_review.v1"
+    status: str
+    next_manual_action: str
+    current_holding_count: int
+    confirmed_holding_count: int
+    review_required_count: int
+    fund_nav_review_count: int
+    estimated_review_count: int
+    stale_or_cached_review_count: int
+    missing_or_error_review_count: int
+    unknown_status_review_count: int
+    refreshable_symbols: list[str] = Field(default_factory=list)
+    items: list[CurrentHoldingMarketEvidenceReviewItem] = Field(default_factory=list)
+    source_blockers: list[str] = Field(default_factory=list)
+    review_fingerprint: str
+    valuation_snapshot_id: str | None = None
+    valuation_as_of: str | None = None
+    valuation_trade_date: str | None = None
+    valuation_policy: str | None = None
+    valuation_status: str = "missing"
+    ledger_cutoff_id: int = 0
+    ledger_fingerprint: str | None = None
+    quote_set_fingerprint: str | None = None
+    reads_persisted_facts_only: bool = True
+    provider_contact_performed: bool = False
+    runtime_connector_query_performed: bool = False
+    database_writes_performed: bool = False
+    does_not_mutate_oms: bool = True
+    does_not_mutate_production_ledger: bool = True
+    does_not_mutate_risk: bool = True
+    does_not_mutate_kill_switch: bool = True
+    does_not_change_capital_authority: bool = True
+    authorizes_execution: bool = False
+
+
 class AllocationItem(BaseModel):
     symbol: str
     name: str

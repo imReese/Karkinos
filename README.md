@@ -100,7 +100,13 @@ only. The score measures process evidence, not return, advice, or authority.
 On Overview, the market/NAV review count is scoped to canonical current
 non-zero holdings. Watchlist instruments, market indices, and closed-position
 quotes remain visible in Market or history but cannot inflate the current
-holding review queue.
+holding review queue. The queue is now projected by
+`/api/portfolio/market-evidence-review` from one persisted Portfolio snapshot,
+with the exact valuation snapshot, quote-set fingerprint, ledger cutoff, and
+ledger fingerprint attached. Market exposes the affected symbols, reasons, and
+safe manual next step. The GET path is read-only and provider-free; an explicit
+targeted refresh is a separately audited ingestion command and clears nothing
+unless newer confirmed persisted evidence produces a new canonical snapshot.
 
 Trading now provides a default-collapsed, non-submitting per-order evidence
 review. It lists only canonical `manually_confirmed` OMS candidates and resolves
