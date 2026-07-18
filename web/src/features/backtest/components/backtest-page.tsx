@@ -584,6 +584,9 @@ export function BacktestPage() {
   const [symbol, setSymbol] = useState(searchDefaults.symbol);
   const [assetClass, setAssetClass] = useState(searchDefaults.assetClass);
   const [latestReport, setLatestReport] = useState<BacktestReport | null>(null);
+  const [mobileWorkspaceView, setMobileWorkspaceView] = useState<
+    'setup' | 'results'
+  >('setup');
   const [formError, setFormError] = useState('');
   const assetClassOptions = [
     { value: 'stock', label: common.assetClassStock },
@@ -682,6 +685,7 @@ export function BacktestPage() {
       });
       const report = await runBacktest.mutateAsync(payload);
       setLatestReport(report);
+      setMobileWorkspaceView('results');
       signalPreview.reset();
       riskPreview.reset();
       paperShadowPreview.reset();
@@ -777,278 +781,302 @@ export function BacktestPage() {
         ]}
       />
 
-      <div className="scroll-mt-24" id="backtest-strategy-catalog">
-        <StrategyCatalogPanel
-          strategyCatalog={strategyCatalog}
-          selectedStrategyName={strategy}
-          onSelect={setStrategy}
-        />
+      <div
+        aria-label={labels.title}
+        className="flex border-y border-[var(--app-divider)] xl:hidden"
+        data-testid="backtest-mobile-workspace-tabs"
+        role="tablist"
+      >
+        {[
+          { id: 'setup' as const, label: labels.formKicker },
+          { id: 'results' as const, label: labels.currentKicker },
+        ].map((item) => (
+          <button
+            aria-controls={`backtest-mobile-${item.id}`}
+            aria-selected={mobileWorkspaceView === item.id}
+            className={`min-h-10 flex-1 border-b-2 px-3 text-xs font-semibold transition-colors ${
+              mobileWorkspaceView === item.id
+                ? 'border-[var(--app-accent)] text-[var(--app-accent)]'
+                : 'border-transparent text-[var(--app-text-secondary)]'
+            }`}
+            key={item.id}
+            onClick={() => setMobileWorkspaceView(item.id)}
+            role="tab"
+            type="button"
+          >
+            {item.label}
+          </button>
+        ))}
       </div>
 
-      <AccountStrategyPanel
-        assignment={accountStrategy.data ?? null}
-        attribution={accountStrategyAttribution.data ?? null}
-        contribution={accountStrategyContribution.data ?? null}
-        instruments={portfolioInstruments.data?.positions ?? []}
-        scopedAssignments={accountStrategyAssignments.data ?? []}
-        targetSymbol={symbol}
-        selectedStrategy={selectedStrategy}
-        strategyCatalog={strategyCatalog}
-        loading={accountStrategy.isLoading}
-        error={accountStrategy.isError}
-        scopedAssignmentsLoading={accountStrategyAssignments.isLoading}
-        scopedAssignmentsError={accountStrategyAssignments.isError}
-        attributionLoading={accountStrategyAttribution.isLoading}
-        attributionError={accountStrategyAttribution.isError}
-        contributionLoading={accountStrategyContribution.isLoading}
-        contributionError={accountStrategyContribution.isError}
-        assigning={updateAccountStrategy.isPending}
-        assigningScoped={updateScopedAccountStrategy.isPending}
-        assignError={updateAccountStrategy.isError}
-        assignScopedError={updateScopedAccountStrategy.isError}
-        onAssignSelected={assignSelectedStrategy}
-        onAssignSelectedToSymbol={assignSelectedStrategyToSymbol}
-      />
-
-      <div className="grid gap-5 2xl:grid-cols-[minmax(360px,0.72fr)_minmax(0,1.28fr)]">
-        <section className="app-workbench-section min-w-0">
-          <div className="p-4 sm:p-5">
-            <div className="app-kicker text-xs uppercase tracking-[0.16em]">
-              {labels.formKicker}
-            </div>
-            <h2 className="app-card-title mt-1.5">{labels.formTitle}</h2>
-            <p className="app-muted mt-2 text-sm leading-6">
-              {labels.formDetail}
-            </p>
-            {searchDefaults.hasHandoffContext ? (
-              <section
-                className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-accent)_34%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_10%,transparent)] p-3.5"
-                data-testid="backtest-handoff-context"
-              >
-                <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0">
-                    <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
-                      {handoffLabels.kicker}
-                    </div>
-                    <h3 className="mt-1 text-sm font-semibold text-[var(--app-text)]">
-                      {handoffLabels.title}
-                    </h3>
-                    <p className="app-muted mt-1.5 text-xs leading-5">
-                      {handoffLabels.detail}
-                    </p>
-                  </div>
-                  <span className="inline-flex shrink-0 items-center rounded-full border border-[color-mix(in_srgb,var(--app-warning)_42%,var(--app-border))] bg-[var(--app-warning-bg)] px-3 py-1 text-xs font-semibold text-[var(--app-warning)]">
-                    {handoffLabels.badge}
-                  </span>
-                </div>
-                <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
-                  <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3 py-2">
-                    <div className="app-muted">{labels.symbol}</div>
-                    <div className="mt-1 truncate font-semibold text-[var(--app-text)] tabular-nums">
-                      {symbol || labels.notDeclared}
-                    </div>
-                  </div>
-                  <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3 py-2">
-                    <div className="app-muted">{labels.assetClass}</div>
-                    <div className="mt-1 truncate font-semibold text-[var(--app-text)]">
-                      {selectedAssetClassLabel}
-                    </div>
-                  </div>
-                  <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3 py-2">
-                    <div className="app-muted">{labels.strategy}</div>
-                    <div className="mt-1 truncate font-semibold text-[var(--app-text)]">
-                      {strategyDisplayName(
-                        selectedStrategy,
-                        labels.strategyNames,
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </section>
-            ) : null}
-
-            <form className="mt-5 grid gap-4" onSubmit={submitRun}>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="grid gap-2 text-sm font-medium">
-                  {labels.startDate}
-                  <input
-                    className="app-field rounded-2xl px-4 py-3 text-sm"
-                    type="date"
-                    value={startDate}
-                    onChange={(event) => setStartDate(event.target.value)}
-                    aria-label={labels.startDate}
-                  />
-                </label>
-                <label className="grid gap-2 text-sm font-medium">
-                  {labels.endDate}
-                  <input
-                    className="app-field rounded-2xl px-4 py-3 text-sm"
-                    type="date"
-                    value={endDate}
-                    onChange={(event) => setEndDate(event.target.value)}
-                    aria-label={labels.endDate}
-                  />
-                </label>
-              </div>
-
-              <label className="grid gap-2 text-sm font-medium">
-                {labels.initialCash}
-                <input
-                  className="app-field rounded-2xl px-4 py-3 text-sm tabular-nums"
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={initialCash}
-                  onChange={(event) => setInitialCash(event.target.value)}
-                  aria-label={labels.initialCash}
-                />
-              </label>
-
-              <div className="grid gap-3">
-                {strategies.isError ? (
-                  <span className="app-muted text-xs">
-                    {labels.strategyRegistryFailed}
-                  </span>
-                ) : null}
-                {strategies.isPending ? (
-                  <span className="app-muted text-xs">
-                    {labels.strategyRegistryLoading}
-                  </span>
-                ) : null}
-                <StrategyMetadataPanel
-                  strategy={selectedStrategy}
-                  description={strategyDescription(
-                    selectedStrategy,
-                    labels.strategyDescriptions,
-                  )}
-                  labels={labels}
-                />
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                {parameterSchema.map((param) => {
-                  const displayName = parameterDisplayName(
-                    param,
-                    labels.parameterLabels,
-                  );
-                  const description = parameterDescription(
-                    param,
-                    labels.parameterDescriptions,
-                  );
-                  return (
-                    <label
-                      key={param.name}
-                      className="grid gap-2 text-sm font-medium"
-                    >
-                      <span className="flex min-w-0 flex-wrap items-center gap-2">
-                        <span>{displayName}</span>
-                      </span>
-                      <input
-                        className="app-field rounded-2xl px-4 py-3 text-sm tabular-nums"
-                        type={
-                          param.type === 'int' || param.type === 'float'
-                            ? 'number'
-                            : 'text'
-                        }
-                        min={param.min ?? undefined}
-                        max={param.max ?? undefined}
-                        step={param.type === 'float' ? '0.1' : '1'}
-                        value={parameterValues[param.name] ?? ''}
-                        onChange={(event) =>
-                          setParameterValues((current) => ({
-                            ...current,
-                            [param.name]: event.target.value,
-                          }))
-                        }
-                        aria-label={displayName}
-                      />
-                      {description ? (
-                        <span className="app-muted flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                          <span>{description}</span>
-                        </span>
-                      ) : null}
-                    </label>
-                  );
-                })}
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px]">
-                <label className="grid gap-2 text-sm font-medium">
-                  {labels.symbol}
-                  <input
-                    className="app-field rounded-2xl px-4 py-3 text-sm tabular-nums"
-                    value={symbol}
-                    onChange={(event) => setSymbol(event.target.value)}
-                    placeholder={labels.symbolPlaceholder}
-                    aria-label={labels.symbol}
-                  />
-                </label>
-                <label className="grid gap-2 text-sm font-medium">
-                  {labels.assetClass}
-                  <select
-                    className="app-field rounded-2xl px-4 py-3 text-sm"
-                    value={assetClass}
-                    onChange={(event) => setAssetClass(event.target.value)}
-                    aria-label={labels.assetClass}
-                  >
-                    {assetClassOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <span className="app-muted text-xs sm:col-span-2">
-                  {labels.singleSymbolHint}
-                </span>
-              </div>
-
-              <RunReadinessSummary
-                assetClassLabel={selectedAssetClassLabel}
-                labels={labels}
-                parameterCount={parameterSchema.length}
-                selectedStrategy={selectedStrategy}
-                symbol={symbol}
-              />
-
-              {formError ? (
-                <div
-                  className="rounded-2xl border border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] px-4 py-3 text-sm text-[var(--app-danger)]"
-                  role="alert"
-                >
-                  {formError}
-                </div>
-              ) : null}
-
-              <button
-                type="submit"
-                className="app-button-primary rounded-2xl px-4 py-3 text-sm font-semibold transition active:scale-[0.99]"
-                disabled={runBacktest.isPending}
-              >
-                {runBacktest.isPending ? labels.running : labels.run}
-              </button>
-            </form>
-            <ParameterSweepPanel
-              startDate={startDate}
-              endDate={endDate}
-              initialCash={initialCash}
-              strategy={strategy}
-              parameterSchema={parameterSchema}
-              parameterValues={parameterValues}
-              assets={buildSingleAsset(symbol, assetClass)}
-            />
-            <ParameterComparePanel
-              startDate={startDate}
-              endDate={endDate}
-              initialCash={initialCash}
-              strategy={strategy}
-              parameterSchema={parameterSchema}
-              assets={buildSingleAsset(symbol, assetClass)}
+      <div
+        className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(360px,0.78fr)_minmax(0,1.22fr)]"
+        data-testid="backtest-primary-workbench"
+      >
+        <div
+          className={`min-w-0 space-y-4 ${
+            mobileWorkspaceView === 'setup' ? '' : 'hidden xl:block'
+          }`}
+          id="backtest-mobile-setup"
+          role="tabpanel"
+        >
+          <div className="scroll-mt-24" id="backtest-strategy-catalog">
+            <StrategyCatalogPanel
+              strategyCatalog={strategyCatalog}
+              selectedStrategyName={strategy}
+              onSelect={setStrategy}
             />
           </div>
-        </section>
 
-        <section className="app-workbench-section min-w-0">
+          <section
+            className="app-workbench-section min-w-0"
+            data-testid="backtest-parameter-panel"
+          >
+            <div className="p-4 sm:p-5">
+              <div className="app-kicker text-xs uppercase tracking-[0.16em]">
+                {labels.formKicker}
+              </div>
+              <h2 className="app-card-title mt-1.5">{labels.formTitle}</h2>
+              <p className="app-muted mt-2 text-sm leading-6">
+                {labels.formDetail}
+              </p>
+              {searchDefaults.hasHandoffContext ? (
+                <section
+                  className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-accent)_34%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_10%,transparent)] p-3.5"
+                  data-testid="backtest-handoff-context"
+                >
+                  <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+                        {handoffLabels.kicker}
+                      </div>
+                      <h3 className="mt-1 text-sm font-semibold text-[var(--app-text)]">
+                        {handoffLabels.title}
+                      </h3>
+                      <p className="app-muted mt-1.5 text-xs leading-5">
+                        {handoffLabels.detail}
+                      </p>
+                    </div>
+                    <span className="inline-flex shrink-0 items-center rounded-full border border-[color-mix(in_srgb,var(--app-warning)_42%,var(--app-border))] bg-[var(--app-warning-bg)] px-3 py-1 text-xs font-semibold text-[var(--app-warning)]">
+                      {handoffLabels.badge}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+                    <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3 py-2">
+                      <div className="app-muted">{labels.symbol}</div>
+                      <div className="mt-1 truncate font-semibold text-[var(--app-text)] tabular-nums">
+                        {symbol || labels.notDeclared}
+                      </div>
+                    </div>
+                    <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3 py-2">
+                      <div className="app-muted">{labels.assetClass}</div>
+                      <div className="mt-1 truncate font-semibold text-[var(--app-text)]">
+                        {selectedAssetClassLabel}
+                      </div>
+                    </div>
+                    <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3 py-2">
+                      <div className="app-muted">{labels.strategy}</div>
+                      <div className="mt-1 truncate font-semibold text-[var(--app-text)]">
+                        {strategyDisplayName(
+                          selectedStrategy,
+                          labels.strategyNames,
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              ) : null}
+
+              <form className="mt-5 grid gap-4" onSubmit={submitRun}>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="grid gap-2 text-sm font-medium">
+                    {labels.startDate}
+                    <input
+                      className="app-field rounded-2xl px-4 py-3 text-sm"
+                      type="date"
+                      value={startDate}
+                      onChange={(event) => setStartDate(event.target.value)}
+                      aria-label={labels.startDate}
+                    />
+                  </label>
+                  <label className="grid gap-2 text-sm font-medium">
+                    {labels.endDate}
+                    <input
+                      className="app-field rounded-2xl px-4 py-3 text-sm"
+                      type="date"
+                      value={endDate}
+                      onChange={(event) => setEndDate(event.target.value)}
+                      aria-label={labels.endDate}
+                    />
+                  </label>
+                </div>
+
+                <label className="grid gap-2 text-sm font-medium">
+                  {labels.initialCash}
+                  <input
+                    className="app-field rounded-2xl px-4 py-3 text-sm tabular-nums"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={initialCash}
+                    onChange={(event) => setInitialCash(event.target.value)}
+                    aria-label={labels.initialCash}
+                  />
+                </label>
+
+                <div className="grid gap-3">
+                  {strategies.isError ? (
+                    <span className="app-muted text-xs">
+                      {labels.strategyRegistryFailed}
+                    </span>
+                  ) : null}
+                  {strategies.isPending ? (
+                    <span className="app-muted text-xs">
+                      {labels.strategyRegistryLoading}
+                    </span>
+                  ) : null}
+                  <StrategyMetadataPanel
+                    strategy={selectedStrategy}
+                    description={strategyDescription(
+                      selectedStrategy,
+                      labels.strategyDescriptions,
+                    )}
+                    labels={labels}
+                  />
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {parameterSchema.map((param) => {
+                    const displayName = parameterDisplayName(
+                      param,
+                      labels.parameterLabels,
+                    );
+                    const description = parameterDescription(
+                      param,
+                      labels.parameterDescriptions,
+                    );
+                    return (
+                      <label
+                        key={param.name}
+                        className="grid gap-2 text-sm font-medium"
+                      >
+                        <span className="flex min-w-0 flex-wrap items-center gap-2">
+                          <span>{displayName}</span>
+                        </span>
+                        <input
+                          className="app-field rounded-2xl px-4 py-3 text-sm tabular-nums"
+                          type={
+                            param.type === 'int' || param.type === 'float'
+                              ? 'number'
+                              : 'text'
+                          }
+                          min={param.min ?? undefined}
+                          max={param.max ?? undefined}
+                          step={param.type === 'float' ? '0.1' : '1'}
+                          value={parameterValues[param.name] ?? ''}
+                          onChange={(event) =>
+                            setParameterValues((current) => ({
+                              ...current,
+                              [param.name]: event.target.value,
+                            }))
+                          }
+                          aria-label={displayName}
+                        />
+                        {description ? (
+                          <span className="app-muted flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                            <span>{description}</span>
+                          </span>
+                        ) : null}
+                      </label>
+                    );
+                  })}
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px]">
+                  <label className="grid gap-2 text-sm font-medium">
+                    {labels.symbol}
+                    <input
+                      className="app-field rounded-2xl px-4 py-3 text-sm tabular-nums"
+                      value={symbol}
+                      onChange={(event) => setSymbol(event.target.value)}
+                      placeholder={labels.symbolPlaceholder}
+                      aria-label={labels.symbol}
+                    />
+                  </label>
+                  <label className="grid gap-2 text-sm font-medium">
+                    {labels.assetClass}
+                    <select
+                      className="app-field rounded-2xl px-4 py-3 text-sm"
+                      value={assetClass}
+                      onChange={(event) => setAssetClass(event.target.value)}
+                      aria-label={labels.assetClass}
+                    >
+                      {assetClassOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <span className="app-muted text-xs sm:col-span-2">
+                    {labels.singleSymbolHint}
+                  </span>
+                </div>
+
+                <RunReadinessSummary
+                  assetClassLabel={selectedAssetClassLabel}
+                  labels={labels}
+                  parameterCount={parameterSchema.length}
+                  selectedStrategy={selectedStrategy}
+                  symbol={symbol}
+                />
+
+                {formError ? (
+                  <div
+                    className="rounded-2xl border border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] px-4 py-3 text-sm text-[var(--app-danger)]"
+                    role="alert"
+                  >
+                    {formError}
+                  </div>
+                ) : null}
+
+                <button
+                  type="submit"
+                  className="app-button-primary rounded-2xl px-4 py-3 text-sm font-semibold transition active:scale-[0.99]"
+                  disabled={runBacktest.isPending}
+                >
+                  {runBacktest.isPending ? labels.running : labels.run}
+                </button>
+              </form>
+              <ParameterSweepPanel
+                startDate={startDate}
+                endDate={endDate}
+                initialCash={initialCash}
+                strategy={strategy}
+                parameterSchema={parameterSchema}
+                parameterValues={parameterValues}
+                assets={buildSingleAsset(symbol, assetClass)}
+              />
+              <ParameterComparePanel
+                startDate={startDate}
+                endDate={endDate}
+                initialCash={initialCash}
+                strategy={strategy}
+                parameterSchema={parameterSchema}
+                assets={buildSingleAsset(symbol, assetClass)}
+              />
+            </div>
+          </section>
+        </div>
+
+        <section
+          className={`app-workbench-section min-w-0 ${
+            mobileWorkspaceView === 'results' ? '' : 'hidden xl:block'
+          }`}
+          data-testid="backtest-result-panel"
+          id="backtest-mobile-results"
+          role="tabpanel"
+        >
           <div className="p-4 sm:p-5">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
@@ -1215,13 +1243,38 @@ export function BacktestPage() {
               <EvidenceState
                 className="mt-5"
                 kind="empty"
-                title={labels.currentTitle}
+                title={labels.notDeclared}
                 description={labels.emptyCurrent}
               />
             )}
           </div>
         </section>
       </div>
+
+      <AccountStrategyPanel
+        assignment={accountStrategy.data ?? null}
+        attribution={accountStrategyAttribution.data ?? null}
+        contribution={accountStrategyContribution.data ?? null}
+        instruments={portfolioInstruments.data?.positions ?? []}
+        scopedAssignments={accountStrategyAssignments.data ?? []}
+        targetSymbol={symbol}
+        selectedStrategy={selectedStrategy}
+        strategyCatalog={strategyCatalog}
+        loading={accountStrategy.isLoading}
+        error={accountStrategy.isError}
+        scopedAssignmentsLoading={accountStrategyAssignments.isLoading}
+        scopedAssignmentsError={accountStrategyAssignments.isError}
+        attributionLoading={accountStrategyAttribution.isLoading}
+        attributionError={accountStrategyAttribution.isError}
+        contributionLoading={accountStrategyContribution.isLoading}
+        contributionError={accountStrategyContribution.isError}
+        assigning={updateAccountStrategy.isPending}
+        assigningScoped={updateScopedAccountStrategy.isPending}
+        assignError={updateAccountStrategy.isError}
+        assignScopedError={updateScopedAccountStrategy.isError}
+        onAssignSelected={assignSelectedStrategy}
+        onAssignSelectedToSymbol={assignSelectedStrategyToSymbol}
+      />
 
       <StrategyEvidenceGatePanel
         strategyCatalog={strategyCatalog}
@@ -1592,67 +1645,65 @@ function StrategyCatalogPanel({
   ].filter(Boolean);
 
   return (
-    <section className="app-terminal-panel rounded-[28px] p-[1px]">
-      <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
-        <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,420px)] lg:items-end">
+    <section className="min-w-0 border-y border-[var(--app-divider)] py-3 sm:py-4">
+      <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(180px,240px)] sm:items-end">
+        <div className="min-w-0">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
+            {labels.strategyCatalogKicker}
+          </div>
+          <h2 className="mt-1 text-base font-semibold text-[var(--app-text)]">
+            {labels.strategyCatalogTitle}
+          </h2>
+          <p className="mt-1 text-xs leading-5 text-[var(--app-text-secondary)]">
+            {labels.strategyCatalogDetail}
+          </p>
+        </div>
+        <label className="grid min-w-0 gap-1.5 text-xs font-medium text-[var(--app-text-secondary)]">
+          <span>{labels.strategy}</span>
+          <select
+            aria-label={labels.strategyCatalogTitle}
+            className="app-field h-10 rounded-[var(--app-radius-control)] px-3 text-sm"
+            value={selectedStrategy.name}
+            onChange={(event) => onSelect(event.target.value)}
+          >
+            {strategyCatalog.map((item) => (
+              <option key={item.strategy_id} value={item.name}>
+                {strategyDisplayName(item, labels.strategyNames)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="mt-3 min-w-0 border-t border-[var(--app-divider)] pt-3">
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
-            <div className="app-product-mark">
-              {labels.strategyCatalogKicker}
+            <div className="text-[10px] font-medium text-[var(--app-text-tertiary)]">
+              {labels.selectedStrategy}
             </div>
-            <h2 className="app-card-title mt-1.5">
-              {labels.strategyCatalogTitle}
-            </h2>
-            <p className="app-muted mt-2 max-w-3xl text-sm leading-6">
-              {labels.strategyCatalogDetail}
+            <h3 className="mt-0.5 truncate text-sm font-semibold text-[var(--app-text)]">
+              {selectedStrategyDisplayName}
+            </h3>
+            <p className="mt-1 text-xs leading-5 text-[var(--app-text-secondary)]">
+              {selectedDescription}
             </p>
           </div>
-          <label className="grid min-w-0 gap-2 text-sm font-medium">
-            <span className="app-muted">{labels.strategy}</span>
-            <select
-              aria-label={labels.strategyCatalogTitle}
-              className="app-field rounded-2xl px-4 py-3 text-sm"
-              value={selectedStrategy.name}
-              onChange={(event) => onSelect(event.target.value)}
-            >
-              {strategyCatalog.map((item) => (
-                <option key={item.strategy_id} value={item.name}>
-                  {strategyDisplayName(item, labels.strategyNames)}
-                </option>
-              ))}
-            </select>
-          </label>
+          <code className="shrink-0 break-all font-mono text-[11px] text-[var(--app-text-tertiary)]">
+            {selectedStrategy.strategy_id}
+          </code>
         </div>
-
-        <div className="mt-5 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-4">
-          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
-                {labels.selectedStrategy}
-              </div>
-              <h3 className="mt-1 truncate text-base font-semibold text-[var(--app-text)]">
-                {selectedStrategyDisplayName}
-              </h3>
-              <p className="app-muted mt-1.5 text-sm leading-6">
-                {selectedDescription}
-              </p>
-            </div>
-            <code className="shrink-0 break-all rounded-full border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-2.5 py-1 text-[11px] font-semibold text-[var(--app-muted)]">
-              {selectedStrategy.strategy_id}
-            </code>
+        {badges.length ? (
+          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+            {badges.map((badge) => (
+              <span
+                className="text-[11px] font-medium text-[var(--app-text-tertiary)]"
+                key={badge}
+              >
+                {badge}
+              </span>
+            ))}
           </div>
-          {badges.length ? (
-            <div className="mt-4 flex flex-wrap gap-2">
-              {badges.map((badge) => (
-                <span
-                  className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-2.5 py-1 text-xs font-semibold text-[var(--app-muted)]"
-                  key={badge}
-                >
-                  {badge}
-                </span>
-              ))}
-            </div>
-          ) : null}
-        </div>
+        ) : null}
       </div>
     </section>
   );

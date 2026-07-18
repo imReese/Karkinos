@@ -751,7 +751,7 @@ test('labels overview pnl as latest trading day when today is market closed', as
   expect(within(metricsRail).queryByText('Today PnL')).toBeNull();
 });
 
-test('puts analysis and action queue before holdings, then broad-market context', async () => {
+test('puts action queue and current holdings before analysis, then broad-market context', async () => {
   renderOverviewPage();
 
   const workbench = await screen.findByTestId('overview-daily-workbench');
@@ -784,16 +784,19 @@ test('puts analysis and action queue before holdings, then broad-market context'
   ).toContain('Market heatmap awaiting evidence');
   expect(screen.queryByTestId('today-pnl-heatmap')).toBeNull();
   expect(screen.queryByTestId('overview-holding-movers')).toBeNull();
-  expect(workbench.contains(performanceCard)).toBe(true);
   expect(workbench.contains(todayQueue)).toBe(true);
+  expect(workbench.contains(holdings)).toBe(true);
+  expect(workbench.contains(performanceCard)).toBe(false);
   expect(
-    workbench.compareDocumentPosition(holdings) &
+    workbench.compareDocumentPosition(performanceCard) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(
-    holdings.compareDocumentPosition(reviewStrip) &
+    performanceCard.compareDocumentPosition(reviewStrip) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
+  expect(performanceCard.className).toContain('border-y');
+  expect(performanceCard.className).not.toContain('rounded-');
   expect(reviewStrip.contains(marketPulse)).toBe(true);
 });
 

@@ -1287,6 +1287,27 @@ test('renders the backtest workspace and saved report history', async () => {
   expect(await screen.findByText('Equity and drawdown')).toBeTruthy();
 });
 
+test('keeps setup and current results in one primary workspace with mobile tabs', async () => {
+  renderBacktestPage({ results: [] });
+
+  const primary = await screen.findByTestId('backtest-primary-workbench');
+  const setup = screen.getByTestId('backtest-parameter-panel').parentElement;
+  const results = screen.getByTestId('backtest-result-panel');
+  const tabs = screen.getByTestId('backtest-mobile-workspace-tabs');
+
+  expect(setup).toBeTruthy();
+  expect(primary.contains(setup)).toBe(true);
+  expect(primary.contains(results)).toBe(true);
+  expect(tabs.getAttribute('role')).toBe('tablist');
+  expect(
+    setup!.compareDocumentPosition(results) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+
+  fireEvent.click(within(tabs).getByRole('tab', { name: 'Current run' }));
+  expect(results.className).not.toContain('hidden xl:block');
+  expect(setup!.className).toContain('hidden xl:block');
+});
+
 test('prefills single-instrument research context from decision handoff query', async () => {
   window.history.pushState(
     {},

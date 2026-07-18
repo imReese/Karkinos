@@ -172,7 +172,7 @@ export function OverviewCards({
       <MetricStrip
         items={items}
         ariaLabel={copy.overview.cards.totalAssets}
-        className="account-metric-strip font-mono tabular-nums sm:grid-flow-row sm:grid-cols-2 lg:grid-flow-col lg:grid-cols-none"
+        className="account-metric-strip tabular-nums sm:grid-flow-row sm:grid-cols-2 lg:grid-flow-col lg:grid-cols-none"
       />
       <EvidenceState
         kind={evidenceKind}
@@ -190,7 +190,7 @@ export function OverviewCardsSkeleton() {
     <div
       data-testid="account-metrics-skeleton"
       aria-hidden="true"
-      className="grid min-w-0 animate-pulse overflow-hidden rounded-[var(--app-radius-surface)] border border-[var(--app-border)] bg-[var(--app-surface)] sm:grid-cols-2 lg:grid-cols-6"
+      className="grid min-w-0 animate-pulse overflow-hidden border-y border-[var(--app-divider)] bg-transparent sm:grid-cols-2 lg:grid-cols-6"
     >
       {Array.from({ length: 6 }).map((_, index) => (
         <div

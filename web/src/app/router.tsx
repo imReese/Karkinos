@@ -502,75 +502,9 @@ export function OverviewPage() {
           />
 
           <div
-            className="grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(340px,0.75fr)]"
+            className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(300px,0.7fr)_minmax(0,1.6fr)]"
             data-testid="overview-daily-workbench"
           >
-            <section
-              data-testid="overview-performance-card"
-              className="min-w-0 overflow-hidden rounded-[var(--app-radius-surface)] border border-[var(--app-border)] bg-[var(--app-surface)]"
-            >
-              <div
-                role="tablist"
-                aria-label={copy.overview.dashboard.equityPanel}
-                className="flex max-w-full overflow-x-auto border-b border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-2"
-              >
-                {analysisTabs.map((tab) => (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={analysisView === tab.id}
-                    onClick={() => setAnalysisView(tab.id)}
-                    className={`h-9 shrink-0 border-b-2 px-3 text-xs font-semibold ${
-                      analysisView === tab.id
-                        ? 'border-[var(--app-accent)] text-[var(--app-accent)]'
-                        : 'border-transparent text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-              <div className="min-w-0 p-3 sm:p-4">
-                {analysisView === 'performance' ? (
-                  equityCurve.isLoading ? (
-                    <EquityCurveSkeleton />
-                  ) : equityCurve.isError ? (
-                    <StatusCard
-                      tone="danger"
-                      title={copy.states.error}
-                      detail={copy.overview.curveError}
-                      actionLabel={copy.states.retry}
-                      onAction={() => void equityCurve.refetch()}
-                    />
-                  ) : (
-                    <EquityCurveCard
-                      points={equityCurve.data ?? []}
-                      range={equityCurveRange}
-                      onRangeChange={setEquityCurveRange}
-                    />
-                  )
-                ) : analysisView === 'allocation' ? (
-                  <PortfolioExposureSummary snapshot={snapshot.data} />
-                ) : analysisView === 'attribution' ? (
-                  <StrategyContributionGateCard
-                    report={strategyContribution.data}
-                    isLoading={strategyContribution.isLoading}
-                    isError={strategyContribution.isError}
-                    onRetry={() => void strategyContribution.refetch()}
-                    instruments={positions}
-                    variant="compact"
-                  />
-                ) : (
-                  <ReturnCalendarCard
-                    timeline={explainability.data?.timeline ?? []}
-                    positions={positions}
-                    marketCalendar={marketCalendar.data}
-                    compact
-                  />
-                )}
-              </div>
-            </section>
             <div className="min-w-0">
               <DashboardTodayQueue
                 overview={overview.data}
@@ -599,38 +533,107 @@ export function OverviewPage() {
                 operationsTodayError={operationsToday.isError}
               />
             </div>
+            <section
+              className="min-w-0"
+              data-testid="overview-holdings-section"
+            >
+              <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+                <div>
+                  <h2 className="text-base font-semibold text-[var(--app-text)]">
+                    {copy.overview.dashboard.positionsPanel}
+                  </h2>
+                  <p className="mt-1 text-xs text-[var(--app-text-secondary)]">
+                    {copy.overview.dashboard.positionsDetail}
+                  </p>
+                </div>
+                <span className="text-xs tabular-nums text-[var(--app-text-tertiary)]">
+                  {positions.length} {copy.overview.risk.positions}
+                </span>
+              </div>
+              {positions.length === 0 ? (
+                <StatusCard
+                  title={copy.states.empty}
+                  detail={copy.portfolio.positionsEmpty}
+                />
+              ) : (
+                <PositionsTable
+                  positions={positions}
+                  assetClassBySymbol={assetClassBySymbol}
+                  variant="dashboard"
+                />
+              )}
+            </section>
           </div>
 
-          <section className="min-w-0" data-testid="overview-holdings-section">
-            <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
-              <div>
-                <h2 className="text-base font-semibold text-[var(--app-text)]">
-                  {copy.overview.dashboard.positionsPanel}
-                </h2>
-                <p className="mt-1 text-xs text-[var(--app-text-secondary)]">
-                  {copy.overview.dashboard.positionsDetail}
-                </p>
-              </div>
-              <span className="font-mono text-xs tabular-nums text-[var(--app-text-tertiary)]">
-                {positions.length} {copy.overview.risk.positions}
-              </span>
+          <section
+            data-testid="overview-performance-card"
+            className="min-w-0 overflow-hidden border-y border-[var(--app-divider)] bg-transparent"
+          >
+            <div
+              role="tablist"
+              aria-label={copy.overview.dashboard.equityPanel}
+              className="flex max-w-full overflow-x-auto border-b border-[var(--app-divider)]"
+            >
+              {analysisTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={analysisView === tab.id}
+                  onClick={() => setAnalysisView(tab.id)}
+                  className={`h-9 shrink-0 border-b-2 px-3 text-xs font-semibold ${
+                    analysisView === tab.id
+                      ? 'border-[var(--app-accent)] text-[var(--app-accent)]'
+                      : 'border-transparent text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
-            {positions.length === 0 ? (
-              <StatusCard
-                title={copy.states.empty}
-                detail={copy.portfolio.positionsEmpty}
-              />
-            ) : (
-              <PositionsTable
-                positions={positions}
-                assetClassBySymbol={assetClassBySymbol}
-                variant="dashboard"
-              />
-            )}
+            <div className="min-w-0 py-3 sm:py-4">
+              {analysisView === 'performance' ? (
+                equityCurve.isLoading ? (
+                  <EquityCurveSkeleton />
+                ) : equityCurve.isError ? (
+                  <StatusCard
+                    tone="danger"
+                    title={copy.states.error}
+                    detail={copy.overview.curveError}
+                    actionLabel={copy.states.retry}
+                    onAction={() => void equityCurve.refetch()}
+                  />
+                ) : (
+                  <EquityCurveCard
+                    points={equityCurve.data ?? []}
+                    range={equityCurveRange}
+                    onRangeChange={setEquityCurveRange}
+                  />
+                )
+              ) : analysisView === 'allocation' ? (
+                <PortfolioExposureSummary snapshot={snapshot.data} />
+              ) : analysisView === 'attribution' ? (
+                <StrategyContributionGateCard
+                  report={strategyContribution.data}
+                  isLoading={strategyContribution.isLoading}
+                  isError={strategyContribution.isError}
+                  onRetry={() => void strategyContribution.refetch()}
+                  instruments={positions}
+                  variant="compact"
+                />
+              ) : (
+                <ReturnCalendarCard
+                  timeline={explainability.data?.timeline ?? []}
+                  positions={positions}
+                  marketCalendar={marketCalendar.data}
+                  compact
+                />
+              )}
+            </div>
           </section>
 
           <div
-            className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]"
+            className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]"
             data-testid="overview-review-strip"
           >
             <DashboardMarketPulse
@@ -638,7 +641,7 @@ export function OverviewPage() {
               isLoading={marketHealth.isLoading}
               isError={marketHealth.isError}
             />
-            <section className="min-w-0 rounded-[var(--app-radius-surface)] border border-[var(--app-border)] bg-[var(--app-surface)] p-3 sm:p-4">
+            <section className="min-w-0 border-y border-[var(--app-divider)] bg-transparent py-3 sm:py-4">
               <div className="mb-3 flex items-end justify-between gap-3">
                 <h2 className="text-base font-semibold text-[var(--app-text)]">
                   {copy.overview.dashboard.pendingApprovals}
@@ -2383,14 +2386,14 @@ function DashboardTodayQueue({
     <section className="min-w-0" data-testid="overview-today-queue">
       <div className="mb-2 flex items-end justify-between gap-3">
         <div>
-          <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--app-text-tertiary)]">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
             {labels.dailyWorkbench}
           </div>
           <h2 className="mt-1 text-base font-semibold text-[var(--app-text)]">
             {labels.todayToReview}
           </h2>
         </div>
-        <span className="font-mono text-sm font-semibold tabular-nums text-[var(--app-text-secondary)]">
+        <span className="text-sm font-semibold tabular-nums text-[var(--app-text-secondary)]">
           {actionableCount}
         </span>
       </div>
@@ -2598,10 +2601,10 @@ function DashboardMarketPulse({
 
   return (
     <section
-      className="min-w-0 overflow-hidden rounded-[var(--app-radius-surface)] border border-[var(--app-border)] bg-[var(--app-surface)]"
+      className="min-w-0 overflow-hidden border-y border-[var(--app-divider)] bg-transparent"
       data-testid="overview-market-pulse"
     >
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-3 py-2.5">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--app-divider)] py-2.5">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold text-[var(--app-text)]">
             {labels.marketPulse}
@@ -2618,7 +2621,7 @@ function DashboardMarketPulse({
         </a>
       </div>
 
-      <div className="min-w-0 p-3">
+      <div className="min-w-0 py-3">
         {isLoading ? (
           <EvidenceState kind="loading" title={copy.states.loading} />
         ) : isError ? (
@@ -2739,45 +2742,36 @@ function DashboardPendingOrders({
 }) {
   const { locale } = usePreferences();
   if (isLoading) {
-    return (
-      <div className="app-muted rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-4 py-3 text-sm">
-        {copy.trading.orders.loading}
-      </div>
-    );
+    return <EvidenceState kind="loading" title={copy.trading.orders.loading} />;
   }
 
   if (isError) {
     return (
-      <div className="app-error-text rounded-2xl border border-[var(--app-danger-border)] px-4 py-3 text-sm">
-        {copy.trading.orders.loadFailed}
-      </div>
+      <EvidenceState kind="error" title={copy.trading.orders.loadFailed} />
     );
   }
 
   if (orders.length === 0) {
     return (
-      <div className="rounded-3xl border border-dashed border-[color-mix(in_srgb,var(--app-border)_36%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-4 py-5">
-        <div className="text-sm font-semibold text-[var(--app-soft)]">
-          {copy.overview.dashboard.pendingEmpty}
-        </div>
-        <div className="app-muted mt-2 text-xs leading-5">
-          {copy.overview.dashboard.pendingEmptyDetail}
-        </div>
-      </div>
+      <EvidenceState
+        kind="empty"
+        title={copy.overview.dashboard.pendingEmpty}
+        description={copy.overview.dashboard.pendingEmptyDetail}
+      />
     );
   }
 
   return (
-    <div className="max-h-[270px] space-y-2.5 overflow-y-auto pr-1">
+    <div className="max-h-[270px] divide-y divide-[var(--app-divider)] overflow-y-auto border-y border-[var(--app-divider)]">
       {orders.map((order) => {
         const normalizedSide = order.side.toLowerCase();
         const isBuy = normalizedSide === 'buy';
         const isSell = normalizedSide === 'sell';
         const sideToneClass = isBuy
-          ? 'bg-[var(--app-danger-bg)] text-[var(--app-danger-text)] ring-1 ring-[var(--app-danger-border)]'
+          ? 'border-[color-mix(in_srgb,var(--app-chart-buy)_56%,transparent)] text-[var(--app-chart-buy)]'
           : isSell
-            ? 'bg-[var(--app-success-bg)] text-[var(--app-success-text)] ring-1 ring-[var(--app-success-border)]'
-            : 'bg-[var(--app-warning-bg)] text-[var(--app-warning-text)] ring-1 ring-[var(--app-warning-border)]';
+            ? 'border-[color-mix(in_srgb,var(--app-chart-sell)_56%,transparent)] text-[var(--app-chart-sell)]'
+            : 'border-[var(--app-warning-border)] text-[var(--app-warning-text)]';
         const sideLabel = formatLedgerOrderSideLabel(order.side, locale);
         const displayName = order.display_name ?? order.name ?? null;
         const instrumentNames = displayName
@@ -2790,7 +2784,7 @@ function DashboardPendingOrders({
         return (
           <div
             key={order.order_id}
-            className="group rounded-3xl border border-[color-mix(in_srgb,var(--app-danger-border)_48%,transparent)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--app-danger)_13%,transparent),color-mix(in_srgb,var(--app-surface-0)_8%,transparent))] px-4 py-3.5 shadow-[0_18px_44px_color-mix(in_srgb,var(--app-mantle)_36%,transparent),inset_0_1px_0_color-mix(in_srgb,var(--app-text)_5%,transparent)] transition-[transform,border-color,background-color] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-0.5 hover:border-[color-mix(in_srgb,var(--app-danger)_58%,transparent)]"
+            className="px-2 py-2.5 transition-colors hover:bg-[var(--app-accent-bg)]"
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -2802,12 +2796,12 @@ function DashboardPendingOrders({
                 </div>
               </div>
               <div
-                className={`rounded-full px-2.5 py-1 text-xs font-semibold ${sideToneClass}`}
+                className={`rounded-[var(--app-radius-control)] border bg-transparent px-2 py-1 text-xs font-semibold ${sideToneClass}`}
               >
                 {sideLabel}
               </div>
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-xs tabular-nums">
+            <div className="mt-2 grid grid-cols-2 gap-3 text-xs tabular-nums">
               <MetricLine
                 label={copy.trading.orders.quantity}
                 value={formatQuantity(order.quantity)}
@@ -2837,25 +2831,26 @@ function DashboardLedger({
 }) {
   const { locale } = usePreferences();
   return (
-    <div className="mt-5 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-5">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="app-card-title text-base text-[var(--app-soft)]">
+    <div className="mt-4 border-t border-[var(--app-divider)] pt-4">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="text-sm font-semibold text-[var(--app-text)]">
           {copy.overview.dashboard.ledgerPanel}
         </div>
-        <div className="shrink-0 rounded-full border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-2.5 py-1 font-mono text-xs font-semibold text-[var(--app-subtext-0)] tabular-nums">
+        <div className="shrink-0 text-xs font-medium text-[var(--app-text-tertiary)] tabular-nums">
           {copy.overview.dashboard.ledgerCount(entries.length)}
         </div>
       </div>
       {isLoading ? (
-        <div className="app-muted text-sm">{copy.states.loading}</div>
+        <EvidenceState kind="loading" title={copy.states.loading} />
       ) : isError ? (
-        <div className="app-error-text text-sm">{copy.states.error}</div>
+        <EvidenceState kind="error" title={copy.states.error} />
       ) : entries.length === 0 ? (
-        <div className="app-muted rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3 text-sm">
-          {copy.overview.dashboard.ledgerEmpty}
-        </div>
+        <EvidenceState
+          kind="empty"
+          title={copy.overview.dashboard.ledgerEmpty}
+        />
       ) : (
-        <div className="max-h-[340px] space-y-2 overflow-y-auto pr-1">
+        <div className="max-h-[340px] divide-y divide-[var(--app-divider)] overflow-y-auto border-y border-[var(--app-divider)]">
           {entries.map((entry) => {
             const presentation = formatLedgerDashboardPresentation(
               entry,
@@ -2866,7 +2861,7 @@ function DashboardLedger({
             return (
               <div
                 key={entry.id}
-                className="group rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3 transition-[background-color,transform,border-color] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-px hover:border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)]"
+                className="px-2 py-2.5 transition-colors hover:bg-[var(--app-accent-bg)]"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -2888,7 +2883,7 @@ function DashboardLedger({
                     ) : null}
                   </div>
                   <div
-                    className="shrink-0 whitespace-nowrap text-right font-mono text-sm font-semibold tabular-nums text-[var(--app-soft)]"
+                    className="shrink-0 whitespace-nowrap text-right font-mono text-sm font-semibold tabular-nums text-[var(--app-text-secondary)]"
                     data-testid={`dashboard-ledger-amount-${entry.id}`}
                   >
                     {presentation.amount}
@@ -2905,12 +2900,14 @@ function DashboardLedger({
 
 function MetricLine({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_18%,transparent)] px-3 py-2">
-      <div className="app-kicker text-[10px] uppercase tracking-[0.12em] text-[var(--app-subtext-0)]">
+    <dl className="min-w-0">
+      <dt className="text-[10px] font-medium text-[var(--app-text-tertiary)]">
         {label}
-      </div>
-      <div className="mt-1 font-mono font-semibold">{value}</div>
-    </div>
+      </dt>
+      <dd className="mt-0.5 truncate font-mono font-semibold text-[var(--app-text)]">
+        {value}
+      </dd>
+    </dl>
   );
 }
 
@@ -2938,7 +2935,7 @@ function PortfolioEvidenceReviewPanel({
             {copy.portfolio.evidenceReview.detail}
           </p>
         </div>
-        <span className="font-mono text-xs font-semibold tabular-nums text-[var(--app-warning-text)]">
+        <span className="text-xs font-semibold tabular-nums text-[var(--app-warning-text)]">
           {copy.portfolio.evidenceReview.count(items.length)}
         </span>
       </div>
@@ -3033,7 +3030,7 @@ export function PortfolioPage() {
     : undefined;
 
   return (
-    <section className="space-y-5 sm:space-y-6">
+    <section className="space-y-4 sm:space-y-5">
       <WorkspaceHeader
         eyebrow={copy.portfolio.kicker}
         title={copy.portfolio.title}
@@ -3087,6 +3084,10 @@ export function PortfolioPage() {
         )} · ${copy.portfolio.filteredHoldingsCount(filteredPositions.length)}`}
       />
 
+      {evidenceFilter !== 'clear' ? (
+        <PortfolioEvidenceReviewPanel items={evidenceReviewItems} />
+      ) : null}
+
       <div data-testid="portfolio-current-holdings-count" className="sr-only">
         {copy.portfolio.currentHoldingsCount((positions.data ?? []).length)} ·{' '}
         {copy.portfolio.filteredHoldingsCount(filteredPositions.length)}
@@ -3131,13 +3132,9 @@ export function PortfolioPage() {
         />
       )}
 
-      {evidenceFilter !== 'clear' ? (
-        <PortfolioEvidenceReviewPanel items={evidenceReviewItems} />
-      ) : null}
-
-      <div className="grid min-w-0 gap-5 xl:grid-cols-2">
+      <div className="grid min-w-0 gap-4 xl:grid-cols-2">
         {mode === 'account' ? (
-          <div className="min-w-0 space-y-5">
+          <div className="min-w-0 space-y-4">
             {liveHoldings.isLoading ? (
               <StatusCard
                 title={copy.states.loading}
@@ -3159,7 +3156,7 @@ export function PortfolioPage() {
             ) : null}
           </div>
         ) : (
-          <div className="min-w-0 space-y-5">
+          <div className="min-w-0 space-y-4">
             <StrategyContributionGateCard
               report={strategyContribution.data}
               isLoading={strategyContribution.isLoading}
@@ -3176,7 +3173,7 @@ export function PortfolioPage() {
           </div>
         )}
 
-        <div className="min-w-0 space-y-5">
+        <div className="min-w-0 space-y-4">
           {snapshot.isLoading ? (
             <StatusCard
               title={copy.states.loading}
@@ -3216,7 +3213,7 @@ export function PortfolioPage() {
           </div>
           <a
             href="/activity"
-            className="app-button-secondary rounded-[var(--app-radius-control)] px-2.5 py-1.5 text-xs font-semibold"
+            className="app-button-secondary inline-flex min-h-8 items-center rounded-[var(--app-radius-control)] px-2.5 text-xs font-semibold"
           >
             {copy.portfolio.detail.actionViewActivity}
           </a>
@@ -3339,7 +3336,11 @@ export function RiskPage() {
         description={copy.riskPage.subtitle}
         context={
           state.data
-            ? `${state.data.summary.valuation_timestamp} · ${formatPublicStatus(
+            ? `snapshot ${
+                state.data.summary.valuation_snapshot_id
+                  ? `${state.data.summary.valuation_snapshot_id.slice(0, 18)}…`
+                  : '--'
+              } · ledger ${state.data.summary.ledger_cutoff_id ?? '--'} · ${formatPublicStatus(
                 state.data.summary.quote_status,
                 locale,
               )}`
@@ -3450,28 +3451,6 @@ export function RiskPage() {
             </section>
           ) : null}
 
-          <div
-            className="grid min-w-0 gap-4"
-            data-testid="risk-trading-control-grid"
-          >
-            <KillSwitchPanel />
-            <OrderApprovalTable />
-          </div>
-
-          <MetricStrip
-            ariaLabel={copy.riskPage.metrics}
-            items={workspace.data.metrics.map((metric) => ({
-              id: metric.key,
-              label: getRiskMetricLabel(copy, metric.key),
-              value: metric.display_value,
-              detail: formatRiskAlertLevel(metric.level, locale),
-              tone:
-                metric.level === 'high' || metric.level === 'medium'
-                  ? ('warning' as const)
-                  : ('neutral' as const),
-            }))}
-          />
-
           <section
             data-testid="risk-blocking-register"
             className="min-w-0 space-y-2"
@@ -3514,6 +3493,20 @@ export function RiskPage() {
             />
           </section>
 
+          <MetricStrip
+            ariaLabel={copy.riskPage.metrics}
+            items={workspace.data.metrics.map((metric) => ({
+              id: metric.key,
+              label: getRiskMetricLabel(copy, metric.key),
+              value: metric.display_value,
+              detail: formatRiskAlertLevel(metric.level, locale),
+              tone:
+                metric.level === 'high' || metric.level === 'medium'
+                  ? ('warning' as const)
+                  : ('neutral' as const),
+            }))}
+          />
+
           <section className="min-w-0 space-y-2">
             <div>
               <h2 className="text-base font-semibold text-[var(--app-text)]">
@@ -3527,7 +3520,7 @@ export function RiskPage() {
                   : 'Shows only values, levels, and details persisted by the canonical projection; missing thresholds are not inferred in the UI.'}
               </p>
             </div>
-            <div className="max-w-full overflow-x-auto rounded-[var(--app-radius-surface)] border border-[var(--app-border)]">
+            <div className="max-w-full overflow-x-auto border-y border-[var(--app-divider)]">
               <table
                 className="w-full min-w-[620px] border-collapse text-left text-xs"
                 data-testid="risk-threshold-table"
@@ -3583,26 +3576,23 @@ export function RiskPage() {
             </div>
           </section>
 
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
-            <div className="app-panel rounded-2xl p-4 sm:p-5">
-              <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+            <section className="min-w-0 border-y border-[var(--app-divider)] py-3 sm:py-4">
+              <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
                 {copy.riskPage.drawdown}
               </div>
-              <div className="mt-4">
+              <div className="mt-3">
                 <DrawdownChart points={workspace.data.drawdown_series} />
               </div>
-            </div>
-            <div className="space-y-5">
-              <div className="app-panel rounded-2xl p-4 sm:p-5">
-                <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+            </section>
+            <div className="min-w-0 space-y-4">
+              <section className="min-w-0 border-y border-[var(--app-divider)] py-3 sm:py-4">
+                <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
                   {copy.riskPage.exposure}
                 </div>
-                <div className="mt-4 grid gap-3">
+                <div className="mt-3 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]">
                   {workspace.data.exposure_buckets.map((bucket) => (
-                    <div
-                      key={bucket.bucket}
-                      className="app-panel-strong rounded-2xl px-4 py-4"
-                    >
+                    <div key={bucket.bucket} className="px-2 py-2.5">
                       <div className="flex items-center justify-between gap-3">
                         <div className="text-sm font-semibold">
                           {getRiskBucketLabel(copy, bucket.bucket)}
@@ -3618,26 +3608,23 @@ export function RiskPage() {
                         )}
                       </div>
                       {bucket.symbols.length > 0 ? (
-                        <div className="app-kicker mt-3 text-[11px] uppercase tracking-[0.16em]">
+                        <div className="mt-2 font-mono text-[11px] text-[var(--app-text-tertiary)]">
                           {bucket.symbols.join(' · ')}
                         </div>
                       ) : null}
                     </div>
                   ))}
                 </div>
-              </div>
+              </section>
 
-              <div className="app-panel rounded-2xl p-4 sm:p-5">
-                <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+              <section className="min-w-0 border-y border-[var(--app-divider)] py-3 sm:py-4">
+                <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
                   {copy.riskPage.concentration}
                 </div>
-                <div className="mt-4 grid gap-3">
+                <div className="mt-3 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]">
                   {workspace.data.concentration.length > 0 ? (
                     workspace.data.concentration.map((item) => (
-                      <div
-                        key={item.symbol}
-                        className="app-panel-strong rounded-2xl px-4 py-4"
-                      >
+                      <div key={item.symbol} className="px-2 py-2.5">
                         <div className="flex items-center justify-between gap-3">
                           <div className="text-sm font-semibold">
                             {item.symbol}
@@ -3659,9 +3646,29 @@ export function RiskPage() {
                     </div>
                   )}
                 </div>
-              </div>
+              </section>
             </div>
           </div>
+
+          <section className="min-w-0 space-y-2">
+            <div>
+              <h2 className="text-base font-semibold text-[var(--app-text)]">
+                {locale === 'zh' ? '受控操作' : 'Controlled actions'}
+              </h2>
+              <p className="mt-0.5 max-w-3xl text-xs text-[var(--app-text-secondary)]">
+                {locale === 'zh'
+                  ? '熔断与人工审批独立于风险事实展示；操作不会改变上方 canonical 风险证据。'
+                  : 'Kill-switch and manual approval controls remain separate from risk facts and do not alter the canonical evidence above.'}
+              </p>
+            </div>
+            <div
+              className="grid min-w-0 gap-4"
+              data-testid="risk-trading-control-grid"
+            >
+              <KillSwitchPanel />
+              <OrderApprovalTable />
+            </div>
+          </section>
 
           <ExplainabilityWorkspace
             title={copy.riskPage.equityBridge}

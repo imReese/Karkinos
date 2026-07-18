@@ -654,6 +654,27 @@ textarea {
   background: var(--app-accent-bg);
 }
 
+.app-positions-table .app-data-table :is(th, td):first-child {
+  position: sticky;
+  left: 0;
+  min-width: 160px;
+  box-shadow: 1px 0 0 var(--app-divider);
+}
+
+.app-positions-table .app-data-table th:first-child {
+  z-index: 20;
+  background: var(--app-surface-raised);
+}
+
+.app-positions-table .app-data-table td:first-child {
+  z-index: 5;
+  background: var(--app-surface);
+}
+
+.app-positions-table .app-data-table tbody tr:hover td:first-child {
+  background: var(--app-surface-overlay);
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
