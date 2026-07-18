@@ -51,8 +51,9 @@ export function DataTable<TData extends RowData>({
 
   return (
     <div
+      data-workbench-primitive="data-table"
       className={cn(
-        'min-w-0 overflow-hidden rounded-[var(--app-radius-surface)] border border-[var(--app-border)] bg-[var(--app-surface)]',
+        'app-data-table-shell min-w-0 overflow-hidden border-y border-[var(--app-divider)] bg-transparent',
         className,
       )}
     >
@@ -67,7 +68,7 @@ export function DataTable<TData extends RowData>({
         >
           <table
             data-testid={tableTestId}
-            className="w-full min-w-max border-collapse text-left text-xs"
+            className="app-data-table w-full min-w-max border-collapse text-left text-xs"
           >
             <caption className="sr-only">{caption}</caption>
             <thead className="sticky top-0 z-10 bg-[var(--app-surface-raised)] text-[var(--app-text-secondary)] shadow-[var(--app-shadow-sticky)]">
@@ -127,7 +128,7 @@ export function DataTable<TData extends RowData>({
                     onClick={handleClick}
                     onKeyDown={handleKeyDown}
                     className={cn(
-                      'h-9 text-[var(--app-text)] hover:bg-[var(--app-accent-bg)]',
+                      'h-10 text-[var(--app-text)] hover:bg-[var(--app-accent-bg)]',
                       href && 'cursor-pointer',
                     )}
                   >

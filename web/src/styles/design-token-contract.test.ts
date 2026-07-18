@@ -27,8 +27,6 @@ const DEPRECATED_TOKEN_BUDGETS = {
   '--app-warning': 157,
   '--app-danger': 113,
   '--app-teal': 1,
-  '--app-overlay-0': 1,
-  '--app-radius-lg': 1,
 } as const;
 
 const HARDCODED_COLOR_BUDGETS = {
@@ -86,6 +84,16 @@ const THEME_COLOR_TOKENS = [
   '--app-chart-label',
   '--app-chart-buy',
   '--app-chart-sell',
+] as const;
+
+const REQUIRED_GEOMETRY_TOKENS = [
+  '--app-radius-control',
+  '--app-radius-surface',
+  '--app-radius-overlay',
+  '--app-control-height',
+  '--app-row-height-dense',
+  '--app-touch-target',
+  '--app-section-gap',
 ] as const;
 
 function sourceFiles(directory: string): string[] {
@@ -215,6 +223,18 @@ describe('application design token contract', () => {
         (token) => !MOCHA.has(token) || !latteOverrides.has(token),
       ),
     ).toEqual([]);
+  });
+
+  it('defines the compact shape, row, control, touch, and rhythm scale', () => {
+    for (const token of REQUIRED_GEOMETRY_TOKENS) {
+      expect(MOCHA.has(token), token).toBe(true);
+    }
+    expect(MOCHA.get('--app-radius-control')).toBe('6px');
+    expect(MOCHA.get('--app-radius-surface')).toBe('8px');
+    expect(MOCHA.get('--app-radius-overlay')).toBe('12px');
+    expect(MOCHA.get('--app-control-height')).toBe('32px');
+    expect(MOCHA.get('--app-row-height-dense')).toBe('40px');
+    expect(MOCHA.get('--app-touch-target')).toBe('40px');
   });
 
   it.each([

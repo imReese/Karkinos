@@ -250,12 +250,12 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <aside
           id="app-shell-navigation"
-          className={`app-shell-sidebar fixed inset-y-0 left-0 z-[100] flex w-[min(86vw,288px)] flex-col border-r border-[var(--app-border)] bg-[var(--app-surface)] px-3 py-4 transition-[width,transform] duration-200 lg:relative lg:h-full ${desktopNavExpanded ? 'lg:w-56' : 'lg:w-16'} lg:translate-x-0 ${
+          className={`app-shell-sidebar fixed inset-y-0 left-0 z-[100] flex w-[min(84vw,280px)] flex-col border-r border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-2 py-3 transition-[width,transform] duration-200 lg:relative lg:h-full ${desktopNavExpanded ? 'lg:w-52' : 'lg:w-14'} lg:translate-x-0 ${
             mobileNavOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
           <div
-            className={`mb-4 flex min-h-9 items-center gap-3 px-2 ${desktopNavExpanded ? 'justify-between' : 'lg:justify-center'}`}
+            className={`mb-3 flex min-h-8 items-center gap-3 px-2 ${desktopNavExpanded ? 'justify-between' : 'lg:justify-center'}`}
           >
             <div
               className={`min-w-0 flex-1 ${desktopNavExpanded ? '' : 'lg:hidden'}`}
@@ -275,13 +275,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
 
           <nav
-            className="min-h-0 flex-1 space-y-4 overflow-y-auto"
+            className="min-h-0 flex-1 space-y-3 overflow-y-auto"
             aria-label={copy.shell.navigation}
           >
             {navGroups.map((group) => (
               <div key={group.key} className="grid gap-1">
                 <div
-                  className={`px-2 pb-1 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--app-text-tertiary)] ${desktopNavExpanded ? '' : 'lg:hidden'}`}
+                  className={`app-nav-group-label px-2 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)] ${desktopNavExpanded ? '' : 'lg:hidden'}`}
                 >
                   {group.label[locale]}
                 </div>
@@ -326,7 +326,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               </div>
             ))}
           </nav>
-          <div className="mt-4 hidden border-t border-[var(--app-divider)] pt-3 lg:grid">
+          <div className="mt-3 hidden border-t border-[var(--app-divider)] pt-2 lg:grid">
             <button
               type="button"
               className={`app-nav-item min-h-9 rounded-[var(--app-radius-control)] px-2 py-2 text-sm font-medium text-[var(--app-text-secondary)] ${!desktopNavExpanded ? 'lg:justify-center lg:px-0' : ''}`}
@@ -360,7 +360,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </aside>
 
         <main className="app-shell-main relative flex min-w-0 flex-1 flex-col">
-          <header className="app-toolbar-shell relative z-[80] shrink-0 overflow-visible border-b border-[var(--app-border)] bg-[var(--app-surface)]">
+          <header className="app-toolbar-shell relative z-[80] shrink-0 overflow-visible border-b border-[var(--app-divider)] bg-[var(--app-surface-raised)]">
             <div className="flex h-12 items-center gap-3 px-3 sm:px-4">
               <button
                 type="button"
@@ -391,13 +391,13 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </svg>
               </button>
 
-              <div className="app-product-mark min-w-0 shrink-0 truncate text-[11px] font-semibold lg:hidden">
+              <div className="app-toolbar-brand app-product-mark min-w-0 shrink-0 truncate text-[11px] font-semibold lg:hidden">
                 Karkinos
               </div>
 
               <div
                 ref={statusRailRef}
-                className="hidden min-w-0 flex-1 flex-row flex-nowrap items-center gap-2 overflow-visible self-center lg:flex"
+                className="app-status-rail hidden min-w-0 flex-1 flex-row flex-nowrap items-center gap-2 overflow-visible self-center lg:flex"
                 aria-label={copy.shell.accountStatus}
               >
                 <StatusChip
@@ -506,8 +506,8 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           </header>
 
-          <div className="app-shell-content min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-auto [contain:layout_paint]">
-            <div className="w-full min-w-0 px-3 py-4 sm:px-4 lg:px-5 lg:py-5 xl:px-6">
+          <div className="app-shell-content min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto [contain:layout_paint]">
+            <div className="w-full min-w-0 px-3 py-3 sm:px-4 sm:py-4 lg:px-5 lg:py-5 xl:px-6">
               {children}
             </div>
           </div>
@@ -560,7 +560,7 @@ function LanguageMenu({
     <div ref={rootRef} className="relative w-auto">
       <button
         type="button"
-        className={`inline-flex h-8 w-auto items-center gap-2 whitespace-nowrap rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface-raised)] px-2.5 text-xs font-semibold text-[var(--app-text-secondary)] transition-colors hover:border-[var(--app-accent-border)] hover:text-[var(--app-text)] ${
+        className={`app-language-control inline-flex h-8 w-auto items-center gap-2 whitespace-nowrap rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-transparent px-2.5 text-xs font-semibold text-[var(--app-text-secondary)] transition-colors hover:border-[var(--app-accent-border)] hover:text-[var(--app-text)] ${
           open ? 'border-[var(--app-accent-border)] text-[var(--app-text)]' : ''
         }`}
         aria-label={label}
@@ -628,7 +628,7 @@ function ThemeSwitcher({
 }) {
   return (
     <div
-      className="inline-flex h-8 flex-row items-center gap-0.5 rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface-raised)] p-0.5"
+      className="app-theme-switcher inline-flex h-8 flex-row items-center gap-0.5 rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-transparent p-0.5"
       role="group"
       aria-label={label}
     >
@@ -641,7 +641,7 @@ function ThemeSwitcher({
             type="button"
             aria-label={option.label}
             aria-pressed={active}
-            className={`inline-flex h-6 items-center justify-center rounded-[var(--app-radius-control)] px-1.5 text-[var(--app-text-secondary)] transition-colors hover:text-[var(--app-text)] sm:px-2 [&>svg]:h-3.5 [&>svg]:w-3.5 ${
+            className={`app-theme-switcher-option inline-flex h-6 items-center justify-center rounded-[var(--app-radius-control)] px-1.5 text-[var(--app-text-secondary)] transition-colors hover:text-[var(--app-text)] sm:px-2 [&>svg]:h-3.5 [&>svg]:w-3.5 ${
               active ? 'bg-[var(--app-accent-bg)] text-[var(--app-accent)]' : ''
             }`}
             onClick={() => onChange(option.value)}
@@ -740,7 +740,7 @@ function StatusChip({
   testId?: string;
 }) {
   return (
-    <div className="group relative inline-flex h-8 w-[12.5rem] shrink-0">
+    <div className="app-status-chip group relative inline-flex h-8 w-[11.5rem] shrink-0">
       <button
         type="button"
         data-testid={testId}
@@ -751,16 +751,16 @@ function StatusChip({
         aria-haspopup={popup ? 'dialog' : undefined}
         title={title ?? hoverHint}
         onClick={onClick}
-        className={`inline-flex h-full w-full items-center overflow-hidden whitespace-nowrap rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface-raised)] text-xs text-[var(--app-text-secondary)] transition-colors hover:border-[var(--app-accent-border)] hover:text-[var(--app-text)] ${
+        className={`inline-flex h-full w-full items-center overflow-hidden whitespace-nowrap rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-transparent text-xs text-[var(--app-text-secondary)] transition-colors hover:border-[var(--app-accent-border)] hover:text-[var(--app-text)] ${
           expanded
             ? 'border-[var(--app-accent-border)] text-[var(--app-text)]'
             : ''
         }`}
       >
-        <span className="inline-flex h-full w-14 shrink-0 items-center justify-center border-r border-[var(--app-divider)] px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
+        <span className="inline-flex h-full w-12 shrink-0 items-center justify-center border-r border-[var(--app-divider)] px-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--app-text-tertiary)]">
           {label}
         </span>
-        <span className="inline-flex h-full min-w-0 flex-1 items-center gap-2 px-2.5 pr-7 font-mono tabular-nums">
+        <span className="inline-flex h-full min-w-0 flex-1 items-center gap-2 px-2.5 pr-7 tabular-nums">
           <span className="relative flex h-3.5 w-3.5 items-center justify-center">
             {indicator === 'syncing' ? (
               <RotateCwIcon
@@ -779,11 +779,11 @@ function StatusChip({
               </>
             )}
           </span>
-          <span className="min-w-[4.25rem] max-w-[7.5rem] truncate text-[12px] font-semibold text-[var(--app-text)]">
+          <span className="min-w-[4rem] max-w-[7rem] truncate text-[12px] font-semibold text-[var(--app-text)]">
             {value}
           </span>
           {meta ? (
-            <span className="shrink-0 text-[12px] font-semibold text-[var(--app-text-secondary)]">
+            <span className="shrink-0 text-[11px] font-medium text-[var(--app-text-secondary)]">
               {meta}
             </span>
           ) : null}
@@ -829,10 +829,10 @@ function StatusPopover({
             key={`${row.label}-${row.value}`}
             className="flex items-center justify-between gap-4 text-xs"
           >
-            <span className="font-mono uppercase tracking-[0.12em] text-[var(--app-text-tertiary)]">
+            <span className="text-[11px] font-medium text-[var(--app-text-tertiary)]">
               {row.label}
             </span>
-            <span className="font-mono tabular-nums font-medium text-[var(--app-text)]">
+            <span className="tabular-nums font-medium text-[var(--app-text)]">
               {row.value}
             </span>
           </div>

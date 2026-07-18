@@ -33,12 +33,12 @@
   --ctp-teal: #94e2d5;
 
   /* Canvas, surfaces, structure. */
-  --app-bg: var(--ctp-base);
-  --app-surface: var(--ctp-surface-0);
-  --app-surface-raised: var(--ctp-mantle);
-  --app-surface-overlay: var(--ctp-surface-1);
-  --app-border: var(--ctp-overlay-0);
-  --app-divider: var(--ctp-surface-1);
+  --app-bg: #1e1e2e;
+  --app-surface: #242433;
+  --app-surface-raised: #181825;
+  --app-surface-overlay: #2b2c3c;
+  --app-border: #4a4d61;
+  --app-divider: #383a4c;
 
   /* Text. Critical text colors are explicit for deterministic contrast tests. */
   --app-text: #cdd6f4;
@@ -81,8 +81,12 @@
   --app-radius-control: 6px;
   --app-radius-surface: 8px;
   --app-radius-overlay: 12px;
+  --app-control-height: 32px;
+  --app-row-height-dense: 40px;
+  --app-touch-target: 40px;
+  --app-section-gap: 24px;
   --app-shadow-overlay: 0 18px 50px rgba(17, 17, 27, 0.28);
-  --app-shadow-sticky: 0 1px 0 rgba(17, 17, 27, 0.28);
+  --app-shadow-sticky: 0 1px 0 rgba(17, 17, 27, 0.36);
 
   /* Charts. */
   --app-chart-grid: rgba(108, 112, 134, 0.52);
@@ -113,8 +117,6 @@
   --app-warning: var(--app-warning-indicator);
   --app-danger: var(--app-danger-indicator);
   --app-teal: var(--ctp-teal);
-  --app-overlay-0: var(--ctp-overlay-0);
-  --app-radius-lg: var(--app-radius-surface);
   background: var(--app-bg);
 }
 
@@ -137,11 +139,11 @@
   --ctp-teal: #179299;
 
   --app-bg: #eff1f5;
-  --app-surface: #e6e9ef;
-  --app-surface-raised: #eff1f5;
-  --app-surface-overlay: #ccd0da;
-  --app-border: #9ca0b0;
-  --app-divider: #bcc0cc;
+  --app-surface: #e9ebf1;
+  --app-surface-raised: #e6e9ef;
+  --app-surface-overlay: #f5f6fa;
+  --app-border: #a7acbb;
+  --app-divider: #d3d6df;
 
   --app-text: #4c4f69;
   --app-text-secondary: #52556f;
@@ -209,7 +211,7 @@ body {
 }
 
 [lang^='zh'] body {
-  font-weight: 500;
+  font-weight: 400;
 }
 
 * {
@@ -262,6 +264,10 @@ textarea {
   border-color: var(--app-divider);
   background: var(--app-surface-raised);
   box-shadow: var(--app-shadow-sticky);
+}
+
+.app-toolbar-brand {
+  display: inline-flex;
 }
 
 .app-panel {
@@ -339,12 +345,16 @@ textarea {
   background: var(--app-accent-hover);
 }
 
+.app-button-secondary:hover {
+  background: var(--app-accent-bg);
+}
+
 .app-button-danger:hover {
   border-color: var(--app-danger-text);
 }
 
 .app-kicker {
-  color: var(--app-subtext-0);
+  color: var(--app-text-secondary);
   font-family:
     'JetBrains Mono', 'IBM Plex Mono', 'SFMono-Regular', ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
@@ -366,11 +376,11 @@ textarea {
 }
 
 .app-muted {
-  color: var(--app-muted);
+  color: var(--app-text-secondary);
 }
 
 .app-soft {
-  color: var(--app-soft);
+  color: var(--app-text-tertiary);
 }
 
 .app-progress-track {
@@ -443,15 +453,15 @@ textarea {
 }
 
 .app-page-title {
-  font-size: clamp(1.65rem, 1.4vw + 1rem, 2.45rem);
-  font-weight: 750;
-  line-height: 1;
-  letter-spacing: -0.035em;
+  font-size: 1.5rem;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
 }
 
 .app-page-subtitle {
   max-width: 42rem;
-  color: var(--app-muted);
+  color: var(--app-text-secondary);
   font-size: 13px;
   line-height: 1.45;
 }
@@ -512,7 +522,7 @@ textarea {
 }
 
 .app-tier-4-label {
-  color: var(--app-subtext-0);
+  color: var(--app-text-secondary);
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.14em;
@@ -521,36 +531,14 @@ textarea {
 
 .app-surface-section {
   position: relative;
-  border: 1px solid color-mix(in srgb, var(--app-border) 42%, transparent);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--app-surface-0) 32%, transparent),
-      color-mix(in srgb, var(--app-panel-strong) 30%, transparent)
-    ),
-    color-mix(in srgb, var(--app-surface-0) 18%, transparent);
-  box-shadow:
-    0 28px 90px color-mix(in srgb, var(--app-mantle) 30%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--app-text) 6%, transparent);
+  border: 1px solid var(--app-divider);
+  border-radius: var(--app-radius-surface);
+  background: var(--app-surface);
+  box-shadow: none;
 }
 
 .app-surface-section::before {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  content: '';
-  background:
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--app-accent) 8%, transparent),
-      transparent 22%
-    ),
-    radial-gradient(
-      circle at 0% 0%,
-      color-mix(in srgb, var(--app-accent-secondary) 8%, transparent),
-      transparent 28rem
-    );
-  opacity: 0.82;
+  content: none;
 }
 
 .app-surface-section-header {
@@ -559,25 +547,25 @@ textarea {
   justify-content: space-between;
   gap: 16px;
   position: relative;
-  padding: 18px 20px 0;
+  padding: 14px 16px 0;
   z-index: 1;
 }
 
 .app-surface-pane {
-  border-color: color-mix(in srgb, var(--app-border) 30%, transparent);
+  border-color: var(--app-divider);
   position: relative;
-  padding: 20px;
+  padding: 16px;
   z-index: 1;
 }
 
 .app-surface-pane-accent {
-  background: color-mix(in srgb, var(--app-panel-strong) 18%, transparent);
+  background: var(--app-surface-raised);
 }
 
 .app-surface-card {
-  border: 1px solid color-mix(in srgb, var(--app-border) 22%, transparent);
-  border-radius: var(--app-radius-lg);
-  background: var(--app-surface-0);
+  border: 1px solid var(--app-divider);
+  border-radius: var(--app-radius-surface);
+  background: var(--app-surface);
   color: var(--app-text);
 }
 
@@ -585,18 +573,18 @@ textarea {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  border: 1px solid color-mix(in srgb, var(--app-border) 40%, transparent);
-  border-radius: 9999px;
-  background: color-mix(in srgb, var(--app-panel-strong) 68%, transparent);
+  border: 1px solid var(--app-divider);
+  border-radius: var(--app-radius-control);
+  background: var(--app-surface-raised);
   padding: 2px;
 }
 
 .app-inline-segmented-btn {
-  height: 28px;
+  height: var(--app-control-height);
   border: 0;
-  border-radius: 9999px;
+  border-radius: calc(var(--app-radius-control) - 1px);
   background: transparent;
-  color: var(--app-muted);
+  color: var(--app-text-secondary);
   padding: 0 10px;
   font-size: 11px;
   font-weight: 600;
@@ -619,30 +607,16 @@ textarea {
 }
 
 .app-terminal-panel {
-  border: 1px solid color-mix(in srgb, var(--app-border) 42%, transparent);
-  border-radius: 32px;
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--app-surface-0) 30%, transparent),
-      color-mix(in srgb, var(--app-panel-strong) 58%, transparent)
-    ),
-    var(--app-panel-strong);
-  box-shadow:
-    0 30px 90px color-mix(in srgb, var(--app-mantle) 30%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--app-text) 6%, transparent);
+  border: 1px solid var(--app-divider);
+  border-radius: var(--app-radius-surface);
+  background: var(--app-surface);
+  box-shadow: none;
 }
 
 .app-terminal-inner {
-  border: 1px solid color-mix(in srgb, var(--app-border) 34%, transparent);
-  border-radius: 24px;
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--app-panel-strong) 46%, transparent),
-      color-mix(in srgb, var(--app-mantle) 58%, transparent)
-    ),
-    color-mix(in srgb, var(--app-mantle) 56%, transparent);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .app-data-table {
@@ -651,23 +625,23 @@ textarea {
 }
 
 .app-data-table thead {
-  color: var(--app-subtext-0);
+  color: var(--app-text-secondary);
 }
 
 .app-data-table th {
-  border-bottom: 1px solid
-    color-mix(in srgb, var(--app-border) 48%, transparent);
-  background: color-mix(in srgb, var(--app-surface-0) 12%, transparent);
-  font-family: 'JetBrains Mono', 'SFMono-Regular', ui-monospace, monospace;
-  font-size: 10px;
+  height: 32px;
+  border-bottom: 1px solid var(--app-divider);
+  background: var(--app-surface-raised);
+  font-family: inherit;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  text-transform: none;
 }
 
 .app-data-table td {
-  border-bottom: 1px solid
-    color-mix(in srgb, var(--app-border) 34%, transparent);
+  min-height: var(--app-row-height-dense);
+  border-bottom: 1px solid var(--app-divider);
 }
 
 .app-data-table tbody tr {
@@ -677,11 +651,7 @@ textarea {
 }
 
 .app-data-table tbody tr:hover {
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--app-accent) 8%, transparent),
-    color-mix(in srgb, var(--app-surface-0) 14%, transparent)
-  );
+  background: var(--app-accent-bg);
 }
 
 ::-webkit-scrollbar {
@@ -696,7 +666,7 @@ textarea {
 ::-webkit-scrollbar-thumb {
   border: 3px solid transparent;
   border-radius: 9999px;
-  background: color-mix(in srgb, var(--app-overlay-0) 28%, transparent);
+  background: color-mix(in srgb, var(--app-border) 42%, transparent);
   background-clip: content-box;
 }
 
@@ -728,7 +698,7 @@ textarea {
 h1,
 h2,
 h3 {
-  @apply font-bold;
+  font-weight: 600;
 }
 
 .app-error-text {
@@ -782,15 +752,17 @@ h3 {
 .app-workbench-route {
   min-width: 0;
   max-width: 100%;
+  scroll-padding-top: var(--app-section-gap);
 }
 
 .app-workbench-section {
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
-  border: 1px solid var(--app-border);
-  border-radius: var(--app-radius-surface);
-  background: var(--app-surface);
+  border: 0;
+  border-top: 1px solid var(--app-divider);
+  border-radius: 0;
+  background: transparent;
   box-shadow: none;
 }
 
@@ -805,7 +777,7 @@ h3 {
 }
 
 .app-workbench-route .app-terminal-panel {
-  border: 1px solid var(--app-border);
+  border: 1px solid var(--app-divider);
   border-radius: var(--app-radius-surface);
   background: var(--app-surface);
   box-shadow: none;
@@ -836,20 +808,50 @@ h3 {
 }
 
 @media (max-width: 767px) {
+  .app-metric-strip-item:nth-child(odd) {
+    border-right: 1px solid var(--app-divider);
+  }
+
+  .app-metric-strip-item:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--app-divider);
+  }
+
   .app-workbench-route :where(button, [role='button'], select),
   .app-shell-sidebar :where(button, a[href]),
   .app-toolbar-shell :where(button, a[href]) {
-    min-height: 40px;
+    min-width: var(--app-touch-target);
+    min-height: var(--app-touch-target);
   }
 
   .app-workbench-route a[href] {
     display: inline-flex;
-    min-height: 40px;
+    min-height: var(--app-touch-target);
     align-items: center;
+  }
+
+  .app-theme-switcher-option,
+  .app-language-control {
+    width: var(--app-touch-target);
+    justify-content: center;
+    padding-inline: 0;
+  }
+}
+
+@media (min-width: 640px) {
+  .app-metric-strip-item {
+    border-right: 1px solid var(--app-divider);
+  }
+
+  .app-metric-strip-item:last-child {
+    border-right: 0;
   }
 }
 
 @media (min-width: 1024px) {
+  .app-toolbar-brand {
+    display: none;
+  }
+
   .app-shell-sidebar {
     border-width: 0 1px 0 0;
     border-radius: 0;
