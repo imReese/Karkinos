@@ -52,7 +52,7 @@ import {
 type DetailMetric = {
   label: string;
   value: string;
-  tone?: 'success' | 'danger' | 'warning';
+  tone?: 'pnl-positive' | 'pnl-negative' | 'warning';
 };
 
 type EvidenceRefType =
@@ -627,8 +627,8 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
       tone:
         typeof todayChange === 'number' && todayChange !== 0
           ? todayChange > 0
-            ? 'success'
-            : 'danger'
+            ? 'pnl-positive'
+            : 'pnl-negative'
           : undefined,
     },
     {
@@ -637,14 +637,19 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
       tone:
         typeof todayChange === 'number' && todayChange !== 0
           ? todayChange > 0
-            ? 'success'
-            : 'danger'
+            ? 'pnl-positive'
+            : 'pnl-negative'
           : undefined,
     },
     {
       label: labels.unrealizedPnl,
       value: formatCurrency(position.unrealized_pnl),
-      tone: position.unrealized_pnl >= 0 ? 'success' : 'danger',
+      tone:
+        position.unrealized_pnl > 0
+          ? 'pnl-positive'
+          : position.unrealized_pnl < 0
+            ? 'pnl-negative'
+            : undefined,
     },
     { label: labels.pnlPct, value: formatReturnPercent(pnlPct) },
   ];
@@ -990,7 +995,13 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
                   <InfoRow
                     label={labels.unrealizedPnl}
                     value={formatCurrency(position.unrealized_pnl)}
-                    tone={position.unrealized_pnl >= 0 ? 'success' : 'danger'}
+                    tone={
+                      position.unrealized_pnl > 0
+                        ? 'pnl-positive'
+                        : position.unrealized_pnl < 0
+                          ? 'pnl-negative'
+                          : undefined
+                    }
                   />
                 </div>
               )}
@@ -1031,8 +1042,8 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
                       <span
                         className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
                           attributionReviewReady
-                            ? 'bg-[color-mix(in_srgb,var(--app-success)_14%,transparent)] text-[var(--app-success)]'
-                            : 'bg-[color-mix(in_srgb,var(--app-warning)_14%,transparent)] text-[var(--app-warning)]'
+                            ? 'bg-[var(--app-success-bg)] text-[var(--app-success-text)]'
+                            : 'bg-[var(--app-warning-bg)] text-[var(--app-warning-text)]'
                         }`}
                       >
                         {attributionReviewReady
@@ -1049,8 +1060,8 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
                           <span
                             className={`h-2 w-2 shrink-0 rounded-full ${
                               item.passed
-                                ? 'bg-[var(--app-success)]'
-                                : 'bg-[var(--app-warning)]'
+                                ? 'bg-[var(--app-success-indicator)]'
+                                : 'bg-[var(--app-warning-indicator)]'
                             }`}
                           />
                           <span className="min-w-0 break-words">
@@ -1205,12 +1216,12 @@ function MetricGrid({
           </div>
           <div
             className={`mt-2 break-words font-mono text-sm font-semibold tabular-nums ${
-              metric.tone === 'success'
-                ? 'text-[var(--app-success)]'
-                : metric.tone === 'danger'
-                  ? 'text-[var(--app-danger)]'
+              metric.tone === 'pnl-positive'
+                ? 'text-[var(--app-pnl-positive)]'
+                : metric.tone === 'pnl-negative'
+                  ? 'text-[var(--app-pnl-negative)]'
                   : metric.tone === 'warning'
-                    ? 'text-[var(--app-warning)]'
+                    ? 'text-[var(--app-warning-text)]'
                     : 'text-[var(--app-text)]'
             }`}
           >
@@ -1229,7 +1240,7 @@ function InfoRow({
 }: {
   label: string;
   value: string;
-  tone?: 'success' | 'danger' | 'warning';
+  tone?: 'pnl-positive' | 'pnl-negative' | 'warning';
 }) {
   return (
     <div
@@ -1240,12 +1251,12 @@ function InfoRow({
       <span
         data-testid="holding-info-row-value"
         className={`min-w-0 break-words text-right font-mono font-semibold tabular-nums ${
-          tone === 'success'
-            ? 'text-[var(--app-success)]'
-            : tone === 'danger'
-              ? 'text-[var(--app-danger)]'
+          tone === 'pnl-positive'
+            ? 'text-[var(--app-pnl-positive)]'
+            : tone === 'pnl-negative'
+              ? 'text-[var(--app-pnl-negative)]'
               : tone === 'warning'
-                ? 'text-[var(--app-warning)]'
+                ? 'text-[var(--app-warning-text)]'
                 : 'text-[var(--app-text)]'
         }`}
       >
@@ -1264,10 +1275,10 @@ function StatusBadge({
 }) {
   const colorClass =
     tone === 'success'
-      ? 'bg-[var(--app-success-bg)] text-[var(--app-success)] ring-[var(--app-success-border)]'
+      ? 'bg-[var(--app-success-bg)] text-[var(--app-success-text)] ring-[var(--app-success-border)]'
       : tone === 'danger'
-        ? 'bg-[var(--app-danger-bg)] text-[var(--app-danger)] ring-[var(--app-danger-border)]'
-        : 'bg-[var(--app-warning-bg)] text-[var(--app-warning)] ring-[var(--app-warning-border)]';
+        ? 'bg-[var(--app-danger-bg)] text-[var(--app-danger-text)] ring-[var(--app-danger-border)]'
+        : 'bg-[var(--app-warning-bg)] text-[var(--app-warning-text)] ring-[var(--app-warning-border)]';
   return (
     <span
       className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${colorClass}`}
@@ -1396,7 +1407,7 @@ function StatusPanel({
       <div className="app-terminal-inner rounded-[27px] p-5">
         <div
           className={`app-product-mark ${
-            tone === 'danger' ? 'text-[var(--app-danger)]' : ''
+            tone === 'danger' ? 'text-[var(--app-danger-text)]' : ''
           }`}
         >
           {title}

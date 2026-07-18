@@ -62,7 +62,7 @@ function resolveTone(value: number | null | undefined): NumericCellTone {
   if (typeof value !== 'number' || !Number.isFinite(value) || value === 0) {
     return 'text';
   }
-  return value > 0 ? 'success' : 'danger';
+  return value > 0 ? 'positive' : 'negative';
 }
 
 function quoteNeedsReview(status: string | null | undefined) {
@@ -176,7 +176,7 @@ function handleEntryKeyDown(event: KeyboardEvent<HTMLElement>, href: string) {
 }
 
 type NumericCellKind = 'quantity' | 'price' | 'amount' | 'percent';
-type NumericCellTone = 'muted' | 'text' | 'success' | 'danger';
+type NumericCellTone = 'muted' | 'text' | 'positive' | 'negative';
 
 const NUMERIC_WIDTH_CLASSES: Record<NumericCellKind, string> = {
   quantity: 'min-w-24 px-4',
@@ -188,8 +188,8 @@ const NUMERIC_WIDTH_CLASSES: Record<NumericCellKind, string> = {
 const NUMERIC_TONE_CLASSES: Record<NumericCellTone, string> = {
   muted: 'text-[var(--app-soft)]',
   text: 'text-[var(--app-text)]',
-  success: 'text-[var(--app-success)]',
-  danger: 'text-[var(--app-danger)]',
+  positive: 'text-[var(--app-pnl-positive)]',
+  negative: 'text-[var(--app-pnl-negative)]',
 };
 
 function numericHeaderClassName(kind: NumericCellKind) {
@@ -287,7 +287,7 @@ export function PositionsTable({
       ) : null}
       <div className="grid gap-4 md:hidden">
         {positions.map((position) => {
-          const pnlPositive = position.unrealized_pnl >= 0;
+          const pnlTone = resolveTone(position.unrealized_pnl);
           const isStale = quoteNeedsReview(position.quote_status);
           const displayName = resolvePositionName(position);
           const assetClass =
@@ -391,7 +391,7 @@ export function PositionsTable({
               label: labels.unrealized,
               value: formatCurrency(position.unrealized_pnl),
               kind: 'amount',
-              tone: pnlPositive ? 'success' : 'danger',
+              tone: pnlTone,
               emphasis: true,
             },
             {
@@ -399,7 +399,7 @@ export function PositionsTable({
               label: labels.returnPct,
               value: formatReturnPercent(resolvePnlPct(position)),
               kind: 'percent',
-              tone: pnlPositive ? 'success' : 'danger',
+              tone: pnlTone,
               emphasis: true,
             },
             {
@@ -435,7 +435,7 @@ export function PositionsTable({
             <div
               key={position.symbol}
               data-testid={`position-card-${position.symbol}`}
-              className="app-panel cursor-pointer rounded-3xl p-4 transition-colors hover:border-[color-mix(in_srgb,var(--app-accent)_42%,transparent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+              className="app-panel cursor-pointer rounded-3xl p-4 transition-colors hover:border-[color-mix(in_srgb,var(--app-accent)_42%,transparent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
               tabIndex={0}
               aria-label={detailLabel}
               onClick={() => {
@@ -449,7 +449,7 @@ export function PositionsTable({
                 <div>
                   <a
                     href={detailHref}
-                    className="text-base font-semibold text-[var(--app-text)] underline-offset-4 transition-colors hover:text-[var(--app-accent)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+                    className="text-base font-semibold text-[var(--app-text)] underline-offset-4 transition-colors hover:text-[var(--app-accent)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
                     aria-label={detailLabel}
                     title={`${displayName} · ${position.symbol}`}
                     onClick={stopEntryNavigation}
@@ -620,7 +620,7 @@ export function PositionsTable({
           </thead>
           <tbody>
             {positions.map((position) => {
-              const pnlPositive = position.unrealized_pnl >= 0;
+              const pnlTone = resolveTone(position.unrealized_pnl);
               const isStale = quoteNeedsReview(position.quote_status);
               const displayName = resolvePositionName(position);
               const assetClass =
@@ -657,7 +657,7 @@ export function PositionsTable({
                 <tr
                   key={position.symbol}
                   data-testid={`position-row-${position.symbol}`}
-                  className="group cursor-pointer transition-colors hover:bg-[color-mix(in_srgb,var(--app-accent)_5%,transparent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--app-focus)]"
+                  className="group cursor-pointer transition-colors hover:bg-[color-mix(in_srgb,var(--app-accent)_5%,transparent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--app-focus-ring)]"
                   tabIndex={0}
                   aria-label={detailLabel}
                   onClick={() => {
@@ -673,7 +673,7 @@ export function PositionsTable({
                       <span className="min-w-0">
                         <a
                           href={detailHref}
-                          className="block truncate font-semibold underline-offset-4 transition-colors hover:text-[var(--app-accent)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+                          className="block truncate font-semibold underline-offset-4 transition-colors hover:text-[var(--app-accent)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
                           aria-label={detailLabel}
                           title={`${displayName} · ${position.symbol}`}
                           onClick={stopEntryNavigation}
@@ -772,7 +772,7 @@ export function PositionsTable({
                     data-testid={`position-unrealized-${position.symbol}`}
                     className={numericCellClassName({
                       kind: 'amount',
-                      tone: pnlPositive ? 'success' : 'danger',
+                      tone: pnlTone,
                       emphasis: true,
                     })}
                   >
@@ -782,7 +782,7 @@ export function PositionsTable({
                     data-testid={`position-return-pct-${position.symbol}`}
                     className={numericCellClassName({
                       kind: 'percent',
-                      tone: pnlPositive ? 'success' : 'danger',
+                      tone: pnlTone,
                       emphasis: true,
                     })}
                   >
@@ -794,7 +794,7 @@ export function PositionsTable({
                         className={`w-max rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
                           isStale
                             ? 'border-[color-mix(in_srgb,var(--app-warning)_30%,transparent)] text-[var(--app-warning)]'
-                            : 'border-[color-mix(in_srgb,var(--app-success)_30%,transparent)] text-[var(--app-success)]'
+                            : 'border-[var(--app-success-border)] text-[var(--app-success-text)]'
                         }`}
                         title={staleReason}
                       >

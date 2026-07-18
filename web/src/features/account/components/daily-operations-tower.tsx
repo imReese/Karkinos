@@ -125,7 +125,7 @@ export function DailyOperationsTower({
       </div>
 
       <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
-        <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+        <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
           {labels.operationsTower}
         </div>
         <div className="mt-4 grid min-w-0 grid-cols-2 gap-2">

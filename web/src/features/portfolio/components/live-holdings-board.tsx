@@ -4,9 +4,9 @@ import type { LiveHoldingGroup } from '../api';
 
 function toneClass(value: number | null) {
   if (value === null || value === 0) {
-    return 'text-[var(--app-foreground)]';
+    return 'app-pnl-neutral';
   }
-  return value > 0 ? 'app-positive' : 'app-negative';
+  return value > 0 ? 'app-pnl-positive' : 'app-pnl-negative';
 }
 
 function assetClassLabel(

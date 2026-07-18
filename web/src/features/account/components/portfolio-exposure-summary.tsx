@@ -63,7 +63,7 @@ export function PortfolioExposureSummary({
               key={metric.key}
               className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-3 py-2.5"
             >
-              <div className="app-kicker text-[9px] text-[var(--app-subtext-1)]">
+              <div className="app-kicker text-[9px] text-[var(--app-text-tertiary)]">
                 {metric.label}
               </div>
               <div className="mt-1 font-mono text-sm font-semibold tabular-nums text-[var(--app-soft)]">
@@ -82,9 +82,9 @@ export function PortfolioExposureSummary({
           {largest ? (
             <a
               href={`/portfolio/${encodeURIComponent(largest.symbol)}`}
-              className="group min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-accent)_24%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_7%,transparent)] px-3 py-2.5 transition-colors hover:border-[color-mix(in_srgb,var(--app-accent)_48%,transparent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+              className="group min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-accent)_24%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_7%,transparent)] px-3 py-2.5 transition-colors hover:border-[color-mix(in_srgb,var(--app-accent)_48%,transparent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
             >
-              <div className="app-kicker text-[9px] text-[var(--app-subtext-1)]">
+              <div className="app-kicker text-[9px] text-[var(--app-text-tertiary)]">
                 {labels.largestHolding}
               </div>
               <div className="mt-1 flex min-w-0 items-baseline justify-between gap-2">
@@ -95,7 +95,7 @@ export function PortfolioExposureSummary({
                   {formatPercent(largest.weight)}
                 </span>
               </div>
-              <div className="mt-2 truncate font-mono text-[10px] text-[var(--app-subtext-1)]">
+              <div className="mt-2 truncate font-mono text-[10px] text-[var(--app-text-tertiary)]">
                 {largest.symbol}
               </div>
             </a>

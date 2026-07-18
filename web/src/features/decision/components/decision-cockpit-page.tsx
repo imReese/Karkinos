@@ -3131,7 +3131,7 @@ function AutomationCockpitPanel({
           >
             <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
-                <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+                <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
                   {locale === 'zh'
                     ? '当前逐单证据复核'
                     : 'Current per-order evidence review'}
@@ -3226,7 +3226,7 @@ function AutomationCockpitPanel({
               </div>
               {currentPerOrderHandoffEnabled ? (
                 <a
-                  className="inline-flex min-h-9 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+                  className="inline-flex min-h-9 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
                   href="/trading"
                 >
                   {locale === 'zh'
@@ -3245,7 +3245,7 @@ function AutomationCockpitPanel({
           >
             <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
-                <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+                <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
                   {locale === 'zh'
                     ? '受控执行操作视图'
                     : 'Controlled execution operator view'}
@@ -3638,7 +3638,7 @@ function AutomationCockpitPanel({
             {openAlertManualExecutionEvidence ? (
               <div className="mt-3 border-t border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] pt-3">
                 <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+                  <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
                     {locale === 'zh'
                       ? '手工成交证据'
                       : 'Manual execution evidence'}
@@ -3681,7 +3681,7 @@ function AutomationCockpitPanel({
         {cockpit.promotion_states.length ? (
           <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
             <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+              <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
                 {locale === 'zh' ? '策略晋级状态' : 'Strategy promotion state'}
               </div>
               <span className="app-chip">
@@ -3772,7 +3772,7 @@ function AutomationCockpitPanel({
         {brokerGatewayStatus || brokerGatewayLoading || brokerGatewayError ? (
           <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
             <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+              <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
                 {locale === 'zh' ? '券商网关状态' : 'Broker gateway status'}
               </div>
               <span
@@ -3957,7 +3957,7 @@ function AutomationCockpitPanel({
 
         {showConnectorHealth ? (
           <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
-            <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+            <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
               {locale === 'zh'
                 ? '持久化券商生命周期证据'
                 : 'Persisted broker lifecycle evidence'}
@@ -4100,7 +4100,7 @@ function AutomationCockpitPanel({
         {showAccountFacts ? (
           <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
             <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+              <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
                 {locale === 'zh' ? '暂存账户事实' : 'Staged account facts'}
               </div>
               <span className="app-chip">
@@ -4175,7 +4175,7 @@ function AutomationCockpitPanel({
         {showBrokerFills ? (
           <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
             <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+              <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
                 {locale === 'zh' ? '暂存成交轮询' : 'Staged fill polling'}
               </div>
               <span className="app-chip">
@@ -4259,7 +4259,7 @@ function AutomationCockpitPanel({
         {showExecutionReconciliation ? (
           <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
             <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+              <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
                 {locale === 'zh' ? '执行对账' : 'Execution reconciliation'}
               </div>
               <span className="app-chip">
@@ -4336,7 +4336,7 @@ function AutomationCockpitPanel({
                 {brokerTradeCostEvidence ? (
                   <div className="mt-3 border-t border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] pt-3">
                     <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+                      <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
                         {locale === 'zh'
                           ? '券商成本证据'
                           : 'Broker cost evidence'}
@@ -4376,7 +4376,7 @@ function AutomationCockpitPanel({
                 {manualExecutionEvidence ? (
                   <div className="mt-3 border-t border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] pt-3">
                     <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+                      <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
                         {locale === 'zh'
                           ? '手工成交证据'
                           : 'Manual execution evidence'}
@@ -4419,7 +4419,7 @@ function AutomationCockpitPanel({
                     data-testid="manual-broker-comparison-evidence"
                   >
                     <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+                      <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
                         {locale === 'zh'
                           ? '手工成交 / 券商证据对比'
                           : 'Manual / broker evidence comparison'}
@@ -4464,7 +4464,7 @@ function AutomationCockpitPanel({
                 {showBrokerOrderQuery ? (
                   <div className="mt-3 border-t border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] pt-3">
                     <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+                      <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
                         {locale === 'zh'
                           ? '只读订单查询'
                           : 'Read-only order query'}
@@ -5299,7 +5299,7 @@ function DecisionNextActionGuidePanel({
           </div>
           {guide.href && guide.cta ? (
             <a
-              className="inline-flex min-h-10 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-4 py-2 text-sm font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+              className="inline-flex min-h-10 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-4 py-2 text-sm font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
               href={guide.href}
             >
               {guide.cta}
@@ -5337,7 +5337,7 @@ function DecisionSummaryCollapsedPanel({
           </p>
         </div>
         <button
-          className="inline-flex min-h-10 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-4 py-2 text-sm font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+          className="inline-flex min-h-10 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-4 py-2 text-sm font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
           type="button"
           onClick={onExpand}
         >
@@ -5391,7 +5391,7 @@ function DecisionWorkflowPanel({ lanes }: { lanes: DecisionResponse[] }) {
               </p>
             </div>
             <button
-              className="inline-flex min-h-9 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+              className="inline-flex min-h-9 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
               type="button"
               onClick={() => setExpanded(true)}
             >
@@ -5482,7 +5482,7 @@ function DecisionWorkflowTaskCard({
       {target ? (
         <a
           aria-label={labels.workflowOpenSurfaceLabel(target.label, taskLabel)}
-          className="mt-3 inline-flex min-h-8 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+          className="mt-3 inline-flex min-h-8 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
           href={target.href}
         >
           {target.label}
@@ -5586,7 +5586,7 @@ function SignalQueuePanel({
               </p>
             </div>
             <button
-              className="inline-flex min-h-9 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+              className="inline-flex min-h-9 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
               type="button"
               onClick={() => setSignalQueueExpanded(true)}
             >
@@ -5971,7 +5971,7 @@ function DecisionLanePanel({ lane }: { lane: DecisionResponse }) {
                 </p>
               </div>
               <button
-                className="inline-flex min-h-9 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+                className="inline-flex min-h-9 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
                 type="button"
                 onClick={() => setExpanded((value) => !value)}
               >

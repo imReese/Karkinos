@@ -24,7 +24,8 @@ type MetricItem = {
   value: string;
   detail: string;
   icon: LucideIcon;
-  tone?: 'default' | 'good' | 'danger' | 'warning';
+  tone?:
+    'default' | 'good' | 'danger' | 'warning' | 'pnl-positive' | 'pnl-negative';
 };
 
 function finiteNumber(value: unknown, fallback = 0) {
@@ -56,7 +57,12 @@ export function MetricsGrid({ report }: { report: BacktestReport }) {
         metrics.final_equity,
       )}`,
       icon: TrendingUp,
-      tone: finiteNumber(metrics.total_return) >= 0 ? 'good' : 'danger',
+      tone:
+        finiteNumber(metrics.total_return) > 0
+          ? 'pnl-positive'
+          : finiteNumber(metrics.total_return) < 0
+            ? 'pnl-negative'
+            : 'default',
     },
     {
       label: labels.sharpe,
@@ -114,10 +120,9 @@ export function MetricsGrid({ report }: { report: BacktestReport }) {
           <div
             key={item.label}
             className={cn(
-              'app-panel rounded-2xl p-4 shadow-[0_18px_50px_rgba(17,17,27,0.12)]',
+              'app-panel rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] p-4',
               item.tone === 'danger' && 'border-[var(--app-danger-border)]',
-              item.tone === 'warning' &&
-                'border-[color-mix(in_srgb,#f9e2af_46%,var(--app-border))]',
+              item.tone === 'warning' && 'border-[var(--app-warning-border)]',
             )}
           >
             <div className="flex items-start justify-between gap-4">
@@ -128,9 +133,13 @@ export function MetricsGrid({ report }: { report: BacktestReport }) {
                 <div
                   className={cn(
                     'mt-2 truncate text-xl font-semibold tabular-nums',
-                    item.tone === 'danger' && 'text-[var(--app-danger)]',
-                    item.tone === 'warning' && 'text-[#f9e2af]',
-                    item.tone === 'good' && 'text-[#a6e3a1]',
+                    item.tone === 'danger' && 'text-[var(--app-danger-text)]',
+                    item.tone === 'warning' && 'text-[var(--app-warning-text)]',
+                    item.tone === 'good' && 'text-[var(--app-success-text)]',
+                    item.tone === 'pnl-positive' &&
+                      'text-[var(--app-pnl-positive)]',
+                    item.tone === 'pnl-negative' &&
+                      'text-[var(--app-pnl-negative)]',
                   )}
                 >
                   {item.value}

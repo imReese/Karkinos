@@ -223,7 +223,11 @@ export function PriceStructureChart({
   const change = latest - first;
   const changePercent = first === 0 ? 0 : change / first;
   const latestTone =
-    change >= 0 ? 'text-[var(--app-success)]' : 'text-[var(--app-danger)]';
+    change > 0
+      ? 'text-[var(--app-pnl-positive)]'
+      : change < 0
+        ? 'text-[var(--app-pnl-negative)]'
+        : 'text-[var(--app-pnl-neutral)]';
   const plot = {
     left: 64,
     right: 620,
@@ -423,7 +427,9 @@ export function PriceStructureChart({
               const topY = Math.min(openY, closeY);
               const height = Math.max(Math.abs(openY - closeY), 2);
               const tone =
-                bar.close >= open ? 'var(--app-success)' : 'var(--app-danger)';
+                bar.close >= open
+                  ? 'var(--app-pnl-positive)'
+                  : 'var(--app-pnl-negative)';
 
               return (
                 <g
@@ -457,7 +463,9 @@ export function PriceStructureChart({
               const x = plot.left + step * marker.barIndex + step / 2;
               const y = plotY(marker.price);
               const isBuy = marker.kind === 'buy';
-              const tone = isBuy ? 'var(--app-success)' : 'var(--app-danger)';
+              const tone = isBuy
+                ? 'var(--app-chart-buy)'
+                : 'var(--app-chart-sell)';
               return (
                 <g
                   key={`${marker.timestamp}-${marker.kind}-${index}`}
@@ -500,7 +508,7 @@ export function PriceStructureChart({
           {plottedMarkers.length > 0 || referenceLines.length > 0 ? (
             <div className="mt-3 flex min-w-0 flex-wrap gap-2 text-[10px] font-semibold text-[var(--app-muted)]">
               {plottedMarkers.some((marker) => marker.kind === 'buy') ? (
-                <span className="rounded-full border border-[color-mix(in_srgb,var(--app-success)_32%,transparent)] px-2 py-0.5 text-[var(--app-success)]">
+                <span className="rounded-full border border-[color-mix(in_srgb,var(--app-chart-buy)_42%,transparent)] px-2 py-0.5 text-[var(--app-chart-buy)]">
                   B ·{' '}
                   {
                     plottedMarkers.find((marker) => marker.kind === 'buy')
@@ -509,7 +517,7 @@ export function PriceStructureChart({
                 </span>
               ) : null}
               {plottedMarkers.some((marker) => marker.kind === 'sell') ? (
-                <span className="rounded-full border border-[color-mix(in_srgb,var(--app-danger)_32%,transparent)] px-2 py-0.5 text-[var(--app-danger)]">
+                <span className="rounded-full border border-[color-mix(in_srgb,var(--app-chart-sell)_42%,transparent)] px-2 py-0.5 text-[var(--app-chart-sell)]">
                   S ·{' '}
                   {
                     plottedMarkers.find((marker) => marker.kind === 'sell')

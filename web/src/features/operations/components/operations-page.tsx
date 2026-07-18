@@ -61,7 +61,7 @@ function statusTone(status: OperationsStatus) {
   return {
     border: 'border-[color-mix(in_srgb,var(--app-border)_34%,transparent)]',
     background: 'bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)]',
-    text: 'text-[var(--app-subtext-1)]',
+    text: 'text-[var(--app-text-tertiary)]',
     dot: 'bg-[var(--app-muted)]',
   };
 }
@@ -245,7 +245,7 @@ export function OperationsPage() {
                     </span>
                   </div>
                 </div>
-                <div className="text-xs text-[var(--app-subtext-1)]">
+                <div className="text-xs text-[var(--app-text-tertiary)]">
                   {formatPublicStatus(projection.conclusion_status, locale)}
                 </div>
               </div>
@@ -386,7 +386,7 @@ export function OperationsPage() {
                               locale,
                             )}
                           </dd>
-                          <div className="mt-1 text-xs leading-5 text-[var(--app-subtext-1)]">
+                          <div className="mt-1 text-xs leading-5 text-[var(--app-text-tertiary)]">
                             {labels.viewingDoesNotClear}
                           </div>
                         </div>
@@ -394,7 +394,7 @@ export function OperationsPage() {
                           <dt className="text-xs text-[var(--app-subtext-0)]">
                             {labels.fingerprint}
                           </dt>
-                          <dd className="mt-1 break-all font-mono text-[11px] leading-5 text-[var(--app-subtext-1)]">
+                          <dd className="mt-1 break-all font-mono text-[11px] leading-5 text-[var(--app-text-tertiary)]">
                             {item.task_fingerprint}
                           </dd>
                         </div>
@@ -453,7 +453,7 @@ export function OperationsPage() {
                     <div className="mt-3 text-xs text-[var(--app-subtext-0)]">
                       {labels.limitations}
                     </div>
-                    <div className="mt-1 text-xs leading-5 text-[var(--app-subtext-1)]">
+                    <div className="mt-1 text-xs leading-5 text-[var(--app-text-tertiary)]">
                       {subsystem.limitations.length > 0
                         ? subsystem.limitations.join(' · ')
                         : labels.noLimitations}
@@ -464,7 +464,7 @@ export function OperationsPage() {
             </div>
           </section>
 
-          <div className="rounded-[1.75rem] border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4 text-xs leading-6 text-[var(--app-subtext-1)]">
+          <div className="rounded-[1.75rem] border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4 text-xs leading-6 text-[var(--app-text-tertiary)]">
             {labels.sourceBoundary}
           </div>
         </>

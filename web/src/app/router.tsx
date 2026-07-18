@@ -202,20 +202,20 @@ function marketDataStatusToneClass(status?: string | null) {
     return 'text-[var(--app-soft)]';
   }
   if (isConfirmedMarketDataStatus(normalized)) {
-    return 'text-[var(--app-success)]';
+    return 'text-[var(--app-success-text)]';
   }
   if (
     normalized === 'degraded' ||
     normalized === 'error' ||
     normalized === 'missing'
   ) {
-    return 'text-[var(--app-danger)]';
+    return 'text-[var(--app-danger-text)]';
   }
   if (
     isCacheLikeMarketDataStatus(normalized) ||
     isUnconfirmedMarketDataStatus(normalized)
   ) {
-    return 'text-[var(--app-warning)]';
+    return 'text-[var(--app-warning-text)]';
   }
   return 'text-[var(--app-soft)]';
 }
@@ -226,20 +226,20 @@ function marketDataStatusDotClass(status?: string | null) {
     return 'bg-[var(--app-muted)]';
   }
   if (isConfirmedMarketDataStatus(normalized)) {
-    return 'bg-[var(--app-success)]';
+    return 'bg-[var(--app-success-indicator)]';
   }
   if (
     normalized === 'degraded' ||
     normalized === 'error' ||
     normalized === 'missing'
   ) {
-    return 'bg-[var(--app-danger)]';
+    return 'bg-[var(--app-danger-indicator)]';
   }
   if (
     isCacheLikeMarketDataStatus(normalized) ||
     isUnconfirmedMarketDataStatus(normalized)
   ) {
-    return 'bg-[var(--app-warning)]';
+    return 'bg-[var(--app-warning-indicator)]';
   }
   return 'bg-[var(--app-muted)]';
 }
@@ -701,23 +701,23 @@ const TODAY_QUEUE_PRIORITY_ORDER: TodayQueuePriority[] = [
 function todayQueueToneClasses(tone: TodayQueueTone) {
   if (tone === 'success') {
     return {
-      card: 'border-[color-mix(in_srgb,var(--app-success)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_8%,transparent)]',
-      dot: 'bg-[var(--app-success)]',
-      text: 'text-[var(--app-success)]',
+      card: 'border-[var(--app-success-border)] bg-[var(--app-success-bg)]',
+      dot: 'bg-[var(--app-success-indicator)]',
+      text: 'text-[var(--app-success-text)]',
     };
   }
   if (tone === 'danger') {
     return {
-      card: 'border-[color-mix(in_srgb,var(--app-danger)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-danger)_9%,transparent)]',
-      dot: 'bg-[var(--app-danger)]',
-      text: 'text-[var(--app-danger)]',
+      card: 'border-[var(--app-danger-border)] bg-[var(--app-danger-bg)]',
+      dot: 'bg-[var(--app-danger-indicator)]',
+      text: 'text-[var(--app-danger-text)]',
     };
   }
   if (tone === 'warning') {
     return {
-      card: 'border-[color-mix(in_srgb,var(--app-warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)]',
-      dot: 'bg-[var(--app-warning)]',
-      text: 'text-[var(--app-warning)]',
+      card: 'border-[var(--app-warning-border)] bg-[var(--app-warning-bg)]',
+      dot: 'bg-[var(--app-warning-indicator)]',
+      text: 'text-[var(--app-warning-text)]',
     };
   }
   return {
@@ -2416,7 +2416,7 @@ function DashboardTodayQueue({
 
         <div className="mt-5 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
           <div className="flex items-center justify-between gap-3">
-            <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+            <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
               {labels.opsPanel}
             </div>
             <div className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_36%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-soft)] tabular-nums">
@@ -2431,7 +2431,7 @@ function DashboardTodayQueue({
                 data-testid={`overview-today-queue-${group.priority}`}
                 key={group.priority}
               >
-                <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+                <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
                   {todayQueuePriorityLabel(group.priority, labels)}
                 </div>
                 {group.items.map((item) => {
@@ -2459,7 +2459,7 @@ function DashboardTodayQueue({
                             {item.detail}
                           </div>
                           {item.resolution ? (
-                            <div className="mt-2 text-[11px] leading-5 text-[var(--app-subtext-1)]">
+                            <div className="mt-2 text-[11px] leading-5 text-[var(--app-text-tertiary)]">
                               {item.resolution}
                             </div>
                           ) : null}
@@ -2496,9 +2496,11 @@ const MARKET_INDEX_DISPLAY_NAMES: Record<string, { en: string; zh: string }> = {
 
 function marketPulseToneClass(value: number | null) {
   if (value == null || value === 0) {
-    return 'text-[var(--app-soft)]';
+    return 'text-[var(--app-pnl-neutral)]';
   }
-  return value > 0 ? 'text-[var(--app-success)]' : 'text-[var(--app-danger)]';
+  return value > 0
+    ? 'text-[var(--app-pnl-positive)]'
+    : 'text-[var(--app-pnl-negative)]';
 }
 
 function normalizeMarketPulsePercent(value: number | null | undefined) {
@@ -2679,12 +2681,12 @@ function DashboardMarketPulse({
             {copy.states.loading}
           </div>
         ) : isError ? (
-          <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-danger)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-danger)_8%,transparent)] px-4 py-4 text-sm font-semibold text-[var(--app-danger)]">
+          <div className="mt-4 rounded-2xl border border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] px-4 py-4 text-sm font-semibold text-[var(--app-danger-text)]">
             {copy.states.error}
           </div>
         ) : indexQuotes.length === 0 ? (
           <div className="mt-4 rounded-3xl border border-[color-mix(in_srgb,var(--app-warning)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_9%,transparent)] px-4 py-4">
-            <div className="text-sm font-semibold text-[var(--app-warning)]">
+            <div className="text-sm font-semibold text-[var(--app-warning-text)]">
               {labels.marketPulsePending}
             </div>
             <div className="app-muted mt-2 text-xs leading-5">
@@ -2695,7 +2697,7 @@ function DashboardMarketPulse({
           <div className="mt-4 grid min-w-0 gap-3">
             <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
               <div className="min-w-0 rounded-3xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-4 py-3">
-                <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+                <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
                   {labels.marketPulseDisclosure}
                 </div>
                 <div className="mt-1 truncate text-lg font-semibold text-[var(--app-text)]">
@@ -2703,7 +2705,7 @@ function DashboardMarketPulse({
                 </div>
               </div>
               <div className="rounded-3xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-4 py-3 text-xs">
-                <div className="app-kicker text-[10px] text-[var(--app-subtext-1)]">
+                <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
                   {labels.dataStatus}
                 </div>
                 <div className="mt-1 font-semibold text-[var(--app-soft)]">
@@ -2712,7 +2714,7 @@ function DashboardMarketPulse({
                 <div
                   className={`mt-1 font-semibold ${
                     missingChangeCount > 0
-                      ? 'text-[var(--app-warning)]'
+                      ? 'text-[var(--app-warning-text)]'
                       : 'text-[var(--app-muted)]'
                   }`}
                 >
@@ -2756,7 +2758,7 @@ function DashboardMarketPulse({
                         data-testid={`market-pulse-change-amount-${quote.symbol}`}
                         className={`font-mono text-xs font-semibold tabular-nums ${marketPulseToneClass(
                           changeValue,
-                        )} ${changeMissing ? 'text-[var(--app-warning)]' : ''}`}
+                        )} ${changeMissing ? 'text-[var(--app-warning-text)]' : ''}`}
                       >
                         {changeAmount === null
                           ? marketPulseMoveLabel(quote, labels, locale)
@@ -2784,7 +2786,7 @@ function DashboardMarketPulse({
               className="rounded-3xl border border-[color-mix(in_srgb,var(--app-warning)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_7%,transparent)] px-4 py-3"
               data-testid="market-breadth-heatmap-unavailable"
             >
-              <div className="text-xs font-semibold text-[var(--app-warning)]">
+              <div className="text-xs font-semibold text-[var(--app-warning-text)]">
                 {labels.marketHeatmapUnavailable}
               </div>
               <div className="app-muted mt-1 text-[11px] leading-5">
@@ -2846,10 +2848,10 @@ function DashboardPendingOrders({
         const isBuy = normalizedSide === 'buy';
         const isSell = normalizedSide === 'sell';
         const sideToneClass = isBuy
-          ? 'bg-[var(--app-danger-bg)] text-[var(--app-danger)] ring-1 ring-[var(--app-danger-border)]'
+          ? 'bg-[var(--app-danger-bg)] text-[var(--app-danger-text)] ring-1 ring-[var(--app-danger-border)]'
           : isSell
-            ? 'bg-[var(--app-success-bg)] text-[var(--app-success)] ring-1 ring-[var(--app-success-border)]'
-            : 'bg-[var(--app-warning-bg)] text-[var(--app-warning)] ring-1 ring-[var(--app-warning-border)]';
+            ? 'bg-[var(--app-success-bg)] text-[var(--app-success-text)] ring-1 ring-[var(--app-success-border)]'
+            : 'bg-[var(--app-warning-bg)] text-[var(--app-warning-text)] ring-1 ring-[var(--app-warning-border)]';
         const sideLabel = formatLedgerOrderSideLabel(order.side, locale);
         const displayName = order.display_name ?? order.name ?? null;
         const instrumentNames = displayName
@@ -3010,7 +3012,7 @@ function PortfolioEvidenceReviewPanel({
             {copy.portfolio.evidenceReview.detail}
           </p>
         </div>
-        <span className="rounded-full border border-[color-mix(in_srgb,var(--app-warning)_38%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] px-2.5 py-1 text-xs font-semibold text-[var(--app-warning)]">
+        <span className="rounded-full border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--app-warning-text)]">
           {copy.portfolio.evidenceReview.count(items.length)}
         </span>
       </div>
@@ -3034,7 +3036,7 @@ function PortfolioEvidenceReviewPanel({
               {item.reason_codes.map((reason) => (
                 <span
                   key={reason}
-                  className="rounded-full border border-[color-mix(in_srgb,var(--app-warning)_30%,transparent)] px-2 py-0.5 text-[10px] font-semibold text-[var(--app-warning)]"
+                  className="rounded-full border border-[var(--app-warning-border)] px-2 py-0.5 text-[10px] font-semibold text-[var(--app-warning-text)]"
                 >
                   {formatPublicCode(reason, locale)}
                 </span>
@@ -3431,7 +3433,7 @@ export function RiskPage() {
           {hasRiskRefreshError ? (
             <div
               role="status"
-              className="rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3 text-sm font-semibold leading-6 text-[var(--app-warning)]"
+              className="rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3 text-sm font-semibold leading-6 text-[var(--app-warning-text)]"
             >
               {copy.riskPage.refreshError}
             </div>
@@ -3456,7 +3458,7 @@ export function RiskPage() {
                     )}
                   </p>
                 </div>
-                <span className="inline-flex min-h-9 items-center justify-center rounded-full border border-[color-mix(in_srgb,var(--app-warning)_45%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_12%,transparent)] px-3 py-1 text-sm font-semibold text-[var(--app-warning)]">
+                <span className="inline-flex min-h-9 items-center justify-center rounded-full border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-3 py-1 text-sm font-semibold text-[var(--app-warning-text)]">
                   {copy.riskPage.batchRunnerMissing}
                 </span>
               </div>
@@ -3495,14 +3497,14 @@ export function RiskPage() {
                 </div>
               </div>
               {batchRiskMessage ? (
-                <div className="mt-3 rounded-2xl border border-[var(--app-success-border)] bg-[var(--app-success-bg)] px-3 py-2 text-sm font-semibold text-[var(--app-success)]">
+                <div className="mt-3 rounded-2xl border border-[var(--app-success-border)] bg-[var(--app-success-bg)] px-3 py-2 text-sm font-semibold text-[var(--app-success-text)]">
                   {batchRiskMessage}
                 </div>
               ) : null}
               {batchRiskBlockedMessage ? (
                 <div
                   role="status"
-                  className="mt-3 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-3 py-2 text-sm font-semibold leading-6 text-[var(--app-warning)]"
+                  className="mt-3 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-3 py-2 text-sm font-semibold leading-6 text-[var(--app-warning-text)]"
                 >
                   {batchRiskBlockedMessage}
                 </div>
@@ -3989,8 +3991,8 @@ export function MarketPage() {
                       <span
                         className={`h-2 w-2 rounded-full ${
                           health?.market_open
-                            ? 'bg-[var(--app-success)]'
-                            : 'bg-[var(--app-warning)]'
+                            ? 'bg-[var(--app-success-indicator)]'
+                            : 'bg-[var(--app-warning-indicator)]'
                         }`}
                       />
                       {marketStateLabel}
@@ -4996,7 +4998,6 @@ export function ActivityPage() {
               entries.isLoading ? '--' : formatCurrencyValue(netCashImpact)
             }
             detail={copy.activity.summary.netCashImpactDetail}
-            tone={netCashImpact >= 0 ? 'success' : 'danger'}
           />
           <ActivityMetric
             label={copy.activity.summary.latestActivity}
@@ -5204,23 +5205,15 @@ function ActivityMetric({
   label,
   value,
   detail,
-  tone = 'neutral',
 }: {
   label: string;
   value: string;
   detail: string;
-  tone?: 'neutral' | 'success' | 'danger';
 }) {
-  const valueClass =
-    tone === 'success'
-      ? 'text-[var(--app-success)]'
-      : tone === 'danger'
-        ? 'text-[var(--app-danger)]'
-        : 'text-[var(--app-soft)]';
   return (
     <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-4 py-3 shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_4%,transparent)]">
       <div className="app-muted text-xs">{label}</div>
-      <div className={`mt-2 text-lg font-semibold tabular-nums ${valueClass}`}>
+      <div className="mt-2 text-lg font-semibold tabular-nums text-[var(--app-text)]">
         {value}
       </div>
       <div className="app-muted mt-1 text-xs leading-5">{detail}</div>
@@ -5492,10 +5485,10 @@ function ExplainabilityWorkspace({
                       <div
                         className={`shrink-0 text-right text-sm font-semibold tabular-nums ${
                           item.amount < 0
-                            ? 'text-[var(--app-danger-text)]'
+                            ? 'text-[var(--app-pnl-negative)]'
                             : item.amount > 0
-                              ? 'text-[var(--app-success-text)]'
-                              : 'app-muted'
+                              ? 'text-[var(--app-pnl-positive)]'
+                              : 'text-[var(--app-pnl-neutral)]'
                         }`}
                       >
                         {formatCurrency(item.amount)}
@@ -6218,10 +6211,10 @@ function ReturnCalendarDataStatus({
         : copy.explainability.confirmedValuation;
   const tone =
     status === 'missing'
-      ? 'border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] text-[var(--app-warning)]'
+      ? 'border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] text-[var(--app-warning-text)]'
       : status === 'partial'
         ? 'border-[color-mix(in_srgb,var(--app-accent-secondary)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-accent-secondary)_10%,transparent)] text-[var(--app-accent-secondary)]'
-        : 'border-[var(--app-success-border)] bg-[var(--app-success-bg)] text-[var(--app-success)]';
+        : 'border-[var(--app-success-border)] bg-[var(--app-success-bg)] text-[var(--app-success-text)]';
 
   return (
     <div
@@ -6323,9 +6316,11 @@ function ReturnCalendarEmptyState({
                     </span>
                     <span
                       className={
-                        positionPnl >= 0
-                          ? 'text-[var(--app-danger-text)]'
-                          : 'text-[var(--app-success-text)]'
+                        positionPnl > 0
+                          ? 'text-[var(--app-pnl-positive)]'
+                          : positionPnl < 0
+                            ? 'text-[var(--app-pnl-negative)]'
+                            : 'text-[var(--app-pnl-neutral)]'
                       }
                     >
                       {formatCurrency(positionPnl)}

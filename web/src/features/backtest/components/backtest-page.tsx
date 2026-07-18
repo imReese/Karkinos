@@ -1064,7 +1064,7 @@ export function BacktestPage() {
                     <div className="flex shrink-0 flex-wrap items-center gap-2">
                       {reportSymbol ? (
                         <a
-                          className="inline-flex items-center rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-3 py-1 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+                          className="inline-flex items-center rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-3 py-1 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
                           href={`/portfolio/${encodeURIComponent(reportSymbol)}`}
                         >
                           {labels.runContextReviewHolding}
@@ -1453,7 +1453,7 @@ function SingleInstrumentLoopReadinessCard({
           </p>
         </div>
         <a
-          className="inline-flex shrink-0 items-center justify-center rounded-full border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+          className="inline-flex shrink-0 items-center justify-center rounded-full border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
           href="#backtest-signal-review-evidence"
         >
           {labels.singleInstrumentLoopEvidenceCta}
@@ -1508,7 +1508,7 @@ function SingleInstrumentLoopReadinessCard({
             <div className="min-w-0">{step.label}</div>
             <a
               aria-label={step.evidenceLabel}
-              className="mt-2 inline-flex max-w-full items-center rounded-full border border-[color-mix(in_srgb,currentColor_24%,transparent)] px-2.5 py-1 text-[11px] font-semibold text-inherit opacity-85 transition hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+              className="mt-2 inline-flex max-w-full items-center rounded-full border border-[color-mix(in_srgb,currentColor_24%,transparent)] px-2.5 py-1 text-[11px] font-semibold text-inherit opacity-85 transition hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
               href={step.evidenceHref}
             >
               {labels.singleInstrumentLoopEvidenceCta}
@@ -2429,7 +2429,7 @@ function StrategySignalPreviewPanel({
                       <div
                         className={`mt-1 text-base font-semibold ${
                           riskPreviewResult.passed
-                            ? 'text-[var(--app-profit)]'
+                            ? 'text-[var(--app-pnl-positive)]'
                             : 'text-[var(--app-danger)]'
                         }`}
                       >
@@ -2781,7 +2781,7 @@ function AttributionPreviewResult({
             </div>
             <div className="flex shrink-0 flex-wrap gap-2">
               <a
-                className="inline-flex items-center rounded-full border border-[color-mix(in_srgb,var(--app-accent)_42%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_12%,transparent)] px-3 py-1 text-xs font-semibold text-[var(--app-accent)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_58%,var(--app-border))] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+                className="inline-flex items-center rounded-full border border-[color-mix(in_srgb,var(--app-accent)_42%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_12%,transparent)] px-3 py-1 text-xs font-semibold text-[var(--app-accent)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_58%,var(--app-border))] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
                 href={buildHoldingAttributionReviewHref(
                   result.review_linkage_candidate.symbol || result.symbol,
                 )}
@@ -2881,7 +2881,7 @@ function AttributionPreviewResult({
                 {holdingAttributionNextAction.detail}
               </p>
               <a
-                className="mt-3 inline-flex items-center rounded-full border border-[color-mix(in_srgb,var(--app-accent)_42%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_12%,transparent)] px-3 py-1 text-xs font-semibold text-[var(--app-accent)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_58%,var(--app-border))] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+                className="mt-3 inline-flex items-center rounded-full border border-[color-mix(in_srgb,var(--app-accent)_42%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_12%,transparent)] px-3 py-1 text-xs font-semibold text-[var(--app-accent)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_58%,var(--app-border))] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
                 href={holdingAttributionNextAction.href}
               >
                 {holdingAttributionNextAction.label}
