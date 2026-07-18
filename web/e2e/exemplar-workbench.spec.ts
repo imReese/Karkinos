@@ -136,3 +136,62 @@ test('exemplar routes remain task-reordered and overflow safe on mobile themes',
     }
   }
 });
+
+test('core review routes keep audit drill-downs closed and mobile reading paths bounded', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  await page.goto('/decision');
+  await expect(
+    page.getByRole('heading', { name: /Decision platform|决策平台/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByTestId('decision-quality-disclosure'),
+  ).not.toHaveAttribute('open', '');
+  await expect(
+    page.getByTestId('decision-automation-disclosure'),
+  ).not.toHaveAttribute('open', '');
+  await expect(
+    page.locator('[data-testid^="decision-candidate-card-"]'),
+  ).toHaveCount(0);
+
+  await page.goto('/trading');
+  await expect(
+    page.getByRole('heading', { name: /Trading review|交易复核/ }),
+  ).toBeVisible();
+  await expect(page.getByTestId('kill-switch-panel')).toBeVisible();
+  await expect(
+    page.getByTestId('trading-broker-boundary-disclosure'),
+  ).not.toHaveAttribute('open', '');
+
+  await page.goto('/settings');
+  await expect(
+    page.getByRole('heading', { name: /Control center|控制中心/ }),
+  ).toBeVisible();
+  for (const testId of [
+    'settings-data-source-disclosure',
+    'settings-backend-disclosure',
+    'settings-notifications-disclosure',
+  ]) {
+    await expect(page.getByTestId(testId)).not.toHaveAttribute('open', '');
+  }
+
+  for (const path of ['/decision', '/trading', '/settings']) {
+    await page.goto(path);
+    const geometry = await page.evaluate(() => {
+      const content = document.querySelector(
+        '.app-shell-content',
+      ) as HTMLElement;
+      return {
+        contentOverflow: content.scrollWidth - content.clientWidth,
+        documentOverflow:
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+      };
+    });
+    expect(geometry.documentOverflow, path).toBeLessThanOrEqual(0);
+    expect(geometry.contentOverflow, path).toBeLessThanOrEqual(0);
+  }
+});

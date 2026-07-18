@@ -5119,7 +5119,7 @@ export function DecisionCockpitPage() {
       lanes.reduce((total, lane) => total + lane.summary.candidate_count, 0),
     [lanes],
   );
-  const collapseDecisionEvidence = denseCandidateCount > 6;
+  const collapseDecisionEvidence = denseCandidateCount > 0;
   const gateItems = useMemo(
     () => decisionGateMatrixItems(today.data, labels, locale),
     [labels, locale, today.data],
@@ -5231,7 +5231,24 @@ export function DecisionCockpitPage() {
         />
       </section>
 
-      <DecisionQualityPanel />
+      <details
+        className="min-w-0 border-y border-[var(--app-divider)]"
+        data-testid="decision-quality-disclosure"
+      >
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 text-sm font-semibold text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]">
+          <span>
+            {locale === 'zh'
+              ? '决策质量与复盘证据'
+              : 'Decision quality and review evidence'}
+          </span>
+          <span className="text-xs font-normal text-[var(--app-text-secondary)]">
+            {locale === 'zh' ? '按需展开' : 'Expand on demand'}
+          </span>
+        </summary>
+        <div className="py-4">
+          <DecisionQualityPanel />
+        </div>
+      </details>
 
       <DailyTradingPlanPanel
         plan={tradingPlan.data}
@@ -5243,33 +5260,54 @@ export function DecisionCockpitPage() {
         paperShadowRunError={runPaperShadow.isError}
       />
 
-      <AutomationCockpitPanel
-        cockpit={automationCockpit.data}
-        brokerGatewayStatus={brokerGatewayStatus.data}
-        brokerConnectorHealth={brokerConnectorHealth.data}
-        brokerConnectorHealthLoading={brokerConnectorHealth.isLoading}
-        brokerConnectorHealthError={brokerConnectorHealth.isError}
-        brokerAccountFacts={brokerAccountFacts.data}
-        brokerAccountFactsLoading={brokerAccountFacts.isLoading}
-        brokerAccountFactsError={brokerAccountFacts.isError}
-        brokerFills={brokerFills.data}
-        brokerFillsLoading={brokerFills.isLoading}
-        brokerFillsError={brokerFills.isError}
-        brokerOrderQuery={brokerOrderQuery.data}
-        brokerOrderQueryLoading={brokerOrderQuery.isLoading}
-        brokerOrderQueryError={brokerOrderQuery.isError}
-        executionReconciliationRuns={executionReconciliationRuns.data}
-        executionReconciliationRunDetail={executionReconciliationRunDetail.data}
-        executionReconciliationLoading={executionReconciliationRuns.isLoading}
-        executionReconciliationError={
-          executionReconciliationRuns.isError ||
-          executionReconciliationRunDetail.isError
-        }
-        brokerGatewayLoading={brokerGatewayStatus.isLoading}
-        brokerGatewayError={brokerGatewayStatus.isError}
-        loading={automationCockpit.isLoading}
-        error={automationCockpit.isError}
-      />
+      <details
+        className="min-w-0 border-y border-[var(--app-divider)]"
+        data-testid="decision-automation-disclosure"
+      >
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 text-sm font-semibold text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]">
+          <span>
+            {locale === 'zh'
+              ? '自动化与受控执行证据'
+              : 'Automation and controlled execution evidence'}
+          </span>
+          <span className="text-xs font-normal text-[var(--app-text-secondary)]">
+            {locale === 'zh' ? '按需展开' : 'Expand on demand'}
+          </span>
+        </summary>
+        <div className="py-4">
+          <AutomationCockpitPanel
+            cockpit={automationCockpit.data}
+            brokerGatewayStatus={brokerGatewayStatus.data}
+            brokerConnectorHealth={brokerConnectorHealth.data}
+            brokerConnectorHealthLoading={brokerConnectorHealth.isLoading}
+            brokerConnectorHealthError={brokerConnectorHealth.isError}
+            brokerAccountFacts={brokerAccountFacts.data}
+            brokerAccountFactsLoading={brokerAccountFacts.isLoading}
+            brokerAccountFactsError={brokerAccountFacts.isError}
+            brokerFills={brokerFills.data}
+            brokerFillsLoading={brokerFills.isLoading}
+            brokerFillsError={brokerFills.isError}
+            brokerOrderQuery={brokerOrderQuery.data}
+            brokerOrderQueryLoading={brokerOrderQuery.isLoading}
+            brokerOrderQueryError={brokerOrderQuery.isError}
+            executionReconciliationRuns={executionReconciliationRuns.data}
+            executionReconciliationRunDetail={
+              executionReconciliationRunDetail.data
+            }
+            executionReconciliationLoading={
+              executionReconciliationRuns.isLoading
+            }
+            executionReconciliationError={
+              executionReconciliationRuns.isError ||
+              executionReconciliationRunDetail.isError
+            }
+            brokerGatewayLoading={brokerGatewayStatus.isLoading}
+            brokerGatewayError={brokerGatewayStatus.isError}
+            loading={automationCockpit.isLoading}
+            error={automationCockpit.isError}
+          />
+        </div>
+      </details>
 
       <DecisionWorkflowPanel lanes={lanes} />
 
@@ -5413,9 +5451,9 @@ function DecisionSummaryCollapsedPanel({
   return (
     <section
       data-testid="decision-summary-collapsed"
-      className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]"
+      className="app-panel min-w-0 overflow-hidden rounded-[var(--app-radius-surface)]"
     >
-      <div className="app-terminal-inner flex min-w-0 flex-col gap-3 rounded-[27px] p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+      <div className="flex min-w-0 flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
         <div className="min-w-0">
           <div className="app-product-mark">
             {labels.summaryCollapsedKicker}
@@ -5449,7 +5487,7 @@ function DecisionWorkflowPanel({ lanes }: { lanes: DecisionResponse[] }) {
     (total, lane) => total + lane.summary.candidate_count,
     0,
   );
-  const [expanded, setExpanded] = useState(denseCandidateCount <= 6);
+  const [expanded, setExpanded] = useState(denseCandidateCount === 0);
 
   if (lanesWithTasks.length === 0) {
     return null;
@@ -5458,9 +5496,9 @@ function DecisionWorkflowPanel({ lanes }: { lanes: DecisionResponse[] }) {
   return (
     <section
       data-testid="decision-workflow-tasks"
-      className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]"
+      className="app-panel min-w-0 overflow-hidden rounded-[var(--app-radius-surface)]"
     >
-      <div className="app-terminal-inner min-w-0 rounded-[27px] p-4 sm:p-5">
+      <div className="min-w-0 p-4 sm:p-5">
         <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="app-product-mark">{labels.workflowKicker}</div>
@@ -5965,7 +6003,7 @@ function StrategyAttributionGateTile({ lane }: { lane: DecisionResponse }) {
 function DecisionLanePanel({ lane }: { lane: DecisionResponse }) {
   const labels = useCopy().decision;
   const { locale } = usePreferences();
-  const defaultExpanded = lane.summary.candidate_count <= 3;
+  const defaultExpanded = lane.summary.candidate_count === 0;
   const [expanded, setExpanded] = useState(defaultExpanded);
   const laneLabel =
     lane.lane === 'daily' ? labels.dailyLane : labels.intradayLane;

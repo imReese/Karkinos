@@ -392,7 +392,9 @@ test('renders holding detail with cached quote status and ledger trace', async (
   const { container } = renderHoldingDetail();
 
   expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
-  expect(await screen.findByText('Cached quote')).toBeTruthy();
+  expect((await screen.findAllByText('Cached quote')).length).toBeGreaterThan(
+    0,
+  );
   expect(
     await screen.findByText(
       'Cached quotes · valuation uses cached market data',
@@ -422,7 +424,7 @@ test('renders holding detail with cached quote status and ledger trace', async (
   expect(await screen.findByText('Price range / K-line')).toBeTruthy();
   expect(await screen.findByText('¥1,640.00')).toBeTruthy();
   expect(await screen.findByText('Holding results & evidence')).toBeTruthy();
-  expect(await screen.findByText('valuation-1')).toBeTruthy();
+  expect((await screen.findAllByText('valuation-1')).length).toBeGreaterThan(0);
   expect(await screen.findByText('Persisted account ledger only')).toBeTruthy();
   expect(await screen.findByTestId('kline-trade-marker-buy')).toBeTruthy();
   expect((await screen.findAllByTestId('kline-reference-line')).length).toBe(1);

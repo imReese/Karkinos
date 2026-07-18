@@ -258,7 +258,14 @@ test('renders market data operations and triggers manual backfills', async () =>
   const user = userEvent.setup();
   const { fetchMock } = renderMarketPage();
 
-  expect(await screen.findByText('Data operations')).toBeTruthy();
+  expect(
+    (await screen.findAllByText('Data operations')).length,
+  ).toBeGreaterThan(0);
+  await user.click(
+    screen
+      .getByTestId('market-data-operations-disclosure')
+      .querySelector('summary') as HTMLElement,
+  );
   expect(await screen.findByText(/manual · completed/i)).toBeTruthy();
 
   await user.click(screen.getByRole('button', { name: 'Backfill metadata' }));
@@ -294,7 +301,21 @@ test('counts cache estimated and missing quotes as market data needing confirmat
     0,
   );
   expect((await screen.findAllByText('Cache only')).length).toBeGreaterThan(0);
+  expect(await screen.findByText('Evidence mode')).toBeTruthy();
   expect(await screen.findByText('3 quotes need review')).toBeTruthy();
+});
+
+test('states the personal-universe boundary and shows quote age separately from status', async () => {
+  renderMarketPage();
+
+  expect(await screen.findByText('Personal universe')).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'Watchlist and current-holding research only; this is not a broad-market dashboard or a portfolio-contribution view.',
+    ),
+  ).toBeTruthy();
+  expect((await screen.findAllByText('1m')).length).toBeGreaterThan(0);
+  expect((await screen.findAllByText('Healthy')).length).toBeGreaterThan(0);
 });
 
 test('surfaces selected symbol next action without leaking raw data status codes', async () => {
@@ -359,7 +380,7 @@ test('routes confirmed NAV blockers through confirmation-only ingestion', async 
   const panel = await screen.findByTestId(
     'current-holding-market-evidence-review',
   );
-  expect(within(panel).getByText('证据基金')).toBeTruthy();
+  expect(await within(panel).findByText('证据基金')).toBeTruthy();
   expect(within(panel).getByText(/FUND-A/)).toBeTruthy();
   expect(
     within(panel).getByText('1 current holding needs review'),

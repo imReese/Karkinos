@@ -101,7 +101,6 @@ import {
   formatLedgerExplainabilityDetail,
   formatLedgerExplainabilityTitle,
   formatLedgerOrderSideLabel,
-  summarizeLedgerEntry,
 } from '../shared/ledger-format';
 import { ActivityFeed } from '../features/activity/components/activity-feed';
 import {
@@ -3821,6 +3820,8 @@ export function MarketPage() {
   const refreshPolicyLabel = health?.refresh_policy
     ? formatPublicStatus(health.refresh_policy, locale)
     : '--';
+  const cacheBound = isCacheLikeMarketDataStatus(health?.refresh_policy);
+  const evidenceModeLabel = cacheBound ? refreshPolicyLabel : sourceHealthLabel;
   const providerStatusLabel = health?.provider_status
     ? formatPublicStatus(health.provider_status, locale)
     : copy.market.unknown;
@@ -3892,11 +3893,23 @@ export function MarketPage() {
           context={`${copy.market.latestQuote}: ${latestQuoteLabel}`}
           actions={
             <StatusBadge
-              tone={staleCount > 0 ? 'warning' : health ? 'success' : 'neutral'}
+              tone={
+                cacheBound || staleCount > 0
+                  ? 'warning'
+                  : health
+                    ? 'success'
+                    : 'neutral'
+              }
             >
-              {sourceHealthLabel}
+              {evidenceModeLabel}
             </StatusBadge>
           }
+        />
+
+        <CurrentHoldingMarketEvidenceReviewPanel
+          report={holdingMarketEvidenceReview.data}
+          loading={holdingMarketEvidenceReview.isLoading}
+          error={holdingMarketEvidenceReview.isError}
         />
 
         {board.isLoading ? (
@@ -3924,10 +3937,10 @@ export function MarketPage() {
                 },
                 {
                   id: 'source-health',
-                  label: copy.market.sourceHealth,
-                  value: sourceHealthLabel,
-                  detail: refreshPolicyLabel,
-                  tone: staleCount > 0 ? 'warning' : 'neutral',
+                  label: copy.market.evidenceMode,
+                  value: evidenceModeLabel,
+                  detail: `${copy.market.sourceHealth}: ${sourceHealthLabel}`,
+                  tone: cacheBound || staleCount > 0 ? 'warning' : 'neutral',
                 },
                 {
                   id: 'latest-quote',
@@ -3945,23 +3958,20 @@ export function MarketPage() {
               ]}
             />
 
-            <CurrentHoldingMarketEvidenceReviewPanel
-              report={holdingMarketEvidenceReview.data}
-              loading={holdingMarketEvidenceReview.isLoading}
-              error={holdingMarketEvidenceReview.isError}
-            />
-
             <div className="grid gap-5 xl:grid-cols-[minmax(0,1.18fr)_minmax(340px,0.82fr)]">
               <div className="app-panel rounded-2xl p-0">
                 <div className="border-b border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-4 py-4 sm:px-5">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                     <div>
                       <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-                        {copy.market.watchlist}
+                        {copy.market.personalUniverse}
                       </div>
                       <div className="mt-1 text-lg font-semibold text-[var(--app-text)]">
-                        {activeSymbol || copy.market.noSelection}
+                        {copy.market.watchlist}
                       </div>
+                      <p className="mt-1 max-w-2xl text-xs leading-5 text-[var(--app-text-secondary)]">
+                        {copy.market.scopeBoundary}
+                      </p>
                     </div>
                     <div className="inline-flex w-fit items-center gap-2 rounded-full border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)] px-3 py-1.5 text-xs text-[var(--app-soft)]">
                       <span
@@ -4096,7 +4106,12 @@ export function MarketPage() {
                                 quoteStatus,
                               )}`}
                             />
-                            {quoteStatusLabel}
+                            <span className="font-mono tabular-nums">
+                              {formatAge(itemHealth?.quote_age_seconds)}
+                            </span>
+                            <span className="text-[var(--app-text-tertiary)]">
+                              {quoteStatusLabel}
+                            </span>
                           </div>
                         </div>
                         <div className="flex items-center justify-between gap-3 md:justify-end">
@@ -4271,51 +4286,70 @@ export function MarketPage() {
                     ))}
                   </div>
                 </div>
-                <MarketDataOperationsPanel
-                  runs={quoteFetchRuns.data ?? []}
-                  loading={quoteFetchRuns.isLoading}
-                  error={quoteFetchRuns.isError}
-                  metadataPending={metadataBackfill.isPending}
-                  barsPending={barsBackfill.isPending}
-                  onMetadataBackfill={async () => {
-                    try {
-                      const result = await metadataBackfill.mutateAsync();
-                      pushToast(
-                        'success',
-                        copy.market.metadataBackfillComplete,
-                        copy.market.backfillResult(
-                          result.updated_count,
-                          result.failed_count,
-                        ),
-                      );
-                    } catch (error) {
-                      pushToast(
-                        'error',
-                        copy.market.metadataBackfillFailed,
-                        getErrorMessage(error),
-                      );
-                    }
-                  }}
-                  onBarsBackfill={async () => {
-                    try {
-                      const result = await barsBackfill.mutateAsync();
-                      pushToast(
-                        'success',
-                        copy.market.barsBackfillComplete,
-                        copy.market.backfillResult(
-                          result.updated_count,
-                          result.failed_count,
-                        ),
-                      );
-                    } catch (error) {
-                      pushToast(
-                        'error',
-                        copy.market.barsBackfillFailed,
-                        getErrorMessage(error),
-                      );
-                    }
-                  }}
-                />
+                <details
+                  className="group border-y border-[var(--app-divider)] py-2"
+                  data-testid="market-data-operations-disclosure"
+                >
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-[var(--app-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)]">
+                    <span>{copy.market.dataOperations}</span>
+                    <span className="flex items-center gap-2 font-mono text-xs font-normal tabular-nums text-[var(--app-text-tertiary)]">
+                      {quoteFetchRuns.data?.length ?? 0}
+                      <span
+                        aria-hidden="true"
+                        className="group-open:rotate-180"
+                      >
+                        ▾
+                      </span>
+                    </span>
+                  </summary>
+                  <div className="mt-3">
+                    <MarketDataOperationsPanel
+                      runs={quoteFetchRuns.data ?? []}
+                      loading={quoteFetchRuns.isLoading}
+                      error={quoteFetchRuns.isError}
+                      metadataPending={metadataBackfill.isPending}
+                      barsPending={barsBackfill.isPending}
+                      onMetadataBackfill={async () => {
+                        try {
+                          const result = await metadataBackfill.mutateAsync();
+                          pushToast(
+                            'success',
+                            copy.market.metadataBackfillComplete,
+                            copy.market.backfillResult(
+                              result.updated_count,
+                              result.failed_count,
+                            ),
+                          );
+                        } catch (error) {
+                          pushToast(
+                            'error',
+                            copy.market.metadataBackfillFailed,
+                            getErrorMessage(error),
+                          );
+                        }
+                      }}
+                      onBarsBackfill={async () => {
+                        try {
+                          const result = await barsBackfill.mutateAsync();
+                          pushToast(
+                            'success',
+                            copy.market.barsBackfillComplete,
+                            copy.market.backfillResult(
+                              result.updated_count,
+                              result.failed_count,
+                            ),
+                          );
+                        } catch (error) {
+                          pushToast(
+                            'error',
+                            copy.market.barsBackfillFailed,
+                            getErrorMessage(error),
+                          );
+                        }
+                      }}
+                    />
+                  </div>
+                </details>
               </div>
             </div>
 
@@ -4750,14 +4784,6 @@ export function ActivityPage() {
   const createAdjustment = useCreateAdjustmentMutation();
   const ledgerRows = entries.data ?? [];
   const latestEntry = ledgerRows[0] ?? null;
-  const netCashImpact = useMemo(
-    () =>
-      ledgerRows.reduce(
-        (total, entry) => total + (summarizeLedgerEntry(entry).cashImpact ?? 0),
-        0,
-      ),
-    [ledgerRows],
-  );
   const fundBatchCandidates = useMemo<FundBatchCandidate[]>(
     () =>
       (positions.data ?? [])
@@ -4981,9 +5007,7 @@ export function ActivityPage() {
             {
               id: 'net-cash-impact',
               label: copy.activity.summary.netCashImpact,
-              value: entries.isLoading
-                ? '--'
-                : formatCurrencyValue(netCashImpact),
+              value: copy.activity.summary.netCashImpactUnavailable,
               detail: copy.activity.summary.netCashImpactDetail,
             },
             {
@@ -5025,11 +5049,14 @@ export function ActivityPage() {
             )}
           </div>
           <aside className="min-w-0 space-y-6 2xl:sticky 2xl:top-24 2xl:self-start">
-            <EvidenceState
-              kind="partial"
-              title={copy.activity.entryTools.kicker}
-              description={copy.activity.entryTools.detail}
-            />
+            <div className="border-b border-[var(--app-border)] pb-3">
+              <div className="app-kicker text-[11px] uppercase tracking-[0.14em]">
+                {copy.activity.entryTools.kicker}
+              </div>
+              <p className="mt-1 text-xs leading-5 text-[var(--app-text-secondary)]">
+                {copy.activity.entryTools.detail}
+              </p>
+            </div>
             <ActivityEntryToolsPanel
               activeEntryTool={activeEntryTool}
               candidates={fundBatchCandidates}

@@ -634,7 +634,8 @@ export function SettingsPage() {
             </ControlledActionZone>
           </SettingsSection>
 
-          <SettingsSection
+          <SettingsDisclosure
+            testId="settings-data-source-disclosure"
             title={copy.settings.dataSourceOperations}
             detail={copy.settings.dataSourceOperationsDetail}
           >
@@ -722,7 +723,7 @@ export function SettingsPage() {
                 </div>
               </div>
             </div>
-          </SettingsSection>
+          </SettingsDisclosure>
 
           <SettingsSection
             title={copy.settings.liveServices}
@@ -820,7 +821,8 @@ export function SettingsPage() {
             />
           </SettingsSection>
 
-          <SettingsSection
+          <SettingsDisclosure
+            testId="settings-backend-disclosure"
             title={copy.settings.backendSettings}
             detail={copy.settings.liveServicesDetail}
           >
@@ -1155,9 +1157,10 @@ export function SettingsPage() {
                 />
               )}
             </div>
-          </SettingsSection>
+          </SettingsDisclosure>
 
-          <SettingsSection
+          <SettingsDisclosure
+            testId="settings-notifications-disclosure"
             title={copy.settings.notifications}
             detail={copy.settings.notificationsDetail}
           >
@@ -1202,7 +1205,7 @@ export function SettingsPage() {
                     )}`
                   : copy.settings.notificationsDetail}
             </div>
-          </SettingsSection>
+          </SettingsDisclosure>
 
           <SettingsSection
             title={copy.settings.dataSafety}
@@ -1255,8 +1258,8 @@ function SettingsSection({
   children: ReactNode;
 }) {
   return (
-    <section className="app-terminal-panel rounded-[2rem] p-1.5">
-      <div className="app-terminal-inner space-y-4 p-4 sm:p-5">
+    <section className="app-panel rounded-[var(--app-radius-surface)]">
+      <div className="space-y-4 p-4 sm:p-5">
         <div>
           <div className="app-card-title text-lg">{title}</div>
           <p className="app-muted mt-2 text-sm leading-6">{detail}</p>
@@ -1264,6 +1267,43 @@ function SettingsSection({
         {children}
       </div>
     </section>
+  );
+}
+
+function SettingsDisclosure({
+  testId,
+  title,
+  detail,
+  children,
+}: {
+  testId: string;
+  title: string;
+  detail: string;
+  children: ReactNode;
+}) {
+  return (
+    <details
+      className="min-w-0 border-y border-[var(--app-divider)]"
+      data-testid={testId}
+    >
+      <summary className="flex min-h-11 cursor-pointer list-none items-start justify-between gap-4 py-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]">
+        <span className="min-w-0">
+          <span className="block text-sm font-semibold text-[var(--app-text)]">
+            {title}
+          </span>
+          <span className="mt-0.5 block text-xs leading-5 text-[var(--app-text-secondary)]">
+            {detail}
+          </span>
+        </span>
+        <span
+          aria-hidden="true"
+          className="shrink-0 text-sm text-[var(--app-text-secondary)]"
+        >
+          +
+        </span>
+      </summary>
+      <div className="space-y-4 py-4">{children}</div>
+    </details>
   );
 }
 

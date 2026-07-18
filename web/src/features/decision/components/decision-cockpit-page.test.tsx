@@ -1162,6 +1162,31 @@ function renderDecisionCockpit(options?: RenderDecisionOptions) {
   return { fetchMock };
 }
 
+async function expandDecisionSummary(locale: 'en' | 'zh' = 'en') {
+  fireEvent.click(
+    await screen.findByRole('button', {
+      name: locale === 'zh' ? '展开状态明细' : 'Expand status details',
+    }),
+  );
+}
+
+async function expandDecisionWorkflow(locale: 'en' | 'zh' = 'en') {
+  fireEvent.click(
+    await screen.findByRole('button', {
+      name: locale === 'zh' ? '展开工作流明细' : 'Expand workflow details',
+    }),
+  );
+}
+
+async function expandDecisionCandidates(locale: 'en' | 'zh' = 'en') {
+  const buttons = await screen.findAllByRole('button', {
+    name: locale === 'zh' ? '展开证据明细' : 'Expand evidence',
+  });
+  for (const button of buttons) {
+    fireEvent.click(button);
+  }
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -1337,6 +1362,9 @@ test('renders cash shortfall in daily trading plan without manual readiness', as
 test('renders daily and intraday decision cockpit evidence without execution', async () => {
   renderDecisionCockpit();
 
+  await expandDecisionSummary();
+  await expandDecisionCandidates();
+
   expect(await screen.findByText('Decision platform')).toBeTruthy();
   const metricStrip = await screen.findByLabelText('Today operating posture');
   expect(within(metricStrip).getByText('Candidate pool')).toBeTruthy();
@@ -1451,6 +1479,8 @@ test('collapses dense signal action queues until the user asks for details', asy
 
 test('localizes signal journal audit events without exposing dotted event keys', async () => {
   renderDecisionCockpit();
+
+  await expandDecisionCandidates();
 
   expect(await screen.findByText('Signal journal')).toBeTruthy();
   expect(await screen.findByText('Journal: Risk signal recorded')).toBeTruthy();
@@ -3864,6 +3894,9 @@ test('surfaces degraded and blocked account-truth gates in decision summaries', 
     intradayResponse: blockedIntraday,
   });
 
+  await expandDecisionSummary();
+  await expandDecisionCandidates();
+
   const gateMatrix = await screen.findByTestId('decision-gate-matrix');
   expect(gateMatrix.textContent).toContain('Account truth');
   expect(gateMatrix.textContent).toContain('Degraded');
@@ -3940,6 +3973,9 @@ test('surfaces strategy-attribution gate status in decision summaries', async ()
 
   renderDecisionCockpit({ todayResponse: blockedToday });
 
+  await expandDecisionSummary();
+  await expandDecisionCandidates();
+
   expect(
     (await screen.findAllByText('Strategy attribution gate')).length,
   ).toBeGreaterThan(0);
@@ -3972,6 +4008,8 @@ test('surfaces strategy-attribution gate status in decision summaries', async ()
 test('surfaces strategy contribution components in decision summaries', async () => {
   renderDecisionCockpit({ todayResponse: contributionDecision() });
 
+  await expandDecisionSummary();
+
   expect(
     await screen.findByText(/Contribution status: Estimated from linked fills/),
   ).toBeTruthy();
@@ -4003,6 +4041,8 @@ test('localizes strategy contribution status in decision summaries', async () =>
     locale: 'zh',
   });
 
+  await expandDecisionSummary('zh');
+
   expect(await screen.findByText(/贡献状态: 基于已归属成交估算/)).toBeTruthy();
   expect(document.body.textContent).not.toContain(
     'estimated_from_linked_fills',
@@ -4014,6 +4054,8 @@ test('localizes strategy contribution status in decision summaries', async () =>
 
 test('renders localized candidate evidence chain for decision review', async () => {
   renderDecisionCockpit({ locale: 'zh' });
+
+  await expandDecisionCandidates('zh');
 
   const card = await screen.findByTestId('decision-candidate-card-600519');
 
@@ -4072,6 +4114,8 @@ test('localizes decision candidate details before rendering action cards', async
     locale: 'zh',
   });
 
+  await expandDecisionCandidates('zh');
+
   const card = await screen.findByTestId('decision-candidate-card-600519');
 
   expect(
@@ -4123,6 +4167,8 @@ test('marks stale data candidates as review-only instead of certain actions', as
 
   renderDecisionCockpit({ todayResponse: staleToday, locale: 'zh' });
 
+  await expandDecisionCandidates('zh');
+
   const card = await screen.findByTestId('decision-candidate-card-600519');
 
   expect((await screen.findAllByText('决策: 需要复核')).length).toBeGreaterThan(
@@ -4163,6 +4209,8 @@ test('shows localized risk gate reasons on blocked decision candidates', async (
   } as DecisionResponse;
 
   renderDecisionCockpit({ todayResponse: blockedToday, locale: 'zh' });
+
+  await expandDecisionCandidates('zh');
 
   const candidateCard = await screen.findByTestId(
     'decision-candidate-card-600519',
@@ -4229,6 +4277,8 @@ test('localizes no-action, degraded, blocked, and review-required decision state
     intradayResponse: localizedIntraday,
     locale: 'zh',
   });
+
+  await expandDecisionCandidates('zh');
 
   const card = await screen.findByTestId('decision-candidate-card-600519');
 
@@ -4330,6 +4380,8 @@ test('renders localized decision workflow tasks before candidate actions', async
   } as DecisionResponse;
 
   renderDecisionCockpit({ todayResponse: workflowToday, locale: 'zh' });
+
+  await expandDecisionWorkflow('zh');
 
   const workflow = await screen.findByTestId('decision-workflow-tasks');
   expect(await screen.findByText('决策工作流')).toBeTruthy();
@@ -4567,6 +4619,8 @@ test('uses generic review labels for unknown decision workflow action codes', as
 
   renderDecisionCockpit({ todayResponse: workflowToday, locale: 'zh' });
 
+  await expandDecisionWorkflow('zh');
+
   const workflow = await screen.findByTestId('decision-workflow-tasks');
   expect(workflow.textContent).toContain('待人工复核项');
   expect(workflow.textContent).toContain('待确认状态');
@@ -4599,6 +4653,8 @@ test('uses generic review-note labels for unknown decision workflow blocking rea
 
   renderDecisionCockpit({ todayResponse: workflowToday, locale: 'zh' });
 
+  await expandDecisionWorkflow('zh');
+
   const workflow = await screen.findByTestId('decision-workflow-tasks');
   expect(workflow.textContent).toContain('待人工复核说明');
   expect(workflow.textContent).not.toContain('待人工复核项');
@@ -4628,6 +4684,8 @@ test('uses generic English review labels for unknown decision workflow action co
   } as DecisionResponse;
 
   renderDecisionCockpit({ todayResponse: workflowToday, locale: 'en' });
+
+  await expandDecisionWorkflow();
 
   const workflow = await screen.findByTestId('decision-workflow-tasks');
   expect(workflow.textContent).toContain('Review item');
@@ -4661,6 +4719,8 @@ test('uses generic English review-note labels for unknown decision workflow bloc
 
   renderDecisionCockpit({ todayResponse: workflowToday, locale: 'en' });
 
+  await expandDecisionWorkflow();
+
   const workflow = await screen.findByTestId('decision-workflow-tasks');
   expect(workflow.textContent).toContain('Review note');
   expect(workflow.textContent).not.toContain('Review item');
@@ -4670,6 +4730,8 @@ test('uses generic English review-note labels for unknown decision workflow bloc
 
 test('shows strategy display names before internal ids in candidate evidence', async () => {
   renderDecisionCockpit();
+
+  await expandDecisionCandidates();
 
   const candidateCard = await screen.findByTestId(
     'decision-candidate-card-600519',
@@ -4686,6 +4748,8 @@ test('shows strategy display names before internal ids in candidate evidence', a
 
 test('shows instrument names before symbols across decision candidates and signal audit', async () => {
   renderDecisionCockpit({ locale: 'zh' });
+
+  await expandDecisionCandidates('zh');
 
   const candidateCard = await screen.findByTestId(
     'decision-candidate-card-600519',
@@ -4707,6 +4771,8 @@ test('shows instrument names before symbols across decision candidates and signa
 test('links decision candidates to holding attribution review', async () => {
   renderDecisionCockpit();
 
+  await expandDecisionCandidates();
+
   const candidateCard = await screen.findByTestId(
     'decision-candidate-card-600519',
   );
@@ -4723,6 +4789,9 @@ test('keeps decision cockpit candidates accessible on narrow responsive layouts'
   renderDecisionCockpit();
 
   expect(await screen.findByText('Decision platform')).toBeTruthy();
+
+  await expandDecisionSummary();
+  await expandDecisionCandidates();
 
   const candidateCard = await screen.findByTestId(
     'decision-candidate-card-600519',

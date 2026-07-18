@@ -757,7 +757,8 @@ afterEach(() => {
 test('renders the trading approvals workspace', async () => {
   renderTradingPage();
 
-  expect(await screen.findByText('Trading approvals')).toBeTruthy();
+  expect(await screen.findByText('Trading review')).toBeTruthy();
+  expect(document.body.textContent).not.toContain('Trading approvals');
   expect(await screen.findByText('Operating mode')).toBeTruthy();
   expect(await screen.findByText('Manual confirmation default')).toBeTruthy();
   expect(await screen.findByText('Broker bridge disabled')).toBeTruthy();
