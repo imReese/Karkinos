@@ -47,6 +47,10 @@ import {
 import { formatStaleReason } from '../../../shared/stale-reason';
 import { formatStrategyDisplayName } from '../../../shared/strategy-display';
 import {
+  isCacheLikeMarketDataStatus,
+  isUnconfirmedMarketDataStatus,
+} from '../../../shared/market-data-status';
+import {
   useLiveHoldingsQuery,
   usePortfolioSnapshotQuery,
   usePositionsQuery,
@@ -368,7 +372,10 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     staleReason,
     copy.common.staleReasons,
   );
-  const isStale = quoteStatus === 'stale';
+  const refreshPolicy = marketHealth.data?.refresh_policy ?? '--';
+  const quoteNeedsReview =
+    isUnconfirmedMarketDataStatus(quoteStatus) ||
+    isCacheLikeMarketDataStatus(refreshPolicy);
   const quoteStatusLabel = quoteStatus
     ? formatPublicStatus(quoteStatus, locale)
     : '--';
@@ -550,7 +557,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
       ? labels.evidenceStates.identityMismatch
       : needsCostBasisReview
         ? labels.evidenceStates.costBasisReview
-        : isStale
+        : quoteNeedsReview
           ? labels.evidenceStates.staleQuote
           : labels.evidenceStates.complete;
   const nextManualStep = isHistoricalClosedPosition
@@ -559,7 +566,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
       ? labels.evidenceNextSteps.reloadIdentity
       : needsCostBasisReview
         ? labels.evidenceNextSteps.reconcileCost
-        : isStale
+        : quoteNeedsReview
           ? labels.evidenceNextSteps.reviewQuote
           : labels.evidenceNextSteps.none;
   const tradeMarkers = symbolLedgerEntries.flatMap((entry) => {
@@ -600,7 +607,6 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
       : []),
   ];
   const marketOpen = marketHealth.data?.market_open;
-  const refreshPolicy = marketHealth.data?.refresh_policy ?? '--';
   const refreshPolicyLabel = marketHealth.data?.refresh_policy
     ? formatPublicStatus(marketHealth.data.refresh_policy, locale)
     : '--';
@@ -611,6 +617,12 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
       : refreshQuote.isSuccess
         ? labels.refreshDone
         : null;
+  const valuationSnapshotId = snapshot.data?.valuation_snapshot_id ?? null;
+  const shortValuationSnapshotId = valuationSnapshotId
+    ? valuationSnapshotId.length > 28
+      ? `${valuationSnapshotId.slice(0, 16)}…${valuationSnapshotId.slice(-8)}`
+      : valuationSnapshotId
+    : '--';
 
   const summaryMetrics: DetailMetric[] = [
     { label: labels.quantity, value: formatQuantity(position.quantity) },
@@ -733,7 +745,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
       label: labels.nextManualStep,
       value: nextManualStep,
       tone:
-        evidenceIdentityConsistent && !needsCostBasisReview && !isStale
+        evidenceIdentityConsistent && !needsCostBasisReview && !quoteNeedsReview
           ? undefined
           : 'warning',
     },
@@ -746,11 +758,16 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
           eyebrow={labels.kicker}
           title={`${displayName} · ${position.symbol}`}
           description={assetClassDisplay}
-          context={`${labels.valuationSnapshotId}: ${
-            snapshot.data?.valuation_snapshot_id ?? '--'
-          } · ${labels.ledgerCutoffId}: ${
-            snapshot.data?.ledger_cutoff_id ?? '--'
-          }`}
+          context={
+            <span title={valuationSnapshotId ?? undefined}>
+              {labels.valuationSnapshotId}:{' '}
+              <span className="font-mono">{shortValuationSnapshotId}</span> ·{' '}
+              {labels.ledgerCutoffId}:{' '}
+              <span className="font-mono">
+                {snapshot.data?.ledger_cutoff_id ?? '--'}
+              </span>
+            </span>
+          }
           actions={
             <>
               <a
@@ -764,14 +781,11 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
                 <StatusBadge label={labels.closedHistoryOnly} tone="warning" />
               ) : null}
               <StatusBadge
-                label={isStale ? labels.quoteStale : labels.quoteLive}
-                tone={isStale ? 'warning' : 'success'}
+                label={quoteNeedsReview ? labels.quoteStale : quoteStatusLabel}
+                tone={quoteNeedsReview ? 'warning' : 'success'}
               />
               {marketOpen === false ? (
                 <StatusBadge label={labels.marketClosed} tone="warning" />
-              ) : null}
-              {refreshPolicy === 'cache_only' ? (
-                <StatusBadge label={labels.cacheOnly} tone="warning" />
               ) : null}
               <div className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-3 py-1 text-xs font-semibold text-[var(--app-muted)]">
                 <span className="app-kicker mr-1 text-[10px] uppercase tracking-[0.14em]">
@@ -786,7 +800,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
         />
       </div>
 
-      {isStale ? (
+      {quoteNeedsReview ? (
         <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-warning)]">
           <span className="h-1.5 w-1.5 rounded-full bg-[var(--app-warning)]" />
           <span className="truncate">{labels.cacheNotice}</span>
@@ -828,9 +842,9 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
 
           <section
             data-testid="holding-kline-panel"
-            className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]"
+            className="app-panel min-w-0 overflow-hidden rounded-[var(--app-radius-surface)]"
           >
-            <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
+            <div className="p-4 sm:p-5">
               <PriceStructureChart
                 bars={kline.data ?? []}
                 emptyLabel={copy.market.noChart}
@@ -845,8 +859,8 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
             </div>
           </section>
 
-          <section className="app-terminal-panel rounded-[28px] p-[1px]">
-            <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
+          <section className="app-panel rounded-[var(--app-radius-surface)]">
+            <div className="p-4 sm:p-5">
               <div className="app-product-mark">{labels.resultsEvidence}</div>
               {!evidenceIdentityConsistent ? (
                 <div
@@ -871,13 +885,15 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
             </div>
           </section>
 
-          <section className="app-terminal-panel rounded-[28px] p-[1px]">
-            <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
+          <section className="app-panel rounded-[var(--app-radius-surface)]">
+            <div className="p-4 sm:p-5">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <div className="app-product-mark">{labels.ledgerTrace}</div>
                   <h2 className="app-card-title mt-1.5">
-                    {labels.ledgerCount(ledgerEntries.length)}
+                    {ledger.isLoading
+                      ? copy.states.loading
+                      : labels.ledgerCount(ledgerEntries.length)}
                   </h2>
                 </div>
                 <span className="w-max rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-2.5 py-1 text-[10px] font-semibold text-[var(--app-muted)]">
@@ -897,15 +913,17 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
         <aside className="min-w-0 space-y-5">
           <section
             data-testid="holding-quote-status-panel"
-            className="app-terminal-panel min-w-0 rounded-[28px] p-[1px]"
+            className="app-panel min-w-0 rounded-[var(--app-radius-surface)]"
           >
-            <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
-              <div className="app-product-mark">{labels.quoteStatus}</div>
+            <div className="p-4 sm:p-5">
+              <div className="app-product-mark">{labels.marketEvidence}</div>
               <div className="mt-4 grid gap-3">
                 <InfoRow
                   label={labels.quoteStatus}
-                  value={quoteStatusLabel}
-                  tone={isStale ? 'warning' : undefined}
+                  value={
+                    quoteNeedsReview ? labels.quoteStale : quoteStatusLabel
+                  }
+                  tone={quoteNeedsReview ? 'warning' : undefined}
                 />
                 <InfoRow
                   label={labels.quoteTimestamp}
@@ -976,9 +994,9 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
 
           <section
             data-testid="holding-risk-exposure-panel"
-            className="app-terminal-panel min-w-0 rounded-[28px] p-[1px]"
+            className="app-panel min-w-0 rounded-[var(--app-radius-surface)]"
           >
-            <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
+            <div className="p-4 sm:p-5">
               <div className="app-product-mark">{labels.riskExposure}</div>
               {isHistoricalClosedPosition ? (
                 <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-3 py-3 text-sm leading-6 text-[var(--app-muted)]">
@@ -1016,9 +1034,9 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
             <section
               data-testid="holding-strategy-attribution-boundary"
               id="holding-strategy-attribution-boundary"
-              className="app-terminal-panel min-w-0 rounded-[28px] p-[1px]"
+              className="app-panel min-w-0 rounded-[var(--app-radius-surface)]"
             >
-              <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
+              <div className="p-4 sm:p-5">
                 <div className="app-product-mark">
                   {labels.strategyAttributionBoundary}
                 </div>
@@ -1164,9 +1182,9 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
 
           <section
             data-testid="holding-related-actions-panel"
-            className="app-terminal-panel min-w-0 rounded-[28px] p-[1px]"
+            className="app-panel min-w-0 rounded-[var(--app-radius-surface)]"
           >
-            <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
+            <div className="p-4 sm:p-5">
               <div className="app-product-mark">{labels.relatedActions}</div>
               <div className="mt-4 grid gap-2">
                 <ActionLink

@@ -8,7 +8,6 @@ import {
   ExceptionList,
   MetricStrip,
   StatusBadge,
-  Timeline,
   WorkspaceHeader,
   type ExceptionItem,
   type StatusTone,
@@ -354,10 +353,11 @@ export function OperationsPage() {
                     </span>
                   ),
                   evidence: (
-                    <span className="break-all">
+                    <span title={item.task_fingerprint}>
                       {formatEvidenceTime(item.evidence.observed_at, locale) ??
                         labels.noTimestamp}{' '}
-                      · {item.task_fingerprint}
+                      · {item.task_fingerprint.slice(0, 14)}…
+                      {item.task_fingerprint.slice(-8)}
                     </span>
                   ),
                 } satisfies ExceptionItem;
@@ -365,26 +365,31 @@ export function OperationsPage() {
             />
           </section>
 
-          <section
-            className="min-w-0 space-y-2"
-            aria-labelledby="operations-subsystem-heading"
+          <details
+            className="group min-w-0 border-y border-[var(--app-divider)] py-2"
+            data-testid="operations-subsystem-register"
           >
-            <h2
-              id="operations-subsystem-heading"
-              className="text-base font-semibold text-[var(--app-text)]"
-            >
-              {labels.subsystemHealth}
-            </h2>
-            <DataTable
-              data={projection.subsystems}
-              columns={subsystemColumns}
-              caption={labels.subsystemHealth}
-              emptyState={labels.attentionEmpty}
-              getRowId={(row) => row.id}
-              tableTestId="operations-subsystem-table"
-              scrollTestId="operations-subsystem-scroll"
-            />
-          </section>
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-[var(--app-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)]">
+              <span>{labels.subsystemHealth}</span>
+              <span className="flex items-center gap-2 font-mono text-xs font-normal tabular-nums text-[var(--app-text-tertiary)]">
+                {projection.subsystems.length}
+                <span aria-hidden="true" className="group-open:rotate-180">
+                  ▾
+                </span>
+              </span>
+            </summary>
+            <div className="mt-3 min-w-0">
+              <DataTable
+                data={projection.subsystems}
+                columns={subsystemColumns}
+                caption={labels.subsystemHealth}
+                emptyState={labels.attentionEmpty}
+                getRowId={(row) => row.id}
+                tableTestId="operations-subsystem-table"
+                scrollTestId="operations-subsystem-scroll"
+              />
+            </div>
+          </details>
 
           <section
             className="min-w-0 space-y-3 border-t border-[var(--app-divider)] pt-4"
@@ -403,42 +408,18 @@ export function OperationsPage() {
                 {labels.sourceBoundary}
               </p>
             </div>
-            <Timeline
-              ariaLabel={
+            <EvidenceState
+              kind="empty"
+              title={
                 locale === 'zh'
-                  ? '持久化证据时间线'
-                  : 'Persisted evidence timeline'
+                  ? '暂无 canonical 历史事件'
+                  : 'No canonical history events'
               }
-              emptyState={
+              description={
                 locale === 'zh'
-                  ? 'canonical 投影没有持久化历史事件；不会根据当前状态伪造时间线。'
-                  : 'The canonical projection has no persisted historical events; no timeline is inferred from current state.'
+                  ? '当前投影只包含子系统最新状态；不会把它改写成不可变历史。'
+                  : 'The current projection contains latest subsystem state only; it is not rewritten as immutable history.'
               }
-              items={projection.subsystems.flatMap((subsystem) =>
-                subsystem.last_run_at
-                  ? [
-                      {
-                        id: `${subsystem.id}-${subsystem.last_run_at}`,
-                        timestamp:
-                          formatEvidenceTime(subsystem.last_run_at, locale) ??
-                          labels.noTimestamp,
-                        title: operationsSubsystemLabel(subsystem.id, locale),
-                        description: `${formatPublicStatus(
-                          subsystem.status,
-                          locale,
-                        )} · ${formatPublicStatus(
-                          subsystem.detail_status,
-                          locale,
-                        )}`,
-                        evidence: operationsNextActionLabel(
-                          subsystem.next_action,
-                          locale,
-                        ),
-                        tone: statusTone(subsystem.status),
-                      },
-                    ]
-                  : [],
-              )}
             />
           </section>
         </>

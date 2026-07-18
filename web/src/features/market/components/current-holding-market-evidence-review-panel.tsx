@@ -15,14 +15,21 @@ type Props = {
   error: boolean;
 };
 
-function reportTone(report?: CurrentHoldingMarketEvidenceReview | null) {
-  if (!report || report.status === 'blocked_identity') {
+function reportTone(
+  report: CurrentHoldingMarketEvidenceReview | null | undefined,
+  loading: boolean,
+  error: boolean,
+) {
+  if (loading) {
+    return 'text-[var(--app-info-text)]';
+  }
+  if (error || !report || report.status === 'blocked_identity') {
     return 'text-[var(--app-danger)]';
   }
   if (report.status === 'review_required') {
     return 'text-[var(--app-warning)]';
   }
-  return 'text-[var(--app-success)]';
+  return 'text-[var(--app-text)]';
 }
 
 function shortIdentity(value?: string | null) {
@@ -65,11 +72,16 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
           : report.status === 'complete'
             ? labels.holdingEvidenceReviewComplete
             : labels.holdingEvidenceReviewCount(report.review_required_count);
+  const complete = report?.status === 'complete';
 
   return (
     <section
       id="current-holding-evidence-review"
-      className="app-panel scroll-mt-24 rounded-2xl p-4 sm:p-5"
+      className={
+        complete
+          ? 'scroll-mt-24 border-y border-[var(--app-divider)] py-3'
+          : 'app-panel scroll-mt-24 rounded-[var(--app-radius-surface)] p-4'
+      }
       data-testid="current-holding-market-evidence-review"
     >
       <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -77,12 +89,16 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
           <div className="app-kicker text-xs uppercase tracking-[0.18em]">
             {labels.holdingEvidenceReview}
           </div>
-          <div className={`mt-2 text-lg font-semibold ${reportTone(report)}`}>
+          <div
+            className={`${complete ? 'mt-1 text-sm' : 'mt-2 text-lg'} font-semibold ${reportTone(report, loading, error)}`}
+          >
             {title}
           </div>
-          <p className="app-muted mt-2 max-w-3xl text-sm leading-6">
-            {labels.holdingEvidenceReviewDetail}
-          </p>
+          {!complete ? (
+            <p className="app-muted mt-2 max-w-3xl text-sm leading-6">
+              {labels.holdingEvidenceReviewDetail}
+            </p>
+          ) : null}
         </div>
         {confirmedNavSymbols.length > 0 || genericRefreshSymbols.length > 0 ? (
           <div className="flex shrink-0 flex-wrap justify-end gap-3">
@@ -96,7 +112,21 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
         ) : null}
       </div>
 
-      {report ? (
+      {report && complete ? (
+        <div className="mt-2 flex min-w-0 flex-wrap gap-x-4 gap-y-1 font-mono text-[10px] tabular-nums text-[var(--app-text-tertiary)]">
+          <span>
+            {report.confirmed_holding_count}/{report.current_holding_count}
+          </span>
+          <span title={report.valuation_snapshot_id ?? undefined}>
+            {labels.holdingEvidenceSnapshot}:{' '}
+            {shortIdentity(report.valuation_snapshot_id)}
+          </span>
+          <span>
+            {labels.holdingEvidenceLedgerCutoff}: {report.ledger_cutoff_id}
+          </span>
+          <span>{formatTimestamp(report.valuation_as_of)}</span>
+        </div>
+      ) : report ? (
         <>
           <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
             <EvidenceIdentity

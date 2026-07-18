@@ -5,7 +5,7 @@ test('critical human-review surfaces load from the product runtime', async ({
 }) => {
   const surfaces = [
     { path: '/decision', heading: /Decision platform|决策平台/ },
-    { path: '/trading', heading: /Trading approvals|交易审批/ },
+    { path: '/trading', heading: /Trading review|交易复核/ },
     {
       path: '/account-truth',
       heading: /Account Truth Review Center|账户事实复核中心/,

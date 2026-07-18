@@ -138,14 +138,20 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-test('summarizes activity net cash impact with the shared ledger formatter semantics', async () => {
+test('does not derive authoritative net cash impact from the visible ledger rows', async () => {
   renderActivityPage();
 
   expect(await screen.findByText('Net cash impact')).toBeTruthy();
-  expect(await screen.findByText('-¥3,254.89')).toBeTruthy();
+  expect(await screen.findByText('Not available')).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'No canonical persisted summary is exposed for this timeline; visible rows are not aggregated in the browser.',
+    ),
+  ).toBeTruthy();
   expect(await screen.findByText('Commission ¥5.00')).toBeTruthy();
   expect(await screen.findByText('Stamp tax ¥0.00')).toBeTruthy();
   expect(await screen.findByText('Transfer fee ¥0.16')).toBeTruthy();
+  expect(screen.queryByText('-¥3,254.89')).toBeNull();
   expect(screen.queryByText('-¥3,250.00')).toBeNull();
   expect(screen.queryByText('synthetic_fee_rule')).toBeNull();
   expect(screen.queryByText('moving_average_buy_cost')).toBeNull();

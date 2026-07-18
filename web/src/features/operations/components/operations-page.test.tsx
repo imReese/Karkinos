@@ -187,7 +187,7 @@ test('renders persisted attention evidence without write or execution affordance
     ),
   ).toBeTruthy();
   expect(
-    within(attention).getByText(/sha256:market-attention-fixture/),
+    within(attention).getByTitle('sha256:market-attention-fixture'),
   ).toBeTruthy();
   expect(
     within(attention)
@@ -245,10 +245,19 @@ test('keeps subsystem evidence visible when the review queue is empty', async ()
     'No subsystem currently requires evidence review.',
   );
   expect(
-    screen.getByRole('link', { name: 'Market data and NAV' }),
+    screen.getByRole('link', {
+      name: 'Market data and NAV',
+      hidden: true,
+    }),
   ).toBeTruthy();
   expect(
     screen.getByText('Three fund NAV observations require confirmation.'),
+  ).toBeTruthy();
+  expect(screen.getByText('No canonical history events')).toBeTruthy();
+  expect(
+    screen.getByText(
+      'The current projection contains latest subsystem state only; it is not rewritten as immutable history.',
+    ),
   ).toBeTruthy();
 });
 

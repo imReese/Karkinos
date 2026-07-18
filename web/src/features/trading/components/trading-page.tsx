@@ -1038,7 +1038,7 @@ export function TradingPage() {
               <label className="grid gap-2 text-sm font-medium">
                 {labels.statusFilter}
                 <select
-                  className="app-field rounded-2xl px-4 py-3 text-sm"
+                  className="app-field rounded-[var(--app-radius-control)] px-4 py-3 text-sm"
                   value={status}
                   onChange={(event) =>
                     setStatus(event.target.value as ManualOrderStatus)
@@ -1059,7 +1059,7 @@ export function TradingPage() {
                 <input
                   name="trading-symbol-filter"
                   autoComplete="off"
-                  className="app-field rounded-2xl px-4 py-3 text-sm"
+                  className="app-field rounded-[var(--app-radius-control)] px-4 py-3 text-sm"
                   value={symbolFilter}
                   onChange={(event) => setSymbolFilter(event.target.value)}
                   placeholder={labels.symbolPlaceholder}
@@ -1069,7 +1069,7 @@ export function TradingPage() {
               <label className="grid gap-2 text-sm font-medium">
                 {labels.sideFilter}
                 <select
-                  className="app-field rounded-2xl px-4 py-3 text-sm"
+                  className="app-field rounded-[var(--app-radius-control)] px-4 py-3 text-sm"
                   value={sideFilter}
                   onChange={(event) =>
                     setSideFilter(event.target.value as SideFilter)
@@ -1146,16 +1146,36 @@ export function TradingPage() {
 
       <KillSwitchPanel />
 
-      <BrokerAdapterReadinessPanel
-        readiness={brokerAdapterReadiness}
-        loading={operationsToday.isLoading}
-        error={operationsToday.isError}
-        soak={brokerSoakPromotion.data ?? null}
-        soakLoading={brokerSoakPromotion.isLoading}
-        soakError={brokerSoakPromotion.isError}
-      />
+      <details
+        className="min-w-0 border-y border-[var(--app-divider)]"
+        data-testid="trading-broker-boundary-disclosure"
+      >
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]">
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-[var(--app-text)]">
+              {labels.brokerBoundaryEvidence}
+            </span>
+            <span className="mt-0.5 block text-xs font-normal text-[var(--app-text-secondary)]">
+              {labels.brokerBoundaryEvidenceDetail}
+            </span>
+          </span>
+          <span className="shrink-0 text-xs text-[var(--app-text-secondary)]">
+            {labels.expandOnDemand}
+          </span>
+        </summary>
+        <div className="space-y-5 py-4">
+          <BrokerAdapterReadinessPanel
+            readiness={brokerAdapterReadiness}
+            loading={operationsToday.isLoading}
+            error={operationsToday.isError}
+            soak={brokerSoakPromotion.data ?? null}
+            soakLoading={brokerSoakPromotion.isLoading}
+            soakError={brokerSoakPromotion.isError}
+          />
 
-      <CurrentPerOrderDossierOperatorPanel locale={locale} />
+          <CurrentPerOrderDossierOperatorPanel locale={locale} />
+        </div>
+      </details>
 
       <ExecutionAuditPanel
         orders={orderFacts.data ?? []}
@@ -1175,8 +1195,8 @@ export function TradingPage() {
         onAcceptSimulationReview={() => void handleAcceptSimulationReview()}
       />
 
-      <section className="app-terminal-panel rounded-[28px] p-[1px]">
-        <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
+      <section className="app-panel rounded-[var(--app-radius-surface)]">
+        <div className="p-4 sm:p-5">
           <div>
             <div className="app-product-mark">{labels.historyKicker}</div>
             <h2 className="app-card-title mt-1.5">{labels.historyTitle}</h2>
