@@ -11,6 +11,11 @@ import { MarketRefreshButton } from '../../market/components/market-refresh-butt
 import { useMarketDataHealthQuery } from '../../market/api';
 import { useCopy } from '../../../app/copy';
 import {
+  ControlledActionZone,
+  MetricStrip,
+  WorkspaceHeader,
+} from '../../../app/components/workbench';
+import {
   usePreferences,
   type Locale,
   type ThemePreference,
@@ -490,18 +495,16 @@ export function SettingsPage() {
   };
 
   return (
-    <section className="space-y-5 sm:space-y-6">
-      <header className="app-page-header pb-1">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div className="min-w-0">
-            <div className="app-product-mark">{copy.settings.kicker}</div>
-            <h1 className="app-page-title mt-2">{copy.settings.title}</h1>
-          </div>
-          <p className="app-page-subtitle sm:max-w-xl sm:text-right">
-            {copy.settings.subtitle}
-          </p>
-        </div>
-      </header>
+    <section
+      className="app-workbench-route space-y-5 sm:space-y-6"
+      data-workbench-route="settings"
+    >
+      <WorkspaceHeader
+        eyebrow={copy.settings.kicker}
+        title={copy.settings.title}
+        description={copy.settings.subtitle}
+        context={`${copy.settings.localOnly} · ${resolvedTheme}`}
+      />
 
       {statusLoadFailed ? (
         <InlineNotice
@@ -527,50 +530,76 @@ export function SettingsPage() {
             title={copy.settings.dataStatus}
             detail={copy.settings.dataStatusDetail}
           >
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <StatusMetric
-                label={copy.settings.marketState}
-                value={
-                  marketHealth.isLoading
+            <MetricStrip
+              ariaLabel={copy.settings.dataStatus}
+              items={[
+                {
+                  id: 'market-state',
+                  label: copy.settings.marketState,
+                  value: marketHealth.isLoading ? (
+                    copy.shell.checking
+                  ) : marketHealth.data?.market_open ? (
+                    <span
+                      aria-label={`${copy.settings.marketState}: ${copy.shell.marketOpen}`}
+                    >
+                      {copy.shell.marketOpen}
+                    </span>
+                  ) : (
+                    <span
+                      aria-label={`${copy.settings.marketState}: ${copy.shell.marketClosed}`}
+                    >
+                      {copy.shell.marketClosed}
+                    </span>
+                  ),
+                  tone:
+                    !marketHealth.isLoading && !marketHealth.data?.market_open
+                      ? 'warning'
+                      : 'neutral',
+                },
+                {
+                  id: 'refresh-policy',
+                  label: copy.settings.refreshPolicy,
+                  value: marketHealth.isLoading ? (
+                    copy.shell.checking
+                  ) : (
+                    <span
+                      aria-label={`${copy.settings.refreshPolicy}: ${refreshPolicyLabel}`}
+                    >
+                      {refreshPolicyLabel}
+                    </span>
+                  ),
+                  tone: refreshPolicyNeedsReview ? 'warning' : 'neutral',
+                },
+                {
+                  id: 'quote-state',
+                  label: copy.settings.quoteState,
+                  value: overview.isLoading ? (
+                    copy.shell.checking
+                  ) : isStaleQuote ? (
+                    <span
+                      aria-label={`${copy.settings.quoteState}: ${copy.settings.cachedQuotes}`}
+                    >
+                      {copy.settings.cachedQuotes}
+                    </span>
+                  ) : (
+                    <span
+                      aria-label={`${copy.settings.quoteState}: ${quoteStatusLabel}`}
+                    >
+                      {quoteStatusLabel}
+                    </span>
+                  ),
+                  tone: quoteNeedsReview ? 'warning' : 'neutral',
+                },
+                {
+                  id: 'valuation-time',
+                  label: copy.settings.valuationTime,
+                  value: overview.isLoading
                     ? copy.shell.checking
-                    : marketHealth.data?.market_open
-                      ? copy.shell.marketOpen
-                      : copy.shell.marketClosed
-                }
-                tone={
-                  marketHealth.isLoading
-                    ? 'neutral'
-                    : marketHealth.data?.market_open
-                      ? 'success'
-                      : 'warning'
-                }
-              />
-              <StatusMetric
-                label={copy.settings.refreshPolicy}
-                value={
-                  marketHealth.isLoading
-                    ? copy.shell.checking
-                    : refreshPolicyLabel
-                }
-                tone={refreshPolicyNeedsReview ? 'warning' : 'success'}
-              />
-              <StatusMetric
-                label={copy.settings.quoteState}
-                value={
-                  overview.isLoading
-                    ? copy.shell.checking
-                    : isStaleQuote
-                      ? copy.settings.cachedQuotes
-                      : quoteStatusLabel
-                }
-                tone={quoteNeedsReview ? 'warning' : 'success'}
-              />
-              <StatusMetric
-                label={copy.settings.valuationTime}
-                value={overview.isLoading ? copy.shell.checking : valuationTime}
-                tone={quoteNeedsReview ? 'warning' : 'neutral'}
-              />
-            </div>
+                    : valuationTime,
+                  tone: quoteNeedsReview ? 'warning' : 'neutral',
+                },
+              ]}
+            />
 
             {refreshPolicyNeedsReview || quoteNeedsReview ? (
               <InlineNotice
@@ -596,17 +625,13 @@ export function SettingsPage() {
               />
             ) : null}
 
-            <div className="flex flex-col gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <div className="text-sm font-semibold">
-                  {copy.market.refreshQuotes}
-                </div>
-                <div className="app-muted mt-1 text-xs leading-5">
-                  {copy.settings.dataStatusDetail}
-                </div>
-              </div>
+            <ControlledActionZone
+              title={copy.market.refreshQuotes}
+              description={copy.settings.dataStatusDetail}
+              evidence={copy.settings.refreshPolicy}
+            >
               <MarketRefreshButton />
-            </div>
+            </ControlledActionZone>
           </SettingsSection>
 
           <SettingsSection
@@ -725,7 +750,11 @@ export function SettingsPage() {
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-3">
+            <ControlledActionZone
+              title={copy.settings.runtimeBoundary}
+              description={copy.settings.schedulerBoundaryDetail}
+              evidence={copy.settings.noAutoTrading}
+            >
               <button
                 type="button"
                 className="app-button-primary rounded-2xl px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
@@ -748,7 +777,7 @@ export function SettingsPage() {
                   ? copy.settings.updatingScheduler
                   : copy.settings.stopScheduler}
               </button>
-            </div>
+            </ControlledActionZone>
 
             {startLive.isError || stopLive.isError ? (
               <InlineNotice

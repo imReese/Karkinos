@@ -19,6 +19,7 @@ import { ToastStack, type ToastItem } from './components/toast-stack';
 import {
   EvidenceState,
   ExceptionList,
+  FilterBar,
   MetricStrip,
   StatusBadge,
   WorkspaceHeader,
@@ -3873,74 +3874,69 @@ export function MarketPage() {
   return (
     <>
       <ToastStack toasts={toasts} />
-      <section className="space-y-5 sm:space-y-6">
-        <PageHeader
-          kicker={copy.market.kicker}
+      <section
+        className="app-workbench-route space-y-5 sm:space-y-6"
+        data-workbench-route="market"
+      >
+        <WorkspaceHeader
+          eyebrow={copy.market.kicker}
           title={copy.market.title}
-          subtitle={copy.market.subtitle}
+          description={copy.market.subtitle}
+          context={`${copy.market.latestQuote}: ${latestQuoteLabel}`}
+          actions={
+            <StatusBadge
+              tone={staleCount > 0 ? 'warning' : health ? 'success' : 'neutral'}
+            >
+              {sourceHealthLabel}
+            </StatusBadge>
+          }
         />
 
         {board.isLoading ? (
-          <StatusCard
+          <EvidenceState
+            kind="loading"
             title={copy.states.loading}
-            detail={copy.market.loading}
+            description={copy.market.loading}
           />
         ) : board.isError ? (
-          <StatusCard
+          <EvidenceState
+            kind="error"
             title={copy.states.error}
-            detail={copy.market.error}
-            tone="danger"
+            description={copy.market.error}
           />
         ) : (
           <div className="space-y-5 sm:space-y-6">
-            <div className="grid gap-3 md:grid-cols-4">
-              <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_24%,transparent)] px-4 py-3">
-                <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
-                  {copy.market.watchlist}
-                </div>
-                <div className="mt-2 text-2xl font-semibold tabular-nums text-[var(--app-text)]">
-                  {items.length}
-                </div>
-                <div className="app-muted mt-1 text-xs">
-                  {holdingItemsCount} {copy.market.holdingsContext}
-                </div>
-              </div>
-              <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_24%,transparent)] px-4 py-3">
-                <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
-                  {copy.market.sourceHealth}
-                </div>
-                <div
-                  className={`mt-2 text-2xl font-semibold tabular-nums ${sourceHealthTone}`}
-                >
-                  {sourceHealthLabel}
-                </div>
-                <div className="app-muted mt-1 text-xs">
-                  {refreshPolicyLabel}
-                </div>
-              </div>
-              <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_24%,transparent)] px-4 py-3">
-                <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
-                  {copy.market.latestQuote}
-                </div>
-                <div className="mt-2 text-2xl font-semibold tabular-nums text-[var(--app-text)]">
-                  {latestQuoteLabel}
-                </div>
-                <div className="app-muted mt-1 text-xs">
-                  {copy.market.cacheAge} {formatAge(health?.cache_age_seconds)}
-                </div>
-              </div>
-              <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_24%,transparent)] px-4 py-3">
-                <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
-                  {copy.market.marketOpen}
-                </div>
-                <div className="mt-2 text-2xl font-semibold tabular-nums text-[var(--app-text)]">
-                  {marketStateLabel}
-                </div>
-                <div className="app-muted mt-1 text-xs">
-                  {staleCount} {copy.market.staleSymbols}
-                </div>
-              </div>
-            </div>
+            <MetricStrip
+              ariaLabel={copy.market.title}
+              items={[
+                {
+                  id: 'watchlist',
+                  label: copy.market.watchlist,
+                  value: items.length,
+                  detail: `${holdingItemsCount} ${copy.market.holdingsContext}`,
+                },
+                {
+                  id: 'source-health',
+                  label: copy.market.sourceHealth,
+                  value: sourceHealthLabel,
+                  detail: refreshPolicyLabel,
+                  tone: staleCount > 0 ? 'warning' : 'neutral',
+                },
+                {
+                  id: 'latest-quote',
+                  label: copy.market.latestQuote,
+                  value: latestQuoteLabel,
+                  detail: `${copy.market.cacheAge} ${formatAge(health?.cache_age_seconds)}`,
+                },
+                {
+                  id: 'market-state',
+                  label: copy.market.marketOpen,
+                  value: marketStateLabel,
+                  detail: `${staleCount} ${copy.market.staleSymbols}`,
+                  tone: staleCount > 0 ? 'warning' : 'neutral',
+                },
+              ]}
+            />
 
             <CurrentHoldingMarketEvidenceReviewPanel
               report={holdingMarketEvidenceReview.data}
@@ -4569,7 +4565,13 @@ export function MarketPage() {
                 <div className="app-kicker text-xs uppercase tracking-[0.18em]">
                   {copy.market.notesTitle}
                 </div>
-                <div className="mt-4 grid gap-3 md:grid-cols-4">
+                <FilterBar
+                  className="mt-4"
+                  label={copy.market.notesTitle}
+                  summary={
+                    notes.data ? String(notes.data.items.length) : undefined
+                  }
+                >
                   <label className="grid gap-2">
                     <span className="text-sm font-medium">
                       {copy.market.noteType}
@@ -4634,7 +4636,7 @@ export function MarketPage() {
                       aria-label={copy.market.noteDateTo}
                     />
                   </label>
-                </div>
+                </FilterBar>
                 {notes.isLoading ? (
                   <div className="app-muted mt-4 text-sm">
                     {copy.states.loading}
@@ -4939,48 +4941,88 @@ export function ActivityPage() {
   return (
     <>
       <ToastStack toasts={toasts} />
-      <section className="min-w-0 space-y-6">
-        <header className="min-w-0 space-y-2">
-          <div className="app-kicker text-xs font-medium uppercase tracking-[0.24em]">
-            {copy.activity.kicker}
-          </div>
-          <h1 className="text-3xl font-semibold">{copy.activity.title}</h1>
-          <p className="app-muted max-w-2xl break-words text-sm leading-6">
-            {copy.activity.subtitle}
-          </p>
-        </header>
+      <section
+        className="app-workbench-route min-w-0 space-y-5 sm:space-y-6"
+        data-workbench-route="activity"
+      >
+        <WorkspaceHeader
+          eyebrow={copy.activity.kicker}
+          title={copy.activity.title}
+          description={copy.activity.subtitle}
+          context={
+            latestEntry ? formatTimestamp(latestEntry.timestamp) : undefined
+          }
+        />
 
-        <div className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <ActivityMetric
-            label={copy.activity.summary.pendingOrders}
-            value={
-              pendingFundOrders.isLoading
+        <MetricStrip
+          ariaLabel={copy.activity.title}
+          items={[
+            {
+              id: 'pending-orders',
+              label: copy.activity.summary.pendingOrders,
+              value: pendingFundOrders.isLoading
                 ? '--'
-                : String(pendingFundOrders.data?.length ?? 0)
-            }
-            detail={copy.activity.summary.pendingOrdersDetail}
-          />
-          <ActivityMetric
-            label={copy.activity.summary.recentEntries}
-            value={entries.isLoading ? '--' : String(ledgerRows.length)}
-            detail={copy.activity.summary.recentEntriesDetail}
-          />
-          <ActivityMetric
-            label={copy.activity.summary.netCashImpact}
-            value={
-              entries.isLoading ? '--' : formatCurrencyValue(netCashImpact)
-            }
-            detail={copy.activity.summary.netCashImpactDetail}
-          />
-          <ActivityMetric
-            label={copy.activity.summary.latestActivity}
-            value={latestEntry ? formatTimestamp(latestEntry.timestamp) : '--'}
-            detail={copy.activity.summary.latestActivityDetail}
-          />
-        </div>
+                : String(pendingFundOrders.data?.length ?? 0),
+              detail: copy.activity.summary.pendingOrdersDetail,
+            },
+            {
+              id: 'recent-entries',
+              label: copy.activity.summary.recentEntries,
+              value: entries.isLoading ? '--' : String(ledgerRows.length),
+              detail: copy.activity.summary.recentEntriesDetail,
+            },
+            {
+              id: 'net-cash-impact',
+              label: copy.activity.summary.netCashImpact,
+              value: entries.isLoading
+                ? '--'
+                : formatCurrencyValue(netCashImpact),
+              detail: copy.activity.summary.netCashImpactDetail,
+            },
+            {
+              id: 'latest-activity',
+              label: copy.activity.summary.latestActivity,
+              value: latestEntry
+                ? formatTimestamp(latestEntry.timestamp)
+                : '--',
+              detail: copy.activity.summary.latestActivityDetail,
+            },
+          ]}
+        />
 
         <div className="grid min-w-0 gap-6 2xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.55fr)]">
-          <aside className="order-1 min-w-0 space-y-6 2xl:order-2 2xl:sticky 2xl:top-24 2xl:self-start">
+          <div className="min-w-0 space-y-6">
+            {entries.isLoading ? (
+              <EvidenceState
+                kind="loading"
+                title={copy.states.loading}
+                description={copy.activity.loading}
+              />
+            ) : entries.isError ? (
+              <EvidenceState
+                kind="error"
+                title={copy.states.error}
+                description={copy.activity.error}
+                action={
+                  <button
+                    type="button"
+                    className="app-button-secondary px-3 py-2 text-xs"
+                    onClick={() => void entries.refetch()}
+                  >
+                    {copy.states.retry}
+                  </button>
+                }
+              />
+            ) : (
+              <ActivityFeed entries={entries.data ?? []} />
+            )}
+          </div>
+          <aside className="min-w-0 space-y-6 2xl:sticky 2xl:top-24 2xl:self-start">
+            <EvidenceState
+              kind="partial"
+              title={copy.activity.entryTools.kicker}
+              description={copy.activity.entryTools.detail}
+            />
             <ActivityEntryToolsPanel
               activeEntryTool={activeEntryTool}
               candidates={fundBatchCandidates}
@@ -5016,24 +5058,6 @@ export function ActivityPage() {
               onRetry={() => void pendingFundOrders.refetch()}
             />
           </aside>
-          <div className="order-2 min-w-0 space-y-6 2xl:order-1">
-            {entries.isLoading ? (
-              <StatusCard
-                title={copy.states.loading}
-                detail={copy.activity.loading}
-              />
-            ) : entries.isError ? (
-              <StatusCard
-                tone="danger"
-                title={copy.states.error}
-                detail={copy.activity.error}
-                actionLabel={copy.states.retry}
-                onAction={() => void entries.refetch()}
-              />
-            ) : (
-              <ActivityFeed entries={entries.data ?? []} />
-            )}
-          </div>
         </div>
       </section>
     </>
@@ -5170,26 +5194,6 @@ function ActivityEntryToolsPanel({
           />
         ) : null}
       </div>
-    </div>
-  );
-}
-
-function ActivityMetric({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-4 py-3 shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_4%,transparent)]">
-      <div className="app-muted text-xs">{label}</div>
-      <div className="mt-2 text-lg font-semibold tabular-nums text-[var(--app-text)]">
-        {value}
-      </div>
-      <div className="app-muted mt-1 text-xs leading-5">{detail}</div>
     </div>
   );
 }
@@ -7726,30 +7730,6 @@ function StatusCard({
         </button>
       ) : null}
     </div>
-  );
-}
-
-function PageHeader({
-  kicker,
-  title,
-  subtitle,
-}: {
-  kicker: string;
-  title: string;
-  subtitle: string;
-}) {
-  return (
-    <header className="app-page-header pb-1">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <div className="app-product-mark">{kicker}</div>
-          <h1 className="app-page-title mt-2">{title}</h1>
-        </div>
-        <p className="app-page-subtitle sm:max-w-md sm:text-right">
-          {subtitle}
-        </p>
-      </div>
-    </header>
   );
 }
 
