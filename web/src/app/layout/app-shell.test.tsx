@@ -225,7 +225,11 @@ test('renders portfolio workspace navigation', async () => {
   const navigation = await screen.findByLabelText('Navigation');
 
   expect(await within(navigation).findByText('Overview')).toBeTruthy();
-  expect(await within(navigation).findByText('Portfolio')).toBeTruthy();
+  expect(
+    within(await screen.findByTestId('sidebar-nav-portfolio')).getByText(
+      'Portfolio',
+    ),
+  ).toBeTruthy();
   expect(await within(navigation).findByText('Ledger')).toBeTruthy();
   expect(await within(navigation).findByText('Market')).toBeTruthy();
   expect(await within(navigation).findByText('Backtest')).toBeTruthy();
@@ -234,8 +238,12 @@ test('renders portfolio workspace navigation', async () => {
   expect(await within(navigation).findByText('Decision')).toBeTruthy();
   expect(await within(navigation).findByText('Operations')).toBeTruthy();
   expect(await within(navigation).findByText('Execution')).toBeTruthy();
+  expect(await within(navigation).findByText('Decision & Risk')).toBeTruthy();
+  expect(
+    await within(navigation).findByText('Execution & Operations'),
+  ).toBeTruthy();
   expect(await screen.findByText('Overview page')).toBeTruthy();
-  expect(await screen.findByText('Workspace toolbar')).toBeTruthy();
+  expect(screen.queryByText('Workspace toolbar')).toBeNull();
   expect(await screen.findByLabelText('Account Status')).toBeTruthy();
 
   const navOrder = Array.from(
@@ -249,8 +257,8 @@ test('renders portfolio workspace navigation', async () => {
     'sidebar-nav-activity',
     'sidebar-nav-market',
     'sidebar-nav-backtest',
-    'sidebar-nav-risk',
     'sidebar-nav-decision',
+    'sidebar-nav-risk',
     'sidebar-nav-operations',
     'sidebar-nav-trading',
     'sidebar-nav-settings',
@@ -285,9 +293,9 @@ test('keeps a compact mobile navigation control visible in the header', async ()
 
   expect(toggle.getAttribute('aria-expanded')).toBe('true');
   expect(toggle.getAttribute('aria-label')).toBe('Close navigation');
-  const navigation = await screen.findByLabelText('Navigation');
-  expect(navigation).toHaveProperty('id', 'app-shell-navigation');
-  expect(navigation.className).toContain('z-[100]');
+  const navigation = document.getElementById('app-shell-navigation');
+  expect(navigation).toBeTruthy();
+  expect(navigation?.className).toContain('z-[100]');
   expect(
     (await screen.findByTestId('mobile-navigation-backdrop')).className,
   ).toContain('z-[90]');
@@ -300,7 +308,7 @@ test('keeps the KARKINOS brand mark unwrapped in the sidebar header', async () =
   const sidebarBrand = brandMarks[0] as HTMLElement;
 
   expect(sidebarBrand.className).toContain('whitespace-nowrap');
-  expect(sidebarBrand.className).toContain('shrink-0');
+  expect(sidebarBrand.className).toContain('truncate');
   expect(sidebarBrand.className).toContain('font-semibold');
 });
 
@@ -322,22 +330,25 @@ test('switches interface language from english to chinese', async () => {
   expect(await within(navigation).findByText('决策')).toBeTruthy();
   expect(await within(navigation).findByText('运营')).toBeTruthy();
   expect(await within(navigation).findByText('执行')).toBeTruthy();
-  expect(await screen.findByText('全局工具栏')).toBeTruthy();
+  expect(await within(navigation).findByText('组合管理')).toBeTruthy();
+  expect(await within(navigation).findByText('决策与风控')).toBeTruthy();
+  expect(screen.queryByText('全局工具栏')).toBeNull();
   expect(window.localStorage.getItem('karkinos.locale')).toBe('zh');
 });
 
-test('uses stronger chinese typography in the sidebar', async () => {
+test('localizes grouped navigation without decorative workspace copy', async () => {
   renderShell();
   const user = userEvent.setup();
 
   await user.click(await screen.findByRole('button', { name: 'Language' }));
   await user.click(await screen.findByRole('menuitemradio', { name: '中文' }));
 
-  const workspaceTitle = await screen.findByText('量化投研平台');
+  const groupTitle = await screen.findByText('组合管理');
   const overviewNav = await screen.findByTestId('sidebar-nav-overview');
 
-  expect(workspaceTitle.className).not.toContain('tracking-[-0.02em]');
-  expect(overviewNav.className).toContain('font-semibold');
+  expect(groupTitle.className).toContain('uppercase');
+  expect(overviewNav.className).toContain('font-medium');
+  expect(screen.queryByText('量化投研平台')).toBeNull();
 });
 
 test('switches theme preference and persists it', async () => {
@@ -370,17 +381,21 @@ test('switches theme preference and persists it', async () => {
 test('keeps the desktop toolbar controls in a single centered row', async () => {
   renderShell();
 
-  const toolbarTitle = await screen.findByText('Workspace toolbar');
-  const toolbarShell = toolbarTitle.closest('header') as HTMLElement | null;
-  const toolbarRow = toolbarTitle.closest('header')
-    ?.firstElementChild as HTMLElement | null;
-  expect(toolbarShell?.className).toContain('absolute');
+  await screen.findByText('Overview page');
+  const toolbarShell = document.querySelector(
+    '.app-toolbar-shell',
+  ) as HTMLElement | null;
+  const toolbarRow = toolbarShell?.firstElementChild as HTMLElement | null;
+  expect(toolbarShell?.className).toContain('relative');
   expect(toolbarShell?.className).toContain('z-[80]');
   expect(toolbarShell?.className).toContain('overflow-visible');
+  expect(toolbarShell?.className).toContain('border-b');
+  expect(toolbarShell?.className).not.toContain('backdrop-blur');
+  expect(toolbarShell?.className).not.toContain('rounded-');
   expect(toolbarRow).toBeTruthy();
-  expect(toolbarRow?.className).toContain('h-14');
+  expect(toolbarRow?.className).toContain('h-12');
   expect(toolbarRow?.className).toContain('items-center');
-  expect(toolbarRow?.className).toContain('px-4');
+  expect(toolbarRow?.className).toContain('px-3');
 
   const accountStatus = await screen.findByLabelText('Account Status');
   expect(accountStatus.className).toContain('flex-nowrap');
@@ -389,16 +404,16 @@ test('keeps the desktop toolbar controls in a single centered row', async () => 
   const themeSwitcher = await screen.findByRole('group', { name: 'Theme' });
   expect(themeSwitcher.className).toContain('flex-row');
   expect(themeSwitcher.className).toContain('items-center');
-  expect(themeSwitcher.className).toContain('rounded-full');
-  expect(themeSwitcher.className).toContain('h-9');
+  expect(themeSwitcher.className).toContain('app-radius-control');
+  expect(themeSwitcher.className).toContain('h-8');
 
   const languageButton = await screen.findByRole('button', {
     name: 'Language',
   });
-  expect(languageButton.className).toContain('h-9');
+  expect(languageButton.className).toContain('h-8');
   expect(languageButton.className).toContain('w-auto');
   expect(languageButton.className).toContain('whitespace-nowrap');
-  expect(languageButton.className).toContain('text-[12px]');
+  expect(languageButton.className).toContain('text-xs');
   expect(languageButton.textContent).toBe('English');
 });
 
@@ -406,7 +421,7 @@ test('surfaces compact status without duplicate nav links in the header rail', a
   renderShell();
 
   const headerRail = await screen.findByLabelText('Account Status');
-  expect(headerRail.className).toContain('xl:flex');
+  expect(headerRail.className).toContain('lg:flex');
   expect(headerRail.className).toContain('flex-1');
   const valuationStatus = within(headerRail).getByTestId(
     'status-pill-valuation',
@@ -416,29 +431,19 @@ test('surfaces compact status without duplicate nav links in the header rail', a
   expect(marketStatus).toBeTruthy();
   const valuationShell = valuationStatus.closest('.group');
   const marketShell = marketStatus.closest('.group');
-  expect(valuationShell?.className).toContain('h-9');
-  expect(valuationShell?.className).toContain('w-[15rem]');
-  expect(valuationStatus.className).toContain('text-[12px]');
+  expect(valuationShell?.className).toContain('h-8');
+  expect(valuationShell?.className).toContain('w-[12.5rem]');
+  expect(valuationStatus.className).toContain('text-xs');
   expect(valuationStatus.className).toContain('whitespace-nowrap');
-  expect(marketShell?.className).toContain('h-9');
-  expect(marketShell?.className).toContain('w-[15rem]');
-  expect(marketStatus.className).toContain('text-[12px]');
+  expect(marketShell?.className).toContain('h-8');
+  expect(marketShell?.className).toContain('w-[12.5rem]');
+  expect(marketStatus.className).toContain('text-xs');
   expect(marketStatus.className).toContain('whitespace-nowrap');
-  const marketRefresh = within(headerRail).getByRole('button', {
-    name: 'Refresh quotes: Market',
-  });
   expect(
     within(headerRail).queryByRole('button', {
-      name: 'Refresh quotes: NAV',
+      name: 'Refresh quotes: Market',
     }),
   ).toBeNull();
-  expect(marketRefresh.className).toContain('h-5');
-  expect(marketRefresh.className).toContain('w-5');
-  expect(marketRefresh.className).toContain('group-hover:opacity-100');
-  expect(marketRefresh.className).toContain('hover:opacity-100');
-  expect(marketRefresh.className).not.toContain('!opacity');
-  expect(marketRefresh.className).not.toContain('border');
-  expect(marketRefresh.className).not.toContain('shadow-');
   expect(within(headerRail).queryByTestId('status-pill-ledger')).toBeNull();
   expect(within(headerRail).queryByTestId('status-pill-broker')).toBeNull();
   expect(within(headerRail).queryByRole('link', { name: 'Market' })).toBeNull();
@@ -487,7 +492,7 @@ test('uses full language names and fluid menu width', async () => {
     name: 'Language',
   });
   expect(languageButton.className).toContain('w-auto');
-  expect(languageButton.className).toContain('px-3');
+  expect(languageButton.className).toContain('px-2.5');
   expect(languageButton.textContent).toBe('English');
 
   await user.click(languageButton);
@@ -523,63 +528,32 @@ test('shows cached quote status and valuation time from account overview', async
   expect(screen.queryByText('账本已同步')).toBeNull();
 });
 
-test('keeps the compact header refresh affordance actionable', async () => {
-  const fetchMock = installShellStatusFetchMock({
-    marketHealth: {
-      source_health: 'cache',
-      provider_status: 'cache',
-      refresh_policy: 'live',
-    },
+test('keeps compact header status read-only and provider-free', async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = input.toString();
+    if (url.includes('/api/portfolio/overview')) {
+      return jsonResponse(defaultOverview);
+    }
+    if (url.includes('/api/market/data-health')) {
+      return jsonResponse({
+        ...defaultMarketHealth,
+        source_health: 'cache',
+        provider_status: 'cache',
+        refresh_policy: 'live',
+      });
+    }
+    return new Response('Not found', { status: 404 });
   });
-  window.scrollTo = () => {};
-  window.localStorage.clear();
-  installMatchMediaMock();
-
-  const rootRoute = createRootRoute({
-    component: () => (
-      <AppShell>
-        <Outlet />
-      </AppShell>
-    ),
-  });
-  const indexRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: '/',
-    component: () => <div>Overview page</div>,
-  });
-  const routeTree = rootRoute.addChildren([indexRoute]);
-  const router = createRouter({
-    routeTree,
-    history: createMemoryHistory({ initialEntries: ['/'] }),
-  });
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: false,
-      },
-    },
-  });
-  render(
-    <PreferencesProvider>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>
-    </PreferencesProvider>,
-  );
-
+  renderShell({ fetchImpl: fetchMock });
   const user = userEvent.setup();
-  const headerRail = await screen.findByLabelText('Account Status');
-  await user.click(
-    within(headerRail).getByRole('button', { name: 'Refresh quotes: Market' }),
-  );
+  await user.click(await screen.findByTestId('status-pill-market'));
 
-  expect(fetchMock).toHaveBeenCalledWith(
-    '/api/market/quotes/refresh',
-    expect.objectContaining({
-      method: 'POST',
-    }),
-  );
-  expect(screen.queryByRole('dialog', { name: 'Market' })).toBeNull();
+  expect(
+    fetchMock.mock.calls.some(([input]) =>
+      input.toString().includes('/api/market/quotes/refresh'),
+    ),
+  ).toBe(false);
+  expect(await screen.findByRole('dialog', { name: 'Market' })).toBeTruthy();
 });
 
 test('shows cache-only market state from data health', async () => {
@@ -610,7 +584,7 @@ test('shows closed market with healthy cached quotes as available', async () => 
   expect(await screen.findByText('市场休市')).toBeTruthy();
   expect(
     screen.getByTestId('status-pill-market-indicator').style.backgroundColor,
-  ).toBe('var(--app-success)');
+  ).toBe('var(--app-success-indicator)');
 });
 
 test('shows cache-only open-market state without claiming live quotes', async () => {

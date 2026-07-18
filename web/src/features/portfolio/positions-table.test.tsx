@@ -447,10 +447,10 @@ test('uses shared numeric display classes for mobile portfolio metrics', () => {
   ).toBe('-¥3.00');
   expect(
     screen.getByTestId('position-mobile-today-change-600003').className,
-  ).toContain('text-[var(--app-danger)]');
+  ).toContain('text-[var(--app-pnl-negative)]');
   expect(
     screen.getByTestId('position-mobile-return-pct-600003').className,
-  ).toContain('text-[var(--app-danger)]');
+  ).toContain('text-[var(--app-pnl-negative)]');
   expect(screen.queryByText('¥16.2750')).toBeNull();
   expect(screen.queryByText('¥16.2608')).toBeNull();
 });

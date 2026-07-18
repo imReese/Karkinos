@@ -281,7 +281,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                     {entry.symbol ? (
                       <a
                         href={`/portfolio/${encodeURIComponent(entry.symbol)}`}
-                        className="font-semibold text-[var(--app-text)] underline-offset-4 transition-colors hover:text-[var(--app-accent)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus)]"
+                        className="font-semibold text-[var(--app-text)] underline-offset-4 transition-colors hover:text-[var(--app-accent)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
                         aria-label={labels.openHoldingDetail(entry.symbol)}
                       >
                         {formatLedgerInstrumentLabel(entry, locale) ||

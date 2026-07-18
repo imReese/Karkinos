@@ -191,7 +191,7 @@ test('renders a month calendar with selectable daily return cells by default', a
   expect(screen.getByTestId('return-calendar-period-select')).toBeTruthy();
   const statusChip = screen.getByTestId('return-calendar-status-chip');
   expect(statusChip).toBeTruthy();
-  expect(statusChip.className).toContain('text-[var(--app-warning)]');
+  expect(statusChip.className).toContain('text-[var(--app-warning-text)]');
   expect(statusChip.className).not.toMatch(/text-(amber|emerald|sky)-100/);
   expect(screen.getByTestId('return-calendar-month-grid')).toBeTruthy();
   expect(

@@ -46,22 +46,22 @@ export type TodayPnlContributor = {
 
 function moneyTone(value: number) {
   if (value < 0) {
-    return 'text-[var(--app-danger)]';
+    return 'text-[var(--app-pnl-negative)]';
   }
   if (value > 0) {
-    return 'text-[var(--app-success)]';
+    return 'text-[var(--app-pnl-positive)]';
   }
-  return 'text-[var(--app-soft)]';
+  return 'text-[var(--app-pnl-neutral)]';
 }
 
 function metricToneClass(tone: OverviewCardItem['tone']) {
   if (tone === 'positive') {
-    return 'text-[var(--app-success)]';
+    return 'text-[var(--app-pnl-positive)]';
   }
   if (tone === 'negative') {
-    return 'text-[var(--app-danger)]';
+    return 'text-[var(--app-pnl-negative)]';
   }
-  return 'text-[var(--app-soft)]';
+  return 'text-[var(--app-pnl-neutral)]';
 }
 
 function formatSignedReturnPercent(value: number | null | undefined) {
@@ -248,7 +248,7 @@ export function OverviewCards({
                   </div>
                   <div
                     data-testid="drawdown-peak-detail"
-                    className="mt-1 whitespace-nowrap text-right text-[11px] font-semibold text-[var(--app-subtext-1)]"
+                    className="mt-1 whitespace-nowrap text-right text-[11px] font-semibold text-[var(--app-text-tertiary)]"
                   >
                     {copy.overview.cards.drawdownPeak} {drawdownPeakValue}
                   </div>
@@ -283,7 +283,7 @@ export function OverviewCards({
             {todayPnlItem.context ? (
               <div
                 data-testid="today-pnl-period-context"
-                className="mt-1.5 text-[11px] font-semibold leading-relaxed text-[var(--app-subtext-1)]"
+                className="mt-1.5 text-[11px] font-semibold leading-relaxed text-[var(--app-text-tertiary)]"
               >
                 {todayPnlItem.context}
               </div>
@@ -310,7 +310,7 @@ export function OverviewCards({
             {todayPnlItem.contributors &&
             todayPnlItem.contributors.length > 0 ? (
               <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-3">
-                <div className="app-kicker mb-2 text-[9px] text-[var(--app-subtext-1)]">
+                <div className="app-kicker mb-2 text-[9px] text-[var(--app-text-tertiary)]">
                   {copy.overview.cards.todayContributors}
                 </div>
                 <div className="grid min-w-0 gap-1.5">
@@ -358,7 +358,7 @@ export function OverviewCards({
               </div>
               <div
                 data-testid="available-cash-ratio"
-                className="mt-2 text-[11px] font-semibold text-[var(--app-subtext-1)]"
+                className="mt-2 text-[11px] font-semibold text-[var(--app-text-tertiary)]"
               >
                 {cashRatio.label} {cashRatio.value}
               </div>
@@ -422,7 +422,7 @@ export function OverviewCards({
               </div>
               {item.contributors && item.contributors.length > 0 ? (
                 <div className="mt-1 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-2">
-                  <div className="app-kicker mb-1.5 text-[9px] text-[var(--app-subtext-1)]">
+                  <div className="app-kicker mb-1.5 text-[9px] text-[var(--app-text-tertiary)]">
                     {copy.overview.cards.todayContributors}
                   </div>
                   <div className="grid min-w-0 gap-1">
@@ -465,10 +465,10 @@ export function OverviewCards({
                   : 'text-lg sm:text-xl'
               } ${
                 item.tone === 'positive'
-                  ? 'text-[var(--app-success)]'
+                  ? 'text-[var(--app-pnl-positive)]'
                   : item.tone === 'negative'
-                    ? 'text-[var(--app-danger)]'
-                    : 'text-[var(--app-soft)]'
+                    ? 'text-[var(--app-pnl-negative)]'
+                    : 'text-[var(--app-pnl-neutral)]'
               }`}
             >
               {item.value}

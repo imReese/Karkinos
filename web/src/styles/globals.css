@@ -16,121 +16,172 @@
   font-family:
     -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', 'PingFang SC',
     'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
-  --app-bg: #1e1e2e;
-  --app-bg-accent: rgba(203, 166, 247, 0.12);
-  --app-panel: #313244;
-  --app-panel-strong: #181825;
-  --app-sidebar: #181825;
-  --app-border: #45475a;
+  /* Catppuccin Mocha palette foundations. Components consume --app-* roles. */
+  --ctp-base: #1e1e2e;
+  --ctp-mantle: #181825;
+  --ctp-crust: #11111b;
+  --ctp-surface-0: #313244;
+  --ctp-surface-1: #45475a;
+  --ctp-overlay-0: #6c7086;
+  --ctp-text: #cdd6f4;
+  --ctp-subtext-1: #bac2de;
+  --ctp-mauve: #cba6f7;
+  --ctp-blue: #89b4fa;
+  --ctp-green: #a6e3a1;
+  --ctp-red: #f38ba8;
+  --ctp-yellow: #f9e2af;
+  --ctp-teal: #94e2d5;
+
+  /* Canvas, surfaces, structure. */
+  --app-bg: var(--ctp-base);
+  --app-surface: var(--ctp-surface-0);
+  --app-surface-raised: var(--ctp-mantle);
+  --app-surface-overlay: var(--ctp-surface-1);
+  --app-border: var(--ctp-overlay-0);
+  --app-divider: var(--ctp-surface-1);
+
+  /* Text. Critical text colors are explicit for deterministic contrast tests. */
   --app-text: #cdd6f4;
-  --app-muted: #a6adc8;
-  --app-subtext-0: #a6adc8;
-  --app-soft: #bac2de;
-  --app-foreground: #cdd6f4;
-  --app-input: #313244;
-  --app-input-focus: rgba(137, 180, 250, 0.34);
-  --app-button: #cba6f7;
-  --app-button-text: #11111b;
-  --app-secondary: #313244;
-  --app-secondary-text: #cdd6f4;
-  --app-accent: #cba6f7;
-  --app-accent-secondary: #89b4fa;
-  --app-accent-ghost: rgba(203, 166, 247, 0.12);
-  --app-accent-border: rgba(203, 166, 247, 0.32);
-  --app-success: #a6e3a1;
-  --app-danger: #f38ba8;
-  --app-warning: #f9e2af;
-  --app-teal: #94e2d5;
-  --app-success-bg: rgba(166, 227, 161, 0.12);
-  --app-success-border: rgba(166, 227, 161, 0.32);
+  --app-text-secondary: #bac2de;
+  --app-text-tertiary: #aeb7d3;
+  --app-text-inverse: #11111b;
+
+  /* Interaction. */
+  --app-accent: var(--ctp-mauve);
+  --app-accent-hover: #b98be8;
+  --app-accent-bg: rgba(203, 166, 247, 0.14);
+  --app-accent-border: rgba(203, 166, 247, 0.48);
+  --app-focus-ring: var(--ctp-blue);
+  --app-focus-shadow: rgba(137, 180, 250, 0.3);
+
+  /* Operational state. These tokens never encode financial direction. */
   --app-success-text: #a6e3a1;
-  --app-danger-bg: rgba(243, 139, 168, 0.12);
-  --app-danger-border: rgba(243, 139, 168, 0.32);
-  --app-danger-text: #f38ba8;
-  --app-warning-bg: rgba(249, 226, 175, 0.12);
-  --app-warning-border: rgba(249, 226, 175, 0.32);
+  --app-success-bg: rgba(166, 227, 161, 0.12);
+  --app-success-border: rgba(166, 227, 161, 0.42);
+  --app-success-indicator: var(--ctp-green);
   --app-warning-text: #f9e2af;
+  --app-warning-bg: rgba(249, 226, 175, 0.12);
+  --app-warning-border: rgba(249, 226, 175, 0.42);
+  --app-warning-indicator: var(--ctp-yellow);
+  --app-danger-text: #f5a3ba;
+  --app-danger-bg: rgba(243, 139, 168, 0.12);
+  --app-danger-border: rgba(243, 139, 168, 0.42);
+  --app-danger-indicator: var(--ctp-red);
   --app-info-text: #89b4fa;
-  --app-accent-strong: #cba6f7;
-  --app-toolbar: #181825;
-  --app-chart-line: #a6e3a1;
-  --app-chart-line-alt: #cba6f7;
-  --app-chart-grid: rgba(69, 71, 90, 0.72);
-  --app-chart-label: #a6adc8;
-  --app-surface-0: #313244;
-  --app-surface-1: #45475a;
-  --app-overlay-0: #6c7086;
-  --app-radius-lg: 18px;
-  --app-radius-xl: 24px;
-  --app-base: #1e1e2e;
-  --app-mantle: #181825;
-  --app-crust: #11111b;
-  --app-shell-stroke: color-mix(in srgb, var(--app-border) 30%, transparent);
-  --app-shell-fill: var(--app-base);
-  --app-shell-inset: color-mix(
-    in srgb,
-    var(--app-panel-strong) 18%,
-    var(--app-base)
-  );
+  --app-info-bg: rgba(137, 180, 250, 0.12);
+  --app-info-border: rgba(137, 180, 250, 0.42);
+  --app-info-indicator: var(--ctp-blue);
+
+  /* China-market financial direction: positive is red, negative is green. */
+  --app-pnl-positive: #f5a3ba;
+  --app-pnl-negative: #a6e3a1;
+  --app-pnl-neutral: #bac2de;
+
+  /* Shape and functional elevation. */
+  --app-radius-control: 6px;
+  --app-radius-surface: 8px;
+  --app-radius-overlay: 12px;
+  --app-shadow-overlay: 0 18px 50px rgba(17, 17, 27, 0.28);
+  --app-shadow-sticky: 0 1px 0 rgba(17, 17, 27, 0.28);
+
+  /* Charts. */
+  --app-chart-grid: rgba(108, 112, 134, 0.52);
+  --app-chart-label: #bac2de;
+  --app-chart-buy: var(--ctp-mauve);
+  --app-chart-sell: var(--ctp-teal);
+
+  /*
+   * Legacy aliases. @deprecated consumer budgets are enforced in
+   * design-token-contract.test.ts and must only decrease through Phase 4.
+   */
+  --app-base: var(--app-bg);
+  --app-mantle: var(--app-surface-raised);
+  --app-panel: var(--app-surface);
+  --app-panel-strong: var(--app-surface-raised);
+  --app-surface-0: var(--app-surface);
+  --app-surface-1: var(--app-surface-overlay);
+  --app-foreground: var(--app-text);
+  --app-muted: var(--app-text-secondary);
+  --app-subtext-0: var(--app-text-secondary);
+  --app-soft: var(--app-text-tertiary);
+  --app-button: var(--app-accent);
+  --app-button-text: var(--app-text-inverse);
+  --app-accent-secondary: var(--app-info-indicator);
+  --app-accent-ghost: var(--app-accent-bg);
+  --app-accent-strong: var(--app-accent-hover);
+  --app-success: var(--app-success-indicator);
+  --app-warning: var(--app-warning-indicator);
+  --app-danger: var(--app-danger-indicator);
+  --app-teal: var(--ctp-teal);
+  --app-overlay-0: var(--ctp-overlay-0);
+  --app-radius-lg: var(--app-radius-surface);
   background: var(--app-bg);
 }
 
 :root[data-theme='light'] {
   color-scheme: light;
+  /* Catppuccin Latte palette foundations. */
+  --ctp-base: #eff1f5;
+  --ctp-mantle: #e6e9ef;
+  --ctp-crust: #dce0e8;
+  --ctp-surface-0: #ccd0da;
+  --ctp-surface-1: #bcc0cc;
+  --ctp-overlay-0: #9ca0b0;
+  --ctp-text: #4c4f69;
+  --ctp-subtext-1: #5c5f77;
+  --ctp-mauve: #8839ef;
+  --ctp-blue: #1e66f5;
+  --ctp-green: #40a02b;
+  --ctp-red: #d20f39;
+  --ctp-yellow: #df8e1d;
+  --ctp-teal: #179299;
+
   --app-bg: #eff1f5;
-  --app-bg-accent: rgba(136, 57, 239, 0.08);
-  --app-panel: #ccd0da;
-  --app-panel-strong: #e6e9ef;
-  --app-sidebar: #e6e9ef;
-  --app-border: #bcc0cc;
+  --app-surface: #e6e9ef;
+  --app-surface-raised: #eff1f5;
+  --app-surface-overlay: #ccd0da;
+  --app-border: #9ca0b0;
+  --app-divider: #bcc0cc;
+
   --app-text: #4c4f69;
-  --app-muted: #6c6f85;
-  --app-subtext-0: #6c6f85;
-  --app-soft: #5c5f77;
-  --app-foreground: #4c4f69;
-  --app-input: #e6e9ef;
-  --app-input-focus: rgba(30, 102, 245, 0.26);
-  --app-button: #8839ef;
-  --app-button-text: #eff1f5;
-  --app-secondary: #e6e9ef;
-  --app-secondary-text: #4c4f69;
+  --app-text-secondary: #52556f;
+  --app-text-tertiary: #54576e;
+  --app-text-inverse: #eff1f5;
+
   --app-accent: #8839ef;
-  --app-accent-secondary: #1e66f5;
-  --app-accent-ghost: rgba(136, 57, 239, 0.1);
-  --app-accent-border: rgba(136, 57, 239, 0.22);
-  --app-success: #40a02b;
-  --app-success-bg: rgba(64, 160, 43, 0.1);
-  --app-success-border: rgba(64, 160, 43, 0.24);
-  --app-success-text: #348022;
-  --app-danger: #d20f39;
-  --app-warning: #df8e1d;
-  --app-teal: #179299;
-  --app-danger-bg: rgba(210, 15, 57, 0.08);
-  --app-danger-border: rgba(210, 15, 57, 0.2);
-  --app-danger-text: #b80c30;
-  --app-warning-bg: rgba(223, 142, 29, 0.08);
-  --app-warning-border: rgba(223, 142, 29, 0.22);
-  --app-warning-text: #b37015;
-  --app-info-text: #174eb8;
-  --app-accent-strong: #7220df;
-  --app-toolbar: #e6e9ef;
-  --app-chart-line: #40a02b;
-  --app-chart-line-alt: #8839ef;
-  --app-chart-grid: rgba(188, 192, 204, 0.95);
-  --app-chart-label: #6c6f85;
-  --app-surface-0: #ccd0da;
-  --app-surface-1: #bcc0cc;
-  --app-overlay-0: #9ca0b0;
-  --app-base: #eff1f5;
-  --app-mantle: #e6e9ef;
-  --app-crust: #dce0e8;
-  --app-shell-stroke: color-mix(in srgb, var(--app-border) 34%, transparent);
-  --app-shell-fill: var(--app-base);
-  --app-shell-inset: color-mix(
-    in srgb,
-    var(--app-panel-strong) 58%,
-    var(--app-base)
-  );
+  --app-accent-hover: #7220df;
+  --app-accent-bg: rgba(136, 57, 239, 0.12);
+  --app-accent-border: rgba(136, 57, 239, 0.44);
+  --app-focus-ring: #1e66f5;
+  --app-focus-shadow: rgba(30, 102, 245, 0.24);
+
+  --app-success-text: #24621b;
+  --app-success-bg: rgba(64, 160, 43, 0.11);
+  --app-success-border: rgba(36, 98, 27, 0.44);
+  --app-success-indicator: #348022;
+  --app-warning-text: #7a4c00;
+  --app-warning-bg: rgba(223, 142, 29, 0.12);
+  --app-warning-border: rgba(122, 76, 0, 0.44);
+  --app-warning-indicator: #a86600;
+  --app-danger-text: #a20b2c;
+  --app-danger-bg: rgba(210, 15, 57, 0.1);
+  --app-danger-border: rgba(162, 11, 44, 0.44);
+  --app-danger-indicator: #b80c30;
+  --app-info-text: #164da8;
+  --app-info-bg: rgba(30, 102, 245, 0.1);
+  --app-info-border: rgba(22, 77, 168, 0.44);
+  --app-info-indicator: #1e66f5;
+
+  --app-pnl-positive: #a20b2c;
+  --app-pnl-negative: #24621b;
+  --app-pnl-neutral: #52556f;
+
+  --app-shadow-overlay: 0 18px 50px rgba(76, 79, 105, 0.2);
+  --app-shadow-sticky: 0 1px 0 rgba(76, 79, 105, 0.2);
+  --app-chart-grid: rgba(156, 160, 176, 0.72);
+  --app-chart-label: #52556f;
+  --app-chart-buy: #8839ef;
+  --app-chart-sell: #0f6f73;
 }
 
 :root[data-theme='dark'] {
@@ -176,201 +227,120 @@ a {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--app-focus-ring);
+  outline-offset: 2px;
+}
+
 .app-root {
-  background:
-    radial-gradient(
-      circle at 18% 0%,
-      color-mix(in srgb, var(--app-accent) 12%, transparent),
-      transparent 28rem
-    ),
-    radial-gradient(
-      circle at 85% 6%,
-      color-mix(in srgb, var(--app-warning) 7%, transparent),
-      transparent 24rem
-    ),
-    linear-gradient(180deg, var(--app-base) 0%, var(--app-mantle) 100%);
+  background: var(--app-bg);
   color: var(--app-text);
 }
 
 .app-shell-sidebar {
-  border-color: color-mix(in srgb, var(--app-border) 42%, transparent);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--app-panel-strong) 92%, transparent),
-      color-mix(in srgb, var(--app-mantle) 96%, transparent)
-    ),
-    var(--app-mantle);
-  box-shadow:
-    inset -1px 0 0 color-mix(in srgb, var(--app-text) 3%, transparent),
-    22px 0 60px color-mix(in srgb, var(--app-mantle) 20%, transparent);
+  border-color: var(--app-divider);
+  background: var(--app-surface-raised);
 }
 
 .app-shell-main {
-  border-color: var(--app-shell-stroke);
-  background: transparent;
+  border-color: var(--app-divider);
+  background: var(--app-bg);
 }
 
 .app-shell-content {
-  background:
-    linear-gradient(
-      color-mix(in srgb, var(--app-text) 2%, transparent) 1px,
-      transparent 1px
-    ),
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--app-text) 2%, transparent) 1px,
-      transparent 1px
-    ),
-    radial-gradient(
-      circle at 72% 8%,
-      color-mix(in srgb, var(--app-accent) 8%, transparent),
-      transparent 28rem
-    ),
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--app-base) 90%, var(--app-panel) 10%) 0%,
-      var(--app-base) 48%,
-      var(--app-mantle) 100%
-    );
-  background-size:
-    48px 48px,
-    48px 48px,
-    auto,
-    auto;
-  scrollbar-color: color-mix(in srgb, var(--app-overlay-0) 32%, transparent)
+  background: var(--app-bg);
+  scrollbar-color: color-mix(in srgb, var(--app-border) 48%, transparent)
     transparent;
 }
 
 .app-toolbar-shell {
-  border-color: color-mix(in srgb, var(--app-border) 38%, transparent);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--app-surface-0) 58%, transparent),
-      color-mix(in srgb, var(--app-mantle) 78%, transparent)
-    ),
-    var(--app-toolbar);
-  backdrop-filter: blur(18px) saturate(130%);
-  -webkit-backdrop-filter: blur(18px) saturate(130%);
-  box-shadow:
-    inset 0 -1px 0 color-mix(in srgb, var(--app-text) 4%, transparent),
-    0 18px 44px color-mix(in srgb, var(--app-mantle) 20%, transparent);
+  border-color: var(--app-divider);
+  background: var(--app-surface-raised);
+  box-shadow: var(--app-shadow-sticky);
 }
 
 .app-panel {
-  background: var(--app-panel);
+  background: var(--app-surface);
   color: var(--app-text);
 }
 
 .app-panel-strong {
-  border: 1px solid color-mix(in srgb, var(--app-border) 34%, transparent);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--app-panel-strong) 72%, transparent),
-      color-mix(in srgb, var(--app-mantle) 82%, transparent)
-    ),
-    var(--app-panel-strong);
+  border: 1px solid var(--app-divider);
+  background: var(--app-surface-raised);
   color: var(--app-text);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--app-text) 4%, transparent),
-    0 12px 36px color-mix(in srgb, var(--app-mantle) 18%, transparent);
 }
 
 .app-panel-danger {
   border: 1px solid var(--app-danger-border);
   background: var(--app-danger-bg);
-  color: var(--app-danger);
+  color: var(--app-danger-text);
 }
 
 .app-field {
-  border: 1px solid color-mix(in srgb, var(--app-border) 48%, transparent);
-  background: color-mix(in srgb, var(--app-input) 90%, transparent);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-control);
+  background: var(--app-surface-raised);
   color: var(--app-text);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--app-text) 3%, transparent);
   transition:
-    border-color 260ms cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 260ms cubic-bezier(0.16, 1, 0.3, 1),
-    background-color 260ms cubic-bezier(0.16, 1, 0.3, 1);
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease;
 }
 
 .app-field:focus,
 .app-field:focus-visible {
-  border-color: color-mix(
-    in srgb,
-    var(--app-accent-secondary) 58%,
-    var(--app-border)
-  );
-  box-shadow:
-    0 0 0 3px var(--app-input-focus),
-    inset 0 1px 0 color-mix(in srgb, var(--app-text) 4%, transparent);
+  border-color: var(--app-focus-ring);
+  box-shadow: 0 0 0 3px var(--app-focus-shadow);
   outline: none;
 }
 
 .app-button-primary {
   border: 1px solid var(--app-accent);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--app-button) 92%, var(--app-text) 8%) 0%,
-    var(--app-button) 100%
-  );
-  color: var(--app-button-text);
-  box-shadow:
-    0 14px 34px color-mix(in srgb, var(--app-accent) 22%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--app-text) 34%, transparent);
+  border-radius: var(--app-radius-control);
+  background: var(--app-accent);
+  color: var(--app-text-inverse);
   transition:
-    transform 260ms cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 260ms cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 260ms cubic-bezier(0.16, 1, 0.3, 1),
-    background-color 260ms cubic-bezier(0.16, 1, 0.3, 1);
+    border-color 160ms ease,
+    background-color 160ms ease;
 }
 
 .app-button-secondary {
-  border: 1px solid color-mix(in srgb, var(--app-border) 52%, transparent);
-  background: color-mix(in srgb, var(--app-secondary) 76%, transparent);
-  color: var(--app-secondary-text);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-control);
+  background: var(--app-surface-raised);
+  color: var(--app-text);
   transition:
-    transform 260ms cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 260ms cubic-bezier(0.16, 1, 0.3, 1),
-    background-color 260ms cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 260ms cubic-bezier(0.16, 1, 0.3, 1);
+    border-color 160ms ease,
+    background-color 160ms ease;
 }
 
 .app-button-danger {
-  border: 1px solid color-mix(in srgb, var(--app-danger) 58%, transparent);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--app-danger) 86%, var(--app-text) 14%) 0%,
-    var(--app-danger) 100%
-  );
-  color: var(--app-button-text);
-  box-shadow: 0 14px 30px color-mix(in srgb, var(--app-danger) 24%, transparent);
+  border: 1px solid var(--app-danger-border);
+  border-radius: var(--app-radius-control);
+  background: var(--app-danger-bg);
+  color: var(--app-danger-text);
   transition:
-    transform 160ms ease,
-    box-shadow 160ms ease,
-    filter 160ms ease;
+    border-color 160ms ease,
+    background-color 160ms ease;
 }
 
 .app-button-primary:hover,
 .app-button-secondary:hover,
 .app-button-danger:hover {
-  transform: translateY(-1px);
+  border-color: var(--app-accent-border);
 }
 
-.app-button-primary:active,
-.app-button-secondary:active,
-.app-button-danger:active {
-  transform: translateY(0) scale(0.985);
+.app-button-primary:hover {
+  background: var(--app-accent-hover);
 }
 
 .app-button-danger:hover {
-  box-shadow: 0 18px 38px color-mix(in srgb, var(--app-danger) 30%, transparent);
-  filter: brightness(1.04);
+  border-color: var(--app-danger-text);
 }
 
 .app-kicker {
@@ -387,7 +357,7 @@ select {
   display: inline-flex;
   align-items: center;
   white-space: nowrap;
-  color: color-mix(in srgb, var(--app-accent-secondary) 56%, var(--app-muted));
+  color: var(--app-info-text);
   font-size: 11px;
   font-weight: 700;
   line-height: 1;
@@ -417,17 +387,16 @@ select {
   align-items: center;
   gap: 11px;
   border: 0;
-  color: var(--app-subtext-0);
+  color: var(--app-text-secondary);
   isolation: isolate;
   overflow: hidden;
   transition:
-    color 260ms cubic-bezier(0.16, 1, 0.3, 1),
-    background-color 260ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
+    color 160ms ease,
+    background-color 160ms ease;
 }
 
 .app-nav-icon {
-  color: var(--app-subtext-0);
+  color: var(--app-text-tertiary);
   transition:
     color 0.18s ease,
     opacity 0.18s ease;
@@ -439,39 +408,24 @@ select {
   bottom: 10px;
   left: 0;
   width: 3px;
-  border-radius: 9999px;
-  background: linear-gradient(
-    180deg,
-    var(--app-accent-secondary),
-    var(--app-accent)
-  );
+  border-radius: var(--app-radius-control);
+  background: var(--app-accent);
   opacity: 0;
-  box-shadow: 0 0 18px color-mix(in srgb, var(--app-accent) 34%, transparent);
-  transition: opacity 260ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 160ms ease;
 }
 
 .app-nav-item:hover {
-  background: color-mix(in srgb, var(--app-surface-0) 18%, transparent);
+  background: var(--app-accent-bg);
   color: var(--app-text);
-  transform: translateX(2px);
 }
 
 .app-nav-item:hover .app-nav-icon {
-  color: var(--app-soft);
+  color: var(--app-text);
 }
 
 .app-nav-item-active {
-  background:
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--app-accent) 13%, transparent),
-      transparent 86%
-    ),
-    color-mix(in srgb, var(--app-surface-0) 22%, transparent);
+  background: var(--app-accent-bg);
   color: var(--app-text);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--app-text) 4%, transparent),
-    inset 0 -1px 0 color-mix(in srgb, var(--app-mantle) 18%, transparent);
 }
 
 .app-nav-item-active .app-nav-icon {
@@ -747,7 +701,7 @@ select {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--app-overlay-0) 42%, transparent);
+  background: color-mix(in srgb, var(--app-border) 62%, transparent);
   background-clip: content-box;
 }
 
@@ -759,12 +713,16 @@ select {
   border-top: 1px solid color-mix(in srgb, var(--app-border) 72%, transparent);
 }
 
-.app-positive {
-  color: var(--app-success);
+.app-pnl-positive {
+  color: var(--app-pnl-positive);
 }
 
-.app-negative {
-  color: var(--app-danger);
+.app-pnl-negative {
+  color: var(--app-pnl-negative);
+}
+
+.app-pnl-neutral {
+  color: var(--app-pnl-neutral);
 }
 
 h1,
@@ -774,7 +732,7 @@ h3 {
 }
 
 .app-error-text {
-  color: var(--app-danger);
+  color: var(--app-danger-text);
 }
 
 .app-chart-grid-line {
@@ -786,38 +744,38 @@ h3 {
 }
 
 .app-heat-positive-soft {
-  border-color: var(--app-success-border);
-  background: color-mix(in srgb, var(--app-success) 8%, transparent);
-  color: var(--app-foreground);
+  border-color: color-mix(in srgb, var(--app-pnl-positive) 36%, transparent);
+  background: color-mix(in srgb, var(--app-pnl-positive) 8%, transparent);
+  color: var(--app-text);
 }
 
 .app-heat-positive-medium {
-  border-color: var(--app-success-border);
-  background: color-mix(in srgb, var(--app-success) 14%, transparent);
-  color: var(--app-foreground);
+  border-color: color-mix(in srgb, var(--app-pnl-positive) 42%, transparent);
+  background: color-mix(in srgb, var(--app-pnl-positive) 14%, transparent);
+  color: var(--app-text);
 }
 
 .app-heat-positive-strong {
-  border-color: var(--app-success-border);
-  background: color-mix(in srgb, var(--app-success) 24%, transparent);
+  border-color: color-mix(in srgb, var(--app-pnl-positive) 52%, transparent);
+  background: color-mix(in srgb, var(--app-pnl-positive) 24%, transparent);
   color: var(--app-text);
 }
 
 .app-heat-negative-soft {
-  border-color: var(--app-danger-border);
-  background: color-mix(in srgb, var(--app-danger) 8%, transparent);
-  color: var(--app-foreground);
+  border-color: color-mix(in srgb, var(--app-pnl-negative) 36%, transparent);
+  background: color-mix(in srgb, var(--app-pnl-negative) 8%, transparent);
+  color: var(--app-text);
 }
 
 .app-heat-negative-medium {
-  border-color: var(--app-danger-border);
-  background: color-mix(in srgb, var(--app-danger) 14%, transparent);
-  color: var(--app-foreground);
+  border-color: color-mix(in srgb, var(--app-pnl-negative) 42%, transparent);
+  background: color-mix(in srgb, var(--app-pnl-negative) 14%, transparent);
+  color: var(--app-text);
 }
 
 .app-heat-negative-strong {
-  border-color: var(--app-danger-border);
-  background: color-mix(in srgb, var(--app-danger) 24%, transparent);
+  border-color: color-mix(in srgb, var(--app-pnl-negative) 52%, transparent);
+  background: color-mix(in srgb, var(--app-pnl-negative) 24%, transparent);
   color: var(--app-text);
 }
 
@@ -842,5 +800,16 @@ h3 {
   .app-shell-content {
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

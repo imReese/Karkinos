@@ -442,7 +442,7 @@ export function ResearchTaskPanel({
             </div>
             {createTask.isError ? (
               <p
-                className="mt-3 text-sm text-[var(--app-negative)]"
+                className="mt-3 text-sm text-[var(--app-danger-text)]"
                 role="alert"
               >
                 {createTask.error.message}
@@ -450,7 +450,7 @@ export function ResearchTaskPanel({
             ) : null}
             {successMessage ? (
               <p
-                className="mt-3 text-sm text-[var(--app-positive)]"
+                className="mt-3 text-sm text-[var(--app-success-text)]"
                 role="status"
               >
                 {successMessage}
@@ -473,7 +473,7 @@ export function ResearchTaskPanel({
               </p>
             ) : tasks.isError ? (
               <p
-                className="mt-4 text-sm text-[var(--app-negative)]"
+                className="mt-4 text-sm text-[var(--app-danger-text)]"
                 role="alert"
               >
                 {copy.loadError}
@@ -505,7 +505,7 @@ export function ResearchTaskPanel({
             ) : null}
             {reviewTask.isError ? (
               <p
-                className="mt-3 text-sm text-[var(--app-negative)]"
+                className="mt-3 text-sm text-[var(--app-danger-text)]"
                 role="alert"
               >
                 {reviewTask.error.message}
@@ -518,7 +518,7 @@ export function ResearchTaskPanel({
             ) : null}
             {analyses.isError ? (
               <p
-                className="mt-3 text-sm text-[var(--app-negative)]"
+                className="mt-3 text-sm text-[var(--app-danger-text)]"
                 role="alert"
               >
                 {copy.analysisLoadError}
@@ -526,7 +526,7 @@ export function ResearchTaskPanel({
             ) : null}
             {startFixture.isError ? (
               <p
-                className="mt-3 text-sm text-[var(--app-negative)]"
+                className="mt-3 text-sm text-[var(--app-danger-text)]"
                 role="alert"
               >
                 {startFixture.error.message}
@@ -733,7 +733,7 @@ function FixtureAnalysisSummary({
         </div>
       ) : null}
       {!bindingValid && analysis.binding_errors.length ? (
-        <ul className="mt-3 space-y-1 text-xs text-[var(--app-negative)]">
+        <ul className="mt-3 space-y-1 text-xs text-[var(--app-danger-text)]">
           {analysis.binding_errors.map((error) => (
             <li key={error}>{error}</li>
           ))}
@@ -805,7 +805,7 @@ function FixtureAnalysisReviewControl({
           {copy.analysisLoading}
         </p>
       ) : reviews.isError ? (
-        <p className="mt-3 text-xs text-[var(--app-negative)]" role="alert">
+        <p className="mt-3 text-xs text-[var(--app-danger-text)]" role="alert">
           {copy.analysisReviewLoadError}
         </p>
       ) : review ? (
@@ -869,7 +869,7 @@ function FixtureAnalysisReviewControl({
         </p>
       ) : null}
       {recordReview.isError ? (
-        <p className="mt-3 text-xs text-[var(--app-negative)]" role="alert">
+        <p className="mt-3 text-xs text-[var(--app-danger-text)]" role="alert">
           {recordReview.error.message}
         </p>
       ) : null}
@@ -903,7 +903,7 @@ function RecordedAnalysisReview({
         {review.reviewed_by} · {review.created_at}
       </p>
       {review.invalidation_reasons.length ? (
-        <ul className="mt-2 space-y-1 text-xs text-[var(--app-negative)]">
+        <ul className="mt-2 space-y-1 text-xs text-[var(--app-danger-text)]">
           {review.invalidation_reasons.map((reason) => (
             <li key={reason}>{reason}</li>
           ))}

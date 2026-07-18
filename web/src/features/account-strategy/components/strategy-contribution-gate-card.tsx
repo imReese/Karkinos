@@ -122,7 +122,7 @@ export function StrategyContributionGateCard({
           <span
             className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${
               isSupported
-                ? 'border-[color-mix(in_srgb,var(--app-positive)_45%,transparent)] bg-[color-mix(in_srgb,var(--app-positive)_16%,transparent)] text-[var(--app-positive)]'
+                ? 'border-[var(--app-success-border)] bg-[var(--app-success-bg)] text-[var(--app-success-text)]'
                 : isNotApplicable
                   ? 'border-[color-mix(in_srgb,var(--app-border)_55%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_24%,transparent)] text-[var(--app-soft)]'
                   : 'border-[color-mix(in_srgb,var(--app-warning)_45%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_16%,transparent)] text-[var(--app-warning)]'
@@ -320,9 +320,9 @@ function Metric({
 }) {
   const toneClass =
     tone === 'positive'
-      ? 'text-[var(--app-positive)]'
+      ? 'text-[var(--app-pnl-positive)]'
       : tone === 'negative'
-        ? 'text-[var(--app-negative)]'
+        ? 'text-[var(--app-pnl-negative)]'
         : 'text-[var(--app-text)]';
   return (
     <div className="rounded-3xl border border-[color-mix(in_srgb,var(--app-border)_62%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_35%,transparent)] p-3">

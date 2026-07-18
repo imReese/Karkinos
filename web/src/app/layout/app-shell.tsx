@@ -10,10 +10,7 @@ import {
 import { Link, useRouterState } from '@tanstack/react-router';
 
 import { useAccountOverviewQuery } from '../../features/account/api';
-import {
-  useMarketDataHealthQuery,
-  useRefreshMarketQuotesMutation,
-} from '../../features/market/api';
+import { useMarketDataHealthQuery } from '../../features/market/api';
 import { useCopy } from '../copy';
 import {
   usePreferences,
@@ -23,28 +20,52 @@ import {
 import { isUnconfirmedMarketDataStatus } from '../../shared/market-data-status';
 import { formatPublicStatus } from '../../shared/public-labels';
 
-const navItems = [
-  { to: '/', key: 'overview', icon: OverviewNavIcon },
-  { to: '/portfolio', key: 'portfolio', icon: PortfolioNavIcon },
-  { to: '/activity', key: 'activity', icon: ActivityNavIcon },
-  { to: '/market', key: 'market', icon: MarketNavIcon },
-  { to: '/backtest', key: 'backtest', icon: BacktestNavIcon },
-  { to: '/risk', key: 'risk', icon: RiskNavIcon },
-  { to: '/decision', key: 'decision', icon: DecisionNavIcon },
-  { to: '/operations', key: 'operations', icon: OperationsNavIcon },
-  { to: '/trading', key: 'trading', icon: TradingNavIcon },
-  { to: '/settings', key: 'settings', icon: SettingsNavIcon },
+const navGroups = [
+  {
+    key: 'portfolio',
+    label: { en: 'Portfolio', zh: '组合管理' },
+    items: [
+      { to: '/', key: 'overview', icon: OverviewNavIcon },
+      { to: '/portfolio', key: 'portfolio', icon: PortfolioNavIcon },
+      { to: '/activity', key: 'activity', icon: ActivityNavIcon },
+      { to: '/market', key: 'market', icon: MarketNavIcon },
+    ],
+  },
+  {
+    key: 'research',
+    label: { en: 'Research', zh: '研究' },
+    items: [{ to: '/backtest', key: 'backtest', icon: BacktestNavIcon }],
+  },
+  {
+    key: 'decision-risk',
+    label: { en: 'Decision & Risk', zh: '决策与风控' },
+    items: [
+      { to: '/decision', key: 'decision', icon: DecisionNavIcon },
+      { to: '/risk', key: 'risk', icon: RiskNavIcon },
+    ],
+  },
+  {
+    key: 'execution-operations',
+    label: { en: 'Execution & Operations', zh: '执行与运营' },
+    items: [
+      { to: '/operations', key: 'operations', icon: OperationsNavIcon },
+      { to: '/trading', key: 'trading', icon: TradingNavIcon },
+    ],
+  },
+  {
+    key: 'system',
+    label: { en: 'System', zh: '系统' },
+    items: [{ to: '/settings', key: 'settings', icon: SettingsNavIcon }],
+  },
 ] as const;
 
-type ToolbarStatusTone = 'success' | 'warning' | 'error';
+type ToolbarStatusTone = 'success' | 'warning' | 'danger';
 type ToolbarPopoverKey = 'valuation' | 'market' | null;
 type ToolbarStatusIndicator = 'dot' | 'syncing';
-type ToolbarStatusAffordance = 'resync' | 'details';
-
 const STATUS_COLORS: Record<ToolbarStatusTone, string> = {
-  success: 'var(--app-success)',
-  warning: 'var(--app-warning)',
-  error: 'var(--app-danger)',
+  success: 'var(--app-success-indicator)',
+  warning: 'var(--app-warning-indicator)',
+  danger: 'var(--app-danger-indicator)',
 };
 
 function formatToolbarTimestamp(
@@ -78,9 +99,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const copy = useCopy();
   const accountOverview = useAccountOverviewQuery();
   const marketHealth = useMarketDataHealthQuery();
-  const refreshQuotes = useRefreshMarketQuotesMutation();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [desktopNavExpanded, setDesktopNavExpanded] = useState(false);
+  const [desktopNavExpanded, setDesktopNavExpanded] = useState(true);
   const [openStatusPanel, setOpenStatusPanel] =
     useState<ToolbarPopoverKey>(null);
   const statusRailRef = useRef<HTMLDivElement | null>(null);
@@ -145,7 +165,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     : accountOverview.isError
       ? {
           value: copy.shell.valuationError,
-          tone: 'error' as ToolbarStatusTone,
+          tone: 'danger' as ToolbarStatusTone,
           indicator: 'dot' as ToolbarStatusIndicator,
         }
       : isQuoteStale
@@ -175,7 +195,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     : marketHealth.isError
       ? {
           value: copy.shell.marketError,
-          tone: 'error' as ToolbarStatusTone,
+          tone: 'danger' as ToolbarStatusTone,
           indicator: 'dot' as ToolbarStatusIndicator,
         }
       : isQuoteStale || marketQuotesUnconfirmed
@@ -218,9 +238,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="app-root min-h-[100dvh] w-full">
-      <div className="app-shell-frame flex h-[100dvh] min-h-[100dvh] min-w-0 w-full">
+      <div className="app-shell-frame flex h-[100dvh] min-h-[100dvh] w-full min-w-0">
         <div
-          className={`fixed inset-0 z-[90] bg-[color-mix(in_srgb,var(--app-mantle)_54%,transparent)] transition lg:hidden ${
+          className={`fixed inset-0 z-[90] bg-[color-mix(in_srgb,var(--app-bg)_72%,transparent)] transition-opacity lg:hidden ${
             mobileNavOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
           }`}
           data-testid="mobile-navigation-backdrop"
@@ -230,34 +250,23 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <aside
           id="app-shell-navigation"
-          className={`app-shell-sidebar fixed inset-y-0 left-0 z-[100] flex w-[min(84vw,320px)] flex-col border-r border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[var(--app-mantle)] px-5 py-6 transition-[width,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] lg:relative lg:h-full ${desktopNavExpanded ? 'lg:w-[252px] lg:px-5' : 'lg:w-[68px] lg:px-3'} lg:translate-x-0 ${
+          className={`app-shell-sidebar fixed inset-y-0 left-0 z-[100] flex w-[min(86vw,288px)] flex-col border-r border-[var(--app-border)] bg-[var(--app-surface)] px-3 py-4 transition-[width,transform] duration-200 lg:relative lg:h-full ${desktopNavExpanded ? 'lg:w-56' : 'lg:w-16'} lg:translate-x-0 ${
             mobileNavOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
-          aria-label={copy.shell.navigation}
         >
           <div
-            className={`mb-8 flex items-start gap-4 ${desktopNavExpanded ? 'justify-between' : 'lg:justify-center'}`}
+            className={`mb-4 flex min-h-9 items-center gap-3 px-2 ${desktopNavExpanded ? 'justify-between' : 'lg:justify-center'}`}
           >
             <div
-              className={`min-w-0 flex-1 space-y-2 ${desktopNavExpanded ? '' : 'lg:hidden'}`}
+              className={`min-w-0 flex-1 ${desktopNavExpanded ? '' : 'lg:hidden'}`}
             >
-              <div className="app-product-mark shrink-0 whitespace-nowrap font-semibold text-[10px]">
+              <div className="app-product-mark truncate whitespace-nowrap text-[11px] font-semibold">
                 Karkinos
               </div>
-              <div className="app-shell-section-title tracking-[-0.035em]">
-                {copy.shell.title}
-              </div>
-              <p
-                className={`app-muted max-w-[14rem] text-xs leading-5 ${
-                  locale === 'zh' ? 'font-medium' : ''
-                }`}
-              >
-                {copy.shell.description}
-              </p>
             </div>
             <button
               type="button"
-              className="app-button-secondary rounded-2xl px-3 py-2 text-sm lg:hidden"
+              className="app-button-secondary h-8 w-8 rounded-[var(--app-radius-control)] p-0 text-sm lg:hidden"
               aria-label={copy.shell.closeNavigation}
               onClick={() => setMobileNavOpen(false)}
             >
@@ -265,42 +274,62 @@ export function AppShell({ children }: { children: ReactNode }) {
             </button>
           </div>
 
-          <nav className="grid gap-1.5">
-            {navItems.map((item) => {
-              const active = pathname === item.to;
-              const Icon = item.icon;
-              return (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  onClick={() => setMobileNavOpen(false)}
-                  data-testid={`sidebar-nav-${item.key}`}
-                  className={`app-nav-item rounded-[18px] px-3 py-3 text-sm font-semibold ${!desktopNavExpanded ? 'lg:px-0 lg:justify-center' : ''} ${
-                    active ? 'app-nav-item-active' : ''
-                  }`}
+          <nav
+            className="min-h-0 flex-1 space-y-4 overflow-y-auto"
+            aria-label={copy.shell.navigation}
+          >
+            {navGroups.map((group) => (
+              <div key={group.key} className="grid gap-1">
+                <div
+                  className={`px-2 pb-1 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--app-text-tertiary)] ${desktopNavExpanded ? '' : 'lg:hidden'}`}
                 >
-                  <span
-                    className={`app-nav-active-rail ${desktopNavExpanded ? '' : 'lg:hidden'}`}
-                    aria-hidden="true"
-                  />
-                  <Icon
-                    data-testid={`sidebar-nav-${item.key}-icon`}
-                    className="app-nav-icon h-5 w-5 shrink-0"
-                    aria-hidden="true"
-                  />
-                  <span
-                    className={`truncate ${desktopNavExpanded ? '' : 'lg:hidden'}`}
-                  >
-                    {copy.shell.nav[item.key]}
-                  </span>
-                </Link>
-              );
-            })}
+                  {group.label[locale]}
+                </div>
+                {group.items.map((item) => {
+                  const active =
+                    item.to === '/'
+                      ? pathname === '/'
+                      : pathname.startsWith(item.to);
+                  const Icon = item.icon;
+                  return (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      onClick={() => setMobileNavOpen(false)}
+                      data-testid={`sidebar-nav-${item.key}`}
+                      title={
+                        desktopNavExpanded
+                          ? undefined
+                          : copy.shell.nav[item.key]
+                      }
+                      className={`app-nav-item min-h-9 rounded-[var(--app-radius-control)] px-2 py-2 text-sm font-medium ${!desktopNavExpanded ? 'lg:justify-center lg:px-0' : ''} ${
+                        active ? 'app-nav-item-active' : ''
+                      }`}
+                    >
+                      <span
+                        className="app-nav-active-rail"
+                        aria-hidden="true"
+                      />
+                      <Icon
+                        data-testid={`sidebar-nav-${item.key}-icon`}
+                        className="app-nav-icon h-4 w-4 shrink-0"
+                        aria-hidden="true"
+                      />
+                      <span
+                        className={`truncate ${desktopNavExpanded ? '' : 'lg:hidden'}`}
+                      >
+                        {copy.shell.nav[item.key]}
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            ))}
           </nav>
-          <div className="mt-auto hidden lg:grid pt-6">
+          <div className="mt-4 hidden border-t border-[var(--app-divider)] pt-3 lg:grid">
             <button
               type="button"
-              className={`app-nav-item rounded-[18px] px-3 py-3 text-sm font-semibold text-[var(--app-subtext-0)] transition-colors hover:text-[var(--app-text)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)] ${!desktopNavExpanded ? 'lg:px-0 lg:justify-center' : ''}`}
+              className={`app-nav-item min-h-9 rounded-[var(--app-radius-control)] px-2 py-2 text-sm font-medium text-[var(--app-text-secondary)] ${!desktopNavExpanded ? 'lg:justify-center lg:px-0' : ''}`}
               onClick={() => setDesktopNavExpanded(!desktopNavExpanded)}
               aria-label={
                 desktopNavExpanded
@@ -317,40 +346,58 @@ export function AppShell({ children }: { children: ReactNode }) {
                 strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                className={`app-nav-icon h-5 w-5 shrink-0 transition-transform duration-300 ${desktopNavExpanded ? '' : 'rotate-180'}`}
+                className={`app-nav-icon h-4 w-4 shrink-0 transition-transform duration-200 ${desktopNavExpanded ? '' : 'rotate-180'}`}
               >
                 <path d="M15 18l-6-6 6-6" />
               </svg>
               <span
                 className={`truncate ${desktopNavExpanded ? '' : 'lg:hidden'}`}
               >
-                {copy.shell.closeNavigation || '收起侧边栏'}
+                {copy.shell.closeNavigation}
               </span>
             </button>
           </div>
         </aside>
 
-        <main className="app-shell-main flex min-w-0 flex-1 flex-col relative">
-          <header className="app-toolbar-shell absolute left-4 right-4 top-4 z-[80] shrink-0 overflow-visible rounded-[20px] border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-mantle)_95%,transparent)] shadow-lg backdrop-blur-xl">
-            <div className="flex h-14 items-center gap-4 px-4 sm:px-5 lg:px-6">
-              <div className="min-w-0 shrink-0">
-                <div className="flex min-w-0 items-center gap-3.5">
-                  <div className="app-product-mark shrink-0 whitespace-nowrap font-semibold text-[10px]">
-                    Karkinos
-                  </div>
-                  <div
-                    className="hidden h-4 w-px shrink-0 self-center bg-[color-mix(in_srgb,var(--app-border)_64%,transparent)] sm:block"
-                    aria-hidden="true"
-                  />
-                  <div className="app-toolbar-section-title hidden truncate sm:block">
-                    {copy.shell.toolbarTitle}
-                  </div>
-                </div>
+        <main className="app-shell-main relative flex min-w-0 flex-1 flex-col">
+          <header className="app-toolbar-shell relative z-[80] shrink-0 overflow-visible border-b border-[var(--app-border)] bg-[var(--app-surface)]">
+            <div className="flex h-12 items-center gap-3 px-3 sm:px-4">
+              <button
+                type="button"
+                className="app-button-secondary inline-flex h-8 w-8 items-center justify-center rounded-[var(--app-radius-control)] p-0 text-sm lg:hidden"
+                data-testid="mobile-navigation-toggle"
+                aria-label={
+                  mobileNavOpen
+                    ? copy.shell.closeNavigation
+                    : copy.shell.openNavigation
+                }
+                aria-controls="app-shell-navigation"
+                aria-expanded={mobileNavOpen}
+                onClick={() => setMobileNavOpen((open) => !open)}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  aria-hidden="true"
+                  className="h-4 w-4"
+                  data-testid="mobile-navigation-icon"
+                >
+                  <path d="M4 7h16" />
+                  <path d="M4 12h16" />
+                  <path d="M4 17h16" />
+                </svg>
+              </button>
+
+              <div className="app-product-mark min-w-0 shrink-0 truncate text-[11px] font-semibold lg:hidden">
+                Karkinos
               </div>
 
               <div
                 ref={statusRailRef}
-                className="hidden min-w-0 flex-1 flex-row flex-nowrap items-center justify-end gap-2 overflow-hidden self-center xl:flex"
+                className="hidden min-w-0 flex-1 flex-row flex-nowrap items-center gap-2 overflow-visible self-center lg:flex"
                 aria-label={copy.shell.accountStatus}
               >
                 <StatusChip
@@ -361,7 +408,6 @@ export function AppShell({ children }: { children: ReactNode }) {
                   tone={valuationStatus.tone}
                   indicator={valuationStatus.indicator}
                   hoverHint={copy.shell.viewValuationDetails}
-                  affordance="details"
                   expanded={openStatusPanel === 'valuation'}
                   title={`${copy.shell.navStatus}: ${valuationStatus.value}${
                     valuationMeta ? ` · ${valuationMeta}` : ''
@@ -395,14 +441,6 @@ export function AppShell({ children }: { children: ReactNode }) {
                   tone={marketStatus.tone}
                   indicator={marketStatus.indicator}
                   hoverHint={copy.shell.viewStatusDetails}
-                  affordance="details"
-                  refreshLabel={`${copy.market.refreshQuotes}: ${copy.shell.marketStatus}`}
-                  refreshing={refreshQuotes.isPending}
-                  onRefresh={() =>
-                    void refreshQuotes.mutateAsync({
-                      force: true,
-                    })
-                  }
                   expanded={openStatusPanel === 'market'}
                   title={`${copy.shell.marketStatus}: ${marketStatus.value}${
                     marketTimestamp ? ` · ${marketTimestamp}` : ''
@@ -434,40 +472,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                 />
               </div>
 
-              <div className="ml-auto flex min-w-0 shrink-0 flex-row items-center justify-end gap-3 self-center whitespace-nowrap sm:gap-4">
-                <button
-                  type="button"
-                  className="app-button-secondary inline-flex h-8 w-8 items-center justify-center rounded-2xl p-0 text-sm sm:w-auto sm:px-3 lg:hidden"
-                  data-testid="mobile-navigation-toggle"
-                  aria-label={
-                    mobileNavOpen
-                      ? copy.shell.closeNavigation
-                      : copy.shell.openNavigation
-                  }
-                  aria-controls="app-shell-navigation"
-                  aria-expanded={mobileNavOpen}
-                  onClick={() => setMobileNavOpen((open) => !open)}
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    aria-hidden="true"
-                    className="h-4 w-4 sm:hidden"
-                    data-testid="mobile-navigation-icon"
-                  >
-                    <path d="M4 7h16" />
-                    <path d="M4 12h16" />
-                    <path d="M4 17h16" />
-                  </svg>
-                  <span className="hidden sm:inline">
-                    {copy.shell.navigation}
-                  </span>
-                </button>
-
-                <div className="flex min-w-0 flex-row items-center gap-2 sm:gap-3">
+              <div className="ml-auto flex min-w-0 shrink-0 flex-row items-center justify-end whitespace-nowrap">
+                <div className="flex min-w-0 flex-row items-center gap-2">
                   <ThemeSwitcher
                     label={copy.shell.theme}
                     value={theme}
@@ -501,7 +507,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </header>
 
           <div className="app-shell-content min-h-0 min-w-0 flex-1 overflow-x-auto overflow-y-auto [contain:layout_paint]">
-            <div className="mx-auto min-w-0 w-full max-w-[1880px] px-4 pt-24 pb-12 sm:px-5 lg:px-6 xl:px-7 2xl:px-8">
+            <div className="w-full min-w-0 px-3 py-4 sm:px-4 lg:px-5 lg:py-5 xl:px-6">
               {children}
             </div>
           </div>
@@ -554,10 +560,8 @@ function LanguageMenu({
     <div ref={rootRef} className="relative w-auto">
       <button
         type="button"
-        className={`inline-flex h-9 w-auto items-center gap-2 whitespace-nowrap rounded-full border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3.5 text-[12px] font-semibold tracking-[0.06em] text-[var(--app-muted)] backdrop-blur-md transition-[background-color,border-color,color,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-px hover:border-[color-mix(in_srgb,var(--app-border)_56%,transparent)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_26%,transparent)] hover:text-[var(--app-text)] active:translate-y-0 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-accent-secondary)] ${
-          open
-            ? 'border-[color-mix(in_srgb,var(--app-border)_56%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_26%,transparent)] text-[var(--app-text)]'
-            : ''
+        className={`inline-flex h-8 w-auto items-center gap-2 whitespace-nowrap rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface-raised)] px-2.5 text-xs font-semibold text-[var(--app-text-secondary)] transition-colors hover:border-[var(--app-accent-border)] hover:text-[var(--app-text)] ${
+          open ? 'border-[var(--app-accent-border)] text-[var(--app-text)]' : ''
         }`}
         aria-label={label}
         aria-haspopup="menu"
@@ -571,7 +575,7 @@ function LanguageMenu({
       </button>
       {open ? (
         <div
-          className="absolute right-0 top-[calc(100%+6px)] z-[60] min-w-full min-w-max rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-panel)_92%,transparent)] p-1.5 shadow-[0_20px_60px_color-mix(in_srgb,var(--app-mantle)_34%,transparent)] backdrop-blur-lg"
+          className="absolute right-0 top-[calc(100%+6px)] z-[60] min-w-max rounded-[var(--app-radius-overlay)] border border-[var(--app-border)] bg-[var(--app-surface-overlay)] p-1 shadow-[var(--app-shadow-overlay)]"
           role="menu"
           aria-label={label}
         >
@@ -588,7 +592,7 @@ function LanguageMenu({
                 type="button"
                 role="menuitemradio"
                 aria-checked={active}
-                className={`flex w-full min-w-max items-center justify-between gap-3 rounded-xl bg-transparent px-3 py-2 text-left text-xs font-medium text-[var(--app-muted)] transition-[background-color,color,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:bg-[var(--app-accent-ghost)] hover:text-[var(--app-text)] active:scale-[0.98] ${
+                className={`flex w-full min-w-max items-center justify-between gap-3 rounded-[var(--app-radius-control)] bg-transparent px-3 py-2 text-left text-xs font-medium text-[var(--app-text-secondary)] transition-colors hover:bg-[var(--app-accent-bg)] hover:text-[var(--app-text)] ${
                   active ? 'text-[var(--app-text)]' : ''
                 }`}
                 onClick={() => {
@@ -624,7 +628,7 @@ function ThemeSwitcher({
 }) {
   return (
     <div
-      className="inline-flex h-9 flex-row items-center gap-1 rounded-full border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] p-1 backdrop-blur-md"
+      className="inline-flex h-8 flex-row items-center gap-0.5 rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface-raised)] p-0.5"
       role="group"
       aria-label={label}
     >
@@ -637,10 +641,8 @@ function ThemeSwitcher({
             type="button"
             aria-label={option.label}
             aria-pressed={active}
-            className={`inline-flex items-center justify-center rounded-full px-1.5 py-1.5 text-[var(--app-muted)] transition-[background-color,color,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-px hover:text-[var(--app-text)] active:translate-y-0 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-accent-secondary)] sm:px-2.5 [&>svg]:h-4 [&>svg]:w-4 ${
-              active
-                ? 'bg-[color-mix(in_srgb,var(--app-accent)_18%,transparent)] text-[var(--app-accent)] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_8%,transparent)]'
-                : ''
+            className={`inline-flex h-6 items-center justify-center rounded-[var(--app-radius-control)] px-1.5 text-[var(--app-text-secondary)] transition-colors hover:text-[var(--app-text)] sm:px-2 [&>svg]:h-3.5 [&>svg]:w-3.5 ${
+              active ? 'bg-[var(--app-accent-bg)] text-[var(--app-accent)]' : ''
             }`}
             onClick={() => onChange(option.value)}
           >
@@ -719,13 +721,8 @@ function StatusChip({
   actionLabel,
   hoverHint,
   title,
-  affordance,
   meta,
   popup,
-  onRefresh,
-  refreshLabel,
-  refreshing = false,
-  celebrate = false,
   expanded = false,
   testId,
 }: {
@@ -737,18 +734,13 @@ function StatusChip({
   actionLabel?: string;
   hoverHint?: string;
   title?: string;
-  affordance: ToolbarStatusAffordance;
   meta?: string;
   popup?: ReactNode;
-  onRefresh?: () => void;
-  refreshLabel?: string;
-  refreshing?: boolean;
-  celebrate?: boolean;
   expanded?: boolean;
   testId?: string;
 }) {
   return (
-    <div className="group relative inline-flex h-9 w-[15rem] shrink-0">
+    <div className="group relative inline-flex h-8 w-[12.5rem] shrink-0">
       <button
         type="button"
         data-testid={testId}
@@ -759,20 +751,16 @@ function StatusChip({
         aria-haspopup={popup ? 'dialog' : undefined}
         title={title ?? hoverHint}
         onClick={onClick}
-        className={`inline-flex h-full w-full items-center overflow-hidden whitespace-nowrap rounded-full border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] text-[12px] text-[var(--app-soft)] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_4%,transparent)] backdrop-blur-md transition-[background-color,transform,color,border-color,box-shadow] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-px hover:cursor-pointer hover:border-[color-mix(in_srgb,var(--app-border)_56%,transparent)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_24%,transparent)] hover:text-[var(--app-text)] hover:shadow-[0_12px_32px_color-mix(in_srgb,var(--app-mantle)_20%,transparent),inset_0_1px_0_color-mix(in_srgb,var(--app-text)_6%,transparent)] active:translate-y-0 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-accent-secondary)] ${
+        className={`inline-flex h-full w-full items-center overflow-hidden whitespace-nowrap rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface-raised)] text-xs text-[var(--app-text-secondary)] transition-colors hover:border-[var(--app-accent-border)] hover:text-[var(--app-text)] ${
           expanded
-            ? 'border-[color-mix(in_srgb,var(--app-border)_56%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_26%,transparent)] text-[var(--app-text)] shadow-[0_12px_32px_color-mix(in_srgb,var(--app-mantle)_22%,transparent)]'
+            ? 'border-[var(--app-accent-border)] text-[var(--app-text)]'
             : ''
         }`}
       >
-        <span className="font-mono inline-flex h-full w-14 shrink-0 items-center justify-center bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)] px-2 text-[12px] uppercase tracking-[0.1em] text-[var(--app-subtext-0)] transition-colors duration-300 group-hover:bg-transparent">
+        <span className="inline-flex h-full w-14 shrink-0 items-center justify-center border-r border-[var(--app-divider)] px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
           {label}
         </span>
-        <span
-          className="h-5 w-px shrink-0 bg-[color-mix(in_srgb,var(--app-border)_18%,transparent)]"
-          aria-hidden="true"
-        />
-        <span className="font-mono inline-flex h-full min-w-0 flex-1 items-center gap-2 bg-[color-mix(in_srgb,var(--app-surface-0)_50%,transparent)] px-3 py-1.5 pr-8 tabular-nums transition-colors duration-200 group-hover:bg-transparent">
+        <span className="inline-flex h-full min-w-0 flex-1 items-center gap-2 px-2.5 pr-7 font-mono tabular-nums">
           <span className="relative flex h-3.5 w-3.5 items-center justify-center">
             {indicator === 'syncing' ? (
               <RotateCwIcon
@@ -783,22 +771,11 @@ function StatusChip({
             ) : (
               <>
                 <span
-                  className={`absolute inset-[1px] rounded-full transition-opacity duration-200 ${
-                    affordance === 'resync' || onRefresh
-                      ? 'group-hover:opacity-0 group-focus-within:opacity-0'
-                      : ''
-                  } ${celebrate ? 'animate-[bounce_320ms_ease-out_1]' : ''}`}
+                  className="absolute inset-[2px] rounded-full"
                   style={{ backgroundColor: STATUS_COLORS[tone] }}
                   aria-hidden="true"
                   data-testid={testId ? `${testId}-indicator` : undefined}
                 />
-                {affordance === 'resync' ? (
-                  <RotateCwIcon
-                    className="absolute h-3.5 w-3.5 text-[var(--app-accent)] opacity-0 transition-opacity duration-200 group-hover:opacity-100"
-                    color="currentColor"
-                    aria-hidden="true"
-                  />
-                ) : null}
               </>
             )}
           </span>
@@ -806,39 +783,18 @@ function StatusChip({
             {value}
           </span>
           {meta ? (
-            <span className="shrink-0 text-[12px] font-semibold text-[var(--app-muted)]">
+            <span className="shrink-0 text-[12px] font-semibold text-[var(--app-text-secondary)]">
               {meta}
             </span>
           ) : null}
-          {affordance === 'details' ? (
-            <ChevronDownIcon
-              className="absolute right-3 h-3.5 w-3.5 shrink-0 text-[var(--app-subtext-0)] opacity-40 transition-[opacity,color] duration-200 group-hover:text-[var(--app-accent)] group-hover:opacity-100"
-              aria-hidden="true"
-            />
-          ) : null}
-        </span>
-      </button>
-      {onRefresh ? (
-        <button
-          type="button"
-          aria-label={refreshLabel ?? hoverHint ?? title ?? label}
-          className="absolute left-[4.75rem] top-1/2 z-10 inline-flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-transparent text-[var(--app-accent)] opacity-0 transition-[opacity,transform,background-color] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] hover:scale-105 hover:bg-[color-mix(in_srgb,var(--app-accent)_12%,transparent)] hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-accent-secondary)] group-focus-within:opacity-100 group-hover:opacity-100"
-          disabled={refreshing}
-          aria-busy={refreshing}
-          onClick={(event) => {
-            event.stopPropagation();
-            onRefresh();
-          }}
-        >
-          <RotateCwIcon
-            className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`}
-            color="currentColor"
+          <ChevronDownIcon
+            className="absolute right-2 h-3.5 w-3.5 shrink-0 text-[var(--app-text-tertiary)]"
             aria-hidden="true"
           />
-        </button>
-      ) : null}
+        </span>
+      </button>
       {hoverHint && !expanded ? (
-        <div className="pointer-events-none absolute left-1/2 top-[calc(100%+8px)] z-[75] -translate-x-1/2 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_58%,transparent)] px-2.5 py-1.5 text-xs text-[var(--app-text)] opacity-0 shadow-[0_12px_30px_color-mix(in_srgb,var(--app-mantle)_18%,transparent)] backdrop-blur-md transition-opacity duration-75 group-hover:opacity-100 group-focus-visible:opacity-100">
+        <div className="pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-[75] -translate-x-1/2 rounded-[var(--app-radius-overlay)] border border-[var(--app-border)] bg-[var(--app-surface-overlay)] px-2.5 py-1.5 text-xs text-[var(--app-text)] opacity-0 shadow-[var(--app-shadow-overlay)] transition-opacity duration-75 group-hover:opacity-100 group-focus-within:opacity-100">
           {hoverHint}
         </div>
       ) : null}
@@ -860,7 +816,7 @@ function StatusPopover({
 }) {
   return (
     <div
-      className="min-w-[180px] rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_50%,transparent)] p-3 shadow-[0_16px_44px_rgba(17,17,27,0.24)] backdrop-blur-md"
+      className="min-w-[200px] rounded-[var(--app-radius-overlay)] border border-[var(--app-border)] bg-[var(--app-surface-overlay)] p-3 shadow-[var(--app-shadow-overlay)]"
       role="dialog"
       aria-label={title}
     >
@@ -873,7 +829,7 @@ function StatusPopover({
             key={`${row.label}-${row.value}`}
             className="flex items-center justify-between gap-4 text-xs"
           >
-            <span className="font-mono uppercase tracking-[0.18em] text-[var(--app-muted)]">
+            <span className="font-mono uppercase tracking-[0.12em] text-[var(--app-text-tertiary)]">
               {row.label}
             </span>
             <span className="font-mono tabular-nums font-medium text-[var(--app-text)]">
