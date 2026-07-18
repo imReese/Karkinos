@@ -62,7 +62,11 @@ test('renders the canonical current-holdings table with direct detail drill-down
   const row = screen.getByRole('row', {
     name: 'Holding Details: 贵州茅台 600519',
   });
+  const tableShell = screen
+    .getByTestId('positions-table-desktop')
+    .closest('[data-workbench-primitive="data-table"]');
   expect(row.className).toContain('cursor-pointer');
+  expect(tableShell?.className).toContain('app-positions-table');
   expect(
     screen
       .getAllByRole('link', { name: 'Holding Details: 贵州茅台 600519' })[0]

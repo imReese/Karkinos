@@ -50,9 +50,9 @@ export function LiveHoldingsBoard({ groups }: { groups: LiveHoldingGroup[] }) {
   return (
     <div
       data-testid="live-holdings-board"
-      className="min-w-0 overflow-hidden rounded-[var(--app-radius-surface)] border border-[var(--app-border)] bg-[var(--app-surface)]"
+      className="min-w-0 overflow-hidden border-y border-[var(--app-divider)] bg-transparent"
     >
-      <div className="border-b border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-3 py-2">
+      <div className="border-b border-[var(--app-divider)] px-3 py-2">
         <div className="text-sm font-semibold text-[var(--app-text)]">
           {labels.title}
         </div>

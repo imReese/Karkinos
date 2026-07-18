@@ -54,7 +54,7 @@ test('renders canonical account facts as a compact metric strip', () => {
 
   expect(rail.className).toContain('min-w-0');
   expect(strip?.className).toContain('account-metric-strip');
-  expect(strip?.className).toContain('font-mono');
+  expect(strip?.className).not.toContain('font-mono');
   expect(strip?.className).toContain('tabular-nums');
   expect(screen.getByText('Total Assets')).toBeTruthy();
   expect(screen.getByText('Realized PnL')).toBeTruthy();
@@ -106,7 +106,9 @@ test('renders a responsive shimmering metrics rail skeleton', () => {
   const skeleton = screen.getByTestId('account-metrics-skeleton');
 
   expect(skeleton.className).toContain('animate-pulse');
-  expect(skeleton.className).toContain('border-[var(--app-border)]');
+  expect(skeleton.className).toContain('border-y');
+  expect(skeleton.className).toContain('border-[var(--app-divider)]');
+  expect(skeleton.className).not.toContain('rounded-');
   expect(skeleton.className).toContain('lg:grid-cols-6');
 });
 

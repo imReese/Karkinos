@@ -384,7 +384,16 @@ test('renders risk boundaries and blocking register without execution controls',
   expect(screen.queryByTestId('risk-boundary-register')).toBeNull();
 
   const blockRegister = await screen.findByTestId('risk-blocking-register');
+  const metrics = screen.getByLabelText('Risk metrics');
   expect(blockRegister.className).toContain('min-w-0');
+  expect(
+    blockRegister.compareDocumentPosition(metrics) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    thresholdTable.compareDocumentPosition(controlGrid) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
   expect(within(blockRegister).getByText(/Cash Buffer/)).toBeTruthy();
   expect(within(blockRegister).queryByText('cash_buffer')).toBeNull();
   expect(within(blockRegister).getByText('Warning')).toBeTruthy();

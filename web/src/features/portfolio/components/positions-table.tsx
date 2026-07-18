@@ -123,7 +123,7 @@ function formatBrokerCostBasisDetail(
 function numericCell(value: string, tone = 'text-[var(--app-text)]') {
   return (
     <span
-      className={`block text-right font-mono font-semibold tabular-nums ${tone}`}
+      className={`block text-right font-mono font-medium tabular-nums ${tone}`}
     >
       {value}
     </span>
@@ -470,6 +470,7 @@ export function PositionsTable({
         />
       ) : null}
       <DataTable
+        className="app-positions-table"
         data={positions}
         columns={columns}
         caption={labels.symbol}
