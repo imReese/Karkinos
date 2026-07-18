@@ -25,6 +25,10 @@ import {
 } from '../../market/api';
 import { PriceStructureChart } from '../../market/components/price-structure-chart';
 import { useCopy } from '../../../app/copy';
+import {
+  MetricStrip as WorkbenchMetricStrip,
+  WorkspaceHeader as WorkbenchWorkspaceHeader,
+} from '../../../app/components/workbench';
 import { usePreferences } from '../../../app/preferences';
 import {
   formatCurrency,
@@ -100,9 +104,6 @@ function resolveQuotePrice(position: Position, livePrice: number | null) {
   }
   if (typeof livePrice === 'number' && Number.isFinite(livePrice)) {
     return livePrice;
-  }
-  if (position.quantity > 0) {
-    return position.market_value / position.quantity;
   }
   return null;
 }
@@ -371,17 +372,18 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
   const quoteStatusLabel = quoteStatus
     ? formatPublicStatus(quoteStatus, locale)
     : '--';
-  const quotePrice = resolveQuotePrice(
+  const projectedQuotePrice = resolveQuotePrice(
     position,
     liveItem?.latest_price ?? null,
   );
-  const todayChange = isHistoricalClosedPosition
+  const projectedTodayChange = isHistoricalClosedPosition
     ? null
     : (position.today_change ?? liveItem?.today_change ?? null);
-  const todayChangePct = isHistoricalClosedPosition
+  const projectedTodayChangePct = isHistoricalClosedPosition
     ? null
     : (position.today_change_pct ?? liveItem?.today_change_pct ?? null);
-  const baselinePrice = position.baseline_price ?? liveItem?.baseline_price;
+  const projectedBaselinePrice =
+    position.baseline_price ?? liveItem?.baseline_price;
   const baselineSource =
     position.baseline_source ?? liveItem?.baseline_source ?? 'unavailable';
   const baselineSourceLabel =
@@ -394,7 +396,6 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
       fallback_close: labels.baselineSources.fallbackClose,
       unavailable: labels.baselineSources.unavailable,
     }[baselineSource] ?? baselineSource;
-  const costBasis = position.avg_cost * position.quantity;
   const brokerDisplayedCostBasis =
     isFiniteNumber(position.broker_displayed_cost_basis) &&
     position.broker_displayed_cost_basis > 0
@@ -404,16 +405,12 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     isFiniteNumber(position.broker_displayed_unit_cost) &&
     position.broker_displayed_unit_cost > 0
       ? position.broker_displayed_unit_cost
-      : brokerDisplayedCostBasis !== null && position.quantity > 0
-        ? brokerDisplayedCostBasis / position.quantity
-        : null;
+      : null;
   const brokerCostBasisDifference = isFiniteNumber(
     position.broker_cost_basis_difference,
   )
     ? position.broker_cost_basis_difference
-    : brokerDisplayedCostBasis !== null
-      ? brokerDisplayedCostBasis - costBasis
-      : null;
+    : null;
   const costBasisStatus = position.broker_cost_basis_status ?? 'unavailable';
   const isBrokerConfirmedCostBasis = costBasisStatus === 'available';
   const isProjectedLedgerCostBasis =
@@ -427,7 +424,6 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     hasBrokerCostBasisEvidence &&
     brokerCostBasisDifference !== null &&
     Math.abs(brokerCostBasisDifference) >= 0.005;
-  const pnlPct = costBasis > 0 ? position.unrealized_pnl / costBasis : null;
   const displayName =
     liveItem?.name ??
     allocation?.name ??
@@ -536,6 +532,18 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
       );
   const evidenceIdentityConsistent =
     snapshotIdentityMatchesOverview && snapshotIdentityMatchesLive;
+  const quotePrice = evidenceIdentityConsistent ? projectedQuotePrice : null;
+  const todayChange = evidenceIdentityConsistent ? projectedTodayChange : null;
+  const todayChangePct = evidenceIdentityConsistent
+    ? projectedTodayChangePct
+    : null;
+  const baselinePrice = evidenceIdentityConsistent
+    ? projectedBaselinePrice
+    : null;
+  const pnlPct =
+    !isHistoricalClosedPosition && evidenceIdentityConsistent
+      ? (liveItem?.since_buy_pnl_pct ?? null)
+      : null;
   const evidenceReviewState = isHistoricalClosedPosition
     ? labels.evidenceStates.historicalClosed
     : !evidenceIdentityConsistent
@@ -580,7 +588,8 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
         ]
       : []),
     ...(brokerDisplayedUnitCost !== null &&
-    Math.abs(brokerDisplayedUnitCost - position.avg_cost) >= 0.00005
+    brokerCostBasisDifference !== null &&
+    Math.abs(brokerCostBasisDifference) >= 0.005
       ? [
           {
             value: brokerDisplayedUnitCost,
@@ -617,9 +626,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     },
     {
       label: labels.portfolioWeight,
-      value: isHistoricalClosedPosition
-        ? formatPercent(0)
-        : formatPercent(portfolioWeight),
+      value: isHistoricalClosedPosition ? '--' : formatPercent(portfolioWeight),
     },
     {
       label: labels.todayChange,
@@ -695,7 +702,6 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     : [];
 
   const valuationMetrics: DetailMetric[] = [
-    { label: labels.costBasis, value: formatCurrency(costBasis) },
     { label: labels.avgCost, value: formatPrice(position.avg_cost) },
     ...brokerCostBasisMetrics,
     { label: labels.quotePrice, value: formatPrice(quotePrice) },
@@ -735,52 +741,50 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
 
   return (
     <section className="space-y-5 sm:space-y-6">
-      <header
-        data-testid="holding-detail-header"
-        className="app-page-header pb-0"
-      >
-        <div className="flex flex-col gap-3 rounded-[28px] border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_14%,transparent)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center">
-            <a
-              href="/portfolio"
-              className="app-button-secondary inline-flex w-max rounded-2xl px-4 py-2 text-sm font-semibold"
-              aria-label={labels.returnToPortfolio}
-            >
-              {labels.backToPortfolio}
-            </a>
-            <span className="hidden h-8 w-px bg-[color-mix(in_srgb,var(--app-border)_36%,transparent)] sm:block" />
-            <div className="min-w-0">
-              <div className="app-product-mark">{labels.kicker}</div>
-              <div className="app-muted mt-1 truncate text-sm">
-                {displayName} · {position.symbol} · {assetClassDisplay}
+      <div data-testid="holding-detail-header">
+        <WorkbenchWorkspaceHeader
+          eyebrow={labels.kicker}
+          title={`${displayName} · ${position.symbol}`}
+          description={assetClassDisplay}
+          context={`${labels.valuationSnapshotId}: ${
+            snapshot.data?.valuation_snapshot_id ?? '--'
+          } · ${labels.ledgerCutoffId}: ${
+            snapshot.data?.ledger_cutoff_id ?? '--'
+          }`}
+          actions={
+            <>
+              <a
+                href="/portfolio"
+                className="app-button-secondary inline-flex w-max rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
+                aria-label={labels.returnToPortfolio}
+              >
+                {labels.backToPortfolio}
+              </a>
+              {isHistoricalClosedPosition ? (
+                <StatusBadge label={labels.closedHistoryOnly} tone="warning" />
+              ) : null}
+              <StatusBadge
+                label={isStale ? labels.quoteStale : labels.quoteLive}
+                tone={isStale ? 'warning' : 'success'}
+              />
+              {marketOpen === false ? (
+                <StatusBadge label={labels.marketClosed} tone="warning" />
+              ) : null}
+              {refreshPolicy === 'cache_only' ? (
+                <StatusBadge label={labels.cacheOnly} tone="warning" />
+              ) : null}
+              <div className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-3 py-1 text-xs font-semibold text-[var(--app-muted)]">
+                <span className="app-kicker mr-1 text-[10px] uppercase tracking-[0.14em]">
+                  {labels.quoteTimestamp}
+                </span>
+                <span className="font-mono tabular-nums">
+                  {formatTimestamp(quoteTimestamp)}
+                </span>
               </div>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-            {isHistoricalClosedPosition ? (
-              <StatusBadge label={labels.closedHistoryOnly} tone="warning" />
-            ) : null}
-            <StatusBadge
-              label={isStale ? labels.quoteStale : labels.quoteLive}
-              tone={isStale ? 'warning' : 'success'}
-            />
-            {marketOpen === false ? (
-              <StatusBadge label={labels.marketClosed} tone="warning" />
-            ) : null}
-            {refreshPolicy === 'cache_only' ? (
-              <StatusBadge label={labels.cacheOnly} tone="warning" />
-            ) : null}
-            <div className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-3 py-1 text-xs font-semibold text-[var(--app-muted)]">
-              <span className="app-kicker mr-1 text-[10px] uppercase tracking-[0.14em]">
-                {labels.quoteTimestamp}
-              </span>
-              <span className="font-mono tabular-nums">
-                {formatTimestamp(quoteTimestamp)}
-              </span>
-            </div>
-          </div>
-        </div>
-      </header>
+            </>
+          }
+        />
+      </div>
 
       {isStale ? (
         <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-warning)]">
@@ -791,33 +795,33 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.8fr)]">
         <div className="min-w-0 space-y-5">
-          <section className="app-terminal-panel min-w-0 rounded-[28px] p-[1px]">
-            <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
-              <div
-                data-testid="holding-summary-header"
-                className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"
-              >
-                <div className="min-w-0">
-                  <div className="app-product-mark">{labels.summary}</div>
-                  <h2
-                    data-testid="holding-summary-title"
-                    className="app-card-title mt-1.5 break-words"
-                  >
-                    {displayName}
-                  </h2>
-                  <p className="app-muted mt-2 text-sm">{assetClassDisplay}</p>
-                </div>
-                <div
-                  data-testid="holding-summary-symbol"
-                  className="shrink-0 font-mono text-sm font-semibold tabular-nums"
-                >
-                  {position.symbol}
-                </div>
-              </div>
-              <MetricGrid
-                metrics={summaryMetrics}
-                testId="holding-summary-metrics"
-                metricTestId="holding-summary-metric"
+          <section className="min-w-0">
+            <div
+              data-testid="holding-summary-header"
+              className="sr-only"
+              aria-hidden="true"
+            >
+              <span>{displayName}</span>
+              <span data-testid="holding-summary-symbol">
+                {position.symbol}
+              </span>
+            </div>
+            <h2
+              data-testid="holding-summary-title"
+              className="mb-2 text-sm font-semibold text-[var(--app-text)]"
+            >
+              {labels.summary}
+            </h2>
+            <div data-testid="holding-summary-metrics">
+              <WorkbenchMetricStrip
+                ariaLabel={labels.summary}
+                items={summaryMetrics.map((metric) => ({
+                  id: metric.label,
+                  label: metric.label,
+                  value: metric.value,
+                  tone: metric.tone,
+                }))}
+                className="sm:grid-flow-row sm:grid-cols-2 xl:grid-cols-4"
               />
             </div>
           </section>

@@ -1,4 +1,5 @@
 import { useCopy } from '../../../app/copy';
+import { DataTable } from '../../../app/components/workbench';
 import { formatCurrency, formatPercent } from '../../../shared/format';
 import type { AllocationItem } from '../api';
 
@@ -7,38 +8,66 @@ export function AllocationCard({ items }: { items: AllocationItem[] }) {
 
   if (items.length === 0) {
     return (
-      <div className="app-panel rounded-2xl p-4 text-sm app-muted sm:p-5">
+      <div className="border-y border-[var(--app-divider)] px-3 py-3 text-sm text-[var(--app-text-secondary)]">
         {copy.portfolio.allocation.empty}
       </div>
     );
   }
 
   return (
-    <div className="app-panel rounded-2xl p-4 sm:p-5">
-      <div className="app-kicker mb-4 text-xs uppercase tracking-[0.18em]">
+    <section className="min-w-0">
+      <h2 className="mb-2 text-sm font-semibold text-[var(--app-text)]">
         {copy.portfolio.allocation.title}
-      </div>
-      <div className="space-y-3">
-        {items.map((item) => (
-          <div key={item.symbol} className="space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span>{item.name}</span>
-              <span className="font-semibold tabular-nums">
-                {formatPercent(item.weight)}
+      </h2>
+      <DataTable
+        data={items}
+        caption={copy.portfolio.allocation.title}
+        emptyState={copy.portfolio.allocation.empty}
+        getRowId={(item) => item.symbol}
+        columns={[
+          {
+            id: 'instrument',
+            header: copy.portfolio.table.symbol,
+            cell: ({ row }) => (
+              <a
+                href={`/portfolio/${encodeURIComponent(row.original.symbol)}`}
+                className="font-semibold text-[var(--app-text)] hover:text-[var(--app-accent)]"
+              >
+                {row.original.name} ·{' '}
+                <span className="font-mono text-[var(--app-text-tertiary)]">
+                  {row.original.symbol}
+                </span>
+              </a>
+            ),
+          },
+          {
+            id: 'value',
+            header: () => (
+              <span className="block text-right">
+                {copy.portfolio.table.marketValue}
               </span>
-            </div>
-            <div className="app-progress-track h-2 overflow-hidden rounded-full">
-              <div
-                className="app-progress-fill h-full rounded-full"
-                style={{ width: `${Math.max(item.weight * 100, 2)}%` }}
-              />
-            </div>
-            <div className="app-muted text-xs tabular-nums">
-              {formatCurrency(item.value)}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
+            ),
+            cell: ({ row }) => (
+              <span className="block text-right font-mono font-semibold tabular-nums">
+                {formatCurrency(row.original.value)}
+              </span>
+            ),
+          },
+          {
+            id: 'weight',
+            header: () => (
+              <span className="block text-right">
+                {copy.portfolio.table.weight}
+              </span>
+            ),
+            cell: ({ row }) => (
+              <span className="block text-right font-mono font-semibold tabular-nums">
+                {formatPercent(row.original.weight)}
+              </span>
+            ),
+          },
+        ]}
+      />
+    </section>
   );
 }

@@ -16,6 +16,13 @@ import {
 
 import { useCopy, type AppCopy } from './copy';
 import { ToastStack, type ToastItem } from './components/toast-stack';
+import {
+  EvidenceState,
+  ExceptionList,
+  MetricStrip,
+  WorkspaceHeader,
+  type ExceptionItem,
+} from './components/workbench';
 import { AppShell } from './layout/app-shell';
 import { usePreferences, type Locale } from './preferences';
 import {
@@ -32,7 +39,6 @@ import {
   EquityCurveCard,
   EquityCurveSkeleton,
 } from '../features/account/components/equity-curve-card';
-import { DailyOperationsTower } from '../features/account/components/daily-operations-tower';
 import type { QuoteDiagnosticItem } from '../features/account/components/dashboard-quick-actions';
 import {
   useAccountStrategyContributionQuery,
@@ -65,7 +71,6 @@ import {
   OverviewCardsSkeleton,
 } from '../features/account/components/overview-cards';
 import { PortfolioExposureSummary } from '../features/account/components/portfolio-exposure-summary';
-import { PerformanceBreakdownCard } from '../features/account/components/performance-breakdown-card';
 import { RiskSummaryCard } from '../features/account/components/risk-summary-card';
 import { KillSwitchPanel } from '../features/trading/components/kill-switch-panel';
 import { OrderApprovalTable } from '../features/trading/components/order-approval-table';
@@ -120,8 +125,6 @@ import {
   type FundBatchFormValues,
 } from '../features/activity/components/fund-batch-form';
 import {
-  type AllocationGroup,
-  type AllocationItem,
   type CurrentHoldingMarketEvidenceReview,
   type PortfolioSnapshot,
   type PositionEvidenceReview,
@@ -388,9 +391,11 @@ export function OverviewPage() {
   const copy = useCopy();
   const [equityCurveRange, setEquityCurveRange] =
     useState<EquityCurveRange>('all');
+  const [analysisView, setAnalysisView] = useState<
+    'performance' | 'allocation' | 'attribution' | 'calendar'
+  >('performance');
   const overview = useAccountOverviewQuery();
   const snapshot = usePortfolioSnapshotQuery();
-  const liveHoldings = useLiveHoldingsQuery();
   const equityCurve = useEquityCurveSeriesQuery(equityCurveRange);
   const explainability = useExplainabilityQuery();
   const ledgerEntries = useLedgerEntriesQuery(8);
@@ -402,26 +407,6 @@ export function OverviewPage() {
   const todayDecision = useTodayDecisionQuery();
   const tradingPlan = useDailyTradingPlanQuery();
   const operationsToday = useOperationsTodayQuery();
-  const showStrategyContributionCard =
-    strategyContribution.isLoading ||
-    strategyContribution.isError ||
-    canUseStrategyContribution(strategyContribution.data);
-
-  const liveGroups = useMemo(
-    () => liveHoldings.data?.groups ?? [],
-    [liveHoldings.data],
-  );
-  const liveItems = useMemo(
-    () => liveGroups.flatMap((group) => group.items),
-    [liveGroups],
-  );
-  const latestPriceBySymbol = useMemo(
-    () =>
-      Object.fromEntries(
-        liveItems.map((item) => [item.symbol, item.latest_price]),
-      ),
-    [liveItems],
-  );
   const assetClassBySymbol = useMemo(
     () =>
       Object.fromEntries(
@@ -465,13 +450,25 @@ export function OverviewPage() {
   const todayPnlContext = isCurrentMarketTradingDay
     ? null
     : copy.overview.cards.marketClosedPnlContext;
+  const analysisTabs = [
+    {
+      id: 'performance' as const,
+      label: copy.overview.dashboard.equityPanel,
+    },
+    { id: 'allocation' as const, label: copy.portfolio.allocation.title },
+    {
+      id: 'attribution' as const,
+      label: copy.backtest.page.accountStrategyContributionPublicTitle,
+    },
+    { id: 'calendar' as const, label: copy.explainability.returnCalendar },
+  ];
 
   return (
     <section className="space-y-5">
-      <PageHeader
-        kicker={copy.overview.kicker}
+      <WorkspaceHeader
+        eyebrow={copy.overview.kicker}
         title={copy.overview.title}
-        subtitle={copy.overview.subtitle}
+        description={copy.overview.subtitle}
       />
 
       {overview.isLoading || snapshot.isLoading ? (
@@ -496,31 +493,86 @@ export function OverviewPage() {
         />
       ) : overview.data && snapshot.data ? (
         <div className="space-y-5">
+          <OverviewCards
+            overview={overview.data}
+            variant="workbench"
+            todayPnlLabel={todayPnlLabel}
+            todayPnlContext={todayPnlContext}
+          />
+
           <div
-            className="grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1.18fr)_minmax(360px,0.82fr)]"
+            className="grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(340px,0.75fr)]"
             data-testid="overview-daily-workbench"
           >
-            <div className="min-w-0 space-y-5">
-              <OverviewCards
-                overview={overview.data}
-                variant="workbench"
-                todayPnlLabel={todayPnlLabel}
-                todayPnlContext={todayPnlContext}
-              />
-              <PortfolioExposureSummary snapshot={snapshot.data} />
-              <DashboardMarketPulse
-                marketHealth={marketHealth.data}
-                isLoading={marketHealth.isLoading}
-                isError={marketHealth.isError}
-              />
-            </div>
-            <div className="min-w-0 space-y-5">
+            <section
+              data-testid="overview-performance-card"
+              className="min-w-0 overflow-hidden rounded-[var(--app-radius-surface)] border border-[var(--app-border)] bg-[var(--app-surface)]"
+            >
+              <div
+                role="tablist"
+                aria-label={copy.overview.dashboard.equityPanel}
+                className="flex max-w-full overflow-x-auto border-b border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-2"
+              >
+                {analysisTabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={analysisView === tab.id}
+                    onClick={() => setAnalysisView(tab.id)}
+                    className={`h-9 shrink-0 border-b-2 px-3 text-xs font-semibold ${
+                      analysisView === tab.id
+                        ? 'border-[var(--app-accent)] text-[var(--app-accent)]'
+                        : 'border-transparent text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+              <div className="min-w-0 p-3 sm:p-4">
+                {analysisView === 'performance' ? (
+                  equityCurve.isLoading ? (
+                    <EquityCurveSkeleton />
+                  ) : equityCurve.isError ? (
+                    <StatusCard
+                      tone="danger"
+                      title={copy.states.error}
+                      detail={copy.overview.curveError}
+                      actionLabel={copy.states.retry}
+                      onAction={() => void equityCurve.refetch()}
+                    />
+                  ) : (
+                    <EquityCurveCard
+                      points={equityCurve.data ?? []}
+                      range={equityCurveRange}
+                      onRangeChange={setEquityCurveRange}
+                    />
+                  )
+                ) : analysisView === 'allocation' ? (
+                  <PortfolioExposureSummary snapshot={snapshot.data} />
+                ) : analysisView === 'attribution' ? (
+                  <StrategyContributionGateCard
+                    report={strategyContribution.data}
+                    isLoading={strategyContribution.isLoading}
+                    isError={strategyContribution.isError}
+                    onRetry={() => void strategyContribution.refetch()}
+                    instruments={positions}
+                    variant="compact"
+                  />
+                ) : (
+                  <ReturnCalendarCard
+                    timeline={explainability.data?.timeline ?? []}
+                    positions={positions}
+                    marketCalendar={marketCalendar.data}
+                    compact
+                  />
+                )}
+              </div>
+            </section>
+            <div className="min-w-0">
               <DashboardTodayQueue
                 overview={overview.data}
-                dailyOperations={
-                  operationsToday.data?.daily_operations ??
-                  overview.data.daily_operations
-                }
                 marketHealth={marketHealth.data}
                 portfolioSnapshot={snapshot.data}
                 marketEvidenceReview={holdingMarketEvidenceReview.data}
@@ -548,127 +600,68 @@ export function OverviewPage() {
             </div>
           </div>
 
-          <div className="grid gap-5">
-            <section
-              className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5"
-              data-testid="overview-performance-card"
-            >
-              <div className="app-terminal-inner min-w-0 p-4 sm:p-5">
-                {equityCurve.isLoading ? (
-                  <EquityCurveSkeleton />
-                ) : equityCurve.isError ? (
-                  <StatusCard
-                    tone="danger"
-                    title={copy.states.error}
-                    detail={copy.overview.curveError}
-                    actionLabel={copy.states.retry}
-                    onAction={() => void equityCurve.refetch()}
-                  />
-                ) : (
-                  <EquityCurveCard
-                    points={equityCurve.data ?? []}
-                    range={equityCurveRange}
-                    onRangeChange={setEquityCurveRange}
-                  />
-                )}
-                <div className="mt-5 border-t border-[color-mix(in_srgb,var(--app-border)_58%,transparent)] pt-4">
-                  <ReturnCalendarCard
-                    timeline={explainability.data?.timeline ?? []}
-                    positions={positions}
-                    marketCalendar={marketCalendar.data}
-                    compact
-                  />
-                </div>
+          <section className="min-w-0" data-testid="overview-holdings-section">
+            <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <h2 className="text-base font-semibold text-[var(--app-text)]">
+                  {copy.overview.dashboard.positionsPanel}
+                </h2>
+                <p className="mt-1 text-xs text-[var(--app-text-secondary)]">
+                  {copy.overview.dashboard.positionsDetail}
+                </p>
               </div>
-            </section>
-
-            <aside
-              className={`grid min-w-0 gap-5 ${
-                showStrategyContributionCard ? 'xl:grid-cols-2' : ''
-              }`}
-              data-testid="overview-review-strip"
-            >
-              <div className="app-terminal-panel rounded-[2rem] p-1.5">
-                <div className="app-terminal-inner h-full p-4 sm:p-5">
-                  <div className="mb-5 flex items-start justify-between gap-4">
-                    <div>
-                      <div className="app-product-mark">
-                        {copy.overview.dashboard.opsPanel}
-                      </div>
-                      <div className="app-card-title mt-1.5 text-xl">
-                        {copy.overview.dashboard.pendingApprovals}
-                      </div>
-                    </div>
-                    <div className="rounded-full border border-[var(--app-accent-border)] bg-[var(--app-accent-ghost)] px-3 py-1.5 text-xs font-semibold text-[var(--app-accent)] tabular-nums">
-                      {copy.overview.dashboard.pendingCount(
-                        pendingOrders.data?.length ?? 0,
-                      )}
-                    </div>
-                  </div>
-                  <DashboardPendingOrders
-                    orders={pendingOrders.data ?? []}
-                    isLoading={pendingOrders.isLoading}
-                    isError={pendingOrders.isError}
-                    copy={copy}
-                  />
-                  <DashboardLedger
-                    entries={ledgerEntries.data ?? []}
-                    isLoading={ledgerEntries.isLoading}
-                    isError={ledgerEntries.isError}
-                    copy={copy}
-                  />
-                </div>
-              </div>
-              {showStrategyContributionCard ? (
-                <div className="min-w-0">
-                  <StrategyContributionGateCard
-                    report={strategyContribution.data}
-                    isLoading={strategyContribution.isLoading}
-                    isError={strategyContribution.isError}
-                    onRetry={() => void strategyContribution.refetch()}
-                    instruments={positions}
-                    variant="compact"
-                  />
-                </div>
-              ) : null}
-            </aside>
-          </div>
-
-          <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5">
-            <div className="app-terminal-inner min-w-0 p-4 sm:p-5">
-              <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <div className="app-product-mark">
-                    {copy.overview.dashboard.positionsPanel}
-                  </div>
-                  <div className="app-card-title mt-1.5 text-xl">
-                    {copy.overview.dashboard.positionsPanel}
-                  </div>
-                  <p className="app-muted mt-2 max-w-2xl text-sm">
-                    {copy.overview.dashboard.positionsDetail}
-                  </p>
-                </div>
-                <div className="app-kicker rounded-full border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)] px-3 py-1.5 text-[10px] tabular-nums">
-                  {positions.length} {copy.overview.risk.positions}
-                </div>
-              </div>
-              <div className="min-w-0">
-                {positions.length === 0 ? (
-                  <StatusCard
-                    title={copy.states.empty}
-                    detail={copy.portfolio.positionsEmpty}
-                  />
-                ) : (
-                  <PositionsTable
-                    positions={positions}
-                    assetClassBySymbol={assetClassBySymbol}
-                    latestPriceBySymbol={latestPriceBySymbol}
-                    variant="dashboard"
-                  />
-                )}
-              </div>
+              <span className="font-mono text-xs tabular-nums text-[var(--app-text-tertiary)]">
+                {positions.length} {copy.overview.risk.positions}
+              </span>
             </div>
+            {positions.length === 0 ? (
+              <StatusCard
+                title={copy.states.empty}
+                detail={copy.portfolio.positionsEmpty}
+              />
+            ) : (
+              <PositionsTable
+                positions={positions}
+                assetClassBySymbol={assetClassBySymbol}
+                variant="dashboard"
+              />
+            )}
           </section>
+
+          <div
+            className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]"
+            data-testid="overview-review-strip"
+          >
+            <DashboardMarketPulse
+              marketHealth={marketHealth.data}
+              isLoading={marketHealth.isLoading}
+              isError={marketHealth.isError}
+            />
+            <section className="min-w-0 rounded-[var(--app-radius-surface)] border border-[var(--app-border)] bg-[var(--app-surface)] p-3 sm:p-4">
+              <div className="mb-3 flex items-end justify-between gap-3">
+                <h2 className="text-base font-semibold text-[var(--app-text)]">
+                  {copy.overview.dashboard.pendingApprovals}
+                </h2>
+                <span className="font-mono text-xs tabular-nums text-[var(--app-text-tertiary)]">
+                  {copy.overview.dashboard.pendingCount(
+                    pendingOrders.data?.length ?? 0,
+                  )}
+                </span>
+              </div>
+              <DashboardPendingOrders
+                orders={pendingOrders.data ?? []}
+                isLoading={pendingOrders.isLoading}
+                isError={pendingOrders.isError}
+                copy={copy}
+              />
+              <DashboardLedger
+                entries={ledgerEntries.data ?? []}
+                isLoading={ledgerEntries.isLoading}
+                isError={ledgerEntries.isError}
+                copy={copy}
+              />
+            </section>
+          </div>
         </div>
       ) : (
         <StatusCard title={copy.states.empty} detail={copy.overview.empty} />
@@ -697,35 +690,6 @@ const TODAY_QUEUE_PRIORITY_ORDER: TodayQueuePriority[] = [
   'watch',
   'normal',
 ];
-
-function todayQueueToneClasses(tone: TodayQueueTone) {
-  if (tone === 'success') {
-    return {
-      card: 'border-[var(--app-success-border)] bg-[var(--app-success-bg)]',
-      dot: 'bg-[var(--app-success-indicator)]',
-      text: 'text-[var(--app-success-text)]',
-    };
-  }
-  if (tone === 'danger') {
-    return {
-      card: 'border-[var(--app-danger-border)] bg-[var(--app-danger-bg)]',
-      dot: 'bg-[var(--app-danger-indicator)]',
-      text: 'text-[var(--app-danger-text)]',
-    };
-  }
-  if (tone === 'warning') {
-    return {
-      card: 'border-[var(--app-warning-border)] bg-[var(--app-warning-bg)]',
-      dot: 'bg-[var(--app-warning-indicator)]',
-      text: 'text-[var(--app-warning-text)]',
-    };
-  }
-  return {
-    card: 'border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)]',
-    dot: 'bg-[var(--app-muted)]',
-    text: 'text-[var(--app-soft)]',
-  };
-}
 
 function todayQueuePriorityLabel(
   priority: TodayQueuePriority,
@@ -1961,7 +1925,6 @@ function tradingPlanBlockedDetailText(
 
 function DashboardTodayQueue({
   overview,
-  dailyOperations,
   marketHealth,
   portfolioSnapshot,
   marketEvidenceReview,
@@ -1985,7 +1948,6 @@ function DashboardTodayQueue({
   operationsTodayError,
 }: {
   overview: AccountOverview;
-  dailyOperations?: AccountOverview['daily_operations'];
   marketHealth?: MarketDataHealthResponse;
   portfolioSnapshot: PortfolioSnapshot;
   marketEvidenceReview?: CurrentHoldingMarketEvidenceReview | null;
@@ -2093,12 +2055,10 @@ function DashboardTodayQueue({
   const decisionCandidateDetail = leadingCandidate
     ? `${decisionActionLabel} · ${decisionCandidateDisplayName(leadingCandidate)}`
     : labels.strategyCandidateEmptyDetail;
-  const cashShortfall = tradingPlan
-    ? tradingPlan.order_intents.reduce(
-        (total, intent) => total + Math.max(intent.cash_shortfall ?? 0, 0),
-        0,
-      )
-    : 0;
+  const cashShortfall =
+    tradingPlan?.order_intents.find(
+      (intent) => (intent.cash_shortfall ?? 0) > 0,
+    )?.cash_shortfall ?? 0;
   const tradingPlanTitle = tradingPlanError
     ? labels.tradingPlanUnavailable
     : tradingPlan?.conclusion_status === 'cash_shortfall'
@@ -2384,103 +2344,83 @@ function DashboardTodayQueue({
   const items = allItems.filter(
     (item) => !(hideDuplicateOperationsReview && item.key === 'operations'),
   );
-  const priorityGroups = TODAY_QUEUE_PRIORITY_ORDER.map((priority) => ({
-    priority,
-    items: items.filter((item) => item.priority === priority),
-  })).filter((group) => group.items.length > 0);
   const actionableCount = items.filter(
     (item) => item.priority !== 'normal',
   ).length;
+  const exceptionItems: ExceptionItem[] = items
+    .filter((item) => item.priority !== 'normal')
+    .sort(
+      (left, right) =>
+        TODAY_QUEUE_PRIORITY_ORDER.indexOf(left.priority) -
+        TODAY_QUEUE_PRIORITY_ORDER.indexOf(right.priority),
+    )
+    .map((item) => ({
+      id: item.key,
+      severity:
+        item.tone === 'danger'
+          ? 'danger'
+          : item.tone === 'warning'
+            ? 'warning'
+            : 'info',
+      statusLabel: todayQueuePriorityLabel(item.priority, labels),
+      title: item.title,
+      reason: item.detail,
+      unblockCondition: item.resolution,
+      nextAction: (
+        <a
+          href={item.href}
+          className="font-semibold text-[var(--app-accent)] hover:underline"
+        >
+          {item.actionLabel}
+        </a>
+      ),
+      evidence: item.meta,
+    }));
+  const normalCount = items.length - actionableCount;
 
   return (
-    <section
-      className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5"
-      data-testid="overview-today-queue"
-    >
-      <div className="app-terminal-inner flex h-full min-w-0 flex-col p-4 sm:p-5">
-        {dailyOperations ? (
-          <DailyOperationsTower summary={dailyOperations} />
-        ) : (
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <div className="app-product-mark">{labels.dailyWorkbench}</div>
-              <h2 className="app-card-title mt-1.5 text-xl">
-                {labels.todayToReview}
-              </h2>
-            </div>
-            <div className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_36%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-soft)] tabular-nums">
-              {actionableCount}
-            </div>
+    <section className="min-w-0" data-testid="overview-today-queue">
+      <div className="mb-2 flex items-end justify-between gap-3">
+        <div>
+          <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--app-text-tertiary)]">
+            {labels.dailyWorkbench}
           </div>
-        )}
-
-        <div className="mt-5 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
-              {labels.opsPanel}
-            </div>
-            <div className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_36%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-soft)] tabular-nums">
-              {actionableCount}
-            </div>
-          </div>
-
-          <div className="mt-4 grid min-w-0 gap-3">
-            {priorityGroups.map((group) => (
-              <div
-                className="grid min-w-0 gap-2"
-                data-testid={`overview-today-queue-${group.priority}`}
-                key={group.priority}
-              >
-                <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
-                  {todayQueuePriorityLabel(group.priority, labels)}
-                </div>
-                {group.items.map((item) => {
-                  const tone = todayQueueToneClasses(item.tone);
-                  const compactNormal = group.priority === 'normal';
-                  return (
-                    <a
-                      href={item.href}
-                      key={item.key}
-                      className={`group grid min-w-0 gap-3 rounded-3xl border px-4 transition-[background-color,border-color,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-0.5 ${
-                        compactNormal ? 'py-3 opacity-85' : 'py-3.5'
-                      } ${tone.card}`}
-                    >
-                      <div className="flex min-w-0 items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex min-w-0 items-center gap-2">
-                            <span
-                              className={`h-2 w-2 shrink-0 rounded-full ${tone.dot}`}
-                            />
-                            <div className="truncate text-sm font-semibold text-[var(--app-soft)]">
-                              {item.title}
-                            </div>
-                          </div>
-                          <div className="app-muted mt-2 text-xs leading-5">
-                            {item.detail}
-                          </div>
-                          {item.resolution ? (
-                            <div className="mt-2 text-[11px] leading-5 text-[var(--app-text-tertiary)]">
-                              {item.resolution}
-                            </div>
-                          ) : null}
-                        </div>
-                        <span
-                          className={`shrink-0 rounded-full border border-current/25 px-2.5 py-1 text-[10px] font-semibold ${tone.text}`}
-                        >
-                          {item.meta}
-                        </span>
-                      </div>
-                      <div className="text-xs font-semibold text-[var(--app-accent)]">
-                        {item.actionLabel}
-                      </div>
-                    </a>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
+          <h2 className="mt-1 text-base font-semibold text-[var(--app-text)]">
+            {labels.todayToReview}
+          </h2>
         </div>
+        <span className="font-mono text-sm font-semibold tabular-nums text-[var(--app-text-secondary)]">
+          {actionableCount}
+        </span>
       </div>
+      <ExceptionList
+        items={exceptionItems}
+        ariaLabel={labels.todayToReview}
+        emptyState={labels.noActionItems}
+        labels={
+          locale === 'zh'
+            ? {
+                reason: '阻断原因',
+                unblockCondition: '解除条件',
+                nextAction: '安全下一步',
+                evidence: '证据',
+              }
+            : {
+                reason: 'Reason',
+                unblockCondition: 'Unblock condition',
+                nextAction: 'Safe next step',
+                evidence: 'Evidence',
+              }
+        }
+      />
+      {normalCount > 0 ? (
+        <div
+          data-testid="overview-today-queue-normal"
+          className="mt-2 border-y border-[var(--app-divider)] px-3 py-2 text-xs text-[var(--app-text-tertiary)]"
+        >
+          {todayQueuePriorityLabel('normal', labels)} · {normalCount}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -2657,72 +2597,57 @@ function DashboardMarketPulse({
 
   return (
     <section
-      className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5"
+      className="min-w-0 overflow-hidden rounded-[var(--app-radius-surface)] border border-[var(--app-border)] bg-[var(--app-surface)]"
       data-testid="overview-market-pulse"
     >
-      <div className="app-terminal-inner min-w-0 p-4 sm:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="app-product-mark">{labels.marketPulse}</div>
-            <div className="app-muted mt-2 max-w-3xl text-sm">
-              {labels.marketPulseDetail}
-            </div>
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-3 py-2.5">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold text-[var(--app-text)]">
+            {labels.marketPulse}
+          </h2>
+          <div className="mt-1 max-w-3xl text-xs text-[var(--app-text-secondary)]">
+            {labels.marketPulseDetail}
           </div>
-          <a
-            href="/market"
-            className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_36%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-soft)] transition-colors hover:border-[color-mix(in_srgb,var(--app-accent)_45%,transparent)] hover:text-[var(--app-text)]"
-          >
-            {labels.viewMarket}
-          </a>
         </div>
+        <a
+          href="/market"
+          className="app-button-secondary rounded-[var(--app-radius-control)] px-2.5 py-1.5 text-xs font-semibold"
+        >
+          {labels.viewMarket}
+        </a>
+      </div>
 
+      <div className="min-w-0 p-3">
         {isLoading ? (
-          <div className="app-muted mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] px-4 py-4 text-sm">
-            {copy.states.loading}
-          </div>
+          <EvidenceState kind="loading" title={copy.states.loading} />
         ) : isError ? (
-          <div className="mt-4 rounded-2xl border border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] px-4 py-4 text-sm font-semibold text-[var(--app-danger-text)]">
-            {copy.states.error}
-          </div>
+          <EvidenceState kind="error" title={copy.states.error} />
         ) : indexQuotes.length === 0 ? (
-          <div className="mt-4 rounded-3xl border border-[color-mix(in_srgb,var(--app-warning)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_9%,transparent)] px-4 py-4">
-            <div className="text-sm font-semibold text-[var(--app-warning-text)]">
-              {labels.marketPulsePending}
-            </div>
-            <div className="app-muted mt-2 text-xs leading-5">
-              {labels.marketPulseMissing}
-            </div>
-          </div>
+          <EvidenceState
+            kind="missing"
+            title={labels.marketPulsePending}
+            description={labels.marketPulseMissing}
+          />
         ) : (
-          <div className="mt-4 grid min-w-0 gap-3">
-            <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-              <div className="min-w-0 rounded-3xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-4 py-3">
-                <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
-                  {labels.marketPulseDisclosure}
-                </div>
-                <div className="mt-1 truncate text-lg font-semibold text-[var(--app-text)]">
-                  {signalLabel}
-                </div>
-              </div>
-              <div className="rounded-3xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-4 py-3 text-xs">
-                <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
-                  {labels.dataStatus}
-                </div>
-                <div className="mt-1 font-semibold text-[var(--app-soft)]">
-                  {sourceStatus}
-                </div>
-                <div
-                  className={`mt-1 font-semibold ${
-                    missingChangeCount > 0
-                      ? 'text-[var(--app-warning-text)]'
-                      : 'text-[var(--app-muted)]'
-                  }`}
-                >
-                  {marketPulseCoverageLabel}
-                </div>
-              </div>
-            </div>
-            <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+          <div className="grid min-w-0 gap-3">
+            <MetricStrip
+              ariaLabel={labels.marketPulse}
+              items={[
+                {
+                  id: 'signal',
+                  label: labels.marketPulseDisclosure,
+                  value: signalLabel,
+                },
+                {
+                  id: 'source',
+                  label: labels.dataStatus,
+                  value: sourceStatus,
+                  detail: marketPulseCoverageLabel,
+                  tone: missingChangeCount > 0 ? 'warning' : 'neutral',
+                },
+              ]}
+            />
+            <div className="divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]">
               {indexQuotes.map((quote) => {
                 const changeValue = marketPulseSignalValue(quote);
                 const changeMissing = changeValue === null;
@@ -2737,13 +2662,13 @@ function DashboardMarketPulse({
                   <a
                     href={`/market?symbol=${encodeURIComponent(quote.symbol)}`}
                     key={quote.symbol}
-                    className="group grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-3xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-4 py-3 transition-[background-color,border-color,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-0.5 hover:border-[color-mix(in_srgb,var(--app-accent)_36%,transparent)]"
+                    className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-2 py-2 hover:bg-[var(--app-accent-bg)]"
                   >
                     <div className="min-w-0">
                       <div className="truncate text-sm font-semibold text-[var(--app-text)]">
                         {displayName}
                       </div>
-                      <div className="app-muted mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+                      <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[var(--app-text-tertiary)]">
                         <span className="font-mono">{quote.symbol}</span>
                         <span>{quoteStatus}</span>
                         <span>{formatTimestamp(quote.timestamp)}</span>
@@ -2783,13 +2708,13 @@ function DashboardMarketPulse({
               })}
             </div>
             <div
-              className="rounded-3xl border border-[color-mix(in_srgb,var(--app-warning)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_7%,transparent)] px-4 py-3"
+              className="border-l-2 border-[var(--app-warning-indicator)] bg-[var(--app-warning-bg)] px-3 py-2"
               data-testid="market-breadth-heatmap-unavailable"
             >
               <div className="text-xs font-semibold text-[var(--app-warning-text)]">
                 {labels.marketHeatmapUnavailable}
               </div>
-              <div className="app-muted mt-1 text-[11px] leading-5">
+              <div className="mt-1 text-[11px] leading-5 text-[var(--app-text-secondary)]">
                 {labels.marketHeatmapUnavailableDetail}
               </div>
             </div>
@@ -3001,50 +2926,61 @@ function PortfolioEvidenceReviewPanel({
   return (
     <section
       data-testid="portfolio-position-evidence-review"
-      className="app-panel rounded-3xl border-[color-mix(in_srgb,var(--app-warning)_36%,var(--app-border))] p-4 sm:p-5"
+      className="min-w-0"
     >
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+      <div className="mb-2 flex min-w-0 flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
-          <div className="app-product-mark">
+          <h2 className="text-sm font-semibold text-[var(--app-text)]">
             {copy.portfolio.evidenceReview.title}
-          </div>
-          <p className="app-muted mt-2 text-sm leading-6">
+          </h2>
+          <p className="mt-1 text-xs leading-5 text-[var(--app-text-secondary)]">
             {copy.portfolio.evidenceReview.detail}
           </p>
         </div>
-        <span className="rounded-full border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--app-warning-text)]">
+        <span className="font-mono text-xs font-semibold tabular-nums text-[var(--app-warning-text)]">
           {copy.portfolio.evidenceReview.count(items.length)}
         </span>
       </div>
-      <div className="mt-4 grid gap-2">
-        {items.map((item) => (
-          <div
-            key={item.position.symbol}
-            className="grid min-w-0 gap-2 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
-          >
-            <div className="min-w-0">
-              <div className="truncate text-sm font-semibold text-[var(--app-text)]">
-                {item.position.display_name ??
-                  item.position.name ??
-                  item.position.symbol}
-              </div>
-              <div className="mt-1 font-mono text-xs text-[var(--app-muted)]">
-                {item.position.symbol}
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-1.5 sm:justify-end">
-              {item.reason_codes.map((reason) => (
-                <span
-                  key={reason}
-                  className="rounded-full border border-[var(--app-warning-border)] px-2 py-0.5 text-[10px] font-semibold text-[var(--app-warning-text)]"
-                >
-                  {formatPublicCode(reason, locale)}
-                </span>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
+      <ExceptionList
+        ariaLabel={copy.portfolio.evidenceReview.title}
+        emptyState={copy.portfolio.evidenceReview.detail}
+        items={items.map((item) => ({
+          id: item.position.symbol,
+          severity: 'warning',
+          statusLabel: locale === 'zh' ? '待复核' : 'Review',
+          title:
+            item.position.display_name ??
+            item.position.name ??
+            item.position.symbol,
+          reason: item.reason_codes
+            .map((reason) => formatPublicCode(reason, locale))
+            .join(' · '),
+          nextAction: (
+            <a
+              href="/account-truth"
+              className="font-semibold text-[var(--app-accent)] hover:underline"
+            >
+              {locale === 'zh' ? '复核账户事实' : 'Review account truth'}
+            </a>
+          ),
+          evidence: item.position.symbol,
+        }))}
+        labels={
+          locale === 'zh'
+            ? {
+                reason: '原因',
+                unblockCondition: '解除条件',
+                nextAction: '安全下一步',
+                evidence: '标的',
+              }
+            : {
+                reason: 'Reason',
+                unblockCondition: 'Unblock condition',
+                nextAction: 'Safe next step',
+                evidence: 'Instrument',
+              }
+        }
+      />
     </section>
   );
 }
@@ -3057,7 +2993,6 @@ export function PortfolioPage() {
   const [quoteFilter, setQuoteFilter] = useState<QuoteFilter>('all');
   const [evidenceFilter, setEvidenceFilter] = useState<EvidenceFilter>('all');
   const [sortBy, setSortBy] = useState<PositionSort>('market_value');
-  const overview = useAccountOverviewQuery();
   const positions = usePositionsQuery();
   const snapshot = usePortfolioSnapshotQuery();
   const cockpit = usePortfolioCockpitQuery();
@@ -3089,49 +3024,20 @@ export function PortfolioPage() {
     sortBy,
   });
 
-  const filteredSymbols = new Set(
-    filteredPositions.map((position) => position.symbol),
-  );
-  const positionOrder = new Map(
-    filteredPositions.map((position, index) => [position.symbol, index]),
-  );
-  const filteredAllocation = (snapshot.data?.allocation ?? []).filter((item) =>
-    filteredSymbols.has(item.symbol),
-  );
-  const filteredGroups = groupAllocation(filteredAllocation);
-  const filteredLiveGroups = (liveHoldings.data?.groups ?? [])
-    .map((group) => ({
-      ...group,
-      items: group.items
-        .filter((item) => filteredSymbols.has(item.symbol))
-        .sort(
-          (left, right) =>
-            (positionOrder.get(left.symbol) ?? Number.MAX_SAFE_INTEGER) -
-            (positionOrder.get(right.symbol) ?? Number.MAX_SAFE_INTEGER),
-        ),
-    }))
-    .filter((group) => group.items.length > 0)
-    .map((group) => ({
-      ...group,
-      total_market_value: group.items.reduce(
-        (sum, item) => sum + item.market_value,
-        0,
-      ),
-      total_today_change: group.items.some((item) => item.today_change === null)
-        ? null
-        : group.items.reduce((sum, item) => sum + (item.today_change ?? 0), 0),
-      total_since_buy_pnl: group.items.reduce(
-        (sum, item) => sum + item.since_buy_pnl,
-        0,
-      ),
-    }));
+  const closedPositions = snapshot.data?.closed_positions ?? [];
+  const portfolioIdentity = snapshot.data
+    ? `snapshot ${snapshot.data.valuation_snapshot_id ?? '--'} · ledger ${
+        snapshot.data.ledger_cutoff_id ?? '--'
+      }`
+    : undefined;
 
   return (
     <section className="space-y-5 sm:space-y-6">
-      <PageHeader
-        kicker={copy.portfolio.kicker}
+      <WorkspaceHeader
+        eyebrow={copy.portfolio.kicker}
         title={copy.portfolio.title}
-        subtitle={copy.portfolio.subtitle}
+        description={copy.portfolio.subtitle}
+        context={portfolioIdentity}
       />
 
       <WorkspaceToolbar
@@ -3175,129 +3081,117 @@ export function PortfolioPage() {
         onEvidenceFilterChange={setEvidenceFilter}
         sortBy={sortBy}
         onSortByChange={setSortBy}
+        summary={`${copy.portfolio.currentHoldingsCount(
+          (positions.data ?? []).length,
+        )} · ${copy.portfolio.filteredHoldingsCount(filteredPositions.length)}`}
       />
 
-      <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.65fr)_minmax(320px,0.95fr)]">
-        <div className="min-w-0 space-y-5 sm:space-y-6">
-          {evidenceFilter !== 'clear' ? (
-            <PortfolioEvidenceReviewPanel items={evidenceReviewItems} />
-          ) : null}
-          {liveHoldings.isLoading ? (
-            <StatusCard
-              title={copy.states.loading}
-              detail={copy.portfolio.liveBoard.loading}
-            />
-          ) : liveHoldings.isError ? (
-            <StatusCard
-              tone="danger"
-              title={copy.states.error}
-              detail={copy.portfolio.liveBoard.error}
-              actionLabel={copy.states.retry}
-              onAction={() => void liveHoldings.refetch()}
-            />
-          ) : (
-            <LiveHoldingsBoard groups={filteredLiveGroups} />
+      <div data-testid="portfolio-current-holdings-count" className="sr-only">
+        {copy.portfolio.currentHoldingsCount((positions.data ?? []).length)} ·{' '}
+        {copy.portfolio.filteredHoldingsCount(filteredPositions.length)}
+      </div>
+      {positions.isLoading ? (
+        <StatusCard
+          title={copy.states.loading}
+          detail={copy.portfolio.positionsLoading}
+        />
+      ) : positions.isError ? (
+        <StatusCard
+          tone="danger"
+          title={copy.states.error}
+          detail={copy.portfolio.positionsError}
+          actionLabel={copy.states.retry}
+          onAction={() => void positions.refetch()}
+        />
+      ) : filteredPositions.length === 0 ? (
+        <StatusCard
+          title={copy.states.empty}
+          detail={
+            (positions.data ?? []).length === 0
+              ? copy.portfolio.positionsEmpty
+              : copy.portfolio.filterEmpty
+          }
+        />
+      ) : (
+        <PositionsTable
+          positions={filteredPositions}
+          assetClassBySymbol={Object.fromEntries(
+            Array.from(allocationBySymbol.entries()).map(([symbol, item]) => [
+              symbol,
+              item.asset_class,
+            ]),
           )}
-          <div
-            data-testid="portfolio-current-holdings-count"
-            className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_7%,transparent)] px-4 py-2.5 text-xs font-semibold text-[var(--app-muted)]"
-          >
-            <span>
-              {copy.portfolio.currentHoldingsCount(
-                (positions.data ?? []).length,
-              )}
-            </span>
-            <span>
-              {copy.portfolio.filteredHoldingsCount(filteredPositions.length)}
-            </span>
-          </div>
-          {positions.isLoading ? (
-            <StatusCard
-              title={copy.states.loading}
-              detail={copy.portfolio.positionsLoading}
-            />
-          ) : positions.isError ? (
-            <StatusCard
-              tone="danger"
-              title={copy.states.error}
-              detail={copy.portfolio.positionsError}
-              actionLabel={copy.states.retry}
-              onAction={() => void positions.refetch()}
-            />
-          ) : filteredPositions.length === 0 ? (
-            <StatusCard
-              title={copy.states.empty}
-              detail={
-                (positions.data ?? []).length === 0
-                  ? copy.portfolio.positionsEmpty
-                  : copy.portfolio.filterEmpty
-              }
-            />
-          ) : (
-            <PositionsTable
-              positions={filteredPositions}
-              assetClassBySymbol={Object.fromEntries(
-                Array.from(allocationBySymbol.entries()).map(
-                  ([symbol, item]) => [symbol, item.asset_class],
-                ),
-              )}
-              weightBySymbol={Object.fromEntries(
-                Array.from(allocationBySymbol.entries()).map(
-                  ([symbol, item]) => [symbol, item.weight],
-                ),
-              )}
-            />
+          weightBySymbol={Object.fromEntries(
+            Array.from(allocationBySymbol.entries()).map(([symbol, item]) => [
+              symbol,
+              item.weight,
+            ]),
           )}
-        </div>
+        />
+      )}
 
-        <div className="min-w-0 space-y-5 sm:space-y-6">
-          {snapshot.isLoading || overview.isLoading ? (
+      {evidenceFilter !== 'clear' ? (
+        <PortfolioEvidenceReviewPanel items={evidenceReviewItems} />
+      ) : null}
+
+      <div className="grid min-w-0 gap-5 xl:grid-cols-2">
+        {mode === 'account' ? (
+          <div className="min-w-0 space-y-5">
+            {liveHoldings.isLoading ? (
+              <StatusCard
+                title={copy.states.loading}
+                detail={copy.portfolio.liveBoard.loading}
+              />
+            ) : liveHoldings.isError ? (
+              <StatusCard
+                tone="danger"
+                title={copy.states.error}
+                detail={copy.portfolio.liveBoard.error}
+                actionLabel={copy.states.retry}
+                onAction={() => void liveHoldings.refetch()}
+              />
+            ) : (
+              <LiveHoldingsBoard groups={liveHoldings.data?.groups ?? []} />
+            )}
+            {snapshot.data ? (
+              <AllocationGroupsCard groups={snapshot.data.allocation_grouped} />
+            ) : null}
+          </div>
+        ) : (
+          <div className="min-w-0 space-y-5">
+            <StrategyContributionGateCard
+              report={strategyContribution.data}
+              isLoading={strategyContribution.isLoading}
+              isError={strategyContribution.isError}
+              onRetry={() => void strategyContribution.refetch()}
+              instruments={positions.data ?? snapshot.data?.positions ?? []}
+            />
+            <PortfolioConstructionRecommendationsCard
+              recommendations={cockpit.data?.construction_recommendations ?? []}
+              isLoading={cockpit.isLoading}
+              isError={cockpit.isError}
+              onRetry={() => void cockpit.refetch()}
+            />
+          </div>
+        )}
+
+        <div className="min-w-0 space-y-5">
+          {snapshot.isLoading ? (
             <StatusCard
               title={copy.states.loading}
               detail={copy.portfolio.sidebarLoading}
             />
-          ) : snapshot.isError || overview.isError ? (
+          ) : snapshot.isError ? (
             <StatusCard
               tone="danger"
               title={copy.states.error}
               detail={copy.portfolio.sidebarError}
               actionLabel={copy.states.retry}
-              onAction={() => {
-                void snapshot.refetch();
-                void overview.refetch();
-              }}
+              onAction={() => void snapshot.refetch()}
             />
-          ) : snapshot.data && overview.data ? (
+          ) : snapshot.data ? (
             <>
-              <PerformanceBreakdownCard
-                overview={overview.data}
-                snapshot={snapshot.data}
-                mode={mode}
-                onModeChange={setMode}
-                accountLabel={copy.mode.account}
-                strategyLabel={copy.mode.strategy}
-              />
-              <StrategyContributionGateCard
-                report={strategyContribution.data}
-                isLoading={strategyContribution.isLoading}
-                isError={strategyContribution.isError}
-                onRetry={() => void strategyContribution.refetch()}
-                instruments={positions.data ?? snapshot.data.positions}
-              />
-              <PortfolioConstructionRecommendationsCard
-                recommendations={
-                  cockpit.data?.construction_recommendations ?? []
-                }
-                isLoading={cockpit.isLoading}
-                isError={cockpit.isError}
-                onRetry={() => void cockpit.refetch()}
-              />
-              <RiskSummaryCard
-                overview={overview.data}
-                snapshot={snapshot.data}
-              />
-              <AllocationCard items={filteredAllocation} />
-              <AllocationGroupsCard groups={filteredGroups} />
+              <AllocationCard items={snapshot.data.allocation} />
             </>
           ) : (
             <StatusCard
@@ -3307,6 +3201,33 @@ export function PortfolioPage() {
           )}
         </div>
       </div>
+
+      <section className="min-w-0" data-testid="portfolio-history">
+        <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-[var(--app-text)]">
+              {copy.portfolio.detail.closedHistoryOnly}
+            </h2>
+            <p className="mt-1 text-xs text-[var(--app-text-secondary)]">
+              {copy.portfolio.detail.realizedPnl}:{' '}
+              {formatCurrencyValue(snapshot.data?.realized_pnl_total)}
+            </p>
+          </div>
+          <a
+            href="/activity"
+            className="app-button-secondary rounded-[var(--app-radius-control)] px-2.5 py-1.5 text-xs font-semibold"
+          >
+            {copy.portfolio.detail.actionViewActivity}
+          </a>
+        </div>
+        {closedPositions.length > 0 ? (
+          <PositionsTable positions={closedPositions} variant="history" />
+        ) : (
+          <div className="border-y border-[var(--app-divider)] px-3 py-3 text-sm text-[var(--app-text-secondary)]">
+            {copy.portfolio.detail.noLedger}
+          </div>
+        )}
+      </section>
     </section>
   );
 }
@@ -7777,32 +7698,6 @@ function PageHeader({
         </p>
       </div>
     </header>
-  );
-}
-
-function groupAllocation(items: AllocationItem[]): AllocationGroup[] {
-  const grouped = new Map<string, AllocationGroup>();
-  const total = items.reduce((sum, item) => sum + item.value, 0) || 1;
-
-  items.forEach((item) => {
-    const existing = grouped.get(item.asset_class);
-    if (existing) {
-      existing.value += item.value;
-      existing.items.push(item);
-      existing.weight = existing.value / total;
-      return;
-    }
-    grouped.set(item.asset_class, {
-      asset_class: item.asset_class,
-      name: item.asset_class,
-      value: item.value,
-      weight: item.value / total,
-      items: [item],
-    });
-  });
-
-  return Array.from(grouped.values()).sort(
-    (left, right) => right.value - left.value,
   );
 }
 

@@ -636,29 +636,25 @@ test('uses shared public fallback for unknown holding cost-basis methods', async
 });
 
 test('keeps holding summary and kline regions responsive on narrow screens', async () => {
-  const { container } = renderHoldingDetail();
+  renderHoldingDetail();
 
   expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
 
-  const summaryHeader = screen.getByTestId('holding-summary-header');
   const summaryTitle = screen.getByTestId('holding-summary-title');
-  const summarySymbol = screen.getByTestId('holding-summary-symbol');
   const summaryGrid = screen.getByTestId('holding-summary-metrics');
-  const metricCards = container.querySelectorAll(
-    '[data-testid="holding-summary-metric"]',
-  );
+  const metricStrip = summaryGrid.querySelector('dl');
+  const metricCells = metricStrip?.querySelectorAll(':scope > div') ?? [];
   const chartPanel = screen.getByTestId('holding-kline-panel');
   const chartScroll = screen.getByTestId('price-structure-chart-scroll');
   const chartCanvas = screen.getByTestId('price-structure-chart-canvas');
 
-  expect(summaryHeader.className).toContain('min-w-0');
-  expect(summaryTitle.className).toContain('break-words');
-  expect(summarySymbol.className).toContain('shrink-0');
-  expect(summaryGrid.className).toContain('grid-cols-1');
-  expect(summaryGrid.className).toContain('min-w-0');
-  expect(metricCards.length).toBeGreaterThan(0);
-  for (const card of metricCards) {
-    expect(card.className).toContain('min-w-0');
+  expect(summaryTitle.className).toContain('text-sm');
+  expect(metricStrip?.className).toContain('min-w-0');
+  expect(metricStrip?.className).toContain('sm:grid-cols-2');
+  expect(metricStrip?.className).toContain('xl:grid-cols-4');
+  expect(metricCells.length).toBeGreaterThan(0);
+  for (const cell of metricCells) {
+    expect(cell.className).toContain('min-w-0');
   }
   expect(chartPanel.className).toContain('overflow-hidden');
   expect(chartScroll.className).toContain('overflow-x-auto');

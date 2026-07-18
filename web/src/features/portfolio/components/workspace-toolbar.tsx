@@ -1,4 +1,5 @@
 import { useCopy } from '../../../app/copy';
+import { FilterBar } from '../../../app/components/workbench';
 import { formatAssetClassLabel } from '../../../shared/asset-class';
 
 type WorkspaceMode = 'account' | 'strategy';
@@ -28,6 +29,7 @@ export function WorkspaceToolbar({
   onEvidenceFilterChange,
   sortBy = 'market_value',
   onSortByChange,
+  summary,
 }: {
   mode: WorkspaceMode;
   onModeChange: (mode: WorkspaceMode) => void;
@@ -44,140 +46,131 @@ export function WorkspaceToolbar({
   onEvidenceFilterChange?: (value: EvidenceFilter) => void;
   sortBy?: PositionSort;
   onSortByChange?: (value: PositionSort) => void;
+  summary?: string;
 }) {
   const copy = useCopy();
   const labels = copy.portfolio.toolbar;
+  const fieldClassName =
+    'app-field h-8 rounded-[var(--app-radius-control)] px-2 text-xs';
 
   return (
-    <div className="app-panel rounded-2xl p-4 sm:p-5">
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_repeat(3,minmax(0,1fr))]">
-        <div className="space-y-2">
-          <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-            {labels.view}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {[
-              { value: 'account', label: copy.mode.accountShort },
-              { value: 'strategy', label: copy.mode.strategyShort },
-            ].map((item) => (
-              <button
-                key={item.value}
-                type="button"
-                onClick={() => onModeChange(item.value as WorkspaceMode)}
-                className={`rounded-2xl px-3 py-2 text-sm font-semibold transition sm:px-4 ${
-                  mode === item.value
-                    ? 'app-button-primary'
-                    : 'app-button-secondary'
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-          <div className="app-muted text-sm">{labels.helper}</div>
-        </div>
-
-        <label className="space-y-2">
-          <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-            {labels.search}
-          </div>
-          <input
-            value={search}
-            onChange={(event) => onSearchChange(event.target.value)}
-            placeholder={labels.searchPlaceholder}
-            className="app-field w-full rounded-2xl px-3 py-2 text-sm"
-          />
-        </label>
-
-        <label className="space-y-2">
-          <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-            {labels.assetClass}
-          </div>
-          <select
-            value={assetClassFilter}
-            onChange={(event) => onAssetClassFilterChange(event.target.value)}
-            className="app-field w-full rounded-2xl px-3 py-2 text-sm"
+    <FilterBar label={labels.helper} summary={summary}>
+      <div
+        className="inline-flex h-8 overflow-hidden rounded-[var(--app-radius-control)] border border-[var(--app-border)]"
+        aria-label={labels.view}
+      >
+        {[
+          { value: 'account', label: copy.mode.accountShort },
+          { value: 'strategy', label: copy.mode.strategyShort },
+        ].map((item) => (
+          <button
+            key={item.value}
+            type="button"
+            aria-pressed={mode === item.value}
+            onClick={() => onModeChange(item.value as WorkspaceMode)}
+            className={`px-3 text-xs font-semibold ${
+              mode === item.value
+                ? 'bg-[var(--app-accent)] text-[var(--app-text-inverse)]'
+                : 'bg-[var(--app-surface)] text-[var(--app-text-secondary)] hover:bg-[var(--app-accent-bg)]'
+            }`}
           >
-            <option value="all">{labels.allAssetClasses}</option>
-            {assetClasses.map((assetClass) => (
-              <option key={assetClass} value={assetClass}>
-                {formatAssetClassLabel(assetClass, copy.common)}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="space-y-2">
-          <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-            {labels.pnlFocus}
-          </div>
-          <select
-            value={pnlFilter}
-            onChange={(event) =>
-              onPnlFilterChange(event.target.value as PnlFilter)
-            }
-            className="app-field w-full rounded-2xl px-3 py-2 text-sm"
-          >
-            <option value="all">{labels.allHoldings}</option>
-            <option value="winners">{labels.winnersOnly}</option>
-            <option value="losers">{labels.losersOnly}</option>
-          </select>
-        </label>
+            {item.label}
+          </button>
+        ))}
       </div>
-      <div className="mt-4 grid gap-4 border-t border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] pt-4 sm:grid-cols-3">
-        <label className="space-y-2">
-          <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-            {labels.quoteFilter}
-          </div>
-          <select
-            value={quoteFilter}
-            onChange={(event) =>
-              onQuoteFilterChange?.(event.target.value as QuoteFilter)
-            }
-            className="app-field w-full rounded-2xl px-3 py-2 text-sm"
-          >
-            <option value="all">{labels.allQuoteStates}</option>
-            <option value="healthy">{labels.healthyQuotes}</option>
-            <option value="review">{labels.reviewQuotes}</option>
-          </select>
-        </label>
 
-        <label className="space-y-2">
-          <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-            {labels.evidenceFilter}
-          </div>
-          <select
-            value={evidenceFilter}
-            onChange={(event) =>
-              onEvidenceFilterChange?.(event.target.value as EvidenceFilter)
-            }
-            className="app-field w-full rounded-2xl px-3 py-2 text-sm"
-          >
-            <option value="all">{labels.allEvidenceStates}</option>
-            <option value="review">{labels.evidenceReviewOnly}</option>
-            <option value="clear">{labels.evidenceClearOnly}</option>
-          </select>
-        </label>
+      <label className="min-w-40 flex-1 sm:max-w-56">
+        <span className="sr-only">{labels.search}</span>
+        <input
+          value={search}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder={labels.searchPlaceholder}
+          className={`${fieldClassName} w-full`}
+        />
+      </label>
 
-        <label className="space-y-2">
-          <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-            {labels.sortBy}
-          </div>
-          <select
-            value={sortBy}
-            onChange={(event) =>
-              onSortByChange?.(event.target.value as PositionSort)
-            }
-            className="app-field w-full rounded-2xl px-3 py-2 text-sm"
-          >
-            <option value="market_value">{labels.sortMarketValue}</option>
-            <option value="weight">{labels.sortWeight}</option>
-            <option value="today_change">{labels.sortTodayPnl}</option>
-            <option value="unrealized_pnl">{labels.sortUnrealizedPnl}</option>
-            <option value="realized_pnl">{labels.sortRealizedPnl}</option>
-          </select>
-        </label>
-      </div>
-    </div>
+      <label>
+        <span className="sr-only">{labels.assetClass}</span>
+        <select
+          aria-label={labels.assetClass}
+          value={assetClassFilter}
+          onChange={(event) => onAssetClassFilterChange(event.target.value)}
+          className={fieldClassName}
+        >
+          <option value="all">{labels.allAssetClasses}</option>
+          {assetClasses.map((assetClass) => (
+            <option key={assetClass} value={assetClass}>
+              {formatAssetClassLabel(assetClass, copy.common)}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label>
+        <span className="sr-only">{labels.pnlFocus}</span>
+        <select
+          aria-label={labels.pnlFocus}
+          value={pnlFilter}
+          onChange={(event) =>
+            onPnlFilterChange(event.target.value as PnlFilter)
+          }
+          className={fieldClassName}
+        >
+          <option value="all">{labels.allHoldings}</option>
+          <option value="winners">{labels.winnersOnly}</option>
+          <option value="losers">{labels.losersOnly}</option>
+        </select>
+      </label>
+
+      <label>
+        <span className="sr-only">{labels.quoteFilter}</span>
+        <select
+          aria-label={labels.quoteFilter}
+          value={quoteFilter}
+          onChange={(event) =>
+            onQuoteFilterChange?.(event.target.value as QuoteFilter)
+          }
+          className={fieldClassName}
+        >
+          <option value="all">{labels.allQuoteStates}</option>
+          <option value="healthy">{labels.healthyQuotes}</option>
+          <option value="review">{labels.reviewQuotes}</option>
+        </select>
+      </label>
+
+      <label>
+        <span className="sr-only">{labels.evidenceFilter}</span>
+        <select
+          aria-label={labels.evidenceFilter}
+          value={evidenceFilter}
+          onChange={(event) =>
+            onEvidenceFilterChange?.(event.target.value as EvidenceFilter)
+          }
+          className={fieldClassName}
+        >
+          <option value="all">{labels.allEvidenceStates}</option>
+          <option value="review">{labels.evidenceReviewOnly}</option>
+          <option value="clear">{labels.evidenceClearOnly}</option>
+        </select>
+      </label>
+
+      <label>
+        <span className="sr-only">{labels.sortBy}</span>
+        <select
+          aria-label={labels.sortBy}
+          value={sortBy}
+          onChange={(event) =>
+            onSortByChange?.(event.target.value as PositionSort)
+          }
+          className={fieldClassName}
+        >
+          <option value="market_value">{labels.sortMarketValue}</option>
+          <option value="weight">{labels.sortWeight}</option>
+          <option value="today_change">{labels.sortTodayPnl}</option>
+          <option value="unrealized_pnl">{labels.sortUnrealizedPnl}</option>
+          <option value="realized_pnl">{labels.sortRealizedPnl}</option>
+        </select>
+      </label>
+    </FilterBar>
   );
 }

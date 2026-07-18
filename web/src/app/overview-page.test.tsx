@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import { PreferencesProvider } from './preferences';
@@ -693,9 +694,9 @@ test('renders the compact return calendar on the overview page', async () => {
       return url.includes('/api/portfolio/equity-curve/series?range=all');
     }),
   ).toBe(true);
+  await userEvent.click(screen.getByRole('tab', { name: 'Return calendar' }));
   const calendar = await screen.findByTestId('return-calendar-card');
   expect(calendar.className).toContain('p-4');
-  expect(await screen.findByText('Return calendar')).toBeTruthy();
   expect(screen.getByTestId('return-calendar-month-grid')).toBeTruthy();
   expect(
     await screen.findByRole('button', { name: '2026-02-10 · ¥600.00' }),
@@ -718,7 +719,7 @@ test('renders the compact return calendar on the overview page', async () => {
   ).toBe(false);
 });
 
-test('splits today pnl into stocks funds and total on overview cards', async () => {
+test('keeps the overview metric strip bound to canonical account totals', async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   vi.setSystemTime(new Date('2026-02-10T10:00:00+08:00'));
 
@@ -726,16 +727,12 @@ test('splits today pnl into stocks funds and total on overview cards', async () 
 
   const metricsRail = await screen.findByTestId('account-metrics-rail');
   expect(within(metricsRail).getByText('Today PnL')).toBeTruthy();
-  expect(within(metricsRail).getByText('Stocks')).toBeTruthy();
-  expect(within(metricsRail).getByText('Funds')).toBeTruthy();
-  expect(within(metricsRail).getByText('Total')).toBeTruthy();
-  expect(within(metricsRail).getAllByText('¥33.00').length).toBe(2);
-  expect(within(metricsRail).getByText('-¥4.00')).toBeTruthy();
   expect(within(metricsRail).getByText('¥29.00')).toBeTruthy();
   expect(within(metricsRail).getByText('-4.59%')).toBeTruthy();
-  expect(within(metricsRail).getByText('Top contributors')).toBeTruthy();
-  expect(within(metricsRail).getByText('后端权威贡献')).toBeTruthy();
-  expect(within(metricsRail).queryByText('示例稳健混合C')).toBeNull();
+  expect(within(metricsRail).getByText('Unrealized PnL')).toBeTruthy();
+  expect(within(metricsRail).getByText('Realized PnL')).toBeTruthy();
+  expect(within(metricsRail).queryByText('Top contributors')).toBeNull();
+  expect(within(metricsRail).queryByText('Cumulative Return')).toBeNull();
 });
 
 test('labels overview pnl as latest trading day when today is market closed', async () => {
@@ -747,14 +744,14 @@ test('labels overview pnl as latest trading day when today is market closed', as
   const metricsRail = await screen.findByTestId('account-metrics-rail');
   expect(within(metricsRail).getByText('Latest trading-day PnL')).toBeTruthy();
   expect(
-    within(metricsRail).getByText(
+    within(metricsRail).getAllByText(
       'Market is closed today; showing the latest available PnL.',
-    ),
-  ).toBeTruthy();
+    ).length,
+  ).toBeGreaterThan(0);
   expect(within(metricsRail).queryByText('Today PnL')).toBeNull();
 });
 
-test('renders the daily workbench before chart and detail panels', async () => {
+test('puts analysis and action queue before holdings, then broad-market context', async () => {
   renderOverviewPage();
 
   const workbench = await screen.findByTestId('overview-daily-workbench');
@@ -764,25 +761,18 @@ test('renders the daily workbench before chart and detail panels', async () => {
     'overview-performance-card',
   );
   const reviewStrip = await screen.findByTestId('overview-review-strip');
+  const holdings = await screen.findByTestId('overview-holdings-section');
 
   expect(within(workbench).getByText("Today's to-dos")).toBeTruthy();
+  expect(within(workbench).getByText('Today to review')).toBeTruthy();
   expect(
-    within(workbench).getByText('No manual trading action needed today'),
-  ).toBeTruthy();
-  expect(within(workbench).getByText('Today runbook is healthy')).toBeTruthy();
-  expect(within(workbench).getByText('No additional action')).toBeTruthy();
-  expect(within(workbench).getByText('Execution status')).toBeTruthy();
-  expect(within(workbench).getByText('Review queue')).toBeTruthy();
-  expect(
-    within(workbench).getByText('Market data and NAV are usable.'),
+    within(workbench).getByText('No urgent items right now.'),
   ).toBeTruthy();
   expect(
-    within(workbench).getByText('No orders awaiting confirmation'),
-  ).toBeTruthy();
-  expect(
-    within(workbench).getByText('Strategy contribution is evidence-linked'),
+    within(workbench).getByTestId('overview-today-queue-normal'),
   ).toBeTruthy();
   expect(screen.queryByTestId('overview-operations-panel')).toBeNull();
+  expect(screen.queryByTestId('daily-operations-tower')).toBeNull();
   expect(within(workbench).queryByText('Daily workbench')).toBeNull();
   expect(within(workbench).queryByText('Daily operations tower')).toBeNull();
   expect(within(marketPulse).getByText('Market pulse')).toBeTruthy();
@@ -794,24 +784,17 @@ test('renders the daily workbench before chart and detail panels', async () => {
   ).toContain('Market heatmap awaiting evidence');
   expect(screen.queryByTestId('today-pnl-heatmap')).toBeNull();
   expect(screen.queryByTestId('overview-holding-movers')).toBeNull();
-  expect(
-    workbench.compareDocumentPosition(performanceCard) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  expect(
-    marketPulse.compareDocumentPosition(performanceCard) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
+  expect(workbench.contains(performanceCard)).toBe(true);
   expect(workbench.contains(todayQueue)).toBe(true);
   expect(
-    performanceCard.compareDocumentPosition(reviewStrip) &
+    workbench.compareDocumentPosition(holdings) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(
-    within(reviewStrip)
-      .getByTestId('strategy-contribution-gate-card')
-      .getAttribute('data-variant'),
-  ).toBe('compact');
+    holdings.compareDocumentPosition(reviewStrip) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(reviewStrip.contains(marketPulse)).toBe(true);
 });
 
 test('surfaces paper shadow next action in today todos', async () => {
@@ -1052,7 +1035,9 @@ test('deduplicates manual-plan review and trusts confirmed quotes over provider 
   expect(todayQueue.textContent).toContain('另 2 笔待确认');
   expect(within(todayQueue).queryByText('今日待办需要人工复核')).toBeNull();
   expect(within(todayQueue).queryByText('行情或净值需要复核。')).toBeNull();
-  expect(within(todayQueue).getByText('行情与净值可用于解读。')).toBeTruthy();
+  expect(todayQueue.textContent).not.toContain(
+    'tushare_fund_nav_permission_denied',
+  );
 });
 
 test('surfaces paper shadow divergence evidence summary in today todos', async () => {
@@ -2021,7 +2006,7 @@ test('surfaces manual execution reconciliation review in today todos', async () 
   expect(todayQueue.textContent).not.toContain('Ledger sync');
 });
 
-test('renders daily operations tower without treating 50 candidates as manual work', async () => {
+test('keeps a healthy candidate pool out of the actionable exception list', async () => {
   window.localStorage.setItem('karkinos.locale', 'zh');
   installOverviewFetchMock({
     daily_operations: {
@@ -2048,23 +2033,14 @@ test('renders daily operations tower without treating 50 candidates as manual wo
   renderOverviewPage({ installFetch: false });
 
   const queue = await screen.findByTestId('overview-today-queue');
-  const tower = await screen.findByTestId('daily-operations-tower');
   expect(within(queue).getByText('今日待办')).toBeTruthy();
-  expect(within(tower).getByText('执行状态')).toBeTruthy();
-  expect(within(queue).queryByText('今日操作塔台')).toBeNull();
-  expect(within(tower).getByText('今日无需手动交易')).toBeTruthy();
-  expect(within(tower).getByText('候选池')).toBeTruthy();
-  expect(within(tower).getByText('50')).toBeTruthy();
-  expect(within(tower).getByText('计划意图待复核')).toBeTruthy();
-  expect(within(tower).getAllByText('0').length).toBeGreaterThan(0);
-  expect(within(tower).getByText('人工确认')).toBeTruthy();
-  expect(within(tower).getByText('未启用')).toBeTruthy();
-  expect(within(tower).getByText('复核交易计划')).toBeTruthy();
-  expect(tower.textContent).not.toContain('50 项待人工确认');
-  expect(tower.textContent).not.toContain('50 个待确认');
+  expect(within(queue).getByText('当前没有紧急事项。')).toBeTruthy();
+  expect(screen.queryByTestId('daily-operations-tower')).toBeNull();
+  expect(queue.textContent).not.toContain('50 项待人工确认');
+  expect(queue.textContent).not.toContain('50 个待确认');
 });
 
-test('uses the canonical operations summary for the daily operations tower', async () => {
+test('uses the canonical operations summary for the action queue', async () => {
   window.localStorage.setItem('karkinos.locale', 'zh');
   installOverviewFetchMock(
     {
@@ -2149,12 +2125,12 @@ test('uses the canonical operations summary for the daily operations tower', asy
 
   renderOverviewPage({ installFetch: false });
 
-  const tower = await screen.findByTestId('daily-operations-tower');
-  expect(within(tower).getByText('今日无需手动交易')).toBeTruthy();
-  expect(tower.textContent).not.toContain('6 项待人工确认');
+  const queue = await screen.findByTestId('overview-today-queue');
+  expect(within(queue).getByText('当前没有紧急事项。')).toBeTruthy();
+  expect(queue.textContent).not.toContain('6 项待人工确认');
 });
 
-test('routes daily operations tower primary action to Trading for pending manual orders', async () => {
+test('does not promote legacy daily-operation counts into an action', async () => {
   installOverviewFetchMock({
     daily_operations: {
       candidate_pool_count: 1,
@@ -2179,18 +2155,12 @@ test('routes daily operations tower primary action to Trading for pending manual
 
   renderOverviewPage({ installFetch: false });
 
-  const tower = await screen.findByTestId('daily-operations-tower');
-  expect(
-    within(tower).getByText('1 item needs manual confirmation'),
-  ).toBeTruthy();
-  expect(
-    within(tower)
-      .getByRole('link', { name: 'Enter manual confirmation' })
-      .getAttribute('href'),
-  ).toBe('/trading');
+  const queue = await screen.findByTestId('overview-today-queue');
+  expect(within(queue).getByText('No urgent items right now.')).toBeTruthy();
+  expect(within(queue).queryByRole('link')).toBeNull();
 });
 
-test('keeps plan intents in Decision until an OMS order awaits approval', async () => {
+test('does not infer plan intents from a legacy aggregate summary', async () => {
   window.localStorage.setItem('karkinos.locale', 'zh');
   installOverviewFetchMock({
     daily_operations: {
@@ -2216,18 +2186,12 @@ test('keeps plan intents in Decision until an OMS order awaits approval', async 
 
   renderOverviewPage({ installFetch: false });
 
-  const tower = await screen.findByTestId('daily-operations-tower');
-  expect(within(tower).getByText('3 个交易计划意图待复核')).toBeTruthy();
-  expect(within(tower).getByText('计划意图待复核')).toBeTruthy();
-  expect(
-    within(tower)
-      .getByRole('link', { name: '复核交易计划' })
-      .getAttribute('href'),
-  ).toBe('/decision');
-  expect(tower.textContent).not.toContain('3 项待人工确认');
+  const queue = await screen.findByTestId('overview-today-queue');
+  expect(within(queue).getByText('当前没有紧急事项。')).toBeTruthy();
+  expect(queue.textContent).not.toContain('3 项待人工确认');
 });
 
-test('routes daily operations tower primary action to Risk for risk blockers', async () => {
+test('does not infer risk authority from a legacy aggregate summary', async () => {
   installOverviewFetchMock({
     daily_operations: {
       candidate_pool_count: 2,
@@ -2252,13 +2216,9 @@ test('routes daily operations tower primary action to Risk for risk blockers', a
 
   renderOverviewPage({ installFetch: false });
 
-  const tower = await screen.findByTestId('daily-operations-tower');
-  expect(within(tower).getByText('1 risk block needs review')).toBeTruthy();
-  expect(
-    within(tower)
-      .getByRole('link', { name: 'View risk reasons' })
-      .getAttribute('href'),
-  ).toBe('/risk');
+  const queue = await screen.findByTestId('overview-today-queue');
+  expect(within(queue).getByText('No urgent items right now.')).toBeTruthy();
+  expect(within(queue).queryByRole('link')).toBeNull();
 });
 
 test('orders overview workbench items by user-facing priority', async () => {
@@ -2339,18 +2299,17 @@ test('orders overview workbench items by user-facing priority', async () => {
   const queue = await screen.findByTestId('overview-today-queue');
   expect(within(queue).getByText('Handle first')).toBeTruthy();
   expect(within(queue).getByText('Watch today')).toBeTruthy();
-  expect(within(queue).getByText('Normal status')).toBeTruthy();
+  expect(
+    within(queue).getByTestId('overview-today-queue-normal').textContent,
+  ).toContain('Normal status');
 
   const text = queue.textContent ?? '';
   expect(text.indexOf('Market data or NAV needs review.')).toBeGreaterThan(-1);
   expect(text.indexOf('Strategy candidate signal')).toBeGreaterThan(-1);
-  expect(text.indexOf('No orders awaiting confirmation')).toBeGreaterThan(-1);
   expect(text.indexOf('Market data or NAV needs review.')).toBeLessThan(
     text.indexOf('Strategy candidate signal'),
   );
-  expect(text.indexOf('Strategy candidate signal')).toBeLessThan(
-    text.indexOf('No orders awaiting confirmation'),
-  );
+  expect(text).not.toContain('No orders awaiting confirmation');
 });
 
 test('surfaces strategy candidate signals in the overview workbench', async () => {
@@ -2492,13 +2451,12 @@ test('prioritizes daily trading plan cash shortfall on the overview workbench', 
   renderOverviewPage({ installFetch: false });
 
   const queue = await screen.findByTestId('overview-today-queue');
-  const firstGroup = await screen.findByTestId('overview-today-queue-first');
 
   expect(
-    within(firstGroup).getByText('Cash shortfall blocks buy preview'),
+    within(queue).getByText('Cash shortfall blocks buy preview'),
   ).toBeTruthy();
   expect(
-    within(firstGroup).getByText(
+    within(queue).getByText(
       'Review cash allocation before confirming. Shortfall: ¥9,005.10.',
     ),
   ).toBeTruthy();
@@ -2683,17 +2641,14 @@ test('explains operations blockers when candidates are waiting for risk gate', a
   renderOverviewPage({ installFetch: false });
 
   const queue = await screen.findByTestId('overview-today-queue');
-  const firstGroup = await screen.findByTestId('overview-today-queue-first');
 
-  expect(within(firstGroup).getByText('风险闸门待检查')).toBeTruthy();
+  expect(within(queue).getByText('风险闸门待检查')).toBeTruthy();
   expect(
-    within(firstGroup).getByText(
-      '50 个候选等待风险闸门检查；当前 0 个可人工确认。',
-    ),
+    within(queue).getByText('50 个候选等待风险闸门检查；当前 0 个可人工确认。'),
   ).toBeTruthy();
-  expect(within(firstGroup).getByText('50 待检查')).toBeTruthy();
-  expect(within(firstGroup).getByText('查看风控原因')).toBeTruthy();
-  expect(firstGroup.textContent).toContain(
+  expect(within(queue).getByText('50 待检查')).toBeTruthy();
+  expect(within(queue).getByText('查看风控原因')).toBeTruthy();
+  expect(queue.textContent).toContain(
     '解除条件：新的日度计划不再包含未解决阻断。仅查看或确认不会清除此状态。',
   );
   expect(queue.textContent).not.toContain('今日待办存在阻断');
@@ -2771,19 +2726,18 @@ test('explains operations blockers when candidates are already blocked by risk',
   renderOverviewPage({ installFetch: false });
 
   const queue = await screen.findByTestId('overview-today-queue');
-  const firstGroup = await screen.findByTestId('overview-today-queue-first');
 
-  expect(within(firstGroup).getByText('风控阻断待复核')).toBeTruthy();
+  expect(within(queue).getByText('风控阻断待复核')).toBeTruthy();
   expect(
-    within(firstGroup).getByText(
+    within(queue).getByText(
       '2 个候选被风控阻断：现金缓冲不足、单标的仓位过高；涉及 510300、600519。先复核原因，不进入人工确认。',
     ),
   ).toBeTruthy();
-  expect(within(firstGroup).getByText('2 风控阻断')).toBeTruthy();
-  expect(within(firstGroup).getByText('查看风控原因')).toBeTruthy();
+  expect(within(queue).getByText('2 风控阻断')).toBeTruthy();
+  expect(within(queue).getByText('查看风控原因')).toBeTruthy();
   expect(
-    within(firstGroup)
-      .getByRole('link', { name: /风控阻断待复核/ })
+    within(queue)
+      .getByRole('link', { name: '查看风控原因' })
       .getAttribute('href'),
   ).toBe('/risk');
   expect(queue.textContent).not.toContain('今日待办存在阻断');
@@ -2867,16 +2821,15 @@ test('keeps user-readable data work items on stale homepage status', async () =>
     </PreferencesProvider>,
   );
 
-  const workbench = await screen.findByTestId('overview-daily-workbench');
-  expect(within(workbench).getByText("Today's to-dos")).toBeTruthy();
-  expect(within(workbench).getByText('Review queue')).toBeTruthy();
+  const queue = await screen.findByTestId('overview-today-queue');
+  expect(within(queue).getByText("Today's to-dos")).toBeTruthy();
   expect(
-    within(workbench).getByText('Market data or NAV needs review.'),
+    within(queue).getByText('Market data or NAV needs review.'),
   ).toBeTruthy();
-  expect(within(workbench).getByText('1 fund NAV')).toBeTruthy();
-  expect(within(workbench).queryByText('cache_only')).toBeNull();
+  expect(within(queue).getByText('1 fund NAV')).toBeTruthy();
+  expect(within(queue).queryByText('cache_only')).toBeNull();
   expect(
-    within(workbench).queryByText('confirmed_fund_nav_missing_estimate_only'),
+    within(queue).queryByText('confirmed_fund_nav_missing_estimate_only'),
   ).toBeNull();
 });
 
@@ -2958,13 +2911,13 @@ test('shows the market evidence repair once before an awaiting risk gate', async
 
   renderOverviewPage({ installFetch: false });
 
-  const firstGroup = await screen.findByTestId('overview-today-queue-first');
+  const queue = await screen.findByTestId('overview-today-queue');
   expect(
-    within(firstGroup).getByText('Market data or NAV needs review.'),
+    within(queue).getByText('Market data or NAV needs review.'),
   ).toBeTruthy();
-  expect(within(firstGroup).queryByText('Risk gate checks pending')).toBeNull();
+  expect(within(queue).queryByText('Risk gate checks pending')).toBeNull();
   expect(
-    within(firstGroup)
+    within(queue)
       .getAllByRole('link')
       .filter((link) => link.getAttribute('href')?.startsWith('/market')),
   ).toHaveLength(1);
@@ -3058,11 +3011,14 @@ test('labels unconfirmed overview valuation status on the total-assets card', as
 test('shows evidence-gated strategy contribution on overview', async () => {
   renderOverviewPage();
 
-  const reviewStrip = await screen.findByTestId('overview-review-strip');
-  expect(reviewStrip.className).toContain('xl:grid-cols-2');
-  expect(await screen.findByText('Strategy contribution')).toBeTruthy();
-  expect(await screen.findByText('Evidence-linked')).toBeTruthy();
-  expect(await screen.findByText('¥122.00')).toBeTruthy();
+  await userEvent.click(
+    await screen.findByRole('tab', { name: 'Strategy contribution' }),
+  );
+  const performanceCard = await screen.findByTestId(
+    'overview-performance-card',
+  );
+  expect(within(performanceCard).getByText('Evidence-linked')).toBeTruthy();
+  expect(within(performanceCard).getByText('¥122.00')).toBeTruthy();
 });
 
 test('treats zero linked strategy fills as a normal evidence-bound state', async () => {
@@ -3109,26 +3065,26 @@ test('treats zero linked strategy fills as a normal evidence-bound state', async
     </PreferencesProvider>,
   );
 
-  const workbench = await screen.findByTestId('overview-daily-workbench');
+  await userEvent.click(
+    await screen.findByRole('tab', { name: 'Strategy contribution' }),
+  );
+  const performanceCard = await screen.findByTestId(
+    'overview-performance-card',
+  );
   expect(
-    within(workbench).getByText('No attributable strategy fills yet'),
+    within(performanceCard).getByText('No contribution due yet'),
   ).toBeTruthy();
   expect(
-    within(workbench).queryByText(
+    within(performanceCard).queryByText(
       'Strategy contribution needs linked evidence',
     ),
   ).toBeNull();
-  expect(
-    within(await screen.findByTestId('overview-today-queue-normal')).getByText(
-      'No attributable strategy fills yet',
-    ),
-  ).toBeTruthy();
-  expect(workbench.textContent).toContain(
-    'No action required: contribution appears only after a production-ledger fill is explicitly linked to strategy evidence.',
+  expect(performanceCard.textContent).toContain('No linked fills');
+  expect(performanceCard.textContent).toContain(
+    'No action is needed until a strategy-linked fill exists.',
   );
-  const reviewStrip = await screen.findByTestId('overview-review-strip');
-  expect(reviewStrip.className).not.toContain('xl:grid-cols-2');
-  expect(screen.queryByTestId('strategy-contribution-gate-card')).toBeNull();
+  const normal = await screen.findByTestId('overview-today-queue-normal');
+  expect(normal.textContent).toContain('Normal status');
 });
 
 test('scopes the homepage data review count to canonical current holdings', async () => {
@@ -3320,7 +3276,9 @@ test('keeps the return calendar inside the performance analysis card', async () 
   expect(
     within(performanceCard).getByText('Performance Analysis'),
   ).toBeTruthy();
-  expect(within(performanceCard).getByText('Return calendar')).toBeTruthy();
+  await userEvent.click(
+    within(performanceCard).getByRole('tab', { name: 'Return calendar' }),
+  );
   expect(
     within(performanceCard).getByTestId('return-calendar-month-grid'),
   ).toBeTruthy();

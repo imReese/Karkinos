@@ -46,25 +46,21 @@ const snapshot: PortfolioSnapshot = {
   allocation_grouped: [],
 };
 
-test('renders account metrics as a single integrated terminal rail', () => {
+test('renders canonical account facts as a compact metric strip', () => {
   renderWithPreferences(<OverviewCards overview={overview} />);
 
   const rail = screen.getByTestId('account-metrics-rail');
-  const totalAssetsLabel = screen.getByText('Total Assets');
+  const strip = rail.querySelector('dl');
 
-  expect(rail.className).toContain('font-mono');
-  expect(rail.className).toContain('tabular-nums');
-  expect(rail.className).toContain('app-terminal-panel');
-  expect(rail.className).toContain(
-    'xl:grid-cols-[1.6fr_repeat(5,minmax(0,1fr))]',
-  );
-  expect(totalAssetsLabel.className).toContain('font-bold');
-  expect(totalAssetsLabel.className).toContain('text-[10px]');
-  expect(totalAssetsLabel.className).toContain('text-[var(--app-subtext-0)]');
+  expect(rail.className).toContain('min-w-0');
+  expect(strip?.className).toContain('account-metric-strip');
+  expect(strip?.className).toContain('font-mono');
+  expect(strip?.className).toContain('tabular-nums');
   expect(screen.getByText('Total Assets')).toBeTruthy();
-  expect(screen.getByText('Cumulative Return')).toBeTruthy();
-  expect(screen.getByText('¥1,550.00 / +1.55%')).toBeTruthy();
-  expect(screen.getByText('Cash Ratio')).toBeTruthy();
+  expect(screen.getByText('Realized PnL')).toBeTruthy();
+  expect(screen.getByText('Available Cash')).toBeTruthy();
+  expect(screen.getByText('Cash Ratio 74.8%')).toBeTruthy();
+  expect(screen.queryByText('Cumulative Return')).toBeNull();
 });
 
 test('shows current drawdown as a signed downside metric', () => {
@@ -94,31 +90,14 @@ test('renders account metrics in a compact homepage workbench layout', () => {
   );
 
   const rail = screen.getByTestId('account-metrics-rail');
-  const coreMetrics = screen.getByTestId('account-core-metrics-stack');
   const totalAssetsValue = screen.getByTestId('overview-total-assets-value');
-  const sideMetrics = screen.getByTestId('today-pnl-side-metrics');
-  const drawdownPeak = screen.getByTestId('drawdown-peak-detail');
 
   expect(rail.className).toContain('self-start');
-  expect(rail.className).toContain(
-    'lg:grid-cols-[minmax(0,1.05fr)_minmax(290px,0.95fr)]',
-  );
-  expect(sideMetrics.className).toContain('mt-auto');
-  expect(sideMetrics.textContent).toContain('Available Cash');
-  expect(sideMetrics.textContent).toContain('Active Positions');
-  expect(rail.className).not.toContain(
-    'xl:grid-cols-[1.7fr_repeat(4,minmax(0,1fr))]',
-  );
-  expect(coreMetrics.className).toContain('gap-2');
-  expect(coreMetrics.textContent).toBe(
-    'Net Deposits¥100,000.00Unrealized PnL¥1,550.00Current Drawdown-4.80%Peak ¥106,650.00Cumulative Return¥1,550.00 / +1.55%',
-  );
-  expect(drawdownPeak.className).toContain('text-right');
-  expect(totalAssetsValue.className).not.toContain('xl:text-5xl');
-  expect(screen.getByText('¥1,550.00 / +1.55%')).toBeTruthy();
-  expect(screen.getByTestId('available-cash-ratio').textContent).toBe(
-    'Cash Ratio 74.8%',
-  );
+  expect(totalAssetsValue.className).toContain('sr-only');
+  expect(screen.getByText('Peak ¥106,650.00')).toBeTruthy();
+  expect(screen.getByText('Cash Ratio 74.8%')).toBeTruthy();
+  expect(screen.getByText('¥220.00')).toBeTruthy();
+  expect(screen.queryByText(/\+1\.55%/)).toBeNull();
 });
 
 test('renders a responsive shimmering metrics rail skeleton', () => {
@@ -127,10 +106,8 @@ test('renders a responsive shimmering metrics rail skeleton', () => {
   const skeleton = screen.getByTestId('account-metrics-skeleton');
 
   expect(skeleton.className).toContain('animate-pulse');
-  expect(skeleton.className).toContain('app-terminal-panel');
-  expect(skeleton.className).toContain(
-    'xl:grid-cols-[1.6fr_repeat(5,minmax(0,1fr))]',
-  );
+  expect(skeleton.className).toContain('border-[var(--app-border)]');
+  expect(skeleton.className).toContain('lg:grid-cols-6');
 });
 
 test('shows cached quote copy on stale overview metrics', () => {

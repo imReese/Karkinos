@@ -1,20 +1,25 @@
+import type { ColumnDef } from '@tanstack/react-table';
+
 import { useCopy } from '../../../app/copy';
+import {
+  DataTable,
+  EvidenceState,
+  StatusBadge,
+} from '../../../app/components/workbench';
 import { usePreferences } from '../../../app/preferences';
-import type { KeyboardEvent, MouseEvent } from 'react';
+import { formatAssetClassLabel } from '../../../shared/asset-class';
 import {
   formatCurrency,
   formatPercent,
   formatPrice,
   formatQuantity,
-  formatReturnPercent,
   formatTimestamp,
 } from '../../../shared/format';
-import { formatAssetClassLabel } from '../../../shared/asset-class';
-import { useRefreshMarketQuotesMutation } from '../../market/api';
-import type { Position } from '../api';
+import { formatLedgerCostBasisMethodLabel } from '../../../shared/ledger-format';
 import { formatPublicStatus } from '../../../shared/public-labels';
 import { formatStaleReason } from '../../../shared/stale-reason';
-import { formatLedgerCostBasisMethodLabel } from '../../../shared/ledger-format';
+import { useRefreshMarketQuotesMutation } from '../../market/api';
+import type { Position } from '../api';
 
 function holdingDetailHref(symbol: string) {
   return `/portfolio/${encodeURIComponent(symbol)}`;
@@ -40,29 +45,20 @@ function formatAge(seconds: number | null | undefined) {
     return `${minutes}m`;
   }
   const hours = Math.round(minutes / 60);
-  if (hours < 48) {
-    return `${hours}h`;
-  }
-  return `${Math.round(hours / 24)}d`;
+  return hours < 48 ? `${hours}h` : `${Math.round(hours / 24)}d`;
 }
 
 function resolvePositionName(position: Position) {
   return position.display_name || position.name || position.symbol;
 }
 
-function resolvePnlPct(position: Position) {
-  const costBasis = position.avg_cost * position.quantity;
-  if (costBasis <= 0) {
-    return null;
-  }
-  return position.unrealized_pnl / costBasis;
-}
-
-function resolveTone(value: number | null | undefined): NumericCellTone {
+function resolveTone(value: number | null | undefined) {
   if (typeof value !== 'number' || !Number.isFinite(value) || value === 0) {
-    return 'text';
+    return 'text-[var(--app-text)]';
   }
-  return value > 0 ? 'positive' : 'negative';
+  return value > 0
+    ? 'text-[var(--app-pnl-positive)]'
+    : 'text-[var(--app-pnl-negative)]';
 }
 
 function quoteNeedsReview(status: string | null | undefined) {
@@ -74,27 +70,10 @@ function isFiniteNumber(value: unknown): value is number {
 }
 
 function resolveBrokerDisplayedUnitCost(position: Position) {
-  if (
-    isFiniteNumber(position.broker_displayed_unit_cost) &&
+  return isFiniteNumber(position.broker_displayed_unit_cost) &&
     position.broker_displayed_unit_cost > 0
-  ) {
-    return position.broker_displayed_unit_cost;
-  }
-  if (
-    !isFiniteNumber(position.broker_displayed_cost_basis) ||
-    position.broker_displayed_cost_basis <= 0 ||
-    position.quantity <= 0
-  ) {
-    return null;
-  }
-  return position.broker_displayed_cost_basis / position.quantity;
-}
-
-function formatCostBasisMethod(
-  locale: ReturnType<typeof usePreferences>['locale'],
-  method: string | null | undefined,
-) {
-  return formatLedgerCostBasisMethodLabel(method, locale);
+    ? position.broker_displayed_unit_cost
+    : null;
 }
 
 function formatCostBasisStatus(
@@ -113,141 +92,54 @@ function isProjectedLedgerCostBasis(status: string | null | undefined) {
   return status === 'projected_from_ledger';
 }
 
-function brokerUnitCostLabel(
-  labels: ReturnType<typeof useCopy>['portfolio']['detail'],
-  status: string | null | undefined,
-) {
-  return isProjectedLedgerCostBasis(status)
-    ? labels.ledgerProjectedUnitCost
-    : labels.brokerDisplayedCost;
-}
-
 function formatBrokerCostBasisDetail(
   labels: ReturnType<typeof useCopy>['portfolio']['detail'],
   locale: ReturnType<typeof usePreferences>['locale'],
   position: Position,
 ) {
-  const projectedFromLedger = isProjectedLedgerCostBasis(
-    position.broker_cost_basis_status,
-  );
-  const detailParts = [
-    projectedFromLedger
-      ? labels.ledgerProjectedCostBasis
-      : formatCostBasisMethod(locale, position.broker_cost_basis_method),
+  const method = isProjectedLedgerCostBasis(position.broker_cost_basis_status)
+    ? labels.ledgerProjectedCostBasis
+    : formatLedgerCostBasisMethodLabel(
+        position.broker_cost_basis_method,
+        locale,
+      );
+  const parts = [
+    method,
     formatCostBasisStatus(labels, position.broker_cost_basis_status),
   ];
-
   if (
     isFiniteNumber(position.broker_cost_basis_difference) &&
     Math.abs(position.broker_cost_basis_difference) >= 0.005
   ) {
-    detailParts.push(
+    parts.push(
       `${labels.costBasisDifference} ${formatCurrency(
         position.broker_cost_basis_difference,
       )}`,
     );
   }
-
-  return detailParts.join(' · ');
+  return parts.join(' · ');
 }
 
-function detailAriaLabel(
-  labels: ReturnType<typeof useCopy>['portfolio']['table'],
-  displayName: string,
-  symbol: string,
-) {
-  return `${labels.detailsTitle}: ${displayName} ${symbol}`;
-}
-
-function openHoldingDetail(href: string) {
-  window.location.assign(href);
-}
-
-function stopEntryNavigation(event: MouseEvent<HTMLElement>) {
-  event.stopPropagation();
-}
-
-function handleEntryKeyDown(event: KeyboardEvent<HTMLElement>, href: string) {
-  if (event.key !== 'Enter' && event.key !== ' ') {
-    return;
-  }
-  event.preventDefault();
-  openHoldingDetail(href);
-}
-
-type NumericCellKind = 'quantity' | 'price' | 'amount' | 'percent';
-type NumericCellTone = 'muted' | 'text' | 'positive' | 'negative';
-
-const NUMERIC_WIDTH_CLASSES: Record<NumericCellKind, string> = {
-  quantity: 'min-w-24 px-4',
-  price: 'min-w-28 px-5',
-  amount: 'min-w-32 px-4',
-  percent: 'min-w-24 px-4',
-};
-
-const NUMERIC_TONE_CLASSES: Record<NumericCellTone, string> = {
-  muted: 'text-[var(--app-soft)]',
-  text: 'text-[var(--app-text)]',
-  positive: 'text-[var(--app-pnl-positive)]',
-  negative: 'text-[var(--app-pnl-negative)]',
-};
-
-function numericHeaderClassName(kind: NumericCellKind) {
-  return `whitespace-nowrap ${NUMERIC_WIDTH_CLASSES[kind]} py-3 text-right`;
-}
-
-function numericDisplayClassName({
-  kind,
-  tone = 'text',
-  emphasis = false,
-  surface = 'metric',
-}: {
-  kind: NumericCellKind;
-  tone?: NumericCellTone;
-  emphasis?: boolean;
-  surface?: 'cell' | 'metric' | 'summary';
-}) {
-  const surfaceClass =
-    surface === 'cell'
-      ? `${NUMERIC_WIDTH_CLASSES[kind]} py-3.5 text-right`
-      : surface === 'summary'
-        ? 'text-sm'
-        : 'mt-2 text-sm';
-
-  return `karkinos-numeric-display whitespace-nowrap ${surfaceClass} font-mono tabular-nums ${
-    emphasis ? 'font-semibold' : ''
-  } ${NUMERIC_TONE_CLASSES[tone]}`;
-}
-
-function numericCellClassName({
-  kind,
-  tone = 'text',
-  emphasis = false,
-}: {
-  kind: NumericCellKind;
-  tone?: NumericCellTone;
-  emphasis?: boolean;
-}) {
-  return `karkinos-numeric-cell ${numericDisplayClassName({
-    kind,
-    tone,
-    emphasis,
-    surface: 'cell',
-  })}`;
+function numericCell(value: string, tone = 'text-[var(--app-text)]') {
+  return (
+    <span
+      className={`block text-right font-mono font-semibold tabular-nums ${tone}`}
+    >
+      {value}
+    </span>
+  );
 }
 
 export function PositionsTable({
   positions,
   assetClassBySymbol = {},
-  latestPriceBySymbol = {},
   weightBySymbol = {},
   variant = 'full',
 }: {
   positions: Position[];
   assetClassBySymbol?: Record<string, string>;
-  latestPriceBySymbol?: Record<string, number | null | undefined>;
   weightBySymbol?: Record<string, number | null | undefined>;
-  variant?: 'full' | 'dashboard';
+  variant?: 'full' | 'dashboard' | 'history';
 }) {
   const copy = useCopy();
   const { locale } = usePreferences();
@@ -255,643 +147,344 @@ export function PositionsTable({
   const detailLabels = copy.portfolio.detail;
   const refreshQuotes = useRefreshMarketQuotesMutation();
   const showFullColumns = variant === 'full';
-  const showDashboardColumns = variant === 'dashboard';
-  const hasStaleQuotes = positions.some((position) =>
+  const showHistoryColumns = variant === 'history';
+  const hasQuotesNeedingReview = positions.some((position) =>
     quoteNeedsReview(position.quote_status),
   );
 
-  const resolveLatestPrice = (position: Position) => {
-    if (
-      typeof position.latest_price === 'number' &&
-      Number.isFinite(position.latest_price)
-    ) {
-      return position.latest_price;
-    }
-    const livePrice = latestPriceBySymbol[position.symbol];
-    if (typeof livePrice === 'number' && Number.isFinite(livePrice)) {
-      return livePrice;
-    }
-    if (position.quantity > 0) {
-      return position.market_value / position.quantity;
-    }
-    return null;
-  };
-
-  return (
-    <div className="space-y-4">
-      {hasStaleQuotes ? (
-        <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-warning)]">
-          <span className="h-1.5 w-1.5 rounded-full bg-[var(--app-warning)]" />
-          <span className="truncate">{labels.cachedQuoteNotice}</span>
-        </div>
-      ) : null}
-      <div className="grid gap-4 md:hidden">
-        {positions.map((position) => {
-          const pnlTone = resolveTone(position.unrealized_pnl);
-          const isStale = quoteNeedsReview(position.quote_status);
-          const displayName = resolvePositionName(position);
-          const assetClass =
-            position.asset_class ?? assetClassBySymbol[position.symbol] ?? '--';
-          const assetClassDisplay = formatAssetClassLabel(
-            assetClass,
-            copy.common,
-          );
-          const staleReason = formatStaleReason(
-            position.stale_reason,
-            copy.common.staleReasons,
-          );
-          const detailHref = holdingDetailHref(position.symbol);
-          const detailLabel = detailAriaLabel(
-            labels,
-            displayName,
-            position.symbol,
-          );
-          const latestPrice = resolveLatestPrice(position);
-          const brokerDisplayedUnitCost =
-            resolveBrokerDisplayedUnitCost(position);
-          const brokerCostBasisDetail =
-            brokerDisplayedUnitCost === null
-              ? null
-              : formatBrokerCostBasisDetail(detailLabels, locale, position);
-          const mobileMetrics: Array<{
-            key: string;
-            label: string;
-            value: string;
-            detail?: string;
-            kind: NumericCellKind;
-            tone?: NumericCellTone;
-            emphasis?: boolean;
-          }> = [
-            {
-              key: 'quantity',
-              label: labels.quantity,
-              value: formatQuantity(position.quantity),
-              kind: 'quantity',
-              tone: 'muted',
-            },
-            {
-              key: 'avg-cost',
-              label: detailLabels.avgCost,
-              value: formatPrice(position.avg_cost),
-              kind: 'price',
-              tone: 'muted',
-            },
-            ...(brokerDisplayedUnitCost === null
-              ? []
-              : [
-                  {
-                    key: 'broker-cost',
-                    label: brokerUnitCostLabel(
+  const columns: ColumnDef<Position, unknown>[] = [
+    {
+      id: 'symbol',
+      header: labels.symbol,
+      cell: ({ row }) => {
+        const position = row.original;
+        const displayName = resolvePositionName(position);
+        return (
+          <a
+            href={holdingDetailHref(position.symbol)}
+            aria-label={`${labels.detailsTitle}: ${displayName} ${position.symbol}`}
+            className="block min-w-40 font-semibold text-[var(--app-text)] hover:text-[var(--app-accent)]"
+            title={`${displayName} · ${position.symbol}`}
+          >
+            <span className="block max-w-52 truncate">{displayName}</span>
+            <span className="mt-0.5 block font-mono text-[11px] font-medium text-[var(--app-text-tertiary)]">
+              {position.symbol}
+            </span>
+          </a>
+        );
+      },
+    },
+    {
+      id: 'asset-class',
+      header: labels.assetClass,
+      cell: ({ row }) => {
+        const position = row.original;
+        const assetClass =
+          position.asset_class ?? assetClassBySymbol[position.symbol] ?? '--';
+        return (
+          <span data-testid={`position-asset-class-${position.symbol}`}>
+            <StatusBadge>
+              {formatAssetClassLabel(assetClass, copy.common)}
+            </StatusBadge>
+          </span>
+        );
+      },
+    },
+    {
+      id: 'quantity',
+      header: () => <span className="block text-right">{labels.quantity}</span>,
+      cell: ({ row }) => (
+        <span data-testid={`position-quantity-${row.original.symbol}`}>
+          {numericCell(
+            formatQuantity(row.original.quantity),
+            'text-[var(--app-text-secondary)]',
+          )}
+        </span>
+      ),
+    },
+    ...(showFullColumns
+      ? [
+          {
+            id: 'avg-cost',
+            header: () => (
+              <span className="block text-right">{detailLabels.avgCost}</span>
+            ),
+            cell: ({ row }: { row: { original: Position } }) => (
+              <span data-testid={`position-avg-cost-${row.original.symbol}`}>
+                {numericCell(
+                  formatPrice(row.original.avg_cost),
+                  'text-[var(--app-text-secondary)]',
+                )}
+              </span>
+            ),
+          },
+          {
+            id: 'broker-cost',
+            header: () => (
+              <span className="block text-right">
+                {detailLabels.brokerDisplayedCost}
+              </span>
+            ),
+            cell: ({ row }: { row: { original: Position } }) => {
+              const unitCost = resolveBrokerDisplayedUnitCost(row.original);
+              const detail =
+                unitCost === null
+                  ? undefined
+                  : formatBrokerCostBasisDetail(
                       detailLabels,
-                      position.broker_cost_basis_status,
-                    ),
-                    value: formatPrice(brokerDisplayedUnitCost),
-                    detail: brokerCostBasisDetail ?? undefined,
-                    kind: 'price' as const,
-                    tone: 'muted' as const,
-                  },
-                ]),
-            {
-              key: 'latest-price',
-              label: labels.latestPrice,
-              value: formatPrice(latestPrice),
-              kind: 'price',
-              tone: 'text',
-            },
-            {
-              key: 'market-value',
-              label: labels.marketValue,
-              value: formatCurrency(position.market_value),
-              kind: 'amount',
-              tone: 'text',
-              emphasis: true,
-            },
-            ...(showFullColumns
-              ? [
-                  {
-                    key: 'weight',
-                    label: labels.weight,
-                    value: formatPercent(weightBySymbol[position.symbol]),
-                    kind: 'percent' as const,
-                    tone: 'text' as const,
-                    emphasis: true,
-                  },
-                ]
-              : []),
-            {
-              key: 'today-change',
-              label: labels.todayChange,
-              value: formatCurrency(position.today_change),
-              kind: 'amount',
-              tone: resolveTone(position.today_change),
-              emphasis: true,
-            },
-            {
-              key: 'unrealized',
-              label: labels.unrealized,
-              value: formatCurrency(position.unrealized_pnl),
-              kind: 'amount',
-              tone: pnlTone,
-              emphasis: true,
-            },
-            {
-              key: 'return-pct',
-              label: labels.returnPct,
-              value: formatReturnPercent(resolvePnlPct(position)),
-              kind: 'percent',
-              tone: pnlTone,
-              emphasis: true,
-            },
-            {
-              key: 'quote-age',
-              label: labels.quoteAge,
-              value: formatAge(position.quote_age_seconds),
-              kind: 'quantity',
-              tone: 'muted',
-            },
-            ...(showFullColumns
-              ? [
-                  {
-                    key: 'available-frozen',
-                    label: labels.availFrozen,
-                    value: `${formatQuantity(position.available_qty)} / ${formatQuantity(position.frozen_qty)}`,
-                    kind: 'quantity' as const,
-                    tone: 'text' as const,
-                  },
-                  {
-                    key: 'realized',
-                    label: labels.realized,
-                    value: formatCurrency(position.realized_pnl),
-                    kind: 'amount' as const,
-                    tone: 'text' as const,
-                  },
-                ]
-              : []),
-          ];
-          const refreshing =
-            refreshQuotes.isPending &&
-            refreshQuotes.variables?.symbols?.includes(position.symbol);
-          return (
-            <div
-              key={position.symbol}
-              data-testid={`position-card-${position.symbol}`}
-              className="app-panel cursor-pointer rounded-3xl p-4 transition-colors hover:border-[color-mix(in_srgb,var(--app-accent)_42%,transparent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
-              tabIndex={0}
-              aria-label={detailLabel}
-              onClick={() => {
-                openHoldingDetail(detailHref);
-              }}
-              onKeyDown={(event) => {
-                handleEntryKeyDown(event, detailHref);
-              }}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <a
-                    href={detailHref}
-                    className="text-base font-semibold text-[var(--app-text)] underline-offset-4 transition-colors hover:text-[var(--app-accent)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
-                    aria-label={detailLabel}
-                    title={`${displayName} · ${position.symbol}`}
-                    onClick={stopEntryNavigation}
-                  >
-                    {displayName}
-                  </a>
-                  <div className="mt-1 font-mono text-xs font-medium text-[var(--app-soft)]">
-                    {position.symbol}
-                  </div>
-                  <div className="app-muted mt-1 text-xs">
-                    {assetClassDisplay}
-                  </div>
-                  {isStale ? (
-                    <div
-                      className="mt-2 inline-flex items-center gap-1 rounded-full border border-[color-mix(in_srgb,var(--app-warning)_30%,transparent)] px-2 py-0.5 text-[10px] font-semibold text-[var(--app-warning)]"
-                      title={staleReason}
-                    >
-                      {labels.cachedQuoteAt(
-                        formatTimestamp(position.quote_timestamp),
-                      )}
-                    </div>
+                      locale,
+                      row.original,
+                    );
+              return (
+                <span
+                  data-testid={`position-broker-cost-${row.original.symbol}`}
+                  title={detail}
+                >
+                  {numericCell(
+                    formatPrice(unitCost),
+                    unitCost === null
+                      ? 'text-[var(--app-text-tertiary)]'
+                      : 'text-[var(--app-text)]',
+                  )}
+                  {detail ? (
+                    <span className="mt-0.5 block max-w-48 whitespace-normal text-right text-[10px] leading-4 text-[var(--app-text-tertiary)]">
+                      {detail}
+                    </span>
                   ) : null}
-                </div>
-                <div className="text-right">
-                  <div
-                    data-testid={`position-mobile-summary-market-value-${position.symbol}`}
-                    className={numericDisplayClassName({
-                      kind: 'amount',
-                      tone: 'text',
-                      emphasis: true,
-                      surface: 'summary',
-                    })}
-                  >
-                    {formatCurrency(position.market_value)}
-                  </div>
-                  <div className="app-muted mt-1 text-xs">
-                    {labels.marketValue}
-                  </div>
-                </div>
+                </span>
+              );
+            },
+          },
+        ]
+      : []),
+    {
+      id: 'latest-price',
+      header: () => (
+        <span className="block text-right">{labels.latestPrice}</span>
+      ),
+      cell: ({ row }) => (
+        <span data-testid={`position-latest-price-${row.original.symbol}`}>
+          {numericCell(formatPrice(row.original.latest_price))}
+        </span>
+      ),
+    },
+    {
+      id: 'market-value',
+      header: () => (
+        <span className="block text-right">{labels.marketValue}</span>
+      ),
+      cell: ({ row }) => (
+        <span data-testid={`position-market-value-${row.original.symbol}`}>
+          {numericCell(formatCurrency(row.original.market_value))}
+        </span>
+      ),
+    },
+    ...(showFullColumns
+      ? [
+          {
+            id: 'weight',
+            header: () => (
+              <span className="block text-right">{labels.weight}</span>
+            ),
+            cell: ({ row }: { row: { original: Position } }) => (
+              <span data-testid={`position-weight-${row.original.symbol}`}>
+                {numericCell(
+                  formatPercent(weightBySymbol[row.original.symbol]),
+                )}
+              </span>
+            ),
+          },
+        ]
+      : []),
+    {
+      id: 'today-change',
+      header: () => (
+        <span className="block text-right">{labels.todayChange}</span>
+      ),
+      cell: ({ row }) => (
+        <span data-testid={`position-today-change-${row.original.symbol}`}>
+          {numericCell(
+            formatCurrency(row.original.today_change),
+            resolveTone(row.original.today_change),
+          )}
+        </span>
+      ),
+    },
+    {
+      id: 'unrealized',
+      header: () => (
+        <span className="block text-right">{labels.unrealized}</span>
+      ),
+      cell: ({ row }) => (
+        <span data-testid={`position-unrealized-${row.original.symbol}`}>
+          {numericCell(
+            formatCurrency(row.original.unrealized_pnl),
+            resolveTone(row.original.unrealized_pnl),
+          )}
+        </span>
+      ),
+    },
+    ...(showFullColumns || showHistoryColumns
+      ? [
+          {
+            id: 'realized',
+            header: () => (
+              <span className="block text-right">{labels.realized}</span>
+            ),
+            cell: ({ row }: { row: { original: Position } }) => (
+              <span data-testid={`position-realized-${row.original.symbol}`}>
+                {numericCell(
+                  formatCurrency(row.original.realized_pnl),
+                  resolveTone(row.original.realized_pnl),
+                )}
+              </span>
+            ),
+          },
+        ]
+      : []),
+    ...(showFullColumns
+      ? [
+          {
+            id: 'availability',
+            header: () => (
+              <span className="block text-right">{labels.availFrozen}</span>
+            ),
+            cell: ({ row }: { row: { original: Position } }) => (
+              <span
+                data-testid={`position-available-frozen-${row.original.symbol}`}
+              >
+                {numericCell(
+                  `${formatQuantity(row.original.available_qty)} / ${formatQuantity(
+                    row.original.frozen_qty,
+                  )}`,
+                  'text-[var(--app-text-secondary)]',
+                )}
+              </span>
+            ),
+          },
+        ]
+      : []),
+    {
+      id: 'quote-state',
+      header: labels.quoteState,
+      cell: ({ row }) => {
+        const position = row.original;
+        const needsReview = quoteNeedsReview(position.quote_status);
+        return (
+          <div className="min-w-32">
+            <StatusBadge tone={needsReview ? 'warning' : 'success'}>
+              {position.quote_status
+                ? formatPublicStatus(position.quote_status, locale)
+                : '--'}
+            </StatusBadge>
+            <div
+              className="mt-1 max-w-40 truncate text-[10px] text-[var(--app-text-tertiary)]"
+              title={formatStaleReason(
+                position.stale_reason,
+                copy.common.staleReasons,
+              )}
+            >
+              {formatAge(position.quote_age_seconds)} ·{' '}
+              {formatTimestamp(position.quote_timestamp)}
+            </div>
+            {position.stale_reason ? (
+              <div className="mt-0.5 max-w-40 whitespace-normal text-[10px] leading-4 text-[var(--app-warning-text)]">
+                {formatStaleReason(
+                  position.stale_reason,
+                  copy.common.staleReasons,
+                )}
               </div>
-
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                {mobileMetrics.map((metric) => (
-                  <div
-                    key={metric.key}
-                    className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3"
-                  >
-                    <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
-                      {metric.label}
-                    </div>
-                    <div
-                      data-testid={`position-mobile-${metric.key}-${position.symbol}`}
-                      className={numericDisplayClassName({
-                        kind: metric.kind,
-                        tone: metric.tone,
-                        emphasis: metric.emphasis,
-                      })}
-                    >
-                      {metric.value}
-                    </div>
-                    {metric.detail ? (
-                      <div className="app-muted mt-1 truncate text-[10px]">
-                        {metric.detail}
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <a
-                  href={detailHref}
-                  className="app-button-secondary justify-center rounded-2xl px-3 py-2 text-xs font-semibold"
-                  onClick={stopEntryNavigation}
-                >
-                  {labels.detailsTitle}
-                </a>
-                <button
-                  type="button"
-                  className="app-button-secondary justify-center rounded-2xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={refreshing}
-                  aria-busy={refreshing}
-                  onClick={(event) => {
-                    stopEntryNavigation(event);
-                    void refreshQuotes.mutateAsync({
-                      symbols: [position.symbol],
-                      force: true,
-                    });
-                  }}
-                >
-                  {refreshing ? labels.refreshing : labels.refresh}
-                </button>
+            ) : null}
+          </div>
+        );
+      },
+    },
+    {
+      id: 'actions',
+      header: () => <span className="block text-right">{labels.actions}</span>,
+      cell: ({ row }) => {
+        const position = row.original;
+        const refreshing =
+          refreshQuotes.isPending &&
+          refreshQuotes.variables?.symbols?.includes(position.symbol);
+        return (
+          <div className="flex min-w-max justify-end gap-1">
+            <a
+              href={holdingDetailHref(position.symbol)}
+              className="app-button-secondary rounded-[var(--app-radius-control)] px-2 py-1 text-[11px] font-semibold"
+            >
+              {labels.detailsTitle}
+            </a>
+            {!showHistoryColumns ? (
+              <button
+                type="button"
+                className="app-button-secondary rounded-[var(--app-radius-control)] px-2 py-1 text-[11px] font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={refreshing}
+                aria-busy={refreshing}
+                onClick={() =>
+                  void refreshQuotes.mutateAsync({
+                    symbols: [position.symbol],
+                    force: true,
+                  })
+                }
+              >
+                {refreshing ? labels.refreshing : labels.refresh}
+              </button>
+            ) : null}
+            {showFullColumns ? (
+              <>
                 <a
                   href={symbolTradingHref(position.symbol)}
-                  className="app-button-secondary justify-center rounded-2xl px-3 py-2 text-xs font-semibold"
-                  onClick={stopEntryNavigation}
+                  className="app-button-secondary rounded-[var(--app-radius-control)] px-2 py-1 text-[11px] font-semibold"
                 >
                   {labels.trade}
                 </a>
                 <a
                   href={symbolActivityHref(position.symbol)}
-                  className="app-button-secondary justify-center rounded-2xl px-3 py-2 text-xs font-semibold"
-                  onClick={stopEntryNavigation}
+                  className="app-button-secondary rounded-[var(--app-radius-control)] px-2 py-1 text-[11px] font-semibold"
                 >
                   {labels.ledger}
                 </a>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+              </>
+            ) : showHistoryColumns ? (
+              <a
+                href={symbolActivityHref(position.symbol)}
+                className="app-button-secondary rounded-[var(--app-radius-control)] px-2 py-1 text-[11px] font-semibold"
+              >
+                {labels.ledger}
+              </a>
+            ) : null}
+          </div>
+        );
+      },
+    },
+  ];
 
-      <div
-        data-testid="positions-table-scroll"
-        className="hidden min-w-0 max-w-full overflow-x-scroll overscroll-x-contain rounded-[26px] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_18%,transparent)] pb-2 [scrollbar-gutter:stable] md:block"
-      >
-        <table
-          data-testid="positions-table-desktop"
-          className="app-data-table w-[1580px] min-w-max text-left text-xs"
-        >
-          <thead className="app-kicker text-xs uppercase tracking-[0.16em]">
-            <tr>
-              <th className="w-60 px-3 py-1.5">{labels.symbol}</th>
-              <th className="w-24 whitespace-nowrap px-3 py-1.5">
-                {labels.assetClass}
-              </th>
-              <th className={numericHeaderClassName('quantity')}>
-                {labels.quantity}
-              </th>
-              <th className={numericHeaderClassName('price')}>
-                {detailLabels.avgCost}
-              </th>
-              <th className={numericHeaderClassName('price')}>
-                {detailLabels.brokerDisplayedCost}
-              </th>
-              <th className={numericHeaderClassName('price')}>
-                {labels.latestPrice}
-              </th>
-              <th className={numericHeaderClassName('amount')}>
-                {labels.marketValue}
-              </th>
-              {showFullColumns ? (
-                <th className={numericHeaderClassName('percent')}>
-                  {labels.weight}
-                </th>
-              ) : null}
-              <th className={numericHeaderClassName('amount')}>
-                {labels.todayChange}
-              </th>
-              <th className={numericHeaderClassName('amount')}>
-                {labels.unrealized}
-              </th>
-              <th className={numericHeaderClassName('percent')}>
-                {labels.returnPct}
-              </th>
-              <th className="px-3 py-1.5">{labels.quoteState}</th>
-              {showFullColumns ? (
-                <>
-                  <th className={numericHeaderClassName('quantity')}>
-                    {labels.availFrozen}
-                  </th>
-                  <th className={numericHeaderClassName('amount')}>
-                    {labels.realized}
-                  </th>
-                </>
-              ) : null}
-              <th className="px-3 py-1.5 text-right">{labels.actions}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {positions.map((position) => {
-              const pnlTone = resolveTone(position.unrealized_pnl);
-              const isStale = quoteNeedsReview(position.quote_status);
-              const displayName = resolvePositionName(position);
-              const assetClass =
-                position.asset_class ??
-                assetClassBySymbol[position.symbol] ??
-                '--';
-              const assetClassDisplay = formatAssetClassLabel(
-                assetClass,
-                copy.common,
-              );
-              const staleReason = formatStaleReason(
-                position.stale_reason,
-                copy.common.staleReasons,
-              );
-              const quoteStatusLabel = position.quote_status
-                ? formatPublicStatus(position.quote_status, locale)
-                : '--';
-              const brokerDisplayedUnitCost =
-                resolveBrokerDisplayedUnitCost(position);
-              const brokerCostBasisDetail =
-                brokerDisplayedUnitCost === null
-                  ? null
-                  : formatBrokerCostBasisDetail(detailLabels, locale, position);
-              const detailHref = holdingDetailHref(position.symbol);
-              const detailLabel = detailAriaLabel(
-                labels,
-                displayName,
-                position.symbol,
-              );
-              const refreshing =
-                refreshQuotes.isPending &&
-                refreshQuotes.variables?.symbols?.includes(position.symbol);
-              return (
-                <tr
-                  key={position.symbol}
-                  data-testid={`position-row-${position.symbol}`}
-                  className="group cursor-pointer transition-colors hover:bg-[color-mix(in_srgb,var(--app-accent)_5%,transparent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--app-focus-ring)]"
-                  tabIndex={0}
-                  aria-label={detailLabel}
-                  onClick={() => {
-                    openHoldingDetail(detailHref);
-                  }}
-                  onKeyDown={(event) => {
-                    handleEntryKeyDown(event, detailHref);
-                  }}
-                >
-                  <td className="px-3 py-1.5 text-[var(--app-text)]">
-                    <span className="flex min-w-44 items-start gap-2">
-                      <span className="h-1.5 w-1.5 rounded-full bg-[var(--app-accent)] opacity-70 transition-opacity group-hover:opacity-100" />
-                      <span className="min-w-0">
-                        <a
-                          href={detailHref}
-                          className="block truncate font-semibold underline-offset-4 transition-colors hover:text-[var(--app-accent)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
-                          aria-label={detailLabel}
-                          title={`${displayName} · ${position.symbol}`}
-                          onClick={stopEntryNavigation}
-                        >
-                          {displayName}
-                        </a>
-                        <span className="mt-1 block truncate font-mono text-xs font-medium text-[var(--app-muted)]">
-                          {position.symbol}
-                        </span>
-                      </span>
-                    </span>
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3.5 text-[var(--app-muted)]">
-                    <span
-                      data-testid={`position-asset-class-${position.symbol}`}
-                      className="inline-flex whitespace-nowrap rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-2.5 py-1 text-xs"
-                    >
-                      {assetClassDisplay}
-                    </span>
-                  </td>
-                  <td
-                    data-testid={`position-quantity-${position.symbol}`}
-                    className={numericCellClassName({
-                      kind: 'quantity',
-                      tone: 'muted',
-                    })}
-                  >
-                    {formatQuantity(position.quantity)}
-                  </td>
-                  <td
-                    data-testid={`position-avg-cost-${position.symbol}`}
-                    className={numericCellClassName({
-                      kind: 'price',
-                      tone: 'muted',
-                    })}
-                  >
-                    {formatPrice(position.avg_cost)}
-                  </td>
-                  <td
-                    data-testid={`position-broker-cost-${position.symbol}`}
-                    className={numericCellClassName({
-                      kind: 'price',
-                      tone: brokerDisplayedUnitCost === null ? 'muted' : 'text',
-                    })}
-                    title={brokerCostBasisDetail ?? undefined}
-                  >
-                    <span>{formatPrice(brokerDisplayedUnitCost)}</span>
-                    {brokerCostBasisDetail ? (
-                      <span className="app-muted mt-1 block max-w-44 whitespace-normal text-[10px] font-sans leading-4">
-                        {brokerCostBasisDetail}
-                      </span>
-                    ) : null}
-                  </td>
-                  <td
-                    data-testid={`position-latest-price-${position.symbol}`}
-                    className={numericCellClassName({
-                      kind: 'price',
-                      tone: 'text',
-                    })}
-                  >
-                    {formatPrice(resolveLatestPrice(position))}
-                  </td>
-                  <td
-                    data-testid={`position-market-value-${position.symbol}`}
-                    className={numericCellClassName({
-                      kind: 'amount',
-                      tone: 'text',
-                      emphasis: true,
-                    })}
-                  >
-                    {formatCurrency(position.market_value)}
-                  </td>
-                  {showFullColumns ? (
-                    <td
-                      data-testid={`position-weight-${position.symbol}`}
-                      className={numericCellClassName({
-                        kind: 'percent',
-                        tone: 'text',
-                        emphasis: true,
-                      })}
-                    >
-                      {formatPercent(weightBySymbol[position.symbol])}
-                    </td>
-                  ) : null}
-                  <td
-                    data-testid={`position-today-change-${position.symbol}`}
-                    className={numericCellClassName({
-                      kind: 'amount',
-                      tone: resolveTone(position.today_change),
-                      emphasis: true,
-                    })}
-                  >
-                    {formatCurrency(position.today_change)}
-                  </td>
-                  <td
-                    data-testid={`position-unrealized-${position.symbol}`}
-                    className={numericCellClassName({
-                      kind: 'amount',
-                      tone: pnlTone,
-                      emphasis: true,
-                    })}
-                  >
-                    {formatCurrency(position.unrealized_pnl)}
-                  </td>
-                  <td
-                    data-testid={`position-return-pct-${position.symbol}`}
-                    className={numericCellClassName({
-                      kind: 'percent',
-                      tone: pnlTone,
-                      emphasis: true,
-                    })}
-                  >
-                    {formatReturnPercent(resolvePnlPct(position))}
-                  </td>
-                  <td className="px-4 py-3.5">
-                    <div className="flex min-w-36 flex-col gap-1">
-                      <span
-                        className={`w-max rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
-                          isStale
-                            ? 'border-[color-mix(in_srgb,var(--app-warning)_30%,transparent)] text-[var(--app-warning)]'
-                            : 'border-[var(--app-success-border)] text-[var(--app-success-text)]'
-                        }`}
-                        title={staleReason}
-                      >
-                        {isStale
-                          ? labels.cachedQuoteAt(
-                              formatTimestamp(position.quote_timestamp),
-                            )
-                          : quoteStatusLabel}
-                      </span>
-                      <span className="app-muted text-[10px]">
-                        {labels.quoteAge}:{' '}
-                        {formatAge(position.quote_age_seconds)}
-                      </span>
-                      {position.stale_reason ? (
-                        <span className="app-muted max-w-40 truncate text-[10px]">
-                          {staleReason}
-                        </span>
-                      ) : null}
-                    </div>
-                  </td>
-                  {showFullColumns ? (
-                    <>
-                      <td
-                        data-testid={`position-available-frozen-${position.symbol}`}
-                        className={numericCellClassName({
-                          kind: 'quantity',
-                          tone: 'text',
-                        })}
-                      >
-                        {formatQuantity(position.available_qty)} /{' '}
-                        {formatQuantity(position.frozen_qty)}
-                      </td>
-                      <td
-                        data-testid={`position-realized-${position.symbol}`}
-                        className={numericCellClassName({
-                          kind: 'amount',
-                          tone: 'text',
-                        })}
-                      >
-                        {formatCurrency(position.realized_pnl)}
-                      </td>
-                    </>
-                  ) : null}
-                  <td className="px-4 py-3.5 text-right">
-                    <div
-                      className={`inline-flex justify-end gap-1.5 ${
-                        showDashboardColumns ? 'min-w-36' : 'min-w-44'
-                      }`}
-                    >
-                      <a
-                        href={detailHref}
-                        className="app-button-secondary rounded-xl px-2.5 py-1.5 text-[11px] font-semibold"
-                        onClick={stopEntryNavigation}
-                      >
-                        {labels.detailsTitle}
-                      </a>
-                      <button
-                        type="button"
-                        className="app-button-secondary rounded-xl px-2.5 py-1.5 text-[11px] font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-                        disabled={refreshing}
-                        aria-busy={refreshing}
-                        onClick={(event) => {
-                          stopEntryNavigation(event);
-                          void refreshQuotes.mutateAsync({
-                            symbols: [position.symbol],
-                            force: true,
-                          });
-                        }}
-                      >
-                        {refreshing ? labels.refreshing : labels.refresh}
-                      </button>
-                      {!showDashboardColumns ? (
-                        <>
-                          <a
-                            href={symbolTradingHref(position.symbol)}
-                            className="app-button-secondary rounded-xl px-2.5 py-1.5 text-[11px] font-semibold"
-                            onClick={stopEntryNavigation}
-                          >
-                            {labels.trade}
-                          </a>
-                          <a
-                            href={symbolActivityHref(position.symbol)}
-                            className="app-button-secondary rounded-xl px-2.5 py-1.5 text-[11px] font-semibold"
-                            onClick={stopEntryNavigation}
-                          >
-                            {labels.ledger}
-                          </a>
-                        </>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+  return (
+    <div className="min-w-0 space-y-2">
+      {hasQuotesNeedingReview ? (
+        <EvidenceState
+          kind="partial"
+          title={labels.cachedQuoteNotice}
+          evidence={labels.quoteState}
+        />
+      ) : null}
+      <DataTable
+        data={positions}
+        columns={columns}
+        caption={labels.symbol}
+        emptyState={copy.portfolio.positionsEmpty}
+        getRowId={(position) => position.symbol}
+        rowLabel={(position) =>
+          `${labels.detailsTitle}: ${resolvePositionName(position)} ${
+            position.symbol
+          }`
+        }
+        rowHref={(position) => holdingDetailHref(position.symbol)}
+        rowTestId={(position) => `position-row-${position.symbol}`}
+        scrollTestId="positions-table-scroll"
+        tableTestId="positions-table-desktop"
+      />
     </div>
   );
 }
