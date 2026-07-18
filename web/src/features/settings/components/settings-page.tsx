@@ -1413,26 +1413,28 @@ function ManualTaskRow({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
-      <input
-        type="checkbox"
-        className="h-4 w-4 accent-[var(--app-accent)]"
-        checked={checked}
-        aria-label={`Manual task: ${label}`}
-        onChange={(event) => onChange(event.target.checked)}
-      />
-      <span className="min-w-0 text-sm font-medium text-[var(--app-soft)]">
-        {label}
-      </span>
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center border-t border-[var(--app-divider)] first:border-t-0">
+      <label className="flex min-h-[var(--app-touch-target)] min-w-0 cursor-pointer items-center gap-3 px-3 py-2">
+        <input
+          type="checkbox"
+          className="h-5 w-5 shrink-0 accent-[var(--app-accent)]"
+          checked={checked}
+          aria-label={`Manual task: ${label}`}
+          onChange={(event) => onChange(event.target.checked)}
+        />
+        <span className="min-w-0 text-sm font-medium text-[var(--app-soft)]">
+          {label}
+        </span>
+      </label>
       <a
-        className="app-link text-xs font-semibold"
+        className="app-link inline-flex min-h-[var(--app-touch-target)] items-center px-3 py-2 text-xs font-semibold"
         href={href}
         target="_blank"
         rel="noreferrer"
       >
         {actionLabel}
       </a>
-    </label>
+    </div>
   );
 }
 

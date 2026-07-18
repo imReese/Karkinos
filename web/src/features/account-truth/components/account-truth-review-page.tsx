@@ -2,6 +2,11 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 
 import { usePreferences } from '../../../app/preferences';
 import {
+  EvidenceState,
+  MetricStrip,
+  WorkspaceHeader,
+} from '../../../app/components/workbench';
+import {
   formatCurrency,
   formatDateTime,
   formatQuantity,
@@ -342,47 +347,68 @@ export function AccountTruthReviewPage() {
   ];
 
   return (
-    <section className="mx-auto grid w-full max-w-[1440px] gap-5">
-      <header className="grid gap-2">
-        <div className="app-product-mark">{text.kicker}</div>
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div className="min-w-0">
-            <h1 className="text-3xl font-black tracking-normal text-[var(--app-text)]">
-              {text.title}
-            </h1>
-            <p className="app-muted mt-2 max-w-3xl text-sm leading-6">
-              {text.subtitle}
-            </p>
-          </div>
-          <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_12%,transparent)] px-4 py-3 text-xs font-semibold text-[var(--app-warning)]">
-            {text.safety}
-          </div>
-        </div>
-      </header>
+    <section
+      className="app-account-truth-route app-workbench-route mx-auto grid w-full max-w-[1440px] gap-5 sm:gap-6"
+      data-workbench-route="account-truth"
+    >
+      <WorkspaceHeader
+        eyebrow={text.kicker}
+        title={text.title}
+        description={text.subtitle}
+        context={text.safety}
+      />
 
-      {hasError ? (
-        <div className="app-card p-5 text-sm font-semibold text-[var(--app-danger)]">
-          {text.error}
-        </div>
-      ) : null}
-      {loading ? (
-        <div className="app-card p-5 text-sm font-semibold text-[var(--app-muted)]">
-          {text.loading}
-        </div>
-      ) : null}
+      {hasError ? <EvidenceState kind="error" title={text.error} /> : null}
+      {loading ? <EvidenceState kind="loading" title={text.loading} /> : null}
 
-      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(320px,0.82fr)_minmax(0,1.6fr)]">
+      <MetricStrip
+        ariaLabel={text.score}
+        items={[
+          {
+            id: 'score',
+            label: text.score,
+            value: scoreData?.score ?? text.scorePending,
+            detail: `${text.gate}: ${formatCode(
+              scoreData?.gate_status ?? '--',
+              locale,
+              'status',
+            )}`,
+            tone: scoreData?.gate_status === 'blocked' ? 'warning' : 'neutral',
+          },
+          {
+            id: 'unresolved',
+            label: text.unresolved,
+            value: String(scoreData?.unresolved_mismatch_count ?? '--'),
+          },
+          {
+            id: 'resolved',
+            label: text.resolved,
+            value: String(scoreData?.resolved_review_count ?? '--'),
+          },
+          {
+            id: 'freshness',
+            label: text.freshness,
+            value: formatCode(
+              scoreData?.data_freshness_status ?? '--',
+              locale,
+              'status',
+            ),
+          },
+        ]}
+      />
+
+      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(300px,0.72fr)_minmax(0,1.55fr)]">
         <div className="grid min-w-0 content-start gap-5">
           <section
-            className="app-card min-w-0 p-5"
+            className="app-workbench-section min-w-0 px-1 py-4 sm:px-4"
             data-testid="account-truth-score"
           >
             <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="app-product-mark">{text.score}</div>
-                <div className="mt-2 text-4xl font-black tracking-normal text-[var(--app-text)]">
-                  {scoreData?.score ?? text.scorePending}
-                </div>
+              <div className="min-w-0">
+                <div className="app-kicker text-[10px]">{text.score}</div>
+                <h2 className="mt-1 text-base font-semibold text-[var(--app-text)]">
+                  {text.components}
+                </h2>
               </div>
               <StatusBadge
                 status={scoreData?.gate_status ?? 'blocked'}
@@ -390,47 +416,16 @@ export function AccountTruthReviewPage() {
               />
             </div>
             {scoreIsMissing ? <MissingEvidenceCallout locale={locale} /> : null}
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <Metric
-                label={text.gate}
-                value={formatCode(
-                  scoreData?.gate_status ?? '--',
-                  locale,
-                  'status',
-                )}
-              />
-              <Metric
-                label={text.unresolved}
-                value={String(scoreData?.unresolved_mismatch_count ?? '--')}
-              />
-              <Metric
-                label={text.resolved}
-                value={String(scoreData?.resolved_review_count ?? '--')}
-              />
-              <Metric
-                label={text.freshness}
-                value={formatCode(
-                  scoreData?.data_freshness_status ?? '--',
-                  locale,
-                  'status',
-                )}
-              />
-            </div>
-            <div className="mt-5">
-              <div className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--app-muted)]">
-                {text.components}
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {componentEntries.map(([label, value]) => (
-                  <span
-                    key={label}
-                    className="rounded-full border border-[var(--app-border)] px-3 py-1 text-xs font-semibold text-[var(--app-muted)]"
-                  >
-                    {label}: {formatCode(value ?? '--', locale, 'status')}
-                  </span>
-                ))}
-              </div>
-            </div>
+            <ul className="mt-4 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]">
+              {componentEntries.map(([label, value]) => (
+                <li
+                  key={label}
+                  className="py-2.5 text-xs font-medium text-[var(--app-text-secondary)]"
+                >
+                  {label}: {formatCode(value ?? '--', locale, 'status')}
+                </li>
+              ))}
+            </ul>
             <ReasonList
               title={text.blockingReasons}
               values={scoreData?.blocking_reasons ?? []}
@@ -443,11 +438,11 @@ export function AccountTruthReviewPage() {
             />
           </section>
 
-          <section className="app-card min-w-0 p-5">
+          <section className="app-workbench-section min-w-0 px-1 py-4 sm:px-4">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
                 <div className="app-product-mark">{text.imports}</div>
-                <h2 className="mt-1 text-lg font-black tracking-normal text-[var(--app-text)]">
+                <h2 className="mt-1 text-base font-semibold text-[var(--app-text)]">
                   {text.imports}
                 </h2>
               </div>
@@ -460,13 +455,13 @@ export function AccountTruthReviewPage() {
                     type="button"
                     className={`rounded-2xl border p-4 text-left transition ${
                       selectedReport?.import_run_id === run.import_run_id
-                        ? 'border-[var(--app-accent)] bg-[var(--app-accent-ghost)]'
+                        ? 'border-[var(--app-accent)] bg-[var(--app-accent-bg)]'
                         : 'border-[var(--app-border)] bg-[var(--app-surface-0)]'
                     }`}
                     onClick={() => setSelectedImportRunId(run.import_run_id)}
                   >
                     <div className="flex min-w-0 items-center justify-between gap-3">
-                      <span className="truncate text-sm font-black text-[var(--app-text)]">
+                      <span className="truncate text-sm font-semibold text-[var(--app-text)]">
                         {run.source_name}
                       </span>
                       <StatusBadge
@@ -505,11 +500,11 @@ export function AccountTruthReviewPage() {
             }}
           />
 
-          <section className="app-card min-w-0 p-5">
+          <section className="app-workbench-section min-w-0 px-1 py-4 sm:px-4">
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div>
                 <div className="app-product-mark">{text.reports}</div>
-                <h2 className="mt-1 text-xl font-black tracking-normal text-[var(--app-text)]">
+                <h2 className="mt-1 text-base font-semibold text-[var(--app-text)]">
                   {text.reports}
                 </h2>
               </div>
@@ -518,10 +513,10 @@ export function AccountTruthReviewPage() {
                   <button
                     key={option.value}
                     type="button"
-                    className={`shrink-0 rounded-full border px-3 py-2 text-xs font-black ${
+                    className={`shrink-0 rounded-[var(--app-radius-control)] border px-3 py-2 text-xs font-semibold ${
                       filter === option.value
-                        ? 'border-[var(--app-accent)] bg-[var(--app-accent)] text-[var(--app-base)]'
-                        : 'border-[var(--app-border)] text-[var(--app-muted)]'
+                        ? 'border-[var(--app-accent)] bg-[var(--app-accent)] text-[var(--app-text-inverse)]'
+                        : 'border-[var(--app-border)] text-[var(--app-text-secondary)]'
                     }`}
                     onClick={() => setFilter(option.value)}
                   >
@@ -540,7 +535,7 @@ export function AccountTruthReviewPage() {
                       type="button"
                       className={`rounded-2xl border p-4 text-left transition ${
                         selectedReport?.import_run_id === report.import_run_id
-                          ? 'border-[var(--app-accent-secondary)] bg-[var(--app-accent-ghost)]'
+                          ? 'border-[var(--app-accent)] bg-[var(--app-accent-bg)]'
                           : 'border-[var(--app-border)] bg-[var(--app-surface-0)]'
                       }`}
                       onClick={() =>
@@ -553,7 +548,7 @@ export function AccountTruthReviewPage() {
                           {report.unresolved_count} {text.unresolved}
                         </span>
                       </div>
-                      <div className="mt-3 truncate text-sm font-black text-[var(--app-text)]">
+                      <div className="mt-3 truncate text-sm font-semibold text-[var(--app-text)]">
                         {report.source_name}
                       </div>
                       <div className="mt-2 text-xs text-[var(--app-muted)]">
@@ -583,11 +578,11 @@ export function AccountTruthReviewPage() {
                 )}
               </div>
 
-              <div className="min-w-0 rounded-3xl border border-[var(--app-border)] bg-[color-mix(in_srgb,var(--app-surface-0)_62%,transparent)] p-4">
+              <div className="min-w-0 rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-4">
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <div>
                     <div className="app-product-mark">{text.detail}</div>
-                    <h3 className="mt-1 text-lg font-black text-[var(--app-text)]">
+                    <h3 className="mt-1 text-base font-semibold text-[var(--app-text)]">
                       {selectedReport?.source_name ?? text.detail}
                     </h3>
                   </div>
@@ -601,9 +596,9 @@ export function AccountTruthReviewPage() {
 
                 <div className="grid gap-3">
                   {(detail.data?.items ?? []).length > 0 ? (
-                    detail.data?.items.map((item) => (
+                    detail.data?.items.map((item, itemIndex) => (
                       <ReviewItemCard
-                        key={item.item_key}
+                        key={`${item.item_key}:${item.evidence_fingerprint ?? 'legacy'}:${itemIndex}`}
                         item={item}
                         importRunId={detail.data.import_run_id}
                         locale={locale}
@@ -721,7 +716,7 @@ function BrokerEvidenceImportWizard({
 
   return (
     <section
-      className="app-card min-w-0 p-5"
+      className="app-workbench-section min-w-0 px-1 py-4 sm:px-4"
       data-testid="account-truth-import-wizard"
     >
       <div className="app-product-mark">{text.importWizardKicker}</div>
@@ -1028,24 +1023,24 @@ function Metric({ label, value }: { label: string; value: string }) {
 function MissingEvidenceCallout({ locale }: { locale: 'en' | 'zh' }) {
   const text = labels[locale];
   return (
-    <div className="mt-5 rounded-3xl border border-[color-mix(in_srgb,var(--app-warning)_38%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] p-4">
-      <div className="text-base font-black text-[var(--app-text)]">
+    <div className="mt-4 border-l-2 border-[var(--app-warning-indicator)] py-1 pl-3">
+      <div className="text-sm font-semibold text-[var(--app-text)]">
         {text.notReadyTitle}
       </div>
-      <p className="mt-2 text-sm font-semibold leading-6 text-[var(--app-muted)]">
+      <p className="mt-1 text-xs leading-5 text-[var(--app-text-secondary)]">
         {text.notReadyBody}
       </p>
-      <div className="mt-4 rounded-2xl border border-[var(--app-border)] bg-[color-mix(in_srgb,var(--app-surface-0)_62%,transparent)] p-3">
-        <div className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--app-muted)]">
+      <div className="mt-3 border-t border-[var(--app-divider)] pt-3">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
           {text.workflowTitle}
         </div>
-        <ol className="mt-3 grid gap-2 text-sm font-semibold text-[var(--app-text)]">
+        <ol className="mt-2 grid gap-2 text-xs font-medium text-[var(--app-text-secondary)]">
           {text.workflowSteps.map((step, index) => (
             <li
               key={step}
               className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-2"
             >
-              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[var(--app-accent-ghost)] text-xs font-black text-[var(--app-accent)]">
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded-[var(--app-radius-control)] border border-[var(--app-accent-border)] text-[10px] font-semibold text-[var(--app-accent)]">
                 {index + 1}
               </span>
               <span>{step}</span>
@@ -1101,7 +1096,7 @@ function ReasonList({
         {values.map((value) => (
           <div
             key={value}
-            className="rounded-xl bg-[var(--app-surface-0)] px-3 py-2 text-xs font-semibold text-[var(--app-muted)]"
+            className="border-l-2 border-[var(--app-divider)] py-1 pl-3 text-xs font-medium leading-5 text-[var(--app-text-secondary)]"
           >
             {formatCode(value, locale, 'code')}
           </div>
@@ -1142,14 +1137,14 @@ function ReviewItemCard({
   );
   return (
     <article
-      className="min-w-0 rounded-2xl border border-[var(--app-border)] bg-[var(--app-panel)] p-4"
+      className="min-w-0 rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-4"
       data-testid={`account-truth-item-${item.item_key}`}
     >
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <StatusBadge status={item.status} locale={locale} />
-            <span className="text-lg font-black text-[var(--app-text)]">
+            <span className="text-base font-semibold text-[var(--app-text)]">
               {itemTitle}
             </span>
             <span className="rounded-full bg-[var(--app-surface-0)] px-2 py-1 text-xs font-semibold text-[var(--app-muted)]">
@@ -1210,23 +1205,23 @@ function ReviewItemCard({
       </div>
 
       <div className="mt-4 grid gap-3">
-        <div className="rounded-2xl bg-[var(--app-surface-0)] p-3">
-          <div className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--app-muted)]">
+        <div className="border-t border-[var(--app-divider)] py-3">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
             {text.suggestedAction}
           </div>
-          <div className="mt-1 text-sm font-bold text-[var(--app-text)]">
+          <div className="mt-1 text-sm font-semibold text-[var(--app-text)]">
             {formatCode(item.suggested_review_action || '--', locale, 'code')}
           </div>
         </div>
-        <div className="rounded-2xl bg-[var(--app-surface-0)] p-3">
-          <div className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--app-muted)]">
+        <div className="border-t border-[var(--app-divider)] py-3">
+          <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
             {text.evidence}
           </div>
           <div className="mt-2 grid gap-1">
             {item.evidence_references.map((reference) => (
               <span
                 key={reference}
-                className="break-words rounded-lg bg-[var(--app-mantle)] px-2 py-1 text-xs font-semibold text-[var(--app-muted)]"
+                className="break-words border-l border-[var(--app-divider)] py-0.5 pl-2 font-mono text-[11px] text-[var(--app-text-tertiary)]"
               >
                 {formatLedgerEvidenceReference(
                   reference,
@@ -1269,7 +1264,7 @@ function ReviewItemCard({
           <button
             key={action}
             type="button"
-            className="shrink-0 rounded-full border border-[var(--app-border)] px-3 py-2 text-xs font-black text-[var(--app-muted)] transition hover:border-[var(--app-accent)] hover:text-[var(--app-text)]"
+            className="shrink-0 rounded-[var(--app-radius-control)] border border-[var(--app-border)] px-3 py-2 text-xs font-semibold text-[var(--app-text-secondary)] transition hover:border-[var(--app-accent)] hover:text-[var(--app-text)]"
             onClick={() => onReview(action)}
           >
             {formatPublicReviewActionLabel(action, locale)}

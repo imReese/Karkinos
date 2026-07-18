@@ -126,7 +126,13 @@ test('exposes explicit evidence lifecycle states', () => {
       evidence="snapshot: none"
     />,
   );
-  expect(screen.getByText('missing')).toBeTruthy();
+  expect(
+    screen
+      .getByText('Snapshot missing')
+      .closest('section')
+      ?.getAttribute('data-evidence-kind'),
+  ).toBe('missing');
+  expect(screen.queryByText('missing')).toBeNull();
   expect(screen.getByText('Authoritative result is blocked')).toBeTruthy();
 });
 

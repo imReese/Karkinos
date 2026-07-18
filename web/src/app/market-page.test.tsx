@@ -90,6 +90,7 @@ function installMarketFetchMock(
     health?: Record<string, unknown>;
     quotes?: Array<Record<string, unknown>>;
     marketEvidenceReview?: Record<string, unknown>;
+    items?: Array<Record<string, unknown>>;
   } = {},
 ) {
   const boardHealth = {
@@ -109,7 +110,7 @@ function installMarketFetchMock(
       if (url.includes('/api/market/research-board')) {
         return jsonResponse({
           health: boardHealth,
-          items: [
+          items: overrides.items ?? [
             {
               symbol: '600519',
               asset_class: 'stock',
@@ -281,6 +282,33 @@ test('renders market data operations and triggers manual backfills', async () =>
       expect.objectContaining({ method: 'POST' }),
     );
   });
+});
+
+test('keeps missing quote and holding values unavailable instead of inventing zeroes', async () => {
+  renderMarketPage({
+    items: [
+      {
+        symbol: '600519',
+        asset_class: 'stock',
+        name: '测试标的',
+        is_holding: true,
+        quantity: 100,
+        avg_cost: 90,
+        market_value: null,
+        unrealized_pnl: null,
+        realized_pnl: 0,
+        last_snapshot_at: '2026-06-17T14:10:00+08:00',
+        price: null,
+        volume: null,
+        research_count: 1,
+        last_research_at: '2026-06-17T10:00:00+08:00',
+      },
+    ],
+  });
+
+  const row = await screen.findByRole('button', { name: /测试标的/ });
+  expect(within(row).getAllByText('--')).toHaveLength(2);
+  expect(within(row).queryByText('¥0.00')).toBeNull();
 });
 
 test('counts cache estimated and missing quotes as market data needing confirmation', async () => {

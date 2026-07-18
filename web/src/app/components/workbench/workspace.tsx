@@ -201,6 +201,7 @@ const EVIDENCE_STATE_TONES: Record<EvidenceStateKind, StatusTone> = {
 
 export function EvidenceState({
   kind,
+  statusLabel,
   title,
   description,
   evidence,
@@ -208,6 +209,7 @@ export function EvidenceState({
   className,
 }: {
   kind: EvidenceStateKind;
+  statusLabel?: ReactNode;
   title: ReactNode;
   description?: ReactNode;
   evidence?: ReactNode;
@@ -234,7 +236,11 @@ export function EvidenceState({
     >
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <StatusBadge tone={EVIDENCE_STATE_TONES[kind]}>{kind}</StatusBadge>
+          {statusLabel ? (
+            <StatusBadge tone={EVIDENCE_STATE_TONES[kind]}>
+              {statusLabel}
+            </StatusBadge>
+          ) : null}
           <h2 className="text-sm font-semibold text-[var(--app-text)]">
             {title}
           </h2>
