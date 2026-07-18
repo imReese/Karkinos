@@ -2,6 +2,11 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import { useCopy } from '../../../app/copy';
+import {
+  EvidenceState,
+  MetricStrip,
+  WorkspaceHeader,
+} from '../../../app/components/workbench';
 import { usePreferences } from '../../../app/preferences';
 import {
   useHoldingStrategyAttributionQuery,
@@ -727,18 +732,50 @@ export function BacktestPage() {
   };
 
   return (
-    <section className="space-y-5 sm:space-y-6">
-      <header className="app-page-header pb-1">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div className="min-w-0">
-            <div className="app-product-mark">{labels.kicker}</div>
-            <h1 className="app-page-title mt-2">{labels.title}</h1>
-          </div>
-          <p className="app-page-subtitle sm:max-w-xl sm:text-right">
-            {labels.subtitle}
-          </p>
-        </div>
-      </header>
+    <section
+      className="app-workbench-route space-y-5 sm:space-y-6"
+      data-workbench-route="backtest"
+    >
+      <WorkspaceHeader
+        eyebrow={labels.kicker}
+        title={labels.title}
+        description={labels.subtitle}
+        context={labels.decisionHandoffResearchOnly}
+      />
+
+      <MetricStrip
+        ariaLabel={labels.title}
+        items={[
+          {
+            id: 'strategy',
+            label: labels.strategy,
+            value: strategyDisplayName(selectedStrategy, labels.strategyNames),
+            detail: selectedStrategy.name,
+          },
+          {
+            id: 'instrument',
+            label: labels.symbol,
+            value: symbol || labels.notDeclared,
+            detail: selectedAssetClassLabel,
+          },
+          {
+            id: 'parameters',
+            label: labels.formKicker,
+            value: parameterSchema.length,
+            detail: labels.formDetail,
+          },
+          {
+            id: 'latest-result',
+            label: labels.currentKicker,
+            value: summary
+              ? formatPercent(summary.returnValue)
+              : labels.notDeclared,
+            detail: summary
+              ? `${labels.totalCost}: ${formatCurrency(summary.cost)}`
+              : labels.emptyCurrent,
+          },
+        ]}
+      />
 
       <div className="scroll-mt-24" id="backtest-strategy-catalog">
         <StrategyCatalogPanel
@@ -774,8 +811,8 @@ export function BacktestPage() {
       />
 
       <div className="grid gap-5 2xl:grid-cols-[minmax(360px,0.72fr)_minmax(0,1.28fr)]">
-        <section className="app-terminal-panel rounded-[28px] p-[1px]">
-          <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
+        <section className="app-workbench-section min-w-0">
+          <div className="p-4 sm:p-5">
             <div className="app-kicker text-xs uppercase tracking-[0.16em]">
               {labels.formKicker}
             </div>
@@ -1011,8 +1048,8 @@ export function BacktestPage() {
           </div>
         </section>
 
-        <section className="app-terminal-panel rounded-[28px] p-[1px]">
-          <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
+        <section className="app-workbench-section min-w-0">
+          <div className="p-4 sm:p-5">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <div className="app-kicker text-xs uppercase tracking-[0.16em]">
@@ -1175,9 +1212,12 @@ export function BacktestPage() {
                 <FillsTable fills={latestReport.fills ?? []} />
               </div>
             ) : (
-              <div className="mt-5 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-5 text-sm text-[var(--app-muted)]">
-                {labels.emptyCurrent}
-              </div>
+              <EvidenceState
+                className="mt-5"
+                kind="empty"
+                title={labels.currentTitle}
+                description={labels.emptyCurrent}
+              />
             )}
           </div>
         </section>

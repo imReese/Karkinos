@@ -331,7 +331,10 @@ export function StrategyHypothesisPanel({
 
   if (!open) {
     return (
-      <section className="app-panel flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+      <section
+        className="app-ai-research-boundary flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5"
+        data-evidence-kind="cited-ai-research"
+      >
         <div>
           <div className="app-kicker">{copy.kicker}</div>
           <h2 className="mt-2 text-lg font-semibold text-[var(--app-text)]">
@@ -357,7 +360,8 @@ export function StrategyHypothesisPanel({
 
   return (
     <section
-      className="app-panel p-5"
+      className="app-ai-research-boundary p-4 sm:p-5"
+      data-evidence-kind="cited-ai-research"
       aria-labelledby="ai-strategy-research-title"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">

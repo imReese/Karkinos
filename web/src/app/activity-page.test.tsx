@@ -311,7 +311,7 @@ test('filters recent ledger entries by instrument search', async () => {
   expect(await screen.findByText('没有匹配的流水。')).toBeTruthy();
 });
 
-test('puts manual entry tools before recent ledger review and switches the active entry tool', async () => {
+test('prioritizes recent ledger review before manual entry tools and switches the active entry tool', async () => {
   renderActivityPage('zh');
 
   const entryTitle = await screen.findByText('新增流水');
@@ -322,7 +322,7 @@ test('puts manual entry tools before recent ledger review and switches the activ
   ).getAllByRole('button');
 
   expect(
-    entryTitle.compareDocumentPosition(ledgerTitle) &
+    ledgerTitle.compareDocumentPosition(entryTitle) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(

@@ -779,6 +779,76 @@ h3 {
   color: var(--app-text);
 }
 
+.app-workbench-route {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.app-workbench-section {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-surface);
+  background: var(--app-surface);
+  box-shadow: none;
+}
+
+.app-ai-research-boundary {
+  min-width: 0;
+  border: 1px solid var(--app-info-border);
+  border-left-width: 2px;
+  border-radius: var(--app-radius-surface);
+  background: var(--app-info-bg);
+  color: var(--app-text);
+  box-shadow: none;
+}
+
+.app-workbench-route .app-terminal-panel {
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-surface);
+  background: var(--app-surface);
+  box-shadow: none;
+}
+
+.app-workbench-route .app-terminal-inner {
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.app-workbench-route :is(.app-panel, .app-panel-strong) {
+  border-radius: var(--app-radius-surface);
+  box-shadow: none;
+}
+
+.app-workbench-route :is(.rounded-2xl, .rounded-3xl) {
+  border-radius: var(--app-radius-surface);
+}
+
+.app-workbench-route :is(button, input, select, textarea).rounded-2xl {
+  border-radius: var(--app-radius-control);
+}
+
+.app-workbench-route :is(.overflow-x-auto, .overflow-auto) {
+  max-width: 100%;
+  overscroll-behavior-inline: contain;
+}
+
+@media (max-width: 767px) {
+  .app-workbench-route :where(button, [role='button'], select),
+  .app-shell-sidebar :where(button, a[href]),
+  .app-toolbar-shell :where(button, a[href]) {
+    min-height: 40px;
+  }
+
+  .app-workbench-route a[href] {
+    display: inline-flex;
+    min-height: 40px;
+    align-items: center;
+  }
+}
+
 @media (min-width: 1024px) {
   .app-shell-sidebar {
     border-width: 0 1px 0 0;

@@ -1,6 +1,12 @@
 import { useMemo, useState, type FormEvent } from 'react';
 
 import { useCopy } from '../../../app/copy';
+import {
+  FilterBar,
+  MetricStrip,
+  StatusBadge as WorkbenchStatusBadge,
+  WorkspaceHeader,
+} from '../../../app/components/workbench';
 import { usePreferences, type Locale } from '../../../app/preferences';
 import {
   formatCurrency,
@@ -957,75 +963,69 @@ export function TradingPage() {
   };
 
   return (
-    <section className="space-y-5 sm:space-y-6">
-      <header className="app-page-header pb-1">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div className="min-w-0">
-            <div className="app-product-mark">{labels.kicker}</div>
-            <h1 className="app-page-title mt-2">{labels.title}</h1>
-          </div>
-          <p className="app-page-subtitle sm:max-w-xl sm:text-right">
-            {labels.subtitle}
-          </p>
-        </div>
-      </header>
+    <section
+      className="app-workbench-route space-y-5 sm:space-y-6"
+      data-workbench-route="trading"
+    >
+      <WorkspaceHeader
+        eyebrow={labels.kicker}
+        title={labels.title}
+        description={labels.subtitle}
+      />
 
-      <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5">
-        <div className="app-terminal-inner flex min-w-0 flex-wrap items-center gap-2 p-4 sm:p-5">
-          <div className="app-product-mark mr-2">{labels.operatingMode}</div>
-          <span className="rounded-full border border-[color-mix(in_srgb,var(--app-success)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_10%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-success)]">
-            {labels.manualDefault}
-          </span>
-          <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-soft)]">
+      <FilterBar
+        label={labels.operatingMode}
+        summary={
+          <WorkbenchStatusBadge tone="neutral">
             {labels.brokerBridgeDisabled}
-          </span>
-        </div>
-      </section>
-
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-        <StatusTile label={labels.pending} value={String(counts.pending)} />
-        <StatusTile label={labels.confirmed} value={String(counts.confirmed)} />
-        <StatusTile label={labels.rejected} value={String(counts.rejected)} />
-        <StatusTile label={labels.canceled} value={String(counts.canceled)} />
-        <StatusTile
-          label={labels.lastUpdated}
-          value={formatTimestamp(latestTimestamp)}
-        />
-      </div>
-
-      <KillSwitchPanel />
-
-      <BrokerAdapterReadinessPanel
-        readiness={brokerAdapterReadiness}
-        loading={operationsToday.isLoading}
-        error={operationsToday.isError}
-        soak={brokerSoakPromotion.data ?? null}
-        soakLoading={brokerSoakPromotion.isLoading}
-        soakError={brokerSoakPromotion.isError}
-      />
-
-      <CurrentPerOrderDossierOperatorPanel locale={locale} />
-
-      <ExecutionAuditPanel
-        orders={orderFacts.data ?? []}
-        fills={fillFacts.data ?? []}
-        loading={orderFacts.isLoading || fillFacts.isLoading}
-        error={orderFacts.isError || fillFacts.isError}
-        instrumentNames={instrumentNames}
-        shadowRunPending={shadowRun.isPending}
-        shadowRunResult={shadowRun.data ?? null}
-        paperShadowRun={paperShadowRun}
-        reviewPending={reviewShadowRun.isPending}
-        reviewResult={reviewShadowRun.data ?? null}
-        reviewError={
-          reviewShadowRun.isError ? getErrorMessage(reviewShadowRun.error) : ''
+          </WorkbenchStatusBadge>
         }
-        onRunShadowReview={() => void shadowRun.mutate()}
-        onAcceptSimulationReview={() => void handleAcceptSimulationReview()}
+      >
+        <span className="text-xs font-semibold text-[var(--app-text-secondary)]">
+          {labels.operatingMode}
+        </span>
+        <WorkbenchStatusBadge tone="success">
+          {labels.manualDefault}
+        </WorkbenchStatusBadge>
+      </FilterBar>
+
+      <MetricStrip
+        ariaLabel={labels.ordersTitle}
+        items={[
+          {
+            id: 'pending',
+            label: labels.pending,
+            value: String(counts.pending),
+            tone: counts.pending > 0 ? 'warning' : 'neutral',
+          },
+          {
+            id: 'confirmed',
+            label: labels.confirmed,
+            value: String(counts.confirmed),
+          },
+          {
+            id: 'rejected',
+            label: labels.rejected,
+            value: String(counts.rejected),
+          },
+          {
+            id: 'canceled',
+            label: labels.canceled,
+            value: String(counts.canceled),
+          },
+          {
+            id: 'last-updated',
+            label: labels.lastUpdated,
+            value: formatTimestamp(latestTimestamp),
+          },
+        ]}
       />
 
-      <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]">
-        <div className="app-terminal-inner min-w-0 rounded-[27px] p-4 sm:p-5">
+      <section
+        className="app-workbench-section min-w-0 overflow-hidden"
+        data-testid="trading-review-queue"
+      >
+        <div className="min-w-0 p-4 sm:p-5">
           <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div className="min-w-0">
               <div className="app-product-mark">{labels.filterTitle}</div>
@@ -1143,6 +1143,37 @@ export function TradingPage() {
           ) : null}
         </div>
       </section>
+
+      <KillSwitchPanel />
+
+      <BrokerAdapterReadinessPanel
+        readiness={brokerAdapterReadiness}
+        loading={operationsToday.isLoading}
+        error={operationsToday.isError}
+        soak={brokerSoakPromotion.data ?? null}
+        soakLoading={brokerSoakPromotion.isLoading}
+        soakError={brokerSoakPromotion.isError}
+      />
+
+      <CurrentPerOrderDossierOperatorPanel locale={locale} />
+
+      <ExecutionAuditPanel
+        orders={orderFacts.data ?? []}
+        fills={fillFacts.data ?? []}
+        loading={orderFacts.isLoading || fillFacts.isLoading}
+        error={orderFacts.isError || fillFacts.isError}
+        instrumentNames={instrumentNames}
+        shadowRunPending={shadowRun.isPending}
+        shadowRunResult={shadowRun.data ?? null}
+        paperShadowRun={paperShadowRun}
+        reviewPending={reviewShadowRun.isPending}
+        reviewResult={reviewShadowRun.data ?? null}
+        reviewError={
+          reviewShadowRun.isError ? getErrorMessage(reviewShadowRun.error) : ''
+        }
+        onRunShadowReview={() => void shadowRun.mutate()}
+        onAcceptSimulationReview={() => void handleAcceptSimulationReview()}
+      />
 
       <section className="app-terminal-panel rounded-[28px] p-[1px]">
         <div className="app-terminal-inner rounded-[27px] p-4 sm:p-5">
@@ -2536,17 +2567,6 @@ function ControlledBridgeGateSummaryBlock({
           gateSummary?.does_not_authorize_execution,
         )}
       </div>
-    </div>
-  );
-}
-
-function StatusTile({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="app-panel-strong rounded-2xl px-4 py-3 shadow-[0_12px_32px_rgba(17,17,27,0.10)]">
-      <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
-        {label}
-      </div>
-      <div className="mt-1.5 text-lg font-semibold tabular-nums">{value}</div>
     </div>
   );
 }

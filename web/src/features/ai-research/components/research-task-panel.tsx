@@ -313,7 +313,8 @@ export function ResearchTaskPanel({
   return (
     <section
       aria-labelledby="ai-research-task-title"
-      className="app-panel rounded-[28px] border border-[color-mix(in_srgb,var(--app-accent)_24%,var(--app-border))] p-5 sm:p-6"
+      className="app-ai-research-boundary p-4 sm:p-5"
+      data-evidence-kind="cited-ai-research"
       data-testid="ai-research-task-panel"
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -347,7 +348,7 @@ export function ResearchTaskPanel({
       {open ? (
         <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(300px,0.82fr)_minmax(0,1.18fr)]">
           <form
-            className="rounded-2xl border border-[var(--app-border)] bg-[color-mix(in_srgb,var(--app-surface-1)_62%,transparent)] p-4"
+            className="border border-[var(--app-divider)] bg-[var(--app-surface-raised)] p-4"
             onSubmit={(event) => void submit(event)}
           >
             <div className="grid gap-3 sm:grid-cols-2">

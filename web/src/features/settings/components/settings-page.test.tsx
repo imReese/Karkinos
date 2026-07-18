@@ -256,7 +256,9 @@ test('renders backend data status and service state', async () => {
   ).toBeTruthy();
   expect(await screen.findByLabelText('Refresh policy: Live')).toBeTruthy();
   expect(await screen.findByText('Scheduler running')).toBeTruthy();
-  expect(await screen.findByText('Runtime boundary')).toBeTruthy();
+  expect(
+    (await screen.findAllByText('Runtime boundary')).length,
+  ).toBeGreaterThanOrEqual(2);
   expect(
     await screen.findByLabelText('Boundary item: Scheduler Scheduler running'),
   ).toBeTruthy();
