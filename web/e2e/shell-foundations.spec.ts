@@ -48,7 +48,7 @@ test('desktop shell defaults to labeled business groups and remains collapsible'
           document.documentElement.clientWidth,
       };
     });
-    expect(shellGeometry.sidebarWidth).toBeGreaterThanOrEqual(220);
+    expect(shellGeometry.sidebarWidth).toBeGreaterThanOrEqual(200);
     expect(shellGeometry.headerHeight).toBe(49);
     expect(shellGeometry.headerTop).toBe(0);
     expect(shellGeometry.headerRadius).toBe('0px');
@@ -58,7 +58,7 @@ test('desktop shell defaults to labeled business groups and remains collapsible'
     await page.getByRole('button', { name: 'Close navigation' }).click();
     await expect
       .poll(async () => (await sidebar.boundingBox())?.width)
-      .toBe(64);
+      .toBe(56);
   }
 });
 

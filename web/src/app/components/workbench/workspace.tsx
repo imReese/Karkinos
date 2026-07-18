@@ -9,7 +9,7 @@ export type MetricTone =
 
 const STATUS_TONE_CLASSES: Record<StatusTone, string> = {
   neutral:
-    'border-[var(--app-border)] bg-[var(--app-surface-raised)] text-[var(--app-text-secondary)]',
+    'border-[var(--app-divider)] bg-transparent text-[var(--app-text-secondary)]',
   info: 'border-[var(--app-info-border)] bg-[var(--app-info-bg)] text-[var(--app-info-text)]',
   success:
     'border-[var(--app-success-border)] bg-[var(--app-success-bg)] text-[var(--app-success-text)]',
@@ -43,33 +43,34 @@ export function WorkspaceHeader({
 }) {
   return (
     <header
+      data-workbench-primitive="workspace-header"
       className={cn(
-        'flex min-w-0 flex-col gap-3 border-b border-[var(--app-divider)] pb-4 sm:flex-row sm:items-end sm:justify-between',
+        'app-workspace-header flex min-w-0 flex-col gap-2.5 border-b border-[var(--app-divider)] pb-3 sm:flex-row sm:items-start sm:justify-between',
         className,
       )}
     >
       <div className="min-w-0">
         {eyebrow ? (
-          <div className="mb-1 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--app-text-tertiary)]">
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
             {eyebrow}
           </div>
         ) : null}
-        <h1 className="text-xl font-semibold tracking-[-0.02em] text-[var(--app-text)] sm:text-2xl">
+        <h1 className="text-[1.375rem] leading-7 font-semibold tracking-[-0.025em] text-[var(--app-text)] sm:text-2xl sm:leading-8">
           {title}
         </h1>
         {description ? (
-          <p className="mt-1 max-w-3xl text-sm leading-5 text-[var(--app-text-secondary)]">
+          <p className="mt-0.5 max-w-4xl text-[13px] leading-5 text-[var(--app-text-secondary)]">
             {description}
           </p>
         ) : null}
         {context ? (
-          <div className="mt-2 text-xs text-[var(--app-text-tertiary)]">
+          <div className="mt-1.5 max-w-full overflow-hidden text-ellipsis text-[11px] leading-4 text-[var(--app-text-tertiary)] [overflow-wrap:anywhere]">
             {context}
           </div>
         ) : null}
       </div>
       {actions ? (
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
           {actions}
         </div>
       ) : null}
@@ -97,29 +98,30 @@ export function MetricStrip({
   return (
     <dl
       aria-label={ariaLabel}
+      data-workbench-primitive="metric-strip"
       className={cn(
-        'grid min-w-0 overflow-hidden rounded-[var(--app-radius-surface)] border border-[var(--app-border)] bg-[var(--app-surface)] sm:grid-flow-col sm:auto-cols-fr',
+        'app-metric-strip grid min-w-0 grid-cols-2 border-y border-[var(--app-divider)] bg-transparent sm:grid-flow-col sm:auto-cols-fr sm:grid-cols-none',
         className,
       )}
     >
       {items.map((item) => (
         <div
           key={item.id}
-          className="min-w-0 border-b border-[var(--app-divider)] px-3 py-2.5 last:border-b-0 sm:border-r sm:border-b-0 sm:last:border-r-0"
+          className="app-metric-strip-item min-w-0 px-3 py-2.5"
         >
-          <dt className="truncate text-[11px] font-medium text-[var(--app-text-secondary)]">
+          <dt className="truncate text-[11px] leading-4 font-medium text-[var(--app-text-secondary)]">
             {item.label}
           </dt>
           <dd
             className={cn(
-              'mt-0.5 truncate font-mono text-base font-semibold tabular-nums',
+              'mt-0.5 truncate text-[17px] leading-[22px] font-semibold tracking-[-0.015em] tabular-nums',
               METRIC_TONE_CLASSES[item.tone ?? 'neutral'],
             )}
           >
             {item.value}
           </dd>
           {item.detail ? (
-            <div className="mt-0.5 truncate text-[11px] text-[var(--app-text-tertiary)]">
+            <div className="mt-0.5 truncate text-[11px] leading-4 text-[var(--app-text-tertiary)]">
               {item.detail}
             </div>
           ) : null}
@@ -143,8 +145,9 @@ export function FilterBar({
   return (
     <section
       aria-label={label}
+      data-workbench-primitive="filter-bar"
       className={cn(
-        'flex min-w-0 flex-col gap-2 border-y border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-3 py-2 sm:flex-row sm:items-center sm:justify-between',
+        'app-filter-bar flex min-w-0 flex-col gap-2 border-y border-[var(--app-divider)] bg-transparent py-2 sm:flex-row sm:items-center sm:justify-between',
         className,
       )}
     >
@@ -171,8 +174,9 @@ export function StatusBadge({
 }) {
   return (
     <span
+      data-workbench-primitive="status-badge"
       className={cn(
-        'inline-flex min-h-5 items-center rounded-[var(--app-radius-control)] border px-1.5 py-0.5 text-[11px] font-semibold leading-4',
+        'inline-flex min-h-[22px] items-center rounded-[var(--app-radius-control)] border px-1.5 py-0.5 text-[11px] leading-4 font-semibold',
         STATUS_TONE_CLASSES[tone],
         className,
       )}
@@ -214,8 +218,10 @@ export function EvidenceState({
     <section
       aria-live={kind === 'loading' ? 'polite' : undefined}
       aria-busy={kind === 'loading'}
+      data-evidence-kind={kind}
+      data-workbench-primitive="evidence-state"
       className={cn(
-        'flex min-w-0 flex-col gap-2 border-l-2 border-[var(--app-border)] bg-[var(--app-surface-raised)] px-3 py-2.5 sm:flex-row sm:items-start sm:justify-between',
+        'app-evidence-state flex min-w-0 flex-col gap-2 border-l-2 border-[var(--app-border)] bg-transparent px-3 py-2.5 sm:flex-row sm:items-start sm:justify-between',
         kind === 'missing' || kind === 'error'
           ? 'border-l-[var(--app-danger-indicator)]'
           : kind === 'stale' || kind === 'partial'
@@ -234,12 +240,12 @@ export function EvidenceState({
           </h2>
         </div>
         {description ? (
-          <p className="mt-1 text-xs leading-5 text-[var(--app-text-secondary)]">
+          <p className="mt-1 text-xs leading-[18px] text-[var(--app-text-secondary)]">
             {description}
           </p>
         ) : null}
         {evidence ? (
-          <div className="mt-1 font-mono text-[11px] text-[var(--app-text-tertiary)]">
+          <div className="mt-1 font-mono text-[11px] leading-4 text-[var(--app-text-tertiary)] [overflow-wrap:anywhere]">
             {evidence}
           </div>
         ) : null}

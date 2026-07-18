@@ -17,8 +17,9 @@ export function ControlledActionZone({
 }) {
   return (
     <section
+      data-workbench-primitive="controlled-action-zone"
       className={cn(
-        'rounded-[var(--app-radius-surface)] border border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] px-3 py-3',
+        'app-controlled-action-zone rounded-[var(--app-radius-surface)] border border-l-2 border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] px-3 py-3',
         className,
       )}
     >
@@ -31,7 +32,7 @@ export function ControlledActionZone({
             {description}
           </p>
           {evidence ? (
-            <div className="mt-1 font-mono text-[11px] text-[var(--app-text-tertiary)]">
+            <div className="mt-1 font-mono text-[11px] leading-4 text-[var(--app-text-tertiary)] [overflow-wrap:anywhere]">
               {evidence}
             </div>
           ) : null}

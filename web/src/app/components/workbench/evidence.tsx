@@ -52,11 +52,16 @@ export function ExceptionList({
   }
 
   return (
-    <ul aria-label={ariaLabel} className={cn('grid gap-2', className)}>
+    <ul
+      aria-label={ariaLabel}
+      data-workbench-primitive="exception-list"
+      className={cn('grid gap-2', className)}
+    >
       {items.map((item) => (
         <li
           key={item.id}
-          className="rounded-[var(--app-radius-surface)] border border-[var(--app-border)] bg-[var(--app-surface)] px-3 py-2.5"
+          data-severity={item.severity}
+          className="app-exception-item rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] bg-[var(--app-surface)] px-3 py-2.5"
         >
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge tone={item.severity}>
@@ -97,10 +102,12 @@ function EvidenceRow({
 }) {
   return (
     <div className="min-w-0">
-      <dt className="font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--app-text-tertiary)]">
+      <dt className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--app-text-tertiary)]">
         {label}
       </dt>
-      <dd className="mt-0.5 text-[var(--app-text-secondary)]">{children}</dd>
+      <dd className="mt-0.5 leading-[18px] text-[var(--app-text-secondary)] [overflow-wrap:anywhere]">
+        {children}
+      </dd>
     </div>
   );
 }
@@ -147,12 +154,13 @@ export function GateMatrix({
 }) {
   return (
     <div
+      data-workbench-primitive="gate-matrix"
       className={cn(
-        'max-w-full overflow-x-auto rounded-[var(--app-radius-surface)] border border-[var(--app-border)]',
+        'app-gate-matrix max-w-full overflow-x-auto border-y border-[var(--app-divider)]',
         className,
       )}
     >
-      <table className="w-full min-w-[680px] border-collapse text-left text-xs">
+      <table className="w-full min-w-[640px] border-collapse text-left text-xs">
         <caption className="sr-only">{caption}</caption>
         <thead className="bg-[var(--app-surface-raised)] text-[var(--app-text-secondary)]">
           <tr>
@@ -205,6 +213,14 @@ export type TimelineItem = {
   tone?: StatusTone;
 };
 
+const TIMELINE_TONE_CLASSES: Record<StatusTone, string> = {
+  neutral: 'bg-[var(--app-text-tertiary)]',
+  info: 'bg-[var(--app-info-indicator)]',
+  success: 'bg-[var(--app-success-indicator)]',
+  warning: 'bg-[var(--app-warning-indicator)]',
+  danger: 'bg-[var(--app-danger-indicator)]',
+};
+
 export function Timeline({
   items,
   ariaLabel,
@@ -227,21 +243,27 @@ export function Timeline({
   }
 
   return (
-    <ol aria-label={ariaLabel} className={cn('relative ml-2', className)}>
-      {items.map((item, index) => (
+    <ol
+      aria-label={ariaLabel}
+      data-workbench-primitive="timeline"
+      className={cn('relative ml-2', className)}
+    >
+      {items.map((item) => (
         <li
           key={item.id}
           className="relative border-l border-[var(--app-divider)] pb-4 pl-5 last:border-transparent last:pb-0"
         >
           <span
-            className="absolute -left-[5px] top-1 h-2.5 w-2.5 rounded-full border-2 border-[var(--app-surface-raised)] bg-[var(--app-info-indicator)]"
+            className={cn(
+              'absolute -left-[5px] top-1 h-2.5 w-2.5 rounded-full border-2 border-[var(--app-bg)]',
+              TIMELINE_TONE_CLASSES[item.tone ?? 'info'],
+            )}
             aria-hidden="true"
           />
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
             <time className="font-mono text-[11px] tabular-nums text-[var(--app-text-tertiary)]">
               {item.timestamp}
             </time>
-            <StatusBadge tone={item.tone ?? 'neutral'}>{index + 1}</StatusBadge>
             <h3 className="text-sm font-semibold text-[var(--app-text)]">
               {item.title}
             </h3>
@@ -252,7 +274,7 @@ export function Timeline({
             </p>
           ) : null}
           {item.evidence ? (
-            <div className="mt-1 font-mono text-[11px] text-[var(--app-text-tertiary)]">
+            <div className="mt-1 font-mono text-[11px] leading-4 text-[var(--app-text-tertiary)] [overflow-wrap:anywhere]">
               {item.evidence}
             </div>
           ) : null}

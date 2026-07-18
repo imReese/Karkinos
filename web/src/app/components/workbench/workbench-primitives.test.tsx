@@ -57,6 +57,18 @@ test('renders the workspace hierarchy without routine card nesting', () => {
   expect(screen.getByLabelText('Account metrics').tagName).toBe('DL');
   expect(screen.getByLabelText('Position filters').tagName).toBe('SECTION');
   expect(screen.getByText('snapshot: snap-7 · ledger cutoff: 42')).toBeTruthy();
+
+  const header = screen
+    .getByRole('heading', { name: 'Account evidence' })
+    .closest('header');
+  const metrics = screen.getByLabelText('Account metrics');
+  const filters = screen.getByLabelText('Position filters');
+  expect(header?.getAttribute('data-workbench-primitive')).toBe(
+    'workspace-header',
+  );
+  expect(metrics.getAttribute('data-workbench-primitive')).toBe('metric-strip');
+  expect(filters.getAttribute('data-workbench-primitive')).toBe('filter-bar');
+  expect(metrics.className).not.toContain('rounded-');
 });
 
 test('keeps operational state and financial direction on separate roles', () => {
@@ -137,6 +149,9 @@ test('renders a dense accessible TanStack data table and a real empty state', ()
   );
 
   const table = screen.getByRole('table', { name: 'Evidence rows' });
+  const tableShell = table.closest('[data-workbench-primitive="data-table"]');
+  expect(tableShell).toBeTruthy();
+  expect(tableShell?.className).not.toContain('rounded-');
   expect(
     within(table).getByRole('columnheader', { name: 'Evidence' }),
   ).toBeTruthy();
@@ -233,6 +248,11 @@ test('closes the evidence drawer with Escape and restores focus', async () => {
   const trigger = screen.getByRole('button', { name: 'Open evidence' });
   await user.click(trigger);
   expect(screen.getByRole('dialog', { name: 'Evidence detail' })).toBeTruthy();
+  expect(document.activeElement).toBe(
+    screen.getAllByRole('button', { name: 'Close evidence' })[1],
+  );
+
+  await user.keyboard('{Tab}');
   expect(document.activeElement).toBe(
     screen.getAllByRole('button', { name: 'Close evidence' })[1],
   );

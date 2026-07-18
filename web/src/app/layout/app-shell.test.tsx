@@ -306,10 +306,13 @@ test('keeps the KARKINOS brand mark unwrapped in the sidebar header', async () =
 
   const brandMarks = await screen.findAllByText('Karkinos');
   const sidebarBrand = brandMarks[0] as HTMLElement;
+  const toolbarBrand = brandMarks[1] as HTMLElement;
 
   expect(sidebarBrand.className).toContain('whitespace-nowrap');
   expect(sidebarBrand.className).toContain('truncate');
   expect(sidebarBrand.className).toContain('font-semibold');
+  expect(toolbarBrand.className).toContain('app-toolbar-brand');
+  expect(toolbarBrand.className).toContain('lg:hidden');
 });
 
 test('switches interface language from english to chinese', async () => {
@@ -432,11 +435,11 @@ test('surfaces compact status without duplicate nav links in the header rail', a
   const valuationShell = valuationStatus.closest('.group');
   const marketShell = marketStatus.closest('.group');
   expect(valuationShell?.className).toContain('h-8');
-  expect(valuationShell?.className).toContain('w-[12.5rem]');
+  expect(valuationShell?.className).toContain('w-[11.5rem]');
   expect(valuationStatus.className).toContain('text-xs');
   expect(valuationStatus.className).toContain('whitespace-nowrap');
   expect(marketShell?.className).toContain('h-8');
-  expect(marketShell?.className).toContain('w-[12.5rem]');
+  expect(marketShell?.className).toContain('w-[11.5rem]');
   expect(marketStatus.className).toContain('text-xs');
   expect(marketStatus.className).toContain('whitespace-nowrap');
   expect(
@@ -479,7 +482,8 @@ test('keeps app shell overflow from clipping responsive content', async () => {
   expect(main?.className).toContain('min-w-0');
   expect(content?.className).toContain('min-w-0');
   expect(content?.className).toContain('overflow-y-auto');
-  expect(content?.className).toContain('overflow-x-auto');
+  expect(content?.className).toContain('overflow-x-hidden');
+  expect(content?.className).not.toContain('overflow-x-auto');
   expect(content?.className).toContain('[contain:layout_paint]');
   expect(contentInner?.className).toContain('min-w-0');
 });

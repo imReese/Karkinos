@@ -60,15 +60,20 @@ describe('remaining route workbench contract', () => {
   it('enforces local overflow, compact shape, touch, and reduced-motion rules', () => {
     expect(CSS).toContain('.app-workbench-route');
     expect(CSS).toContain('overscroll-behavior-inline: contain');
-    expect(CSS).toMatch(/max-width:\s*767px[\s\S]*min-height:\s*40px/);
     expect(CSS).toMatch(
-      /\.app-shell-sidebar[\s\S]*\.app-toolbar-shell[\s\S]*min-height:\s*40px/,
+      /max-width:\s*767px[\s\S]*min-width:\s*var\(--app-touch-target\)[\s\S]*min-height:\s*var\(--app-touch-target\)/,
+    );
+    expect(CSS).toMatch(
+      /\.app-shell-sidebar[\s\S]*\.app-toolbar-shell[\s\S]*min-height:\s*var\(--app-touch-target\)/,
     );
     expect(CSS).toMatch(
       /\.app-workbench-route a\[href\][\s\S]*display:\s*inline-flex/,
     );
     expect(CSS).toMatch(
       /prefers-reduced-motion:\s*reduce[\s\S]*transition-duration:\s*0\.01ms\s*!important/,
+    );
+    expect(CSS).toMatch(
+      /min-width:\s*1024px[\s\S]*\.app-toolbar-brand\s*{[\s\S]*display:\s*none/,
     );
   });
 
