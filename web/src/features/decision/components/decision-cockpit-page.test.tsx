@@ -1338,24 +1338,14 @@ test('renders daily and intraday decision cockpit evidence without execution', a
   renderDecisionCockpit();
 
   expect(await screen.findByText('Decision platform')).toBeTruthy();
-  expect(await screen.findByText('Decision evidence register')).toBeTruthy();
+  const metricStrip = await screen.findByLabelText('Today operating posture');
+  expect(within(metricStrip).getByText('Candidate pool')).toBeTruthy();
+  expect(within(metricStrip).getByText('1 ready')).toBeTruthy();
+  expect(within(metricStrip).getByText('0 blocked')).toBeTruthy();
   expect(
-    await screen.findByLabelText('Decision register item: Candidate pool 1'),
-  ).toBeTruthy();
-  expect(
-    await screen.findByLabelText(
-      'Decision register item: Manual confirmations 1 ready',
-    ),
-  ).toBeTruthy();
-  expect(
-    await screen.findByLabelText(
-      'Decision register item: Risk blocks 0 blocked',
-    ),
-  ).toBeTruthy();
-  expect(
-    await screen.findByLabelText(
-      'Decision register item: Execution default Manual confirmation required',
-    ),
+    await screen.findByRole('table', {
+      name: 'Evidence-first review order',
+    }),
   ).toBeTruthy();
   expect((await screen.findAllByText('Daily lane')).length).toBeGreaterThan(0);
   expect((await screen.findAllByText('Intraday lane')).length).toBeGreaterThan(
@@ -1417,10 +1407,9 @@ test('renders daily and intraday decision cockpit evidence without execution', a
 test('labels decision candidates as a candidate pool in Chinese', async () => {
   renderDecisionCockpit({ locale: 'zh' });
 
-  expect(await screen.findByText('决策证据登记')).toBeTruthy();
-  expect(
-    await screen.findByLabelText('Decision register item: 候选池 1'),
-  ).toBeTruthy();
+  const metricStrip = await screen.findByLabelText('今日运行姿态');
+  expect(within(metricStrip).getByText('候选池')).toBeTruthy();
+  expect(within(metricStrip).getByText('1')).toBeTruthy();
   expect(document.body.textContent).not.toContain('候选动作 1');
 });
 
@@ -3875,6 +3864,10 @@ test('surfaces degraded and blocked account-truth gates in decision summaries', 
     intradayResponse: blockedIntraday,
   });
 
+  const gateMatrix = await screen.findByTestId('decision-gate-matrix');
+  expect(gateMatrix.textContent).toContain('Account truth');
+  expect(gateMatrix.textContent).toContain('Degraded');
+  expect(gateMatrix.textContent).toContain('Review position difference');
   expect(
     (await screen.findAllByText('Account truth gate')).length,
   ).toBeGreaterThan(0);
@@ -3886,7 +3879,9 @@ test('surfaces degraded and blocked account-truth gates in decision summaries', 
   );
   expect(await screen.findByText(/2 unresolved differences/)).toBeTruthy();
   expect(await screen.findByText(/4 unresolved differences/)).toBeTruthy();
-  expect(await screen.findByText(/Review position difference/)).toBeTruthy();
+  expect(
+    (await screen.findAllByText(/Review position difference/)).length,
+  ).toBeGreaterThan(0);
   expect(
     await screen.findByText(/Import broker evidence and run reconciliation/),
   ).toBeTruthy();
@@ -3959,10 +3954,12 @@ test('surfaces strategy-attribution gate status in decision summaries', async ()
   ).toBeNull();
   expect(screen.queryByText('Blocked · dual_ma')).toBeNull();
   expect(
-    await screen.findByText(
-      /Link strategy signals, reviews, orders, fills, and contribution evidence/,
-    ),
-  ).toBeTruthy();
+    (
+      await screen.findAllByText(
+        /Link strategy signals, reviews, orders, fills, and contribution evidence/,
+      )
+    ).length,
+  ).toBeGreaterThan(0);
   expect(
     screen.queryByText(/link_strategy_signals_orders_fills_and_contribution/),
   ).toBeNull();

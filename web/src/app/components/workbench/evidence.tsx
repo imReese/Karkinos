@@ -118,6 +118,7 @@ export type GateMatrixItem = {
   id: string;
   gate: ReactNode;
   state: GateState;
+  stateLabel?: ReactNode;
   reason: ReactNode;
   evidence?: ReactNode;
   unblockCondition?: ReactNode;
@@ -176,7 +177,7 @@ export function GateMatrix({
               </th>
               <td className="px-3 py-2.5">
                 <StatusBadge tone={GATE_TONES[item.state]}>
-                  {item.state}
+                  {item.stateLabel ?? item.state}
                 </StatusBadge>
               </td>
               <td className="px-3 py-2.5 text-[var(--app-text-secondary)]">

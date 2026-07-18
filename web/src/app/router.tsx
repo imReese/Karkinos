@@ -20,6 +20,7 @@ import {
   EvidenceState,
   ExceptionList,
   MetricStrip,
+  StatusBadge,
   WorkspaceHeader,
   type ExceptionItem,
 } from './components/workbench';
@@ -71,7 +72,6 @@ import {
   OverviewCardsSkeleton,
 } from '../features/account/components/overview-cards';
 import { PortfolioExposureSummary } from '../features/account/components/portfolio-exposure-summary';
-import { RiskSummaryCard } from '../features/account/components/risk-summary-card';
 import { KillSwitchPanel } from '../features/trading/components/kill-switch-panel';
 import { OrderApprovalTable } from '../features/trading/components/order-approval-table';
 import { TradingPage } from '../features/trading/components/trading-page';
@@ -3332,22 +3332,31 @@ export function RiskPage() {
 
   return (
     <section className="space-y-5 sm:space-y-6">
-      <PageHeader
-        kicker={copy.riskPage.kicker}
+      <WorkspaceHeader
+        eyebrow={copy.riskPage.kicker}
         title={copy.riskPage.title}
-        subtitle={copy.riskPage.subtitle}
+        description={copy.riskPage.subtitle}
+        context={
+          state.data
+            ? `${state.data.summary.valuation_timestamp} · ${formatPublicStatus(
+                state.data.summary.quote_status,
+                locale,
+              )}`
+            : undefined
+        }
       />
 
       {isInitialRiskLoad ? (
-        <StatusCard
+        <EvidenceState
+          kind="loading"
           title={copy.states.loading}
-          detail={copy.riskPage.loading}
+          description={copy.riskPage.loading}
         />
       ) : isRiskWorkspaceUnavailable ? (
-        <StatusCard
+        <EvidenceState
+          kind="error"
           title={copy.states.error}
-          detail={copy.riskPage.error}
-          tone="danger"
+          description={copy.riskPage.error}
         />
       ) : (
         <div className="space-y-5 sm:space-y-6">
@@ -3362,46 +3371,48 @@ export function RiskPage() {
           {riskReviewTask ? (
             <section
               data-testid="risk-decision-handoff"
-              className="app-panel rounded-2xl p-4 sm:p-5"
+              className="min-w-0 space-y-2"
             >
-              <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                <div className="min-w-0">
-                  <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-                    {copy.riskPage.decisionHandoffKicker}
-                  </div>
-                  <h2 className="mt-2 text-xl font-semibold">
-                    {copy.riskPage.decisionHandoffTitle}
-                  </h2>
-                  <p className="app-muted mt-2 max-w-3xl break-words text-sm leading-6">
-                    {copy.riskPage.decisionHandoffDetail(
+              <h2 className="text-base font-semibold text-[var(--app-text)]">
+                {copy.riskPage.decisionHandoffKicker}
+              </h2>
+              <ExceptionList
+                ariaLabel={copy.riskPage.decisionHandoffKicker}
+                emptyState={copy.riskPage.noBlockingItems}
+                labels={{
+                  reason: locale === 'zh' ? '阻断原因' : 'Reason',
+                  unblockCondition:
+                    locale === 'zh' ? '解除条件' : 'Unblock condition',
+                  nextAction: locale === 'zh' ? '安全下一步' : 'Safe next step',
+                  evidence: locale === 'zh' ? '证据' : 'Evidence',
+                }}
+                items={[
+                  {
+                    id: riskReviewTask.id,
+                    severity: 'warning',
+                    statusLabel: formatPublicStatus(
+                      riskReviewTask.status,
+                      locale,
+                    ),
+                    title: copy.riskPage.decisionHandoffTitle,
+                    reason: copy.riskPage.decisionHandoffDetail(
                       riskCandidateCount,
                       riskCheckedCount,
-                    )}
-                  </p>
-                </div>
-                <span className="inline-flex min-h-9 items-center justify-center rounded-full border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-3 py-1 text-sm font-semibold text-[var(--app-warning-text)]">
-                  {copy.riskPage.batchRunnerMissing}
-                </span>
-              </div>
-              <div className="mt-4 grid min-w-0 gap-2 md:grid-cols-3">
-                <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] px-3 py-2.5 text-sm font-semibold">
-                  {copy.riskPage.decisionHandoffWhat}
-                </div>
-                <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] px-3 py-2.5 text-sm font-semibold">
-                  {copy.riskPage.decisionHandoffHow}
-                </div>
-                <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] px-3 py-2.5 text-sm font-semibold">
-                  {copy.riskPage.decisionHandoffDoNot}
-                </div>
-              </div>
-              <div className="mt-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    ),
+                    unblockCondition: copy.riskPage.decisionHandoffHow,
+                    nextAction: copy.riskPage.decisionHandoffWhat,
+                    evidence: copy.riskPage.decisionHandoffDoNot,
+                  },
+                ]}
+              />
+              <div className="flex min-w-0 flex-col gap-3 border-b border-[var(--app-divider)] pb-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="app-muted min-w-0 break-words text-sm">
                   {copy.riskPage.decisionHandoffNext}
                 </p>
                 <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
                   <button
                     type="button"
-                    className="app-button-primary inline-flex min-h-10 items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-55"
+                    className="app-button-primary inline-flex min-h-9 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-55"
                     disabled={batchPreTradeRisk.isPending}
                     onClick={() => void runBatchRiskGate()}
                   >
@@ -3410,7 +3421,7 @@ export function RiskPage() {
                       : copy.riskPage.runBatchRiskGate}
                   </button>
                   <a
-                    className="app-button-secondary inline-flex min-h-10 items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold"
+                    className="app-button-secondary inline-flex min-h-9 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-sm font-semibold"
                     href="/decision"
                   >
                     {copy.riskPage.returnToDecision}
@@ -3439,96 +3450,137 @@ export function RiskPage() {
           ) : null}
 
           <div
-            className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]"
+            className="grid min-w-0 gap-4"
             data-testid="risk-trading-control-grid"
           >
             <KillSwitchPanel />
             <OrderApprovalTable />
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
-            {workspace.data.metrics.map((metric) => (
-              <div
-                key={metric.key}
-                className="app-panel rounded-2xl p-4 sm:p-5"
-              >
-                <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-                  {getRiskMetricLabel(copy, metric.key)}
-                </div>
-                <div className="mt-3 text-2xl font-semibold">
-                  {metric.display_value}
-                </div>
-                <div className="app-muted mt-2 text-sm">
-                  {getRiskMetricDetail(copy, metric.key)}
-                </div>
-              </div>
-            ))}
-          </div>
+          <MetricStrip
+            ariaLabel={copy.riskPage.metrics}
+            items={workspace.data.metrics.map((metric) => ({
+              id: metric.key,
+              label: getRiskMetricLabel(copy, metric.key),
+              value: metric.display_value,
+              detail: formatRiskAlertLevel(metric.level, locale),
+              tone:
+                metric.level === 'high' || metric.level === 'medium'
+                  ? ('warning' as const)
+                  : ('neutral' as const),
+            }))}
+          />
 
-          <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.75fr)]">
-            <div
-              data-testid="risk-blocking-register"
-              className="app-panel min-w-0 rounded-2xl p-4 sm:p-5"
-            >
-              <div className="min-w-0">
-                <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-                  {copy.riskPage.blockingRegister}
-                </div>
-                <div className="app-muted mt-2 max-w-3xl text-sm">
-                  {copy.riskPage.blockingRegisterDetail}
-                </div>
-              </div>
-              <div className="mt-4 grid min-w-0 gap-3">
-                {(risks.data ?? []).length > 0 ? (
-                  (risks.data ?? []).map((item) => (
-                    <div
-                      key={`${item.kind}-${item.title}`}
-                      className={`min-w-0 rounded-2xl border px-4 py-4 ${
-                        item.level === 'high' || item.level === 'medium'
-                          ? 'app-panel-danger'
-                          : 'app-panel-strong'
-                      }`}
-                    >
-                      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="text-sm font-semibold">
-                            {item.title}
-                          </div>
-                          <div className="app-muted mt-1 break-all text-xs">
-                            {getRiskAlertKindLabel(copy, item.kind)}
-                          </div>
-                        </div>
-                        <span className="shrink-0 rounded-full border border-[color-mix(in_srgb,var(--app-border)_36%,transparent)] px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.12em]">
-                          {formatRiskAlertLevel(item.level, locale)}
-                        </span>
-                      </div>
-                      <div className="mt-3 break-words text-sm opacity-90">
-                        {formatPublicNote(item.detail, locale)}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="app-panel-strong rounded-2xl px-4 py-4 text-sm">
-                    {copy.riskPage.noBlockingItems}
-                  </div>
-                )}
-              </div>
+          <section
+            data-testid="risk-blocking-register"
+            className="min-w-0 space-y-2"
+          >
+            <div>
+              <h2 className="text-base font-semibold text-[var(--app-text)]">
+                {copy.riskPage.blockingRegister}
+              </h2>
+              <p className="mt-0.5 max-w-3xl text-xs text-[var(--app-text-secondary)]">
+                {copy.riskPage.blockingRegisterDetail}
+              </p>
             </div>
-            <div className="space-y-5">
-              <RiskSummaryCard
-                overview={state.data.summary}
-                snapshot={state.data.snapshot}
-              />
-              <div className="app-panel rounded-2xl p-4 sm:p-5">
-                <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-                  {copy.riskPage.nextStep}
-                </div>
-                <div className="mt-3 text-lg font-semibold">
-                  {state.data.next_step}
-                </div>
-              </div>
+            <ExceptionList
+              ariaLabel={copy.riskPage.blockingRegister}
+              emptyState={copy.riskPage.noBlockingItems}
+              labels={{
+                reason: locale === 'zh' ? '阻断原因' : 'Reason',
+                unblockCondition:
+                  locale === 'zh' ? '解除条件' : 'Unblock condition',
+                nextAction: locale === 'zh' ? '安全下一步' : 'Safe next step',
+                evidence: locale === 'zh' ? '证据' : 'Evidence',
+              }}
+              items={(risks.data ?? []).map((item) => ({
+                id: `${item.kind}-${item.title}`,
+                severity:
+                  item.level === 'high'
+                    ? ('danger' as const)
+                    : item.level === 'medium'
+                      ? ('warning' as const)
+                      : ('info' as const),
+                statusLabel: formatRiskAlertLevel(item.level, locale),
+                title: item.title,
+                reason: formatPublicNote(item.detail, locale),
+                nextAction: state.data.next_step,
+                evidence: `${getRiskAlertKindLabel(
+                  copy,
+                  item.kind,
+                )} · ${formatRiskAlertLevel(item.level, locale)}`,
+              }))}
+            />
+          </section>
+
+          <section className="min-w-0 space-y-2">
+            <div>
+              <h2 className="text-base font-semibold text-[var(--app-text)]">
+                {locale === 'zh'
+                  ? '风险指标与阈值证据'
+                  : 'Risk metric and threshold evidence'}
+              </h2>
+              <p className="mt-0.5 text-xs text-[var(--app-text-secondary)]">
+                {locale === 'zh'
+                  ? '仅展示 canonical 投影持久化的数值、等级和说明；未提供的阈值不会在 UI 中推导。'
+                  : 'Shows only values, levels, and details persisted by the canonical projection; missing thresholds are not inferred in the UI.'}
+              </p>
             </div>
-          </div>
+            <div className="max-w-full overflow-x-auto rounded-[var(--app-radius-surface)] border border-[var(--app-border)]">
+              <table
+                className="w-full min-w-[620px] border-collapse text-left text-xs"
+                data-testid="risk-threshold-table"
+              >
+                <caption className="sr-only">{copy.riskPage.metrics}</caption>
+                <thead className="bg-[var(--app-surface-raised)] text-[var(--app-text-secondary)]">
+                  <tr>
+                    {[
+                      locale === 'zh' ? '指标' : 'Metric',
+                      locale === 'zh' ? '投影值' : 'Projected value',
+                      locale === 'zh' ? '等级' : 'Level',
+                      locale === 'zh' ? '持久化说明' : 'Persisted detail',
+                    ].map((label) => (
+                      <th
+                        key={label}
+                        scope="col"
+                        className="border-b border-[var(--app-divider)] px-3 py-2 font-semibold"
+                      >
+                        {label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--app-divider)] bg-[var(--app-surface)]">
+                  {workspace.data.metrics.map((metric) => (
+                    <tr key={metric.key}>
+                      <th scope="row" className="px-3 py-2.5 font-semibold">
+                        {getRiskMetricLabel(copy, metric.key)}
+                      </th>
+                      <td className="px-3 py-2.5 font-mono tabular-nums">
+                        {metric.display_value}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <StatusBadge
+                          tone={
+                            metric.level === 'high'
+                              ? 'danger'
+                              : metric.level === 'medium'
+                                ? 'warning'
+                                : 'neutral'
+                          }
+                        >
+                          {formatRiskAlertLevel(metric.level, locale)}
+                        </StatusBadge>
+                      </td>
+                      <td className="px-3 py-2.5 text-[var(--app-text-secondary)]">
+                        {metric.detail || getRiskMetricDetail(copy, metric.key)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
 
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
             <div className="app-panel rounded-2xl p-4 sm:p-5">

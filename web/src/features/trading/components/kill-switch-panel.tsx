@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 
+import { ControlledActionZone } from '../../../app/components/workbench';
 import { useCopy } from '../../../app/copy';
 import {
   useKillSwitchQuery,
@@ -39,26 +40,25 @@ export function KillSwitchPanel() {
   };
 
   return (
-    <section
-      className="app-panel min-w-0 rounded-[22px] p-3 sm:p-4"
+    <div
+      className="min-w-0"
       data-layout="compact-control"
       data-testid="kill-switch-panel"
     >
-      <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(300px,0.78fr)] lg:items-center">
-        <div className="min-w-0">
-          <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-            {labels.kicker}
-          </div>
-          <div className="mt-1.5 flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-semibold">{labels.title}</h2>
+      <ControlledActionZone
+        title={labels.title}
+        description={labels.subtitle}
+        evidence={
+          <span className="flex flex-wrap items-center gap-2">
             <KillSwitchBadge enabled={enabled} snapshot={snapshot} />
-          </div>
-          <p className="app-muted mt-1.5 max-w-2xl text-sm leading-5">
-            {labels.subtitle}
-          </p>
-        </div>
-
-        <div className="grid min-w-0 gap-2">
+            <span>
+              {labels.updatedAt}:{' '}
+              {formatTimestamp(snapshot?.updated_at) ?? labels.neverUpdated}
+            </span>
+          </span>
+        }
+      >
+        <div className="grid w-full min-w-[280px] gap-2 sm:w-[360px]">
           <label className="grid min-w-0 gap-1.5">
             <span className="text-sm font-medium">{labels.reason}</span>
             <input
@@ -111,13 +111,9 @@ export function KillSwitchPanel() {
                 : labels.disable}
             </button>
           </div>
-          <div className="app-muted text-xs leading-5">
-            {labels.updatedAt}:{' '}
-            {formatTimestamp(snapshot?.updated_at) ?? labels.neverUpdated}
-          </div>
         </div>
-      </div>
-    </section>
+      </ControlledActionZone>
+    </div>
   );
 }
 
