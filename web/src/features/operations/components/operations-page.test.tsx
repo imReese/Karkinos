@@ -163,16 +163,18 @@ test('renders persisted attention evidence without write or execution affordance
   expect(
     await screen.findByRole('heading', { name: 'Operations evidence' }),
   ).toBeTruthy();
-  expect(await screen.findByText('Read-only projection')).toBeTruthy();
-  expect(screen.getByText('Provider not contacted')).toBeTruthy();
-  expect(screen.getByText('No execution authority')).toBeTruthy();
+  const page = await screen.findByTestId('operations-page');
+  expect(page.textContent).toContain('Read-only projection');
+  expect(page.textContent).toContain('Provider not contacted');
+  expect(page.textContent).toContain('No execution authority');
 
-  const attention = await screen.findByTestId(
-    'operations-attention-market_data',
-  );
+  const attention = await screen.findByRole('list', {
+    name: 'Evidence review queue',
+  });
   expect(
     within(attention).getByRole('heading', { name: 'Market data and NAV' }),
   ).toBeTruthy();
+  expect(attention).toBeTruthy();
   expect(
     within(attention).getByText('Review market data freshness'),
   ).toBeTruthy();
@@ -185,7 +187,7 @@ test('renders persisted attention evidence without write or execution affordance
     ),
   ).toBeTruthy();
   expect(
-    within(attention).getByText('sha256:market-attention-fixture'),
+    within(attention).getByText(/sha256:market-attention-fixture/),
   ).toBeTruthy();
   expect(
     within(attention)
@@ -236,11 +238,14 @@ test('keeps subsystem evidence visible when the review queue is empty', async ()
     },
   });
 
+  const attentionQueue = await screen.findByTestId(
+    'operations-attention-queue',
+  );
+  expect(within(attentionQueue).getByRole('status').textContent).toContain(
+    'No subsystem currently requires evidence review.',
+  );
   expect(
-    (await screen.findByTestId('operations-attention-empty')).textContent,
-  ).toContain('No subsystem currently requires evidence review.');
-  expect(
-    screen.getByRole('heading', { name: 'Market data and NAV' }),
+    screen.getByRole('link', { name: 'Market data and NAV' }),
   ).toBeTruthy();
   expect(
     screen.getByText('Three fund NAV observations require confirmation.'),

@@ -1,5 +1,13 @@
 import { useMemo, useState } from 'react';
 
+import {
+  EvidenceState,
+  ExceptionList,
+  GateMatrix,
+  MetricStrip,
+  WorkspaceHeader,
+  type GateMatrixItem,
+} from '../../../app/components/workbench';
 import { useCopy } from '../../../app/copy';
 import { usePreferences, type Locale } from '../../../app/preferences';
 import {
@@ -4955,6 +4963,116 @@ function DailyTradingPlanPanel({
   );
 }
 
+const DECISION_GATE_IDS = [
+  'account_truth',
+  'strategy_evidence',
+  'risk_review',
+  'paper_shadow_review',
+  'manual_confirmation',
+] as const;
+
+function decisionGateState(status: string | null | undefined) {
+  if (
+    status === 'pass' ||
+    status === 'passed' ||
+    status === 'healthy' ||
+    status === 'ready' ||
+    status === 'attached' ||
+    status === 'live'
+  ) {
+    return 'pass' as const;
+  }
+  if (
+    status === 'blocked' ||
+    status === 'failed' ||
+    status === 'missing' ||
+    status === 'not_attached'
+  ) {
+    return 'block' as const;
+  }
+  if (!status || status === 'unknown' || status === 'skipped') {
+    return 'unknown' as const;
+  }
+  return 'warning' as const;
+}
+
+function decisionGateMatrixItems(
+  lane: DecisionResponse | undefined,
+  labels: ReturnType<typeof useCopy>['decision'],
+  locale: Locale,
+): GateMatrixItem[] {
+  const workflowTasks = new Map(
+    (lane?.summary.workflow_tasks ?? []).map((task) => [task.id, task]),
+  );
+  const missingEvidence =
+    locale === 'zh'
+      ? 'canonical 投影未提供该闸门证据'
+      : 'Canonical projection did not provide this gate evidence';
+
+  return DECISION_GATE_IDS.map((gateId) => {
+    const task = workflowTasks.get(gateId);
+    if (task) {
+      const stateLabel = formatPublicStatus(task.status, locale);
+      const blockers = gateBlockingReasonLabels(task.blocking_reasons, locale);
+      const requiredActions = gateRequirementLabels(
+        task.required_actions,
+        labels,
+      );
+      return {
+        id: gateId,
+        gate: labels.workflowTaskLabel(gateId),
+        state: decisionGateState(task.status),
+        stateLabel,
+        reason: blockers.join(' · ') || stateLabel,
+        evidence: lane
+          ? `${locale === 'zh' ? '工作流投影' : 'Workflow projection'} · ${lane.generated_at}`
+          : missingEvidence,
+        unblockCondition:
+          requiredActions.length > 0 ? requiredActions.join(' · ') : undefined,
+      };
+    }
+
+    const fallback =
+      gateId === 'account_truth'
+        ? lane?.summary.account_truth
+        : gateId === 'strategy_evidence'
+          ? lane?.summary.strategy_attribution
+          : undefined;
+    if (fallback) {
+      const stateLabel = formatPublicStatus(fallback.gate_status, locale);
+      const requiredActions = gateRequirementLabels(
+        fallback.required_actions ?? [],
+        labels,
+      );
+      const blockers = gateBlockingReasonLabels(
+        fallback.blocking_reasons ?? [],
+        locale,
+      );
+      return {
+        id: gateId,
+        gate: labels.workflowTaskLabel(gateId),
+        state: decisionGateState(fallback.gate_status),
+        stateLabel,
+        reason: blockers.join(' · ') || stateLabel,
+        evidence: lane
+          ? `${locale === 'zh' ? '决策摘要' : 'Decision summary'} · ${lane.generated_at}`
+          : missingEvidence,
+        unblockCondition:
+          requiredActions.length > 0 ? requiredActions.join(' · ') : undefined,
+      };
+    }
+
+    return {
+      id: gateId,
+      gate: labels.workflowTaskLabel(gateId),
+      state: 'unknown',
+      stateLabel: formatPublicStatus('unknown', locale),
+      reason: missingEvidence,
+      evidence: missingEvidence,
+    };
+  });
+}
+
 export function DecisionCockpitPage() {
   const copy = useCopy();
   const labels = copy.decision;
@@ -5002,94 +5120,20 @@ export function DecisionCockpitPage() {
     [lanes],
   );
   const collapseDecisionEvidence = denseCandidateCount > 6;
-  const commandRegisterRows = useMemo(() => {
-    const totals = lanes.reduce(
-      (accumulator, lane) => ({
-        candidates: accumulator.candidates + lane.summary.candidate_count,
-        manualReady:
-          accumulator.manualReady +
-          lane.summary.ready_for_manual_confirmation_count,
-        riskBlocked: accumulator.riskBlocked + lane.summary.risk_blocked_count,
-        signals: accumulator.signals + (lane.summary.audit?.signal_count ?? 0),
-        journalEntries:
-          accumulator.journalEntries +
-          (lane.summary.audit?.journal_entry_count ?? 0),
-      }),
-      {
-        candidates: 0,
-        manualReady: 0,
-        riskBlocked: 0,
-        signals: 0,
-        journalEntries: 0,
-      },
-    );
-
-    return [
-      {
-        label: labels.candidateActions,
-        value: String(totals.candidates),
-        tone: totals.candidates > 0 ? 'success' : 'neutral',
-      },
-      {
-        label: labels.manualConfirmations,
-        value: labels.readyCount(totals.manualReady),
-        tone: totals.manualReady > 0 ? 'success' : 'neutral',
-      },
-      {
-        label: labels.riskBlocks,
-        value: labels.blockedCount(totals.riskBlocked),
-        tone: totals.riskBlocked > 0 ? 'danger' : 'success',
-      },
-      {
-        label: labels.auditCoverage,
-        value: `${totals.journalEntries}/${totals.signals}`,
-        tone:
-          totals.signals > 0 && totals.journalEntries >= totals.signals
-            ? 'success'
-            : 'warning',
-      },
-      {
-        label: labels.marketData,
-        value: formatPublicStatus(
-          today.data?.summary.market_data?.source_health ?? '--',
-          locale,
-        ),
-        tone:
-          today.data?.summary.market_data?.source_health === 'live'
-            ? 'success'
-            : 'warning',
-      },
-      {
-        label: labels.executionDefault,
-        value: labels.manualConfirmationRequired,
-        tone: 'success',
-      },
-      {
-        label: labels.accountTruthGate,
-        value: accountTruthValue(today.data?.summary.account_truth, locale),
-        tone: accountTruthTone(today.data?.summary.account_truth),
-      },
-      {
-        label: labels.strategyAttributionGate,
-        value: strategyAttributionValue(
-          today.data?.summary.strategy_attribution,
-          locale,
-          copy.backtest.page.strategyNames,
-        ),
-        tone: strategyAttributionTone(today.data?.summary.strategy_attribution),
-      },
-    ] satisfies Array<{
-      label: string;
-      value: string;
-      tone: 'success' | 'warning' | 'danger' | 'neutral';
-    }>;
-  }, [lanes, labels, locale, today.data]);
+  const gateItems = useMemo(
+    () => decisionGateMatrixItems(today.data, labels, locale),
+    [labels, locale, today.data],
+  );
 
   if (loading) {
     return (
       <section className="space-y-5">
         <PageHeader title={labels.title} subtitle={labels.subtitle} />
-        <StatePanel title={copy.states.loading} detail={labels.loading} />
+        <EvidenceState
+          kind="loading"
+          title={copy.states.loading}
+          description={labels.loading}
+        />
       </section>
     );
   }
@@ -5098,9 +5142,10 @@ export function DecisionCockpitPage() {
     return (
       <section className="space-y-5">
         <PageHeader title={labels.title} subtitle={labels.subtitle} />
-        <StatePanel
+        <EvidenceState
+          kind="error"
           title={copy.states.error}
-          detail={error instanceof Error ? error.message : labels.error}
+          description={error instanceof Error ? error.message : labels.error}
         />
       </section>
     );
@@ -5108,37 +5153,85 @@ export function DecisionCockpitPage() {
 
   return (
     <section className="min-w-0 space-y-5 sm:space-y-6">
-      <PageHeader title={labels.title} subtitle={labels.subtitle} />
+      <WorkspaceHeader
+        eyebrow={labels.kicker}
+        title={labels.title}
+        description={labels.subtitle}
+        context={
+          today.data
+            ? `${today.data.decision_date} · ${formatPublicStatus(
+                today.data.decision,
+                locale,
+              )}`
+            : undefined
+        }
+      />
 
       <DecisionNextActionGuidePanel lanes={lanes} />
 
-      <DecisionQualityPanel />
+      <MetricStrip
+        ariaLabel={labels.commandRegisterTitle}
+        items={[
+          {
+            id: 'candidate-count',
+            label: labels.candidateActions,
+            value: today.data?.summary.candidate_count ?? '--',
+          },
+          {
+            id: 'manual-ready',
+            label: labels.manualConfirmations,
+            value: today.data
+              ? labels.readyCount(
+                  today.data.summary.ready_for_manual_confirmation_count,
+                )
+              : '--',
+          },
+          {
+            id: 'risk-blocked',
+            label: labels.riskBlocks,
+            value: today.data
+              ? labels.blockedCount(today.data.summary.risk_blocked_count)
+              : '--',
+            tone:
+              (today.data?.summary.risk_blocked_count ?? 0) > 0
+                ? 'warning'
+                : 'neutral',
+          },
+          {
+            id: 'market-evidence',
+            label: labels.marketData,
+            value: formatPublicStatus(
+              today.data?.summary.market_data?.source_health ?? 'unknown',
+              locale,
+            ),
+          },
+        ]}
+      />
 
-      <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]">
-        <div className="app-terminal-inner min-w-0 rounded-[27px] p-4 sm:p-5">
-          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0">
-              <div className="app-product-mark">{labels.commandRegister}</div>
-              <h2 className="app-card-title mt-1.5">
-                {labels.commandRegisterTitle}
-              </h2>
-            </div>
-            <p className="app-muted max-w-2xl break-words text-sm leading-6 sm:text-right">
-              {labels.commandRegisterDetail}
-            </p>
-          </div>
-          <div className="mt-4 grid min-w-0 gap-2 md:grid-cols-2 xl:grid-cols-3">
-            {commandRegisterRows.map((row) => (
-              <DecisionRegisterRow
-                key={row.label}
-                label={row.label}
-                value={row.value}
-                tone={row.tone}
-              />
-            ))}
-          </div>
+      <section className="min-w-0 space-y-2" data-testid="decision-gate-matrix">
+        <div>
+          <h2 className="text-base font-semibold text-[var(--app-text)]">
+            {labels.workflowTitle}
+          </h2>
+          <p className="mt-0.5 text-xs text-[var(--app-text-secondary)]">
+            {labels.workflowDetail}
+          </p>
         </div>
+        <GateMatrix
+          caption={labels.workflowTitle}
+          items={gateItems}
+          labels={{
+            gate: locale === 'zh' ? '闸门' : 'Gate',
+            state: locale === 'zh' ? '状态' : 'State',
+            reason:
+              locale === 'zh' ? '阻断原因 / 结论' : 'Blocker / conclusion',
+            evidence:
+              locale === 'zh' ? '证据 / 解除条件' : 'Evidence / unblock',
+          }}
+        />
       </section>
+
+      <DecisionQualityPanel />
 
       <DailyTradingPlanPanel
         plan={tradingPlan.data}
@@ -5266,47 +5359,45 @@ function DecisionNextActionGuidePanel({
   return (
     <section
       data-testid="decision-next-action-guide"
-      className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]"
+      className="min-w-0 space-y-2"
     >
-      <div className="app-terminal-inner min-w-0 rounded-[27px] p-4 sm:p-5">
-        <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-          <div className="min-w-0">
-            <div className="app-product-mark">{labels.nextActionKicker}</div>
-            <h2 className="app-card-title mt-1.5">{guide.title}</h2>
-            <p className="app-muted mt-2 max-w-3xl break-words text-sm leading-6">
-              {guide.detail}
-            </p>
-          </div>
-          <div className="inline-flex min-h-9 items-center justify-center rounded-full border border-[color-mix(in_srgb,var(--app-warning)_45%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_12%,transparent)] px-3 py-1 text-sm font-semibold text-[var(--app-warning)]">
-            {guide.status}
-          </div>
-        </div>
-
-        <div className="mt-4 grid min-w-0 gap-2 md:grid-cols-3">
-          {[guide.what, guide.how, guide.after].map((item, index) => (
-            <div
-              key={`${index}-${item}`}
-              className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5 text-sm font-semibold leading-6 text-[var(--app-text)]"
-            >
-              {item}
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0 rounded-full border border-[color-mix(in_srgb,var(--app-accent)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-accent)_10%,transparent)] px-3 py-1.5 text-sm font-semibold text-[var(--app-accent)]">
-            {guide.note}
-          </div>
-          {guide.href && guide.cta ? (
-            <a
-              className="inline-flex min-h-10 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-4 py-2 text-sm font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
-              href={guide.href}
-            >
-              {guide.cta}
-            </a>
-          ) : null}
-        </div>
-      </div>
+      <h2 className="text-base font-semibold text-[var(--app-text)]">
+        {labels.nextActionKicker}
+      </h2>
+      <ExceptionList
+        ariaLabel={labels.nextActionKicker}
+        emptyState={labels.workflowDetail}
+        labels={{
+          reason: locale === 'zh' ? '阻断原因' : 'Reason',
+          unblockCondition: locale === 'zh' ? '解除条件' : 'Unblock condition',
+          nextAction: locale === 'zh' ? '安全下一步' : 'Safe next step',
+          evidence: locale === 'zh' ? '证据' : 'Evidence',
+        }}
+        items={[
+          {
+            id: 'primary-decision-action',
+            severity: 'warning',
+            statusLabel: guide.status,
+            title: guide.title,
+            reason: `${guide.what} · ${guide.detail}`,
+            unblockCondition: guide.how,
+            nextAction: guide.after,
+            evidence: (
+              <span className="flex flex-wrap items-center gap-2">
+                <span>{guide.note}</span>
+                {guide.href && guide.cta ? (
+                  <a
+                    className="font-semibold text-[var(--app-accent)] underline decoration-transparent underline-offset-2 hover:decoration-current"
+                    href={guide.href}
+                  >
+                    {guide.cta}
+                  </a>
+                ) : null}
+              </span>
+            ),
+          },
+        ]}
+      />
     </section>
   );
 }
@@ -5506,17 +5597,6 @@ function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
         </p>
       </div>
     </header>
-  );
-}
-
-function StatePanel({ title, detail }: { title: string; detail: string }) {
-  return (
-    <section className="app-terminal-panel rounded-[28px] p-[1px]">
-      <div className="app-terminal-inner rounded-[27px] p-5">
-        <h2 className="app-card-title">{title}</h2>
-        <p className="app-muted mt-2 text-sm">{detail}</p>
-      </div>
-    </section>
   );
 }
 
@@ -5790,44 +5870,6 @@ function SummaryTile({
         {value}
       </div>
       <div className="app-muted mt-1 break-words text-xs">{detail}</div>
-    </div>
-  );
-}
-
-function DecisionRegisterRow({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone: 'success' | 'warning' | 'danger' | 'neutral';
-}) {
-  const toneClass =
-    tone === 'success'
-      ? 'border-[var(--app-success-border)] bg-[var(--app-success-bg)] text-[var(--app-success)]'
-      : tone === 'danger'
-        ? 'border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] text-[var(--app-danger)]'
-        : tone === 'warning'
-          ? 'border-[color-mix(in_srgb,var(--app-warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] text-[var(--app-warning)]'
-          : 'border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)] text-[var(--app-soft)]';
-  return (
-    <div
-      className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5"
-      aria-label={`Decision register item: ${label} ${value}`}
-    >
-      <div className="min-w-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--app-muted)]">
-        {label}
-      </div>
-      <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 justify-self-end">
-        <span
-          className={`h-2 w-2 rounded-full border ${toneClass}`}
-          aria-hidden="true"
-        />
-        <span className="min-w-0 text-right font-mono text-sm font-semibold tabular-nums text-[var(--app-text)]">
-          {value}
-        </span>
-      </div>
     </div>
   );
 }

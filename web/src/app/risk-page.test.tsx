@@ -363,7 +363,7 @@ test('renders risk boundaries and blocking register without execution controls',
   ).toBe('/decision');
 
   const controlGrid = await screen.findByTestId('risk-trading-control-grid');
-  expect(controlGrid.className).toContain('gap-3');
+  expect(controlGrid.className).toContain('gap-4');
   expect(
     within(controlGrid)
       .getByTestId('kill-switch-panel')
@@ -375,23 +375,17 @@ test('renders risk boundaries and blocking register without execution controls',
       .getAttribute('data-layout'),
   ).toBe('compact-approval');
 
-  expect(await screen.findByText('Risk boundary register')).toBeTruthy();
   expect(await screen.findByText('Blocking register')).toBeTruthy();
 
-  const boundaryRegister = await screen.findByTestId('risk-boundary-register');
-  expect(boundaryRegister.className).toContain('min-w-0');
+  const thresholdTable = await screen.findByTestId('risk-threshold-table');
   expect(
-    within(boundaryRegister).getByLabelText(
-      'Risk boundary item: Cash Buffer 20.0% Healthy reserve',
-    ),
+    within(thresholdTable).getByText('Immediate liquidity buffer.'),
   ).toBeTruthy();
-  expect(
-    within(boundaryRegister).getByText('Manual confirmation required'),
-  ).toBeTruthy();
+  expect(screen.queryByTestId('risk-boundary-register')).toBeNull();
 
   const blockRegister = await screen.findByTestId('risk-blocking-register');
   expect(blockRegister.className).toContain('min-w-0');
-  expect(within(blockRegister).getByText('Cash Buffer')).toBeTruthy();
+  expect(within(blockRegister).getByText(/Cash Buffer/)).toBeTruthy();
   expect(within(blockRegister).queryByText('cash_buffer')).toBeNull();
   expect(within(blockRegister).getByText('Warning')).toBeTruthy();
   expect(within(blockRegister).queryByText('medium')).toBeNull();
@@ -509,7 +503,7 @@ test('keeps the last persisted risk projection visible when a post-run refresh f
       '部分风控数据暂时无法刷新。当前显示最近一次成功加载的持久化投影，继续操作前请复核数据状态。',
     ),
   ).toBeTruthy();
-  expect(screen.getByText('现金占比')).toBeTruthy();
+  expect((await screen.findAllByText('现金占比')).length).toBeGreaterThan(0);
   expect(screen.queryByText('风控中心加载失败。')).toBeNull();
 });
 
