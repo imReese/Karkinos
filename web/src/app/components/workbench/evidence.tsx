@@ -6,6 +6,7 @@ import { StatusBadge, type StatusTone } from './workspace';
 export type ExceptionItem = {
   id: string;
   severity: Exclude<StatusTone, 'success'>;
+  statusLabel?: ReactNode;
   title: ReactNode;
   reason: ReactNode;
   unblockCondition?: ReactNode;
@@ -17,11 +18,23 @@ export function ExceptionList({
   items,
   ariaLabel,
   emptyState,
+  labels = {
+    reason: 'Reason',
+    unblockCondition: 'Unblock condition',
+    nextAction: 'Safe next step',
+    evidence: 'Evidence',
+  },
   className,
 }: {
   items: ReadonlyArray<ExceptionItem>;
   ariaLabel: string;
   emptyState: ReactNode;
+  labels?: {
+    reason: string;
+    unblockCondition: string;
+    nextAction: string;
+    evidence: string;
+  };
   className?: string;
 }) {
   if (items.length === 0) {
@@ -46,25 +59,27 @@ export function ExceptionList({
           className="rounded-[var(--app-radius-surface)] border border-[var(--app-border)] bg-[var(--app-surface)] px-3 py-2.5"
         >
           <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge tone={item.severity}>{item.severity}</StatusBadge>
+            <StatusBadge tone={item.severity}>
+              {item.statusLabel ?? item.severity}
+            </StatusBadge>
             <h3 className="text-sm font-semibold text-[var(--app-text)]">
               {item.title}
             </h3>
           </div>
           <dl className="mt-2 grid gap-1.5 text-xs sm:grid-cols-2">
-            <EvidenceRow label="Reason">{item.reason}</EvidenceRow>
+            <EvidenceRow label={labels.reason}>{item.reason}</EvidenceRow>
             {item.unblockCondition ? (
-              <EvidenceRow label="Unblock condition">
+              <EvidenceRow label={labels.unblockCondition}>
                 {item.unblockCondition}
               </EvidenceRow>
             ) : null}
             {item.nextAction ? (
-              <EvidenceRow label="Safe next step">
+              <EvidenceRow label={labels.nextAction}>
                 {item.nextAction}
               </EvidenceRow>
             ) : null}
             {item.evidence ? (
-              <EvidenceRow label="Evidence">{item.evidence}</EvidenceRow>
+              <EvidenceRow label={labels.evidence}>{item.evidence}</EvidenceRow>
             ) : null}
           </dl>
         </li>
