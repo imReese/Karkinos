@@ -4051,6 +4051,7 @@ export function MarketPage() {
                       <div
                         key={item.symbol}
                         role="button"
+                        aria-pressed={isActive}
                         tabIndex={0}
                         onClick={() => setSelectedSymbol(item.symbol)}
                         onKeyDown={(event) => {
@@ -4083,7 +4084,9 @@ export function MarketPage() {
                             {copy.market.priceLabel}
                           </div>
                           <div className="mt-1 font-mono text-sm font-semibold tabular-nums text-[var(--app-text)]">
-                            {formatCurrency(item.price ?? 0)}
+                            {item.price == null
+                              ? '--'
+                              : formatCurrency(item.price)}
                           </div>
                         </div>
                         <div>
@@ -4091,8 +4094,8 @@ export function MarketPage() {
                             {copy.market.holdingsContext}
                           </div>
                           <div className="mt-1 font-mono text-sm font-semibold tabular-nums text-[var(--app-text)]">
-                            {item.is_holding
-                              ? formatCurrency(item.market_value ?? 0)
+                            {item.is_holding && item.market_value != null
+                              ? formatCurrency(item.market_value)
                               : '--'}
                           </div>
                         </div>
@@ -5021,7 +5024,7 @@ export function ActivityPage() {
           ]}
         />
 
-        <div className="grid min-w-0 gap-6 2xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.55fr)]">
+        <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.55fr)]">
           <div className="min-w-0 space-y-6">
             {entries.isLoading ? (
               <EvidenceState
@@ -5048,15 +5051,7 @@ export function ActivityPage() {
               <ActivityFeed entries={entries.data ?? []} />
             )}
           </div>
-          <aside className="min-w-0 space-y-6 2xl:sticky 2xl:top-24 2xl:self-start">
-            <div className="border-b border-[var(--app-border)] pb-3">
-              <div className="app-kicker text-[11px] uppercase tracking-[0.14em]">
-                {copy.activity.entryTools.kicker}
-              </div>
-              <p className="mt-1 text-xs leading-5 text-[var(--app-text-secondary)]">
-                {copy.activity.entryTools.detail}
-              </p>
-            </div>
+          <aside className="min-w-0 space-y-6 xl:sticky xl:top-24 xl:self-start">
             <ActivityEntryToolsPanel
               activeEntryTool={activeEntryTool}
               candidates={fundBatchCandidates}
@@ -5153,7 +5148,7 @@ function ActivityEntryToolsPanel({
   ];
 
   return (
-    <div className="app-panel min-w-0 overflow-hidden rounded-2xl">
+    <div className="app-workbench-section min-w-0 overflow-hidden">
       <div className="border-b border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-5 py-4">
         <div className="app-product-mark">
           {copy.activity.entryTools.kicker}
@@ -5177,8 +5172,8 @@ function ActivityEntryToolsPanel({
                 aria-pressed={isSelected}
                 className={`min-w-0 rounded-2xl border px-3 py-2 text-left text-xs font-semibold transition ${
                   isSelected
-                    ? 'border-[var(--app-accent)] bg-[var(--app-accent-bg)] text-[var(--app-accent-strong)] shadow-[0_0_0_1px_var(--app-accent-border)]'
-                    : 'border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] text-[var(--app-soft)] hover:border-[var(--app-accent-border)]'
+                    ? 'border-[var(--app-accent)] bg-[var(--app-accent-bg)] text-[var(--app-accent-hover)]'
+                    : 'border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-transparent text-[var(--app-text-tertiary)] hover:border-[var(--app-accent-border)]'
                 }`}
                 onClick={() => onSelectEntryTool(tool.key)}
                 type="button"

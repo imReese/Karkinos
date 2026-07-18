@@ -299,6 +299,15 @@ test('renders Account Truth score, import runs, reconciliation detail, and revie
   const { fetchMock } = renderAccountTruthReviewPage();
 
   expect(await screen.findByText('Account Truth Review Center')).toBeTruthy();
+  expect(
+    document.querySelector('[data-workbench-route="account-truth"]'),
+  ).toBeTruthy();
+  expect(
+    document.querySelector('[data-workbench-primitive="workspace-header"]'),
+  ).toBeTruthy();
+  expect(
+    document.querySelector('[data-workbench-primitive="metric-strip"]'),
+  ).toBeTruthy();
   expect(await screen.findByText('42')).toBeTruthy();
   await waitFor(() =>
     expect(screen.getAllByText('Blocked').length).toBeGreaterThan(0),
@@ -378,6 +387,38 @@ test('renders Account Truth score, import runs, reconciliation detail, and revie
     await screen.findByText('Review saved: Known difference'),
   ).toBeTruthy();
   expect(screen.queryByText('Review saved: known_difference')).toBeNull();
+});
+
+test('keeps repeated reconciliation evidence rows as distinct render instances', async () => {
+  const consoleError = vi
+    .spyOn(console, 'error')
+    .mockImplementation(() => undefined);
+  renderAccountTruthReviewPage({
+    reportDetailResponse: {
+      ...reportDetail,
+      items: [
+        reportDetail.items[0],
+        {
+          ...reportDetail.items[0],
+          detail: 'A second persisted broker event has the same review key.',
+          evidence_references: [
+            'broker_event:import-run-1:SYN001:position_snapshot:2',
+          ],
+        },
+      ],
+    },
+  });
+
+  expect(
+    await screen.findAllByTestId('account-truth-item-position:SYN001'),
+  ).toHaveLength(2);
+  expect(
+    consoleError.mock.calls.some((call) =>
+      call.some((argument) =>
+        String(argument).includes('Encountered two children with the same key'),
+      ),
+    ),
+  ).toBe(false);
 });
 
 test('shows the enabled local collector as evidence-only automatic reading', async () => {

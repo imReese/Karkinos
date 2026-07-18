@@ -237,6 +237,13 @@ describe('application design token contract', () => {
     expect(MOCHA.get('--app-touch-target')).toBe('40px');
   });
 
+  it('provides a deterministic reduced-motion fallback', () => {
+    expect(CSS).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(CSS).toContain('animation-duration: 0.01ms !important');
+    expect(CSS).toContain('transition-duration: 0.01ms !important');
+    expect(CSS).toContain('scroll-behavior: auto !important');
+  });
+
   it.each([
     ['Mocha', MOCHA],
     ['Latte', LATTE],

@@ -195,3 +195,67 @@ test('core review routes keep audit drill-downs closed and mobile reading paths 
     expect(geometry.contentOverflow, path).toBeLessThanOrEqual(0);
   }
 });
+
+test('remaining phase-four routes stay overflow safe in Latte and Mocha', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  for (const theme of ['light', 'dark']) {
+    for (const path of [
+      '/activity',
+      '/market',
+      '/account-truth',
+      '/trading',
+      '/settings',
+    ]) {
+      await page.goto(path);
+      await page
+        .getByRole('button', {
+          name:
+            theme === 'light' ? /Light theme|浅色主题/ : /Dark theme|深色主题/,
+        })
+        .click();
+
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+      await expect(page.locator('h1')).toHaveCount(1);
+
+      const geometry = await page.evaluate(() => {
+        const content = document.querySelector(
+          '.app-shell-content',
+        ) as HTMLElement;
+        return {
+          contentOverflow: content.scrollWidth - content.clientWidth,
+          documentOverflow:
+            document.documentElement.scrollWidth -
+            document.documentElement.clientWidth,
+        };
+      });
+      expect(geometry.documentOverflow, `${path} ${theme}`).toBeLessThanOrEqual(
+        0,
+      );
+      expect(geometry.contentOverflow, `${path} ${theme}`).toBeLessThanOrEqual(
+        0,
+      );
+    }
+  }
+});
+
+test('reduced-motion preference removes routine transition timing', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/backtest');
+
+  const tab = page
+    .getByTestId('backtest-mobile-workspace-tabs')
+    .getByRole('tab')
+    .first();
+  await expect(tab).toBeVisible();
+  const transitionDuration = await tab.evaluate(
+    (element) => getComputedStyle(element).transitionDuration,
+  );
+  expect(Number.parseFloat(transitionDuration)).toBeLessThanOrEqual(0.001);
+});

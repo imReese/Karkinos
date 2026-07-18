@@ -810,7 +810,7 @@ export function BacktestPage() {
       </div>
 
       <div
-        className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(360px,0.78fr)_minmax(0,1.22fr)]"
+        className="grid min-w-0 items-start gap-6 xl:grid-cols-[minmax(380px,0.82fr)_minmax(0,1.18fr)]"
         data-testid="backtest-primary-workbench"
       >
         <div
@@ -1240,12 +1240,48 @@ export function BacktestPage() {
                 <FillsTable fills={latestReport.fills ?? []} />
               </div>
             ) : (
-              <EvidenceState
-                className="mt-5"
-                kind="empty"
-                title={labels.notDeclared}
-                description={labels.emptyCurrent}
-              />
+              <div className="mt-5 flex min-h-[360px] flex-col justify-between border-y border-[var(--app-divider)] py-4">
+                <EvidenceState
+                  kind="empty"
+                  title={labels.notDeclared}
+                  description={labels.emptyCurrent}
+                />
+                <div className="mt-8 border-t border-[var(--app-divider)] pt-4">
+                  <div className="app-kicker text-[10px] uppercase tracking-[0.08em]">
+                    {labels.runReadinessTitle}
+                  </div>
+                  <p className="mt-1 max-w-xl text-xs leading-5 text-[var(--app-text-secondary)]">
+                    {labels.runReadinessDetail}
+                  </p>
+                  <div className="mt-3 grid gap-x-4 sm:grid-cols-2">
+                    <RunContextValue
+                      label={labels.runReadinessStrategy}
+                      value={strategyDisplayName(
+                        selectedStrategy,
+                        labels.strategyNames,
+                      )}
+                    />
+                    <RunContextValue
+                      label={labels.runReadinessInstrument}
+                      value={symbol.trim() || labels.notDeclared}
+                      numeric
+                    />
+                    <RunContextValue
+                      label={labels.runReadinessParams}
+                      value={labels.runReadinessParameterCount(
+                        parameterSchema.length,
+                      )}
+                    />
+                    <RunContextValue
+                      label={labels.runReadinessAssetClass}
+                      value={selectedAssetClassLabel}
+                    />
+                  </div>
+                  <p className="mt-3 text-[11px] leading-4 text-[var(--app-text-tertiary)]">
+                    {labels.decisionHandoffResearchOnly}
+                  </p>
+                </div>
+              </div>
             )}
           </div>
         </section>
@@ -1309,7 +1345,7 @@ function RunReadinessSummary({
 }) {
   return (
     <section
-      className="rounded-3xl border border-[color-mix(in_srgb,var(--app-accent)_28%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_8%,transparent)] p-4"
+      className="border-l-2 border-[var(--app-info-indicator)] py-1 pl-3"
       data-testid="backtest-run-readiness-summary"
     >
       <div className="min-w-0">
@@ -1320,7 +1356,7 @@ function RunReadinessSummary({
           {labels.runReadinessDetail}
         </p>
       </div>
-      <div className="mt-4 grid gap-2 text-xs sm:grid-cols-2">
+      <div className="mt-3 grid gap-x-4 text-xs sm:grid-cols-2">
         <RunContextValue
           label={labels.runReadinessStrategy}
           value={strategyDisplayName(selectedStrategy, labels.strategyNames)}
@@ -1361,10 +1397,12 @@ function RunContextValue({
   numeric?: boolean;
 }) {
   return (
-    <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-3 py-2.5">
-      <div className="app-muted text-[11px] font-semibold">{label}</div>
+    <div className="min-w-0 border-t border-[var(--app-divider)] py-2.5">
+      <div className="text-[11px] font-medium text-[var(--app-text-secondary)]">
+        {label}
+      </div>
       <div
-        className={`mt-1 truncate text-sm font-semibold text-[var(--app-text)] ${
+        className={`mt-0.5 truncate text-sm font-semibold text-[var(--app-text)] ${
           numeric ? 'tabular-nums' : ''
         }`}
       >

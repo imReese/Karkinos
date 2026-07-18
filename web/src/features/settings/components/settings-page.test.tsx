@@ -537,15 +537,24 @@ test('shows tushare capability matrix and manual daily tasks', async () => {
     (await screen.findAllByText('Eastmoney fund estimate')).length,
   ).toBeGreaterThan(0);
   expect(await screen.findByText('Manual daily task checklist')).toBeTruthy();
-  expect(
-    await screen.findByLabelText('Manual task: TuShare sign-in'),
-  ).toBeTruthy();
+  const signInTask = await screen.findByLabelText(
+    'Manual task: TuShare sign-in',
+  );
+  expect(signInTask.closest('label')).toBeTruthy();
   expect(
     await screen.findByLabelText('Manual task: Guess market direction'),
   ).toBeTruthy();
   expect(
     await screen.findByLabelText('Manual task: Check points and permissions'),
   ).toBeTruthy();
+  const taskLinks = screen.getAllByRole('link', { name: 'Open' });
+  expect(taskLinks).toHaveLength(3);
+  expect(taskLinks.every((link) => link.closest('label') === null)).toBe(true);
+  expect(
+    taskLinks.every((link) =>
+      link.className.includes('min-h-[var(--app-touch-target)]'),
+    ),
+  ).toBe(true);
   expect(screen.queryByText('Submit bugs or data requests')).toBeNull();
 });
 
