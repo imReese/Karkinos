@@ -84,6 +84,10 @@ test('renders account metrics in a compact homepage workbench layout', () => {
         ...overview,
         current_drawdown: 0.048,
         drawdown_peak_equity: 106_650,
+        valuation_snapshot_id: 'valuation-private-fixture',
+        valuation_as_of: '2026-02-10T15:00:00+08:00',
+        ledger_cutoff_id: 42,
+        quote_status: 'confirmed',
       }}
       variant="workbench"
     />,
@@ -93,7 +97,14 @@ test('renders account metrics in a compact homepage workbench layout', () => {
   const totalAssetsValue = screen.getByTestId('overview-total-assets-value');
 
   expect(rail.className).toContain('self-start');
-  expect(totalAssetsValue.className).toContain('sr-only');
+  expect(totalAssetsValue.className).toContain('account-primary-metric-value');
+  expect(rail.querySelector('.account-overview-summary')).toBeTruthy();
+  expect(screen.getByLabelText('Supporting account metrics')).toBeTruthy();
+  expect(screen.getByText('Evidence complete')).toBeTruthy();
+  expect(
+    screen.getByText('Valuation as of 02-10 15:00 · ledger cutoff 42'),
+  ).toBeTruthy();
+  expect(screen.queryByText(/valuation-private-fixture/)).toBeNull();
   expect(screen.getByText('Peak ¥106,650.00')).toBeTruthy();
   expect(screen.getByText('Cash Ratio 74.8%')).toBeTruthy();
   expect(screen.getByText('¥220.00')).toBeTruthy();
@@ -106,10 +117,10 @@ test('renders a responsive shimmering metrics rail skeleton', () => {
   const skeleton = screen.getByTestId('account-metrics-skeleton');
 
   expect(skeleton.className).toContain('animate-pulse');
-  expect(skeleton.className).toContain('border-y');
-  expect(skeleton.className).toContain('border-[var(--app-divider)]');
+  expect(skeleton.className).toContain('account-overview-summary');
   expect(skeleton.className).not.toContain('rounded-');
-  expect(skeleton.className).toContain('lg:grid-cols-6');
+  expect(skeleton.querySelector('.account-primary-metric')).toBeTruthy();
+  expect(skeleton.querySelectorAll('.app-metric-strip-item')).toHaveLength(5);
 });
 
 test('shows cached quote copy on stale overview metrics', () => {
@@ -124,6 +135,28 @@ test('shows cached quote copy on stale overview metrics', () => {
   );
 
   expect(screen.getByText(/Cached quotes · valuation time/)).toBeTruthy();
+});
+
+test('treats a persisted complete valuation with snapshot identity as ready', () => {
+  renderWithPreferences(
+    <OverviewCards
+      overview={{
+        ...overview,
+        valuation_snapshot_id: 'valuation-complete-fixture',
+        valuation_status: 'complete',
+        valuation_as_of: '2026-02-10T15:00:00+08:00',
+        ledger_cutoff_id: 42,
+      }}
+      variant="workbench"
+    />,
+  );
+
+  expect(screen.getByText('Evidence complete')).toBeTruthy();
+  expect(
+    screen
+      .getByTestId('account-metrics-rail')
+      .querySelector('[data-evidence-kind="ready"]'),
+  ).toBeTruthy();
 });
 
 test('keeps the localized perspective switcher in the breakdown header', async () => {

@@ -64,6 +64,9 @@ function valuationEvidenceKind(
   if (normalized === 'error' || normalized === 'degraded') {
     return 'error';
   }
+  if (normalized === 'complete') {
+    return 'ready';
+  }
   if (isCacheLikeMarketDataStatus(normalized)) {
     return 'stale';
   }
@@ -153,29 +156,67 @@ export function OverviewCards({
       : isCacheLikeMarketDataStatus(valuationStatus)
         ? copy.overview.cards.cachedValuation
         : copy.overview.cards.valuationStatus(valuationStatusLabel);
-  const evidenceIdentity = [
-    overview.valuation_snapshot_id
-      ? `snapshot ${overview.valuation_snapshot_id}`
-      : 'snapshot --',
-    `ledger ${overview.ledger_cutoff_id ?? '--'}`,
-    formatDateTime(overview.valuation_as_of ?? overview.valuation_timestamp),
-  ].join(' · ');
+  const evidenceAsOf = formatDateTime(
+    overview.valuation_as_of ?? overview.valuation_timestamp,
+  );
+  const evidenceIdentity = copy.overview.cards.evidenceIdentity(
+    evidenceAsOf,
+    overview.ledger_cutoff_id ?? '--',
+  );
+  const totalAssets = items[0];
+  const supportingMetrics = items.slice(1);
 
   return (
     <section
       data-testid="account-metrics-rail"
       className={variant === 'workbench' ? 'min-w-0 self-start' : 'min-w-0'}
     >
-      <div data-testid="overview-total-assets-value" className="sr-only">
-        {formatCurrency(overview.total_equity)}
-      </div>
-      <MetricStrip
-        items={items}
-        ariaLabel={copy.overview.cards.totalAssets}
-        className="account-metric-strip tabular-nums sm:grid-flow-row sm:grid-cols-2 lg:grid-flow-col lg:grid-cols-none"
-      />
+      {variant === 'workbench' ? (
+        <div className="account-overview-summary min-w-0">
+          <dl
+            className="account-primary-metric min-w-0 tabular-nums"
+            aria-label={copy.overview.cards.totalAssets}
+          >
+            <dt className="text-[11px] leading-4 font-medium text-[var(--app-text-secondary)]">
+              {totalAssets.label}
+            </dt>
+            <dd
+              data-testid="overview-total-assets-value"
+              className="account-primary-metric-value mt-1 truncate text-[1.75rem] leading-8 font-semibold tracking-[-0.035em] text-[var(--app-text)]"
+            >
+              {totalAssets.value}
+            </dd>
+            {totalAssets.detail ? (
+              <div className="mt-1 truncate text-[11px] leading-4 text-[var(--app-text-tertiary)]">
+                {totalAssets.detail}
+              </div>
+            ) : null}
+          </dl>
+          <MetricStrip
+            items={supportingMetrics}
+            ariaLabel={copy.overview.cards.supportingMetrics}
+            className="account-metric-strip account-support-metric-strip tabular-nums sm:grid-flow-row sm:grid-cols-2 lg:grid-flow-row lg:grid-cols-5"
+          />
+        </div>
+      ) : (
+        <>
+          <div data-testid="overview-total-assets-value" className="sr-only">
+            {formatCurrency(overview.total_equity)}
+          </div>
+          <MetricStrip
+            items={items}
+            ariaLabel={copy.overview.cards.totalAssets}
+            className="account-metric-strip tabular-nums sm:grid-flow-row sm:grid-cols-2 lg:grid-flow-col lg:grid-cols-none"
+          />
+        </>
+      )}
       <EvidenceState
         kind={evidenceKind}
+        statusLabel={
+          evidenceKind === 'ready'
+            ? copy.overview.cards.evidenceReady
+            : valuationStatusLabel
+        }
         title={evidenceDescription}
         description={todayPnlContext}
         evidence={evidenceIdentity}
@@ -190,17 +231,21 @@ export function OverviewCardsSkeleton() {
     <div
       data-testid="account-metrics-skeleton"
       aria-hidden="true"
-      className="grid min-w-0 animate-pulse overflow-hidden border-y border-[var(--app-divider)] bg-transparent sm:grid-cols-2 lg:grid-cols-6"
+      className="account-overview-summary min-w-0 animate-pulse overflow-hidden"
     >
-      {Array.from({ length: 6 }).map((_, index) => (
-        <div
-          key={index}
-          className="border-b border-[var(--app-divider)] px-3 py-2.5 sm:border-r lg:border-b-0"
-        >
-          <div className="h-3 w-20 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)]" />
-          <div className="mt-2 h-5 w-28 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)]" />
-        </div>
-      ))}
+      <div className="account-primary-metric px-3 py-3 sm:px-4">
+        <div className="h-3 w-20 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)]" />
+        <div className="mt-2 h-8 w-36 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)]" />
+        <div className="mt-2 h-3 w-28 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)]" />
+      </div>
+      <div className="account-support-metric-strip grid min-w-0 grid-cols-2 sm:grid-cols-2 lg:grid-cols-5">
+        {Array.from({ length: 5 }).map((_, index) => (
+          <div key={index} className="app-metric-strip-item px-3 py-2.5">
+            <div className="h-3 w-20 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)]" />
+            <div className="mt-2 h-5 w-28 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)]" />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
