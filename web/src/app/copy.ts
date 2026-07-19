@@ -155,9 +155,9 @@ export const copy = {
     },
     overview: {
       kicker: 'Overview',
-      title: 'Portfolio platform',
+      title: "Today's investment workbench",
       subtitle:
-        'Review asset status, today PnL, data confidence, and items that need attention.',
+        'Confirm account truth first, then review exceptions and current holdings before analysis.',
       modeHelper:
         'Account view focuses on capital structure. Strategy view focuses on return quality.',
       loading: 'Loading account overview and portfolio snapshot.',
@@ -194,6 +194,10 @@ export const copy = {
         positionsCount: 'Active Positions',
         cachedValuation: 'Cached quotes · valuation time',
         valuationStatus: (status: string) => `Valuation status: ${status}`,
+        evidenceReady: 'Evidence complete',
+        supportingMetrics: 'Supporting account metrics',
+        evidenceIdentity: (asOf: string, ledgerCutoff: string | number) =>
+          `Valuation as of ${asOf} · ledger cutoff ${ledgerCutoff}`,
       },
       dashboard: {
         equityPanel: 'Equity curve',
@@ -2826,8 +2830,8 @@ export const copy = {
     },
     overview: {
       kicker: '总览',
-      title: '资产平台',
-      subtitle: '查看资产状态、今日盈亏、数据可信度和需要处理的事项。',
+      title: '今日投资工作台',
+      subtitle: '先确认账户事实，再处理异常与当前持仓，最后进入分析与历史。',
       modeHelper: '账户视角看资本结构，策略视角看收益质量和执行结果。',
       loading: '正在加载账户总览和组合快照。',
       error: '账户总览或组合快照读取失败。',
@@ -2861,6 +2865,10 @@ export const copy = {
         positionsCount: '活跃持仓',
         cachedValuation: '行情缓存 · 估值时间',
         valuationStatus: (status: string) => `估值状态：${status}`,
+        evidenceReady: '证据完整',
+        supportingMetrics: '账户辅助指标',
+        evidenceIdentity: (asOf: string, ledgerCutoff: string | number) =>
+          `估值截至 ${asOf} · 账本截止 ${ledgerCutoff}`,
       },
       dashboard: {
         equityPanel: '资金曲线',

@@ -340,6 +340,60 @@ textarea {
   color: var(--app-accent);
 }
 
+.account-overview-summary {
+  display: grid;
+  border-top: 1px solid var(--app-divider);
+  border-bottom: 1px solid var(--app-divider);
+}
+
+.account-primary-metric {
+  border-bottom: 1px solid var(--app-divider);
+  padding: 12px 16px;
+}
+
+.account-support-metric-strip {
+  border-block: 0;
+}
+
+.account-support-metric-strip .app-metric-strip-item {
+  border-right: 0;
+  border-bottom: 1px solid var(--app-divider);
+}
+
+.account-support-metric-strip .app-metric-strip-item:nth-child(odd) {
+  border-right: 1px solid var(--app-divider);
+}
+
+.account-support-metric-strip .app-metric-strip-item:last-child {
+  grid-column: 1 / -1;
+  border-right: 0;
+  border-bottom: 0;
+}
+
+@media (min-width: 1024px) {
+  .account-support-metric-strip .app-metric-strip-item,
+  .account-support-metric-strip .app-metric-strip-item:nth-child(odd) {
+    border-right: 1px solid var(--app-divider);
+    border-bottom: 0;
+  }
+
+  .account-support-metric-strip .app-metric-strip-item:last-child {
+    grid-column: auto;
+    border-right: 0;
+  }
+}
+
+@media (min-width: 1280px) {
+  .account-overview-summary {
+    grid-template-columns: minmax(220px, 0.8fr) minmax(0, 2.7fr);
+  }
+
+  .account-primary-metric {
+    border-right: 1px solid var(--app-divider);
+    border-bottom: 0;
+  }
+}
+
 .app-panel {
   background: var(--app-surface);
   color: var(--app-text);

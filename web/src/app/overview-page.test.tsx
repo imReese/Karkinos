@@ -726,6 +726,12 @@ test('keeps the overview metric strip bound to canonical account totals', async 
   renderOverviewPage();
 
   const metricsRail = await screen.findByTestId('account-metrics-rail');
+  expect(
+    screen.getByRole('heading', {
+      level: 1,
+      name: "Today's investment workbench",
+    }),
+  ).toBeTruthy();
   expect(within(metricsRail).getByText('Today PnL')).toBeTruthy();
   expect(within(metricsRail).getByText('¥29.00')).toBeTruthy();
   expect(within(metricsRail).getByText('-4.59%')).toBeTruthy();
