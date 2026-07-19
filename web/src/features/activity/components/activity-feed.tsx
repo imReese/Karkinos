@@ -142,20 +142,20 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
 
   if (entries.length === 0) {
     return (
-      <div className="app-panel rounded-2xl p-5 text-sm app-muted">
+      <div className="app-workbench-section p-5 text-sm app-muted">
         {labels.empty}
       </div>
     );
   }
 
   return (
-    <div className="app-panel min-w-0 overflow-hidden rounded-2xl">
+    <div className="app-workbench-section min-w-0 overflow-hidden">
       <div className="flex flex-wrap items-start justify-between gap-3 px-5 py-4">
         <div>
           <div className="app-product-mark">{labels.kicker}</div>
           <h2 className="mt-2 text-base font-semibold">{labels.title}</h2>
         </div>
-        <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-3 py-1 text-xs font-semibold text-[var(--app-soft)]">
+        <span className="app-chip px-2.5 py-1 text-xs font-semibold">
           {labels.count(visibleEntries.length)}
         </span>
       </div>
@@ -173,10 +173,10 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                 <button
                   key={category}
                   aria-pressed={isSelected}
-                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                  className={`min-h-8 rounded-[var(--app-radius-control)] border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
                     isSelected
-                      ? 'border-[var(--app-accent)] bg-[var(--app-accent-bg)] text-[var(--app-accent-strong)] shadow-[0_0_0_1px_var(--app-accent-border)]'
-                      : 'border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] text-[var(--app-muted)] hover:border-[var(--app-accent-border)] hover:text-[var(--app-soft)]'
+                      ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-bg)] text-[var(--app-accent-strong)]'
+                      : 'border-transparent bg-transparent text-[var(--app-muted)] hover:border-[var(--app-border)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] hover:text-[var(--app-soft)]'
                   }`}
                   onClick={() => {
                     setSelectedCategory(category);
@@ -193,7 +193,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
             <span className="sr-only">{labels.searchLabel}</span>
             <input
               aria-label={labels.searchLabel}
-              className="app-field h-9 w-full rounded-full px-3 text-xs font-semibold"
+              className="app-field h-9 w-full rounded-[var(--app-radius-control)] px-3 text-xs font-semibold"
               onChange={(event) => setQuery(event.target.value)}
               placeholder={labels.searchPlaceholder}
               type="search"
@@ -213,10 +213,10 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                 <button
                   key={option.key}
                   aria-pressed={isSelected}
-                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                  className={`min-h-8 rounded-[var(--app-radius-control)] border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
                     isSelected
-                      ? 'border-[var(--app-accent)] bg-[var(--app-accent-bg)] text-[var(--app-accent-strong)] shadow-[0_0_0_1px_var(--app-accent-border)]'
-                      : 'border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] text-[var(--app-muted)] hover:border-[var(--app-accent-border)] hover:text-[var(--app-soft)]'
+                      ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-bg)] text-[var(--app-accent-strong)]'
+                      : 'border-transparent bg-transparent text-[var(--app-muted)] hover:border-[var(--app-border)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] hover:text-[var(--app-soft)]'
                   }`}
                   onClick={() => setSelectedSubcategory(option.key)}
                   type="button"
