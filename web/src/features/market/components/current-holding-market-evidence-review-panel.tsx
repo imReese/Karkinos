@@ -1,4 +1,5 @@
 import { useCopy } from '../../../app/copy';
+import { EvidenceIdentityDisclosure } from '../../../app/components/workbench';
 import { usePreferences } from '../../../app/preferences';
 import { formatQuantity, formatTimestamp } from '../../../shared/format';
 import {
@@ -30,13 +31,6 @@ function reportTone(
     return 'text-[var(--app-warning)]';
   }
   return 'text-[var(--app-text)]';
-}
-
-function shortIdentity(value?: string | null) {
-  if (!value) {
-    return '--';
-  }
-  return value.length > 22 ? `${value.slice(0, 12)}…${value.slice(-8)}` : value;
 }
 
 export function CurrentHoldingMarketEvidenceReviewPanel({
@@ -100,8 +94,62 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
             </p>
           ) : null}
         </div>
-        {confirmedNavSymbols.length > 0 || genericRefreshSymbols.length > 0 ? (
+        {report ||
+        confirmedNavSymbols.length > 0 ||
+        genericRefreshSymbols.length > 0 ? (
           <div className="flex shrink-0 flex-wrap justify-end gap-3">
+            {report ? (
+              <EvidenceIdentityDisclosure
+                triggerLabel={copy.common.viewEvidenceIdentity}
+                title={copy.common.evidenceIdentityTitle}
+                description={copy.common.evidenceIdentityDescription}
+                closeLabel={copy.common.closeEvidenceIdentity}
+                fields={[
+                  {
+                    label: copy.common.valuationSnapshot,
+                    value: report.valuation_snapshot_id ?? '--',
+                    mono: true,
+                  },
+                  {
+                    label: copy.common.ledgerCutoff,
+                    value: report.ledger_cutoff_id,
+                    mono: true,
+                  },
+                  {
+                    label: copy.common.valuationAsOf,
+                    value: formatTimestamp(report.valuation_as_of),
+                    mono: true,
+                  },
+                  {
+                    label: copy.common.valuationStatus,
+                    value: formatPublicStatus(report.status, locale),
+                  },
+                  {
+                    label: copy.common.reviewFingerprint,
+                    value: report.review_fingerprint,
+                    mono: true,
+                  },
+                  {
+                    label: copy.common.providerContact,
+                    value: report.provider_contact_performed
+                      ? copy.common.yes
+                      : copy.common.no,
+                  },
+                  {
+                    label: copy.common.databaseWrites,
+                    value: report.database_writes_performed
+                      ? copy.common.yes
+                      : copy.common.no,
+                  },
+                  {
+                    label: copy.common.executionAuthority,
+                    value: report.authorizes_execution
+                      ? copy.common.yes
+                      : copy.common.no,
+                  },
+                ]}
+              />
+            ) : null}
             {confirmedNavSymbols.length > 0 ? (
               <ConfirmedFundNavRefreshButton symbols={confirmedNavSymbols} />
             ) : null}
@@ -113,22 +161,15 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
       </div>
 
       {report && complete ? (
-        <div className="mt-2 flex min-w-0 flex-wrap gap-x-4 gap-y-1 font-mono text-[10px] tabular-nums text-[var(--app-text-tertiary)]">
+        <div className="mt-2 flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-[11px] tabular-nums text-[var(--app-text-tertiary)]">
           <span>
             {report.confirmed_holding_count}/{report.current_holding_count}
-          </span>
-          <span title={report.valuation_snapshot_id ?? undefined}>
-            {labels.holdingEvidenceSnapshot}:{' '}
-            {shortIdentity(report.valuation_snapshot_id)}
-          </span>
-          <span>
-            {labels.holdingEvidenceLedgerCutoff}: {report.ledger_cutoff_id}
           </span>
           <span>{formatTimestamp(report.valuation_as_of)}</span>
         </div>
       ) : report ? (
         <>
-          <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
             <EvidenceIdentity
               label={labels.holdingEvidenceReview}
               value={`${report.review_required_count}/${report.current_holding_count}`}
@@ -140,13 +181,8 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
               value={formatPublicStatus(report.status, locale)}
             />
             <EvidenceIdentity
-              label={labels.holdingEvidenceSnapshot}
-              value={shortIdentity(report.valuation_snapshot_id)}
-              title={report.valuation_snapshot_id ?? undefined}
-            />
-            <EvidenceIdentity
-              label={labels.holdingEvidenceLedgerCutoff}
-              value={String(report.ledger_cutoff_id)}
+              label={copy.common.valuationAsOf}
+              value={formatTimestamp(report.valuation_as_of)}
             />
           </div>
 
@@ -196,37 +232,17 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
               {labels.holdingEvidenceExplicitRefresh}
             </p>
           ) : null}
-          <div className="app-muted mt-3 flex min-w-0 flex-wrap gap-x-4 gap-y-1 font-mono text-[10px] tabular-nums">
-            <span title={report.review_fingerprint}>
-              {labels.holdingEvidenceFingerprint}:{' '}
-              {shortIdentity(report.review_fingerprint)}
-            </span>
-            <span>{formatTimestamp(report.valuation_as_of)}</span>
-            <span>provider_contact=false</span>
-            <span>authorizes_execution=false</span>
-          </div>
         </>
       ) : null}
     </section>
   );
 }
 
-function EvidenceIdentity({
-  label,
-  value,
-  title,
-}: {
-  label: string;
-  value: string;
-  title?: string;
-}) {
+function EvidenceIdentity({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2">
       <div className="app-kicker text-[10px] tracking-[0.14em]">{label}</div>
-      <div
-        className="mt-1 truncate font-mono text-xs font-semibold tabular-nums text-[var(--app-soft)]"
-        title={title}
-      >
+      <div className="mt-1 truncate font-mono text-xs font-semibold tabular-nums text-[var(--app-soft)]">
         {value}
       </div>
     </div>

@@ -2,6 +2,10 @@ export { ControlledActionZone } from './controlled-action-zone';
 export { DataTable } from './data-table';
 export { EvidenceDrawer } from './evidence-drawer';
 export {
+  EvidenceIdentityDisclosure,
+  type EvidenceIdentityField,
+} from './evidence-identity-disclosure';
+export {
   ExceptionList,
   GateMatrix,
   Timeline,

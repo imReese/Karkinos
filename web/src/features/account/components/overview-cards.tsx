@@ -1,5 +1,6 @@
 import { useCopy } from '../../../app/copy';
 import {
+  EvidenceIdentityDisclosure,
   EvidenceState,
   MetricStrip,
   type EvidenceStateKind,
@@ -159,10 +160,7 @@ export function OverviewCards({
   const evidenceAsOf = formatDateTime(
     overview.valuation_as_of ?? overview.valuation_timestamp,
   );
-  const evidenceIdentity = copy.overview.cards.evidenceIdentity(
-    evidenceAsOf,
-    overview.ledger_cutoff_id ?? '--',
-  );
+  const evidenceIdentity = copy.overview.cards.evidenceIdentity(evidenceAsOf);
   const totalAssets = items[0];
   const supportingMetrics = items.slice(1);
 
@@ -220,6 +218,38 @@ export function OverviewCards({
         title={evidenceDescription}
         description={todayPnlContext}
         evidence={evidenceIdentity}
+        action={
+          overview.valuation_snapshot_id ||
+          overview.ledger_cutoff_id != null ? (
+            <EvidenceIdentityDisclosure
+              triggerLabel={copy.common.viewEvidenceIdentity}
+              title={copy.common.evidenceIdentityTitle}
+              description={copy.common.evidenceIdentityDescription}
+              closeLabel={copy.common.closeEvidenceIdentity}
+              fields={[
+                {
+                  label: copy.common.valuationSnapshot,
+                  value: overview.valuation_snapshot_id ?? '--',
+                  mono: true,
+                },
+                {
+                  label: copy.common.ledgerCutoff,
+                  value: overview.ledger_cutoff_id ?? '--',
+                  mono: true,
+                },
+                {
+                  label: copy.common.valuationAsOf,
+                  value: evidenceAsOf,
+                  mono: true,
+                },
+                {
+                  label: copy.common.valuationStatus,
+                  value: valuationStatusLabel,
+                },
+              ]}
+            />
+          ) : undefined
+        }
         className="mt-2"
       />
     </section>

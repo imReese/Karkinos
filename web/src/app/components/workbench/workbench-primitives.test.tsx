@@ -8,6 +8,7 @@ import {
   ControlledActionZone,
   DataTable,
   EvidenceDrawer,
+  EvidenceIdentityDisclosure,
   EvidenceState,
   ExceptionList,
   FilterBar,
@@ -17,6 +18,36 @@ import {
   Timeline,
   WorkspaceHeader,
 } from './index';
+
+test('keeps full evidence identifiers behind an explicit disclosure', async () => {
+  const user = userEvent.setup();
+
+  render(
+    <EvidenceIdentityDisclosure
+      triggerLabel="View evidence identity"
+      title="Evidence identity"
+      description="Persisted audit identity"
+      closeLabel="Close evidence identity"
+      fields={[
+        {
+          label: 'Valuation snapshot',
+          value: 'valuation-private-full-identity',
+          mono: true,
+        },
+        { label: 'Ledger cutoff', value: 42, mono: true },
+      ]}
+    />,
+  );
+
+  expect(screen.queryByText('valuation-private-full-identity')).toBeNull();
+  await user.click(
+    screen.getByRole('button', { name: 'View evidence identity' }),
+  );
+  expect(screen.getByText('valuation-private-full-identity')).toBeTruthy();
+  expect(
+    screen.getByRole('dialog', { name: 'Evidence identity' }),
+  ).toBeTruthy();
+});
 
 test('renders the workspace hierarchy without routine card nesting', () => {
   render(
