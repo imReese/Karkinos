@@ -14,7 +14,9 @@ test('desktop shell defaults to labeled business groups and remains collapsible'
 
     const sidebar = page.locator('#app-shell-navigation');
     const header = page.locator('.app-toolbar-shell');
+    const statusFooter = page.locator('.app-status-footer');
     await expect(sidebar).toBeVisible();
+    await expect(statusFooter).toBeVisible();
     await expect(
       page.getByText('Decision & Risk', { exact: true }),
     ).toBeVisible();
@@ -25,6 +27,10 @@ test('desktop shell defaults to labeled business groups and remains collapsible'
       'Overview',
     );
     await expect(page.getByText('Workspace toolbar')).toHaveCount(0);
+    await expect(
+      page.getByRole('group', { name: 'Current workspace' }),
+    ).toContainText('Portfolio');
+    await expect(statusFooter).toContainText('Persisted evidence');
     await expect(
       page.getByRole('button', { name: /Refresh quotes: Market/ }),
     ).toHaveCount(0);
@@ -80,11 +86,24 @@ test('shell remains local-overflow safe in Latte and Mocha across tablet and mob
 
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       const toggle = page.getByTestId('mobile-navigation-toggle');
+      const primaryNavigation = page.getByRole('navigation', {
+        name: 'Primary navigation',
+      });
       await expect(toggle).toBeVisible();
+      await expect(primaryNavigation).toBeVisible();
+      await expect(
+        primaryNavigation.getByRole('link', { name: 'Overview' }),
+      ).toBeVisible();
+      await expect(
+        primaryNavigation.getByRole('link', { name: 'Portfolio' }),
+      ).toBeVisible();
+      await expect(
+        primaryNavigation.getByRole('link', { name: 'Decision' }),
+      ).toBeVisible();
       await expect(page.locator('#app-shell-navigation')).not.toBeInViewport();
       await toggle.click();
       await expect(
-        page.getByRole('navigation', { name: 'Navigation' }),
+        page.getByRole('navigation', { name: 'Navigation', exact: true }),
       ).toBeVisible();
       await expect(page.getByTestId('sidebar-nav-overview')).toContainText(
         'Overview',

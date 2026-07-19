@@ -270,6 +270,76 @@ textarea {
   display: inline-flex;
 }
 
+.app-brand-lockup {
+  border-bottom: 1px solid var(--app-divider);
+  padding-bottom: 12px;
+}
+
+.app-brand-glyph {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--app-radius-control);
+  background: var(--app-accent);
+  color: var(--app-text-inverse);
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.app-brand-glyph-compact {
+  width: 24px;
+  height: 24px;
+  font-size: 11px;
+}
+
+.app-toolbar-context {
+  min-height: 28px;
+}
+
+.app-status-footer {
+  border-color: var(--app-divider);
+  background: var(--app-surface-raised);
+}
+
+.app-mobile-primary-nav {
+  border-color: var(--app-divider);
+  background: var(--app-surface-raised);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.app-mobile-primary-item {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 56px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--app-text-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  transition:
+    color 160ms ease,
+    background-color 160ms ease;
+}
+
+.app-mobile-primary-item:hover {
+  background: var(--app-accent-bg);
+  color: var(--app-text);
+}
+
+.app-mobile-primary-item-active {
+  color: var(--app-accent);
+}
+
 .app-panel {
   background: var(--app-surface);
   color: var(--app-text);
@@ -367,7 +437,7 @@ textarea {
   display: inline-flex;
   align-items: center;
   white-space: nowrap;
-  color: var(--app-info-text);
+  color: var(--app-text);
   font-size: 11px;
   font-weight: 700;
   line-height: 1;

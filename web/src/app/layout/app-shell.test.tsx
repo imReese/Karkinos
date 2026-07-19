@@ -301,7 +301,7 @@ test('keeps a compact mobile navigation control visible in the header', async ()
   ).toContain('z-[90]');
 });
 
-test('keeps the KARKINOS brand mark unwrapped in the sidebar header', async () => {
+test('keeps one branded lockup per responsive shell context', async () => {
   renderShell();
 
   const brandMarks = await screen.findAllByText('Karkinos');
@@ -310,9 +310,12 @@ test('keeps the KARKINOS brand mark unwrapped in the sidebar header', async () =
 
   expect(sidebarBrand.className).toContain('whitespace-nowrap');
   expect(sidebarBrand.className).toContain('truncate');
-  expect(sidebarBrand.className).toContain('font-semibold');
-  expect(toolbarBrand.className).toContain('app-toolbar-brand');
-  expect(toolbarBrand.className).toContain('lg:hidden');
+  expect(sidebarBrand.closest('.app-brand-lockup')).toBeTruthy();
+  expect(await screen.findByText('Personal investing workbench')).toBeTruthy();
+  expect(toolbarBrand.closest('.app-toolbar-brand')).toBeTruthy();
+  expect(toolbarBrand.closest('.app-toolbar-brand')?.className).toContain(
+    'lg:hidden',
+  );
 });
 
 test('switches interface language from english to chinese', async () => {
@@ -346,7 +349,8 @@ test('localizes grouped navigation without decorative workspace copy', async () 
   await user.click(await screen.findByRole('button', { name: 'Language' }));
   await user.click(await screen.findByRole('menuitemradio', { name: '中文' }));
 
-  const groupTitle = await screen.findByText('组合管理');
+  const navigation = await screen.findByLabelText('导航');
+  const groupTitle = await within(navigation).findByText('组合管理');
   const overviewNav = await screen.findByTestId('sidebar-nav-overview');
 
   expect(groupTitle.className).toContain('uppercase');
@@ -400,9 +404,17 @@ test('keeps the desktop toolbar controls in a single centered row', async () => 
   expect(toolbarRow?.className).toContain('items-center');
   expect(toolbarRow?.className).toContain('px-3');
 
+  const workspaceContext = await screen.findByLabelText('Current workspace');
+  expect(workspaceContext.className).toContain('lg:flex');
+  expect(within(workspaceContext).getByText('Portfolio')).toBeTruthy();
+  expect(within(workspaceContext).getByText('Overview')).toBeTruthy();
+
   const accountStatus = await screen.findByLabelText('Account Status');
-  expect(accountStatus.className).toContain('flex-nowrap');
-  expect(accountStatus.className).not.toContain('flex-wrap');
+  expect(accountStatus.className).toContain('app-status-footer');
+  expect(accountStatus.className).toContain('border-t');
+  const statusRail = accountStatus.querySelector('.app-status-rail');
+  expect(statusRail?.className).toContain('flex-nowrap');
+  expect(statusRail?.className).not.toContain('flex-wrap');
 
   const themeSwitcher = await screen.findByRole('group', { name: 'Theme' });
   expect(themeSwitcher.className).toContain('flex-row');
@@ -420,16 +432,17 @@ test('keeps the desktop toolbar controls in a single centered row', async () => 
   expect(languageButton.textContent).toBe('English');
 });
 
-test('surfaces compact status without duplicate nav links in the header rail', async () => {
+test('surfaces compact persisted status in the desktop footer', async () => {
   renderShell();
 
-  const headerRail = await screen.findByLabelText('Account Status');
-  expect(headerRail.className).toContain('lg:flex');
-  expect(headerRail.className).toContain('flex-1');
-  const valuationStatus = within(headerRail).getByTestId(
+  const statusFooter = await screen.findByLabelText('Account Status');
+  expect(statusFooter.className).toContain('lg:flex');
+  expect(statusFooter.className).toContain('app-status-footer');
+  expect(within(statusFooter).getByText('Persisted evidence')).toBeTruthy();
+  const valuationStatus = within(statusFooter).getByTestId(
     'status-pill-valuation',
   );
-  const marketStatus = within(headerRail).getByTestId('status-pill-market');
+  const marketStatus = within(statusFooter).getByTestId('status-pill-market');
   expect(valuationStatus).toBeTruthy();
   expect(marketStatus).toBeTruthy();
   const valuationShell = valuationStatus.closest('.group');
@@ -443,16 +456,44 @@ test('surfaces compact status without duplicate nav links in the header rail', a
   expect(marketStatus.className).toContain('text-xs');
   expect(marketStatus.className).toContain('whitespace-nowrap');
   expect(
-    within(headerRail).queryByRole('button', {
+    within(statusFooter).queryByRole('button', {
       name: 'Refresh quotes: Market',
     }),
   ).toBeNull();
-  expect(within(headerRail).queryByTestId('status-pill-ledger')).toBeNull();
-  expect(within(headerRail).queryByTestId('status-pill-broker')).toBeNull();
-  expect(within(headerRail).queryByRole('link', { name: 'Market' })).toBeNull();
+  expect(within(statusFooter).queryByTestId('status-pill-ledger')).toBeNull();
+  expect(within(statusFooter).queryByTestId('status-pill-broker')).toBeNull();
   expect(
-    within(headerRail).queryByRole('link', { name: 'Execution' }),
+    within(statusFooter).queryByRole('link', { name: 'Market' }),
   ).toBeNull();
+  expect(
+    within(statusFooter).queryByRole('link', { name: 'Execution' }),
+  ).toBeNull();
+});
+
+test('offers primary mobile tasks without shrinking the complete drawer', async () => {
+  renderShell();
+  const user = userEvent.setup();
+
+  const primaryNavigation = await screen.findByLabelText('Primary navigation');
+  expect(
+    within(primaryNavigation).getByRole('link', { name: 'Overview' }),
+  ).toBeTruthy();
+  expect(
+    within(primaryNavigation).getByRole('link', { name: 'Portfolio' }),
+  ).toBeTruthy();
+  expect(
+    within(primaryNavigation).getByRole('link', { name: 'Decision' }),
+  ).toBeTruthy();
+  const moreButton = within(primaryNavigation).getByRole('button', {
+    name: 'More',
+  });
+  expect(moreButton.getAttribute('aria-expanded')).toBe('false');
+
+  await user.click(moreButton);
+
+  expect(moreButton.getAttribute('aria-expanded')).toBe('true');
+  expect(await screen.findByLabelText('Navigation')).toBeTruthy();
+  expect(await screen.findByTestId('sidebar-nav-operations')).toBeTruthy();
 });
 
 test('keeps app shell overflow from clipping responsive content', async () => {

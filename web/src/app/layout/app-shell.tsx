@@ -59,6 +59,12 @@ const navGroups = [
   },
 ] as const;
 
+const mobilePrimaryItems = [
+  navGroups[0].items[0],
+  navGroups[0].items[1],
+  navGroups[2].items[0],
+] as const;
+
 type ToolbarStatusTone = 'success' | 'warning' | 'danger';
 type ToolbarPopoverKey = 'valuation' | 'market' | null;
 type ToolbarStatusIndicator = 'dot' | 'syncing';
@@ -235,6 +241,11 @@ export function AppShell({ children }: { children: ReactNode }) {
       marketHealth.data?.last_refresh_attempt,
     locale,
   );
+  const activeNavigation = navGroups
+    .flatMap((group) => group.items.map((item) => ({ group, item })))
+    .find(({ item }) =>
+      item.to === '/' ? pathname === '/' : pathname.startsWith(item.to),
+    );
 
   return (
     <div className="app-root min-h-[100dvh] w-full">
@@ -255,13 +266,21 @@ export function AppShell({ children }: { children: ReactNode }) {
           }`}
         >
           <div
-            className={`mb-3 flex min-h-8 items-center gap-3 px-2 ${desktopNavExpanded ? 'justify-between' : 'lg:justify-center'}`}
+            className={`app-brand-lockup mb-4 flex min-h-10 items-center gap-2.5 px-1.5 ${desktopNavExpanded ? 'justify-between' : 'lg:justify-center'}`}
           >
-            <div
-              className={`min-w-0 flex-1 ${desktopNavExpanded ? '' : 'lg:hidden'}`}
-            >
-              <div className="app-product-mark truncate whitespace-nowrap text-[11px] font-semibold">
-                Karkinos
+            <div className="flex min-w-0 flex-1 items-center gap-2.5">
+              <span className="app-brand-glyph" aria-hidden="true">
+                K
+              </span>
+              <div
+                className={`min-w-0 ${desktopNavExpanded ? '' : 'lg:hidden'}`}
+              >
+                <div className="app-product-mark truncate whitespace-nowrap">
+                  Karkinos
+                </div>
+                <div className="mt-1 truncate text-[10px] font-medium text-[var(--app-text-tertiary)]">
+                  {copy.shell.workspaceLabel}
+                </div>
               </div>
             </div>
             <button
@@ -391,85 +410,32 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </svg>
               </button>
 
-              <div className="app-toolbar-brand app-product-mark min-w-0 shrink-0 truncate text-[11px] font-semibold lg:hidden">
-                Karkinos
+              <div className="app-toolbar-brand min-w-0 shrink-0 items-center gap-2 lg:hidden">
+                <span
+                  className="app-brand-glyph app-brand-glyph-compact"
+                  aria-hidden="true"
+                >
+                  K
+                </span>
+                <span className="app-product-mark truncate">Karkinos</span>
               </div>
 
               <div
-                ref={statusRailRef}
-                className="app-status-rail hidden min-w-0 flex-1 flex-row flex-nowrap items-center gap-2 overflow-visible self-center lg:flex"
-                aria-label={copy.shell.accountStatus}
+                className="app-toolbar-context hidden min-w-0 flex-1 items-center gap-2 lg:flex"
+                role="group"
+                aria-label={copy.shell.currentWorkspace}
               >
-                <StatusChip
-                  testId="status-pill-valuation"
-                  label={copy.shell.navStatus}
-                  value={valuationStatus.value}
-                  meta={valuationTimestamp ?? undefined}
-                  tone={valuationStatus.tone}
-                  indicator={valuationStatus.indicator}
-                  hoverHint={copy.shell.viewValuationDetails}
-                  expanded={openStatusPanel === 'valuation'}
-                  title={`${copy.shell.navStatus}: ${valuationStatus.value}${
-                    valuationMeta ? ` · ${valuationMeta}` : ''
-                  }`}
-                  popup={
-                    <StatusPopover
-                      title={copy.shell.navStatus}
-                      rows={[
-                        {
-                          label: copy.shell.valuationUpdated,
-                          value: valuationMeta ?? copy.shell.statusUnknown,
-                        },
-                        {
-                          label: copy.shell.quoteStatus,
-                          value: quoteStatus,
-                        },
-                      ]}
-                    />
-                  }
-                  onClick={() =>
-                    setOpenStatusPanel((current) =>
-                      current === 'valuation' ? null : 'valuation',
-                    )
-                  }
-                />
-                <StatusChip
-                  testId="status-pill-market"
-                  label={copy.shell.marketStatus}
-                  value={marketStatus.value}
-                  meta={marketTimestamp ?? undefined}
-                  tone={marketStatus.tone}
-                  indicator={marketStatus.indicator}
-                  hoverHint={copy.shell.viewStatusDetails}
-                  expanded={openStatusPanel === 'market'}
-                  title={`${copy.shell.marketStatus}: ${marketStatus.value}${
-                    marketTimestamp ? ` · ${marketTimestamp}` : ''
-                  }`}
-                  popup={
-                    <StatusPopover
-                      title={copy.shell.marketStatus}
-                      rows={[
-                        {
-                          label: copy.shell.marketSession,
-                          value: marketOpenText,
-                        },
-                        {
-                          label: copy.shell.refreshPolicy,
-                          value: refreshPolicy,
-                        },
-                        {
-                          label: copy.shell.quoteStatus,
-                          value: quoteStatus,
-                        },
-                      ]}
-                    />
-                  }
-                  onClick={() =>
-                    setOpenStatusPanel((current) =>
-                      current === 'market' ? null : 'market',
-                    )
-                  }
-                />
+                <span className="truncate text-[11px] font-semibold text-[var(--app-text-tertiary)]">
+                  {activeNavigation?.group.label[locale] ?? copy.shell.title}
+                </span>
+                <span className="text-[var(--app-divider)]" aria-hidden="true">
+                  /
+                </span>
+                <span className="truncate text-[13px] font-semibold text-[var(--app-text)]">
+                  {activeNavigation
+                    ? copy.shell.nav[activeNavigation.item.key]
+                    : copy.shell.title}
+                </span>
               </div>
 
               <div className="ml-auto flex min-w-0 shrink-0 flex-row items-center justify-end whitespace-nowrap">
@@ -511,6 +477,128 @@ export function AppShell({ children }: { children: ReactNode }) {
               {children}
             </div>
           </div>
+
+          <div
+            ref={statusRailRef}
+            className="app-status-footer relative z-[80] hidden h-10 shrink-0 items-center gap-2 overflow-visible border-t border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-3 lg:flex"
+            aria-label={copy.shell.accountStatus}
+          >
+            <div className="app-status-rail flex min-w-0 flex-1 flex-row flex-nowrap items-center gap-2 overflow-visible">
+              <StatusChip
+                testId="status-pill-valuation"
+                label={copy.shell.navStatus}
+                value={valuationStatus.value}
+                meta={valuationTimestamp ?? undefined}
+                tone={valuationStatus.tone}
+                indicator={valuationStatus.indicator}
+                hoverHint={copy.shell.viewValuationDetails}
+                expanded={openStatusPanel === 'valuation'}
+                popupPlacement="top"
+                title={`${copy.shell.navStatus}: ${valuationStatus.value}${
+                  valuationMeta ? ` · ${valuationMeta}` : ''
+                }`}
+                popup={
+                  <StatusPopover
+                    title={copy.shell.navStatus}
+                    rows={[
+                      {
+                        label: copy.shell.valuationUpdated,
+                        value: valuationMeta ?? copy.shell.statusUnknown,
+                      },
+                      {
+                        label: copy.shell.quoteStatus,
+                        value: quoteStatus,
+                      },
+                    ]}
+                  />
+                }
+                onClick={() =>
+                  setOpenStatusPanel((current) =>
+                    current === 'valuation' ? null : 'valuation',
+                  )
+                }
+              />
+              <StatusChip
+                testId="status-pill-market"
+                label={copy.shell.marketStatus}
+                value={marketStatus.value}
+                meta={marketTimestamp ?? undefined}
+                tone={marketStatus.tone}
+                indicator={marketStatus.indicator}
+                hoverHint={copy.shell.viewStatusDetails}
+                expanded={openStatusPanel === 'market'}
+                popupPlacement="top"
+                title={`${copy.shell.marketStatus}: ${marketStatus.value}${
+                  marketTimestamp ? ` · ${marketTimestamp}` : ''
+                }`}
+                popup={
+                  <StatusPopover
+                    title={copy.shell.marketStatus}
+                    rows={[
+                      {
+                        label: copy.shell.marketSession,
+                        value: marketOpenText,
+                      },
+                      {
+                        label: copy.shell.refreshPolicy,
+                        value: refreshPolicy,
+                      },
+                      {
+                        label: copy.shell.quoteStatus,
+                        value: quoteStatus,
+                      },
+                    ]}
+                  />
+                }
+                onClick={() =>
+                  setOpenStatusPanel((current) =>
+                    current === 'market' ? null : 'market',
+                  )
+                }
+              />
+            </div>
+            <div className="flex shrink-0 items-center gap-2 text-[11px] font-medium text-[var(--app-text-tertiary)]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[var(--app-info-indicator)]" />
+              {copy.shell.persistedEvidence}
+            </div>
+          </div>
+
+          <nav
+            className="app-mobile-primary-nav relative z-[80] grid shrink-0 grid-cols-4 border-t border-[var(--app-divider)] bg-[var(--app-surface-raised)] lg:hidden"
+            aria-label={copy.shell.primaryNavigation}
+          >
+            {mobilePrimaryItems.map((item) => {
+              const active =
+                item.to === '/'
+                  ? pathname === '/'
+                  : pathname.startsWith(item.to);
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  className={`app-mobile-primary-item ${
+                    active ? 'app-mobile-primary-item-active' : ''
+                  }`}
+                  onClick={() => setMobileNavOpen(false)}
+                >
+                  <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
+                  <span>{copy.shell.nav[item.key]}</span>
+                </Link>
+              );
+            })}
+            <button
+              type="button"
+              className={`app-mobile-primary-item ${mobileNavOpen ? 'app-mobile-primary-item-active' : ''}`}
+              aria-label={copy.shell.moreNavigation}
+              aria-controls="app-shell-navigation"
+              aria-expanded={mobileNavOpen}
+              onClick={() => setMobileNavOpen((open) => !open)}
+            >
+              <MenuIcon className="h-[18px] w-[18px]" aria-hidden="true" />
+              <span>{copy.shell.moreNavigation}</span>
+            </button>
+          </nav>
         </main>
       </div>
     </div>
@@ -723,6 +811,7 @@ function StatusChip({
   title,
   meta,
   popup,
+  popupPlacement = 'bottom',
   expanded = false,
   testId,
 }: {
@@ -736,6 +825,7 @@ function StatusChip({
   title?: string;
   meta?: string;
   popup?: ReactNode;
+  popupPlacement?: 'top' | 'bottom';
   expanded?: boolean;
   testId?: string;
 }) {
@@ -794,12 +884,24 @@ function StatusChip({
         </span>
       </button>
       {hoverHint && !expanded ? (
-        <div className="pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-[75] -translate-x-1/2 rounded-[var(--app-radius-overlay)] border border-[var(--app-border)] bg-[var(--app-surface-overlay)] px-2.5 py-1.5 text-xs text-[var(--app-text)] opacity-0 shadow-[var(--app-shadow-overlay)] transition-opacity duration-75 group-hover:opacity-100 group-focus-within:opacity-100">
+        <div
+          className={`pointer-events-none absolute left-1/2 z-[75] -translate-x-1/2 rounded-[var(--app-radius-overlay)] border border-[var(--app-border)] bg-[var(--app-surface-overlay)] px-2.5 py-1.5 text-xs text-[var(--app-text)] opacity-0 shadow-[var(--app-shadow-overlay)] transition-opacity duration-75 group-hover:opacity-100 group-focus-within:opacity-100 ${
+            popupPlacement === 'top'
+              ? 'bottom-[calc(100%+6px)]'
+              : 'top-[calc(100%+6px)]'
+          }`}
+        >
           {hoverHint}
         </div>
       ) : null}
       {popup ? (
-        <div className="absolute right-0 top-[calc(100%+8px)] z-[70]">
+        <div
+          className={`absolute right-0 z-[70] ${
+            popupPlacement === 'top'
+              ? 'bottom-[calc(100%+8px)]'
+              : 'top-[calc(100%+8px)]'
+          }`}
+        >
           {expanded ? popup : null}
         </div>
       ) : null}
@@ -910,6 +1012,23 @@ function ChevronDownIcon(props: SVGProps<SVGSVGElement>) {
       {...props}
     >
       <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+function MenuIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      viewBox="0 0 24 24"
+      strokeLinecap="round"
+      {...props}
+    >
+      <path d="M4 7h16" />
+      <path d="M4 12h16" />
+      <path d="M4 17h16" />
     </svg>
   );
 }
