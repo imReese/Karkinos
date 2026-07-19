@@ -77,7 +77,8 @@ test('shows current drawdown as a signed downside metric', () => {
   expect(screen.getByText('-4.80%')).toBeTruthy();
 });
 
-test('renders account metrics in a compact homepage workbench layout', () => {
+test('renders account metrics in a compact homepage workbench layout', async () => {
+  const user = userEvent.setup();
   renderWithPreferences(
     <OverviewCards
       overview={{
@@ -101,10 +102,13 @@ test('renders account metrics in a compact homepage workbench layout', () => {
   expect(rail.querySelector('.account-overview-summary')).toBeTruthy();
   expect(screen.getByLabelText('Supporting account metrics')).toBeTruthy();
   expect(screen.getByText('Evidence complete')).toBeTruthy();
-  expect(
-    screen.getByText('Valuation as of 02-10 15:00 · ledger cutoff 42'),
-  ).toBeTruthy();
+  expect(screen.getByText('Valuation as of 02-10 15:00')).toBeTruthy();
   expect(screen.queryByText(/valuation-private-fixture/)).toBeNull();
+  await user.click(
+    screen.getByRole('button', { name: 'View evidence identity' }),
+  );
+  expect(screen.getByText('valuation-private-fixture')).toBeTruthy();
+  expect(screen.getByText('42')).toBeTruthy();
   expect(screen.getByText('Peak ¥106,650.00')).toBeTruthy();
   expect(screen.getByText('Cash Ratio 74.8%')).toBeTruthy();
   expect(screen.getByText('¥220.00')).toBeTruthy();

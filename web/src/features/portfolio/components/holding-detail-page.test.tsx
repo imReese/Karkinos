@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { PreferencesProvider } from '../../../app/preferences';
@@ -389,6 +390,7 @@ afterEach(() => {
 });
 
 test('renders holding detail with cached quote status and ledger trace', async () => {
+  const user = userEvent.setup();
   const { container } = renderHoldingDetail();
 
   expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
@@ -424,7 +426,13 @@ test('renders holding detail with cached quote status and ledger trace', async (
   expect(await screen.findByText('Price range / K-line')).toBeTruthy();
   expect(await screen.findByText('¥1,640.00')).toBeTruthy();
   expect(await screen.findByText('Holding results & evidence')).toBeTruthy();
-  expect((await screen.findAllByText('valuation-1')).length).toBeGreaterThan(0);
+  expect(screen.queryByText('valuation-1')).toBeNull();
+  await user.click(
+    within(screen.getByTestId('holding-detail-header')).getByRole('button', {
+      name: 'View evidence identity',
+    }),
+  );
+  expect(await screen.findByText('valuation-1')).toBeTruthy();
   expect(await screen.findByText('Persisted account ledger only')).toBeTruthy();
   expect(await screen.findByTestId('kline-trade-marker-buy')).toBeTruthy();
   expect((await screen.findAllByTestId('kline-reference-line')).length).toBe(1);

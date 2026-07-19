@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 
 import { PreferencesProvider } from '../../../app/preferences';
@@ -35,7 +36,8 @@ function renderCard(
   );
 }
 
-test('shows strategy contribution only when linked-fill evidence supports it', () => {
+test('shows strategy contribution only when linked-fill evidence supports it', async () => {
+  const user = userEvent.setup();
   renderCard({
     schema_version: 'karkinos.account_strategy_contribution.v2',
     strategy_id: 'dual_ma',
@@ -90,7 +92,7 @@ test('shows strategy contribution only when linked-fill evidence supports it', (
   expect(screen.getByText('Strategy health')).toBeTruthy();
   expect(screen.getByText('Healthy')).toBeTruthy();
   expect(screen.getByText('Dual Moving Average')).toBeTruthy();
-  expect(screen.getByText('Audit id dual_ma')).toBeTruthy();
+  expect(screen.queryByText('dual_ma')).toBeNull();
   expect(screen.queryByText('Dual Moving Average · dual_ma')).toBeNull();
   expect(screen.getByText('Gross realized P/L')).toBeTruthy();
   expect(screen.getByText('¥8.00')).toBeTruthy();
@@ -100,10 +102,12 @@ test('shows strategy contribution only when linked-fill evidence supports it', (
   expect(screen.getByText('¥5.00 / ¥1.50')).toBeTruthy();
   expect(screen.getByText('Tax')).toBeTruthy();
   expect(screen.getByText('¥0.50')).toBeTruthy();
-  expect(screen.getByText('Valuation snapshot')).toBeTruthy();
+  expect(screen.queryByText('valuation-fixture-1')).toBeNull();
+  await user.click(
+    screen.getByRole('button', { name: 'View evidence identity' }),
+  );
   expect(screen.getByText('valuation-fixture-1')).toBeTruthy();
-  expect(screen.getByText('Ledger cutoff')).toBeTruthy();
-  expect(screen.getByText('42')).toBeTruthy();
+  expect(screen.getByText('dual_ma')).toBeTruthy();
   expect(screen.getByText('Net contribution')).toBeTruthy();
   expect(screen.getByText('¥129.50')).toBeTruthy();
   expect(screen.getByText('Evidence refs')).toBeTruthy();

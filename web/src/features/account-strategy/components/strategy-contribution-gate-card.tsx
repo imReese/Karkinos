@@ -1,6 +1,7 @@
 import { useCopy } from '../../../app/copy';
+import { EvidenceIdentityDisclosure } from '../../../app/components/workbench';
 import { usePreferences } from '../../../app/preferences';
-import { formatCurrency } from '../../../shared/format';
+import { formatCurrency, formatTimestamp } from '../../../shared/format';
 import {
   formatInstrumentDisplayLabelsBySymbol,
   type InstrumentDisplayRecord,
@@ -8,6 +9,7 @@ import {
 import {
   formatPublicCode,
   formatPublicNote,
+  formatPublicStatus,
 } from '../../../shared/public-labels';
 import { formatStrategyDisplayName } from '../../../shared/strategy-display';
 import type { AccountStrategyContributionReport } from '../api';
@@ -119,21 +121,66 @@ export function StrategyContributionGateCard({
               </p>
             )}
           </div>
-          <span
-            className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${
-              isSupported
-                ? 'border-[var(--app-success-border)] bg-[var(--app-success-bg)] text-[var(--app-success-text)]'
+          <div className="flex flex-wrap items-center gap-2">
+            {report ? (
+              <EvidenceIdentityDisclosure
+                triggerLabel={copy.common.viewEvidenceIdentity}
+                title={copy.common.evidenceIdentityTitle}
+                description={copy.common.evidenceIdentityDescription}
+                closeLabel={copy.common.closeEvidenceIdentity}
+                fields={[
+                  {
+                    label: copy.common.valuationSnapshot,
+                    value: report.valuation_snapshot_id ?? '--',
+                    mono: true,
+                  },
+                  {
+                    label: copy.common.ledgerCutoff,
+                    value: report.ledger_cutoff_id ?? '--',
+                    mono: true,
+                  },
+                  {
+                    label: copy.common.valuationAsOf,
+                    value: formatTimestamp(report.valuation_as_of),
+                    mono: true,
+                  },
+                  {
+                    label: copy.common.valuationStatus,
+                    value: formatPublicStatus(report.valuation_status, locale),
+                  },
+                  {
+                    label: copy.common.reviewFingerprint,
+                    value: report.contribution_fingerprint ?? '--',
+                    mono: true,
+                  },
+                  ...(strategyAuditId
+                    ? [
+                        {
+                          label: labels.accountStrategyAuditId,
+                          value: strategyAuditId,
+                          mono: true,
+                        },
+                      ]
+                    : []),
+                ]}
+              />
+            ) : null}
+            <span
+              className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${
+                isSupported
+                  ? 'border-[var(--app-success-border)] bg-[var(--app-success-bg)] text-[var(--app-success-text)]'
+                  : isNotApplicable
+                    ? 'border-[color-mix(in_srgb,var(--app-border)_55%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_24%,transparent)] text-[var(--app-soft)]'
+                    : 'border-[color-mix(in_srgb,var(--app-warning)_45%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_16%,transparent)] text-[var(--app-warning)]'
+              }`}
+            >
+              {isSupported
+                ? labels.accountStrategyEvidenceLinked
                 : isNotApplicable
-                  ? 'border-[color-mix(in_srgb,var(--app-border)_55%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_24%,transparent)] text-[var(--app-soft)]'
-                  : 'border-[color-mix(in_srgb,var(--app-warning)_45%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_16%,transparent)] text-[var(--app-warning)]'
-            }`}
-          >
-            {isSupported
-              ? labels.accountStrategyEvidenceLinked
-              : isNotApplicable
-                ? labels.accountStrategyEvidenceNotApplicable
-                : labels.accountStrategyEvidenceRequired}
-          </span>
+                  ? labels.accountStrategyEvidenceNotApplicable
+                  : labels.accountStrategyEvidenceRequired}
+            </span>
+          </div>
         </div>
 
         {isLoading ? (
@@ -183,14 +230,6 @@ export function StrategyContributionGateCard({
                     label={labels.accountStrategyTax}
                     value={formatCurrency(report.total_tax)}
                   />
-                  <Metric
-                    label={labels.accountStrategyValuationSnapshot}
-                    value={report.valuation_snapshot_id ?? '--'}
-                  />
-                  <Metric
-                    label={labels.accountStrategyLedgerCutoff}
-                    value={String(report.ledger_cutoff_id ?? '--')}
-                  />
                 </>
               )}
               <Metric
@@ -223,11 +262,6 @@ export function StrategyContributionGateCard({
                 />
               )}
             </div>
-            {strategyAuditId ? (
-              <div className="app-muted text-xs font-semibold">
-                {labels.accountStrategyAuditId} {strategyAuditId}
-              </div>
-            ) : null}
             <ContributionLimitations
               limitations={report.limitations}
               locale={locale}
@@ -260,16 +294,7 @@ export function StrategyContributionGateCard({
                 label={labels.accountStrategyLedgerPostedFills}
                 value={`${report?.ledger_posted_fill_count ?? 0} / ${report?.linked_fill_count ?? 0}`}
               />
-              <Metric
-                label={labels.accountStrategyValuationSnapshot}
-                value={report?.valuation_snapshot_id ?? '--'}
-              />
             </div>
-            {strategyAuditId ? (
-              <div className="app-muted text-xs font-semibold">
-                {labels.accountStrategyAuditId} {strategyAuditId}
-              </div>
-            ) : null}
             {report?.missing_valuation_symbols.length ? (
               <p className="text-xs font-semibold text-[var(--app-warning)]">
                 {labels.accountStrategyMissingValuation(

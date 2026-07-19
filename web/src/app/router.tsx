@@ -17,6 +17,7 @@ import {
 import { useCopy, type AppCopy } from './copy';
 import { ToastStack, type ToastItem } from './components/toast-stack';
 import {
+  EvidenceIdentityDisclosure,
   EvidenceState,
   ExceptionList,
   FilterBar,
@@ -2984,6 +2985,7 @@ function PortfolioEvidenceReviewPanel({
 
 export function PortfolioPage() {
   const copy = useCopy();
+  const { locale } = usePreferences();
   const navigate = useNavigate();
   const searchState = portfolioRoute.useSearch();
   const [mode, setMode] = useState<'account' | 'strategy'>('account');
@@ -3023,9 +3025,10 @@ export function PortfolioPage() {
 
   const closedPositions = snapshot.data?.closed_positions ?? [];
   const portfolioIdentity = snapshot.data
-    ? `snapshot ${snapshot.data.valuation_snapshot_id ?? '--'} · ledger ${
-        snapshot.data.ledger_cutoff_id ?? '--'
-      }`
+    ? copy.common.valuationEvidenceAsOf(
+        formatTimestamp(snapshot.data.valuation_as_of),
+        formatPublicStatus(snapshot.data.valuation_status, locale),
+      )
     : undefined;
 
   return (
@@ -3035,6 +3038,40 @@ export function PortfolioPage() {
         title={copy.portfolio.title}
         description={copy.portfolio.subtitle}
         context={portfolioIdentity}
+        actions={
+          snapshot.data ? (
+            <EvidenceIdentityDisclosure
+              triggerLabel={copy.common.viewEvidenceIdentity}
+              title={copy.common.evidenceIdentityTitle}
+              description={copy.common.evidenceIdentityDescription}
+              closeLabel={copy.common.closeEvidenceIdentity}
+              fields={[
+                {
+                  label: copy.common.valuationSnapshot,
+                  value: snapshot.data.valuation_snapshot_id ?? '--',
+                  mono: true,
+                },
+                {
+                  label: copy.common.ledgerCutoff,
+                  value: snapshot.data.ledger_cutoff_id ?? '--',
+                  mono: true,
+                },
+                {
+                  label: copy.common.valuationAsOf,
+                  value: formatTimestamp(snapshot.data.valuation_as_of),
+                  mono: true,
+                },
+                {
+                  label: copy.common.valuationStatus,
+                  value: formatPublicStatus(
+                    snapshot.data.valuation_status,
+                    locale,
+                  ),
+                },
+              ]}
+            />
+          ) : undefined
+        }
       />
 
       <WorkspaceToolbar
@@ -3335,15 +3372,56 @@ export function RiskPage() {
         description={copy.riskPage.subtitle}
         context={
           state.data
-            ? `snapshot ${
-                state.data.summary.valuation_snapshot_id
-                  ? `${state.data.summary.valuation_snapshot_id.slice(0, 18)}…`
-                  : '--'
-              } · ledger ${state.data.summary.ledger_cutoff_id ?? '--'} · ${formatPublicStatus(
-                state.data.summary.quote_status,
-                locale,
-              )}`
+            ? copy.common.valuationEvidenceAsOf(
+                formatTimestamp(
+                  state.data.summary.valuation_as_of ??
+                    state.data.summary.valuation_timestamp,
+                ),
+                formatPublicStatus(
+                  state.data.summary.valuation_status ??
+                    state.data.summary.quote_status,
+                  locale,
+                ),
+              )
             : undefined
+        }
+        actions={
+          state.data ? (
+            <EvidenceIdentityDisclosure
+              triggerLabel={copy.common.viewEvidenceIdentity}
+              title={copy.common.evidenceIdentityTitle}
+              description={copy.common.evidenceIdentityDescription}
+              closeLabel={copy.common.closeEvidenceIdentity}
+              fields={[
+                {
+                  label: copy.common.valuationSnapshot,
+                  value: state.data.summary.valuation_snapshot_id ?? '--',
+                  mono: true,
+                },
+                {
+                  label: copy.common.ledgerCutoff,
+                  value: state.data.summary.ledger_cutoff_id ?? '--',
+                  mono: true,
+                },
+                {
+                  label: copy.common.valuationAsOf,
+                  value: formatTimestamp(
+                    state.data.summary.valuation_as_of ??
+                      state.data.summary.valuation_timestamp,
+                  ),
+                  mono: true,
+                },
+                {
+                  label: copy.common.valuationStatus,
+                  value: formatPublicStatus(
+                    state.data.summary.valuation_status ??
+                      state.data.summary.quote_status,
+                    locale,
+                  ),
+                },
+              ]}
+            />
+          ) : undefined
         }
       />
 

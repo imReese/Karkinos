@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from 'react';
 
+import { useCopy } from '../../../app/copy';
+import { EvidenceIdentityDisclosure } from '../../../app/components/workbench';
 import { usePreferences } from '../../../app/preferences';
 import {
   useCreateHumanResearchTaskMutation,
@@ -562,6 +564,7 @@ function ResearchTaskCard({
   reviewDisabled: boolean;
   task: HumanResearchTask;
 }) {
+  const appCopy = useCopy();
   const reviewable =
     task.status === 'awaiting_human_review' ||
     task.status === 'blocked_by_evidence';
@@ -576,20 +579,45 @@ function ResearchTaskCard({
             {task.research_question}
           </p>
         </div>
-        <span className="rounded-full border border-[var(--app-border)] px-2.5 py-1 text-[10px] font-semibold text-[var(--app-text)]">
-          {copy.statuses[task.status]}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <EvidenceIdentityDisclosure
+            triggerLabel={appCopy.common.viewEvidenceIdentity}
+            title={appCopy.common.evidenceIdentityTitle}
+            description={appCopy.common.evidenceIdentityDescription}
+            closeLabel={appCopy.common.closeEvidenceIdentity}
+            fields={[
+              {
+                label: appCopy.common.valuationSnapshot,
+                value: task.valuation_snapshot_id,
+                mono: true,
+              },
+              {
+                label: appCopy.common.ledgerCutoff,
+                value: task.ledger_cutoff_id,
+                mono: true,
+              },
+              {
+                label: appCopy.common.captureIdentity,
+                value: task.capture_id,
+                mono: true,
+              },
+              {
+                label: appCopy.common.contextSnapshot,
+                value: task.context_snapshot_id,
+                mono: true,
+              },
+              {
+                label: appCopy.common.contextFingerprint,
+                value: task.context_fingerprint,
+                mono: true,
+              },
+            ]}
+          />
+          <span className="rounded-full border border-[var(--app-border)] px-2.5 py-1 text-[10px] font-semibold text-[var(--app-text)]">
+            {copy.statuses[task.status]}
+          </span>
+        </div>
       </div>
-      <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
-        <EvidenceIdentity
-          label={copy.snapshot}
-          value={task.valuation_snapshot_id}
-        />
-        <EvidenceIdentity
-          label={copy.cutoff}
-          value={String(task.ledger_cutoff_id)}
-        />
-      </dl>
       <div className="mt-3 flex flex-wrap gap-1.5">
         {task.evidence.map((evidence) => (
           <span

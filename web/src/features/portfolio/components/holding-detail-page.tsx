@@ -26,6 +26,7 @@ import {
 import { PriceStructureChart } from '../../market/components/price-structure-chart';
 import { useCopy } from '../../../app/copy';
 import {
+  EvidenceIdentityDisclosure,
   MetricStrip as WorkbenchMetricStrip,
   WorkspaceHeader as WorkbenchWorkspaceHeader,
 } from '../../../app/components/workbench';
@@ -618,11 +619,6 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
         ? labels.refreshDone
         : null;
   const valuationSnapshotId = snapshot.data?.valuation_snapshot_id ?? null;
-  const shortValuationSnapshotId = valuationSnapshotId
-    ? valuationSnapshotId.length > 28
-      ? `${valuationSnapshotId.slice(0, 16)}…${valuationSnapshotId.slice(-8)}`
-      : valuationSnapshotId
-    : '--';
 
   const summaryMetrics: DetailMetric[] = [
     { label: labels.quantity, value: formatQuantity(position.quantity) },
@@ -729,14 +725,6 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
       value: formatTimestamp(lastLedgerEntry?.timestamp),
     },
     {
-      label: labels.valuationSnapshotId,
-      value: snapshot.data?.valuation_snapshot_id ?? '--',
-    },
-    {
-      label: labels.ledgerCutoffId,
-      value: snapshot.data?.ledger_cutoff_id?.toString() ?? '--',
-    },
-    {
       label: labels.evidenceState,
       value: evidenceReviewState,
       tone: evidenceIdentityConsistent ? undefined : 'warning',
@@ -758,18 +746,41 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
           eyebrow={labels.kicker}
           title={`${displayName} · ${position.symbol}`}
           description={assetClassDisplay}
-          context={
-            <span title={valuationSnapshotId ?? undefined}>
-              {labels.valuationSnapshotId}:{' '}
-              <span className="font-mono">{shortValuationSnapshotId}</span> ·{' '}
-              {labels.ledgerCutoffId}:{' '}
-              <span className="font-mono">
-                {snapshot.data?.ledger_cutoff_id ?? '--'}
-              </span>
-            </span>
-          }
+          context={copy.common.valuationEvidenceAsOf(
+            formatTimestamp(snapshot.data?.valuation_as_of),
+            evidenceReviewState,
+          )}
           actions={
             <>
+              {snapshot.data ? (
+                <EvidenceIdentityDisclosure
+                  triggerLabel={copy.common.viewEvidenceIdentity}
+                  title={copy.common.evidenceIdentityTitle}
+                  description={copy.common.evidenceIdentityDescription}
+                  closeLabel={copy.common.closeEvidenceIdentity}
+                  fields={[
+                    {
+                      label: copy.common.valuationSnapshot,
+                      value: valuationSnapshotId ?? '--',
+                      mono: true,
+                    },
+                    {
+                      label: copy.common.ledgerCutoff,
+                      value: snapshot.data.ledger_cutoff_id ?? '--',
+                      mono: true,
+                    },
+                    {
+                      label: copy.common.valuationAsOf,
+                      value: formatTimestamp(snapshot.data.valuation_as_of),
+                      mono: true,
+                    },
+                    {
+                      label: copy.common.valuationStatus,
+                      value: evidenceReviewState,
+                    },
+                  ]}
+                />
+              ) : null}
               <a
                 href="/portfolio"
                 className="app-button-secondary inline-flex w-max rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"

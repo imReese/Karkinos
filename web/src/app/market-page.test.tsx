@@ -413,7 +413,12 @@ test('routes confirmed NAV blockers through confirmation-only ingestion', async 
   expect(
     within(panel).getByText('1 current holding needs review'),
   ).toBeTruthy();
-  expect(within(panel).getByTitle('valuation-market-fixture')).toBeTruthy();
+  expect(within(panel).queryByText('valuation-market-fixture')).toBeNull();
+  await user.click(
+    within(panel).getByRole('button', { name: 'View evidence identity' }),
+  );
+  expect(await screen.findByText('valuation-market-fixture')).toBeTruthy();
+  await user.keyboard('{Escape}');
   expect(
     within(panel).queryByRole('button', { name: 'Refresh quotes' }),
   ).toBeNull();

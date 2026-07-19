@@ -22,6 +22,10 @@ const accountState = {
     unrealized_pnl: 1800,
     realized_pnl: 200,
     cash_ratio: 0.2,
+    valuation_snapshot_id: 'valuation-risk-private-fixture',
+    valuation_as_of: '2026-06-12T15:00:00+08:00',
+    valuation_status: 'complete',
+    ledger_cutoff_id: 42,
     valuation_timestamp: '2026-06-12T15:00:00+08:00',
     quote_status: 'live',
   },
@@ -343,9 +347,16 @@ afterEach(() => {
 });
 
 test('renders risk boundaries and blocking register without execution controls', async () => {
+  const user = userEvent.setup();
   renderRiskPage();
 
   expect(await screen.findByText('Risk control center')).toBeTruthy();
+  expect(screen.queryByText('valuation-risk-private-fixture')).toBeNull();
+  await user.click(
+    await screen.findByRole('button', { name: 'View evidence identity' }),
+  );
+  expect(screen.getByText('valuation-risk-private-fixture')).toBeTruthy();
+  await user.keyboard('{Escape}');
   const handoff = await screen.findByTestId('risk-decision-handoff');
   expect(handoff.textContent).toContain(
     'Run pre-trade risk gate for candidates',

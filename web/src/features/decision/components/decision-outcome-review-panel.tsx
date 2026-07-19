@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
 
+import { useCopy } from '../../../app/copy';
+import { EvidenceIdentityDisclosure } from '../../../app/components/workbench';
 import { usePreferences } from '../../../app/preferences';
 import { formatCurrency } from '../../../shared/format';
 import {
@@ -83,6 +85,7 @@ export function DecisionOutcomeReviewPanel({
 }: {
   entry: SignalJournalEntry;
 }) {
+  const appCopy = useCopy();
   const { locale } = usePreferences();
   const signalId = entry.signal.id;
   const reviewSignalId = signalId ?? 0;
@@ -228,6 +231,31 @@ export function DecisionOutcomeReviewPanel({
             </div>
           ) : target ? (
             <>
+              <div className="flex justify-end">
+                <EvidenceIdentityDisclosure
+                  triggerLabel={appCopy.common.viewEvidenceIdentity}
+                  title={appCopy.common.evidenceIdentityTitle}
+                  description={appCopy.common.evidenceIdentityDescription}
+                  closeLabel={appCopy.common.closeEvidenceIdentity}
+                  fields={[
+                    {
+                      label: appCopy.common.valuationSnapshot,
+                      value: target.valuation_snapshot_id ?? '--',
+                      mono: true,
+                    },
+                    {
+                      label: appCopy.common.ledgerCutoff,
+                      value: target.ledger_cutoff_id,
+                      mono: true,
+                    },
+                    {
+                      label: appCopy.common.reviewFingerprint,
+                      value: target.target_fingerprint,
+                      mono: true,
+                    },
+                  ]}
+                />
+              </div>
               <dl className="grid gap-2 text-[11px] sm:grid-cols-2">
                 <div>
                   <dt className="app-muted">{labels.execution}</dt>
@@ -244,18 +272,6 @@ export function DecisionOutcomeReviewPanel({
                     {contribution?.net_contribution != null
                       ? ` · ${formatCurrency(contribution.net_contribution)}`
                       : ''}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="app-muted">{labels.snapshot}</dt>
-                  <dd className="mt-0.5 break-all font-mono text-[var(--app-soft)]">
-                    {target.valuation_snapshot_id ?? '--'}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="app-muted">{labels.cutoff}</dt>
-                  <dd className="mt-0.5 font-mono tabular-nums text-[var(--app-soft)]">
-                    {target.ledger_cutoff_id}
                   </dd>
                 </div>
               </dl>
