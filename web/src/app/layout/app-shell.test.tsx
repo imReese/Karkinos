@@ -299,6 +299,33 @@ test('keeps a compact mobile navigation control visible in the header', async ()
   expect(
     (await screen.findByTestId('mobile-navigation-backdrop')).className,
   ).toContain('z-[90]');
+
+  await user.keyboard('{Escape}');
+  expect(toggle.getAttribute('aria-expanded')).toBe('false');
+  expect(toggle.getAttribute('aria-label')).toBe('Open navigation');
+});
+
+test('consolidates mobile display preferences behind one compact control', async () => {
+  renderShell();
+  const user = userEvent.setup();
+
+  const toggle = await screen.findByTestId('mobile-preferences-toggle');
+  expect(toggle.className).toContain('h-8');
+  expect(toggle.className).toContain('w-8');
+  expect(toggle.getAttribute('aria-expanded')).toBe('false');
+
+  await user.click(toggle);
+  const preferences = await screen.findByRole('dialog', {
+    name: 'Theme · Language',
+  });
+  expect(toggle.getAttribute('aria-expanded')).toBe('true');
+
+  await user.click(
+    within(preferences).getByRole('button', { name: 'Dark theme' }),
+  );
+  expect(document.documentElement.dataset.theme).toBe('dark');
+  expect(window.localStorage.getItem('karkinos.theme')).toBe('dark');
+  expect(toggle.getAttribute('aria-expanded')).toBe('false');
 });
 
 test('keeps one branded lockup per responsive shell context', async () => {

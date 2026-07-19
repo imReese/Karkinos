@@ -10,6 +10,8 @@ const ROUTER = source('app/router.tsx');
 const BACKTEST = source('features/backtest/components/backtest-page.tsx');
 const TRADING = source('features/trading/components/trading-page.tsx');
 const SETTINGS = source('features/settings/components/settings-page.tsx');
+const ACTIVITY_FEED = source('features/activity/components/activity-feed.tsx');
+const APP_SHELL = source('app/layout/app-shell.tsx');
 const RESEARCH_TASK = source(
   'features/ai-research/components/research-task-panel.tsx',
 );
@@ -83,5 +85,35 @@ describe('remaining route workbench contract', () => {
     expect(
       SETTINGS.match(/<ControlledActionZone/g)?.length ?? 0,
     ).toBeGreaterThanOrEqual(2);
+  });
+
+  it('keeps routine route structure flat and mobile preferences compact', () => {
+    const activityFeed = ACTIVITY_FEED.slice(
+      ACTIVITY_FEED.indexOf('export function ActivityFeed'),
+      ACTIVITY_FEED.indexOf('function activityAmountClass'),
+    );
+    const marketPage = ROUTER.slice(
+      ROUTER.indexOf('export function MarketPage'),
+      ROUTER.indexOf('export function ActivityPage'),
+    );
+    const settingsSection = SETTINGS.slice(
+      SETTINGS.indexOf('function SettingsSection'),
+      SETTINGS.indexOf('function SettingsDisclosure'),
+    );
+
+    expect(activityFeed).toContain('app-workbench-section');
+    expect(activityFeed).not.toContain(
+      'app-panel min-w-0 overflow-hidden rounded-2xl',
+    );
+    expect(marketPage).not.toContain('app-panel rounded-2xl p-0');
+    expect(
+      marketPage.match(/app-workbench-section min-w-0 overflow-hidden/g),
+    ).toHaveLength(2);
+    expect(settingsSection).toContain('border-y border-[var(--app-divider)]');
+    expect(settingsSection).not.toContain('app-panel');
+    expect(APP_SHELL).toContain('data-testid="mobile-preferences-toggle"');
+    expect(APP_SHELL).toContain(
+      'hidden min-w-0 flex-row items-center gap-2 sm:flex',
+    );
   });
 });

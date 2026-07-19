@@ -4037,7 +4037,7 @@ export function MarketPage() {
             />
 
             <div className="grid gap-5 xl:grid-cols-[minmax(0,1.18fr)_minmax(340px,0.82fr)]">
-              <div className="app-panel rounded-2xl p-0">
+              <div className="app-workbench-section min-w-0 overflow-hidden">
                 <div className="border-b border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-4 py-4 sm:px-5">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                     <div>
@@ -4051,7 +4051,7 @@ export function MarketPage() {
                         {copy.market.scopeBoundary}
                       </p>
                     </div>
-                    <div className="inline-flex w-fit items-center gap-2 rounded-full border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)] px-3 py-1.5 text-xs text-[var(--app-soft)]">
+                    <div className="app-chip inline-flex w-fit items-center gap-2 px-2.5 py-1 text-xs text-[var(--app-soft)]">
                       <span
                         className={`h-2 w-2 rounded-full ${
                           health?.market_open
@@ -4089,7 +4089,7 @@ export function MarketPage() {
                       value={newSymbol}
                       onChange={(event) => setNewSymbol(event.target.value)}
                       placeholder={copy.market.symbolPlaceholder}
-                      className="app-field rounded-2xl px-3 py-2 text-sm"
+                      className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
                     />
                   </label>
                   <label className="grid gap-2">
@@ -4100,7 +4100,7 @@ export function MarketPage() {
                       name="watchlist_asset_class"
                       value={newAssetClass}
                       onChange={(event) => setNewAssetClass(event.target.value)}
-                      className="app-field rounded-2xl px-3 py-2 text-sm"
+                      className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
                     >
                       {assetClassOptions.map(([value, label]) => (
                         <option key={value} value={value}>
@@ -4111,7 +4111,7 @@ export function MarketPage() {
                   </label>
                   <button
                     type="submit"
-                    className="app-button-primary rounded-2xl px-4 py-2 text-sm"
+                    className="app-button-primary rounded-[var(--app-radius-control)] px-4 py-2 text-sm"
                   >
                     {copy.market.add}
                   </button>
@@ -4201,7 +4201,7 @@ export function MarketPage() {
                           </span>
                           <button
                             type="button"
-                            className="app-button-secondary rounded-xl px-3 py-1 text-xs"
+                            className="app-button-secondary rounded-[var(--app-radius-control)] px-3 py-1 text-xs"
                             onClick={async (event) => {
                               event.stopPropagation();
                               await removeWatchlistItem.mutateAsync(
@@ -4222,7 +4222,7 @@ export function MarketPage() {
               </div>
 
               <div className="space-y-5">
-                <div className="app-panel rounded-2xl p-0">
+                <div className="app-workbench-section min-w-0 overflow-hidden">
                   <div className="border-b border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] px-4 py-4 sm:px-5">
                     <div className="flex items-start justify-between gap-3">
                       <div>
@@ -4352,21 +4352,21 @@ export function MarketPage() {
                     />
                   </div>
                 </div>
-                <div className="app-panel rounded-2xl p-4 sm:p-5">
+                <section className="border-y border-[var(--app-divider)] py-4">
                   <div className="app-kicker text-xs uppercase tracking-[0.18em]">
                     {copy.market.promptsTitle}
                   </div>
-                  <div className="mt-4 grid gap-2">
+                  <div className="mt-3 divide-y divide-[var(--app-divider)]">
                     {copy.market.prompts.map((prompt) => (
                       <div
                         key={prompt}
-                        className="rounded-xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] px-3 py-2.5 text-sm text-[var(--app-soft)]"
+                        className="py-2.5 text-sm leading-5 text-[var(--app-soft)]"
                       >
                         {prompt}
                       </div>
                     ))}
                   </div>
-                </div>
+                </section>
                 <details
                   className="group border-y border-[var(--app-divider)] py-2"
                   data-testid="market-data-operations-disclosure"
@@ -4434,8 +4434,8 @@ export function MarketPage() {
               </div>
             </div>
 
-            <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
-              <div className="app-panel rounded-2xl p-4 sm:p-5">
+            <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
+              <div className="app-workbench-section min-w-0 p-4 sm:p-5">
                 <div className="app-kicker text-xs uppercase tracking-[0.18em]">
                   {copy.market.chart}
                 </div>
@@ -4457,7 +4457,7 @@ export function MarketPage() {
                   )}
                 </div>
               </div>
-              <div className="app-panel rounded-2xl p-4 sm:p-5">
+              <div className="app-workbench-section min-w-0 p-4 sm:p-5">
                 <div className="app-kicker text-xs uppercase tracking-[0.18em]">
                   {copy.market.selectedSymbol}
                 </div>
@@ -4521,8 +4521,8 @@ export function MarketPage() {
               </div>
             </div>
 
-            <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-              <div className="app-panel rounded-2xl p-4 sm:p-5">
+            <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+              <div className="app-workbench-section min-w-0 p-4 sm:p-5">
                 <div className="app-kicker text-xs uppercase tracking-[0.18em]">
                   {copy.market.notesTitle}
                 </div>
@@ -4591,7 +4591,7 @@ export function MarketPage() {
                           name="research_note_type"
                           value={noteType}
                           onChange={(event) => setNoteType(event.target.value)}
-                          className="app-field rounded-2xl px-3 py-2 text-sm"
+                          className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
                         >
                           <option value="note">{copy.market.note}</option>
                           <option value="thesis">{copy.market.thesis}</option>
@@ -4610,7 +4610,7 @@ export function MarketPage() {
                           onChange={(event) =>
                             setNotePriority(event.target.value)
                           }
-                          className="app-field rounded-2xl px-3 py-2 text-sm"
+                          className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
                         >
                           <option value="high">
                             {copy.market.highPriority}
@@ -4632,7 +4632,7 @@ export function MarketPage() {
                         value={noteTitle}
                         onChange={(event) => setNoteTitle(event.target.value)}
                         placeholder={copy.market.noteTitlePlaceholder}
-                        className="app-field rounded-2xl px-3 py-2 text-sm"
+                        className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
                       />
                     </label>
                     <label className="grid gap-2">
@@ -4645,7 +4645,7 @@ export function MarketPage() {
                         onChange={(event) => setNoteContent(event.target.value)}
                         placeholder={copy.market.noteContentPlaceholder}
                         rows={5}
-                        className="app-field min-h-32 rounded-2xl px-3 py-2 text-sm"
+                        className="app-field min-h-32 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
                       />
                     </label>
                     <label className="grid gap-2">
@@ -4657,7 +4657,7 @@ export function MarketPage() {
                         type="date"
                         value={noteDate}
                         onChange={(event) => setNoteDate(event.target.value)}
-                        className="app-field rounded-2xl px-3 py-2 text-sm"
+                        className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
                       />
                     </label>
                     <button
@@ -4666,7 +4666,7 @@ export function MarketPage() {
                         createResearchNote.isPending ||
                         updateResearchNote.isPending
                       }
-                      className="app-button-primary rounded-2xl px-4 py-2 text-sm"
+                      className="app-button-primary rounded-[var(--app-radius-control)] px-4 py-2 text-sm"
                     >
                       {createResearchNote.isPending ||
                       updateResearchNote.isPending
@@ -4683,7 +4683,7 @@ export function MarketPage() {
                 )}
               </div>
 
-              <div className="app-panel rounded-2xl p-4 sm:p-5">
+              <div className="app-workbench-section min-w-0 p-4 sm:p-5">
                 <div className="app-kicker text-xs uppercase tracking-[0.18em]">
                   {copy.market.notesTitle}
                 </div>
@@ -4703,7 +4703,7 @@ export function MarketPage() {
                       onChange={(event) =>
                         setNoteFilterType(event.target.value)
                       }
-                      className="app-field rounded-2xl px-3 py-2 text-sm"
+                      className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
                     >
                       <option value="">{copy.market.allTypes}</option>
                       <option value="note">{copy.market.note}</option>
@@ -4720,7 +4720,7 @@ export function MarketPage() {
                       onChange={(event) =>
                         setNoteFilterPriority(event.target.value)
                       }
-                      className="app-field rounded-2xl px-3 py-2 text-sm"
+                      className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
                     >
                       <option value="">{copy.market.allPriorities}</option>
                       <option value="high">{copy.market.highPriority}</option>
@@ -4740,7 +4740,7 @@ export function MarketPage() {
                       onChange={(event) =>
                         setNoteFilterDateFrom(event.target.value)
                       }
-                      className="app-field rounded-2xl px-3 py-2 text-sm"
+                      className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
                       aria-label={copy.market.noteDateFrom}
                     />
                   </label>
@@ -4754,7 +4754,7 @@ export function MarketPage() {
                       onChange={(event) =>
                         setNoteFilterDateTo(event.target.value)
                       }
-                      className="app-field rounded-2xl px-3 py-2 text-sm"
+                      className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
                       aria-label={copy.market.noteDateTo}
                     />
                   </label>
@@ -4772,7 +4772,7 @@ export function MarketPage() {
                     {notes.data.items.map((note) => (
                       <div
                         key={note.id}
-                        className="app-panel-strong rounded-2xl px-4 py-4"
+                        className="app-panel-strong rounded-[var(--app-radius-surface)] px-4 py-4"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div>
@@ -4788,7 +4788,7 @@ export function MarketPage() {
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
-                              className="app-button-secondary rounded-2xl px-3 py-1 text-xs"
+                              className="app-button-secondary rounded-[var(--app-radius-control)] px-3 py-1 text-xs"
                               onClick={() => {
                                 setEditingNoteId(note.id);
                                 setNoteType(note.entry_kind);
@@ -4802,7 +4802,7 @@ export function MarketPage() {
                             </button>
                             <button
                               type="button"
-                              className="app-button-secondary rounded-2xl px-3 py-1 text-xs"
+                              className="app-button-secondary rounded-[var(--app-radius-control)] px-3 py-1 text-xs"
                               onClick={async () => {
                                 try {
                                   await deleteResearchNote.mutateAsync(note.id);
@@ -5239,7 +5239,7 @@ function ActivityEntryToolsPanel({
         </p>
         <div
           aria-label={copy.activity.entryTools.ariaLabel}
-          className="mt-4 grid min-w-0 grid-cols-2 gap-2"
+          className="mt-4 grid min-w-0 grid-cols-2 gap-1"
           role="group"
         >
           {tools.map((tool) => {
@@ -5248,10 +5248,10 @@ function ActivityEntryToolsPanel({
               <button
                 key={tool.key}
                 aria-pressed={isSelected}
-                className={`min-w-0 rounded-2xl border px-3 py-2 text-left text-xs font-semibold transition ${
+                className={`min-h-8 min-w-0 rounded-[var(--app-radius-control)] border px-2.5 py-1.5 text-left text-xs font-semibold transition-colors ${
                   isSelected
-                    ? 'border-[var(--app-accent)] bg-[var(--app-accent-bg)] text-[var(--app-accent-hover)]'
-                    : 'border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-transparent text-[var(--app-text-tertiary)] hover:border-[var(--app-accent-border)]'
+                    ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-bg)] text-[var(--app-accent-hover)]'
+                    : 'border-transparent bg-transparent text-[var(--app-text-tertiary)] hover:border-[var(--app-border)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)]'
                 }`}
                 onClick={() => onSelectEntryTool(tool.key)}
                 type="button"
@@ -5835,11 +5835,11 @@ function MarketDataOperationsPanel({
 
 function MetricBlock({ label, value }: { label: string; value: string }) {
   return (
-    <div className="app-panel-strong rounded-2xl px-4 py-4">
+    <div className="min-w-0 bg-[var(--app-surface-raised)] px-4 py-3">
       <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
         {label}
       </div>
-      <div className="mt-2 text-sm font-medium">{value}</div>
+      <div className="mt-1.5 break-words text-sm font-medium">{value}</div>
     </div>
   );
 }

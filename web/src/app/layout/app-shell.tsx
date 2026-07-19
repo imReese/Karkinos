@@ -112,6 +112,21 @@ export function AppShell({ children }: { children: ReactNode }) {
   const statusRailRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    if (!mobileNavOpen) {
+      return;
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMobileNavOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [mobileNavOpen]);
+
+  useEffect(() => {
     if (!openStatusPanel) {
       return;
     }
@@ -439,7 +454,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               </div>
 
               <div className="ml-auto flex min-w-0 shrink-0 flex-row items-center justify-end whitespace-nowrap">
-                <div className="flex min-w-0 flex-row items-center gap-2">
+                <div className="hidden min-w-0 flex-row items-center gap-2 sm:flex">
                   <ThemeSwitcher
                     label={copy.shell.theme}
                     value={theme}
@@ -466,6 +481,33 @@ export function AppShell({ children }: { children: ReactNode }) {
                     label={copy.shell.language}
                     value={locale}
                     onChange={(value) => setLocale(value as Locale)}
+                  />
+                </div>
+                <div className="sm:hidden">
+                  <PreferenceMenu
+                    themeLabel={copy.shell.theme}
+                    languageLabel={copy.shell.language}
+                    theme={theme}
+                    locale={locale}
+                    onThemeChange={(value) => setTheme(value)}
+                    onLocaleChange={(value) => setLocale(value)}
+                    themeOptions={[
+                      {
+                        value: 'system',
+                        label: copy.shell.systemThemeLabel,
+                        icon: SystemThemeIcon,
+                      },
+                      {
+                        value: 'light',
+                        label: copy.shell.lightThemeLabel,
+                        icon: LightThemeIcon,
+                      },
+                      {
+                        value: 'dark',
+                        label: copy.shell.darkThemeLabel,
+                        icon: DarkThemeIcon,
+                      },
+                    ]}
                   />
                 </div>
               </div>
@@ -601,6 +643,149 @@ export function AppShell({ children }: { children: ReactNode }) {
           </nav>
         </main>
       </div>
+    </div>
+  );
+}
+
+function PreferenceMenu({
+  themeLabel,
+  languageLabel,
+  theme,
+  locale,
+  onThemeChange,
+  onLocaleChange,
+  themeOptions,
+}: {
+  themeLabel: string;
+  languageLabel: string;
+  theme: ThemePreference;
+  locale: Locale;
+  onThemeChange: (value: ThemePreference) => void;
+  onLocaleChange: (value: Locale) => void;
+  themeOptions: ReadonlyArray<{
+    value: ThemePreference;
+    label: string;
+    icon: ComponentType<SVGProps<SVGSVGElement>>;
+  }>;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const activeTheme =
+    themeOptions.find((option) => option.value === theme) ?? themeOptions[0];
+  const ActiveThemeIcon = activeTheme?.icon ?? SystemThemeIcon;
+  const menuLabel = `${themeLabel} · ${languageLabel}`;
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false);
+      }
+    };
+
+    window.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('keydown', handleEscape);
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        className={`app-button-secondary inline-flex h-8 w-8 items-center justify-center rounded-[var(--app-radius-control)] p-0 ${
+          open
+            ? 'border-[var(--app-accent-border)] text-[var(--app-accent)]'
+            : ''
+        }`}
+        data-testid="mobile-preferences-toggle"
+        aria-label={menuLabel}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <ActiveThemeIcon className="h-4 w-4" aria-hidden="true" />
+      </button>
+      {open ? (
+        <div
+          role="dialog"
+          aria-label={menuLabel}
+          className="absolute right-0 top-[calc(100%+6px)] z-[70] w-[min(18rem,calc(100vw-1.5rem))] rounded-[var(--app-radius-overlay)] border border-[var(--app-border)] bg-[var(--app-surface-overlay)] p-3 shadow-[var(--app-shadow-overlay)]"
+        >
+          <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+            {themeLabel}
+          </div>
+          <div className="mt-2 grid grid-cols-3 gap-1" role="group">
+            {themeOptions.map((option) => {
+              const Icon = option.icon;
+              const active = option.value === theme;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-label={option.label}
+                  aria-pressed={active}
+                  className={`inline-flex min-h-9 items-center justify-center gap-1.5 rounded-[var(--app-radius-control)] px-2 text-[11px] font-semibold transition-colors ${
+                    active
+                      ? 'bg-[var(--app-accent-bg)] text-[var(--app-accent)]'
+                      : 'text-[var(--app-text-secondary)] hover:bg-[var(--app-accent-bg)] hover:text-[var(--app-text)]'
+                  }`}
+                  onClick={() => {
+                    onThemeChange(option.value);
+                    setOpen(false);
+                  }}
+                >
+                  <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span className="truncate">{option.label}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="my-3 border-t border-[var(--app-divider)]" />
+          <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+            {languageLabel}
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-1" role="group">
+            {(
+              [
+                ['en', 'English'],
+                ['zh', '中文'],
+              ] as const
+            ).map(([value, label]) => {
+              const active = value === locale;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  aria-label={label}
+                  aria-pressed={active}
+                  className={`min-h-9 rounded-[var(--app-radius-control)] px-3 text-xs font-semibold transition-colors ${
+                    active
+                      ? 'bg-[var(--app-accent-bg)] text-[var(--app-accent)]'
+                      : 'text-[var(--app-text-secondary)] hover:bg-[var(--app-accent-bg)] hover:text-[var(--app-text)]'
+                  }`}
+                  onClick={() => {
+                    onLocaleChange(value);
+                    setOpen(false);
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
