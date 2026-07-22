@@ -10,6 +10,9 @@ const ROUTER = source('app/router.tsx');
 const BACKTEST = source('features/backtest/components/backtest-page.tsx');
 const TRADING = source('features/trading/components/trading-page.tsx');
 const SETTINGS = source('features/settings/components/settings-page.tsx');
+const ACCOUNT_TRUTH = source(
+  'features/account-truth/components/account-truth-review-page.tsx',
+);
 const ACTIVITY_FEED = source('features/activity/components/activity-feed.tsx');
 const APP_SHELL = source('app/layout/app-shell.tsx');
 const RESEARCH_TASK = source(
@@ -27,8 +30,9 @@ describe('remaining route workbench contract', () => {
     expect(BACKTEST).toContain('data-workbench-route="backtest"');
     expect(TRADING).toContain('data-workbench-route="trading"');
     expect(SETTINGS).toContain('data-workbench-route="settings"');
+    expect(ACCOUNT_TRUTH).toContain('data-workbench-route="account-truth"');
 
-    for (const page of [ROUTER, BACKTEST, TRADING, SETTINGS]) {
+    for (const page of [ROUTER, BACKTEST, TRADING, SETTINGS, ACCOUNT_TRUTH]) {
       expect(page).toContain('WorkspaceHeader');
       expect(page).toContain('MetricStrip');
     }
@@ -123,6 +127,15 @@ describe('remaining route workbench contract', () => {
     expect(APP_SHELL).toContain('data-testid="mobile-preferences-toggle"');
     expect(APP_SHELL).toContain(
       'hidden min-w-0 flex-row items-center gap-2 sm:flex',
+    );
+    expect(ACCOUNT_TRUTH).toContain(
+      'data-testid="account-truth-review-workspace"',
+    );
+    expect(ACCOUNT_TRUTH).toContain('EvidenceIdentityDisclosure');
+    expect(ACCOUNT_TRUTH).not.toContain('rounded-2xl');
+    expect(ACCOUNT_TRUTH).not.toContain('rounded-3xl');
+    expect(ACCOUNT_TRUTH).not.toMatch(
+      /style=\{\{[\s\S]*var\(--app-(?:success|warning|danger)\)/,
     );
   });
 });

@@ -20,6 +20,18 @@ test('critical human-review surfaces load from the product runtime', async ({
     ).toBeVisible();
   }
 
+  await page.goto('/account-truth');
+  await expect(
+    page.getByTestId('account-truth-review-workspace'),
+  ).toBeVisible();
+  expect(
+    await page
+      .locator(
+        '[data-testid^="account-truth-item-"]:not([data-testid^="account-truth-item-selector-"])',
+      )
+      .count(),
+  ).toBeLessThanOrEqual(1);
+
   await page.goto('/trading');
   await expect(page.getByTestId('kill-switch-panel')).toBeVisible();
   await expect(page.getByText(/Global kill switch|全局紧急停止/)).toBeVisible();

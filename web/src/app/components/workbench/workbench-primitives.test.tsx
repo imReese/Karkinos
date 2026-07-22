@@ -322,7 +322,7 @@ test('closes the evidence drawer with Escape and restores focus', async () => {
 });
 
 test('isolates privileged controls in a controlled action zone', () => {
-  render(
+  const { rerender } = render(
     <ControlledActionZone
       title="Kill switch"
       description="Requires explicit operator confirmation and persisted evidence."
@@ -342,4 +342,22 @@ test('isolates privileged controls in a controlled action zone', () => {
     screen.getByRole('button', { name: 'Submit unavailable' }),
   ).toHaveProperty('disabled', true);
   expect(screen.getByText('authority: denied by default')).toBeTruthy();
+
+  rerender(
+    <ControlledActionZone
+      title="Stage evidence"
+      description="Writes a persisted ingestion run only."
+      layout="stack"
+      tone="info"
+    >
+      <button type="button">Preview</button>
+    </ControlledActionZone>,
+  );
+
+  const informationZone = screen
+    .getByRole('heading', { name: 'Stage evidence' })
+    .closest('section');
+  expect(informationZone?.getAttribute('data-action-tone')).toBe('info');
+  expect(informationZone?.className).toContain('app-info-border');
+  expect(informationZone?.className).not.toContain('app-danger-border');
 });
