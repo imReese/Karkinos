@@ -3360,6 +3360,72 @@ export function RiskPage() {
   const hasRiskRefreshError =
     !isRiskWorkspaceUnavailable &&
     (state.isError || risks.isError || workspace.isError);
+  const representedRiskMetricKeys = new Set<string>();
+  const activeRiskItems: ExceptionItem[] = [];
+  for (const item of risks.data ?? []) {
+    if (item.level !== 'high' && item.level !== 'medium') {
+      continue;
+    }
+    switch (item.kind) {
+      case 'cash_buffer':
+        representedRiskMetricKeys.add('cash_ratio');
+        break;
+      case 'concentration':
+        representedRiskMetricKeys.add('largest_weight');
+        representedRiskMetricKeys.add('top3_weight');
+        break;
+      case 'largest_weight':
+      case 'gross_exposure':
+      case 'current_drawdown':
+      case 'max_drawdown':
+        representedRiskMetricKeys.add(item.kind);
+        break;
+      case 'capital_deployment':
+        representedRiskMetricKeys.add('gross_exposure');
+        break;
+    }
+    activeRiskItems.push({
+      id: `${item.kind}-${item.title}`,
+      severity: item.level === 'high' ? 'danger' : 'warning',
+      statusLabel: formatRiskAlertLevel(item.level, locale),
+      title: item.title,
+      reason: formatRiskAlertDetail(item.detail, locale),
+      unblockCondition: copy.riskPage.clearsWithNewProjection,
+      nextAction: state.data?.next_step,
+      evidence: `${getRiskAlertKindLabel(
+        copy,
+        item.kind,
+      )} · ${formatRiskAlertLevel(item.level, locale)}`,
+    });
+  }
+  for (const metric of workspace.data?.metrics ?? []) {
+    if (
+      (metric.level !== 'high' && metric.level !== 'medium') ||
+      representedRiskMetricKeys.has(metric.key)
+    ) {
+      continue;
+    }
+    activeRiskItems.push({
+      id: `metric-${metric.key}`,
+      severity: metric.level === 'high' ? 'danger' : 'warning',
+      statusLabel: formatRiskAlertLevel(metric.level, locale),
+      title: getRiskMetricLabel(copy, metric.key),
+      reason: `${metric.display_value} · ${getRiskMetricDetail(
+        copy,
+        metric.key,
+      )}`,
+      unblockCondition: copy.riskPage.clearsWithNewProjection,
+      nextAction: state.data?.next_step,
+      evidence: `${getRiskMetricLabel(
+        copy,
+        metric.key,
+      )} · ${formatRiskAlertLevel(metric.level, locale)}`,
+    });
+  }
+  activeRiskItems.sort(
+    (left, right) =>
+      Number(left.severity !== 'danger') - Number(right.severity !== 'danger'),
+  );
   const runBatchRiskGate = async () => {
     setBatchRiskMessage(null);
     setBatchRiskBlockedMessage(null);
@@ -3472,6 +3538,49 @@ export function RiskPage() {
               {copy.riskPage.refreshError}
             </div>
           ) : null}
+          <section
+            data-testid="risk-blocking-register"
+            className="min-w-0 space-y-2"
+          >
+            <div>
+              <h2 className="text-base font-semibold text-[var(--app-text)]">
+                {copy.riskPage.blockingRegister}
+              </h2>
+              <p className="mt-0.5 max-w-3xl text-xs text-[var(--app-text-secondary)]">
+                {copy.riskPage.blockingRegisterDetail}
+              </p>
+            </div>
+            <ExceptionList
+              ariaLabel={copy.riskPage.blockingRegister}
+              emptyState={copy.riskPage.noBlockingItems}
+              labels={{
+                reason: locale === 'zh' ? '阻断原因' : 'Reason',
+                unblockCondition:
+                  locale === 'zh' ? '解除条件' : 'Unblock condition',
+                nextAction: locale === 'zh' ? '安全下一步' : 'Safe next step',
+                evidence: locale === 'zh' ? '证据' : 'Evidence',
+              }}
+              items={activeRiskItems}
+              className="md:grid-cols-2 [&>li>dl]:grid-cols-2"
+            />
+          </section>
+
+          <MetricStrip
+            ariaLabel={copy.riskPage.metrics}
+            items={workspace.data.metrics.map((metric) => ({
+              id: metric.key,
+              label: getRiskMetricLabel(copy, metric.key),
+              value: metric.display_value,
+              detail: formatRiskAlertLevel(metric.level, locale),
+              tone:
+                metric.level === 'high'
+                  ? ('danger' as const)
+                  : metric.level === 'medium'
+                    ? ('warning' as const)
+                    : ('neutral' as const),
+            }))}
+          />
+
           {riskReviewTask ? (
             <section
               data-testid="risk-decision-handoff"
@@ -3509,38 +3618,33 @@ export function RiskPage() {
                   },
                 ]}
               />
-              <div className="flex min-w-0 flex-col gap-3 border-b border-[var(--app-divider)] pb-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="app-muted min-w-0 break-words text-sm">
-                  {copy.riskPage.decisionHandoffNext}
-                </p>
-                <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
-                  <button
-                    type="button"
-                    className="app-button-primary inline-flex min-h-9 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-55"
-                    disabled={batchPreTradeRisk.isPending}
-                    onClick={() => void runBatchRiskGate()}
-                  >
-                    {batchPreTradeRisk.isPending
-                      ? copy.riskPage.runningBatchRiskGate
-                      : copy.riskPage.runBatchRiskGate}
-                  </button>
-                  <a
-                    className="app-button-secondary inline-flex min-h-9 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-sm font-semibold"
-                    href="/decision"
-                  >
-                    {copy.riskPage.returnToDecision}
-                  </a>
-                </div>
+              <div className="flex min-w-0 flex-col gap-2 border-b border-[var(--app-divider)] pb-3 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  className="app-button-primary inline-flex min-h-10 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-55 sm:min-h-9"
+                  disabled={batchPreTradeRisk.isPending}
+                  onClick={() => void runBatchRiskGate()}
+                >
+                  {batchPreTradeRisk.isPending
+                    ? copy.riskPage.runningBatchRiskGate
+                    : copy.riskPage.runBatchRiskGate}
+                </button>
+                <a
+                  className="app-button-secondary inline-flex min-h-10 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-sm font-semibold sm:min-h-9"
+                  href="/decision"
+                >
+                  {copy.riskPage.returnToDecision}
+                </a>
               </div>
               {batchRiskMessage ? (
-                <div className="mt-3 rounded-2xl border border-[var(--app-success-border)] bg-[var(--app-success-bg)] px-3 py-2 text-sm font-semibold text-[var(--app-success-text)]">
+                <div className="mt-3 rounded-[var(--app-radius-surface)] border border-[var(--app-success-border)] bg-[var(--app-success-bg)] px-3 py-2 text-sm font-semibold text-[var(--app-success-text)]">
                   {batchRiskMessage}
                 </div>
               ) : null}
               {batchRiskBlockedMessage ? (
                 <div
                   role="status"
-                  className="mt-3 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-3 py-2 text-sm font-semibold leading-6 text-[var(--app-warning-text)]"
+                  className="mt-3 rounded-[var(--app-radius-surface)] border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-3 py-2 text-sm font-semibold leading-6 text-[var(--app-warning-text)]"
                 >
                   {batchRiskBlockedMessage}
                 </div>
@@ -3552,62 +3656,6 @@ export function RiskPage() {
               ) : null}
             </section>
           ) : null}
-
-          <section
-            data-testid="risk-blocking-register"
-            className="min-w-0 space-y-2"
-          >
-            <div>
-              <h2 className="text-base font-semibold text-[var(--app-text)]">
-                {copy.riskPage.blockingRegister}
-              </h2>
-              <p className="mt-0.5 max-w-3xl text-xs text-[var(--app-text-secondary)]">
-                {copy.riskPage.blockingRegisterDetail}
-              </p>
-            </div>
-            <ExceptionList
-              ariaLabel={copy.riskPage.blockingRegister}
-              emptyState={copy.riskPage.noBlockingItems}
-              labels={{
-                reason: locale === 'zh' ? '阻断原因' : 'Reason',
-                unblockCondition:
-                  locale === 'zh' ? '解除条件' : 'Unblock condition',
-                nextAction: locale === 'zh' ? '安全下一步' : 'Safe next step',
-                evidence: locale === 'zh' ? '证据' : 'Evidence',
-              }}
-              items={(risks.data ?? []).map((item) => ({
-                id: `${item.kind}-${item.title}`,
-                severity:
-                  item.level === 'high'
-                    ? ('danger' as const)
-                    : item.level === 'medium'
-                      ? ('warning' as const)
-                      : ('info' as const),
-                statusLabel: formatRiskAlertLevel(item.level, locale),
-                title: item.title,
-                reason: formatPublicNote(item.detail, locale),
-                nextAction: state.data.next_step,
-                evidence: `${getRiskAlertKindLabel(
-                  copy,
-                  item.kind,
-                )} · ${formatRiskAlertLevel(item.level, locale)}`,
-              }))}
-            />
-          </section>
-
-          <MetricStrip
-            ariaLabel={copy.riskPage.metrics}
-            items={workspace.data.metrics.map((metric) => ({
-              id: metric.key,
-              label: getRiskMetricLabel(copy, metric.key),
-              value: metric.display_value,
-              detail: formatRiskAlertLevel(metric.level, locale),
-              tone:
-                metric.level === 'high' || metric.level === 'medium'
-                  ? ('warning' as const)
-                  : ('neutral' as const),
-            }))}
-          />
 
           <section className="min-w-0 space-y-2">
             <div>
@@ -3669,7 +3717,7 @@ export function RiskPage() {
                         </StatusBadge>
                       </td>
                       <td className="px-3 py-2.5 text-[var(--app-text-secondary)]">
-                        {metric.detail || getRiskMetricDetail(copy, metric.key)}
+                        {getRiskMetricDetail(copy, metric.key)}
                       </td>
                     </tr>
                   ))}
@@ -7790,12 +7838,24 @@ function getRiskAlertKindLabel(copy: AppCopy, value: string) {
     case 'max_drawdown':
       return copy.riskPage.maxDrawdown;
     case 'market_data':
+    case 'data':
       return copy.decision.marketData;
     case 'manual_confirmation':
       return copy.overview.risk.manualConfirmationRequired;
     default:
       return value;
   }
+}
+
+function formatRiskAlertDetail(value: string, locale: Locale) {
+  const quoteTimestamp = /^(\S+)\s+最新快照时间\s+(.+)$/u.exec(value.trim());
+  if (quoteTimestamp) {
+    const [, symbol, timestamp] = quoteTimestamp;
+    return locale === 'zh'
+      ? `${symbol} 最新行情截至 ${formatTimestamp(timestamp)}`
+      : `${symbol} quote evidence as of ${formatTimestamp(timestamp)}`;
+  }
+  return formatPublicNote(value, locale);
 }
 
 function formatRiskAlertLevel(level: string, locale: Locale) {
@@ -7807,7 +7867,7 @@ function formatRiskAlertLevel(level: string, locale: Locale) {
     return formatPublicStatus('blocked', locale);
   }
   if (normalized === 'low') {
-    return formatPublicStatus('review_required', locale);
+    return formatPublicStatus('healthy', locale);
   }
   return formatPublicStatus(level, locale);
 }

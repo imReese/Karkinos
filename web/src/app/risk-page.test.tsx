@@ -76,6 +76,14 @@ const riskAlerts = [
 const riskWorkspace = {
   metrics: [
     {
+      key: 'current_drawdown',
+      label: 'Current drawdown',
+      value: 0.01,
+      display_value: '1.0%',
+      level: 'low',
+      detail: 'Distance between current equity and the latest portfolio peak.',
+    },
+    {
       key: 'cash_ratio',
       label: 'Cash ratio',
       value: 0.2,
@@ -386,20 +394,27 @@ test('renders risk boundaries and blocking register without execution controls',
       .getAttribute('data-layout'),
   ).toBe('compact-approval');
 
-  expect(await screen.findByText('Blocking register')).toBeTruthy();
+  expect(await screen.findByText('Active risk priorities')).toBeTruthy();
 
   const thresholdTable = await screen.findByTestId('risk-threshold-table');
   expect(
-    within(thresholdTable).getByText('Immediate liquidity buffer.'),
+    within(thresholdTable).getByText(
+      'Immediate liquidity buffer for rebalance or defense.',
+    ),
   ).toBeTruthy();
   expect(screen.queryByTestId('risk-boundary-register')).toBeNull();
 
   const blockRegister = await screen.findByTestId('risk-blocking-register');
   const metrics = screen.getByLabelText('Risk metrics');
+  expect(within(metrics).getByText('Healthy')).toBeTruthy();
+  expect(within(metrics).queryByText('Review required')).toBeNull();
   expect(blockRegister.className).toContain('min-w-0');
   expect(
     blockRegister.compareDocumentPosition(metrics) &
       Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    metrics.compareDocumentPosition(handoff) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(
     thresholdTable.compareDocumentPosition(controlGrid) &
@@ -417,6 +432,17 @@ test('renders risk boundaries and blocking register without execution controls',
 
 test('localizes decision risk handoff without asking users to inspect every risk metric', async () => {
   renderRiskPage({ locale: 'zh' });
+
+  const blockRegister = await screen.findByTestId('risk-blocking-register');
+  expect(within(blockRegister).getByText('当前风险优先项')).toBeTruthy();
+  expect(blockRegister.textContent).not.toContain('当前风险可控');
+  const thresholdTable = await screen.findByTestId('risk-threshold-table');
+  expect(
+    within(thresholdTable).getByText('当前净值距离最近峰值的回撤幅度。'),
+  ).toBeTruthy();
+  expect(thresholdTable.textContent).not.toContain(
+    'Distance between current equity and the latest portfolio peak.',
+  );
 
   const handoff = await screen.findByTestId('risk-decision-handoff');
   expect(handoff.textContent).toContain('候选动作需要下单前风控');
@@ -532,6 +558,7 @@ test('localizes risk blocking detail codes before rendering alerts', async () =>
     riskAlertsResponse: [
       {
         ...riskAlerts[0],
+        kind: 'data',
         detail: 'quote_older_than_expected_session',
       },
     ],
@@ -541,9 +568,48 @@ test('localizes risk blocking detail codes before rendering alerts', async () =>
   const blockRegister = await screen.findByTestId('risk-blocking-register');
 
   expect(within(blockRegister).getByText('行情早于预期交易时段')).toBeTruthy();
+  expect(within(blockRegister).getByText(/市场数据/u)).toBeTruthy();
   expect(blockRegister.textContent).not.toContain(
     'quote_older_than_expected_session',
   );
+});
+
+test('formats persisted quote timestamps for the primary risk reading path', async () => {
+  renderRiskPage({
+    locale: 'zh',
+    riskAlertsResponse: [
+      {
+        kind: 'data',
+        level: 'medium',
+        title: '行情数据可能过旧',
+        detail: '000001 最新快照时间 2026-07-21T15:00:00+08:00',
+      },
+    ],
+  });
+
+  const blockRegister = await screen.findByTestId('risk-blocking-register');
+  expect(
+    within(blockRegister).getByText('000001 最新行情截至 07/21 15:00'),
+  ).toBeTruthy();
+  expect(blockRegister.textContent).not.toContain('T15:00:00');
+});
+
+test('keeps low-severity summary rows quiet while promoting persisted metric warnings', async () => {
+  renderRiskPage({
+    riskAlertsResponse: [
+      {
+        kind: 'status',
+        level: 'low',
+        title: 'Current risk is manageable',
+        detail: 'No summary alert requires action.',
+      },
+    ],
+  });
+
+  const blockRegister = await screen.findByTestId('risk-blocking-register');
+  expect(blockRegister.textContent).not.toContain('Current risk is manageable');
+  expect(within(blockRegister).getByText('Cash ratio')).toBeTruthy();
+  expect(within(blockRegister).getByText('Warning')).toBeTruthy();
 });
 
 test('shows instrument names before symbols in risk manual approval rows', async () => {

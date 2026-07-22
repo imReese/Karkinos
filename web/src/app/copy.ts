@@ -847,14 +847,14 @@ export const copy = {
         'How: wait for the batch runner or use a single-instrument preview',
       decisionHandoffDoNot:
         'Do not inspect every candidate or submit orders directly',
-      decisionHandoffNext:
-        'This page now marks the missing execution surface instead of asking you to hunt through risk metrics.',
       returnToDecision: 'Return to decision platform',
       alerts: 'Active alerts',
-      blockingRegister: 'Blocking register',
+      blockingRegister: 'Active risk priorities',
       blockingRegisterDetail:
-        'Risk alerts that should be reviewed before new buy-side exposure reaches manual order approval.',
-      noBlockingItems: 'No active blocking items from the risk summary.',
+        'Only persisted warning and blocked states are promoted here; normal boundaries stay quiet.',
+      noBlockingItems: 'No persisted warning or blocked risk states.',
+      clearsWithNewProjection:
+        'A newer canonical risk projection records a lower-severity state.',
       nextStep: 'Suggested next step',
       equityBridge: 'Equity bridge',
       recentDrivers: 'Recent impact events',
@@ -3549,14 +3549,14 @@ export const copy = {
       decisionHandoffWhat: '要处理什么：候选动作风控闸门',
       decisionHandoffHow: '怎么处理：等待批量运行器，或先用单标的风控预检',
       decisionHandoffDoNot: '不要逐个翻候选，也不要直接下单。',
-      decisionHandoffNext:
-        '这里先把缺失的执行入口标出来，而不是让你在风险指标里找答案。',
       returnToDecision: '回到决策平台',
       alerts: '当前风险提示',
-      blockingRegister: '阻断登记',
+      blockingRegister: '当前风险优先项',
       blockingRegisterDetail:
-        '这些风险提示需要在新增买入暴露进入人工审批前完成复核。',
-      noBlockingItems: '当前风险摘要没有活跃阻断项。',
+        '这里只提升持久化的警告与阻断状态；正常边界保持安静。',
+      noBlockingItems: '当前没有持久化的警告或阻断风险状态。',
+      clearsWithNewProjection:
+        '更新后的 canonical 风险投影记录为更低严重度时解除。',
       nextStep: '建议动作',
       equityBridge: '净值桥',
       recentDrivers: '最近影响事件',

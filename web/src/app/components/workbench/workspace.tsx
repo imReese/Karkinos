@@ -5,7 +5,7 @@ import { cn } from '../../../lib/utils/cn';
 export type StatusTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger';
 
 export type MetricTone =
-  'neutral' | 'pnl-positive' | 'pnl-negative' | 'warning';
+  'neutral' | 'pnl-positive' | 'pnl-negative' | 'warning' | 'danger';
 
 const STATUS_TONE_CLASSES: Record<StatusTone, string> = {
   neutral:
@@ -24,6 +24,7 @@ const METRIC_TONE_CLASSES: Record<MetricTone, string> = {
   'pnl-positive': 'text-[var(--app-pnl-positive)]',
   'pnl-negative': 'text-[var(--app-pnl-negative)]',
   warning: 'text-[var(--app-warning-text)]',
+  danger: 'text-[var(--app-danger-text)]',
 };
 
 export function WorkspaceHeader({
