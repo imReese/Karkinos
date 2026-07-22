@@ -30,11 +30,12 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
   await expect(
     overviewPrimary.getByTestId('overview-holdings-section'),
   ).toBeVisible();
+  const overviewQueueBox = (await overviewQueue.boundingBox())!;
+  const overviewHoldingsBox = (await overviewHoldings.boundingBox())!;
+  expect(overviewHoldingsBox.x).toBeLessThan(overviewQueueBox.x);
+  expect(overviewHoldingsBox.width).toBeGreaterThan(overviewQueueBox.width);
   expect((await overviewPerformance.boundingBox())!.y).toBeGreaterThan(
-    Math.min(
-      (await overviewQueue.boundingBox())!.y,
-      (await overviewHoldings.boundingBox())!.y,
-    ),
+    Math.max(overviewQueueBox.y, overviewHoldingsBox.y),
   );
 
   await page.goto('/risk');
