@@ -523,37 +523,9 @@ export function OverviewPage() {
           />
 
           <div
-            className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(300px,0.7fr)_minmax(0,1.6fr)]"
+            className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(300px,0.7fr)]"
             data-testid="overview-daily-workbench"
           >
-            <div className="min-w-0">
-              <DashboardTodayQueue
-                overview={overview.data}
-                marketHealth={marketHealth.data}
-                portfolioSnapshot={snapshot.data}
-                marketEvidenceReview={holdingMarketEvidenceReview.data}
-                marketEvidenceReviewLoading={
-                  holdingMarketEvidenceReview.isLoading
-                }
-                marketEvidenceReviewError={holdingMarketEvidenceReview.isError}
-                quoteDiagnostics={positions}
-                pendingOrders={pendingOrders.data ?? []}
-                pendingOrdersLoading={pendingOrders.isLoading}
-                pendingOrdersError={pendingOrders.isError}
-                strategyContribution={strategyContribution.data}
-                strategyContributionLoading={strategyContribution.isLoading}
-                strategyContributionError={strategyContribution.isError}
-                todayDecision={todayDecision.data}
-                todayDecisionLoading={todayDecision.isLoading}
-                todayDecisionError={todayDecision.isError}
-                tradingPlan={tradingPlan.data}
-                tradingPlanLoading={tradingPlan.isLoading}
-                tradingPlanError={tradingPlan.isError}
-                operationsToday={operationsToday.data}
-                operationsTodayLoading={operationsToday.isLoading}
-                operationsTodayError={operationsToday.isError}
-              />
-            </div>
             <section
               className="min-w-0"
               data-testid="overview-holdings-section"
@@ -584,6 +556,34 @@ export function OverviewPage() {
                 />
               )}
             </section>
+            <div className="min-w-0">
+              <DashboardTodayQueue
+                overview={overview.data}
+                marketHealth={marketHealth.data}
+                portfolioSnapshot={snapshot.data}
+                marketEvidenceReview={holdingMarketEvidenceReview.data}
+                marketEvidenceReviewLoading={
+                  holdingMarketEvidenceReview.isLoading
+                }
+                marketEvidenceReviewError={holdingMarketEvidenceReview.isError}
+                quoteDiagnostics={positions}
+                pendingOrders={pendingOrders.data ?? []}
+                pendingOrdersLoading={pendingOrders.isLoading}
+                pendingOrdersError={pendingOrders.isError}
+                strategyContribution={strategyContribution.data}
+                strategyContributionLoading={strategyContribution.isLoading}
+                strategyContributionError={strategyContribution.isError}
+                todayDecision={todayDecision.data}
+                todayDecisionLoading={todayDecision.isLoading}
+                todayDecisionError={todayDecision.isError}
+                tradingPlan={tradingPlan.data}
+                tradingPlanLoading={tradingPlan.isLoading}
+                tradingPlanError={tradingPlan.isError}
+                operationsToday={operationsToday.data}
+                operationsTodayLoading={operationsToday.isLoading}
+                operationsTodayError={operationsToday.isError}
+              />
+            </div>
           </div>
 
           <section

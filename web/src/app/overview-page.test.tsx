@@ -757,7 +757,7 @@ test('labels overview pnl as latest trading day when today is market closed', as
   expect(within(metricsRail).queryByText('Today PnL')).toBeNull();
 });
 
-test('puts action queue and current holdings before analysis, then broad-market context', async () => {
+test('puts current holdings before the action queue and analysis, then broad-market context', async () => {
   renderOverviewPage();
 
   const workbench = await screen.findByTestId('overview-daily-workbench');
@@ -793,6 +793,10 @@ test('puts action queue and current holdings before analysis, then broad-market 
   expect(workbench.contains(todayQueue)).toBe(true);
   expect(workbench.contains(holdings)).toBe(true);
   expect(workbench.contains(performanceCard)).toBe(false);
+  expect(
+    holdings.compareDocumentPosition(todayQueue) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
   expect(
     workbench.compareDocumentPosition(performanceCard) &
       Node.DOCUMENT_POSITION_FOLLOWING,
