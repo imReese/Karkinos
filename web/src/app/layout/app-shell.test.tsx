@@ -399,9 +399,14 @@ test('switches theme preference and persists it', async () => {
   expect(document.documentElement.dataset.theme).toBe('dark');
   expect(window.localStorage.getItem('karkinos.theme')).toBe('dark');
 
-  await user.click(await screen.findByRole('button', { name: 'Light theme' }));
+  const lightTheme = await screen.findByRole('button', {
+    name: 'Light theme',
+  });
+  await user.click(lightTheme);
   expect(document.documentElement.dataset.theme).toBe('light');
   expect(window.localStorage.getItem('karkinos.theme')).toBe('light');
+  expect(lightTheme.className).toContain('bg-[var(--app-surface-overlay)]');
+  expect(lightTheme.className).not.toContain('bg-[var(--app-accent-bg)]');
 
   act(() => {
     matchMedia.setDarkMode(true);
@@ -598,6 +603,11 @@ test('uses full language names and fluid menu width', async () => {
 
   await user.click(languageButton);
 
+  expect(languageButton.className).toContain('bg-[var(--app-surface-overlay)]');
+  expect(languageButton.className).not.toContain(
+    'border-[var(--app-accent-border)]',
+  );
+
   const menu = await screen.findByRole('menu', { name: 'Language' });
   expect(menu.className).toContain('min-w-max');
   expect(
@@ -621,7 +631,19 @@ test('shows cached quote status and valuation time from account overview', async
 
   expect((await screen.findAllByText('缓存行情')).length).toBeGreaterThan(0);
   expect(await screen.findByText('22:40')).toBeTruthy();
-  await user.click(await screen.findByTestId('status-pill-valuation'));
+  const valuationStatus = await screen.findByTestId('status-pill-valuation');
+  await user.click(valuationStatus);
+  expect(valuationStatus.className).toContain(
+    'bg-[var(--app-surface-overlay)]',
+  );
+  expect(valuationStatus.className).not.toContain(
+    'border-[var(--app-accent-border)]',
+  );
+  expect(
+    valuationStatus
+      .querySelector('[data-status-chip-part="chevron"]')
+      ?.getAttribute('class'),
+  ).toContain('rotate-180');
   const valuationDialog = await screen.findByRole('dialog', { name: '净值' });
   expect(within(valuationDialog).getByText('估值 22:40')).toBeTruthy();
   expect(screen.queryByText('行情实时')).toBeNull();

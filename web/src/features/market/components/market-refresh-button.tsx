@@ -55,7 +55,7 @@ export function MarketRefreshButton({
     <div className="grid justify-items-end gap-2 text-right">
       <button
         type="button"
-        className="app-button-secondary min-h-10 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60 sm:min-h-8"
+        className="app-button-secondary h-10 rounded-[var(--app-radius-control)] px-2.5 text-[11px] font-semibold disabled:cursor-not-allowed disabled:opacity-60 sm:h-8"
         disabled={refreshQuotes.isPending}
         aria-busy={refreshQuotes.isPending}
         onClick={async () => {

@@ -148,6 +148,7 @@ export function PositionsTable({
   const refreshQuotes = useRefreshMarketQuotesMutation();
   const showFullColumns = variant === 'full';
   const showHistoryColumns = variant === 'history';
+  const showDashboardColumns = variant === 'dashboard';
   const hasQuotesNeedingReview = positions.some((position) =>
     quoteNeedsReview(position.quote_status),
   );
@@ -174,34 +175,42 @@ export function PositionsTable({
         );
       },
     },
-    {
-      id: 'asset-class',
-      header: labels.assetClass,
-      cell: ({ row }) => {
-        const position = row.original;
-        const assetClass =
-          position.asset_class ?? assetClassBySymbol[position.symbol] ?? '--';
-        return (
-          <span data-testid={`position-asset-class-${position.symbol}`}>
-            <StatusBadge>
-              {formatAssetClassLabel(assetClass, copy.common)}
-            </StatusBadge>
-          </span>
-        );
-      },
-    },
-    {
-      id: 'quantity',
-      header: () => <span className="block text-right">{labels.quantity}</span>,
-      cell: ({ row }) => (
-        <span data-testid={`position-quantity-${row.original.symbol}`}>
-          {numericCell(
-            formatQuantity(row.original.quantity),
-            'text-[var(--app-text-secondary)]',
-          )}
-        </span>
-      ),
-    },
+    ...(showDashboardColumns
+      ? []
+      : [
+          {
+            id: 'asset-class',
+            header: labels.assetClass,
+            cell: ({ row }: { row: { original: Position } }) => {
+              const position = row.original;
+              const assetClass =
+                position.asset_class ??
+                assetClassBySymbol[position.symbol] ??
+                '--';
+              return (
+                <span data-testid={`position-asset-class-${position.symbol}`}>
+                  <StatusBadge>
+                    {formatAssetClassLabel(assetClass, copy.common)}
+                  </StatusBadge>
+                </span>
+              );
+            },
+          },
+          {
+            id: 'quantity',
+            header: () => (
+              <span className="block text-right">{labels.quantity}</span>
+            ),
+            cell: ({ row }: { row: { original: Position } }) => (
+              <span data-testid={`position-quantity-${row.original.symbol}`}>
+                {numericCell(
+                  formatQuantity(row.original.quantity),
+                  'text-[var(--app-text-secondary)]',
+                )}
+              </span>
+            ),
+          },
+        ]),
     ...(showFullColumns
       ? [
           {
@@ -257,17 +266,23 @@ export function PositionsTable({
           },
         ]
       : []),
-    {
-      id: 'latest-price',
-      header: () => (
-        <span className="block text-right">{labels.latestPrice}</span>
-      ),
-      cell: ({ row }) => (
-        <span data-testid={`position-latest-price-${row.original.symbol}`}>
-          {numericCell(formatPrice(row.original.latest_price))}
-        </span>
-      ),
-    },
+    ...(showDashboardColumns
+      ? []
+      : [
+          {
+            id: 'latest-price',
+            header: () => (
+              <span className="block text-right">{labels.latestPrice}</span>
+            ),
+            cell: ({ row }: { row: { original: Position } }) => (
+              <span
+                data-testid={`position-latest-price-${row.original.symbol}`}
+              >
+                {numericCell(formatPrice(row.original.latest_price))}
+              </span>
+            ),
+          },
+        ]),
     {
       id: 'market-value',
       header: () => (
@@ -399,65 +414,71 @@ export function PositionsTable({
         );
       },
     },
-    {
-      id: 'actions',
-      header: () => <span className="block text-right">{labels.actions}</span>,
-      cell: ({ row }) => {
-        const position = row.original;
-        const refreshing =
-          refreshQuotes.isPending &&
-          refreshQuotes.variables?.symbols?.includes(position.symbol);
-        return (
-          <div className="flex min-w-max justify-end gap-1">
-            <a
-              href={holdingDetailHref(position.symbol)}
-              className="app-button-secondary rounded-[var(--app-radius-control)] px-2 py-1 text-[11px] font-semibold"
-            >
-              {labels.detailsTitle}
-            </a>
-            {!showHistoryColumns ? (
-              <button
-                type="button"
-                className="app-button-secondary rounded-[var(--app-radius-control)] px-2 py-1 text-[11px] font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={refreshing}
-                aria-busy={refreshing}
-                onClick={() =>
-                  void refreshQuotes.mutateAsync({
-                    symbols: [position.symbol],
-                    force: true,
-                  })
-                }
-              >
-                {refreshing ? labels.refreshing : labels.refresh}
-              </button>
-            ) : null}
-            {showFullColumns ? (
-              <>
-                <a
-                  href={symbolTradingHref(position.symbol)}
-                  className="app-button-secondary rounded-[var(--app-radius-control)] px-2 py-1 text-[11px] font-semibold"
-                >
-                  {labels.trade}
-                </a>
-                <a
-                  href={symbolActivityHref(position.symbol)}
-                  className="app-button-secondary rounded-[var(--app-radius-control)] px-2 py-1 text-[11px] font-semibold"
-                >
-                  {labels.ledger}
-                </a>
-              </>
-            ) : showHistoryColumns ? (
-              <a
-                href={symbolActivityHref(position.symbol)}
-                className="app-button-secondary rounded-[var(--app-radius-control)] px-2 py-1 text-[11px] font-semibold"
-              >
-                {labels.ledger}
-              </a>
-            ) : null}
-          </div>
-        );
-      },
-    },
+    ...(showDashboardColumns
+      ? []
+      : [
+          {
+            id: 'actions',
+            header: () => (
+              <span className="block text-right">{labels.actions}</span>
+            ),
+            cell: ({ row }: { row: { original: Position } }) => {
+              const position = row.original;
+              const refreshing =
+                refreshQuotes.isPending &&
+                refreshQuotes.variables?.symbols?.includes(position.symbol);
+              return (
+                <div className="flex min-w-max justify-end gap-1">
+                  <a
+                    href={holdingDetailHref(position.symbol)}
+                    className="app-button-secondary rounded-[var(--app-radius-control)] px-2 py-1 text-[11px] font-semibold"
+                  >
+                    {labels.detailsTitle}
+                  </a>
+                  {!showHistoryColumns ? (
+                    <button
+                      type="button"
+                      className="app-button-secondary rounded-[var(--app-radius-control)] px-2 py-1 text-[11px] font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={refreshing}
+                      aria-busy={refreshing}
+                      onClick={() =>
+                        void refreshQuotes.mutateAsync({
+                          symbols: [position.symbol],
+                          force: true,
+                        })
+                      }
+                    >
+                      {refreshing ? labels.refreshing : labels.refresh}
+                    </button>
+                  ) : null}
+                  {showFullColumns ? (
+                    <>
+                      <a
+                        href={symbolTradingHref(position.symbol)}
+                        className="app-button-secondary rounded-[var(--app-radius-control)] px-2 py-1 text-[11px] font-semibold"
+                      >
+                        {labels.trade}
+                      </a>
+                      <a
+                        href={symbolActivityHref(position.symbol)}
+                        className="app-button-secondary rounded-[var(--app-radius-control)] px-2 py-1 text-[11px] font-semibold"
+                      >
+                        {labels.ledger}
+                      </a>
+                    </>
+                  ) : showHistoryColumns ? (
+                    <a
+                      href={symbolActivityHref(position.symbol)}
+                      className="app-button-secondary rounded-[var(--app-radius-control)] px-2 py-1 text-[11px] font-semibold"
+                    >
+                      {labels.ledger}
+                    </a>
+                  ) : null}
+                </div>
+              );
+            },
+          },
+        ]),
   ];
   const priorityColumnOrder = showFullColumns
     ? [
@@ -489,17 +510,7 @@ export function PositionsTable({
           'latest-price',
           'actions',
         ]
-      : [
-          'symbol',
-          'market-value',
-          'today-change',
-          'unrealized',
-          'asset-class',
-          'quantity',
-          'latest-price',
-          'quote-state',
-          'actions',
-        ];
+      : ['symbol', 'market-value', 'today-change', 'unrealized', 'quote-state'];
   const orderedColumns = [...columns].sort(
     (left, right) =>
       priorityColumnOrder.indexOf(left.id ?? '') -

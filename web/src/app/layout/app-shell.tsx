@@ -1006,8 +1006,8 @@ function LanguageMenu({
     <div ref={rootRef} className="relative w-auto">
       <button
         type="button"
-        className={`app-language-control inline-flex h-8 w-auto items-center gap-2 whitespace-nowrap rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-transparent px-2.5 text-xs font-semibold text-[var(--app-text-secondary)] transition-colors hover:border-[var(--app-accent-border)] hover:text-[var(--app-text)] ${
-          open ? 'border-[var(--app-accent-border)] text-[var(--app-text)]' : ''
+        className={`app-language-control inline-flex h-8 w-auto items-center gap-2 whitespace-nowrap rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-transparent px-2.5 text-xs font-semibold text-[var(--app-text-secondary)] transition-colors hover:bg-[var(--app-surface-overlay)] hover:text-[var(--app-text)] ${
+          open ? 'bg-[var(--app-surface-overlay)] text-[var(--app-text)]' : ''
         }`}
         aria-label={label}
         aria-haspopup="menu"
@@ -1087,8 +1087,10 @@ function ThemeSwitcher({
             type="button"
             aria-label={option.label}
             aria-pressed={active}
-            className={`app-theme-switcher-option inline-flex h-6 items-center justify-center rounded-[var(--app-radius-control)] px-1.5 text-[var(--app-text-secondary)] transition-colors hover:text-[var(--app-text)] sm:px-2 [&>svg]:h-3.5 [&>svg]:w-3.5 ${
-              active ? 'bg-[var(--app-accent-bg)] text-[var(--app-accent)]' : ''
+            className={`app-theme-switcher-option inline-flex h-6 items-center justify-center rounded-[var(--app-radius-control)] px-1.5 text-[var(--app-text-secondary)] transition-colors hover:bg-[var(--app-surface-overlay)] hover:text-[var(--app-text)] sm:px-2 [&>svg]:h-3.5 [&>svg]:w-3.5 ${
+              active
+                ? 'bg-[var(--app-surface-overlay)] text-[var(--app-accent)] shadow-[inset_0_-2px_0_var(--app-accent)]'
+                : ''
             }`}
             onClick={() => onChange(option.value)}
           >
@@ -1199,17 +1201,17 @@ function StatusChip({
         aria-haspopup={popup ? 'dialog' : undefined}
         title={title ?? hoverHint}
         onClick={onClick}
-        className={`inline-flex h-full w-full items-center overflow-hidden whitespace-nowrap rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-transparent text-xs text-[var(--app-text-secondary)] transition-colors hover:border-[var(--app-accent-border)] hover:text-[var(--app-text)] ${
+        className={`inline-flex h-full w-full items-center overflow-hidden whitespace-nowrap rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-transparent text-xs text-[var(--app-text-secondary)] transition-colors hover:bg-[var(--app-surface-overlay)] hover:text-[var(--app-text)] ${
           expanded
-            ? 'border-[var(--app-accent-border)] text-[var(--app-text)]'
+            ? 'bg-[var(--app-surface-overlay)] text-[var(--app-text)]'
             : ''
         }`}
       >
         <span className="inline-flex h-full w-12 shrink-0 items-center justify-center border-r border-[var(--app-divider)] px-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--app-text-tertiary)]">
           {label}
         </span>
-        <span className="inline-flex h-full min-w-0 flex-1 items-center gap-2 px-2.5 pr-7 tabular-nums">
-          <span className="relative flex h-3.5 w-3.5 items-center justify-center">
+        <span className="grid h-full min-w-0 flex-1 grid-cols-[14px_minmax(0,1fr)_auto_14px] items-center gap-1 px-1.5 tabular-nums">
+          <span className="relative col-start-1 flex h-3.5 w-3.5 items-center justify-center">
             {indicator === 'syncing' ? (
               <RotateCwIcon
                 className="h-3.5 w-3.5 animate-spin"
@@ -1227,16 +1229,23 @@ function StatusChip({
               </>
             )}
           </span>
-          <span className="min-w-[4rem] max-w-[7rem] truncate text-[12px] font-semibold text-[var(--app-text)]">
+          <span
+            className="col-start-2 min-w-0 truncate text-[12px] font-semibold text-[var(--app-text)]"
+            data-status-chip-part="value"
+          >
             {value}
           </span>
           {meta ? (
-            <span className="shrink-0 text-[11px] font-medium text-[var(--app-text-secondary)]">
+            <span
+              className="col-start-3 shrink-0 font-mono text-[11px] font-medium text-[var(--app-text-secondary)]"
+              data-status-chip-part="meta"
+            >
               {meta}
             </span>
           ) : null}
           <ChevronDownIcon
-            className="absolute right-2 h-3.5 w-3.5 shrink-0 text-[var(--app-text-tertiary)]"
+            className={`col-start-4 h-3.5 w-3.5 shrink-0 text-[var(--app-text-tertiary)] transition-transform ${expanded ? 'rotate-180' : ''}`}
+            data-status-chip-part="chevron"
             aria-hidden="true"
           />
         </span>

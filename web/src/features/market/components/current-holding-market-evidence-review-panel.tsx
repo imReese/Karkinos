@@ -173,9 +173,13 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
         {report ||
         confirmedNavSymbols.length > 0 ||
         genericRefreshSymbols.length > 0 ? (
-          <div className="flex shrink-0 flex-wrap justify-end gap-3">
+          <div
+            className="flex shrink-0 flex-wrap items-center justify-end gap-2"
+            data-testid="holding-evidence-actions"
+          >
             {report ? (
               <EvidenceIdentityDisclosure
+                className="app-button-secondary inline-flex h-10 items-center rounded-[var(--app-radius-control)] px-2.5 text-[11px] font-semibold sm:h-8"
                 triggerLabel={copy.common.viewEvidenceIdentity}
                 title={copy.common.evidenceIdentityTitle}
                 description={copy.common.evidenceIdentityDescription}
