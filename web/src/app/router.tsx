@@ -5,6 +5,7 @@ import {
   createRouter,
   Outlet,
   useNavigate,
+  useRouterState,
 } from '@tanstack/react-router';
 import {
   BarChart3,
@@ -77,6 +78,7 @@ import { PortfolioExposureSummary } from '../features/account/components/portfol
 import { KillSwitchPanel } from '../features/trading/components/kill-switch-panel';
 import { OrderApprovalTable } from '../features/trading/components/order-approval-table';
 import { TradingPage } from '../features/trading/components/trading-page';
+import { PublicHomePage } from '../features/home/components/public-home-page';
 import {
   usePendingManualOrdersQuery,
   type ManualOrder,
@@ -248,17 +250,35 @@ function marketDataStatusDotClass(status?: string | null) {
   return 'bg-[var(--app-muted)]';
 }
 
-const rootRoute = createRootRoute({
-  component: () => (
+function RootLayout() {
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
+
+  if (pathname === '/') {
+    return <Outlet />;
+  }
+
+  return (
     <AppShell>
       <Outlet />
     </AppShell>
-  ),
+  );
+}
+
+const rootRoute = createRootRoute({
+  component: RootLayout,
 });
 
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
+  component: PublicHomePage,
+});
+
+const overviewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/overview',
   component: OverviewPage,
 });
 
@@ -343,6 +363,7 @@ const settingsRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  overviewRoute,
   portfolioRoute,
   holdingDetailRoute,
   activityRoute,

@@ -18,7 +18,7 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
 
-  await page.goto('/');
+  await page.goto('/overview');
   const overviewPrimary = page.getByTestId('overview-daily-workbench');
   const overviewQueue = page.getByTestId('overview-today-queue');
   const overviewHoldings = page.getByTestId('overview-holdings-section');
@@ -109,7 +109,7 @@ test('exemplar routes remain task-reordered and overflow safe on mobile themes',
   test.setTimeout(90_000);
 
   for (const theme of ['light', 'dark']) {
-    for (const path of ['/', '/portfolio', '/risk', '/backtest']) {
+    for (const path of ['/overview', '/portfolio', '/risk', '/backtest']) {
       await page.setViewportSize({ width: 390, height: 844 });
       await page.goto(path);
       await selectMobileTheme(page, theme as 'light' | 'dark');

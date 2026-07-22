@@ -10,7 +10,7 @@ test('desktop shell defaults to labeled business groups and remains collapsible'
 }) => {
   for (const viewport of desktopViewports) {
     await page.setViewportSize(viewport);
-    await page.goto('/');
+    await page.goto('/overview');
 
     const sidebar = page.locator('#app-shell-navigation');
     const header = page.locator('.app-toolbar-shell');
@@ -78,7 +78,7 @@ test('shell remains local-overflow safe in Latte and Mocha across tablet and mob
       { width: 390, height: 844 },
     ]) {
       await page.setViewportSize(viewport);
-      await page.goto('/');
+      await page.goto('/overview');
       const themeName = theme === 'light' ? 'Light theme' : 'Dark theme';
       if (viewport.width < 640) {
         await page.getByTestId('mobile-preferences-toggle').click();

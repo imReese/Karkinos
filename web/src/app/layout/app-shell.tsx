@@ -25,7 +25,7 @@ const navGroups = [
     key: 'portfolio',
     label: { en: 'Portfolio', zh: '组合管理' },
     items: [
-      { to: '/', key: 'overview', icon: OverviewNavIcon },
+      { to: '/overview', key: 'overview', icon: OverviewNavIcon },
       { to: '/portfolio', key: 'portfolio', icon: PortfolioNavIcon },
       { to: '/activity', key: 'activity', icon: ActivityNavIcon },
       { to: '/market', key: 'market', icon: MarketNavIcon },
@@ -73,6 +73,10 @@ const STATUS_COLORS: Record<ToolbarStatusTone, string> = {
   warning: 'var(--app-warning-indicator)',
   danger: 'var(--app-danger-indicator)',
 };
+
+function isNavigationItemActive(pathname: string, target: string) {
+  return pathname === target || pathname.startsWith(`${target}/`);
+}
 
 function formatToolbarTimestamp(
   value: Date | string | null | undefined,
@@ -258,9 +262,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
   const activeNavigation = navGroups
     .flatMap((group) => group.items.map((item) => ({ group, item })))
-    .find(({ item }) =>
-      item.to === '/' ? pathname === '/' : pathname.startsWith(item.to),
-    );
+    .find(({ item }) => isNavigationItemActive(pathname, item.to));
 
   return (
     <div className="app-root min-h-[100dvh] w-full">
@@ -320,10 +322,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   {group.label[locale]}
                 </div>
                 {group.items.map((item) => {
-                  const active =
-                    item.to === '/'
-                      ? pathname === '/'
-                      : pathname.startsWith(item.to);
+                  const active = isNavigationItemActive(pathname, item.to);
                   const Icon = item.icon;
                   return (
                     <Link
@@ -610,10 +609,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             aria-label={copy.shell.primaryNavigation}
           >
             {mobilePrimaryItems.map((item) => {
-              const active =
-                item.to === '/'
-                  ? pathname === '/'
-                  : pathname.startsWith(item.to);
+              const active = isNavigationItemActive(pathname, item.to);
               const Icon = item.icon;
               return (
                 <Link
