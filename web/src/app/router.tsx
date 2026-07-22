@@ -18,6 +18,7 @@ import {
 import { useCopy, type AppCopy } from './copy';
 import { ToastStack, type ToastItem } from './components/toast-stack';
 import {
+  ControlledActionZone,
   EvidenceIdentityDisclosure,
   EvidenceState,
   ExceptionList,
@@ -5180,6 +5181,35 @@ export function ActivityPage() {
         />
 
         <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.55fr)]">
+          <div
+            className="min-w-0 space-y-6 xl:col-start-1 xl:row-start-1"
+            data-activity-surface="audit-history"
+          >
+            {entries.isLoading ? (
+              <EvidenceState
+                kind="loading"
+                title={copy.states.loading}
+                description={copy.activity.loading}
+              />
+            ) : entries.isError ? (
+              <EvidenceState
+                kind="error"
+                title={copy.states.error}
+                description={copy.activity.error}
+                action={
+                  <button
+                    type="button"
+                    className="app-button-secondary px-3 py-2 text-xs"
+                    onClick={() => void entries.refetch()}
+                  >
+                    {copy.states.retry}
+                  </button>
+                }
+              />
+            ) : (
+              <ActivityFeed entries={entries.data ?? []} />
+            )}
+          </div>
           <aside
             className="min-w-0 space-y-6 xl:sticky xl:top-24 xl:col-start-2 xl:row-start-1 xl:self-start"
             data-activity-surface="priority-and-entry"
@@ -5219,35 +5249,6 @@ export function ActivityPage() {
               tradePreview={tradePreview.data ?? null}
             />
           </aside>
-          <div
-            className="min-w-0 space-y-6 xl:col-start-1 xl:row-start-1"
-            data-activity-surface="audit-history"
-          >
-            {entries.isLoading ? (
-              <EvidenceState
-                kind="loading"
-                title={copy.states.loading}
-                description={copy.activity.loading}
-              />
-            ) : entries.isError ? (
-              <EvidenceState
-                kind="error"
-                title={copy.states.error}
-                description={copy.activity.error}
-                action={
-                  <button
-                    type="button"
-                    className="app-button-secondary px-3 py-2 text-xs"
-                    onClick={() => void entries.refetch()}
-                  >
-                    {copy.states.retry}
-                  </button>
-                }
-              />
-            ) : (
-              <ActivityFeed entries={entries.data ?? []} />
-            )}
-          </div>
         </div>
       </section>
     </>
@@ -5309,20 +5310,18 @@ function ActivityEntryToolsPanel({
   ];
 
   return (
-    <div className="app-workbench-section min-w-0 overflow-hidden">
-      <div className="border-b border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-5 py-4">
-        <div className="app-product-mark">
-          {copy.activity.entryTools.kicker}
-        </div>
-        <h2 className="mt-2 text-base font-semibold">
-          {copy.activity.entryTools.title}
-        </h2>
-        <p className="app-muted mt-2 text-xs leading-5">
-          {copy.activity.entryTools.detail}
-        </p>
+    <ControlledActionZone
+      title={copy.activity.entryTools.title}
+      description={copy.activity.entryTools.detail}
+      evidence={copy.activity.entryTools.boundary}
+      layout="stack"
+      tone="info"
+      className="min-w-0"
+    >
+      <div className="min-w-0 w-full">
         <div
           aria-label={copy.activity.entryTools.ariaLabel}
-          className="mt-4 grid min-w-0 grid-cols-2 gap-1"
+          className="grid min-w-0 grid-cols-2 gap-1"
           role="group"
         >
           {tools.map((tool) => {
@@ -5344,47 +5343,47 @@ function ActivityEntryToolsPanel({
             );
           })}
         </div>
+        <div className="mt-4 min-w-0 border-t border-[var(--app-divider)] pt-4">
+          {activeEntryTool === 'trade' ? (
+            <TradeForm
+              onSubmit={onTradeSubmit}
+              pending={createTradePending}
+              tradePreview={tradePreview}
+              previewLoading={previewLoading}
+              previewError={previewError}
+              onPreviewChange={onTradePreviewChange}
+              commissionSettings={commissionSettings}
+            />
+          ) : null}
+          {activeEntryTool === 'fundBatch' ? (
+            <FundBatchForm
+              candidates={candidates}
+              loadingCandidates={loadingCandidates}
+              onSubmit={onFundBatchSubmit}
+              pending={createTradePending}
+            />
+          ) : null}
+          {activeEntryTool === 'cashFlow' ? (
+            <CashFlowForm
+              onSubmit={onCashFlowSubmit}
+              pending={createCashFlowPending}
+            />
+          ) : null}
+          {activeEntryTool === 'dividend' ? (
+            <DividendForm
+              onSubmit={onDividendSubmit}
+              pending={createDividendPending}
+            />
+          ) : null}
+          {activeEntryTool === 'adjustment' ? (
+            <ManualAdjustmentForm
+              onSubmit={onAdjustmentSubmit}
+              pending={createAdjustmentPending}
+            />
+          ) : null}
+        </div>
       </div>
-      <div className="min-w-0 p-4">
-        {activeEntryTool === 'trade' ? (
-          <TradeForm
-            onSubmit={onTradeSubmit}
-            pending={createTradePending}
-            tradePreview={tradePreview}
-            previewLoading={previewLoading}
-            previewError={previewError}
-            onPreviewChange={onTradePreviewChange}
-            commissionSettings={commissionSettings}
-          />
-        ) : null}
-        {activeEntryTool === 'fundBatch' ? (
-          <FundBatchForm
-            candidates={candidates}
-            loadingCandidates={loadingCandidates}
-            onSubmit={onFundBatchSubmit}
-            pending={createTradePending}
-          />
-        ) : null}
-        {activeEntryTool === 'cashFlow' ? (
-          <CashFlowForm
-            onSubmit={onCashFlowSubmit}
-            pending={createCashFlowPending}
-          />
-        ) : null}
-        {activeEntryTool === 'dividend' ? (
-          <DividendForm
-            onSubmit={onDividendSubmit}
-            pending={createDividendPending}
-          />
-        ) : null}
-        {activeEntryTool === 'adjustment' ? (
-          <ManualAdjustmentForm
-            onSubmit={onAdjustmentSubmit}
-            pending={createAdjustmentPending}
-          />
-        ) : null}
-      </div>
-    </div>
+    </ControlledActionZone>
   );
 }
 
@@ -5412,20 +5411,28 @@ function PendingFundOrdersCard({
 
   if (loading) {
     return (
-      <StatusCard
+      <EvidenceState
+        kind="loading"
         title={copy.states.loading}
-        detail={copy.activity.pending.loading}
+        description={copy.activity.pending.loading}
       />
     );
   }
   if (error) {
     return (
-      <StatusCard
-        tone="danger"
+      <EvidenceState
+        kind="error"
         title={copy.states.error}
-        detail={copy.activity.pending.error}
-        actionLabel={copy.states.retry}
-        onAction={onRetry}
+        description={copy.activity.pending.error}
+        action={
+          <button
+            type="button"
+            className="app-button-secondary px-3 py-2 text-xs"
+            onClick={onRetry}
+          >
+            {copy.states.retry}
+          </button>
+        }
       />
     );
   }
@@ -5434,22 +5441,19 @@ function PendingFundOrdersCard({
   }
 
   return (
-    <div className="app-panel rounded-2xl p-5">
-      <div className="flex items-start justify-between gap-3">
+    <section className="app-workbench-section min-w-0 overflow-hidden">
+      <div className="flex items-start justify-between gap-3 border-b border-[var(--app-divider)] px-4 py-3">
         <div>
           <div className="app-product-mark">{copy.activity.pending.kicker}</div>
           <h2 className="mt-2 text-base font-semibold">
             {copy.activity.pending.title}
           </h2>
         </div>
-        <span className="app-chip app-chip-warn text-xs">{orders.length}</span>
+        <StatusBadge tone="warning">{orders.length}</StatusBadge>
       </div>
-      <div className="mt-4 space-y-3">
+      <div className="divide-y divide-[var(--app-divider)]">
         {orders.map((order) => (
-          <div
-            key={order.id}
-            className="rounded-2xl border border-[var(--app-border)] bg-[var(--app-surface-1)] p-4"
-          >
+          <div key={order.id} className="px-4 py-3">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold">
@@ -5475,7 +5479,7 @@ function PendingFundOrdersCard({
           </div>
         ))}
       </div>
-    </div>
+    </section>
   );
 }
 

@@ -2409,6 +2409,8 @@ export const copy = {
         title: 'New entry',
         detail:
           'Preview public ledger impact before writing to the local ledger, then refresh the portfolio path.',
+        boundary:
+          'Explicit submit writes a persisted ledger entry. It does not place a broker order or grant trading authority.',
         ariaLabel: 'Ledger entry tool selector',
       },
       feed: {
@@ -5074,6 +5076,8 @@ export const copy = {
         kicker: '录入工具',
         title: '新增流水',
         detail: '写入本地账本前，先预览公开账本影响，再刷新组合路径。',
+        boundary:
+          '仅在明确提交后写入持久化账本；不会向券商下单，也不会授予交易权限。',
         ariaLabel: '流水录入工具选择',
       },
       feed: {

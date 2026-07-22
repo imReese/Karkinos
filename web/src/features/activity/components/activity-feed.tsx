@@ -230,12 +230,12 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
       </div>
       <div
         aria-label={labels.title}
-        className="min-w-0 max-w-full overflow-x-auto overscroll-x-contain"
+        className="min-w-0 max-h-[min(68vh,42rem)] max-w-full overflow-auto overscroll-contain [scrollbar-gutter:stable] xl:max-h-none"
         role="region"
         tabIndex={0}
       >
         <table className="app-data-table w-full min-w-[760px] text-left text-sm">
-          <thead>
+          <thead className="sticky top-0 z-10">
             <tr>
               <th className="px-4 py-2.5">{labels.columns.time}</th>
               <th className="px-4 py-2.5">{labels.columns.activity}</th>
@@ -364,13 +364,13 @@ function LedgerExecutionDetails({
   );
 
   if (details.length === 0) {
-    return <div className="app-muted mt-1 text-xs">--</div>;
+    return <div className="app-muted mt-1 text-[11px]">--</div>;
   }
 
   return (
-    <div className="app-muted mt-1 flex flex-col items-end gap-0.5 text-xs">
+    <div className="app-muted mt-1 ml-auto flex max-w-[240px] flex-wrap items-center justify-end gap-x-2 gap-y-0.5 text-[11px] leading-4">
       {details.map((item) => (
-        <span key={item.label}>
+        <span key={item.label} className="whitespace-nowrap">
           {item.label} {item.value}
         </span>
       ))}

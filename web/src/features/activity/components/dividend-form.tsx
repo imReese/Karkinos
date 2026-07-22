@@ -63,15 +63,12 @@ export function DividendForm({
           );
         }
       })}
-      className="app-panel space-y-3 rounded-2xl p-5"
+      className="min-w-0 space-y-3"
     >
-      <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-        {labels.title}
-      </div>
       <input
         aria-label={labels.occurredAtLabel}
         type="datetime-local"
-        className="app-field w-full rounded-2xl px-4 py-3 text-sm"
+        className="app-field min-h-10 w-full rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
         {...register('occurred_at', { required: common.required })}
       />
       {errors.occurred_at ? (
@@ -80,14 +77,14 @@ export function DividendForm({
       <input
         aria-label={labels.symbolLabel}
         placeholder={labels.symbolPlaceholder}
-        className="app-field w-full rounded-2xl px-4 py-3 text-sm"
+        className="app-field min-h-10 w-full rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
         {...register('symbol', { required: common.required })}
       />
       {errors.symbol ? <FieldError message={errors.symbol.message} /> : null}
       <div className="grid gap-3 md:grid-cols-2">
         <select
           aria-label={labels.assetClassLabel}
-          className="app-field rounded-2xl px-4 py-3 text-sm"
+          className="app-field min-h-10 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
           {...register('asset_class', { required: common.required })}
         >
           {assetOptions.map((option) => (
@@ -100,7 +97,7 @@ export function DividendForm({
           aria-label={labels.amountLabel}
           type="number"
           step="any"
-          className="app-field rounded-2xl px-4 py-3 text-sm"
+          className="app-field min-h-10 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
           {...register('amount', {
             required: common.required,
             valueAsNumber: true,
@@ -112,14 +109,14 @@ export function DividendForm({
       <input
         aria-label={labels.noteLabel}
         placeholder={labels.notePlaceholder}
-        className="app-field w-full rounded-2xl px-4 py-3 text-sm"
+        className="app-field min-h-10 w-full rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
         {...register('note')}
       />
       {submitError ? <FieldError message={submitError} /> : null}
       <button
         type="submit"
         disabled={pending}
-        className="app-button-primary rounded-2xl px-5 py-3 text-sm font-semibold disabled:opacity-50"
+        className="app-button-primary min-h-10 rounded-[var(--app-radius-control)] px-4 py-2 text-sm font-semibold disabled:opacity-50"
       >
         {pending ? labels.saving : labels.submit}
       </button>
