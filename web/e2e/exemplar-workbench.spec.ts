@@ -1,4 +1,17 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+
+async function selectMobileTheme(page: Page, theme: 'light' | 'dark') {
+  await page.getByTestId('mobile-preferences-toggle').click();
+  const preferences = page.getByRole('dialog', {
+    name: /Theme · Language|主题 · 语言/,
+  });
+  await preferences
+    .getByRole('button', {
+      name: theme === 'light' ? /Light theme|浅色主题/ : /Dark theme|深色主题/,
+    })
+    .click();
+  await expect(preferences).toBeHidden();
+}
 
 test('exemplar pages keep one evidence-first desktop reading path', async ({
   page,
@@ -99,12 +112,7 @@ test('exemplar routes remain task-reordered and overflow safe on mobile themes',
     for (const path of ['/', '/portfolio', '/risk', '/backtest']) {
       await page.setViewportSize({ width: 390, height: 844 });
       await page.goto(path);
-      await page
-        .getByRole('button', {
-          name:
-            theme === 'light' ? /Light theme|浅色主题/ : /Dark theme|深色主题/,
-        })
-        .click();
+      await selectMobileTheme(page, theme as 'light' | 'dark');
 
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       await expect(page.getByTestId('mobile-navigation-toggle')).toBeVisible();
@@ -211,12 +219,7 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
       '/settings',
     ]) {
       await page.goto(path);
-      await page
-        .getByRole('button', {
-          name:
-            theme === 'light' ? /Light theme|浅色主题/ : /Dark theme|深色主题/,
-        })
-        .click();
+      await selectMobileTheme(page, theme as 'light' | 'dark');
 
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       await expect(page.locator('h1')).toHaveCount(1);
