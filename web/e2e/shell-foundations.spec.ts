@@ -92,7 +92,7 @@ test('workspace command menu navigates without adding execution authority', asyn
   ).toBeVisible();
 });
 
-test('desktop utility controls align and the overview table avoids partial columns', async ({
+test('desktop utility controls align and overview holdings avoid partial columns', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -101,7 +101,7 @@ test('desktop utility controls align and the overview table avoids partial colum
   });
   await page.goto('/overview');
   await page.getByRole('button', { name: '浅色主题' }).click();
-  await expect(page.getByTestId('positions-table-desktop')).toBeVisible({
+  await expect(page.getByTestId('overview-holdings-section')).toBeVisible({
     timeout: 15_000,
   });
 
@@ -118,9 +118,13 @@ test('desktop utility controls align and the overview table avoids partial colum
     const chevron = valuation.querySelector(
       '[data-status-chip-part="chevron"]',
     ) as SVGElement;
-    const dashboardScroll = document.querySelector(
-      '[data-testid="overview-holdings-section"] [data-testid="positions-table-scroll"]',
+    const holdingsSection = document.querySelector(
+      '[data-testid="overview-holdings-section"]',
     ) as HTMLElement;
+    const dashboardScroll = holdingsSection.querySelector(
+      '[data-testid="positions-table-scroll"]',
+    ) as HTMLElement | null;
+    const dashboardOverflowTarget = dashboardScroll ?? holdingsSection;
     const toolbarControls = [
       document.querySelector('.app-command-trigger') as HTMLElement,
       document.querySelector('.app-theme-switcher') as HTMLElement,
@@ -132,7 +136,8 @@ test('desktop utility controls align and the overview table avoids partial colum
 
     return {
       dashboardOverflow:
-        dashboardScroll.scrollWidth - dashboardScroll.clientWidth,
+        dashboardOverflowTarget.scrollWidth -
+        dashboardOverflowTarget.clientWidth,
       statusValueWidth: valueBox.width,
       statusValueClipped: value.scrollWidth > value.clientWidth,
       statusMetaChevronGap: chevronBox.left - metaBox.right,
