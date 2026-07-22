@@ -34,7 +34,7 @@ describe('remaining route workbench contract', () => {
     }
   });
 
-  it('keeps persisted review and ledger history before mutation surfaces', () => {
+  it('keeps controlled review first and makes Activity ordering explicit by viewport', () => {
     const tradingPage = TRADING.slice(
       TRADING.indexOf('export function TradingPage'),
     );
@@ -46,9 +46,18 @@ describe('remaining route workbench contract', () => {
       ROUTER.indexOf('export function ActivityPage'),
       ROUTER.indexOf('type ActivityEntryTool'),
     );
-    expect(activityPage.indexOf('<ActivityFeed')).toBeLessThan(
-      activityPage.indexOf('<ActivityEntryToolsPanel'),
+    expect(
+      activityPage.indexOf('data-activity-surface="priority-and-entry"'),
+    ).toBeLessThan(
+      activityPage.indexOf('data-activity-surface="audit-history"'),
     );
+    expect(activityPage).toContain(
+      'xl:sticky xl:top-24 xl:col-start-2 xl:row-start-1',
+    );
+    expect(activityPage).toContain('xl:col-start-1 xl:row-start-1');
+    expect(
+      activityPage.indexOf('data-activity-surface="audit-history"'),
+    ).toBeLessThan(activityPage.indexOf('<ActivityFeed'));
   });
 
   it('marks AI output as cited research rather than deterministic account fact', () => {

@@ -317,7 +317,7 @@ test('filters recent ledger entries by instrument search', async () => {
   expect(await screen.findByText('没有匹配的流水。')).toBeTruthy();
 });
 
-test('prioritizes recent ledger review before manual entry tools and switches the active entry tool', async () => {
+test('prioritizes pending journeys and entry tools before immutable history in document order', async () => {
   renderActivityPage('zh');
 
   const entryTitle = await screen.findByText('新增流水');
@@ -328,7 +328,7 @@ test('prioritizes recent ledger review before manual entry tools and switches th
   ).getAllByRole('button');
 
   expect(
-    ledgerTitle.compareDocumentPosition(entryTitle) &
+    entryTitle.compareDocumentPosition(ledgerTitle) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(
@@ -348,4 +348,16 @@ test('prioritizes recent ledger review before manual entry tools and switches th
 
   expect(await screen.findByLabelText('资金流水发生时间')).toBeTruthy();
   expect(screen.queryByLabelText('证券代码')).toBeNull();
+});
+
+test('keeps financial direction colors separate from system state colors', async () => {
+  renderActivityPage('zh');
+
+  const creditAmount = await screen.findByText('+¥0.27');
+  const debitAmount = await screen.findByText('-¥3,255.16');
+
+  expect(creditAmount.className).toContain('var(--app-pnl-positive)');
+  expect(debitAmount.className).toContain('var(--app-pnl-negative)');
+  expect(creditAmount.className).not.toContain('var(--app-success)');
+  expect(debitAmount.className).not.toContain('var(--app-danger)');
 });
