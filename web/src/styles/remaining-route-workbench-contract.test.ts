@@ -209,5 +209,20 @@ describe('remaining route workbench contract', () => {
     expect(BACKTEST_REPORT_SECTIONS.join('\n')).toContain(
       'var(--app-chart-grid)',
     );
+    expect(BACKTEST_REPORT_SECTIONS.join('\n')).not.toContain(
+      '<ResponsiveContainer',
+    );
+    expect(
+      BACKTEST_REPORT_SECTIONS.join('\n').match(/<ResponsiveChartFrame\s/g),
+    ).toHaveLength(2);
+    expect(
+      BACKTEST_REPORT_SECTIONS.join('\n').match(/accessibilityLayer/g),
+    ).toHaveLength(2);
+    expect(
+      BACKTEST_REPORT_SECTIONS.join('\n').match(/isAnimationActive=\{false\}/g),
+    ).toHaveLength(2);
+    expect(BACKTEST_REPORT_SECTIONS.join('\n')).toContain(
+      'backtest-drawdown-${useId().replace',
+    );
   });
 });

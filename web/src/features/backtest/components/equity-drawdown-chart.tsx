@@ -1,3 +1,5 @@
+import { useId } from 'react';
+
 import {
   Area,
   AreaChart,
@@ -5,14 +7,16 @@ import {
   Line,
   LineChart,
   ReferenceDot,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts';
 
 import { useCopy } from '../../../app/copy';
-import { EvidenceState } from '../../../app/components/workbench';
+import {
+  EvidenceState,
+  ResponsiveChartFrame,
+} from '../../../app/components/workbench';
 import {
   formatCompactNumber,
   formatCurrency,
@@ -129,6 +133,7 @@ export function EquityDrawdownChart({
   const { locale } = usePreferences();
   const data = toChartPoints(points);
   const fillMarkers = toFillMarkers(fills, data, locale);
+  const drawdownGradientId = `backtest-drawdown-${useId().replace(/:/g, '')}`;
 
   if (data.length === 0) {
     return (
@@ -160,17 +165,18 @@ export function EquityDrawdownChart({
       </div>
 
       <div className="mt-5 grid gap-4">
-        <div className="h-[320px] min-w-0 border-y border-[var(--app-divider)] bg-transparent">
-          <ResponsiveContainer
-            width="100%"
-            height="100%"
-            minWidth={1}
-            minHeight={320}
-            initialDimension={{ width: 1, height: 320 }}
-          >
+        <ResponsiveChartFrame
+          ariaLabel={`${labels.title}. ${labels.points(data.length)}. ${labels.markersCount(fillMarkers.length)}.`}
+          className="h-[320px] border-y border-[var(--app-divider)] bg-transparent"
+          testId="backtest-equity-chart-frame"
+        >
+          {({ height, width }) => (
             <LineChart
+              accessibilityLayer
               data={data}
+              height={height}
               margin={{ top: 18, right: 18, bottom: 8, left: 8 }}
+              width={width}
             >
               <CartesianGrid stroke="var(--app-chart-grid)" vertical={false} />
               <XAxis
@@ -216,10 +222,11 @@ export function EquityDrawdownChart({
                 strokeWidth={2}
                 dot={false}
                 activeDot={{ r: 4 }}
+                isAnimationActive={false}
               />
             </LineChart>
-          </ResponsiveContainer>
-        </div>
+          )}
+        </ResponsiveChartFrame>
 
         {fillMarkers.length > 0 ? (
           <div className="border-t border-[var(--app-divider)] pt-3">
@@ -269,21 +276,22 @@ export function EquityDrawdownChart({
           </div>
         ) : null}
 
-        <div className="h-[150px] min-w-0 border-y border-[var(--app-divider)] bg-transparent">
-          <ResponsiveContainer
-            width="100%"
-            height="100%"
-            minWidth={1}
-            minHeight={150}
-            initialDimension={{ width: 1, height: 150 }}
-          >
+        <ResponsiveChartFrame
+          ariaLabel={`${labels.drawdown}. ${labels.points(data.length)}.`}
+          className="h-[150px] border-y border-[var(--app-divider)] bg-transparent"
+          testId="backtest-drawdown-chart-frame"
+        >
+          {({ height, width }) => (
             <AreaChart
+              accessibilityLayer
               data={data}
+              height={height}
               margin={{ top: 16, right: 18, bottom: 4, left: 8 }}
+              width={width}
             >
               <defs>
                 <linearGradient
-                  id="backtestDrawdown"
+                  id={drawdownGradientId}
                   x1="0"
                   x2="0"
                   y1="0"
@@ -327,12 +335,13 @@ export function EquityDrawdownChart({
                 dataKey="drawdown"
                 stroke="var(--app-pnl-negative)"
                 strokeWidth={1.5}
-                fill="url(#backtestDrawdown)"
+                fill={`url(#${drawdownGradientId})`}
                 dot={false}
+                isAnimationActive={false}
               />
             </AreaChart>
-          </ResponsiveContainer>
-        </div>
+          )}
+        </ResponsiveChartFrame>
       </div>
     </section>
   );

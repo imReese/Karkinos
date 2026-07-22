@@ -2,6 +2,10 @@ export { ControlledActionZone } from './controlled-action-zone';
 export { DataTable } from './data-table';
 export { EvidenceDrawer } from './evidence-drawer';
 export {
+  ResponsiveChartFrame,
+  type ResponsiveChartSize,
+} from './responsive-chart-frame';
+export {
   EvidenceIdentityDisclosure,
   type EvidenceIdentityField,
 } from './evidence-identity-disclosure';
