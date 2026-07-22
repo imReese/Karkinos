@@ -11,6 +11,7 @@ import { useCopy } from '../../../app/copy';
 import {
   EvidenceState,
   MetricStrip,
+  StatusBadge,
   WorkspaceHeader,
 } from '../../../app/components/workbench';
 import { usePreferences } from '../../../app/preferences';
@@ -879,7 +880,7 @@ export function BacktestPage() {
               </p>
               {searchDefaults.hasHandoffContext ? (
                 <section
-                  className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-accent)_34%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_10%,transparent)] p-3.5"
+                  className="mt-4 border-l-2 border-[var(--app-info-indicator)] py-1 pl-3"
                   data-testid="backtest-handoff-context"
                 >
                   <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -894,32 +895,27 @@ export function BacktestPage() {
                         {handoffLabels.detail}
                       </p>
                     </div>
-                    <span className="inline-flex shrink-0 items-center rounded-full border border-[color-mix(in_srgb,var(--app-warning)_42%,var(--app-border))] bg-[var(--app-warning-bg)] px-3 py-1 text-xs font-semibold text-[var(--app-warning)]">
+                    <StatusBadge className="shrink-0" tone="warning">
                       {handoffLabels.badge}
-                    </span>
+                    </StatusBadge>
                   </div>
-                  <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
-                    <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3 py-2">
-                      <div className="app-muted">{labels.symbol}</div>
-                      <div className="mt-1 truncate font-semibold text-[var(--app-text)] tabular-nums">
-                        {symbol || labels.notDeclared}
-                      </div>
-                    </div>
-                    <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3 py-2">
-                      <div className="app-muted">{labels.assetClass}</div>
-                      <div className="mt-1 truncate font-semibold text-[var(--app-text)]">
-                        {selectedAssetClassLabel}
-                      </div>
-                    </div>
-                    <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3 py-2">
-                      <div className="app-muted">{labels.strategy}</div>
-                      <div className="mt-1 truncate font-semibold text-[var(--app-text)]">
-                        {strategyDisplayName(
-                          selectedStrategy,
-                          labels.strategyNames,
-                        )}
-                      </div>
-                    </div>
+                  <div className="mt-3 grid gap-x-4 text-xs sm:grid-cols-3">
+                    <RunContextValue
+                      label={labels.symbol}
+                      value={symbol || labels.notDeclared}
+                      numeric
+                    />
+                    <RunContextValue
+                      label={labels.assetClass}
+                      value={selectedAssetClassLabel}
+                    />
+                    <RunContextValue
+                      label={labels.strategy}
+                      value={strategyDisplayName(
+                        selectedStrategy,
+                        labels.strategyNames,
+                      )}
+                    />
                   </div>
                 </section>
               ) : null}
@@ -929,7 +925,7 @@ export function BacktestPage() {
                   <label className="grid gap-2 text-sm font-medium">
                     {labels.startDate}
                     <input
-                      className="app-field rounded-2xl px-4 py-3 text-sm"
+                      className="app-field min-h-11 rounded-[var(--app-radius-control)] px-3 py-2.5 text-sm"
                       type="date"
                       value={startDate}
                       onChange={(event) => setStartDate(event.target.value)}
@@ -939,7 +935,7 @@ export function BacktestPage() {
                   <label className="grid gap-2 text-sm font-medium">
                     {labels.endDate}
                     <input
-                      className="app-field rounded-2xl px-4 py-3 text-sm"
+                      className="app-field min-h-11 rounded-[var(--app-radius-control)] px-3 py-2.5 text-sm"
                       type="date"
                       value={endDate}
                       onChange={(event) => setEndDate(event.target.value)}
@@ -951,7 +947,7 @@ export function BacktestPage() {
                 <label className="grid gap-2 text-sm font-medium">
                   {labels.initialCash}
                   <input
-                    className="app-field rounded-2xl px-4 py-3 text-sm tabular-nums"
+                    className="app-field min-h-11 rounded-[var(--app-radius-control)] px-3 py-2.5 text-sm tabular-nums"
                     type="number"
                     min="1"
                     step="1"
@@ -974,10 +970,6 @@ export function BacktestPage() {
                   ) : null}
                   <StrategyMetadataPanel
                     strategy={selectedStrategy}
-                    description={strategyDescription(
-                      selectedStrategy,
-                      labels.strategyDescriptions,
-                    )}
                     labels={labels}
                   />
                 </div>
@@ -1001,7 +993,7 @@ export function BacktestPage() {
                           <span>{displayName}</span>
                         </span>
                         <input
-                          className="app-field rounded-2xl px-4 py-3 text-sm tabular-nums"
+                          className="app-field min-h-11 rounded-[var(--app-radius-control)] px-3 py-2.5 text-sm tabular-nums"
                           type={
                             param.type === 'int' || param.type === 'float'
                               ? 'number'
@@ -1033,7 +1025,7 @@ export function BacktestPage() {
                   <label className="grid gap-2 text-sm font-medium">
                     {labels.symbol}
                     <input
-                      className="app-field rounded-2xl px-4 py-3 text-sm tabular-nums"
+                      className="app-field min-h-11 rounded-[var(--app-radius-control)] px-3 py-2.5 text-sm tabular-nums"
                       value={symbol}
                       onChange={(event) => setSymbol(event.target.value)}
                       placeholder={labels.symbolPlaceholder}
@@ -1043,7 +1035,7 @@ export function BacktestPage() {
                   <label className="grid gap-2 text-sm font-medium">
                     {labels.assetClass}
                     <select
-                      className="app-field rounded-2xl px-4 py-3 text-sm"
+                      className="app-field min-h-11 rounded-[var(--app-radius-control)] px-3 py-2.5 text-sm"
                       value={assetClass}
                       onChange={(event) => setAssetClass(event.target.value)}
                       aria-label={labels.assetClass}
@@ -1070,20 +1062,25 @@ export function BacktestPage() {
 
                 {formError ? (
                   <div
-                    className="rounded-2xl border border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] px-4 py-3 text-sm text-[var(--app-danger)]"
+                    className="rounded-[var(--app-radius-control)] border border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] px-3 py-2.5 text-sm text-[var(--app-danger)]"
                     role="alert"
                   >
                     {formError}
                   </div>
                 ) : null}
 
-                <button
-                  type="submit"
-                  className="app-button-primary rounded-2xl px-4 py-3 text-sm font-semibold transition active:scale-[0.99]"
-                  disabled={runBacktest.isPending}
-                >
-                  {runBacktest.isPending ? labels.running : labels.run}
-                </button>
+                <div className="flex flex-col gap-3 border-t border-[var(--app-divider)] pt-4 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="max-w-sm text-xs leading-5 text-[var(--app-text-secondary)]">
+                    {labels.decisionHandoffResearchOnly}
+                  </p>
+                  <button
+                    type="submit"
+                    className="app-button-primary min-h-11 w-full rounded-[var(--app-radius-control)] px-4 py-2.5 text-sm font-semibold transition active:scale-[0.99] sm:w-auto"
+                    disabled={runBacktest.isPending}
+                  >
+                    {runBacktest.isPending ? labels.running : labels.run}
+                  </button>
+                </div>
               </form>
               <BacktestResponsiveDisclosure
                 detail={labels.advancedToolsDetail}
@@ -1140,7 +1137,7 @@ export function BacktestPage() {
                   <SummaryValue
                     label={labels.maxDrawdown}
                     value={formatPercent(summary.drawdown)}
-                    danger
+                    tone="pnl-negative"
                   />
                   <SummaryValue
                     label={labels.totalCost}
@@ -1157,7 +1154,7 @@ export function BacktestPage() {
             {latestReport ? (
               <div className="mt-5 space-y-5">
                 <section
-                  className="rounded-3xl border border-[color-mix(in_srgb,var(--app-accent)_30%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_8%,transparent)] p-4"
+                  className="border-l-2 border-[var(--app-info-indicator)] py-1 pl-3"
                   data-testid="backtest-run-context-summary"
                 >
                   <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1175,15 +1172,15 @@ export function BacktestPage() {
                     <div className="flex shrink-0 flex-wrap items-center gap-2">
                       {reportSymbol ? (
                         <a
-                          className="inline-flex items-center rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-3 py-1 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
+                          className="inline-flex min-h-8 items-center rounded-[var(--app-radius-control)] border border-[var(--app-border)] px-2.5 py-1 text-xs font-semibold text-[var(--app-text)] transition hover:border-[var(--app-accent)] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
                           href={`/portfolio/${encodeURIComponent(reportSymbol)}`}
                         >
                           {labels.runContextReviewHolding}
                         </a>
                       ) : null}
-                      <span className="inline-flex items-center rounded-full border border-[color-mix(in_srgb,var(--app-warning)_42%,var(--app-border))] bg-[var(--app-warning-bg)] px-3 py-1 text-xs font-semibold text-[var(--app-warning)]">
+                      <StatusBadge tone="warning">
                         {labels.decisionHandoffResearchOnly}
-                      </span>
+                      </StatusBadge>
                     </div>
                   </div>
                   <div className="mt-4 grid gap-2 text-xs sm:grid-cols-2 xl:grid-cols-4">
@@ -3411,11 +3408,9 @@ function EvidenceBadge({
 
 function StrategyMetadataPanel({
   strategy,
-  description,
   labels,
 }: {
   strategy: BacktestStrategyInfo;
-  description: string;
   labels: ReturnType<typeof useCopy>['backtest']['page'];
 }) {
   const { locale } = usePreferences();
@@ -3428,14 +3423,11 @@ function StrategyMetadataPanel({
   const validationNoteLabels: Record<string, string> = labels.validationNotes;
 
   return (
-    <section className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)] p-4">
+    <section className="border-y border-[var(--app-divider)] py-3">
       <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
         {labels.strategyMetadata}
       </div>
-      <p className="mt-2 text-sm leading-6 text-[var(--app-text)]">
-        {description}
-      </p>
-      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+      <div className="mt-2 grid gap-x-4 sm:grid-cols-2">
         <MetadataItem
           label={labels.assetUniverse}
           value={formatMetadataList(assetUniverse, labels.notDeclared)}
@@ -3452,16 +3444,16 @@ function StrategyMetadataPanel({
             labels.notDeclared,
           )}
         />
-        <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_22%,transparent)] px-3 py-2">
-          <div className="app-muted text-[11px]">
+        <div className="min-w-0 border-t border-[var(--app-divider)] py-2.5">
+          <div className="text-[11px] font-medium text-[var(--app-text-secondary)]">
             {labels.validationRequirements}
           </div>
           {validationBadges.length > 0 ? (
-            <div className="mt-1.5 flex flex-wrap gap-1.5">
+            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
               {validationBadges.map((badge) => (
                 <span
                   key={badge}
-                  className="rounded-full border border-[color-mix(in_srgb,var(--app-accent)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-accent)_10%,transparent)] px-2 py-1 text-[11px] font-semibold text-[var(--app-accent-strong)]"
+                  className="text-xs font-semibold text-[var(--app-text)]"
                 >
                   {badge}
                 </span>
@@ -3489,9 +3481,11 @@ function StrategyMetadataPanel({
 
 function MetadataItem({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_22%,transparent)] px-3 py-2">
-      <div className="app-muted text-[11px]">{label}</div>
-      <div className="mt-1 truncate text-sm font-semibold tabular-nums">
+    <div className="min-w-0 border-t border-[var(--app-divider)] py-2.5">
+      <div className="text-[11px] font-medium text-[var(--app-text-secondary)]">
+        {label}
+      </div>
+      <div className="mt-0.5 truncate text-sm font-semibold tabular-nums text-[var(--app-text)]">
         {value}
       </div>
     </div>
@@ -3505,11 +3499,11 @@ function formatMetadataList(values: string[] | undefined, fallback: string) {
 function SummaryValue({
   label,
   value,
-  danger = false,
+  tone = 'neutral',
 }: {
   label: string;
   value: string;
-  danger?: boolean;
+  tone?: 'neutral' | 'pnl-negative';
 }) {
   return (
     <div>
@@ -3517,7 +3511,7 @@ function SummaryValue({
         {label}
       </div>
       <div
-        className={`mt-1 font-semibold ${danger ? 'text-[var(--app-danger)]' : ''}`}
+        className={`mt-1 font-semibold ${tone === 'pnl-negative' ? 'text-[var(--app-pnl-negative)]' : 'text-[var(--app-text)]'}`}
       >
         {value}
       </div>

@@ -225,4 +225,32 @@ describe('remaining route workbench contract', () => {
       'backtest-drawdown-${useId().replace',
     );
   });
+
+  it('keeps the current backtest workspace flat and separates PnL from system danger', () => {
+    const currentWorkspace = BACKTEST.slice(
+      BACKTEST.indexOf('export function BacktestPage'),
+      BACKTEST.indexOf('function BacktestResponsiveDisclosure'),
+    );
+    const strategyMetadata = BACKTEST.slice(
+      BACKTEST.indexOf('function StrategyMetadataPanel'),
+      BACKTEST.indexOf('function formatMetadataList'),
+    );
+    const summaryValue = BACKTEST.slice(
+      BACKTEST.indexOf('function SummaryValue'),
+    );
+
+    expect(currentWorkspace).toContain(
+      'data-testid="backtest-primary-workbench"',
+    );
+    expect(currentWorkspace).toContain('<StatusBadge tone="warning">');
+    expect(currentWorkspace).toContain('rounded-[var(--app-radius-control)]');
+    expect(currentWorkspace).not.toContain('rounded-2xl');
+    expect(currentWorkspace).not.toContain('rounded-3xl');
+    expect(currentWorkspace).not.toContain('backdrop-blur');
+    expect(currentWorkspace).not.toMatch(/shadow-\[0_/);
+    expect(strategyMetadata).not.toContain('rounded-2xl');
+    expect(strategyMetadata).not.toContain('rounded-xl');
+    expect(summaryValue).toContain('var(--app-pnl-negative)');
+    expect(summaryValue).not.toContain('var(--app-danger)');
+  });
 });
