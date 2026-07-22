@@ -136,6 +136,12 @@ test('keeps operational state and financial direction on separate roles', () => 
             value: 'Negative',
             tone: 'pnl-negative',
           },
+          {
+            id: 'blocked',
+            label: 'Risk limit',
+            value: 'Blocked',
+            tone: 'danger',
+          },
         ]}
       />
     </div>,
@@ -146,6 +152,7 @@ test('keeps operational state and financial direction on separate roles', () => 
   );
   expect(screen.getByText('Positive').className).toContain('app-pnl-positive');
   expect(screen.getByText('Negative').className).toContain('app-pnl-negative');
+  expect(screen.getByText('Blocked').className).toContain('app-danger-text');
 });
 
 test('exposes explicit evidence lifecycle states', () => {
