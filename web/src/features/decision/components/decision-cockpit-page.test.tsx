@@ -2939,7 +2939,12 @@ test('surfaces bounded controlled execution evidence without live actions', asyn
   expect(operatorView.textContent).toContain('Cancellation off');
   expect(operatorView.textContent).toContain('No automatic authority resume');
   expect(operatorView.textContent).toContain('No automatic scale-up');
-  expect(within(operatorView).queryAllByRole('button')).toHaveLength(1);
+  expect(
+    within(operatorView).getByRole('button', {
+      name: 'Review and revoke this session authority',
+    }),
+  ).toBeTruthy();
+  expect(within(operatorView).queryAllByRole('button')).toHaveLength(2);
 
   const orderJourney = within(operatorView).getByTestId(
     'controlled-order-journey',

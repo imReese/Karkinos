@@ -191,6 +191,11 @@ The local suite validates Karkinos contracts and does not claim a real adapter
 works. Acceptance neither registers an adapter nor grants broker-write or
 capital authority.
 
+Trading exposes the same decision as a default-collapsed signed journey: one dossier binds the exact manifest, latest conformance, current review,
+decision/reason/time, and short-lived approval. Its approval id enters the
+review fingerprint; drift fails closed, while reject/revoke remain safety-only
+and the journey cannot select, register, or contact a broker.
+
 Operations exposes the same persisted release, conformance, and collector
 bindings through `karkinos.broker_adapter_readiness.v1`. The projection opens
 the database read-only, never creates missing schema, never contacts a provider,
@@ -225,6 +230,15 @@ Strategy code cannot reach the gateway. A prepared, accepted-but-unreconciled,
 or unknown intent blocks a different order. Unknown outcomes are query-only and
 are never automatically resubmitted.
 
+Decision exposes a separately opened signed revocation journey for a persisted
+runtime session. The operator selects an allowlisted reason, reviews the exact
+session/reservation fingerprint, signs a three-minute Ed25519 challenge outside
+Karkinos, and confirms the one-way revocation. The command reuses the canonical
+runtime-authority transaction and cannot auto-resume, renew, widen, submit, or
+cancel. Revocation closes future runtime admission only; it never claims that an
+open broker order was cancelled, so lifecycle collection and reconciliation
+remain separate mandatory work.
+
 `karkinos.current_per_order_confirmation_dossier.v1` is the read-only operator
 entry boundary before any controlled intent exists. It selects only canonical
 `manually_confirmed` OMS orders, scans append-only capital evaluations newest
@@ -233,7 +247,20 @@ prior-batch reconciliation reference and one gateway-verification reference.
 It never falls back from a newer matching blocked evaluation to an older pass;
 missing, malformed, ambiguous, or bounded-scan-incomplete evidence remains
 blocked. The resolved references feed the existing canonical per-order dossier,
-whose fingerprint is then used for a three-minute offline Ed25519 approval.
+whose v5 fingerprint also binds the newest persisted adapter release matching
+the exact evidence-connector, execution-gateway, and account scope. That release
+must still be human-accepted, conformance-clear, blocker-free, and attached to a
+recorded read-only collector run. Missing evidence, revocation, conformance or
+manifest drift, scope mismatch, and unsafe projection boundaries all fail
+closed and invalidate an earlier signature. V5 additionally treats the four
+OMS gateway-gate references as typed identities rather than labels: the exact
+Account Truth import, Decision action, risk decision, and paper/shadow run must
+resolve from persisted facts, appear in the same capital evaluation, and match
+the order symbol, side, strategy, quantity, and limit price where applicable.
+The paper/shadow run must contain exactly one clear simulated order for the same
+Decision action. A missing provider-free Account Truth projection, a non-empty
+forged ref, or any source drift is a review and hard-submission blocker. The
+fingerprint is then used for a three-minute offline Ed25519 approval.
 The resulting confirmation is append-only, non-authorizing evidence. Listing
 and preview read persisted facts only; neither they nor the confirmation can
 contact a provider, mutate OMS/ledger/risk/kill switch/capital authority, or
@@ -344,6 +371,30 @@ the Karkinos harness, not a third-party implementation; real adapter acceptance
 still requires a separately approved runner, ADR/threat review, and deployment
 authorization.
 
+Enabling that edge requires a distinct
+`karkinos.controlled_broker_write_release.v1` capability release. Its signed
+dossier binds the exact provider/gateway/account scope to the newest strict
+execution-edge manifest and clear conformance result, the newest exact-scope accepted
+read-only adapter release, the exact signed soak-promotion acceptance, and
+seven owner-reviewed agreement, account-permission, reporting, acceptance-test,
+deployment, risk-control, and rollback references. A release lasts at most 12
+hours, permits only `manual_each_order`, and can be revoked once with a separate
+offline signature. Expiry, revocation, trusted-key rotation/disable, or any
+source drift makes resolution fail closed.
+
+Production submission and cancellation factories resolve only an active
+persisted release (unless an explicit test/integration provider is injected),
+then independently recheck their existing order-specific proof, gateway health,
+claim, risk, and lifecycle gates. The release is necessary but never sufficient:
+it registers no adapter, contacts no provider, creates no order, mutates no
+financial fact, and grants neither order nor capital authority. Status reads do
+not create release tables or refresh upstream evidence.
+
+Trading projects this boundary as a default-collapsed operator review. Opening it reads
+persisted status, validates a reviewed credential-free manifest and seven owner references,
+then reuses the three-minute offline-signature flow to issue or revoke; the browser blocks
+sensitive manifest keys before POST and exposes no submit, cancel, registration, or capital action.
+
 Reconciliation clearance uses
 `karkinos.controlled_submission_reconciliation_clearance.v3` as the canonical
 exact-terminal contract. A signed command may record a full fill, a no-fill
@@ -439,34 +490,34 @@ drift. Only a fully bound contribution is authoritative. No-fill, missing, or
 unreconciled results remain degraded or blocked evidence, and the capture
 performs no provider call, financial recomputation, or authority mutation.
 
-### Evidence-bound post-decision review
+### Evidence-bound post-decision review and learning queue
 
-`karkinos.decision_outcome_review.v1` is the canonical human disposition of one
-persisted signal outcome. Its preview binds the exact signal and action/risk
-chain, signal-specific order/fill references, and the existing symbol-scoped
-`karkinos.account_strategy_contribution.v2` report. Numeric P/L is never
-accepted from the operator and is never recalculated by the review boundary.
-The target fingerprint therefore includes the valuation snapshot id, ledger
-cutoff, contribution fingerprint, and the exact execution evidence available
-when the conclusion was made.
+`karkinos.decision_outcome_review.v1` is the canonical human disposition of one persisted signal outcome. Preview binds the exact signal/action/risk chain,
+signal-specific order/fill references, and symbol-scoped canonical contribution.
+Its target fingerprint includes valuation snapshot, ledger cutoff, contribution,
+and execution evidence; operator-supplied P/L is rejected and never recalculated.
 
-Recording requires a caller-supplied idempotency key, the exact preview
-fingerprint, an allowlisted human decision/outcome pair, a reviewer, a note,
-and an explicit no-authority confirmation. Evidence-supported or
-evidence-not-supported conclusions are available only for acted signals with
-linked fills and a fully bound canonical contribution. Risk-blocked or
-unexecuted signals can be recorded only as the corresponding process outcome;
-otherwise the review remains inconclusive. Snapshot, ledger, action, risk,
-order, or fill drift rejects a new confirmation and makes a previously stored
-review visibly non-current without deleting it.
+Recording requires an idempotency key, exact preview fingerprint, allowlisted
+human decision/outcome, reviewer, note, and explicit no-authority confirmation.
+Acted conclusions require linked fills and fully bound contribution; risk-blocked
+or unexecuted signals retain process outcomes. Any source drift rejects a new
+confirmation and makes a prior review non-current without deleting it.
 
-The review and its tamper-evident event chain are append-only and restart-safe.
-One transaction records the review, hash-chain event, and shared signal-journal
-event. Legacy `signal_reviews` remain historical read evidence but are not the
-canonical write contract. Preview is database-write-free and provider-free;
-confirmation writes only review audit evidence and cannot modify OMS, orders,
-fills, ledger, Account Truth, risk, kill switch, broker submit/cancel, AI
-memory, model prompts, or capital authority.
+The stored review, event hash chain, and shared signal-journal event are appended
+in one transaction. Replay verifies the chain plus exact request fingerprint,
+target identity, review identity, signal, reviewer, decision, outcome, note, and
+timestamp bindings. Corrupt JSON or row/event mismatch fails closed. Legacy
+`signal_reviews` remain historical evidence, not the canonical write contract.
+
+`karkinos.strategy_learning_review.v1` is a read-only projection of the latest
+persisted human review per signal; unreviewed signals are explicitly outside its
+classification. Every read replays that review and rebuilds the current canonical
+target. Audit failure becomes a critical integrity repair; target drift requires
+re-preview; unsupported evidence creates only a copyable question for separately
+human-started capture and research. No private review note enters the queue.
+
+The queue contacts no provider, writes no database, recalculates no financial fact, invokes no AI, creates no memory, changes no strategy, and grants no OMS,
+broker, execution, or capital authority.
 
 ### Decision Quality Score evidence
 

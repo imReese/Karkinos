@@ -57,6 +57,7 @@ def _persisted_current_service(env: dict) -> CurrentPerOrderDossierService:
                 clock=lambda: NOW,
             )
         ),
+        account_truth_evidence_provider=env["account_truth_evidence_provider"],
         clock=lambda: NOW,
     )
     return CurrentPerOrderDossierService(

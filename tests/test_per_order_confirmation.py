@@ -11,11 +11,28 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from account_truth.broker_adapter_conformance import (
+    BROKER_ADAPTER_CONFORMANCE_ACKNOWLEDGEMENT,
+    BrokerAdapterConformanceRepository,
+)
+from account_truth.broker_adapter_conformance_fixtures import (
+    run_deterministic_broker_adapter_conformance,
+)
+from account_truth.broker_adapter_release import (
+    BROKER_ADAPTER_RELEASE_REVIEW_ACKNOWLEDGEMENT,
+    BrokerAdapterReleaseReviewRepository,
+    preview_broker_adapter_release_manifest,
+)
 from account_truth.broker_connector import (
     BrokerCashFact,
     BrokerConnectorHealth,
     BrokerConnectorSnapshot,
     FakeReadOnlyBrokerConnector,
+)
+from account_truth.broker_order_lifecycle_collector import (
+    BROKER_ORDER_LIFECYCLE_COLLECTOR_RECORD_ACKNOWLEDGEMENT,
+    BrokerOrderLifecycleCollectorRepository,
+    preview_broker_order_lifecycle_collector_batch,
 )
 from data.market_calendar import build_static_market_calendar_snapshot
 from server.config import TrustedOperatorIdentityConfig
@@ -61,11 +78,11 @@ def _gateway_evidence() -> dict:
     return {
         "account_truth": {
             "gate_status": "pass",
-            "evidence_ref": "account-truth:review-1",
+            "evidence_ref": "account_truth:import-run-1",
         },
         "research_evidence": {
             "gate_status": "pass",
-            "evidence_ref": "research:bundle-1",
+            "evidence_ref": "decision_action:1",
         },
         "risk": {
             "gate_status": "passed",
@@ -73,9 +90,102 @@ def _gateway_evidence() -> dict:
         },
         "paper_shadow": {
             "divergence_status": "within_expectations",
-            "evidence_ref": "paper-shadow:run-1",
+            "evidence_ref": "paper_shadow:run-1",
         },
     }
+
+
+def _clear_account_truth_evidence() -> dict:
+    return {
+        "status": "clear",
+        "source_fingerprint": "a" * 64,
+        "import_run_id": "import-run-1",
+        "captured_at": NOW.isoformat(),
+        "data_freshness_status": "fresh",
+        "reconciliation_status": "clear",
+        "gate_status": "pass",
+        "unresolved_mismatch_count": 0,
+        "does_not_mutate_production_ledger": True,
+        "does_not_issue_execution_authority": True,
+        "broker_submission_enabled": False,
+        "persisted_facts_only": True,
+        "provider_contact_performed": False,
+    }
+
+
+def _record_gateway_source_evidence(db: AppDatabase, now: datetime) -> None:
+    db.upsert_action_task_sync(
+        source_signal_id=101,
+        symbol="510300.SH",
+        title="fixture controlled order",
+        detail="deterministic per-order lineage fixture",
+        direction="buy",
+        urgency="normal",
+        target_weight=0.01,
+        price=4.0,
+        strategy_id="etf_rotation",
+        timestamp=now.isoformat(),
+        asset_class="fund",
+    )
+    db.append_event_sync(
+        event_type="risk.signal.recorded",
+        timestamp=now.isoformat(),
+        entity_type="risk_signal",
+        entity_id="decision-1",
+        source="risk_decisions",
+        source_ref="decision-1",
+        payload={
+            "intent": {
+                "intent_id": "fixture-intent-1",
+                "strategy_id": "etf_rotation",
+                "source_signal_id": 101,
+                "symbol": "510300.SH",
+                "side": "buy",
+            },
+            "decision": {
+                "decision_id": "decision-1",
+                "timestamp": now.isoformat(),
+                "passed": True,
+                "symbol": "510300.SH",
+                "side": "buy",
+                "severity": "info",
+            },
+        },
+    )
+    db.upsert_paper_shadow_run_sync(
+        run_id="run-1",
+        plan_date=now.astimezone(timezone(timedelta(hours=8))).date().isoformat(),
+        input_fingerprint="b" * 64,
+        status="within_expectations",
+        order_intent_count=1,
+        simulated_order_count=1,
+        simulated_fill_count=1,
+        divergence_status="within_expectations",
+        next_manual_review_step="review_manual_confirmation",
+        limitations=[],
+        payload={
+            "schema_version": "karkinos.paper_shadow_run.v1",
+            "run_id": "run-1",
+            "orders": [
+                {
+                    "order_id": "SHADOW-FIXTURE-1",
+                    "status": "filled",
+                    "divergence_status": "within_expectations",
+                    "order_intent": {
+                        "action_ref": "action:1",
+                        "symbol": "510300.SH",
+                        "side": "buy",
+                        "estimated_quantity": 100.0,
+                        "estimated_price": 4.0,
+                        "strategy_refs": ["strategy:etf_rotation"],
+                        "risk_refs": ["risk:decision-1"],
+                    },
+                }
+            ],
+            "does_not_submit_broker_order": True,
+            "does_not_mutate_production_ledger": True,
+        },
+    )
 
 
 def _connector(now: datetime = NOW) -> FakeReadOnlyBrokerConnector:
@@ -168,9 +278,152 @@ def _clear_gateway_verification(order: dict, *, version: int = 1) -> dict:
     }
 
 
-def _ready_environment(tmp_path, *, now: datetime = NOW) -> dict:
+def _adapter_release_manifest() -> dict:
+    return {
+        "schema_version": "karkinos.broker_adapter_release_manifest.v1",
+        "release_evidence_ref": "fixture-per-order-adapter-release-v1",
+        "collector_id": "fixture-readonly-confirmation",
+        "deployment_id": "fixture-per-order-deployment-v1",
+        "collector_version": "fixture-v1",
+        "deployment_fingerprint": "8" * 64,
+        "provider": "deterministic_fixture",
+        "gateway_id": "fixture-execution-disabled",
+        "account_alias": "fixture-review",
+        "adapter_authorization_ref": "test-only-owner-authorization",
+        "collection_modes": ["callback", "poll"],
+        "capabilities": {
+            "can_read_account": False,
+            "can_read_cash": False,
+            "can_read_positions": False,
+            "can_read_orders": True,
+            "can_read_fills": True,
+            "can_read_market_session": False,
+            "can_read_heartbeat": True,
+            "can_submit_orders": False,
+            "can_cancel_orders": False,
+        },
+        "boundaries": {
+            "runtime_auth_material_external": True,
+            "strategy_imports_adapter": False,
+            "ai_imports_adapter": False,
+            "core_imports_provider_sdk": False,
+            "writes_oms": False,
+            "writes_production_ledger": False,
+            "writes_risk_state": False,
+            "writes_kill_switch": False,
+            "writes_capital_authority": False,
+            "default_registered": False,
+        },
+        "review_refs": {
+            "adapter_adr": "fixture-adr-v1",
+            "capability_matrix": "fixture-capability-matrix-v1",
+            "threat_model": "fixture-threat-model-v1",
+            "deployment_runbook": "fixture-deployment-runbook-v1",
+            "rollback_runbook": "fixture-rollback-runbook-v1",
+            "privacy_review": "fixture-privacy-review-v1",
+        },
+        "limitations": ["Deterministic per-order confirmation fixture only."],
+    }
+
+
+def _record_observing_adapter_release(db: AppDatabase, now: datetime) -> dict:
+    preview = preview_broker_adapter_release_manifest(
+        json.dumps(_adapter_release_manifest()),
+        source_name="deterministic per-order adapter release fixture",
+    )
+    conformance = run_deterministic_broker_adapter_conformance(
+        preview,
+        run_id="fixture-per-order-conformance-v1",
+    )
+    BrokerAdapterConformanceRepository(db._path).record_report(
+        conformance,
+        acknowledgement=BROKER_ADAPTER_CONFORMANCE_ACKNOWLEDGEMENT,
+    )
+    review = BrokerAdapterReleaseReviewRepository(db._path).record_review(
+        preview,
+        review_id="fixture-per-order-release-review-v1",
+        decision="accepted",
+        reviewer_ref="fixture-human-reviewer",
+        reviewed_at=now.isoformat(),
+        reason_ref="fixture-release-approved",
+        acknowledgement=BROKER_ADAPTER_RELEASE_REVIEW_ACKNOWLEDGEMENT,
+    )
+    lifecycle = {
+        "schema_version": "karkinos.broker_order_lifecycle_export.v1",
+        "provider": "deterministic_fixture",
+        "snapshot_kind": "exact_order_lifecycle",
+        "gateway_id": "fixture-execution-disabled",
+        "account_id": "private-adapter-account-id-must-not-leak",
+        "account_alias": "fixture-review",
+        "captured_at": now.isoformat(),
+        "source_sequence": 1,
+        "orders": [
+            {
+                "broker_order_id": "FIXTURE-ADAPTER-ORDER-1",
+                "client_order_id": "KARK-fixture-adapter-order-1",
+                "symbol": "510300.SH",
+                "side": "buy",
+                "status": "open",
+                "order_quantity": "100",
+                "cumulative_filled_quantity": "0",
+                "cancelled_quantity": "0",
+                "average_fill_price": None,
+                "submitted_at": (now - timedelta(seconds=2)).isoformat(),
+                "updated_at": (now - timedelta(seconds=1)).isoformat(),
+            }
+        ],
+        "fills": [],
+    }
+    collector_payload = {
+        "schema_version": "karkinos.broker_order_lifecycle_collector_batch.v1",
+        "run_id": "fixture-per-order-collector-run-v1",
+        "collector_id": "fixture-readonly-confirmation",
+        "deployment_id": "fixture-per-order-deployment-v1",
+        "collector_version": "fixture-v1",
+        "deployment_fingerprint": "8" * 64,
+        "release_evidence_ref": "fixture-per-order-adapter-release-v1",
+        "release_review_status": "reviewed",
+        "adapter_authorization_ref": "test-only-owner-authorization",
+        "provider": "deterministic_fixture",
+        "gateway_id": "fixture-execution-disabled",
+        "account_id": "private-adapter-account-id-must-not-leak",
+        "account_alias": "fixture-review",
+        "collection_mode": "callback",
+        "source_contact_status": "read_only_contact",
+        "connection_status": "connected",
+        "batch_status": "complete",
+        "cursor": {"previous": 0, "current": 1},
+        "captured_at": now.isoformat(),
+        "event_count": 1,
+        "callbacks_received": 1,
+        "duplicate_callbacks_dropped": 0,
+        "out_of_order_callbacks_dropped": 0,
+        "lifecycle": lifecycle,
+    }
+    collector_preview = preview_broker_order_lifecycle_collector_batch(
+        json.dumps(collector_payload),
+        source_name="deterministic per-order collector fixture",
+        clock=lambda: now,
+    )
+    collector = BrokerOrderLifecycleCollectorRepository(db._path).ingest(
+        collector_preview,
+        acknowledgement=(BROKER_ORDER_LIFECYCLE_COLLECTOR_RECORD_ACKNOWLEDGEMENT),
+    )
+    return {"preview": preview, "review": review, "collector": collector}
+
+
+def _ready_environment(
+    tmp_path,
+    *,
+    now: datetime = NOW,
+    with_adapter_release: bool = True,
+) -> dict:
     db = AppDatabase(tmp_path / "per-order-confirmation.db")
     db.init_sync()
+    _record_gateway_source_evidence(db, now)
+    adapter_release = (
+        _record_observing_adapter_release(db, now) if with_adapter_release else {}
+    )
     shanghai_day = now.astimezone(timezone(timedelta(hours=8))).date().isoformat()
     db.upsert_market_calendar_snapshot_sync(
         build_static_market_calendar_snapshot(
@@ -330,8 +583,10 @@ def _ready_environment(tmp_path, *, now: datetime = NOW) -> dict:
         order_fingerprint=order_fingerprint,
         manual_confirmation_fingerprint=order_fingerprint,
         evidence_refs=(
+            "account_truth:import-run-1",
+            "decision_action:1",
             "risk:decision-1",
-            "paper-shadow:run-1",
+            "paper_shadow:run-1",
             batch_ref,
             ("execution_gateway_verification:" f"{GATEWAY_VERIFICATION_FINGERPRINT}"),
         ),
@@ -367,6 +622,7 @@ def _ready_environment(tmp_path, *, now: datetime = NOW) -> dict:
         execution_gateway_verification_provider=(
             lambda fingerprint: _clear_gateway_verification(order)
         ),
+        account_truth_evidence_provider=_clear_account_truth_evidence,
         clock=lambda: now,
     )
     return {
@@ -380,8 +636,10 @@ def _ready_environment(tmp_path, *, now: datetime = NOW) -> dict:
         "capital_context": context,
         "batch": batch,
         "gateway_verification_fingerprint": GATEWAY_VERIFICATION_FINGERPRINT,
+        "adapter_release": adapter_release,
         "private_key": private_key,
         "trusted_identity": trusted_identity,
+        "account_truth_evidence_provider": _clear_account_truth_evidence,
     }
 
 
@@ -463,6 +721,20 @@ def test_dossier_binds_all_review_evidence_but_keeps_submission_blocked(
     assert dossier["review_blockers"] == []
     assert dossier["capital_evaluation"]["status"] == "pass"
     assert dossier["gateway_gates"]["status"] == "pass"
+    assert dossier["broker_adapter_release"]["status"] == "pass"
+    assert dossier["broker_adapter_release"]["expected_scope"] == {
+        "collector_id": "fixture-readonly-confirmation",
+        "gateway_id": "fixture-execution-disabled",
+        "account_alias": "fixture-review",
+    }
+    assert dossier["broker_adapter_release"]["release"]["review_status"] == ("accepted")
+    assert dossier["broker_adapter_release"]["release"]["conformance_status"] == (
+        "clear"
+    )
+    assert dossier["broker_adapter_release"]["release"]["status"] == (
+        "observing_readonly"
+    )
+    assert dossier["broker_adapter_release"]["provider_contact_performed"] is False
     assert dossier["connector_soak"]["latest_soak_status"] == "healthy"
     assert dossier["prior_execution_reconciliation"]["status"] == "pass"
     assert dossier["kill_switch"]["status"] == "pass"
@@ -498,6 +770,190 @@ def test_dossier_binds_all_review_evidence_but_keeps_submission_blocked(
     assert dossier["authorizes_execution"] is False
     assert dossier["safety"]["does_not_contact_broker"] is True
     assert "private-per-order-account-id-must-not-leak" not in json.dumps(dossier)
+    assert "private-adapter-account-id-must-not-leak" not in json.dumps(dossier)
+
+
+def test_gateway_gate_refs_resolve_to_exact_persisted_order_lineage(tmp_path) -> None:
+    env = _ready_environment(tmp_path)
+
+    dossier = env["service"].preview_dossier(
+        env["order"]["order_id"],
+        capital_evaluation_input_fingerprint=env["evaluation"]["input_fingerprint"],
+        prior_batch_reconciliation_fingerprint=env["batch"][
+            "batch_reconciliation_fingerprint"
+        ],
+        execution_gateway_verification_fingerprint=(
+            env["gateway_verification_fingerprint"]
+        ),
+    )
+
+    gateway = dossier["gateway_gates"]
+    assert dossier["schema_version"] == "karkinos.per_order_confirmation_dossier.v5"
+    assert gateway["schema_version"] == "karkinos.per_order_gateway_gate_summary.v2"
+    assert gateway["status"] == "pass"
+    assert gateway["blockers"] == []
+    assert {
+        gate: evidence["source_identifier"]
+        for gate, evidence in gateway["gates"].items()
+    } == {
+        "account_truth": "import-run-1",
+        "research_evidence": "1",
+        "risk": "decision-1",
+        "paper_shadow": "run-1",
+    }
+    assert all(
+        evidence["resolution_status"] == "resolved_clear"
+        and evidence["source_fingerprint"]
+        for evidence in gateway["gates"].values()
+    )
+    assert gateway["persisted_facts_only"] is True
+    assert gateway["provider_contact_performed"] is False
+    assert gateway["authorizes_execution"] is False
+
+
+def test_nonempty_spoofed_gateway_ref_fails_closed(tmp_path) -> None:
+    env = _ready_environment(tmp_path)
+    order = env["db"].get_oms_order_sync(env["order"]["order_id"])
+    payload = json.loads(order["payload_json"])
+    payload["gateway_evidence"]["risk"] = {
+        "gate_status": "passed",
+        "evidence_ref": "risk:forged-decision",
+    }
+    env["db"].upsert_oms_order_sync({**order, "payload": payload})
+
+    dossier = env["service"].preview_dossier(
+        env["order"]["order_id"],
+        capital_evaluation_input_fingerprint=env["evaluation"]["input_fingerprint"],
+        prior_batch_reconciliation_fingerprint=env["batch"][
+            "batch_reconciliation_fingerprint"
+        ],
+        execution_gateway_verification_fingerprint=(
+            env["gateway_verification_fingerprint"]
+        ),
+    )
+
+    assert "gateway_evidence_capital_ref_mismatch:risk" in dossier["review_blockers"]
+    assert "gateway_evidence_source_not_found:risk" in dossier["review_blockers"]
+    assert dossier["gateway_gates"]["gates"]["risk"]["raw_status"] == "passed"
+    assert dossier["gateway_gates"]["gates"]["risk"]["status"] == "blocked"
+    assert (
+        "gateway_evidence_source_not_found:risk" in dossier["hard_submission_blockers"]
+    )
+    assert dossier["review_ready"] is False
+    assert dossier["authorizes_execution"] is False
+
+
+def test_paper_shadow_order_scope_drift_invalidates_exact_dossier(tmp_path) -> None:
+    env = _ready_environment(tmp_path)
+    kwargs = {
+        "capital_evaluation_input_fingerprint": env["evaluation"]["input_fingerprint"],
+        "prior_batch_reconciliation_fingerprint": env["batch"][
+            "batch_reconciliation_fingerprint"
+        ],
+        "execution_gateway_verification_fingerprint": env[
+            "gateway_verification_fingerprint"
+        ],
+    }
+    before = env["service"].preview_dossier(env["order"]["order_id"], **kwargs)
+    run = env["db"].get_paper_shadow_run_sync("run-1")
+    payload = json.loads(run["payload_json"])
+    payload["orders"][0]["order_intent"]["estimated_quantity"] = 200.0
+    env["db"].upsert_paper_shadow_run_sync(
+        run_id="run-1",
+        plan_date=run["plan_date"],
+        input_fingerprint=run["input_fingerprint"],
+        status=run["status"],
+        order_intent_count=run["order_intent_count"],
+        simulated_order_count=run["simulated_order_count"],
+        simulated_fill_count=run["simulated_fill_count"],
+        divergence_status=run["divergence_status"],
+        next_manual_review_step=run["next_manual_review_step"],
+        limitations=json.loads(run["limitations_json"]),
+        payload=payload,
+    )
+
+    drifted = env["service"].preview_dossier(env["order"]["order_id"], **kwargs)
+
+    blocker = "gateway_evidence_scope_mismatch:paper_shadow:quantity"
+    assert blocker in drifted["review_blockers"]
+    assert blocker in drifted["hard_submission_blockers"]
+    assert drifted["dossier_fingerprint"] != before["dossier_fingerprint"]
+    assert drifted["review_ready"] is False
+    assert drifted["authorizes_execution"] is False
+
+
+def test_account_truth_source_identity_drift_fails_closed(tmp_path) -> None:
+    env = _ready_environment(tmp_path)
+    drifted_account_truth = {
+        **_clear_account_truth_evidence(),
+        "import_run_id": "newer-import-run",
+        "source_fingerprint": "c" * 64,
+    }
+    service = PerOrderConfirmationService(
+        db=env["db"],
+        connectors=[env["connector"]],
+        trusted_operator_identities=[env["trusted_identity"]],
+        trading_controls=env["controls"],
+        execution_gateway_verification_provider=(
+            lambda fingerprint: _clear_gateway_verification(env["order"])
+        ),
+        account_truth_evidence_provider=lambda: drifted_account_truth,
+        clock=lambda: NOW,
+    )
+
+    dossier = service.preview_dossier(
+        env["order"]["order_id"],
+        capital_evaluation_input_fingerprint=env["evaluation"]["input_fingerprint"],
+        prior_batch_reconciliation_fingerprint=env["batch"][
+            "batch_reconciliation_fingerprint"
+        ],
+        execution_gateway_verification_fingerprint=(
+            env["gateway_verification_fingerprint"]
+        ),
+    )
+
+    blocker = "gateway_evidence_source_identity_mismatch:account_truth"
+    assert blocker in dossier["review_blockers"]
+    assert blocker in dossier["hard_submission_blockers"]
+    assert dossier["gateway_gates"]["gates"]["account_truth"]["status"] == ("blocked")
+    assert dossier["review_ready"] is False
+    assert dossier["authorizes_execution"] is False
+
+
+def test_account_truth_source_provider_failure_is_sanitized(tmp_path) -> None:
+    env = _ready_environment(tmp_path)
+
+    def failed_provider() -> dict:
+        raise RuntimeError("private Account Truth source must not leak")
+
+    service = PerOrderConfirmationService(
+        db=env["db"],
+        connectors=[env["connector"]],
+        trading_controls=env["controls"],
+        execution_gateway_verification_provider=(
+            lambda fingerprint: _clear_gateway_verification(env["order"])
+        ),
+        account_truth_evidence_provider=failed_provider,
+        clock=lambda: NOW,
+    )
+
+    dossier = service.preview_dossier(
+        env["order"]["order_id"],
+        capital_evaluation_input_fingerprint=env["evaluation"]["input_fingerprint"],
+        prior_batch_reconciliation_fingerprint=env["batch"][
+            "batch_reconciliation_fingerprint"
+        ],
+        execution_gateway_verification_fingerprint=(
+            env["gateway_verification_fingerprint"]
+        ),
+    )
+
+    blocker = "gateway_evidence_provider_failed:account_truth"
+    assert blocker in dossier["review_blockers"]
+    assert blocker in dossier["hard_submission_blockers"]
+    assert "private Account Truth source must not leak" not in json.dumps(dossier)
+    assert dossier["review_ready"] is False
+    assert dossier["authorizes_execution"] is False
 
 
 def test_exact_dossier_confirmation_is_append_only_reused_and_non_mutating(
@@ -621,6 +1077,7 @@ def test_dossier_fingerprint_ignores_age_counter_but_changes_at_stale_boundary(
         execution_gateway_verification_provider=(
             lambda fingerprint: _clear_gateway_verification(env["order"])
         ),
+        account_truth_evidence_provider=_clear_account_truth_evidence,
         clock=lambda: current_time[0],
     )
     order_id = env["order"]["order_id"]
@@ -791,6 +1248,7 @@ def test_expired_capital_evaluation_and_stale_soak_evidence_fail_closed(
         execution_gateway_verification_provider=(
             lambda fingerprint: _clear_gateway_verification(env["order"])
         ),
+        account_truth_evidence_provider=_clear_account_truth_evidence,
         clock=lambda: later,
     )
 
@@ -863,6 +1321,7 @@ def test_unconfirmed_order_open_reconciliation_and_missing_connector_fail_closed
         db=env["db"],
         connectors=[],
         trading_controls=env["controls"],
+        account_truth_evidence_provider=_clear_account_truth_evidence,
         clock=lambda: NOW,
     )
 
@@ -899,6 +1358,7 @@ def test_status_makes_unverified_non_submitting_boundary_explicit(tmp_path) -> N
     assert status["operator_identity_verified"] is False
     assert status["broker_submission_enabled"] is False
     assert status["controlled_bridge_promotion_ready"] is False
+    assert status["broker_adapter_release_binding"] == "required_per_dossier"
     assert status["broker_soak_promotion_binding"] == "required_per_dossier"
     assert status["execution_gateway_verification_binding"] == ("required_per_dossier")
 
@@ -918,6 +1378,7 @@ def test_signed_stage1_promotion_is_bound_but_does_not_remove_execution_blocks(
         execution_gateway_verification_provider=(
             lambda fingerprint: _clear_gateway_verification(env["order"])
         ),
+        account_truth_evidence_provider=_clear_account_truth_evidence,
         clock=lambda: NOW,
     )
 
@@ -966,6 +1427,204 @@ def test_signed_stage1_promotion_is_bound_but_does_not_remove_execution_blocks(
     assert "runtime_execution_authority_disabled" in dossier["hard_submission_blockers"]
     assert "live_gateway_not_implemented" in dossier["hard_submission_blockers"]
     assert dossier["submission_status"] == "blocked"
+    assert dossier["authorizes_execution"] is False
+
+
+def test_adapter_release_revocation_invalidates_exact_dossier_and_blocks_review(
+    tmp_path,
+) -> None:
+    env = _ready_environment(tmp_path)
+    service = PerOrderConfirmationService(
+        db=env["db"],
+        connectors=[env["connector"]],
+        trusted_operator_identities=[env["trusted_identity"]],
+        trading_controls=env["controls"],
+        broker_soak_promotion_evidence_provider=(
+            lambda connector_id: _signed_stage1_promotion()
+        ),
+        execution_gateway_verification_provider=(
+            lambda fingerprint: _clear_gateway_verification(env["order"])
+        ),
+        account_truth_evidence_provider=_clear_account_truth_evidence,
+        clock=lambda: NOW,
+    )
+    kwargs = {
+        "capital_evaluation_input_fingerprint": env["evaluation"]["input_fingerprint"],
+        "prior_batch_reconciliation_fingerprint": env["batch"][
+            "batch_reconciliation_fingerprint"
+        ],
+        "execution_gateway_verification_fingerprint": env[
+            "gateway_verification_fingerprint"
+        ],
+    }
+    current = service.preview_dossier(env["order"]["order_id"], **kwargs)
+    approval = _operator_approval(env, current["dossier_fingerprint"])
+
+    BrokerAdapterReleaseReviewRepository(env["db"]._path).record_review(
+        env["adapter_release"]["preview"],
+        review_id="fixture-per-order-release-revoked-v1",
+        decision="revoked",
+        reviewer_ref="fixture-human-reviewer",
+        reviewed_at=(NOW + timedelta(minutes=1)).isoformat(),
+        reason_ref="fixture-release-revoked",
+        acknowledgement=BROKER_ADAPTER_RELEASE_REVIEW_ACKNOWLEDGEMENT,
+    )
+    revoked = service.preview_dossier(env["order"]["order_id"], **kwargs)
+
+    assert current["review_ready"] is True
+    assert current["broker_adapter_release"]["status"] == "pass"
+    assert revoked["dossier_fingerprint"] != current["dossier_fingerprint"]
+    assert revoked["review_status"] == "blocked_review"
+    assert revoked["broker_adapter_release"]["status"] == "blocked"
+    assert revoked["broker_adapter_release"]["release"]["review_status"] == ("revoked")
+    assert "broker_adapter_release_review_not_accepted" in revoked["review_blockers"]
+    assert (
+        "broker_adapter_release_not_observing_readonly"
+        in revoked["hard_submission_blockers"]
+    )
+    with pytest.raises(PerOrderConfirmationRejected) as exc_info:
+        service.record_confirmation(
+            env["order"]["order_id"],
+            **kwargs,
+            dossier_fingerprint=current["dossier_fingerprint"],
+            operator_label="local-owner",
+            operator_approval_id=approval["approval_id"],
+            acknowledgement=PER_ORDER_CONFIRMATION_ACKNOWLEDGEMENT,
+        )
+    assert "dossier_fingerprint_mismatch" in (
+        exc_info.value.evidence["rejection_reasons"]
+    )
+    assert "dossier_review_blocked" in exc_info.value.evidence["rejection_reasons"]
+    assert exc_info.value.evidence["authorizes_execution"] is False
+
+
+def test_adapter_release_binding_requires_exact_capital_scope(tmp_path) -> None:
+    env = _ready_environment(tmp_path)
+    mismatched_policy = replace(
+        env["capital_policy"],
+        authorization_id="auth-review-other-gateway",
+        execution_gateway_ids=("other-execution-gateway",),
+    )
+    mismatched_context = replace(
+        env["capital_context"],
+        execution_gateway_id="other-execution-gateway",
+    )
+    evaluation = CapitalAuthorizationAuditService(
+        db=env["db"],
+        clock=lambda: NOW,
+    ).record_evaluation(policy=mismatched_policy, context=mismatched_context)
+
+    dossier = env["service"].preview_dossier(
+        env["order"]["order_id"],
+        capital_evaluation_input_fingerprint=evaluation["input_fingerprint"],
+        prior_batch_reconciliation_fingerprint=env["batch"][
+            "batch_reconciliation_fingerprint"
+        ],
+        execution_gateway_verification_fingerprint=env[
+            "gateway_verification_fingerprint"
+        ],
+    )
+
+    assert dossier["broker_adapter_release"]["expected_scope"]["gateway_id"] == (
+        "other-execution-gateway"
+    )
+    assert dossier["broker_adapter_release"]["matching_release_count"] == 0
+    assert "broker_adapter_release_scope_not_found" in dossier["review_blockers"]
+    assert "broker_adapter_release_scope_not_found" in (
+        dossier["hard_submission_blockers"]
+    )
+    assert dossier["review_ready"] is False
+    assert dossier["authorizes_execution"] is False
+
+
+def test_newer_exact_release_without_collector_never_falls_back_to_old_pass(
+    tmp_path,
+) -> None:
+    env = _ready_environment(tmp_path)
+    manifest = {
+        **_adapter_release_manifest(),
+        "release_evidence_ref": "fixture-per-order-adapter-release-v2",
+        "deployment_id": "fixture-per-order-deployment-v2",
+        "collector_version": "fixture-v2",
+        "deployment_fingerprint": "9" * 64,
+    }
+    preview = preview_broker_adapter_release_manifest(
+        json.dumps(manifest),
+        source_name="newer deterministic per-order adapter release fixture",
+    )
+    conformance = run_deterministic_broker_adapter_conformance(
+        preview,
+        run_id="fixture-per-order-conformance-v2",
+    )
+    BrokerAdapterConformanceRepository(env["db"]._path).record_report(
+        conformance,
+        acknowledgement=BROKER_ADAPTER_CONFORMANCE_ACKNOWLEDGEMENT,
+    )
+    BrokerAdapterReleaseReviewRepository(env["db"]._path).record_review(
+        preview,
+        review_id="fixture-per-order-release-review-v2",
+        decision="accepted",
+        reviewer_ref="fixture-human-reviewer",
+        reviewed_at=(NOW + timedelta(minutes=1)).isoformat(),
+        reason_ref="fixture-new-release-approved",
+        acknowledgement=BROKER_ADAPTER_RELEASE_REVIEW_ACKNOWLEDGEMENT,
+    )
+
+    dossier = env["service"].preview_dossier(
+        env["order"]["order_id"],
+        capital_evaluation_input_fingerprint=env["evaluation"]["input_fingerprint"],
+        prior_batch_reconciliation_fingerprint=env["batch"][
+            "batch_reconciliation_fingerprint"
+        ],
+        execution_gateway_verification_fingerprint=env[
+            "gateway_verification_fingerprint"
+        ],
+    )
+
+    binding = dossier["broker_adapter_release"]
+    assert binding["matching_release_count"] == 2
+    assert binding["release"]["release_evidence_ref"] == (
+        "fixture-per-order-adapter-release-v2"
+    )
+    assert binding["release"]["collector_status"] == "not_started"
+    assert "broker_adapter_release_collector_not_recorded" in (
+        dossier["review_blockers"]
+    )
+    assert "broker_adapter_release_not_observing_readonly" in (
+        dossier["hard_submission_blockers"]
+    )
+    assert dossier["review_ready"] is False
+    assert dossier["authorizes_execution"] is False
+
+
+def test_missing_adapter_release_evidence_fails_closed_without_provider_contact(
+    tmp_path,
+) -> None:
+    env = _ready_environment(tmp_path, with_adapter_release=False)
+
+    dossier = env["service"].preview_dossier(
+        env["order"]["order_id"],
+        capital_evaluation_input_fingerprint=env["evaluation"]["input_fingerprint"],
+        prior_batch_reconciliation_fingerprint=env["batch"][
+            "batch_reconciliation_fingerprint"
+        ],
+        execution_gateway_verification_fingerprint=env[
+            "gateway_verification_fingerprint"
+        ],
+    )
+
+    binding = dossier["broker_adapter_release"]
+    assert binding["status"] == "blocked"
+    assert binding["release"] is None
+    assert binding["provider_contact_performed"] is False
+    assert binding["persisted_evidence_only"] is True
+    assert "broker_adapter_readiness_evidence_store_unavailable" in (
+        dossier["review_blockers"]
+    )
+    assert "broker_adapter_release_scope_not_found" in (
+        dossier["hard_submission_blockers"]
+    )
+    assert dossier["review_ready"] is False
     assert dossier["authorizes_execution"] is False
 
 
@@ -1022,6 +1681,7 @@ def test_recorded_confirmation_resolves_current_sources_for_submit_boundary(
         execution_gateway_verification_provider=(
             lambda fingerprint: _clear_gateway_verification(env["order"])
         ),
+        account_truth_evidence_provider=_clear_account_truth_evidence,
         clock=lambda: NOW,
     )
     order_id = env["order"]["order_id"]
@@ -1080,6 +1740,7 @@ def test_signed_stage1_promotion_source_drift_invalidates_exact_order_dossier(
         execution_gateway_verification_provider=(
             lambda fingerprint: _clear_gateway_verification(env["order"])
         ),
+        account_truth_evidence_provider=_clear_account_truth_evidence,
         clock=lambda: NOW,
     )
     order_id = env["order"]["order_id"]
@@ -1153,6 +1814,7 @@ def test_missing_or_failed_signed_stage1_provider_fails_closed_without_details(
         execution_gateway_verification_provider=(
             lambda fingerprint: _clear_gateway_verification(env["order"])
         ),
+        account_truth_evidence_provider=_clear_account_truth_evidence,
         clock=lambda: NOW,
     )
     malformed_promotion = _signed_stage1_promotion()
@@ -1170,6 +1832,7 @@ def test_missing_or_failed_signed_stage1_provider_fails_closed_without_details(
         execution_gateway_verification_provider=(
             lambda fingerprint: _clear_gateway_verification(env["order"])
         ),
+        account_truth_evidence_provider=_clear_account_truth_evidence,
         clock=lambda: NOW,
     )
     failed = failed_service.preview_dossier(
@@ -1265,6 +1928,7 @@ def test_gateway_verification_scope_mismatch_blocks_exact_dossier(
         trusted_operator_identities=[env["trusted_identity"]],
         trading_controls=env["controls"],
         execution_gateway_verification_provider=lambda fingerprint: verification,
+        account_truth_evidence_provider=_clear_account_truth_evidence,
         clock=lambda: NOW,
     )
 
@@ -1299,6 +1963,7 @@ def test_gateway_verification_source_drift_invalidates_operator_approval(
         trusted_operator_identities=[env["trusted_identity"]],
         trading_controls=env["controls"],
         execution_gateway_verification_provider=lambda fingerprint: current[0],
+        account_truth_evidence_provider=_clear_account_truth_evidence,
         clock=lambda: NOW,
     )
     kwargs = {
@@ -1356,6 +2021,7 @@ def test_gateway_verification_provider_failures_are_sanitized_and_fail_closed(
         db=env["db"],
         connectors=[env["connector"]],
         trading_controls=env["controls"],
+        account_truth_evidence_provider=_clear_account_truth_evidence,
         clock=lambda: NOW,
     )
     failed_service = PerOrderConfirmationService(
@@ -1363,6 +2029,7 @@ def test_gateway_verification_provider_failures_are_sanitized_and_fail_closed(
         connectors=[env["connector"]],
         trading_controls=env["controls"],
         execution_gateway_verification_provider=failed_provider,
+        account_truth_evidence_provider=_clear_account_truth_evidence,
         clock=lambda: NOW,
     )
     kwargs = {
@@ -1405,6 +2072,7 @@ def test_capital_evaluation_must_reference_exact_gateway_verification(
         connectors=[env["connector"]],
         trading_controls=env["controls"],
         execution_gateway_verification_provider=lambda fingerprint: verification,
+        account_truth_evidence_provider=_clear_account_truth_evidence,
         clock=lambda: NOW,
     )
 
@@ -1478,6 +2146,7 @@ def test_recorded_runtime_verification_resolves_into_exact_per_order_dossier(
         trusted_operator_identities=[env["trusted_identity"]],
         trading_controls=env["controls"],
         execution_gateway_verification_provider=verifier.resolve,
+        account_truth_evidence_provider=_clear_account_truth_evidence,
         clock=lambda: NOW,
     )
 

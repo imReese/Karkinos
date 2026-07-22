@@ -8,7 +8,7 @@ in Git commits and pull requests.
 
 ## Current Baseline
 
-As of 2026-07-17, v0.2 through v1.7 are complete. The v1.8 control-plane
+As of 2026-07-18, v0.2 through v1.7 are complete. The v1.8 control-plane
 foundation and AI-native research foundation through Phase 1.18 are
 implemented. The active product milestone is the broker-connected controlled
 per-order pilot described in [ROADMAP.md](ROADMAP.md).
@@ -31,6 +31,9 @@ The latest completed cross-cutting work includes:
   signal/action/risk/order/fill chain together with the canonical strategy
   contribution snapshot, rejects drift, records idempotently with a replayable
   append-only audit chain, and cannot mutate financial facts or authority;
+- a persisted-only Strategy Lab learning queue that replay-checks the stored
+  review, rebinds current evidence, emits deterministic human next actions, and
+  offers only copyable human-started research handoffs with no AI or authority;
 - a canonical five-dimension Decision Quality Score over persisted Decision,
   with idempotent daily capture, tamper-evident replay, longitudinal coverage,
   and no AI, financial, risk, execution, or authority side effects;
@@ -63,18 +66,14 @@ The latest completed cross-cutting work includes:
   controlled-intent/OMS result status may be resolved from definitive query
   evidence;
 - provider-neutral manual open/partial cancellation handoff and terminal rejection review; both recheck drift and perform no broker call, while a separate signed command binds lifecycle/release/gateway health, atomically admits one cancel effect, and permits only query recovery without making gateway responses canonical;
-- provider-neutral adapter release manifests with append-only human
-  accept/reject/revoke evidence and exact live collector prepare/commit
-  binding, without selecting or registering a real provider.
+- provider-neutral adapter release manifests with append-only human accept/reject/revoke evidence, exact live collector prepare/commit binding, a default-collapsed signed Web review, and an eight-criterion machine-verifiable acceptance audit; none edits the database directly, selects/registers/contacts a provider, or grants execution authority.
 - provider-neutral deterministic conformance fixtures with append-only reports,
   exact manifest/review binding, latest-result precedence, and prepare/commit
   revalidation; this does not claim a real adapter is supported.
 - connector-scoped soak recovery evidence where unscoped, unrelated, or mixed
   drills cannot satisfy promotion, and the newest scoped failure invalidates an
   older pass and its signed dossier acceptance.
-- a read-only Trading projection of the exact connector's 20-day coverage,
-  three daily phases, recovery drills, Account Truth binding, and signed owner
-  acceptance; it exposes no promotion, registration, submit, or cancel action.
+- a read-only Trading projection of exact 20-day soak evidence and signed owner acceptance, plus a default-collapsed, no-database-edit operator review for the separately signed, expiring, one-way-revocable persisted write-edge release that production submit/cancel can resolve only while current; the Web review blocks credential-key manifests locally and exposes no submit/cancel, adapter-registration, or capital-authority action.
 
 Exact historical test totals are intentionally not maintained here because
 they become stale after every change. CI artifacts and the acceptance-audit
@@ -93,9 +92,9 @@ Implemented foundation:
 - signed per-order and session attestations;
 - gateway verification and exact evidence binding;
 - session-start Account Truth, atomic account/symbol budgets, and rate limits;
-- signed expiring runtime sessions, live gates, pause, revocation, and
-  equal-or-narrower replacement;
-- default-closed one-shot submission, unknown recovery, cross-order interlock, and separately signed exact cancellation with an atomic one-effect claim plus no-recancel query recovery; gateway telemetry stays non-authoritative and cannot mutate OMS, ledger, risk, kill switch, interlock, or capital authority;
+- signed expiring runtime sessions, live gates, pause, equal-or-narrower
+  replacement, and exact-preview, offline-signed one-way revocation from Decision;
+- default-closed one-shot submission, unknown recovery, cross-order interlock, and separately signed exact cancellation with an atomic one-effect claim plus no-recancel query recovery; their production factories can resolve only a current persisted write-edge release, while gateway telemetry stays non-authoritative and cannot mutate OMS, ledger, risk, kill switch, interlock, or capital authority;
 - signed exact-terminal clearance for full fill, no-fill cancel, and
   partial-fill-then-cancel, plus broker-neutral lifecycle ingestion; open
   partial fills remain blocked and clearance itself cannot post the ledger;
@@ -139,11 +138,11 @@ Implemented foundation:
   query/retry/submit/cancel, change OMS/ledger/authority, release the interlock,
   or prove a later broker outcome.
 
-M4 current per-order dossier assumptions and risk record:
+M4 current adapter/per-order dossier and write-release assumptions and risk record:
 
-- The newest exact order-matching capital evaluation is authoritative even when blocked; unique prior-batch/gateway references are mandatory, and malformed, ambiguous, missing, or scan-truncated evidence fails closed.
-- Deterministic tests cover server-side resolution, newer-blocked precedence, replay/idempotence, unchanged OMS, strict schemas, collapsed/empty/blocked UI, Automation/Decision handoff, source drift/failure, explicit-scan blocker-alert restart idempotence, offline proof, and no submit/cancel requests.
-- Risk is low: GET adds only a fail-closed projection and Trading link; explicit scan may write an idempotent automation-alert row, while the only confirmation write remains non-authorizing. No provider/adapter is selected and OMS, ledger, Account Truth, risk, kill switch, broker actions, and capital authority remain unchanged.
+- The adapter reviewer supplies an already reviewed credential-free provider-neutral manifest and stable external refs; its signed acceptance binds the exact newest conformance/current review/approval id but does not mean a provider is selected or deployed. Separately, the newest exact order-matching capital evaluation is authoritative even when blocked; dossier v5 resolves unique prior-batch/gateway plus Account Truth, Decision, risk, paper/shadow, and accepted read-only adapter evidence, while the server owns the strict write-release scope and at-most-12-hour window.
+- Deterministic tests cover adapter strict manifest and nested credential-key rejection, exact signature/retry, accept/reject/revoke, changed conformance/current-review drift, GET-without-schema creation, collapsed Web zero-read/no-broker behavior, plus dossier source drift and write-release issue/revoke, expiry, scope, soak, trusted-key, tamper, zero-financial-write, provider-resolution, and local credential tests.
+- Risk is HIGH only where production submit/cancel consumes a separately reviewed persisted write-edge release; adapter review and Web wiring are safety-positive LOW/MEDIUM scope. Missing/drifted/revoked evidence remains default-closed, rejection/revocation can only block, and these UIs select/contact/register no provider, create no order, and change no OMS, ledger, Account Truth, risk, kill switch, lifecycle, per-order, or capital-authority fact.
 
 M4 non-authorizing operator-package assumptions and risk record:
 
