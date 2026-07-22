@@ -2,6 +2,8 @@ import { useMemo, useState, type FormEvent } from 'react';
 
 import { useCopy } from '../../../app/copy';
 import {
+  ControlledActionZone,
+  EvidenceState,
   FilterBar,
   MetricStrip,
   StatusBadge as WorkbenchStatusBadge,
@@ -1027,7 +1029,7 @@ export function TradingPage() {
         className="app-workbench-section min-w-0 overflow-hidden"
         data-testid="trading-review-queue"
       >
-        <div className="min-w-0 p-4 sm:p-5">
+        <div className="min-w-0 px-1 py-4 sm:px-3">
           <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div className="min-w-0">
               <div className="app-product-mark">{labels.filterTitle}</div>
@@ -1056,33 +1058,46 @@ export function TradingPage() {
                   ))}
                 </select>
               </label>
-              <label className="grid gap-2 text-sm font-medium">
-                {labels.symbolFilter}
-                <input
-                  name="trading-symbol-filter"
-                  autoComplete="off"
-                  className="app-field rounded-[var(--app-radius-control)] px-4 py-3 text-sm"
-                  value={symbolFilter}
-                  onChange={(event) => setSymbolFilter(event.target.value)}
-                  placeholder={labels.symbolPlaceholder}
-                  aria-label={labels.symbolFilter}
-                />
-              </label>
-              <label className="grid gap-2 text-sm font-medium">
-                {labels.sideFilter}
-                <select
-                  className="app-field rounded-[var(--app-radius-control)] px-4 py-3 text-sm"
-                  value={sideFilter}
-                  onChange={(event) =>
-                    setSideFilter(event.target.value as SideFilter)
-                  }
-                  aria-label={labels.sideFilter}
-                >
-                  <option value="all">{labels.allSides}</option>
-                  <option value="buy">{labels.buy}</option>
-                  <option value="sell">{labels.sell}</option>
-                </select>
-              </label>
+              <details
+                className="group min-w-0 sm:col-span-2 sm:contents"
+                data-testid="trading-secondary-filters"
+              >
+                <summary className="app-button-ghost flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 rounded-[var(--app-radius-control)] px-3 text-sm font-semibold text-[var(--app-text-secondary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] sm:hidden [&::-webkit-details-marker]:hidden">
+                  <span>{labels.moreFilters}</span>
+                  <span className="text-xs font-normal text-[var(--app-text-tertiary)]">
+                    {labels.moreFiltersDetail}
+                  </span>
+                </summary>
+                <div className="hidden min-w-0 gap-3 pt-2 group-open:grid sm:contents sm:pt-0">
+                  <label className="grid gap-2 text-sm font-medium">
+                    {labels.symbolFilter}
+                    <input
+                      name="trading-symbol-filter"
+                      autoComplete="off"
+                      className="app-field rounded-[var(--app-radius-control)] px-4 py-3 text-sm"
+                      value={symbolFilter}
+                      onChange={(event) => setSymbolFilter(event.target.value)}
+                      placeholder={labels.symbolPlaceholder}
+                      aria-label={labels.symbolFilter}
+                    />
+                  </label>
+                  <label className="grid gap-2 text-sm font-medium">
+                    {labels.sideFilter}
+                    <select
+                      className="app-field rounded-[var(--app-radius-control)] px-4 py-3 text-sm"
+                      value={sideFilter}
+                      onChange={(event) =>
+                        setSideFilter(event.target.value as SideFilter)
+                      }
+                      aria-label={labels.sideFilter}
+                    >
+                      <option value="all">{labels.allSides}</option>
+                      <option value="buy">{labels.buy}</option>
+                      <option value="sell">{labels.sell}</option>
+                    </select>
+                  </label>
+                </div>
+              </details>
             </div>
           </div>
 
@@ -1205,19 +1220,23 @@ export function TradingPage() {
         onAcceptSimulationReview={() => void handleAcceptSimulationReview()}
       />
 
-      <section className="app-panel rounded-[var(--app-radius-surface)]">
-        <div className="p-4 sm:p-5">
+      <section className="app-workbench-section min-w-0 py-4">
+        <div className="px-1 sm:px-3">
           <div>
             <div className="app-product-mark">{labels.historyKicker}</div>
             <h2 className="app-card-title mt-1.5">{labels.historyTitle}</h2>
             <p className="app-muted mt-2 text-sm">{labels.historyDetail}</p>
           </div>
           {completedOrders.length === 0 ? (
-            <div className="mt-5 rounded-2xl border border-dashed border-[color-mix(in_srgb,var(--app-border)_36%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-4 py-5 text-sm text-[var(--app-muted)]">
-              {labels.noHistory}
-            </div>
+            <EvidenceState
+              className="mt-4"
+              kind="empty"
+              statusLabel={labels.historyKicker}
+              title={labels.noHistory}
+              description={labels.historyDetail}
+            />
           ) : (
-            <div className="mt-5 grid gap-2">
+            <div className="mt-4 grid divide-y divide-[var(--app-divider)]">
               {completedOrders.slice(0, 8).map((order) => (
                 <AuditRow
                   key={order.order_id}
@@ -1655,8 +1674,8 @@ function ExecutionAuditPanel({
     : [];
 
   return (
-    <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]">
-      <div className="app-terminal-inner min-w-0 rounded-[27px] p-4 sm:p-5">
+    <section className="app-workbench-section min-w-0 py-4">
+      <div className="min-w-0 px-1 sm:px-3">
         <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <div className="app-product-mark">{labels.executionAudit}</div>
@@ -1667,9 +1686,22 @@ function ExecutionAuditPanel({
               {labels.executionAuditDetail}
             </p>
           </div>
+        </div>
+
+        <ControlledActionZone
+          className="mt-4"
+          tone="info"
+          title={labels.simulationReviewAction}
+          description={labels.simulationReviewActionDetail}
+          evidence={
+            paperShadowRun?.status
+              ? formatPublicStatus(paperShadowRun.status, locale)
+              : undefined
+          }
+        >
           <button
             type="button"
-            className="app-button-secondary shrink-0 rounded-2xl px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+            className="app-button-secondary shrink-0 rounded-[var(--app-radius-control)] px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
             disabled={shadowRunPending}
             onClick={onRunShadowReview}
           >
@@ -1677,19 +1709,34 @@ function ExecutionAuditPanel({
               ? labels.runningShadowReview
               : labels.runShadowReview}
           </button>
-        </div>
+          {canRecordSimulationReview ? (
+            <button
+              type="button"
+              className="app-button-primary shrink-0 rounded-[var(--app-radius-control)] px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={reviewPending}
+              onClick={onAcceptSimulationReview}
+            >
+              {reviewPending
+                ? labels.recordingSimulationReview
+                : labels.recordSimulationReview}
+            </button>
+          ) : null}
+        </ControlledActionZone>
 
         {shadowRunResult ? (
-          <div className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-success)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_10%,transparent)] px-4 py-3 text-sm text-[var(--app-success)]">
-            {labels.shadowRunResult(
+          <EvidenceState
+            className="mt-3"
+            kind="ready"
+            statusLabel={labels.executionAudit}
+            title={labels.shadowRunResult(
               shadowRunResult.processed_count,
               shadowRunResult.reused_count,
             )}
-          </div>
+          />
         ) : null}
 
         {latestPaperShadowEvidenceItems.length > 0 ? (
-          <div className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3 text-sm">
+          <div className="mt-3 border-y border-[var(--app-divider)] px-3 py-3 text-sm">
             <div className="font-semibold text-[var(--app-text)]">
               {locale === 'zh'
                 ? '最新 paper/shadow 运行'
@@ -1709,41 +1756,25 @@ function ExecutionAuditPanel({
         ) : null}
 
         {needsSimulationReview || reviewAccepted ? (
-          <div className="mt-3 flex min-w-0 flex-col gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_9%,transparent)] px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <div className="font-semibold text-[var(--app-text)]">
-                {reviewAccepted
-                  ? labels.simulationReviewAccepted
-                  : labels.simulationReviewNeedsAttention}
-              </div>
-              {reviewAccepted ? null : (
-                <div className="app-muted mt-1 break-words">
-                  {labels.simulationReviewNeedsAttentionDetail}
-                </div>
-              )}
-              {acceptedReviewEvidenceItems.length > 0 ? (
-                <div className="mt-2 grid min-w-0 gap-1 text-[var(--app-soft)]">
-                  {acceptedReviewEvidenceItems.map((item) => (
-                    <div className="min-w-0 break-words" key={item}>
+          <EvidenceState
+            className="mt-3"
+            kind={reviewAccepted ? 'ready' : 'partial'}
+            statusLabel={labels.executionAudit}
+            title={
+              reviewAccepted
+                ? labels.simulationReviewAccepted
+                : labels.simulationReviewNeedsAttention
+            }
+            description={
+              reviewAccepted
+                ? acceptedReviewEvidenceItems.map((item) => (
+                    <span className="block" key={item}>
                       {item}
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-            {canRecordSimulationReview ? (
-              <button
-                type="button"
-                className="app-button-secondary shrink-0 rounded-2xl px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={reviewPending}
-                onClick={onAcceptSimulationReview}
-              >
-                {reviewPending
-                  ? labels.recordingSimulationReview
-                  : labels.recordSimulationReview}
-              </button>
-            ) : null}
-          </div>
+                    </span>
+                  ))
+                : labels.simulationReviewNeedsAttentionDetail
+            }
+          />
         ) : null}
 
         {reviewError ? (
@@ -1753,11 +1784,19 @@ function ExecutionAuditPanel({
         ) : null}
 
         {loading ? (
-          <div className="app-muted mt-4 text-sm">{labels.auditLoading}</div>
+          <EvidenceState
+            className="mt-4"
+            kind="loading"
+            statusLabel={labels.executionAudit}
+            title={labels.auditLoading}
+          />
         ) : error ? (
-          <div className="app-error-text mt-4 text-sm">
-            {labels.auditLoadFailed}
-          </div>
+          <EvidenceState
+            className="mt-4"
+            kind="error"
+            statusLabel={labels.executionAudit}
+            title={labels.auditLoadFailed}
+          />
         ) : (
           <div className="mt-4 grid min-w-0 gap-4 xl:grid-cols-2">
             <AuditFactList
@@ -1812,17 +1851,14 @@ function AuditFactList({
   rows: Array<{ id: string; title: string; detail: string; timestamp: string }>;
 }) {
   return (
-    <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] p-4">
+    <section className="min-w-0 border-t border-[var(--app-divider)] py-3">
       <div className="app-product-mark">{title}</div>
       {rows.length === 0 ? (
         <div className="app-muted mt-3 text-sm">{empty}</div>
       ) : (
-        <div className="mt-3 grid gap-2">
+        <div className="mt-2 grid divide-y divide-[var(--app-divider)]">
           {rows.map((row) => (
-            <div
-              key={row.id}
-              className="rounded-xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] px-3 py-2 text-sm"
-            >
+            <div key={row.id} className="px-1 py-3 text-sm">
               <div className="font-semibold text-[var(--app-text)]">
                 {row.title}
               </div>
@@ -1836,7 +1872,7 @@ function AuditFactList({
           ))}
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -2633,36 +2669,51 @@ function OrderQueue({
   const pageLabels = copy.trading.page;
 
   if (loading) {
-    return <div className="app-muted mt-5 text-sm">{labels.loading}</div>;
+    return (
+      <EvidenceState
+        className="mt-4"
+        kind="loading"
+        statusLabel={pageLabels.ordersTitle}
+        title={labels.loading}
+      />
+    );
   }
   if (error) {
     return (
-      <div className="app-error-text mt-5 text-sm">{labels.loadFailed}</div>
+      <EvidenceState
+        className="mt-4"
+        kind="error"
+        statusLabel={pageLabels.ordersTitle}
+        title={labels.loadFailed}
+      />
     );
   }
   if (orders.length === 0) {
     return (
-      <div className="mt-5 rounded-2xl border border-dashed border-[color-mix(in_srgb,var(--app-border)_36%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-4 py-5 text-sm text-[var(--app-muted)]">
-        {labels.empty}
-      </div>
+      <EvidenceState
+        className="mt-4"
+        kind="empty"
+        statusLabel={pageLabels.ordersTitle}
+        title={labels.empty}
+        description={labels.subtitle}
+      />
     );
   }
 
   return (
     <div className="mt-5 min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
-      <table className="min-w-[1120px] table-fixed text-left text-sm">
+      <table className="min-w-[1180px] table-fixed text-left text-sm">
         <thead>
-          <tr className="app-kicker border-b border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] text-[11px] uppercase tracking-[0.16em]">
-            <th className="w-[130px] px-3 py-3">{labels.symbol}</th>
+          <tr className="app-kicker border-b border-[var(--app-divider)] text-[11px] uppercase tracking-[0.12em]">
+            <th className="w-[150px] px-3 py-3">{labels.symbol}</th>
             <th className="w-[90px] px-3 py-3">{labels.side}</th>
-            <th className="w-[120px] px-3 py-3 text-right">
+            <th className="w-[100px] px-3 py-3 text-right">
               {labels.quantity}
             </th>
-            <th className="w-[120px] px-3 py-3 text-right">{labels.price}</th>
-            <th className="w-[140px] px-3 py-3">{pageLabels.statusFilter}</th>
-            <th className="w-[240px] px-3 py-3">{labels.riskHint}</th>
-            <th className="w-[210px] px-3 py-3">{labels.rejectReason}</th>
-            <th className="w-[180px] px-3 py-3">{labels.actions}</th>
+            <th className="w-[110px] px-3 py-3 text-right">{labels.price}</th>
+            <th className="w-[130px] px-3 py-3">{pageLabels.statusFilter}</th>
+            <th className="w-[260px] px-3 py-3">{labels.riskHint}</th>
+            <th className="w-[340px] px-3 py-3">{labels.actions}</th>
           </tr>
         </thead>
         <tbody>
@@ -2725,7 +2776,7 @@ function OrderRow({
   const publicNote = formatPublicOperationalNote(order.note, locale);
 
   return (
-    <tr className="border-b border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] align-top transition-colors hover:bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)]">
+    <tr className="border-b border-[var(--app-divider)] align-top transition-colors hover:bg-[var(--app-surface-raised)]">
       <td className="px-3 py-4">
         <div className="font-semibold">{displayLabel}</div>
         <div className="app-muted mt-1 text-xs">
@@ -2759,49 +2810,61 @@ function OrderRow({
         </div>
       </td>
       <td className="px-3 py-4">
-        <input
-          name={`reject-reason-${order.order_id}`}
-          autoComplete="off"
-          value={rejectReason}
-          onChange={(event) => onRejectReasonChange(event.target.value)}
-          placeholder={labels.rejectReasonPlaceholder}
-          className="app-field w-full rounded-2xl px-4 py-2.5 text-sm"
-          aria-label={`${labels.rejectReason}: ${displayLabel}`}
-          disabled={!isPending}
-        />
-      </td>
-      <td className="px-3 py-4">
         {isPending ? (
-          <div className="grid gap-2">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void onConfirm()}
-              className="app-button-primary rounded-2xl px-3.5 py-2.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-45"
-              aria-label={`${labels.confirm}: ${displayLabel}`}
-            >
-              {labels.confirm}
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void onReject()}
-              className="app-button-secondary rounded-2xl px-3.5 py-2.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-45"
-              aria-label={`${labels.reject}: ${displayLabel}`}
-            >
-              {confirmingReject ? pageLabels.rejectConfirm : labels.reject}
-            </button>
-          </div>
-        ) : order.status === 'confirmed' ? (
-          <button
-            type="button"
-            disabled={exportingTicket}
-            onClick={() => void onExportTicket()}
-            className="app-button-secondary rounded-2xl px-3.5 py-2.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-45"
-            aria-label={`${labels.exportTicket}: ${displayLabel}`}
+          <ControlledActionZone
+            tone="info"
+            layout="stack"
+            title={pageLabels.manualReviewDecision}
+            description={pageLabels.manualReviewDecisionDetail}
+            evidence={`${labels.decisionId}: ${decisionId ?? '--'} · ${labels.intentId}: ${intentId ?? '--'}`}
           >
-            {exportingTicket ? labels.exportingTicket : labels.exportTicket}
-          </button>
+            <input
+              name={`reject-reason-${order.order_id}`}
+              autoComplete="off"
+              value={rejectReason}
+              onChange={(event) => onRejectReasonChange(event.target.value)}
+              placeholder={labels.rejectReasonPlaceholder}
+              className="app-field min-h-9 w-full rounded-[var(--app-radius-control)] px-3 py-2 text-xs"
+              aria-label={`${labels.rejectReason}: ${displayLabel}`}
+            />
+            <div className="grid w-full grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void onConfirm()}
+                className="app-button-primary rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-45"
+                aria-label={`${labels.confirm}: ${displayLabel}`}
+              >
+                {labels.confirm}
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void onReject()}
+                className="app-button-secondary rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-45"
+                aria-label={`${labels.reject}: ${displayLabel}`}
+              >
+                {confirmingReject ? pageLabels.rejectConfirm : labels.reject}
+              </button>
+            </div>
+          </ControlledActionZone>
+        ) : order.status === 'confirmed' ? (
+          <ControlledActionZone
+            tone="info"
+            layout="stack"
+            title={pageLabels.manualTicketHandoff}
+            description={pageLabels.manualTicketExportDetail}
+          >
+            <button
+              type="button"
+              disabled={exportingTicket}
+              onClick={() => void onExportTicket()}
+              className="app-button-secondary rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-45"
+              aria-label={`${labels.exportTicket}: ${displayLabel}`}
+            >
+              {exportingTicket ? labels.exportingTicket : labels.exportTicket}
+            </button>
+          </ControlledActionZone>
         ) : (
           <div className="app-muted text-xs">{pageLabels.statusCheck}</div>
         )}
@@ -2818,19 +2881,13 @@ function SideBadge({ side }: { side: string }) {
   const isBuy = normalized === 'buy';
 
   return (
-    <span
-      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-        isBuy
-          ? 'bg-[var(--app-danger-bg)] text-[var(--app-danger)] ring-1 ring-[var(--app-danger-border)]'
-          : 'bg-[var(--app-success-bg)] text-[var(--app-success)] ring-1 ring-[var(--app-success-border)]'
-      }`}
-    >
+    <WorkbenchStatusBadge tone={isBuy ? 'info' : 'neutral'}>
       {isBuy
         ? labels.buy
         : normalized === 'sell'
           ? labels.sell
           : formatPublicStatus(side, locale)}
-    </span>
+    </WorkbenchStatusBadge>
   );
 }
 
@@ -2840,17 +2897,11 @@ function StatusBadge({ status }: { status: string }) {
   const warning = status === 'pending_confirm';
   const danger = status === 'rejected' || status === 'canceled';
   return (
-    <span
-      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-        warning
-          ? 'bg-[var(--app-warning-bg)] text-[var(--app-warning)] ring-1 ring-[var(--app-warning-border)]'
-          : danger
-            ? 'bg-[var(--app-danger-bg)] text-[var(--app-danger)] ring-1 ring-[var(--app-danger-border)]'
-            : 'bg-[var(--app-success-bg)] text-[var(--app-success)] ring-1 ring-[var(--app-success-border)]'
-      }`}
+    <WorkbenchStatusBadge
+      tone={warning ? 'warning' : danger ? 'danger' : 'success'}
     >
       {statusLabel(status, labels, locale)}
-    </span>
+    </WorkbenchStatusBadge>
   );
 }
 
@@ -2867,7 +2918,7 @@ function AuditRow({
   const publicNote =
     formatPublicOperationalNote(order.note, locale) ?? labels.noPublicAuditNote;
   return (
-    <div className="grid gap-2 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3 text-sm sm:grid-cols-[120px_90px_minmax(0,1fr)_160px] sm:items-center">
+    <div className="grid gap-2 px-1 py-3 text-sm sm:grid-cols-[140px_90px_minmax(0,1fr)_160px] sm:items-center">
       <div className="font-semibold">{displayLabel}</div>
       <SideBadge side={order.side} />
       <div className="app-muted min-w-0 truncate text-xs">{publicNote}</div>
