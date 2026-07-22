@@ -247,6 +247,98 @@ test('portfolio account and strategy evidence stay flat across themes and target
   }
 });
 
+test('market keeps context, evidence review, and provider telemetry task-ordered across themes and target widths', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+
+  for (const theme of ['light', 'dark'] as const) {
+    for (const viewport of [
+      { width: 1440, height: 900 },
+      { width: 1280, height: 800 },
+      { width: 834, height: 900 },
+      { width: 390, height: 844 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await page.goto('/market');
+      await page.evaluate((nextTheme) => {
+        window.localStorage.setItem('karkinos.theme', nextTheme);
+      }, theme);
+      await page.reload();
+
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+      await expect(page.getByTestId('market-data-health-summary')).toBeVisible({
+        timeout: 15_000,
+      });
+      await expect(
+        page.getByTestId('market-provider-details'),
+      ).not.toHaveAttribute('open', '');
+
+      const geometry = await page.evaluate(() => {
+        const route = document.querySelector(
+          '[data-workbench-route="market"]',
+        ) as HTMLElement;
+        const tableScroll = document.querySelector(
+          '[data-testid="market-research-table-scroll"]',
+        ) as HTMLElement | null;
+        const table = document.querySelector(
+          '[data-testid="market-research-table"]',
+        ) as HTMLElement | null;
+        const review = document.querySelector(
+          '[data-testid="current-holding-market-evidence-review"]',
+        ) as HTMLElement | null;
+        return {
+          routeOverflow: route.scrollWidth - route.clientWidth,
+          documentOverflow:
+            document.documentElement.scrollWidth -
+            document.documentElement.clientWidth,
+          oversizedRadii: route.querySelectorAll('.rounded-2xl,.rounded-3xl')
+            .length,
+          tableOverflow: tableScroll
+            ? tableScroll.scrollWidth - tableScroll.clientWidth
+            : 0,
+          tableExists: table !== null,
+          quietReviewAfterContext:
+            table !== null && review !== null
+              ? review.getBoundingClientRect().top >
+                table.getBoundingClientRect().top
+              : true,
+        };
+      });
+
+      expect(
+        geometry.documentOverflow,
+        `${theme} ${viewport.width}`,
+      ).toBeLessThanOrEqual(0);
+      expect(
+        geometry.routeOverflow,
+        `${theme} ${viewport.width}`,
+      ).toBeLessThanOrEqual(0);
+      expect(geometry.oversizedRadii, `${theme} ${viewport.width}`).toBe(0);
+      expect(
+        geometry.tableOverflow,
+        `${theme} ${viewport.width}`,
+      ).toBeGreaterThanOrEqual(0);
+      expect(
+        geometry.quietReviewAfterContext,
+        `${theme} ${viewport.width}`,
+      ).toBe(true);
+
+      if (geometry.tableExists) {
+        const table = page.getByTestId('market-research-table');
+        await expect(table).toBeVisible();
+        await expect(
+          table.getByRole('columnheader', { name: /Symbol|代码/ }),
+        ).toBeVisible();
+        await expect(
+          table.getByRole('columnheader', { name: /Evidence mode|证据模式/ }),
+        ).toBeVisible();
+      }
+    }
+  }
+});
+
 test('exemplar routes remain task-reordered and overflow safe on mobile themes', async ({
   page,
 }) => {
