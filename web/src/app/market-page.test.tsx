@@ -481,6 +481,16 @@ test('routes confirmed NAV blockers through confirmation-only ingestion', async 
   ).toBeTruthy();
   expect(panel.querySelector('article')).toBeNull();
   expect(within(panel).queryByText('valuation-market-fixture')).toBeNull();
+  const actionCluster = within(panel).getByTestId('holding-evidence-actions');
+  expect(actionCluster.className).toContain('gap-2');
+  for (const action of [
+    within(panel).getByRole('button', { name: 'View evidence identity' }),
+    within(panel).getByRole('button', { name: 'Sync confirmed NAV' }),
+  ]) {
+    expect(action.className).toContain('h-10');
+    expect(action.className).toContain('sm:h-8');
+    expect(action.className).toContain('text-[11px]');
+  }
   await user.click(
     within(panel).getByRole('button', { name: 'View evidence identity' }),
   );

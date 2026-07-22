@@ -92,6 +92,86 @@ test('workspace command menu navigates without adding execution authority', asyn
   ).toBeVisible();
 });
 
+test('desktop utility controls align and the overview table avoids partial columns', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.addInitScript(() => {
+    window.localStorage.setItem('karkinos.locale', 'zh');
+  });
+  await page.goto('/overview');
+  await page.getByRole('button', { name: '浅色主题' }).click();
+  await expect(page.getByTestId('positions-table-desktop')).toBeVisible();
+
+  const geometry = await page.evaluate(() => {
+    const valuation = document.querySelector(
+      '[data-testid="status-pill-valuation"]',
+    ) as HTMLElement;
+    const value = valuation.querySelector(
+      '[data-status-chip-part="value"]',
+    ) as HTMLElement;
+    const meta = valuation.querySelector(
+      '[data-status-chip-part="meta"]',
+    ) as HTMLElement;
+    const chevron = valuation.querySelector(
+      '[data-status-chip-part="chevron"]',
+    ) as SVGElement;
+    const dashboardScroll = document.querySelector(
+      '[data-testid="overview-holdings-section"] [data-testid="positions-table-scroll"]',
+    ) as HTMLElement;
+    const toolbarControls = [
+      document.querySelector('.app-command-trigger') as HTMLElement,
+      document.querySelector('.app-theme-switcher') as HTMLElement,
+      document.querySelector('.app-language-control') as HTMLElement,
+    ].map((element) => element.getBoundingClientRect());
+    const valueBox = value.getBoundingClientRect();
+    const metaBox = meta.getBoundingClientRect();
+    const chevronBox = chevron.getBoundingClientRect();
+
+    return {
+      dashboardOverflow:
+        dashboardScroll.scrollWidth - dashboardScroll.clientWidth,
+      statusValueWidth: valueBox.width,
+      statusValueClipped: value.scrollWidth > value.clientWidth,
+      statusMetaChevronGap: chevronBox.left - metaBox.right,
+      toolbarHeights: toolbarControls.map((box) => box.height),
+      toolbarCenters: toolbarControls.map((box) => box.top + box.height / 2),
+    };
+  });
+
+  expect(geometry.dashboardOverflow).toBeLessThanOrEqual(0);
+  expect(geometry.statusValueWidth).toBeGreaterThan(0);
+  expect(geometry.statusValueClipped).toBe(false);
+  expect(geometry.statusMetaChevronGap).toBeGreaterThanOrEqual(4);
+  expect(geometry.toolbarHeights).toEqual([32, 32, 32]);
+  expect(
+    Math.max(...geometry.toolbarCenters) - Math.min(...geometry.toolbarCenters),
+  ).toBeLessThanOrEqual(1);
+
+  const valuationStatus = page.getByTestId('status-pill-valuation');
+  await valuationStatus.click();
+  await expect
+    .poll(() =>
+      valuationStatus.evaluate((element) => {
+        const style = getComputedStyle(element);
+        const selectedTheme = document.querySelector(
+          '.app-theme-switcher-option[aria-pressed="true"]',
+        ) as HTMLElement;
+        const themeSwitcher = document.querySelector(
+          '.app-theme-switcher',
+        ) as HTMLElement;
+        return {
+          backgroundMatches:
+            style.backgroundColor ===
+            getComputedStyle(selectedTheme).backgroundColor,
+          borderMatches:
+            style.borderColor === getComputedStyle(themeSwitcher).borderColor,
+        };
+      }),
+    )
+    .toEqual({ backgroundMatches: true, borderMatches: true });
+});
+
 test('shell remains local-overflow safe in Latte and Mocha across tablet and mobile', async ({
   page,
 }) => {

@@ -109,6 +109,27 @@ test('keeps the operator-priority portfolio facts before secondary cost detail',
   );
 });
 
+test('keeps the overview dashboard table compact without redundant row actions', () => {
+  renderTable(
+    <PositionsTable positions={[basePosition]} variant="dashboard" />,
+  );
+
+  const table = screen.getByTestId('positions-table-desktop');
+  const headers = within(table)
+    .getAllByRole('columnheader')
+    .map((header) => header.textContent);
+  expect(headers).toEqual([
+    'Symbol',
+    'Market Value',
+    'Today PnL',
+    'Unrealized',
+    'Quote State',
+  ]);
+  expect(within(table).queryByRole('button', { name: 'Refresh' })).toBeNull();
+  expect(within(table).queryByText('Asset class')).toBeNull();
+  expect(within(table).queryByText('Latest Price')).toBeNull();
+});
+
 test('formats persisted cost and quote prices without recomputing them', () => {
   renderTable(
     <PositionsTable
