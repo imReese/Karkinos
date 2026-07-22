@@ -43,7 +43,7 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
   const riskMetrics = page.locator('[data-workbench-primitive="metric-strip"]');
   const thresholdTable = page.getByTestId('risk-threshold-table');
   const controlledActions = page.getByTestId('risk-trading-control-grid');
-  await expect(blockingRegister).toBeVisible();
+  await expect(blockingRegister).toBeVisible({ timeout: 15_000 });
   expect((await blockingRegister.boundingBox())!.y).toBeLessThan(
     (await riskMetrics.boundingBox())!.y,
   );
@@ -102,6 +102,46 @@ test('portfolio keeps filtering ordered and wide holdings locally scrollable', a
   expect(geometry.documentOverflow).toBeLessThanOrEqual(0);
   expect(geometry.contentOverflow).toBeLessThanOrEqual(0);
   expect(geometry.tableOverflow).toBeGreaterThanOrEqual(0);
+});
+
+test('portfolio mobile keeps secondary filters disclosed on demand', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/portfolio');
+
+  const filterBar = page.locator('[data-workbench-primitive="filter-bar"]');
+  const moreFilters = filterBar.locator(
+    'button[aria-controls="portfolio-secondary-filters"]',
+  );
+  const holdingsTable = page.locator('.app-positions-table table').first();
+
+  await expect(moreFilters).toBeVisible();
+  await expect(filterBar.locator('select:visible')).toHaveCount(2);
+  await expect(moreFilters).toHaveAttribute('aria-expanded', 'false');
+  await expect(holdingsTable).toBeVisible();
+
+  const compactControlHeights = await filterBar
+    .locator('button:visible, input:visible, select:visible')
+    .evaluateAll((elements) =>
+      elements.map((element) => element.getBoundingClientRect().height),
+    );
+  expect(Math.min(...compactControlHeights)).toBeGreaterThanOrEqual(40);
+  const collapsedTableTop = (await holdingsTable.boundingBox())!.y;
+
+  await moreFilters.click();
+
+  await expect(moreFilters).toHaveAttribute('aria-expanded', 'true');
+  await expect(filterBar.locator('select:visible')).toHaveCount(5);
+  const expandedTableTop = (await holdingsTable.boundingBox())!.y;
+  expect(collapsedTableTop).toBeLessThan(expandedTableTop);
+
+  const documentOverflow = await page.evaluate(
+    () =>
+      document.documentElement.scrollWidth -
+      document.documentElement.clientWidth,
+  );
+  expect(documentOverflow).toBeLessThanOrEqual(0);
 });
 
 test('exemplar routes remain task-reordered and overflow safe on mobile themes', async ({

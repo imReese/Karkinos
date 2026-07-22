@@ -131,3 +131,38 @@ test('exposes local quote, evidence, and sort controls without mutations', () =>
   expect(onEvidenceFilterChange).toHaveBeenCalledWith('review');
   expect(onSortByChange).toHaveBeenCalledWith('realized_pnl');
 });
+
+test('discloses secondary portfolio filters locally with an active count', () => {
+  renderWithLocale(
+    <WorkspaceToolbar
+      mode="account"
+      onModeChange={() => undefined}
+      search=""
+      onSearchChange={() => undefined}
+      assetClassFilter="all"
+      onAssetClassFilterChange={() => undefined}
+      pnlFilter="all"
+      onPnlFilterChange={() => undefined}
+      assetClasses={['fund', 'stock']}
+      quoteFilter="review"
+      evidenceFilter="all"
+      sortBy="realized_pnl"
+    />,
+    'en',
+  );
+
+  const secondaryFilters = screen.getByTestId('portfolio-secondary-filters');
+  const disclosure = screen.getByRole('button', {
+    name: 'More filters · 2 active filters',
+  });
+  expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+  expect(secondaryFilters.className).toContain('hidden');
+
+  fireEvent.click(disclosure);
+
+  expect(disclosure.getAttribute('aria-expanded')).toBe('true');
+  expect(disclosure.getAttribute('aria-label')).toBe(
+    'Hide filters · 2 active filters',
+  );
+  expect(secondaryFilters.className).toBe('contents');
+});
