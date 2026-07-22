@@ -192,14 +192,14 @@ function renderShell(options: ShellStatusMockOptions = {}) {
 
   const indexRoute = createRoute({
     getParentRoute: () => rootRoute,
-    path: '/',
+    path: '/overview',
     component: () => <div>Overview page</div>,
   });
 
   const routeTree = rootRoute.addChildren([indexRoute]);
   const router = createRouter({
     routeTree,
-    history: createMemoryHistory({ initialEntries: ['/'] }),
+    history: createMemoryHistory({ initialEntries: ['/overview'] }),
   });
   const queryClient = new QueryClient({
     defaultOptions: {
