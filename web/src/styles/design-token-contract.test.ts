@@ -96,6 +96,23 @@ const REQUIRED_GEOMETRY_TOKENS = [
   '--app-section-gap',
 ] as const;
 
+const REQUIRED_TYPOGRAPHY_TOKENS = [
+  '--app-font-sans',
+  '--app-font-mono',
+  '--app-font-weight-regular',
+  '--app-font-weight-medium',
+  '--app-font-weight-semibold',
+  '--app-font-weight-title',
+  '--app-font-weight-brand',
+  '--app-letter-spacing-product',
+] as const;
+
+const REQUIRED_MOTION_TOKENS = [
+  '--app-motion-fast',
+  '--app-motion-standard',
+  '--app-ease-standard',
+] as const;
+
 function sourceFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = resolve(directory, entry.name);
@@ -235,6 +252,19 @@ describe('application design token contract', () => {
     expect(MOCHA.get('--app-control-height')).toBe('32px');
     expect(MOCHA.get('--app-row-height-dense')).toBe('40px');
     expect(MOCHA.get('--app-touch-target')).toBe('40px');
+  });
+
+  it('defines the product typography and motion contract', () => {
+    for (const token of [
+      ...REQUIRED_TYPOGRAPHY_TOKENS,
+      ...REQUIRED_MOTION_TOKENS,
+    ]) {
+      expect(MOCHA.has(token), token).toBe(true);
+    }
+    expect(MOCHA.get('--app-letter-spacing-product')).toBe('0.24em');
+    expect(MOCHA.get('--app-motion-fast')).toBe('120ms');
+    expect(MOCHA.get('--app-motion-standard')).toBe('160ms');
+    expect(MOCHA.get('--app-ease-standard')).toBe('cubic-bezier(0.2, 0, 0, 1)');
   });
 
   it('provides a deterministic reduced-motion fallback', () => {
