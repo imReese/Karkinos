@@ -109,7 +109,6 @@
    */
   --app-base: var(--app-bg);
   --app-mantle: var(--app-surface-raised);
-  --app-panel: var(--app-surface);
   --app-panel-strong: var(--app-surface-raised);
   --app-surface-0: var(--app-surface);
   --app-surface-1: var(--app-surface-overlay);

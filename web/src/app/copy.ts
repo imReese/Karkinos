@@ -620,15 +620,26 @@ export const copy = {
         loading: 'Loading holding detail.',
         error: 'Failed to load holding detail.',
         summary: 'Summary',
+        tabListLabel: 'Holding detail views',
+        tabPosition: 'Position',
+        tabPnlCosts: 'P&L & Costs',
+        tabTransactions: 'Transactions',
+        tabEvidence: 'Evidence',
+        tabReconciliation: 'Reconciliation',
         valuation: 'Valuation & Cost',
         resultsEvidence: 'Holding results & evidence',
+        pnlCostsDetail:
+          'Compare canonical local cost, labeled external or ledger-projected cost evidence, realized P&L, and fees without creating a second headline value.',
         closedHistoryOnly: 'Closed · history only',
         closedNoCurrentExposure:
           'This asset is closed and has no current portfolio exposure. Historical trades, fees, and realized PnL remain available for review.',
         evidenceIdentityMismatch:
           'Snapshot or ledger identity changed during the request. Review before treating these figures as one authoritative result.',
+        evidenceSummaryTitle: 'Holding evidence state',
         quoteStatus: 'Quote & Data State',
         marketEvidence: 'Market evidence',
+        marketEvidenceDetail:
+          'Persisted quote provenance and freshness for this instrument. Reading this view does not contact a provider.',
         ledgerTrace: 'Ledger Trace',
         productionLedgerOnly: 'Persisted account ledger only',
         riskExposure: 'Risk & Exposure',
@@ -779,6 +790,11 @@ export const copy = {
         price: 'Price',
         note: 'Note',
         refreshQuote: 'Refresh this quote',
+        quoteRefreshTitle: 'Ingest newer quote evidence',
+        quoteRefreshDetail:
+          'This explicit command may contact the configured market-data provider and persist an audited refresh result for this instrument.',
+        quoteRefreshBoundary:
+          'It does not rewrite the ledger, recalculate account facts in the UI, or grant trading authority',
         refreshingQuote: 'Refreshing quote…',
         refreshDone: 'Quote refresh request completed.',
         refreshFailed: 'Quote refresh failed. Check market data state.',
@@ -789,6 +805,11 @@ export const copy = {
         actionActivity: 'Record activity',
         actionViewActivity: 'View historical activity',
         actionPortfolio: 'View all holdings',
+        reconciliationTitle: 'Reconciliation evidence',
+        reconciliationStateTitle: 'Canonical identity and cost alignment',
+        reconciliationDetail:
+          'Read-only alignment of the valuation snapshot, ledger cutoff, quote evidence, and cost-basis status. This view does not reconcile or mutate account facts.',
+        actionAccountTruth: 'Open Account Truth review',
       },
       allocation: {
         title: 'Allocation',
@@ -3358,15 +3379,26 @@ export const copy = {
         loading: '正在加载持仓详情。',
         error: '持仓详情加载失败。',
         summary: '摘要',
+        tabListLabel: '持仓详情视图',
+        tabPosition: '持仓',
+        tabPnlCosts: '盈亏与成本',
+        tabTransactions: '流水',
+        tabEvidence: '证据',
+        tabReconciliation: '对账',
         valuation: '估值与成本',
         resultsEvidence: '持仓结果与证据',
+        pnlCostsDetail:
+          '统一复核本地成本、明确标注的券商或流水推算成本、已实现盈亏与费用，不制造第二套权威结果。',
         closedHistoryOnly: '已清仓 · 仅历史',
         closedNoCurrentExposure:
           '该资产已经清仓，不再形成当前组合暴露；历史交易、费用和已实现盈亏仍完整保留以供复核。',
         evidenceIdentityMismatch:
           '请求期间估值快照或账本截止标识发生变化；复核前不得把这些数字视为同一份权威结果。',
+        evidenceSummaryTitle: '持仓证据状态',
         quoteStatus: '行情与数据状态',
         marketEvidence: '市场证据',
+        marketEvidenceDetail:
+          '展示该标的持久化行情来源与新鲜度；读取本页不会联系数据提供方。',
         ledgerTrace: '流水轨迹',
         productionLedgerOnly: '仅持久化账户账本',
         riskExposure: '风险暴露',
@@ -3517,6 +3549,10 @@ export const copy = {
         price: '价格',
         note: '备注',
         refreshQuote: '刷新该标的行情',
+        quoteRefreshTitle: '摄取更新的行情证据',
+        quoteRefreshDetail:
+          '这是显式命令，可能联系已配置的数据提供方，并为该标的持久化一条可审计刷新结果。',
+        quoteRefreshBoundary: '不会改写账本、在 UI 重算账户事实或授予交易权限',
         refreshingQuote: '正在刷新行情…',
         refreshDone: '行情刷新请求已完成。',
         refreshFailed: '行情刷新失败，请检查市场数据状态。',
@@ -3527,6 +3563,11 @@ export const copy = {
         actionActivity: '记录流水',
         actionViewActivity: '查看历史流水',
         actionPortfolio: '查看全部持仓',
+        reconciliationTitle: '对账证据',
+        reconciliationStateTitle: '权威身份与成本对齐',
+        reconciliationDetail:
+          '只读核对估值快照、账本截止、行情证据与成本状态；本视图不会执行对账或修改账户事实。',
+        actionAccountTruth: '打开账户事实复核',
       },
       allocation: {
         title: '配置明细',

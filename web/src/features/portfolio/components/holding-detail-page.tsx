@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
 import { useAccountOverviewQuery } from '../../account/api';
 import {
@@ -26,8 +26,11 @@ import {
 import { PriceStructureChart } from '../../market/components/price-structure-chart';
 import { useCopy } from '../../../app/copy';
 import {
+  ControlledActionZone,
+  EvidenceState as WorkbenchEvidenceState,
   EvidenceIdentityDisclosure,
   MetricStrip as WorkbenchMetricStrip,
+  StatusBadge as WorkbenchStatusBadge,
   WorkspaceHeader as WorkbenchWorkspaceHeader,
 } from '../../../app/components/workbench';
 import { usePreferences } from '../../../app/preferences';
@@ -59,10 +62,22 @@ import {
 } from '../api';
 
 type DetailMetric = {
+  detail?: string;
   label: string;
   value: string;
   tone?: 'pnl-positive' | 'pnl-negative' | 'warning';
 };
+
+type HoldingDetailTab =
+  'position' | 'pnl-costs' | 'transactions' | 'evidence' | 'reconciliation';
+
+const HOLDING_DETAIL_TABS: HoldingDetailTab[] = [
+  'position',
+  'pnl-costs',
+  'transactions',
+  'evidence',
+  'reconciliation',
+];
 
 type EvidenceRefType =
   'signal' | 'action' | 'risk' | 'review' | 'order' | 'fill' | 'unknown';
@@ -270,6 +285,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
   const holdingStrategyAttribution =
     useHoldingStrategyAttributionQuery(decodedSymbol);
   const refreshQuote = useRefreshMarketQuotesMutation();
+  const [activeTab, setActiveTab] = useState<HoldingDetailTab>('position');
 
   const currentPositions = positions.data ?? snapshot.data?.positions ?? [];
   const currentPosition = currentPositions.find(
@@ -313,7 +329,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
       <StatusPanel
         title={copy.states.loading}
         detail={labels.loading}
-        tone="neutral"
+        kind="loading"
       />
     );
   }
@@ -323,7 +339,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
       <StatusPanel
         title={copy.states.error}
         detail={labels.error}
-        tone="danger"
+        kind="error"
       />
     );
   }
@@ -333,14 +349,14 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
       <section className="space-y-5 sm:space-y-6">
         <a
           href="/portfolio"
-          className="app-button-secondary inline-flex rounded-2xl px-4 py-2 text-sm font-semibold"
+          className="app-button-secondary inline-flex min-h-10 items-center rounded-[var(--app-radius-control)] px-3 py-2 text-sm font-semibold"
         >
           {labels.backToPortfolio}
         </a>
         <StatusPanel
           title={labels.notFoundTitle}
           detail={labels.notFoundDetail}
-          tone="neutral"
+          kind="empty"
         />
       </section>
     );
@@ -359,7 +375,10 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     liveItem?.quote_source ??
     healthQuote?.quote_source ??
     null;
-  const quoteSourceLabel = quoteSource ?? '--';
+  const quoteSourceLabel =
+    quoteSource === 'market_bar_close'
+      ? labels.baselineSources.marketBarClose
+      : (quoteSource ?? '--');
   const quoteAgeSeconds =
     position.quote_age_seconds ??
     liveItem?.quote_age_seconds ??
@@ -619,18 +638,27 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
         ? labels.refreshDone
         : null;
   const valuationSnapshotId = snapshot.data?.valuation_snapshot_id ?? null;
+  const evidenceStateKind = isHistoricalClosedPosition
+    ? ('empty' as const)
+    : !evidenceIdentityConsistent
+      ? ('missing' as const)
+      : needsCostBasisReview
+        ? ('partial' as const)
+        : quoteNeedsReview
+          ? ('stale' as const)
+          : ('ready' as const);
 
   const summaryMetrics: DetailMetric[] = [
     { label: labels.quantity, value: formatQuantity(position.quantity) },
-    {
-      label: labels.marketValue,
-      value: formatCurrency(position.market_value),
-    },
     {
       label: labels.availableFrozen,
       value: `${formatQuantity(position.available_qty)} / ${formatQuantity(
         position.frozen_qty,
       )}`,
+    },
+    {
+      label: labels.marketValue,
+      value: formatCurrency(position.market_value),
     },
     {
       label: labels.portfolioWeight,
@@ -639,16 +667,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     {
       label: labels.todayChange,
       value: formatCurrency(todayChange),
-      tone:
-        typeof todayChange === 'number' && todayChange !== 0
-          ? todayChange > 0
-            ? 'pnl-positive'
-            : 'pnl-negative'
-          : undefined,
-    },
-    {
-      label: labels.todayChangePct,
-      value: formatReturnPercent(todayChangePct),
+      detail: `${labels.todayChangePct} ${formatReturnPercent(todayChangePct)}`,
       tone:
         typeof todayChange === 'number' && todayChange !== 0
           ? todayChange > 0
@@ -659,6 +678,9 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     {
       label: labels.unrealizedPnl,
       value: formatCurrency(position.unrealized_pnl),
+      detail: `${labels.pnlPct} ${formatReturnPercent(
+        pnlPct,
+      )} · ${labels.realizedPnl} ${formatCurrency(position.realized_pnl)}`,
       tone:
         position.unrealized_pnl > 0
           ? 'pnl-positive'
@@ -666,7 +688,6 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
             ? 'pnl-negative'
             : undefined,
     },
-    { label: labels.pnlPct, value: formatReturnPercent(pnlPct) },
   ];
 
   const brokerCostBasisMetrics: DetailMetric[] = hasBrokerCostBasisEvidence
@@ -724,6 +745,9 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
       label: labels.lastTradeAt,
       value: formatTimestamp(lastLedgerEntry?.timestamp),
     },
+  ];
+
+  const reconciliationMetrics: DetailMetric[] = [
     {
       label: labels.evidenceState,
       value: evidenceReviewState,
@@ -737,7 +761,29 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
           ? undefined
           : 'warning',
     },
+    {
+      label: labels.costBasisStatus,
+      value:
+        labels.costBasisStatuses[
+          costBasisStatus as keyof typeof labels.costBasisStatuses
+        ] ?? labels.costBasisStatuses.unavailable,
+    },
+    {
+      label: labels.valuationTimestamp,
+      value: formatTimestamp(snapshot.data?.valuation_as_of),
+    },
+    {
+      label: labels.quoteTimestamp,
+      value: formatTimestamp(quoteTimestamp),
+    },
   ];
+  const tabLabels: Record<HoldingDetailTab, string> = {
+    position: labels.tabPosition,
+    'pnl-costs': labels.tabPnlCosts,
+    transactions: labels.tabTransactions,
+    evidence: labels.tabEvidence,
+    reconciliation: labels.tabReconciliation,
+  };
 
   return (
     <section className="space-y-5 sm:space-y-6">
@@ -790,37 +836,34 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
               >
                 {labels.backToPortfolio}
               </a>
-              {isHistoricalClosedPosition ? (
-                <StatusBadge label={labels.closedHistoryOnly} tone="warning" />
-              ) : null}
-              <StatusBadge
-                label={quoteNeedsReview ? labels.quoteStale : quoteStatusLabel}
-                tone={quoteNeedsReview ? 'warning' : 'success'}
-              />
-              {marketOpen === false ? (
-                <StatusBadge label={labels.marketClosed} tone="warning" />
-              ) : null}
-              <div className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-3 py-1 text-xs font-semibold text-[var(--app-muted)]">
-                <span className="app-kicker mr-1 text-[10px] uppercase tracking-[0.14em]">
-                  {labels.quoteTimestamp}
-                </span>
-                <span className="font-mono tabular-nums">
-                  {formatTimestamp(quoteTimestamp)}
-                </span>
-              </div>
             </>
           }
         />
       </div>
 
-      {quoteNeedsReview ? (
-        <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-warning)]">
-          <span className="h-1.5 w-1.5 rounded-full bg-[var(--app-warning)]" />
-          <span className="truncate">{labels.cacheNotice}</span>
-        </div>
-      ) : null}
+      <WorkbenchEvidenceState
+        kind={evidenceStateKind}
+        statusLabel={
+          isHistoricalClosedPosition
+            ? labels.closedHistoryOnly
+            : evidenceReviewState
+        }
+        title={
+          quoteNeedsReview && evidenceIdentityConsistent
+            ? labels.cacheNotice
+            : labels.evidenceSummaryTitle
+        }
+        description={
+          isHistoricalClosedPosition
+            ? labels.closedNoCurrentExposure
+            : nextManualStep
+        }
+        evidence={`${labels.valuationTimestamp} ${formatTimestamp(
+          snapshot.data?.valuation_as_of,
+        )} · ${labels.quoteTimestamp} ${formatTimestamp(quoteTimestamp)}`}
+      />
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.8fr)]">
+      <div className="space-y-5">
         <div className="min-w-0 space-y-5">
           <section className="min-w-0">
             <div
@@ -846,18 +889,80 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
                   id: metric.label,
                   label: metric.label,
                   value: metric.value,
+                  detail: metric.detail,
                   tone: metric.tone,
                 }))}
-                className="sm:grid-flow-row sm:grid-cols-2 xl:grid-cols-4"
+                className="sm:grid-flow-row sm:grid-cols-3 xl:grid-cols-6"
               />
             </div>
           </section>
 
-          <section
-            data-testid="holding-kline-panel"
-            className="app-panel min-w-0 overflow-hidden rounded-[var(--app-radius-surface)]"
+          <div
+            role="tablist"
+            aria-label={labels.tabListLabel}
+            data-testid="holding-detail-tabs"
+            className="flex min-w-0 gap-1 overflow-x-auto border-b border-[var(--app-divider)] pb-px"
           >
-            <div className="p-4 sm:p-5">
+            {HOLDING_DETAIL_TABS.map((tab) => {
+              const selected = activeTab === tab;
+              return (
+                <button
+                  key={tab}
+                  id={`holding-tab-${tab}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  aria-controls={`holding-panel-${tab}`}
+                  tabIndex={selected ? 0 : -1}
+                  className={`min-h-10 shrink-0 border-b-2 px-3 py-2 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] ${
+                    selected
+                      ? 'border-[var(--app-accent)] text-[var(--app-text)]'
+                      : 'border-transparent text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
+                  }`}
+                  onClick={() => setActiveTab(tab)}
+                  onKeyDown={(event) => {
+                    if (
+                      !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(
+                        event.key,
+                      )
+                    ) {
+                      return;
+                    }
+                    event.preventDefault();
+                    const currentIndex = HOLDING_DETAIL_TABS.indexOf(tab);
+                    const nextIndex =
+                      event.key === 'Home'
+                        ? 0
+                        : event.key === 'End'
+                          ? HOLDING_DETAIL_TABS.length - 1
+                          : event.key === 'ArrowRight'
+                            ? (currentIndex + 1) % HOLDING_DETAIL_TABS.length
+                            : (currentIndex - 1 + HOLDING_DETAIL_TABS.length) %
+                              HOLDING_DETAIL_TABS.length;
+                    const nextTab = HOLDING_DETAIL_TABS[nextIndex];
+                    setActiveTab(nextTab);
+                    event.currentTarget.parentElement
+                      ?.querySelector<HTMLButtonElement>(
+                        `#holding-tab-${nextTab}`,
+                      )
+                      ?.focus();
+                  }}
+                >
+                  {tabLabels[tab]}
+                </button>
+              );
+            })}
+          </div>
+
+          <section
+            id="holding-panel-position"
+            role="tabpanel"
+            aria-labelledby="holding-tab-position"
+            hidden={activeTab !== 'position'}
+            data-testid="holding-kline-panel"
+            className="app-workbench-section min-w-0 overflow-hidden"
+          >
+            <div className="min-w-0">
               <PriceStructureChart
                 bars={kline.data ?? []}
                 emptyLabel={copy.market.noChart}
@@ -872,34 +977,50 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
             </div>
           </section>
 
-          <section className="app-panel rounded-[var(--app-radius-surface)]">
-            <div className="p-4 sm:p-5">
-              <div className="app-product-mark">{labels.resultsEvidence}</div>
+          <section
+            id="holding-panel-pnl-costs"
+            role="tabpanel"
+            aria-labelledby="holding-tab-pnl-costs"
+            hidden={activeTab !== 'pnl-costs'}
+            data-testid="holding-pnl-costs-panel"
+            className="app-workbench-section min-w-0"
+          >
+            <div className="flex flex-col gap-3">
+              <div>
+                <div className="app-product-mark">{labels.resultsEvidence}</div>
+                <p className="mt-1 text-xs leading-5 text-[var(--app-text-secondary)]">
+                  {labels.pnlCostsDetail}
+                </p>
+              </div>
               {!evidenceIdentityConsistent ? (
-                <div
-                  data-testid="holding-evidence-identity-warning"
-                  className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] px-4 py-3 text-sm font-semibold text-[var(--app-warning)]"
-                  role="status"
-                >
-                  {labels.evidenceIdentityMismatch}
-                </div>
+                <WorkbenchEvidenceState
+                  kind="missing"
+                  statusLabel={labels.evidenceStates.identityMismatch}
+                  title={labels.evidenceIdentityMismatch}
+                  description={labels.evidenceNextSteps.reloadIdentity}
+                />
               ) : null}
               {needsCostBasisReview ? (
-                <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] px-4 py-3">
-                  <div className="text-sm font-semibold text-[var(--app-warning)]">
-                    {labels.costBasisReviewNeeded}
-                  </div>
-                  <p className="mt-1 text-sm leading-6 text-[var(--app-muted)]">
-                    {labels.costBasisReviewDetail}
-                  </p>
-                </div>
+                <WorkbenchEvidenceState
+                  kind="partial"
+                  statusLabel={labels.evidenceStates.costBasisReview}
+                  title={labels.costBasisReviewNeeded}
+                  description={labels.costBasisReviewDetail}
+                />
               ) : null}
               <MetricGrid metrics={valuationMetrics} />
             </div>
           </section>
 
-          <section className="app-panel rounded-[var(--app-radius-surface)]">
-            <div className="p-4 sm:p-5">
+          <section
+            id="holding-panel-transactions"
+            role="tabpanel"
+            aria-labelledby="holding-tab-transactions"
+            hidden={activeTab !== 'transactions'}
+            data-testid="holding-transactions-panel"
+            className="app-workbench-section min-w-0"
+          >
+            <div>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <div className="app-product-mark">{labels.ledgerTrace}</div>
@@ -909,9 +1030,9 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
                       : labels.ledgerCount(ledgerEntries.length)}
                   </h2>
                 </div>
-                <span className="w-max rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-2.5 py-1 text-[10px] font-semibold text-[var(--app-muted)]">
+                <WorkbenchStatusBadge tone="neutral">
                   {labels.productionLedgerOnly}
-                </span>
+                </WorkbenchStatusBadge>
                 {ledger.isError ? (
                   <div className="app-error-text text-sm">
                     {copy.activity.error}
@@ -924,282 +1045,299 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
         </div>
 
         <aside className="min-w-0 space-y-5">
-          <section
-            data-testid="holding-quote-status-panel"
-            className="app-panel min-w-0 rounded-[var(--app-radius-surface)]"
+          <div
+            id="holding-panel-evidence"
+            role="tabpanel"
+            aria-labelledby="holding-tab-evidence"
+            hidden={activeTab !== 'evidence'}
+            className="min-w-0 space-y-5"
           >
-            <div className="p-4 sm:p-5">
-              <div className="app-product-mark">{labels.marketEvidence}</div>
-              <div className="mt-4 grid gap-3">
-                <InfoRow
-                  label={labels.quoteStatus}
-                  value={
-                    quoteNeedsReview ? labels.quoteStale : quoteStatusLabel
-                  }
-                  tone={quoteNeedsReview ? 'warning' : undefined}
-                />
-                <InfoRow
-                  label={labels.quoteTimestamp}
-                  value={formatTimestamp(quoteTimestamp)}
-                />
-                <InfoRow label={labels.quoteSource} value={quoteSourceLabel} />
-                <InfoRow
-                  label={labels.quoteAge}
-                  value={formatAge(quoteAgeSeconds)}
-                />
-                <InfoRow
-                  label={labels.staleReason}
-                  value={staleReasonLabel}
-                  tone={staleReason ? 'warning' : undefined}
-                />
-                <InfoRow
-                  label={labels.valuationTimestamp}
-                  value={formatTimestamp(overview.data?.valuation_timestamp)}
-                />
-                <InfoRow
-                  label={labels.refreshPolicy}
-                  value={refreshPolicyLabel}
-                />
-                <InfoRow
-                  label={labels.marketOpen}
-                  value={
-                    marketOpen === undefined
-                      ? '--'
-                      : marketOpen
-                        ? labels.marketOpen
-                        : labels.marketClosed
-                  }
-                />
-              </div>
-              {!isHistoricalClosedPosition ? (
-                <button
-                  type="button"
-                  className="app-button-primary mt-4 w-full rounded-2xl px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-55"
-                  disabled={refreshQuote.isPending}
-                  onClick={() =>
-                    refreshQuote.mutate({
-                      symbols: [position.symbol],
-                      force: true,
-                    })
-                  }
-                  aria-label={`${labels.refreshQuote}: ${position.symbol}`}
-                >
-                  {refreshQuote.isPending
-                    ? labels.refreshingQuote
-                    : labels.refreshQuote}
-                </button>
-              ) : null}
-              {refreshStatus ? (
-                <div
-                  className={`mt-3 text-sm ${
-                    refreshQuote.isError
-                      ? 'app-error-text'
-                      : 'text-[var(--app-muted)]'
-                  }`}
-                  role="status"
-                  aria-live="polite"
-                >
-                  {refreshStatus}
-                </div>
-              ) : null}
-            </div>
-          </section>
-
-          <section
-            data-testid="holding-risk-exposure-panel"
-            className="app-panel min-w-0 rounded-[var(--app-radius-surface)]"
-          >
-            <div className="p-4 sm:p-5">
-              <div className="app-product-mark">{labels.riskExposure}</div>
-              {isHistoricalClosedPosition ? (
-                <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-3 py-3 text-sm leading-6 text-[var(--app-muted)]">
-                  {labels.closedNoCurrentExposure}
-                </div>
-              ) : (
-                <div className="mt-4 grid gap-3">
+            <section
+              data-testid="holding-quote-status-panel"
+              className="app-workbench-section min-w-0"
+            >
+              <div>
+                <div className="app-product-mark">{labels.marketEvidence}</div>
+                <p className="mt-1 text-xs leading-5 text-[var(--app-text-secondary)]">
+                  {labels.marketEvidenceDetail}
+                </p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   <InfoRow
-                    label={labels.portfolioWeight}
-                    value={formatPercent(portfolioWeight)}
+                    label={labels.quoteStatus}
+                    value={
+                      quoteNeedsReview ? labels.quoteStale : quoteStatusLabel
+                    }
+                    tone={quoteNeedsReview ? 'warning' : undefined}
                   />
                   <InfoRow
-                    label={labels.availableFrozen}
-                    value={`${formatQuantity(position.available_qty)} / ${formatQuantity(
-                      position.frozen_qty,
-                    )}`}
+                    label={labels.quoteTimestamp}
+                    value={formatTimestamp(quoteTimestamp)}
                   />
                   <InfoRow
-                    label={labels.unrealizedPnl}
-                    value={formatCurrency(position.unrealized_pnl)}
-                    tone={
-                      position.unrealized_pnl > 0
-                        ? 'pnl-positive'
-                        : position.unrealized_pnl < 0
-                          ? 'pnl-negative'
-                          : undefined
+                    label={labels.quoteSource}
+                    value={quoteSourceLabel}
+                  />
+                  <InfoRow
+                    label={labels.quoteAge}
+                    value={formatAge(quoteAgeSeconds)}
+                  />
+                  <InfoRow
+                    label={labels.staleReason}
+                    value={staleReasonLabel}
+                    tone={staleReason ? 'warning' : undefined}
+                  />
+                  <InfoRow
+                    label={labels.valuationTimestamp}
+                    value={formatTimestamp(overview.data?.valuation_timestamp)}
+                  />
+                  <InfoRow
+                    label={labels.refreshPolicy}
+                    value={refreshPolicyLabel}
+                  />
+                  <InfoRow
+                    label={labels.marketOpen}
+                    value={
+                      marketOpen === undefined
+                        ? '--'
+                        : marketOpen
+                          ? labels.marketOpen
+                          : labels.marketClosed
                     }
                   />
                 </div>
-              )}
-            </div>
-          </section>
-
-          {!isHistoricalClosedPosition ? (
-            <section
-              data-testid="holding-strategy-attribution-boundary"
-              id="holding-strategy-attribution-boundary"
-              className="app-panel min-w-0 rounded-[var(--app-radius-surface)]"
-            >
-              <div className="p-4 sm:p-5">
-                <div className="app-product-mark">
-                  {labels.strategyAttributionBoundary}
-                </div>
-                <div className="mt-3 inline-flex max-w-full items-center rounded-full border border-[color-mix(in_srgb,var(--app-warning)_42%,var(--app-border))] bg-[var(--app-warning-bg)] px-3 py-1 text-xs font-semibold text-[var(--app-warning)]">
-                  <span className="truncate">
-                    {hasSymbolStrategyEvidence
-                      ? labels.strategyAttributionLinkedEvidence
-                      : labels.strategyAttributionNoLinkedFills}
-                  </span>
-                </div>
-                <p className="app-muted mt-3 text-sm leading-6">
-                  {hasSymbolStrategyEvidence
-                    ? labels.strategyAttributionLinkedDetail
-                    : labels.strategyAttributionDetail}
-                </p>
-                {attributionReadinessItems.length > 0 ? (
-                  <div
-                    data-testid="holding-strategy-attribution-readiness"
-                    className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-panel)_36%,transparent)] p-3"
+                {!isHistoricalClosedPosition ? (
+                  <ControlledActionZone
+                    title={labels.quoteRefreshTitle}
+                    description={labels.quoteRefreshDetail}
+                    evidence={`${labels.quoteRefreshBoundary} · ${labels.quoteTimestamp} ${formatTimestamp(
+                      quoteTimestamp,
+                    )}`}
+                    tone="info"
+                    className="mt-4"
                   >
-                    <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                      <div className="app-product-mark">
-                        {labels.strategyAttributionReviewReadiness}
-                      </div>
-                      <span
-                        className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                          attributionReviewReady
-                            ? 'bg-[var(--app-success-bg)] text-[var(--app-success-text)]'
-                            : 'bg-[var(--app-warning-bg)] text-[var(--app-warning-text)]'
-                        }`}
-                      >
-                        {attributionReviewReady
-                          ? labels.strategyAttributionReviewReady
-                          : labels.strategyAttributionReviewIncomplete}
-                      </span>
-                    </div>
-                    <ul className="mt-3 grid gap-2">
-                      {attributionReadinessItems.map((item) => (
-                        <li
-                          key={item.label}
-                          className="flex min-w-0 items-center gap-2 text-sm text-[var(--app-muted)]"
-                        >
-                          <span
-                            className={`h-2 w-2 shrink-0 rounded-full ${
-                              item.passed
-                                ? 'bg-[var(--app-success-indicator)]'
-                                : 'bg-[var(--app-warning-indicator)]'
-                            }`}
-                          />
-                          <span className="min-w-0 break-words">
-                            {item.label}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                    <p className="mt-3 text-sm leading-6 text-[var(--app-muted)]">
-                      {labels.strategyAttributionReviewBoundary}
-                    </p>
-                  </div>
+                    <button
+                      type="button"
+                      className="app-button-primary min-h-10 rounded-[var(--app-radius-control)] px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-55"
+                      disabled={refreshQuote.isPending}
+                      onClick={() =>
+                        refreshQuote.mutate({
+                          symbols: [position.symbol],
+                          force: true,
+                        })
+                      }
+                      aria-label={`${labels.refreshQuote}: ${position.symbol}`}
+                    >
+                      {refreshQuote.isPending
+                        ? labels.refreshingQuote
+                        : labels.refreshQuote}
+                    </button>
+                  </ControlledActionZone>
                 ) : null}
-                {attributionNextAction ? (
+                {refreshStatus ? (
                   <div
-                    data-testid="holding-strategy-attribution-next-action"
-                    className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-accent)_24%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_8%,transparent)] p-3"
+                    className={`mt-3 text-sm ${
+                      refreshQuote.isError
+                        ? 'app-error-text'
+                        : 'text-[var(--app-muted)]'
+                    }`}
+                    role="status"
+                    aria-live="polite"
                   >
-                    <div className="app-product-mark">
-                      {labels.strategyAttributionNextActionTitle}
-                    </div>
-                    <p className="mt-2 text-sm leading-6 text-[var(--app-muted)]">
-                      {attributionNextAction.detail}
-                    </p>
-                    <div className="mt-3">
-                      <ActionLink
-                        href={attributionNextAction.href}
-                        label={attributionNextAction.label}
-                      />
-                    </div>
-                  </div>
-                ) : null}
-                {hasSymbolStrategyEvidence ? (
-                  <div className="mt-4 grid gap-2">
-                    <InfoRow
-                      label={labels.strategyAttributionStrategy}
-                      value={strategyDisplayName}
-                    />
-                    <InfoRow
-                      label={labels.strategyAttributionEvidenceStatus}
-                      value={attributionStatusLabel}
-                    />
-                    <InfoRow
-                      label={labels.strategyAttributionLinkedFillsLabel}
-                      value={labels.strategyAttributionLinkedFills(
-                        strategyEvidenceFillCount,
-                      )}
-                    />
-                    <InfoRow
-                      label={labels.strategyAttributionEvidenceRefs}
-                      value={String(strategyEvidenceRefCount)}
-                    />
-                    {strategyEvidenceItems.length > 0 ? (
-                      <div
-                        data-testid="holding-strategy-evidence-chain"
-                        className="mt-2 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-panel)_36%,transparent)] p-3"
-                      >
-                        <div className="app-product-mark">
-                          {labels.strategyAttributionEvidenceChain}
-                        </div>
-                        <ul className="mt-3 grid gap-2">
-                          {strategyEvidenceItems.map((item, index) => (
-                            <li
-                              key={`${item.kind}-${item.auditRef}-${index}`}
-                              className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_24%,transparent)] px-3 py-2"
-                            >
-                              <div className="text-sm font-semibold text-[var(--app-text)]">
-                                {item.label}
-                              </div>
-                              <div className="mt-1 break-all font-mono text-xs text-[var(--app-muted)]">
-                                {labels.strategyAttributionEvidenceAuditRef(
-                                  item.auditRef,
-                                )}
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-                {!attributionNextAction ? (
-                  <div className="mt-4">
-                    <ActionLink
-                      href={buildBacktestHandoffHref(
-                        position.symbol,
-                        assetClass,
-                      )}
-                      label={labels.actionStrategyEvidence}
-                    />
+                    {refreshStatus}
                   </div>
                 ) : null}
               </div>
             </section>
-          ) : null}
+
+            {!isHistoricalClosedPosition ? (
+              <section
+                data-testid="holding-strategy-attribution-boundary"
+                id="holding-strategy-attribution-boundary"
+                className="app-workbench-section min-w-0 border-t border-[var(--app-divider)] pt-4"
+              >
+                <div>
+                  <div className="app-product-mark">
+                    {labels.strategyAttributionBoundary}
+                  </div>
+                  <WorkbenchEvidenceState
+                    kind={hasSymbolStrategyEvidence ? 'ready' : 'partial'}
+                    statusLabel={
+                      hasSymbolStrategyEvidence
+                        ? labels.strategyAttributionLinkedEvidence
+                        : labels.strategyAttributionNoLinkedFills
+                    }
+                    title={labels.strategyAttributionBoundary}
+                    description={
+                      hasSymbolStrategyEvidence
+                        ? labels.strategyAttributionLinkedDetail
+                        : labels.strategyAttributionDetail
+                    }
+                    className="mt-3"
+                  />
+                  {attributionReadinessItems.length > 0 ? (
+                    <div
+                      data-testid="holding-strategy-attribution-readiness"
+                      className="mt-4 border-y border-[var(--app-divider)] py-3"
+                    >
+                      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                        <div className="app-product-mark">
+                          {labels.strategyAttributionReviewReadiness}
+                        </div>
+                        <WorkbenchStatusBadge
+                          tone={attributionReviewReady ? 'success' : 'warning'}
+                        >
+                          {attributionReviewReady
+                            ? labels.strategyAttributionReviewReady
+                            : labels.strategyAttributionReviewIncomplete}
+                        </WorkbenchStatusBadge>
+                      </div>
+                      <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+                        {attributionReadinessItems.map((item) => (
+                          <li
+                            key={item.label}
+                            className="flex min-w-0 items-center gap-2 text-sm text-[var(--app-muted)]"
+                          >
+                            <span
+                              className={`h-2 w-2 shrink-0 rounded-full ${
+                                item.passed
+                                  ? 'bg-[var(--app-success-indicator)]'
+                                  : 'bg-[var(--app-warning-indicator)]'
+                              }`}
+                            />
+                            <span className="min-w-0 break-words">
+                              {item.label}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="mt-3 text-sm leading-6 text-[var(--app-muted)]">
+                        {labels.strategyAttributionReviewBoundary}
+                      </p>
+                    </div>
+                  ) : null}
+                  {attributionNextAction ? (
+                    <div
+                      data-testid="holding-strategy-attribution-next-action"
+                      className="mt-4 border-l-2 border-[var(--app-accent-border)] pl-3"
+                    >
+                      <div className="app-product-mark">
+                        {labels.strategyAttributionNextActionTitle}
+                      </div>
+                      <p className="mt-2 text-sm leading-6 text-[var(--app-muted)]">
+                        {attributionNextAction.detail}
+                      </p>
+                      <div className="mt-3">
+                        <ActionLink
+                          href={attributionNextAction.href}
+                          label={attributionNextAction.label}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+                  {hasSymbolStrategyEvidence ? (
+                    <div className="mt-4 grid gap-2">
+                      <InfoRow
+                        label={labels.strategyAttributionStrategy}
+                        value={strategyDisplayName}
+                      />
+                      <InfoRow
+                        label={labels.strategyAttributionEvidenceStatus}
+                        value={attributionStatusLabel}
+                      />
+                      <InfoRow
+                        label={labels.strategyAttributionLinkedFillsLabel}
+                        value={labels.strategyAttributionLinkedFills(
+                          strategyEvidenceFillCount,
+                        )}
+                      />
+                      <InfoRow
+                        label={labels.strategyAttributionEvidenceRefs}
+                        value={String(strategyEvidenceRefCount)}
+                      />
+                      {strategyEvidenceItems.length > 0 ? (
+                        <details
+                          data-testid="holding-strategy-evidence-chain"
+                          className="mt-3 border-y border-[var(--app-divider)] py-3"
+                        >
+                          <summary className="min-h-10 cursor-pointer py-2 text-xs font-semibold text-[var(--app-text-secondary)]">
+                            {labels.strategyAttributionEvidenceChain}
+                          </summary>
+                          <ul className="divide-y divide-[var(--app-divider)]">
+                            {strategyEvidenceItems.map((item, index) => (
+                              <li
+                                key={`${item.kind}-${item.auditRef}-${index}`}
+                                className="min-w-0 py-2.5"
+                              >
+                                <div className="text-sm font-semibold text-[var(--app-text)]">
+                                  {item.label}
+                                </div>
+                                <div className="mt-1 break-all font-mono text-xs text-[var(--app-muted)]">
+                                  {labels.strategyAttributionEvidenceAuditRef(
+                                    item.auditRef,
+                                  )}
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {!attributionNextAction ? (
+                    <div className="mt-4">
+                      <ActionLink
+                        href={buildBacktestHandoffHref(
+                          position.symbol,
+                          assetClass,
+                        )}
+                        label={labels.actionStrategyEvidence}
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
+          </div>
+
+          <section
+            id="holding-panel-reconciliation"
+            role="tabpanel"
+            aria-labelledby="holding-tab-reconciliation"
+            hidden={activeTab !== 'reconciliation'}
+            data-testid="holding-reconciliation-panel"
+            className="app-workbench-section min-w-0"
+          >
+            <div className="app-product-mark">{labels.reconciliationTitle}</div>
+            <p className="mt-1 text-xs leading-5 text-[var(--app-text-secondary)]">
+              {labels.reconciliationDetail}
+            </p>
+            <WorkbenchEvidenceState
+              kind={evidenceStateKind}
+              statusLabel={evidenceReviewState}
+              title={labels.reconciliationStateTitle}
+              description={nextManualStep}
+              className="mt-3"
+            />
+            <MetricGrid metrics={reconciliationMetrics} />
+            <div className="mt-4 flex flex-wrap gap-2">
+              <ActionLink
+                href="/account-truth"
+                label={labels.actionAccountTruth}
+              />
+              <ActionLink href="/market" label={labels.actionMarket} />
+            </div>
+          </section>
 
           <section
             data-testid="holding-related-actions-panel"
-            className="app-panel min-w-0 rounded-[var(--app-radius-surface)]"
+            className="min-w-0 border-t border-[var(--app-divider)] pt-4"
           >
-            <div className="p-4 sm:p-5">
+            <div>
               <div className="app-product-mark">{labels.relatedActions}</div>
-              <div className="mt-4 grid gap-2">
+              <nav
+                aria-label={labels.relatedActions}
+                className="mt-3 flex flex-wrap gap-2"
+              >
                 <ActionLink
                   href={buildBacktestHandoffHref(position.symbol, assetClass)}
                   label={labels.actionStrategyResearch}
@@ -1217,7 +1355,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
                       : labels.actionActivity
                   }
                 />
-              </div>
+              </nav>
             </div>
           </section>
         </aside>
@@ -1236,21 +1374,21 @@ function MetricGrid({
   metricTestId?: string;
 }) {
   return (
-    <div
+    <dl
       data-testid={testId}
-      className="mt-5 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
+      className="mt-3 grid min-w-0 grid-cols-1 border-y border-[var(--app-divider)] sm:grid-cols-2 xl:grid-cols-3"
     >
       {metrics.map((metric) => (
         <div
           key={metric.label}
           data-testid={metricTestId}
-          className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3"
+          className="min-w-0 border-b border-[var(--app-divider)] px-3 py-2.5 sm:border-r sm:[&:nth-child(2n)]:border-r-0 xl:[&:nth-child(2n)]:border-r xl:[&:nth-child(3n)]:border-r-0"
         >
-          <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+          <dt className="text-[11px] font-medium text-[var(--app-text-secondary)]">
             {metric.label}
-          </div>
-          <div
-            className={`mt-2 break-words font-mono text-sm font-semibold tabular-nums ${
+          </dt>
+          <dd
+            className={`mt-0.5 break-words text-sm font-semibold tabular-nums ${
               metric.tone === 'pnl-positive'
                 ? 'text-[var(--app-pnl-positive)]'
                 : metric.tone === 'pnl-negative'
@@ -1261,10 +1399,15 @@ function MetricGrid({
             }`}
           >
             {metric.value}
-          </div>
+          </dd>
+          {metric.detail ? (
+            <div className="mt-0.5 text-[11px] leading-4 text-[var(--app-text-tertiary)]">
+              {metric.detail}
+            </div>
+          ) : null}
         </div>
       ))}
-    </div>
+    </dl>
   );
 }
 
@@ -1280,9 +1423,11 @@ function InfoRow({
   return (
     <div
       data-testid="holding-info-row"
-      className="grid min-w-0 grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] items-start gap-3 border-b border-[color-mix(in_srgb,var(--app-border)_20%,transparent)] pb-2 text-sm last:border-b-0 last:pb-0"
+      className="grid min-w-0 grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] items-start gap-3 border-b border-[var(--app-divider)] pb-2 text-sm last:border-b-0 last:pb-0"
     >
-      <span className="app-muted min-w-0 break-words">{label}</span>
+      <span className="min-w-0 break-words text-[var(--app-text-secondary)]">
+        {label}
+      </span>
       <span
         data-testid="holding-info-row-value"
         className={`min-w-0 break-words text-right font-mono font-semibold tabular-nums ${
@@ -1298,28 +1443,6 @@ function InfoRow({
         {value}
       </span>
     </div>
-  );
-}
-
-function StatusBadge({
-  label,
-  tone,
-}: {
-  label: string;
-  tone: 'success' | 'warning' | 'danger';
-}) {
-  const colorClass =
-    tone === 'success'
-      ? 'bg-[var(--app-success-bg)] text-[var(--app-success-text)] ring-[var(--app-success-border)]'
-      : tone === 'danger'
-        ? 'bg-[var(--app-danger-bg)] text-[var(--app-danger-text)] ring-[var(--app-danger-border)]'
-        : 'bg-[var(--app-warning-bg)] text-[var(--app-warning-text)] ring-[var(--app-warning-border)]';
-  return (
-    <span
-      className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${colorClass}`}
-    >
-      {label}
-    </span>
   );
 }
 
@@ -1340,7 +1463,7 @@ function LedgerTrace({
   }
   if (entries.length === 0) {
     return (
-      <div className="mt-5 rounded-2xl border border-dashed border-[color-mix(in_srgb,var(--app-border)_36%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-4 py-5 text-sm text-[var(--app-muted)]">
+      <div className="mt-4 border-y border-dashed border-[var(--app-divider)] px-3 py-4 text-sm text-[var(--app-text-secondary)]">
         {labels.noLedger}
       </div>
     );
@@ -1349,11 +1472,11 @@ function LedgerTrace({
   return (
     <div
       data-testid="holding-ledger-scroll"
-      className="mt-5 min-w-0 max-w-full overflow-x-scroll overscroll-x-contain pb-2 [scrollbar-gutter:stable]"
+      className="mt-4 min-w-0 max-w-full overflow-x-auto overscroll-x-contain pb-2 [scrollbar-gutter:stable]"
     >
       <table
         data-testid="holding-ledger-table"
-        className="app-data-table w-[880px] min-w-max text-left text-sm"
+        className="app-data-table w-full min-w-[760px] text-left text-sm"
       >
         <thead className="app-kicker text-xs uppercase tracking-[0.16em]">
           <tr>
@@ -1420,7 +1543,7 @@ function ActionLink({ href, label }: { href: string; label: string }) {
     <a
       href={href}
       data-testid="holding-related-action-link"
-      className="app-button-secondary min-w-0 break-words rounded-2xl px-4 py-2.5 text-center text-sm font-semibold"
+      className="app-button-secondary inline-flex min-h-10 min-w-0 items-center break-words rounded-[var(--app-radius-control)] px-3 py-2 text-center text-sm font-semibold"
       aria-label={label}
     >
       {label}
@@ -1431,24 +1554,13 @@ function ActionLink({ href, label }: { href: string; label: string }) {
 function StatusPanel({
   title,
   detail,
-  tone,
+  kind,
 }: {
   title: string;
   detail: string;
-  tone: 'neutral' | 'danger';
+  kind: 'loading' | 'empty' | 'error';
 }) {
   return (
-    <section className="app-terminal-panel rounded-[28px] p-[1px]">
-      <div className="app-terminal-inner rounded-[27px] p-5">
-        <div
-          className={`app-product-mark ${
-            tone === 'danger' ? 'text-[var(--app-danger-text)]' : ''
-          }`}
-        >
-          {title}
-        </div>
-        <p className="app-muted mt-2 text-sm">{detail}</p>
-      </div>
-    </section>
+    <WorkbenchEvidenceState kind={kind} title={title} description={detail} />
   );
 }
