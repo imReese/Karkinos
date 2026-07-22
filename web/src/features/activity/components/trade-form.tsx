@@ -185,15 +185,12 @@ export function TradeForm({
           );
         }
       })}
-      className="app-panel space-y-3 rounded-2xl p-5"
+      className="min-w-0 space-y-3"
     >
-      <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-        {labels.title}
-      </div>
       <input
         aria-label={labels.occurredAtLabel}
         type="datetime-local"
-        className="app-field w-full rounded-2xl px-4 py-3 text-sm"
+        className="app-field min-h-10 w-full rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
         {...register('occurred_at', { required: common.required })}
       />
       {errors.occurred_at ? (
@@ -202,14 +199,14 @@ export function TradeForm({
       <input
         aria-label={labels.symbolLabel}
         placeholder={labels.symbolPlaceholder}
-        className="app-field w-full rounded-2xl px-4 py-3 text-sm"
+        className="app-field min-h-10 w-full rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
         {...register('symbol', { required: common.required })}
       />
       {errors.symbol ? <FieldError message={errors.symbol.message} /> : null}
       <div className="grid gap-3 md:grid-cols-2">
         <select
           aria-label={labels.directionLabel}
-          className="app-field rounded-2xl px-4 py-3 text-sm"
+          className="app-field min-h-10 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
           {...register('direction', { required: common.required })}
         >
           <option value="buy">{labels.buy}</option>
@@ -217,7 +214,7 @@ export function TradeForm({
         </select>
         <select
           aria-label={labels.assetClassLabel}
-          className="app-field rounded-2xl px-4 py-3 text-sm"
+          className="app-field min-h-10 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
           {...register('asset_class', { required: common.required })}
         >
           {assetOptions.map((option) => (
@@ -237,7 +234,7 @@ export function TradeForm({
             type="number"
             step="any"
             placeholder={labels.amountPlaceholder}
-            className="app-field w-full rounded-2xl px-4 py-3 text-sm"
+            className="app-field min-h-10 w-full rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
             {...register('amount', {
               valueAsNumber: true,
               validate: (value) =>
@@ -258,7 +255,7 @@ export function TradeForm({
           type="number"
           step="any"
           placeholder={labels.quantityPlaceholder}
-          className="app-field rounded-2xl px-4 py-3 text-sm"
+          className="app-field min-h-10 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
           {...register('quantity', {
             valueAsNumber: true,
             validate: (value) =>
@@ -272,7 +269,7 @@ export function TradeForm({
           type="number"
           step="any"
           placeholder={labels.pricePlaceholder}
-          className="app-field rounded-2xl px-4 py-3 text-sm"
+          className="app-field min-h-10 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
           {...register('unit_price', {
             valueAsNumber: true,
             validate: (value) =>
@@ -285,7 +282,7 @@ export function TradeForm({
           aria-label={labels.feeLabel}
           type="number"
           step="any"
-          className="app-field rounded-2xl px-4 py-3 text-sm"
+          className="app-field min-h-10 rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
           {...register('fee', {
             valueAsNumber: true,
             onChange: () => {
@@ -305,12 +302,12 @@ export function TradeForm({
         </div>
       ) : null}
       {previewLoading ? (
-        <div className="app-muted rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] px-4 py-3 text-xs leading-5">
+        <div className="app-muted border-l-2 border-[var(--app-info-border)] px-3 py-2 text-xs leading-5">
           {labels.previewLoading}
         </div>
       ) : null}
       {previewError ? (
-        <div className="app-error-text rounded-2xl border border-[var(--app-danger-border)] px-4 py-3 text-xs leading-5">
+        <div className="app-error-text border-l-2 border-[var(--app-danger-border)] px-3 py-2 text-xs leading-5">
           {labels.previewUnavailable}
         </div>
       ) : null}
@@ -330,14 +327,14 @@ export function TradeForm({
       <input
         aria-label={labels.noteLabel}
         placeholder={labels.notePlaceholder}
-        className="app-field w-full rounded-2xl px-4 py-3 text-sm"
+        className="app-field min-h-10 w-full rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
         {...register('note')}
       />
       {submitError ? <FieldError message={submitError} /> : null}
       <button
         type="submit"
         disabled={pending}
-        className="app-button-primary rounded-2xl px-5 py-3 text-sm font-semibold disabled:opacity-50"
+        className="app-button-primary min-h-10 rounded-[var(--app-radius-control)] px-4 py-2 text-sm font-semibold disabled:opacity-50"
       >
         {pending ? labels.saving : labels.submit}
       </button>
@@ -371,7 +368,7 @@ function TradePreviewPanel({
   const otherFees = readFeeBreakdown(preview, 'other_fees') ?? 0;
 
   return (
-    <section className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)] p-4">
+    <section className="border-y border-[var(--app-divider)] py-3">
       <div className="flex min-w-0 items-center justify-between gap-3">
         <div className="app-kicker text-xs uppercase tracking-[0.18em]">
           {labels.previewTitle}

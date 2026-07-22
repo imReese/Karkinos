@@ -14,6 +14,13 @@ const ACCOUNT_TRUTH = source(
   'features/account-truth/components/account-truth-review-page.tsx',
 );
 const ACTIVITY_FEED = source('features/activity/components/activity-feed.tsx');
+const ACTIVITY_FORMS = [
+  source('features/activity/components/trade-form.tsx'),
+  source('features/activity/components/cash-flow-form.tsx'),
+  source('features/activity/components/dividend-form.tsx'),
+  source('features/activity/components/manual-adjustment-form.tsx'),
+  source('features/activity/components/fund-batch-form.tsx'),
+];
 const APP_SHELL = source('app/layout/app-shell.tsx');
 const RESEARCH_TASK = source(
   'features/ai-research/components/research-task-panel.tsx',
@@ -38,7 +45,7 @@ describe('remaining route workbench contract', () => {
     }
   });
 
-  it('keeps controlled review first and makes Activity ordering explicit by viewport', () => {
+  it('keeps controlled review first and makes Activity history primary by viewport', () => {
     const tradingPage = TRADING.slice(
       TRADING.indexOf('export function TradingPage'),
     );
@@ -51,9 +58,9 @@ describe('remaining route workbench contract', () => {
       ROUTER.indexOf('type ActivityEntryTool'),
     );
     expect(
-      activityPage.indexOf('data-activity-surface="priority-and-entry"'),
-    ).toBeLessThan(
       activityPage.indexOf('data-activity-surface="audit-history"'),
+    ).toBeLessThan(
+      activityPage.indexOf('data-activity-surface="priority-and-entry"'),
     );
     expect(activityPage).toContain(
       'xl:sticky xl:top-24 xl:col-start-2 xl:row-start-1',
@@ -62,6 +69,8 @@ describe('remaining route workbench contract', () => {
     expect(
       activityPage.indexOf('data-activity-surface="audit-history"'),
     ).toBeLessThan(activityPage.indexOf('<ActivityFeed'));
+    expect(ROUTER).toContain('<ControlledActionZone');
+    expect(ROUTER).toContain('copy.activity.entryTools.boundary');
   });
 
   it('marks AI output as cited research rather than deterministic account fact', () => {
@@ -115,6 +124,9 @@ describe('remaining route workbench contract', () => {
     );
 
     expect(activityFeed).toContain('app-workbench-section');
+    expect(activityFeed).toContain('max-h-[min(68vh,42rem)]');
+    expect(activityFeed).toContain('<thead className="sticky top-0 z-10">');
+    expect(ACTIVITY_FEED).toContain('max-w-[240px] flex-wrap');
     expect(activityFeed).not.toContain(
       'app-panel min-w-0 overflow-hidden rounded-2xl',
     );
@@ -137,5 +149,23 @@ describe('remaining route workbench contract', () => {
     expect(ACCOUNT_TRUTH).not.toMatch(
       /style=\{\{[\s\S]*var\(--app-(?:success|warning|danger)\)/,
     );
+  });
+
+  it('keeps Activity ledger entry surfaces flat and token-shaped', () => {
+    const activityTools = ROUTER.slice(
+      ROUTER.indexOf('function ActivityEntryToolsPanel'),
+      ROUTER.indexOf('function formatPendingStatus'),
+    );
+
+    expect(activityTools).toContain('<ControlledActionZone');
+    expect(activityTools).toContain('app-workbench-section');
+    expect(activityTools).not.toContain('app-panel');
+    expect(activityTools).not.toContain('rounded-2xl');
+
+    for (const form of ACTIVITY_FORMS) {
+      expect(form).not.toContain('app-panel');
+      expect(form).not.toContain('rounded-2xl');
+      expect(form).toContain('rounded-[var(--app-radius-control)]');
+    }
   });
 });

@@ -317,7 +317,7 @@ test('filters recent ledger entries by instrument search', async () => {
   expect(await screen.findByText('没有匹配的流水。')).toBeTruthy();
 });
 
-test('prioritizes pending journeys and entry tools before immutable history in document order', async () => {
+test('prioritizes immutable history before the controlled entry zone in document order', async () => {
   renderActivityPage('zh');
 
   const entryTitle = await screen.findByText('新增流水');
@@ -328,8 +328,11 @@ test('prioritizes pending journeys and entry tools before immutable history in d
   ).getAllByRole('button');
 
   expect(
-    entryTitle.compareDocumentPosition(ledgerTitle) &
+    ledgerTitle.compareDocumentPosition(entryTitle) &
       Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    entryTitle.closest('[data-workbench-primitive="controlled-action-zone"]'),
   ).toBeTruthy();
   expect(
     entryTitle.compareDocumentPosition(tradeTitle) &

@@ -94,13 +94,10 @@ export function FundBatchForm({
           );
         }
       }}
-      className="app-panel min-w-0 max-w-full space-y-4 rounded-2xl p-5"
+      className="min-w-0 max-w-full space-y-4"
     >
       <div className="min-w-0">
-        <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-          {labels.title}
-        </div>
-        <p className="app-muted mt-2 break-words text-xs leading-5">
+        <p className="app-muted break-words text-xs leading-5">
           {labels.helper}
         </p>
       </div>
@@ -114,22 +111,22 @@ export function FundBatchForm({
             occurred_at: event.target.value,
           }))
         }
-        className="app-field min-w-0 w-full rounded-2xl px-4 py-3 text-sm"
+        className="app-field min-h-10 min-w-0 w-full rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
       />
       {loadingCandidates ? (
-        <div className="app-panel-strong rounded-2xl p-3 text-sm app-muted">
+        <div className="app-muted border-y border-[var(--app-divider)] py-3 text-sm">
           {labels.loadingCandidates}
         </div>
       ) : values.orders.length === 0 ? (
-        <div className="app-panel-strong rounded-2xl p-3 text-sm app-muted">
+        <div className="app-muted border-y border-[var(--app-divider)] py-3 text-sm">
           {labels.noCandidates}
         </div>
       ) : (
-        <div className="min-w-0 space-y-2">
+        <div className="min-w-0 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]">
           {values.orders.map((order, index) => (
             <div
               key={order.symbol}
-              className="app-panel-strong grid min-w-0 gap-2 rounded-2xl p-3 sm:grid-cols-[minmax(0,1fr)_minmax(130px,150px)]"
+              className="grid min-w-0 gap-2 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(130px,150px)] sm:items-center"
             >
               <div className="min-w-0">
                 <div className="break-words text-sm font-semibold">
@@ -153,7 +150,7 @@ export function FundBatchForm({
                       : Number(event.target.value);
                   updateOrderAmount(index, nextAmount);
                 }}
-                className="app-field min-w-0 w-full rounded-2xl px-4 py-3 text-sm"
+                className="app-field min-h-10 min-w-0 w-full rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
               />
             </div>
           ))}
@@ -166,7 +163,7 @@ export function FundBatchForm({
         onChange={(event) =>
           setValues((current) => ({ ...current, note: event.target.value }))
         }
-        className="app-field min-w-0 w-full rounded-2xl px-4 py-3 text-sm"
+        className="app-field min-h-10 min-w-0 w-full rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
       />
       {submitError ? (
         <div className="app-error-text text-sm">{submitError}</div>
@@ -174,7 +171,7 @@ export function FundBatchForm({
       <button
         type="submit"
         disabled={pending}
-        className="app-button-primary rounded-2xl px-5 py-3 text-sm font-semibold disabled:opacity-50"
+        className="app-button-primary min-h-10 rounded-[var(--app-radius-control)] px-4 py-2 text-sm font-semibold disabled:opacity-50"
       >
         {pending ? labels.saving : labels.submit}
       </button>
