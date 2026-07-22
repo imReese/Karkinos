@@ -229,7 +229,23 @@ test('core review routes keep audit drill-downs closed and mobile reading paths 
     await expect(page.getByTestId(testId)).not.toHaveAttribute('open', '');
   }
 
-  for (const path of ['/decision', '/trading', '/settings']) {
+  await page.goto('/backtest');
+  await expect(
+    page.getByRole('heading', { name: /Strategy replay|策略回放/ }),
+  ).toBeVisible();
+  for (const testId of [
+    'backtest-advanced-tools-disclosure',
+    'backtest-research-governance-disclosure',
+    'backtest-promotion-evidence-disclosure',
+    'backtest-research-archive-disclosure',
+  ]) {
+    await expect(page.getByTestId(testId)).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+  }
+
+  for (const path of ['/decision', '/trading', '/settings', '/backtest']) {
     await page.goto(path);
     const geometry = await page.evaluate(() => {
       const content = document.querySelector(
@@ -260,6 +276,7 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
       '/account-truth',
       '/trading',
       '/settings',
+      '/backtest',
     ]) {
       await page.goto(path);
       await selectMobileTheme(page, theme as 'light' | 'dark');

@@ -1404,6 +1404,21 @@ export const copy = {
           'Dataset snapshot will be frozen when this backtest runs.',
         runReadinessParameterCount: (count: number) =>
           `${count} configured ${count === 1 ? 'parameter' : 'parameters'}`,
+        promotionRequirementsCount: (count: number) =>
+          `${count} unmet ${count === 1 ? 'gate' : 'gates'}`,
+        promotionEvidenceUnavailable: 'No promotion evidence for this strategy',
+        advancedToolsTitle: 'Advanced experiment tools',
+        advancedToolsDetail:
+          'Parameter sweeps and same-snapshot comparisons are secondary research tools.',
+        researchGovernanceTitle: 'Research governance',
+        researchGovernanceDetail:
+          'Account and symbol assignments plus reviewed learning remain separate from execution authority.',
+        promotionEvidenceTitle: 'Promotion evidence',
+        promotionEvidenceDetail:
+          'Review after-cost, OOS, risk, simulation, Account Truth, and attribution gates.',
+        researchArchiveTitle: 'AI research and saved reports',
+        researchArchiveDetail:
+          'Human-started AI tasks and canonical saved experiments remain research-only evidence.',
         accountStrategyKicker: 'Account strategy',
         accountStrategyTitle: 'Current account strategy',
         accountStrategyDetail:
@@ -4081,6 +4096,19 @@ export const copy = {
         runReadinessDataset: '数据快照',
         runReadinessDatasetPending: '运行回测时会冻结本次数据快照。',
         runReadinessParameterCount: (count: number) => `${count} 个已配置参数`,
+        promotionRequirementsCount: (count: number) => `${count} 个闸门待满足`,
+        promotionEvidenceUnavailable: '该策略暂无推广证据',
+        advancedToolsTitle: '高级实验工具',
+        advancedToolsDetail: '参数扫描与同快照对比属于次级研究工具。',
+        researchGovernanceTitle: '研究治理',
+        researchGovernanceDetail:
+          '账户/标的策略绑定与已复盘学习保持独立，不授予执行权限。',
+        promotionEvidenceTitle: '推广证据',
+        promotionEvidenceDetail:
+          '复核扣费后、样本外、风控、模拟、Account Truth 与归因闸门。',
+        researchArchiveTitle: 'AI 研究与已保存报告',
+        researchArchiveDetail:
+          '人工启动的 AI 任务与权威持久化实验仍然只是研究证据。',
         accountStrategyKicker: '账户策略',
         accountStrategyTitle: '当前账户策略',
         accountStrategyDetail:
