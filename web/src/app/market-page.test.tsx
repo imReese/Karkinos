@@ -306,9 +306,12 @@ test('keeps missing quote and holding values unavailable instead of inventing ze
     ],
   });
 
-  const row = await screen.findByRole('button', { name: /测试标的/ });
-  expect(within(row).getAllByText('--')).toHaveLength(2);
-  expect(within(row).queryByText('¥0.00')).toBeNull();
+  const instrument = await screen.findByRole('button', { name: /测试标的/ });
+  const row = instrument.closest('tr');
+  expect(row).toBeTruthy();
+  expect(within(row as HTMLTableRowElement).getAllByText('--')).toHaveLength(2);
+  expect(within(row as HTMLTableRowElement).queryByText('¥0.00')).toBeNull();
+  expect(screen.queryByText('¥0.00')).toBeNull();
 });
 
 test('counts cache estimated and missing quotes as market data needing confirmation', async () => {
@@ -336,7 +339,9 @@ test('counts cache estimated and missing quotes as market data needing confirmat
 test('states the personal-universe boundary and shows quote age separately from status', async () => {
   renderMarketPage();
 
-  expect(await screen.findByText('Personal universe')).toBeTruthy();
+  expect(
+    (await screen.findAllByText('Personal universe')).length,
+  ).toBeGreaterThan(0);
   expect(
     await screen.findByText(
       'Watchlist and current-holding research only; this is not a broad-market dashboard or a portfolio-contribution view.',
@@ -363,13 +368,56 @@ test('surfaces selected symbol next action without leaking raw data status codes
     ],
   });
 
-  expect(await screen.findByText('Confirmed NAV missing')).toBeTruthy();
+  const selectedInstrument = await screen.findByTestId(
+    'market-selected-instrument',
+  );
   expect(
-    await screen.findByText('Wait for confirmed fund NAV or sync NAV data'),
+    await within(selectedInstrument).findByText('Confirmed NAV missing'),
+  ).toBeTruthy();
+  expect(
+    await within(selectedInstrument).findByText(
+      'Wait for confirmed fund NAV or sync NAV data',
+    ),
   ).toBeTruthy();
   expect(
     screen.queryByText('confirmed_fund_nav_missing_estimate_only'),
   ).toBeNull();
+});
+
+test('uses a semantic comparison table with local overflow and quiet secondary provider details', async () => {
+  renderMarketPage();
+
+  const table = await screen.findByRole('table', { name: 'Research board' });
+  expect(
+    within(table).getByRole('columnheader', { name: 'Symbol' }),
+  ).toBeTruthy();
+  expect(
+    within(table).getByRole('columnheader', { name: 'Price' }),
+  ).toBeTruthy();
+  expect(
+    within(table).getByRole('columnheader', { name: 'Evidence mode' }),
+  ).toBeTruthy();
+  expect(
+    screen
+      .getByTestId('market-research-table-scroll')
+      .classList.contains('overflow-x-auto'),
+  ).toBe(true);
+
+  const providerDetails = screen.getByTestId('market-provider-details');
+  expect(providerDetails.hasAttribute('open')).toBe(false);
+  expect(screen.getByTestId('market-data-health-summary')).toBeTruthy();
+});
+
+test('keeps quiet confirmed holding evidence after market context', async () => {
+  renderMarketPage();
+
+  const table = await screen.findByTestId('market-research-table');
+  const review = await screen.findByTestId(
+    'current-holding-market-evidence-review',
+  );
+  expect(
+    table.compareDocumentPosition(review) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
 });
 
 test('routes confirmed NAV blockers through confirmation-only ingestion', async () => {

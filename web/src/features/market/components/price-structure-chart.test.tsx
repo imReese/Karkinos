@@ -62,6 +62,8 @@ test('renders OHLC price range as a K-line chart', () => {
   expect(chartScroll.className).toContain('overflow-x-auto');
   expect(chartScroll.className).toContain('pb-2');
   expect(chartCanvas.className).toContain('min-w-[640px]');
+  expect(container.querySelector('.rounded-2xl')).toBeNull();
+  expect(container.querySelector('.rounded-3xl')).toBeNull();
 
   fireEvent.click(screen.getByRole('button', { name: 'Show 1M K-line range' }));
 
@@ -77,7 +79,7 @@ test('renders OHLC price range as a K-line chart', () => {
 });
 
 test('renders an empty state when no bars are available', () => {
-  render(
+  const { container } = render(
     <PriceStructureChart
       titleLabel="Price range / K-line"
       priceLabel="Price"
@@ -88,6 +90,8 @@ test('renders an empty state when no bars are available', () => {
 
   expect(screen.getByText('No chart')).toBeTruthy();
   expect(screen.getByText('Price range / K-line')).toBeTruthy();
+  expect(container.querySelector('[data-evidence-kind="empty"]')).toBeTruthy();
+  expect(container.querySelector('.rounded-2xl')).toBeNull();
 });
 
 test('excludes out-of-range trade markers from the selected range axis', () => {

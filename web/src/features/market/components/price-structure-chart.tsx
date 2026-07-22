@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 
+import { EvidenceState } from '../../../app/components/workbench';
 import { formatCurrency, formatPercent } from '../../../shared/format';
 
 export type PriceStructureBar = {
@@ -148,15 +149,13 @@ export function PriceStructureChart({
   if (validBars.length === 0) {
     return (
       <div
-        className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_20%,transparent)] p-4"
+        className="border-y border-[var(--app-divider)] py-3"
         aria-label={titleLabel}
       >
         <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
           {titleLabel}
         </div>
-        <div className="mt-3 flex h-48 items-center justify-center rounded-2xl border border-dashed border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] text-sm text-[var(--app-muted)] sm:h-56">
-          {emptyLabel}
-        </div>
+        <EvidenceState className="mt-3" kind="empty" title={emptyLabel} />
       </div>
     );
   }
@@ -256,7 +255,7 @@ export function PriceStructureChart({
   );
   return (
     <div
-      className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_20%,transparent)] p-4"
+      className="min-w-0 border-y border-[var(--app-divider)] py-3"
       aria-label={titleLabel}
     >
       <div className="mb-4 flex min-w-0 flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -283,7 +282,7 @@ export function PriceStructureChart({
             <button
               key={rangeOption.key}
               type="button"
-              className={`rounded-full border px-3 py-1.5 font-mono text-[11px] font-semibold transition-colors ${
+              className={`rounded-[var(--app-radius-control)] border px-3 py-1.5 font-mono text-[11px] font-semibold transition-colors ${
                 selected
                   ? 'border-[color-mix(in_srgb,var(--app-accent)_58%,transparent)] bg-[color-mix(in_srgb,var(--app-accent)_16%,transparent)] text-[var(--app-text)]'
                   : 'border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] text-[var(--app-muted)] hover:border-[color-mix(in_srgb,var(--app-accent)_34%,transparent)] hover:text-[var(--app-soft)]'

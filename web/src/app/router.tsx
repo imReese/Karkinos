@@ -25,6 +25,7 @@ import {
   FilterBar,
   MetricStrip,
   StatusBadge,
+  Timeline,
   WorkspaceHeader,
   type ExceptionItem,
 } from './components/workbench';
@@ -194,7 +195,6 @@ import {
   isCacheLikeMarketDataStatus,
   isConfirmedMarketDataStatus,
   isUnconfirmedMarketDataStatus,
-  normalizeMarketDataStatus,
 } from '../shared/market-data-status';
 
 type PortfolioSearchState = {
@@ -202,54 +202,6 @@ type PortfolioSearchState = {
   pnl: 'all' | 'winners' | 'losers';
   q: string;
 };
-
-function marketDataStatusToneClass(status?: string | null) {
-  const normalized = normalizeMarketDataStatus(status);
-  if (!normalized) {
-    return 'text-[var(--app-soft)]';
-  }
-  if (isConfirmedMarketDataStatus(normalized)) {
-    return 'text-[var(--app-success-text)]';
-  }
-  if (
-    normalized === 'degraded' ||
-    normalized === 'error' ||
-    normalized === 'missing'
-  ) {
-    return 'text-[var(--app-danger-text)]';
-  }
-  if (
-    isCacheLikeMarketDataStatus(normalized) ||
-    isUnconfirmedMarketDataStatus(normalized)
-  ) {
-    return 'text-[var(--app-warning-text)]';
-  }
-  return 'text-[var(--app-soft)]';
-}
-
-function marketDataStatusDotClass(status?: string | null) {
-  const normalized = normalizeMarketDataStatus(status);
-  if (!normalized) {
-    return 'bg-[var(--app-muted)]';
-  }
-  if (isConfirmedMarketDataStatus(normalized)) {
-    return 'bg-[var(--app-success-indicator)]';
-  }
-  if (
-    normalized === 'degraded' ||
-    normalized === 'error' ||
-    normalized === 'missing'
-  ) {
-    return 'bg-[var(--app-danger-indicator)]';
-  }
-  if (
-    isCacheLikeMarketDataStatus(normalized) ||
-    isUnconfirmedMarketDataStatus(normalized)
-  ) {
-    return 'bg-[var(--app-warning-indicator)]';
-  }
-  return 'bg-[var(--app-muted)]';
-}
 
 function RootLayout() {
   const pathname = useRouterState({
@@ -4002,7 +3954,10 @@ export function MarketPage() {
       ? copy.market.marketOpen
       : copy.market.marketClosed
     : copy.market.unknown;
-  const sourceHealthTone = marketDataStatusToneClass(health?.source_health);
+  const holdingReviewNeedsAttention =
+    holdingMarketEvidenceReview.isError ||
+    holdingMarketEvidenceReview.data?.status === 'review_required' ||
+    holdingMarketEvidenceReview.data?.status === 'blocked_identity';
   const kline = useKlineQuery(activeSymbol);
   const notes = useResearchNotesQuery(activeSymbol, {
     entry_kind: noteFilterType || undefined,
@@ -4058,11 +4013,13 @@ export function MarketPage() {
           }
         />
 
-        <CurrentHoldingMarketEvidenceReviewPanel
-          report={holdingMarketEvidenceReview.data}
-          loading={holdingMarketEvidenceReview.isLoading}
-          error={holdingMarketEvidenceReview.isError}
-        />
+        {holdingReviewNeedsAttention ? (
+          <CurrentHoldingMarketEvidenceReviewPanel
+            report={holdingMarketEvidenceReview.data}
+            loading={holdingMarketEvidenceReview.isLoading}
+            error={holdingMarketEvidenceReview.isError}
+          />
+        ) : null}
 
         {board.isLoading ? (
           <EvidenceState
@@ -4085,14 +4042,13 @@ export function MarketPage() {
                   id: 'watchlist',
                   label: copy.market.watchlist,
                   value: items.length,
-                  detail: `${holdingItemsCount} ${copy.market.holdingsContext}`,
+                  detail: copy.market.personalUniverse,
                 },
                 {
-                  id: 'source-health',
-                  label: copy.market.evidenceMode,
-                  value: evidenceModeLabel,
-                  detail: `${copy.market.sourceHealth}: ${sourceHealthLabel}`,
-                  tone: cacheBound || staleCount > 0 ? 'warning' : 'neutral',
+                  id: 'holdings',
+                  label: copy.market.holdingsContext,
+                  value: holdingItemsCount,
+                  detail: `${items.length} ${copy.market.watchlist}`,
                 },
                 {
                   id: 'latest-quote',
@@ -4110,7 +4066,7 @@ export function MarketPage() {
               ]}
             />
 
-            <div className="grid gap-5 xl:grid-cols-[minmax(0,1.18fr)_minmax(340px,0.82fr)]">
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1.28fr)_minmax(320px,0.72fr)]">
               <div className="app-workbench-section min-w-0 overflow-hidden">
                 <div className="border-b border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-4 py-4 sm:px-5">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -4125,16 +4081,11 @@ export function MarketPage() {
                         {copy.market.scopeBoundary}
                       </p>
                     </div>
-                    <div className="app-chip inline-flex w-fit items-center gap-2 px-2.5 py-1 text-xs text-[var(--app-soft)]">
-                      <span
-                        className={`h-2 w-2 rounded-full ${
-                          health?.market_open
-                            ? 'bg-[var(--app-success-indicator)]'
-                            : 'bg-[var(--app-warning-indicator)]'
-                        }`}
-                      />
+                    <StatusBadge
+                      tone={health?.market_open ? 'success' : 'neutral'}
+                    >
                       {marketStateLabel}
-                    </div>
+                    </StatusBadge>
                   </div>
                 </div>
 
@@ -4191,256 +4142,324 @@ export function MarketPage() {
                   </button>
                 </form>
 
-                <div className="divide-y divide-[color-mix(in_srgb,var(--app-border)_18%,transparent)]">
-                  {items.map((item) => {
-                    const itemHealth = healthBySymbol.get(item.symbol);
-                    const isActive = activeSymbol === item.symbol;
-                    const quoteStatus = itemHealth?.quote_status ?? null;
-                    const quoteStatusLabel = itemHealth?.quote_status
-                      ? formatPublicStatus(itemHealth.quote_status, locale)
-                      : '--';
-                    return (
-                      <div
-                        key={item.symbol}
-                        role="button"
-                        aria-pressed={isActive}
-                        tabIndex={0}
-                        onClick={() => setSelectedSymbol(item.symbol)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter' || event.key === ' ') {
-                            event.preventDefault();
-                            setSelectedSymbol(item.symbol);
-                          }
-                        }}
-                        className={`grid w-full gap-3 px-4 py-4 text-left transition-[background-color,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] active:scale-[0.995] md:grid-cols-[minmax(0,1.35fr)_0.75fr_0.75fr_0.7fr_auto] md:items-center sm:px-5 ${
-                          isActive
-                            ? 'bg-[color-mix(in_srgb,var(--app-accent)_10%,transparent)]'
-                            : ''
-                        }`}
-                      >
-                        <div className="min-w-0">
-                          <div className="flex min-w-0 items-center gap-2">
-                            <span className="truncate text-sm font-semibold text-[var(--app-text)]">
-                              {item.name || item.symbol}
-                            </span>
-                            <span className="rounded-md border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--app-soft)]">
-                              {getAssetClassLabel(copy, item.asset_class)}
-                            </span>
-                          </div>
-                          <div className="app-muted mt-1 font-mono text-xs">
-                            {item.symbol}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
-                            {copy.market.priceLabel}
-                          </div>
-                          <div className="mt-1 font-mono text-sm font-semibold tabular-nums text-[var(--app-text)]">
-                            {item.price == null
-                              ? '--'
-                              : formatCurrency(item.price)}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
-                            {copy.market.holdingsContext}
-                          </div>
-                          <div className="mt-1 font-mono text-sm font-semibold tabular-nums text-[var(--app-text)]">
-                            {item.is_holding && item.market_value != null
-                              ? formatCurrency(item.market_value)
-                              : '--'}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
-                            {copy.market.quoteAge}
-                          </div>
-                          <div className="mt-1 flex items-center gap-2 text-xs text-[var(--app-soft)]">
-                            <span
-                              className={`h-1.5 w-1.5 rounded-full ${marketDataStatusDotClass(
-                                quoteStatus,
-                              )}`}
-                            />
-                            <span className="font-mono tabular-nums">
-                              {formatAge(itemHealth?.quote_age_seconds)}
-                            </span>
-                            <span className="text-[var(--app-text-tertiary)]">
-                              {quoteStatusLabel}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between gap-3 md:justify-end">
-                          <span className="font-mono text-xs text-[var(--app-muted)]">
-                            {item.research_count} {copy.market.notesTitle}
-                          </span>
-                          <button
-                            type="button"
-                            className="app-button-secondary rounded-[var(--app-radius-control)] px-3 py-1 text-xs"
-                            onClick={async (event) => {
-                              event.stopPropagation();
-                              await removeWatchlistItem.mutateAsync(
-                                item.symbol,
-                              );
-                              if (activeSymbol === item.symbol) {
-                                setSelectedSymbol('');
+                {items.length > 0 ? (
+                  <div
+                    className="max-w-full overflow-x-auto overscroll-x-contain"
+                    data-testid="market-research-table-scroll"
+                  >
+                    <table
+                      className="w-full min-w-[760px] border-collapse text-left text-xs"
+                      data-testid="market-research-table"
+                    >
+                      <caption className="sr-only">
+                        {copy.market.watchlist}
+                      </caption>
+                      <thead className="bg-[var(--app-surface-raised)] text-[var(--app-text-secondary)]">
+                        <tr>
+                          {[
+                            copy.market.symbolLabel,
+                            copy.market.priceLabel,
+                            copy.market.holdingsContext,
+                            copy.market.evidenceMode,
+                            copy.market.researchCount,
+                            '',
+                          ].map((label, index) => (
+                            <th
+                              key={`${label}-${index}`}
+                              scope="col"
+                              className="border-b border-[var(--app-divider)] px-3 py-2 font-semibold"
+                            >
+                              {label || (
+                                <span className="sr-only">
+                                  {copy.market.remove}
+                                </span>
+                              )}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[var(--app-divider)] bg-[var(--app-surface)]">
+                        {items.map((item) => {
+                          const itemHealth = healthBySymbol.get(item.symbol);
+                          const isActive = activeSymbol === item.symbol;
+                          const quoteStatus = itemHealth?.quote_status ?? null;
+                          const quoteStatusLabel = itemHealth?.quote_status
+                            ? formatPublicStatus(
+                                itemHealth.quote_status,
+                                locale,
+                              )
+                            : '--';
+                          return (
+                            <tr
+                              key={item.symbol}
+                              className={
+                                isActive
+                                  ? 'bg-[color-mix(in_srgb,var(--app-accent)_10%,transparent)]'
+                                  : 'hover:bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)]'
                               }
-                            }}
-                          >
-                            {copy.market.remove}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                            >
+                              <th scope="row" className="px-3 py-2.5">
+                                <button
+                                  type="button"
+                                  aria-pressed={isActive}
+                                  aria-label={`${item.name || item.symbol} ${item.symbol}`}
+                                  className="min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)]"
+                                  onClick={() => setSelectedSymbol(item.symbol)}
+                                >
+                                  <span className="block truncate text-sm font-semibold text-[var(--app-text)]">
+                                    {item.name || item.symbol}
+                                  </span>
+                                  <span className="mt-0.5 block font-mono text-[11px] font-normal tabular-nums text-[var(--app-text-tertiary)]">
+                                    {item.symbol} ·{' '}
+                                    {getAssetClassLabel(copy, item.asset_class)}
+                                  </span>
+                                </button>
+                              </th>
+                              <td className="px-3 py-2.5 font-mono text-sm font-semibold tabular-nums">
+                                {item.price == null
+                                  ? '--'
+                                  : formatCurrency(item.price)}
+                              </td>
+                              <td className="px-3 py-2.5 font-mono text-sm tabular-nums">
+                                {item.is_holding && item.market_value != null
+                                  ? formatCurrency(item.market_value)
+                                  : '--'}
+                              </td>
+                              <td className="px-3 py-2.5">
+                                <div className="flex items-center gap-2">
+                                  <StatusBadge
+                                    tone={
+                                      isConfirmedMarketDataStatus(quoteStatus)
+                                        ? 'success'
+                                        : isUnconfirmedMarketDataStatus(
+                                              quoteStatus,
+                                            )
+                                          ? 'warning'
+                                          : 'neutral'
+                                    }
+                                  >
+                                    {quoteStatusLabel}
+                                  </StatusBadge>
+                                  <span className="font-mono text-[11px] tabular-nums text-[var(--app-text-tertiary)]">
+                                    {formatAge(itemHealth?.quote_age_seconds)}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="px-3 py-2.5">
+                                <span className="font-mono text-sm tabular-nums">
+                                  {item.research_count}
+                                </span>
+                                <span className="mt-0.5 block text-[11px] text-[var(--app-text-tertiary)]">
+                                  {formatTimestamp(item.last_research_at)}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2.5 text-right">
+                                <button
+                                  type="button"
+                                  className="app-button-secondary rounded-[var(--app-radius-control)] px-3 py-1 text-xs"
+                                  onClick={async () => {
+                                    await removeWatchlistItem.mutateAsync(
+                                      item.symbol,
+                                    );
+                                    if (activeSymbol === item.symbol) {
+                                      setSelectedSymbol('');
+                                    }
+                                  }}
+                                >
+                                  {copy.market.remove}
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <EvidenceState
+                    kind="empty"
+                    title={copy.market.noSelection}
+                    description={copy.market.scopeBoundary}
+                    className="border-0"
+                  />
+                )}
               </div>
 
               <div className="space-y-5">
-                <div className="app-workbench-section min-w-0 overflow-hidden">
-                  <div className="border-b border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] px-4 py-4 sm:px-5">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-                          {copy.market.health}
-                        </div>
-                        <div
-                          className={`mt-1 text-lg font-semibold ${sourceHealthTone}`}
+                <section
+                  className="min-w-0 border-y border-[var(--app-divider)] py-4"
+                  data-testid="market-data-health-summary"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+                        {copy.market.health}
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <h2 className="text-lg font-semibold text-[var(--app-text)]">
+                          {copy.market.sourceHealth}
+                        </h2>
+                        <StatusBadge
+                          tone={
+                            cacheBound || staleCount > 0
+                              ? 'warning'
+                              : health
+                                ? 'success'
+                                : 'neutral'
+                          }
                         >
                           {sourceHealthLabel}
-                        </div>
+                        </StatusBadge>
                       </div>
-                      <MarketRefreshButton
-                        onComplete={(response) => {
-                          const title =
-                            response.quote_status === 'live'
-                              ? copy.market.quoteRefreshComplete
-                              : response.quote_status === 'partial'
-                                ? copy.market.quoteRefreshPartial
-                                : response.quote_status === 'stale'
-                                  ? copy.market.quoteRefreshStale
-                                  : copy.market.quoteRefreshFailed;
-                          pushToast(
-                            response.quote_status === 'error'
-                              ? 'error'
-                              : 'success',
-                            title,
-                            response.message,
-                          );
-                        }}
-                        onError={(error) => {
-                          pushToast(
-                            'error',
-                            copy.market.quoteRefreshFailed,
-                            error.message,
-                          );
-                        }}
-                      />
                     </div>
-                  </div>
-                  <div className="grid gap-px bg-[color-mix(in_srgb,var(--app-border)_12%,transparent)] sm:grid-cols-2">
-                    <MetricBlock
-                      label={copy.market.sourceHealth}
-                      value={sourceHealthLabel}
-                    />
-                    <MetricBlock
-                      label={copy.market.provider}
-                      value={health?.provider_name ?? copy.market.unknown}
-                    />
-                    <MetricBlock
-                      label={copy.market.providerStatus}
-                      value={providerStatusLabel}
-                    />
-                    <MetricBlock
-                      label={copy.market.providerConfigured}
-                      value={providerConfiguredLabel}
-                    />
-                    <MetricBlock
-                      label={copy.market.providerSupportsFunds}
-                      value={providerFundsLabel}
-                    />
-                    <MetricBlock
-                      label={copy.market.metadataConfiguredCount}
-                      value={
-                        health == null
-                          ? '--'
-                          : String(health.metadata_configured_count)
-                      }
-                    />
-                    <MetricBlock
-                      label={copy.market.providerTimeout}
-                      value={
-                        health?.provider_timeout_seconds == null
-                          ? '--'
-                          : `${health.provider_timeout_seconds}s`
-                      }
-                    />
-                    <MetricBlock
-                      label={copy.market.marketOpen}
-                      value={
-                        health
-                          ? health.market_open
-                            ? copy.market.marketOpen
-                            : copy.market.marketClosed
-                          : copy.market.unknown
-                      }
-                    />
-                    <MetricBlock
-                      label={copy.market.refreshPolicy}
-                      value={refreshPolicyLabel}
-                    />
-                    <MetricBlock
-                      label={copy.market.latestQuote}
-                      value={formatTimestamp(health?.latest_quote_timestamp)}
-                    />
-                    <MetricBlock
-                      label={copy.market.cacheAge}
-                      value={formatAge(health?.cache_age_seconds)}
-                    />
-                    <MetricBlock
-                      label={copy.market.staleSymbols}
-                      value={
-                        health
-                          ? `${health.stale_symbols_count} ${
-                              health.stale_symbols_sample.length
-                                ? `· ${health.stale_symbols_sample.join(', ')}`
-                                : ''
-                            }`
-                          : '--'
-                      }
-                    />
-                    <MetricBlock
-                      label={copy.market.lastRefreshAttempt}
-                      value={formatTimestamp(health?.last_refresh_attempt)}
-                    />
-                    <MetricBlock
-                      label={copy.market.lastRefreshError}
-                      value={formatStaleReason(
-                        health?.provider_last_error ??
-                          health?.last_refresh_error,
-                        copy.common.staleReasons,
-                      )}
-                    />
-                    <MetricBlock
-                      label={copy.market.providerNextAction}
-                      value={providerAction ?? '--'}
+                    <MarketRefreshButton
+                      onComplete={(response) => {
+                        const title =
+                          response.quote_status === 'live'
+                            ? copy.market.quoteRefreshComplete
+                            : response.quote_status === 'partial'
+                              ? copy.market.quoteRefreshPartial
+                              : response.quote_status === 'stale'
+                                ? copy.market.quoteRefreshStale
+                                : copy.market.quoteRefreshFailed;
+                        pushToast(
+                          response.quote_status === 'error'
+                            ? 'error'
+                            : 'success',
+                          title,
+                          response.message,
+                        );
+                      }}
+                      onError={(error) => {
+                        pushToast(
+                          'error',
+                          copy.market.quoteRefreshFailed,
+                          error.message,
+                        );
+                      }}
                     />
                   </div>
-                </div>
-                <section className="border-y border-[var(--app-divider)] py-4">
-                  <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-                    {copy.market.promptsTitle}
-                  </div>
-                  <div className="mt-3 divide-y divide-[var(--app-divider)]">
+
+                  <MetricStrip
+                    className="mt-3"
+                    ariaLabel={copy.market.health}
+                    items={[
+                      {
+                        id: 'provider',
+                        label: copy.market.provider,
+                        value: health?.provider_name ?? copy.market.unknown,
+                        detail: providerStatusLabel,
+                      },
+                      {
+                        id: 'refresh-policy',
+                        label: copy.market.refreshPolicy,
+                        value: refreshPolicyLabel,
+                        detail: providerConfiguredLabel,
+                        tone: cacheBound ? 'warning' : 'neutral',
+                      },
+                      {
+                        id: 'cache-age',
+                        label: copy.market.cacheAge,
+                        value: formatAge(health?.cache_age_seconds),
+                        detail: latestQuoteLabel,
+                      },
+                      {
+                        id: 'review-count',
+                        label: copy.market.health,
+                        value: staleCount,
+                        detail: copy.market.staleSymbols,
+                        tone: staleCount > 0 ? 'warning' : 'neutral',
+                      },
+                    ]}
+                  />
+
+                  {providerAction ? (
+                    <div className="mt-3 border-l-2 border-[var(--app-warning-border)] pl-3 text-xs leading-5 text-[var(--app-text-secondary)]">
+                      <span className="font-semibold text-[var(--app-text)]">
+                        {copy.market.providerNextAction}:
+                      </span>{' '}
+                      {providerAction}
+                    </div>
+                  ) : null}
+
+                  <details
+                    className="group mt-3 border-t border-[var(--app-divider)] pt-2"
+                    data-testid="market-provider-details"
+                  >
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-semibold text-[var(--app-text-secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)]">
+                      <span>{copy.market.providerStatus}</span>
+                      <span
+                        aria-hidden="true"
+                        className="group-open:rotate-180"
+                      >
+                        ▾
+                      </span>
+                    </summary>
+                    <dl className="mt-3 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)] text-xs">
+                      {[
+                        [
+                          copy.market.providerConfigured,
+                          providerConfiguredLabel,
+                        ],
+                        [copy.market.providerSupportsFunds, providerFundsLabel],
+                        [
+                          copy.market.metadataConfiguredCount,
+                          health == null
+                            ? '--'
+                            : String(health.metadata_configured_count),
+                        ],
+                        [
+                          copy.market.providerTimeout,
+                          health?.provider_timeout_seconds == null
+                            ? '--'
+                            : `${health.provider_timeout_seconds}s`,
+                        ],
+                        [
+                          copy.market.lastRefreshAttempt,
+                          formatTimestamp(health?.last_refresh_attempt),
+                        ],
+                        [
+                          copy.market.lastRefreshError,
+                          formatStaleReason(
+                            health?.provider_last_error ??
+                              health?.last_refresh_error,
+                            copy.common.staleReasons,
+                          ),
+                        ],
+                      ].map(([label, value]) => (
+                        <div
+                          key={label}
+                          className="grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-3 px-2 py-2"
+                        >
+                          <dt className="text-[var(--app-text-tertiary)]">
+                            {label}
+                          </dt>
+                          <dd className="min-w-0 break-words text-right text-[var(--app-text-secondary)]">
+                            {value}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </details>
+                </section>
+                <details className="group border-y border-[var(--app-divider)] py-2">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-[var(--app-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)]">
+                    <span>{copy.market.promptsTitle}</span>
+                    <span aria-hidden="true" className="group-open:rotate-180">
+                      ▾
+                    </span>
+                  </summary>
+                  <div className="mt-2 divide-y divide-[var(--app-divider)]">
                     {copy.market.prompts.map((prompt) => (
                       <div
                         key={prompt}
-                        className="py-2.5 text-sm leading-5 text-[var(--app-soft)]"
+                        className="py-2 text-xs leading-5 text-[var(--app-text-secondary)]"
                       >
                         {prompt}
                       </div>
                     ))}
                   </div>
-                </section>
+                </details>
                 <details
                   className="group border-y border-[var(--app-divider)] py-2"
                   data-testid="market-data-operations-disclosure"
@@ -4508,6 +4527,14 @@ export function MarketPage() {
               </div>
             </div>
 
+            {!holdingReviewNeedsAttention ? (
+              <CurrentHoldingMarketEvidenceReviewPanel
+                report={holdingMarketEvidenceReview.data}
+                loading={holdingMarketEvidenceReview.isLoading}
+                error={holdingMarketEvidenceReview.isError}
+              />
+            ) : null}
+
             <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
               <div className="app-workbench-section min-w-0 p-4 sm:p-5">
                 <div className="app-kicker text-xs uppercase tracking-[0.18em]">
@@ -4531,68 +4558,139 @@ export function MarketPage() {
                   )}
                 </div>
               </div>
-              <div className="app-workbench-section min-w-0 p-4 sm:p-5">
-                <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-                  {copy.market.selectedSymbol}
-                </div>
+              <section
+                className="min-w-0 border-y border-[var(--app-divider)] py-4"
+                data-testid="market-selected-instrument"
+              >
                 {selectedItem ? (
-                  <div className="mt-4 space-y-3">
-                    <MetricBlock
-                      label={copy.market.symbolLabel}
-                      value={selectedItem.symbol}
+                  <>
+                    <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+                          {copy.market.selectedSymbol}
+                        </div>
+                        <h2 className="mt-1 truncate text-lg font-semibold text-[var(--app-text)]">
+                          {selectedItem.name || selectedItem.symbol}
+                        </h2>
+                      </div>
+                      <StatusBadge
+                        tone={
+                          isConfirmedMarketDataStatus(
+                            selectedHealthQuote?.quote_status,
+                          )
+                            ? 'success'
+                            : isUnconfirmedMarketDataStatus(
+                                  selectedHealthQuote?.quote_status,
+                                )
+                              ? 'warning'
+                              : 'neutral'
+                        }
+                      >
+                        {selectedHealthQuote?.quote_status
+                          ? formatPublicStatus(
+                              selectedHealthQuote.quote_status,
+                              locale,
+                            )
+                          : copy.market.unknown}
+                      </StatusBadge>
+                    </div>
+
+                    <MetricStrip
+                      className="mt-3"
+                      ariaLabel={copy.market.selectedSymbol}
+                      items={[
+                        {
+                          id: 'symbol',
+                          label: copy.market.symbolLabel,
+                          value: selectedItem.symbol,
+                          detail: getAssetClassLabel(
+                            copy,
+                            selectedItem.asset_class,
+                          ),
+                        },
+                        {
+                          id: 'price',
+                          label: copy.market.priceLabel,
+                          value:
+                            selectedItem.price == null
+                              ? '--'
+                              : formatCurrency(selectedItem.price),
+                          detail:
+                            selectedHealthQuote?.quote_source ??
+                            copy.market.unknown,
+                        },
+                        {
+                          id: 'holding',
+                          label: copy.market.holdingsContext,
+                          value:
+                            selectedItem.is_holding &&
+                            selectedItem.market_value != null
+                              ? formatCurrency(selectedItem.market_value)
+                              : '--',
+                          detail: selectedItem.is_holding
+                            ? `${copy.explainability.quantity} ${formatQuantity(
+                                selectedItem.quantity,
+                              )}`
+                            : '--',
+                        },
+                        {
+                          id: 'quote-age',
+                          label: copy.market.quoteAge,
+                          value: formatAge(
+                            selectedHealthQuote?.quote_age_seconds,
+                          ),
+                          detail: formatTimestamp(
+                            selectedHealthQuote?.timestamp,
+                          ),
+                          tone: isUnconfirmedMarketDataStatus(
+                            selectedHealthQuote?.quote_status,
+                          )
+                            ? 'warning'
+                            : 'neutral',
+                        },
+                      ]}
                     />
-                    <MetricBlock
-                      label={copy.market.priceLabel}
-                      value={formatCurrency(selectedItem.price ?? 0)}
-                    />
-                    <MetricBlock
-                      label={copy.market.holdingsContext}
-                      value={
-                        selectedItem.is_holding
-                          ? `${copy.explainability.quantity} ${formatQuantity(
-                              selectedItem.quantity,
-                            )} / ${formatCurrency(
-                              selectedItem.market_value ?? 0,
-                            )}`
-                          : '--'
-                      }
-                    />
-                    <MetricBlock
-                      label={copy.market.snapshotLabel}
-                      value={selectedItem.last_snapshot_at ?? '--'}
-                    />
-                    <MetricBlock
-                      label={copy.market.quoteSource}
-                      value={
-                        selectedHealthQuote?.quote_source ?? copy.market.unknown
-                      }
-                    />
-                    <MetricBlock
-                      label={copy.market.quoteAge}
-                      value={formatAge(selectedHealthQuote?.quote_age_seconds)}
-                    />
-                    <MetricBlock
-                      label={copy.market.staleReason}
-                      value={formatStaleReason(
-                        selectedHealthQuote?.stale_reason,
-                        copy.common.staleReasons,
-                      )}
-                    />
-                    <MetricBlock
-                      label={copy.market.providerNextAction}
-                      value={selectedQuoteNextAction ?? '--'}
-                    />
-                    <MetricBlock
-                      label={copy.market.lastResearch}
-                      value={selectedItem.last_research_at ?? '--'}
-                    />
-                  </div>
+
+                    <dl className="mt-3 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)] text-xs">
+                      {[
+                        [
+                          copy.market.snapshotLabel,
+                          formatTimestamp(selectedItem.last_snapshot_at),
+                        ],
+                        [
+                          copy.market.staleReason,
+                          formatStaleReason(
+                            selectedHealthQuote?.stale_reason,
+                            copy.common.staleReasons,
+                          ),
+                        ],
+                        [
+                          copy.market.providerNextAction,
+                          selectedQuoteNextAction ?? '--',
+                        ],
+                        [
+                          copy.market.lastResearch,
+                          formatTimestamp(selectedItem.last_research_at),
+                        ],
+                      ].map(([label, value]) => (
+                        <div
+                          key={label}
+                          className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-3 px-2 py-2"
+                        >
+                          <dt className="text-[var(--app-text-tertiary)]">
+                            {label}
+                          </dt>
+                          <dd className="min-w-0 break-words text-right text-[var(--app-text-secondary)]">
+                            {value}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </>
                 ) : (
-                  <div className="app-muted mt-4 text-sm">
-                    {copy.market.noSelection}
-                  </div>
+                  <EvidenceState kind="empty" title={copy.market.noSelection} />
                 )}
-              </div>
+              </section>
             </div>
 
             <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
@@ -5844,7 +5942,7 @@ function MarketDataOperationsPanel({
   const copy = useCopy();
   const { locale } = usePreferences();
   return (
-    <div className="app-panel rounded-2xl p-4 sm:p-5">
+    <div className="space-y-3">
       <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <div className="app-kicker text-xs uppercase tracking-[0.18em]">
@@ -5857,7 +5955,7 @@ function MarketDataOperationsPanel({
         <div className="grid shrink-0 grid-cols-2 gap-2">
           <button
             type="button"
-            className="app-button-secondary rounded-2xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+            className="app-button-secondary rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
             disabled={metadataPending}
             onClick={() => void onMetadataBackfill()}
           >
@@ -5867,7 +5965,7 @@ function MarketDataOperationsPanel({
           </button>
           <button
             type="button"
-            className="app-button-secondary rounded-2xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+            className="app-button-secondary rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
             disabled={barsPending}
             onClick={() => void onBarsBackfill()}
           >
@@ -5876,45 +5974,27 @@ function MarketDataOperationsPanel({
         </div>
       </div>
       {loading ? (
-        <div className="app-muted mt-4 text-sm">{copy.states.loading}</div>
+        <EvidenceState kind="loading" title={copy.states.loading} />
       ) : error ? (
-        <div className="app-error-text mt-4 text-sm">
-          {copy.market.quoteFetchRunsFailed}
-        </div>
-      ) : runs.length === 0 ? (
-        <div className="app-muted mt-4 text-sm">
-          {copy.market.noQuoteFetchRuns}
-        </div>
+        <EvidenceState kind="error" title={copy.market.quoteFetchRunsFailed} />
       ) : (
-        <div className="mt-4 grid gap-2">
-          {runs.slice(0, 4).map((run) => (
-            <div
-              key={run.run_id}
-              className="rounded-xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] px-3 py-2 text-xs"
-            >
-              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                <span className="font-semibold text-[var(--app-text)]">
-                  {formatPublicCode(run.trigger, locale)} ·{' '}
-                  {formatPublicStatus(run.status, locale)}
-                </span>
-                <span className="app-muted font-mono tabular-nums">
-                  {formatTimestamp(run.started_at)}
-                </span>
-              </div>
-              <div className="app-muted mt-1 break-words">
-                {copy.market.provider}: {run.provider ?? copy.market.unknown} ·{' '}
-                {copy.market.successCount}: {run.success_count} ·{' '}
-                {copy.market.failedCount}: {run.failure_count} ·{' '}
-                {copy.market.cacheHitCount}: {run.cache_hit_count}
-              </div>
-              {run.error_message ? (
-                <div className="app-error-text mt-1 break-words">
-                  {run.error_message}
-                </div>
-              ) : null}
-            </div>
-          ))}
-        </div>
+        <Timeline
+          ariaLabel={copy.market.dataOperations}
+          emptyState={copy.market.noQuoteFetchRuns}
+          items={runs.slice(0, 4).map((run) => ({
+            id: run.run_id,
+            timestamp: formatTimestamp(run.started_at),
+            title: `${formatPublicCode(run.trigger, locale)} · ${formatPublicStatus(run.status, locale)}`,
+            description: `${copy.market.provider}: ${run.provider ?? copy.market.unknown} · ${copy.market.successCount}: ${run.success_count} · ${copy.market.failedCount}: ${run.failure_count} · ${copy.market.cacheHitCount}: ${run.cache_hit_count}`,
+            evidence: run.error_message,
+            tone:
+              run.failure_count > 0 || run.error_message
+                ? ('danger' as const)
+                : run.status === 'completed'
+                  ? ('success' as const)
+                  : ('info' as const),
+          }))}
+        />
       )}
     </div>
   );

@@ -14,6 +14,13 @@ const ACCOUNT_TRUTH = source(
   'features/account-truth/components/account-truth-review-page.tsx',
 );
 const ACTIVITY_FEED = source('features/activity/components/activity-feed.tsx');
+const PRICE_STRUCTURE_CHART = source(
+  'features/market/components/price-structure-chart.tsx',
+);
+const MARKET_DATA_OPERATIONS = ROUTER.slice(
+  ROUTER.indexOf('function MarketDataOperationsPanel'),
+  ROUTER.indexOf('function MetricBlock'),
+);
 const ACTIVITY_FORMS = [
   source('features/activity/components/trade-form.tsx'),
   source('features/activity/components/cash-flow-form.tsx'),
@@ -146,7 +153,20 @@ describe('remaining route workbench contract', () => {
     expect(marketPage).not.toContain('app-panel rounded-2xl p-0');
     expect(
       marketPage.match(/app-workbench-section min-w-0 overflow-hidden/g),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
+    expect(marketPage).toContain('data-testid="market-research-table"');
+    expect(marketPage).toContain('data-testid="market-research-table-scroll"');
+    expect(marketPage).toContain('data-testid="market-provider-details"');
+    expect(marketPage).toContain('holdingReviewNeedsAttention');
+    expect(marketPage).not.toContain('selectedItem.price ?? 0');
+    expect(marketPage).not.toContain('selectedItem.market_value ?? 0');
+    expect(marketPage).not.toContain('app-button-secondary rounded-2xl');
+    expect(MARKET_DATA_OPERATIONS).toContain('<Timeline');
+    expect(MARKET_DATA_OPERATIONS).not.toContain('app-panel');
+    expect(MARKET_DATA_OPERATIONS).not.toContain('rounded-2xl');
+    expect(PRICE_STRUCTURE_CHART).toContain('<EvidenceState');
+    expect(PRICE_STRUCTURE_CHART).not.toContain('rounded-2xl');
+    expect(PRICE_STRUCTURE_CHART).not.toContain('rounded-3xl');
     expect(settingsSection).toContain('border-y border-[var(--app-divider)]');
     expect(settingsSection).not.toContain('app-panel');
     expect(APP_SHELL).toContain('data-testid="mobile-preferences-toggle"');
