@@ -2574,10 +2574,13 @@ export const copy = {
       kicker: 'Settings',
       title: 'Control center',
       subtitle:
-        'Review data freshness, service state, local preferences, and safety notes without changing trading semantics.',
+        'Configure persisted defaults, inspect runtime state, and review safety boundaries without changing trading authority.',
       dataStatus: 'Data status',
       dataStatusDetail:
         'Portfolio valuation uses backend quote status and market refresh policy.',
+      refreshActionDetail:
+        'Runs explicit quote ingestion and updates persisted quote evidence. It does not write ledger entries or submit orders.',
+      refreshActionEvidence: 'Explicit ingestion · persisted quote cache',
       liveServices: 'Live services',
       liveServicesDetail:
         'Scheduler and interface state come from the backend live status endpoint.',
@@ -2586,10 +2589,10 @@ export const copy = {
         'Theme and language are local browser preferences for this platform.',
       notifications: 'Notifications',
       notificationsDetail:
-        'Current notification configuration is read from backend settings.',
+        'Readiness comes from the backend; delivery credentials remain environment-owned and are never editable here.',
       dataSafety: 'Data safety',
       dataSafetyDetail:
-        'Cached quotes can lag market prices. Use timestamps before acting.',
+        'Trading authority, evidence requirements, and private-data ownership remain explicit.',
       loading: 'Loading settings state.',
       error: 'Failed to load settings state.',
       retry: 'Retry status',
@@ -2723,7 +2726,9 @@ export const copy = {
       stopScheduler: 'Stop scheduler',
       updatingScheduler: 'Updating scheduler',
       schedulerUpdateFailed: 'Failed to update scheduler state',
-      backendSettings: 'Backend settings',
+      backendSettings: 'Persisted configuration',
+      persistedSettingsDetail:
+        'Non-secret account and data defaults are persisted here; credentials stay in the runtime environment.',
       assetsTracked: (count: number) => `${count} tracked assets`,
       initialCash: 'Initial cash',
       strategy: 'Strategy',
@@ -2750,7 +2755,7 @@ export const copy = {
         'Keep broker tokens, account exports, and real statements out of public repositories.',
       deferred: 'Deferred',
       deferredDetail:
-        'Full broker credentials, notification channel editing, and advanced data-source health are intentionally deferred.',
+        'AI research providers, evidence-ingestion policy, broker credentials, and notification editing remain environment- or config-owned until reviewed controls exist.',
     },
     placeholder: 'This page is still under construction.',
   },
@@ -5192,17 +5197,21 @@ export const copy = {
       kicker: '设置',
       title: '控制中心',
       subtitle:
-        '集中查看数据新鲜度、服务状态、本地偏好与安全提示，不改变交易语义。',
+        '配置持久化默认值、检查运行状态并复核安全边界，不改变交易权限。',
       dataStatus: '数据状态',
       dataStatusDetail: '组合估值读取后端行情状态与市场刷新策略。',
+      refreshActionDetail:
+        '显式执行行情摄取并更新持久化行情证据；不会写入账本，也不会提交订单。',
+      refreshActionEvidence: '显式摄取 · 持久化行情缓存',
       liveServices: '服务状态',
       liveServicesDetail: '调度器与接口状态来自后端 live status 接口。',
       preferences: '偏好设置',
       preferencesDetail: '主题和语言是当前浏览器的本地偏好。',
       notifications: '通知',
-      notificationsDetail: '当前通知配置来自后端设置。',
+      notificationsDetail:
+        '就绪状态来自后端；投递凭证归运行环境所有，本页不提供编辑。',
       dataSafety: '数据安全',
-      dataSafetyDetail: '缓存行情可能滞后市场价格，操作前请确认时间戳。',
+      dataSafetyDetail: '交易权限、证据要求和私有数据归属保持显式。',
       loading: '正在加载设置状态。',
       error: '设置状态加载失败。',
       retry: '重试状态',
@@ -5330,7 +5339,9 @@ export const copy = {
       stopScheduler: '停止调度器',
       updatingScheduler: '更新调度器',
       schedulerUpdateFailed: '调度器状态更新失败',
-      backendSettings: '后端设置',
+      backendSettings: '持久化配置',
+      persistedSettingsDetail:
+        '账户与数据的非敏感默认值在此持久化；凭证继续由运行环境管理。',
       assetsTracked: (count: number) => `${count} 个跟踪资产`,
       initialCash: '初始现金',
       strategy: '策略',
@@ -5356,7 +5367,7 @@ export const copy = {
       safetyPrivateData: '券商 token、账户导出和真实对账单不应进入公开仓库。',
       deferred: '暂缓项',
       deferredDetail:
-        '完整券商凭证管理、通知通道编辑和高级数据源健康页暂不在第一版落地。',
+        'AI 研究供应商、证据摄取策略、券商凭证和通知编辑，在受控界面完成评审前继续由运行环境或配置文件管理。',
     },
     placeholder: '这个页面还在继续建设中。',
   },
