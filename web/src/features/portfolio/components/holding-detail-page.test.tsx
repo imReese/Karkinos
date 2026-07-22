@@ -402,30 +402,13 @@ test('renders holding detail with cached quote status and ledger trace', async (
       'Cached quotes · valuation uses cached market data',
     ),
   ).toBeTruthy();
-  expect(await screen.findByText('Security buy')).toBeTruthy();
-  expect(await screen.findByText('Consumes cash')).toBeTruthy();
-  expect(screen.queryByText('trade_buy')).toBeNull();
-  expect(await screen.findByText('initial allocation')).toBeTruthy();
-  expect(await screen.findByText('-¥90,035.10')).toBeTruthy();
-  expect(await screen.findByText('Gross amount ¥90,000.00')).toBeTruthy();
-  expect(await screen.findByText('Net cash impact -¥90,035.10')).toBeTruthy();
-  expect(await screen.findByText('Commission ¥30.00')).toBeTruthy();
-  expect(await screen.findByText('Stamp tax ¥0.00')).toBeTruthy();
-  expect(await screen.findByText('Transfer fee ¥5.10')).toBeTruthy();
-  expect(screen.queryByText('Cost basis Moving average buy cost')).toBeNull();
-  expect(await screen.findByText('akshare')).toBeTruthy();
-  expect(await screen.findByText('26d')).toBeTruthy();
-  expect(await screen.findByText('6.67%')).toBeTruthy();
+  expect(await screen.findByText(/6\.67%/)).toBeTruthy();
   expect(await screen.findByText('Today PnL')).toBeTruthy();
   expect(await screen.findByText('¥240.00')).toBeTruthy();
-  expect(await screen.findByText('0.25%')).toBeTruthy();
-  expect(await screen.findByText('1,596.0000')).toBeTruthy();
-  expect(await screen.findByText('Reported previous close')).toBeTruthy();
-  expect((await screen.findAllByText('1,500.0000')).length).toBeGreaterThan(0);
+  expect(await screen.findByText(/0\.25%/)).toBeTruthy();
   expect((await screen.findAllByText('1,600.0000')).length).toBeGreaterThan(0);
   expect(await screen.findByText('Price range / K-line')).toBeTruthy();
   expect(await screen.findByText('¥1,640.00')).toBeTruthy();
-  expect(await screen.findByText('Holding results & evidence')).toBeTruthy();
   expect(screen.queryByText('valuation-1')).toBeNull();
   await user.click(
     within(screen.getByTestId('holding-detail-header')).getByRole('button', {
@@ -433,23 +416,66 @@ test('renders holding detail with cached quote status and ledger trace', async (
     }),
   );
   expect(await screen.findByText('valuation-1')).toBeTruthy();
-  expect(await screen.findByText('Persisted account ledger only')).toBeTruthy();
   expect(await screen.findByTestId('kline-trade-marker-buy')).toBeTruthy();
   expect((await screen.findAllByTestId('kline-reference-line')).length).toBe(1);
-  expect(screen.queryByText('6.7%')).toBeNull();
-  expect(
-    await screen.findByText('Market closed; using cached quote'),
-  ).toBeTruthy();
-  expect(document.body.textContent).not.toMatch(/real-time|latest price|NaN/i);
 
-  const ledgerScroll = await screen.findByTestId('holding-ledger-scroll');
+  await user.click(screen.getByRole('tab', { name: 'P&L & Costs' }));
+  const pnlPanel = screen.getByRole('tabpanel', { name: 'P&L & Costs' });
+  expect(within(pnlPanel).getByText('Holding results & evidence')).toBeTruthy();
+  expect(within(pnlPanel).getByText('1,596.0000')).toBeTruthy();
+  expect(within(pnlPanel).getByText('Reported previous close')).toBeTruthy();
+  expect(within(pnlPanel).getByText('1,500.0000')).toBeTruthy();
+
+  await user.click(screen.getByRole('tab', { name: 'Transactions' }));
+  const transactionsPanel = screen.getByRole('tabpanel', {
+    name: 'Transactions',
+  });
+  expect(within(transactionsPanel).getByText('Security buy')).toBeTruthy();
+  expect(within(transactionsPanel).getByText('Consumes cash')).toBeTruthy();
+  expect(within(transactionsPanel).queryByText('trade_buy')).toBeNull();
+  expect(
+    within(transactionsPanel).getByText('initial allocation'),
+  ).toBeTruthy();
+  expect(within(transactionsPanel).getByText('-¥90,035.10')).toBeTruthy();
+  expect(
+    within(transactionsPanel).getByText('Gross amount ¥90,000.00'),
+  ).toBeTruthy();
+  expect(
+    within(transactionsPanel).getByText('Net cash impact -¥90,035.10'),
+  ).toBeTruthy();
+  expect(within(transactionsPanel).getByText('Commission ¥30.00')).toBeTruthy();
+  expect(within(transactionsPanel).getByText('Stamp tax ¥0.00')).toBeTruthy();
+  expect(
+    within(transactionsPanel).getByText('Transfer fee ¥5.10'),
+  ).toBeTruthy();
+  expect(
+    within(transactionsPanel).queryByText('Cost basis Moving average buy cost'),
+  ).toBeNull();
+  expect(
+    within(transactionsPanel).getByText('Persisted account ledger only'),
+  ).toBeTruthy();
+
+  await user.click(screen.getByRole('tab', { name: 'Evidence' }));
+  const evidencePanel = screen.getByRole('tabpanel', { name: 'Evidence' });
+  expect(within(evidencePanel).getByText('akshare')).toBeTruthy();
+  expect(within(evidencePanel).getByText('26d')).toBeTruthy();
+  expect(
+    within(evidencePanel).getByText('Market closed; using cached quote'),
+  ).toBeTruthy();
+  expect(document.body.textContent).not.toMatch(
+    /\breal-time\b|\blatest price\b|\bNaN\b/i,
+  );
+
+  const ledgerScroll = within(transactionsPanel).getByTestId(
+    'holding-ledger-scroll',
+  );
   const ledgerTable = container.querySelector(
     '[data-testid="holding-ledger-table"]',
   );
-  expect(ledgerScroll.className).toContain('overflow-x-scroll');
+  expect(ledgerScroll.className).toContain('overflow-x-auto');
   expect(ledgerScroll.className).toContain('pb-2');
-  expect(ledgerTable?.className).toContain('w-[880px]');
-  expect(ledgerTable?.className).toContain('min-w-max');
+  expect(ledgerTable?.className).toContain('w-full');
+  expect(ledgerTable?.className).toContain('min-w-[760px]');
 });
 
 test('keeps a closed asset available as historical evidence without current exposure', async () => {
@@ -561,6 +587,7 @@ test('keeps a closed asset available as historical evidence without current expo
 });
 
 test('explains local average cost and broker displayed cost basis when evidence exists', async () => {
+  const user = userEvent.setup();
   renderHoldingDetail({
     positionOverride: {
       broker_displayed_unit_cost: 1502.3456,
@@ -572,24 +599,27 @@ test('explains local average cost and broker displayed cost basis when evidence 
   });
 
   expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
-  expect(await screen.findByText('Local moving average cost')).toBeTruthy();
-  expect(await screen.findByText('Broker displayed cost')).toBeTruthy();
-  expect(await screen.findByText('Cost basis difference')).toBeTruthy();
+  await user.click(screen.getByRole('tab', { name: 'P&L & Costs' }));
+  const pnlPanel = screen.getByRole('tabpanel', { name: 'P&L & Costs' });
+  expect(within(pnlPanel).getByText('Local moving average cost')).toBeTruthy();
+  expect(within(pnlPanel).getByText('Broker displayed cost')).toBeTruthy();
+  expect(within(pnlPanel).getByText('Cost basis difference')).toBeTruthy();
   expect(
-    await screen.findByText('Broker displayed remaining cost'),
+    within(pnlPanel).getByText('Broker displayed remaining cost'),
   ).toBeTruthy();
-  expect((await screen.findAllByText('1,500.0000')).length).toBeGreaterThan(0);
-  expect(await screen.findByText('1,502.3456')).toBeTruthy();
-  expect(await screen.findByText('¥140.74')).toBeTruthy();
-  expect(await screen.findByText('Cost basis review needed')).toBeTruthy();
+  expect(within(pnlPanel).getByText('1,500.0000')).toBeTruthy();
+  expect(within(pnlPanel).getByText('1,502.3456')).toBeTruthy();
+  expect(within(pnlPanel).getByText('¥140.74')).toBeTruthy();
+  expect(within(pnlPanel).getByText('Cost basis review needed')).toBeTruthy();
   expect(
-    await screen.findByText(
+    within(pnlPanel).getByText(
       'Broker displayed cost differs from Karkinos local moving average cost. Review Account Truth evidence before relying on cost-basis P/L.',
     ),
   ).toBeTruthy();
 });
 
 test('shows ledger-projected remaining cost without presenting it as broker-confirmed evidence', async () => {
+  const user = userEvent.setup();
   renderHoldingDetail({
     positionOverride: {
       broker_displayed_unit_cost: 9.0261,
@@ -611,23 +641,28 @@ test('shows ledger-projected remaining cost without presenting it as broker-conf
   });
 
   expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
+  await user.click(screen.getByRole('tab', { name: 'P&L & Costs' }));
+  const pnlPanel = screen.getByRole('tabpanel', { name: 'P&L & Costs' });
   expect(
-    await screen.findByText('Ledger-projected remaining cost'),
+    within(pnlPanel).getByText('Ledger-projected remaining cost'),
   ).toBeTruthy();
-  expect(await screen.findByText('Projected from local ledger')).toBeTruthy();
-  expect(await screen.findByText('¥1,805.22')).toBeTruthy();
-  expect(await screen.findByText('9.0261')).toBeTruthy();
-  expect(await screen.findByText('-¥196.78')).toBeTruthy();
-  expect(screen.queryByText('Broker displayed cost')).toBeNull();
-  expect(screen.queryByText('Cost basis review needed')).toBeNull();
   expect(
-    screen.queryByText(
+    within(pnlPanel).getByText('Projected from local ledger'),
+  ).toBeTruthy();
+  expect(within(pnlPanel).getByText('¥1,805.22')).toBeTruthy();
+  expect(within(pnlPanel).getByText('9.0261')).toBeTruthy();
+  expect(within(pnlPanel).getByText('-¥196.78')).toBeTruthy();
+  expect(within(pnlPanel).queryByText('Broker displayed cost')).toBeNull();
+  expect(within(pnlPanel).queryByText('Cost basis review needed')).toBeNull();
+  expect(
+    within(pnlPanel).queryByText(
       'Broker displayed cost differs from Karkinos local moving average cost. Review Account Truth evidence before relying on cost-basis P/L.',
     ),
   ).toBeNull();
 });
 
 test('uses shared public fallback for unknown holding cost-basis methods', async () => {
+  const user = userEvent.setup();
   renderHoldingDetail({
     positionOverride: {
       broker_displayed_unit_cost: 1502.3456,
@@ -639,10 +674,14 @@ test('uses shared public fallback for unknown holding cost-basis methods', async
   });
 
   expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
+  await user.click(screen.getByRole('tab', { name: 'P&L & Costs' }));
+  const pnlPanel = screen.getByRole('tabpanel', { name: 'P&L & Costs' });
   expect(
-    await screen.findByText('Cost basis method needs review'),
+    within(pnlPanel).getByText('Cost basis method needs review'),
   ).toBeTruthy();
-  expect(screen.queryByText(/future_private_cost_basis_method/)).toBeNull();
+  expect(
+    within(pnlPanel).queryByText(/future_private_cost_basis_method/),
+  ).toBeNull();
 });
 
 test('keeps holding summary and kline regions responsive on narrow screens', async () => {
@@ -660,15 +699,49 @@ test('keeps holding summary and kline regions responsive on narrow screens', asy
 
   expect(summaryTitle.className).toContain('text-sm');
   expect(metricStrip?.className).toContain('min-w-0');
-  expect(metricStrip?.className).toContain('sm:grid-cols-2');
-  expect(metricStrip?.className).toContain('xl:grid-cols-4');
-  expect(metricCells.length).toBeGreaterThan(0);
+  expect(metricStrip?.className).toContain('sm:grid-cols-3');
+  expect(metricStrip?.className).toContain('xl:grid-cols-6');
+  expect(metricCells.length).toBe(6);
   for (const cell of metricCells) {
     expect(cell.className).toContain('min-w-0');
   }
   expect(chartPanel.className).toContain('overflow-hidden');
   expect(chartScroll.className).toContain('overflow-x-auto');
   expect(chartCanvas.className).toContain('min-w-[640px]');
+});
+
+test('exposes five keyboard-operable holding evidence views', async () => {
+  const user = userEvent.setup();
+  renderHoldingDetail();
+
+  expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
+  const tabs = screen.getAllByRole('tab');
+  expect(tabs.map((tab) => tab.textContent)).toEqual([
+    'Position',
+    'P&L & Costs',
+    'Transactions',
+    'Evidence',
+    'Reconciliation',
+  ]);
+  expect(tabs[0]?.getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByTestId('holding-kline-panel').hidden).toBe(false);
+  expect(screen.getByTestId('holding-pnl-costs-panel').hidden).toBe(true);
+
+  await user.click(tabs[1]!);
+  expect(tabs[1]?.getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByTestId('holding-pnl-costs-panel').hidden).toBe(false);
+  expect(screen.getByTestId('holding-kline-panel').hidden).toBe(true);
+
+  tabs[1]?.focus();
+  await user.keyboard('{ArrowRight}');
+  expect(tabs[2]?.getAttribute('aria-selected')).toBe('true');
+  expect(document.activeElement).toBe(tabs[2]);
+  expect(screen.getByTestId('holding-transactions-panel').hidden).toBe(false);
+
+  await user.keyboard('{End}');
+  expect(tabs[4]?.getAttribute('aria-selected')).toBe('true');
+  expect(document.activeElement).toBe(tabs[4]);
+  expect(screen.getByTestId('holding-reconciliation-panel').hidden).toBe(false);
 });
 
 test('keeps the holding detail header compact and non-duplicative', async () => {
@@ -682,7 +755,7 @@ test('keeps the holding detail header compact and non-duplicative', async () => 
   expect(header).not.toBeNull();
   expect(header?.querySelectorAll('a[href="/portfolio"]').length).toBe(1);
   expect(header?.textContent).toContain('Holding detail');
-  expect(header?.textContent).toContain('Cached quote');
+  expect(header?.textContent).not.toContain('Cached quote');
   expect(header?.textContent).not.toContain('Quote & data status');
   expect(
     header?.querySelector('[data-testid="holding-header-status-card"]'),
@@ -716,7 +789,9 @@ test('keeps quote status and action panels readable with long runtime values', a
   expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
 
   const quotePanel = screen.getByTestId('holding-quote-status-panel');
-  const riskPanel = screen.getByTestId('holding-risk-exposure-panel');
+  const reconciliationPanel = screen.getByTestId(
+    'holding-reconciliation-panel',
+  );
   const actionsPanel = screen.getByTestId('holding-related-actions-panel');
   const infoRows = container.querySelectorAll(
     '[data-testid="holding-info-row"]',
@@ -729,7 +804,7 @@ test('keeps quote status and action panels readable with long runtime values', a
   );
 
   expect(quotePanel.className).toContain('min-w-0');
-  expect(riskPanel.className).toContain('min-w-0');
+  expect(reconciliationPanel.className).toContain('min-w-0');
   expect(actionsPanel.className).toContain('min-w-0');
   expect(infoRows.length).toBeGreaterThan(0);
   for (const row of infoRows) {
@@ -743,6 +818,21 @@ test('keeps quote status and action panels readable with long runtime values', a
   for (const link of actionLinks) {
     expect(link.className).toContain('break-words');
   }
+});
+
+test('localizes known persisted quote source enums in the evidence view', async () => {
+  const user = userEvent.setup();
+  renderHoldingDetail({
+    positionOverride: { quote_source: 'market_bar_close' },
+    liveItemOverride: { quote_source: 'market_bar_close' },
+    healthQuoteOverride: { quote_source: 'market_bar_close' },
+  });
+
+  expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
+  await user.click(screen.getByRole('tab', { name: 'Evidence' }));
+  const evidencePanel = screen.getByRole('tabpanel', { name: 'Evidence' });
+  expect(within(evidencePanel).getByText('Local OHLC close')).toBeTruthy();
+  expect(within(evidencePanel).queryByText('market_bar_close')).toBeNull();
 });
 
 test('links the holding detail to a single-instrument strategy loop with symbol context', async () => {
@@ -760,9 +850,11 @@ test('links the holding detail to a single-instrument strategy loop with symbol 
 });
 
 test('explains that holding PnL is not attributed to strategy without linked fills', async () => {
+  const user = userEvent.setup();
   renderHoldingDetail();
 
   expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
+  await user.click(screen.getByRole('tab', { name: 'Evidence' }));
 
   const card = screen.getByTestId('holding-strategy-attribution-boundary');
   expect(card.textContent).toContain('Strategy attribution boundary');
@@ -1163,6 +1255,7 @@ test('uses structured holding attribution prerequisites instead of parsing evide
 });
 
 test('shows a localized next action for the first missing attribution prerequisite', async () => {
+  const user = userEvent.setup();
   renderHoldingDetail({
     holdingStrategyAttribution: {
       strategy_id: 'dual_ma',
@@ -1197,6 +1290,7 @@ test('shows a localized next action for the first missing attribution prerequisi
   });
 
   expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
+  await user.click(screen.getByRole('tab', { name: 'Evidence' }));
 
   const card = await screen.findByTestId(
     'holding-strategy-attribution-boundary',
@@ -1213,9 +1307,11 @@ test('shows a localized next action for the first missing attribution prerequisi
 });
 
 test('shows a next action when holding-level attribution readiness is unavailable', async () => {
+  const user = userEvent.setup();
   renderHoldingDetail({ holdingStrategyAttribution: null });
 
   expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
+  await user.click(screen.getByRole('tab', { name: 'Evidence' }));
 
   const card = await screen.findByTestId(
     'holding-strategy-attribution-boundary',
