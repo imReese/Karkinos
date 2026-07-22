@@ -47,4 +47,28 @@ describe('trading workbench contract', () => {
       /text-\[var\(--app-(?:success|warning|danger)\)\]/,
     );
   });
+
+  it('presents broker adapter and soak readiness as flat, read-only evidence', () => {
+    const brokerReadiness = TRADING.slice(
+      TRADING.indexOf('function BrokerAdapterReadinessPanel'),
+      TRADING.indexOf('function selectSoakPromotionConnector'),
+    );
+    const readinessMetric = TRADING.slice(
+      TRADING.indexOf('function BrokerReadinessMetric'),
+      TRADING.indexOf('function brokerAdapterReadinessCopy'),
+    );
+
+    expect(brokerReadiness).toContain('app-workbench-section');
+    expect(brokerReadiness).toContain('<WorkbenchStatusBadge');
+    expect(brokerReadiness).toContain('<EvidenceState');
+    expect(brokerReadiness).toContain(
+      'data-testid="broker-soak-promotion-readiness"',
+    );
+    expect(brokerReadiness).not.toContain('app-terminal-panel');
+    expect(brokerReadiness).not.toContain('app-terminal-inner');
+    expect(brokerReadiness).not.toMatch(/rounded-(?:2xl|3xl)/);
+    expect(brokerReadiness).not.toMatch(/rounded-\[(?:27|28)px\]/);
+    expect(readinessMetric).toContain('border-t border-[var(--app-divider)]');
+    expect(readinessMetric).not.toMatch(/rounded-(?:xl|2xl|3xl)/);
+  });
 });
