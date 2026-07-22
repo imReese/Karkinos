@@ -1,5 +1,10 @@
 import { useCopy } from '../../../app/copy';
-import { EvidenceIdentityDisclosure } from '../../../app/components/workbench';
+import {
+  EvidenceIdentityDisclosure,
+  ExceptionList,
+  MetricStrip,
+  type ExceptionItem,
+} from '../../../app/components/workbench';
 import { usePreferences } from '../../../app/preferences';
 import { formatQuantity, formatTimestamp } from '../../../shared/format';
 import {
@@ -25,12 +30,19 @@ function reportTone(
     return 'text-[var(--app-info-text)]';
   }
   if (error || !report || report.status === 'blocked_identity') {
-    return 'text-[var(--app-danger)]';
+    return 'text-[var(--app-danger-text)]';
   }
   if (report.status === 'review_required') {
-    return 'text-[var(--app-warning)]';
+    return 'text-[var(--app-warning-text)]';
   }
   return 'text-[var(--app-text)]';
+}
+
+function reviewItemSeverity(reviewReason: string) {
+  return reviewReason === 'quote_missing_or_error' ||
+    reviewReason === 'quote_status_not_confirmed'
+    ? ('danger' as const)
+    : ('warning' as const);
 }
 
 export function CurrentHoldingMarketEvidenceReviewPanel({
@@ -67,15 +79,79 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
             ? labels.holdingEvidenceReviewComplete
             : labels.holdingEvidenceReviewCount(report.review_required_count);
   const complete = report?.status === 'complete';
+  const quiet = complete || report?.status === 'no_current_holdings';
+  const showReviewWorkspace =
+    report?.status === 'review_required' ||
+    report?.status === 'blocked_identity';
+  const reasonLabels = labels.holdingEvidenceReasons;
+  const exceptionItems: ExceptionItem[] = report
+    ? [
+        ...(report.status === 'blocked_identity'
+          ? [
+              {
+                id: 'valuation-identity',
+                severity: 'danger' as const,
+                statusLabel: labels.holdingEvidenceIdentityBlockedStatus,
+                title: labels.holdingEvidenceIdentityTitle,
+                reason: labels.holdingEvidenceIdentityReason,
+                unblockCondition:
+                  labels.holdingEvidenceIdentityClearingCondition,
+                nextAction: labels.holdingEvidenceIdentityNextAction,
+                evidence: (
+                  <>
+                    <span className="block">
+                      {labels.holdingEvidenceIdentityEvidence(
+                        report.source_blockers.length,
+                      )}
+                    </span>
+                    <span className="mt-0.5 block font-mono tabular-nums">
+                      {formatTimestamp(report.valuation_as_of)}
+                    </span>
+                  </>
+                ),
+              },
+            ]
+          : []),
+        ...report.items.map((item) => ({
+          id: `${item.symbol}-${item.review_reason}`,
+          severity: reviewItemSeverity(item.review_reason),
+          statusLabel: formatPublicStatus(item.quote_status, locale),
+          title: (
+            <span className="min-w-0">
+              <span className="block truncate">{item.name}</span>
+              <span className="mt-0.5 block font-mono text-[11px] font-normal tabular-nums text-[var(--app-text-tertiary)]">
+                {item.symbol} · {formatQuantity(item.quantity)}
+              </span>
+            </span>
+          ),
+          reason: (
+            <>
+              <span className="block">
+                {reasonLabels[
+                  item.review_reason as keyof typeof reasonLabels
+                ] ?? formatPublicCode(item.review_reason, locale)}
+              </span>
+              {item.blocks_authoritative_decisions ? (
+                <span className="mt-0.5 block font-medium text-[var(--app-warning-text)]">
+                  {labels.holdingEvidenceBlocksAuthoritativeDecisions}
+                </span>
+              ) : null}
+            </>
+          ),
+          unblockCondition: labels.holdingEvidenceClearingCondition,
+          nextAction:
+            actionLabels[
+              item.next_manual_action as keyof typeof actionLabels
+            ] ?? formatPublicCode(item.next_manual_action, locale),
+          evidence: `${item.quote_source ?? '--'} · ${formatTimestamp(item.quote_timestamp)}`,
+        })),
+      ]
+    : [];
 
   return (
     <section
       id="current-holding-evidence-review"
-      className={
-        complete
-          ? 'scroll-mt-24 border-y border-[var(--app-divider)] py-3'
-          : 'app-panel scroll-mt-24 rounded-[var(--app-radius-surface)] p-4'
-      }
+      className="scroll-mt-24 space-y-4 border-y border-[var(--app-divider)] py-4"
       data-testid="current-holding-market-evidence-review"
     >
       <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -83,12 +159,12 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
           <div className="app-kicker text-xs uppercase tracking-[0.18em]">
             {labels.holdingEvidenceReview}
           </div>
-          <div
-            className={`${complete ? 'mt-1 text-sm' : 'mt-2 text-lg'} font-semibold ${reportTone(report, loading, error)}`}
+          <h2
+            className={`${quiet ? 'mt-1 text-sm' : 'mt-2 text-lg'} font-semibold ${reportTone(report, loading, error)}`}
           >
             {title}
-          </div>
-          {!complete ? (
+          </h2>
+          {!quiet ? (
             <p className="app-muted mt-2 max-w-3xl text-sm leading-6">
               {labels.holdingEvidenceReviewDetail}
             </p>
@@ -162,91 +238,66 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
         ) : null}
       </div>
 
-      {report && complete ? (
-        <div className="mt-2 flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-[11px] tabular-nums text-[var(--app-text-tertiary)]">
+      {confirmedNavSymbols.length > 0 ? (
+        <p className="app-muted border-l-2 border-[var(--app-warning-border)] pl-3 text-xs leading-5">
+          {labels.holdingEvidenceConfirmedNavRefresh}
+        </p>
+      ) : null}
+      {genericRefreshSymbols.length > 0 ? (
+        <p className="app-muted border-l-2 border-[var(--app-warning-border)] pl-3 text-xs leading-5">
+          {labels.holdingEvidenceExplicitRefresh}
+        </p>
+      ) : null}
+
+      {report && !showReviewWorkspace ? (
+        <div className="flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-[11px] tabular-nums text-[var(--app-text-tertiary)]">
           <span>
             {report.confirmed_holding_count}/{report.current_holding_count}
           </span>
           <span>{formatTimestamp(report.valuation_as_of)}</span>
         </div>
-      ) : report ? (
+      ) : report && showReviewWorkspace ? (
         <>
-          <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            <EvidenceIdentity
-              label={labels.holdingEvidenceReview}
-              value={`${report.review_required_count}/${report.current_holding_count}`}
-            />
-            <EvidenceIdentity
-              label={labels.holdingEvidenceConfirmedCount(
-                report.confirmed_holding_count,
-              )}
-              value={formatPublicStatus(report.status, locale)}
-            />
-            <EvidenceIdentity
-              label={copy.common.valuationAsOf}
-              value={formatTimestamp(report.valuation_as_of)}
-            />
-          </div>
+          <MetricStrip
+            ariaLabel={labels.holdingEvidenceMetricsLabel}
+            className="[&>.app-metric-strip-item:last-child:nth-child(odd)]:col-span-2 sm:[&>.app-metric-strip-item:last-child:nth-child(odd)]:col-span-1"
+            items={[
+              {
+                id: 'review-required',
+                label: labels.holdingEvidenceMetricReviewRequired,
+                value: `${report.review_required_count}/${report.current_holding_count}`,
+                detail: formatPublicStatus(report.status, locale),
+                tone: 'warning',
+              },
+              {
+                id: 'confirmed',
+                label: labels.holdingEvidenceMetricConfirmed,
+                value: `${report.confirmed_holding_count}/${report.current_holding_count}`,
+                detail: labels.holdingEvidenceConfirmedCount(
+                  report.confirmed_holding_count,
+                ),
+              },
+              {
+                id: 'valuation-as-of',
+                label: copy.common.valuationAsOf,
+                value: formatTimestamp(report.valuation_as_of),
+              },
+            ]}
+          />
 
-          {report.items.length > 0 ? (
-            <div className="mt-4 grid gap-2 lg:grid-cols-2">
-              {report.items.map((item) => (
-                <article
-                  key={`${item.symbol}-${item.review_reason}`}
-                  className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_8%,transparent)] px-4 py-3"
-                >
-                  <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-semibold text-[var(--app-text)]">
-                        {item.name}
-                      </div>
-                      <div className="app-muted mt-1 font-mono text-xs tabular-nums">
-                        {item.symbol} · {formatQuantity(item.quantity)}
-                      </div>
-                    </div>
-                    <span className="rounded-full border border-[color-mix(in_srgb,var(--app-warning)_30%,transparent)] px-2.5 py-1 text-[10px] font-semibold text-[var(--app-warning)]">
-                      {formatPublicStatus(item.quote_status, locale)}
-                    </span>
-                  </div>
-                  <div className="app-muted mt-3 grid gap-1 text-xs leading-5">
-                    <span>
-                      {actionLabels[
-                        item.next_manual_action as keyof typeof actionLabels
-                      ] ?? formatPublicCode(item.next_manual_action, locale)}
-                    </span>
-                    <span>
-                      {item.quote_source ?? '--'} ·{' '}
-                      {formatTimestamp(item.quote_timestamp)}
-                    </span>
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : null}
-
-          {confirmedNavSymbols.length > 0 ? (
-            <p className="app-muted mt-4 text-xs leading-5">
-              {labels.holdingEvidenceConfirmedNavRefresh}
-            </p>
-          ) : null}
-          {genericRefreshSymbols.length > 0 ? (
-            <p className="app-muted mt-4 text-xs leading-5">
-              {labels.holdingEvidenceExplicitRefresh}
-            </p>
-          ) : null}
+          <ExceptionList
+            ariaLabel={labels.holdingEvidenceExceptionListLabel}
+            emptyState={labels.holdingEvidenceReviewEmpty}
+            labels={{
+              reason: labels.holdingEvidenceReasonLabel,
+              unblockCondition: labels.holdingEvidenceClearingConditionLabel,
+              nextAction: labels.holdingEvidenceSafeNextStepLabel,
+              evidence: labels.holdingEvidenceEvidenceLabel,
+            }}
+            items={exceptionItems}
+          />
         </>
       ) : null}
     </section>
-  );
-}
-
-function EvidenceIdentity({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2">
-      <div className="app-kicker text-[10px] tracking-[0.14em]">{label}</div>
-      <div className="mt-1 truncate font-mono text-xs font-semibold tabular-nums text-[var(--app-soft)]">
-        {value}
-      </div>
-    </div>
   );
 }
