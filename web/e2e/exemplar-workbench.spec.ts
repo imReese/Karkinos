@@ -284,6 +284,37 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
       expect(geometry.contentOverflow, `${path} ${theme}`).toBeLessThanOrEqual(
         0,
       );
+
+      if (path === '/activity') {
+        const activityGeometry = await page.evaluate(() => {
+          const entrySurface = document.querySelector(
+            '[data-activity-surface="priority-and-entry"]',
+          ) as HTMLElement;
+          const historySurface = document.querySelector(
+            '[data-activity-surface="audit-history"]',
+          ) as HTMLElement;
+          const controls = Array.from(
+            document.querySelectorAll(
+              '[aria-label="Ledger entry tool selector"] button, [aria-label="流水录入工具选择"] button',
+            ),
+          ) as HTMLElement[];
+          return {
+            entryTop: entrySurface.getBoundingClientRect().top,
+            historyTop: historySurface.getBoundingClientRect().top,
+            minControlHeight: Math.min(
+              ...controls.map(
+                (control) => control.getBoundingClientRect().height,
+              ),
+            ),
+          };
+        });
+        expect(activityGeometry.entryTop, theme).toBeLessThan(
+          activityGeometry.historyTop,
+        );
+        expect(activityGeometry.minControlHeight, theme).toBeGreaterThanOrEqual(
+          40,
+        );
+      }
     }
   }
 });

@@ -5151,6 +5151,10 @@ export function ActivityPage() {
                 ? '--'
                 : String(pendingFundOrders.data?.length ?? 0),
               detail: copy.activity.summary.pendingOrdersDetail,
+              tone:
+                (pendingFundOrders.data?.length ?? 0) > 0
+                  ? 'warning'
+                  : 'neutral',
             },
             {
               id: 'recent-entries',
@@ -5176,33 +5180,16 @@ export function ActivityPage() {
         />
 
         <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.55fr)]">
-          <div className="min-w-0 space-y-6">
-            {entries.isLoading ? (
-              <EvidenceState
-                kind="loading"
-                title={copy.states.loading}
-                description={copy.activity.loading}
-              />
-            ) : entries.isError ? (
-              <EvidenceState
-                kind="error"
-                title={copy.states.error}
-                description={copy.activity.error}
-                action={
-                  <button
-                    type="button"
-                    className="app-button-secondary px-3 py-2 text-xs"
-                    onClick={() => void entries.refetch()}
-                  >
-                    {copy.states.retry}
-                  </button>
-                }
-              />
-            ) : (
-              <ActivityFeed entries={entries.data ?? []} />
-            )}
-          </div>
-          <aside className="min-w-0 space-y-6 xl:sticky xl:top-24 xl:self-start">
+          <aside
+            className="min-w-0 space-y-6 xl:sticky xl:top-24 xl:col-start-2 xl:row-start-1 xl:self-start"
+            data-activity-surface="priority-and-entry"
+          >
+            <PendingFundOrdersCard
+              orders={pendingFundOrders.data ?? []}
+              loading={pendingFundOrders.isLoading}
+              error={pendingFundOrders.isError}
+              onRetry={() => void pendingFundOrders.refetch()}
+            />
             <ActivityEntryToolsPanel
               activeEntryTool={activeEntryTool}
               candidates={fundBatchCandidates}
@@ -5231,13 +5218,36 @@ export function ActivityPage() {
               previewLoading={tradePreview.isPending}
               tradePreview={tradePreview.data ?? null}
             />
-            <PendingFundOrdersCard
-              orders={pendingFundOrders.data ?? []}
-              loading={pendingFundOrders.isLoading}
-              error={pendingFundOrders.isError}
-              onRetry={() => void pendingFundOrders.refetch()}
-            />
           </aside>
+          <div
+            className="min-w-0 space-y-6 xl:col-start-1 xl:row-start-1"
+            data-activity-surface="audit-history"
+          >
+            {entries.isLoading ? (
+              <EvidenceState
+                kind="loading"
+                title={copy.states.loading}
+                description={copy.activity.loading}
+              />
+            ) : entries.isError ? (
+              <EvidenceState
+                kind="error"
+                title={copy.states.error}
+                description={copy.activity.error}
+                action={
+                  <button
+                    type="button"
+                    className="app-button-secondary px-3 py-2 text-xs"
+                    onClick={() => void entries.refetch()}
+                  >
+                    {copy.states.retry}
+                  </button>
+                }
+              />
+            ) : (
+              <ActivityFeed entries={entries.data ?? []} />
+            )}
+          </div>
         </div>
       </section>
     </>
@@ -5321,7 +5331,7 @@ function ActivityEntryToolsPanel({
               <button
                 key={tool.key}
                 aria-pressed={isSelected}
-                className={`min-h-8 min-w-0 rounded-[var(--app-radius-control)] border px-2.5 py-1.5 text-left text-xs font-semibold transition-colors ${
+                className={`min-h-10 min-w-0 rounded-[var(--app-radius-control)] border px-2.5 py-1.5 text-left text-xs font-semibold transition-colors xl:min-h-8 ${
                   isSelected
                     ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-bg)] text-[var(--app-accent-hover)]'
                     : 'border-transparent bg-transparent text-[var(--app-text-tertiary)] hover:border-[var(--app-border)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)]'

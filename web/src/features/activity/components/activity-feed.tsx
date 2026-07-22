@@ -173,7 +173,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                 <button
                   key={category}
                   aria-pressed={isSelected}
-                  className={`min-h-8 rounded-[var(--app-radius-control)] border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                  className={`min-h-10 rounded-[var(--app-radius-control)] border px-2.5 py-1.5 text-xs font-semibold transition-colors xl:min-h-8 ${
                     isSelected
                       ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-bg)] text-[var(--app-accent-strong)]'
                       : 'border-transparent bg-transparent text-[var(--app-muted)] hover:border-[var(--app-border)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] hover:text-[var(--app-soft)]'
@@ -213,7 +213,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                 <button
                   key={option.key}
                   aria-pressed={isSelected}
-                  className={`min-h-8 rounded-[var(--app-radius-control)] border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                  className={`min-h-10 rounded-[var(--app-radius-control)] border px-2.5 py-1.5 text-xs font-semibold transition-colors xl:min-h-8 ${
                     isSelected
                       ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-bg)] text-[var(--app-accent-strong)]'
                       : 'border-transparent bg-transparent text-[var(--app-muted)] hover:border-[var(--app-border)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] hover:text-[var(--app-soft)]'
@@ -228,22 +228,29 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
           </div>
         ) : null}
       </div>
-      <div className="min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
-        <table className="app-data-table w-full min-w-[820px] text-left text-sm">
+      <div
+        aria-label={labels.title}
+        className="min-w-0 max-w-full overflow-x-auto overscroll-x-contain"
+        role="region"
+        tabIndex={0}
+      >
+        <table className="app-data-table w-full min-w-[760px] text-left text-sm">
           <thead>
             <tr>
-              <th className="px-5 py-3">{labels.columns.time}</th>
-              <th className="px-5 py-3">{labels.columns.activity}</th>
-              <th className="px-5 py-3">{labels.columns.instrument}</th>
-              <th className="px-5 py-3 text-right">{labels.columns.amount}</th>
-              <th className="px-5 py-3">{labels.columns.detail}</th>
+              <th className="px-4 py-2.5">{labels.columns.time}</th>
+              <th className="px-4 py-2.5">{labels.columns.activity}</th>
+              <th className="px-4 py-2.5">{labels.columns.instrument}</th>
+              <th className="px-4 py-2.5 text-right">
+                {labels.columns.amount}
+              </th>
+              <th className="px-4 py-2.5">{labels.columns.detail}</th>
             </tr>
           </thead>
           <tbody>
             {visibleEntries.length === 0 ? (
               <tr>
                 <td
-                  className="px-5 py-8 text-center text-sm text-[var(--app-muted)]"
+                  className="px-4 py-8 text-center text-sm text-[var(--app-muted)]"
                   colSpan={5}
                 >
                   {labels.filteredEmpty}
@@ -254,7 +261,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
               const summary = formatLedgerActivitySummary(entry, locale);
               return (
                 <tr key={entry.id}>
-                  <td className="px-5 py-4 align-top">
+                  <td className="px-4 py-3 align-top">
                     <div className="font-mono text-xs font-semibold text-[var(--app-soft)]">
                       {formatTimestamp(entry.timestamp)}
                     </div>
@@ -262,10 +269,10 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                       {formatLedgerSourceLabel(entry.source, locale)}
                     </div>
                   </td>
-                  <td className="px-5 py-4 align-top">
-                    <div className="flex items-center gap-3">
+                  <td className="px-4 py-3 align-top">
+                    <div className="flex items-center gap-2.5">
                       <span
-                        className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ${activityBadgeClass(summary.tone)}`}
+                        className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--app-radius-control)] text-[11px] font-bold ${activityBadgeClass(summary.tone)}`}
                       >
                         {summary.shortLabel}
                       </span>
@@ -277,7 +284,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                       </div>
                     </div>
                   </td>
-                  <td className="px-5 py-4 align-top">
+                  <td className="px-4 py-3 align-top">
                     {entry.symbol ? (
                       <a
                         href={`/portfolio/${encodeURIComponent(entry.symbol)}`}
@@ -297,7 +304,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                     </div>
                   </td>
                   <td
-                    className={`px-5 py-4 text-right align-top font-mono text-sm font-semibold tabular-nums ${activityAmountClass(summary.tone)}`}
+                    className={`px-4 py-3 text-right align-top font-mono text-sm font-semibold tabular-nums ${activityAmountClass(summary.tone)}`}
                   >
                     {summary.amount}
                     <LedgerExecutionDetails
@@ -306,7 +313,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                       locale={locale}
                     />
                   </td>
-                  <td className="max-w-[280px] px-5 py-4 align-top text-[var(--app-muted)]">
+                  <td className="max-w-[280px] px-4 py-3 align-top text-[var(--app-muted)]">
                     <span className="line-clamp-2 break-words">
                       {formatLedgerPublicNote(entry, locale) ?? labels.noDetail}
                     </span>
@@ -323,20 +330,20 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
 
 function activityAmountClass(tone: LedgerActivitySummaryTone) {
   if (tone === 'credit') {
-    return 'text-[var(--app-success)]';
+    return 'text-[var(--app-pnl-positive)]';
   }
   if (tone === 'debit') {
-    return 'text-[var(--app-danger)]';
+    return 'text-[var(--app-pnl-negative)]';
   }
-  return 'text-[var(--app-soft)]';
+  return 'text-[var(--app-pnl-neutral)]';
 }
 
 function activityBadgeClass(tone: LedgerActivitySummaryTone) {
   if (tone === 'credit') {
-    return 'bg-[var(--app-success-bg)] text-[var(--app-success)] ring-1 ring-[var(--app-success-border)]';
+    return 'bg-[color-mix(in_srgb,var(--app-pnl-positive)_10%,transparent)] text-[var(--app-pnl-positive)] ring-1 ring-[color-mix(in_srgb,var(--app-pnl-positive)_38%,transparent)]';
   }
   if (tone === 'debit') {
-    return 'bg-[var(--app-danger-bg)] text-[var(--app-danger)] ring-1 ring-[var(--app-danger-border)]';
+    return 'bg-[color-mix(in_srgb,var(--app-pnl-negative)_10%,transparent)] text-[var(--app-pnl-negative)] ring-1 ring-[color-mix(in_srgb,var(--app-pnl-negative)_38%,transparent)]';
   }
   return 'bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)] text-[var(--app-soft)] ring-1 ring-[color-mix(in_srgb,var(--app-border)_34%,transparent)]';
 }
