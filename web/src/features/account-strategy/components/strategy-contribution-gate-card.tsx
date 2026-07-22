@@ -1,5 +1,10 @@
 import { useCopy } from '../../../app/copy';
-import { EvidenceIdentityDisclosure } from '../../../app/components/workbench';
+import {
+  EvidenceIdentityDisclosure,
+  EvidenceState,
+  MetricStrip,
+  StatusBadge,
+} from '../../../app/components/workbench';
 import { usePreferences } from '../../../app/preferences';
 import { formatCurrency, formatTimestamp } from '../../../shared/format';
 import {
@@ -94,270 +99,264 @@ export function StrategyContributionGateCard({
 
   return (
     <section
-      className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5"
+      className="min-w-0"
       data-testid="strategy-contribution-gate-card"
       data-variant={variant}
     >
-      <div className="app-terminal-inner min-w-0 p-4 sm:p-5">
-        <div
-          className={`flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between ${
-            isCompact ? 'mb-3' : 'mb-4'
-          }`}
-        >
-          <div className="min-w-0">
-            <div className="app-product-mark">
-              {labels.accountStrategyContributionReport}
-            </div>
-            <h2
-              className={`app-card-title mt-1.5 ${
-                isCompact ? 'text-lg' : 'text-xl'
-              }`}
-            >
-              {labels.accountStrategyContributionPublicTitle}
-            </h2>
-            {isCompact ? null : (
-              <p className="app-muted mt-2 max-w-3xl text-sm leading-6">
-                {labels.accountStrategyContributionExplanation}
-              </p>
-            )}
+      <div
+        className={`flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between ${
+          isCompact ? 'mb-3' : 'mb-4'
+        }`}
+      >
+        <div className="min-w-0">
+          <div className="app-product-mark">
+            {labels.accountStrategyContributionReport}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {report ? (
-              <EvidenceIdentityDisclosure
-                triggerLabel={copy.common.viewEvidenceIdentity}
-                title={copy.common.evidenceIdentityTitle}
-                description={copy.common.evidenceIdentityDescription}
-                closeLabel={copy.common.closeEvidenceIdentity}
-                copyLabel={copy.common.copyEvidenceValue}
-                copiedLabel={copy.common.evidenceValueCopied}
-                fields={[
-                  {
-                    label: copy.common.valuationSnapshot,
-                    value: report.valuation_snapshot_id ?? '--',
-                    mono: true,
-                  },
-                  {
-                    label: copy.common.ledgerCutoff,
-                    value: report.ledger_cutoff_id ?? '--',
-                    mono: true,
-                  },
-                  {
-                    label: copy.common.valuationAsOf,
-                    value: formatTimestamp(report.valuation_as_of),
-                    mono: true,
-                  },
-                  {
-                    label: copy.common.valuationStatus,
-                    value: formatPublicStatus(report.valuation_status, locale),
-                  },
-                  {
-                    label: copy.common.reviewFingerprint,
-                    value: report.contribution_fingerprint ?? '--',
-                    mono: true,
-                  },
-                  ...(strategyAuditId
-                    ? [
-                        {
-                          label: labels.accountStrategyAuditId,
-                          value: strategyAuditId,
-                          mono: true,
-                        },
-                      ]
-                    : []),
-                ]}
-              />
-            ) : null}
-            <span
-              className={`w-fit rounded-full border px-3 py-1 text-xs font-semibold ${
-                isSupported
-                  ? 'border-[var(--app-success-border)] bg-[var(--app-success-bg)] text-[var(--app-success-text)]'
-                  : isNotApplicable
-                    ? 'border-[color-mix(in_srgb,var(--app-border)_55%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_24%,transparent)] text-[var(--app-soft)]'
-                    : 'border-[color-mix(in_srgb,var(--app-warning)_45%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_16%,transparent)] text-[var(--app-warning)]'
-              }`}
-            >
-              {isSupported
-                ? labels.accountStrategyEvidenceLinked
-                : isNotApplicable
-                  ? labels.accountStrategyEvidenceNotApplicable
-                  : labels.accountStrategyEvidenceRequired}
-            </span>
-          </div>
-        </div>
-
-        {isLoading ? (
-          <p className="app-muted text-sm">
-            {labels.accountStrategyContributionLoading}
-          </p>
-        ) : isError ? (
-          <div className="space-y-3">
-            <p className="app-muted text-sm">
-              {labels.accountStrategyContributionUnavailable}
+          <h2
+            className={`mt-1 text-[var(--app-text)] ${
+              isCompact ? 'text-base font-semibold' : 'text-lg font-semibold'
+            }`}
+          >
+            {labels.accountStrategyContributionPublicTitle}
+          </h2>
+          {isCompact ? null : (
+            <p className="mt-1 max-w-3xl text-xs leading-5 text-[var(--app-text-secondary)]">
+              {labels.accountStrategyContributionExplanation}
             </p>
-            {onRetry ? (
+          )}
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+          {report ? (
+            <EvidenceIdentityDisclosure
+              triggerLabel={copy.common.viewEvidenceIdentity}
+              title={copy.common.evidenceIdentityTitle}
+              description={copy.common.evidenceIdentityDescription}
+              closeLabel={copy.common.closeEvidenceIdentity}
+              copyLabel={copy.common.copyEvidenceValue}
+              copiedLabel={copy.common.evidenceValueCopied}
+              fields={[
+                {
+                  label: copy.common.valuationSnapshot,
+                  value: report.valuation_snapshot_id ?? '--',
+                  mono: true,
+                },
+                {
+                  label: copy.common.ledgerCutoff,
+                  value: report.ledger_cutoff_id ?? '--',
+                  mono: true,
+                },
+                {
+                  label: copy.common.valuationAsOf,
+                  value: formatTimestamp(report.valuation_as_of),
+                  mono: true,
+                },
+                {
+                  label: copy.common.valuationStatus,
+                  value: formatPublicStatus(report.valuation_status, locale),
+                },
+                {
+                  label: copy.common.reviewFingerprint,
+                  value: report.contribution_fingerprint ?? '--',
+                  mono: true,
+                },
+                ...(strategyAuditId
+                  ? [
+                      {
+                        label: labels.accountStrategyAuditId,
+                        value: strategyAuditId,
+                        mono: true,
+                      },
+                    ]
+                  : []),
+              ]}
+            />
+          ) : null}
+          <StatusBadge
+            tone={
+              isSupported ? 'success' : isNotApplicable ? 'neutral' : 'warning'
+            }
+          >
+            {isSupported
+              ? labels.accountStrategyEvidenceLinked
+              : isNotApplicable
+                ? labels.accountStrategyEvidenceNotApplicable
+                : labels.accountStrategyEvidenceRequired}
+          </StatusBadge>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <EvidenceState
+          kind="loading"
+          title={labels.accountStrategyContributionLoading}
+        />
+      ) : isError ? (
+        <EvidenceState
+          kind="error"
+          title={labels.accountStrategyContributionUnavailable}
+          action={
+            onRetry ? (
               <button
                 type="button"
-                className="app-button-secondary rounded-2xl px-4 py-2 text-sm"
+                className="app-button-secondary min-h-8 rounded-[var(--app-radius-control)] px-3 text-xs font-semibold"
                 onClick={onRetry}
               >
                 {copy.states.retry}
               </button>
-            ) : null}
-          </div>
-        ) : isSupported && report ? (
-          <div className="space-y-3">
-            <div
-              className={
-                isCompact
-                  ? 'grid gap-2 sm:grid-cols-2'
-                  : 'grid gap-3 sm:grid-cols-2 xl:grid-cols-4'
-              }
-            >
-              <Metric label={labels.strategy} value={strategyLabel} />
-              {isCompact ? null : (
-                <>
-                  <Metric
-                    label={labels.accountStrategyGrossRealizedPnl}
-                    value={formatCurrency(report.gross_realized_pnl)}
-                  />
-                  <Metric
-                    label={labels.accountStrategyGrossUnrealizedPnl}
-                    value={formatCurrency(report.gross_unrealized_pnl)}
-                  />
-                  <Metric
-                    label={labels.accountStrategyCommissionSlippage}
-                    value={`${formatCurrency(report.total_commission)} / ${formatCurrency(report.total_slippage)}`}
-                  />
-                  <Metric
-                    label={labels.accountStrategyTax}
-                    value={formatCurrency(report.total_tax)}
-                  />
-                </>
-              )}
-              <Metric
-                label={labels.accountStrategyNetContribution}
-                value={formatCurrency(report.net_contribution)}
-                tone={
+            ) : undefined
+          }
+        />
+      ) : isSupported && report ? (
+        <div className="space-y-3">
+          <MetricStrip
+            ariaLabel={labels.accountStrategyContributionPublicTitle}
+            className="sm:grid-flow-row sm:grid-cols-2"
+            items={[
+              {
+                id: 'strategy',
+                label: labels.strategy,
+                value: strategyLabel,
+              },
+              ...(!isCompact
+                ? [
+                    {
+                      id: 'gross-realized',
+                      label: labels.accountStrategyGrossRealizedPnl,
+                      value: formatCurrency(report.gross_realized_pnl),
+                    },
+                    {
+                      id: 'gross-unrealized',
+                      label: labels.accountStrategyGrossUnrealizedPnl,
+                      value: formatCurrency(report.gross_unrealized_pnl),
+                    },
+                    {
+                      id: 'commission-slippage',
+                      label: labels.accountStrategyCommissionSlippage,
+                      value: `${formatCurrency(report.total_commission)} / ${formatCurrency(report.total_slippage)}`,
+                    },
+                    {
+                      id: 'tax',
+                      label: labels.accountStrategyTax,
+                      value: formatCurrency(report.total_tax),
+                    },
+                  ]
+                : []),
+              {
+                id: 'net-contribution',
+                label: labels.accountStrategyNetContribution,
+                value: formatCurrency(report.net_contribution),
+                tone:
                   report.net_contribution === null
-                    ? 'neutral'
+                    ? ('neutral' as const)
                     : report.net_contribution >= 0
-                      ? 'positive'
-                      : 'negative'
-                }
-              />
-              <Metric
-                label={labels.accountStrategyContributionStatus}
-                value={statusLabel}
-              />
-              <Metric
-                label={labels.accountStrategyHealthStatus}
-                value={healthLabel}
-              />
-              <Metric
-                label={labels.accountStrategyLedgerPostedFills}
-                value={`${report.ledger_posted_fill_count ?? 0} / ${report.linked_fill_count}`}
-              />
-              {isCompact ? null : (
-                <Metric
-                  label={labels.accountStrategyEvidenceRefs}
-                  value={String(report.evidence_refs.length)}
-                />
+                      ? ('pnl-positive' as const)
+                      : ('pnl-negative' as const),
+              },
+              {
+                id: 'contribution-status',
+                label: labels.accountStrategyContributionStatus,
+                value: statusLabel,
+              },
+              {
+                id: 'health-status',
+                label: labels.accountStrategyHealthStatus,
+                value: healthLabel,
+              },
+              {
+                id: 'posted-fills',
+                label: labels.accountStrategyLedgerPostedFills,
+                value: `${report.ledger_posted_fill_count ?? 0} / ${report.linked_fill_count}`,
+              },
+              ...(!isCompact
+                ? [
+                    {
+                      id: 'evidence-refs',
+                      label: labels.accountStrategyEvidenceRefs,
+                      value: String(report.evidence_refs.length),
+                    },
+                  ]
+                : []),
+            ]}
+          />
+          <ContributionLimitations
+            limitations={report.limitations}
+            locale={locale}
+          />
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <EvidenceState
+            kind={isNotApplicable ? 'empty' : 'partial'}
+            title={labels.accountStrategyContributionHiddenUntilEvidence}
+            description={`${labels.accountStrategyNextManualAction}: ${nextAction}`}
+          />
+          <MetricStrip
+            ariaLabel={labels.accountStrategyContributionPublicTitle}
+            className="sm:grid-flow-row sm:grid-cols-2"
+            items={[
+              {
+                id: 'strategy',
+                label: labels.strategy,
+                value: strategyLabel,
+              },
+              {
+                id: 'contribution-status',
+                label: labels.accountStrategyContributionStatus,
+                value: statusLabel,
+              },
+              {
+                id: 'health-status',
+                label: labels.accountStrategyHealthStatus,
+                value: healthLabel,
+              },
+              {
+                id: 'orders-fills',
+                label: labels.accountStrategyOrdersFills,
+                value: String(report?.linked_fill_count ?? 0),
+              },
+              {
+                id: 'evidence-binding',
+                label: labels.accountStrategyEvidenceBinding,
+                value: bindingLabel,
+              },
+              {
+                id: 'posted-fills',
+                label: labels.accountStrategyLedgerPostedFills,
+                value: `${report?.ledger_posted_fill_count ?? 0} / ${report?.linked_fill_count ?? 0}`,
+              },
+            ]}
+          />
+          {report?.missing_valuation_symbols.length ? (
+            <p className="border-l-2 border-l-[var(--app-warning-indicator)] px-3 py-2 text-xs font-semibold text-[var(--app-warning-text)]">
+              {labels.accountStrategyMissingValuation(
+                formatInstrumentDisplayLabelsBySymbol(
+                  report.missing_valuation_symbols,
+                  instruments,
+                ),
               )}
-            </div>
-            <ContributionLimitations
-              limitations={report.limitations}
-              locale={locale}
-            />
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <p className="app-muted text-sm">
-              {labels.accountStrategyContributionHiddenUntilEvidence}
             </p>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Metric label={labels.strategy} value={strategyLabel} />
-              <Metric
-                label={labels.accountStrategyContributionStatus}
-                value={statusLabel}
-              />
-              <Metric
-                label={labels.accountStrategyHealthStatus}
-                value={healthLabel}
-              />
-              <Metric
-                label={labels.accountStrategyOrdersFills}
-                value={String(report?.linked_fill_count ?? 0)}
-              />
-              <Metric
-                label={labels.accountStrategyEvidenceBinding}
-                value={bindingLabel}
-              />
-              <Metric
-                label={labels.accountStrategyLedgerPostedFills}
-                value={`${report?.ledger_posted_fill_count ?? 0} / ${report?.linked_fill_count ?? 0}`}
-              />
-            </div>
-            {report?.missing_valuation_symbols.length ? (
-              <p className="text-xs font-semibold text-[var(--app-warning)]">
-                {labels.accountStrategyMissingValuation(
-                  formatInstrumentDisplayLabelsBySymbol(
-                    report.missing_valuation_symbols,
-                    instruments,
-                  ),
-                )}
-              </p>
-            ) : null}
-            <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_9%,transparent)] px-3 py-3 text-sm leading-6 text-[var(--app-soft)]">
-              <div className="text-xs font-semibold text-[var(--app-warning)]">
-                {labels.accountStrategyNextManualAction}
+          ) : null}
+          {report?.blockers?.length ? (
+            <div className="border-y border-[var(--app-divider)]">
+              <div className="px-3 py-2 text-xs font-semibold text-[var(--app-text-secondary)]">
+                {labels.accountStrategyBlockers}
               </div>
-              <p className="mt-1">{nextAction}</p>
-            </div>
-            {report?.blockers?.length ? (
-              <div className="space-y-1 text-xs text-[var(--app-soft)]">
-                <div className="font-semibold">
-                  {labels.accountStrategyBlockers}
-                </div>
+              <ul className="divide-y divide-[var(--app-divider)] text-xs text-[var(--app-text-secondary)]">
                 {report.blockers.map((blocker) => (
-                  <div className="break-words" key={blocker}>
+                  <li className="break-words px-3 py-2" key={blocker}>
                     {formatPublicNote(blocker, locale)}
-                  </div>
+                  </li>
                 ))}
-              </div>
-            ) : null}
-            <ContributionLimitations
-              limitations={report?.limitations ?? []}
-              locale={locale}
-            />
-          </div>
-        )}
-      </div>
+              </ul>
+            </div>
+          ) : null}
+          <ContributionLimitations
+            limitations={report?.limitations ?? []}
+            locale={locale}
+          />
+        </div>
+      )}
     </section>
-  );
-}
-
-function Metric({
-  label,
-  value,
-  tone = 'neutral',
-}: {
-  label: string;
-  value: string;
-  tone?: 'positive' | 'negative' | 'neutral';
-}) {
-  const toneClass =
-    tone === 'positive'
-      ? 'text-[var(--app-pnl-positive)]'
-      : tone === 'negative'
-        ? 'text-[var(--app-pnl-negative)]'
-        : 'text-[var(--app-text)]';
-  return (
-    <div className="rounded-3xl border border-[color-mix(in_srgb,var(--app-border)_62%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_35%,transparent)] p-3">
-      <div className="app-muted text-xs font-semibold">{label}</div>
-      <div className={`mt-2 text-lg font-bold tabular-nums ${toneClass}`}>
-        {value}
-      </div>
-    </div>
   );
 }
 
@@ -373,15 +372,15 @@ function ContributionLimitations({
   }
 
   return (
-    <div className="grid gap-2">
+    <ul className="divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]">
       {limitations.map((limitation) => (
-        <p
-          className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_22%,transparent)] px-3 py-2 text-sm leading-6 text-[var(--app-soft)]"
+        <li
+          className="px-3 py-2 text-xs leading-5 text-[var(--app-text-secondary)]"
           key={limitation}
         >
           {formatPublicNote(limitation, locale)}
-        </p>
+        </li>
       ))}
-    </div>
+    </ul>
   );
 }

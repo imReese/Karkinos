@@ -89,6 +89,12 @@ test('portfolio keeps filtering ordered and wide holdings locally scrollable', a
     const tableShell = document.querySelector(
       '.app-positions-table [data-testid="positions-table-scroll"]',
     ) as HTMLElement | null;
+    const liveHoldings = document.querySelector(
+      '[data-testid="live-holdings-board"]',
+    ) as HTMLElement | null;
+    const tableHeaders = Array.from(
+      document.querySelectorAll('[data-testid="positions-table-desktop"] th'),
+    ).map((header) => header.textContent?.trim());
     return {
       contentOverflow: content.scrollWidth - content.clientWidth,
       documentOverflow:
@@ -97,11 +103,27 @@ test('portfolio keeps filtering ordered and wide holdings locally scrollable', a
       tableOverflow: tableShell
         ? tableShell.scrollWidth - tableShell.clientWidth
         : 0,
+      liveHoldingsOverflow: liveHoldings
+        ? liveHoldings.scrollWidth - liveHoldings.clientWidth
+        : 0,
+      tableHeaders,
     };
   });
   expect(geometry.documentOverflow).toBeLessThanOrEqual(0);
   expect(geometry.contentOverflow).toBeLessThanOrEqual(0);
   expect(geometry.tableOverflow).toBeGreaterThanOrEqual(0);
+  expect(geometry.liveHoldingsOverflow).toBeLessThanOrEqual(0);
+  if (geometry.tableHeaders.length > 0) {
+    expect(geometry.tableHeaders.slice(0, 7)).toEqual([
+      '代码',
+      '市值',
+      '权重',
+      '今日收益',
+      '浮盈亏',
+      '已实现盈亏',
+      '行情状态',
+    ]);
+  }
 });
 
 test('portfolio mobile keeps secondary filters disclosed on demand', async ({
@@ -144,6 +166,85 @@ test('portfolio mobile keeps secondary filters disclosed on demand', async ({
       document.documentElement.clientWidth,
   );
   expect(documentOverflow).toBeLessThanOrEqual(0);
+});
+
+test('portfolio account and strategy evidence stay flat across themes and target widths', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+
+  for (const theme of ['light', 'dark'] as const) {
+    for (const viewport of [
+      { width: 1440, height: 900 },
+      { width: 1280, height: 800 },
+      { width: 834, height: 900 },
+      { width: 390, height: 844 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await page.goto('/portfolio');
+      await page.evaluate((nextTheme) => {
+        window.localStorage.setItem('karkinos.theme', nextTheme);
+      }, theme);
+      await page.reload();
+
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+      const accountGeometry = await page.evaluate(() => {
+        const content = document.querySelector(
+          '.app-shell-content',
+        ) as HTMLElement;
+        const liveHoldings = document.querySelector(
+          '[data-testid="live-holdings-board"]',
+        ) as HTMLElement | null;
+        return {
+          contentOverflow: content.scrollWidth - content.clientWidth,
+          documentOverflow:
+            document.documentElement.scrollWidth -
+            document.documentElement.clientWidth,
+          liveHoldingsOverflow: liveHoldings
+            ? liveHoldings.scrollWidth - liveHoldings.clientWidth
+            : 0,
+        };
+      });
+      expect(
+        accountGeometry.documentOverflow,
+        `${theme} ${viewport.width}`,
+      ).toBeLessThanOrEqual(0);
+      expect(
+        accountGeometry.contentOverflow,
+        `${theme} ${viewport.width}`,
+      ).toBeLessThanOrEqual(0);
+      expect(
+        accountGeometry.liveHoldingsOverflow,
+        `${theme} ${viewport.width}`,
+      ).toBeLessThanOrEqual(0);
+
+      await page.getByRole('button', { name: /Strategy|策略/ }).click();
+      const contribution = page.getByTestId('strategy-contribution-gate-card');
+      await expect(contribution).toBeVisible();
+      const contributionGeometry = await contribution.evaluate((element) => ({
+        legacyTerminal: element.querySelectorAll(
+          '.app-terminal-panel,.app-terminal-inner',
+        ).length,
+        oversizedRadii: element.querySelectorAll('.rounded-2xl,.rounded-3xl')
+          .length,
+        width: element.getBoundingClientRect().width,
+      }));
+      expect(
+        contributionGeometry.legacyTerminal,
+        `${theme} ${viewport.width}`,
+      ).toBe(0);
+      expect(
+        contributionGeometry.oversizedRadii,
+        `${theme} ${viewport.width}`,
+      ).toBe(0);
+      expect(
+        contributionGeometry.width,
+        `${theme} ${viewport.width}`,
+      ).toBeLessThanOrEqual(viewport.width);
+    }
+  }
 });
 
 test('exemplar routes remain task-reordered and overflow safe on mobile themes', async ({
