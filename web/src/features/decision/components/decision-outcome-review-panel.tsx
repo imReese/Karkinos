@@ -237,6 +237,8 @@ export function DecisionOutcomeReviewPanel({
                   title={appCopy.common.evidenceIdentityTitle}
                   description={appCopy.common.evidenceIdentityDescription}
                   closeLabel={appCopy.common.closeEvidenceIdentity}
+                  copyLabel={appCopy.common.copyEvidenceValue}
+                  copiedLabel={appCopy.common.evidenceValueCopied}
                   fields={[
                     {
                       label: appCopy.common.valuationSnapshot,

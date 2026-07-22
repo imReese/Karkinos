@@ -3066,6 +3066,8 @@ export function PortfolioPage() {
               title={copy.common.evidenceIdentityTitle}
               description={copy.common.evidenceIdentityDescription}
               closeLabel={copy.common.closeEvidenceIdentity}
+              copyLabel={copy.common.copyEvidenceValue}
+              copiedLabel={copy.common.evidenceValueCopied}
               fields={[
                 {
                   label: copy.common.valuationSnapshot,
@@ -3413,6 +3415,8 @@ export function RiskPage() {
               title={copy.common.evidenceIdentityTitle}
               description={copy.common.evidenceIdentityDescription}
               closeLabel={copy.common.closeEvidenceIdentity}
+              copyLabel={copy.common.copyEvidenceValue}
+              copiedLabel={copy.common.evidenceValueCopied}
               fields={[
                 {
                   label: copy.common.valuationSnapshot,

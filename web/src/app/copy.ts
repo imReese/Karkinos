@@ -142,6 +142,8 @@ export const copy = {
       evidenceIdentityDescription:
         'Full persisted identifiers are kept here for audit and deterministic replay.',
       closeEvidenceIdentity: 'Close evidence identity',
+      copyEvidenceValue: (label: string) => `Copy ${label}`,
+      evidenceValueCopied: (label: string) => `${label} copied`,
       valuationEvidenceAsOf: (time: string, status: string) =>
         `Valuation evidence as of ${time} · ${status}`,
       valuationSnapshot: 'Valuation snapshot',
@@ -2849,6 +2851,8 @@ export const copy = {
       evidenceIdentityTitle: '证据身份',
       evidenceIdentityDescription: '完整持久化标识仅在此用于审计与确定性复现。',
       closeEvidenceIdentity: '关闭证据身份',
+      copyEvidenceValue: (label: string) => `复制${label}`,
+      evidenceValueCopied: (label: string) => `已复制${label}`,
       valuationEvidenceAsOf: (time: string, status: string) =>
         `估值证据截至 ${time} · ${status}`,
       valuationSnapshot: '估值快照',
