@@ -90,6 +90,44 @@ def test_acceptance_audit_cli_broker_connector_soak_promotion_filter() -> None:
     assert audit["completed_count"] == audit["required_count"]
 
 
+def test_acceptance_audit_cli_signed_broker_adapter_release_review_filter() -> None:
+    result = _run_cli("--audit", "signed_broker_adapter_release_review")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["selected_audit"] == "signed_broker_adapter_release_review"
+    assert [audit["key"] for audit in payload["audits"]] == [
+        "signed_broker_adapter_release_review"
+    ]
+    audit = payload["audits"][0]
+    assert audit["required_count"] == 8
+    assert audit["completed_count"] == audit["required_count"]
+    assert {criterion["key"] for criterion in audit["criteria"]} >= {
+        "exact_signed_operator_review_dossier",
+        "preview_record_drift_and_retry_integrity",
+        "eligibility_only_zero_provider_or_authority_side_effects",
+    }
+
+
+def test_acceptance_audit_cli_strategy_learning_review_filter() -> None:
+    result = _run_cli("--audit", "strategy_learning_review")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["selected_audit"] == "strategy_learning_review"
+    assert [audit["key"] for audit in payload["audits"]] == ["strategy_learning_review"]
+    audit = payload["audits"][0]
+    assert audit["required_count"] == 7
+    assert audit["completed_count"] == audit["required_count"]
+    assert {criterion["key"] for criterion in audit["criteria"]} >= {
+        "stored_review_and_event_replay_integrity",
+        "copy_only_human_started_research_boundary",
+        "strategy_lab_non_authorizing_action_queue",
+    }
+
+
 def test_acceptance_audit_cli_per_order_confirmation_foundation_filter() -> None:
     result = _run_cli("--audit", "per_order_confirmation_foundation")
 
@@ -574,6 +612,7 @@ def test_acceptance_audit_cli_all_outputs_every_registered_audit() -> None:
     assert [audit["key"] for audit in payload["audits"]] == [
         "profit_discipline",
         "strategy_lab",
+        "strategy_learning_review",
         "research_evidence",
         "account_truth",
         "account_truth_review",
@@ -586,6 +625,7 @@ def test_acceptance_audit_cli_all_outputs_every_registered_audit() -> None:
         "capital_authorization_policy",
         "broker_connector_soak_foundation",
         "broker_connector_soak_promotion",
+        "signed_broker_adapter_release_review",
         "per_order_confirmation_foundation",
         "execution_gateway_verification",
         "per_order_gateway_verification_binding",

@@ -28,6 +28,13 @@ function shortenedIdentity(value: string) {
   return `${value.slice(0, 10)}…${value.slice(-8)}`;
 }
 
+function adapterReadOnlyStatusLabel(status: string, locale: Locale) {
+  if (status === 'observing_readonly') {
+    return locale === 'zh' ? '只读观测中' : 'Read-only observation active';
+  }
+  return formatPublicStatus(status, locale);
+}
+
 export function CurrentPerOrderDossierOperatorPanel({
   locale,
 }: {
@@ -155,8 +162,8 @@ export function CurrentPerOrderDossierOperatorPanel({
             </h2>
             <p className="app-muted mt-2 max-w-3xl text-sm leading-6">
               {locale === 'zh'
-                ? '从持久化资本评估自动解析当前订单、前序批次与网关验证指纹。签名只记录 append-only 复核事实，不修改 OMS、账本、风控、kill switch 或资本授权。'
-                : 'Resolve the current order, prior-batch, and gateway-verification fingerprints from persisted capital evidence. The signature records only an append-only review fact and changes no OMS, ledger, risk, kill switch, or capital authority.'}
+                ? '从持久化资本评估自动解析当前订单、前序批次与网关验证指纹，并绑定当前已审查的只读适配器 release。签名只记录 append-only 复核事实，不修改 OMS、账本、风控、kill switch 或资本授权。'
+                : 'Resolve current order, prior-batch, and gateway-verification fingerprints from persisted capital evidence, then bind the current reviewed read-only adapter release. The signature records only an append-only review fact and changes no OMS, ledger, risk, kill switch, or capital authority.'}
             </p>
           </div>
           <button
@@ -313,6 +320,27 @@ export function CurrentPerOrderDossierOperatorPanel({
                     value={
                       preview.data.capital_evaluation.scope.account_alias || '—'
                     }
+                  />
+                  <EvidenceMetric
+                    label={
+                      locale === 'zh' ? '适配器发布证据' : 'Adapter release'
+                    }
+                    value={shortenedIdentity(
+                      preview.data.broker_adapter_release.release
+                        ?.release_evidence_ref || '—',
+                    )}
+                  />
+                  <EvidenceMetric
+                    label={
+                      locale === 'zh'
+                        ? '适配器只读状态'
+                        : 'Adapter read-only status'
+                    }
+                    value={adapterReadOnlyStatusLabel(
+                      preview.data.broker_adapter_release.release?.status ||
+                        preview.data.broker_adapter_release.status,
+                      locale,
+                    )}
                   />
                   <EvidenceMetric
                     label="kill switch"

@@ -32,6 +32,8 @@ import {
 } from '../../../shared/ledger-format';
 import { KillSwitchPanel } from './kill-switch-panel';
 import { CurrentPerOrderDossierOperatorPanel } from '../../operations/current-per-order-dossier-operator-panel';
+import { ControlledBrokerWriteReleaseOperatorPanel } from '../../operations/controlled-broker-write-release-operator-panel';
+import { SignedBrokerAdapterReleaseReviewOperatorPanel } from '../../operations/signed-broker-adapter-release-review-operator-panel';
 import {
   useBrokerConnectorSoakPromotionStatusQuery,
   useOperationsTodayQuery,
@@ -1171,6 +1173,14 @@ export function TradingPage() {
             soak={brokerSoakPromotion.data ?? null}
             soakLoading={brokerSoakPromotion.isLoading}
             soakError={brokerSoakPromotion.isError}
+          />
+
+          <SignedBrokerAdapterReleaseReviewOperatorPanel locale={locale} />
+
+          <ControlledBrokerWriteReleaseOperatorPanel
+            locale={locale}
+            readiness={brokerAdapterReadiness}
+            soak={brokerSoakPromotion.data ?? null}
           />
 
           <CurrentPerOrderDossierOperatorPanel locale={locale} />

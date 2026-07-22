@@ -329,6 +329,47 @@ def test_signal_review_replay_detects_tampering(monkeypatch, tmp_path) -> None:
     assert "event_hash_mismatch" in replay["errors"]
 
 
+def test_signal_review_read_rejects_tampered_main_record(monkeypatch, tmp_path) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _seed_signal_chain(db)
+    fake_state = SimpleNamespace(db=db)
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    preview_endpoint = _endpoint(
+        "/api/signals/journal/{signal_id}/review/preview", method="POST"
+    )
+    review_endpoint = _endpoint(
+        "/api/signals/journal/{signal_id}/review", method="POST"
+    )
+    get_endpoint = _endpoint("/api/signals/journal/reviews/{review_id}", method="GET")
+    replay_endpoint = _endpoint(
+        "/api/signals/journal/reviews/{review_id}/replay", method="GET"
+    )
+
+    preview = asyncio.run(preview_endpoint(1))
+    recorded = asyncio.run(
+        review_endpoint(1, _review_request(preview["target_fingerprint"]))
+    )
+    review_id = recorded["review"]["review_id"]
+    with sqlite3.connect(db._path) as conn:
+        conn.execute(
+            "UPDATE decision_outcome_reviews "
+            "SET target_json = ?, request_json = ? WHERE review_id = ?",
+            ('{"tampered_target":true}', '{"tampered_request":true}', review_id),
+        )
+        conn.commit()
+
+    result = asyncio.run(get_endpoint(review_id))
+    replay = asyncio.run(replay_endpoint(review_id))
+
+    assert result["target_binding_valid"] is False
+    assert result["stored_review_integrity_valid"] is False
+    assert replay["valid"] is False
+    assert "stored_review_request_fingerprint_mismatch" in replay["errors"]
+    assert "stored_review_target_fingerprint_mismatch" in replay["errors"]
+    assert "stored_review_request_target_binding_mismatch" in replay["errors"]
+
+
 def test_signal_review_binds_canonical_contribution_and_exposes_later_drift(
     monkeypatch, tmp_path
 ) -> None:

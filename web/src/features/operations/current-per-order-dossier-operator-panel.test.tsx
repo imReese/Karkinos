@@ -66,7 +66,7 @@ const candidates: CurrentPerOrderDossierCandidates = {
 const preview: CurrentPerOrderDossierPreview = {
   schema_version: 'karkinos.current_per_order_confirmation_dossier.v1',
   underlying_dossier_schema_version:
-    'karkinos.per_order_confirmation_dossier.v3',
+    'karkinos.per_order_confirmation_dossier.v5',
   order: {
     order_id: orderId,
     intent_key: 'fixture-intent-1',
@@ -108,6 +108,35 @@ const preview: CurrentPerOrderDossierPreview = {
     },
     effective_limits: { max_order_value: '1000' },
     remaining_budget: { order_value: '590' },
+  },
+  broker_adapter_release: {
+    schema_version: 'karkinos.per_order_broker_adapter_release_binding.v1',
+    status: 'pass',
+    expected_scope: {
+      collector_id: 'fixture-readonly-edge',
+      gateway_id: 'fixture-disabled-gateway',
+      account_alias: 'fixture-review-account',
+    },
+    matching_release_count: 1,
+    release: {
+      release_evidence_ref: 'release-evidence-v1',
+      manifest_fingerprint: '7'.repeat(64),
+      provider: 'deterministic-fixture',
+      gateway_id: 'fixture-disabled-gateway',
+      account_alias: 'fixture-review-account',
+      collector_id: 'fixture-readonly-edge',
+      review_status: 'accepted',
+      conformance_status: 'clear',
+      collector_status: 'recorded',
+      collector_run_id: 'collector-run-v1',
+      status: 'observing_readonly',
+      does_not_authorize_provider_activation: true,
+    },
+    blockers: [],
+    persisted_evidence_only: true,
+    provider_contact_performed: false,
+    broker_submission_enabled: false,
+    authorizes_execution: false,
   },
   prior_execution_reconciliation: {
     status: 'pass',
@@ -283,6 +312,8 @@ test('stays collapsed without reads, then records an exact non-authorizing revie
   expect(await screen.findByText(/Current candidates \(1\)/)).toBeTruthy();
   fireEvent.click(screen.getByText('Resolve current exact evidence'));
   expect(await screen.findByText('510300.SH · Buy 100')).toBeTruthy();
+  expect(screen.getByText('release-evidence-v1')).toBeTruthy();
+  expect(screen.getByText('Read-only observation active')).toBeTruthy();
   expect(
     screen.getByText(
       'Submission remains blocked with 3 hard gates. This review removes none of them.',

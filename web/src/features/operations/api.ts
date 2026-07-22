@@ -326,6 +326,294 @@ export type BrokerConnectorSoakPromotionStatus = {
   automatic_promotion_enabled: boolean;
 };
 
+export type SignedBrokerAdapterReleaseReviewDecision =
+  'accepted' | 'rejected' | 'revoked';
+
+export type SignedBrokerAdapterReleaseReviewDossierRequest = {
+  manifest: Record<string, unknown>;
+  source_name: string;
+  review_id: string;
+  decision: SignedBrokerAdapterReleaseReviewDecision;
+  reviewed_at: string;
+  reason_ref: string;
+};
+
+export type SignedBrokerAdapterReleaseReviewStatus = {
+  schema_version: 'karkinos.signed_broker_adapter_release_review_status.v1';
+  contract_status: string;
+  recorded_manifest_count: number;
+  recorded_review_count: number;
+  supported_decisions: SignedBrokerAdapterReleaseReviewDecision[];
+  operator_signature_required: true;
+  review_store_available: boolean;
+  provider_contact_performed: false;
+  adapter_registered: false;
+  broker_submission_enabled: false;
+  broker_cancellation_enabled: false;
+  capital_authority_changed: false;
+  authorizes_execution: false;
+};
+
+export type SignedBrokerAdapterReleaseCurrentReview = {
+  status: string;
+  review_id?: string;
+  release_evidence_ref: string;
+  manifest_fingerprint?: string;
+  decision?: SignedBrokerAdapterReleaseReviewDecision;
+  reviewer_ref?: string;
+  reviewed_at?: string;
+  reason_ref?: string;
+  conformance_run_id?: string;
+  conformance_report_fingerprint?: string;
+  review_fingerprint: string;
+  integrity_blockers: string[];
+  persisted?: true;
+  reused?: boolean;
+  created_at?: string;
+};
+
+export type SignedBrokerAdapterReleaseReviewListItem = {
+  schema_version: 'karkinos.signed_broker_adapter_release_review_list.v1';
+  release_evidence_ref: string;
+  manifest_fingerprint: string;
+  manifest: Record<string, unknown>;
+  current_review: SignedBrokerAdapterReleaseCurrentReview;
+  blockers: string[];
+  reviewable: boolean;
+  provider_contact_performed: false;
+  adapter_registered: false;
+  authorizes_execution: false;
+};
+
+export type SignedBrokerAdapterReleaseReviewDossier = {
+  schema_version: 'karkinos.signed_broker_adapter_release_review_dossier.v1';
+  action: 'review_broker_adapter_release';
+  review_id: string;
+  decision: SignedBrokerAdapterReleaseReviewDecision;
+  reviewed_at: string;
+  reason_ref: string;
+  manifest: Record<string, unknown>;
+  manifest_fingerprint: string;
+  manifest_evidence: {
+    file_fingerprint: string;
+    source_name: string;
+    validation_status: string;
+    recordable: boolean;
+    blockers: string[];
+    record_blockers: string[];
+  };
+  current_review: SignedBrokerAdapterReleaseCurrentReview;
+  conformance: {
+    status: string;
+    run_id?: string;
+    report_fingerprint?: string;
+    blockers: string[];
+  };
+  dossier_fingerprint: string;
+  generated_at: string;
+  review_status: 'ready_for_signature' | 'blocked';
+  review_ready: boolean;
+  review_blockers: string[];
+  required_operator_approval: {
+    action: 'review_broker_adapter_release';
+    artifact_type: 'broker_adapter_release_review_dossier';
+    artifact_fingerprint: string;
+  };
+  provider_contact_performed: false;
+  adapter_registered: false;
+  broker_submission_enabled: false;
+  broker_cancellation_enabled: false;
+  capital_authority_changed: false;
+  authorizes_execution: false;
+};
+
+export type SignedBrokerAdapterReleaseReviewRecord = {
+  schema_version: 'karkinos.broker_adapter_release_review.v1';
+  status: SignedBrokerAdapterReleaseReviewDecision;
+  review_id: string;
+  release_evidence_ref: string;
+  manifest_fingerprint: string;
+  decision: SignedBrokerAdapterReleaseReviewDecision;
+  reviewer_ref: string;
+  reviewed_at: string;
+  reason_ref: string;
+  conformance_run_id: string;
+  conformance_report_fingerprint: string;
+  review_fingerprint: string;
+  dossier_fingerprint: string;
+  operator_id: string;
+  operator_key_id: string;
+  operator_public_key_fingerprint: string;
+  operator_approval_id: string;
+  operator_identity_verified: true;
+  persisted: true;
+  reused: boolean;
+  created_at: string;
+  provider_contact_performed: false;
+  adapter_registered: false;
+  broker_submission_enabled: false;
+  broker_cancellation_enabled: false;
+  capital_authority_changed: false;
+  authorizes_execution: false;
+};
+
+export type ControlledBrokerWriteReleaseOwnerReviewRefs = {
+  broker_agreement_review: string;
+  account_permissions_review: string;
+  program_trading_reporting_review: string;
+  provider_acceptance_test_report: string;
+  deployment_authorization: string;
+  risk_controls_review: string;
+  rollback_drill_review: string;
+};
+
+export type ControlledBrokerWriteReleaseDossierRequest = {
+  execution_edge_manifest: Record<string, unknown>;
+  readonly_release_evidence_ref: string;
+  soak_acceptance_id: string;
+  effective_at: string;
+  expires_at: string;
+  owner_review_refs: ControlledBrokerWriteReleaseOwnerReviewRefs;
+};
+
+export type ControlledBrokerWriteReleaseDossier = {
+  schema_version: 'karkinos.controlled_broker_write_release_dossier.v1';
+  dossier_fingerprint: string;
+  generated_at: string;
+  review_status: 'ready_for_signature' | 'blocked';
+  review_ready: boolean;
+  review_blockers: string[];
+  scope: {
+    provider: string;
+    gateway_id: string;
+    account_alias: string;
+    connector_id: string;
+  };
+  readonly_adapter_release: {
+    release_evidence_ref?: string;
+    manifest_fingerprint?: string;
+    status?: string;
+  };
+  soak_promotion: {
+    connector_id: string;
+    account_alias: string;
+    dossier_fingerprint: string;
+    acceptance_id: string;
+    promotion_ready: boolean;
+  };
+  effective_at: string;
+  expires_at: string;
+  execution_mode: 'manual_each_order';
+  required_operator_approval: {
+    action: 'issue_controlled_broker_write_release';
+    artifact_type: 'controlled_broker_write_release_dossier';
+    artifact_fingerprint: string;
+  };
+  provider_contact_performed: false;
+  adapter_registered: false;
+  broker_submission_performed: false;
+  broker_cancellation_performed: false;
+  capital_authority_changed: false;
+};
+
+export type ControlledBrokerWriteReleaseEvidence = {
+  schema_version: 'karkinos.controlled_broker_write_release.v1';
+  status: 'current_clear_signed_release' | 'blocked' | string;
+  release_evidence_id: string;
+  evidence_fingerprint: string;
+  provider: string;
+  gateway_id: string;
+  account_alias: string;
+  execution_edge_ref?: string;
+  readonly_release_evidence_ref?: string;
+  soak_acceptance_id?: string;
+  operator_id?: string;
+  operator_identity_verified?: boolean;
+  execution_mode: 'manual_each_order';
+  effective_at: string;
+  expires_at: string;
+  blockers?: string[];
+  revoked?: boolean;
+  authorizes_order_submission_by_itself: false;
+  does_not_grant_capital_authority: true;
+};
+
+export type ControlledBrokerWriteReleaseStatus = {
+  schema_version: 'karkinos.controlled_broker_write_release_status.v1';
+  contract_status: string;
+  recorded_release_count: number;
+  active_release_count: number;
+  active_release_ids: string[];
+  maximum_release_seconds: number;
+  supported_revocation_reasons: ControlledBrokerWriteReleaseRevocationReason[];
+  release_provider_available: boolean;
+  default_registered: false;
+  gateway_registered: false;
+  broker_contact_performed: false;
+  broker_submission_performed: false;
+  broker_cancellation_performed: false;
+  automatic_execution_allowed: false;
+  strategy_direct_submission_allowed: false;
+  authorizes_order_submission_by_itself: false;
+  does_not_grant_capital_authority: true;
+};
+
+export type ControlledBrokerWriteReleaseRecord =
+  ControlledBrokerWriteReleaseEvidence & {
+    status: 'recorded_expiring_manual_each_order_release' | string;
+    dossier_fingerprint: string;
+    operator_approval_id: string;
+    created_at: string;
+    persisted: true;
+    reused: boolean;
+  };
+
+export type ControlledBrokerWriteReleaseRevocationReason =
+  | 'adapter_or_deployment_changed'
+  | 'incident_or_anomaly'
+  | 'owner_disabled'
+  | 'provider_scope_changed'
+  | 'regulatory_or_permission_change'
+  | 'scheduled_expiry_superseded';
+
+export type ControlledBrokerWriteReleaseRevocationPreview = {
+  schema_version: 'karkinos.controlled_broker_write_release_revocation.v1';
+  action: 'revoke_controlled_broker_write_release';
+  release_evidence_id: string;
+  release_evidence_fingerprint: string;
+  reason_code: ControlledBrokerWriteReleaseRevocationReason;
+  revocation_fingerprint: string;
+  status: 'ready_for_signature' | 'already_revoked' | 'blocked';
+  ready: boolean;
+  blockers: string[];
+  required_operator_approval: {
+    action: 'revoke_controlled_broker_write_release';
+    artifact_type: 'controlled_broker_write_release_revocation';
+    artifact_fingerprint: string;
+  };
+  broker_contact_performed: false;
+  broker_submission_performed: false;
+  broker_cancellation_performed: false;
+  capital_authority_changed: false;
+  resume_enabled: false;
+};
+
+export type ControlledBrokerWriteReleaseRevocation = {
+  schema_version: 'karkinos.controlled_broker_write_release_revocation.v1';
+  release_evidence_id: string;
+  release_evidence_fingerprint: string;
+  reason_code: ControlledBrokerWriteReleaseRevocationReason;
+  revocation_fingerprint: string;
+  revocation_id: string;
+  operator_id: string;
+  operator_approval_id: string;
+  status: 'revoked';
+  created_at: string;
+  persisted: true;
+  reused: boolean;
+  resume_enabled: false;
+};
+
 export type OperationsTodayResponse = {
   schema_version: 'karkinos.operations_today.v1';
   operations_date: string;
@@ -602,6 +890,59 @@ export type ControlledExecutionOperatorSession = {
   runtime_authentication_evaluated: false;
   runtime_authority_granted: false;
   broker_submission_enabled: false;
+};
+
+export type ControlledSessionRevocationReason =
+  | 'manual_operator_stop'
+  | 'end_of_strategy_window'
+  | 'operational_concern'
+  | 'risk_review'
+  | 'account_or_reconciliation_concern';
+
+export type ControlledSessionRevocationPreview = {
+  schema_version: 'karkinos.controlled_session_runtime_authority.v1';
+  action: 'revoke_controlled_session';
+  session_id: string;
+  session_fingerprint: string;
+  reservation_id: string;
+  reason_code: ControlledSessionRevocationReason;
+  revocation_fingerprint: string;
+  revocation_id: string;
+  status: 'ready_for_signed_revocation' | 'blocked';
+  ready: boolean;
+  already_revoked: boolean;
+  blockers: string[];
+  required_operator_approval: {
+    action: 'revoke_controlled_session';
+    artifact_type: 'controlled_session_revocation';
+    artifact_fingerprint: string;
+  };
+  broker_submission_enabled: false;
+};
+
+export type ControlledSessionRevocationResult = {
+  schema_version: 'karkinos.controlled_session_runtime_authority.v1';
+  action: 'revoke_controlled_session';
+  revocation_id: string;
+  revocation_fingerprint: string;
+  session_id: string;
+  session_fingerprint: string;
+  reservation_id: string;
+  reason_code: ControlledSessionRevocationReason;
+  operator_id: string;
+  operator_approval_id: string;
+  status: 'revoked';
+  automatic_resume_enabled: false;
+  broker_submission_enabled: false;
+  persisted: true;
+  reused: boolean;
+  revoked_at: string;
+  current_session: {
+    session_id: string;
+    status: 'revoked';
+    automatic_resume_enabled: false;
+    broker_submission_enabled: false;
+  };
 };
 
 export type ControlledOrderJourneyStage = {
@@ -1169,6 +1510,35 @@ export type CurrentPerOrderDossierPreview = {
     effective_limits: Record<string, string | number>;
     remaining_budget: Record<string, string | number>;
   };
+  broker_adapter_release: {
+    schema_version: string;
+    status: string;
+    expected_scope: {
+      collector_id: string;
+      gateway_id: string;
+      account_alias: string;
+    };
+    matching_release_count: number;
+    release: {
+      release_evidence_ref: string;
+      manifest_fingerprint: string;
+      provider: string;
+      gateway_id: string;
+      account_alias: string;
+      collector_id: string;
+      review_status: string;
+      conformance_status: string;
+      collector_status: string;
+      collector_run_id: string;
+      status: string;
+      does_not_authorize_provider_activation: boolean;
+    } | null;
+    blockers: string[];
+    persisted_evidence_only: boolean;
+    provider_contact_performed: boolean;
+    broker_submission_enabled: false;
+    authorizes_execution: false;
+  };
   prior_execution_reconciliation: {
     status: string;
     run_id?: string;
@@ -1551,6 +1921,220 @@ export function useBrokerConnectorSoakPromotionStatusQuery() {
     staleTime: 5_000,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
+  });
+}
+
+export function useSignedBrokerAdapterReleaseReviewStatusQuery(
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: ['signed-broker-adapter-release-review', 'status'],
+    queryFn: () =>
+      apiClient<SignedBrokerAdapterReleaseReviewStatus>(
+        '/api/automation/broker-adapter-release-review/status',
+      ),
+    enabled,
+    staleTime: 5_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useSignedBrokerAdapterReleaseReviewsQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: ['signed-broker-adapter-release-review', 'releases'],
+    queryFn: () =>
+      apiClient<SignedBrokerAdapterReleaseReviewListItem[]>(
+        '/api/automation/broker-adapter-release-review/releases?limit=100',
+      ),
+    enabled,
+    staleTime: 2_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useSignedBrokerAdapterReleaseReviewDossierPreviewMutation() {
+  return useMutation({
+    mutationFn: (request: SignedBrokerAdapterReleaseReviewDossierRequest) =>
+      postJson<SignedBrokerAdapterReleaseReviewDossier>(
+        '/api/automation/broker-adapter-release-review/dossiers/preview',
+        request,
+      ),
+  });
+}
+
+export function useSignedBrokerAdapterReleaseReviewApprovalChallengeMutation() {
+  return useMutation({
+    mutationFn: (request: {
+      operator_id: string;
+      key_id: string;
+      action: 'review_broker_adapter_release';
+      artifact_type: 'broker_adapter_release_review_dossier';
+      artifact_fingerprint: string;
+      ttl_seconds: number;
+    }) =>
+      postJson<OperatorApprovalChallenge>(
+        '/api/automation/capital-authority/operator-approvals/challenges',
+        request,
+      ),
+  });
+}
+
+export function useSignedBrokerAdapterReleaseReviewMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (
+      request: SignedBrokerAdapterReleaseReviewDossierRequest & {
+        dossier_fingerprint: string;
+        operator_label: string;
+        operator_approval_id: string;
+        operator_proof_signature_base64: string;
+        acknowledgement: 'review_broker_adapter_release_without_registration_or_execution_authority';
+      },
+    ) =>
+      postJson<SignedBrokerAdapterReleaseReviewRecord>(
+        '/api/automation/broker-adapter-release-review/reviews',
+        request,
+      ),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ['signed-broker-adapter-release-review'],
+        }),
+        queryClient.invalidateQueries({ queryKey: ['operations', 'today'] }),
+      ]);
+    },
+  });
+}
+
+export function useControlledBrokerWriteReleaseStatusQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: ['controlled-broker-write-release', 'status'],
+    queryFn: () =>
+      apiClient<ControlledBrokerWriteReleaseStatus>(
+        '/api/automation/controlled-broker-write-release/status',
+      ),
+    enabled,
+    staleTime: 5_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useControlledBrokerWriteReleasesQuery(enabled: boolean) {
+  return useQuery({
+    queryKey: ['controlled-broker-write-release', 'releases'],
+    queryFn: () =>
+      apiClient<ControlledBrokerWriteReleaseEvidence[]>(
+        '/api/automation/controlled-broker-write-release/releases?limit=100',
+      ),
+    enabled,
+    staleTime: 2_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useControlledBrokerWriteReleaseDossierPreviewMutation() {
+  return useMutation({
+    mutationFn: (request: ControlledBrokerWriteReleaseDossierRequest) =>
+      postJson<ControlledBrokerWriteReleaseDossier>(
+        '/api/automation/controlled-broker-write-release/dossiers/preview',
+        request,
+      ),
+  });
+}
+
+export function useControlledBrokerWriteReleaseApprovalChallengeMutation() {
+  return useMutation({
+    mutationFn: (request: {
+      operator_id: string;
+      key_id: string;
+      action:
+        | 'issue_controlled_broker_write_release'
+        | 'revoke_controlled_broker_write_release';
+      artifact_type:
+        | 'controlled_broker_write_release_dossier'
+        | 'controlled_broker_write_release_revocation';
+      artifact_fingerprint: string;
+      ttl_seconds: number;
+    }) =>
+      postJson<OperatorApprovalChallenge>(
+        '/api/automation/capital-authority/operator-approvals/challenges',
+        request,
+      ),
+  });
+}
+
+export function useControlledBrokerWriteReleaseIssueMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (
+      request: ControlledBrokerWriteReleaseDossierRequest & {
+        dossier_fingerprint: string;
+        operator_label: string;
+        operator_approval_id: string;
+        operator_proof_signature_base64: string;
+        acknowledgement: 'issue_exact_expiring_manual_each_order_write_release_without_order_or_capital_authority';
+      },
+    ) =>
+      postJson<ControlledBrokerWriteReleaseRecord>(
+        '/api/automation/controlled-broker-write-release/releases',
+        request,
+      ),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ['controlled-broker-write-release'],
+        }),
+        queryClient.invalidateQueries({ queryKey: ['operations', 'today'] }),
+      ]);
+    },
+  });
+}
+
+export function useControlledBrokerWriteReleaseRevocationPreviewMutation() {
+  return useMutation({
+    mutationFn: (request: {
+      releaseId: string;
+      reason_code: ControlledBrokerWriteReleaseRevocationReason;
+    }) => {
+      const { releaseId, ...body } = request;
+      return postJson<ControlledBrokerWriteReleaseRevocationPreview>(
+        `/api/automation/controlled-broker-write-release/releases/${encodeURIComponent(
+          releaseId,
+        )}/revocation/preview`,
+        body,
+      );
+    },
+  });
+}
+
+export function useControlledBrokerWriteReleaseRevocationMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: {
+      releaseId: string;
+      reason_code: ControlledBrokerWriteReleaseRevocationReason;
+      revocation_fingerprint: string;
+      operator_label: string;
+      operator_approval_id: string;
+      operator_proof_signature_base64: string;
+      acknowledgement: 'revoke_exact_broker_write_release_without_resume_or_broker_action';
+    }) => {
+      const { releaseId, ...body } = request;
+      return postJson<ControlledBrokerWriteReleaseRevocation>(
+        `/api/automation/controlled-broker-write-release/releases/${encodeURIComponent(
+          releaseId,
+        )}/revocations`,
+        body,
+      );
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ['controlled-broker-write-release'],
+        }),
+        queryClient.invalidateQueries({ queryKey: ['operations', 'today'] }),
+      ]);
+    },
   });
 }
 
@@ -2031,6 +2615,68 @@ export function useControlledSubmissionClearanceApprovalChallengeMutation() {
         '/api/automation/capital-authority/operator-approvals/challenges',
         request,
       ),
+  });
+}
+
+export function useControlledSessionRevocationPreviewMutation() {
+  return useMutation({
+    mutationFn: (request: {
+      sessionId: string;
+      reason_code: ControlledSessionRevocationReason;
+    }) => {
+      const { sessionId, ...body } = request;
+      return postJson<ControlledSessionRevocationPreview>(
+        `/api/automation/controlled-sessions/runtime-authority/sessions/${encodeURIComponent(
+          sessionId,
+        )}/revocation/preview`,
+        body,
+      );
+    },
+  });
+}
+
+export function useControlledSessionRevocationApprovalChallengeMutation() {
+  return useMutation({
+    mutationFn: (request: {
+      operator_id: string;
+      key_id: string;
+      action: 'revoke_controlled_session';
+      artifact_type: 'controlled_session_revocation';
+      artifact_fingerprint: string;
+      ttl_seconds: number;
+    }) =>
+      postJson<OperatorApprovalChallenge>(
+        '/api/automation/capital-authority/operator-approvals/challenges',
+        request,
+      ),
+  });
+}
+
+export function useControlledSessionRevocationMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: {
+      sessionId: string;
+      reason_code: ControlledSessionRevocationReason;
+      revocation_fingerprint: string;
+      operator_approval_id: string;
+      operator_proof_signature_base64: string;
+      acknowledgement: 'revoke_exact_controlled_session_no_auto_resume';
+    }) => {
+      const { sessionId, ...body } = request;
+      return postJson<ControlledSessionRevocationResult>(
+        `/api/automation/controlled-sessions/runtime-authority/sessions/${encodeURIComponent(
+          sessionId,
+        )}/revocations`,
+        body,
+      );
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['automation', 'cockpit'] }),
+        queryClient.invalidateQueries({ queryKey: ['operations', 'today'] }),
+      ]);
+    },
   });
 }
 

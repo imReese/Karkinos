@@ -112,6 +112,15 @@ Required evidence:
 
 - dry-run, submit, query, callback/poll, cancel, and idempotent client-order
   conformance;
+- the newest exact connector/gateway/account adapter release remains accepted,
+  conformance-clear, and attached to a recorded read-only collector run;
+- one separately signed write-edge release binds that exact scope to the strict
+  execution manifest/conformance, accepted read-only release, signed soak
+  acceptance, and reviewed agreement/permission/reporting/test/deployment/risk/
+  rollback evidence; it permits only `manual_each_order` and expires within 12
+  hours;
+- Account Truth, Decision action, risk, and paper/shadow gate refs resolve to
+  matching persisted facts and are all bound by the same capital evaluation;
 - exact OMS/order/account/strategy/symbol/policy/gateway binding;
 - a final short-lived operator signature immediately before one submission;
 - accepted, rejected, partial, partial-cancelled, cancelled, filled, unknown,
@@ -121,7 +130,16 @@ Required evidence:
 
 Exit condition: repeated requests cannot duplicate a broker order. Unknown or
 unreconciled state blocks a different order. Partial and cancel quantities are
-conserved, and every ledger mutation is exactly once.
+conserved, and every ledger mutation is exactly once. Release revocation,
+expiry, trusted-key change, conformance drift, source-fact drift, or scope drift
+invalidates the write release and exact per-order signature. The write release
+is necessary but does not register an adapter or grant order/capital authority;
+a passing status paired with an unresolved or forged ref never satisfies the
+gate.
+
+The operator journey is default-collapsed and performs no read until opened. It
+can preview, offline-sign, issue, list, and one-way revoke this release without
+database editing; credential-key manifests are blocked locally and no broker action is exposed.
 
 ### Gate 3 — Session-Bounded Pilot
 
@@ -204,6 +222,22 @@ The product must show, from persisted facts:
 
 No surface may imply execution approval merely because research, a signature,
 or one policy evaluation passed.
+
+### Runtime-session revocation operator journey
+
+Assumption: the persisted operator projection identifies the candidate, but the
+canonical preview and write transaction remain authoritative and recheck the
+exact session, reservation, allowlisted reason, detached proof, and revocation
+fingerprint. UI state is never authority. Revocation closes future admission;
+it neither cancels nor proves the outcome of an externally open order.
+
+Deterministic validation: `uv run pytest -q tests/test_controlled_session_runtime_authority.py tests/server/test_controlled_session_runtime_authority_routes.py`,
+`npm --prefix web test`, and `npm --prefix web run build`.
+
+Risk impact is operationally medium because the action is deliberately one-way
+and can stop planned admissions. Trading risk is reduced: it cannot resume,
+renew, widen, submit, cancel, mutate financial facts, or bypass lifecycle and
+reconciliation work.
 
 ## Release and Regulatory Gate
 

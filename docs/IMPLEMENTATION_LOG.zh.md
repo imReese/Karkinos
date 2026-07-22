@@ -7,7 +7,7 @@ commit 和 pull request。
 
 ## 当前基线
 
-截至 2026-07-17，v0.2 至 v1.7 已完成。v1.8 control-plane 基础以及截至 Phase 1.18 的
+截至 2026-07-18，v0.2 至 v1.7 已完成。v1.8 control-plane 基础以及截至 Phase 1.18 的
 AI-native research 基础已经实现。当前产品里程碑是[路线图](ROADMAP.zh.md)中的券商连接、逐单
 受控 pilot。
 
@@ -24,6 +24,8 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
 - evidence-bound 的人工决策后复盘，将一条持久化 signal/action/risk/order/fill 链与 canonical
   策略贡献快照一起冻结，拒绝证据漂移，以幂等、append-only、可重放方式记录，且不能修改财务
   事实或权限；
+- Strategy Lab 的 persisted-only 学习队列会重放校验复盘主记录/事件链、重新绑定当前证据并给出
+  确定性人工下一步；研究交接只提供可复制问题，不调用 AI、不创建记忆，也不产生策略或执行权限；
 - 基于当前持久化 Decision 投影的 canonical 五维 Decision Quality Score，支持人工显式、幂等的
   每日捕获、tamper-evident replay 与 latest-per-day 纵向覆盖，不调用 AI，也不修改财务、风控、
   执行或权限状态；
@@ -71,8 +73,7 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
   绑定、最新结果优先与 prepare/commit 复核；不宣称支持真实 adapter。
 - connector-scoped soak recovery evidence：无 scope、无关或混合 connector 的 drill 不能满足
   promotion，同 scope 的最新失败会使旧 pass 与其签名 dossier acceptance 失效。
-- Trading 只读投影精确 connector 的 20 日覆盖、每日三阶段、恢复演练、Account Truth 绑定与签名
-  owner acceptance；不提供 promotion、注册、submit 或 cancel 动作。
+- Trading 只读投影精确 20 日 soak 与签名 owner acceptance，并提供默认折叠、无需编辑数据库的 write-edge release 签发/撤销复核；含凭据键的 manifest 会在本地拦截，生产 submit/cancel 只在 release 当前有效时解析，Web 不提供 submit/cancel、adapter 注册或资本授权动作。
 
 本文故意不维护历史测试总数，因为每次变更都会使其过期。CI artifact 与 acceptance-audit export
 负责当前数量和证据。
@@ -92,8 +93,9 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
   已签名、非授权的 dossier confirmation；
 - gateway verification 与精确 evidence binding；
 - session-start Account Truth、原子 account/symbol budget 与 rate limit；
-- 已签名且会过期的 runtime session、live gate、pause、revocation 与 equal-or-narrower replacement；
-- 默认关闭的 one-shot submission、unknown recovery 与 cross-order interlock；
+- 已签名且会过期的 runtime session、live gate、pause、equal-or-narrower replacement，以及从
+  Decision 完成精确 preview、离线签名的单向 revocation；
+- 默认关闭的 one-shot submission、unknown recovery 与 cross-order interlock；生产 factory 只解析当前有效的持久化 write-edge release；
 - 默认关闭、单独签名的精确撤单：通过原子 one-effect claim 和禁止再次撤单的 query recovery 保存
   已净化、非权威的 gateway telemetry，且不修改 OMS/ledger/risk/kill switch/interlock/capital；
 - 已签名的 exact-terminal clearance，覆盖 full fill、no-fill cancel 与
@@ -127,19 +129,11 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
   fingerprint 确认并收敛为不得重试。两者都不能 query/retry/submit/cancel、修改 OMS/ledger/
   authority、解除 interlock 或证明后续券商结果。
 
-M4 当前逐单 dossier 的假设与风险记录：
+M4 当前逐单 dossier 与 write-release 的假设和风险记录：
 
-- 与精确 OMS order fingerprint 或 manual-confirmation fingerprint 匹配的最新 capital evaluation
-  是权威证据，即使它已阻断也绝不回退到旧 pass。必须恰好存在一条有效前序批次引用与一条网关验证
-  引用；格式错误、歧义、缺失或扫描截断都 fail closed。
-- 确定性验证覆盖无需操作员输入 fingerprint 的当前解析、最新阻断优先、歧义引用、精确 replay、
-  append-only 幂等、OMS 不变、严格请求 schema、面板折叠时零读取、empty/blocked 状态、
-  Automation/Decision ready/blocked 下钻、来源漂移/失败、显式 scan 阻断告警的重启幂等、离线签名，
-  以及不存在 submit/cancel 请求。
-- 风险影响为 low：GET 仅增加 fail-closed 投影和 Trading 链接；显式 scan 可写入幂等 automation
-  alert 行，逐单 confirmation 写入仍不授权执行，
-  且不具备授权能力。OMS、ledger、Account Truth、risk、kill switch、provider、submit、cancel 与
-  capital authority 均不改变；没有选择、注册或宣称支持任何 provider/adapter。
+- 最新精确 order-matching capital evaluation 即使 blocked 也优先；dossier v5 会解析唯一前序批次/gateway 以及精确 Account Truth、Decision、risk、paper/shadow 与 accepted 只读 adapter 证据。操作员只粘贴已审查且无凭据的 execution manifest；服务端仍权威核验严格 manifest/conformance、精确只读 release、签名 soak acceptance、七类所有者复核引用、provider/gateway/account scope、`manual_each_order` 与最长 12 小时窗口。
+- 确定性验证覆盖 dossier 来源解析/drift、write-release 签发/精确重试、严格 route、GET 不建表、伪造 scope、manifest/conformance/soak 漂移、同 scope 较新只读 release 不回退、过期、可信公钥轮换、重算哈希篡改、上游漂移后仍可单向撤销、provider 异常净化、零 broker/财务写入、注入 provider 优先、生产只解析当前有效 release，以及 Web 折叠态零读取、精确签发/撤销 request、离线 proof 与嵌套凭据键本地拦截且敏感值不外发。
+- 风险影响在 execution-edge 接线层仍为 high，因为生产 submit/cancel 可消费已复核的持久化 release；Web 集成 blast radius 为 LOW 且安全性正向。来源漂移使旧 proof 失效，缺失/过期/撤销仍默认关闭；界面与 release 不注册 adapter、不联系 provider、不创建订单，也不改变 OMS、ledger、Account Truth、risk、kill switch、lifecycle、逐单或资本权限事实。
 
 M4 非授权操作资料包的假设与风险记录：
 

@@ -41,10 +41,12 @@ from analytics.acceptance_audit import (
     build_persisted_controlled_execution_operator_view_acceptance_audit,
     build_research_evidence_acceptance_audit,
     build_session_start_account_truth_binding_acceptance_audit,
+    build_signed_broker_adapter_release_review_acceptance_audit,
     build_signed_operator_approval_acceptance_audit,
     build_single_instrument_strategy_loop_acceptance_audit,
     build_strategy_assignment_acceptance_audit,
     build_strategy_lab_acceptance_audit,
+    build_strategy_learning_review_acceptance_audit,
 )
 
 AuditBuilder = Callable[[], AcceptanceAudit]
@@ -54,6 +56,10 @@ AUDIT_REGISTRY: dict[str, tuple[str, AuditBuilder]] = {
     "strategy_lab": (
         "Strategy Lab acceptance audit",
         build_strategy_lab_acceptance_audit,
+    ),
+    "strategy_learning_review": (
+        "Strategy Learning Review acceptance audit",
+        build_strategy_learning_review_acceptance_audit,
     ),
     "research_evidence": (
         "Research Evidence acceptance audit",
@@ -102,6 +108,10 @@ AUDIT_REGISTRY: dict[str, tuple[str, AuditBuilder]] = {
     "broker_connector_soak_promotion": (
         "Signed Broker Soak Promotion acceptance audit",
         build_broker_connector_soak_promotion_acceptance_audit,
+    ),
+    "signed_broker_adapter_release_review": (
+        "Signed Broker Adapter Release Review acceptance audit",
+        build_signed_broker_adapter_release_review_acceptance_audit,
     ),
     "per_order_confirmation_foundation": (
         "Per-Order Confirmation Foundation acceptance audit",

@@ -12,9 +12,17 @@ from fastapi.testclient import TestClient
 from server.app import create_app
 from server.config import TrustedOperatorIdentityConfig
 from server.db import AppDatabase
-from server.routes.capital_authorization import create_router
+from server.routes.capital_authorization import (
+    OperatorApprovalChallengeRequest,
+    create_router,
+)
 from server.services.capital_authorization_audit import (
     CAPITAL_AUTHORIZATION_EVENT_TYPE,
+)
+from server.services.operator_approval import (
+    OPERATOR_APPROVAL_ACTION_ARTIFACT_TYPES,
+    OPERATOR_APPROVAL_ACTIONS,
+    OPERATOR_APPROVAL_ARTIFACT_TYPES,
 )
 from tests.route_assertions import registered_app_routes
 
@@ -95,6 +103,17 @@ def _evaluation_payload() -> dict:
             "connector_account_binding_status": "verified",
         },
     }
+
+
+def test_operator_approval_challenge_schema_matches_service_whitelist() -> None:
+    schema = OperatorApprovalChallengeRequest.model_json_schema()["properties"]
+
+    assert set(schema["action"]["enum"]) == OPERATOR_APPROVAL_ACTIONS
+    assert set(schema["artifact_type"]["enum"]) == OPERATOR_APPROVAL_ARTIFACT_TYPES
+    assert set(OPERATOR_APPROVAL_ACTION_ARTIFACT_TYPES) == OPERATOR_APPROVAL_ACTIONS
+    assert set(OPERATOR_APPROVAL_ACTION_ARTIFACT_TYPES.values()) == (
+        OPERATOR_APPROVAL_ARTIFACT_TYPES
+    )
 
 
 def test_capital_authority_preview_is_read_only(tmp_path, monkeypatch) -> None:

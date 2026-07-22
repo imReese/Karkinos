@@ -382,6 +382,9 @@ def create_app(
     from server.routes.controlled_broker_submission import (
         create_router as controlled_broker_submission_router,
     )
+    from server.routes.controlled_broker_write_release import (
+        create_router as controlled_broker_write_release_router,
+    )
     from server.routes.controlled_session_automatic_pause import (
         create_router as controlled_session_automatic_pause_router,
     )
@@ -422,6 +425,12 @@ def create_app(
     )
     from server.routes.settings import create_router as settings_router
     from server.routes.signals import create_router as signals_router
+    from server.routes.signed_broker_adapter_release_review import (
+        create_router as signed_broker_adapter_release_review_router,
+    )
+    from server.routes.strategy_learning import (
+        create_router as strategy_learning_router,
+    )
     from server.routes.strategy_promotion import (
         create_router as strategy_promotion_router,
     )
@@ -443,9 +452,11 @@ def create_app(
     app.include_router(automation_router())
     app.include_router(broker_gateway_router())
     app.include_router(broker_connector_soak_router())
+    app.include_router(signed_broker_adapter_release_review_router())
     app.include_router(capital_authorization_router())
     app.include_router(capital_scaling_review_router())
     app.include_router(controlled_broker_submission_router())
+    app.include_router(controlled_broker_write_release_router())
     app.include_router(controlled_submission_ledger_posting_router())
     app.include_router(controlled_submission_ledger_correction_router())
     app.include_router(controlled_session_envelope_router())
@@ -462,6 +473,7 @@ def create_app(
     app.include_router(portfolio_router())
     app.include_router(signals_router())
     app.include_router(decision_router())
+    app.include_router(strategy_learning_router())
     app.include_router(strategy_promotion_router())
     app.include_router(backtest_router())
     app.include_router(settings_router())

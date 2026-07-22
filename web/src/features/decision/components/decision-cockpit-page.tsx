@@ -56,6 +56,7 @@ import { ControlledBrokerRecoveryOperatorPanel } from '../../operations/controll
 import { ControlledBrokerRejectionEvidencePanel } from '../../operations/controlled-broker-rejection-evidence-panel';
 import { ControlledLedgerPostingOperatorPanel } from '../../operations/controlled-ledger-posting-operator-panel';
 import { ControlledLedgerCorrectionOperatorPanel } from '../../operations/controlled-ledger-correction-operator-panel';
+import { ControlledSessionRevocationOperatorPanel } from '../../operations/controlled-session-revocation-operator-panel';
 import { ControlledTerminalClearanceOperatorPanel } from '../../operations/controlled-terminal-clearance-operator-panel';
 import { ManualBrokerCancellationTicketPanel } from '../../operations/manual-broker-cancellation-ticket-panel';
 import {
@@ -3396,6 +3397,10 @@ function AutomationCockpitPanel({
                       .join(' · ')}
                   </div>
                 ) : null}
+                <ControlledSessionRevocationOperatorPanel
+                  session={controlledExecutionSession}
+                  locale={locale}
+                />
               </>
             ) : (
               <div className="app-muted mt-3 text-sm">

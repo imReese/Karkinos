@@ -47,6 +47,13 @@ def build_current_per_order_dossier_service(
                 fingerprint,
             )
         ),
+        account_truth_evidence_provider=(
+            lambda: {
+                **build_latest_account_truth_promotion_evidence(state),
+                "persisted_facts_only": True,
+                "provider_contact_performed": False,
+            }
+        ),
     )
     return CurrentPerOrderDossierService(
         db=state.db,

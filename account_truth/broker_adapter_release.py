@@ -95,6 +95,7 @@ _SENSITIVE_KEY_PARTS = (
     "token",
     "credential",
     "private_key",
+    "api_key",
 )
 
 
@@ -265,6 +266,9 @@ class BrokerAdapterReleaseReviewRepository:
         reviewed_at: str,
         reason_ref: str,
         acknowledgement: str,
+        expected_conformance_run_id: str | None = None,
+        expected_conformance_report_fingerprint: str | None = None,
+        expected_latest_review_fingerprint: str | None = None,
     ) -> dict[str, Any]:
         """Append one explicit review decision without registering the adapter."""
 
@@ -356,6 +360,29 @@ class BrokerAdapterReleaseReviewRepository:
                 )
             conformance_run_id = str(conformance["run_id"])
             conformance_report_fingerprint = str(conformance["report_fingerprint"])
+            if (
+                expected_conformance_run_id is not None
+                and str(expected_conformance_run_id) != conformance_run_id
+            ):
+                raise BrokerAdapterReleaseRejected(
+                    "adapter release conformance changed after review preview",
+                    evidence=_rejection(
+                        preview,
+                        ["broker_adapter_release_conformance_run_drift"],
+                    ),
+                )
+            if (
+                expected_conformance_report_fingerprint is not None
+                and str(expected_conformance_report_fingerprint)
+                != conformance_report_fingerprint
+            ):
+                raise BrokerAdapterReleaseRejected(
+                    "adapter release conformance changed after review preview",
+                    evidence=_rejection(
+                        preview,
+                        ["broker_adapter_release_conformance_fingerprint_drift"],
+                    ),
+                )
         manifest_payload = _manifest_core(preview)
         now = datetime.now(UTC).isoformat()
         with sqlite3.connect(self._path, timeout=2) as conn:
@@ -440,6 +467,22 @@ class BrokerAdapterReleaseReviewRepository:
                 """,
                 (release_ref,),
             ).fetchone()
+            actual_latest_review_fingerprint = (
+                str(latest["review_fingerprint"]) if latest is not None else ""
+            )
+            if (
+                expected_latest_review_fingerprint is not None
+                and str(expected_latest_review_fingerprint)
+                != actual_latest_review_fingerprint
+            ):
+                conn.rollback()
+                raise BrokerAdapterReleaseRejected(
+                    "adapter release review changed after signed preview",
+                    evidence=_rejection(
+                        preview,
+                        ["broker_adapter_release_latest_review_drift"],
+                    ),
+                )
             if (
                 latest is not None
                 and str(latest["decision"]) == "revoked"

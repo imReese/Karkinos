@@ -89,6 +89,14 @@ Decision and Daily Trading Plan combine portfolio, market, strategy, signal,
 risk, Account Truth, and paper/shadow evidence. Outcomes are explicit: buy,
 sell, hold, rebalance, no action, or review required.
 
+Decision outcome reviews freeze one exact persisted signal-to-execution chain
+and canonical contribution target. Strategy Lab replays the stored row and
+event chain, rebuilds the current target, and turns only the latest valid human
+review per signal into a safe learning action. Drift or tampering blocks the
+item; an unsupported outcome yields only a copyable question for a separately
+human-started research task. The queue is read-only and cannot invoke AI,
+create memory, change a strategy, or grant execution or capital authority.
+
 ### Paper/shadow and Operations
 
 Operations exposes data, plan, paper/shadow, OMS, reconciliation, alert, and
@@ -121,6 +129,12 @@ previews, short-lived offline signatures, and final acknowledgements. Clearance
 records exact terminal fills and releases only that order's interlock without
 posting the ledger. No matching trusted public identity keeps either action
 disabled.
+
+Trading also exposes default-collapsed, no-database-edit signed reviews for
+provider-neutral adapter accept/reject/revoke and for a separate exact
+write-edge issue/revocation. Adapter acceptance binds the newest conformance,
+current review, and exact operator approval; both journeys block credential-key
+manifests locally and provide no broker, registration, or capital-authority action.
 
 A rejected controlled intent exposes a sanitized, fingerprinted copy package
 and a separate append-only human review. The review records one exact reviewer,

@@ -1,6 +1,6 @@
 # Karkinos
 
-> Investing is a chronic condition. Here is your scalpel.  
+> Investing is a chronic condition. Here is your scalpel.
 > 投资是一种慢性病。这是你的手术刀。
 
 Karkinos is a China-market personal quant research and trading platform. It
@@ -51,11 +51,10 @@ Historical results and AI-generated research do not guarantee future returns.
 
 Research, daily planning, paper/shadow operations, OMS, Account Truth,
 reconciliation, and the non-submitting controlled-execution foundation are
-implemented. The active milestone is v1.8. Provider-neutral release and local
-read-only conformance foundations and persisted-only Operations/Trading readiness
-views are in place, including a read-only soak-promotion gate. A separate default-closed execution-edge fixture suite now
-proves the M2 dry-run/submit/query/cancel/idempotency contract without loading or
-registering an adapter. Signed exact-terminal reconciliation now covers full fill, no-fill
+implemented. The active milestone is v1.8. Provider-neutral adapter release,
+conformance, persisted-only readiness, and read-only soak-promotion gates are in place; Trading now provides a default-collapsed signed accept/reject/revoke review that binds the exact manifest, newest conformance, current review, and operator approval without database editing.
+A separately signed, at-most-12-hour write-edge release binds exact reviewed evidence and one-way revocation through a signed issue/revoke review.
+Both block credential-key manifests locally, expose no submit/cancel action, grant no order/capital authority, register no adapter, and do not select or contact a provider. Signed exact-terminal reconciliation now covers full fill, no-fill
 cancel, and partial-fill-then-cancel from persisted evidence. A separate final
 operator signature can now post the exact cleared fills to the production
 ledger once, in one transaction, while zero-fill cancel remains a recorded
@@ -66,7 +65,7 @@ reverse one posting only from canonical replay, preserving the original trades
 and requiring a newer Account Truth import afterward. That optional correction
 is available from the existing order journey as a reason-selected deterministic
 preview, offline-signature verification, and final exactly-once apply; the UI
-cannot supply financial deltas. Selecting or implementing one real broker edge
+cannot supply financial deltas. Decision also exposes exact-preview, offline-signed one-way session revocation that closes future admission without submit/cancel. Selecting or implementing one real broker edge
 still requires explicit owner confirmation before any read-only soak or
 human-confirmed per-order pilot.
 
@@ -87,10 +86,7 @@ Decision's signal journal now supports an explicit post-decision review. It
 first previews the persisted signal/action/risk/order/fill chain and the same
 canonical contribution report, then records a human conclusion only against
 that exact fingerprint. Acted outcomes require bound fill, valuation-snapshot,
-and ledger-cutoff evidence; unexecuted or risk-blocked signals retain their own
-non-financial outcomes. Reviews are idempotent, append-only, replayable, and
-become visibly stale after evidence drift. This path does not invoke AI, contact
-a provider, change financial facts, or grant trading or capital authority.
+and ledger-cutoff evidence; unexecuted or risk-blocked signals retain separate non-financial outcomes. Stored rows and their append-only event chains are replay-checked, and evidence drift makes old conclusions visibly non-current. Strategy Lab projects the latest valid human review per signal into deterministic safe next actions; integrity failure blocks learning, while an evidence-not-supported result produces only a copyable, separately human-started research question. The GET path does not invoke AI, create memory, contact a provider, change a strategy or financial fact, or grant trading or capital authority.
 
 Decision also exposes the evidence-bound North Star Decision Quality Score.
 The current projection checks data and Account Truth completeness,
@@ -113,11 +109,11 @@ unless newer confirmed persisted evidence produces a new canonical snapshot.
 Trading now provides a default-collapsed, non-submitting per-order evidence
 review. It lists only canonical `manually_confirmed` OMS candidates and resolves
 the newest exact capital evaluation, prior-batch reconciliation, and gateway
-verification from persisted facts, so the operator does not copy those
-fingerprints by hand. A three-minute offline signature can append one exact
+verification from persisted facts, then binds the newest exact-scope accepted,
+conformance-clear, read-only-observing adapter release. Dossier v5 also resolves the Account Truth, Decision action, risk decision, and paper/shadow references to matching persisted source facts, requires those exact refs in the same capital evaluation, and rejects order/symbol/strategy/quantity drift. The operator does not copy those fingerprints by hand. A three-minute offline signature can append one exact
 review fact; it cannot submit/cancel, contact a provider, or change OMS, ledger,
 risk, kill switch, or capital authority. Missing, ambiguous, newer blocked, or
-bounded-scan-incomplete evidence remains blocked.
+bounded-scan-incomplete evidence, release revocation, or scope drift remains blocked.
 Automation Cockpit and Decision project the same persisted-only candidates as a
 ready/blocked summary and provide only a non-submitting handoff to Trading.
 Only an explicit alert scan records idempotent warnings for source or candidate

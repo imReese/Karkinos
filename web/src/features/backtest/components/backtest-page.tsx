@@ -38,6 +38,7 @@ import { FillsTable } from './fills-table';
 import { MetricsGrid } from './metrics-grid';
 import { ParameterComparePanel } from './parameter-compare-panel';
 import { ParameterSweepPanel } from './parameter-sweep-panel';
+import { StrategyLearningReviewPanel } from './strategy-learning-review-panel';
 import { ValidationEvidencePanel } from './validation-evidence-panel';
 import {
   useAccountStrategyAssignmentQuery,
@@ -1311,6 +1312,8 @@ export function BacktestPage() {
         onAssignSelected={assignSelectedStrategy}
         onAssignSelectedToSymbol={assignSelectedStrategyToSymbol}
       />
+
+      <StrategyLearningReviewPanel />
 
       <StrategyEvidenceGatePanel
         strategyCatalog={strategyCatalog}

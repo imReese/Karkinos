@@ -9,6 +9,10 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable
 
+from server.services.broker_adapter_readiness import (
+    BROKER_ADAPTER_READINESS_SCHEMA_VERSION,
+    build_broker_adapter_readiness,
+)
 from server.services.broker_connector_soak import BrokerConnectorSoakService
 from server.services.capital_authorization_audit import (
     CAPITAL_AUTHORIZATION_EVENT_ENTITY_TYPE,
@@ -24,9 +28,12 @@ from server.services.execution_gateway_verification_binding import (
     resolve_execution_gateway_verification_binding,
 )
 from server.services.operator_approval import resolve_operator_approval
+from server.services.per_order_gateway_evidence import (
+    resolve_per_order_gateway_evidence,
+)
 
-PER_ORDER_DOSSIER_SCHEMA_VERSION = "karkinos.per_order_confirmation_dossier.v3"
-PER_ORDER_CONFIRMATION_SCHEMA_VERSION = "karkinos.per_order_confirmation.v3"
+PER_ORDER_DOSSIER_SCHEMA_VERSION = "karkinos.per_order_confirmation_dossier.v5"
+PER_ORDER_CONFIRMATION_SCHEMA_VERSION = "karkinos.per_order_confirmation.v4"
 PER_ORDER_CONFIRMATION_EVENT_TYPE = "controlled_bridge.per_order_confirmed"
 PER_ORDER_CONFIRMATION_EVENT_ENTITY_TYPE = "per_order_confirmation"
 PER_ORDER_CONFIRMATION_EVENT_SOURCE = "controlled_bridge_confirmation"
@@ -35,16 +42,6 @@ PER_ORDER_CONFIRMATION_ACKNOWLEDGEMENT = (
 )
 PER_ORDER_CONFIRMATION_MAX_SOAK_AGE_SECONDS = 900
 _FINGERPRINT_PATTERN = re.compile(r"^[a-f0-9]{64}$")
-
-_REQUIRED_GATEWAY_EVIDENCE: dict[str, tuple[str, frozenset[str]]] = {
-    "account_truth": ("gate_status", frozenset({"pass", "passed"})),
-    "research_evidence": ("gate_status", frozenset({"pass", "passed"})),
-    "risk": ("gate_status", frozenset({"pass", "passed"})),
-    "paper_shadow": (
-        "divergence_status",
-        frozenset({"within_expectations"}),
-    ),
-}
 
 
 class PerOrderConfirmationRejected(ValueError):
@@ -71,6 +68,7 @@ class PerOrderConfirmationService:
         execution_gateway_verification_provider: (
             Callable[[str], dict[str, Any]] | None
         ) = None,
+        account_truth_evidence_provider: Callable[[], dict[str, Any]] | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._db = db
@@ -83,11 +81,12 @@ class PerOrderConfirmationService:
         self._execution_gateway_verification_provider = (
             execution_gateway_verification_provider
         )
+        self._account_truth_evidence_provider = account_truth_evidence_provider
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def get_status(self) -> dict[str, Any]:
         return {
-            "schema_version": "karkinos.per_order_confirmation_status.v3",
+            "schema_version": "karkinos.per_order_confirmation_status.v4",
             "contract_status": "evidence_only_non_submitting",
             "runtime_execution_authority": "disabled",
             "operator_identity_verified": False,
@@ -97,16 +96,20 @@ class PerOrderConfirmationService:
             "broker_submission_enabled": False,
             "live_gateway_implemented": False,
             "controlled_bridge_promotion_ready": False,
+            "broker_adapter_release_binding": "required_per_dossier",
             "broker_soak_promotion_binding": "required_per_dossier",
             "execution_gateway_verification_binding": "required_per_dossier",
+            "gateway_evidence_source_binding": "required_per_dossier",
             "acknowledgement": PER_ORDER_CONFIRMATION_ACKNOWLEDGEMENT,
             "safety": _safety_flags(),
             "limitations": [
                 "A recorded confirmation requires a verified, artifact-bound operator signature.",
                 "It does not change OMS status or grant broker execution authority.",
                 "An exact recorded clear prior-batch reconciliation fingerprint is required.",
+                "Each dossier resolves the current reviewed read-only broker adapter release.",
                 "Each dossier resolves current signed broker-soak promotion evidence.",
                 "Each dossier resolves an exact, current, non-submitting gateway verification.",
+                "Every gateway gate reference must resolve to matching persisted Account Truth, Decision, risk, and paper/shadow facts.",
                 "A reviewed submit-capable runtime remains required and unimplemented.",
             ],
         }
@@ -135,9 +138,22 @@ class PerOrderConfirmationService:
             ),
             now=now,
         )
-        gateway, gateway_blockers = _gateway_gate_summary(order)
-        connector_id = str(
-            (capital.get("scope") or {}).get("evidence_connector_id") or ""
+        scope = capital.get("scope") or {}
+        gateway, gateway_blockers = resolve_per_order_gateway_evidence(
+            db=self._db,
+            order=order,
+            capital_scope=scope,
+            capital_evidence_refs=capital.get("evidence_refs") or [],
+            account_truth_provider=self._account_truth_evidence_provider,
+        )
+        connector_id = str(scope.get("evidence_connector_id") or "")
+        broker_adapter_release, broker_adapter_release_blockers = (
+            _resolve_broker_adapter_release_binding(
+                _read_broker_adapter_readiness(self._db),
+                expected_collector_id=connector_id,
+                expected_gateway_id=str(scope.get("execution_gateway_id") or ""),
+                expected_account_alias=str(scope.get("account_alias") or ""),
+            )
         )
         soak, soak_review_blockers, soak_hard_blockers = self._soak_summary(
             connector_id,
@@ -199,6 +215,7 @@ class PerOrderConfirmationService:
             review_blockers.append("oms_order_not_manually_confirmed")
         review_blockers.extend(capital_blockers)
         review_blockers.extend(gateway_blockers)
+        review_blockers.extend(broker_adapter_release_blockers)
         review_blockers.extend(soak_review_blockers)
         review_blockers.extend(verification_blockers)
         review_blockers.extend(reconciliation_blockers)
@@ -208,6 +225,8 @@ class PerOrderConfirmationService:
         hard_submission_blockers = list(
             dict.fromkeys(
                 [
+                    *broker_adapter_release_blockers,
+                    *gateway_blockers,
                     *soak_hard_blockers,
                     *execution_gateway_hard_blockers,
                     *(
@@ -228,6 +247,7 @@ class PerOrderConfirmationService:
             "order_fingerprint": order_fingerprint,
             "capital_evaluation": capital,
             "gateway_gates": gateway,
+            "broker_adapter_release": broker_adapter_release,
             "connector_soak": soak,
             "execution_gateway": execution_gateway,
             "execution_gateway_verification": execution_gateway_verification,
@@ -855,6 +875,172 @@ class PerOrderConfirmationService:
         return _event_response(saved[0], reused=False)
 
 
+def _read_broker_adapter_readiness(db: Any) -> dict[str, Any]:
+    """Read the canonical persisted-only projection and fail closed on defects."""
+
+    try:
+        readiness = build_broker_adapter_readiness(db)
+    except Exception:  # Defensive boundary: an unreadable gate must never pass.
+        return {}
+    return readiness if isinstance(readiness, dict) else {}
+
+
+def _resolve_broker_adapter_release_binding(
+    readiness: dict[str, Any],
+    *,
+    expected_collector_id: str,
+    expected_gateway_id: str,
+    expected_account_alias: str,
+) -> tuple[dict[str, Any], list[str]]:
+    """Bind the newest exact-scope release that remains safe for observation."""
+
+    blockers: list[str] = []
+    expected_scope = {
+        "collector_id": str(expected_collector_id or ""),
+        "gateway_id": str(expected_gateway_id or ""),
+        "account_alias": str(expected_account_alias or ""),
+    }
+    for field, value in expected_scope.items():
+        if not value:
+            blockers.append(f"broker_adapter_release_expected_{field}_missing")
+
+    if (
+        str(readiness.get("schema_version") or "")
+        != BROKER_ADAPTER_READINESS_SCHEMA_VERSION
+    ):
+        blockers.append("broker_adapter_readiness_schema_invalid")
+    if str(readiness.get("evidence_store_status") or "") != "available":
+        blockers.append("broker_adapter_readiness_evidence_store_unavailable")
+
+    required_safety = {
+        "persisted_facts_only": True,
+        "provider_contacted": False,
+        "adapter_registered": False,
+        "default_registered": False,
+        "broker_submission_enabled": False,
+        "does_not_mutate_oms": True,
+        "does_not_mutate_production_ledger": True,
+        "does_not_mutate_risk_state": True,
+        "does_not_mutate_kill_switch": True,
+        "does_not_mutate_capital_authority": True,
+        "authorizes_execution": False,
+    }
+    source_safety = {field: readiness.get(field) for field in required_safety}
+    for field, expected in required_safety.items():
+        if readiness.get(field) is not expected:
+            blockers.append(f"broker_adapter_readiness_boundary_invalid:{field}")
+
+    releases_value = readiness.get("releases")
+    releases = releases_value if isinstance(releases_value, list) else []
+    if not isinstance(releases_value, list):
+        blockers.append("broker_adapter_readiness_releases_invalid")
+    if any(not isinstance(item, dict) for item in releases):
+        blockers.append("broker_adapter_readiness_release_item_invalid")
+    exact_matches = [
+        item
+        for item in releases
+        if isinstance(item, dict)
+        and str(item.get("collector_id") or "") == expected_scope["collector_id"]
+        and str(item.get("gateway_id") or "") == expected_scope["gateway_id"]
+        and str(item.get("account_alias") or "") == expected_scope["account_alias"]
+    ]
+    selected = exact_matches[0] if exact_matches else None
+    if selected is None:
+        blockers.append("broker_adapter_release_scope_not_found")
+
+    release: dict[str, Any] | None = None
+    if selected is not None:
+        release_blockers_value = selected.get("blockers")
+        release_blockers = (
+            [str(item) for item in release_blockers_value]
+            if isinstance(release_blockers_value, list)
+            else []
+        )
+        if not isinstance(release_blockers_value, list):
+            blockers.append("broker_adapter_release_blockers_invalid")
+        elif release_blockers:
+            blockers.append("broker_adapter_release_has_blockers")
+        if not str(selected.get("release_evidence_ref") or ""):
+            blockers.append("broker_adapter_release_evidence_ref_invalid")
+        if not _FINGERPRINT_PATTERN.fullmatch(
+            str(selected.get("manifest_fingerprint") or "")
+        ):
+            blockers.append("broker_adapter_release_manifest_fingerprint_invalid")
+        if str(selected.get("manifest_status") or "") != "clear":
+            blockers.append("broker_adapter_release_manifest_not_clear")
+        if not str(selected.get("provider") or ""):
+            blockers.append("broker_adapter_release_provider_missing")
+        if str(selected.get("review_status") or "") != "accepted":
+            blockers.append("broker_adapter_release_review_not_accepted")
+        if not str(selected.get("review_id") or ""):
+            blockers.append("broker_adapter_release_review_id_missing")
+        if str(selected.get("conformance_status") or "") != "clear":
+            blockers.append("broker_adapter_release_conformance_not_clear")
+        if not str(selected.get("conformance_run_id") or ""):
+            blockers.append("broker_adapter_release_conformance_run_id_missing")
+        if not _FINGERPRINT_PATTERN.fullmatch(
+            str(selected.get("conformance_report_fingerprint") or "")
+        ):
+            blockers.append("broker_adapter_release_conformance_fingerprint_invalid")
+        if str(selected.get("collector_status") or "") not in {
+            "recorded",
+            "duplicate",
+        }:
+            blockers.append("broker_adapter_release_collector_not_recorded")
+        if not str(selected.get("collector_run_id") or ""):
+            blockers.append("broker_adapter_release_collector_run_id_missing")
+        if not str(selected.get("collector_updated_at") or ""):
+            blockers.append("broker_adapter_release_collector_updated_at_missing")
+        if str(selected.get("status") or "") != "observing_readonly":
+            blockers.append("broker_adapter_release_not_observing_readonly")
+        if selected.get("does_not_authorize_provider_activation") is not True:
+            blockers.append("broker_adapter_release_activation_boundary_invalid")
+        release = {
+            "release_evidence_ref": str(selected.get("release_evidence_ref") or ""),
+            "manifest_fingerprint": str(selected.get("manifest_fingerprint") or ""),
+            "manifest_status": str(selected.get("manifest_status") or ""),
+            "provider": str(selected.get("provider") or ""),
+            "gateway_id": str(selected.get("gateway_id") or ""),
+            "account_alias": str(selected.get("account_alias") or ""),
+            "collector_id": str(selected.get("collector_id") or ""),
+            "collection_modes": [
+                str(item) for item in selected.get("collection_modes") or []
+            ],
+            "review_status": str(selected.get("review_status") or ""),
+            "review_id": str(selected.get("review_id") or ""),
+            "reviewed_at": selected.get("reviewed_at"),
+            "conformance_status": str(selected.get("conformance_status") or ""),
+            "conformance_run_id": str(selected.get("conformance_run_id") or ""),
+            "conformance_report_fingerprint": str(
+                selected.get("conformance_report_fingerprint") or ""
+            ),
+            "collector_status": str(selected.get("collector_status") or ""),
+            "collector_run_id": str(selected.get("collector_run_id") or ""),
+            "collector_updated_at": selected.get("collector_updated_at"),
+            "status": str(selected.get("status") or ""),
+            "release_blockers": release_blockers,
+            "does_not_authorize_provider_activation": bool(
+                selected.get("does_not_authorize_provider_activation")
+            ),
+        }
+
+    blockers = list(dict.fromkeys(blockers))
+    return {
+        "schema_version": "karkinos.per_order_broker_adapter_release_binding.v1",
+        "status": "pass" if not blockers else "blocked",
+        "source_schema_version": str(readiness.get("schema_version") or ""),
+        "expected_scope": expected_scope,
+        "matching_release_count": len(exact_matches),
+        "release": release,
+        "source_safety": source_safety,
+        "blockers": blockers,
+        "persisted_evidence_only": readiness.get("persisted_facts_only") is True,
+        "provider_contact_performed": bool(readiness.get("provider_contacted")),
+        "broker_submission_enabled": False,
+        "authorizes_execution": False,
+    }, blockers
+
+
 def build_order_fingerprint(order: dict[str, Any]) -> str:
     """Return the canonical fingerprint used by per-order capital evidence."""
 
@@ -878,42 +1064,6 @@ def _order_contract(order: dict[str, Any]) -> dict[str, Any]:
         "source": str(order.get("source") or ""),
         "source_ref": str(order.get("source_ref") or ""),
     }
-
-
-def _gateway_gate_summary(
-    order: dict[str, Any],
-) -> tuple[dict[str, Any], list[str]]:
-    payload = _order_payload(order)
-    evidence = payload.get("gateway_evidence")
-    evidence = evidence if isinstance(evidence, dict) else {}
-    gates: dict[str, Any] = {}
-    blockers: list[str] = []
-    for gate, (status_field, passing_values) in _REQUIRED_GATEWAY_EVIDENCE.items():
-        item = evidence.get(gate)
-        item = item if isinstance(item, dict) else {}
-        raw_status = str(item.get(status_field) or "").lower()
-        evidence_ref = str(item.get("evidence_ref") or "")
-        passed = bool(evidence_ref) and raw_status in passing_values
-        gates[gate] = {
-            "status": "pass" if passed else (raw_status or "missing"),
-            "evidence_ref": evidence_ref,
-        }
-        if not evidence_ref:
-            blockers.append(f"gateway_evidence_missing:{gate}")
-        elif not passed:
-            blockers.append(f"gateway_evidence_not_passing:{gate}")
-    return {
-        "schema_version": "karkinos.per_order_gateway_gate_summary.v1",
-        "status": "pass" if not blockers else "blocked",
-        "gates": gates,
-    }, blockers
-
-
-def _order_payload(order: dict[str, Any]) -> dict[str, Any]:
-    value = order.get("payload")
-    if isinstance(value, dict):
-        return value
-    return _json_object(order.get("payload_json"))
 
 
 def _missing_capital_summary(input_fingerprint: str = "") -> dict[str, Any]:

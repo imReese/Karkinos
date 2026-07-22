@@ -158,10 +158,10 @@ class StoredDecisionOutcomeReview:
             "signal_id": self.signal_id,
             "idempotency_key": self.idempotency_key,
             "reviewed_at": self.created_at,
-            "reviewed_by": self.request["reviewed_by"],
-            "user_decision": self.request["user_decision"],
-            "outcome": self.request["outcome"],
-            "note": self.request["note"],
+            "reviewed_by": self.request.get("reviewed_by"),
+            "user_decision": self.request.get("user_decision"),
+            "outcome": self.request.get("outcome"),
+            "note": self.request.get("note"),
             "request_fingerprint": self.request_fingerprint,
             "stored_target_fingerprint": self.target_fingerprint,
             "stored_target": self.target,
@@ -201,12 +201,14 @@ class DecisionOutcomeReviewResult:
     def to_dict(self) -> dict[str, Any]:
         binding_valid = (
             self.review.target_fingerprint == self.current_target.fingerprint
+            and self.audit_replay.valid
         )
         return {
             "schema_version": DECISION_OUTCOME_REVIEW_CONTRACT_VERSION,
             "review": self.review.to_dict(),
             "current_target": self.current_target.to_dict(),
             "target_binding_valid": binding_valid,
+            "stored_review_integrity_valid": self.audit_replay.valid,
             "audit_replay": self.audit_replay.to_dict(),
             "reused": self.reused,
             "persisted_facts_only": True,
@@ -254,6 +256,37 @@ class DecisionOutcomeReviewStore:
         if row is None:
             raise LookupError(f"decision outcome review not found: {review_id}")
         return _review_from_row(row)
+
+    def list_latest_by_signal(
+        self,
+        *,
+        limit: int = 100,
+    ) -> list[StoredDecisionOutcomeReview]:
+        """Return the latest stored review per signal without creating schema."""
+
+        with self._connection() as conn:
+            try:
+                rows = conn.execute(
+                    """
+                    WITH ranked AS (
+                        SELECT *, ROW_NUMBER() OVER (
+                            PARTITION BY signal_id
+                            ORDER BY created_at DESC, review_id DESC
+                        ) AS signal_rank
+                        FROM decision_outcome_reviews
+                    )
+                    SELECT * FROM ranked
+                    WHERE signal_rank = 1
+                    ORDER BY created_at DESC, review_id DESC
+                    LIMIT ?
+                    """,
+                    (max(1, min(int(limit), 500)),),
+                ).fetchall()
+            except sqlite3.OperationalError as exc:
+                if "no such table" in str(exc).lower():
+                    return []
+                raise
+        return [_review_from_row(row) for row in rows]
 
     def record(
         self,
@@ -374,7 +407,7 @@ class DecisionOutcomeReviewStore:
     def verify_replay(self, review_id: str) -> DecisionOutcomeReviewReplay:
         with self._connection() as conn:
             review = conn.execute(
-                "SELECT review_id FROM decision_outcome_reviews WHERE review_id = ?",
+                "SELECT * FROM decision_outcome_reviews WHERE review_id = ?",
                 (review_id,),
             ).fetchone()
             if review is None:
@@ -386,10 +419,17 @@ class DecisionOutcomeReviewStore:
                 """,
                 (review_id,),
             ).fetchall()
-        errors: list[str] = []
+        errors = list(_stored_review_integrity_errors(review))
         previous_hash: str | None = None
+        first_payload: dict[str, Any] | None = None
         for expected_sequence, row in enumerate(rows, start=1):
-            payload = _json_object(row["payload_json"])
+            try:
+                payload = _json_object(row["payload_json"])
+            except (TypeError, ValueError, json.JSONDecodeError):
+                payload = {}
+                errors.append("review_event_payload_json_invalid")
+            if first_payload is None:
+                first_payload = payload
             if int(row["sequence"]) != expected_sequence:
                 errors.append("event_sequence_gap")
             if row["previous_hash"] != previous_hash:
@@ -407,6 +447,21 @@ class DecisionOutcomeReviewStore:
             previous_hash = str(row["event_hash"])
         if not rows:
             errors.append("review_event_missing")
+        else:
+            first = rows[0]
+            if str(first["event_type"]) != "decision_outcome_review_recorded":
+                errors.append("review_event_type_mismatch")
+            if str(first["created_at"]) != str(review["created_at"]):
+                errors.append("review_event_timestamp_mismatch")
+            expected_event_payload = {
+                "signal_id": int(review["signal_id"]),
+                "request_fingerprint": str(review["request_fingerprint"]),
+                "target_fingerprint": str(review["target_fingerprint"]),
+                "outcome": str(review["outcome"]),
+                "authority_effect": "none",
+            }
+            if first_payload != expected_event_payload:
+                errors.append("review_event_record_binding_mismatch")
         return DecisionOutcomeReviewReplay(
             review_id=review_id,
             valid=not errors,
@@ -822,12 +877,83 @@ def _review_from_row(row: sqlite3.Row) -> StoredDecisionOutcomeReview:
         review_id=str(row["review_id"]),
         signal_id=int(row["signal_id"]),
         idempotency_key=str(row["idempotency_key"]),
-        request=_json_object(row["request_json"]),
+        request=_safe_json_object(row["request_json"]),
         request_fingerprint=str(row["request_fingerprint"]),
-        target=_json_object(row["target_json"]),
+        target=_safe_json_object(row["target_json"]),
         target_fingerprint=str(row["target_fingerprint"]),
         created_at=str(row["created_at"]),
     )
+
+
+def _stored_review_integrity_errors(row: sqlite3.Row) -> tuple[str, ...]:
+    errors: list[str] = []
+    try:
+        request = _json_object(row["request_json"])
+    except (TypeError, ValueError, json.JSONDecodeError):
+        request = {}
+        errors.append("stored_review_request_json_invalid")
+    try:
+        target = _json_object(row["target_json"])
+    except (TypeError, ValueError, json.JSONDecodeError):
+        target = {}
+        errors.append("stored_review_target_json_invalid")
+
+    request_fingerprint = str(row["request_fingerprint"])
+    target_fingerprint = str(row["target_fingerprint"])
+    if request and content_fingerprint(request) != request_fingerprint:
+        errors.append("stored_review_request_fingerprint_mismatch")
+    target_identity = {
+        key: target.get(key)
+        for key in (
+            "schema_version",
+            "signal_id",
+            "signal",
+            "signal_fingerprint",
+            "action_task",
+            "risk_decision",
+            "execution_evidence",
+            "strategy_contribution_report",
+            "financial_evidence_status",
+            "allowed_outcomes",
+            "blockers",
+            "limitations",
+        )
+    }
+    if target and content_fingerprint(target_identity) != target_fingerprint:
+        errors.append("stored_review_target_fingerprint_mismatch")
+    if str(target.get("target_fingerprint") or "") != target_fingerprint:
+        errors.append("stored_review_embedded_target_fingerprint_mismatch")
+    if str(request.get("expected_target_fingerprint") or "") != target_fingerprint:
+        errors.append("stored_review_request_target_binding_mismatch")
+    if str(request.get("idempotency_key") or "") != str(row["idempotency_key"]):
+        errors.append("stored_review_idempotency_binding_mismatch")
+    if str(request.get("reviewed_by") or "") != str(row["reviewed_by"]):
+        errors.append("stored_review_reviewer_binding_mismatch")
+    if str(request.get("user_decision") or "") != str(row["user_decision"]):
+        errors.append("stored_review_user_decision_binding_mismatch")
+    if str(request.get("outcome") or "") != str(row["outcome"]):
+        errors.append("stored_review_outcome_binding_mismatch")
+    if str(request.get("note") or "") != str(row["note"]):
+        errors.append("stored_review_note_binding_mismatch")
+    try:
+        target_signal_id = int(target.get("signal_id") or 0)
+    except (TypeError, ValueError):
+        target_signal_id = 0
+    if target_signal_id != int(row["signal_id"]):
+        errors.append("stored_review_signal_binding_mismatch")
+    expected_review_id = (
+        "decision-review-"
+        + content_fingerprint(
+            {
+                "signal_id": int(row["signal_id"]),
+                "request_fingerprint": request_fingerprint,
+                "target_fingerprint": target_fingerprint,
+            }
+        )[:24]
+    )
+    if str(row["review_id"]) != expected_review_id:
+        errors.append("stored_review_id_fingerprint_mismatch")
+    return tuple(dict.fromkeys(errors))
 
 
 def _json_object(value: Any) -> dict[str, Any]:
@@ -837,6 +963,13 @@ def _json_object(value: Any) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ValueError("stored review JSON must be an object")
     return parsed
+
+
+def _safe_json_object(value: Any) -> dict[str, Any]:
+    try:
+        return _json_object(value)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
 
 
 def _event_hash(

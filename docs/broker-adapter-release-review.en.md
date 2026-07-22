@@ -37,14 +37,35 @@ Unknown fields, auth-material-like keys, malformed identities, writable
 capabilities, and boundary violations fail closed. The raw account id and
 credentials are not part of this manifest.
 
-## Conformance prerequisite and explicit review command
+## Signed Trading journey and CLI fallback
 
 Run and explicitly record the deterministic local conformance suite first; see
 [Broker adapter deterministic conformance](broker-adapter-conformance.en.md).
 The suite validates Karkinos contracts only and does not approve a real
 provider.
 
-Preview is read-only and does not create the database:
+Trading now exposes a default-collapsed review panel. It performs no release
+query until opened and supports three append-only decisions:
+
+- `accepted` previews the strict credential-free manifest and binds the newest
+  exact passing conformance report plus the current review fingerprint;
+- `rejected` can record a human safety decision for a structurally recordable
+  candidate even when its semantic capability/boundary checks fail;
+- `revoked` selects the exact currently accepted persisted manifest and can
+  only move eligibility toward blocked.
+
+The server fingerprints the exact manifest, decision, reason, timestamp,
+current review, and conformance evidence into one dossier. A matching trusted
+operator creates a three-minute challenge, signs it offline, and records the
+decision with the exact approval id embedded in `reviewer_ref`. Conformance or
+review drift between preview and record rejects the transaction. An exact
+immediate retry reuses the same row; conflicting ids or inputs fail closed.
+The Web panel rejects nested credential-like keys locally before any POST and
+never exposes provider selection/contact, adapter registration, submit/cancel,
+or capital-authority controls.
+
+The explicit CLI remains available for controlled administrative use. Its
+preview is read-only and does not create the database:
 
 ```bash
 uv run python scripts/review_broker_adapter_release.py \
@@ -69,7 +90,7 @@ uv run python scripts/review_broker_adapter_release.py \
   review_broker_adapter_release_without_registration_or_execution_authority
 ```
 
-`rejected` and `revoked` use the same command and exact manifest. Review events
+`rejected` and `revoked` use the same command and exact manifest. CLI review events
 are append-only. A revoked release cannot be accepted again in place; a new
 release identity and a new review are required.
 
@@ -109,14 +130,15 @@ execution-gateway, per-order approval, reconciliation, or capital gates.
 
 ## Assumptions, validation, and risk impact
 
-- **Assumption:** ADR, threat-model, deployment, rollback, and privacy documents
-  remain external reviewed artifacts referenced by stable ids; Karkinos binds
-  their review, not their prose.
+- **Assumption:** the operator supplies an already reviewed, credential-free
+  manifest whose ADR, threat-model, deployment, rollback, and privacy artifacts
+  have stable external ids. Acceptance does not mean that provider is selected
+  or deployed.
 - **Validation:** deterministic fixtures cover preview, sensitive/unknown
   fields, writable capabilities, explicit acceptance, rejection, revocation,
-  idempotency, restart verification, deployment/authorization drift, missing
-  conformance/review, and conformance-failure or revoke between prepare and
-  commit.
+  offline proof, exact retry, GET-without-schema creation, current-review and
+  conformance drift, restart verification, deployment/authorization drift,
+  missing evidence, collapsed Web zero reads, and zero broker actions.
 - **Risk impact:** this gate can only block or revoke live collector ingestion.
   It does not contact a broker or change OMS, fills, ledger, risk, kill switch,
   capital authority, submission, or cancellation.

@@ -96,6 +96,13 @@ provider/deployment/account scope。
 所需证据：
 
 - dry-run、submit、query、callback/poll、cancel 与幂等 client-order conformance；
+- 与 connector/gateway/account 精确匹配的最新 adapter release 仍为人工 accepted、conformance
+  clear，并绑定已记录的只读 collector run；
+- 一份单独签名的 write-edge release 把该精确 scope 绑定到严格 execution manifest/conformance、
+  accepted 的只读 release、已签名 soak acceptance，以及经复核的协议/权限/报告/测试/部署/风控/
+  回滚证据；它只允许 `manual_each_order` 且最长 12 小时过期；
+- Account Truth、Decision action、risk 与 paper/shadow gate 引用均解析到匹配的持久化事实，并由
+  同一 capital evaluation 精确绑定；
 - 精确 OMS/order/account/strategy/symbol/policy/gateway 绑定；
 - 每次提交前即时生成、短期有效的最终操作员签名；
 - accepted、rejected、partial、partial-cancelled、cancelled、filled、unknown、timeout、reconnect
@@ -104,7 +111,12 @@ provider/deployment/account scope。
 - 显式对账，随后单独确认账本入账。
 
 退出条件：重复请求不能生成重复券商订单。Unknown 或 unreconciled 状态阻断不同订单。Partial
-与 cancel 数量守恒，每个账本修改 exactly once。
+与 cancel 数量守恒，每个账本修改 exactly once。Release 撤销、过期、可信公钥变化、conformance
+drift、来源事实 drift 或 scope drift 都会使 write release 与精确逐单签名失效。Write release 只
+是必要条件，不注册 adapter，也不授予逐单/资本权限；状态通过但引用无法解析或伪造时绝不满足门禁。
+
+操作员旅程默认折叠，打开前不读取状态。它可以在不编辑数据库的情况下 preview、离线签名、
+签发、列出并单向撤销该 release；含凭据键的 manifest 会在本地拦截，界面不暴露任何券商动作。
 
 ### Gate 3 — Session-Bounded Pilot
 
@@ -173,6 +185,18 @@ pause 或 disable；绝不会自动 scale up。
 - 精确阻断项、证据年龄和一个安全的下一步。
 
 任何界面都不得仅因为研究、签名或一次 policy evaluation 通过而暗示已批准执行。
+
+### Runtime-session 撤销操作员旅程
+
+假设：持久化 operator projection 只识别候选项；canonical preview 与写事务仍是权威边界，并会
+重检精确 session、reservation、白名单原因、detached proof 与 revocation fingerprint。UI 状态
+绝不构成权限。撤销只关闭未来准入；它既不撤销也不证明外部未结订单的结果。
+
+确定性验证：`uv run pytest -q tests/test_controlled_session_runtime_authority.py tests/server/test_controlled_session_runtime_authority_routes.py`、
+`npm --prefix web test` 和 `npm --prefix web run build`。
+
+风险影响在运行层面为 medium，因为该动作刻意不可逆，可能停止计划中的准入。交易风险下降：它
+不能恢复、续期、扩大、submit、cancel、修改财务事实，也不能绕过 lifecycle 与 reconciliation。
 
 ## 发布与监管门禁
 

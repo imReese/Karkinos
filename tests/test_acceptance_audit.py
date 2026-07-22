@@ -35,10 +35,12 @@ from analytics.acceptance_audit import (
     build_per_order_gateway_verification_binding_acceptance_audit,
     build_research_evidence_acceptance_audit,
     build_session_start_account_truth_binding_acceptance_audit,
+    build_signed_broker_adapter_release_review_acceptance_audit,
     build_signed_operator_approval_acceptance_audit,
     build_single_instrument_strategy_loop_acceptance_audit,
     build_strategy_assignment_acceptance_audit,
     build_strategy_lab_acceptance_audit,
+    build_strategy_learning_review_acceptance_audit,
 )
 
 
@@ -97,6 +99,52 @@ def test_broker_connector_soak_promotion_acceptance_audit_is_complete() -> None:
 
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
+
+
+def test_signed_broker_adapter_release_review_acceptance_audit_is_complete() -> None:
+    audit = build_signed_broker_adapter_release_review_acceptance_audit()
+
+    assert audit.required_count == 8
+    assert audit.completed_count == audit.required_count
+    assert audit.is_complete is True
+    assert {criterion.key for criterion in audit.criteria} == {
+        "strict_provider_neutral_release_manifest",
+        "latest_conformance_exact_acceptance_binding",
+        "exact_signed_operator_review_dossier",
+        "preview_record_drift_and_retry_integrity",
+        "append_only_reject_and_one_way_revoke",
+        "strict_api_and_operator_approval_contract",
+        "default_collapsed_no_database_edit_web_review",
+        "eligibility_only_zero_provider_or_authority_side_effects",
+    }
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path
+
+
+def test_strategy_learning_review_acceptance_audit_is_complete() -> None:
+    audit = build_strategy_learning_review_acceptance_audit()
+
+    assert audit.required_count == 7
+    assert audit.completed_count == audit.required_count
+    assert audit.is_complete is True
+    assert {criterion.key for criterion in audit.criteria} == {
+        "latest_persisted_human_review_projection",
+        "stored_review_and_event_replay_integrity",
+        "current_canonical_target_revalidation",
+        "deterministic_learning_actions_and_exact_evidence",
+        "copy_only_human_started_research_boundary",
+        "read_only_fail_closed_learning_api",
+        "strategy_lab_non_authorizing_action_queue",
+    }
+    for criterion in audit.criteria:
         assert criterion.evidence_paths, criterion.key
         assert criterion.validation_commands, criterion.key
         for evidence_path in criterion.evidence_paths:

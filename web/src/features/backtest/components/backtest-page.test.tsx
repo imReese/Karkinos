@@ -1111,6 +1111,30 @@ function installBacktestFetchMock({
       if (url.includes('/api/account-strategy/contribution')) {
         return jsonResponse(accountStrategyContribution);
       }
+      if (url.includes('/api/strategy-learning/review-queue')) {
+        return jsonResponse({
+          schema_version: 'karkinos.strategy_learning_review.v1',
+          status: 'not_configured',
+          reviewed_signal_count: 0,
+          action_item_count: 0,
+          critical_item_count: 0,
+          outcome_counts: {},
+          strategy_summaries: [],
+          items: [],
+          limitations: [],
+          queue_fingerprint: 'strategy-learning-empty-fixture',
+          generated_at: '2026-07-18T12:00:00+00:00',
+          persisted_facts_only: true,
+          provider_contacted: false,
+          database_writes_performed: false,
+          financial_recalculation_performed: false,
+          ai_invoked: false,
+          memory_created: false,
+          strategy_changed: false,
+          authorizes_execution: false,
+          capital_authority_changed: false,
+        });
+      }
       if (url.includes('/api/account-strategy/assignments')) {
         if (init?.method === 'PUT') {
           const payload = JSON.parse(String(init.body ?? '{}'));
@@ -2493,7 +2517,12 @@ test('summarizes attribution preview evidence without claiming strategy pnl', as
 test('renders dataset snapshot metadata for saved reports', async () => {
   renderBacktestPage();
 
-  expect(await screen.findByText('Dataset snapshot')).toBeTruthy();
+  expect(
+    await screen.findByRole('heading', {
+      level: 3,
+      name: 'Dataset snapshot',
+    }),
+  ).toBeTruthy();
   expect(
     await screen.findByText('sha256:fixture-dataset-snapshot'),
   ).toBeTruthy();
@@ -2529,7 +2558,10 @@ test('binds AI strategy research to the selected saved canonical report', async 
 test('localizes dataset snapshot asset classes in chinese reports', async () => {
   renderBacktestPage({ locale: 'zh' });
 
-  const title = await screen.findByText('数据快照');
+  const title = await screen.findByRole('heading', {
+    level: 3,
+    name: '数据快照',
+  });
   const panel = title.closest('section');
   expect(panel).toBeTruthy();
   expect(within(panel!).getByText('股票')).toBeTruthy();

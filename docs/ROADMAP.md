@@ -40,14 +40,14 @@ authority, bypass risk, or call a broker directly.
 | v1.4-v1.7 | Completed | Ledger/snapshot-bound contribution and cost fidelity, Daily Trading Plan, Operations runbook, non-submitting controlled bridge |
 | v1.8 control plane | Foundation implemented | Signed bounded authority, atomic budgets, sessions, live gates, pause/replacement, one-shot submit boundary, interlock, broker-neutral lifecycle evidence, exact-terminal full/partial-cancel/no-fill-cancel clearance, capital-scaling review |
 | v1.8 adapter acceptance | Provider-neutral foundation implemented | Versioned manifest, deterministic local conformance evidence, capability/boundary matrix, append-only accept/reject/revoke review, exact live collector binding, and persisted-only operator readiness visibility; no real provider selected or registered |
-| AI-native Phase 1-1.18 + outcome/quality bridge | Implemented | Provider-neutral, evidence-bound research, memory, Formula DSL/backtest/critique, explicit canonical strategy-contribution and post-decision review, plus a captured daily Decision Quality Score without trading authority |
+| AI-native Phase 1-1.18 + outcome/quality bridge | Implemented | Provider-neutral, evidence-bound research, memory, Formula DSL/backtest/critique, canonical contribution and post-decision review, a persisted-only human strategy-learning queue, and captured Decision Quality without trading authority |
 
 Account Truth and reconciliation remain mandatory safety gates, while v1.8 is
 the active product milestone after the explicitly authorized Phase 1.18 formula
-vertical. The read-only outcome and Decision Quality bridges do not activate
-Phase 1.19; further AI and memory expansion remain deferred until controlled
-execution closes. Decision Quality measures captured process evidence, not
-returns or execution authority.
+vertical. The read-only outcome, human strategy-learning, and Decision Quality
+bridges do not activate Phase 1.19; further AI and memory expansion remain
+deferred until controlled execution closes. Learning handoffs are copy-only,
+and Decision Quality measures process evidence, not returns or authority.
 
 ## Active Milestone: v1.8 — Broker-Connected Controlled Pilot
 
@@ -94,13 +94,14 @@ still register no write adapter or release provider by default.
 strategy, risk, Decision, and AI modules cannot import the provider SDK.
 
 Current state: the provider-neutral release manifest, deterministic local
-conformance suite, append-only report, and review gate are implemented,
-including exact conformance-to-review binding and prepare/commit drift and
-revocation checks. Operations now projects release, conformance, and collector
+conformance suite, append-only report, and review gate are implemented. Trading
+adds a default-collapsed, no-database-edit signed accept/reject/revoke journey;
+acceptance binds the exact newest conformance, current review, and approval id,
+while transactional drift checks preserve fail-closed semantics. Operations projects
 evidence through one persisted-only readiness view; an unconfigured provider is
 neutral, while evidence drift or a failed active collector is explicit. The
-suite validates Karkinos contracts, not a real adapter, and the view exposes no
-registration or review mutation control.
+suite validates Karkinos contracts, not a real adapter, and neither surface can
+register or contact one.
 Selecting the real provider, accepting its actual ADR/threat model, and
 authorizing its deployment remain open and require explicit owner input.
 
@@ -135,7 +136,7 @@ terminal states. Any unresolved order continues to block a different order.
 **Implemented foundation:** a separate default-closed local execution-edge suite now proves the fixed
 dry-run/submit/query/cancel/idempotency contract, including concurrency, timeout, restart, not-found,
 disconnect, and partial-fill/cancel races, without registering an adapter or contacting a provider.
-Deterministic evidence also reaches signed exact-terminal clearance and an open lifecycle can produce a copy-only package. A separate signed explicit-cancel foundation atomically admits at most one cancel effect and permits query-only recovery without making gateway responses canonical. Real-adapter integration and real-environment recovery evidence remain release work.
+Deterministic evidence also reaches signed exact-terminal clearance and an open lifecycle can produce a copy-only package. A separate signed, expiring, one-way-revocable write-edge release binds the strict manifest/conformance, read-only release, accepted soak, and owner review evidence; Trading now has a default-collapsed, no-database-edit signed issue/revoke review that locally blocks credential-key manifests and exposes no broker action. Production one-shot submit/cancel resolves only a current persisted release before its independent gates. It is necessary but grants no order/capital authority or adapter registration. Real-adapter integration and real-environment recovery evidence remain release work.
 
 ### M3 — Reconciled Ledger Posting
 
@@ -178,10 +179,11 @@ Trading. Every blocked state must expose its evidence and one safe next action.
 reconciliation, terminal clearance, ledger posting, and append-only correction, exposing one safe
 human next step. Signed reviews cover query-only unknown recovery, terminal clearance, posting, and
 optional correction without operator-supplied financial deltas. An exact open lifecycle can also
-produce a no-database-edit manual cancellation package; the UI requires external human action and new evidence, and exposes no cancel endpoint. The backend signed-cancel contract remains default-closed and outside that Web journey until explicit provider acceptance.
+produce a no-database-edit manual cancellation package; the UI requires external human action and new evidence, and exposes no cancel endpoint. The backend signed-cancel contract remains default-closed and outside that Web journey until explicit provider acceptance. Decision now adds exact-preview, offline-signed one-way session revocation;
+it closes future admission without cancelling or making claims about any open broker order.
 A rejected intent now exposes a drift-checked,
 sanitized copy-only package plus an append-only, exactly-once no-retry acknowledgement. The v4 view prioritizes every unfinished journey and closes post-ledger follow-up only from complete canonical Account Truth evidence.
-Trading can now resolve each canonical `manually_confirmed` OMS candidate's newest capital, prior-batch, and gateway evidence into a separately signed, append-only review without operator-supplied fingerprints. Missing, ambiguous, newer blocked, or scan-truncated evidence fails closed; Web cannot submit/cancel or mutate OMS, ledger, risk, kill switch, or capital authority. Automation Cockpit and Decision validate and summarize the same persisted-only contract, then provide only a non-submitting handoff to Trading; source drift blocks it. An explicit scan writes idempotent blocker alerts from that same projection while ready candidates remain normal tasks. Operations Today now fingerprints every non-normal subsystem together with its safe next action and exact evidence-based resolution condition; the dedicated `/operations` read-only workbench validates the non-authority contract and exposes source evidence plus safe drill-down, while viewing cannot clear status and AI capture receives the same non-authorizing payload. Overview and Market also consume one valuation/ledger-bound current-holding market-evidence review; fund NAV uses a request-idempotent confirmation-only ingestion command that rejects estimates and previous-day NAV, and only newer confirmed persisted evidence can clear the review. Signed one-shot submission and broker-neutral signed-cancel foundations are implemented; real-adapter integration/recovery evidence and a complete provider-approved operator journey remain open.
+Trading can now resolve each canonical `manually_confirmed` OMS candidate's newest capital, prior-batch, and gateway evidence into a separately signed, append-only review without operator-supplied fingerprints. Its v5 fingerprint binds the newest exact-scope accepted, conformance-clear, read-only-observing adapter release plus exact persisted Account Truth, Decision action, risk, and paper/shadow source facts referenced by the same capital evaluation; forged refs, source/order drift, revocation, or scope drift invalidate prior approval. Missing, ambiguous, newer blocked, or scan-truncated evidence fails closed; Web cannot submit/cancel or mutate OMS, ledger, risk, kill switch, or capital authority. Automation Cockpit and Decision validate and summarize the same persisted-only contract, then provide only a non-submitting handoff to Trading; source drift blocks it. An explicit scan writes idempotent blocker alerts from that same projection while ready candidates remain normal tasks. Operations Today now fingerprints every non-normal subsystem together with its safe next action and exact evidence-based resolution condition; the dedicated `/operations` read-only workbench validates the non-authority contract and exposes source evidence plus safe drill-down, while viewing cannot clear status and AI capture receives the same non-authorizing payload. Overview and Market also consume one valuation/ledger-bound current-holding market-evidence review; fund NAV uses a request-idempotent confirmation-only ingestion command that rejects estimates and previous-day NAV, and only newer confirmed persisted evidence can clear the review. Signed one-shot submission and broker-neutral signed-cancel foundations are implemented; real-adapter integration/recovery evidence and a complete provider-approved operator journey remain open.
 
 **Exit gate:** an operator can complete every normal and recovery flow without
 editing the database. Refresh, duplicate clicks, and service restart do not
@@ -213,7 +215,7 @@ incident returns the system to `disabled`.
 2. **Implemented foundation:** provider-neutral deterministic conformance fixtures and release binding.
 3. **Next after explicit provider approval:** provider read-only adapter, collector integration, health, and soak.
 4. **Foundation implemented locally:** lifecycle, signed exact-terminal reconciliation, signed unknown recovery, and signed exact-cancel/query-only recovery with duplicate/restart protection; real-adapter recovery evidence remains.
-5. Default-closed real write-adapter integration and provider-approved per-order submit/cancel journey.
+5. **Local foundation implemented:** persisted signed write-edge release and production resolver; real write-adapter integration and provider-approved per-order submit/cancel journey remain default-closed.
 6. **Foundation implemented:** signed, exactly-once reconciled ledger posting,
    append-only compensating correction, and core cross-surface acceptance.
 7. **Foundation implemented:** Operations/Trading readiness, alerts, and a

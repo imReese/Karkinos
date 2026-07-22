@@ -225,6 +225,13 @@ def _service() -> PerOrderConfirmationService:
                 gateways=getattr(state, "execution_gateways", []) or [],
             ).resolve
         ),
+        account_truth_evidence_provider=(
+            lambda: {
+                **build_latest_account_truth_promotion_evidence(state),
+                "persisted_facts_only": True,
+                "provider_contact_performed": False,
+            }
+        ),
     )
 
 

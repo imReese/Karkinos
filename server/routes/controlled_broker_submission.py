@@ -461,15 +461,12 @@ def _service() -> ControlledBrokerSubmissionService:
 
     state = get_app_state()
     config = getattr(state, "config", None)
+    release_evidence_provider = _release_evidence_provider(state)
     return ControlledBrokerSubmissionService(
         db=state.db,
         gateways=getattr(state, "execution_gateways", []) or [],
         confirmation_provider=per_order_confirmation_service().resolve_confirmation,
-        release_evidence_provider=getattr(
-            state,
-            "controlled_broker_release_evidence_provider",
-            None,
-        ),
+        release_evidence_provider=release_evidence_provider,
         trusted_operator_identities=(
             getattr(config, "trusted_operator_identities", []) or []
         ),
@@ -510,18 +507,36 @@ def _controlled_cancellation_service() -> ControlledBrokerCancellationService:
 
     state = get_app_state()
     config = getattr(state, "config", None)
+    release_evidence_provider = _release_evidence_provider(state)
     return ControlledBrokerCancellationService(
         db=state.db,
         gateways=getattr(state, "execution_gateways", []) or [],
-        release_evidence_provider=getattr(
-            state,
-            "controlled_broker_release_evidence_provider",
-            None,
-        ),
+        release_evidence_provider=release_evidence_provider,
         trusted_operator_identities=(
             getattr(config, "trusted_operator_identities", []) or []
         ),
     )
+
+
+def _release_evidence_provider(state: Any) -> Any | None:
+    injected = getattr(
+        state,
+        "controlled_broker_release_evidence_provider",
+        None,
+    )
+    if callable(injected):
+        return injected
+    try:
+        from server.routes.controlled_broker_write_release import (
+            build_controlled_broker_write_release_service,
+        )
+
+        persisted = build_controlled_broker_write_release_service(state)
+        if persisted.get_status().get("active_release_count", 0) > 0:
+            return persisted
+    except Exception:
+        return None
+    return None
 
 
 def _rejection_evidence_service() -> ControlledBrokerRejectionEvidenceService:
