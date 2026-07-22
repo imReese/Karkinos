@@ -111,6 +111,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const marketHealth = useMarketDataHealthQuery();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [desktopNavExpanded, setDesktopNavExpanded] = useState(true);
+  const [commandOpen, setCommandOpen] = useState(false);
   const [openStatusPanel, setOpenStatusPanel] =
     useState<ToolbarPopoverKey>(null);
   const statusRailRef = useRef<HTMLDivElement | null>(null);
@@ -129,6 +130,22 @@ export function AppShell({ children }: { children: ReactNode }) {
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
   }, [mobileNavOpen]);
+
+  useEffect(() => {
+    const handleCommandKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setCommandOpen(true);
+        return;
+      }
+      if (event.key === 'Escape') {
+        setCommandOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleCommandKey);
+    return () => window.removeEventListener('keydown', handleCommandKey);
+  }, []);
 
   useEffect(() => {
     if (!openStatusPanel) {
@@ -251,6 +268,19 @@ export function AppShell({ children }: { children: ReactNode }) {
                 tone: 'warning' as ToolbarStatusTone,
                 indicator: 'dot' as ToolbarStatusIndicator,
               };
+  const executionMode = accountOverview.isLoading
+    ? copy.shell.checking
+    : overview?.daily_operations?.default_execution_mode === 'paper_shadow'
+      ? copy.shell.paperShadowMode
+      : overview?.daily_operations?.default_execution_mode ===
+          'manual_confirmation'
+        ? copy.shell.manualConfirmationMode
+        : overview?.daily_operations?.default_execution_mode
+          ? formatPublicStatus(
+              overview.daily_operations.default_execution_mode,
+              locale,
+            )
+          : copy.shell.statusUnknown;
 
   const valuationMeta = valuationTimestamp
     ? copy.shell.valuationAt(valuationTimestamp)
@@ -260,10 +290,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       marketHealth.data?.last_refresh_attempt,
     locale,
   );
-  const activeNavigation = navGroups
-    .flatMap((group) => group.items.map((item) => ({ group, item })))
-    .find(({ item }) => isNavigationItemActive(pathname, item.to));
-
   return (
     <div className="app-root min-h-[100dvh] w-full">
       <div className="app-shell-frame flex h-[100dvh] min-h-[100dvh] w-full min-w-0">
@@ -285,7 +311,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div
             className={`app-brand-lockup mb-4 flex min-h-10 items-center gap-2.5 px-1.5 ${desktopNavExpanded ? 'justify-between' : 'lg:justify-center'}`}
           >
-            <div className="flex min-w-0 flex-1 items-center gap-2.5">
+            <Link
+              to="/"
+              aria-label={copy.shell.publicHome}
+              className="flex min-w-0 flex-1 items-center gap-2.5"
+            >
               <span className="app-brand-glyph" aria-hidden="true">
                 K
               </span>
@@ -299,7 +329,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   {copy.shell.workspaceLabel}
                 </div>
               </div>
-            </div>
+            </Link>
             <button
               type="button"
               className="app-button-secondary h-8 w-8 rounded-[var(--app-radius-control)] p-0 text-sm lg:hidden"
@@ -434,25 +464,56 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <span className="app-product-mark truncate">Karkinos</span>
               </div>
 
-              <div
-                className="app-toolbar-context hidden min-w-0 flex-1 items-center gap-2 lg:flex"
-                role="group"
-                aria-label={copy.shell.currentWorkspace}
-              >
-                <span className="truncate text-[11px] font-semibold text-[var(--app-text-tertiary)]">
-                  {activeNavigation?.group.label[locale] ?? copy.shell.title}
-                </span>
-                <span className="text-[var(--app-divider)]" aria-hidden="true">
-                  /
-                </span>
-                <span className="truncate text-[13px] font-semibold text-[var(--app-text)]">
-                  {activeNavigation
-                    ? copy.shell.nav[activeNavigation.item.key]
-                    : copy.shell.title}
-                </span>
+              <div className="app-toolbar-state hidden shrink-0 items-center xl:flex">
+                <div
+                  className="app-toolbar-mode"
+                  aria-label={`${copy.shell.accountMode}: ${executionMode}`}
+                >
+                  <span>{copy.shell.accountMode}</span>
+                  <strong>{executionMode}</strong>
+                </div>
+                <div
+                  className="app-toolbar-health"
+                  aria-label={`${copy.shell.evidenceStatus}: ${valuationStatus.value} · ${copy.shell.dataStatus}: ${marketStatus.value}`}
+                >
+                  <span className="app-toolbar-health-item">
+                    <span
+                      className="app-toolbar-health-dot"
+                      style={{
+                        backgroundColor: STATUS_COLORS[valuationStatus.tone],
+                      }}
+                      aria-hidden="true"
+                    />
+                    {copy.shell.evidenceStatus}
+                  </span>
+                  <span className="app-toolbar-health-item">
+                    <span
+                      className="app-toolbar-health-dot"
+                      style={{
+                        backgroundColor: STATUS_COLORS[marketStatus.tone],
+                      }}
+                      aria-hidden="true"
+                    />
+                    {copy.shell.dataStatus}
+                  </span>
+                </div>
               </div>
 
-              <div className="ml-auto flex min-w-0 shrink-0 flex-row items-center justify-end whitespace-nowrap">
+              <button
+                type="button"
+                className="app-command-trigger ml-auto"
+                data-testid="workspace-command-trigger"
+                aria-label={copy.shell.commandTrigger}
+                aria-haspopup="dialog"
+                aria-expanded={commandOpen}
+                onClick={() => setCommandOpen(true)}
+              >
+                <SearchIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                <span>{copy.shell.commandPlaceholder}</span>
+                <kbd aria-hidden="true">⌘K</kbd>
+              </button>
+
+              <div className="flex min-w-0 shrink-0 flex-row items-center justify-end whitespace-nowrap">
                 <div className="hidden min-w-0 flex-row items-center gap-2 sm:flex">
                   <ThemeSwitcher
                     label={copy.shell.theme}
@@ -512,6 +573,12 @@ export function AppShell({ children }: { children: ReactNode }) {
               </div>
             </div>
           </header>
+
+          <WorkspaceCommandMenu
+            open={commandOpen}
+            locale={locale}
+            onClose={() => setCommandOpen(false)}
+          />
 
           <div className="app-shell-content min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto [contain:layout_paint]">
             <div className="w-full min-w-0 px-3 py-3 sm:px-4 sm:py-4 lg:px-5 lg:py-5 xl:px-6">
@@ -639,6 +706,116 @@ export function AppShell({ children }: { children: ReactNode }) {
           </nav>
         </main>
       </div>
+    </div>
+  );
+}
+
+function WorkspaceCommandMenu({
+  open,
+  locale,
+  onClose,
+}: {
+  open: boolean;
+  locale: Locale;
+  onClose: () => void;
+}) {
+  const copy = useCopy();
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
+  const [query, setQuery] = useState('');
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    setQuery('');
+    inputRef.current?.focus();
+  }, [open]);
+
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const filteredGroups = navGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) =>
+        copy.shell.nav[item.key].toLocaleLowerCase().includes(normalizedQuery),
+      ),
+    }))
+    .filter((group) => group.items.length > 0);
+
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div
+      className="app-command-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <section
+        className="app-command-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label={copy.shell.commandTitle}
+      >
+        <div className="app-command-input-row">
+          <SearchIcon className="h-4 w-4" aria-hidden="true" />
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            aria-label={copy.shell.commandPlaceholder}
+            placeholder={copy.shell.commandPlaceholder}
+            autoComplete="off"
+          />
+          <button
+            type="button"
+            aria-label={copy.shell.closeCommand}
+            onClick={onClose}
+          >
+            ✕
+          </button>
+        </div>
+        <nav
+          className="app-command-results"
+          aria-label={copy.shell.commandResults}
+        >
+          {filteredGroups.length > 0 ? (
+            filteredGroups.map((group) => (
+              <div className="app-command-group" key={group.key}>
+                <div className="app-command-group-label">
+                  {group.label[locale]}
+                </div>
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  const active = isNavigationItemActive(pathname, item.to);
+                  return (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      className={`app-command-result ${
+                        active ? 'app-command-result-active' : ''
+                      }`}
+                      onClick={onClose}
+                    >
+                      <Icon className="h-4 w-4" aria-hidden="true" />
+                      <span>{copy.shell.nav[item.key]}</span>
+                      <span aria-hidden="true">→</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            ))
+          ) : (
+            <div className="app-command-empty">{copy.shell.commandEmpty}</div>
+          )}
+        </nav>
+      </section>
     </div>
   );
 }
@@ -1193,6 +1370,23 @@ function ChevronDownIcon(props: SVGProps<SVGSVGElement>) {
       {...props}
     >
       <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+function SearchIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      viewBox="0 0 24 24"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-4-4" />
     </svg>
   );
 }

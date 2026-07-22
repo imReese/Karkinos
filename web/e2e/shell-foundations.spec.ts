@@ -27,9 +27,12 @@ test('desktop shell defaults to labeled business groups and remains collapsible'
       'Overview',
     );
     await expect(page.getByText('Workspace toolbar')).toHaveCount(0);
-    await expect(
-      page.getByRole('group', { name: 'Current workspace' }),
-    ).toContainText('Portfolio');
+    await expect(page.getByTestId('workspace-command-trigger')).toBeVisible();
+    if (viewport.width >= 1280) {
+      await expect(page.locator('.app-toolbar-state')).toBeVisible();
+    } else {
+      await expect(page.locator('.app-toolbar-state')).toBeHidden();
+    }
     await expect(statusFooter).toContainText('Persisted evidence');
     await expect(
       page.getByRole('button', { name: /Refresh quotes: Market/ }),
@@ -66,6 +69,27 @@ test('desktop shell defaults to labeled business groups and remains collapsible'
       .poll(async () => (await sidebar.boundingBox())?.width)
       .toBe(56);
   }
+});
+
+test('workspace command menu navigates without adding execution authority', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/overview');
+
+  await page.keyboard.press('Control+k');
+  const commandMenu = page.getByRole('dialog', { name: 'Go to workspace' });
+  await expect(commandMenu).toBeVisible();
+  const search = commandMenu.getByRole('textbox', { name: 'Search routes' });
+  await expect(search).toBeFocused();
+  await search.fill('risk');
+  await commandMenu.getByRole('link', { name: 'Risk' }).click();
+
+  await expect(page).toHaveURL(/\/risk$/);
+  await expect(commandMenu).toHaveCount(0);
+  await expect(
+    page.getByRole('heading', { name: 'Risk control center' }),
+  ).toBeVisible();
 });
 
 test('shell remains local-overflow safe in Latte and Mocha across tablet and mobile', async ({

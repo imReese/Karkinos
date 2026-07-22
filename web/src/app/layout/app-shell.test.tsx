@@ -29,6 +29,9 @@ const defaultOverview = {
   cash_ratio: 0.561,
   valuation_timestamp: '2026-05-16T22:40:00+08:00',
   quote_status: 'live',
+  daily_operations: {
+    default_execution_mode: 'paper_shadow',
+  },
 };
 
 const defaultLiveStatus = {
@@ -245,6 +248,9 @@ test('renders portfolio workspace navigation', async () => {
   expect(await screen.findByText('Overview page')).toBeTruthy();
   expect(screen.queryByText('Workspace toolbar')).toBeNull();
   expect(await screen.findByLabelText('Account Status')).toBeTruthy();
+  expect(
+    screen.getByRole('link', { name: 'Public home' }).getAttribute('href'),
+  ).toBe('/');
 
   const navOrder = Array.from(
     document.querySelectorAll('[data-testid^="sidebar-nav-"]'),
@@ -431,10 +437,12 @@ test('keeps the desktop toolbar controls in a single centered row', async () => 
   expect(toolbarRow?.className).toContain('items-center');
   expect(toolbarRow?.className).toContain('px-3');
 
-  const workspaceContext = await screen.findByLabelText('Current workspace');
-  expect(workspaceContext.className).toContain('lg:flex');
-  expect(within(workspaceContext).getByText('Portfolio')).toBeTruthy();
-  expect(within(workspaceContext).getByText('Overview')).toBeTruthy();
+  expect(screen.queryByLabelText('Current workspace')).toBeNull();
+  expect(await screen.findByLabelText('Mode: Paper / shadow')).toBeTruthy();
+  expect(await screen.findByLabelText(/Evidence: .* · Data: .*/i)).toBeTruthy();
+  const commandTrigger = await screen.findByTestId('workspace-command-trigger');
+  expect(commandTrigger.getAttribute('aria-haspopup')).toBe('dialog');
+  expect(commandTrigger.getAttribute('aria-expanded')).toBe('false');
 
   const accountStatus = await screen.findByLabelText('Account Status');
   expect(accountStatus.className).toContain('app-status-footer');
@@ -457,6 +465,27 @@ test('keeps the desktop toolbar controls in a single centered row', async () => 
   expect(languageButton.className).toContain('whitespace-nowrap');
   expect(languageButton.className).toContain('text-xs');
   expect(languageButton.textContent).toBe('English');
+});
+
+test('opens a keyboard-accessible route command menu', async () => {
+  renderShell();
+  const user = userEvent.setup();
+
+  await user.keyboard('{Control>}k{/Control}');
+  const dialog = await screen.findByRole('dialog', {
+    name: 'Go to workspace',
+  });
+  const search = within(dialog).getByRole('textbox', {
+    name: 'Search routes',
+  });
+  expect(document.activeElement).toBe(search);
+
+  await user.type(search, 'risk');
+  expect(within(dialog).getByRole('link', { name: 'Risk' })).toBeTruthy();
+  expect(within(dialog).queryByRole('link', { name: 'Portfolio' })).toBeNull();
+
+  await user.keyboard('{Escape}');
+  expect(screen.queryByRole('dialog', { name: 'Go to workspace' })).toBeNull();
 });
 
 test('surfaces compact persisted status in the desktop footer', async () => {
