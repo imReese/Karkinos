@@ -1327,6 +1327,27 @@ test('keeps setup and current results in one primary workspace with mobile tabs'
     setup!.compareDocumentPosition(results) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
 
+  for (const testId of [
+    'backtest-advanced-tools-disclosure',
+    'backtest-research-governance-disclosure',
+    'backtest-promotion-evidence-disclosure',
+    'backtest-research-archive-disclosure',
+  ]) {
+    expect(screen.getByTestId(testId).getAttribute('aria-expanded')).toBe(
+      'false',
+    );
+  }
+
+  fireEvent.click(screen.getByTestId('backtest-advanced-tools-disclosure'));
+  expect(
+    screen
+      .getByTestId('backtest-advanced-tools-disclosure')
+      .getAttribute('aria-expanded'),
+  ).toBe('true');
+  expect(
+    document.getElementById('backtest-advanced-tools')!.className,
+  ).not.toContain('hidden');
+
   fireEvent.click(within(tabs).getByRole('tab', { name: 'Current run' }));
   expect(results.className).not.toContain('hidden xl:block');
   expect(setup!.className).toContain('hidden xl:block');

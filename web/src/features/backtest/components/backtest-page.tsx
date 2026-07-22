@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import { useCopy } from '../../../app/copy';
@@ -556,6 +562,7 @@ export function BacktestPage() {
   const copy = useCopy();
   const labels = copy.backtest.page;
   const common = copy.common;
+  const { locale } = usePreferences();
   const runBacktest = useRunBacktestMutation();
   const signalPreview = useStrategySignalPreviewMutation();
   const riskPreview = useBacktestRiskPreviewMutation();
@@ -588,6 +595,10 @@ export function BacktestPage() {
   const [mobileWorkspaceView, setMobileWorkspaceView] = useState<
     'setup' | 'results'
   >('setup');
+  const [advancedToolsOpen, setAdvancedToolsOpen] = useState(false);
+  const [researchGovernanceOpen, setResearchGovernanceOpen] = useState(false);
+  const [promotionEvidenceOpen, setPromotionEvidenceOpen] = useState(false);
+  const [researchArchiveOpen, setResearchArchiveOpen] = useState(false);
   const [formError, setFormError] = useState('');
   const assetClassOptions = [
     { value: 'stock', label: common.assetClassStock },
@@ -611,6 +622,12 @@ export function BacktestPage() {
       strategyCatalog[0],
     [strategy, strategyCatalog],
   );
+  const selectedReadiness =
+    readiness.data?.rows.find(
+      (row) =>
+        row.strategy_id === selectedStrategy.strategy_id ||
+        row.strategy_id === selectedStrategy.name,
+    ) ?? null;
   const parameterSchema = useMemo(
     () => selectedStrategy.parameter_schema ?? [],
     [selectedStrategy],
@@ -755,7 +772,7 @@ export function BacktestPage() {
             id: 'strategy',
             label: labels.strategy,
             value: strategyDisplayName(selectedStrategy, labels.strategyNames),
-            detail: selectedStrategy.name,
+            detail: strategySourceDisplayName(selectedStrategy, labels),
           },
           {
             id: 'instrument',
@@ -767,7 +784,7 @@ export function BacktestPage() {
             id: 'parameters',
             label: labels.formKicker,
             value: parameterSchema.length,
-            detail: labels.formDetail,
+            detail: labels.runReadinessDatasetPending,
           },
           {
             id: 'latest-result',
@@ -778,6 +795,25 @@ export function BacktestPage() {
             detail: summary
               ? `${labels.totalCost}: ${formatCurrency(summary.cost)}`
               : labels.emptyCurrent,
+          },
+          {
+            id: 'promotion-readiness',
+            label: labels.promotionReadiness,
+            value: readiness.isLoading
+              ? copy.shell.checking
+              : selectedReadiness
+                ? formatPublicStatus(selectedReadiness.promotion_status, locale)
+                : labels.notDeclared,
+            detail: selectedReadiness
+              ? labels.promotionRequirementsCount(
+                  selectedReadiness.missing_requirements.length,
+                )
+              : labels.promotionEvidenceUnavailable,
+            tone: selectedReadiness
+              ? selectedReadiness.is_promotable
+                ? 'neutral'
+                : 'warning'
+              : 'neutral',
           },
         ]}
       />
@@ -1049,23 +1085,32 @@ export function BacktestPage() {
                   {runBacktest.isPending ? labels.running : labels.run}
                 </button>
               </form>
-              <ParameterSweepPanel
-                startDate={startDate}
-                endDate={endDate}
-                initialCash={initialCash}
-                strategy={strategy}
-                parameterSchema={parameterSchema}
-                parameterValues={parameterValues}
-                assets={buildSingleAsset(symbol, assetClass)}
-              />
-              <ParameterComparePanel
-                startDate={startDate}
-                endDate={endDate}
-                initialCash={initialCash}
-                strategy={strategy}
-                parameterSchema={parameterSchema}
-                assets={buildSingleAsset(symbol, assetClass)}
-              />
+              <BacktestResponsiveDisclosure
+                detail={labels.advancedToolsDetail}
+                id="backtest-advanced-tools"
+                open={advancedToolsOpen}
+                onToggle={() => setAdvancedToolsOpen((current) => !current)}
+                testId="backtest-advanced-tools-disclosure"
+                title={labels.advancedToolsTitle}
+              >
+                <ParameterSweepPanel
+                  startDate={startDate}
+                  endDate={endDate}
+                  initialCash={initialCash}
+                  strategy={strategy}
+                  parameterSchema={parameterSchema}
+                  parameterValues={parameterValues}
+                  assets={buildSingleAsset(symbol, assetClass)}
+                />
+                <ParameterComparePanel
+                  startDate={startDate}
+                  endDate={endDate}
+                  initialCash={initialCash}
+                  strategy={strategy}
+                  parameterSchema={parameterSchema}
+                  assets={buildSingleAsset(symbol, assetClass)}
+                />
+              </BacktestResponsiveDisclosure>
             </div>
           </section>
         </div>
@@ -1288,47 +1333,123 @@ export function BacktestPage() {
         </section>
       </div>
 
-      <AccountStrategyPanel
-        assignment={accountStrategy.data ?? null}
-        attribution={accountStrategyAttribution.data ?? null}
-        contribution={accountStrategyContribution.data ?? null}
-        instruments={portfolioInstruments.data?.positions ?? []}
-        scopedAssignments={accountStrategyAssignments.data ?? []}
-        targetSymbol={symbol}
-        selectedStrategy={selectedStrategy}
-        strategyCatalog={strategyCatalog}
-        loading={accountStrategy.isLoading}
-        error={accountStrategy.isError}
-        scopedAssignmentsLoading={accountStrategyAssignments.isLoading}
-        scopedAssignmentsError={accountStrategyAssignments.isError}
-        attributionLoading={accountStrategyAttribution.isLoading}
-        attributionError={accountStrategyAttribution.isError}
-        contributionLoading={accountStrategyContribution.isLoading}
-        contributionError={accountStrategyContribution.isError}
-        assigning={updateAccountStrategy.isPending}
-        assigningScoped={updateScopedAccountStrategy.isPending}
-        assignError={updateAccountStrategy.isError}
-        assignScopedError={updateScopedAccountStrategy.isError}
-        onAssignSelected={assignSelectedStrategy}
-        onAssignSelectedToSymbol={assignSelectedStrategyToSymbol}
-      />
+      <BacktestResponsiveDisclosure
+        detail={labels.researchGovernanceDetail}
+        id="backtest-research-governance"
+        open={researchGovernanceOpen}
+        onToggle={() => setResearchGovernanceOpen((current) => !current)}
+        testId="backtest-research-governance-disclosure"
+        title={labels.researchGovernanceTitle}
+      >
+        <AccountStrategyPanel
+          assignment={accountStrategy.data ?? null}
+          attribution={accountStrategyAttribution.data ?? null}
+          contribution={accountStrategyContribution.data ?? null}
+          instruments={portfolioInstruments.data?.positions ?? []}
+          scopedAssignments={accountStrategyAssignments.data ?? []}
+          targetSymbol={symbol}
+          selectedStrategy={selectedStrategy}
+          strategyCatalog={strategyCatalog}
+          loading={accountStrategy.isLoading}
+          error={accountStrategy.isError}
+          scopedAssignmentsLoading={accountStrategyAssignments.isLoading}
+          scopedAssignmentsError={accountStrategyAssignments.isError}
+          attributionLoading={accountStrategyAttribution.isLoading}
+          attributionError={accountStrategyAttribution.isError}
+          contributionLoading={accountStrategyContribution.isLoading}
+          contributionError={accountStrategyContribution.isError}
+          assigning={updateAccountStrategy.isPending}
+          assigningScoped={updateScopedAccountStrategy.isPending}
+          assignError={updateAccountStrategy.isError}
+          assignScopedError={updateScopedAccountStrategy.isError}
+          onAssignSelected={assignSelectedStrategy}
+          onAssignSelectedToSymbol={assignSelectedStrategyToSymbol}
+        />
 
-      <StrategyLearningReviewPanel />
+        <StrategyLearningReviewPanel />
+      </BacktestResponsiveDisclosure>
 
-      <StrategyEvidenceGatePanel
-        strategyCatalog={strategyCatalog}
-        validation={validation.data ?? null}
-        readiness={readiness.data ?? null}
-        loading={validation.isLoading || readiness.isLoading}
-        error={validation.isError || readiness.isError}
-      />
+      <BacktestResponsiveDisclosure
+        detail={labels.promotionEvidenceDetail}
+        id="backtest-promotion-evidence"
+        open={promotionEvidenceOpen}
+        onToggle={() => setPromotionEvidenceOpen((current) => !current)}
+        testId="backtest-promotion-evidence-disclosure"
+        title={labels.promotionEvidenceTitle}
+      >
+        <StrategyEvidenceGatePanel
+          strategyCatalog={strategyCatalog}
+          validation={validation.data ?? null}
+          readiness={readiness.data ?? null}
+          loading={validation.isLoading || readiness.isLoading}
+          error={validation.isError || readiness.isError}
+        />
+      </BacktestResponsiveDisclosure>
 
-      <ResearchTaskPanel
-        backtestResultId={latestReport?.id ?? null}
-        strategyId={accountStrategy.data?.strategy_id ?? null}
-      />
+      <BacktestResponsiveDisclosure
+        detail={labels.researchArchiveDetail}
+        id="backtest-research-archive"
+        open={researchArchiveOpen}
+        onToggle={() => setResearchArchiveOpen((current) => !current)}
+        testId="backtest-research-archive-disclosure"
+        title={labels.researchArchiveTitle}
+      >
+        <ResearchTaskPanel
+          backtestResultId={latestReport?.id ?? null}
+          strategyId={accountStrategy.data?.strategy_id ?? null}
+        />
 
-      <BacktestReportView />
+        <BacktestReportView />
+      </BacktestResponsiveDisclosure>
+    </section>
+  );
+}
+
+function BacktestResponsiveDisclosure({
+  detail,
+  id,
+  open,
+  onToggle,
+  testId,
+  title,
+  children,
+}: {
+  detail: string;
+  id: string;
+  open: boolean;
+  onToggle: () => void;
+  testId: string;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="min-w-0">
+      <button
+        aria-controls={id}
+        aria-expanded={open}
+        className="flex min-h-11 w-full items-start justify-between gap-4 border-y border-[var(--app-divider)] py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
+        data-testid={testId}
+        onClick={onToggle}
+        type="button"
+      >
+        <span className="min-w-0">
+          <span className="block text-sm font-semibold text-[var(--app-text)]">
+            {title}
+          </span>
+          <span className="mt-0.5 block text-xs leading-5 text-[var(--app-text-secondary)]">
+            {detail}
+          </span>
+        </span>
+        <span
+          aria-hidden="true"
+          className="shrink-0 text-sm text-[var(--app-text-tertiary)]"
+        >
+          {open ? '−' : '+'}
+        </span>
+      </button>
+      <div className={`${open ? '' : 'hidden'} min-w-0 space-y-5`} id={id}>
+        {children}
+      </div>
     </section>
   );
 }
@@ -3092,8 +3213,8 @@ function StrategyEvidenceGatePanel({
   );
 
   return (
-    <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]">
-      <div className="app-terminal-inner min-w-0 rounded-[27px] p-4 sm:p-5">
+    <section className="app-workbench-section min-w-0 overflow-hidden">
+      <div className="min-w-0 p-4 sm:p-5">
         <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <div className="app-product-mark">{labels.evidenceGate}</div>
