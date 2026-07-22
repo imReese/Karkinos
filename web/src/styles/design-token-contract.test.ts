@@ -8,7 +8,6 @@ const CSS_PATH = resolve(SRC_ROOT, 'styles/globals.css');
 const CSS = readFileSync(CSS_PATH, 'utf8');
 
 const DEPRECATED_TOKEN_BUDGETS = {
-  '--app-base': 2,
   '--app-mantle': 14,
   '--app-panel-strong': 20,
   '--app-surface-0': 180,

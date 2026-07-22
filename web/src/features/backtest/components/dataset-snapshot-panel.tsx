@@ -1,6 +1,7 @@
-import { Database, ShieldCheck } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 
 import { useCopy } from '../../../app/copy';
+import { EvidenceState } from '../../../app/components/workbench';
 import { formatAssetClassLabel } from '../../../shared/asset-class';
 import { formatTimestamp } from '../../../shared/format';
 import {
@@ -22,8 +23,8 @@ function snapshotFromReport(report: BacktestReport): DatasetSnapshot | null {
 
 function qualityTone(status: string) {
   return status === 'ok'
-    ? 'text-[#a6e3a1]'
-    : 'text-[color-mix(in_srgb,#f9e2af_90%,white)]';
+    ? 'text-[var(--app-success-text)]'
+    : 'text-[var(--app-warning-text)]';
 }
 
 function datasetStatusNeedsReview(status?: string | null) {
@@ -49,25 +50,34 @@ export function DatasetSnapshotPanel({ report }: { report: BacktestReport }) {
   const hasUnconfirmedData = snapshot.symbol_universe.some((row) =>
     datasetStatusNeedsReview(row.data_quality?.status),
   );
+  const datasetIssue = firstIssue
+    ? `${firstIssue.symbol ? `${firstIssue.symbol}: ` : ''}${
+        firstIssue.message ?? firstIssue.code
+      }`
+    : hasUnconfirmedData
+      ? labels.unconfirmedDataNotice
+      : null;
 
   return (
-    <section className="app-panel rounded-2xl p-4 sm:p-5">
+    <section
+      data-backtest-report-section="dataset-snapshot"
+      className="app-workbench-section min-w-0 border-t border-[var(--app-divider)] pt-4"
+    >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="app-kicker text-xs uppercase tracking-[0.16em]">
             {labels.kicker}
           </div>
-          <h3 className="app-card-title mt-1.5">{labels.title}</h3>
-          <p className="app-muted mt-2 max-w-3xl text-sm leading-6">
+          <h3 className="mt-1 text-base font-semibold text-[var(--app-text)]">
+            {labels.title}
+          </h3>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-[var(--app-text-secondary)]">
             {labels.subtitle}
           </p>
         </div>
-        <span className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_30%,transparent)] p-2 text-[var(--app-muted)]">
-          <Database className="h-4 w-4" aria-hidden="true" />
-        </span>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="mt-4 grid grid-cols-2 gap-2 xl:grid-cols-5">
         <SnapshotStat
           label={labels.snapshotId}
           value={snapshot.snapshot_id}
@@ -92,7 +102,7 @@ export function DatasetSnapshotPanel({ report }: { report: BacktestReport }) {
         />
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
         <BoundaryChip
           label={labels.cacheStore}
           value={boolLabel(snapshot.cache.store_available, labels)}
@@ -107,22 +117,13 @@ export function DatasetSnapshotPanel({ report }: { report: BacktestReport }) {
         />
       </div>
 
-      {firstIssue ? (
-        <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,#f9e2af_35%,var(--app-border))] bg-[color-mix(in_srgb,#f9e2af_8%,transparent)] px-4 py-3 text-sm text-[color-mix(in_srgb,#f9e2af_88%,white)]">
-          {firstIssue.symbol ? `${firstIssue.symbol}: ` : ''}
-          {firstIssue.message ?? firstIssue.code}
-        </div>
+      {datasetIssue ? (
+        <EvidenceState kind="partial" title={datasetIssue} className="mt-4" />
       ) : null}
 
-      {hasUnconfirmedData ? (
-        <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,#f9e2af_35%,var(--app-border))] bg-[color-mix(in_srgb,#f9e2af_8%,transparent)] px-4 py-3 text-sm text-[color-mix(in_srgb,#f9e2af_88%,white)]">
-          {labels.unconfirmedDataNotice}
-        </div>
-      ) : null}
-
-      <div className="mt-4 overflow-x-auto rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)]">
+      <div className="mt-4 max-w-full overflow-x-auto overscroll-x-contain border-y border-[var(--app-divider)]">
         <table className="min-w-[860px] w-full text-left text-sm">
-          <thead className="bg-[color-mix(in_srgb,var(--app-surface-0)_35%,transparent)] text-xs uppercase tracking-[0.12em] text-[var(--app-muted)]">
+          <thead className="sticky top-0 z-10 bg-[var(--app-surface-raised)] text-xs uppercase tracking-[0.12em] text-[var(--app-text-secondary)] shadow-[var(--app-shadow-sticky)]">
             <tr>
               <th className="px-4 py-3 font-semibold">{labels.symbol}</th>
               <th className="px-4 py-3 font-semibold">{labels.assetClass}</th>
@@ -140,7 +141,7 @@ export function DatasetSnapshotPanel({ report }: { report: BacktestReport }) {
               return (
                 <tr
                   key={`${row.symbol}-${row.frequency ?? ''}`}
-                  className="border-t border-[color-mix(in_srgb,var(--app-border)_18%,transparent)]"
+                  className="border-t border-[var(--app-divider)]"
                 >
                   <td className="px-4 py-3 font-semibold">{row.symbol}</td>
                   <td className="px-4 py-3">
@@ -189,7 +190,7 @@ function SnapshotStat({
   valueClassName?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] p-3">
+    <div className="min-w-0 border-l border-[var(--app-divider)] py-1 pl-3">
       <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
         {label}
       </div>
@@ -205,11 +206,13 @@ function SnapshotStat({
 
 function BoundaryChip({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2">
-      <span className="app-muted min-w-0 truncate text-xs">{label}</span>
+    <div className="flex min-w-0 items-center justify-between gap-3 border-t border-[var(--app-divider)] py-2">
+      <span className="min-w-0 truncate text-xs text-[var(--app-text-secondary)]">
+        {label}
+      </span>
       <span className="inline-flex items-center gap-1 text-sm font-semibold">
         <ShieldCheck
-          className="h-3.5 w-3.5 text-[#a6e3a1]"
+          className="h-3.5 w-3.5 text-[var(--app-success-indicator)]"
           aria-hidden="true"
         />
         {value}

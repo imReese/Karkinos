@@ -28,6 +28,19 @@ const RESEARCH_TASK = source(
 const STRATEGY_RESEARCH = source(
   'features/ai-research/components/strategy-hypothesis-panel.tsx',
 );
+const BACKTEST_REPORT = source(
+  'features/backtest/components/backtest-report-view.tsx',
+);
+const BACKTEST_METRICS = source(
+  'features/backtest/components/metrics-grid.tsx',
+);
+const BACKTEST_REPORT_SECTIONS = [
+  source('features/backtest/components/validation-evidence-panel.tsx'),
+  source('features/backtest/components/strategy-metadata-snapshot-panel.tsx'),
+  source('features/backtest/components/dataset-snapshot-panel.tsx'),
+  source('features/backtest/components/equity-drawdown-chart.tsx'),
+  source('features/backtest/components/fills-table.tsx'),
+];
 const CSS = source('styles/globals.css');
 
 describe('remaining route workbench contract', () => {
@@ -167,5 +180,34 @@ describe('remaining route workbench contract', () => {
       expect(form).not.toContain('rounded-2xl');
       expect(form).toContain('rounded-[var(--app-radius-control)]');
     }
+  });
+
+  it('treats saved backtests as flat reproducible evidence instead of metric cards', () => {
+    expect(BACKTEST_REPORT).toContain(
+      'data-backtest-report-workspace="saved-evidence"',
+    );
+    expect(BACKTEST_REPORT).toContain('<FilterBar');
+    expect(BACKTEST_REPORT).toContain('<MetricStrip');
+    expect(BACKTEST_REPORT).toContain('<EvidenceState');
+    expect(BACKTEST_METRICS.match(/<MetricStrip\s/g)).toHaveLength(2);
+
+    for (const reportSurface of [
+      BACKTEST_REPORT,
+      BACKTEST_METRICS,
+      ...BACKTEST_REPORT_SECTIONS,
+    ]) {
+      expect(reportSurface).not.toContain('app-panel');
+      expect(reportSurface).not.toContain('rounded-2xl');
+      expect(reportSurface).not.toMatch(/#[0-9a-fA-F]{3,8}(?![0-9a-zA-Z_-])/);
+      expect(reportSurface).not.toContain('backdrop-blur');
+      expect(reportSurface).not.toMatch(/shadow-\[0_/);
+    }
+
+    expect(BACKTEST_METRICS).toContain("tone: 'pnl-negative'");
+    expect(BACKTEST_METRICS).not.toContain("tone: 'danger'");
+    expect(BACKTEST_REPORT_SECTIONS.join('\n')).toContain('<DataTable');
+    expect(BACKTEST_REPORT_SECTIONS.join('\n')).toContain(
+      'var(--app-chart-grid)',
+    );
   });
 });

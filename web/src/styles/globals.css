@@ -107,7 +107,6 @@
    * Legacy aliases. @deprecated consumer budgets are enforced in
    * design-token-contract.test.ts and must only decrease through Phase 4.
    */
-  --app-base: var(--app-bg);
   --app-mantle: var(--app-surface-raised);
   --app-panel-strong: var(--app-surface-raised);
   --app-surface-0: var(--app-surface);

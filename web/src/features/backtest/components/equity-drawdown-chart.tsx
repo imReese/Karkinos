@@ -12,6 +12,7 @@ import {
 } from 'recharts';
 
 import { useCopy } from '../../../app/copy';
+import { EvidenceState } from '../../../app/components/workbench';
 import {
   formatCompactNumber,
   formatCurrency,
@@ -105,11 +106,11 @@ function EquityTooltip({
   }
 
   return (
-    <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_66%,transparent)] px-3 py-2 text-xs shadow-[0_14px_44px_rgba(17,17,27,0.22)] backdrop-blur-md">
+    <div className="rounded-[var(--app-radius-overlay)] border border-[var(--app-border)] bg-[var(--app-surface-overlay)] px-3 py-2 text-xs shadow-[var(--app-shadow-overlay)]">
       <div className="font-medium">{formatTimestamp(point.timestamp)}</div>
       <div className="mt-2 grid gap-1 tabular-nums">
         <div>{formatCurrency(point.equity)}</div>
-        <div className="text-[var(--app-danger)]">
+        <div className="text-[var(--app-pnl-negative)]">
           {labels.drawdown} {formatPercent(point.drawdown)}
         </div>
       </div>
@@ -131,21 +132,27 @@ export function EquityDrawdownChart({
 
   if (data.length === 0) {
     return (
-      <section className="app-panel rounded-2xl p-5">
-        <div className="app-card-title">{labels.title}</div>
-        <div className="app-muted mt-4 text-sm">{labels.empty}</div>
-      </section>
+      <EvidenceState
+        kind="empty"
+        title={labels.title}
+        description={labels.empty}
+      />
     );
   }
 
   return (
-    <section className="app-panel rounded-2xl p-4 sm:p-5">
+    <section
+      data-backtest-report-section="equity-drawdown"
+      className="app-workbench-section min-w-0 border-t border-[var(--app-divider)] pt-4"
+    >
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="app-kicker text-xs uppercase tracking-[0.16em]">
             {labels.kicker}
           </div>
-          <div className="app-card-title mt-1.5">{labels.title}</div>
+          <h3 className="mt-1 text-base font-semibold text-[var(--app-text)]">
+            {labels.title}
+          </h3>
         </div>
         <div className="app-muted text-xs tabular-nums">
           {labels.points(data.length)}
@@ -153,7 +160,7 @@ export function EquityDrawdownChart({
       </div>
 
       <div className="mt-5 grid gap-4">
-        <div className="h-[320px] min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)]">
+        <div className="h-[320px] min-w-0 border-y border-[var(--app-divider)] bg-transparent">
           <ResponsiveContainer
             width="100%"
             height="100%"
@@ -165,10 +172,7 @@ export function EquityDrawdownChart({
               data={data}
               margin={{ top: 18, right: 18, bottom: 8, left: 8 }}
             >
-              <CartesianGrid
-                stroke="color-mix(in srgb, var(--app-border) 28%, transparent)"
-                vertical={false}
-              />
+              <CartesianGrid stroke="var(--app-chart-grid)" vertical={false} />
               <XAxis
                 dataKey="timestampMs"
                 type="number"
@@ -177,7 +181,7 @@ export function EquityDrawdownChart({
                 tickLine={false}
                 axisLine={false}
                 minTickGap={30}
-                stroke="var(--app-muted)"
+                stroke="var(--app-chart-label)"
                 fontSize={12}
               />
               <YAxis
@@ -185,7 +189,7 @@ export function EquityDrawdownChart({
                 tickLine={false}
                 axisLine={false}
                 width={56}
-                stroke="var(--app-muted)"
+                stroke="var(--app-chart-label)"
                 fontSize={12}
               />
               <Tooltip content={<EquityTooltip />} />
@@ -193,13 +197,13 @@ export function EquityDrawdownChart({
                 <ReferenceDot
                   fill={
                     marker.side === 'buy'
-                      ? 'var(--app-success)'
-                      : 'var(--app-danger)'
+                      ? 'var(--app-chart-buy)'
+                      : 'var(--app-chart-sell)'
                   }
                   ifOverflow="extendDomain"
                   key={`${marker.fill_id ?? marker.order_id ?? marker.symbol}-${index}`}
                   r={5}
-                  stroke="var(--app-base)"
+                  stroke="var(--app-bg)"
                   strokeWidth={2}
                   x={marker.timestampMs}
                   y={marker.equity}
@@ -208,7 +212,7 @@ export function EquityDrawdownChart({
               <Line
                 type="monotone"
                 dataKey="equity"
-                stroke="#89b4fa"
+                stroke="var(--app-accent-secondary)"
                 strokeWidth={2}
                 dot={false}
                 activeDot={{ r: 4 }}
@@ -218,13 +222,13 @@ export function EquityDrawdownChart({
         </div>
 
         {fillMarkers.length > 0 ? (
-          <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+          <div className="border-t border-[var(--app-divider)] pt-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
                   {labels.markersKicker}
                 </div>
-                <div className="mt-1 text-sm font-black text-[var(--app-text)]">
+                <div className="mt-1 text-sm font-semibold text-[var(--app-text)]">
                   {labels.markersTitle}
                 </div>
               </div>
@@ -235,15 +239,15 @@ export function EquityDrawdownChart({
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               {fillMarkers.slice(0, 6).map((marker, index) => (
                 <div
-                  className="min-w-0 rounded-2xl bg-[color-mix(in_srgb,var(--app-mantle)_34%,transparent)] px-3 py-2 text-xs"
+                  className="min-w-0 border-l border-[var(--app-divider)] py-1 pl-3 text-xs"
                   key={`${marker.fill_id ?? marker.order_id ?? marker.symbol}-${index}-summary`}
                 >
                   <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
                     <span
-                      className={`font-black ${
+                      className={`font-semibold ${
                         marker.side === 'buy'
-                          ? 'text-[var(--app-success)]'
-                          : 'text-[var(--app-danger)]'
+                          ? 'text-[var(--app-chart-buy)]'
+                          : 'text-[var(--app-chart-sell)]'
                       }`}
                     >
                       {marker.sideLabel} · {marker.symbol}
@@ -265,7 +269,7 @@ export function EquityDrawdownChart({
           </div>
         ) : null}
 
-        <div className="h-[150px] min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-danger-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)]">
+        <div className="h-[150px] min-w-0 border-y border-[var(--app-divider)] bg-transparent">
           <ResponsiveContainer
             width="100%"
             height="100%"
@@ -285,14 +289,19 @@ export function EquityDrawdownChart({
                   y1="0"
                   y2="1"
                 >
-                  <stop offset="0%" stopColor="#f38ba8" stopOpacity={0.42} />
-                  <stop offset="100%" stopColor="#f38ba8" stopOpacity={0.04} />
+                  <stop
+                    offset="0%"
+                    stopColor="var(--app-pnl-negative)"
+                    stopOpacity={0.34}
+                  />
+                  <stop
+                    offset="100%"
+                    stopColor="var(--app-pnl-negative)"
+                    stopOpacity={0.03}
+                  />
                 </linearGradient>
               </defs>
-              <CartesianGrid
-                stroke="color-mix(in srgb, var(--app-border) 22%, transparent)"
-                vertical={false}
-              />
+              <CartesianGrid stroke="var(--app-chart-grid)" vertical={false} />
               <XAxis
                 dataKey="timestampMs"
                 type="number"
@@ -301,7 +310,7 @@ export function EquityDrawdownChart({
                 tickLine={false}
                 axisLine={false}
                 minTickGap={30}
-                stroke="var(--app-muted)"
+                stroke="var(--app-chart-label)"
                 fontSize={12}
               />
               <YAxis
@@ -309,14 +318,14 @@ export function EquityDrawdownChart({
                 tickLine={false}
                 axisLine={false}
                 width={56}
-                stroke="var(--app-muted)"
+                stroke="var(--app-chart-label)"
                 fontSize={12}
               />
               <Tooltip content={<EquityTooltip />} />
               <Area
                 type="monotone"
                 dataKey="drawdown"
-                stroke="#f38ba8"
+                stroke="var(--app-pnl-negative)"
                 strokeWidth={1.5}
                 fill="url(#backtestDrawdown)"
                 dot={false}
