@@ -459,6 +459,52 @@ export function PositionsTable({
       },
     },
   ];
+  const priorityColumnOrder = showFullColumns
+    ? [
+        'symbol',
+        'market-value',
+        'weight',
+        'today-change',
+        'unrealized',
+        'realized',
+        'quote-state',
+        'asset-class',
+        'quantity',
+        'latest-price',
+        'avg-cost',
+        'broker-cost',
+        'availability',
+        'actions',
+      ]
+    : showHistoryColumns
+      ? [
+          'symbol',
+          'market-value',
+          'today-change',
+          'unrealized',
+          'realized',
+          'quote-state',
+          'asset-class',
+          'quantity',
+          'latest-price',
+          'actions',
+        ]
+      : [
+          'symbol',
+          'market-value',
+          'today-change',
+          'unrealized',
+          'asset-class',
+          'quantity',
+          'latest-price',
+          'quote-state',
+          'actions',
+        ];
+  const orderedColumns = [...columns].sort(
+    (left, right) =>
+      priorityColumnOrder.indexOf(left.id ?? '') -
+      priorityColumnOrder.indexOf(right.id ?? ''),
+  );
 
   return (
     <div className="min-w-0 space-y-2">
@@ -472,7 +518,7 @@ export function PositionsTable({
       <DataTable
         className="app-positions-table"
         data={positions}
-        columns={columns}
+        columns={orderedColumns}
         caption={labels.symbol}
         emptyState={copy.portfolio.positionsEmpty}
         getRowId={(position) => position.symbol}

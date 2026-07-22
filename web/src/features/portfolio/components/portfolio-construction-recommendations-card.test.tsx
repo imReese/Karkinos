@@ -60,12 +60,18 @@ test('renders blocked construction recommendations as review evidence in Chinese
   expect(screen.getByText('组合构建建议')).toBeTruthy();
   expect(screen.getByText('贵州茅台')).toBeTruthy();
   expect(screen.getByText('600519')).toBeTruthy();
-  expect(screen.getByText('阻断')).toBeTruthy();
-  expect(screen.getByText('实际 80.00%')).toBeTruthy();
-  expect(screen.getByText('目标 50.00%')).toBeTruthy();
-  expect(screen.getByText('漂移 -30.00%')).toBeTruthy();
-  expect(screen.getByText('账户事实：阻断')).toBeTruthy();
-  expect(screen.getByText('风控：阻断')).toBeTruthy();
+  const recommendation = screen.getByTestId(
+    'construction-recommendation-600519',
+  );
+  expect(within(recommendation).getAllByText('阻断')).toHaveLength(3);
+  expect(within(recommendation).getByText('实际')).toBeTruthy();
+  expect(within(recommendation).getByText('80.00%')).toBeTruthy();
+  expect(within(recommendation).getByText('目标')).toBeTruthy();
+  expect(within(recommendation).getByText('50.00%')).toBeTruthy();
+  expect(within(recommendation).getByText('漂移')).toBeTruthy();
+  expect(within(recommendation).getByText('-30.00%')).toBeTruthy();
+  expect(within(recommendation).getByText('账户事实')).toBeTruthy();
+  expect(within(recommendation).getByText('风控')).toBeTruthy();
   expect(screen.getByText('导入并对账券商证据')).toBeTruthy();
   expect(screen.getByText('先解决账户事实再再平衡')).toBeTruthy();
   expect(screen.getByText('复核被风控阻断的原因')).toBeTruthy();
@@ -98,9 +104,11 @@ test('marks passed construction recommendations as manual-review candidates', ()
 
   const card = screen.getByTestId('construction-recommendation-510300');
   expect(within(card).getByText('可进入人工复核')).toBeTruthy();
-  expect(within(card).getByText('账户事实：通过')).toBeTruthy();
-  expect(within(card).getByText('风控：通过')).toBeTruthy();
-  expect(within(card).getByText('目标 30.00%')).toBeTruthy();
+  expect(within(card).getByText('账户事实')).toBeTruthy();
+  expect(within(card).getByText('风控')).toBeTruthy();
+  expect(within(card).getAllByText('通过')).toHaveLength(2);
+  expect(within(card).getByText('目标')).toBeTruthy();
+  expect(within(card).getByText('30.00%')).toBeTruthy();
   expect(screen.queryByText('actionable')).toBeNull();
   expect(screen.queryByText('passed')).toBeNull();
 });

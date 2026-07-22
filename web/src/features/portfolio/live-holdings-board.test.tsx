@@ -138,6 +138,12 @@ test('groups summary values with their labels in the asset cards', () => {
     within(stockSinceBuy).getByText(copy.portfolio.liveBoard.sinceBuyReturn),
   );
   expect(within(stockSinceBuy).getByText('¥300.00'));
+  expect(stockSummary.className).toContain('grid-cols-2');
+  expect(stockSummary.className).toContain('minmax(84px,1fr)');
+  expect(stockSummary.firstElementChild?.className).toContain('col-span-2');
+  expect(screen.getByTestId('live-holdings-board').className).toContain(
+    'overflow-x-auto',
+  );
 });
 
 test('renders localized holdings quote board in chinese', () => {

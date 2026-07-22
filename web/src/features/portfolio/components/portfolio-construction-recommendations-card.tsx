@@ -1,4 +1,10 @@
 import { usePreferences } from '../../../app/preferences';
+import {
+  EvidenceState,
+  MetricStrip,
+  StatusBadge,
+  type StatusTone,
+} from '../../../app/components/workbench';
 import { formatAssetClassLabel } from '../../../shared/asset-class';
 import { formatPercent } from '../../../shared/format';
 import {
@@ -61,22 +67,24 @@ function percent(value: number) {
 
 function toneClass(recommendation: PortfolioConstructionRecommendation) {
   if (recommendation.actionable) {
-    return 'border-[color-mix(in_srgb,var(--app-success)_38%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_8%,transparent)]';
+    return 'border-l-[var(--app-success-indicator)]';
   }
   if (recommendation.status === 'degraded') {
-    return 'border-[color-mix(in_srgb,var(--app-warning)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_8%,transparent)]';
+    return 'border-l-[var(--app-warning-indicator)]';
   }
-  return 'border-[color-mix(in_srgb,var(--app-danger)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-danger)_7%,transparent)]';
+  return 'border-l-[var(--app-danger-indicator)]';
 }
 
-function badgeClass(recommendation: PortfolioConstructionRecommendation) {
+function badgeClass(
+  recommendation: PortfolioConstructionRecommendation,
+): StatusTone {
   if (recommendation.actionable) {
-    return 'border-[color-mix(in_srgb,var(--app-success)_38%,transparent)] text-[var(--app-success)]';
+    return 'success';
   }
   if (recommendation.status === 'degraded') {
-    return 'border-[color-mix(in_srgb,var(--app-warning)_42%,transparent)] text-[var(--app-warning)]';
+    return 'warning';
   }
-  return 'border-[color-mix(in_srgb,var(--app-danger)_34%,transparent)] text-[var(--app-danger)]';
+  return 'danger';
 }
 
 function displayGateStatus(status: string, locale: 'en' | 'zh') {
@@ -99,57 +107,61 @@ export function PortfolioConstructionRecommendationsCard({
 
   if (isLoading) {
     return (
-      <div className="app-panel rounded-2xl p-4 text-sm app-muted sm:p-5">
-        {locale === 'zh'
-          ? '正在加载组合构建建议。'
-          : 'Loading construction recommendations.'}
-      </div>
+      <EvidenceState
+        kind="loading"
+        title={
+          locale === 'zh'
+            ? '正在加载组合构建建议。'
+            : 'Loading construction recommendations.'
+        }
+      />
     );
   }
 
   if (isError) {
     return (
-      <div className="app-panel rounded-2xl p-4 sm:p-5">
-        <div className="font-semibold text-[var(--app-danger)]">
-          {locale === 'zh'
+      <EvidenceState
+        kind="error"
+        title={
+          locale === 'zh'
             ? '组合构建建议加载失败。'
-            : 'Failed to load construction recommendations.'}
-        </div>
-        {onRetry ? (
-          <button
-            type="button"
-            className="mt-3 rounded-full border border-[var(--app-border)] px-3 py-1.5 text-xs font-semibold"
-            onClick={onRetry}
-          >
-            {locale === 'zh' ? '重试' : 'Retry'}
-          </button>
-        ) : null}
-      </div>
+            : 'Failed to load construction recommendations.'
+        }
+        action={
+          onRetry ? (
+            <button
+              type="button"
+              className="app-button-secondary min-h-8 rounded-[var(--app-radius-control)] px-3 text-xs font-semibold"
+              onClick={onRetry}
+            >
+              {locale === 'zh' ? '重试' : 'Retry'}
+            </button>
+          ) : undefined
+        }
+      />
     );
   }
 
   if (recommendations.length === 0) {
-    return (
-      <div className="app-panel rounded-2xl p-4 text-sm app-muted sm:p-5">
-        {labels.empty}
-      </div>
-    );
+    return <EvidenceState kind="empty" title={labels.empty} />;
   }
 
   return (
-    <div className="app-panel rounded-2xl p-4 sm:p-5">
-      <div className="mb-4 space-y-1">
-        <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+    <section className="min-w-0">
+      <div className="mb-3 space-y-1">
+        <h2 className="text-sm font-semibold text-[var(--app-text)]">
           {labels.title}
-        </div>
-        <p className="text-xs leading-relaxed app-muted">{labels.subtitle}</p>
+        </h2>
+        <p className="text-xs leading-5 text-[var(--app-text-secondary)]">
+          {labels.subtitle}
+        </p>
       </div>
-      <div className="space-y-3">
+      <div className="divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]">
         {recommendations.map((recommendation) => (
           <article
             key={`${recommendation.symbol}-${recommendation.source_action_task_id ?? 'none'}`}
             data-testid={`construction-recommendation-${recommendation.symbol}`}
-            className={`rounded-2xl border p-3 ${toneClass(recommendation)}`}
+            className={`border-l-2 px-3 py-3 ${toneClass(recommendation)}`}
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
@@ -182,82 +194,100 @@ export function PortfolioConstructionRecommendationsCard({
                   </span>
                 </div>
               </div>
-              <span
-                className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${badgeClass(
-                  recommendation,
-                )}`}
-              >
+              <StatusBadge tone={badgeClass(recommendation)}>
                 {recommendation.actionable
                   ? labels.actionable
                   : formatPublicStatus(recommendation.status, locale)}
-              </span>
+              </StatusBadge>
             </div>
 
-            <div className="mt-4 grid grid-cols-1 gap-2 text-xs sm:grid-cols-3">
-              <Metric
-                label={labels.actual}
-                value={percent(recommendation.actual_weight)}
-              />
-              <Metric
-                label={labels.target}
-                value={percent(recommendation.target_weight)}
-              />
-              <Metric
-                label={labels.drift}
-                value={percent(recommendation.drift)}
-              />
-            </div>
+            <MetricStrip
+              ariaLabel={`${recommendation.name} ${labels.title}`}
+              className="mt-3"
+              items={[
+                {
+                  id: 'actual',
+                  label: labels.actual,
+                  value: percent(recommendation.actual_weight),
+                },
+                {
+                  id: 'target',
+                  label: labels.target,
+                  value: percent(recommendation.target_weight),
+                },
+                {
+                  id: 'drift',
+                  label: labels.drift,
+                  value: percent(recommendation.drift),
+                },
+              ]}
+            />
 
-            <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
-              <div className="rounded-xl border border-[var(--app-border)] px-3 py-2">
-                {`${labels.accountTruth}：${displayGateStatus(
-                  recommendation.account_truth_gate_status,
-                  locale,
-                )}`}
+            <dl className="mt-3 grid gap-2 border-t border-[var(--app-divider)] pt-2 text-xs sm:grid-cols-2">
+              <div className="flex min-w-0 items-center justify-between gap-2">
+                <dt className="text-[var(--app-text-secondary)]">
+                  {labels.accountTruth}
+                </dt>
+                <dd>
+                  <StatusBadge
+                    tone={
+                      recommendation.account_truth_gate_status === 'passed'
+                        ? 'success'
+                        : recommendation.account_truth_gate_status ===
+                            'degraded'
+                          ? 'warning'
+                          : 'danger'
+                    }
+                  >
+                    {displayGateStatus(
+                      recommendation.account_truth_gate_status,
+                      locale,
+                    )}
+                  </StatusBadge>
+                </dd>
               </div>
-              <div className="rounded-xl border border-[var(--app-border)] px-3 py-2">
-                {`${labels.risk}：${displayGateStatus(
-                  recommendation.risk_gate_status,
-                  locale,
-                )}`}
+              <div className="flex min-w-0 items-center justify-between gap-2">
+                <dt className="text-[var(--app-text-secondary)]">
+                  {labels.risk}
+                </dt>
+                <dd>
+                  <StatusBadge
+                    tone={
+                      recommendation.risk_gate_status === 'passed'
+                        ? 'success'
+                        : recommendation.risk_gate_status === 'degraded'
+                          ? 'warning'
+                          : 'danger'
+                    }
+                  >
+                    {displayGateStatus(recommendation.risk_gate_status, locale)}
+                  </StatusBadge>
+                </dd>
               </div>
-            </div>
+            </dl>
 
             <p className="mt-3 text-xs leading-relaxed text-[var(--app-text)]">
               {recommendation.rationale}
             </p>
 
             {recommendation.required_actions.length > 0 ? (
-              <div className="mt-3">
+              <div className="mt-3 border-t border-[var(--app-divider)] pt-2">
                 <div className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] app-muted">
                   {labels.nextActions}
                 </div>
-                <div className="mt-2 flex flex-wrap gap-2">
+                <ul className="mt-1.5 grid gap-1 text-xs leading-5 text-[var(--app-text-secondary)]">
                   {recommendation.required_actions.map((action) => (
-                    <span
-                      key={action}
-                      className="rounded-full border border-[var(--app-border)] px-2.5 py-1 text-xs app-muted"
-                    >
+                    <li key={action} className="flex gap-2">
+                      <span aria-hidden="true">·</span>
                       {formatPublicCode(action, locale)}
-                    </span>
+                    </li>
                   ))}
-                </div>
+                </ul>
               </div>
             ) : null}
           </article>
         ))}
       </div>
-    </div>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-[var(--app-border)] px-3 py-2">
-      <div className="app-muted">{label}</div>
-      <div className="mt-1 font-mono text-sm font-semibold tabular-nums text-[var(--app-text)]">
-        {label} {value}
-      </div>
-    </div>
+    </section>
   );
 }

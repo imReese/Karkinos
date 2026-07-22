@@ -81,6 +81,34 @@ test('renders the canonical current-holdings table with direct detail drill-down
   expect(screen.getByRole('button', { name: 'Refresh' })).toBeTruthy();
 });
 
+test('keeps the operator-priority portfolio facts before secondary cost detail', () => {
+  renderTable(
+    <PositionsTable
+      positions={[basePosition]}
+      weightBySymbol={{ '600519': 0.42 }}
+    />,
+  );
+
+  const headers = within(screen.getByTestId('positions-table-desktop'))
+    .getAllByRole('columnheader')
+    .map((header) => header.textContent);
+  expect(headers.slice(0, 7)).toEqual([
+    'Symbol',
+    'Market Value',
+    'Weight',
+    'Today PnL',
+    'Unrealized',
+    'Realized PnL',
+    'Quote State',
+  ]);
+  expect(headers.indexOf('Realized PnL')).toBeLessThan(
+    headers.indexOf('Local moving average cost'),
+  );
+  expect(headers.indexOf('Quote State')).toBeLessThan(
+    headers.indexOf('Broker displayed cost'),
+  );
+});
+
 test('formats persisted cost and quote prices without recomputing them', () => {
   renderTable(
     <PositionsTable

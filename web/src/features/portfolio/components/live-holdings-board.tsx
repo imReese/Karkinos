@@ -50,7 +50,7 @@ export function LiveHoldingsBoard({ groups }: { groups: LiveHoldingGroup[] }) {
   return (
     <div
       data-testid="live-holdings-board"
-      className="min-w-0 overflow-hidden border-y border-[var(--app-divider)] bg-transparent"
+      className="min-w-0 max-w-full overflow-x-auto overscroll-x-contain border-y border-[var(--app-divider)] bg-transparent"
     >
       <div className="border-b border-[var(--app-divider)] px-3 py-2">
         <div className="text-sm font-semibold text-[var(--app-text)]">
@@ -63,9 +63,9 @@ export function LiveHoldingsBoard({ groups }: { groups: LiveHoldingGroup[] }) {
           <div
             key={group.asset_class}
             data-testid={`live-holdings-group-summary-${group.asset_class}`}
-            className="grid min-w-0 gap-2 px-3 py-2.5 sm:grid-cols-[minmax(150px,0.7fr)_repeat(3,minmax(120px,1fr))] sm:items-center"
+            className="grid min-w-0 grid-cols-2 gap-2 px-3 py-2.5 sm:grid-cols-[minmax(112px,1.25fr)_repeat(3,minmax(84px,1fr))] sm:items-center"
           >
-            <div className="min-w-0">
+            <div className="col-span-2 min-w-0 sm:col-span-1">
               <div className="truncate text-sm font-semibold text-[var(--app-text)]">
                 {group.label || assetClassLabel(group.asset_class, copy.common)}
               </div>
