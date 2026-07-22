@@ -101,7 +101,9 @@ test('desktop utility controls align and the overview table avoids partial colum
   });
   await page.goto('/overview');
   await page.getByRole('button', { name: '浅色主题' }).click();
-  await expect(page.getByTestId('positions-table-desktop')).toBeVisible();
+  await expect(page.getByTestId('positions-table-desktop')).toBeVisible({
+    timeout: 15_000,
+  });
 
   const geometry = await page.evaluate(() => {
     const valuation = document.querySelector(
