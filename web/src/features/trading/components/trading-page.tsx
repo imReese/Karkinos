@@ -1272,13 +1272,13 @@ function BrokerAdapterReadinessPanel({
   const status = readiness?.status ?? 'not_configured';
   const copy = brokerAdapterReadinessCopy(locale);
   const statusLabel = copy.status[status] ?? formatPublicStatus(status, locale);
-  const statusClass =
-    readiness?.subsystem_status === 'blocked'
-      ? 'border-[color-mix(in_srgb,var(--app-danger)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-danger)_10%,transparent)] text-[var(--app-danger)]'
+  const statusTone =
+    error || readiness?.subsystem_status === 'blocked'
+      ? 'danger'
       : readiness?.subsystem_status === 'manual_action_required' ||
           readiness?.subsystem_status === 'degraded'
-        ? 'border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] text-[var(--app-warning)]'
-        : 'border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] text-[var(--app-soft)]';
+        ? 'warning'
+        : 'neutral';
   const matchedSoak = selectSoakPromotionConnector(
     soak,
     latest?.collector_id ?? '',
@@ -1304,13 +1304,20 @@ function BrokerAdapterReadinessPanel({
         : matchedSoak
           ? copy.soakReviewRequired
           : copy.soakNotConfigured;
+  const soakTone = soakError
+    ? 'danger'
+    : matchedSoak?.promotion_ready
+      ? 'success'
+      : matchedSoak
+        ? 'warning'
+        : 'neutral';
 
   return (
     <section
-      className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]"
+      className="app-workbench-section min-w-0"
       data-testid="broker-adapter-readiness"
     >
-      <div className="app-terminal-inner min-w-0 rounded-[27px] p-4 sm:p-5">
+      <div className="min-w-0 px-1 py-4 sm:px-3">
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="app-product-mark">{copy.kicker}</div>
@@ -1319,11 +1326,9 @@ function BrokerAdapterReadinessPanel({
               {copy.detail}
             </p>
           </div>
-          <span
-            className={`w-fit shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold ${statusClass}`}
-          >
+          <WorkbenchStatusBadge className="w-fit shrink-0" tone={statusTone}>
             {loading ? copy.loading : error ? copy.unavailable : statusLabel}
-          </span>
+          </WorkbenchStatusBadge>
         </div>
 
         {error ? (
@@ -1333,9 +1338,12 @@ function BrokerAdapterReadinessPanel({
         ) : loading ? (
           <div className="app-muted mt-4 text-sm">{copy.loading}</div>
         ) : !readiness || status === 'not_configured' ? (
-          <div className="mt-4 rounded-2xl border border-dashed border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] px-4 py-4 text-sm text-[var(--app-soft)]">
-            {copy.notConfigured}
-          </div>
+          <EvidenceState
+            className="mt-4"
+            kind="empty"
+            title={copy.notConfiguredTitle}
+            description={copy.notConfigured}
+          />
         ) : (
           <div className="mt-4 min-w-0">
             {latest?.release_evidence_ref ? (
@@ -1349,7 +1357,7 @@ function BrokerAdapterReadinessPanel({
                 </span>
               </div>
             ) : null}
-            <div className="grid min-w-0 gap-3 lg:grid-cols-4">
+            <div className="grid min-w-0 gap-x-4 sm:grid-cols-2 lg:grid-cols-4">
               <BrokerReadinessMetric
                 label={copy.provider}
                 value={latest?.provider || '--'}
@@ -1371,7 +1379,7 @@ function BrokerAdapterReadinessPanel({
         )}
 
         {!loading && !error && readiness?.blockers.length ? (
-          <div className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_8%,transparent)] px-4 py-3 text-sm text-[var(--app-soft)]">
+          <div className="mt-4 border-l-2 border-[var(--app-warning-indicator)] py-1 pl-3 text-sm text-[var(--app-text-secondary)]">
             <div className="font-semibold text-[var(--app-text)]">
               {copy.blockers(readiness.blockers.length)}
             </div>
@@ -1386,8 +1394,8 @@ function BrokerAdapterReadinessPanel({
         ) : null}
 
         {!loading && !error && readiness && status !== 'not_configured' ? (
-          <div className="mt-3 grid min-w-0 gap-2 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_9%,transparent)] px-4 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-            <div className="min-w-0 break-words text-[var(--app-soft)]">
+          <div className="mt-4 grid min-w-0 gap-2 border-t border-[var(--app-divider)] pt-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+            <div className="min-w-0 break-words text-[var(--app-text-secondary)]">
               <span className="font-semibold text-[var(--app-text)]">
                 {copy.nextAction}
               </span>{' '}
@@ -1404,8 +1412,8 @@ function BrokerAdapterReadinessPanel({
           </div>
         ) : null}
 
-        <div
-          className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] p-4"
+        <section
+          className="mt-5 border-t border-[var(--app-divider)] pt-4"
           data-testid="broker-soak-promotion-readiness"
         >
           <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -1417,12 +1425,12 @@ function BrokerAdapterReadinessPanel({
                 {copy.soakDetail}
               </p>
             </div>
-            <span className="w-fit shrink-0 text-xs font-semibold text-[var(--app-soft)]">
+            <WorkbenchStatusBadge className="w-fit shrink-0" tone={soakTone}>
               {soakStatus}
-            </span>
+            </WorkbenchStatusBadge>
           </div>
 
-          <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="mt-3 grid min-w-0 gap-x-4 sm:grid-cols-2 xl:grid-cols-5">
             <BrokerReadinessMetric
               label={copy.soakDays}
               value={
@@ -1470,7 +1478,7 @@ function BrokerAdapterReadinessPanel({
           </div>
 
           {!soakLoading && !soakError && soakBlockers.length ? (
-            <div className="app-muted mt-3 text-xs leading-5">
+            <div className="mt-3 border-l-2 border-[var(--app-warning-indicator)] py-1 pl-3 text-xs leading-5 text-[var(--app-text-secondary)]">
               {copy.soakBlockers(soakBlockers.length)}{' '}
               {soakBlockers
                 .slice(0, 2)
@@ -1478,7 +1486,7 @@ function BrokerAdapterReadinessPanel({
                 .join(' · ')}
             </div>
           ) : null}
-        </div>
+        </section>
 
         <p className="app-muted mt-3 text-xs leading-5">{copy.boundary}</p>
       </div>
@@ -1512,10 +1520,12 @@ function BrokerReadinessMetric({
   value: string;
 }) {
   return (
-    <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-4 py-3">
-      <div className="app-muted text-xs">{label}</div>
+    <div className="min-w-0 border-t border-[var(--app-divider)] py-2.5">
+      <div className="text-xs font-medium text-[var(--app-text-secondary)]">
+        {label}
+      </div>
       <div
-        className="mt-1 truncate text-sm font-semibold text-[var(--app-text)]"
+        className="mt-0.5 truncate text-sm font-semibold text-[var(--app-text)]"
         title={value}
       >
         {value || '--'}
@@ -1534,6 +1544,7 @@ function brokerAdapterReadinessCopy(locale: Locale) {
       loading: '读取中',
       unavailable: '不可用',
       loadFailed: '券商适配器证据读取失败；未改变任何交易或资本权限。',
+      notConfiguredTitle: '未选择券商环境',
       notConfigured:
         '尚未选择或授权真实券商环境。Karkinos 保持无默认适配器、无提交与撤单权限。',
       provider: '来源标识',
@@ -1581,6 +1592,7 @@ function brokerAdapterReadinessCopy(locale: Locale) {
     unavailable: 'Unavailable',
     loadFailed:
       'Broker adapter evidence could not be read; no trading or capital authority changed.',
+    notConfiguredTitle: 'No broker environment selected',
     notConfigured:
       'No real broker environment has been selected or authorized. Karkinos retains no default adapter and no submit or cancel permission.',
     provider: 'Source label',
