@@ -312,8 +312,14 @@ test('renders Account Truth score, import runs, reconciliation detail, and revie
   await waitFor(() =>
     expect(screen.getAllByText('Blocked').length).toBeGreaterThan(0),
   );
-  expect(await screen.findByText('Cash: Mismatch')).toBeTruthy();
-  expect(await screen.findByText('Cost basis: Mismatch')).toBeTruthy();
+  const scoreDisclosure = await screen.findByTestId(
+    'account-truth-score-disclosure',
+  );
+  expect(within(scoreDisclosure).getByText('Cash')).toBeTruthy();
+  expect(within(scoreDisclosure).getByText('Cost basis')).toBeTruthy();
+  expect(
+    within(scoreDisclosure).getAllByText('Mismatch').length,
+  ).toBeGreaterThanOrEqual(3);
   expect(
     (await screen.findAllByText('Review position difference')).length,
   ).toBeGreaterThan(0);
@@ -350,13 +356,19 @@ test('renders Account Truth score, import runs, reconciliation detail, and revie
   expect(within(item).getByText('Broker 100 shares')).toBeTruthy();
   expect(within(item).getByText('Karkinos 0 shares')).toBeTruthy();
   expect(within(item).getByText('Difference 100 shares')).toBeTruthy();
+  expect(item.textContent).not.toContain(
+    'broker_event:import-run-1:SYN001:position_snapshot',
+  );
+  await userEvent.click(
+    within(item).getByRole('button', { name: 'Open evidence detail' }),
+  );
   expect(
-    within(item).getByText(
+    screen.getByText(
       'Broker evidence · 合成样例股票A SYN001 · Position snapshot · import-run-1',
     ),
   ).toBeTruthy();
-  expect(item.textContent).not.toContain(
-    'broker_event:import-run-1:SYN001:position_snapshot',
+  await userEvent.click(
+    screen.getAllByRole('button', { name: 'Close evidence detail' })[1],
   );
   expect(
     within(item).getByRole('button', { name: 'Create ledger candidate' }),
@@ -389,7 +401,7 @@ test('renders Account Truth score, import runs, reconciliation detail, and revie
   expect(screen.queryByText('Review saved: known_difference')).toBeNull();
 });
 
-test('keeps repeated reconciliation evidence rows as distinct render instances', async () => {
+test('keeps repeated reconciliation evidence rows as distinct selectable instances', async () => {
   const consoleError = vi
     .spyOn(console, 'error')
     .mockImplementation(() => undefined);
@@ -409,9 +421,19 @@ test('keeps repeated reconciliation evidence rows as distinct render instances',
     },
   });
 
+  const selectors = await screen.findAllByTestId(
+    'account-truth-item-selector-position:SYN001',
+  );
+  expect(selectors).toHaveLength(2);
   expect(
     await screen.findAllByTestId('account-truth-item-position:SYN001'),
-  ).toHaveLength(2);
+  ).toHaveLength(1);
+  await userEvent.click(selectors[1]);
+  expect(
+    await screen.findByText(
+      'A second persisted broker event has the same review key.',
+    ),
+  ).toBeTruthy();
   expect(
     consoleError.mock.calls.some((call) =>
       call.some((argument) =>
@@ -424,6 +446,10 @@ test('keeps repeated reconciliation evidence rows as distinct render instances',
 test('shows the enabled local collector as evidence-only automatic reading', async () => {
   renderAccountTruthReviewPage();
 
+  await userEvent.click(
+    screen.getByText('Stage new broker evidence').closest('summary')!,
+  );
+
   const status = await screen.findByTestId('broker-statement-collector-status');
 
   expect(within(status).getByText('Automatic local reader')).toBeTruthy();
@@ -433,8 +459,13 @@ test('shows the enabled local collector as evidence-only automatic reading', asy
       'The fingerprint is unchanged; no duplicate run was created.',
     ),
   ).toBeTruthy();
-  expect(status.textContent).toContain('Path: broker_statement.csv');
-  expect(status.textContent).toContain('Import run: import-run-1');
+  expect(status.textContent).not.toContain('broker_statement.csv');
+  expect(status.textContent).not.toContain('import-run-1');
+  await userEvent.click(
+    within(status).getByRole('button', { name: 'Open evidence detail' }),
+  );
+  expect(screen.getByText('broker_statement.csv')).toBeTruthy();
+  expect(screen.getByText('import-run-1')).toBeTruthy();
   expect(status.textContent).toContain(
     'Automatic reading never posts the ledger.',
   );
@@ -442,6 +473,10 @@ test('shows the enabled local collector as evidence-only automatic reading', asy
 
 test('previews and stages broker evidence from pasted CSV', async () => {
   const { fetchMock } = renderAccountTruthReviewPage();
+
+  await userEvent.click(
+    screen.getByText('Stage new broker evidence').closest('summary')!,
+  );
 
   const wizard = await screen.findByTestId('account-truth-import-wizard');
   await userEvent.clear(within(wizard).getByLabelText('CSV content'));
@@ -590,6 +625,9 @@ test('formats reconciliation values with category-aware units in Chinese locale'
   expect(within(positionItem).getByText('Karkinos 0 股')).toBeTruthy();
   expect(within(positionItem).getByText('差异 100 股')).toBeTruthy();
 
+  await userEvent.click(
+    screen.getByTestId('account-truth-item-selector-cost_basis:SYN001'),
+  );
   const costBasisItem = await screen.findByTestId(
     'account-truth-item-cost_basis:SYN001',
   );
@@ -750,13 +788,91 @@ test('formats broker trade evidence references through shared ledger labels', as
 
   const item = await screen.findByTestId('account-truth-item-trade:SYN001');
 
+  await userEvent.click(
+    within(item).getByRole('button', { name: 'Open evidence detail' }),
+  );
   expect(
-    within(item).getByText(
+    screen.getByText(
       'Broker evidence · 合成样例股票A SYN001 · Buy · import-run-1',
     ),
   ).toBeTruthy();
   expect(item.textContent).not.toContain('Buy trade');
   expect(item.textContent).not.toContain('trade_buy');
+});
+
+test('keeps matched rows quiet until the operator explicitly inspects them', async () => {
+  const matchedItems = [
+    {
+      ...reportDetail.items[0],
+      item_key: 'position:SYN001',
+      status: 'pass',
+      severity: 'pass',
+      broker_value: '100',
+      karkinos_value: '100',
+      difference: '0',
+      suggested_review_action: '',
+    },
+    {
+      ...reportDetail.items[0],
+      item_key: 'cash:account',
+      category: 'cash',
+      status: 'pass',
+      severity: 'pass',
+      symbol: '',
+      display_name: null,
+      broker_value: '10000',
+      karkinos_value: '10000',
+      difference: '0',
+      suggested_review_action: '',
+    },
+    {
+      ...reportDetail.items[0],
+      item_key: 'fee:SYN001',
+      category: 'fee',
+      status: 'pass',
+      severity: 'pass',
+      broker_value: '5',
+      karkinos_value: '5',
+      difference: '0',
+      suggested_review_action: '',
+    },
+  ];
+  renderAccountTruthReviewPage({
+    reportSummaryResponse: [
+      {
+        ...reportSummaries[0],
+        status: 'pass',
+        unresolved_count: 0,
+      },
+    ],
+    reportDetailResponse: {
+      ...reportDetail,
+      status: 'pass',
+      unresolved_count: 0,
+      items: matchedItems,
+    },
+  });
+
+  expect(
+    await screen.findByText(
+      '3 matched rows are quiet because no current blocker was found.',
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByTestId('account-truth-item-position:SYN001')).toBeNull();
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Inspect 3 matched rows' }),
+  );
+  const itemList = await screen.findByRole('list', {
+    name: 'Reconciliation item selection',
+  });
+  expect(within(itemList).getAllByRole('listitem')).toHaveLength(3);
+  expect(itemList.className).toContain('overflow-y-auto');
+  expect(
+    await screen.findAllByTestId('account-truth-item-position:SYN001'),
+  ).toHaveLength(1);
+  expect(
+    screen.getByTestId('account-truth-item-selector-cash:account'),
+  ).toBeTruthy();
 });
 
 test('uses specific localized labels for cash-impact reconciliation categories', async () => {
@@ -799,6 +915,9 @@ test('uses specific localized labels for cash-impact reconciliation categories',
   expect(netCashItem.textContent).not.toContain('net_cash_impact');
   expect(netCashItem.textContent).not.toContain('待人工复核项');
 
+  await userEvent.click(
+    screen.getByTestId('account-truth-item-selector-transfer_fee:SYN001'),
+  );
   const transferFeeItem = await screen.findByTestId(
     'account-truth-item-transfer_fee:SYN001',
   );
