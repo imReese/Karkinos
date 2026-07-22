@@ -1,12 +1,15 @@
 import { useMemo, useState } from 'react';
 
 import {
+  ControlledActionZone,
   EvidenceState,
   ExceptionList,
   GateMatrix,
   MetricStrip,
+  StatusBadge,
   WorkspaceHeader,
   type GateMatrixItem,
+  type StatusTone,
 } from '../../../app/components/workbench';
 import { useCopy } from '../../../app/copy';
 import { usePreferences, type Locale } from '../../../app/preferences';
@@ -83,7 +86,9 @@ function normalizeStatus(value: string | null | undefined, locale: Locale) {
   return formatPublicStatus(value ?? 'unknown', locale);
 }
 
-function decisionTone(value: string) {
+type DecisionTone = Exclude<StatusTone, 'info'>;
+
+function decisionTone(value: string): DecisionTone {
   if (
     value === 'pass' ||
     value === 'passed' ||
@@ -5456,9 +5461,9 @@ function DecisionSummaryCollapsedPanel({
   return (
     <section
       data-testid="decision-summary-collapsed"
-      className="app-panel min-w-0 overflow-hidden rounded-[var(--app-radius-surface)]"
+      className="min-w-0 border-y border-[var(--app-divider)] py-3"
     >
-      <div className="flex min-w-0 flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+      <div className="flex min-w-0 flex-col gap-3 px-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <div className="app-product-mark">
             {labels.summaryCollapsedKicker}
@@ -5471,7 +5476,7 @@ function DecisionSummaryCollapsedPanel({
           </p>
         </div>
         <button
-          className="inline-flex min-h-10 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-4 py-2 text-sm font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
+          className="app-button-secondary inline-flex min-h-10 max-w-full items-center justify-center rounded-[var(--app-radius-control)] px-4 py-2 text-sm font-semibold"
           type="button"
           onClick={onExpand}
         >
@@ -5501,9 +5506,9 @@ function DecisionWorkflowPanel({ lanes }: { lanes: DecisionResponse[] }) {
   return (
     <section
       data-testid="decision-workflow-tasks"
-      className="app-panel min-w-0 overflow-hidden rounded-[var(--app-radius-surface)]"
+      className="app-workbench-section min-w-0 py-4"
     >
-      <div className="min-w-0 p-4 sm:p-5">
+      <div className="min-w-0 px-1 sm:px-3">
         <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="app-product-mark">{labels.workflowKicker}</div>
@@ -5515,7 +5520,7 @@ function DecisionWorkflowPanel({ lanes }: { lanes: DecisionResponse[] }) {
         </div>
 
         {!expanded ? (
-          <div className="mt-4 flex min-w-0 flex-col gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mt-4 flex min-w-0 flex-col gap-3 border-y border-[var(--app-divider)] px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <div className="text-sm font-semibold text-[var(--app-text)]">
                 {labels.workflowCollapsedTitle(denseCandidateCount)}
@@ -5525,7 +5530,7 @@ function DecisionWorkflowPanel({ lanes }: { lanes: DecisionResponse[] }) {
               </p>
             </div>
             <button
-              className="inline-flex min-h-9 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
+              className="app-button-secondary inline-flex min-h-9 max-w-full items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
               type="button"
               onClick={() => setExpanded(true)}
             >
@@ -5543,7 +5548,7 @@ function DecisionWorkflowPanel({ lanes }: { lanes: DecisionResponse[] }) {
               return (
                 <div key={`${lane.lane}-workflow`} className="min-w-0">
                   <div className="app-product-mark mb-2">{laneLabel}</div>
-                  <div className="grid min-w-0 gap-2 md:grid-cols-2 xl:grid-cols-3">
+                  <div className="grid min-w-0 divide-y divide-[var(--app-divider)] md:grid-cols-2 md:divide-y-0 xl:grid-cols-3">
                     {tasks.map((task) => (
                       <DecisionWorkflowTaskCard
                         key={`${lane.lane}-${task.id}`}
@@ -5580,7 +5585,7 @@ function DecisionWorkflowTaskCard({
   const target = decisionWorkflowTarget(task.id, labels);
 
   return (
-    <article className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-3.5">
+    <article className="min-w-0 border-l-2 border-[var(--app-divider)] px-3 py-2.5">
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="break-words text-sm font-semibold text-[var(--app-text)]">
@@ -5590,33 +5595,26 @@ function DecisionWorkflowTaskCard({
             {formatPublicStatus(task.status, locale)}
           </div>
         </div>
-        <span
-          className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full border ${
-            decisionTone(task.status) === 'success'
-              ? 'border-[var(--app-success-border)] bg-[var(--app-success)]'
-              : decisionTone(task.status) === 'danger'
-                ? 'border-[var(--app-danger-border)] bg-[var(--app-danger)]'
-                : 'border-[color-mix(in_srgb,var(--app-warning)_45%,transparent)] bg-[var(--app-warning)]'
-          }`}
-          aria-hidden="true"
-        />
+        <StatusBadge tone={decisionTone(task.status)}>
+          {formatPublicStatus(task.status, locale)}
+        </StatusBadge>
       </div>
-      <div className="mt-3 flex min-w-0 flex-wrap gap-1.5">
+      <ul className="mt-2 grid min-w-0 gap-1">
         {(actionLabels.length > 0 ? actionLabels : [labels.none]).map(
           (label, index) => (
-            <span
+            <li
               key={`${index}-${label}`}
-              className="min-w-0 rounded-full border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-mantle)_28%,transparent)] px-2.5 py-1 text-xs text-[var(--app-soft)]"
+              className="min-w-0 border-l border-[var(--app-divider)] pl-2 text-xs leading-5 text-[var(--app-text-secondary)]"
             >
               {label}
-            </span>
+            </li>
           ),
         )}
-      </div>
+      </ul>
       {target ? (
         <a
           aria-label={labels.workflowOpenSurfaceLabel(target.label, taskLabel)}
-          className="mt-3 inline-flex min-h-8 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
+          className="app-button-secondary mt-3 inline-flex min-h-8 max-w-full items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
           href={target.href}
         >
           {target.label}
@@ -5679,8 +5677,8 @@ function SignalQueuePanel({
   };
 
   return (
-    <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]">
-      <div className="app-terminal-inner min-w-0 rounded-[27px] p-4 sm:p-5">
+    <section className="app-workbench-section min-w-0 py-4">
+      <div className="min-w-0 px-1 sm:px-3">
         <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="app-product-mark">{labels.signalQueue}</div>
@@ -5698,7 +5696,7 @@ function SignalQueuePanel({
         ) : collapseSignalQueue ? (
           <div
             data-testid="signal-queue-collapsed"
-            className="mt-4 flex min-w-0 flex-col gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+            className="mt-4 flex min-w-0 flex-col gap-3 border-y border-[var(--app-divider)] px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
           >
             <div className="min-w-0">
               <div className="text-sm font-semibold text-[var(--app-text)]">
@@ -5709,7 +5707,7 @@ function SignalQueuePanel({
               </p>
             </div>
             <button
-              className="inline-flex min-h-9 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
+              className="app-button-secondary inline-flex min-h-9 max-w-full items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
               type="button"
               onClick={() => setSignalQueueExpanded(true)}
             >
@@ -5720,18 +5718,21 @@ function SignalQueuePanel({
           <div className="mt-4 grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]">
             <div className="grid min-w-0 gap-2">
               {actions.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] px-4 py-5 text-sm text-[var(--app-muted)]">
-                  {labels.noSignalActions}
-                </div>
+                <EvidenceState
+                  kind="empty"
+                  statusLabel={labels.signalQueue}
+                  title={labels.noSignalActions}
+                  description={labels.signalQueueDetail}
+                />
               ) : (
                 actions.slice(0, 4).map((action) => {
                   const instrumentLabel = formatInstrumentDisplayLabel(action);
                   const actionId = action.id;
                   return (
-                    <div
+                    <article
                       key={action.id ?? action.symbol}
                       data-testid={`signal-action-card-${action.id ?? action.symbol}`}
-                      className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4"
+                      className="min-w-0 border-b border-[var(--app-divider)] px-1 py-3 last:border-b-0"
                     >
                       <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                         <div className="min-w-0">
@@ -5756,14 +5757,14 @@ function SignalQueuePanel({
                         </div>
                         <div className="grid shrink-0 gap-2 sm:grid-cols-2 lg:min-w-[280px]">
                           <a
-                            className="app-button-secondary inline-flex min-h-9 items-center justify-center rounded-2xl px-3 py-2 text-center text-xs font-semibold whitespace-normal"
+                            className="app-button-secondary inline-flex min-h-9 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-2 text-center text-xs font-semibold whitespace-normal"
                             href={signalActionBacktestHref(action)}
                             aria-label={`${labels.openBacktestEvidence}: ${instrumentLabel}`}
                           >
                             {labels.openBacktestEvidence}
                           </a>
                           <a
-                            className="app-button-secondary inline-flex min-h-9 items-center justify-center rounded-2xl px-3 py-2 text-center text-xs font-semibold whitespace-normal"
+                            className="app-button-secondary inline-flex min-h-9 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-2 text-center text-xs font-semibold whitespace-normal"
                             href={signalActionHoldingAttributionHref(action)}
                             aria-label={`${labels.openAttributionReview}: ${instrumentLabel}`}
                           >
@@ -5772,9 +5773,19 @@ function SignalQueuePanel({
                           {actionId !== null &&
                           action.manual_confirmation_status ===
                             'ready_for_manual_confirmation' ? (
-                            <>
+                            <ControlledActionZone
+                              className="sm:col-span-2"
+                              tone="info"
+                              layout="stack"
+                              title={labels.manual}
+                              description={formatPublicStatus(
+                                action.manual_confirmation_status,
+                                locale,
+                              )}
+                              evidence={`${formatPublicStatus(action.direction, locale)} · ${formatPublicStatus(action.risk_gate_status, locale)}`}
+                            >
                               <input
-                                className="app-field rounded-2xl px-3 py-2 text-xs tabular-nums"
+                                className="app-field min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs tabular-nums"
                                 type="number"
                                 min="1"
                                 value={quantities[actionId] ?? '100'}
@@ -5788,17 +5799,17 @@ function SignalQueuePanel({
                               />
                               <button
                                 type="button"
-                                className="app-button-primary rounded-2xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                                className="app-button-primary min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                                 disabled={createManualOrder.isPending}
                                 onClick={() => void prepareManualOrder(action)}
                               >
                                 {labels.prepareManualOrder}
                               </button>
-                            </>
+                            </ControlledActionZone>
                           ) : null}
                         </div>
                       </div>
-                    </div>
+                    </article>
                   );
                 })
               )}
@@ -5806,10 +5817,10 @@ function SignalQueuePanel({
 
             <div
               data-testid="signal-journal-panel"
-              className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] p-4"
+              className="min-w-0 border-t border-[var(--app-divider)] pt-3 xl:border-t-0 xl:border-l xl:pl-4"
             >
               <div className="app-product-mark">{labels.signalJournal}</div>
-              <div className="mt-3 grid gap-2">
+              <div className="mt-2 grid divide-y divide-[var(--app-divider)]">
                 {latestJournal.length === 0 ? (
                   <div className="app-muted text-sm">
                     {labels.noSignalJournal}
@@ -5836,7 +5847,7 @@ function SignalQueuePanel({
                     return (
                       <div
                         key={`${entry.signal.id}-${entry.signal.timestamp}`}
-                        className="rounded-xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] px-3 py-2 text-xs"
+                        className="px-1 py-3 text-xs"
                       >
                         <div className="font-semibold text-[var(--app-soft)]">
                           {instrumentLabel} · {strategyLabel}
@@ -5869,14 +5880,14 @@ function SignalQueuePanel({
                         </div>
                         <div className="mt-2 flex flex-wrap gap-2">
                           <a
-                            className="app-button-secondary inline-flex min-h-8 items-center justify-center rounded-xl px-2.5 py-1.5 text-center text-[11px] font-semibold whitespace-normal"
+                            className="app-button-secondary inline-flex min-h-8 items-center justify-center rounded-[var(--app-radius-control)] px-2.5 py-1.5 text-center text-[11px] font-semibold whitespace-normal"
                             href={signalBacktestHref(entry.signal)}
                             aria-label={`${labels.openBacktestEvidence}: ${instrumentLabel}`}
                           >
                             {labels.openBacktestEvidence}
                           </a>
                           <a
-                            className="app-button-secondary inline-flex min-h-8 items-center justify-center rounded-xl px-2.5 py-1.5 text-center text-[11px] font-semibold whitespace-normal"
+                            className="app-button-secondary inline-flex min-h-8 items-center justify-center rounded-[var(--app-radius-control)] px-2.5 py-1.5 text-center text-[11px] font-semibold whitespace-normal"
                             href={signalHoldingAttributionHref(entry.signal)}
                             aria-label={`${labels.openAttributionReview}: ${instrumentLabel}`}
                           >
@@ -5907,9 +5918,9 @@ function SummaryTile({
   detail: string;
 }) {
   return (
-    <div className="app-card min-w-0 rounded-[22px] p-4">
+    <div className="min-w-0 border-l-2 border-[var(--app-divider)] px-3 py-2.5">
       <div className="app-product-mark">{label}</div>
-      <div className="mt-2 break-words text-base font-semibold text-[var(--app-text)]">
+      <div className="mt-1 break-words text-base font-semibold text-[var(--app-text)]">
         {value}
       </div>
       <div className="app-muted mt-1 break-words text-xs">{detail}</div>
@@ -6014,8 +6025,8 @@ function DecisionLanePanel({ lane }: { lane: DecisionResponse }) {
     lane.lane === 'daily' ? labels.dailyLane : labels.intradayLane;
   const hasCandidates = lane.candidates.length > 0;
   return (
-    <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]">
-      <div className="app-terminal-inner min-w-0 rounded-[27px] p-4 sm:p-5">
+    <section className="app-workbench-section min-w-0 py-4">
+      <div className="min-w-0 px-1 sm:px-3">
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="app-product-mark">{laneLabel}</div>
@@ -6044,7 +6055,7 @@ function DecisionLanePanel({ lane }: { lane: DecisionResponse }) {
 
         {hasCandidates ? (
           <div className="mt-5 grid min-w-0 gap-3">
-            <div className="flex min-w-0 flex-col gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 flex-col gap-3 border-y border-[var(--app-divider)] px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
                 <div className="text-sm font-semibold text-[var(--app-text)]">
                   {labels.candidateEvidenceCollapsedTitle(
@@ -6056,7 +6067,7 @@ function DecisionLanePanel({ lane }: { lane: DecisionResponse }) {
                 </p>
               </div>
               <button
-                className="inline-flex min-h-9 max-w-full items-center justify-center rounded-xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_18%,transparent)] px-3 py-1.5 text-xs font-semibold text-[var(--app-text)] transition hover:border-[color-mix(in_srgb,var(--app-accent)_45%,var(--app-border))] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
+                className="app-button-secondary inline-flex min-h-9 max-w-full items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
                 type="button"
                 onClick={() => setExpanded((value) => !value)}
               >
@@ -6087,22 +6098,26 @@ function DecisionLanePanel({ lane }: { lane: DecisionResponse }) {
 
 function NoActionReasons({ reasons }: { reasons: string[] }) {
   const labels = useCopy().decision;
+  const items = reasons.length ? reasons : [labels.noActionUnavailable];
   return (
-    <div className="mt-5 min-w-0 rounded-[20px] border border-[color-mix(in_srgb,var(--app-border)_50%,transparent)] p-4">
-      <div className="text-sm font-semibold">{labels.noActionReasons}</div>
-      <div className="mt-2 flex flex-wrap gap-2">
-        {(reasons.length ? reasons : [labels.noActionUnavailable]).map(
-          (reason) => (
-            <span
+    <EvidenceState
+      className="mt-5"
+      kind="empty"
+      statusLabel={labels.noActionReasons}
+      title={labels.noActionReasons}
+      description={
+        <ul className="grid gap-1">
+          {items.map((reason) => (
+            <li
               key={reason}
-              className="min-w-0 rounded-full border border-[var(--app-accent-border)] px-3 py-1 text-xs text-[var(--app-muted)]"
+              className="border-l border-[var(--app-divider)] pl-2"
             >
               {labels.gateRequirementLabel(reason)}
-            </span>
-          ),
-        )}
-      </div>
-    </div>
+            </li>
+          ))}
+        </ul>
+      }
+    />
   );
 }
 
@@ -6134,7 +6149,7 @@ function DecisionCandidateCard({
   return (
     <article
       data-testid={`decision-candidate-card-${candidate.symbol}`}
-      className="min-w-0 break-words rounded-[22px] border border-[color-mix(in_srgb,var(--app-border)_55%,transparent)] bg-[color-mix(in_srgb,var(--app-panel)_58%,transparent)] p-4"
+      className="min-w-0 break-words border-l-2 border-[var(--app-divider)] px-3 py-3"
     >
       <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
@@ -6152,21 +6167,21 @@ function DecisionCandidateCard({
         </div>
         <div className="flex shrink-0 flex-wrap gap-2 lg:justify-end">
           <a
-            className="app-button-secondary inline-flex min-h-10 shrink-0 items-center justify-center rounded-2xl px-4 text-center text-sm font-semibold whitespace-normal"
+            className="app-button-secondary inline-flex min-h-10 shrink-0 items-center justify-center rounded-[var(--app-radius-control)] px-4 text-center text-sm font-semibold whitespace-normal"
             href={backtestHref}
             aria-label={`${labels.openBacktestEvidence}: ${instrumentLabel}`}
           >
             {labels.openBacktestEvidence}
           </a>
           <a
-            className="app-button-secondary inline-flex min-h-10 shrink-0 items-center justify-center rounded-2xl px-4 text-center text-sm font-semibold whitespace-normal"
+            className="app-button-secondary inline-flex min-h-10 shrink-0 items-center justify-center rounded-[var(--app-radius-control)] px-4 text-center text-sm font-semibold whitespace-normal"
             href={holdingDetailHref}
             aria-label={`${labels.openHoldingDetail}: ${instrumentLabel}`}
           >
             {labels.openHoldingDetail}
           </a>
           <a
-            className="app-button-secondary inline-flex min-h-10 shrink-0 items-center justify-center rounded-2xl px-4 text-center text-sm font-semibold whitespace-normal"
+            className="app-button-secondary inline-flex min-h-10 shrink-0 items-center justify-center rounded-[var(--app-radius-control)] px-4 text-center text-sm font-semibold whitespace-normal"
             href={holdingAttributionHref}
             aria-label={`${labels.openAttributionReview}: ${instrumentLabel}`}
           >
@@ -6174,7 +6189,7 @@ function DecisionCandidateCard({
           </a>
           {readyForManual ? (
             <a
-              className="app-button-secondary inline-flex min-h-10 shrink-0 items-center justify-center rounded-2xl px-4 text-center text-sm font-semibold whitespace-normal"
+              className="app-button-secondary inline-flex min-h-10 shrink-0 items-center justify-center rounded-[var(--app-radius-control)] px-4 text-center text-sm font-semibold whitespace-normal"
               href="/trading"
               aria-label={`${labels.openTradingApprovals}: ${instrumentLabel}`}
             >
@@ -6184,7 +6199,7 @@ function DecisionCandidateCard({
         </div>
       </div>
 
-      <div className="mt-4 grid min-w-0 gap-2 text-sm sm:grid-cols-2">
+      <dl className="mt-4 grid min-w-0 text-sm sm:grid-cols-2 sm:gap-x-4">
         <EvidenceLine
           label={labels.manual}
           value={manualStatus(candidate, locale)}
@@ -6266,7 +6281,7 @@ function DecisionCandidateCard({
             tone={decisionTone(candidate.evidence.risk_gate.status)}
           />
         ) : null}
-      </div>
+      </dl>
 
       <CandidateEvidenceChain candidate={candidate} />
     </article>
@@ -6289,34 +6304,34 @@ function CandidateEvidenceChain({
     strategyNames,
   );
   return (
-    <div className="mt-4 min-w-0 rounded-[18px] border border-[color-mix(in_srgb,var(--app-border)_45%,transparent)] bg-[color-mix(in_srgb,var(--app-mantle)_32%,transparent)] p-3">
+    <section className="mt-4 min-w-0 border-t border-[var(--app-divider)] pt-3">
       <div className="text-xs font-semibold tracking-[0.08em] text-[var(--app-muted)] uppercase">
         {labels.candidateEvidenceChain}
       </div>
-      <div className="mt-3 grid min-w-0 gap-2 md:grid-cols-3">
+      <dl className="mt-2 grid min-w-0 md:grid-cols-3 md:gap-x-4">
         {items.map((item) => (
           <EvidenceChainCell key={item.label} item={item} />
         ))}
-      </div>
-    </div>
+      </dl>
+    </section>
   );
 }
 
 function EvidenceChainCell({ item }: { item: CandidateEvidenceChainItem }) {
   const textColor =
     item.tone === 'success'
-      ? 'text-[var(--app-success)]'
+      ? 'text-[var(--app-success-text)]'
       : item.tone === 'danger'
-        ? 'text-[var(--app-danger)]'
+        ? 'text-[var(--app-danger-text)]'
         : item.tone === 'warning'
-          ? 'text-[var(--app-warning)]'
+          ? 'text-[var(--app-warning-text)]'
           : 'text-[var(--app-text)]';
   return (
-    <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_38%,transparent)] px-3 py-2">
-      <div className="app-muted text-[11px]">{item.label}</div>
-      <div className={`mt-1 break-words text-sm font-semibold ${textColor}`}>
+    <div className="min-w-0 border-b border-[var(--app-divider)] py-2">
+      <dt className="app-muted text-[11px]">{item.label}</dt>
+      <dd className={`mt-1 break-words text-sm font-semibold ${textColor}`}>
         {item.value}
-      </div>
+      </dd>
     </div>
   );
 }
@@ -6326,17 +6341,9 @@ function StatusPill({ value, prefix }: { value: string; prefix?: string }) {
   const tone = decisionTone(value);
   const label = normalizeStatus(value, locale);
   return (
-    <span
-      className={`min-w-0 rounded-full border px-2.5 py-1 text-xs font-semibold break-words ${
-        tone === 'success'
-          ? 'border-[var(--app-success-border)] bg-[var(--app-success-bg)] text-[var(--app-success)]'
-          : tone === 'danger'
-            ? 'border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] text-[var(--app-danger)]'
-            : 'border-[color-mix(in_srgb,var(--app-warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] text-[var(--app-warning)]'
-      }`}
-    >
+    <StatusBadge tone={tone} className="min-w-0 break-words">
       {prefix ? `${prefix}: ${label}` : label}
-    </span>
+    </StatusBadge>
   );
 }
 
@@ -6351,21 +6358,21 @@ function EvidenceLine({
 }) {
   const textColor =
     tone === 'success'
-      ? 'text-[var(--app-success)]'
+      ? 'text-[var(--app-success-text)]'
       : tone === 'danger'
-        ? 'text-[var(--app-danger)]'
+        ? 'text-[var(--app-danger-text)]'
         : tone === 'warning'
-          ? 'text-[var(--app-warning)]'
+          ? 'text-[var(--app-warning-text)]'
           : 'text-[var(--app-text)]';
   return (
     <div
       data-testid="decision-evidence-line"
-      className="min-w-0 rounded-2xl bg-[color-mix(in_srgb,var(--app-mantle)_42%,transparent)] px-3 py-2"
+      className="min-w-0 border-b border-[var(--app-divider)] py-2"
     >
-      <div className="app-muted break-words text-[11px] uppercase">{label}</div>
-      <div className={`mt-1 break-words text-sm font-semibold ${textColor}`}>
+      <dt className="app-muted break-words text-[11px] uppercase">{label}</dt>
+      <dd className={`mt-1 break-words text-sm font-semibold ${textColor}`}>
         {label}: {value}
-      </div>
+      </dd>
     </div>
   );
 }
