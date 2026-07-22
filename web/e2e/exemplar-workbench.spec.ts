@@ -114,12 +114,14 @@ test('portfolio mobile keeps secondary filters disclosed on demand', async ({
   const moreFilters = filterBar.locator(
     'button[aria-controls="portfolio-secondary-filters"]',
   );
-  const holdingsTable = page.locator('.app-positions-table table').first();
+  const holdingsSurface = page
+    .getByTestId('portfolio-current-holdings-count')
+    .locator('xpath=following-sibling::*[1]');
 
   await expect(moreFilters).toBeVisible();
   await expect(filterBar.locator('select:visible')).toHaveCount(2);
   await expect(moreFilters).toHaveAttribute('aria-expanded', 'false');
-  await expect(holdingsTable).toBeVisible();
+  await expect(holdingsSurface).toBeVisible();
 
   const compactControlHeights = await filterBar
     .locator('button:visible, input:visible, select:visible')
@@ -127,14 +129,14 @@ test('portfolio mobile keeps secondary filters disclosed on demand', async ({
       elements.map((element) => element.getBoundingClientRect().height),
     );
   expect(Math.min(...compactControlHeights)).toBeGreaterThanOrEqual(40);
-  const collapsedTableTop = (await holdingsTable.boundingBox())!.y;
+  const collapsedHoldingsTop = (await holdingsSurface.boundingBox())!.y;
 
   await moreFilters.click();
 
   await expect(moreFilters).toHaveAttribute('aria-expanded', 'true');
   await expect(filterBar.locator('select:visible')).toHaveCount(5);
-  const expandedTableTop = (await holdingsTable.boundingBox())!.y;
-  expect(collapsedTableTop).toBeLessThan(expandedTableTop);
+  const expandedHoldingsTop = (await holdingsSurface.boundingBox())!.y;
+  expect(collapsedHoldingsTop).toBeLessThan(expandedHoldingsTop);
 
   const documentOverflow = await page.evaluate(
     () =>
