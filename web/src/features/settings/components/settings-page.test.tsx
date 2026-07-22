@@ -256,9 +256,11 @@ test('renders backend data status and service state', async () => {
   ).toBeTruthy();
   expect(await screen.findByLabelText('Refresh policy: Live')).toBeTruthy();
   expect(await screen.findByText('Scheduler running')).toBeTruthy();
+  expect(await screen.findByText('Persisted configuration')).toBeTruthy();
   expect(
-    (await screen.findAllByText('Runtime boundary')).length,
-  ).toBeGreaterThanOrEqual(2);
+    await screen.findByText('Explicit ingestion · persisted quote cache'),
+  ).toBeTruthy();
+  expect(screen.queryByText('Runtime boundary')).toBeNull();
   expect(
     await screen.findByLabelText('Boundary item: Scheduler Scheduler running'),
   ).toBeTruthy();

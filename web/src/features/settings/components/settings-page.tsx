@@ -83,8 +83,7 @@ export function SettingsPage() {
   const startLive = useStartLiveMutation();
   const stopLive = useStopLiveMutation();
   const testNotification = useTestNotificationMutation();
-  const { locale, setLocale, theme, setTheme, resolvedTheme } =
-    usePreferences();
+  const { locale, setLocale, theme, setTheme } = usePreferences();
   const [dataSource, setDataSource] = useState('');
   const [pollInterval, setPollInterval] = useState('60');
   const [accountCommissionRate, setAccountCommissionRate] = useState('0.0001');
@@ -366,26 +365,16 @@ export function SettingsPage() {
     : liveStatus.data?.running
       ? copy.settings.brokerReady
       : copy.settings.brokerDegraded;
-  const marketSessionState = liveStatus.isLoading
-    ? copy.shell.checking
-    : liveStatus.data?.market_open
-      ? copy.shell.marketOpen
-      : copy.shell.marketClosed;
   const boundaryRows = [
     {
       label: copy.settings.scheduler,
       value: schedulerState,
-      tone: liveStatus.data?.running ? 'success' : 'warning',
+      tone: liveStatus.data?.running ? 'success' : 'neutral',
     },
     {
       label: copy.settings.brokerInterface,
       value: brokerState,
-      tone: liveStatus.data?.running ? 'success' : 'warning',
-    },
-    {
-      label: copy.shell.marketSession,
-      value: marketSessionState,
-      tone: liveStatus.data?.market_open ? 'success' : 'warning',
+      tone: liveStatus.data?.running ? 'success' : 'neutral',
     },
     {
       label: copy.settings.executionDefault,
@@ -503,7 +492,6 @@ export function SettingsPage() {
         eyebrow={copy.settings.kicker}
         title={copy.settings.title}
         description={copy.settings.subtitle}
-        context={`${copy.settings.localOnly} · ${resolvedTheme}`}
       />
 
       {statusLoadFailed ? (
@@ -524,7 +512,7 @@ export function SettingsPage() {
         />
       ) : null}
 
-      <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
         <div className="min-w-0 space-y-5">
           <SettingsSection
             title={copy.settings.dataStatus}
@@ -551,10 +539,7 @@ export function SettingsPage() {
                       {copy.shell.marketClosed}
                     </span>
                   ),
-                  tone:
-                    !marketHealth.isLoading && !marketHealth.data?.market_open
-                      ? 'warning'
-                      : 'neutral',
+                  tone: 'neutral',
                 },
                 {
                   id: 'refresh-policy',
@@ -627,8 +612,8 @@ export function SettingsPage() {
 
             <ControlledActionZone
               title={copy.market.refreshQuotes}
-              description={copy.settings.dataStatusDetail}
-              evidence={copy.settings.refreshPolicy}
+              description={copy.settings.refreshActionDetail}
+              evidence={copy.settings.refreshActionEvidence}
             >
               <MarketRefreshButton />
             </ControlledActionZone>
@@ -640,7 +625,7 @@ export function SettingsPage() {
             detail={copy.settings.dataSourceOperationsDetail}
           >
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
-              <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+              <div className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                   <div className="text-sm font-semibold">
                     {copy.settings.providerCapabilityMatrix}
@@ -665,7 +650,7 @@ export function SettingsPage() {
               </div>
 
               <div className="grid min-w-0 gap-4">
-                <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+                <div className="rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
                   <div className="text-sm font-semibold">
                     {copy.settings.tusharePermissions}
                   </div>
@@ -699,7 +684,7 @@ export function SettingsPage() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+                <div className="rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
                   <div className="text-sm font-semibold">
                     {copy.settings.manualDailyTaskChecklist}
                   </div>
@@ -729,36 +714,26 @@ export function SettingsPage() {
             title={copy.settings.liveServices}
             detail={copy.settings.liveServicesDetail}
           >
-            <div className="grid gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
-              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                <div className="text-sm font-semibold">
-                  {copy.settings.runtimeBoundary}
-                </div>
-                <div className="app-muted text-xs leading-5">
-                  {copy.settings.schedulerBoundaryDetail}
-                </div>
-              </div>
-              <div className="grid gap-2 md:grid-cols-2">
-                {boundaryRows.map((row) => (
-                  <RegisterRow
-                    key={row.label}
-                    label={row.label}
-                    value={row.value}
-                    tone={row.tone}
-                    ariaLabelPrefix="Boundary item"
-                  />
-                ))}
-              </div>
+            <div className="grid gap-x-4 border-y border-[var(--app-divider)] md:grid-cols-2">
+              {boundaryRows.map((row) => (
+                <RegisterRow
+                  key={row.label}
+                  label={row.label}
+                  value={row.value}
+                  tone={row.tone}
+                  ariaLabelPrefix="Boundary item"
+                />
+              ))}
             </div>
 
             <ControlledActionZone
-              title={copy.settings.runtimeBoundary}
+              title={copy.settings.scheduler}
               description={copy.settings.schedulerBoundaryDetail}
               evidence={copy.settings.noAutoTrading}
             >
               <button
                 type="button"
-                className="app-button-primary rounded-2xl px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                className="app-button-primary rounded-[var(--app-radius-control)] px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={startLive.isPending || liveStatus.data?.running}
                 aria-busy={startLive.isPending}
                 onClick={() => void startLive.mutateAsync()}
@@ -769,7 +744,7 @@ export function SettingsPage() {
               </button>
               <button
                 type="button"
-                className="app-button-secondary rounded-2xl px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                className="app-button-secondary rounded-[var(--app-radius-control)] px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={stopLive.isPending || !liveStatus.data?.running}
                 aria-busy={stopLive.isPending}
                 onClick={() => void stopLive.mutateAsync()}
@@ -794,39 +769,12 @@ export function SettingsPage() {
         </div>
 
         <aside className="min-w-0 space-y-5">
-          <SettingsSection
-            title={copy.settings.preferences}
-            detail={copy.settings.preferencesDetail}
-          >
-            <PreferenceGroup
-              label={copy.shell.theme}
-              helper={`${copy.settings.localOnly} · ${resolvedTheme}`}
-              options={[
-                ['dark', copy.settings.themeMocha],
-                ['light', copy.settings.themeLatte],
-                ['system', copy.settings.themeSystem],
-              ]}
-              value={theme}
-              onChange={(value) => setTheme(value as ThemePreference)}
-            />
-            <PreferenceGroup
-              label={copy.shell.language}
-              helper={copy.settings.localOnly}
-              options={[
-                ['zh', copy.settings.languageZh],
-                ['en', copy.settings.languageEn],
-              ]}
-              value={locale}
-              onChange={(value) => setLocale(value as Locale)}
-            />
-          </SettingsSection>
-
           <SettingsDisclosure
             testId="settings-backend-disclosure"
             title={copy.settings.backendSettings}
-            detail={copy.settings.liveServicesDetail}
+            detail={copy.settings.persistedSettingsDetail}
           >
-            <div className="grid gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+            <div className="grid gap-3 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-sm font-semibold">
                   {copy.settings.operationsRegister}
@@ -872,7 +820,7 @@ export function SettingsPage() {
             ) : null}
 
             <form
-              className="grid gap-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4"
+              className="grid gap-4 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4"
               onSubmit={submitAccountCommission}
             >
               <div>
@@ -890,7 +838,7 @@ export function SettingsPage() {
                   </span>
                   <input
                     aria-label={copy.settings.stockCommissionRate}
-                    className="app-field rounded-2xl px-3 py-2 text-sm tabular-nums"
+                    className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm tabular-nums"
                     type="number"
                     min={0}
                     step="0.00001"
@@ -907,7 +855,7 @@ export function SettingsPage() {
                   </span>
                   <input
                     aria-label={copy.settings.minimumCommission}
-                    className="app-field rounded-2xl px-3 py-2 text-sm tabular-nums"
+                    className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm tabular-nums"
                     type="number"
                     min={0}
                     step="0.01"
@@ -927,7 +875,7 @@ export function SettingsPage() {
               </div>
               <button
                 type="submit"
-                className="app-button-primary rounded-2xl px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                className="app-button-primary rounded-[var(--app-radius-control)] px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={
                   settings.isLoading ||
                   updateSettings.isPending ||
@@ -960,7 +908,7 @@ export function SettingsPage() {
             ) : null}
 
             <form
-              className="grid gap-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4"
+              className="grid gap-4 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4"
               onSubmit={submitDataSource}
             >
               <div>
@@ -988,7 +936,7 @@ export function SettingsPage() {
                       <button
                         key={option}
                         type="button"
-                        className={`rounded-2xl border px-3 py-2 text-sm font-semibold transition-[transform,border-color,background-color] duration-200 active:scale-[0.98] ${
+                        className={`rounded-[var(--app-radius-control)] border px-3 py-2 text-sm font-semibold transition-[transform,border-color,background-color] duration-200 active:scale-[0.98] ${
                           selected
                             ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-ghost)] text-[var(--app-accent)]'
                             : 'border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] text-[var(--app-soft)] hover:border-[color-mix(in_srgb,var(--app-border)_48%,transparent)]'
@@ -1011,7 +959,7 @@ export function SettingsPage() {
                 <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
                   <input
                     aria-label={copy.settings.pollInterval}
-                    className="app-field rounded-2xl px-3 py-2 text-sm tabular-nums"
+                    className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm tabular-nums"
                     type="number"
                     min={15}
                     value={pollInterval}
@@ -1028,7 +976,7 @@ export function SettingsPage() {
                   {copy.settings.token}
                 </span>
                 <div
-                  className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2 text-sm"
+                  className="border-y border-[var(--app-divider)] px-1 py-2 text-sm"
                   role="status"
                   aria-label={copy.settings.token}
                 >
@@ -1044,7 +992,7 @@ export function SettingsPage() {
               </div>
               <button
                 type="submit"
-                className="app-button-primary rounded-2xl px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                className="app-button-primary rounded-[var(--app-radius-control)] px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={
                   settings.isLoading ||
                   updateDataSource.isPending ||
@@ -1082,7 +1030,7 @@ export function SettingsPage() {
               />
             ) : null}
 
-            <div className="grid gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+            <div className="grid gap-3 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
               <div>
                 <div className="text-sm font-semibold">
                   {copy.settings.metadataReadiness}
@@ -1139,7 +1087,7 @@ export function SettingsPage() {
                       {copy.settings.assetMetadataSnippet}
                     </span>
                     <textarea
-                      className="app-field min-h-44 resize-y rounded-2xl px-3 py-3 font-mono text-xs leading-5"
+                      className="app-field min-h-44 resize-y rounded-[var(--app-radius-control)] px-3 py-3 font-mono text-xs leading-5"
                       readOnly
                       aria-label={copy.settings.assetMetadataSnippet}
                       value={metadataSnippet}
@@ -1169,7 +1117,7 @@ export function SettingsPage() {
               value={notificationType}
               tone={
                 notificationType === copy.settings.notificationUnavailable
-                  ? 'warning'
+                  ? 'neutral'
                   : 'success'
               }
             />
@@ -1180,11 +1128,11 @@ export function SettingsPage() {
                   ? copy.settings.notificationConfigured
                   : copy.settings.notificationMissingCredential
               }
-              tone={notificationConfigured ? 'success' : 'warning'}
+              tone={notificationConfigured ? 'success' : 'neutral'}
             />
             <button
               type="button"
-              className="app-button-secondary rounded-2xl px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+              className="app-button-secondary rounded-[var(--app-radius-control)] px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
               disabled={testNotification.isPending || !notificationConfigured}
               aria-busy={testNotification.isPending}
               onClick={() => void testNotification.mutateAsync()}
@@ -1211,7 +1159,7 @@ export function SettingsPage() {
             title={copy.settings.dataSafety}
             detail={copy.settings.dataSafetyDetail}
           >
-            <div className="grid gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+            <div className="grid gap-3 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-sm font-semibold">
                   {copy.settings.safetyRegister}
@@ -1240,6 +1188,33 @@ export function SettingsPage() {
               tone="neutral"
               title={copy.settings.deferred}
               detail={copy.settings.deferredDetail}
+            />
+          </SettingsSection>
+
+          <SettingsSection
+            title={copy.settings.preferences}
+            detail={copy.settings.preferencesDetail}
+          >
+            <PreferenceGroup
+              label={copy.shell.theme}
+              helper={copy.settings.localOnly}
+              options={[
+                ['dark', copy.settings.themeMocha],
+                ['light', copy.settings.themeLatte],
+                ['system', copy.settings.themeSystem],
+              ]}
+              value={theme}
+              onChange={(value) => setTheme(value as ThemePreference)}
+            />
+            <PreferenceGroup
+              label={copy.shell.language}
+              helper={copy.settings.localOnly}
+              options={[
+                ['zh', copy.settings.languageZh],
+                ['en', copy.settings.languageEn],
+              ]}
+              value={locale}
+              onChange={(value) => setLocale(value as Locale)}
             />
           </SettingsSection>
         </aside>
@@ -1347,7 +1322,7 @@ function RegisterRow({
 }) {
   return (
     <div
-      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-3 py-2.5"
+      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-[var(--app-divider)] px-1 py-2.5 last:border-b-0"
       aria-label={`${ariaLabelPrefix}: ${label} ${value}`}
     >
       {legacyLabel ? (
