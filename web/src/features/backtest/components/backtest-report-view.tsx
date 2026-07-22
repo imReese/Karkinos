@@ -2,6 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { useCopy } from '../../../app/copy';
 import {
+  EvidenceState,
+  FilterBar,
+  MetricStrip,
+  type MetricTone,
+} from '../../../app/components/workbench';
+import {
   formatAmount,
   formatPercent,
   formatTimestamp,
@@ -31,16 +37,16 @@ function ResultSelector({
   const labels = useCopy().backtest.selection;
 
   return (
-    <section className="app-panel rounded-2xl p-4 sm:p-5">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
+    <FilterBar label={labels.kicker}>
+      <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
           <div className="app-kicker text-xs uppercase tracking-[0.16em]">
             {labels.kicker}
           </div>
           <div className="app-card-title mt-1.5">{labels.title}</div>
         </div>
         <select
-          className="app-field min-w-[260px] rounded-2xl px-4 py-3 text-sm"
+          className="app-field min-h-10 w-full rounded-[var(--app-radius-control)] px-3 py-2 text-sm sm:w-auto sm:min-w-[260px]"
           value={selectedId ?? ''}
           onChange={(event) => onSelect(Number(event.target.value))}
           aria-label={labels.ariaLabel}
@@ -53,7 +59,7 @@ function ResultSelector({
           ))}
         </select>
       </div>
-    </section>
+    </FilterBar>
   );
 }
 
@@ -77,31 +83,26 @@ export function BacktestReportView() {
   );
 
   if (results.isLoading) {
-    return (
-      <div className="app-panel rounded-2xl p-5">
-        {labels.selection.loading}
-      </div>
-    );
+    return <EvidenceState kind="loading" title={labels.selection.loading} />;
   }
 
   if (results.isError) {
-    return (
-      <div className="app-panel-danger rounded-2xl p-5">
-        {labels.selection.loadFailed}
-      </div>
-    );
+    return <EvidenceState kind="error" title={labels.selection.loadFailed} />;
   }
 
   if (!results.data?.length) {
-    return (
-      <div className="app-panel rounded-2xl p-5 text-sm text-[var(--app-muted)]">
-        {labels.selection.empty}
-      </div>
-    );
+    return <EvidenceState kind="empty" title={labels.selection.empty} />;
   }
 
+  const summaryReturnTone: MetricTone =
+    (selectedSummary?.total_return ?? 0) > 0
+      ? 'pnl-positive'
+      : (selectedSummary?.total_return ?? 0) < 0
+        ? 'pnl-negative'
+        : 'neutral';
+
   return (
-    <div className="space-y-5">
+    <div data-backtest-report-workspace="saved-evidence" className="space-y-4">
       <ResultSelector
         results={results.data}
         selectedId={selectedId}
@@ -109,42 +110,36 @@ export function BacktestReportView() {
       />
 
       {selectedSummary ? (
-        <div className="grid gap-3 md:grid-cols-3">
-          <div className="app-panel-strong rounded-2xl px-4 py-3 shadow-[0_12px_32px_rgba(17,17,27,0.10)]">
-            <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
-              {labels.summary.return}
-            </div>
-            <div className="mt-1.5 text-lg font-semibold tabular-nums">
-              {formatPercent(selectedSummary.total_return)}
-            </div>
-          </div>
-          <div className="app-panel-strong rounded-2xl px-4 py-3 shadow-[0_12px_32px_rgba(17,17,27,0.10)]">
-            <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
-              {labels.summary.sharpe}
-            </div>
-            <div className="mt-1.5 text-lg font-semibold tabular-nums">
-              {formatAmount(selectedSummary.sharpe)}
-            </div>
-          </div>
-          <div className="app-panel-strong rounded-2xl px-4 py-3 shadow-[0_12px_32px_rgba(17,17,27,0.10)]">
-            <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
-              {labels.summary.maxDrawdown}
-            </div>
-            <div className="mt-1.5 text-lg font-semibold text-[var(--app-danger)] tabular-nums">
-              {formatPercent(selectedSummary.max_drawdown)}
-            </div>
-          </div>
-        </div>
+        <MetricStrip
+          ariaLabel={labels.selection.kicker}
+          items={[
+            {
+              id: 'summary-return',
+              label: labels.summary.return,
+              value: formatPercent(selectedSummary.total_return),
+              tone: summaryReturnTone,
+            },
+            {
+              id: 'summary-sharpe',
+              label: labels.summary.sharpe,
+              value: formatAmount(selectedSummary.sharpe),
+            },
+            {
+              id: 'summary-max-drawdown',
+              label: labels.summary.maxDrawdown,
+              value: formatPercent(selectedSummary.max_drawdown),
+            },
+          ]}
+        />
       ) : null}
 
       {report.isLoading ? (
-        <div className="app-panel rounded-2xl p-5">
-          {labels.selection.selectedLoading}
-        </div>
+        <EvidenceState
+          kind="loading"
+          title={labels.selection.selectedLoading}
+        />
       ) : report.isError ? (
-        <div className="app-panel-danger rounded-2xl p-5">
-          {labels.selection.selectedFailed}
-        </div>
+        <EvidenceState kind="error" title={labels.selection.selectedFailed} />
       ) : report.data ? (
         <>
           <StrategyHypothesisPanel report={report.data} />

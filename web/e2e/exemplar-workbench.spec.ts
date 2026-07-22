@@ -347,6 +347,71 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
           40,
         );
       }
+
+      if (path === '/backtest') {
+        const archiveDisclosure = page.getByTestId(
+          'backtest-research-archive-disclosure',
+        );
+        await archiveDisclosure.click();
+        await expect(archiveDisclosure).toHaveAttribute(
+          'aria-expanded',
+          'true',
+        );
+
+        const archiveContent = page.locator('#backtest-research-archive');
+        await expect
+          .poll(
+            () =>
+              archiveContent.evaluate((element) => {
+                const workspace = element.querySelector(
+                  '[data-backtest-report-workspace="saved-evidence"]',
+                );
+                const visibleEmpty = Array.from(
+                  element.querySelectorAll('[data-evidence-kind="empty"]'),
+                ).some(
+                  (state) =>
+                    (state as HTMLElement).getBoundingClientRect().height > 0,
+                );
+                return Boolean(workspace) || visibleEmpty;
+              }),
+            { timeout: 15_000 },
+          )
+          .toBe(true);
+        const reportWorkspace = archiveContent.locator(
+          '[data-backtest-report-workspace="saved-evidence"]',
+        );
+        if ((await reportWorkspace.count()) > 0) {
+          await expect(
+            reportWorkspace.locator('[data-workbench-primitive="filter-bar"]'),
+          ).toHaveCount(1);
+          await expect(
+            reportWorkspace.locator(
+              '[data-workbench-primitive="metric-strip"]',
+            ),
+          ).toHaveCount(3);
+          const reportGeometry = await reportWorkspace.evaluate((element) => ({
+            legacyPanels: element.querySelectorAll(
+              '.app-panel,.app-panel-strong',
+            ).length,
+            oversizedRadii: element.querySelectorAll('.rounded-2xl').length,
+            width: element.getBoundingClientRect().width,
+          }));
+          expect(reportGeometry.legacyPanels, theme).toBe(0);
+          expect(reportGeometry.oversizedRadii, theme).toBe(0);
+          expect(reportGeometry.width, theme).toBeLessThanOrEqual(390);
+        } else {
+          const visibleEmptyStateCount = await archiveContent
+            .locator('[data-evidence-kind="empty"]')
+            .evaluateAll(
+              (elements) =>
+                elements.filter(
+                  (element) =>
+                    (element as HTMLElement).getBoundingClientRect().height > 0,
+                ).length,
+            );
+          expect(visibleEmptyStateCount, theme).toBeGreaterThan(0);
+        }
+      }
     }
   }
 });

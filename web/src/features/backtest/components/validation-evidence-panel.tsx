@@ -1,4 +1,3 @@
-import { BadgeCheck, FlaskConical } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { useCopy } from '../../../app/copy';
@@ -34,12 +33,12 @@ function compactTimestamp(value?: string) {
 
 function validationTone(status?: string) {
   if (status === 'benchmark_passed') {
-    return 'text-[#a6e3a1]';
+    return 'text-[var(--app-success-text)]';
   }
   if (status === 'benchmark_failed') {
-    return 'text-[var(--app-danger)]';
+    return 'text-[var(--app-danger-text)]';
   }
-  return 'text-[#f9e2af]';
+  return 'text-[var(--app-warning-text)]';
 }
 
 function translatedBenchmarkRole(
@@ -110,26 +109,28 @@ export function ValidationEvidencePanel({
   ];
 
   return (
-    <section className="app-panel rounded-2xl p-4 sm:p-5">
+    <section
+      data-backtest-report-section="validation-evidence"
+      className="app-workbench-section min-w-0 border-t border-[var(--app-divider)] pt-4"
+    >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="app-kicker text-xs uppercase tracking-[0.16em]">
             {labels.kicker}
           </div>
-          <h3 className="app-card-title mt-1.5">{labels.title}</h3>
-          <p className="app-muted mt-2 max-w-3xl text-sm leading-6">
+          <h3 className="mt-1 text-base font-semibold text-[var(--app-text)]">
+            {labels.title}
+          </h3>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-[var(--app-text-secondary)]">
             {labels.subtitle}
           </p>
         </div>
-        <span className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_30%,transparent)] p-2 text-[var(--app-muted)]">
-          <FlaskConical className="h-4 w-4" aria-hidden="true" />
-        </span>
       </div>
 
-      <div className="mt-4 grid gap-3 xl:grid-cols-2">
+      <div className="mt-4 grid gap-4 xl:grid-cols-2">
         {afterCost ? (
           <EvidenceBlock title={labels.afterCostTitle}>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-2">
               <EvidenceStat
                 label={labels.netReturn}
                 value={formatPercent(afterCost.net_return)}
@@ -160,7 +161,7 @@ export function ValidationEvidencePanel({
 
         {oos ? (
           <EvidenceBlock title={labels.oosTitle}>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-2">
               <EvidenceStat
                 label={labels.strategy}
                 value={strategyDisplayName(
@@ -256,9 +257,8 @@ function EvidenceBlock({
   children: ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
-      <div className="flex items-center gap-2 text-sm font-semibold">
-        <BadgeCheck className="h-4 w-4 text-[#a6e3a1]" aria-hidden="true" />
+    <div className="min-w-0 border-t border-[var(--app-divider)] pt-3">
+      <div className="text-sm font-semibold text-[var(--app-text)]">
         {title}
       </div>
       <div className="mt-3">{children}</div>
@@ -276,7 +276,7 @@ function EvidenceStat({
   valueClassName?: string;
 }) {
   return (
-    <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-3 py-2">
+    <div className="min-w-0 border-l border-[var(--app-divider)] py-1 pl-3">
       <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
         {label}
       </div>
@@ -300,11 +300,11 @@ function EvidenceList({
   locale: Locale;
 }) {
   return (
-    <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-4 py-3">
+    <div className="mt-4 border-t border-[var(--app-divider)] pt-3">
       <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
         {title}
       </div>
-      <ul className="mt-2 space-y-1.5 text-sm leading-6 text-[var(--app-muted)]">
+      <ul className="mt-2 space-y-1.5 text-sm leading-6 text-[var(--app-text-secondary)]">
         {items.map((item) => (
           <li key={item}>{formatPublicNote(item, locale)}</li>
         ))}
