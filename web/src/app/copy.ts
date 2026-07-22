@@ -2077,6 +2077,40 @@ export const copy = {
         `${count} current holding${count === 1 ? ' needs' : 's need'} review`,
       holdingEvidenceConfirmedCount: (count: number) =>
         `${count} confirmed holding${count === 1 ? '' : 's'}`,
+      holdingEvidenceMetricsLabel: 'Current holding evidence metrics',
+      holdingEvidenceMetricReviewRequired: 'Review required',
+      holdingEvidenceMetricConfirmed: 'Confirmed',
+      holdingEvidenceExceptionListLabel:
+        'Holdings requiring market evidence review',
+      holdingEvidenceReasonLabel: 'Evidence gap',
+      holdingEvidenceClearingConditionLabel: 'Clearing condition',
+      holdingEvidenceSafeNextStepLabel: 'Safe next step',
+      holdingEvidenceEvidenceLabel: 'Persisted evidence',
+      holdingEvidenceClearingCondition:
+        'A newer persisted confirmed quote or NAV must replace this evidence.',
+      holdingEvidenceBlocksAuthoritativeDecisions:
+        'Authoritative decisions remain blocked for this holding.',
+      holdingEvidenceIdentityBlockedStatus: 'Identity blocked',
+      holdingEvidenceIdentityTitle: 'Valuation identity',
+      holdingEvidenceIdentityReason:
+        'The persisted snapshot is missing required valuation, ledger, or quote-set identity.',
+      holdingEvidenceIdentityClearingCondition:
+        'Persist and validate a complete snapshot binding before reviewing quote evidence.',
+      holdingEvidenceIdentityNextAction:
+        'Restore the missing persisted identity in Account Truth.',
+      holdingEvidenceIdentityEvidence: (count: number) =>
+        `${count} required identity field${count === 1 ? ' is' : 's are'} missing`,
+      holdingEvidenceReasons: {
+        confirmed_nav_missing:
+          'Confirmed NAV has not been published or persisted.',
+        estimated_quote_not_authoritative:
+          'The estimated quote is not authoritative market evidence.',
+        quote_stale_or_cached:
+          'The persisted quote is stale or bound to cached evidence.',
+        quote_missing_or_error: 'No usable persisted quote is available.',
+        quote_status_not_confirmed:
+          'The persisted quote status is not recognized as confirmed.',
+      },
       holdingEvidenceExplicitRefresh:
         'This button performs an explicit ingestion run. It may contact the configured market-data source, records the batch, and does not change ledger, OMS, risk, or authority.',
       holdingEvidenceConfirmedNavRefresh:
@@ -4686,6 +4720,33 @@ export const copy = {
         `${count} 个当前持仓需要复核`,
       holdingEvidenceConfirmedCount: (count: number) =>
         `${count} 个当前持仓已确认`,
+      holdingEvidenceMetricsLabel: '当前持仓证据指标',
+      holdingEvidenceMetricReviewRequired: '待复核',
+      holdingEvidenceMetricConfirmed: '已确认',
+      holdingEvidenceExceptionListLabel: '需要行情证据复核的当前持仓',
+      holdingEvidenceReasonLabel: '证据缺口',
+      holdingEvidenceClearingConditionLabel: '解除条件',
+      holdingEvidenceSafeNextStepLabel: '安全下一步',
+      holdingEvidenceEvidenceLabel: '持久化证据',
+      holdingEvidenceClearingCondition:
+        '必须由更新且已确认的持久化行情或净值证据替代后才能解除。',
+      holdingEvidenceBlocksAuthoritativeDecisions: '该持仓仍不能用于权威决策。',
+      holdingEvidenceIdentityBlockedStatus: '身份阻断',
+      holdingEvidenceIdentityTitle: '估值身份',
+      holdingEvidenceIdentityReason:
+        '持久化快照缺少必需的估值、账本或行情集身份。',
+      holdingEvidenceIdentityClearingCondition:
+        '必须先持久化并验证完整的快照绑定，才能继续复核行情证据。',
+      holdingEvidenceIdentityNextAction: '前往账户事实页恢复缺失的持久化身份。',
+      holdingEvidenceIdentityEvidence: (count: number) =>
+        `${count} 个必需身份字段缺失`,
+      holdingEvidenceReasons: {
+        confirmed_nav_missing: '确认净值尚未发布或持久化。',
+        estimated_quote_not_authoritative: '估算行情不属于权威行情证据。',
+        quote_stale_or_cached: '持久化行情已过期或仍受缓存证据约束。',
+        quote_missing_or_error: '当前没有可用的持久化行情。',
+        quote_status_not_confirmed: '持久化行情状态尚未被识别为已确认。',
+      },
       holdingEvidenceExplicitRefresh:
         '该按钮会执行显式 ingestion：可能联系已配置的行情源并记录批次，但不会修改账本、OMS、风控或任何权限。',
       holdingEvidenceConfirmedNavRefresh:

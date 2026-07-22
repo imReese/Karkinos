@@ -413,6 +413,25 @@ test('routes confirmed NAV blockers through confirmation-only ingestion', async 
   expect(
     within(panel).getByText('1 current holding needs review'),
   ).toBeTruthy();
+  expect(
+    within(panel).getByRole('list', {
+      name: 'Holdings requiring market evidence review',
+    }),
+  ).toBeTruthy();
+  expect(
+    within(panel).getByText(
+      'Confirmed NAV has not been published or persisted.',
+    ),
+  ).toBeTruthy();
+  expect(
+    within(panel).getByText(
+      'A newer persisted confirmed quote or NAV must replace this evidence.',
+    ),
+  ).toBeTruthy();
+  expect(
+    panel.querySelector('[data-workbench-primitive="metric-strip"]'),
+  ).toBeTruthy();
+  expect(panel.querySelector('article')).toBeNull();
   expect(within(panel).queryByText('valuation-market-fixture')).toBeNull();
   await user.click(
     within(panel).getByRole('button', { name: 'View evidence identity' }),
@@ -439,4 +458,33 @@ test('routes confirmed NAV blockers through confirmation-only ingestion', async 
   expect(
     await within(panel).findByText('1 confirmed fund NAV persisted'),
   ).toBeTruthy();
+});
+
+test('keeps valuation identity blockers ahead of quote review', async () => {
+  renderMarketPage({
+    marketEvidenceReview: {
+      ...currentHoldingMarketEvidenceReview,
+      status: 'blocked_identity',
+      next_manual_action: 'restore_valuation_identity_before_review',
+      valuation_snapshot_id: null,
+      source_blockers: ['valuation_snapshot_id_missing'],
+    },
+  });
+
+  const panel = await screen.findByTestId(
+    'current-holding-market-evidence-review',
+  );
+  expect(await within(panel).findByText('Valuation identity')).toBeTruthy();
+  expect(
+    within(panel).getByText('1 required identity field is missing'),
+  ).toBeTruthy();
+  expect(
+    within(panel).getByText(
+      'Persist and validate a complete snapshot binding before reviewing quote evidence.',
+    ),
+  ).toBeTruthy();
+  expect(within(panel).queryByText('valuation_snapshot_id_missing')).toBeNull();
+  expect(
+    within(panel).queryByText('There are no current holdings to review.'),
+  ).toBeNull();
 });
