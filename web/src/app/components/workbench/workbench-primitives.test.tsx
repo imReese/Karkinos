@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { createColumnHelper } from '@tanstack/react-table';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { vi } from 'vitest';
 
 import {
   ControlledActionZone,
@@ -21,6 +22,11 @@ import {
 
 test('keeps full evidence identifiers behind an explicit disclosure', async () => {
   const user = userEvent.setup();
+  const writeText = vi.fn();
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText },
+  });
 
   render(
     <EvidenceIdentityDisclosure
@@ -28,6 +34,8 @@ test('keeps full evidence identifiers behind an explicit disclosure', async () =
       title="Evidence identity"
       description="Persisted audit identity"
       closeLabel="Close evidence identity"
+      copyLabel={(label) => `Copy ${label}`}
+      copiedLabel={(label) => `${label} copied`}
       fields={[
         {
           label: 'Valuation snapshot',
@@ -46,6 +54,13 @@ test('keeps full evidence identifiers behind an explicit disclosure', async () =
   expect(screen.getByText('valuation-private-full-identity')).toBeTruthy();
   expect(
     screen.getByRole('dialog', { name: 'Evidence identity' }),
+  ).toBeTruthy();
+  await user.click(
+    screen.getByRole('button', { name: 'Copy Valuation snapshot' }),
+  );
+  expect(writeText).toHaveBeenCalledWith('valuation-private-full-identity');
+  expect(
+    screen.getByRole('button', { name: 'Valuation snapshot copied' }),
   ).toBeTruthy();
 });
 
