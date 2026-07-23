@@ -279,11 +279,14 @@ test('market keeps context, evidence review, and provider telemetry task-ordered
         const route = document.querySelector(
           '[data-workbench-route="market"]',
         ) as HTMLElement;
-        const tableScroll = document.querySelector(
-          '[data-testid="market-research-table-scroll"]',
+        const workspace = document.querySelector(
+          '[data-testid="market-instrument-workspace"]',
         ) as HTMLElement | null;
-        const table = document.querySelector(
-          '[data-testid="market-research-table"]',
+        const list = document.querySelector(
+          '[data-testid="market-instrument-list"]',
+        ) as HTMLElement | null;
+        const detail = document.querySelector(
+          '[data-testid="market-selected-instrument"]',
         ) as HTMLElement | null;
         const review = document.querySelector(
           '[data-testid="current-holding-market-evidence-review"]',
@@ -295,14 +298,14 @@ test('market keeps context, evidence review, and provider telemetry task-ordered
             document.documentElement.clientWidth,
           oversizedRadii: route.querySelectorAll('.rounded-2xl,.rounded-3xl')
             .length,
-          tableOverflow: tableScroll
-            ? tableScroll.scrollWidth - tableScroll.clientWidth
-            : 0,
-          tableExists: table !== null,
-          quietReviewAfterContext:
-            table !== null && review !== null
+          workspaceExists: workspace !== null,
+          listOverflow: list ? list.scrollHeight - list.clientHeight : 0,
+          listWidth: list?.getBoundingClientRect().width ?? 0,
+          detailWidth: detail?.getBoundingClientRect().width ?? 0,
+          reviewAfterList:
+            list !== null && review !== null
               ? review.getBoundingClientRect().top >
-                table.getBoundingClientRect().top
+                list.getBoundingClientRect().top
               : true,
         };
       });
@@ -317,23 +320,25 @@ test('market keeps context, evidence review, and provider telemetry task-ordered
       ).toBeLessThanOrEqual(0);
       expect(geometry.oversizedRadii, `${theme} ${viewport.width}`).toBe(0);
       expect(
-        geometry.tableOverflow,
+        geometry.listOverflow,
         `${theme} ${viewport.width}`,
       ).toBeGreaterThanOrEqual(0);
-      expect(
-        geometry.quietReviewAfterContext,
-        `${theme} ${viewport.width}`,
-      ).toBe(true);
+      expect(geometry.reviewAfterList, `${theme} ${viewport.width}`).toBe(true);
 
-      if (geometry.tableExists) {
-        const table = page.getByTestId('market-research-table');
-        await expect(table).toBeVisible();
-        await expect(
-          table.getByRole('columnheader', { name: /Symbol|代码/ }),
-        ).toBeVisible();
-        await expect(
-          table.getByRole('columnheader', { name: /Evidence mode|证据模式/ }),
-        ).toBeVisible();
+      if (geometry.workspaceExists) {
+        const list = page.getByTestId('market-instrument-list');
+        const detail = page.getByTestId('market-selected-instrument');
+        await expect(list).toBeVisible();
+        await expect(detail).toBeVisible();
+        await expect(list.getByRole('button', { pressed: true })).toBeVisible();
+        expect(
+          geometry.listWidth,
+          `${theme} ${viewport.width}`,
+        ).toBeGreaterThan(0);
+        expect(
+          geometry.detailWidth,
+          `${theme} ${viewport.width}`,
+        ).toBeGreaterThan(0);
       }
     }
   }

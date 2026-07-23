@@ -306,11 +306,15 @@ test('keeps missing quote and holding values unavailable instead of inventing ze
     ],
   });
 
-  const instrument = await screen.findByRole('button', { name: /测试标的/ });
-  const row = instrument.closest('tr');
+  const instrument = await screen.findByRole('button', {
+    name: '测试标的 600519',
+  });
+  const row = instrument.closest('[data-market-instrument-row]');
   expect(row).toBeTruthy();
-  expect(within(row as HTMLTableRowElement).getAllByText('--')).toHaveLength(2);
-  expect(within(row as HTMLTableRowElement).queryByText('¥0.00')).toBeNull();
+  expect(within(row as HTMLElement).getAllByText('--')).toHaveLength(2);
+  expect(within(row as HTMLElement).queryByText('¥0.00')).toBeNull();
+  const detail = await screen.findByTestId('market-selected-instrument');
+  expect(within(detail).getAllByText('--').length).toBeGreaterThan(0);
   expect(screen.queryByText('¥0.00')).toBeNull();
 });
 
@@ -332,7 +336,6 @@ test('counts cache estimated and missing quotes as market data needing confirmat
     0,
   );
   expect((await screen.findAllByText('Cache only')).length).toBeGreaterThan(0);
-  expect(await screen.findByText('Evidence mode')).toBeTruthy();
   expect(await screen.findByText('3 quotes need review')).toBeTruthy();
 });
 
@@ -384,39 +387,114 @@ test('surfaces selected symbol next action without leaking raw data status codes
   ).toBeNull();
 });
 
-test('uses a semantic comparison table with local overflow and quiet secondary provider details', async () => {
+test('uses a compact master-detail instrument workspace with local list overflow', async () => {
   renderMarketPage();
 
-  const table = await screen.findByRole('table', { name: 'Research board' });
+  const workspace = await screen.findByTestId('market-instrument-workspace');
+  const list = within(workspace).getByRole('list', {
+    name: 'Research board',
+  });
+  const selected = within(list).getByRole('button', {
+    name: '测试标的 600519',
+  });
+  expect(selected.getAttribute('aria-pressed')).toBe('true');
+  expect(selected.getAttribute('aria-controls')).toBe(
+    'market-instrument-detail',
+  );
+  expect(list.classList.contains('overflow-y-auto')).toBe(true);
+  expect(workspace.className).toContain(
+    'xl:grid-cols-[minmax(264px,296px)_minmax(0,1fr)]',
+  );
+  const remove = within(list).getByRole('button', {
+    name: 'Remove: 测试标的 600519',
+  });
+  expect(remove.className).toContain('opacity-70');
+  expect(remove.className).toContain('focus-visible:opacity-100');
   expect(
-    within(table).getByRole('columnheader', { name: 'Symbol' }),
+    within(workspace).getByTestId('market-selected-instrument'),
   ).toBeTruthy();
-  expect(
-    within(table).getByRole('columnheader', { name: 'Price' }),
-  ).toBeTruthy();
-  expect(
-    within(table).getByRole('columnheader', { name: 'Evidence mode' }),
-  ).toBeTruthy();
-  expect(
-    screen
-      .getByTestId('market-research-table-scroll')
-      .classList.contains('overflow-x-auto'),
-  ).toBe(true);
 
   const providerDetails = screen.getByTestId('market-provider-details');
   expect(providerDetails.hasAttribute('open')).toBe(false);
   expect(screen.getByTestId('market-data-health-summary')).toBeTruthy();
 });
 
+test('keeps instrument selection explicit and updates the single detail canvas', async () => {
+  const user = userEvent.setup();
+  renderMarketPage({
+    quotes: [
+      health.quotes[0],
+      {
+        ...health.quotes[0],
+        symbol: '000001',
+        price: 12.5,
+        daily_change: -0.2,
+      },
+    ],
+    items: [
+      {
+        symbol: '600519',
+        asset_class: 'stock',
+        name: '测试标的',
+        is_holding: true,
+        quantity: 100,
+        avg_cost: 90,
+        market_value: 10000,
+        unrealized_pnl: 1000,
+        realized_pnl: 0,
+        last_snapshot_at: '2026-06-17T14:10:00+08:00',
+        price: 100,
+        volume: 1000,
+        research_count: 1,
+        last_research_at: '2026-06-17T10:00:00+08:00',
+      },
+      {
+        symbol: '000001',
+        asset_class: 'stock',
+        name: '第二标的',
+        is_holding: false,
+        quantity: null,
+        avg_cost: null,
+        market_value: null,
+        unrealized_pnl: null,
+        realized_pnl: null,
+        last_snapshot_at: '2026-06-17T14:10:00+08:00',
+        price: 12.5,
+        volume: 800,
+        research_count: 2,
+        last_research_at: '2026-06-17T11:00:00+08:00',
+      },
+    ],
+  });
+
+  const first = await screen.findByRole('button', {
+    name: '测试标的 600519',
+  });
+  const second = screen.getByRole('button', { name: '第二标的 000001' });
+  expect(first.getAttribute('aria-pressed')).toBe('true');
+  expect(second.getAttribute('aria-pressed')).toBe('false');
+
+  await user.click(second);
+
+  expect(first.getAttribute('aria-pressed')).toBe('false');
+  expect(second.getAttribute('aria-pressed')).toBe('true');
+  const detail = screen.getByTestId('market-selected-instrument');
+  expect(
+    within(detail).getByRole('heading', { name: '第二标的' }),
+  ).toBeTruthy();
+  expect(within(detail).getAllByText('¥12.50').length).toBeGreaterThan(0);
+  expect(within(detail).getByText('-¥0.20')).toBeTruthy();
+});
+
 test('keeps quiet confirmed holding evidence after market context', async () => {
   renderMarketPage();
 
-  const table = await screen.findByTestId('market-research-table');
+  const list = await screen.findByTestId('market-instrument-list');
   const review = await screen.findByTestId(
     'current-holding-market-evidence-review',
   );
   expect(
-    table.compareDocumentPosition(review) & Node.DOCUMENT_POSITION_FOLLOWING,
+    list.compareDocumentPosition(review) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
 });
 
@@ -477,8 +555,9 @@ test('routes confirmed NAV blockers through confirmation-only ingestion', async 
     ),
   ).toBeTruthy();
   expect(
-    panel.querySelector('[data-workbench-primitive="metric-strip"]'),
+    within(panel).getByTestId('holding-evidence-compact-list'),
   ).toBeTruthy();
+  expect(panel.getAttribute('data-density')).toBe('compact');
   expect(panel.querySelector('article')).toBeNull();
   expect(within(panel).queryByText('valuation-market-fixture')).toBeNull();
   const actionCluster = within(panel).getByTestId('holding-evidence-actions');
