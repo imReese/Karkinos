@@ -172,8 +172,8 @@ import {
   type QuoteFetchRun,
 } from '../features/market/api';
 import { CurrentHoldingMarketEvidenceReviewPanel } from '../features/market/components/current-holding-market-evidence-review-panel';
+import { MarketInstrumentWorkspace } from '../features/market/components/market-instrument-workspace';
 import { MarketRefreshButton } from '../features/market/components/market-refresh-button';
-import { PriceStructureChart } from '../features/market/components/price-structure-chart';
 import { SettingsPage } from '../features/settings/components/settings-page';
 import {
   formatCurrency as formatCurrencyValue,
@@ -193,7 +193,6 @@ import { formatStaleReason } from '../shared/stale-reason';
 import {
   formatMarketDataStatusNextAction,
   isCacheLikeMarketDataStatus,
-  isConfirmedMarketDataStatus,
   isUnconfirmedMarketDataStatus,
 } from '../shared/market-data-status';
 
@@ -4013,14 +4012,6 @@ export function MarketPage() {
           }
         />
 
-        {holdingReviewNeedsAttention ? (
-          <CurrentHoldingMarketEvidenceReviewPanel
-            report={holdingMarketEvidenceReview.data}
-            loading={holdingMarketEvidenceReview.isLoading}
-            error={holdingMarketEvidenceReview.isError}
-          />
-        ) : null}
-
         {board.isLoading ? (
           <EvidenceState
             kind="loading"
@@ -4066,466 +4057,102 @@ export function MarketPage() {
               ]}
             />
 
-            <div className="grid gap-5 xl:grid-cols-[minmax(0,1.28fr)_minmax(320px,0.72fr)]">
-              <div className="app-workbench-section min-w-0 overflow-hidden">
-                <div className="border-b border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-4 py-4 sm:px-5">
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                    <div>
-                      <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-                        {copy.market.personalUniverse}
-                      </div>
-                      <div className="mt-1 text-lg font-semibold text-[var(--app-text)]">
-                        {copy.market.watchlist}
-                      </div>
-                      <p className="mt-1 max-w-2xl text-xs leading-5 text-[var(--app-text-secondary)]">
-                        {copy.market.scopeBoundary}
-                      </p>
-                    </div>
-                    <StatusBadge
-                      tone={health?.market_open ? 'success' : 'neutral'}
-                    >
-                      {marketStateLabel}
-                    </StatusBadge>
-                  </div>
-                </div>
-
-                <form
-                  className="grid gap-3 border-b border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] px-4 py-4 md:grid-cols-[minmax(0,1fr)_160px_96px] sm:px-5"
-                  onSubmit={async (event) => {
-                    event.preventDefault();
-                    if (!newSymbol.trim()) {
-                      return;
-                    }
-                    await addWatchlistItem.mutateAsync({
-                      symbol: newSymbol.trim(),
-                      asset_class: newAssetClass,
-                    });
-                    setNewSymbol('');
-                    setSelectedSymbol('');
-                  }}
-                >
-                  <label className="grid gap-2">
-                    <span className="text-sm font-medium">
-                      {copy.market.symbolLabel}
-                    </span>
-                    <input
-                      name="watchlist_symbol"
-                      autoComplete="off"
-                      value={newSymbol}
-                      onChange={(event) => setNewSymbol(event.target.value)}
-                      placeholder={copy.market.symbolPlaceholder}
-                      className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
-                    />
-                  </label>
-                  <label className="grid gap-2">
-                    <span className="text-sm font-medium">
-                      {copy.market.assetClass}
-                    </span>
-                    <select
-                      name="watchlist_asset_class"
-                      value={newAssetClass}
-                      onChange={(event) => setNewAssetClass(event.target.value)}
-                      className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
-                    >
-                      {assetClassOptions.map(([value, label]) => (
-                        <option key={value} value={value}>
-                          {label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <button
-                    type="submit"
-                    className="app-button-primary rounded-[var(--app-radius-control)] px-4 py-2 text-sm"
-                  >
-                    {copy.market.add}
-                  </button>
-                </form>
-
-                {items.length > 0 ? (
-                  <div
-                    className="max-w-full overflow-x-auto overscroll-x-contain"
-                    data-testid="market-research-table-scroll"
-                  >
-                    <table
-                      className="w-full min-w-[760px] border-collapse text-left text-xs"
-                      data-testid="market-research-table"
-                    >
-                      <caption className="sr-only">
-                        {copy.market.watchlist}
-                      </caption>
-                      <thead className="bg-[var(--app-surface-raised)] text-[var(--app-text-secondary)]">
-                        <tr>
-                          {[
-                            copy.market.symbolLabel,
-                            copy.market.priceLabel,
-                            copy.market.holdingsContext,
-                            copy.market.evidenceMode,
-                            copy.market.researchCount,
-                            '',
-                          ].map((label, index) => (
-                            <th
-                              key={`${label}-${index}`}
-                              scope="col"
-                              className="border-b border-[var(--app-divider)] px-3 py-2 font-semibold"
-                            >
-                              {label || (
-                                <span className="sr-only">
-                                  {copy.market.remove}
-                                </span>
-                              )}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[var(--app-divider)] bg-[var(--app-surface)]">
-                        {items.map((item) => {
-                          const itemHealth = healthBySymbol.get(item.symbol);
-                          const isActive = activeSymbol === item.symbol;
-                          const quoteStatus = itemHealth?.quote_status ?? null;
-                          const quoteStatusLabel = itemHealth?.quote_status
-                            ? formatPublicStatus(
-                                itemHealth.quote_status,
-                                locale,
-                              )
-                            : '--';
-                          return (
-                            <tr
-                              key={item.symbol}
-                              className={
-                                isActive
-                                  ? 'bg-[color-mix(in_srgb,var(--app-accent)_10%,transparent)]'
-                                  : 'hover:bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)]'
-                              }
-                            >
-                              <th scope="row" className="px-3 py-2.5">
-                                <button
-                                  type="button"
-                                  aria-pressed={isActive}
-                                  aria-label={`${item.name || item.symbol} ${item.symbol}`}
-                                  className="min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)]"
-                                  onClick={() => setSelectedSymbol(item.symbol)}
-                                >
-                                  <span className="block truncate text-sm font-semibold text-[var(--app-text)]">
-                                    {item.name || item.symbol}
-                                  </span>
-                                  <span className="mt-0.5 block font-mono text-[11px] font-normal tabular-nums text-[var(--app-text-tertiary)]">
-                                    {item.symbol} ·{' '}
-                                    {getAssetClassLabel(copy, item.asset_class)}
-                                  </span>
-                                </button>
-                              </th>
-                              <td className="px-3 py-2.5 font-mono text-sm font-semibold tabular-nums">
-                                {item.price == null
-                                  ? '--'
-                                  : formatCurrency(item.price)}
-                              </td>
-                              <td className="px-3 py-2.5 font-mono text-sm tabular-nums">
-                                {item.is_holding && item.market_value != null
-                                  ? formatCurrency(item.market_value)
-                                  : '--'}
-                              </td>
-                              <td className="px-3 py-2.5">
-                                <div className="flex items-center gap-2">
-                                  <StatusBadge
-                                    tone={
-                                      isConfirmedMarketDataStatus(quoteStatus)
-                                        ? 'success'
-                                        : isUnconfirmedMarketDataStatus(
-                                              quoteStatus,
-                                            )
-                                          ? 'warning'
-                                          : 'neutral'
-                                    }
-                                  >
-                                    {quoteStatusLabel}
-                                  </StatusBadge>
-                                  <span className="font-mono text-[11px] tabular-nums text-[var(--app-text-tertiary)]">
-                                    {formatAge(itemHealth?.quote_age_seconds)}
-                                  </span>
-                                </div>
-                              </td>
-                              <td className="px-3 py-2.5">
-                                <span className="font-mono text-sm tabular-nums">
-                                  {item.research_count}
-                                </span>
-                                <span className="mt-0.5 block text-[11px] text-[var(--app-text-tertiary)]">
-                                  {formatTimestamp(item.last_research_at)}
-                                </span>
-                              </td>
-                              <td className="px-3 py-2.5 text-right">
-                                <button
-                                  type="button"
-                                  className="app-button-secondary rounded-[var(--app-radius-control)] px-3 py-1 text-xs"
-                                  onClick={async () => {
-                                    await removeWatchlistItem.mutateAsync(
-                                      item.symbol,
-                                    );
-                                    if (activeSymbol === item.symbol) {
-                                      setSelectedSymbol('');
-                                    }
-                                  }}
-                                >
-                                  {copy.market.remove}
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <EvidenceState
-                    kind="empty"
-                    title={copy.market.noSelection}
-                    description={copy.market.scopeBoundary}
-                    className="border-0"
-                  />
-                )}
-              </div>
-
-              <div className="space-y-5">
-                <section
-                  className="min-w-0 border-y border-[var(--app-divider)] py-4"
-                  data-testid="market-data-health-summary"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-                        {copy.market.health}
-                      </div>
-                      <div className="mt-1 flex flex-wrap items-center gap-2">
-                        <h2 className="text-lg font-semibold text-[var(--app-text)]">
-                          {copy.market.sourceHealth}
-                        </h2>
-                        <StatusBadge
-                          tone={
-                            cacheBound || staleCount > 0
-                              ? 'warning'
-                              : health
-                                ? 'success'
-                                : 'neutral'
-                          }
-                        >
-                          {sourceHealthLabel}
-                        </StatusBadge>
-                      </div>
-                    </div>
-                    <MarketRefreshButton
-                      onComplete={(response) => {
-                        const title =
-                          response.quote_status === 'live'
-                            ? copy.market.quoteRefreshComplete
-                            : response.quote_status === 'partial'
-                              ? copy.market.quoteRefreshPartial
-                              : response.quote_status === 'stale'
-                                ? copy.market.quoteRefreshStale
-                                : copy.market.quoteRefreshFailed;
-                        pushToast(
-                          response.quote_status === 'error'
-                            ? 'error'
-                            : 'success',
-                          title,
-                          response.message,
-                        );
-                      }}
-                      onError={(error) => {
-                        pushToast(
-                          'error',
-                          copy.market.quoteRefreshFailed,
-                          error.message,
-                        );
-                      }}
-                    />
-                  </div>
-
-                  <MetricStrip
-                    className="mt-3"
-                    ariaLabel={copy.market.health}
-                    items={[
-                      {
-                        id: 'provider',
-                        label: copy.market.provider,
-                        value: health?.provider_name ?? copy.market.unknown,
-                        detail: providerStatusLabel,
-                      },
-                      {
-                        id: 'refresh-policy',
-                        label: copy.market.refreshPolicy,
-                        value: refreshPolicyLabel,
-                        detail: providerConfiguredLabel,
-                        tone: cacheBound ? 'warning' : 'neutral',
-                      },
-                      {
-                        id: 'cache-age',
-                        label: copy.market.cacheAge,
-                        value: formatAge(health?.cache_age_seconds),
-                        detail: latestQuoteLabel,
-                      },
-                      {
-                        id: 'review-count',
-                        label: copy.market.health,
-                        value: staleCount,
-                        detail: copy.market.staleSymbols,
-                        tone: staleCount > 0 ? 'warning' : 'neutral',
-                      },
-                    ]}
-                  />
-
-                  {providerAction ? (
-                    <div className="mt-3 border-l-2 border-[var(--app-warning-border)] pl-3 text-xs leading-5 text-[var(--app-text-secondary)]">
-                      <span className="font-semibold text-[var(--app-text)]">
-                        {copy.market.providerNextAction}:
-                      </span>{' '}
-                      {providerAction}
-                    </div>
-                  ) : null}
-
-                  <details
-                    className="group mt-3 border-t border-[var(--app-divider)] pt-2"
-                    data-testid="market-provider-details"
-                  >
-                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-semibold text-[var(--app-text-secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)]">
-                      <span>{copy.market.providerStatus}</span>
-                      <span
-                        aria-hidden="true"
-                        className="group-open:rotate-180"
-                      >
-                        ▾
-                      </span>
-                    </summary>
-                    <dl className="mt-3 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)] text-xs">
-                      {[
-                        [
-                          copy.market.providerConfigured,
-                          providerConfiguredLabel,
-                        ],
-                        [copy.market.providerSupportsFunds, providerFundsLabel],
-                        [
-                          copy.market.metadataConfiguredCount,
-                          health == null
-                            ? '--'
-                            : String(health.metadata_configured_count),
-                        ],
-                        [
-                          copy.market.providerTimeout,
-                          health?.provider_timeout_seconds == null
-                            ? '--'
-                            : `${health.provider_timeout_seconds}s`,
-                        ],
-                        [
-                          copy.market.lastRefreshAttempt,
-                          formatTimestamp(health?.last_refresh_attempt),
-                        ],
-                        [
-                          copy.market.lastRefreshError,
-                          formatStaleReason(
-                            health?.provider_last_error ??
-                              health?.last_refresh_error,
-                            copy.common.staleReasons,
-                          ),
-                        ],
-                      ].map(([label, value]) => (
-                        <div
-                          key={label}
-                          className="grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-3 px-2 py-2"
-                        >
-                          <dt className="text-[var(--app-text-tertiary)]">
-                            {label}
-                          </dt>
-                          <dd className="min-w-0 break-words text-right text-[var(--app-text-secondary)]">
-                            {value}
-                          </dd>
-                        </div>
-                      ))}
-                    </dl>
-                  </details>
-                </section>
-                <details className="group border-y border-[var(--app-divider)] py-2">
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-[var(--app-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)]">
-                    <span>{copy.market.promptsTitle}</span>
-                    <span aria-hidden="true" className="group-open:rotate-180">
-                      ▾
-                    </span>
-                  </summary>
-                  <div className="mt-2 divide-y divide-[var(--app-divider)]">
-                    {copy.market.prompts.map((prompt) => (
-                      <div
-                        key={prompt}
-                        className="py-2 text-xs leading-5 text-[var(--app-text-secondary)]"
-                      >
-                        {prompt}
-                      </div>
-                    ))}
-                  </div>
-                </details>
+            <MarketInstrumentWorkspace
+              items={items}
+              healthBySymbol={healthBySymbol}
+              activeSymbol={activeSymbol}
+              selectedItem={selectedItem}
+              selectedHealthQuote={selectedHealthQuote}
+              selectedQuoteNextAction={selectedQuoteNextAction}
+              bars={kline.data ?? []}
+              onSelect={setSelectedSymbol}
+              onRemove={async (symbol) => {
+                await removeWatchlistItem.mutateAsync(symbol);
+                if (activeSymbol === symbol) {
+                  setSelectedSymbol('');
+                }
+              }}
+              watchlistEditor={
                 <details
-                  className="group border-y border-[var(--app-divider)] py-2"
-                  data-testid="market-data-operations-disclosure"
+                  className="group border-b border-[var(--app-divider)]"
+                  data-testid="market-watchlist-editor"
                 >
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-[var(--app-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)]">
-                    <span>{copy.market.dataOperations}</span>
-                    <span className="flex items-center gap-2 font-mono text-xs font-normal tabular-nums text-[var(--app-text-tertiary)]">
-                      {quoteFetchRuns.data?.length ?? 0}
-                      <span
-                        aria-hidden="true"
-                        className="group-open:rotate-180"
-                      >
-                        ▾
-                      </span>
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-semibold text-[var(--app-text-secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--app-focus-ring)]">
+                    <span>{copy.market.addSymbol}</span>
+                    <span
+                      aria-hidden="true"
+                      className="transition-transform group-open:rotate-45 motion-reduce:transition-none"
+                    >
+                      +
                     </span>
                   </summary>
-                  <div className="mt-3">
-                    <MarketDataOperationsPanel
-                      runs={quoteFetchRuns.data ?? []}
-                      loading={quoteFetchRuns.isLoading}
-                      error={quoteFetchRuns.isError}
-                      metadataPending={metadataBackfill.isPending}
-                      barsPending={barsBackfill.isPending}
-                      onMetadataBackfill={async () => {
-                        try {
-                          const result = await metadataBackfill.mutateAsync();
-                          pushToast(
-                            'success',
-                            copy.market.metadataBackfillComplete,
-                            copy.market.backfillResult(
-                              result.updated_count,
-                              result.failed_count,
-                            ),
-                          );
-                        } catch (error) {
-                          pushToast(
-                            'error',
-                            copy.market.metadataBackfillFailed,
-                            getErrorMessage(error),
-                          );
+                  <form
+                    className="grid gap-3 border-t border-[var(--app-divider)] px-3 py-3"
+                    onSubmit={async (event) => {
+                      event.preventDefault();
+                      if (!newSymbol.trim()) {
+                        return;
+                      }
+                      await addWatchlistItem.mutateAsync({
+                        symbol: newSymbol.trim(),
+                        asset_class: newAssetClass,
+                      });
+                      setNewSymbol('');
+                      setSelectedSymbol('');
+                    }}
+                  >
+                    <label className="grid gap-1.5">
+                      <span className="text-xs font-medium">
+                        {copy.market.symbolLabel}
+                      </span>
+                      <input
+                        name="watchlist_symbol"
+                        autoComplete="off"
+                        value={newSymbol}
+                        onChange={(event) => setNewSymbol(event.target.value)}
+                        placeholder={copy.market.symbolPlaceholder}
+                        className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
+                      />
+                    </label>
+                    <label className="grid gap-1.5">
+                      <span className="text-xs font-medium">
+                        {copy.market.assetClass}
+                      </span>
+                      <select
+                        name="watchlist_asset_class"
+                        value={newAssetClass}
+                        onChange={(event) =>
+                          setNewAssetClass(event.target.value)
                         }
-                      }}
-                      onBarsBackfill={async () => {
-                        try {
-                          const result = await barsBackfill.mutateAsync();
-                          pushToast(
-                            'success',
-                            copy.market.barsBackfillComplete,
-                            copy.market.backfillResult(
-                              result.updated_count,
-                              result.failed_count,
-                            ),
-                          );
-                        } catch (error) {
-                          pushToast(
-                            'error',
-                            copy.market.barsBackfillFailed,
-                            getErrorMessage(error),
-                          );
-                        }
-                      }}
-                    />
-                  </div>
+                        className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
+                      >
+                        {assetClassOptions.map(([value, label]) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      type="submit"
+                      className="app-button-primary min-h-10 rounded-[var(--app-radius-control)] px-4 py-2 text-sm sm:min-h-8"
+                    >
+                      {copy.market.add}
+                    </button>
+                  </form>
                 </details>
-              </div>
-            </div>
+              }
+              evidenceReview={
+                holdingReviewNeedsAttention ? (
+                  <CurrentHoldingMarketEvidenceReviewPanel
+                    report={holdingMarketEvidenceReview.data}
+                    loading={holdingMarketEvidenceReview.isLoading}
+                    error={holdingMarketEvidenceReview.isError}
+                    compact
+                  />
+                ) : undefined
+              }
+            />
 
             {!holdingReviewNeedsAttention ? (
               <CurrentHoldingMarketEvidenceReviewPanel
@@ -4535,164 +4162,235 @@ export function MarketPage() {
               />
             ) : null}
 
-            <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
-              <div className="app-workbench-section min-w-0 p-4 sm:p-5">
-                <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-                  {copy.market.chart}
-                </div>
-                <div className="mt-4">
-                  {selectedItem ? (
-                    <PriceStructureChart
-                      bars={kline.data ?? []}
-                      emptyLabel={copy.market.noChart}
-                      titleLabel={copy.market.priceRangeKline}
-                      priceLabel={copy.market.priceLabel}
-                      rangeLabels={copy.market.klineRanges}
-                      axisLabels={copy.market.klineAxes}
-                      rangeAriaLabel={copy.market.showKlineRange}
-                    />
-                  ) : (
-                    <div className="app-muted text-sm">
-                      {copy.market.noSelection}
-                    </div>
-                  )}
-                </div>
-              </div>
+            <div className="grid min-w-0 gap-4 lg:grid-cols-3">
               <section
-                className="min-w-0 border-y border-[var(--app-divider)] py-4"
-                data-testid="market-selected-instrument"
+                className="min-w-0 border-y border-[var(--app-divider)] py-4 lg:col-span-2"
+                data-testid="market-data-health-summary"
               >
-                {selectedItem ? (
-                  <>
-                    <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-                          {copy.market.selectedSymbol}
-                        </div>
-                        <h2 className="mt-1 truncate text-lg font-semibold text-[var(--app-text)]">
-                          {selectedItem.name || selectedItem.symbol}
-                        </h2>
-                      </div>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+                      {copy.market.health}
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <h2 className="text-lg font-semibold text-[var(--app-text)]">
+                        {copy.market.sourceHealth}
+                      </h2>
                       <StatusBadge
                         tone={
-                          isConfirmedMarketDataStatus(
-                            selectedHealthQuote?.quote_status,
-                          )
-                            ? 'success'
-                            : isUnconfirmedMarketDataStatus(
-                                  selectedHealthQuote?.quote_status,
-                                )
-                              ? 'warning'
+                          cacheBound || staleCount > 0
+                            ? 'warning'
+                            : health
+                              ? 'success'
                               : 'neutral'
                         }
                       >
-                        {selectedHealthQuote?.quote_status
-                          ? formatPublicStatus(
-                              selectedHealthQuote.quote_status,
-                              locale,
-                            )
-                          : copy.market.unknown}
+                        {sourceHealthLabel}
                       </StatusBadge>
                     </div>
+                  </div>
+                  <MarketRefreshButton
+                    onComplete={(response) => {
+                      const title =
+                        response.quote_status === 'live'
+                          ? copy.market.quoteRefreshComplete
+                          : response.quote_status === 'partial'
+                            ? copy.market.quoteRefreshPartial
+                            : response.quote_status === 'stale'
+                              ? copy.market.quoteRefreshStale
+                              : copy.market.quoteRefreshFailed;
+                      pushToast(
+                        response.quote_status === 'error' ? 'error' : 'success',
+                        title,
+                        response.message,
+                      );
+                    }}
+                    onError={(error) => {
+                      pushToast(
+                        'error',
+                        copy.market.quoteRefreshFailed,
+                        error.message,
+                      );
+                    }}
+                  />
+                </div>
 
-                    <MetricStrip
-                      className="mt-3"
-                      ariaLabel={copy.market.selectedSymbol}
-                      items={[
-                        {
-                          id: 'symbol',
-                          label: copy.market.symbolLabel,
-                          value: selectedItem.symbol,
-                          detail: getAssetClassLabel(
-                            copy,
-                            selectedItem.asset_class,
-                          ),
-                        },
-                        {
-                          id: 'price',
-                          label: copy.market.priceLabel,
-                          value:
-                            selectedItem.price == null
-                              ? '--'
-                              : formatCurrency(selectedItem.price),
-                          detail:
-                            selectedHealthQuote?.quote_source ??
-                            copy.market.unknown,
-                        },
-                        {
-                          id: 'holding',
-                          label: copy.market.holdingsContext,
-                          value:
-                            selectedItem.is_holding &&
-                            selectedItem.market_value != null
-                              ? formatCurrency(selectedItem.market_value)
-                              : '--',
-                          detail: selectedItem.is_holding
-                            ? `${copy.explainability.quantity} ${formatQuantity(
-                                selectedItem.quantity,
-                              )}`
-                            : '--',
-                        },
-                        {
-                          id: 'quote-age',
-                          label: copy.market.quoteAge,
-                          value: formatAge(
-                            selectedHealthQuote?.quote_age_seconds,
-                          ),
-                          detail: formatTimestamp(
-                            selectedHealthQuote?.timestamp,
-                          ),
-                          tone: isUnconfirmedMarketDataStatus(
-                            selectedHealthQuote?.quote_status,
-                          )
-                            ? 'warning'
-                            : 'neutral',
-                        },
-                      ]}
-                    />
+                <MetricStrip
+                  className="mt-3"
+                  ariaLabel={copy.market.health}
+                  items={[
+                    {
+                      id: 'provider',
+                      label: copy.market.provider,
+                      value: health?.provider_name ?? copy.market.unknown,
+                      detail: providerStatusLabel,
+                    },
+                    {
+                      id: 'refresh-policy',
+                      label: copy.market.refreshPolicy,
+                      value: refreshPolicyLabel,
+                      detail: providerConfiguredLabel,
+                      tone: cacheBound ? 'warning' : 'neutral',
+                    },
+                    {
+                      id: 'cache-age',
+                      label: copy.market.cacheAge,
+                      value: formatAge(health?.cache_age_seconds),
+                      detail: latestQuoteLabel,
+                    },
+                    {
+                      id: 'review-count',
+                      label: copy.market.health,
+                      value: staleCount,
+                      detail: copy.market.staleSymbols,
+                      tone: staleCount > 0 ? 'warning' : 'neutral',
+                    },
+                  ]}
+                />
 
-                    <dl className="mt-3 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)] text-xs">
-                      {[
-                        [
-                          copy.market.snapshotLabel,
-                          formatTimestamp(selectedItem.last_snapshot_at),
-                        ],
-                        [
-                          copy.market.staleReason,
-                          formatStaleReason(
-                            selectedHealthQuote?.stale_reason,
-                            copy.common.staleReasons,
-                          ),
-                        ],
-                        [
-                          copy.market.providerNextAction,
-                          selectedQuoteNextAction ?? '--',
-                        ],
-                        [
-                          copy.market.lastResearch,
-                          formatTimestamp(selectedItem.last_research_at),
-                        ],
-                      ].map(([label, value]) => (
-                        <div
-                          key={label}
-                          className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-3 px-2 py-2"
-                        >
-                          <dt className="text-[var(--app-text-tertiary)]">
-                            {label}
-                          </dt>
-                          <dd className="min-w-0 break-words text-right text-[var(--app-text-secondary)]">
-                            {value}
-                          </dd>
-                        </div>
-                      ))}
-                    </dl>
-                  </>
-                ) : (
-                  <EvidenceState kind="empty" title={copy.market.noSelection} />
-                )}
+                {providerAction ? (
+                  <div className="mt-3 border-l-2 border-[var(--app-warning-border)] pl-3 text-xs leading-5 text-[var(--app-text-secondary)]">
+                    <span className="font-semibold text-[var(--app-text)]">
+                      {copy.market.providerNextAction}:
+                    </span>{' '}
+                    {providerAction}
+                  </div>
+                ) : null}
+
+                <details
+                  className="group mt-3 border-t border-[var(--app-divider)] pt-2"
+                  data-testid="market-provider-details"
+                >
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-semibold text-[var(--app-text-secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)]">
+                    <span>{copy.market.providerStatus}</span>
+                    <span aria-hidden="true" className="group-open:rotate-180">
+                      ▾
+                    </span>
+                  </summary>
+                  <dl className="mt-3 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)] text-xs">
+                    {[
+                      [copy.market.providerConfigured, providerConfiguredLabel],
+                      [copy.market.providerSupportsFunds, providerFundsLabel],
+                      [
+                        copy.market.metadataConfiguredCount,
+                        health == null
+                          ? '--'
+                          : String(health.metadata_configured_count),
+                      ],
+                      [
+                        copy.market.providerTimeout,
+                        health?.provider_timeout_seconds == null
+                          ? '--'
+                          : `${health.provider_timeout_seconds}s`,
+                      ],
+                      [
+                        copy.market.lastRefreshAttempt,
+                        formatTimestamp(health?.last_refresh_attempt),
+                      ],
+                      [
+                        copy.market.lastRefreshError,
+                        formatStaleReason(
+                          health?.provider_last_error ??
+                            health?.last_refresh_error,
+                          copy.common.staleReasons,
+                        ),
+                      ],
+                    ].map(([label, value]) => (
+                      <div
+                        key={label}
+                        className="grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-3 px-2 py-2"
+                      >
+                        <dt className="text-[var(--app-text-tertiary)]">
+                          {label}
+                        </dt>
+                        <dd className="min-w-0 break-words text-right text-[var(--app-text-secondary)]">
+                          {value}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </details>
               </section>
+              <details className="group border-y border-[var(--app-divider)] py-2">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-[var(--app-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)]">
+                  <span>{copy.market.promptsTitle}</span>
+                  <span aria-hidden="true" className="group-open:rotate-180">
+                    ▾
+                  </span>
+                </summary>
+                <div className="mt-2 divide-y divide-[var(--app-divider)]">
+                  {copy.market.prompts.map((prompt) => (
+                    <div
+                      key={prompt}
+                      className="py-2 text-xs leading-5 text-[var(--app-text-secondary)]"
+                    >
+                      {prompt}
+                    </div>
+                  ))}
+                </div>
+              </details>
+              <details
+                className="group border-y border-[var(--app-divider)] py-2"
+                data-testid="market-data-operations-disclosure"
+              >
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-[var(--app-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)]">
+                  <span>{copy.market.dataOperations}</span>
+                  <span className="flex items-center gap-2 font-mono text-xs font-normal tabular-nums text-[var(--app-text-tertiary)]">
+                    {quoteFetchRuns.data?.length ?? 0}
+                    <span aria-hidden="true" className="group-open:rotate-180">
+                      ▾
+                    </span>
+                  </span>
+                </summary>
+                <div className="mt-3">
+                  <MarketDataOperationsPanel
+                    runs={quoteFetchRuns.data ?? []}
+                    loading={quoteFetchRuns.isLoading}
+                    error={quoteFetchRuns.isError}
+                    metadataPending={metadataBackfill.isPending}
+                    barsPending={barsBackfill.isPending}
+                    onMetadataBackfill={async () => {
+                      try {
+                        const result = await metadataBackfill.mutateAsync();
+                        pushToast(
+                          'success',
+                          copy.market.metadataBackfillComplete,
+                          copy.market.backfillResult(
+                            result.updated_count,
+                            result.failed_count,
+                          ),
+                        );
+                      } catch (error) {
+                        pushToast(
+                          'error',
+                          copy.market.metadataBackfillFailed,
+                          getErrorMessage(error),
+                        );
+                      }
+                    }}
+                    onBarsBackfill={async () => {
+                      try {
+                        const result = await barsBackfill.mutateAsync();
+                        pushToast(
+                          'success',
+                          copy.market.barsBackfillComplete,
+                          copy.market.backfillResult(
+                            result.updated_count,
+                            result.failed_count,
+                          ),
+                        );
+                      } catch (error) {
+                        pushToast(
+                          'error',
+                          copy.market.barsBackfillFailed,
+                          getErrorMessage(error),
+                        );
+                      }
+                    }}
+                  />
+                </div>
+              </details>
             </div>
-
             <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
               <div className="app-workbench-section min-w-0 p-4 sm:p-5">
                 <div className="app-kicker text-xs uppercase tracking-[0.18em]">
@@ -7785,23 +7483,6 @@ function getHeatmapTone(value: number, maxMagnitude: number) {
   }
 
   return 'border-[var(--app-border)] bg-[var(--app-panel-strong)] text-[var(--app-foreground)]';
-}
-
-function getAssetClassLabel(copy: AppCopy, value: string) {
-  switch (value) {
-    case 'stock':
-      return copy.common.assetClassStock;
-    case 'etf':
-      return copy.common.assetClassEtf;
-    case 'fund':
-      return copy.common.assetClassFund;
-    case 'gold':
-      return copy.common.assetClassGold;
-    case 'bond':
-      return copy.common.assetClassBond;
-    default:
-      return value;
-  }
 }
 
 function getNoteTypeLabel(copy: AppCopy, value: string) {

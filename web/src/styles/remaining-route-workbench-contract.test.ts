@@ -17,6 +17,9 @@ const ACTIVITY_FEED = source('features/activity/components/activity-feed.tsx');
 const PRICE_STRUCTURE_CHART = source(
   'features/market/components/price-structure-chart.tsx',
 );
+const MARKET_INSTRUMENT_WORKSPACE = source(
+  'features/market/components/market-instrument-workspace.tsx',
+);
 const MARKET_DATA_OPERATIONS = ROUTER.slice(
   ROUTER.indexOf('function MarketDataOperationsPanel'),
   ROUTER.indexOf('function MetricBlock'),
@@ -151,15 +154,32 @@ describe('remaining route workbench contract', () => {
       'app-panel min-w-0 overflow-hidden rounded-2xl',
     );
     expect(marketPage).not.toContain('app-panel rounded-2xl p-0');
-    expect(
-      marketPage.match(/app-workbench-section min-w-0 overflow-hidden/g),
-    ).toHaveLength(1);
-    expect(marketPage).toContain('data-testid="market-research-table"');
-    expect(marketPage).toContain('data-testid="market-research-table-scroll"');
+    expect(marketPage).toContain('<MarketInstrumentWorkspace');
+    expect(MARKET_INSTRUMENT_WORKSPACE).toContain(
+      'data-testid="market-instrument-workspace"',
+    );
+    expect(MARKET_INSTRUMENT_WORKSPACE).toContain(
+      'data-testid="market-instrument-list"',
+    );
+    expect(MARKET_INSTRUMENT_WORKSPACE).toContain('overflow-y-auto');
+    expect(MARKET_INSTRUMENT_WORKSPACE).toContain('scrollIntoView({');
+    expect(MARKET_INSTRUMENT_WORKSPACE).toContain(
+      "'(prefers-reduced-motion: reduce)'",
+    );
+    expect(MARKET_INSTRUMENT_WORKSPACE).toContain(
+      'xl:grid-cols-[minmax(264px,296px)_minmax(0,1fr)]',
+    );
+    expect(MARKET_INSTRUMENT_WORKSPACE).not.toContain('overflow-x-auto');
+    expect(MARKET_INSTRUMENT_WORKSPACE).not.toContain('rounded-2xl');
+    expect(MARKET_INSTRUMENT_WORKSPACE).not.toContain('rounded-3xl');
     expect(marketPage).toContain('data-testid="market-provider-details"');
     expect(marketPage).toContain('holdingReviewNeedsAttention');
-    expect(marketPage).not.toContain('selectedItem.price ?? 0');
-    expect(marketPage).not.toContain('selectedItem.market_value ?? 0');
+    expect(MARKET_INSTRUMENT_WORKSPACE).not.toContain(
+      'selectedItem.price ?? 0',
+    );
+    expect(MARKET_INSTRUMENT_WORKSPACE).not.toContain(
+      'selectedItem.market_value ?? 0',
+    );
     expect(marketPage).not.toContain('app-button-secondary rounded-2xl');
     expect(MARKET_DATA_OPERATIONS).toContain('<Timeline');
     expect(MARKET_DATA_OPERATIONS).not.toContain('app-panel');

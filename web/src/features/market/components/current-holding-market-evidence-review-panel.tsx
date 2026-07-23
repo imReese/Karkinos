@@ -3,6 +3,7 @@ import {
   EvidenceIdentityDisclosure,
   ExceptionList,
   MetricStrip,
+  StatusBadge,
   type ExceptionItem,
 } from '../../../app/components/workbench';
 import { usePreferences } from '../../../app/preferences';
@@ -19,6 +20,7 @@ type Props = {
   report?: CurrentHoldingMarketEvidenceReview | null;
   loading: boolean;
   error: boolean;
+  compact?: boolean;
 };
 
 function reportTone(
@@ -49,6 +51,7 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
   report,
   loading,
   error,
+  compact = false,
 }: Props) {
   const copy = useCopy();
   const { locale } = usePreferences();
@@ -147,12 +150,19 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
         })),
       ]
     : [];
+  const compactClearingCondition =
+    report?.status === 'blocked_identity'
+      ? labels.holdingEvidenceIdentityClearingCondition
+      : labels.holdingEvidenceClearingCondition;
 
   return (
     <section
       id="current-holding-evidence-review"
-      className="scroll-mt-24 space-y-4 border-y border-[var(--app-divider)] py-4"
+      className={`scroll-mt-24 border-y border-[var(--app-divider)] ${
+        compact ? 'space-y-3 py-3' : 'space-y-4 py-4'
+      }`}
       data-testid="current-holding-market-evidence-review"
+      data-density={compact ? 'compact' : 'default'}
     >
       <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
@@ -165,7 +175,11 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
             {title}
           </h2>
           {!quiet ? (
-            <p className="app-muted mt-2 max-w-3xl text-sm leading-6">
+            <p
+              className={`app-muted mt-2 max-w-3xl ${
+                compact ? 'text-xs leading-5' : 'text-sm leading-6'
+              }`}
+            >
               {labels.holdingEvidenceReviewDetail}
             </p>
           ) : null}
@@ -261,46 +275,102 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
           <span>{formatTimestamp(report.valuation_as_of)}</span>
         </div>
       ) : report && showReviewWorkspace ? (
-        <>
-          <MetricStrip
-            ariaLabel={labels.holdingEvidenceMetricsLabel}
-            className="[&>.app-metric-strip-item:last-child:nth-child(odd)]:col-span-2 sm:[&>.app-metric-strip-item:last-child:nth-child(odd)]:col-span-1"
-            items={[
-              {
-                id: 'review-required',
-                label: labels.holdingEvidenceMetricReviewRequired,
-                value: `${report.review_required_count}/${report.current_holding_count}`,
-                detail: formatPublicStatus(report.status, locale),
-                tone: 'warning',
-              },
-              {
-                id: 'confirmed',
-                label: labels.holdingEvidenceMetricConfirmed,
-                value: `${report.confirmed_holding_count}/${report.current_holding_count}`,
-                detail: labels.holdingEvidenceConfirmedCount(
-                  report.confirmed_holding_count,
-                ),
-              },
-              {
-                id: 'valuation-as-of',
-                label: copy.common.valuationAsOf,
-                value: formatTimestamp(report.valuation_as_of),
-              },
-            ]}
-          />
+        compact ? (
+          <>
+            <div
+              className="divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]"
+              data-testid="holding-evidence-compact-list"
+              role="list"
+              aria-label={labels.holdingEvidenceExceptionListLabel}
+            >
+              {exceptionItems.map((item) => (
+                <div
+                  key={item.id}
+                  className="grid min-w-0 gap-2 py-2 lg:grid-cols-[minmax(132px,0.72fr)_minmax(0,1fr)_minmax(0,1.12fr)] lg:gap-4"
+                  role="listitem"
+                >
+                  <div className="flex min-w-0 items-start justify-between gap-2 lg:block">
+                    <div className="min-w-0 text-xs font-semibold text-[var(--app-text)]">
+                      {item.title}
+                    </div>
+                    <div className="mt-1 shrink-0 lg:mt-1.5">
+                      <StatusBadge tone={item.severity}>
+                        {item.statusLabel}
+                      </StatusBadge>
+                    </div>
+                  </div>
+                  <div className="min-w-0 text-[11px] leading-4 text-[var(--app-text-secondary)]">
+                    <span className="font-semibold text-[var(--app-text)]">
+                      {labels.holdingEvidenceReasonLabel}:{' '}
+                    </span>
+                    {item.reason}
+                  </div>
+                  <div className="grid min-w-0 gap-1 text-[11px] leading-4 text-[var(--app-text-secondary)]">
+                    <div className="min-w-0">
+                      <span className="font-semibold text-[var(--app-text)]">
+                        {labels.holdingEvidenceSafeNextStepLabel}:{' '}
+                      </span>
+                      {item.nextAction}
+                    </div>
+                    <div className="min-w-0 break-words text-[var(--app-text-tertiary)]">
+                      <span className="font-semibold">
+                        {labels.holdingEvidenceEvidenceLabel}:{' '}
+                      </span>
+                      {item.evidence}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="text-[11px] leading-4 text-[var(--app-text-secondary)]">
+              <span className="font-semibold text-[var(--app-text)]">
+                {labels.holdingEvidenceClearingConditionLabel}:{' '}
+              </span>
+              {compactClearingCondition}
+            </p>
+          </>
+        ) : (
+          <>
+            <MetricStrip
+              ariaLabel={labels.holdingEvidenceMetricsLabel}
+              className="[&>.app-metric-strip-item:last-child:nth-child(odd)]:col-span-2 sm:[&>.app-metric-strip-item:last-child:nth-child(odd)]:col-span-1"
+              items={[
+                {
+                  id: 'review-required',
+                  label: labels.holdingEvidenceMetricReviewRequired,
+                  value: `${report.review_required_count}/${report.current_holding_count}`,
+                  detail: formatPublicStatus(report.status, locale),
+                  tone: 'warning',
+                },
+                {
+                  id: 'confirmed',
+                  label: labels.holdingEvidenceMetricConfirmed,
+                  value: `${report.confirmed_holding_count}/${report.current_holding_count}`,
+                  detail: labels.holdingEvidenceConfirmedCount(
+                    report.confirmed_holding_count,
+                  ),
+                },
+                {
+                  id: 'valuation-as-of',
+                  label: copy.common.valuationAsOf,
+                  value: formatTimestamp(report.valuation_as_of),
+                },
+              ]}
+            />
 
-          <ExceptionList
-            ariaLabel={labels.holdingEvidenceExceptionListLabel}
-            emptyState={labels.holdingEvidenceReviewEmpty}
-            labels={{
-              reason: labels.holdingEvidenceReasonLabel,
-              unblockCondition: labels.holdingEvidenceClearingConditionLabel,
-              nextAction: labels.holdingEvidenceSafeNextStepLabel,
-              evidence: labels.holdingEvidenceEvidenceLabel,
-            }}
-            items={exceptionItems}
-          />
-        </>
+            <ExceptionList
+              ariaLabel={labels.holdingEvidenceExceptionListLabel}
+              emptyState={labels.holdingEvidenceReviewEmpty}
+              labels={{
+                reason: labels.holdingEvidenceReasonLabel,
+                unblockCondition: labels.holdingEvidenceClearingConditionLabel,
+                nextAction: labels.holdingEvidenceSafeNextStepLabel,
+                evidence: labels.holdingEvidenceEvidenceLabel,
+              }}
+              items={exceptionItems}
+            />
+          </>
+        )
       ) : null}
     </section>
   );
