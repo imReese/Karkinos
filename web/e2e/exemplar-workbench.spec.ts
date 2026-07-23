@@ -299,6 +299,7 @@ test('market keeps context, evidence review, and provider telemetry task-ordered
           oversizedRadii: route.querySelectorAll('.rounded-2xl,.rounded-3xl')
             .length,
           workspaceExists: workspace !== null,
+          listExists: list !== null,
           listOverflow: list ? list.scrollHeight - list.clientHeight : 0,
           listWidth: list?.getBoundingClientRect().width ?? 0,
           detailWidth: detail?.getBoundingClientRect().width ?? 0,
@@ -326,17 +327,23 @@ test('market keeps context, evidence review, and provider telemetry task-ordered
       expect(geometry.reviewAfterList, `${theme} ${viewport.width}`).toBe(true);
 
       if (geometry.workspaceExists) {
-        const list = page.getByTestId('market-instrument-list');
+        await expect(
+          page.getByTestId('market-instrument-workspace'),
+        ).toBeVisible();
         const detail = page.getByTestId('market-selected-instrument');
-        await expect(list).toBeVisible();
         await expect(detail).toBeVisible();
+        expect(
+          geometry.detailWidth,
+          `${theme} ${viewport.width}`,
+        ).toBeGreaterThan(0);
+      }
+
+      if (geometry.listExists) {
+        const list = page.getByTestId('market-instrument-list');
+        await expect(list).toBeVisible();
         await expect(list.getByRole('button', { pressed: true })).toBeVisible();
         expect(
           geometry.listWidth,
-          `${theme} ${viewport.width}`,
-        ).toBeGreaterThan(0);
-        expect(
-          geometry.detailWidth,
           `${theme} ${viewport.width}`,
         ).toBeGreaterThan(0);
       }
