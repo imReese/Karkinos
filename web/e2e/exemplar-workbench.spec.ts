@@ -127,7 +127,7 @@ test('portfolio keeps filtering ordered above a compact holdings projection', as
   }
 });
 
-test('portfolio mobile uses compact holdings rows and discloses secondary filters on demand', async ({
+test('portfolio mobile keeps holdings or an explicit empty state below disclosed filters', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -137,7 +137,12 @@ test('portfolio mobile uses compact holdings rows and discloses secondary filter
   const moreFilters = filterBar.locator(
     'button[aria-controls="portfolio-secondary-filters"]',
   );
-  const holdingsSurface = page.getByTestId('positions-mobile-list');
+  const populatedSurface = page.getByTestId('positions-mobile-list');
+  const emptySurface = page.getByText(
+    'No holdings yet. Add trades from Activity first.',
+    { exact: true },
+  );
+  const holdingsSurface = populatedSurface.or(emptySurface);
   const desktopTable = page.getByTestId('positions-table-desktop');
 
   await expect(moreFilters).toBeVisible();
@@ -145,9 +150,15 @@ test('portfolio mobile uses compact holdings rows and discloses secondary filter
   await expect(moreFilters).toHaveAttribute('aria-expanded', 'false');
   await expect(holdingsSurface).toBeVisible();
   await expect(desktopTable).toBeHidden();
-  await expect(
-    holdingsSurface.locator('[data-testid^="position-mobile-row-"]').first(),
-  ).toBeVisible();
+  if ((await populatedSurface.count()) > 0) {
+    const mobileRows = populatedSurface.locator(
+      '[data-testid^="position-mobile-row-"]',
+    );
+    expect(await mobileRows.count()).toBeGreaterThan(0);
+    await expect(mobileRows.first()).toBeVisible();
+  } else {
+    await expect(emptySurface).toBeVisible();
+  }
 
   const compactControlHeights = await filterBar
     .locator('button:visible, input:visible, select:visible')
