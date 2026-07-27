@@ -10,6 +10,7 @@ import {
 import {
   BarChart3,
   CalendarDays,
+  ChevronDown,
   CircleDollarSign,
   Percent,
   Table2,
@@ -4654,7 +4655,9 @@ export function MarketPage() {
                   className="mt-4"
                   label={copy.market.notesTitle}
                   summary={
-                    notes.data ? String(notes.data.items.length) : undefined
+                    notes.data
+                      ? `${notes.data.items.length} ${copy.market.researchCount}`
+                      : undefined
                   }
                 >
                   <label className="grid gap-2">
@@ -4737,8 +4740,8 @@ export function MarketPage() {
                         key={note.id}
                         className="app-panel-strong rounded-[var(--app-radius-surface)] px-4 py-4"
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
+                        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0">
                             <div className="text-sm font-semibold">
                               {note.title}
                             </div>
@@ -4747,11 +4750,17 @@ export function MarketPage() {
                               {getPriorityLabel(copy, note.priority)}
                               {note.event_date ? ` · ${note.event_date}` : ''}
                             </div>
+                            <div className="app-kicker mt-2 text-[11px] uppercase tracking-[0.16em]">
+                              {copy.market.noteUpdatedAt} ·{' '}
+                              <time dateTime={note.updated_at}>
+                                {formatTimestamp(note.updated_at)}
+                              </time>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex shrink-0 items-center gap-2">
                             <button
                               type="button"
-                              className="app-button-secondary rounded-[var(--app-radius-control)] px-3 py-1 text-xs"
+                              className="app-button-secondary min-h-10 rounded-[var(--app-radius-control)] px-3 py-1 text-xs sm:min-h-8"
                               onClick={() => {
                                 setEditingNoteId(note.id);
                                 setNoteType(note.entry_kind);
@@ -4765,7 +4774,7 @@ export function MarketPage() {
                             </button>
                             <button
                               type="button"
-                              className="app-button-secondary rounded-[var(--app-radius-control)] px-3 py-1 text-xs"
+                              className="app-button-secondary min-h-10 rounded-[var(--app-radius-control)] px-3 py-1 text-xs sm:min-h-8"
                               onClick={async () => {
                                 try {
                                   await deleteResearchNote.mutateAsync(note.id);
@@ -4787,12 +4796,29 @@ export function MarketPage() {
                             </button>
                           </div>
                         </div>
-                        <div className="app-muted mt-3 text-sm leading-6">
-                          {note.content}
-                        </div>
-                        <div className="app-kicker mt-3 text-[11px] uppercase tracking-[0.16em]">
-                          {note.updated_at}
-                        </div>
+                        <details
+                          className="group mt-3 border-t border-[var(--app-divider)]"
+                          data-testid={`market-research-note-disclosure-${note.id}`}
+                        >
+                          <summary className="app-focus-ring app-muted flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 rounded-[var(--app-radius-control)] py-2 text-sm font-semibold sm:min-h-8 [&::-webkit-details-marker]:hidden">
+                            <span className="group-open:hidden">
+                              {copy.market.showFullNote}
+                            </span>
+                            <span className="hidden group-open:inline">
+                              {copy.market.hideFullNote}
+                            </span>
+                            <ChevronDown
+                              aria-hidden="true"
+                              className="size-4 shrink-0 transition-transform group-open:rotate-180 motion-reduce:transition-none"
+                            />
+                          </summary>
+                          <div
+                            className="app-muted whitespace-pre-wrap break-words border-t border-[var(--app-divider)] pt-3 text-sm leading-6"
+                            data-testid={`market-research-note-content-${note.id}`}
+                          >
+                            {note.content}
+                          </div>
+                        </details>
                       </div>
                     ))}
                   </div>

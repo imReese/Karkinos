@@ -91,6 +91,7 @@ function installMarketFetchMock(
     quotes?: Array<Record<string, unknown>>;
     marketEvidenceReview?: Record<string, unknown>;
     items?: Array<Record<string, unknown>>;
+    notes?: Array<Record<string, unknown>>;
   } = {},
 ) {
   const boardHealth = {
@@ -179,7 +180,7 @@ function installMarketFetchMock(
         ]);
       }
       if (url.includes('/api/market/research-notes')) {
-        return jsonResponse({ items: [] });
+        return jsonResponse({ items: overrides.notes ?? [] });
       }
       if (url.includes('/api/market/instrument-metadata/backfill')) {
         return jsonResponse({
@@ -282,6 +283,47 @@ test('renders market data operations and triggers manual backfills', async () =>
       expect.objectContaining({ method: 'POST' }),
     );
   });
+});
+
+test('keeps full research-note evidence behind an explicit disclosure', async () => {
+  const user = userEvent.setup();
+  const updatedAt = '2026-06-17T14:10:00+08:00';
+  const snapshotId = `valuation-${'a'.repeat(64)}`;
+  renderMarketPage({
+    notes: [
+      {
+        id: 7,
+        symbol: '600519',
+        asset_class: 'stock',
+        entry_kind: 'thesis',
+        title: '持仓逻辑复核',
+        content: `估值证据 ${snapshotId} · ledger_cutoff_id=21 · ${updatedAt}`,
+        priority: 'high',
+        event_date: '2026-06-20',
+        created_at: updatedAt,
+        updated_at: updatedAt,
+      },
+    ],
+  });
+
+  const disclosure = await screen.findByTestId(
+    'market-research-note-disclosure-7',
+  );
+  const content = screen.getByTestId('market-research-note-content-7');
+  const timestamp = disclosure.parentElement?.querySelector('time');
+
+  expect(disclosure.hasAttribute('open')).toBe(false);
+  expect(timestamp?.getAttribute('datetime')).toBe(updatedAt);
+  expect(timestamp?.textContent).not.toBe(updatedAt);
+  expect(content.textContent).toContain(snapshotId);
+  expect(content.textContent).toContain('ledger_cutoff_id=21');
+
+  await user.click(
+    within(disclosure).getByText('View full record', { exact: true }),
+  );
+
+  expect(disclosure.hasAttribute('open')).toBe(true);
+  expect(within(disclosure).getByText('Hide full record')).toBeTruthy();
 });
 
 test('keeps missing quote and holding values unavailable instead of inventing zeroes', async () => {
