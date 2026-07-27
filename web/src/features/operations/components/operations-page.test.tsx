@@ -171,6 +171,17 @@ test('renders persisted attention evidence without write or execution affordance
   const attention = await screen.findByRole('list', {
     name: 'Evidence review queue',
   });
+  const attentionQueue = screen.getByTestId('operations-attention-queue');
+  const healthMetrics = page.querySelector(
+    '[data-workbench-primitive="metric-strip"]',
+  );
+  expect(attention.getAttribute('data-density')).toBe('compact');
+  expect(attention.className).toContain('divide-y');
+  expect(healthMetrics).toBeTruthy();
+  expect(
+    attentionQueue.compareDocumentPosition(healthMetrics as HTMLElement) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
   expect(
     within(attention).getByRole('heading', { name: 'Market data and NAV' }),
   ).toBeTruthy();
