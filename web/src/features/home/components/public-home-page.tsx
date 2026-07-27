@@ -1,4 +1,11 @@
-import { ArrowRight, Languages, Moon, ShieldCheck, Sun } from 'lucide-react';
+import {
+  ArrowRight,
+  Languages,
+  LockKeyhole,
+  Moon,
+  ShieldCheck,
+  Sun,
+} from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 
 import { usePreferences } from '../../../app/preferences';
@@ -14,32 +21,51 @@ const publicHomeCopy = {
       workflow: 'Workflow',
       docs: 'Docs',
     },
-    enter: 'Enter workbench',
+    enter: 'Open private workbench',
     language: 'Switch to Chinese',
     lightTheme: 'Switch to Latte theme',
     darkTheme: 'Switch to Mocha theme',
     hero: {
       eyebrow: 'China market · Personal quant workspace',
       title: 'Every decision should leave evidence.',
-      body: 'Karkinos connects persisted account facts, research, risk gates, paper and shadow rehearsal, and human review into one auditable path—from research to controlled execution.',
+      body: 'Karkinos connects persisted account facts, research, risk gates, paper and shadow rehearsal, and human review into one auditable path—from evidence to controlled action.',
       explore: 'Explore the workflow',
-      guardrails: [
-        'Persisted facts, never an invisible refresh',
-        'Missing evidence fails closed',
-        'Live-like actions remain human confirmed',
-      ],
     },
     evidence: {
-      eyebrow: 'Concept map · No account data',
-      title: 'One decision. Four evidence layers.',
+      eyebrow: 'Product trace · No account data',
+      title: 'Evidence advances. Authority stays explicit.',
+      routeLabel: 'Public-to-private route',
+      publicRoute: 'Public overview',
+      privateRoute: 'Private workbench',
+      flowLabel: 'Decision evidence path',
       caption:
-        'A structural view of the product contract. It contains no account, return, order, or execution data.',
+        'Structural product proof only. It contains no account, return, order, or execution data.',
       rows: [
-        { label: 'Account truth', value: 'Persisted projection' },
-        { label: 'Research', value: 'Dataset bound' },
-        { label: 'Risk', value: 'Gate evaluated' },
-        { label: 'Authority', value: 'Human confirmed' },
+        {
+          label: 'Account truth',
+          detail: 'Canonical projection',
+          state: 'Persisted',
+        },
+        {
+          label: 'Research',
+          detail: 'Dataset and run identity',
+          state: 'Bound',
+        },
+        {
+          label: 'Risk',
+          detail: 'Threshold evidence',
+          state: 'Evaluated',
+        },
+        {
+          label: 'Human review',
+          detail: 'Explicit authority boundary',
+          state: 'Required',
+        },
       ],
+      outcomeLabel: 'Default authority',
+      outcome: 'Read and review only',
+      outcomeNote:
+        'No broker submit, cancel, recovery, or capital expansion authority.',
     },
     proof: {
       eyebrow: 'Product proof',
@@ -48,20 +74,27 @@ const publicHomeCopy = {
       items: [
         {
           number: '01',
+          route: '/account-truth',
+          surface: 'Account Truth',
           title: 'One account truth',
           body: 'Overview, Portfolio, Decision, and Operations project the same canonical persisted facts.',
         },
         {
           number: '02',
+          route: '/activity',
+          surface: 'Activity ledger',
           title: 'Replayable evidence',
           body: 'Snapshot, ledger cutoff, policy, and run identity remain available without dominating the reading path.',
         },
         {
           number: '03',
+          route: '/decision',
+          surface: 'Decision gates',
           title: 'Controlled authority',
           body: 'Paper and shadow come first. Submission, recovery, and capital expansion are not ambient permissions.',
         },
       ],
+      action: 'Open surface',
     },
     principles: {
       eyebrow: 'Trust principles',
@@ -148,31 +181,33 @@ const publicHomeCopy = {
       workflow: '工作流',
       docs: '文档',
     },
-    enter: '进入工作台',
+    enter: '进入私有工作台',
     language: '切换为英文',
     lightTheme: '切换为 Latte 浅色主题',
     darkTheme: '切换为 Mocha 深色主题',
     hero: {
       eyebrow: '中国市场 · 个人量化投资工作台',
       title: '让每一个投资决定，都有证据可回放。',
-      body: 'Karkinos 将持久化账户事实、研究、风控门禁、paper/shadow 演练与人工复核连成可审计的路径，从研究走向受控执行。',
+      body: 'Karkinos 将持久化账户事实、研究、风控门禁、paper/shadow 演练与人工复核连成可审计的路径，让证据走向受控行动。',
       explore: '了解能力流程',
-      guardrails: [
-        '只读取持久化事实，不做隐式刷新',
-        '证据缺失时 fail closed',
-        '类实盘动作始终需要人工确认',
-      ],
     },
     evidence: {
-      eyebrow: '结构示意 · 不含账户数据',
-      title: '一次决策，四层证据。',
-      caption: '这是产品契约的概念图，不包含任何账户、收益、订单或成交数据。',
+      eyebrow: '产品路径 · 不含账户数据',
+      title: '证据向前，权限保持显式。',
+      routeLabel: '公开页到私有工作台路径',
+      publicRoute: '公开产品首页',
+      privateRoute: '私有证据工作台',
+      flowLabel: '决策证据路径',
+      caption: '仅展示产品结构，不包含任何账户、收益、订单或成交数据。',
       rows: [
-        { label: '账户事实', value: '持久化投影' },
-        { label: '研究结论', value: '绑定数据集' },
-        { label: '风控门禁', value: '显式评估' },
-        { label: '执行权限', value: '人工确认' },
+        { label: '账户事实', detail: 'Canonical 投影', state: '已持久化' },
+        { label: '研究结论', detail: '数据集与运行身份', state: '已绑定' },
+        { label: '风控门禁', detail: '阈值证据', state: '已评估' },
+        { label: '人工复核', detail: '显式权限边界', state: '必须' },
       ],
+      outcomeLabel: '默认权限',
+      outcome: '仅查看与复核',
+      outcomeNote: '不默认拥有券商提交、撤单、恢复或资本扩容权限。',
     },
     proof: {
       eyebrow: '产品证明',
@@ -181,20 +216,27 @@ const publicHomeCopy = {
       items: [
         {
           number: '01',
+          route: '/account-truth',
+          surface: 'Account Truth',
           title: '唯一账户事实',
           body: '首页、组合、决策和运营只投影同一份 canonical persisted facts。',
         },
         {
           number: '02',
+          route: '/activity',
+          surface: '活动账本',
           title: '证据可重放',
           body: 'snapshot、ledger cutoff、policy 与 run identity 完整保留，但不抢占主阅读路径。',
         },
         {
           number: '03',
+          route: '/decision',
+          surface: '决策门禁',
           title: '权限受控',
           body: '从 paper/shadow 开始；submit、恢复与资本扩容从不是环境默认权限。',
         },
       ],
+      action: '查看界面',
     },
     principles: {
       eyebrow: '可信原则',
@@ -363,17 +405,26 @@ export function PublicHomePage() {
                 <ArrowRight aria-hidden="true" />
               </a>
             </div>
-            <ul
-              className="app-public-guardrails"
-              aria-label={copy.principles.title}
-            >
-              {copy.hero.guardrails.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
           </div>
 
-          <figure className="app-public-evidence-frame">
+          <figure
+            className="app-public-evidence-frame"
+            data-testid="public-evidence-trace"
+          >
+            <div
+              className="app-public-route-identity"
+              aria-label={copy.evidence.routeLabel}
+            >
+              <span>
+                <small>{copy.evidence.publicRoute}</small>
+                <code>/</code>
+              </span>
+              <ArrowRight aria-hidden="true" />
+              <span>
+                <small>{copy.evidence.privateRoute}</small>
+                <code>/overview</code>
+              </span>
+            </div>
             <div className="app-public-evidence-heading">
               <div>
                 <p className="app-kicker app-public-eyebrow">
@@ -383,16 +434,34 @@ export function PublicHomePage() {
               </div>
               <ShieldCheck aria-hidden="true" />
             </div>
-            <div className="app-public-evidence-rows">
+            <ol
+              className="app-public-evidence-flow"
+              aria-label={copy.evidence.flowLabel}
+            >
               {copy.evidence.rows.map((row, index) => (
-                <div className="app-public-evidence-row" key={row.label}>
+                <li className="app-public-evidence-step" key={row.label}>
                   <span className="app-public-evidence-index">
                     {String(index + 1).padStart(2, '0')}
                   </span>
-                  <span>{row.label}</span>
-                  <strong>{row.value}</strong>
-                </div>
+                  <span
+                    className="app-public-evidence-node"
+                    aria-hidden="true"
+                  />
+                  <span className="app-public-evidence-copy">
+                    <strong>{row.label}</strong>
+                    <small>{row.detail}</small>
+                  </span>
+                  <span className="app-public-evidence-state">{row.state}</span>
+                </li>
               ))}
+            </ol>
+            <div className="app-public-evidence-boundary">
+              <LockKeyhole aria-hidden="true" />
+              <span>
+                <small>{copy.evidence.outcomeLabel}</small>
+                <strong>{copy.evidence.outcome}</strong>
+                <span>{copy.evidence.outcomeNote}</span>
+              </span>
             </div>
             <figcaption>{copy.evidence.caption}</figcaption>
           </figure>
@@ -412,9 +481,18 @@ export function PublicHomePage() {
           <div className="app-public-proof-grid">
             {copy.proof.items.map((item) => (
               <article key={item.number}>
-                <span>{item.number}</span>
+                <div className="app-public-proof-route">
+                  <span>{item.number}</span>
+                  <code>{item.route}</code>
+                </div>
                 <h3>{item.title}</h3>
                 <p>{item.body}</p>
+                <Link to={item.route} className="app-public-proof-link">
+                  <span>
+                    {copy.proof.action}: {item.surface}
+                  </span>
+                  <ArrowRight aria-hidden="true" />
+                </Link>
               </article>
             ))}
           </div>
