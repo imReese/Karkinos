@@ -638,6 +638,9 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
         ? labels.refreshDone
         : null;
   const valuationSnapshotId = snapshot.data?.valuation_snapshot_id ?? null;
+  const hasPersistedPriceStructure = (kline.data ?? []).some((bar) =>
+    Number.isFinite(bar.close),
+  );
   const evidenceStateKind = isHistoricalClosedPosition
     ? ('empty' as const)
     : !evidenceIdentityConsistent
@@ -844,7 +847,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
 
       <div
         data-testid="holding-detail-overview"
-        className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.75fr)] md:items-stretch"
+        className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.75fr)] xl:items-stretch"
       >
         <WorkbenchEvidenceState
           kind={evidenceStateKind}
@@ -866,9 +869,9 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
           evidence={`${labels.valuationTimestamp} ${formatTimestamp(
             snapshot.data?.valuation_as_of,
           )} · ${labels.quoteTimestamp} ${formatTimestamp(quoteTimestamp)}`}
-          className="md:col-start-2 md:row-start-1"
+          className="order-2 xl:order-none xl:col-start-2 xl:row-start-1"
         />
-        <section className="min-w-0 md:col-start-1 md:row-start-1">
+        <section className="order-1 min-w-0 xl:order-none xl:col-start-1 xl:row-start-1">
           <div
             data-testid="holding-summary-header"
             className="sr-only"
@@ -966,31 +969,105 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
             data-testid="holding-kline-panel"
             className="app-workbench-section min-w-0 overflow-hidden"
           >
-            <div className="min-w-0">
-              <PriceStructureChart
-                bars={kline.data ?? []}
-                emptyLabel={copy.market.noChart}
-                titleLabel={copy.market.priceRangeKline}
-                priceLabel={copy.market.priceLabel}
-                rangeLabels={copy.market.klineRanges}
-                axisLabels={copy.market.klineAxes}
-                rangeAriaLabel={copy.market.showKlineRange}
-                markers={tradeMarkers}
-                referenceLines={costReferenceLines}
-              />
-            </div>
-            <div data-testid="holding-position-size-metrics" className="mt-4">
-              <WorkbenchMetricStrip
-                ariaLabel={`${labels.quantity} · ${labels.availableFrozen}`}
-                items={positionSizeMetrics.map((metric) => ({
-                  id: metric.label,
-                  label: metric.label,
-                  value: metric.value,
-                  detail: metric.detail,
-                  tone: metric.tone,
-                }))}
-              />
-            </div>
+            {hasPersistedPriceStructure ? (
+              <>
+                <div className="min-w-0">
+                  <PriceStructureChart
+                    bars={kline.data ?? []}
+                    emptyLabel={copy.market.noChart}
+                    titleLabel={copy.market.priceRangeKline}
+                    priceLabel={copy.market.priceLabel}
+                    rangeLabels={copy.market.klineRanges}
+                    axisLabels={copy.market.klineAxes}
+                    rangeAriaLabel={copy.market.showKlineRange}
+                    markers={tradeMarkers}
+                    referenceLines={costReferenceLines}
+                  />
+                </div>
+                <div
+                  data-testid="holding-position-size-metrics"
+                  className="mt-4"
+                >
+                  <WorkbenchMetricStrip
+                    ariaLabel={`${labels.quantity} · ${labels.availableFrozen}`}
+                    items={positionSizeMetrics.map((metric) => ({
+                      id: metric.label,
+                      label: metric.label,
+                      value: metric.value,
+                      detail: metric.detail,
+                      tone: metric.tone,
+                    }))}
+                  />
+                </div>
+              </>
+            ) : (
+              <div
+                data-testid="holding-price-structure-fallback"
+                className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(280px,0.75fr)] lg:items-start"
+              >
+                <div
+                  data-testid="holding-position-size-metrics"
+                  className="order-1 min-w-0"
+                >
+                  <div className="app-product-mark">{labels.positionFacts}</div>
+                  <p className="mt-1 text-xs leading-5 text-[var(--app-text-secondary)]">
+                    {labels.positionFactsDetail}
+                  </p>
+                  <WorkbenchMetricStrip
+                    ariaLabel={`${labels.quantity} · ${labels.availableFrozen}`}
+                    className="mt-3"
+                    items={positionSizeMetrics.map((metric) => ({
+                      id: metric.label,
+                      label: metric.label,
+                      value: metric.value,
+                      detail: metric.detail,
+                      tone: metric.tone,
+                    }))}
+                  />
+                </div>
+                <div
+                  data-testid="holding-price-structure-state"
+                  className="order-2 min-w-0 lg:border-l lg:border-[var(--app-divider)] lg:pl-4"
+                >
+                  <div className="app-product-mark">
+                    {copy.market.priceRangeKline}
+                  </div>
+                  {kline.isLoading ? (
+                    <WorkbenchEvidenceState
+                      kind="loading"
+                      title={copy.market.klineLoading}
+                      description={copy.market.klineLoadingDetail}
+                      className="mt-3"
+                    />
+                  ) : kline.isError ? (
+                    <WorkbenchEvidenceState
+                      kind="error"
+                      title={copy.market.klineError}
+                      description={copy.market.klineErrorDetail}
+                      className="mt-3"
+                      action={
+                        <button
+                          type="button"
+                          className="app-button-secondary min-h-10 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
+                          onClick={() => void kline.refetch()}
+                        >
+                          {copy.states.retry}
+                        </button>
+                      }
+                    />
+                  ) : (
+                    <WorkbenchEvidenceState
+                      kind="missing"
+                      statusLabel={labels.priceStructureMissing}
+                      title={copy.market.noChart}
+                      description={labels.priceStructureMissingDetail}
+                      evidence={labels.persistedPriceBoundary}
+                      className="mt-3"
+                    />
+                  )}
+                </div>
+              </div>
+            )}
           </section>
 
           <section

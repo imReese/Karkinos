@@ -1938,7 +1938,9 @@ h3 {
   .app-command-trigger > kbd {
     display: inline-flex;
   }
+}
 
+@media (min-width: 1280px) {
   .app-toolbar-brand {
     display: none;
   }

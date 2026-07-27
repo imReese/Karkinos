@@ -82,6 +82,9 @@ function installHoldingFetchMock({
   marketHealthOverride = {},
   closedPosition,
   ledgerEntriesOverride,
+  klineBarsOverride,
+  failKline = false,
+  deferKline = false,
   accountStrategy = {
     strategy_id: 'dual_ma',
     strategy_name: 'dual_ma',
@@ -167,6 +170,9 @@ function installHoldingFetchMock({
   marketHealthOverride?: Record<string, unknown>;
   closedPosition?: Record<string, unknown>;
   ledgerEntriesOverride?: Array<Record<string, unknown>>;
+  klineBarsOverride?: Array<Record<string, unknown>>;
+  failKline?: boolean;
+  deferKline?: boolean;
   accountStrategy?: Record<string, unknown>;
   accountStrategyAttribution?: Record<string, unknown>;
   accountStrategyContribution?: Record<string, unknown>;
@@ -317,24 +323,35 @@ function installHoldingFetchMock({
       });
     }
     if (url.includes('/api/market/kline/')) {
-      return jsonResponse([
-        {
-          timestamp: '2026-04-19T15:00:00+08:00',
-          open: 1510,
-          high: 1620,
-          low: 1500,
-          close: 1600,
-          volume: 120000,
-        },
-        {
-          timestamp: '2026-04-20T15:00:00+08:00',
-          open: 1600,
-          high: 1660,
-          low: 1580,
-          close: 1640,
-          volume: 130000,
-        },
-      ]);
+      if (deferKline) {
+        return await new Promise<Response>(() => undefined);
+      }
+      if (failKline) {
+        return jsonResponse(
+          { detail: 'persisted price structure unavailable' },
+          { status: 503 },
+        );
+      }
+      return jsonResponse(
+        klineBarsOverride ?? [
+          {
+            timestamp: '2026-04-19T15:00:00+08:00',
+            open: 1510,
+            high: 1620,
+            low: 1500,
+            close: 1600,
+            volume: 120000,
+          },
+          {
+            timestamp: '2026-04-20T15:00:00+08:00',
+            open: 1600,
+            high: 1660,
+            low: 1580,
+            close: 1640,
+            volume: 130000,
+          },
+        ],
+      );
     }
     if (url.includes('/api/account-strategy/holdings/')) {
       return jsonResponse(
@@ -367,7 +384,7 @@ function renderHoldingDetail(
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
   }));
-  installHoldingFetchMock(options);
+  const fetchMock = installHoldingFetchMock(options);
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -375,13 +392,16 @@ function renderHoldingDetail(
     },
   });
 
-  return render(
-    <PreferencesProvider>
-      <QueryClientProvider client={queryClient}>
-        <HoldingDetailPage symbol={symbol} />
-      </QueryClientProvider>
-    </PreferencesProvider>,
-  );
+  return {
+    ...render(
+      <PreferencesProvider>
+        <QueryClientProvider client={queryClient}>
+          <HoldingDetailPage symbol={symbol} />
+        </QueryClientProvider>
+      </PreferencesProvider>,
+    ),
+    fetchMock,
+  };
 }
 
 afterEach(() => {
@@ -702,7 +722,8 @@ test('keeps holding summary and kline regions responsive on narrow screens', asy
   const chartCanvas = screen.getByTestId('price-structure-chart-canvas');
 
   expect(summaryTitle.className).toContain('text-sm');
-  expect(overview.className).toContain('md:grid-cols-');
+  expect(overview.className).toContain('xl:grid-cols-');
+  expect(overview.className).not.toContain('md:grid-cols-');
   expect(metricStrip?.className).toContain('min-w-0');
   expect(metricStrip?.className).toContain('sm:grid-cols-2');
   expect(metricStrip?.className).toContain('xl:grid-cols-4');
@@ -718,6 +739,75 @@ test('keeps holding summary and kline regions responsive on narrow screens', asy
   expect(chartPanel.className).toContain('overflow-hidden');
   expect(chartScroll.className).toContain('overflow-x-auto');
   expect(chartCanvas.className).toContain('min-w-[640px]');
+});
+
+test('keeps canonical position facts primary when persisted price structure is missing', async () => {
+  renderHoldingDetail({ klineBarsOverride: [] });
+
+  expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
+  const fallback = screen.getByTestId('holding-price-structure-fallback');
+  const positionFacts = screen.getByTestId('holding-position-size-metrics');
+  const priceState = screen.getByTestId('holding-price-structure-state');
+
+  expect(fallback.className).toContain('lg:grid-cols-');
+  expect(fallback.className).not.toContain('md:grid-cols-');
+  expect(
+    within(positionFacts).getByText('Canonical position facts'),
+  ).toBeTruthy();
+  expect(within(positionFacts).getByText('60')).toBeTruthy();
+  expect(within(priceState).getByText('Price evidence missing')).toBeTruthy();
+  expect(
+    priceState.querySelector('[data-evidence-kind="missing"]'),
+  ).toBeTruthy();
+  expect(screen.queryByTestId('price-structure-chart-scroll')).toBeNull();
+  expect(
+    positionFacts.compareDocumentPosition(priceState) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+});
+
+test('distinguishes persisted price loading and read failure without implicit refresh', async () => {
+  const loadingView = renderHoldingDetail({ deferKline: true });
+
+  expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
+  expect(
+    within(screen.getByTestId('holding-price-structure-state')).getByText(
+      'Loading persisted price structure',
+    ),
+  ).toBeTruthy();
+  expect(
+    screen
+      .getByTestId('holding-price-structure-state')
+      .querySelector('[data-evidence-kind="loading"]'),
+  ).toBeTruthy();
+  loadingView.unmount();
+
+  const user = userEvent.setup();
+  const { fetchMock } = renderHoldingDetail({ failKline: true });
+  expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
+  const priceState = screen.getByTestId('holding-price-structure-state');
+  expect(
+    within(priceState).getByText('Price structure could not be loaded'),
+  ).toBeTruthy();
+  expect(priceState.querySelector('[data-evidence-kind="error"]')).toBeTruthy();
+  expect(
+    fetchMock.mock.calls.filter(([input]) =>
+      String(input).includes('/api/market/kline/'),
+    ),
+  ).toHaveLength(1);
+
+  await user.click(within(priceState).getByRole('button', { name: 'Retry' }));
+
+  expect(
+    fetchMock.mock.calls.filter(([input]) =>
+      String(input).includes('/api/market/kline/'),
+    ),
+  ).toHaveLength(2);
+  expect(
+    fetchMock.mock.calls.some(([input]) =>
+      String(input).includes('/api/market/quotes/refresh'),
+    ),
+  ).toBe(false);
 });
 
 test('exposes five keyboard-operable holding evidence views', async () => {

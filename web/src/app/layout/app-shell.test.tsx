@@ -349,7 +349,7 @@ test('keeps one branded lockup per responsive shell context', async () => {
   expect(await screen.findByText('Personal investing workbench')).toBeTruthy();
   expect(toolbarBrand.closest('.app-toolbar-brand')).toBeTruthy();
   expect(toolbarBrand.closest('.app-toolbar-brand')?.className).toContain(
-    'lg:hidden',
+    'xl:hidden',
   );
 });
 
@@ -500,7 +500,7 @@ test('surfaces compact persisted status in the desktop footer', async () => {
   renderShell();
 
   const statusFooter = await screen.findByLabelText('Account Status');
-  expect(statusFooter.className).toContain('lg:flex');
+  expect(statusFooter.className).toContain('xl:flex');
   expect(statusFooter.className).toContain('app-status-footer');
   expect(within(statusFooter).getByText('Persisted evidence')).toBeTruthy();
   const valuationStatus = within(statusFooter).getByTestId(
