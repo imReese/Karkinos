@@ -256,8 +256,67 @@ export function EvidenceState({
             {evidence}
           </div>
         ) : null}
+        {kind === 'loading' ? (
+          <span
+            aria-hidden="true"
+            className="mt-2 block h-0.5 w-24 overflow-hidden rounded-full bg-[var(--app-info-bg)]"
+            data-testid="evidence-loading-indicator"
+          >
+            <span className="block h-full w-2/3 rounded-full bg-[var(--app-info-indicator)] motion-safe:animate-pulse" />
+          </span>
+        ) : null}
       </div>
       {action ? <div className="shrink-0">{action}</div> : null}
     </section>
+  );
+}
+
+export function EvidenceLoadingLayout({
+  title,
+  description,
+  metricCount = 4,
+  rowCount = 3,
+  className,
+}: {
+  title: ReactNode;
+  description?: ReactNode;
+  metricCount?: number;
+  rowCount?: number;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn('min-w-0 space-y-4', className)}
+      data-workbench-primitive="evidence-loading-layout"
+    >
+      <EvidenceState kind="loading" title={title} description={description} />
+      <div
+        aria-hidden="true"
+        className="grid min-w-0 grid-cols-2 divide-x divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)] lg:grid-cols-4 lg:divide-y-0"
+        data-testid="evidence-loading-metrics"
+      >
+        {Array.from({ length: metricCount }, (_, index) => (
+          <div key={index} className="min-w-0 px-3 py-3">
+            <span className="block h-2 w-16 rounded-full bg-[var(--app-surface-overlay)] motion-safe:animate-pulse" />
+            <span className="mt-2 block h-4 w-24 max-w-full rounded-full bg-[var(--app-surface-overlay)] motion-safe:animate-pulse" />
+          </div>
+        ))}
+      </div>
+      <div
+        aria-hidden="true"
+        className="min-w-0 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]"
+        data-testid="evidence-loading-rows"
+      >
+        {Array.from({ length: rowCount }, (_, index) => (
+          <div
+            key={index}
+            className="grid min-w-0 gap-3 px-3 py-3 sm:grid-cols-[minmax(9rem,0.55fr)_minmax(0,1fr)]"
+          >
+            <span className="block h-3 w-28 max-w-full rounded-full bg-[var(--app-surface-overlay)] motion-safe:animate-pulse" />
+            <span className="block h-3 w-full max-w-md rounded-full bg-[var(--app-surface-overlay)] motion-safe:animate-pulse" />
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

@@ -10,6 +10,7 @@ import {
   DataTable,
   EvidenceDrawer,
   EvidenceIdentityDisclosure,
+  EvidenceLoadingLayout,
   EvidenceState,
   ExceptionList,
   FilterBar,
@@ -170,6 +171,7 @@ test('exposes explicit evidence lifecycle states', () => {
       .closest('section')
       ?.getAttribute('aria-busy'),
   ).toBe('true');
+  expect(screen.getByTestId('evidence-loading-indicator')).toBeTruthy();
 
   rerender(
     <EvidenceState
@@ -186,7 +188,26 @@ test('exposes explicit evidence lifecycle states', () => {
       ?.getAttribute('data-evidence-kind'),
   ).toBe('missing');
   expect(screen.queryByText('missing')).toBeNull();
+  expect(screen.queryByTestId('evidence-loading-indicator')).toBeNull();
   expect(screen.getByText('Authoritative result is blocked')).toBeTruthy();
+});
+
+test('reserves workbench geometry while evidence is loading without publishing values', () => {
+  render(
+    <EvidenceLoadingLayout
+      title="Loading risk evidence"
+      description="Persisted projections are still pending"
+      metricCount={4}
+      rowCount={3}
+    />,
+  );
+
+  expect(screen.getByText('Loading risk evidence')).toBeTruthy();
+  expect(screen.getByTestId('evidence-loading-metrics').children).toHaveLength(
+    4,
+  );
+  expect(screen.getByTestId('evidence-loading-rows').children).toHaveLength(3);
+  expect(screen.queryByText('--')).toBeNull();
 });
 
 test('renders a dense accessible TanStack data table and a real empty state', () => {
