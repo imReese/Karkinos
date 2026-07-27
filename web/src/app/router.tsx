@@ -4144,37 +4144,6 @@ export function MarketPage() {
           />
         ) : (
           <div className="space-y-5 sm:space-y-6">
-            <MetricStrip
-              ariaLabel={copy.market.title}
-              items={[
-                {
-                  id: 'watchlist',
-                  label: copy.market.watchlist,
-                  value: items.length,
-                  detail: copy.market.personalUniverse,
-                },
-                {
-                  id: 'holdings',
-                  label: copy.market.holdingsContext,
-                  value: holdingItemsCount,
-                  detail: `${items.length} ${copy.market.watchlist}`,
-                },
-                {
-                  id: 'latest-quote',
-                  label: copy.market.latestQuote,
-                  value: latestQuoteLabel,
-                  detail: `${copy.market.cacheAge} ${formatAge(health?.cache_age_seconds)}`,
-                },
-                {
-                  id: 'market-state',
-                  label: copy.market.marketOpen,
-                  value: marketStateLabel,
-                  detail: `${staleCount} ${copy.market.staleSymbols}`,
-                  tone: staleCount > 0 ? 'warning' : 'neutral',
-                },
-              ]}
-            />
-
             <MarketInstrumentWorkspace
               items={items}
               healthBySymbol={healthBySymbol}
@@ -4260,25 +4229,45 @@ export function MarketPage() {
                   </form>
                 </details>
               }
-              evidenceReview={
-                holdingReviewNeedsAttention ? (
-                  <CurrentHoldingMarketEvidenceReviewPanel
-                    report={holdingMarketEvidenceReview.data}
-                    loading={holdingMarketEvidenceReview.isLoading}
-                    error={holdingMarketEvidenceReview.isError}
-                    compact
-                  />
-                ) : undefined
-              }
             />
 
-            {!holdingReviewNeedsAttention ? (
-              <CurrentHoldingMarketEvidenceReviewPanel
-                report={holdingMarketEvidenceReview.data}
-                loading={holdingMarketEvidenceReview.isLoading}
-                error={holdingMarketEvidenceReview.isError}
-              />
-            ) : null}
+            <CurrentHoldingMarketEvidenceReviewPanel
+              report={holdingMarketEvidenceReview.data}
+              loading={holdingMarketEvidenceReview.isLoading}
+              error={holdingMarketEvidenceReview.isError}
+              compact={holdingReviewNeedsAttention}
+            />
+
+            <MetricStrip
+              ariaLabel={copy.market.title}
+              items={[
+                {
+                  id: 'watchlist',
+                  label: copy.market.watchlist,
+                  value: items.length,
+                  detail: copy.market.personalUniverse,
+                },
+                {
+                  id: 'holdings',
+                  label: copy.market.holdingsContext,
+                  value: holdingItemsCount,
+                  detail: `${items.length} ${copy.market.watchlist}`,
+                },
+                {
+                  id: 'latest-quote',
+                  label: copy.market.latestQuote,
+                  value: latestQuoteLabel,
+                  detail: `${copy.market.cacheAge} ${formatAge(health?.cache_age_seconds)}`,
+                },
+                {
+                  id: 'market-state',
+                  label: copy.market.marketOpen,
+                  value: marketStateLabel,
+                  detail: `${staleCount} ${copy.market.staleSymbols}`,
+                  tone: staleCount > 0 ? 'warning' : 'neutral',
+                },
+              ]}
+            />
 
             <div className="grid min-w-0 gap-4 lg:grid-cols-3">
               <section
