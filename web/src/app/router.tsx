@@ -53,6 +53,7 @@ import {
 } from '../features/account-strategy/api';
 import { StrategyContributionGateCard } from '../features/account-strategy/components/strategy-contribution-gate-card';
 import { AccountTruthReviewPage } from '../features/account-truth/components/account-truth-review-page';
+import { AiResearchPage } from '../features/ai-research/components/ai-research-page';
 import { BacktestPage } from '../features/backtest/components/backtest-page';
 import {
   type DailyTradingPlanResponse,
@@ -310,6 +311,12 @@ const backtestRoute = createRoute({
   component: BacktestPage,
 });
 
+const aiResearchRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/ai-research',
+  component: AiResearchPage,
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
@@ -329,6 +336,7 @@ const routeTree = rootRoute.addChildren([
   marketRoute,
   tradingRoute,
   backtestRoute,
+  aiResearchRoute,
   settingsRoute,
 ]);
 

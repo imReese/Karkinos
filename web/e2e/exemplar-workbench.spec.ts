@@ -540,6 +540,7 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
       '/trading',
       '/settings',
       '/backtest',
+      '/ai-research',
     ]) {
       await page.goto(path);
       await selectMobileTheme(page, theme as 'light' | 'dark');
@@ -564,6 +565,30 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
       expect(geometry.contentOverflow, `${path} ${theme}`).toBeLessThanOrEqual(
         0,
       );
+
+      if (path === '/ai-research') {
+        await expect(page.getByTestId('ai-research-primary-canvas')).toBeVisible();
+        await expect(page.getByTestId('ai-research-task-panel')).toBeVisible();
+        const researchGeometry = await page.evaluate(() => {
+          const panel = document.querySelector(
+            '[data-testid="ai-research-task-panel"]',
+          ) as HTMLElement;
+          const form = panel.querySelector('form') as HTMLFormElement;
+          const reviewQueue = form.previousElementSibling as HTMLElement;
+          const panelStyle = getComputedStyle(panel);
+          return {
+            formTop: form.getBoundingClientRect().top,
+            panelBackground: panelStyle.backgroundColor,
+            panelRadius: panelStyle.borderRadius,
+            reviewQueueTop: reviewQueue.getBoundingClientRect().top,
+          };
+        });
+        expect(researchGeometry.reviewQueueTop).toBeLessThan(
+          researchGeometry.formTop,
+        );
+        expect(researchGeometry.panelBackground).toBe('rgba(0, 0, 0, 0)');
+        expect(researchGeometry.panelRadius).toBe('0px');
+      }
 
       if (path === '/activity') {
         const activityGeometry = await page.evaluate(() => {
