@@ -9,7 +9,6 @@ import { useQuery } from '@tanstack/react-query';
 
 import { useCopy } from '../../../app/copy';
 import {
-  EvidenceState,
   MetricStrip,
   StatusBadge,
   WorkspaceHeader,
@@ -57,6 +56,7 @@ import {
   useUpdateScopedAccountStrategyAssignmentMutation,
   useRunBacktestMutation,
   useBacktestPaperShadowPreviewMutation,
+  useBacktestResultsQuery,
   useBacktestRiskPreviewMutation,
   useBacktestStrategiesQuery,
   useStrategySignalPreviewMutation,
@@ -570,6 +570,7 @@ export function BacktestPage() {
   const paperShadowPreview = useBacktestPaperShadowPreviewMutation();
   const attributionPreview = useBacktestAttributionPreviewMutation();
   const strategies = useBacktestStrategiesQuery();
+  const savedResults = useBacktestResultsQuery();
   const accountStrategy = useAccountStrategyAssignmentQuery();
   const accountStrategyAssignments = useAccountStrategyAssignmentsQuery();
   const accountStrategyAttribution = useAccountStrategyAttributionQuery();
@@ -596,6 +597,7 @@ export function BacktestPage() {
   const [mobileWorkspaceView, setMobileWorkspaceView] = useState<
     'setup' | 'results'
   >('setup');
+  const [mobileWorkspaceTouched, setMobileWorkspaceTouched] = useState(false);
   const [advancedToolsOpen, setAdvancedToolsOpen] = useState(false);
   const [researchGovernanceOpen, setResearchGovernanceOpen] = useState(false);
   const [promotionEvidenceOpen, setPromotionEvidenceOpen] = useState(false);
@@ -673,6 +675,12 @@ export function BacktestPage() {
     setParameterValues(buildParamValues(parameterSchema));
   }, [strategy, parameterSchema]);
 
+  useEffect(() => {
+    if (!mobileWorkspaceTouched && savedResults.data?.length) {
+      setMobileWorkspaceView('results');
+    }
+  }, [mobileWorkspaceTouched, savedResults.data]);
+
   const submitRun = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (
@@ -704,6 +712,7 @@ export function BacktestPage() {
       });
       const report = await runBacktest.mutateAsync(payload);
       setLatestReport(report);
+      setMobileWorkspaceTouched(true);
       setMobileWorkspaceView('results');
       signalPreview.reset();
       riskPreview.reset();
@@ -822,12 +831,13 @@ export function BacktestPage() {
       <div
         aria-label={labels.title}
         className="flex border-y border-[var(--app-divider)] xl:hidden"
+        data-workspace-view={mobileWorkspaceView}
         data-testid="backtest-mobile-workspace-tabs"
         role="tablist"
       >
         {[
           { id: 'setup' as const, label: labels.formKicker },
-          { id: 'results' as const, label: labels.currentKicker },
+          { id: 'results' as const, label: labels.resultsWorkspaceTab },
         ].map((item) => (
           <button
             aria-controls={`backtest-mobile-${item.id}`}
@@ -838,7 +848,10 @@ export function BacktestPage() {
                 : 'border-transparent text-[var(--app-text-secondary)]'
             }`}
             key={item.id}
-            onClick={() => setMobileWorkspaceView(item.id)}
+            onClick={() => {
+              setMobileWorkspaceTouched(true);
+              setMobileWorkspaceView(item.id);
+            }}
             role="tab"
             type="button"
           >
@@ -1121,183 +1134,177 @@ export function BacktestPage() {
           role="tabpanel"
         >
           <div className="p-4 sm:p-5">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <div className="app-kicker text-xs uppercase tracking-[0.16em]">
-                  {labels.currentKicker}
-                </div>
-                <h2 className="app-card-title mt-1.5">{labels.currentTitle}</h2>
-              </div>
-              {summary ? (
-                <div className="grid grid-cols-2 gap-3 text-right text-xs tabular-nums sm:grid-cols-4">
-                  <SummaryValue
-                    label={labels.totalReturn}
-                    value={formatPercent(summary.returnValue)}
-                  />
-                  <SummaryValue
-                    label={labels.maxDrawdown}
-                    value={formatPercent(summary.drawdown)}
-                    tone="pnl-negative"
-                  />
-                  <SummaryValue
-                    label={labels.totalCost}
-                    value={formatCurrency(summary.cost)}
-                  />
-                  <SummaryValue
-                    label={labels.fillsCount}
-                    value={String(summary.trades)}
-                  />
-                </div>
-              ) : null}
-            </div>
-
             {latestReport ? (
-              <div className="mt-5 space-y-5">
-                <section
-                  className="border-l-2 border-[var(--app-info-indicator)] py-1 pl-3"
-                  data-testid="backtest-run-context-summary"
-                >
-                  <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
-                        {labels.runContextKicker}
+              <>
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <div className="app-kicker text-xs uppercase tracking-[0.16em]">
+                      {labels.currentKicker}
+                    </div>
+                    <h2 className="app-card-title mt-1.5">
+                      {labels.currentTitle}
+                    </h2>
+                  </div>
+                  {summary ? (
+                    <div className="grid grid-cols-2 gap-3 text-right text-xs tabular-nums sm:grid-cols-4">
+                      <SummaryValue
+                        label={labels.totalReturn}
+                        value={formatPercent(summary.returnValue)}
+                      />
+                      <SummaryValue
+                        label={labels.maxDrawdown}
+                        value={formatPercent(summary.drawdown)}
+                        tone="pnl-negative"
+                      />
+                      <SummaryValue
+                        label={labels.totalCost}
+                        value={formatCurrency(summary.cost)}
+                      />
+                      <SummaryValue
+                        label={labels.fillsCount}
+                        value={String(summary.trades)}
+                      />
+                    </div>
+                  ) : null}
+                </div>
+                <div className="mt-5 space-y-5">
+                  <section
+                    className="border-l-2 border-[var(--app-info-indicator)] py-1 pl-3"
+                    data-testid="backtest-run-context-summary"
+                  >
+                    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+                          {labels.runContextKicker}
+                        </div>
+                        <h3 className="mt-1.5 text-base font-semibold text-[var(--app-text)]">
+                          {labels.runContextTitle}
+                        </h3>
+                        <p className="app-muted mt-2 text-sm leading-6">
+                          {labels.runContextDetail}
+                        </p>
                       </div>
-                      <h3 className="mt-1.5 text-base font-semibold text-[var(--app-text)]">
-                        {labels.runContextTitle}
-                      </h3>
-                      <p className="app-muted mt-2 text-sm leading-6">
-                        {labels.runContextDetail}
-                      </p>
+                      <div className="flex shrink-0 flex-wrap items-center gap-2">
+                        {reportSymbol ? (
+                          <a
+                            className="inline-flex min-h-8 items-center rounded-[var(--app-radius-control)] border border-[var(--app-border)] px-2.5 py-1 text-xs font-semibold text-[var(--app-text)] transition hover:border-[var(--app-accent)] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
+                            href={`/portfolio/${encodeURIComponent(reportSymbol)}`}
+                          >
+                            {labels.runContextReviewHolding}
+                          </a>
+                        ) : null}
+                        <StatusBadge tone="warning">
+                          {labels.decisionHandoffResearchOnly}
+                        </StatusBadge>
+                      </div>
                     </div>
-                    <div className="flex shrink-0 flex-wrap items-center gap-2">
-                      {reportSymbol ? (
-                        <a
-                          className="inline-flex min-h-8 items-center rounded-[var(--app-radius-control)] border border-[var(--app-border)] px-2.5 py-1 text-xs font-semibold text-[var(--app-text)] transition hover:border-[var(--app-accent)] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
-                          href={`/portfolio/${encodeURIComponent(reportSymbol)}`}
-                        >
-                          {labels.runContextReviewHolding}
-                        </a>
-                      ) : null}
-                      <StatusBadge tone="warning">
-                        {labels.decisionHandoffResearchOnly}
-                      </StatusBadge>
+                    <div className="mt-4 grid gap-2 text-xs sm:grid-cols-2 xl:grid-cols-4">
+                      <RunContextValue
+                        label={labels.runContextSource}
+                        value={runContextSourceLabel}
+                      />
+                      <RunContextValue
+                        label={labels.runContextInstrument}
+                        value={reportSymbol || labels.notDeclared}
+                        numeric
+                      />
+                      <RunContextValue
+                        label={labels.runContextAssetClass}
+                        value={reportAssetClassLabel}
+                      />
+                      <RunContextValue
+                        label={labels.runContextStrategy}
+                        value={strategyDisplayName(
+                          reportStrategy,
+                          labels.strategyNames,
+                        )}
+                      />
                     </div>
-                  </div>
-                  <div className="mt-4 grid gap-2 text-xs sm:grid-cols-2 xl:grid-cols-4">
-                    <RunContextValue
-                      label={labels.runContextSource}
-                      value={runContextSourceLabel}
-                    />
-                    <RunContextValue
-                      label={labels.runContextInstrument}
-                      value={reportSymbol || labels.notDeclared}
-                      numeric
-                    />
-                    <RunContextValue
-                      label={labels.runContextAssetClass}
-                      value={reportAssetClassLabel}
-                    />
-                    <RunContextValue
-                      label={labels.runContextStrategy}
-                      value={strategyDisplayName(
-                        reportStrategy,
-                        labels.strategyNames,
-                      )}
-                    />
-                  </div>
-                </section>
-                <SingleInstrumentLoopReadinessCard
-                  acceptanceAudit={
-                    singleInstrumentAudit.data?.audits[0] ?? null
-                  }
-                  auditError={singleInstrumentAudit.isError}
-                  auditLoading={singleInstrumentAudit.isLoading}
-                  attributionPreviewResult={attributionPreview.data ?? null}
-                  paperShadowPreviewResult={paperShadowPreview.data ?? null}
-                  preview={signalPreview.data ?? null}
-                  report={latestReport}
-                  riskPreviewResult={riskPreview.data ?? null}
-                />
-                <div
-                  className="scroll-mt-24 space-y-5"
-                  id="backtest-after-cost-evidence"
-                >
-                  <MetricsGrid report={latestReport} />
-                  <ValidationEvidencePanel report={latestReport} />
-                </div>
-                <div className="scroll-mt-24" id="backtest-dataset-evidence">
-                  <DatasetSnapshotPanel report={latestReport} />
-                </div>
-                <div
-                  className="scroll-mt-24"
-                  id="backtest-signal-review-evidence"
-                >
-                  <StrategySignalPreviewPanel
-                    error={signalPreview.isError}
-                    loading={signalPreview.isPending}
-                    onPaperShadowPreview={(payload) => {
-                      attributionPreview.reset();
-                      paperShadowPreview.mutate(payload, {
-                        onSuccess: (result) => {
-                          attributionPreview.mutate({
-                            strategy: payload.strategy,
-                            symbol: payload.symbol,
-                            asset_class: payload.asset_class,
-                            signal_id: payload.signal_id ?? null,
-                            dataset_snapshot_id:
-                              payload.dataset_snapshot_id ?? null,
-                            risk_preview_passed: payload.risk_preview_passed,
-                            risk_reasons: payload.risk_reasons,
-                            paper_shadow_status: result.status,
-                            paper_shadow_order: result.order,
-                            paper_shadow_fill: result.fill as Record<
-                              string,
-                              unknown
-                            > | null,
-                          });
-                        },
-                      });
-                    }}
-                    onRiskPreview={(payload) => {
-                      paperShadowPreview.reset();
-                      attributionPreview.reset();
-                      riskPreview.mutate(payload);
-                    }}
-                    attributionPreviewError={attributionPreview.isError}
-                    attributionPreviewLoading={attributionPreview.isPending}
+                  </section>
+                  <SingleInstrumentLoopReadinessCard
+                    acceptanceAudit={
+                      singleInstrumentAudit.data?.audits[0] ?? null
+                    }
+                    auditError={singleInstrumentAudit.isError}
+                    auditLoading={singleInstrumentAudit.isLoading}
                     attributionPreviewResult={attributionPreview.data ?? null}
-                    paperShadowPreviewError={paperShadowPreview.isError}
-                    paperShadowPreviewLoading={paperShadowPreview.isPending}
                     paperShadowPreviewResult={paperShadowPreview.data ?? null}
                     preview={signalPreview.data ?? null}
-                    riskPreviewError={riskPreview.isError}
-                    riskPreviewLoading={riskPreview.isPending}
+                    report={latestReport}
                     riskPreviewResult={riskPreview.data ?? null}
-                    singleAsset={latestReport.config.assets?.[0] ?? null}
                   />
+                  <div
+                    className="scroll-mt-24 space-y-5"
+                    id="backtest-after-cost-evidence"
+                  >
+                    <MetricsGrid report={latestReport} />
+                    <ValidationEvidencePanel report={latestReport} />
+                  </div>
+                  <div className="scroll-mt-24" id="backtest-dataset-evidence">
+                    <DatasetSnapshotPanel report={latestReport} />
+                  </div>
+                  <div
+                    className="scroll-mt-24"
+                    id="backtest-signal-review-evidence"
+                  >
+                    <StrategySignalPreviewPanel
+                      error={signalPreview.isError}
+                      loading={signalPreview.isPending}
+                      onPaperShadowPreview={(payload) => {
+                        attributionPreview.reset();
+                        paperShadowPreview.mutate(payload, {
+                          onSuccess: (result) => {
+                            attributionPreview.mutate({
+                              strategy: payload.strategy,
+                              symbol: payload.symbol,
+                              asset_class: payload.asset_class,
+                              signal_id: payload.signal_id ?? null,
+                              dataset_snapshot_id:
+                                payload.dataset_snapshot_id ?? null,
+                              risk_preview_passed: payload.risk_preview_passed,
+                              risk_reasons: payload.risk_reasons,
+                              paper_shadow_status: result.status,
+                              paper_shadow_order: result.order,
+                              paper_shadow_fill: result.fill as Record<
+                                string,
+                                unknown
+                              > | null,
+                            });
+                          },
+                        });
+                      }}
+                      onRiskPreview={(payload) => {
+                        paperShadowPreview.reset();
+                        attributionPreview.reset();
+                        riskPreview.mutate(payload);
+                      }}
+                      attributionPreviewError={attributionPreview.isError}
+                      attributionPreviewLoading={attributionPreview.isPending}
+                      attributionPreviewResult={attributionPreview.data ?? null}
+                      paperShadowPreviewError={paperShadowPreview.isError}
+                      paperShadowPreviewLoading={paperShadowPreview.isPending}
+                      paperShadowPreviewResult={paperShadowPreview.data ?? null}
+                      preview={signalPreview.data ?? null}
+                      riskPreviewError={riskPreview.isError}
+                      riskPreviewLoading={riskPreview.isPending}
+                      riskPreviewResult={riskPreview.data ?? null}
+                      singleAsset={latestReport.config.assets?.[0] ?? null}
+                    />
+                  </div>
+                  <EquityDrawdownChart
+                    fills={latestReport.fills ?? []}
+                    points={latestReport.equity_curve}
+                  />
+                  <FillsTable fills={latestReport.fills ?? []} />
                 </div>
-                <EquityDrawdownChart
-                  fills={latestReport.fills ?? []}
-                  points={latestReport.equity_curve}
-                />
-                <FillsTable fills={latestReport.fills ?? []} />
-              </div>
+              </>
             ) : (
-              <div className="mt-5 space-y-6">
-                <div className="border-y border-[var(--app-divider)] py-3">
-                  <EvidenceState
-                    kind="empty"
-                    title={labels.notDeclared}
-                    description={labels.emptyCurrent}
-                  />
-                </div>
-                <section
-                  className="min-w-0 border-t border-[var(--app-divider)] pt-5"
-                  data-testid="backtest-persisted-evidence"
-                >
-                  <BacktestReportView />
-                </section>
-              </div>
+              <section
+                className="min-w-0"
+                data-testid="backtest-persisted-evidence"
+              >
+                <BacktestReportView />
+              </section>
             )}
           </div>
         </section>

@@ -109,7 +109,7 @@ export function BacktestReportView() {
         onSelect={setSelectedId}
       />
 
-      {selectedSummary ? (
+      {selectedSummary && !report.data ? (
         <MetricStrip
           ariaLabel={labels.selection.kicker}
           items={[

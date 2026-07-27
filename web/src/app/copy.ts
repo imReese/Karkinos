@@ -1670,6 +1670,7 @@ export const copy = {
         running: 'Running backtest',
         currentKicker: 'Current run',
         currentTitle: 'Run output',
+        resultsWorkspaceTab: 'Results and evidence',
         emptyCurrent:
           'Run a backtest to inspect the current result. Saved reports remain available below.',
         signalPreviewKicker: 'Strategy signal',
@@ -4424,6 +4425,7 @@ export const copy = {
         running: '回测运行中',
         currentKicker: '当前运行',
         currentTitle: '运行结果',
+        resultsWorkspaceTab: '结果与证据',
         emptyCurrent: '运行一次回测后可查看当前结果；已保存报告仍在下方可选。',
         signalPreviewKicker: '策略信号',
         signalPreviewTitle: '策略信号预览',
