@@ -20,6 +20,7 @@ import { useCopy, type AppCopy } from './copy';
 import { ToastStack, type ToastItem } from './components/toast-stack';
 import {
   ControlledActionZone,
+  EvidenceDrawer,
   EvidenceIdentityDisclosure,
   EvidenceLoadingLayout,
   EvidenceState,
@@ -4871,6 +4872,7 @@ export function MarketPage() {
 export function ActivityPage() {
   const copy = useCopy();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [entryDrawerOpen, setEntryDrawerOpen] = useState(false);
   const [activeEntryTool, setActiveEntryTool] =
     useState<ActivityEntryTool>('trade');
   const entries = useLedgerEntriesQuery();
@@ -5087,6 +5089,15 @@ export function ActivityPage() {
           context={
             latestEntry ? formatTimestamp(latestEntry.timestamp) : undefined
           }
+          actions={
+            <button
+              type="button"
+              className="app-button-primary px-3 py-2 text-xs"
+              onClick={() => setEntryDrawerOpen(true)}
+            >
+              {copy.activity.entryTools.openAction}
+            </button>
+          }
         />
 
         <MetricStrip
@@ -5127,77 +5138,78 @@ export function ActivityPage() {
           ]}
         />
 
-        <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.55fr)]">
-          <div
-            className="min-w-0 space-y-6 xl:col-start-1 xl:row-start-1"
-            data-activity-surface="audit-history"
-          >
-            {entries.isLoading ? (
-              <EvidenceState
-                kind="loading"
-                title={copy.states.loading}
-                description={copy.activity.loading}
-              />
-            ) : entries.isError ? (
-              <EvidenceState
-                kind="error"
-                title={copy.states.error}
-                description={copy.activity.error}
-                action={
-                  <button
-                    type="button"
-                    className="app-button-secondary px-3 py-2 text-xs"
-                    onClick={() => void entries.refetch()}
-                  >
-                    {copy.states.retry}
-                  </button>
-                }
-              />
-            ) : (
-              <ActivityFeed entries={entries.data ?? []} />
-            )}
-          </div>
-          <aside
-            className="min-w-0 space-y-6 xl:sticky xl:top-24 xl:col-start-2 xl:row-start-1 xl:self-start"
-            data-activity-surface="priority-and-entry"
-          >
-            <PendingFundOrdersCard
-              orders={pendingFundOrders.data ?? []}
-              loading={pendingFundOrders.isLoading}
-              error={pendingFundOrders.isError}
-              onRetry={() => void pendingFundOrders.refetch()}
+        <div
+          className="min-w-0 space-y-6"
+          data-activity-surface="audit-history"
+        >
+          {entries.isLoading ? (
+            <EvidenceState
+              kind="loading"
+              title={copy.states.loading}
+              description={copy.activity.loading}
             />
-            <ActivityEntryToolsPanel
-              activeEntryTool={activeEntryTool}
-              candidates={fundBatchCandidates}
-              commissionSettings={
-                settings.data
-                  ? {
-                      stock_rate: settings.data.account_commission_rate,
-                      stock_min_commission:
-                        settings.data.account_min_commission,
-                    }
-                  : undefined
+          ) : entries.isError ? (
+            <EvidenceState
+              kind="error"
+              title={copy.states.error}
+              description={copy.activity.error}
+              action={
+                <button
+                  type="button"
+                  className="app-button-secondary px-3 py-2 text-xs"
+                  onClick={() => void entries.refetch()}
+                >
+                  {copy.states.retry}
+                </button>
               }
-              createAdjustmentPending={createAdjustment.isPending}
-              createCashFlowPending={createCashFlow.isPending}
-              createDividendPending={createDividend.isPending}
-              createTradePending={createTrade.isPending}
-              loadingCandidates={positions.isLoading}
-              onAdjustmentSubmit={handleAdjustmentSubmit}
-              onCashFlowSubmit={handleCashFlowSubmit}
-              onDividendSubmit={handleDividendSubmit}
-              onFundBatchSubmit={handleFundBatchSubmit}
-              onSelectEntryTool={setActiveEntryTool}
-              onTradePreviewChange={handleTradePreviewChange}
-              onTradeSubmit={handleTradeSubmit}
-              previewError={tradePreview.isError}
-              previewLoading={tradePreview.isPending}
-              tradePreview={tradePreview.data ?? null}
             />
-          </aside>
+          ) : (
+            <ActivityFeed entries={entries.data ?? []} />
+          )}
+          <PendingFundOrdersCard
+            orders={pendingFundOrders.data ?? []}
+            loading={pendingFundOrders.isLoading}
+            error={pendingFundOrders.isError}
+            onRetry={() => void pendingFundOrders.refetch()}
+          />
         </div>
       </section>
+      <EvidenceDrawer
+        open={entryDrawerOpen}
+        onClose={() => setEntryDrawerOpen(false)}
+        title={copy.activity.entryTools.title}
+        description={copy.activity.entryTools.detail}
+        closeLabel={copy.activity.entryTools.closeAction}
+        className="w-[min(96vw,640px)]"
+      >
+        <ActivityEntryToolsPanel
+          activeEntryTool={activeEntryTool}
+          candidates={fundBatchCandidates}
+          commissionSettings={
+            settings.data
+              ? {
+                  stock_rate: settings.data.account_commission_rate,
+                  stock_min_commission: settings.data.account_min_commission,
+                }
+              : undefined
+          }
+          createAdjustmentPending={createAdjustment.isPending}
+          createCashFlowPending={createCashFlow.isPending}
+          createDividendPending={createDividend.isPending}
+          createTradePending={createTrade.isPending}
+          loadingCandidates={positions.isLoading}
+          onAdjustmentSubmit={handleAdjustmentSubmit}
+          onCashFlowSubmit={handleCashFlowSubmit}
+          onDividendSubmit={handleDividendSubmit}
+          onFundBatchSubmit={handleFundBatchSubmit}
+          onSelectEntryTool={setActiveEntryTool}
+          onTradePreviewChange={handleTradePreviewChange}
+          onTradeSubmit={handleTradeSubmit}
+          previewError={tradePreview.isError}
+          previewLoading={tradePreview.isPending}
+          tradePreview={tradePreview.data ?? null}
+        />
+      </EvidenceDrawer>
     </>
   );
 }
@@ -5258,9 +5270,8 @@ function ActivityEntryToolsPanel({
 
   return (
     <ControlledActionZone
-      title={copy.activity.entryTools.title}
-      description={copy.activity.entryTools.detail}
-      evidence={copy.activity.entryTools.boundary}
+      title={copy.activity.entryTools.boundaryTitle}
+      description={copy.activity.entryTools.boundary}
       layout="stack"
       tone="info"
       className="min-w-0"

@@ -370,7 +370,9 @@ test('closes the evidence drawer with Escape and restores focus', async () => {
   render(<DrawerHarness />);
   const trigger = screen.getByRole('button', { name: 'Open evidence' });
   await user.click(trigger);
-  expect(screen.getByRole('dialog', { name: 'Evidence detail' })).toBeTruthy();
+  const dialog = screen.getByRole('dialog', { name: 'Evidence detail' });
+  expect(dialog).toBeTruthy();
+  expect(dialog.parentElement?.parentElement).toBe(document.body);
   expect(document.activeElement).toBe(
     screen.getAllByRole('button', { name: 'Close evidence' })[1],
   );

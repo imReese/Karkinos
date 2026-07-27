@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 import { X } from 'lucide-react';
 
@@ -71,11 +72,11 @@ export function EvidenceDrawer({
     };
   }, [onClose, open]);
 
-  if (!open) {
+  if (!open || typeof document === 'undefined') {
     return null;
   }
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[120]">
       <button
         type="button"
@@ -131,6 +132,7 @@ export function EvidenceDrawer({
           </footer>
         ) : null}
       </aside>
-    </div>
+    </div>,
+    document.body,
   );
 }

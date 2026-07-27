@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
 import type { ColumnDef } from '@tanstack/react-table';
 
 import {
   DataTable,
+  EvidenceDrawer,
   EvidenceState,
   ExceptionList,
   MetricStrip,
@@ -144,11 +145,17 @@ export function OperationsPage() {
   const labels = copy.operationsPage;
   const { locale } = usePreferences();
   const operations = useOperationsTodayQuery();
+  const [selectedAttentionFingerprint, setSelectedAttentionFingerprint] =
+    useState<string | null>(null);
   const projection = operations.data;
   const projectionIsSafe = operationsProjectionIsSafe(projection);
   const attentionItems = projectionIsSafe
     ? (projection.attention_items ?? [])
     : [];
+  const selectedAttention =
+    attentionItems.find(
+      (item) => item.task_fingerprint === selectedAttentionFingerprint,
+    ) ?? null;
   const subsystemColumns = useMemo<ColumnDef<OperationsSubsystem, unknown>[]>(
     () => [
       {
@@ -319,16 +326,20 @@ export function OperationsPage() {
                           {labels.openEvidence}
                         </a>
                       ) : null}
+                      <button
+                        type="button"
+                        className="app-button-secondary px-2 py-1 text-[11px]"
+                        onClick={() =>
+                          setSelectedAttentionFingerprint(item.task_fingerprint)
+                        }
+                      >
+                        {labels.reviewDetails}
+                      </button>
                     </span>
                   ),
-                  evidence: (
-                    <span title={item.task_fingerprint}>
-                      {formatEvidenceTime(item.evidence.observed_at, locale) ??
-                        labels.noTimestamp}{' '}
-                      · {item.task_fingerprint.slice(0, 14)}…
-                      {item.task_fingerprint.slice(-8)}
-                    </span>
-                  ),
+                  evidence:
+                    formatEvidenceTime(item.evidence.observed_at, locale) ??
+                    labels.noTimestamp,
                 } satisfies ExceptionItem;
               })}
             />
@@ -425,6 +436,93 @@ export function OperationsPage() {
           </section>
         </>
       )}
+      <EvidenceDrawer
+        open={selectedAttention !== null}
+        onClose={() => setSelectedAttentionFingerprint(null)}
+        title={
+          selectedAttention
+            ? operationsSubsystemLabel(selectedAttention.subsystem_id, locale)
+            : labels.evidenceDetail
+        }
+        description={labels.evidenceDetailDescription}
+        closeLabel={labels.closeEvidenceDetail}
+      >
+        {selectedAttention ? (
+          <div
+            className="min-w-0 space-y-5"
+            data-testid="operations-evidence-detail"
+          >
+            <dl className="divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)] text-sm">
+              {[
+                [
+                  labels.status,
+                  formatPublicStatus(selectedAttention.status, locale),
+                ],
+                [
+                  labels.evidenceStatus,
+                  formatPublicStatus(selectedAttention.evidence.status, locale),
+                ],
+                [
+                  labels.observedAt,
+                  formatEvidenceTime(
+                    selectedAttention.evidence.observed_at,
+                    locale,
+                  ) ?? labels.noTimestamp,
+                ],
+                [
+                  labels.resolution,
+                  operationsAttentionResolutionLabel(
+                    selectedAttention.resolution_condition,
+                    locale,
+                  ),
+                ],
+                [
+                  labels.nextAction,
+                  operationsNextActionLabel(
+                    selectedAttention.next_action,
+                    locale,
+                  ),
+                ],
+              ].map(([label, value]) => (
+                <div
+                  key={label}
+                  className="grid gap-1 py-2.5 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-3"
+                >
+                  <dt className="text-xs font-medium text-[var(--app-text-tertiary)]">
+                    {label}
+                  </dt>
+                  <dd className="min-w-0 text-[var(--app-text)]">{value}</dd>
+                </div>
+              ))}
+            </dl>
+            <section className="min-w-0 space-y-2">
+              <h3 className="text-sm font-semibold text-[var(--app-text)]">
+                {labels.technicalIdentity}
+              </h3>
+              <div className="border-y border-[var(--app-divider)] py-3">
+                <div className="text-xs font-medium text-[var(--app-text-tertiary)]">
+                  {labels.fingerprint}
+                </div>
+                <code className="mt-1 block break-all text-xs leading-5 text-[var(--app-text-secondary)]">
+                  {selectedAttention.task_fingerprint}
+                </code>
+              </div>
+              <p className="text-xs leading-5 text-[var(--app-text-secondary)]">
+                {labels.sourceBoundary}
+              </p>
+            </section>
+            {operationsTargetHref(selectedAttention.target) !==
+            '/operations' ? (
+              <a
+                className="app-button-primary inline-flex px-3 py-2 text-xs"
+                href={operationsTargetHref(selectedAttention.target)}
+              >
+                {labels.openEvidence}
+              </a>
+            ) : null}
+          </div>
+        ) : null}
+      </EvidenceDrawer>
     </section>
   );
 }
