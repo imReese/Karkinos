@@ -612,20 +612,19 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
       }
 
       if (path === '/backtest') {
-        const archiveDisclosure = page.getByTestId(
-          'backtest-research-archive-disclosure',
+        const resultTab = page
+          .getByTestId('backtest-mobile-workspace-tabs')
+          .getByRole('tab', { name: /Current run|当前运行/ });
+        await resultTab.click();
+        const resultPanel = page.getByTestId('backtest-result-panel');
+        await expect(resultPanel).toBeVisible();
+        const reportWorkspace = resultPanel.locator(
+          '[data-backtest-report-workspace="saved-evidence"]',
         );
-        await archiveDisclosure.click();
-        await expect(archiveDisclosure).toHaveAttribute(
-          'aria-expanded',
-          'true',
-        );
-
-        const archiveContent = page.locator('#backtest-research-archive');
         await expect
           .poll(
             () =>
-              archiveContent.evaluate((element) => {
+              resultPanel.evaluate((element) => {
                 const workspace = element.querySelector(
                   '[data-backtest-report-workspace="saved-evidence"]',
                 );
@@ -640,9 +639,6 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
             { timeout: 15_000 },
           )
           .toBe(true);
-        const reportWorkspace = archiveContent.locator(
-          '[data-backtest-report-workspace="saved-evidence"]',
-        );
         if ((await reportWorkspace.count()) > 0) {
           await expect(
             reportWorkspace.locator('[data-workbench-primitive="filter-bar"]'),
@@ -662,18 +658,20 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
           expect(reportGeometry.legacyPanels, theme).toBe(0);
           expect(reportGeometry.oversizedRadii, theme).toBe(0);
           expect(reportGeometry.width, theme).toBeLessThanOrEqual(390);
-        } else {
-          const visibleEmptyStateCount = await archiveContent
-            .locator('[data-evidence-kind="empty"]')
-            .evaluateAll(
-              (elements) =>
-                elements.filter(
-                  (element) =>
-                    (element as HTMLElement).getBoundingClientRect().height > 0,
-                ).length,
-            );
-          expect(visibleEmptyStateCount, theme).toBeGreaterThan(0);
         }
+
+        const archiveDisclosure = page.getByTestId(
+          'backtest-research-archive-disclosure',
+        );
+        await archiveDisclosure.click();
+        await expect(archiveDisclosure).toHaveAttribute(
+          'aria-expanded',
+          'true',
+        );
+
+        await expect(
+          page.locator('#backtest-research-archive').getByRole('region'),
+        ).toBeVisible();
       }
     }
   }

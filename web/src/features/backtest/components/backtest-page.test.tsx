@@ -1308,7 +1308,31 @@ test('renders the backtest workspace and saved report history', async () => {
     await screen.findByLabelText('Short moving-average window'),
   ).toBeTruthy();
   expect(await screen.findByText('Report selection')).toBeTruthy();
-  expect(await screen.findByText('Equity and drawdown')).toBeTruthy();
+  const persistedEvidence = screen.getByTestId('backtest-persisted-evidence');
+  const equityChart = await within(persistedEvidence).findByRole('heading', {
+    name: 'Equity and drawdown',
+  });
+  const validationEvidence = within(persistedEvidence).getByRole('heading', {
+    name: 'Validation evidence',
+  });
+  const datasetSnapshot = within(persistedEvidence).getByRole('heading', {
+    name: 'Dataset snapshot',
+  });
+  const strategySnapshot = within(persistedEvidence).getByRole('heading', {
+    name: 'Strategy snapshot',
+  });
+  expect(
+    equityChart.compareDocumentPosition(validationEvidence) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    validationEvidence.compareDocumentPosition(datasetSnapshot) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    datasetSnapshot.compareDocumentPosition(strategySnapshot) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
 });
 
 test('keeps setup and current results in one primary workspace with mobile tabs', async () => {
