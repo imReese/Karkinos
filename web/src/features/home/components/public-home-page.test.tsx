@@ -82,15 +82,48 @@ test('renders an evidence-first public home without loading financial data', asy
   expect(screen.getByRole('contentinfo')).toBeTruthy();
   expect(
     screen.getByText(
-      'A structural view of the product contract. It contains no account, return, order, or execution data.',
+      'Structural product proof only. It contains no account, return, order, or execution data.',
+    ),
+  ).toBeTruthy();
+
+  const evidenceTrace = screen.getByTestId('public-evidence-trace');
+  expect(
+    within(evidenceTrace).getByLabelText('Public-to-private route'),
+  ).toBeTruthy();
+  expect(
+    within(
+      within(evidenceTrace).getByRole('list', {
+        name: 'Decision evidence path',
+      }),
+    ).getAllByRole('listitem'),
+  ).toHaveLength(4);
+  expect(within(evidenceTrace).getByText('Read and review only')).toBeTruthy();
+  expect(
+    within(evidenceTrace).getByText(
+      'No broker submit, cancel, recovery, or capital expansion authority.',
     ),
   ).toBeTruthy();
 
   const workbenchLinks = screen.getAllByRole('link', {
-    name: 'Enter workbench',
+    name: 'Open private workbench',
   });
   expect(workbenchLinks.length).toBeGreaterThanOrEqual(2);
   expect(workbenchLinks[0]?.getAttribute('href')).toBe('/overview');
+  expect(
+    screen
+      .getByRole('link', { name: 'Open surface: Account Truth' })
+      .getAttribute('href'),
+  ).toBe('/account-truth');
+  expect(
+    screen
+      .getByRole('link', { name: 'Open surface: Activity ledger' })
+      .getAttribute('href'),
+  ).toBe('/activity');
+  expect(
+    screen
+      .getByRole('link', { name: 'Open surface: Decision gates' })
+      .getAttribute('href'),
+  ).toBe('/decision');
   expect(document.querySelector('.app-shell-frame')).toBeNull();
   expect(fetchMock).not.toHaveBeenCalled();
 });
