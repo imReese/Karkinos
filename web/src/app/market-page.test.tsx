@@ -403,13 +403,24 @@ test('uses a compact master-detail instrument workspace with local list overflow
   );
   expect(list.classList.contains('overflow-y-auto')).toBe(true);
   expect(workspace.className).toContain(
+    'md:grid-cols-[minmax(220px,256px)_minmax(0,1fr)]',
+  );
+  expect(workspace.className).toContain(
     'xl:grid-cols-[minmax(264px,296px)_minmax(0,1fr)]',
   );
   const remove = within(list).getByRole('button', {
     name: 'Remove: 测试标的 600519',
   });
   expect(remove.className).toContain('opacity-70');
+  expect(remove.className).toContain('h-10');
+  expect(remove.className).toContain('xl:h-8');
   expect(remove.className).toContain('focus-visible:opacity-100');
+  expect(
+    screen.getByTestId('market-instrument-price-600519').className,
+  ).not.toContain('font-mono');
+  expect(screen.getByTestId('market-selected-price').className).not.toContain(
+    'font-mono',
+  );
   expect(
     within(workspace).getByTestId('market-selected-instrument'),
   ).toBeTruthy();

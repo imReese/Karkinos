@@ -90,10 +90,10 @@ export function MarketInstrumentWorkspace({
 
   return (
     <div
-      className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(264px,296px)_minmax(0,1fr)]"
+      className="grid min-w-0 items-start gap-4 md:grid-cols-[minmax(220px,256px)_minmax(0,1fr)] xl:grid-cols-[minmax(264px,296px)_minmax(0,1fr)]"
       data-testid="market-instrument-workspace"
     >
-      <aside className="min-w-0 border-y border-[var(--app-divider)] xl:sticky xl:top-3">
+      <aside className="min-w-0 border-y border-[var(--app-divider)] md:sticky md:top-3">
         <div className="flex items-start justify-between gap-3 border-b border-[var(--app-divider)] px-3 py-3">
           <div className="min-w-0">
             <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
@@ -106,7 +106,7 @@ export function MarketInstrumentWorkspace({
               {labels.scopeBoundary}
             </p>
           </div>
-          <span className="shrink-0 font-mono text-xs tabular-nums text-[var(--app-text-secondary)]">
+          <span className="shrink-0 text-xs tabular-nums text-[var(--app-text-secondary)]">
             {items.length}
           </span>
         </div>
@@ -116,7 +116,7 @@ export function MarketInstrumentWorkspace({
         {items.length > 0 ? (
           <ul
             aria-label={labels.watchlist}
-            className="grid max-h-[min(62vh,42rem)] min-w-0 grid-cols-1 divide-y divide-[var(--app-divider)] overflow-y-auto overscroll-y-contain sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:block xl:divide-x-0 xl:divide-y"
+            className="grid max-h-[calc(62vh-5rem)] min-w-0 grid-cols-1 divide-y divide-[var(--app-divider)] overflow-y-auto overscroll-y-contain sm:grid-cols-2 sm:divide-x sm:divide-y-0 md:block md:max-h-[calc(100dvh-39rem)] md:divide-x-0 md:divide-y lg:max-h-[min(62vh,42rem)]"
             data-testid="market-instrument-list"
           >
             {items.map((item) => {
@@ -178,11 +178,14 @@ export function MarketInstrumentWorkspace({
                       </span>
                     </span>
                     <span className="text-right">
-                      <span className="block font-mono text-sm font-semibold tabular-nums text-[var(--app-text)]">
+                      <span
+                        className="block text-sm font-semibold tabular-nums text-[var(--app-text)]"
+                        data-testid={`market-instrument-price-${item.symbol}`}
+                      >
                         {formatCurrency(item.price)}
                       </span>
                       <span
-                        className={`mt-1 block font-mono text-[11px] font-semibold tabular-nums ${moveTone(dailyMove)}`}
+                        className={`mt-1 block text-[11px] font-semibold tabular-nums ${moveTone(dailyMove)}`}
                       >
                         {dailyMove == null ? '--' : formatCurrency(dailyMove)}
                       </span>
@@ -191,7 +194,7 @@ export function MarketInstrumentWorkspace({
                   <button
                     type="button"
                     aria-label={`${labels.remove}: ${item.name || item.symbol} ${item.symbol}`}
-                    className="mr-1 grid h-8 w-8 shrink-0 place-items-center self-center rounded-[var(--app-radius-control)] text-[var(--app-text-tertiary)] opacity-70 transition-opacity hover:bg-[var(--app-surface-overlay)] hover:text-[var(--app-text)] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)] motion-reduce:transition-none sm:opacity-0 sm:group-hover:opacity-100"
+                    className="mr-1 grid h-10 w-10 shrink-0 place-items-center self-center rounded-[var(--app-radius-control)] text-[var(--app-text-tertiary)] opacity-70 transition-opacity hover:bg-[var(--app-surface-overlay)] hover:text-[var(--app-text)] focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)] motion-reduce:transition-none xl:h-8 xl:w-8 xl:opacity-0 xl:group-hover:opacity-100"
                     onClick={() => void onRemove(item.symbol)}
                   >
                     <X aria-hidden="true" size={14} strokeWidth={1.8} />
@@ -232,17 +235,21 @@ export function MarketInstrumentWorkspace({
                       ? formatPublicStatus(selectedQuoteStatus, locale)
                       : labels.unknown}
                   </StatusBadge>
-                  <span className="font-mono tabular-nums">
+                  <span className="tabular-nums">
                     {formatTimestamp(selectedHealthQuote?.timestamp)}
                   </span>
                 </div>
               </div>
               <div className="shrink-0 text-left sm:text-right">
-                <div className="font-mono text-2xl font-semibold tabular-nums text-[var(--app-text)]">
+                <div
+                  className="text-2xl font-semibold tabular-nums text-[var(--app-text)]"
+                  data-testid="market-selected-price"
+                >
                   {formatCurrency(selectedItem.price)}
                 </div>
                 <div
-                  className={`mt-1 font-mono text-sm font-semibold tabular-nums ${moveTone(selectedDailyMove)}`}
+                  className={`mt-1 text-sm font-semibold tabular-nums ${moveTone(selectedDailyMove)}`}
+                  data-testid="market-selected-move"
                 >
                   {selectedDailyMove == null
                     ? '--'

@@ -167,6 +167,9 @@ describe('remaining route workbench contract', () => {
       "'(prefers-reduced-motion: reduce)'",
     );
     expect(MARKET_INSTRUMENT_WORKSPACE).toContain(
+      'md:grid-cols-[minmax(220px,256px)_minmax(0,1fr)]',
+    );
+    expect(MARKET_INSTRUMENT_WORKSPACE).toContain(
       'xl:grid-cols-[minmax(264px,296px)_minmax(0,1fr)]',
     );
     expect(MARKET_INSTRUMENT_WORKSPACE).not.toContain('overflow-x-auto');
@@ -187,6 +190,8 @@ describe('remaining route workbench contract', () => {
     expect(PRICE_STRUCTURE_CHART).toContain('<EvidenceState');
     expect(PRICE_STRUCTURE_CHART).not.toContain('rounded-2xl');
     expect(PRICE_STRUCTURE_CHART).not.toContain('rounded-3xl');
+    expect(PRICE_STRUCTURE_CHART).not.toContain('changePercent');
+    expect(PRICE_STRUCTURE_CHART).not.toContain('formatPercent');
     expect(settingsSection).toContain('border-y border-[var(--app-divider)]');
     expect(settingsSection).not.toContain('app-panel');
     expect(APP_SHELL).toContain('data-testid="mobile-preferences-toggle"');

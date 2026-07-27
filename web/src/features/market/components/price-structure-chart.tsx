@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 
 import { EvidenceState } from '../../../app/components/workbench';
-import { formatCurrency, formatPercent } from '../../../shared/format';
+import { formatCurrency } from '../../../shared/format';
 
 export type PriceStructureBar = {
   timestamp?: string;
@@ -161,7 +161,6 @@ export function PriceStructureChart({
   }
 
   const plottedBars = visibleBars.length > 0 ? visibleBars : validBars;
-  const closes = plottedBars.map((bar) => bar.close);
   const lows = plottedBars.map((bar) => toFiniteNumber(bar.low) ?? bar.close);
   const highs = plottedBars.map((bar) => toFiniteNumber(bar.high) ?? bar.close);
   const plottedTimes = plottedBars.map((bar) => parseBarTime(bar));
@@ -217,16 +216,6 @@ export function PriceStructureChart({
     ...finiteMarkerValues,
   );
   const range = max - min || 1;
-  const latest = closes[closes.length - 1] ?? 0;
-  const first = closes[0] ?? latest;
-  const change = latest - first;
-  const changePercent = first === 0 ? 0 : change / first;
-  const latestTone =
-    change > 0
-      ? 'text-[var(--app-pnl-positive)]'
-      : change < 0
-        ? 'text-[var(--app-pnl-negative)]'
-        : 'text-[var(--app-pnl-neutral)]';
   const plot = {
     left: 64,
     right: 620,
@@ -258,21 +247,8 @@ export function PriceStructureChart({
       className="min-w-0 border-y border-[var(--app-divider)] py-3"
       aria-label={titleLabel}
     >
-      <div className="mb-4 flex min-w-0 flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div className="min-w-0">
-          <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
-            {titleLabel}
-          </div>
-          <div className="mt-1 break-words font-mono text-2xl font-semibold tabular-nums text-[var(--app-text)]">
-            {formatCurrency(latest)}
-          </div>
-        </div>
-        <div
-          className={`shrink-0 font-mono text-sm font-semibold ${latestTone}`}
-        >
-          {change >= 0 ? '+' : ''}
-          {formatCurrency(change)} · {formatPercent(changePercent)}
-        </div>
+      <div className="mb-3 app-kicker text-[11px] uppercase tracking-[0.16em]">
+        {titleLabel}
       </div>
       <div className="mb-4 flex min-w-0 flex-wrap gap-2">
         {KLINE_RANGES.map((rangeOption) => {
@@ -282,7 +258,7 @@ export function PriceStructureChart({
             <button
               key={rangeOption.key}
               type="button"
-              className={`rounded-[var(--app-radius-control)] border px-3 py-1.5 font-mono text-[11px] font-semibold transition-colors ${
+              className={`rounded-[var(--app-radius-control)] border px-3 py-1.5 text-[11px] font-semibold transition-colors ${
                 selected
                   ? 'border-[color-mix(in_srgb,var(--app-accent)_58%,transparent)] bg-[color-mix(in_srgb,var(--app-accent)_16%,transparent)] text-[var(--app-text)]'
                   : 'border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] text-[var(--app-muted)] hover:border-[color-mix(in_srgb,var(--app-accent)_34%,transparent)] hover:text-[var(--app-soft)]'
@@ -353,7 +329,7 @@ export function PriceStructureChart({
                   x={plot.left - 8}
                   y={tick.y + 4}
                   textAnchor="end"
-                  className="fill-current font-mono text-[10px]"
+                  className="fill-current text-[10px] tabular-nums"
                 >
                   {formatCurrency(tick.value)}
                 </text>
@@ -384,7 +360,7 @@ export function PriceStructureChart({
                     y={plotY(line.value) - 5}
                     textAnchor="end"
                     fill={tone}
-                    className="font-mono text-[9px]"
+                    className="text-[9px] tabular-nums"
                   >
                     {line.label}
                   </text>
@@ -408,7 +384,7 @@ export function PriceStructureChart({
                     x={x}
                     y={plot.bottom + 20}
                     textAnchor="middle"
-                    className="fill-current font-mono text-[10px]"
+                    className="fill-current text-[10px] tabular-nums"
                   >
                     {formatDateTick(bar.timestamp, index)}
                   </text>
@@ -492,7 +468,7 @@ export function PriceStructureChart({
               );
             })}
           </svg>
-          <div className="mt-2 flex flex-col gap-1 font-mono text-[11px] text-[var(--app-muted)] sm:flex-row sm:items-center sm:justify-between">
+          <div className="mt-2 flex flex-col gap-1 text-[11px] tabular-nums text-[var(--app-muted)] sm:flex-row sm:items-center sm:justify-between">
             <span>
               {formatDateTick(plottedBars[0]?.timestamp, 0)} -{' '}
               {formatDateTick(

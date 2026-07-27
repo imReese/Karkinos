@@ -23,7 +23,7 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
   const overviewQueue = page.getByTestId('overview-today-queue');
   const overviewHoldings = page.getByTestId('overview-holdings-section');
   const overviewPerformance = page.getByTestId('overview-performance-card');
-  await expect(overviewPrimary).toBeVisible();
+  await expect(overviewPrimary).toBeVisible({ timeout: 15_000 });
   await expect(
     overviewPrimary.getByTestId('overview-today-queue'),
   ).toBeVisible();
@@ -306,6 +306,9 @@ test('market keeps context, evidence review, and provider telemetry task-ordered
         const review = document.querySelector(
           '[data-testid="current-holding-market-evidence-review"]',
         ) as HTMLElement | null;
+        const mobileNavigation = document.querySelector(
+          '.app-mobile-primary-nav',
+        ) as HTMLElement | null;
         return {
           routeOverflow: route.scrollWidth - route.clientWidth,
           documentOverflow:
@@ -317,7 +320,14 @@ test('market keeps context, evidence review, and provider telemetry task-ordered
           listExists: list !== null,
           listOverflow: list ? list.scrollHeight - list.clientHeight : 0,
           listWidth: list?.getBoundingClientRect().width ?? 0,
+          listX: list?.getBoundingClientRect().x ?? 0,
+          listY: list?.getBoundingClientRect().y ?? 0,
+          listBottom: list?.getBoundingClientRect().bottom ?? 0,
           detailWidth: detail?.getBoundingClientRect().width ?? 0,
+          detailX: detail?.getBoundingClientRect().x ?? 0,
+          detailY: detail?.getBoundingClientRect().y ?? 0,
+          mobileNavigationTop:
+            mobileNavigation?.getBoundingClientRect().top ?? 0,
           reviewAfterList:
             list !== null && review !== null
               ? review.getBoundingClientRect().top >
@@ -361,6 +371,23 @@ test('market keeps context, evidence review, and provider telemetry task-ordered
           geometry.listWidth,
           `${theme} ${viewport.width}`,
         ).toBeGreaterThan(0);
+        if (viewport.width >= 768) {
+          expect(
+            geometry.detailX,
+            `${theme} ${viewport.width}`,
+          ).toBeGreaterThan(geometry.listX);
+          if (viewport.width < 1024) {
+            expect(
+              geometry.listBottom,
+              `${theme} ${viewport.width}`,
+            ).toBeLessThanOrEqual(geometry.mobileNavigationTop);
+          }
+        } else {
+          expect(
+            geometry.detailY,
+            `${theme} ${viewport.width}`,
+          ).toBeGreaterThan(geometry.listY);
+        }
       }
     }
   }

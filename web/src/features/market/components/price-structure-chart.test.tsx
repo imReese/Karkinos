@@ -38,7 +38,9 @@ test('renders OHLC price range as a K-line chart', () => {
   );
 
   expect(screen.getByText('Price range / K-line')).toBeTruthy();
-  expect(screen.getByText('¥1,640.00')).toBeTruthy();
+  expect(screen.queryByText('¥1,640.00')).toBeNull();
+  expect(screen.queryByText('¥40.00')).toBeNull();
+  expect(screen.queryByText('2.5%')).toBeNull();
   expect(
     screen.getByRole('button', { name: 'Show 1M K-line range' }),
   ).toBeTruthy();

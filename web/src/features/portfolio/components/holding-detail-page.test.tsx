@@ -408,7 +408,8 @@ test('renders holding detail with cached quote status and ledger trace', async (
   expect(await screen.findByText(/0\.25%/)).toBeTruthy();
   expect((await screen.findAllByText('1,600.0000')).length).toBeGreaterThan(0);
   expect(await screen.findByText('Price range / K-line')).toBeTruthy();
-  expect(await screen.findByText('¥1,640.00')).toBeTruthy();
+  expect(screen.queryByText('¥1,640.00')).toBeNull();
+  expect(await screen.findByText('¥1,500.00 - ¥1,660.00')).toBeTruthy();
   expect(screen.queryByText('valuation-1')).toBeNull();
   await user.click(
     within(screen.getByTestId('holding-detail-header')).getByRole('button', {
