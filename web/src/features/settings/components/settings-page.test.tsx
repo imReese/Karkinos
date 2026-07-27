@@ -293,6 +293,38 @@ test('renders backend data status and service state', async () => {
   expect(await screen.findByText('Metadata readiness')).toBeTruthy();
 });
 
+test('prioritizes persisted configuration before ingestion and runtime controls', async () => {
+  renderSettingsPage();
+
+  const dataStatus = await screen.findByText('Data status');
+  const persistedConfiguration = await screen.findByText(
+    'Persisted configuration',
+  );
+  const refreshAction = await screen.findByRole('heading', {
+    name: 'Refresh quotes',
+    level: 2,
+  });
+  const liveServices = await screen.findByText('Live services');
+
+  expect(
+    dataStatus.compareDocumentPosition(persistedConfiguration) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    persistedConfiguration.compareDocumentPosition(refreshAction) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    refreshAction.compareDocumentPosition(liveServices) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    refreshAction
+      .closest('[data-workbench-primitive="controlled-action-zone"]')
+      ?.getAttribute('data-action-tone'),
+  ).toBe('info');
+});
+
 test('shows cached quote guidance for cache-only and stale valuation states', async () => {
   renderSettingsPage({
     marketHealth: {
