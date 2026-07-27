@@ -405,10 +405,29 @@ test('renders risk boundaries and blocking register without execution controls',
   expect(screen.queryByTestId('risk-boundary-register')).toBeNull();
 
   const blockRegister = await screen.findByTestId('risk-blocking-register');
+  const priorityList = within(blockRegister).getByRole('list', {
+    name: 'Active risk priorities',
+  });
   const metrics = screen.getByLabelText('Risk metrics');
   expect(within(metrics).getByText('Healthy')).toBeTruthy();
   expect(within(metrics).queryByText('Review required')).toBeNull();
   expect(blockRegister.className).toContain('min-w-0');
+  expect(priorityList.getAttribute('data-density')).toBe('compact');
+  expect(priorityList.className).not.toContain('md:grid-cols-2');
+  expect(priorityList.className).toContain('[&>li>dl]:grid-cols-2');
+  const resolutionGuidance = within(blockRegister).getByTestId(
+    'risk-resolution-guidance',
+  );
+  expect(resolutionGuidance.textContent).toContain('Shared unblock condition');
+  expect(resolutionGuidance.textContent).toContain(
+    'Review manual confirmations before any execution.',
+  );
+  expect(within(priorityList).queryByText('Safe next step')).toBeNull();
+  expect(
+    within(handoff)
+      .getByRole('list', { name: 'Decision handoff' })
+      .getAttribute('data-density'),
+  ).toBe('compact');
   expect(
     blockRegister.compareDocumentPosition(metrics) &
       Node.DOCUMENT_POSITION_FOLLOWING,

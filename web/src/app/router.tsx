@@ -3436,8 +3436,6 @@ export function RiskPage() {
       statusLabel: formatRiskAlertLevel(item.level, locale),
       title: item.title,
       reason: formatRiskAlertDetail(item.detail, locale),
-      unblockCondition: copy.riskPage.clearsWithNewProjection,
-      nextAction: state.data?.next_step,
       evidence: `${getRiskAlertKindLabel(
         copy,
         item.kind,
@@ -3460,8 +3458,6 @@ export function RiskPage() {
         copy,
         metric.key,
       )}`,
-      unblockCondition: copy.riskPage.clearsWithNewProjection,
-      nextAction: state.data?.next_step,
       evidence: `${getRiskMetricLabel(
         copy,
         metric.key,
@@ -3599,6 +3595,7 @@ export function RiskPage() {
             <ExceptionList
               ariaLabel={copy.riskPage.blockingRegister}
               emptyState={copy.riskPage.noBlockingItems}
+              density="compact"
               labels={{
                 reason: locale === 'zh' ? '阻断原因' : 'Reason',
                 unblockCondition:
@@ -3607,8 +3604,33 @@ export function RiskPage() {
                 evidence: locale === 'zh' ? '证据' : 'Evidence',
               }}
               items={activeRiskItems}
-              className="md:grid-cols-2 [&>li>dl]:grid-cols-2"
+              className="[&>li>dl]:grid-cols-2 lg:[&>li>dl]:grid-cols-4"
             />
+            {activeRiskItems.length > 0 ? (
+              <dl
+                data-testid="risk-resolution-guidance"
+                className="grid grid-cols-2 gap-3 border-b border-[var(--app-divider)] px-3 py-2.5 text-xs"
+              >
+                <div className="min-w-0">
+                  <dt className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--app-text-tertiary)]">
+                    {locale === 'zh'
+                      ? '统一解除条件'
+                      : 'Shared unblock condition'}
+                  </dt>
+                  <dd className="mt-0.5 leading-[18px] text-[var(--app-text-secondary)] [overflow-wrap:anywhere]">
+                    {copy.riskPage.clearsWithNewProjection}
+                  </dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--app-text-tertiary)]">
+                    {locale === 'zh' ? '安全下一步' : 'Safe next step'}
+                  </dt>
+                  <dd className="mt-0.5 leading-[18px] text-[var(--app-text-secondary)] [overflow-wrap:anywhere]">
+                    {state.data.next_step}
+                  </dd>
+                </div>
+              </dl>
+            ) : null}
           </section>
 
           <MetricStrip
@@ -3638,6 +3660,7 @@ export function RiskPage() {
               <ExceptionList
                 ariaLabel={copy.riskPage.decisionHandoffKicker}
                 emptyState={copy.riskPage.noBlockingItems}
+                density="compact"
                 labels={{
                   reason: locale === 'zh' ? '阻断原因' : 'Reason',
                   unblockCondition:
@@ -3663,6 +3686,7 @@ export function RiskPage() {
                     evidence: copy.riskPage.decisionHandoffDoNot,
                   },
                 ]}
+                className="[&>li>dl]:grid-cols-2 lg:[&>li>dl]:grid-cols-4"
               />
               <div className="flex min-w-0 flex-col gap-2 border-b border-[var(--app-divider)] pb-3 sm:flex-row sm:justify-end">
                 <button
