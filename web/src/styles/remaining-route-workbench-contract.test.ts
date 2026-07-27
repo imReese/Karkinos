@@ -161,6 +161,11 @@ describe('remaining route workbench contract', () => {
     expect(MARKET_INSTRUMENT_WORKSPACE).toContain(
       'data-testid="market-instrument-list"',
     );
+    expect(MARKET_INSTRUMENT_WORKSPACE).toContain(
+      'data-mobile-layout="horizontal-rail"',
+    );
+    expect(MARKET_INSTRUMENT_WORKSPACE).toContain('overflow-x-auto');
+    expect(MARKET_INSTRUMENT_WORKSPACE).toContain('md:overflow-x-visible');
     expect(MARKET_INSTRUMENT_WORKSPACE).toContain('overflow-y-auto');
     expect(MARKET_INSTRUMENT_WORKSPACE).toContain('scrollIntoView({');
     expect(MARKET_INSTRUMENT_WORKSPACE).toContain(
@@ -172,7 +177,6 @@ describe('remaining route workbench contract', () => {
     expect(MARKET_INSTRUMENT_WORKSPACE).toContain(
       'xl:grid-cols-[minmax(264px,296px)_minmax(0,1fr)]',
     );
-    expect(MARKET_INSTRUMENT_WORKSPACE).not.toContain('overflow-x-auto');
     expect(MARKET_INSTRUMENT_WORKSPACE).not.toContain('rounded-2xl');
     expect(MARKET_INSTRUMENT_WORKSPACE).not.toContain('rounded-3xl');
     expect(marketPage).toContain('data-testid="market-provider-details"');

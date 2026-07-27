@@ -401,7 +401,10 @@ test('uses a compact master-detail instrument workspace with local list overflow
   expect(selected.getAttribute('aria-controls')).toBe(
     'market-instrument-detail',
   );
-  expect(list.classList.contains('overflow-y-auto')).toBe(true);
+  expect(list.getAttribute('data-mobile-layout')).toBe('horizontal-rail');
+  expect(list.classList.contains('grid-flow-col')).toBe(true);
+  expect(list.classList.contains('overflow-x-auto')).toBe(true);
+  expect(list.classList.contains('md:overflow-y-auto')).toBe(true);
   expect(workspace.className).toContain(
     'md:grid-cols-[minmax(220px,256px)_minmax(0,1fr)]',
   );

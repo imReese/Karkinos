@@ -116,7 +116,8 @@ export function MarketInstrumentWorkspace({
         {items.length > 0 ? (
           <ul
             aria-label={labels.watchlist}
-            className="grid max-h-[calc(62vh-5rem)] min-w-0 grid-cols-1 divide-y divide-[var(--app-divider)] overflow-y-auto overscroll-y-contain sm:grid-cols-2 sm:divide-x sm:divide-y-0 md:block md:max-h-[calc(100dvh-39rem)] md:divide-x-0 md:divide-y lg:max-h-[min(62vh,42rem)]"
+            className="grid min-w-0 auto-cols-[minmax(15rem,85%)] snap-x snap-mandatory grid-flow-col divide-x divide-[var(--app-divider)] overflow-x-auto overscroll-x-contain scroll-px-3 sm:auto-cols-[minmax(15rem,48%)] md:block md:max-h-[calc(100dvh-39rem)] md:snap-none md:divide-x-0 md:divide-y md:overflow-x-visible md:overflow-y-auto md:overscroll-y-contain lg:max-h-[min(62vh,42rem)]"
+            data-mobile-layout="horizontal-rail"
             data-testid="market-instrument-list"
           >
             {items.map((item) => {
@@ -129,7 +130,7 @@ export function MarketInstrumentWorkspace({
               return (
                 <li
                   key={item.symbol}
-                  className={`group flex min-w-0 border-l-[3px] transition-colors motion-reduce:transition-none ${
+                  className={`group flex min-w-0 snap-start border-l-[3px] transition-colors motion-reduce:transition-none md:snap-none ${
                     isActive
                       ? 'border-l-[var(--app-accent)] bg-[var(--app-accent-bg)]'
                       : 'border-l-transparent hover:bg-[var(--app-surface-raised)]'
