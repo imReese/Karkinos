@@ -260,38 +260,6 @@ export function OperationsPage() {
         </div>
       ) : (
         <>
-          <MetricStrip
-            ariaLabel={labels.subsystemHealth}
-            items={[
-              {
-                id: 'total',
-                label: labels.total,
-                value: projection.health.total,
-              },
-              {
-                id: 'degraded',
-                label: labels.degraded,
-                value: projection.health.degraded,
-                tone: projection.health.degraded > 0 ? 'warning' : 'neutral',
-              },
-              {
-                id: 'blocked',
-                label: labels.blocked,
-                value: projection.health.blocked,
-                tone: projection.health.blocked > 0 ? 'warning' : 'neutral',
-              },
-              {
-                id: 'manual-review',
-                label: labels.manualReview,
-                value: projection.health.manual_action_required,
-                tone:
-                  projection.health.manual_action_required > 0
-                    ? 'warning'
-                    : 'neutral',
-              },
-            ]}
-          />
-
           <section
             className="min-w-0 space-y-2"
             aria-labelledby="operations-attention-heading"
@@ -311,7 +279,8 @@ export function OperationsPage() {
             <ExceptionList
               ariaLabel={labels.attentionQueue}
               emptyState={labels.attentionEmpty}
-              className="min-w-0"
+              density="compact"
+              className="min-w-0 [&>li>dl]:grid-cols-2 lg:[&>li>dl]:grid-cols-4"
               labels={{
                 reason: labels.evidenceStatus,
                 unblockCondition: labels.resolution,
@@ -364,6 +333,38 @@ export function OperationsPage() {
               })}
             />
           </section>
+
+          <MetricStrip
+            ariaLabel={labels.subsystemHealth}
+            items={[
+              {
+                id: 'total',
+                label: labels.total,
+                value: projection.health.total,
+              },
+              {
+                id: 'degraded',
+                label: labels.degraded,
+                value: projection.health.degraded,
+                tone: projection.health.degraded > 0 ? 'warning' : 'neutral',
+              },
+              {
+                id: 'blocked',
+                label: labels.blocked,
+                value: projection.health.blocked,
+                tone: projection.health.blocked > 0 ? 'warning' : 'neutral',
+              },
+              {
+                id: 'manual-review',
+                label: labels.manualReview,
+                value: projection.health.manual_action_required,
+                tone:
+                  projection.health.manual_action_required > 0
+                    ? 'warning'
+                    : 'neutral',
+              },
+            ]}
+          />
 
           <details
             className="group min-w-0 border-y border-[var(--app-divider)] py-2"
