@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 const desktopViewports = [
   { width: 1440, height: 900 },
-  { width: 1024, height: 768 },
+  { width: 1280, height: 800 },
 ];
 
 test('desktop shell defaults to labeled business groups and remains collapsible', async ({
@@ -185,6 +185,7 @@ test('shell remains local-overflow safe in Latte and Mocha across tablet and mob
   test.setTimeout(60_000);
   for (const theme of ['light', 'dark']) {
     for (const viewport of [
+      { width: 1024, height: 768 },
       { width: 768, height: 1024 },
       { width: 390, height: 844 },
     ]) {

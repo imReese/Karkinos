@@ -135,8 +135,12 @@ describe('remaining route workbench contract', () => {
       /prefers-reduced-motion:\s*reduce[\s\S]*transition-duration:\s*0\.01ms\s*!important/,
     );
     expect(CSS).toMatch(
-      /min-width:\s*1024px[\s\S]*\.app-toolbar-brand\s*{[\s\S]*display:\s*none/,
+      /min-width:\s*1280px[\s\S]*\.app-toolbar-brand\s*{[\s\S]*display:\s*none/,
     );
+    expect(APP_SHELL).toContain('xl:relative xl:h-full');
+    expect(APP_SHELL).toContain('app-mobile-primary-nav');
+    expect(APP_SHELL).toContain('xl:hidden');
+    expect(APP_SHELL).not.toContain('lg:relative lg:h-full');
   });
 
   it('removes superseded route-local metric card components', () => {

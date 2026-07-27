@@ -301,7 +301,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="app-root min-h-[100dvh] w-full">
       <div className="app-shell-frame flex h-[100dvh] min-h-[100dvh] w-full min-w-0">
         <div
-          className={`fixed inset-0 z-[90] bg-[color-mix(in_srgb,var(--app-bg)_72%,transparent)] transition-opacity lg:hidden ${
+          className={`fixed inset-0 z-[90] bg-[color-mix(in_srgb,var(--app-bg)_72%,transparent)] transition-opacity xl:hidden ${
             mobileNavOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
           }`}
           data-testid="mobile-navigation-backdrop"
@@ -311,12 +311,12 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <aside
           id="app-shell-navigation"
-          className={`app-shell-sidebar fixed inset-y-0 left-0 z-[100] flex w-[min(84vw,280px)] flex-col border-r border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-2 py-3 transition-[width,transform] duration-200 lg:relative lg:h-full ${desktopNavExpanded ? 'lg:w-52' : 'lg:w-14'} lg:translate-x-0 ${
+          className={`app-shell-sidebar fixed inset-y-0 left-0 z-[100] flex w-[min(84vw,280px)] flex-col border-r border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-2 py-3 transition-[width,transform] duration-200 xl:relative xl:h-full ${desktopNavExpanded ? 'xl:w-52' : 'xl:w-14'} xl:translate-x-0 ${
             mobileNavOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
           <div
-            className={`app-brand-lockup mb-4 flex min-h-10 items-center gap-2.5 px-1.5 ${desktopNavExpanded ? 'justify-between' : 'lg:justify-center'}`}
+            className={`app-brand-lockup mb-4 flex min-h-10 items-center gap-2.5 px-1.5 ${desktopNavExpanded ? 'justify-between' : 'xl:justify-center'}`}
           >
             <Link
               to="/"
@@ -327,7 +327,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 K
               </span>
               <div
-                className={`min-w-0 ${desktopNavExpanded ? '' : 'lg:hidden'}`}
+                className={`min-w-0 ${desktopNavExpanded ? '' : 'xl:hidden'}`}
               >
                 <div className="app-product-mark truncate whitespace-nowrap">
                   Karkinos
@@ -339,7 +339,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Link>
             <button
               type="button"
-              className="app-button-secondary h-8 w-8 rounded-[var(--app-radius-control)] p-0 text-sm lg:hidden"
+              className="app-button-secondary h-8 w-8 rounded-[var(--app-radius-control)] p-0 text-sm xl:hidden"
               aria-label={copy.shell.closeNavigation}
               onClick={() => setMobileNavOpen(false)}
             >
@@ -354,7 +354,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             {navGroups.map((group) => (
               <div key={group.key} className="grid gap-1">
                 <div
-                  className={`app-nav-group-label px-2 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)] ${desktopNavExpanded ? '' : 'lg:hidden'}`}
+                  className={`app-nav-group-label px-2 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)] ${desktopNavExpanded ? '' : 'xl:hidden'}`}
                 >
                   {group.label[locale]}
                 </div>
@@ -372,7 +372,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                           ? undefined
                           : copy.shell.nav[item.key]
                       }
-                      className={`app-nav-item min-h-9 rounded-[var(--app-radius-control)] px-2 py-2 text-sm font-medium ${!desktopNavExpanded ? 'lg:justify-center lg:px-0' : ''} ${
+                      className={`app-nav-item min-h-9 rounded-[var(--app-radius-control)] px-2 py-2 text-sm font-medium ${!desktopNavExpanded ? 'xl:justify-center xl:px-0' : ''} ${
                         active ? 'app-nav-item-active' : ''
                       }`}
                     >
@@ -386,7 +386,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                         aria-hidden="true"
                       />
                       <span
-                        className={`truncate ${desktopNavExpanded ? '' : 'lg:hidden'}`}
+                        className={`truncate ${desktopNavExpanded ? '' : 'xl:hidden'}`}
                       >
                         {copy.shell.nav[item.key]}
                       </span>
@@ -396,10 +396,10 @@ export function AppShell({ children }: { children: ReactNode }) {
               </div>
             ))}
           </nav>
-          <div className="mt-3 hidden border-t border-[var(--app-divider)] pt-2 lg:grid">
+          <div className="mt-3 hidden border-t border-[var(--app-divider)] pt-2 xl:grid">
             <button
               type="button"
-              className={`app-nav-item min-h-9 rounded-[var(--app-radius-control)] px-2 py-2 text-sm font-medium text-[var(--app-text-secondary)] ${!desktopNavExpanded ? 'lg:justify-center lg:px-0' : ''}`}
+              className={`app-nav-item min-h-9 rounded-[var(--app-radius-control)] px-2 py-2 text-sm font-medium text-[var(--app-text-secondary)] ${!desktopNavExpanded ? 'xl:justify-center xl:px-0' : ''}`}
               onClick={() => setDesktopNavExpanded(!desktopNavExpanded)}
               aria-label={
                 desktopNavExpanded
@@ -421,7 +421,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <path d="M15 18l-6-6 6-6" />
               </svg>
               <span
-                className={`truncate ${desktopNavExpanded ? '' : 'lg:hidden'}`}
+                className={`truncate ${desktopNavExpanded ? '' : 'xl:hidden'}`}
               >
                 {copy.shell.closeNavigation}
               </span>
@@ -434,7 +434,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <div className="flex h-12 items-center gap-3 px-3 sm:px-4">
               <button
                 type="button"
-                className="app-button-secondary inline-flex h-8 w-8 items-center justify-center rounded-[var(--app-radius-control)] p-0 text-sm lg:hidden"
+                className="app-button-secondary inline-flex h-8 w-8 items-center justify-center rounded-[var(--app-radius-control)] p-0 text-sm xl:hidden"
                 data-testid="mobile-navigation-toggle"
                 aria-label={
                   mobileNavOpen
@@ -461,7 +461,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </svg>
               </button>
 
-              <div className="app-toolbar-brand min-w-0 shrink-0 items-center gap-2 lg:hidden">
+              <div className="app-toolbar-brand min-w-0 shrink-0 items-center gap-2 xl:hidden">
                 <span
                   className="app-brand-glyph app-brand-glyph-compact"
                   aria-hidden="true"
@@ -595,7 +595,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <div
             ref={statusRailRef}
-            className="app-status-footer relative z-[80] hidden h-10 shrink-0 items-center gap-2 overflow-visible border-t border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-3 lg:flex"
+            className="app-status-footer relative z-[80] hidden h-10 shrink-0 items-center gap-2 overflow-visible border-t border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-3 xl:flex"
             aria-label={copy.shell.accountStatus}
           >
             <div className="app-status-rail flex min-w-0 flex-1 flex-row flex-nowrap items-center gap-2 overflow-visible">
@@ -679,7 +679,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
 
           <nav
-            className="app-mobile-primary-nav relative z-[80] grid shrink-0 grid-cols-4 border-t border-[var(--app-divider)] bg-[var(--app-surface-raised)] lg:hidden"
+            className="app-mobile-primary-nav relative z-[80] grid shrink-0 grid-cols-4 border-t border-[var(--app-divider)] bg-[var(--app-surface-raised)] xl:hidden"
             aria-label={copy.shell.primaryNavigation}
           >
             {mobilePrimaryItems.map((item) => {

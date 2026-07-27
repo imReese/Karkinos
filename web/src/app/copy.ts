@@ -823,6 +823,14 @@ export const copy = {
         chartSellMarker: 'Sell',
         chartLocalCostLine: 'Local moving-average cost',
         chartEvidenceCostLine: 'Persisted evidence cost',
+        positionFacts: 'Canonical position facts',
+        positionFactsDetail:
+          'Quantity state remains available from the persisted portfolio projection even when saved price history is unavailable.',
+        priceStructureMissing: 'Price evidence missing',
+        priceStructureMissingDetail:
+          'No persisted bars are available for this instrument. The position is still shown from canonical portfolio facts without inferring a price history.',
+        persistedPriceBoundary:
+          'This read did not contact a provider or trigger a market-data refresh.',
         quoteTimestamp: 'Quote Timestamp',
         quoteSource: 'Quote Source',
         quoteAge: 'Quote Age',
@@ -3647,6 +3655,14 @@ export const copy = {
         chartSellMarker: '卖出',
         chartLocalCostLine: '本地移动平均成本',
         chartEvidenceCostLine: '持久化证据成本',
+        positionFacts: '权威持仓事实',
+        positionFactsDetail:
+          '即使没有可用的历史价格，数量状态仍来自持久化组合投影并继续可见。',
+        priceStructureMissing: '价格证据缺失',
+        priceStructureMissingDetail:
+          '当前标的没有持久化 K 线；页面继续展示权威组合事实，不会据此推算价格历史。',
+        persistedPriceBoundary:
+          '本次读取没有联系数据提供方，也没有触发行情刷新。',
         quoteTimestamp: '行情时间',
         quoteSource: '行情来源',
         quoteAge: '行情年龄',

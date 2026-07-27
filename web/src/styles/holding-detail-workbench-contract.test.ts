@@ -33,6 +33,21 @@ describe('holding detail workbench contract', () => {
     expect(HOLDING_DETAIL).toContain('force: true');
   });
 
+  it('keeps the overview single-axis on tablet and distinguishes missing price evidence', () => {
+    expect(HOLDING_DETAIL).toContain(
+      'data-testid="holding-price-structure-fallback"',
+    );
+    expect(HOLDING_DETAIL).toContain('kind="loading"');
+    expect(HOLDING_DETAIL).toContain('kind="error"');
+    expect(HOLDING_DETAIL).toContain('kind="missing"');
+    expect(HOLDING_DETAIL).toContain(
+      'xl:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.75fr)]',
+    );
+    expect(HOLDING_DETAIL).not.toContain(
+      'md:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.75fr)]',
+    );
+  });
+
   it('uses semantic tokens instead of raw status or hardcoded colors', () => {
     expect(HOLDING_DETAIL).not.toMatch(/var\(--app-warning\)/);
     expect(HOLDING_DETAIL).not.toMatch(
