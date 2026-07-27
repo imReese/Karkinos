@@ -98,6 +98,20 @@ test('keeps the overview dashboard table compact', () => {
   expect(within(table).queryByRole('button')).toBeNull();
 });
 
+test('uses a watchlist-density mobile row for the overview dashboard', () => {
+  renderTable(
+    <PositionsTable positions={[basePosition]} variant="dashboard" />,
+  );
+
+  const row = screen.getByTestId('position-mobile-row-600519');
+  expect(row.className).toContain('py-2.5');
+  expect(row.textContent).toContain('贵州茅台');
+  expect(row.textContent).toContain('¥96,000.00');
+  expect(row.textContent).toContain('Today PnL: ¥30.00');
+  expect(row.textContent).toContain('Unrealized ¥6,000.00');
+  expect(within(row).queryByText('Weight')).toBeNull();
+});
+
 test('keeps secondary cost, quantity, and quote facts in holding detail', () => {
   renderTable(<PositionsTable positions={[basePosition]} />);
 

@@ -280,6 +280,44 @@ test('prioritizes blockers, gate evidence, and immutable history', () => {
   expect(screen.getByRole('list', { name: 'Immutable history' })).toBeTruthy();
 });
 
+test('offers a flat compact exception register without changing evidence fields', () => {
+  render(
+    <ExceptionList
+      ariaLabel="Compact blocking exceptions"
+      emptyState="No exceptions"
+      density="compact"
+      items={[
+        {
+          id: 'valuation-review',
+          severity: 'warning',
+          statusLabel: 'Review first',
+          title: 'Valuation evidence needs review',
+          reason: 'Confirmed NAV is missing',
+          unblockCondition:
+            'Persist a confirmed NAV and publish a new snapshot',
+          nextAction: 'Open market evidence',
+          evidence: '3 affected holdings',
+        },
+      ]}
+    />,
+  );
+
+  const list = screen.getByRole('list', {
+    name: 'Compact blocking exceptions',
+  });
+  expect(list.getAttribute('data-density')).toBe('compact');
+  expect(list.className).toContain('divide-y');
+  expect(within(list).getByText('Confirmed NAV is missing')).toBeTruthy();
+  expect(
+    within(list).getByText(
+      'Persist a confirmed NAV and publish a new snapshot',
+    ),
+  ).toBeTruthy();
+  expect(list.querySelector('.app-exception-item')?.className).not.toContain(
+    'rounded-',
+  );
+});
+
 test('closes the evidence drawer with Escape and restores focus', async () => {
   const user = userEvent.setup();
 

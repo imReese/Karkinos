@@ -52,9 +52,7 @@ function resolveTone(value: number | null | undefined) {
 
 function numericCell(value: string, tone = 'text-[var(--app-text)]') {
   return (
-    <span
-      className={`block text-right font-mono font-medium tabular-nums ${tone}`}
-    >
+    <span className={`block text-right font-medium tabular-nums ${tone}`}>
       {value}
     </span>
   );
@@ -265,7 +263,9 @@ export function PositionsTable({
                   href={holdingDetailHref(position.symbol)}
                   data-testid={`position-mobile-row-${position.symbol}`}
                   aria-label={`${labels.detailsTitle}: ${displayName} ${position.symbol}`}
-                  className="block px-1 py-3 text-[var(--app-text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
+                  className={`block px-1 text-[var(--app-text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] ${
+                    variant === 'dashboard' ? 'py-2.5' : 'py-3'
+                  }`}
                 >
                   <div className="flex min-w-0 items-start justify-between gap-4">
                     <div className="min-w-0">
@@ -287,7 +287,7 @@ export function PositionsTable({
                     </div>
                     <div className="shrink-0 text-right">
                       <div
-                        className={`font-mono text-sm font-semibold tabular-nums ${
+                        className={`text-sm font-semibold tabular-nums ${
                           showHistoryColumns
                             ? resolveTone(position.realized_pnl)
                             : 'text-[var(--app-text)]'
@@ -304,75 +304,105 @@ export function PositionsTable({
                           ? labels.realized
                           : labels.marketValue}
                       </div>
-                    </div>
-                  </div>
-
-                  <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2">
-                    {showHistoryColumns ? (
-                      <div className="min-w-0">
-                        <dt className="text-[10px] text-[var(--app-text-tertiary)]">
-                          {detailLabels.commissionPaid}
-                        </dt>
-                        <dd className="mt-0.5 truncate font-mono text-xs tabular-nums text-[var(--app-text-secondary)]">
-                          {formatCurrency(position.commission_paid)}
-                        </dd>
-                      </div>
-                    ) : (
-                      <>
-                        {showFullColumns ? (
-                          <div className="min-w-0">
-                            <dt className="text-[10px] text-[var(--app-text-tertiary)]">
-                              {labels.weight}
-                            </dt>
-                            <dd className="mt-0.5 truncate font-mono text-xs font-medium tabular-nums">
-                              {formatPercent(weightBySymbol[position.symbol])}
-                            </dd>
-                          </div>
-                        ) : null}
-                        <div className="min-w-0">
-                          <dt className="text-[10px] text-[var(--app-text-tertiary)]">
-                            {labels.todayChange}
-                          </dt>
-                          <dd
-                            className={`mt-0.5 truncate font-mono text-xs font-medium tabular-nums ${resolveTone(
+                      {variant === 'dashboard' ? (
+                        <>
+                          <div
+                            className={`mt-1 text-xs font-semibold tabular-nums ${resolveTone(
                               position.today_change,
                             )}`}
                           >
+                            <span className="sr-only">
+                              {labels.todayChange}:{' '}
+                            </span>
                             {formatCurrency(position.today_change)}
-                          </dd>
-                        </div>
-                        <div className="min-w-0">
-                          <dt className="text-[10px] text-[var(--app-text-tertiary)]">
-                            {labels.unrealized}
-                          </dt>
-                          <dd
-                            className={`mt-0.5 truncate font-mono text-xs font-medium tabular-nums ${resolveTone(
+                          </div>
+                          <div
+                            className={`mt-0.5 text-[10px] tabular-nums ${resolveTone(
                               position.unrealized_pnl,
                             )}`}
                           >
+                            {labels.unrealized}{' '}
                             {formatCurrency(position.unrealized_pnl)}
+                          </div>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {variant !== 'dashboard' ? (
+                    <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2">
+                      {showHistoryColumns ? (
+                        <div className="min-w-0">
+                          <dt className="text-[10px] text-[var(--app-text-tertiary)]">
+                            {detailLabels.commissionPaid}
+                          </dt>
+                          <dd className="mt-0.5 truncate text-xs tabular-nums text-[var(--app-text-secondary)]">
+                            {formatCurrency(position.commission_paid)}
                           </dd>
                         </div>
-                        {showFullColumns ? (
+                      ) : (
+                        <>
+                          {showFullColumns ? (
+                            <div className="min-w-0">
+                              <dt className="text-[10px] text-[var(--app-text-tertiary)]">
+                                {labels.weight}
+                              </dt>
+                              <dd className="mt-0.5 truncate text-xs font-medium tabular-nums">
+                                {formatPercent(weightBySymbol[position.symbol])}
+                              </dd>
+                            </div>
+                          ) : null}
                           <div className="min-w-0">
                             <dt className="text-[10px] text-[var(--app-text-tertiary)]">
-                              {labels.realized}
+                              {labels.todayChange}
                             </dt>
                             <dd
-                              className={`mt-0.5 truncate font-mono text-xs font-medium tabular-nums ${resolveTone(
-                                position.realized_pnl,
+                              className={`mt-0.5 truncate text-xs font-medium tabular-nums ${resolveTone(
+                                position.today_change,
                               )}`}
                             >
-                              {formatCurrency(position.realized_pnl)}
+                              {formatCurrency(position.today_change)}
                             </dd>
                           </div>
-                        ) : null}
-                      </>
-                    )}
-                  </dl>
+                          <div className="min-w-0">
+                            <dt className="text-[10px] text-[var(--app-text-tertiary)]">
+                              {labels.unrealized}
+                            </dt>
+                            <dd
+                              className={`mt-0.5 truncate text-xs font-medium tabular-nums ${resolveTone(
+                                position.unrealized_pnl,
+                              )}`}
+                            >
+                              {formatCurrency(position.unrealized_pnl)}
+                            </dd>
+                          </div>
+                          {showFullColumns ? (
+                            <div className="min-w-0">
+                              <dt className="text-[10px] text-[var(--app-text-tertiary)]">
+                                {labels.realized}
+                              </dt>
+                              <dd
+                                className={`mt-0.5 truncate text-xs font-medium tabular-nums ${resolveTone(
+                                  position.realized_pnl,
+                                )}`}
+                              >
+                                {formatCurrency(position.realized_pnl)}
+                              </dd>
+                            </div>
+                          ) : null}
+                        </>
+                      )}
+                    </dl>
+                  ) : null}
 
                   {!showHistoryColumns ? (
-                    <div className="mt-3 flex min-w-0 items-center gap-2 border-t border-[var(--app-divider)] pt-2">
+                    <div
+                      className={`flex min-w-0 items-center gap-2 ${
+                        variant === 'dashboard'
+                          ? 'mt-1.5'
+                          : 'mt-3 border-t border-[var(--app-divider)] pt-2'
+                      }`}
+                    >
                       <StatusBadge tone={needsReview ? 'warning' : 'success'}>
                         {position.quote_status
                           ? formatPublicStatus(position.quote_status, locale)

@@ -477,7 +477,7 @@ export function OverviewPage() {
           />
 
           <div
-            className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(300px,0.7fr)]"
+            className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(340px,0.85fr)]"
             data-testid="overview-daily-workbench"
           >
             <section
@@ -2376,6 +2376,7 @@ function DashboardTodayQueue({
         items={exceptionItems}
         ariaLabel={labels.todayToReview}
         emptyState={labels.noActionItems}
+        density="compact"
         labels={
           locale === 'zh'
             ? {
