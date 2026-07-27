@@ -140,10 +140,12 @@ import {
   usePositionsQuery,
 } from '../features/portfolio/api';
 import { AllocationCard } from '../features/portfolio/components/allocation-card';
-import { AllocationGroupsCard } from '../features/portfolio/components/allocation-groups-card';
 import { LiveHoldingsBoard } from '../features/portfolio/components/live-holdings-board';
 import { PortfolioConstructionRecommendationsCard } from '../features/portfolio/components/portfolio-construction-recommendations-card';
-import { filterAndSortPortfolioPositions } from '../features/portfolio/position-observation';
+import {
+  filterAndSortPortfolioPositions,
+  quoteNeedsReview,
+} from '../features/portfolio/position-observation';
 import { HoldingDetailPage } from '../features/portfolio/components/holding-detail-page';
 import { PositionsTable } from '../features/portfolio/components/positions-table';
 import {
@@ -2995,13 +2997,15 @@ export function PortfolioPage() {
     evidenceReviewSymbols,
     sortBy,
   });
+  const hasQuotesNeedingReview = (positions.data ?? []).some((position) =>
+    quoteNeedsReview(position.quote_status),
+  );
 
   const closedPositions = snapshot.data?.closed_positions ?? [];
   const portfolioIdentity = snapshot.data
-    ? copy.common.valuationEvidenceAsOf(
-        formatTimestamp(snapshot.data.valuation_as_of),
-        formatPublicStatus(snapshot.data.valuation_status, locale),
-      )
+    ? `${copy.common.valuationAsOf} ${formatTimestamp(
+        snapshot.data.valuation_as_of,
+      )}`
     : undefined;
 
   return (
@@ -3049,104 +3053,200 @@ export function PortfolioPage() {
         }
       />
 
-      <WorkspaceToolbar
-        mode={mode}
-        onModeChange={setMode}
-        search={search}
-        onSearchChange={(value) => {
-          void navigate({
-            to: '/portfolio',
-            search: (current: PortfolioSearchState) => ({
-              ...current,
-              q: value,
-            }),
-            replace: true,
-          });
-        }}
-        assetClassFilter={assetClassFilter}
-        onAssetClassFilterChange={(value) => {
-          void navigate({
-            to: '/portfolio',
-            search: (current: PortfolioSearchState) => ({
-              ...current,
-              assetClass: value,
-            }),
-          });
-        }}
-        pnlFilter={pnlFilter}
-        onPnlFilterChange={(value) => {
-          void navigate({
-            to: '/portfolio',
-            search: (current: PortfolioSearchState) => ({
-              ...current,
-              pnl: value,
-            }),
-          });
-        }}
-        assetClasses={assetClasses}
-        quoteFilter={quoteFilter}
-        onQuoteFilterChange={setQuoteFilter}
-        evidenceFilter={evidenceFilter}
-        onEvidenceFilterChange={setEvidenceFilter}
-        sortBy={sortBy}
-        onSortByChange={setSortBy}
-        summary={`${copy.portfolio.currentHoldingsCount(
-          (positions.data ?? []).length,
-        )} · ${copy.portfolio.filteredHoldingsCount(filteredPositions.length)}`}
-      />
+      {snapshot.data ? (
+        <div data-testid="portfolio-summary-strip">
+          <MetricStrip
+            ariaLabel={copy.portfolio.summary.ariaLabel}
+            items={[
+              {
+                id: 'total-equity',
+                label: copy.portfolio.summary.totalEquity,
+                value: formatCurrencyValue(snapshot.data.total_equity),
+                detail: copy.portfolio.summary.totalEquityDetail,
+              },
+              {
+                id: 'cash',
+                label: copy.portfolio.summary.cash,
+                value: formatCurrencyValue(snapshot.data.cash),
+                detail: copy.portfolio.summary.cashDetail,
+              },
+              {
+                id: 'open-holdings',
+                label: copy.portfolio.summary.openHoldings,
+                value: snapshot.data.positions.length,
+                detail: copy.portfolio.summary.openHoldingsDetail,
+              },
+              {
+                id: 'realized-pnl',
+                label: copy.portfolio.summary.realizedPnl,
+                value: formatCurrencyValue(snapshot.data.realized_pnl_total),
+                detail: copy.portfolio.summary.realizedPnlDetail,
+                tone:
+                  typeof snapshot.data.realized_pnl_total === 'number' &&
+                  snapshot.data.realized_pnl_total !== 0
+                    ? snapshot.data.realized_pnl_total > 0
+                      ? 'pnl-positive'
+                      : 'pnl-negative'
+                    : undefined,
+              },
+            ]}
+          />
+        </div>
+      ) : null}
 
       {evidenceFilter !== 'clear' ? (
         <PortfolioEvidenceReviewPanel items={evidenceReviewItems} />
       ) : null}
 
-      <div data-testid="portfolio-current-holdings-count" className="sr-only">
-        {copy.portfolio.currentHoldingsCount((positions.data ?? []).length)} ·{' '}
-        {copy.portfolio.filteredHoldingsCount(filteredPositions.length)}
-      </div>
-      {positions.isLoading ? (
-        <StatusCard
-          title={copy.states.loading}
-          detail={copy.portfolio.positionsLoading}
+      <section
+        className="min-w-0 space-y-2"
+        data-testid="portfolio-current-holdings"
+      >
+        <div>
+          <h2 className="text-base font-semibold text-[var(--app-text)]">
+            {copy.portfolio.currentHoldings.title}
+          </h2>
+          <p className="mt-0.5 max-w-4xl text-xs leading-5 text-[var(--app-text-secondary)]">
+            {copy.portfolio.currentHoldings.detail}
+          </p>
+        </div>
+        {hasQuotesNeedingReview ? (
+          <EvidenceState
+            kind="partial"
+            title={copy.portfolio.table.cachedQuoteNotice}
+            evidence={copy.portfolio.table.quoteState}
+          />
+        ) : null}
+        <WorkspaceToolbar
+          search={search}
+          onSearchChange={(value) => {
+            void navigate({
+              to: '/portfolio',
+              search: (current: PortfolioSearchState) => ({
+                ...current,
+                q: value,
+              }),
+              replace: true,
+            });
+          }}
+          assetClassFilter={assetClassFilter}
+          onAssetClassFilterChange={(value) => {
+            void navigate({
+              to: '/portfolio',
+              search: (current: PortfolioSearchState) => ({
+                ...current,
+                assetClass: value,
+              }),
+            });
+          }}
+          pnlFilter={pnlFilter}
+          onPnlFilterChange={(value) => {
+            void navigate({
+              to: '/portfolio',
+              search: (current: PortfolioSearchState) => ({
+                ...current,
+                pnl: value,
+              }),
+            });
+          }}
+          assetClasses={assetClasses}
+          quoteFilter={quoteFilter}
+          onQuoteFilterChange={setQuoteFilter}
+          evidenceFilter={evidenceFilter}
+          onEvidenceFilterChange={setEvidenceFilter}
+          sortBy={sortBy}
+          onSortByChange={setSortBy}
+          summary={`${copy.portfolio.currentHoldingsCount(
+            (positions.data ?? []).length,
+          )} · ${copy.portfolio.filteredHoldingsCount(
+            filteredPositions.length,
+          )}`}
         />
-      ) : positions.isError ? (
-        <StatusCard
-          tone="danger"
-          title={copy.states.error}
-          detail={copy.portfolio.positionsError}
-          actionLabel={copy.states.retry}
-          onAction={() => void positions.refetch()}
-        />
-      ) : filteredPositions.length === 0 ? (
-        <StatusCard
-          title={copy.states.empty}
-          detail={
-            (positions.data ?? []).length === 0
-              ? copy.portfolio.positionsEmpty
-              : copy.portfolio.filterEmpty
-          }
-        />
-      ) : (
-        <PositionsTable
-          positions={filteredPositions}
-          assetClassBySymbol={Object.fromEntries(
-            Array.from(allocationBySymbol.entries()).map(([symbol, item]) => [
-              symbol,
-              item.asset_class,
-            ]),
-          )}
-          weightBySymbol={Object.fromEntries(
-            Array.from(allocationBySymbol.entries()).map(([symbol, item]) => [
-              symbol,
-              item.weight,
-            ]),
-          )}
-        />
-      )}
 
-      <div className="grid min-w-0 gap-4 xl:grid-cols-2">
-        {mode === 'account' ? (
-          <div className="min-w-0 space-y-4">
-            {liveHoldings.isLoading ? (
+        <div data-testid="portfolio-current-holdings-count" className="sr-only">
+          {copy.portfolio.currentHoldingsCount((positions.data ?? []).length)} ·{' '}
+          {copy.portfolio.filteredHoldingsCount(filteredPositions.length)}
+        </div>
+        {positions.isLoading ? (
+          <StatusCard
+            title={copy.states.loading}
+            detail={copy.portfolio.positionsLoading}
+          />
+        ) : positions.isError ? (
+          <StatusCard
+            tone="danger"
+            title={copy.states.error}
+            detail={copy.portfolio.positionsError}
+            actionLabel={copy.states.retry}
+            onAction={() => void positions.refetch()}
+          />
+        ) : filteredPositions.length === 0 ? (
+          <StatusCard
+            title={copy.states.empty}
+            detail={
+              (positions.data ?? []).length === 0
+                ? copy.portfolio.positionsEmpty
+                : copy.portfolio.filterEmpty
+            }
+          />
+        ) : (
+          <PositionsTable
+            positions={filteredPositions}
+            assetClassBySymbol={Object.fromEntries(
+              Array.from(allocationBySymbol.entries()).map(([symbol, item]) => [
+                symbol,
+                item.asset_class,
+              ]),
+            )}
+            weightBySymbol={Object.fromEntries(
+              Array.from(allocationBySymbol.entries()).map(([symbol, item]) => [
+                symbol,
+                item.weight,
+              ]),
+            )}
+          />
+        )}
+      </section>
+
+      <section className="min-w-0 space-y-3" data-testid="portfolio-analysis">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-[var(--app-text)]">
+              {copy.portfolio.analysis.title}
+            </h2>
+            <p className="mt-0.5 text-xs text-[var(--app-text-secondary)]">
+              {copy.portfolio.analysis.detail}
+            </p>
+          </div>
+          <div
+            role="group"
+            className="inline-flex overflow-hidden rounded-[var(--app-radius-control)] border border-[var(--app-border)]"
+            aria-label={copy.portfolio.toolbar.view}
+          >
+            {[
+              { value: 'account', label: copy.mode.accountShort },
+              { value: 'strategy', label: copy.mode.strategyShort },
+            ].map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                aria-pressed={mode === item.value}
+                onClick={() => setMode(item.value as 'account' | 'strategy')}
+                className={`min-h-10 px-3 text-xs font-semibold sm:min-h-8 ${
+                  mode === item.value
+                    ? 'bg-[var(--app-accent)] text-[var(--app-text-inverse)]'
+                    : 'bg-transparent text-[var(--app-text-secondary)] hover:bg-[var(--app-accent-bg)]'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid min-w-0 gap-4 xl:grid-cols-2">
+          {mode === 'account' ? (
+            liveHoldings.isLoading ? (
               <StatusCard
                 title={copy.states.loading}
                 detail={copy.portfolio.liveBoard.loading}
@@ -3161,13 +3261,8 @@ export function PortfolioPage() {
               />
             ) : (
               <LiveHoldingsBoard groups={liveHoldings.data?.groups ?? []} />
-            )}
-            {snapshot.data ? (
-              <AllocationGroupsCard groups={snapshot.data.allocation_grouped} />
-            ) : null}
-          </div>
-        ) : (
-          <div className="min-w-0 space-y-4">
+            )
+          ) : (
             <StrategyContributionGateCard
               report={strategyContribution.data}
               isLoading={strategyContribution.isLoading}
@@ -3175,17 +3270,16 @@ export function PortfolioPage() {
               onRetry={() => void strategyContribution.refetch()}
               instruments={positions.data ?? snapshot.data?.positions ?? []}
             />
+          )}
+
+          {mode === 'strategy' ? (
             <PortfolioConstructionRecommendationsCard
               recommendations={cockpit.data?.construction_recommendations ?? []}
               isLoading={cockpit.isLoading}
               isError={cockpit.isError}
               onRetry={() => void cockpit.refetch()}
             />
-          </div>
-        )}
-
-        <div className="min-w-0 space-y-4">
-          {snapshot.isLoading ? (
+          ) : snapshot.isLoading ? (
             <StatusCard
               title={copy.states.loading}
               detail={copy.portfolio.sidebarLoading}
@@ -3199,9 +3293,7 @@ export function PortfolioPage() {
               onAction={() => void snapshot.refetch()}
             />
           ) : snapshot.data ? (
-            <>
-              <AllocationCard items={snapshot.data.allocation} />
-            </>
+            <AllocationCard items={snapshot.data.allocation} />
           ) : (
             <StatusCard
               title={copy.states.empty}
@@ -3209,7 +3301,7 @@ export function PortfolioPage() {
             />
           )}
         </div>
-      </div>
+      </section>
 
       <section className="min-w-0" data-testid="portfolio-history">
         <div className="mb-2 flex flex-wrap items-end justify-between gap-3">

@@ -45,18 +45,19 @@ test('portfolio strategy evidence uses flat standard workbench primitives', () =
   );
 });
 
-test('portfolio tables expose decision facts before secondary detail', () => {
-  const primaryOrder = [
-    "'market-value'",
-    "'weight'",
-    "'today-change'",
-    "'unrealized'",
-    "'realized'",
-    "'quote-state'",
-  ].map((column) => positionsTableSource.indexOf(column, 13_000));
-
-  expect(primaryOrder.every((index) => index >= 0)).toBe(true);
-  expect(primaryOrder).toEqual([...primaryOrder].sort((a, b) => a - b));
+test('portfolio tables expose primary facts and a mobile master-detail list', () => {
+  expect(positionsTableSource).toContain("id: 'market-value'");
+  expect(positionsTableSource).toContain("id: 'weight'");
+  expect(positionsTableSource).toContain("id: 'today-change'");
+  expect(positionsTableSource).toContain("id: 'unrealized'");
+  expect(positionsTableSource).toContain("id: 'realized'");
+  expect(positionsTableSource).toContain("id: 'quote-state'");
+  expect(positionsTableSource).toContain('positions-mobile-list');
+  expect(positionsTableSource).toContain('position-mobile-row-');
+  expect(positionsTableSource).toContain('md:hidden');
+  expect(positionsTableSource).toContain('hidden min-w-0 md:block');
+  expect(positionsTableSource).not.toContain('useRefreshMarketQuotesMutation');
+  expect(positionsTableSource).not.toContain("id: 'actions'");
   expect(liveHoldingsSource).toContain('minmax(84px,1fr)');
   expect(liveHoldingsSource).toContain('overflow-x-auto');
   expect(liveHoldingsSource).not.toContain('overflow-hidden');

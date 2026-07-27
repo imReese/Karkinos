@@ -1,4 +1,3 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, within } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { beforeEach, expect, test, vi } from 'vitest';
@@ -8,6 +7,7 @@ import type { Position } from './api';
 import { PositionsTable } from './components/positions-table';
 
 beforeEach(() => {
+  window.localStorage.clear();
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation((query: string) => ({
@@ -41,17 +41,10 @@ const basePosition: Position = {
 };
 
 function renderTable(ui: ReactElement) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
-  return render(
-    <PreferencesProvider>
-      <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
-    </PreferencesProvider>,
-  );
+  return render(<PreferencesProvider>{ui}</PreferencesProvider>);
 }
 
-test('renders the canonical current-holdings table with direct detail drill-down', () => {
+test('renders the compact canonical holdings table with direct detail drill-down', () => {
   renderTable(
     <PositionsTable
       positions={[basePosition]}
@@ -59,40 +52,11 @@ test('renders the canonical current-holdings table with direct detail drill-down
     />,
   );
 
-  const row = screen.getByRole('row', {
-    name: 'Holding Details: 贵州茅台 600519',
-  });
-  const tableShell = screen
-    .getByTestId('positions-table-desktop')
-    .closest('[data-workbench-primitive="data-table"]');
-  expect(row.className).toContain('cursor-pointer');
-  expect(tableShell?.className).toContain('app-positions-table');
-  expect(
-    screen
-      .getAllByRole('link', { name: 'Holding Details: 贵州茅台 600519' })[0]
-      .getAttribute('href'),
-  ).toBe('/portfolio/600519');
-  expect(screen.getByTestId('position-weight-600519').textContent).toBe(
-    '42.0%',
-  );
-  expect(screen.getByTestId('position-realized-600519').textContent).toBe(
-    '¥120.00',
-  );
-  expect(screen.getByRole('button', { name: 'Refresh' })).toBeTruthy();
-});
-
-test('keeps the operator-priority portfolio facts before secondary cost detail', () => {
-  renderTable(
-    <PositionsTable
-      positions={[basePosition]}
-      weightBySymbol={{ '600519': 0.42 }}
-    />,
-  );
-
-  const headers = within(screen.getByTestId('positions-table-desktop'))
+  const table = screen.getByTestId('positions-table-desktop');
+  const headers = within(table)
     .getAllByRole('columnheader')
     .map((header) => header.textContent);
-  expect(headers.slice(0, 7)).toEqual([
+  expect(headers).toEqual([
     'Symbol',
     'Market Value',
     'Weight',
@@ -101,15 +65,21 @@ test('keeps the operator-priority portfolio facts before secondary cost detail',
     'Realized PnL',
     'Quote State',
   ]);
-  expect(headers.indexOf('Realized PnL')).toBeLessThan(
-    headers.indexOf('Local moving average cost'),
+  expect(screen.getByTestId('position-weight-600519').textContent).toBe(
+    '42.0%',
   );
-  expect(headers.indexOf('Quote State')).toBeLessThan(
-    headers.indexOf('Broker displayed cost'),
+  expect(screen.getByTestId('position-realized-600519').textContent).toBe(
+    '¥120.00',
   );
+  expect(
+    within(table)
+      .getByRole('link', { name: 'Holding Details: 贵州茅台 600519' })
+      .getAttribute('href'),
+  ).toBe('/portfolio/600519');
+  expect(within(table).queryByRole('button')).toBeNull();
 });
 
-test('keeps the overview dashboard table compact without redundant row actions', () => {
+test('keeps the overview dashboard table compact', () => {
   renderTable(
     <PositionsTable positions={[basePosition]} variant="dashboard" />,
   );
@@ -125,118 +95,25 @@ test('keeps the overview dashboard table compact without redundant row actions',
     'Unrealized',
     'Quote State',
   ]);
-  expect(within(table).queryByRole('button', { name: 'Refresh' })).toBeNull();
-  expect(within(table).queryByText('Asset class')).toBeNull();
-  expect(within(table).queryByText('Latest Price')).toBeNull();
+  expect(within(table).queryByRole('button')).toBeNull();
 });
 
-test('formats persisted cost and quote prices without recomputing them', () => {
-  renderTable(
-    <PositionsTable
-      positions={[
-        {
-          ...basePosition,
-          symbol: '600003',
-          avg_cost: 16.275,
-          latest_price: 16.2608,
-          market_value: 3252,
-          today_change: -3,
-          unrealized_pnl: -3,
-        },
-      ]}
-    />,
-  );
+test('keeps secondary cost, quantity, and quote facts in holding detail', () => {
+  renderTable(<PositionsTable positions={[basePosition]} />);
 
-  expect(screen.getByTestId('position-avg-cost-600003').textContent).toBe(
-    '16.2750',
-  );
-  expect(screen.getByTestId('position-latest-price-600003').textContent).toBe(
-    '16.2608',
-  );
-  expect(screen.getByTestId('position-today-change-600003').textContent).toBe(
-    '-¥3.00',
-  );
+  const table = screen.getByTestId('positions-table-desktop');
+  expect(within(table).queryByText('Quantity')).toBeNull();
+  expect(within(table).queryByText('Quote Price')).toBeNull();
+  expect(within(table).queryByText('Local moving average cost')).toBeNull();
+  expect(within(table).queryByText('Broker displayed cost')).toBeNull();
   expect(
-    screen.getByTestId('position-today-change-600003').querySelector('span')
-      ?.className,
-  ).toContain('text-[var(--app-pnl-negative)]');
+    within(table).getByRole('link', {
+      name: 'Holding Details: 贵州茅台 600519',
+    }),
+  ).toBeTruthy();
 });
 
-test('fails closed when quote price is absent instead of deriving market value per share', () => {
-  renderTable(
-    <PositionsTable positions={[{ ...basePosition, latest_price: null }]} />,
-  );
-
-  expect(screen.getByTestId('position-latest-price-600519').textContent).toBe(
-    '--',
-  );
-  expect(screen.queryByText('1,600.0000')).toBeNull();
-});
-
-test('fails closed when broker unit cost is absent instead of dividing total basis by quantity', () => {
-  renderTable(
-    <PositionsTable
-      positions={[
-        {
-          ...basePosition,
-          avg_cost: 1400,
-          broker_displayed_unit_cost: null,
-          broker_displayed_cost_basis: 90000,
-          broker_cost_basis_status: 'available',
-        },
-      ]}
-    />,
-  );
-
-  expect(screen.getByTestId('position-broker-cost-600519').textContent).toBe(
-    '--',
-  );
-  expect(screen.queryByText('1,500.0000')).toBeNull();
-});
-
-test('shows persisted broker cost evidence and its canonical difference', () => {
-  renderTable(
-    <PositionsTable
-      positions={[
-        {
-          ...basePosition,
-          broker_displayed_unit_cost: 1499.25,
-          broker_displayed_cost_basis: 89955,
-          broker_cost_basis_difference: -45,
-          broker_cost_basis_method: 'broker_remaining_cost',
-          broker_cost_basis_status: 'available',
-        },
-      ]}
-    />,
-  );
-
-  const brokerCell = screen.getByTestId('position-broker-cost-600519');
-  expect(brokerCell.textContent).toContain('1,499.2500');
-  expect(brokerCell.textContent).toContain('Cost basis difference -¥45.00');
-  expect(brokerCell.textContent).toContain('Broker-confirmed evidence');
-});
-
-test('labels ledger-projected cost evidence without claiming broker confirmation', () => {
-  renderTable(
-    <PositionsTable
-      positions={[
-        {
-          ...basePosition,
-          broker_displayed_unit_cost: 1498,
-          broker_displayed_cost_basis: 89880,
-          broker_cost_basis_method: 'broker_remaining_cost',
-          broker_cost_basis_status: 'projected_from_ledger',
-        },
-      ]}
-    />,
-  );
-
-  const brokerCell = screen.getByTestId('position-broker-cost-600519');
-  expect(brokerCell.textContent).toContain('Projected from local ledger');
-  expect(brokerCell.textContent).not.toContain('Broker-confirmed evidence');
-});
-
-test('shows stale quote reason as visible evidence', () => {
+test('shows stale quote reason as compact visible evidence', () => {
   renderTable(
     <PositionsTable
       positions={[
@@ -251,32 +128,53 @@ test('shows stale quote reason as visible evidence', () => {
     />,
   );
 
-  expect(
-    screen.getByText('Cached quotes · positions valued from cached quotes'),
-  ).toBeTruthy();
-  expect(
-    screen.getByText('Quote older than expected trading session'),
-  ).toBeTruthy();
-});
-
-test('contains wide data in a local horizontal scroller', () => {
-  renderTable(<PositionsTable positions={[basePosition]} />);
-
-  const scrollRegion = screen.getByTestId('positions-table-scroll');
   const table = screen.getByTestId('positions-table-desktop');
-  expect(scrollRegion.className).toContain('min-w-0');
-  expect(scrollRegion.className).toContain('max-w-full');
-  expect(scrollRegion.className).toContain('overflow-x-auto');
-  expect(scrollRegion.className).toContain('overscroll-x-contain');
-  expect(table.className).toContain('min-w-max');
+  expect(
+    within(table).getByText('Quote older than expected trading session'),
+  ).toBeTruthy();
+  expect(
+    within(table).getByText('Quote older than expected trading session')
+      .className,
+  ).toContain('truncate');
 });
 
-test('keeps historical positions and realized PnL accessible without refresh or trade authority', () => {
+test('provides a task-focused mobile holdings list without table-width dependence', () => {
+  renderTable(
+    <PositionsTable
+      positions={[basePosition]}
+      weightBySymbol={{ '600519': 0.42 }}
+    />,
+  );
+
+  const list = screen.getByTestId('positions-mobile-list');
+  const row = within(list).getByTestId('position-mobile-row-600519');
+  expect(list.className).toContain('md:hidden');
+  expect(row.getAttribute('href')).toBe('/portfolio/600519');
+  expect(row.textContent).toContain('贵州茅台');
+  expect(row.textContent).toContain('¥96,000.00');
+  expect(row.textContent).toContain('42.0%');
+  expect(row.textContent).toContain('¥6,000.00');
+});
+
+test('keeps closed-position realized results and fees as read-only history', () => {
   renderTable(<PositionsTable positions={[basePosition]} variant="history" />);
 
-  const row = screen.getByTestId('position-row-600519');
-  expect(within(row).getByText('¥120.00')).toBeTruthy();
-  expect(within(row).getByRole('link', { name: 'Ledger' })).toBeTruthy();
-  expect(within(row).queryByRole('button', { name: 'Refresh' })).toBeNull();
-  expect(within(row).queryByRole('link', { name: 'Trade' })).toBeNull();
+  const table = screen.getByTestId('positions-table-desktop');
+  const headers = within(table)
+    .getAllByRole('columnheader')
+    .map((header) => header.textContent);
+  expect(headers).toEqual(['Symbol', 'Realized PnL', 'Commission Paid']);
+  expect(screen.getByTestId('position-realized-600519').textContent).toBe(
+    '¥120.00',
+  );
+  expect(screen.getByTestId('position-commission-600519').textContent).toBe(
+    '¥5.00',
+  );
+  expect(within(table).queryByRole('button')).toBeNull();
+  expect(within(table).queryByText('Trade')).toBeNull();
+  expect(
+    within(table)
+      .getByRole('link', { name: 'Holding Details: 贵州茅台 600519' })
+      .getAttribute('href'),
+  ).toBe('/portfolio/600519');
 });

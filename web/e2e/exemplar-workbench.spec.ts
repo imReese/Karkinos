@@ -62,13 +62,14 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
   await expect(page.getByTestId('backtest-mobile-workspace-tabs')).toBeHidden();
 });
 
-test('portfolio keeps filtering ordered and wide holdings locally scrollable', async ({
+test('portfolio keeps filtering ordered above a compact holdings projection', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/portfolio');
 
   const filterBar = page.locator('[data-workbench-primitive="filter-bar"]');
+  await expect(page.getByTestId('portfolio-summary-strip')).toBeVisible();
   await expect(filterBar).toBeVisible();
   await expect(filterBar.getByRole('textbox')).toBeVisible();
   await expect(filterBar.getByRole('combobox')).toHaveCount(5);
@@ -115,18 +116,18 @@ test('portfolio keeps filtering ordered and wide holdings locally scrollable', a
   expect(geometry.liveHoldingsOverflow).toBeLessThanOrEqual(0);
   if (geometry.tableHeaders.length > 0) {
     expect(geometry.tableHeaders.slice(0, 7)).toEqual([
-      '代码',
-      '市值',
-      '权重',
-      '今日收益',
-      '浮盈亏',
-      '已实现盈亏',
-      '行情状态',
+      'Symbol',
+      'Market Value',
+      'Weight',
+      'Today PnL',
+      'Unrealized',
+      'Realized PnL',
+      'Quote State',
     ]);
   }
 });
 
-test('portfolio mobile keeps secondary filters disclosed on demand', async ({
+test('portfolio mobile uses compact holdings rows and discloses secondary filters on demand', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -136,14 +137,17 @@ test('portfolio mobile keeps secondary filters disclosed on demand', async ({
   const moreFilters = filterBar.locator(
     'button[aria-controls="portfolio-secondary-filters"]',
   );
-  const holdingsSurface = page
-    .getByTestId('portfolio-current-holdings-count')
-    .locator('xpath=following-sibling::*[1]');
+  const holdingsSurface = page.getByTestId('positions-mobile-list');
+  const desktopTable = page.getByTestId('positions-table-desktop');
 
   await expect(moreFilters).toBeVisible();
   await expect(filterBar.locator('select:visible')).toHaveCount(2);
   await expect(moreFilters).toHaveAttribute('aria-expanded', 'false');
   await expect(holdingsSurface).toBeVisible();
+  await expect(desktopTable).toBeHidden();
+  await expect(
+    holdingsSurface.locator('[data-testid^="position-mobile-row-"]').first(),
+  ).toBeVisible();
 
   const compactControlHeights = await filterBar
     .locator('button:visible, input:visible, select:visible')
