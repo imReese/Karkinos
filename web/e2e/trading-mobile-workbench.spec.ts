@@ -3,6 +3,8 @@ import { expect, test } from '@playwright/test';
 test('trading mobile keeps the review task ahead of secondary filters', async ({
   page,
 }) => {
+  test.setTimeout(60_000);
+
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/trading');
 

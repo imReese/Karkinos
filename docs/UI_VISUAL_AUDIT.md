@@ -20,10 +20,10 @@ The following surfaces were reviewed as complete pages:
   market, trading, backtest, AI research, and settings;
 - representative holding detail: `/portfolio/603659`.
 
-The visual baseline covered 1440 x 900, 1280 x 800, 834 x 1112, and 390 x 844.
-Latte and Mocha were both exercised across desktop, tablet, and mobile checks.
-Every route was allowed to reach its settled evidence state before its visual
-hierarchy was judged. The audit checked:
+The visual baseline covered 1440 x 900, 1280 x 800, 1024 x 768, 834 x 1112,
+768 x 1024, and 390 x 844. Latte and Mocha were exercised across desktop,
+tablet, and mobile checks. Every route was allowed to reach its settled
+evidence state before its visual hierarchy was judged. The audit checked:
 
 1. first-screen focal point and five-second comprehension;
 2. page composition and task order;
@@ -33,6 +33,28 @@ hierarchy was judged. The audit checked:
 6. single-H1 structure, local overflow, disclosure defaults, and authority
    boundaries;
 7. missing, stale, degraded, blocked, and reconciled evidence language.
+
+## Second-pass closure
+
+The second pass corrected composition and state-semantics drift found after the
+first full-route audit:
+
+- Overview, Risk, and Market now keep transient loading distinct from empty,
+  missing, stale, and error evidence. A delayed persisted GET no longer appears
+  to prove that evidence is absent.
+- Activity leads with immutable ledger history and opens entry controls only on
+  demand. Operations leads with the priority queue, opens queue evidence in a
+  stable detail drawer, and keeps technical identity in drill-down.
+- Holding detail keeps canonical position facts visible when the persisted
+  price series is missing. The evidence rail stacks below the summary from
+  768-1024 px and returns to the desktop split only at 1280 px.
+- The public home replaces a large, static concept card with a compact product
+  trace. It identifies the public `/` to private `/overview` transition, shows
+  the evidence-to-human-review path, and states the default read-and-review-only
+  authority without inventing account, return, order, or execution values.
+
+No second-pass change introduced a provider-backed read, UI financial
+recalculation, broker capability, or a new design system.
 
 ## Reference matrix
 
@@ -59,16 +81,16 @@ persisted projections.
 
 | Route                | Audit state       | First-screen owner                            | Result and remaining observation                                                                                                                                                                            |
 | -------------------- | ----------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/`                  | Accepted exemplar | Brand proposition and product proof           | Public navigation, hero, proof, CTA, and footer form a coherent editorial page without leaking workbench chrome.                                                                                            |
-| `/overview`          | Accepted          | Account truth, holdings, and next safe action | Account metrics and evidence lead; holdings and action priority remain legible without routine card nesting.                                                                                                |
+| `/`                  | Accepted exemplar | Brand proposition and product trace           | The compact first screen pairs the proposition with a structural evidence path, explicit public/private route identity, and read-and-review-only authority without fake financial data.                     |
+| `/overview`          | Accepted          | Account truth, holdings, and next safe action | Account metrics and evidence lead; loading remains distinct from missing evidence, and holdings and action priority stay legible without routine card nesting.                                              |
 | `/portfolio`         | Accepted          | Current holdings table                        | Holdings remain ahead of secondary analysis while realized history, closed assets, and ledger drill-down stay available.                                                                                    |
-| `/portfolio/$symbol` | Accepted exemplar | Instrument identity and price canvas          | Apple-like list/detail discipline is translated into a persisted-evidence view; stale or missing price structure remains explicit.                                                                          |
-| `/activity`          | Accepted          | Immutable activity timeline                   | History leads and entry tools remain controlled secondary actions.                                                                                                                                          |
-| `/risk`              | Accepted exemplar | Current blockers and clearing conditions      | Exception priority, risk metrics, threshold evidence, and the kill-switch boundary are visually distinct.                                                                                                   |
+| `/portfolio/$symbol` | Accepted exemplar | Instrument identity and price canvas          | Apple-like list/detail discipline is translated into a persisted-evidence view; canonical position facts survive a missing price series, and tablet composition stacks without shrinking the chart.         |
+| `/activity`          | Accepted          | Immutable activity timeline                   | History leads; the controlled entry tool opens on demand instead of competing with the audit path.                                                                                                          |
+| `/risk`              | Accepted exemplar | Current blockers and clearing conditions      | Exception priority, risk metrics, threshold evidence, and the kill-switch boundary are distinct; transient loading is not labeled as missing evidence.                                                      |
 | `/account-truth`     | Accepted          | Current reconciliation report                 | The settled report, score, exceptions, and matched-detail disclosure agree. A transient load state cleared normally and was not treated as a persistent defect.                                             |
 | `/decision`          | Accepted exemplar | Next decision and gate matrix                 | Account facts, research, risk, paper/shadow, and human review are readable as one staged decision.                                                                                                          |
-| `/operations`        | Accepted          | Priority evidence queue                       | Actionable operational exceptions lead; immutable history remains separate and quieter.                                                                                                                     |
-| `/market`            | Accepted exemplar | Instrument list and selected chart            | The watchlist-to-chart relationship survives desktop, tablet, and horizontal mobile rail layouts; personal evidence is not presented as a broad-market heatmap.                                             |
+| `/operations`        | Accepted          | Priority evidence queue                       | Actionable exceptions lead into a stable evidence drawer; immutable history remains quieter and technical fingerprints stay in drill-down.                                                                  |
+| `/market`            | Accepted exemplar | Instrument list and selected chart            | The watchlist-to-chart relationship survives desktop, tablet, and horizontal mobile rail layouts; delayed persisted quotes remain loading rather than false missing evidence.                               |
 | `/trading`           | Accepted          | Manual-confirmation queue                     | Empty pending state is honest and broker authority remains disabled. Monitor whether repeated real use justifies a whole-route empty-state compression; do not reorder it from screenshot preference alone. |
 | `/backtest`          | Accepted exemplar | Persisted report and equity/drawdown evidence | Saved evidence, after-cost metrics, chart, reproducibility identity, and promotion gates now outrank setup controls when results exist.                                                                     |
 | `/ai-research`       | Accepted          | Evidence-freezing human task                  | The empty review state remains honest rather than filled with invented research. Large input space is appropriate only while the task form is the primary action.                                           |
@@ -76,12 +98,13 @@ persisted projections.
 
 ## Cross-viewport results
 
-| Baseline          | Settled result                                                                                                                           |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| 1440 x 900, Mocha | All audited routes retained one visible H1, zero document/shell horizontal overflow, and a stable desktop information hierarchy.         |
-| 1280 x 800, Latte | Navigation, command bar, content canvas, charts, tables, and controlled zones remained usable without first-fold collisions.             |
-| 834 x 1112, Latte | Master-detail routes rebalanced without shrinking the chart into a decorative thumbnail; task routes stacked in reading order.           |
-| 390 x 844, Mocha  | Mobile navigation did not cover the active task, local rails contained intentional overflow, and low-priority disclosures stayed closed. |
+| Baseline          | Settled result                                                                                                                            |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| 1440 x 900, Mocha | All audited routes retained one visible H1, zero document/shell horizontal overflow, and a stable desktop information hierarchy.          |
+| 1280 x 800, Latte | Navigation, command bar, content canvas, charts, tables, and controlled zones remained usable without first-fold collisions.              |
+| 1024/768, mixed   | The shell uses the tablet canvas and bottom navigation; holding summary and evidence stack in one reading path without document overflow. |
+| 834 x 1112, Latte | Master-detail routes rebalanced without shrinking the chart into a decorative thumbnail; task routes stacked in reading order.            |
+| 390 x 844, Mocha  | Mobile navigation did not cover the active task, local rails contained intentional overflow, and low-priority disclosures stayed closed.  |
 
 Theme symmetry, mobile touch targets, reduced motion, and disclosure defaults
 also remain covered by deterministic frontend and Playwright contracts. A route
@@ -95,15 +118,19 @@ Validation used Node.js 24.18.0 and a no-live local application server:
 
 - `web/node_modules/.bin/prettier --check docs/UI_VISUAL_AUDIT.md docs/UI_VISUAL_AUDIT.zh.md`
   passed;
-- `cd web && npm test` passed 66 files and 555 tests;
+- `cd web && npm test` passed 66 files and 562 tests;
 - `cd web && npm run build` completed the TypeScript and production Vite build;
-- `cd web && npm run test:e2e` passed all 18 Playwright tests in 4.9 minutes;
+- `cd web && npm run test:e2e` passed all 18 Playwright tests in 5.0 minutes;
 - the in-app browser audit reached settled states on all 14 audited routes and
   found no document or app-shell horizontal overflow at the sampled widths.
 
 The first sandboxed Playwright launch could not bind its localhost test port;
-the same no-live command was rerun with scoped localhost permission and passed.
-No provider or broker connection was enabled for either run.
+the same no-live command was rerun with scoped localhost permission. One final
+full-suite attempt then reached the completed Trading mobile DOM but exhausted
+the generic 30-second test budget; its isolated rerun passed in 0.662 seconds.
+Aligning that test-only budget with the existing cross-viewport specs produced
+the complete 18-test pass above without changing an assertion or production
+behavior. No provider or broker connection was enabled for any run.
 
 ## Priority decision
 
