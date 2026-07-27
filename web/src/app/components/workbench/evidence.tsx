@@ -18,6 +18,7 @@ export function ExceptionList({
   items,
   ariaLabel,
   emptyState,
+  density = 'default',
   labels = {
     reason: 'Reason',
     unblockCondition: 'Unblock condition',
@@ -29,6 +30,7 @@ export function ExceptionList({
   items: ReadonlyArray<ExceptionItem>;
   ariaLabel: string;
   emptyState: ReactNode;
+  density?: 'default' | 'compact';
   labels?: {
     reason: string;
     unblockCondition: string;
@@ -55,13 +57,24 @@ export function ExceptionList({
     <ul
       aria-label={ariaLabel}
       data-workbench-primitive="exception-list"
-      className={cn('grid gap-2', className)}
+      data-density={density}
+      className={cn(
+        density === 'compact'
+          ? 'divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]'
+          : 'grid gap-2',
+        className,
+      )}
     >
       {items.map((item) => (
         <li
           key={item.id}
           data-severity={item.severity}
-          className="app-exception-item rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] bg-[var(--app-surface)] px-3 py-2.5"
+          className={cn(
+            'app-exception-item px-3 py-2.5',
+            density === 'compact'
+              ? 'bg-transparent'
+              : 'rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] bg-[var(--app-surface)]',
+          )}
         >
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge tone={item.severity}>
@@ -71,7 +84,12 @@ export function ExceptionList({
               {item.title}
             </h3>
           </div>
-          <dl className="mt-2 grid gap-1.5 text-xs sm:grid-cols-2">
+          <dl
+            className={cn(
+              'grid text-xs sm:grid-cols-2',
+              density === 'compact' ? 'mt-1.5 gap-x-3 gap-y-1' : 'mt-2 gap-1.5',
+            )}
+          >
             <EvidenceRow label={labels.reason}>{item.reason}</EvidenceRow>
             {item.unblockCondition ? (
               <EvidenceRow label={labels.unblockCondition}>
