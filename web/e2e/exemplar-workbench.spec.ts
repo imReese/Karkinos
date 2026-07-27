@@ -470,7 +470,13 @@ test('core review routes keep audit drill-downs closed and mobile reading paths 
   await expect(
     page.getByRole('heading', { name: /Trading review|交易复核/ }),
   ).toBeVisible();
-  await expect(page.getByTestId('kill-switch-panel')).toBeVisible();
+  const killSwitch = page.getByTestId('kill-switch-panel');
+  await expect(killSwitch).toBeVisible();
+  await expect(killSwitch).toHaveAttribute(
+    'data-kill-switch-state',
+    'inactive',
+  );
+  await expect(killSwitch).not.toHaveAttribute('open', '');
   await expect(
     page.getByTestId('trading-broker-boundary-disclosure'),
   ).not.toHaveAttribute('open', '');
