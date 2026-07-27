@@ -643,49 +643,89 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
       }
 
       if (path === '/activity') {
+        const historySurface = page.locator(
+          '[data-activity-surface="audit-history"]',
+        );
+        const legacyEntrySurface = page.locator(
+          '[data-activity-surface="priority-and-entry"]',
+        );
+        const entryTrigger = page
+          .getByRole('button', { name: /New entry|新增流水/ })
+          .first();
+        await expect(historySurface).toBeVisible();
+        await expect(legacyEntrySurface).toHaveCount(0);
+        await expect(entryTrigger).toBeVisible();
         const activityGeometry = await page.evaluate(() => {
-          const entrySurface = document.querySelector(
-            '[data-activity-surface="priority-and-entry"]',
-          ) as HTMLElement;
-          const historySurface = document.querySelector(
-            '[data-activity-surface="audit-history"]',
-          ) as HTMLElement;
-          const historyRegion = historySurface.querySelector(
-            '[role="region"]',
+          const historyRegion = document.querySelector(
+            '[data-activity-surface="audit-history"] [role="region"]',
           ) as HTMLElement | null;
-          const controls = Array.from(
-            document.querySelectorAll(
-              '[aria-label="Ledger entry tool selector"] button, [aria-label="流水录入工具选择"] button',
-            ),
-          ) as HTMLElement[];
+          const entryButton = Array.from(
+            document.querySelectorAll('button'),
+          ).find((button) =>
+            /^(New entry|新增流水)$/.test(button.textContent?.trim() ?? ''),
+          );
           return {
-            entryTop: entrySurface.getBoundingClientRect().top,
-            historyTop: historySurface.getBoundingClientRect().top,
             historyRegionHeight:
               historyRegion?.getBoundingClientRect().height ?? null,
+            triggerHeight: entryButton?.getBoundingClientRect().height ?? null,
             viewportHeight: window.innerHeight,
-            minControlHeight: Math.min(
-              ...controls.map(
-                (control) => control.getBoundingClientRect().height,
-              ),
-            ),
           };
         });
-        expect(activityGeometry.historyTop, theme).toBeLessThan(
-          activityGeometry.entryTop,
-        );
-        expect(
-          activityGeometry.entryTop - activityGeometry.historyTop,
-        ).toBeLessThanOrEqual(activityGeometry.viewportHeight * 1.2);
         if (activityGeometry.historyRegionHeight !== null) {
           expect(
             activityGeometry.historyRegionHeight,
             theme,
           ).toBeLessThanOrEqual(activityGeometry.viewportHeight * 0.8);
         }
-        expect(activityGeometry.minControlHeight, theme).toBeGreaterThanOrEqual(
+        expect(activityGeometry.triggerHeight, theme).not.toBeNull();
+        expect(
+          activityGeometry.triggerHeight ?? 0,
+          theme,
+        ).toBeGreaterThanOrEqual(40);
+
+        await entryTrigger.click();
+        const entryDialog = page.getByRole('dialog', {
+          name: /New entry|新增流水/,
+        });
+        await expect(entryDialog).toBeVisible();
+        const drawerGeometry = await entryDialog.evaluate((dialog) => {
+          const controls = Array.from(
+            dialog.querySelectorAll(
+              '[aria-label="Ledger entry tool selector"] button, [aria-label="流水录入工具选择"] button',
+            ),
+          ) as HTMLElement[];
+          const bounds = dialog.getBoundingClientRect();
+          return {
+            bottom: bounds.bottom,
+            left: bounds.left,
+            minControlHeight: Math.min(
+              ...controls.map(
+                (control) => control.getBoundingClientRect().height,
+              ),
+            ),
+            right: bounds.right,
+            top: bounds.top,
+            viewportHeight: window.innerHeight,
+            viewportWidth: window.innerWidth,
+          };
+        });
+        expect(drawerGeometry.left, theme).toBeGreaterThanOrEqual(0);
+        expect(drawerGeometry.top, theme).toBeGreaterThanOrEqual(0);
+        expect(drawerGeometry.right, theme).toBeLessThanOrEqual(
+          drawerGeometry.viewportWidth,
+        );
+        expect(drawerGeometry.bottom, theme).toBeLessThanOrEqual(
+          drawerGeometry.viewportHeight,
+        );
+        expect(drawerGeometry.minControlHeight, theme).toBeGreaterThanOrEqual(
           40,
         );
+        await entryDialog
+          .getByRole('button', {
+            name: /Close entry tools|关闭流水录入/,
+          })
+          .click();
+        await expect(entryDialog).toHaveCount(0);
       }
 
       if (path === '/backtest') {
