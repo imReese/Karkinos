@@ -691,21 +691,30 @@ test('keeps holding summary and kline regions responsive on narrow screens', asy
   expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
 
   const summaryTitle = screen.getByTestId('holding-summary-title');
+  const overview = screen.getByTestId('holding-detail-overview');
   const summaryGrid = screen.getByTestId('holding-summary-metrics');
   const metricStrip = summaryGrid.querySelector('dl');
   const metricCells = metricStrip?.querySelectorAll(':scope > div') ?? [];
   const chartPanel = screen.getByTestId('holding-kline-panel');
+  const positionSizeGrid = screen.getByTestId('holding-position-size-metrics');
+  const positionSizeCells = positionSizeGrid.querySelectorAll('dl > div') ?? [];
   const chartScroll = screen.getByTestId('price-structure-chart-scroll');
   const chartCanvas = screen.getByTestId('price-structure-chart-canvas');
 
   expect(summaryTitle.className).toContain('text-sm');
+  expect(overview.className).toContain('md:grid-cols-');
   expect(metricStrip?.className).toContain('min-w-0');
-  expect(metricStrip?.className).toContain('sm:grid-cols-3');
-  expect(metricStrip?.className).toContain('xl:grid-cols-6');
-  expect(metricCells.length).toBe(6);
+  expect(metricStrip?.className).toContain('sm:grid-cols-2');
+  expect(metricStrip?.className).toContain('xl:grid-cols-4');
+  expect(metricCells.length).toBe(4);
+  expect(positionSizeCells.length).toBe(2);
   for (const cell of metricCells) {
     expect(cell.className).toContain('min-w-0');
   }
+  expect(
+    chartScroll.compareDocumentPosition(positionSizeGrid) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
   expect(chartPanel.className).toContain('overflow-hidden');
   expect(chartScroll.className).toContain('overflow-x-auto');
   expect(chartCanvas.className).toContain('min-w-[640px]');
