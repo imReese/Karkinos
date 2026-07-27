@@ -319,6 +319,9 @@ test('market keeps context, evidence review, and provider telemetry task-ordered
           workspaceExists: workspace !== null,
           listExists: list !== null,
           listOverflow: list ? list.scrollHeight - list.clientHeight : 0,
+          listHorizontalOverflow: list
+            ? list.scrollWidth - list.clientWidth
+            : 0,
           listWidth: list?.getBoundingClientRect().width ?? 0,
           listX: list?.getBoundingClientRect().x ?? 0,
           listY: list?.getBoundingClientRect().y ?? 0,
@@ -384,9 +387,17 @@ test('market keeps context, evidence review, and provider telemetry task-ordered
           }
         } else {
           expect(
+            geometry.listHorizontalOverflow,
+            `${theme} ${viewport.width}`,
+          ).toBeGreaterThan(0);
+          expect(
             geometry.detailY,
             `${theme} ${viewport.width}`,
           ).toBeGreaterThan(geometry.listY);
+          expect(
+            geometry.detailY - geometry.listY,
+            `${theme} ${viewport.width}`,
+          ).toBeLessThan(260);
         }
       }
     }
