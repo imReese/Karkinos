@@ -221,6 +221,8 @@ Choose one documentation index:
 - [中文文档](docs/README.zh.md) — 安装、工作流、产品边界和专题参考
 - [English documentation](docs/README.en.md) — setup, workflows, product
   boundaries, and topic references
+- [AI collaboration policy](AI_COLLABORATION.md) — tool-neutral project,
+  financial-integrity, authority, and validation rules
 
 Each index organizes the same material into core documents, operational
 guides, and references. Individual pages link directly to their translation.
