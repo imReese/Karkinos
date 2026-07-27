@@ -169,6 +169,8 @@ docs/*
 !docs/ROADMAP.zh.md
 !docs/IMPLEMENTATION_LOG.md
 !docs/BENCHMARKS.md
+!docs/UI_VISUAL_AUDIT.md
+!docs/UI_VISUAL_AUDIT.zh.md
 !docs/account-truth-import.zh.md
 !docs/broker-execution-edge-conformance.en.md
 !docs/broker-execution-edge-conformance.zh.md
