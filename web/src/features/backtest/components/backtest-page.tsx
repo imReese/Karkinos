@@ -848,7 +848,7 @@ export function BacktestPage() {
       </div>
 
       <div
-        className="grid min-w-0 items-start gap-6 xl:grid-cols-[minmax(380px,0.82fr)_minmax(0,1.18fr)]"
+        className="grid min-w-0 items-start gap-6 xl:grid-cols-[minmax(360px,0.68fr)_minmax(0,1.32fr)]"
         data-testid="backtest-primary-workbench"
       >
         <div
@@ -1283,47 +1283,20 @@ export function BacktestPage() {
                 <FillsTable fills={latestReport.fills ?? []} />
               </div>
             ) : (
-              <div className="mt-5 flex min-h-[360px] flex-col justify-between border-y border-[var(--app-divider)] py-4">
-                <EvidenceState
-                  kind="empty"
-                  title={labels.notDeclared}
-                  description={labels.emptyCurrent}
-                />
-                <div className="mt-8 border-t border-[var(--app-divider)] pt-4">
-                  <div className="app-kicker text-[10px] uppercase tracking-[0.08em]">
-                    {labels.runReadinessTitle}
-                  </div>
-                  <p className="mt-1 max-w-xl text-xs leading-5 text-[var(--app-text-secondary)]">
-                    {labels.runReadinessDetail}
-                  </p>
-                  <div className="mt-3 grid gap-x-4 sm:grid-cols-2">
-                    <RunContextValue
-                      label={labels.runReadinessStrategy}
-                      value={strategyDisplayName(
-                        selectedStrategy,
-                        labels.strategyNames,
-                      )}
-                    />
-                    <RunContextValue
-                      label={labels.runReadinessInstrument}
-                      value={symbol.trim() || labels.notDeclared}
-                      numeric
-                    />
-                    <RunContextValue
-                      label={labels.runReadinessParams}
-                      value={labels.runReadinessParameterCount(
-                        parameterSchema.length,
-                      )}
-                    />
-                    <RunContextValue
-                      label={labels.runReadinessAssetClass}
-                      value={selectedAssetClassLabel}
-                    />
-                  </div>
-                  <p className="mt-3 text-[11px] leading-4 text-[var(--app-text-tertiary)]">
-                    {labels.decisionHandoffResearchOnly}
-                  </p>
+              <div className="mt-5 space-y-6">
+                <div className="border-y border-[var(--app-divider)] py-3">
+                  <EvidenceState
+                    kind="empty"
+                    title={labels.notDeclared}
+                    description={labels.emptyCurrent}
+                  />
                 </div>
+                <section
+                  className="min-w-0 border-t border-[var(--app-divider)] pt-5"
+                  data-testid="backtest-persisted-evidence"
+                >
+                  <BacktestReportView />
+                </section>
               </div>
             )}
           </div>
@@ -1396,7 +1369,7 @@ export function BacktestPage() {
           strategyId={accountStrategy.data?.strategy_id ?? null}
         />
 
-        <BacktestReportView />
+        {latestReport ? <BacktestReportView /> : null}
       </BacktestResponsiveDisclosure>
     </section>
   );

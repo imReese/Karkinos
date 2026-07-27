@@ -142,15 +142,15 @@ export function BacktestReportView() {
         <EvidenceState kind="error" title={labels.selection.selectedFailed} />
       ) : report.data ? (
         <>
-          <StrategyHypothesisPanel report={report.data} />
           <MetricsGrid report={report.data} />
-          <ValidationEvidencePanel report={report.data} />
-          <StrategyMetadataSnapshotPanel report={report.data} />
-          <DatasetSnapshotPanel report={report.data} />
           <EquityDrawdownChart
             fills={report.data.fills ?? []}
             points={report.data.equity_curve}
           />
+          <ValidationEvidencePanel report={report.data} />
+          <DatasetSnapshotPanel report={report.data} />
+          <StrategyMetadataSnapshotPanel report={report.data} />
+          <StrategyHypothesisPanel report={report.data} />
           <FillsTable fills={report.data.fills ?? []} />
         </>
       ) : null}
