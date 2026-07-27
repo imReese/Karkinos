@@ -5,7 +5,7 @@ import type {
   QuoteFilter,
 } from './components/workspace-toolbar';
 
-function quoteNeedsReview(status: string | null | undefined) {
+export function quoteNeedsReview(status: string | null | undefined) {
   return !['live', 'confirmed', 'cache'].includes(status ?? 'unknown');
 }
 

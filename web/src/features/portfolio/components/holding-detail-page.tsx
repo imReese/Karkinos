@@ -792,12 +792,18 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
           eyebrow={labels.kicker}
           title={`${displayName} · ${position.symbol}`}
           description={assetClassDisplay}
-          context={copy.common.valuationEvidenceAsOf(
-            formatTimestamp(snapshot.data?.valuation_as_of),
-            evidenceReviewState,
-          )}
+          context={`${copy.common.valuationAsOf} ${formatTimestamp(
+            snapshot.data?.valuation_as_of,
+          )}`}
           actions={
             <>
+              <a
+                href="/portfolio"
+                className="app-button-secondary inline-flex w-max rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
+                aria-label={labels.returnToPortfolio}
+              >
+                {labels.backToPortfolio}
+              </a>
               {snapshot.data ? (
                 <EvidenceIdentityDisclosure
                   triggerLabel={copy.common.viewEvidenceIdentity}
@@ -829,13 +835,6 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
                   ]}
                 />
               ) : null}
-              <a
-                href="/portfolio"
-                className="app-button-secondary inline-flex w-max rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
-                aria-label={labels.returnToPortfolio}
-              >
-                {labels.backToPortfolio}
-              </a>
             </>
           }
         />

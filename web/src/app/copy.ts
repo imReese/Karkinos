@@ -531,15 +531,36 @@ export const copy = {
     },
     portfolio: {
       kicker: 'Portfolio',
-      title: 'Holdings and allocation platform',
+      title: 'Holdings & allocation',
       subtitle:
-        'Filter holdings by symbol, asset class, and PnL focus while keeping allocation and return structure in view.',
+        'Review current holdings and evidence first, then allocation structure and strategy attribution.',
       positionsLoading: 'Loading positions.',
       positionsError: 'Failed to load positions.',
       positionsEmpty: 'No holdings yet. Add trades from Activity first.',
       filterEmpty: 'No holdings match the current filters.',
       currentHoldingsCount: (count: number) => `${count} open holdings`,
       filteredHoldingsCount: (count: number) => `${count} shown`,
+      summary: {
+        ariaLabel: 'Canonical portfolio snapshot',
+        totalEquity: 'Total equity',
+        totalEquityDetail: 'Canonical valuation snapshot',
+        cash: 'Cash',
+        cashDetail: 'Persisted account cash',
+        openHoldings: 'Open holdings',
+        openHoldingsDetail: 'Snapshot members',
+        realizedPnl: 'Realized PnL',
+        realizedPnlDetail: 'Ledger-derived total',
+      },
+      currentHoldings: {
+        title: 'Current holdings',
+        detail:
+          'Primary account positions from the persisted portfolio projection. Open a row for cost, quantity, quote provenance, and ledger detail.',
+      },
+      analysis: {
+        title: 'Allocation & attribution',
+        detail:
+          'Switch the analysis below without changing the current-holdings scope above.',
+      },
       evidenceReview: {
         title: 'Evidence review — not current holdings',
         detail:
@@ -551,8 +572,7 @@ export const copy = {
       sidebarEmpty: 'No allocation view is available yet.',
       toolbar: {
         view: 'View',
-        helper:
-          'Account emphasizes capital structure. Strategy emphasizes return quality.',
+        helper: 'Filter and sort the current persisted holdings projection.',
         search: 'Search',
         searchPlaceholder: 'Filter by symbol',
         assetClass: 'Asset Class',
@@ -3296,15 +3316,34 @@ export const copy = {
     },
     portfolio: {
       kicker: '组合',
-      title: '持仓与配置平台',
-      subtitle:
-        '支持按标的检索、收益筛选和资产类别过滤，右侧持续给出配置和收益拆解。',
+      title: '持仓与配置',
+      subtitle: '先核对当前持仓与证据，再查看配置结构和策略归因。',
       positionsLoading: '正在加载持仓明细。',
       positionsError: '持仓明细加载失败。',
       positionsEmpty: '当前还没有持仓，先去 Activity 录入交易。',
       filterEmpty: '当前筛选条件下没有匹配的持仓。',
       currentHoldingsCount: (count: number) => `当前持仓 ${count} 项`,
       filteredHoldingsCount: (count: number) => `筛选后展示 ${count} 项`,
+      summary: {
+        ariaLabel: '权威组合快照',
+        totalEquity: '总权益',
+        totalEquityDetail: '权威估值快照',
+        cash: '现金',
+        cashDetail: '持久化账户现金',
+        openHoldings: '当前持仓',
+        openHoldingsDetail: '快照内成员',
+        realizedPnl: '已实现盈亏',
+        realizedPnlDetail: '账本推导汇总',
+      },
+      currentHoldings: {
+        title: '当前持仓',
+        detail:
+          '主表仅展示持久化组合投影中的核心账户事实；成本、数量、行情来源和流水证据在单只持仓详情中展开。',
+      },
+      analysis: {
+        title: '配置与归因',
+        detail: '切换下方分析视角，不改变上方当前持仓的筛选范围。',
+      },
       evidenceReview: {
         title: '证据待复核（不属于当前持仓）',
         detail:
@@ -3316,7 +3355,7 @@ export const copy = {
       sidebarEmpty: '还没有可用的配置视图。',
       toolbar: {
         view: '视角',
-        helper: '账户视角偏重资产结构，策略视角偏重收益质量。',
+        helper: '筛选并排序当前持久化持仓投影。',
         search: '搜索',
         searchPlaceholder: '按代码过滤',
         assetClass: '资产类别',

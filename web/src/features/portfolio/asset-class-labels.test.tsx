@@ -32,8 +32,6 @@ function renderWithLocale(ui: ReactElement, locale: 'en' | 'zh') {
 function renderToolbar(locale: 'en' | 'zh') {
   renderWithLocale(
     <WorkspaceToolbar
-      mode="account"
-      onModeChange={() => undefined}
       search=""
       onSearchChange={() => undefined}
       assetClassFilter="all"
@@ -101,8 +99,6 @@ test('exposes local quote, evidence, and sort controls without mutations', () =>
   const onSortByChange = vi.fn();
   renderWithLocale(
     <WorkspaceToolbar
-      mode="account"
-      onModeChange={() => undefined}
       search=""
       onSearchChange={() => undefined}
       assetClassFilter="all"
@@ -135,8 +131,6 @@ test('exposes local quote, evidence, and sort controls without mutations', () =>
 test('discloses secondary portfolio filters locally with an active count', () => {
   renderWithLocale(
     <WorkspaceToolbar
-      mode="account"
-      onModeChange={() => undefined}
       search=""
       onSearchChange={() => undefined}
       assetClassFilter="all"
