@@ -276,7 +276,12 @@ test('prioritizes blockers, gate evidence, and immutable history', () => {
   );
 
   expect(screen.getByText('Safe next step')).toBeTruthy();
-  expect(screen.getByRole('table', { name: 'Decision gates' })).toBeTruthy();
+  const gateMatrix = screen.getByRole('table', { name: 'Decision gates' });
+  expect(gateMatrix).toBeTruthy();
+  expect(gateMatrix.getAttribute('data-mobile-layout')).toBe('stacked');
+  expect(
+    gateMatrix.querySelector('[data-gate-id="account-truth"]'),
+  ).toBeTruthy();
   expect(screen.getByRole('list', { name: 'Immutable history' })).toBeTruthy();
 });
 

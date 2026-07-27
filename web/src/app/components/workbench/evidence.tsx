@@ -174,13 +174,17 @@ export function GateMatrix({
     <div
       data-workbench-primitive="gate-matrix"
       className={cn(
-        'app-gate-matrix max-w-full overflow-x-auto border-y border-[var(--app-divider)]',
+        'app-gate-matrix max-w-full border-y border-[var(--app-divider)]',
         className,
       )}
     >
-      <table className="w-full min-w-[640px] border-collapse text-left text-xs">
+      <table
+        className="w-full border-collapse text-left text-xs"
+        data-mobile-layout="stacked"
+        data-testid="gate-matrix-responsive-table"
+      >
         <caption className="sr-only">{caption}</caption>
-        <thead className="bg-[var(--app-surface-raised)] text-[var(--app-text-secondary)]">
+        <thead className="sr-only bg-[var(--app-surface-raised)] text-[var(--app-text-secondary)] sm:not-sr-only sm:table-header-group">
           <tr>
             {[labels.gate, labels.state, labels.reason, labels.evidence].map(
               (label) => (
@@ -197,19 +201,32 @@ export function GateMatrix({
         </thead>
         <tbody className="divide-y divide-[var(--app-divider)] bg-[var(--app-surface)]">
           {items.map((item) => (
-            <tr key={item.id}>
-              <th scope="row" className="px-3 py-2.5 font-semibold">
+            <tr
+              key={item.id}
+              className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 px-3 py-3 sm:table-row sm:px-0 sm:py-0"
+              data-gate-id={item.id}
+            >
+              <th
+                scope="row"
+                className="col-start-1 px-0 py-0 text-sm font-semibold sm:table-cell sm:px-3 sm:py-2.5 sm:text-xs"
+              >
                 {item.gate}
               </th>
-              <td className="px-3 py-2.5">
+              <td className="col-start-2 px-0 py-0 sm:table-cell sm:px-3 sm:py-2.5">
                 <StatusBadge tone={GATE_TONES[item.state]}>
                   {item.stateLabel ?? item.state}
                 </StatusBadge>
               </td>
-              <td className="px-3 py-2.5 text-[var(--app-text-secondary)]">
+              <td className="col-span-2 px-0 py-0 text-[var(--app-text-secondary)] sm:table-cell sm:px-3 sm:py-2.5">
+                <span className="mb-0.5 block text-[11px] font-semibold text-[var(--app-text-tertiary)] sm:hidden">
+                  {labels.reason}
+                </span>
                 {item.reason}
               </td>
-              <td className="px-3 py-2.5 text-[var(--app-text-secondary)]">
+              <td className="col-span-2 px-0 py-0 text-[var(--app-text-secondary)] sm:table-cell sm:px-3 sm:py-2.5">
+                <span className="mb-0.5 block text-[11px] font-semibold text-[var(--app-text-tertiary)] sm:hidden">
+                  {labels.evidence}
+                </span>
                 {item.evidence}
                 {item.evidence && item.unblockCondition ? ' · ' : null}
                 {item.unblockCondition}
