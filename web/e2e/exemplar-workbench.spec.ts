@@ -412,7 +412,23 @@ test('exemplar routes remain task-reordered and overflow safe on mobile themes',
   for (const theme of ['light', 'dark']) {
     for (const path of ['/overview', '/portfolio', '/risk', '/backtest']) {
       await page.setViewportSize({ width: 390, height: 844 });
+      const backtestResultsResponse =
+        path === '/backtest'
+          ? page.waitForResponse(
+              (response) =>
+                response.request().method() === 'GET' &&
+                response.url().endsWith('/api/backtest/results'),
+            )
+          : null;
       await page.goto(path);
+      let hasSavedResults = false;
+      if (backtestResultsResponse) {
+        const response = await backtestResultsResponse;
+        expect(response.ok()).toBe(true);
+        const savedResults = (await response.json()) as unknown;
+        hasSavedResults =
+          Array.isArray(savedResults) && savedResults.length > 0;
+      }
       await selectMobileTheme(page, theme as 'light' | 'dark');
 
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
@@ -438,8 +454,22 @@ test('exemplar routes remain task-reordered and overflow safe on mobile themes',
 
       if (path === '/backtest') {
         const tabs = page.getByTestId('backtest-mobile-workspace-tabs');
+        const resultTab = tabs.getByRole('tab', {
+          name: /Results and evidence|结果与证据/,
+        });
         await expect(tabs).toBeVisible();
-        await tabs.getByRole('tab', { name: /Current run|当前运行/ }).click();
+        await expect(tabs).toHaveAttribute(
+          'data-workspace-view',
+          hasSavedResults ? 'results' : 'setup',
+        );
+        await expect(resultTab).toHaveAttribute(
+          'aria-selected',
+          hasSavedResults ? 'true' : 'false',
+        );
+        if (!hasSavedResults) {
+          await resultTab.click();
+        }
+        await expect(resultTab).toHaveAttribute('aria-selected', 'true');
         await expect(page.getByTestId('backtest-result-panel')).toBeVisible();
       }
     }
@@ -548,7 +578,23 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
       '/backtest',
       '/ai-research',
     ]) {
+      const backtestResultsResponse =
+        path === '/backtest'
+          ? page.waitForResponse(
+              (response) =>
+                response.request().method() === 'GET' &&
+                response.url().endsWith('/api/backtest/results'),
+            )
+          : null;
       await page.goto(path);
+      let hasSavedResults = false;
+      if (backtestResultsResponse) {
+        const response = await backtestResultsResponse;
+        expect(response.ok()).toBe(true);
+        const savedResults = (await response.json()) as unknown;
+        hasSavedResults =
+          Array.isArray(savedResults) && savedResults.length > 0;
+      }
       await selectMobileTheme(page, theme as 'light' | 'dark');
 
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
@@ -645,8 +691,17 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
       if (path === '/backtest') {
         const resultTab = page
           .getByTestId('backtest-mobile-workspace-tabs')
-          .getByRole('tab', { name: /Current run|当前运行/ });
-        await resultTab.click();
+          .getByRole('tab', {
+            name: /Results and evidence|结果与证据/,
+          });
+        await expect(resultTab).toHaveAttribute(
+          'aria-selected',
+          hasSavedResults ? 'true' : 'false',
+        );
+        if (!hasSavedResults) {
+          await resultTab.click();
+        }
+        await expect(resultTab).toHaveAttribute('aria-selected', 'true');
         const resultPanel = page.getByTestId('backtest-result-panel');
         await expect(resultPanel).toBeVisible();
         const reportWorkspace = resultPanel.locator(
@@ -678,17 +733,31 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
             reportWorkspace.locator(
               '[data-workbench-primitive="metric-strip"]',
             ),
-          ).toHaveCount(3);
+          ).toHaveCount(2);
           const reportGeometry = await reportWorkspace.evaluate((element) => ({
+            chartTop:
+              element
+                .querySelector('[data-testid="backtest-equity-chart-frame"]')
+                ?.getBoundingClientRect().top ?? null,
             legacyPanels: element.querySelectorAll(
               '.app-panel,.app-panel-strong',
             ).length,
             oversizedRadii: element.querySelectorAll('.rounded-2xl').length,
+            viewportHeight: window.innerHeight,
             width: element.getBoundingClientRect().width,
+            workspaceTop: element.getBoundingClientRect().top,
           }));
           expect(reportGeometry.legacyPanels, theme).toBe(0);
           expect(reportGeometry.oversizedRadii, theme).toBe(0);
           expect(reportGeometry.width, theme).toBeLessThanOrEqual(390);
+          if (reportGeometry.chartTop !== null) {
+            expect(
+              reportGeometry.chartTop - reportGeometry.workspaceTop,
+              theme,
+            ).toBeLessThanOrEqual(
+              reportGeometry.viewportHeight * 0.75,
+            );
+          }
         }
 
         const archiveDisclosure = page.getByTestId(

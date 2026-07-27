@@ -1333,6 +1333,16 @@ test('renders the backtest workspace and saved report history', async () => {
     datasetSnapshot.compareDocumentPosition(strategySnapshot) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
+  const tabs = screen.getByTestId('backtest-mobile-workspace-tabs');
+  await waitFor(() => {
+    expect(tabs.getAttribute('data-workspace-view')).toBe('results');
+  });
+  expect(
+    within(tabs).getByRole('tab', { name: 'Results and evidence' }),
+  ).toBeTruthy();
+  expect(screen.getByTestId('backtest-result-panel').className).not.toContain(
+    'hidden xl:block',
+  );
 });
 
 test('keeps setup and current results in one primary workspace with mobile tabs', async () => {
@@ -1347,6 +1357,7 @@ test('keeps setup and current results in one primary workspace with mobile tabs'
   expect(primary.contains(setup)).toBe(true);
   expect(primary.contains(results)).toBe(true);
   expect(tabs.getAttribute('role')).toBe('tablist');
+  expect(tabs.getAttribute('data-workspace-view')).toBe('setup');
   expect(
     setup!.compareDocumentPosition(results) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
@@ -1372,7 +1383,9 @@ test('keeps setup and current results in one primary workspace with mobile tabs'
     document.getElementById('backtest-advanced-tools')!.className,
   ).not.toContain('hidden');
 
-  fireEvent.click(within(tabs).getByRole('tab', { name: 'Current run' }));
+  fireEvent.click(
+    within(tabs).getByRole('tab', { name: 'Results and evidence' }),
+  );
   expect(results.className).not.toContain('hidden xl:block');
   expect(setup!.className).toContain('hidden xl:block');
 });

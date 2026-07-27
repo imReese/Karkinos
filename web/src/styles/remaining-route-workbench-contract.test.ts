@@ -255,6 +255,7 @@ describe('remaining route workbench contract', () => {
     expect(BACKTEST_REPORT).toContain('<FilterBar');
     expect(BACKTEST_REPORT).toContain('<MetricStrip');
     expect(BACKTEST_REPORT).toContain('<EvidenceState');
+    expect(BACKTEST_REPORT).toContain('selectedSummary && !report.data');
     expect(BACKTEST_METRICS.match(/<MetricStrip\s/g)).toHaveLength(2);
 
     for (const reportSurface of [
@@ -307,6 +308,12 @@ describe('remaining route workbench contract', () => {
 
     expect(currentWorkspace).toContain(
       'data-testid="backtest-primary-workbench"',
+    );
+    expect(currentWorkspace).toContain('useBacktestResultsQuery()');
+    expect(currentWorkspace).toContain("setMobileWorkspaceView('results')");
+    expect(currentWorkspace).toContain('labels.resultsWorkspaceTab');
+    expect(currentWorkspace).toContain(
+      'data-testid="backtest-persisted-evidence"',
     );
     expect(currentWorkspace).toContain('<StatusBadge tone="warning">');
     expect(currentWorkspace).toContain('rounded-[var(--app-radius-control)]');
