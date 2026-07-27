@@ -757,7 +757,7 @@ test('labels overview pnl as latest trading day when today is market closed', as
   expect(within(metricsRail).queryByText('Today PnL')).toBeNull();
 });
 
-test('puts current holdings before the action queue and analysis, then broad-market context', async () => {
+test('puts the action queue before holdings in the reading order while preserving the desktop split', async () => {
   renderOverviewPage();
 
   const workbench = await screen.findByTestId('overview-daily-workbench');
@@ -794,9 +794,11 @@ test('puts current holdings before the action queue and analysis, then broad-mar
   expect(workbench.contains(holdings)).toBe(true);
   expect(workbench.contains(performanceCard)).toBe(false);
   expect(
-    holdings.compareDocumentPosition(todayQueue) &
+    todayQueue.compareDocumentPosition(holdings) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
+  expect(todayQueue.parentElement?.className).toContain('xl:order-2');
+  expect(holdings.className).toContain('xl:order-1');
   expect(
     workbench.compareDocumentPosition(performanceCard) &
       Node.DOCUMENT_POSITION_FOLLOWING,
