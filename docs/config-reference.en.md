@@ -59,6 +59,7 @@ Unknown top-level fields, unknown group fields, wrong field types, and fields su
 | `host` | string | `0.0.0.0` | API bind address; local development may use `127.0.0.1`. |
 | `port` | integer | `8000` | API bind port. |
 | `live_auto_start` | boolean | `true` | Starts the built-in market scheduler with the Web service; grants no order authority. |
+| `market_calendar_auto_sync` | boolean | `true` | With live startup enabled, automatically ingests the current SSE calendar, verifies it against the official annual closure notice, and starts ingesting next year in December. |
 | `cors_allowed_origins` | string[] | local frontend origins | Browser origins allowed to call the API. |
 | `notification` | object | `{"type":"console"}` | Notification channel type only: `console`, `telegram`, or `wechat`. Credential and destination fields are rejected. |
 
@@ -123,12 +124,14 @@ explicit fallback but is no longer required for the normal enabled local path.
 | `transfer_fee_rate` | number/string | Default transfer-fee rate. |
 | `exchange_transfer_fee_rates` | object | Per-exchange transfer-fee overrides. |
 | `other_fee_rate` | number/string | Other fee rate. |
+| `rounding.money_precision` | number/string | Currency precision for each fee component, such as `0.01` for cents. |
+| `rounding.mode` | string | Rounding mode: `half_up`, `half_even`, `down`, or `up`. |
 | `rules` | array | Detailed rules by asset, market, side, and fee component. |
 | `limitations` | string[] | Known assumptions and review items. |
 
 `account_identifier_saved`, `screenshots_saved`, and `private_exports_saved` must remain `false`. Full account identifiers, screenshots, statements, and real exports are forbidden.
 
-The parser also accepts `profile_id`, `schema_version`, `source`, `effective_from`, `captured_at`, `rounding`, `rule_application`, `broker_absorbed_components`, `commission`, and `taxes_and_fees` as structured import/normalization inputs. They do not become separate account facts; runtime retains only normalized fee terms, schedule/profile identity, and limitations.
+The parser also accepts `profile_id`, `schema_version`, `source`, `effective_from`, `captured_at`, `rounding`, `rule_application`, `broker_absorbed_components`, `commission`, and `taxes_and_fees` as structured import/normalization inputs. They do not become separate account facts; runtime retains normalized fee terms, rounding rules, schedule/profile identity, and limitations. Configured rounding applies only to estimates: each component is rounded to the configured precision before totals are summed, while broker statements still override estimates.
 
 `broker_fee_schedule`, `account_commission_rate`, and `account_min_commission` are migration-only inputs. New writes use `broker_fee`.
 

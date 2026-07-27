@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import ROUND_DOWN, ROUND_HALF_EVEN, ROUND_HALF_UP, ROUND_UP, Decimal
 
 from core.types import OrderSide
 from execution.commission import (
@@ -17,6 +17,12 @@ MANUAL_CONFIGURED_FEE_RULE_ID = "manual_configured_commission"
 MANUAL_CONFIGURED_FEE_RULE_VERSION = "broker_fee_schedule"
 MANUAL_FEE_INPUT_RULE_ID = "manual_fee_input"
 MANUAL_FEE_INPUT_RULE_VERSION = "manual_fee_input"
+_ROUNDING_MODES = {
+    "half_up": ROUND_HALF_UP,
+    "half_even": ROUND_HALF_EVEN,
+    "down": ROUND_DOWN,
+    "up": ROUND_UP,
+}
 
 
 @dataclass(frozen=True)
@@ -115,10 +121,20 @@ def resolve_manual_trade_fee_breakdown(
         Decimal(str(price)),
         Decimal(str(quantity)),
     )
+    money_precision, rounding_mode = _rounding_terms(schedule)
+    if money_precision is not None:
+        breakdown = _round_fee_components(
+            breakdown,
+            precision=money_precision,
+            rounding_mode=rounding_mode,
+        )
     return ManualTradeFeeResult(
         commission=float(breakdown.commission),
         total_fee=float(breakdown.total_fee),
-        fee_breakdown_json=fee_breakdown_payload(breakdown),
+        fee_breakdown_json=fee_breakdown_payload(
+            breakdown,
+            quantization=money_precision,
+        ),
         fee_rule_id=breakdown.fee_rule_id,
         fee_rule_version=_fee_rule_version(schedule),
         note=_account_commission_note(rate, min_commission),
@@ -136,15 +152,57 @@ def manual_fee_input_payload(fee: float) -> dict[str, str]:
     }
 
 
-def fee_breakdown_payload(breakdown: FeeBreakdown) -> dict[str, str]:
+def fee_breakdown_payload(
+    breakdown: FeeBreakdown,
+    *,
+    quantization: Decimal | None = None,
+) -> dict[str, str]:
     """Return the canonical JSON payload for a configured fee breakdown."""
+    component_quantization = (
+        str(quantization) if quantization is not None else "0.000001"
+    )
     return {
         "commission": _fee_component_text(breakdown.commission, "0.01"),
-        "stamp_tax": _fee_component_text(breakdown.stamp_tax),
-        "transfer_fee": _fee_component_text(breakdown.transfer_fee),
-        "other_fees": _fee_component_text(breakdown.other_fees),
-        "total_fee": _fee_component_text(breakdown.total_fee),
+        "stamp_tax": _fee_component_text(breakdown.stamp_tax, component_quantization),
+        "transfer_fee": _fee_component_text(
+            breakdown.transfer_fee, component_quantization
+        ),
+        "other_fees": _fee_component_text(breakdown.other_fees, component_quantization),
+        "total_fee": _fee_component_text(breakdown.total_fee, component_quantization),
     }
+
+
+def _rounding_terms(schedule) -> tuple[Decimal | None, str]:
+    precision = getattr(schedule, "money_precision", None)
+    if precision is None:
+        return None, "none"
+    mode = str(getattr(schedule, "money_rounding_mode", "half_up"))
+    if mode not in _ROUNDING_MODES:
+        raise ValueError(f"unsupported broker fee rounding mode: {mode}")
+    return Decimal(str(precision)), mode
+
+
+def _round_fee_components(
+    breakdown: FeeBreakdown,
+    *,
+    precision: Decimal,
+    rounding_mode: str,
+) -> FeeBreakdown:
+    rounding = _ROUNDING_MODES[rounding_mode]
+    commission = breakdown.commission.quantize(precision, rounding=rounding)
+    stamp_tax = breakdown.stamp_tax.quantize(precision, rounding=rounding)
+    transfer_fee = breakdown.transfer_fee.quantize(precision, rounding=rounding)
+    other_fees = breakdown.other_fees.quantize(precision, rounding=rounding)
+    return FeeBreakdown(
+        gross_amount=breakdown.gross_amount,
+        commission=commission,
+        stamp_tax=stamp_tax,
+        transfer_fee=transfer_fee,
+        other_fees=other_fees,
+        total_fee=commission + stamp_tax + transfer_fee + other_fees,
+        fee_rule_id=breakdown.fee_rule_id,
+        limitations=breakdown.limitations,
+    )
 
 
 def _decimal_config_value(config, name: str, fallback: str) -> Decimal:

@@ -3,6 +3,7 @@
         "host": "127.0.0.1",
         "port": 8000,
         "live_auto_start": true,
+        "market_calendar_auto_sync": true,
         "cors_allowed_origins": [
             "http://localhost:5173",
             "http://127.0.0.1:5173"
@@ -38,6 +39,10 @@
         "screenshots_saved": false,
         "private_exports_saved": false,
         "precedence": "broker_statement_overrides_config",
+        "rounding": {
+            "money_precision": "0.01",
+            "mode": "half_up"
+        },
         "stock_a_commission_rate": 0.0001,
         "stock_a_min_commission": 5.0,
         "fund_etf_commission_rate": 0.0001,

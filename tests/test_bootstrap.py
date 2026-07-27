@@ -58,6 +58,7 @@ def test_server_config_loads_grouped_runtime_sections(tmp_path):
                     "host": "127.0.0.1",
                     "port": 9000,
                     "live_auto_start": False,
+                    "market_calendar_auto_sync": False,
                 },
                 "data_source": {
                     "provider": "tushare",
@@ -84,6 +85,7 @@ def test_server_config_loads_grouped_runtime_sections(tmp_path):
     assert config.host == "127.0.0.1"
     assert config.port == 9000
     assert config.live_auto_start is False
+    assert config.market_calendar_auto_sync is False
     assert config.data_source == "tushare"
     assert config.tushare_token == ""
     assert config.data_source_provider_config == DataSourceProviderConfig(
@@ -244,6 +246,10 @@ def test_server_config_rejects_credentials_in_json(tmp_path, payload, message):
     [
         ({"server": {"port": "8000"}}, "server.port"),
         ({"server": {"live_auto_start": "true"}}, "live_auto_start"),
+        (
+            {"server": {"market_calendar_auto_sync": "true"}},
+            "market_calendar_auto_sync",
+        ),
         ({"server": {"cors_allowed_origins": []}}, "cors_allowed_origins"),
         ({"data_source": {"provider": "unknown"}}, "data_source.provider"),
         (
@@ -930,6 +936,10 @@ def test_server_config_loads_structured_broker_fee_schedule(tmp_path):
                         "shenzhen": 0,
                     },
                     "other_fee_rate": 0,
+                    "rounding": {
+                        "money_precision": "0.01",
+                        "mode": "half_up",
+                    },
                     "limitations": [
                         "transfer_fee_exchange_not_split",
                         "broker_regulatory_fees_assumed_absorbed",
@@ -956,6 +966,8 @@ def test_server_config_loads_structured_broker_fee_schedule(tmp_path):
             "shenzhen": Decimal("0"),
         },
         other_fee_rate=Decimal("0"),
+        money_precision=Decimal("0.01"),
+        money_rounding_mode="half_up",
         limitations=("broker_regulatory_fees_assumed_absorbed",),
     )
     assert config.account_commission_rate == Decimal("0.00015")
@@ -1154,6 +1166,7 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
         "host": "127.0.0.1",
         "port": 8000,
         "live_auto_start": True,
+        "market_calendar_auto_sync": True,
         "cors_allowed_origins": [
             "http://localhost:5173",
             "http://127.0.0.1:5173",
