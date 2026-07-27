@@ -3,14 +3,32 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import json
+import re
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from enum import Enum
 from types import MappingProxyType
-from typing import Any, Iterable, Mapping, Protocol
+from typing import Any, Protocol
+from zoneinfo import ZoneInfo
 
 MARKET_CALENDAR_SCHEMA_VERSION = "karkinos.market_calendar.v1"
+SSE_OFFICIAL_HOLIDAY_NOTICE_URL = (
+    "https://www.sse.com.cn/disclosure/dealinstruc/closed/"
+)
+
+_SSE_REQUIRED_HOLIDAY_NAMES = (
+    "元旦",
+    "春节",
+    "清明节",
+    "劳动节",
+    "端午节",
+    "中秋节",
+    "国庆节",
+)
+_SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 
 DEFAULT_MARKET_HOLIDAYS: Mapping[str, str] = MappingProxyType({})
 
@@ -125,6 +143,62 @@ class HolidayLabelProvider(Protocol):
         closed_dates: Iterable[str],
     ) -> Mapping[str, HolidayLabel]:
         """Return labels keyed by ISO date for known non-trading days."""
+
+
+@dataclass(frozen=True)
+class OfficialMarketHolidayNotice:
+    """One parsed, fingerprinted exchange holiday notice."""
+
+    exchange: str
+    year: int
+    source_url: str
+    source_fingerprint: str
+    fetched_at: str
+    notice_title: str
+    day_labels: Mapping[str, str]
+    reopen_dates: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class OfficialMarketCalendarVerification:
+    """Deterministic comparison of one provider calendar and official notice."""
+
+    status: str
+    issues: tuple[str, ...]
+
+    @property
+    def verified(self) -> bool:
+        return self.status == "verified"
+
+
+class SseOfficialHolidayNoticeProvider:
+    """Fetch and parse the fixed official SSE annual closure page."""
+
+    provider_name = "sse_official_notice"
+    source_url = SSE_OFFICIAL_HOLIDAY_NOTICE_URL
+
+    def fetch_notice(self, *, year: int) -> OfficialMarketHolidayNotice:
+        try:
+            import requests
+        except ImportError as exc:  # pragma: no cover - environment dependent
+            raise RuntimeError("requests is not installed") from exc
+
+        response = requests.get(
+            self.source_url,
+            headers={"User-Agent": "Karkinos/market-calendar-audit"},
+            timeout=10,
+        )
+        response.raise_for_status()
+        try:
+            document = response.content.decode("utf-8")
+        except UnicodeDecodeError:
+            document = response.text
+        return parse_sse_official_holiday_notice(
+            document,
+            year=year,
+            source_url=self.source_url,
+            fetched_at=datetime.now(_SHANGHAI_TZ).isoformat(),
+        )
 
 
 @dataclass(frozen=True)
@@ -486,6 +560,198 @@ def build_market_calendar_provider(
     if provider_name == "akshare":
         return AkShareMarketCalendarProvider(holiday_label_provider=labels)
     raise ValueError(f"Unsupported market calendar provider: {provider}")
+
+
+def parse_sse_official_holiday_notice(
+    document: str,
+    *,
+    year: int,
+    source_url: str = SSE_OFFICIAL_HOLIDAY_NOTICE_URL,
+    fetched_at: str | None = None,
+) -> OfficialMarketHolidayNotice:
+    """Parse one complete annual holiday table from the official SSE page."""
+    normalized_year = int(year)
+    title = f"{normalized_year}年休市安排"
+    section_match = re.search(
+        rf"<strong[^>]*>\s*{normalized_year}年休市安排\s*</strong>(?P<body>.*)",
+        document,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    if section_match is None:
+        raise ValueError(f"official SSE holiday notice does not contain {title}")
+    table_match = re.search(
+        r"<table\b[^>]*>(?P<table>.*?)</table>",
+        section_match.group("body"),
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    if table_match is None:
+        raise ValueError(f"official SSE holiday notice has no table for {title}")
+
+    holiday_descriptions: dict[str, str] = {}
+    for row_html in re.findall(
+        r"<tr\b[^>]*>(.*?)</tr>",
+        table_match.group("table"),
+        flags=re.DOTALL | re.IGNORECASE,
+    ):
+        cells = re.findall(
+            r"<td\b[^>]*>(.*?)</td>",
+            row_html,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+        if len(cells) < 2:
+            continue
+        holiday_name = _html_fragment_text(cells[0]).rstrip("：:").strip()
+        if holiday_name not in _SSE_REQUIRED_HOLIDAY_NAMES:
+            continue
+        holiday_descriptions[holiday_name] = _html_fragment_text(cells[1])
+
+    missing_names = sorted(set(_SSE_REQUIRED_HOLIDAY_NAMES) - set(holiday_descriptions))
+    if missing_names:
+        raise ValueError(
+            "official SSE holiday notice is incomplete for "
+            f"{normalized_year}: missing {', '.join(missing_names)}"
+        )
+
+    day_labels: dict[str, str] = {}
+    reopen_dates: list[str] = []
+    for holiday_name in _SSE_REQUIRED_HOLIDAY_NAMES:
+        description = holiday_descriptions[holiday_name]
+        range_match = re.search(
+            r"(?P<start_month>\d{1,2})月(?P<start_day>\d{1,2})日"
+            r".*?至(?:(?P<end_month>\d{1,2})月)?(?P<end_day>\d{1,2})日"
+            r".*?休市",
+            description,
+        )
+        if range_match is None:
+            raise ValueError(
+                f"official SSE holiday range is unparseable: {holiday_name}"
+            )
+        start_month = int(range_match.group("start_month"))
+        start_day = int(range_match.group("start_day"))
+        end_month = int(range_match.group("end_month") or start_month)
+        end_day = int(range_match.group("end_day"))
+        start = date(normalized_year, start_month, start_day)
+        end = date(normalized_year, end_month, end_day)
+        if end < start:
+            raise ValueError(f"official SSE holiday range is reversed: {holiday_name}")
+        current = start
+        while current <= end:
+            day_labels[current.isoformat()] = f"{holiday_name}休市"
+            current += timedelta(days=1)
+
+        reopen_match = re.search(
+            r"(?P<month>\d{1,2})月(?P<day>\d{1,2})日"
+            r"(?:（[^）]+）|\([^)]*\))?起照常开市",
+            description,
+        )
+        if reopen_match is None:
+            raise ValueError(f"official SSE reopen date is unparseable: {holiday_name}")
+        reopen_dates.append(
+            date(
+                normalized_year,
+                int(reopen_match.group("month")),
+                int(reopen_match.group("day")),
+            ).isoformat()
+        )
+
+    return OfficialMarketHolidayNotice(
+        exchange="SSE",
+        year=normalized_year,
+        source_url=source_url,
+        source_fingerprint=hashlib.sha256(document.encode("utf-8")).hexdigest(),
+        fetched_at=fetched_at or datetime.now(_SHANGHAI_TZ).isoformat(),
+        notice_title=title,
+        day_labels=MappingProxyType(day_labels),
+        reopen_dates=tuple(reopen_dates),
+    )
+
+
+def verify_official_market_calendar(
+    snapshot: MarketCalendarSnapshot,
+    notice: OfficialMarketHolidayNotice,
+) -> OfficialMarketCalendarVerification:
+    """Fail closed unless provider dates exactly support the official notice."""
+    issues: list[str] = []
+    if snapshot.exchange.upper() != notice.exchange.upper():
+        issues.append(
+            f"exchange mismatch: provider={snapshot.exchange}, notice={notice.exchange}"
+        )
+    if snapshot.year != notice.year:
+        issues.append(f"year mismatch: provider={snapshot.year}, notice={notice.year}")
+
+    expected_days = 366 if _is_leap_year(snapshot.year) else 365
+    if len(snapshot.days) != expected_days:
+        actual_days = len(snapshot.days)
+        issues.append(
+            f"provider calendar is incomplete: {actual_days}/{expected_days} days"
+        )
+    if not 200 <= snapshot.trading_day_count <= 260:
+        issues.append(
+            f"provider trading-day count is implausible: {snapshot.trading_day_count}"
+        )
+
+    by_date = {day.date: day for day in snapshot.days}
+    if len(by_date) != len(snapshot.days):
+        issues.append("provider calendar contains duplicate dates")
+
+    weekend_trading_dates = sorted(
+        day.date
+        for day in snapshot.days
+        if day.is_trading_day and _parse_calendar_date(day.date).weekday() >= 5
+    )
+    if weekend_trading_dates:
+        issues.append(
+            "provider marks weekends as trading days: "
+            + ", ".join(weekend_trading_dates)
+        )
+
+    for date_text in sorted(notice.day_labels):
+        day = by_date.get(date_text)
+        if day is None:
+            issues.append(
+                f"official holiday missing from provider calendar: {date_text}"
+            )
+        elif day.is_trading_day:
+            issues.append(f"official holiday marked open by provider: {date_text}")
+
+    for date_text in notice.reopen_dates:
+        day = by_date.get(date_text)
+        if day is None:
+            issues.append(
+                f"official reopen date missing from provider calendar: {date_text}"
+            )
+        elif not day.is_trading_day:
+            issues.append(
+                f"official reopen date marked closed by provider: {date_text}"
+            )
+
+    official_closed_dates = set(notice.day_labels)
+    unexplained_weekday_closures = sorted(
+        day.date
+        for day in snapshot.days
+        if not day.is_trading_day
+        and _parse_calendar_date(day.date).weekday() < 5
+        and day.date not in official_closed_dates
+    )
+    if unexplained_weekday_closures:
+        issues.append(
+            "provider has weekday closures absent from official notice: "
+            + ", ".join(unexplained_weekday_closures)
+        )
+
+    return OfficialMarketCalendarVerification(
+        status="verified" if not issues else "needs_review",
+        issues=tuple(issues),
+    )
+
+
+def _html_fragment_text(fragment: str) -> str:
+    without_tags = re.sub(r"<[^>]+>", "", fragment)
+    return " ".join(html.unescape(without_tags).replace("\xa0", " ").split())
+
+
+def _is_leap_year(year: int) -> bool:
+    return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
 
 
 def _parse_calendar_date(value: str | date | datetime) -> date:

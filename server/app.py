@@ -165,6 +165,9 @@ async def lifespan(app: FastAPI):
     from notification.notifier import build_notifier
     from server.bootstrap import load_runtime_config
     from server.config import BrokerStatementCollectorConfig, ServerConfig
+    from server.services.market_calendar_automation import (
+        run_market_calendar_automation_loop,
+    )
 
     # create_app() loads the runtime config once and lifespan reuses the same
     # object so config.json remains a startup-only input.
@@ -263,6 +266,7 @@ async def lifespan(app: FastAPI):
     # 启动事件转发任务
     forward_task = asyncio.create_task(_forward_events(bridge, hub))
     broker_statement_collector_task: asyncio.Task[None] | None = None
+    market_calendar_task: asyncio.Task[None] | None = None
     if collector_config.enabled:
         broker_statement_collector_task = asyncio.create_task(
             run_local_broker_statement_collector(broker_statement_collector),
@@ -279,12 +283,23 @@ async def lifespan(app: FastAPI):
     # 自动启动实时监控
     if config.live_auto_start:
         scheduler.start()
+        if config.market_calendar_auto_sync:
+            market_calendar_task = asyncio.create_task(
+                run_market_calendar_automation_loop(db=db, config=config),
+                name="market-calendar-automation",
+            )
 
     logger.info("Karkinos Server started")
 
     yield
 
     # ---- Shutdown ----
+    if market_calendar_task is not None:
+        market_calendar_task.cancel()
+        try:
+            await market_calendar_task
+        except asyncio.CancelledError:
+            pass
     if broker_statement_collector_task is not None:
         broker_statement_collector_task.cancel()
         try:

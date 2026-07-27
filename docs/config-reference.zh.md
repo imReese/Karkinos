@@ -59,6 +59,7 @@ python -m server
 | `host` | string | `0.0.0.0` | API 监听地址；本机开发可使用 `127.0.0.1`。 |
 | `port` | integer | `8000` | API 监听端口。 |
 | `live_auto_start` | boolean | `true` | 是否随 Web 服务启动内建行情调度器；不会自动授予下单权限。 |
+| `market_calendar_auto_sync` | boolean | `true` | 实时启动开启时，自动采集当年上交所日历并与年度官方休市公告交叉核验；每年 12 月起同时采集下一年。 |
 | `cors_allowed_origins` | string[] | 本机前端地址 | 允许访问 API 的浏览器 origin。 |
 | `notification` | object | `{"type":"console"}` | 只保存通知通道类型：`console`、`telegram` 或 `wechat`；凭证和目标字段会被拒绝。 |
 
@@ -120,12 +121,14 @@ fallback，但不再是已启用本地 collector 的日常必需步骤。
 | `transfer_fee_rate` | number/string | 默认过户费率。 |
 | `exchange_transfer_fee_rates` | object | 按交易所覆盖过户费率。 |
 | `other_fee_rate` | number/string | 其他费用率。 |
+| `rounding.money_precision` | number/string | 费用分项的货币精度，例如 `0.01` 表示按分。 |
+| `rounding.mode` | string | 舍入模式：`half_up`、`half_even`、`down` 或 `up`。 |
 | `rules` | array | 按资产、市场、方向和费用组件定义的细分规则。 |
 | `limitations` | string[] | 当前费用模型的已知假设和待复核项。 |
 
 `account_identifier_saved`、`screenshots_saved` 和 `private_exports_saved` 必须保持 `false`。完整账号、截图、交割单或真实导出不得写入配置。
 
-解析器还接受 `profile_id`、`schema_version`、`source`、`effective_from`、`captured_at`、`rounding`、`rule_application`、`broker_absorbed_components`、`commission` 和 `taxes_and_fees` 作为结构化导入/归一化输入。它们不会成为独立账户事实；运行时只保留归一化后的费用条款、schedule/profile 标识和限制。
+解析器还接受 `profile_id`、`schema_version`、`source`、`effective_from`、`captured_at`、`rounding`、`rule_application`、`broker_absorbed_components`、`commission` 和 `taxes_and_fees` 作为结构化导入/归一化输入。它们不会成为独立账户事实；运行时保留归一化后的费用条款、舍入规则、schedule/profile 标识和限制。配置舍入只用于估算：各费用分项先按指定精度舍入，再求总费用；券商账单仍覆盖估算。
 
 旧字段 `broker_fee_schedule`、`account_commission_rate` 和 `account_min_commission` 仅用于迁移读取；新写入统一使用 `broker_fee`。
 

@@ -7496,6 +7496,117 @@ def test_portfolio_trade_uses_configured_account_commission_when_missing(
     assert ledger_entry["cost_basis_method"] == "moving_average_buy_cost"
 
 
+def test_portfolio_stock_trade_persists_refreshable_asset_identity(monkeypatch):
+    from server.routes import portfolio as portfolio_routes
+
+    router = portfolio_routes.create_router()
+    trade_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio/trade"
+    )
+
+    class FakeDb:
+        def __init__(self):
+            self.trades: list[dict] = []
+            self.ledger_entries: list[dict] = []
+            self.watchlist_assets: list[dict] = []
+            self.instrument_metadata: list[dict] = []
+
+        async def add_trade(self, **payload):
+            trade_id = len(self.trades) + 1
+            self.trades.insert(
+                0,
+                {
+                    "id": trade_id,
+                    **payload,
+                    "created_at": "2026-07-27T11:30:01+08:00",
+                },
+            )
+            return trade_id
+
+        def insert_ledger_entry_sync(self, **payload):
+            self.ledger_entries.append(payload)
+
+        async def get_trades(self, limit=50, offset=0):
+            return self.trades[offset : offset + limit]
+
+        def list_watchlist_assets_sync(self):
+            return list(self.watchlist_assets)
+
+        def upsert_watchlist_asset_sync(self, **payload):
+            self.watchlist_assets.append(payload)
+            return payload
+
+        def get_instrument_metadata_sync(self, symbol, asset_type=None):
+            return next(
+                (
+                    row
+                    for row in self.instrument_metadata
+                    if row["symbol"] == symbol
+                    and (asset_type is None or row["asset_type"] == asset_type)
+                ),
+                None,
+            )
+
+        def upsert_instrument_metadata_sync(self, **payload):
+            self.instrument_metadata.append(payload)
+            return payload
+
+    db = FakeDb()
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            account_commission_rate=0.00015,
+            account_min_commission=5.0,
+        ),
+        scheduler=SimpleNamespace(is_running=False),
+        db=db,
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+
+    response = asyncio.run(
+        trade_route.endpoint(
+            portfolio_routes.TradeCreate(
+                timestamp="2026-07-24T10:22:47+08:00",
+                symbol="600172",
+                direction="buy",
+                quantity=100,
+                price=11.21,
+                asset_class="stock",
+            )
+        )
+    )
+
+    assert response.symbol == "600172"
+    assert db.watchlist_assets == [
+        {
+            "symbol": "600172",
+            "asset_class": "stock",
+            "display_name": "600172",
+            "source": "trade",
+        }
+    ]
+    assert db.instrument_metadata == [
+        {
+            "symbol": "600172",
+            "asset_type": "stock",
+            "display_name": "600172",
+            "provider_symbol": "600172",
+            "source": "trade",
+        }
+    ]
+
+    portfolio_routes._ensure_asset_config(
+        fake_state,
+        symbol="600172",
+        asset_class="stock",
+        display_name="placeholder-must-not-overwrite",
+    )
+
+    assert len(db.watchlist_assets) == 1
+    assert len(db.instrument_metadata) == 1
+
+
 def test_portfolio_trade_preview_uses_configured_fee_contract_without_writing(
     monkeypatch,
 ):

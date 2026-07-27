@@ -104,7 +104,14 @@ _EXCHANGE_ALIASES = {
 }
 
 _SERVER_CONFIG_GROUP_FIELDS = frozenset(
-    {"host", "port", "live_auto_start", "cors_allowed_origins", "notification"}
+    {
+        "host",
+        "port",
+        "live_auto_start",
+        "market_calendar_auto_sync",
+        "cors_allowed_origins",
+        "notification",
+    }
 )
 _DATA_SOURCE_CONFIG_GROUP_FIELDS = frozenset(
     {"provider", "live_poll_interval", "provider_config"}
@@ -287,6 +294,8 @@ class BrokerFeeScheduleConfig:
     transfer_fee_rate: Decimal = Decimal("0.00001")
     exchange_transfer_fee_rates: dict[str, Decimal] = field(default_factory=dict)
     other_fee_rate: Decimal = Decimal("0")
+    money_precision: Decimal | None = None
+    money_rounding_mode: str = "none"
     limitations: tuple[str, ...] = (
         "transfer_fee_exchange_not_split",
         "broker_regulatory_fees_assumed_absorbed",
@@ -543,6 +552,7 @@ class ServerConfig(BacktestConfig):
     host: str = "0.0.0.0"
     port: int = 8000
     live_auto_start: bool = True
+    market_calendar_auto_sync: bool = True
     cors_allowed_origins: list[str] = field(
         default_factory=lambda: [
             "http://localhost:5173",
@@ -655,6 +665,10 @@ def _validate_core_runtime_values(data: dict) -> None:
         raise ValueError("server.port must be an integer within [1, 65535]")
     if "live_auto_start" in data and not isinstance(data["live_auto_start"], bool):
         raise ValueError("server.live_auto_start must be boolean")
+    if "market_calendar_auto_sync" in data and not isinstance(
+        data["market_calendar_auto_sync"], bool
+    ):
+        raise ValueError("server.market_calendar_auto_sync must be boolean")
     if "cors_allowed_origins" in data:
         origins = data["cors_allowed_origins"]
         if (
@@ -922,6 +936,7 @@ def _parse_broker_fee_schedule_config(value: object) -> BrokerFeeScheduleConfig:
     if not isinstance(limitations, list | tuple):
         raise ValueError("broker fee schedule limitations must be a list")
     exchange_transfer_fee_rates = _exchange_transfer_fee_rates(value)
+    money_precision, money_rounding_mode = _broker_fee_rounding(value.get("rounding"))
     limitation_values = [str(item).strip() for item in limitations if str(item).strip()]
     if exchange_transfer_fee_rates:
         limitation_values = [
@@ -1035,8 +1050,33 @@ def _parse_broker_fee_schedule_config(value: object) -> BrokerFeeScheduleConfig:
                 default="0",
             ),
         ),
+        money_precision=money_precision,
+        money_rounding_mode=money_rounding_mode,
         limitations=tuple(dict.fromkeys(limitation_values)),
     )
+
+
+def _broker_fee_rounding(value: object) -> tuple[Decimal | None, str]:
+    if value is None:
+        return None, "none"
+    if not isinstance(value, dict):
+        raise ValueError("broker fee schedule rounding must be an object")
+    unknown_fields = sorted(set(value) - {"money_precision", "mode"})
+    if unknown_fields:
+        raise ValueError(
+            "broker fee schedule rounding contains unsupported fields: "
+            + ", ".join(unknown_fields)
+        )
+    precision = Decimal(str(value.get("money_precision", "0.01")))
+    if precision <= 0:
+        raise ValueError("broker fee schedule money_precision must be positive")
+    mode = str(value.get("mode", "half_up")).strip().lower()
+    if mode not in {"half_up", "half_even", "down", "up"}:
+        raise ValueError(
+            "broker fee schedule rounding mode must be one of: "
+            "half_up, half_even, down, up"
+        )
+    return precision, mode
 
 
 def _decimal_fee_config(

@@ -70,6 +70,42 @@ def test_manual_trade_fee_service_prefers_broker_fee_schedule_account_terms():
     assert "万1.5" in resolved.note
 
 
+def test_manual_trade_fee_service_rounds_each_component_to_broker_money_precision():
+    from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
+
+    resolved = resolve_manual_trade_fee_breakdown(
+        SimpleNamespace(
+            account_commission_rate=0.00015,
+            account_min_commission=5,
+            broker_fee_schedule=SimpleNamespace(
+                stock_a_commission_rate=0.00015,
+                stock_a_min_commission=5,
+                stamp_tax_rate=0.0005,
+                transfer_fee_rate=0.00001,
+                exchange_transfer_fee_rates={"shanghai": "0.00001"},
+                other_fee_rate=0,
+                money_precision="0.01",
+                money_rounding_mode="half_up",
+            ),
+        ),
+        asset_class="stock",
+        direction="buy",
+        quantity=100,
+        price=11.21,
+        symbol="600172",
+    )
+
+    assert resolved is not None
+    assert resolved.fee_breakdown_json == {
+        "commission": "5.00",
+        "stamp_tax": "0.00",
+        "transfer_fee": "0.01",
+        "other_fees": "0.00",
+        "total_fee": "5.01",
+    }
+    assert resolved.total_fee == 5.01
+
+
 def test_manual_trade_fee_service_uses_symbol_exchange_transfer_fee_split():
     from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
 

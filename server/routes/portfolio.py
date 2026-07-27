@@ -255,20 +255,50 @@ def _ensure_asset_config(
     display_name: str | None = None,
 ) -> None:
     db = getattr(state, "db", None)
+    existing_display_name = None
+    list_watchlist = getattr(db, "list_watchlist_assets_sync", None)
+    if callable(list_watchlist):
+        try:
+            existing_watchlist = next(
+                (
+                    asset
+                    for asset in list_watchlist() or []
+                    if str(asset.get("symbol") or "").strip().lower()
+                    == symbol.strip().lower()
+                ),
+                None,
+            )
+        except Exception:
+            existing_watchlist = None
+        if existing_watchlist is not None:
+            existing_display_name = (
+                str(existing_watchlist.get("display_name") or "").strip() or None
+            )
+
     upsert_watchlist = getattr(db, "upsert_watchlist_asset_sync", None)
-    if callable(upsert_watchlist):
+    if callable(upsert_watchlist) and existing_display_name is None:
         upsert_watchlist(
             symbol=symbol,
             asset_class=asset_class,
             display_name=display_name or symbol,
             source="trade",
         )
+
+    existing_metadata = None
+    get_metadata = getattr(db, "get_instrument_metadata_sync", None)
+    if callable(get_metadata):
+        try:
+            existing_metadata = get_metadata(symbol, asset_class)
+            if existing_metadata is None:
+                existing_metadata = get_metadata(symbol)
+        except Exception:
+            existing_metadata = None
     upsert_metadata = getattr(db, "upsert_instrument_metadata_sync", None)
-    if callable(upsert_metadata):
+    if callable(upsert_metadata) and existing_metadata is None:
         upsert_metadata(
             symbol=symbol,
             asset_type=asset_class,
-            display_name=display_name or symbol,
+            display_name=display_name or existing_display_name or symbol,
             provider_symbol=symbol,
             source="trade",
         )
@@ -4736,6 +4766,13 @@ def create_router() -> APIRouter:
                 status_code=400,
                 detail="quantity and price are required unless this is a fund buy with amount",
             )
+
+        _ensure_asset_config(
+            state,
+            symbol=symbol,
+            asset_class=body.asset_class,
+            display_name=_resolve_display_name(state, symbol, fallback=symbol),
+        )
 
         if commission is None:
             configured_fee = resolve_manual_trade_fee_breakdown(
