@@ -138,6 +138,12 @@ export const copy = {
       resolution: 'Evidence condition to clear',
       fingerprint: 'Task fingerprint',
       openEvidence: 'Open evidence',
+      reviewDetails: 'Review details',
+      evidenceDetail: 'Evidence detail',
+      evidenceDetailDescription:
+        'Review the persisted reason, clearing condition, safe next action, and technical identity.',
+      closeEvidenceDetail: 'Close evidence detail',
+      technicalIdentity: 'Technical identity',
       noTimestamp: 'No persisted observation time',
       viewingDoesNotClear:
         'Viewing or acknowledging this item does not clear its source status.',
@@ -2434,9 +2440,9 @@ export const copy = {
     },
     activity: {
       kicker: 'Ledger',
-      title: 'Ledger entry',
+      title: 'Ledger history',
       subtitle:
-        'Record trades, cash flows, dividends, and adjustments; preview public ledger impact before writing to the local ledger.',
+        'Review persisted ledger activity first. New trades, cash flows, dividends, and adjustments remain explicit controlled entries.',
       loading: 'Loading ledger activity.',
       error: 'Failed to load ledger activity.',
       tradeSaved: 'Trade saved',
@@ -2463,6 +2469,9 @@ export const copy = {
       entryTools: {
         kicker: 'Entry tools',
         title: 'New entry',
+        openAction: 'New entry',
+        closeAction: 'Close entry tools',
+        boundaryTitle: 'Ledger write boundary',
         detail:
           'Preview public ledger impact before writing to the local ledger, then refresh the portfolio path.',
         boundary:
@@ -2995,6 +3004,12 @@ export const copy = {
       resolution: '证据解除条件',
       fingerprint: '任务 fingerprint',
       openEvidence: '打开证据',
+      reviewDetails: '查看详情',
+      evidenceDetail: '证据详情',
+      evidenceDetailDescription:
+        '复核持久化原因、解除条件、安全下一步与技术身份。',
+      closeEvidenceDetail: '关闭证据详情',
+      technicalIdentity: '技术身份',
       noTimestamp: '没有持久化观察时间',
       viewingDoesNotClear: '仅查看或确认该事项不会清除源状态。',
       limitations: '限制',
@@ -5155,9 +5170,9 @@ export const copy = {
     },
     activity: {
       kicker: '账本',
-      title: '账本录入',
+      title: '账本流水',
       subtitle:
-        '手工录入交易、资金流水、分红和调整；写入本地账本前先预览公开账本影响。',
+        '优先复核持久化账本历史；交易、资金流水、分红和调整仍通过明确受控入口新增。',
       loading: '正在加载账本流水。',
       error: '账本流水加载失败。',
       tradeSaved: '交易已保存',
@@ -5184,6 +5199,9 @@ export const copy = {
       entryTools: {
         kicker: '录入工具',
         title: '新增流水',
+        openAction: '新增流水',
+        closeAction: '关闭流水录入',
+        boundaryTitle: '账本写入边界',
         detail: '写入本地账本前，先预览公开账本影响，再刷新组合路径。',
         boundary:
           '仅在明确提交后写入持久化账本；不会向券商下单，也不会授予交易权限。',

@@ -91,15 +91,13 @@ describe('remaining route workbench contract', () => {
       ROUTER.indexOf('export function ActivityPage'),
       ROUTER.indexOf('type ActivityEntryTool'),
     );
-    expect(
-      activityPage.indexOf('data-activity-surface="audit-history"'),
-    ).toBeLessThan(
-      activityPage.indexOf('data-activity-surface="priority-and-entry"'),
+    expect(activityPage).toContain('data-activity-surface="audit-history"');
+    expect(activityPage).not.toContain(
+      'data-activity-surface="priority-and-entry"',
     );
-    expect(activityPage).toContain(
-      'xl:sticky xl:top-24 xl:col-start-2 xl:row-start-1',
-    );
-    expect(activityPage).toContain('xl:col-start-1 xl:row-start-1');
+    expect(activityPage).not.toContain('xl:sticky xl:top-24');
+    expect(activityPage).toContain('<EvidenceDrawer');
+    expect(activityPage).toContain('open={entryDrawerOpen}');
     expect(
       activityPage.indexOf('data-activity-surface="audit-history"'),
     ).toBeLessThan(activityPage.indexOf('<ActivityFeed'));

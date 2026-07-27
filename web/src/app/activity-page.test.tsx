@@ -317,26 +317,33 @@ test('filters recent ledger entries by instrument search', async () => {
   expect(await screen.findByText('没有匹配的流水。')).toBeTruthy();
 });
 
-test('prioritizes immutable history before the controlled entry zone in document order', async () => {
+test('keeps immutable history as the primary surface and opens entry tools on demand', async () => {
   renderActivityPage('zh');
 
-  const entryTitle = await screen.findByText('新增流水');
+  expect(await screen.findByRole('heading', { name: '账本流水' })).toBeTruthy();
   const ledgerTitle = await screen.findByText('最近流水');
-  const [tradeTitle] = await screen.findAllByText('手工交易');
-  const toolButtons = within(
-    screen.getByRole('group', { name: '流水录入工具选择' }),
-  ).getAllByRole('button');
+  expect(ledgerTitle).toBeTruthy();
+  expect(
+    document.querySelector('[data-activity-surface="audit-history"]'),
+  ).toBeTruthy();
+  expect(
+    document.querySelector('[data-activity-surface="priority-and-entry"]'),
+  ).toBeNull();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(screen.queryByRole('group', { name: '流水录入工具选择' })).toBeNull();
 
+  fireEvent.click(screen.getByRole('button', { name: '新增流水' }));
+
+  const dialog = await screen.findByRole('dialog', { name: '新增流水' });
+  const toolButtons = within(dialog)
+    .getAllByRole('button')
+    .filter((button) =>
+      ['手工交易', '资金流水', '分红', '手工调整', '批量基金加仓'].includes(
+        button.textContent ?? '',
+      ),
+    );
   expect(
-    ledgerTitle.compareDocumentPosition(entryTitle) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  expect(
-    entryTitle.closest('[data-workbench-primitive="controlled-action-zone"]'),
-  ).toBeTruthy();
-  expect(
-    entryTitle.compareDocumentPosition(tradeTitle) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
+    dialog.querySelector('[data-workbench-primitive="controlled-action-zone"]'),
   ).toBeTruthy();
   expect(toolButtons.map((button) => button.textContent)).toEqual([
     '手工交易',
@@ -347,7 +354,7 @@ test('prioritizes immutable history before the controlled entry zone in document
   ]);
   expect(screen.queryByLabelText('资金流水发生时间')).toBeNull();
 
-  fireEvent.click(screen.getByRole('button', { name: '资金流水' }));
+  fireEvent.click(within(dialog).getByRole('button', { name: '资金流水' }));
 
   expect(await screen.findByLabelText('资金流水发生时间')).toBeTruthy();
   expect(screen.queryByLabelText('证券代码')).toBeNull();

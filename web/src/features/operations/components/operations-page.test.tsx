@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -197,9 +198,21 @@ test('renders persisted attention evidence without write or execution affordance
       'Viewing or acknowledging this item does not clear its source status.',
     ),
   ).toBeTruthy();
-  expect(
-    within(attention).getByTitle('sha256:market-attention-fixture'),
-  ).toBeTruthy();
+  expect(attention.textContent).not.toContain(
+    'sha256:market-attention-fixture',
+  );
+  fireEvent.click(
+    within(attention).getByRole('button', { name: 'Review details' }),
+  );
+  const evidenceDetail = await screen.findByTestId(
+    'operations-evidence-detail',
+  );
+  expect(evidenceDetail.textContent).toContain(
+    'sha256:market-attention-fixture',
+  );
+  expect(evidenceDetail.textContent).toContain(
+    'Each page read is a GET over persisted facts.',
+  );
   expect(
     within(attention)
       .getByRole('link', { name: 'Open evidence' })
