@@ -92,6 +92,7 @@ function installMarketFetchMock(
     marketEvidenceReview?: Record<string, unknown>;
     items?: Array<Record<string, unknown>>;
     notes?: Array<Record<string, unknown>>;
+    klineResponse?: Promise<Response>;
   } = {},
 ) {
   const boardHealth = {
@@ -204,6 +205,9 @@ function installMarketFetchMock(
         });
       }
       if (url.includes('/api/market/kline/')) {
+        if (overrides.klineResponse) {
+          return overrides.klineResponse;
+        }
         return jsonResponse([
           {
             timestamp: '2026-06-17T00:00:00+08:00',
@@ -358,6 +362,71 @@ test('keeps missing quote and holding values unavailable instead of inventing ze
   const detail = await screen.findByTestId('market-selected-instrument');
   expect(within(detail).getAllByText('--').length).toBeGreaterThan(0);
   expect(screen.queryByText('¥0.00')).toBeNull();
+});
+
+test('does not present a pending persisted K-line request as missing evidence', async () => {
+  let resolveKline!: (response: Response) => void;
+  const klineResponse = new Promise<Response>((resolve) => {
+    resolveKline = resolve;
+  });
+  renderMarketPage({ klineResponse });
+
+  const selectedInstrument = await screen.findByTestId(
+    'market-selected-instrument',
+  );
+  expect(
+    await within(selectedInstrument).findByText(
+      'Loading persisted price structure',
+    ),
+  ).toBeTruthy();
+  expect(
+    within(selectedInstrument).queryByText(
+      'No price structure available for the selected symbol.',
+    ),
+  ).toBeNull();
+
+  resolveKline(
+    jsonResponse([
+      {
+        timestamp: '2026-06-17T00:00:00+08:00',
+        open: 98,
+        high: 101,
+        low: 97,
+        close: 100,
+        volume: 1000,
+      },
+    ]),
+  );
+  expect(
+    await within(selectedInstrument).findByTestId(
+      'price-structure-chart-scroll',
+    ),
+  ).toBeTruthy();
+});
+
+test('keeps a failed persisted K-line request distinct from an empty result', async () => {
+  renderMarketPage({
+    klineResponse: Promise.resolve(
+      new Response('fixture failure', { status: 500 }),
+    ),
+  });
+
+  const selectedInstrument = await screen.findByTestId(
+    'market-selected-instrument',
+  );
+  expect(
+    await within(selectedInstrument).findByText(
+      'Price structure could not be loaded',
+    ),
+  ).toBeTruthy();
+  expect(
+    within(selectedInstrument).queryByText(
+      'No price structure available for the selected symbol.',
+    ),
+  ).toBeNull();
+  expect(
+    within(selectedInstrument).getByRole('button', { name: 'Retry' }),
+  ).toBeTruthy();
 });
 
 test('counts cache estimated and missing quotes as market data needing confirmation', async () => {

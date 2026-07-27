@@ -310,6 +310,7 @@ function installOverviewFetchMock(
         'Contribution is estimated only from linked strategy fills and latest local quotes.',
       ],
     },
+    strategyContributionResponse,
     marketEvidenceReview = currentHoldingMarketEvidenceReview,
   }: {
     snapshot?: Record<string, unknown>;
@@ -320,6 +321,7 @@ function installOverviewFetchMock(
     tradingPlan?: Record<string, unknown>;
     operationsToday?: Record<string, unknown>;
     strategyContribution?: Record<string, unknown>;
+    strategyContributionResponse?: Promise<Response>;
     marketEvidenceReview?: Record<string, unknown>;
   } = {},
 ) {
@@ -563,6 +565,9 @@ function installOverviewFetchMock(
       });
     }
     if (url.includes('/api/account-strategy/contribution')) {
+      if (strategyContributionResponse) {
+        return strategyContributionResponse;
+      }
       return jsonResponse(strategyContribution);
     }
     if (url.includes('/api/portfolio/explainability')) {
@@ -810,6 +815,64 @@ test('puts the action queue before holdings in the reading order while preservin
   expect(performanceCard.className).toContain('border-y');
   expect(performanceCard.className).not.toContain('rounded-');
   expect(reviewStrip.contains(marketPulse)).toBe(true);
+});
+
+test('keeps a pending strategy contribution query out of the actionable queue', async () => {
+  let resolveContribution!: (response: Response) => void;
+  const strategyContributionResponse = new Promise<Response>((resolve) => {
+    resolveContribution = resolve;
+  });
+  installOverviewFetchMock(
+    {},
+    {
+      strategyContributionResponse,
+    },
+  );
+  renderOverviewPage({ installFetch: false });
+
+  const todayQueue = await screen.findByTestId('overview-today-queue');
+  expect(
+    within(todayQueue).getByText('No urgent items right now.'),
+  ).toBeTruthy();
+  expect(
+    within(todayQueue).queryByText('Loading contribution report.'),
+  ).toBeNull();
+
+  resolveContribution(
+    jsonResponse({
+      schema_version: 'karkinos.account_strategy_contribution.v2',
+      strategy_id: 'dual_ma',
+      contribution_status: 'no_linked_fills',
+      evidence_binding_status: 'not_applicable',
+      next_manual_action: 'none',
+      blockers: [],
+      linked_fill_count: 0,
+      ledger_posted_fill_count: 0,
+      unposted_linked_fill_count: 0,
+      unattributed_fill_count: 0,
+      gross_realized_pnl: 0,
+      gross_unrealized_pnl: 0,
+      total_commission: 0,
+      total_slippage: 0,
+      total_tax: 0,
+      net_contribution: 0,
+      unattributed_account_pnl: null,
+      manual_unattributed_pnl: null,
+      cash_flow_pnl: null,
+      missing_valuation_symbols: [],
+      valuation_snapshot_id: 'valuation-overview-fixture',
+      valuation_status: 'complete',
+      valuation_scope_status: 'complete',
+      ledger_cutoff_id: 42,
+      contribution_fingerprint: 'contribution-overview-fixture',
+      evidence_refs: [],
+      persisted_facts_only: true,
+      provider_contacted: false,
+      database_writes_performed: false,
+      authorizes_execution: false,
+      limitations: [],
+    }),
+  );
 });
 
 test('surfaces paper shadow next action in today todos', async () => {

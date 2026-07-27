@@ -19,6 +19,7 @@ export {
   type TimelineItem,
 } from './evidence';
 export {
+  EvidenceLoadingLayout,
   EvidenceState,
   FilterBar,
   MetricStrip,

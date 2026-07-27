@@ -65,6 +65,9 @@ export function MarketInstrumentWorkspace({
   selectedHealthQuote,
   selectedQuoteNextAction,
   bars,
+  barsLoading,
+  barsError,
+  onRetryBars,
   watchlistEditor,
   onSelect,
   onRemove,
@@ -76,6 +79,9 @@ export function MarketInstrumentWorkspace({
   selectedHealthQuote: MarketHealthQuote | null;
   selectedQuoteNextAction: string | null;
   bars: KlineBar[];
+  barsLoading: boolean;
+  barsError: boolean;
+  onRetryBars: () => void;
   watchlistEditor?: ReactNode;
   onSelect: (symbol: string) => void;
   onRemove: (symbol: string) => Promise<void>;
@@ -258,15 +264,38 @@ export function MarketInstrumentWorkspace({
             </header>
 
             <div className="mt-3">
-              <PriceStructureChart
-                bars={bars}
-                emptyLabel={labels.noChart}
-                titleLabel={labels.priceRangeKline}
-                priceLabel={labels.priceLabel}
-                rangeLabels={labels.klineRanges}
-                axisLabels={labels.klineAxes}
-                rangeAriaLabel={labels.showKlineRange}
-              />
+              {barsLoading ? (
+                <EvidenceState
+                  kind="loading"
+                  title={labels.klineLoading}
+                  description={labels.klineLoadingDetail}
+                />
+              ) : barsError ? (
+                <EvidenceState
+                  kind="error"
+                  title={labels.klineError}
+                  description={labels.klineErrorDetail}
+                  action={
+                    <button
+                      type="button"
+                      className="app-button-secondary min-h-8 rounded-[var(--app-radius-control)] px-3 text-xs font-semibold"
+                      onClick={onRetryBars}
+                    >
+                      {copy.states.retry}
+                    </button>
+                  }
+                />
+              ) : (
+                <PriceStructureChart
+                  bars={bars}
+                  emptyLabel={labels.noChart}
+                  titleLabel={labels.priceRangeKline}
+                  priceLabel={labels.priceLabel}
+                  rangeLabels={labels.klineRanges}
+                  axisLabels={labels.klineAxes}
+                  rangeAriaLabel={labels.showKlineRange}
+                />
+              )}
             </div>
 
             <MetricStrip

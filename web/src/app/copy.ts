@@ -2259,6 +2259,12 @@ export const copy = {
         'Watchlist and current-holding research only; this is not a broad-market dashboard or a portfolio-contribution view.',
       noSelection: 'Select or add a symbol to start research.',
       noChart: 'No price structure available for the selected symbol.',
+      klineLoading: 'Loading persisted price structure',
+      klineLoadingDetail:
+        'Waiting for the selected symbol’s saved bars; absence has not been determined yet.',
+      klineError: 'Price structure could not be loaded',
+      klineErrorDetail:
+        'The saved bar request failed. No provider refresh was attempted.',
       promptsTitle: 'Research checklist',
       notesTitle: 'Research notes',
       notesEmpty:
@@ -4981,6 +4987,11 @@ export const copy = {
         '这里只展示关注列表与当前持仓研究，不代表大盘表现，也不等同于个人组合贡献。',
       noSelection: '先选择或新增一个标的，再开始研究。',
       noChart: '当前标的没有可用的价格结构数据。',
+      klineLoading: '正在读取持久化价格结构',
+      klineLoadingDetail:
+        '正在等待当前标的的已保存 K 线，尚不能判定为数据缺失。',
+      klineError: '价格结构加载失败',
+      klineErrorDetail: '读取已保存 K 线失败；本次查看没有触发行情源刷新。',
       promptsTitle: '研究清单',
       notesTitle: '研究记录',
       notesEmpty: '还没有研究记录，先把当前逻辑或催化剂写下来。',

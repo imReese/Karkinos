@@ -21,6 +21,7 @@ import { ToastStack, type ToastItem } from './components/toast-stack';
 import {
   ControlledActionZone,
   EvidenceIdentityDisclosure,
+  EvidenceLoadingLayout,
   EvidenceState,
   ExceptionList,
   FilterBar,
@@ -2293,13 +2294,15 @@ function DashboardTodayQueue({
     },
     {
       key: 'strategy',
-      title: strategyContributionError
-        ? labels.strategyUnavailable
-        : strategyReady
-          ? labels.strategyEvidenceLinked
-          : strategyHasNoLinkedFills
-            ? labels.strategyNoLinkedFills
-            : labels.strategyEvidenceRequired,
+      title: strategyContributionLoading
+        ? copy.backtest.page.accountStrategyContributionLoading
+        : strategyContributionError
+          ? labels.strategyUnavailable
+          : strategyReady
+            ? labels.strategyEvidenceLinked
+            : strategyHasNoLinkedFills
+              ? labels.strategyNoLinkedFills
+              : labels.strategyEvidenceRequired,
       detail: strategyContributionLoading
         ? copy.backtest.page.accountStrategyContributionLoading
         : strategyReady && strategyContribution
@@ -2312,14 +2315,18 @@ function DashboardTodayQueue({
       actionLabel: strategyActionLabel,
       tone: strategyContributionError
         ? 'danger'
-        : strategyReady || strategyHasNoLinkedFills
-          ? 'success'
-          : 'warning',
+        : strategyContributionLoading
+          ? 'neutral'
+          : strategyReady || strategyHasNoLinkedFills
+            ? 'success'
+            : 'warning',
       priority: strategyContributionError
         ? 'watch'
-        : strategyReady || strategyHasNoLinkedFills
+        : strategyContributionLoading
           ? 'normal'
-          : 'watch',
+          : strategyReady || strategyHasNoLinkedFills
+            ? 'normal'
+            : 'watch',
       resolution: strategyContributionLoading
         ? undefined
         : strategyHasNoLinkedFills
@@ -3567,10 +3574,11 @@ export function RiskPage() {
       />
 
       {isInitialRiskLoad ? (
-        <EvidenceState
-          kind="loading"
+        <EvidenceLoadingLayout
           title={copy.states.loading}
           description={copy.riskPage.loading}
+          metricCount={4}
+          rowCount={4}
         />
       ) : isRiskWorkspaceUnavailable ? (
         <EvidenceState
@@ -4160,6 +4168,9 @@ export function MarketPage() {
               selectedHealthQuote={selectedHealthQuote}
               selectedQuoteNextAction={selectedQuoteNextAction}
               bars={kline.data ?? []}
+              barsLoading={kline.isLoading}
+              barsError={kline.isError}
+              onRetryBars={() => void kline.refetch()}
               onSelect={setSelectedSymbol}
               onRemove={async (symbol) => {
                 await removeWatchlistItem.mutateAsync(symbol);
