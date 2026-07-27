@@ -1152,6 +1152,13 @@ h3 {
   box-shadow: none;
 }
 
+[data-workbench-route='ai-research'] .app-ai-research-boundary {
+  border-width: 1px 0 0;
+  border-color: var(--app-divider);
+  border-radius: 0;
+  background: transparent;
+}
+
 .app-workbench-route .app-terminal-panel {
   border: 1px solid var(--app-divider);
   border-radius: var(--app-radius-surface);

@@ -205,14 +205,16 @@ const COPY = {
 
 export function ResearchTaskPanel({
   backtestResultId,
+  defaultOpen = false,
   strategyId,
 }: {
   backtestResultId: number | null;
+  defaultOpen?: boolean;
   strategyId: string | null;
 }) {
   const { locale } = usePreferences();
   const copy = COPY[locale];
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const tasks = useResearchTasksQuery(open);
   const analyses = useResearchTaskFixtureAnalysesQuery(open);
   const createTask = useCreateHumanResearchTaskMutation();
@@ -349,6 +351,82 @@ export function ResearchTaskPanel({
 
       {open ? (
         <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(300px,0.82fr)_minmax(0,1.18fr)]">
+          <div className="min-w-0">
+            <label className="block text-xs font-semibold text-[var(--app-muted)]">
+              {copy.reviewNote}
+              <input
+                className="app-input mt-1 w-full px-3 py-2 text-sm text-[var(--app-text)]"
+                onChange={(event) => setReviewNote(event.target.value)}
+                value={reviewNote}
+              />
+            </label>
+            {tasks.isLoading ? (
+              <p className="app-muted mt-4 text-sm" role="status">
+                {copy.loading}
+              </p>
+            ) : tasks.isError ? (
+              <p
+                className="mt-4 text-sm text-[var(--app-danger-text)]"
+                role="alert"
+              >
+                {copy.loadError}
+              </p>
+            ) : tasks.data?.tasks.length ? (
+              <div className="mt-3 space-y-3">
+                {tasks.data.tasks.map((task) => (
+                  <ResearchTaskCard
+                    analysis={analyses.data?.analyses.find(
+                      (item) => item.task_id === task.task_id,
+                    )}
+                    analysisPending={startFixture.isPending}
+                    copy={copy}
+                    key={task.task_id}
+                    onReview={(decision) => void review(task, decision)}
+                    onStartAnalysis={() => void startAnalysis(task)}
+                    reviewDisabled={reviewTask.isPending || !reviewNote.trim()}
+                    task={task}
+                  />
+                ))}
+              </div>
+            ) : (
+              <p className="app-muted mt-4 text-sm">{copy.empty}</p>
+            )}
+            {reviewTask.isPending ? (
+              <p className="app-muted mt-3 text-xs" role="status">
+                {copy.reviewing}
+              </p>
+            ) : null}
+            {reviewTask.isError ? (
+              <p
+                className="mt-3 text-sm text-[var(--app-danger-text)]"
+                role="alert"
+              >
+                {reviewTask.error.message}
+              </p>
+            ) : null}
+            {analyses.isLoading ? (
+              <p className="app-muted mt-3 text-xs" role="status">
+                {copy.analysisLoading}
+              </p>
+            ) : null}
+            {analyses.isError ? (
+              <p
+                className="mt-3 text-sm text-[var(--app-danger-text)]"
+                role="alert"
+              >
+                {copy.analysisLoadError}
+              </p>
+            ) : null}
+            {startFixture.isError ? (
+              <p
+                className="mt-3 text-sm text-[var(--app-danger-text)]"
+                role="alert"
+              >
+                {startFixture.error.message}
+              </p>
+            ) : null}
+          </div>
+
           <form
             className="border border-[var(--app-divider)] bg-[var(--app-surface-raised)] p-4"
             onSubmit={(event) => void submit(event)}
@@ -460,82 +538,6 @@ export function ResearchTaskPanel({
               </p>
             ) : null}
           </form>
-
-          <div className="min-w-0">
-            <label className="block text-xs font-semibold text-[var(--app-muted)]">
-              {copy.reviewNote}
-              <input
-                className="app-input mt-1 w-full px-3 py-2 text-sm text-[var(--app-text)]"
-                onChange={(event) => setReviewNote(event.target.value)}
-                value={reviewNote}
-              />
-            </label>
-            {tasks.isLoading ? (
-              <p className="app-muted mt-4 text-sm" role="status">
-                {copy.loading}
-              </p>
-            ) : tasks.isError ? (
-              <p
-                className="mt-4 text-sm text-[var(--app-danger-text)]"
-                role="alert"
-              >
-                {copy.loadError}
-              </p>
-            ) : tasks.data?.tasks.length ? (
-              <div className="mt-3 space-y-3">
-                {tasks.data.tasks.map((task) => (
-                  <ResearchTaskCard
-                    analysis={analyses.data?.analyses.find(
-                      (item) => item.task_id === task.task_id,
-                    )}
-                    analysisPending={startFixture.isPending}
-                    copy={copy}
-                    key={task.task_id}
-                    onReview={(decision) => void review(task, decision)}
-                    onStartAnalysis={() => void startAnalysis(task)}
-                    reviewDisabled={reviewTask.isPending || !reviewNote.trim()}
-                    task={task}
-                  />
-                ))}
-              </div>
-            ) : (
-              <p className="app-muted mt-4 text-sm">{copy.empty}</p>
-            )}
-            {reviewTask.isPending ? (
-              <p className="app-muted mt-3 text-xs" role="status">
-                {copy.reviewing}
-              </p>
-            ) : null}
-            {reviewTask.isError ? (
-              <p
-                className="mt-3 text-sm text-[var(--app-danger-text)]"
-                role="alert"
-              >
-                {reviewTask.error.message}
-              </p>
-            ) : null}
-            {analyses.isLoading ? (
-              <p className="app-muted mt-3 text-xs" role="status">
-                {copy.analysisLoading}
-              </p>
-            ) : null}
-            {analyses.isError ? (
-              <p
-                className="mt-3 text-sm text-[var(--app-danger-text)]"
-                role="alert"
-              >
-                {copy.analysisLoadError}
-              </p>
-            ) : null}
-            {startFixture.isError ? (
-              <p
-                className="mt-3 text-sm text-[var(--app-danger-text)]"
-                role="alert"
-              >
-                {startFixture.error.message}
-              </p>
-            ) : null}
-          </div>
         </div>
       ) : null}
     </section>

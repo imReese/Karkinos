@@ -34,7 +34,14 @@ const navGroups = [
   {
     key: 'research',
     label: { en: 'Research', zh: '研究' },
-    items: [{ to: '/backtest', key: 'backtest', icon: BacktestNavIcon }],
+    items: [
+      { to: '/backtest', key: 'backtest', icon: BacktestNavIcon },
+      {
+        to: '/ai-research',
+        key: 'aiResearch',
+        icon: AiResearchNavIcon,
+      },
+    ],
   },
   {
     key: 'decision-risk',
@@ -1583,6 +1590,24 @@ function BacktestNavIcon(props: SVGProps<SVGSVGElement>) {
       <path d="M6 15.5 10 12l3 2.4 5-6.4" />
       <path d="M7 6.5h10" />
       <path d="M7 9.5h5" />
+    </svg>
+  );
+}
+
+function AiResearchNavIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      viewBox="0 0 24 24"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M6 3.5h8l4 4V20H6z" />
+      <path d="M14 3.5v4h4" />
+      <path d="m9 13 1.6 1.6L15 10.2" />
     </svg>
   );
 }

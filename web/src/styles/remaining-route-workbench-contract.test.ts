@@ -35,6 +35,9 @@ const APP_SHELL = source('app/layout/app-shell.tsx');
 const RESEARCH_TASK = source(
   'features/ai-research/components/research-task-panel.tsx',
 );
+const AI_RESEARCH = source(
+  'features/ai-research/components/ai-research-page.tsx',
+);
 const STRATEGY_RESEARCH = source(
   'features/ai-research/components/strategy-hypothesis-panel.tsx',
 );
@@ -58,11 +61,19 @@ describe('remaining route workbench contract', () => {
     expect(ROUTER).toContain('data-workbench-route="market"');
     expect(ROUTER).toContain('data-workbench-route="activity"');
     expect(BACKTEST).toContain('data-workbench-route="backtest"');
+    expect(AI_RESEARCH).toContain('data-workbench-route="ai-research"');
     expect(TRADING).toContain('data-workbench-route="trading"');
     expect(SETTINGS).toContain('data-workbench-route="settings"');
     expect(ACCOUNT_TRUTH).toContain('data-workbench-route="account-truth"');
 
-    for (const page of [ROUTER, BACKTEST, TRADING, SETTINGS, ACCOUNT_TRUTH]) {
+    for (const page of [
+      ROUTER,
+      BACKTEST,
+      AI_RESEARCH,
+      TRADING,
+      SETTINGS,
+      ACCOUNT_TRUTH,
+    ]) {
       expect(page).toContain('WorkspaceHeader');
       expect(page).toContain('MetricStrip');
     }
@@ -102,6 +113,12 @@ describe('remaining route workbench contract', () => {
       'data-evidence-kind="cited-ai-research"',
     );
     expect(CSS).toContain('.app-ai-research-boundary');
+    expect(CSS).toContain(
+      "[data-workbench-route='ai-research'] .app-ai-research-boundary",
+    );
+    expect(RESEARCH_TASK.indexOf('{copy.reviewNote}')).toBeLessThan(
+      RESEARCH_TASK.indexOf('<form'),
+    );
   });
 
   it('enforces local overflow, compact shape, touch, and reduced-motion rules', () => {
