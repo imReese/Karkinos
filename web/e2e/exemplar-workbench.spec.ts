@@ -479,13 +479,18 @@ test('core review routes keep audit drill-downs closed and mobile reading paths 
   await expect(
     page.getByRole('heading', { name: /Control center|控制中心/ }),
   ).toBeVisible();
+  await expect(
+    page.getByTestId('settings-persisted-configuration'),
+  ).toBeVisible();
   for (const testId of [
     'settings-data-source-disclosure',
-    'settings-backend-disclosure',
     'settings-notifications-disclosure',
   ]) {
     await expect(page.getByTestId(testId)).not.toHaveAttribute('open', '');
   }
+  await expect(
+    page.getByRole('heading', { name: /Refresh quotes|刷新行情/ }),
+  ).not.toBeVisible();
 
   await page.goto('/backtest');
   await expect(

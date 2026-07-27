@@ -512,112 +512,441 @@ export function SettingsPage() {
         />
       ) : null}
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
+      <SettingsSection
+        title={copy.settings.dataStatus}
+        detail={copy.settings.dataStatusDetail}
+      >
+        <MetricStrip
+          ariaLabel={copy.settings.dataStatus}
+          items={[
+            {
+              id: 'market-state',
+              label: copy.settings.marketState,
+              value: marketHealth.isLoading ? (
+                copy.shell.checking
+              ) : marketHealth.data?.market_open ? (
+                <span
+                  aria-label={`${copy.settings.marketState}: ${copy.shell.marketOpen}`}
+                >
+                  {copy.shell.marketOpen}
+                </span>
+              ) : (
+                <span
+                  aria-label={`${copy.settings.marketState}: ${copy.shell.marketClosed}`}
+                >
+                  {copy.shell.marketClosed}
+                </span>
+              ),
+              tone: 'neutral',
+            },
+            {
+              id: 'refresh-policy',
+              label: copy.settings.refreshPolicy,
+              value: marketHealth.isLoading ? (
+                copy.shell.checking
+              ) : (
+                <span
+                  aria-label={`${copy.settings.refreshPolicy}: ${refreshPolicyLabel}`}
+                >
+                  {refreshPolicyLabel}
+                </span>
+              ),
+              tone: refreshPolicyNeedsReview ? 'warning' : 'neutral',
+            },
+            {
+              id: 'quote-state',
+              label: copy.settings.quoteState,
+              value: overview.isLoading ? (
+                copy.shell.checking
+              ) : isStaleQuote ? (
+                <span
+                  aria-label={`${copy.settings.quoteState}: ${copy.settings.cachedQuotes}`}
+                >
+                  {copy.settings.cachedQuotes}
+                </span>
+              ) : (
+                <span
+                  aria-label={`${copy.settings.quoteState}: ${quoteStatusLabel}`}
+                >
+                  {quoteStatusLabel}
+                </span>
+              ),
+              tone: quoteNeedsReview ? 'warning' : 'neutral',
+            },
+            {
+              id: 'valuation-time',
+              label: copy.settings.valuationTime,
+              value: overview.isLoading ? copy.shell.checking : valuationTime,
+              tone: quoteNeedsReview ? 'warning' : 'neutral',
+            },
+          ]}
+        />
+
+        {refreshPolicyNeedsReview || quoteNeedsReview ? (
+          <InlineNotice
+            tone="warning"
+            title={
+              isStaleQuote
+                ? copy.settings.cachedQuotes
+                : isCacheOnly
+                  ? copy.settings.cacheOnly
+                  : copy.settings.valuationRequiresReview
+            }
+            detail={
+              isStaleQuote
+                ? marketDataNoticeDetail(copy.settings.cachedQuotesDetail)
+                : isCacheOnly
+                  ? marketDataNoticeDetail(copy.settings.cacheOnlyDetail)
+                  : marketDataNoticeDetail(
+                      copy.settings.valuationRequiresReviewDetail(
+                        quoteStatusLabel,
+                      ),
+                    )
+            }
+          />
+        ) : null}
+      </SettingsSection>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
         <div className="min-w-0 space-y-5">
-          <SettingsSection
-            title={copy.settings.dataStatus}
-            detail={copy.settings.dataStatusDetail}
-          >
-            <MetricStrip
-              ariaLabel={copy.settings.dataStatus}
-              items={[
-                {
-                  id: 'market-state',
-                  label: copy.settings.marketState,
-                  value: marketHealth.isLoading ? (
-                    copy.shell.checking
-                  ) : marketHealth.data?.market_open ? (
-                    <span
-                      aria-label={`${copy.settings.marketState}: ${copy.shell.marketOpen}`}
-                    >
-                      {copy.shell.marketOpen}
-                    </span>
-                  ) : (
-                    <span
-                      aria-label={`${copy.settings.marketState}: ${copy.shell.marketClosed}`}
-                    >
-                      {copy.shell.marketClosed}
-                    </span>
-                  ),
-                  tone: 'neutral',
-                },
-                {
-                  id: 'refresh-policy',
-                  label: copy.settings.refreshPolicy,
-                  value: marketHealth.isLoading ? (
-                    copy.shell.checking
-                  ) : (
-                    <span
-                      aria-label={`${copy.settings.refreshPolicy}: ${refreshPolicyLabel}`}
-                    >
-                      {refreshPolicyLabel}
-                    </span>
-                  ),
-                  tone: refreshPolicyNeedsReview ? 'warning' : 'neutral',
-                },
-                {
-                  id: 'quote-state',
-                  label: copy.settings.quoteState,
-                  value: overview.isLoading ? (
-                    copy.shell.checking
-                  ) : isStaleQuote ? (
-                    <span
-                      aria-label={`${copy.settings.quoteState}: ${copy.settings.cachedQuotes}`}
-                    >
-                      {copy.settings.cachedQuotes}
-                    </span>
-                  ) : (
-                    <span
-                      aria-label={`${copy.settings.quoteState}: ${quoteStatusLabel}`}
-                    >
-                      {quoteStatusLabel}
-                    </span>
-                  ),
-                  tone: quoteNeedsReview ? 'warning' : 'neutral',
-                },
-                {
-                  id: 'valuation-time',
-                  label: copy.settings.valuationTime,
-                  value: overview.isLoading
-                    ? copy.shell.checking
-                    : valuationTime,
-                  tone: quoteNeedsReview ? 'warning' : 'neutral',
-                },
-              ]}
-            />
-
-            {refreshPolicyNeedsReview || quoteNeedsReview ? (
-              <InlineNotice
-                tone="warning"
-                title={
-                  isStaleQuote
-                    ? copy.settings.cachedQuotes
-                    : isCacheOnly
-                      ? copy.settings.cacheOnly
-                      : copy.settings.valuationRequiresReview
-                }
-                detail={
-                  isStaleQuote
-                    ? marketDataNoticeDetail(copy.settings.cachedQuotesDetail)
-                    : isCacheOnly
-                      ? marketDataNoticeDetail(copy.settings.cacheOnlyDetail)
-                      : marketDataNoticeDetail(
-                          copy.settings.valuationRequiresReviewDetail(
-                            quoteStatusLabel,
-                          ),
-                        )
-                }
-              />
-            ) : null}
-
-            <ControlledActionZone
-              title={copy.market.refreshQuotes}
-              description={copy.settings.refreshActionDetail}
-              evidence={copy.settings.refreshActionEvidence}
+          <div data-testid="settings-persisted-configuration">
+            <SettingsSection
+              title={copy.settings.backendSettings}
+              detail={copy.settings.persistedSettingsDetail}
             >
-              <MarketRefreshButton />
-            </ControlledActionZone>
-          </SettingsSection>
+              <div className="grid gap-3 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-semibold">
+                    {copy.settings.operationsRegister}
+                  </div>
+                  <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-2.5 py-1 text-[11px] font-semibold text-[var(--app-soft)]">
+                    {dataSourceStatus.data?.latest_persistent_quote_timestamp ??
+                      copy.settings.noValuationTime}
+                  </span>
+                </div>
+                <div className="grid gap-2">
+                  {operationsRegisterRows.map((row) => (
+                    <RegisterRow
+                      key={row.label}
+                      label={row.label}
+                      legacyLabel={row.legacyLabel}
+                      value={row.value}
+                      tone={row.tone}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {providerTimedOut ? (
+                <InlineNotice
+                  tone="warning"
+                  title={copy.settings.providerNextAction}
+                  detail={copy.settings.providerTimeoutNotice}
+                />
+              ) : null}
+              {metadataConfiguredCount === 0 ? (
+                <InlineNotice
+                  tone="warning"
+                  title={copy.settings.assetMetadataMissing}
+                  detail={copy.settings.assetMetadataMissingDetail}
+                />
+              ) : null}
+              {providerActionLabel ? (
+                <InlineNotice
+                  tone="neutral"
+                  title={copy.settings.providerNextAction}
+                  detail={providerActionLabel}
+                />
+              ) : null}
+
+              <form
+                className="grid gap-4 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4"
+                onSubmit={submitAccountCommission}
+              >
+                <div>
+                  <div className="text-sm font-semibold">
+                    {copy.settings.accountCostProfile}
+                  </div>
+                  <div className="app-muted mt-1 text-xs leading-5">
+                    {copy.settings.accountCostProfileDetail}
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="grid gap-2">
+                    <span className="text-sm font-medium">
+                      {copy.settings.stockCommissionRate}
+                    </span>
+                    <input
+                      aria-label={copy.settings.stockCommissionRate}
+                      className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm tabular-nums"
+                      type="number"
+                      min={0}
+                      step="0.00001"
+                      value={accountCommissionRate}
+                      onChange={(event) =>
+                        setAccountCommissionRate(event.target.value)
+                      }
+                      disabled={settings.isLoading}
+                    />
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-sm font-medium">
+                      {copy.settings.minimumCommission}
+                    </span>
+                    <input
+                      aria-label={copy.settings.minimumCommission}
+                      className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm tabular-nums"
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={accountMinCommission}
+                      onChange={(event) =>
+                        setAccountMinCommission(event.target.value)
+                      }
+                      disabled={settings.isLoading}
+                    />
+                  </label>
+                </div>
+                <div className="app-muted text-xs leading-5">
+                  {copy.settings.accountCostPreview(
+                    Number(accountCommissionRate) || 0,
+                    Number(accountMinCommission) || 0,
+                  )}
+                </div>
+                <button
+                  type="submit"
+                  className="app-button-primary rounded-[var(--app-radius-control)] px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={
+                    settings.isLoading ||
+                    updateSettings.isPending ||
+                    !accountCommissionChanged
+                  }
+                  aria-busy={updateSettings.isPending}
+                >
+                  {updateSettings.isPending
+                    ? copy.settings.savingAccountCosts
+                    : copy.settings.saveAccountCosts}
+                </button>
+              </form>
+
+              {updateSettings.isSuccess ? (
+                <InlineNotice
+                  tone="success"
+                  title={copy.settings.accountCostsSaved}
+                  detail={copy.settings.accountCostsSavedDetail}
+                />
+              ) : null}
+              {updateSettings.isError ? (
+                <InlineNotice
+                  tone="danger"
+                  title={copy.settings.accountCostsFailed}
+                  detail={getErrorMessage(
+                    updateSettings.error,
+                    copy.settings.accountCostsFailed,
+                  )}
+                />
+              ) : null}
+
+              <form
+                className="grid gap-4 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4"
+                onSubmit={submitDataSource}
+              >
+                <div>
+                  <div className="text-sm font-semibold">
+                    {copy.settings.providerConfiguration}
+                  </div>
+                  <div className="app-muted mt-1 text-xs leading-5">
+                    {copy.settings.providerConfigurationDetail}
+                  </div>
+                </div>
+                <div className="grid gap-2">
+                  <span className="text-sm font-medium">
+                    {copy.settings.selectDataSource}
+                  </span>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    {dataSourceOptions.map((option) => {
+                      const selected = dataSource === option;
+                      const label =
+                        option === 'akshare'
+                          ? copy.settings.providerAkshare
+                          : option === 'tushare'
+                            ? copy.settings.providerTushare
+                            : option;
+                      return (
+                        <button
+                          key={option}
+                          type="button"
+                          className={`rounded-[var(--app-radius-control)] border px-3 py-2 text-sm font-semibold transition-[transform,border-color,background-color] duration-200 active:scale-[0.98] ${
+                            selected
+                              ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-ghost)] text-[var(--app-accent)]'
+                              : 'border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] text-[var(--app-soft)] hover:border-[color-mix(in_srgb,var(--app-border)_48%,transparent)]'
+                          }`}
+                          aria-pressed={selected}
+                          aria-label={`${copy.settings.dataSource}: ${label}`}
+                          onClick={() => setDataSource(option)}
+                          disabled={settings.isLoading}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <label className="grid gap-2">
+                  <span className="text-sm font-medium">
+                    {copy.settings.pollInterval}
+                  </span>
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+                    <input
+                      aria-label={copy.settings.pollInterval}
+                      className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm tabular-nums"
+                      type="number"
+                      min={15}
+                      value={pollInterval}
+                      onChange={(event) => setPollInterval(event.target.value)}
+                      disabled={settings.isLoading}
+                    />
+                    <span className="app-muted text-xs">
+                      {copy.settings.pollIntervalUnit}
+                    </span>
+                  </div>
+                </label>
+                <div className="grid gap-2">
+                  <span className="text-sm font-medium">
+                    {copy.settings.token}
+                  </span>
+                  <div
+                    className="border-y border-[var(--app-divider)] px-1 py-2 text-sm"
+                    role="status"
+                    aria-label={copy.settings.token}
+                  >
+                    {dataSource !== 'tushare'
+                      ? copy.settings.credentialNotRequired
+                      : settings.data?.tushare_token_configured
+                        ? copy.settings.credentialConfigured
+                        : copy.settings.credentialMissing}
+                  </div>
+                  <span className="app-muted text-xs leading-5">
+                    {copy.settings.credentialEnvironmentDetail}
+                  </span>
+                </div>
+                <button
+                  type="submit"
+                  className="app-button-primary rounded-[var(--app-radius-control)] px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={
+                    settings.isLoading ||
+                    updateDataSource.isPending ||
+                    !dataSourceChanged ||
+                    (dataSource === 'tushare' &&
+                      !settings.data?.tushare_token_configured)
+                  }
+                  aria-busy={updateDataSource.isPending}
+                >
+                  {updateDataSource.isPending
+                    ? copy.settings.savingDataSource
+                    : copy.settings.saveDataSource}
+                </button>
+              </form>
+
+              {updateDataSource.isSuccess ? (
+                <InlineNotice
+                  tone="success"
+                  title={copy.settings.dataSourceSaved}
+                  detail={
+                    dataSourceStatus.data?.requires_restart
+                      ? copy.settings.requiresRestart
+                      : copy.settings.hotSwitchAvailable
+                  }
+                />
+              ) : null}
+              {updateDataSource.isError ? (
+                <InlineNotice
+                  tone="danger"
+                  title={copy.settings.dataSourceFailed}
+                  detail={getErrorMessage(
+                    updateDataSource.error,
+                    copy.settings.dataSourceFailed,
+                  )}
+                />
+              ) : null}
+
+              <div className="grid gap-3 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+                <div>
+                  <div className="text-sm font-semibold">
+                    {copy.settings.metadataReadiness}
+                  </div>
+                  <div className="app-muted mt-1 text-xs leading-5">
+                    {copy.settings.metadataReadinessDetail}
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <StatusMetric
+                    label={copy.settings.metadataConfigured}
+                    value={
+                      assetMetadataStatus.isLoading
+                        ? copy.shell.checking
+                        : metadataConfiguredCount
+                    }
+                    tone={metadataConfiguredCount > 0 ? 'success' : 'warning'}
+                  />
+                  <StatusMetric
+                    label={copy.settings.assetMetadataMissingCount}
+                    value={
+                      assetMetadataStatus.isLoading
+                        ? copy.shell.checking
+                        : missingMetadataSymbols.length
+                    }
+                    tone={
+                      missingMetadataSymbols.length > 0 ? 'warning' : 'success'
+                    }
+                  />
+                  <StatusMetric
+                    label={copy.settings.assetMetadataSource}
+                    value={
+                      assetMetadataStatus.data?.metadata_source ??
+                      copy.shell.statusUnknown
+                    }
+                    tone="neutral"
+                  />
+                </div>
+                {assetMetadataStatus.isLoading ? (
+                  <InlineNotice
+                    tone="neutral"
+                    title={copy.shell.checking}
+                    detail={copy.settings.assetMetadataDetail}
+                  />
+                ) : assetMetadataStatus.data?.has_missing_metadata ? (
+                  <div className="grid gap-3">
+                    <InlineNotice
+                      tone="warning"
+                      title={copy.settings.assetMetadataMissingSymbols}
+                      detail={missingMetadataSymbols.join(', ')}
+                    />
+                    <label className="grid gap-2">
+                      <span className="text-sm font-semibold">
+                        {copy.settings.assetMetadataSnippet}
+                      </span>
+                      <textarea
+                        className="app-field min-h-44 resize-y rounded-[var(--app-radius-control)] px-3 py-3 font-mono text-xs leading-5"
+                        readOnly
+                        aria-label={copy.settings.assetMetadataSnippet}
+                        value={metadataSnippet}
+                      />
+                      <span className="app-muted text-xs leading-5">
+                        {copy.settings.assetMetadataSnippetDetail}
+                      </span>
+                    </label>
+                  </div>
+                ) : (
+                  <InlineNotice
+                    tone="success"
+                    title={copy.settings.assetMetadataComplete}
+                    detail={copy.settings.assetMetadataCompleteDetail}
+                  />
+                )}
+              </div>
+            </SettingsSection>
+          </div>
 
           <SettingsDisclosure
             testId="settings-data-source-disclosure"
@@ -708,6 +1037,15 @@ export function SettingsPage() {
                 </div>
               </div>
             </div>
+
+            <ControlledActionZone
+              tone="info"
+              title={copy.market.refreshQuotes}
+              description={copy.settings.refreshActionDetail}
+              evidence={copy.settings.refreshActionEvidence}
+            >
+              <MarketRefreshButton />
+            </ControlledActionZone>
           </SettingsDisclosure>
 
           <SettingsSection
@@ -769,344 +1107,6 @@ export function SettingsPage() {
         </div>
 
         <aside className="min-w-0 space-y-5">
-          <SettingsDisclosure
-            testId="settings-backend-disclosure"
-            title={copy.settings.backendSettings}
-            detail={copy.settings.persistedSettingsDetail}
-          >
-            <div className="grid gap-3 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-semibold">
-                  {copy.settings.operationsRegister}
-                </div>
-                <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-2.5 py-1 text-[11px] font-semibold text-[var(--app-soft)]">
-                  {dataSourceStatus.data?.latest_persistent_quote_timestamp ??
-                    copy.settings.noValuationTime}
-                </span>
-              </div>
-              <div className="grid gap-2">
-                {operationsRegisterRows.map((row) => (
-                  <RegisterRow
-                    key={row.label}
-                    label={row.label}
-                    legacyLabel={row.legacyLabel}
-                    value={row.value}
-                    tone={row.tone}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {providerTimedOut ? (
-              <InlineNotice
-                tone="warning"
-                title={copy.settings.providerNextAction}
-                detail={copy.settings.providerTimeoutNotice}
-              />
-            ) : null}
-            {metadataConfiguredCount === 0 ? (
-              <InlineNotice
-                tone="warning"
-                title={copy.settings.assetMetadataMissing}
-                detail={copy.settings.assetMetadataMissingDetail}
-              />
-            ) : null}
-            {providerActionLabel ? (
-              <InlineNotice
-                tone="neutral"
-                title={copy.settings.providerNextAction}
-                detail={providerActionLabel}
-              />
-            ) : null}
-
-            <form
-              className="grid gap-4 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4"
-              onSubmit={submitAccountCommission}
-            >
-              <div>
-                <div className="text-sm font-semibold">
-                  {copy.settings.accountCostProfile}
-                </div>
-                <div className="app-muted mt-1 text-xs leading-5">
-                  {copy.settings.accountCostProfileDetail}
-                </div>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="grid gap-2">
-                  <span className="text-sm font-medium">
-                    {copy.settings.stockCommissionRate}
-                  </span>
-                  <input
-                    aria-label={copy.settings.stockCommissionRate}
-                    className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm tabular-nums"
-                    type="number"
-                    min={0}
-                    step="0.00001"
-                    value={accountCommissionRate}
-                    onChange={(event) =>
-                      setAccountCommissionRate(event.target.value)
-                    }
-                    disabled={settings.isLoading}
-                  />
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-medium">
-                    {copy.settings.minimumCommission}
-                  </span>
-                  <input
-                    aria-label={copy.settings.minimumCommission}
-                    className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm tabular-nums"
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={accountMinCommission}
-                    onChange={(event) =>
-                      setAccountMinCommission(event.target.value)
-                    }
-                    disabled={settings.isLoading}
-                  />
-                </label>
-              </div>
-              <div className="app-muted text-xs leading-5">
-                {copy.settings.accountCostPreview(
-                  Number(accountCommissionRate) || 0,
-                  Number(accountMinCommission) || 0,
-                )}
-              </div>
-              <button
-                type="submit"
-                className="app-button-primary rounded-[var(--app-radius-control)] px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={
-                  settings.isLoading ||
-                  updateSettings.isPending ||
-                  !accountCommissionChanged
-                }
-                aria-busy={updateSettings.isPending}
-              >
-                {updateSettings.isPending
-                  ? copy.settings.savingAccountCosts
-                  : copy.settings.saveAccountCosts}
-              </button>
-            </form>
-
-            {updateSettings.isSuccess ? (
-              <InlineNotice
-                tone="success"
-                title={copy.settings.accountCostsSaved}
-                detail={copy.settings.accountCostsSavedDetail}
-              />
-            ) : null}
-            {updateSettings.isError ? (
-              <InlineNotice
-                tone="danger"
-                title={copy.settings.accountCostsFailed}
-                detail={getErrorMessage(
-                  updateSettings.error,
-                  copy.settings.accountCostsFailed,
-                )}
-              />
-            ) : null}
-
-            <form
-              className="grid gap-4 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4"
-              onSubmit={submitDataSource}
-            >
-              <div>
-                <div className="text-sm font-semibold">
-                  {copy.settings.providerConfiguration}
-                </div>
-                <div className="app-muted mt-1 text-xs leading-5">
-                  {copy.settings.providerConfigurationDetail}
-                </div>
-              </div>
-              <div className="grid gap-2">
-                <span className="text-sm font-medium">
-                  {copy.settings.selectDataSource}
-                </span>
-                <div className="grid gap-2 sm:grid-cols-3">
-                  {dataSourceOptions.map((option) => {
-                    const selected = dataSource === option;
-                    const label =
-                      option === 'akshare'
-                        ? copy.settings.providerAkshare
-                        : option === 'tushare'
-                          ? copy.settings.providerTushare
-                          : option;
-                    return (
-                      <button
-                        key={option}
-                        type="button"
-                        className={`rounded-[var(--app-radius-control)] border px-3 py-2 text-sm font-semibold transition-[transform,border-color,background-color] duration-200 active:scale-[0.98] ${
-                          selected
-                            ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-ghost)] text-[var(--app-accent)]'
-                            : 'border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] text-[var(--app-soft)] hover:border-[color-mix(in_srgb,var(--app-border)_48%,transparent)]'
-                        }`}
-                        aria-pressed={selected}
-                        aria-label={`${copy.settings.dataSource}: ${label}`}
-                        onClick={() => setDataSource(option)}
-                        disabled={settings.isLoading}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              <label className="grid gap-2">
-                <span className="text-sm font-medium">
-                  {copy.settings.pollInterval}
-                </span>
-                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-                  <input
-                    aria-label={copy.settings.pollInterval}
-                    className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm tabular-nums"
-                    type="number"
-                    min={15}
-                    value={pollInterval}
-                    onChange={(event) => setPollInterval(event.target.value)}
-                    disabled={settings.isLoading}
-                  />
-                  <span className="app-muted text-xs">
-                    {copy.settings.pollIntervalUnit}
-                  </span>
-                </div>
-              </label>
-              <div className="grid gap-2">
-                <span className="text-sm font-medium">
-                  {copy.settings.token}
-                </span>
-                <div
-                  className="border-y border-[var(--app-divider)] px-1 py-2 text-sm"
-                  role="status"
-                  aria-label={copy.settings.token}
-                >
-                  {dataSource !== 'tushare'
-                    ? copy.settings.credentialNotRequired
-                    : settings.data?.tushare_token_configured
-                      ? copy.settings.credentialConfigured
-                      : copy.settings.credentialMissing}
-                </div>
-                <span className="app-muted text-xs leading-5">
-                  {copy.settings.credentialEnvironmentDetail}
-                </span>
-              </div>
-              <button
-                type="submit"
-                className="app-button-primary rounded-[var(--app-radius-control)] px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={
-                  settings.isLoading ||
-                  updateDataSource.isPending ||
-                  !dataSourceChanged ||
-                  (dataSource === 'tushare' &&
-                    !settings.data?.tushare_token_configured)
-                }
-                aria-busy={updateDataSource.isPending}
-              >
-                {updateDataSource.isPending
-                  ? copy.settings.savingDataSource
-                  : copy.settings.saveDataSource}
-              </button>
-            </form>
-
-            {updateDataSource.isSuccess ? (
-              <InlineNotice
-                tone="success"
-                title={copy.settings.dataSourceSaved}
-                detail={
-                  dataSourceStatus.data?.requires_restart
-                    ? copy.settings.requiresRestart
-                    : copy.settings.hotSwitchAvailable
-                }
-              />
-            ) : null}
-            {updateDataSource.isError ? (
-              <InlineNotice
-                tone="danger"
-                title={copy.settings.dataSourceFailed}
-                detail={getErrorMessage(
-                  updateDataSource.error,
-                  copy.settings.dataSourceFailed,
-                )}
-              />
-            ) : null}
-
-            <div className="grid gap-3 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
-              <div>
-                <div className="text-sm font-semibold">
-                  {copy.settings.metadataReadiness}
-                </div>
-                <div className="app-muted mt-1 text-xs leading-5">
-                  {copy.settings.metadataReadinessDetail}
-                </div>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <StatusMetric
-                  label={copy.settings.metadataConfigured}
-                  value={
-                    assetMetadataStatus.isLoading
-                      ? copy.shell.checking
-                      : metadataConfiguredCount
-                  }
-                  tone={metadataConfiguredCount > 0 ? 'success' : 'warning'}
-                />
-                <StatusMetric
-                  label={copy.settings.assetMetadataMissingCount}
-                  value={
-                    assetMetadataStatus.isLoading
-                      ? copy.shell.checking
-                      : missingMetadataSymbols.length
-                  }
-                  tone={
-                    missingMetadataSymbols.length > 0 ? 'warning' : 'success'
-                  }
-                />
-                <StatusMetric
-                  label={copy.settings.assetMetadataSource}
-                  value={
-                    assetMetadataStatus.data?.metadata_source ??
-                    copy.shell.statusUnknown
-                  }
-                  tone="neutral"
-                />
-              </div>
-              {assetMetadataStatus.isLoading ? (
-                <InlineNotice
-                  tone="neutral"
-                  title={copy.shell.checking}
-                  detail={copy.settings.assetMetadataDetail}
-                />
-              ) : assetMetadataStatus.data?.has_missing_metadata ? (
-                <div className="grid gap-3">
-                  <InlineNotice
-                    tone="warning"
-                    title={copy.settings.assetMetadataMissingSymbols}
-                    detail={missingMetadataSymbols.join(', ')}
-                  />
-                  <label className="grid gap-2">
-                    <span className="text-sm font-semibold">
-                      {copy.settings.assetMetadataSnippet}
-                    </span>
-                    <textarea
-                      className="app-field min-h-44 resize-y rounded-[var(--app-radius-control)] px-3 py-3 font-mono text-xs leading-5"
-                      readOnly
-                      aria-label={copy.settings.assetMetadataSnippet}
-                      value={metadataSnippet}
-                    />
-                    <span className="app-muted text-xs leading-5">
-                      {copy.settings.assetMetadataSnippetDetail}
-                    </span>
-                  </label>
-                </div>
-              ) : (
-                <InlineNotice
-                  tone="success"
-                  title={copy.settings.assetMetadataComplete}
-                  detail={copy.settings.assetMetadataCompleteDetail}
-                />
-              )}
-            </div>
-          </SettingsDisclosure>
-
           <SettingsDisclosure
             testId="settings-notifications-disclosure"
             title={copy.settings.notifications}
