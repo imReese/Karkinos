@@ -66,7 +66,6 @@ export function MarketInstrumentWorkspace({
   selectedQuoteNextAction,
   bars,
   watchlistEditor,
-  evidenceReview,
   onSelect,
   onRemove,
 }: {
@@ -78,7 +77,6 @@ export function MarketInstrumentWorkspace({
   selectedQuoteNextAction: string | null;
   bars: KlineBar[];
   watchlistEditor?: ReactNode;
-  evidenceReview?: ReactNode;
   onSelect: (symbol: string) => void;
   onRemove: (symbol: string) => Promise<void>;
 }) {
@@ -94,15 +92,15 @@ export function MarketInstrumentWorkspace({
       data-testid="market-instrument-workspace"
     >
       <aside className="min-w-0 border-y border-[var(--app-divider)] md:sticky md:top-3">
-        <div className="flex items-start justify-between gap-3 border-b border-[var(--app-divider)] px-3 py-3">
+        <div className="flex items-center justify-between gap-3 border-b border-[var(--app-divider)] px-3 py-2.5 md:items-start md:py-3">
           <div className="min-w-0">
-            <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+            <div className="app-kicker hidden text-[11px] uppercase tracking-[0.16em] md:block">
               {labels.personalUniverse}
             </div>
-            <h2 className="mt-1 text-base font-semibold text-[var(--app-text)]">
+            <h2 className="text-sm font-semibold text-[var(--app-text)] md:mt-1 md:text-base">
               {labels.watchlist}
             </h2>
-            <p className="mt-1 text-[11px] leading-4 text-[var(--app-text-tertiary)]">
+            <p className="mt-1 hidden text-[11px] leading-4 text-[var(--app-text-tertiary)] md:block">
               {labels.scopeBoundary}
             </p>
           </div>
@@ -221,13 +219,13 @@ export function MarketInstrumentWorkspace({
       >
         {selectedItem ? (
           <>
-            <header className="flex min-w-0 flex-col gap-3 border-b border-[var(--app-divider)] pb-3 sm:flex-row sm:items-end sm:justify-between">
+            <header className="flex min-w-0 items-end justify-between gap-3 border-b border-[var(--app-divider)] pb-3">
               <div className="min-w-0">
                 <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
                   {formatAssetClassLabel(selectedItem.asset_class, copy.common)}{' '}
                   · {selectedItem.symbol}
                 </div>
-                <h2 className="mt-1 truncate text-2xl font-semibold tracking-[-0.02em] text-[var(--app-text)]">
+                <h2 className="mt-1 truncate text-xl font-semibold tracking-[-0.02em] text-[var(--app-text)] sm:text-2xl">
                   {selectedItem.name || selectedItem.symbol}
                 </h2>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--app-text-secondary)]">
@@ -241,9 +239,9 @@ export function MarketInstrumentWorkspace({
                   </span>
                 </div>
               </div>
-              <div className="shrink-0 text-left sm:text-right">
+              <div className="shrink-0 text-right">
                 <div
-                  className="text-2xl font-semibold tabular-nums text-[var(--app-text)]"
+                  className="text-xl font-semibold tabular-nums text-[var(--app-text)] sm:text-2xl"
                   data-testid="market-selected-price"
                 >
                   {formatCurrency(selectedItem.price)}
@@ -258,10 +256,6 @@ export function MarketInstrumentWorkspace({
                 </div>
               </div>
             </header>
-
-            {evidenceReview ? (
-              <div className="mt-3">{evidenceReview}</div>
-            ) : null}
 
             <div className="mt-3">
               <PriceStructureChart
@@ -339,12 +333,7 @@ export function MarketInstrumentWorkspace({
             </dl>
           </>
         ) : (
-          <>
-            {evidenceReview ? (
-              <div className="mb-4">{evidenceReview}</div>
-            ) : null}
-            <EvidenceState kind="empty" title={labels.noSelection} />
-          </>
+          <EvidenceState kind="empty" title={labels.noSelection} />
         )}
       </section>
     </div>

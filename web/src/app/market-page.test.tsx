@@ -542,15 +542,19 @@ test('keeps instrument selection explicit and updates the single detail canvas',
   expect(within(detail).getByText('-¥0.20')).toBeTruthy();
 });
 
-test('keeps quiet confirmed holding evidence after market context', async () => {
+test('keeps holding evidence separate from and after the selected market canvas', async () => {
   renderMarketPage();
 
-  const list = await screen.findByTestId('market-instrument-list');
+  const workspace = await screen.findByTestId('market-instrument-workspace');
+  const chart = await within(workspace).findByTestId(
+    'price-structure-chart-scroll',
+  );
   const review = await screen.findByTestId(
     'current-holding-market-evidence-review',
   );
+  expect(workspace.contains(review)).toBe(false);
   expect(
-    list.compareDocumentPosition(review) & Node.DOCUMENT_POSITION_FOLLOWING,
+    chart.compareDocumentPosition(review) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
 });
 
