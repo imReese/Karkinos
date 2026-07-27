@@ -8,6 +8,10 @@ const TRADING = readFileSync(
   resolve(SRC_ROOT, 'features/trading/components/trading-page.tsx'),
   'utf8',
 );
+const KILL_SWITCH = readFileSync(
+  resolve(SRC_ROOT, 'features/trading/components/kill-switch-panel.tsx'),
+  'utf8',
+);
 
 describe('trading workbench contract', () => {
   it('keeps the default review path flat and mobile filters task-first', () => {
@@ -46,6 +50,18 @@ describe('trading workbench contract', () => {
     expect(orderQueue).not.toMatch(
       /text-\[var\(--app-(?:success|warning|danger)\)\]/,
     );
+  });
+
+  it('keeps a healthy kill switch quiet while surfacing an active boundary', () => {
+    expect(KILL_SWITCH).toContain('if (enabled || killSwitch.isError)');
+    expect(KILL_SWITCH).toContain(
+      "data-kill-switch-state={snapshot ? 'inactive' : 'checking'}",
+    );
+    expect(KILL_SWITCH).toContain('<details');
+    expect(KILL_SWITCH).toContain('<ControlledActionZone');
+    expect(KILL_SWITCH).toContain('{pageLabels.expandOnDemand}');
+    expect(KILL_SWITCH).not.toContain('var(--app-success-bg)');
+    expect(KILL_SWITCH).not.toContain('var(--app-success-text)');
   });
 
   it('presents broker adapter and soak readiness as flat, read-only evidence', () => {

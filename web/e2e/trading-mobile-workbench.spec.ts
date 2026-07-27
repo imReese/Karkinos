@@ -9,10 +9,16 @@ test('trading mobile keeps the review task ahead of secondary filters', async ({
   const secondaryFilters = page.getByTestId('trading-secondary-filters');
   const symbolFilter = page.locator('[name="trading-symbol-filter"]');
   const reviewQueue = page.getByTestId('trading-review-queue');
+  const killSwitch = page.getByTestId('kill-switch-panel');
 
   await expect(secondaryFilters).not.toHaveAttribute('open', '');
   await expect(symbolFilter).toBeHidden();
   await expect(reviewQueue).toBeVisible();
+  await expect(killSwitch).toHaveAttribute(
+    'data-kill-switch-state',
+    'inactive',
+  );
+  await expect(killSwitch).not.toHaveAttribute('open', '');
 
   const taskSurface = reviewQueue
     .locator('[data-evidence-kind], table')
@@ -23,9 +29,22 @@ test('trading mobile keeps the review task ahead of secondary filters', async ({
   await expect(secondaryFilters).toHaveAttribute('open', '');
   await expect(symbolFilter).toBeVisible();
 
-  const geometry = await page.evaluate(() => ({
-    viewportWidth: window.innerWidth,
-    documentWidth: document.documentElement.scrollWidth,
-  }));
+  const geometry = await page.evaluate(() => {
+    const queue = document.querySelector(
+      '[data-testid="trading-review-queue"]',
+    ) as HTMLElement;
+    const control = document.querySelector(
+      '[data-testid="kill-switch-panel"]',
+    ) as HTMLElement;
+    return {
+      viewportWidth: window.innerWidth,
+      documentWidth: document.documentElement.scrollWidth,
+      queueTop: queue.getBoundingClientRect().top,
+      controlTop: control.getBoundingClientRect().top,
+      controlHeight: control.getBoundingClientRect().height,
+    };
+  });
   expect(geometry.documentWidth).toBeLessThanOrEqual(geometry.viewportWidth);
+  expect(geometry.queueTop).toBeLessThan(geometry.controlTop);
+  expect(geometry.controlHeight).toBeLessThan(120);
 });

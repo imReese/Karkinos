@@ -169,6 +169,8 @@ function installTradingFetchMock({
   positions = positionRows,
   operationsToday = defaultOperationsToday,
   brokerSoakPromotion = defaultBrokerSoakPromotion,
+  killSwitchEnabled = false,
+  killSwitchReason = '',
   rejectFails = false,
   ordersFail = false,
 }: {
@@ -178,6 +180,8 @@ function installTradingFetchMock({
   positions?: unknown[];
   operationsToday?: unknown;
   brokerSoakPromotion?: unknown;
+  killSwitchEnabled?: boolean;
+  killSwitchReason?: string;
   rejectFails?: boolean;
   ordersFail?: boolean;
 } = {}) {
@@ -199,8 +203,8 @@ function installTradingFetchMock({
           });
         }
         return jsonResponse({
-          kill_switch_enabled: false,
-          reason: '',
+          kill_switch_enabled: killSwitchEnabled,
+          reason: killSwitchReason,
           updated_at: '2026-05-16T10:00:00+08:00',
         });
       }
@@ -762,7 +766,14 @@ test('renders the trading approvals workspace', async () => {
   expect(await screen.findByText('Operating mode')).toBeTruthy();
   expect(await screen.findByText('Manual confirmation default')).toBeTruthy();
   expect(await screen.findByText('Broker bridge disabled')).toBeTruthy();
-  expect(await screen.findByText('Global kill switch')).toBeTruthy();
+  await waitFor(() => {
+    expect(
+      screen
+        .getByTestId('kill-switch-panel')
+        .getAttribute('data-kill-switch-state'),
+    ).toBe('inactive');
+  });
+  expect(screen.getAllByText('Global kill switch').length).toBeGreaterThan(0);
   expect(await screen.findByText('Execution audit')).toBeTruthy();
   expect(
     await screen.findByText('Order facts, fills, and simulation review'),
@@ -776,6 +787,59 @@ test('renders the trading approvals workspace', async () => {
     screen.queryByText('Order facts, fills, and shadow review'),
   ).toBeNull();
   expect(screen.queryByText(/real-time/i)).toBeNull();
+});
+
+test('keeps an inactive kill switch quiet and an active boundary prominent', async () => {
+  const user = userEvent.setup();
+  renderTradingPage({ orders: [] });
+
+  const inactivePanel = await screen.findByTestId('kill-switch-panel');
+  await waitFor(() => {
+    expect(inactivePanel.getAttribute('data-kill-switch-state')).toBe(
+      'inactive',
+    );
+  });
+  expect(inactivePanel.tagName).toBe('DETAILS');
+  expect((inactivePanel as HTMLDetailsElement).open).toBe(false);
+  expect(
+    within(inactivePanel)
+      .getAllByText('Trading allowed')
+      .every((badge) =>
+        badge.className.includes('text-[var(--app-text-secondary)]'),
+      ),
+  ).toBe(true);
+
+  await user.click(inactivePanel.querySelector('summary') as HTMLElement);
+  expect((inactivePanel as HTMLDetailsElement).open).toBe(true);
+  expect(
+    inactivePanel.querySelector(
+      '[data-workbench-primitive="controlled-action-zone"]',
+    ),
+  ).toBeTruthy();
+
+  cleanup();
+  vi.unstubAllGlobals();
+  renderTradingPage({
+    killSwitchEnabled: true,
+    killSwitchReason: 'manual safety stop',
+    orders: [],
+  });
+
+  await waitFor(() => {
+    expect(
+      screen
+        .getByTestId('kill-switch-panel')
+        .getAttribute('data-kill-switch-state'),
+    ).toBe('active');
+  });
+  const activePanel = screen.getByTestId('kill-switch-panel');
+  expect(activePanel.tagName).toBe('DIV');
+  expect(
+    activePanel
+      .querySelector('[data-workbench-primitive="controlled-action-zone"]')
+      ?.getAttribute('data-action-tone'),
+  ).toBe('danger');
+  expect(within(activePanel).getByText('Kill switch active')).toBeTruthy();
 });
 
 test('shows persisted broker adapter evidence without activation controls', async () => {
