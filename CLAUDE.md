@@ -1,14 +1,29 @@
-# Karkinos Claude Instructions
+# Karkinos Repository Instructions
 
-This is the authoritative Claude entry point for this repository.
+This is the authoritative repository entry point for AI-assisted work in
+Karkinos. Read and follow `AI_COLLABORATION.md` before implementation, review,
+diagnosis, documentation, or operational changes.
 
-Before acting, read and follow:
+## Required context
 
-1. `AGENTS.md` for repository-wide working rules.
-2. `AI_COLLABORATION.md` for product boundaries, financial-data integrity,
-   authority limits, source routing, and validation requirements.
-3. The task-specific documents selected by that policy.
+1. Read `docs/KARKINOS_GOAL.md` and the relevant README sections.
+2. Follow the task-specific source routing in `AI_COLLABORATION.md`.
+3. Treat persisted financial facts, explicit snapshots, and ledger cutoffs as
+   authoritative; provider responses and runtime caches are ingestion inputs.
+4. Preserve human confirmation as the default for live-like workflows.
 
-Claude-specific tools or local integrations may add stricter checks, but they
-must not weaken or replace the repository policy. Deleted, closed, or
-superseded issue discussions are not authoritative project goals.
+## Working rules
+
+- Preserve unrelated and uncommitted workspace changes.
+- Diagnose from source evidence before changing behavior.
+- Keep each financial concept in one canonical implementation.
+- Fail closed when evidence is missing, stale, estimated, conflicting, partial,
+  or unreconciled.
+- Add deterministic validation for affected invariants and direct consumers.
+- State validation boundaries and trading-risk impact explicitly.
+- Do not commit private account data, credentials, exports, screenshots,
+  runtime databases, or secrets.
+- Commit, push, publish, or open a pull request only when the owner requests it.
+
+Local tool integrations may add stricter checks, but they must not weaken or
+replace this file or `AI_COLLABORATION.md`.
