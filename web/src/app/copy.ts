@@ -944,11 +944,15 @@ export const copy = {
       workflowTitle: 'Evidence-first review order',
       workflowDetail:
         'Check data and account facts first, then review strategy opportunities, simulation evidence, and manual confirmation.',
+      workflowLaneKicker: 'Channel details',
+      workflowLaneTitle: 'Daily and intraday gate details',
+      workflowLaneDetail:
+        'The primary matrix shows the daily review order. Expand only to compare daily and intraday task evidence.',
       workflowCollapsedTitle: (count: number) =>
-        `${count} candidates: workflow details collapsed`,
+        `${count} candidates: channel details collapsed`,
       workflowCollapsedDetail:
-        'The next-action panel already names the first task. Expand only when auditing each gate.',
-      expandWorkflow: 'Expand workflow details',
+        'Expand only when auditing differences between daily and intraday tasks.',
+      expandWorkflow: 'Expand channel details',
       tradingPlanKicker: 'Daily trading plan',
       tradingPlanTitle: 'Manual-confirmation plan',
       tradingPlanDetail:
@@ -1010,14 +1014,10 @@ export const copy = {
       nextActionKicker: 'Next action',
       nextActionRiskTitle: 'Run pre-trade risk gate first',
       nextActionRiskDetail: (candidates: number, manualReady: number) =>
-        `${candidates} candidates are only the candidate pool; ${manualReady} are ready for manual confirmation. Run the risk gate first, then return here for approvals or simulation review.`,
+        `${candidates} candidates await risk checks; ${manualReady} are currently ready for manual confirmation. Only passed candidates can proceed to manual confirmation or simulation review.`,
       nextActionDefaultTitle: (task: string) => `Resolve ${task} first`,
       nextActionDefaultDetail: (action: string) =>
         `Complete this action before reviewing the candidate pool: ${action}.`,
-      nextActionWhat: (task: string) => `What to handle: ${task}`,
-      nextActionHow: (action: string) => `How: ${action}`,
-      nextActionAfter:
-        'Afterwards: refresh this page and review manual confirmations only if they become ready',
       nextActionCandidatePoolNote: 'Candidate pool is not an order list',
       nextActionManualReadyNote: 'Manual confirmations are ready for review',
       readyCount: (count: number) => `${count} ready`,
@@ -3710,11 +3710,14 @@ export const copy = {
       workflowTitle: '证据优先的复核顺序',
       workflowDetail:
         '先检查数据和账户事实，再查看策略机会、模拟证据与人工确认。',
+      workflowLaneKicker: '通道明细',
+      workflowLaneTitle: '日级与盘中闸门明细',
+      workflowLaneDetail:
+        '首屏矩阵给出日级复核顺序；仅在核对日级与盘中任务证据差异时展开。',
       workflowCollapsedTitle: (count: number) =>
-        `${count} 个候选：复核顺序明细已收起`,
-      workflowCollapsedDetail:
-        '下一步面板已经给出第一件事；只有审计每个闸门时再展开。',
-      expandWorkflow: '展开工作流明细',
+        `${count} 个候选：通道明细已收起`,
+      workflowCollapsedDetail: '仅在审计日级与盘中任务差异时展开。',
+      expandWorkflow: '展开通道明细',
       tradingPlanKicker: '今日交易计划',
       tradingPlanTitle: '人工确认计划',
       tradingPlanDetail:
@@ -3775,13 +3778,10 @@ export const copy = {
       nextActionKicker: '下一步',
       nextActionRiskTitle: '先运行下单前风控',
       nextActionRiskDetail: (candidates: number, manualReady: number) =>
-        `${candidates} 个候选只是候选池；当前 ${manualReady} 个可人工确认。先去风控中心批量检查风险闸门，通过后才会进入人工确认或模拟复核。`,
+        `${candidates} 个候选等待风控检查，当前 ${manualReady} 个可人工确认。通过风控后才可进入人工确认或模拟复核。`,
       nextActionDefaultTitle: (task: string) => `先处理${task}`,
       nextActionDefaultDetail: (action: string) =>
         `先完成这个动作，再查看候选池：${action}。`,
-      nextActionWhat: (task: string) => `要处理什么：${task}`,
-      nextActionHow: (action: string) => `怎么处理：${action}`,
-      nextActionAfter: '处理后：刷新本页，只复核已变为就绪的人工确认',
       nextActionCandidatePoolNote: '候选池不是待下单清单',
       nextActionManualReadyNote: '人工确认已可复核',
       readyCount: (count: number) => `${count} 个就绪`,

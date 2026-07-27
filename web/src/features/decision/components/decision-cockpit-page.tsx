@@ -840,11 +840,9 @@ function decisionWorkflowTarget(
 
 type DecisionNextActionGuide = {
   title: string;
-  detail: string;
+  reason: string;
   status: string;
-  what: string;
-  how: string;
-  after: string;
+  unblockCondition: string;
   note: string;
   cta: string | null;
   href: string | null;
@@ -918,16 +916,14 @@ function decisionNextActionGuide(
 
   return {
     title,
-    detail: isRiskGateNext
+    reason: isRiskGateNext
       ? labels.nextActionRiskDetail(
           lane.summary.candidate_count,
           lane.summary.ready_for_manual_confirmation_count,
         )
       : labels.nextActionDefaultDetail(actionLabel),
     status: formatPublicStatus(task.status, locale),
-    what: labels.nextActionWhat(taskLabel),
-    how: labels.nextActionHow(actionLabel),
-    after: labels.nextActionAfter,
+    unblockCondition: actionLabel,
     note:
       lane.summary.candidate_count >
       lane.summary.ready_for_manual_confirmation_count
@@ -3084,7 +3080,7 @@ function AutomationCockpitPanel({
         </div>
 
         <div className="mt-4 grid min-w-0 gap-2 md:grid-cols-4">
-          <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+          <div className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
             <div className="app-muted text-xs">
               {locale === 'zh' ? '执行模式' : 'Execution mode'}
             </div>
@@ -3092,7 +3088,7 @@ function AutomationCockpitPanel({
               {automationModeLabel(automationExecutionMode(cockpit), locale)}
             </div>
           </div>
-          <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+          <div className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
             <div className="app-muted text-xs">
               {locale === 'zh' ? '确认门禁' : 'Confirmation gate'}
             </div>
@@ -3106,7 +3102,7 @@ function AutomationCockpitPanel({
                   : 'Manual confirmation not enforced'}
             </div>
           </div>
-          <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+          <div className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
             <div className="app-muted text-xs">
               {locale === 'zh' ? '券商提交' : 'Broker submission'}
             </div>
@@ -3120,7 +3116,7 @@ function AutomationCockpitPanel({
                   : 'Broker submission on'}
             </div>
           </div>
-          <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+          <div className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
             <div className="app-muted text-xs">
               {locale === 'zh' ? '待处理' : 'Queue'}
             </div>
@@ -3141,7 +3137,7 @@ function AutomationCockpitPanel({
         {currentPerOrderReviews ? (
           <div
             data-testid="current-per-order-review-handoff"
-            className="mt-4 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-accent)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-accent)_7%,transparent)] px-3 py-3"
+            className="mt-4 min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-accent)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-accent)_7%,transparent)] px-3 py-3"
           >
             <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
@@ -3255,7 +3251,7 @@ function AutomationCockpitPanel({
         {controlledExecution ? (
           <div
             data-testid="controlled-execution-operator-view"
-            className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-3 py-3"
+            className="mt-4 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-3 py-3"
           >
             <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
@@ -3341,7 +3337,7 @@ function AutomationCockpitPanel({
                     },
                   ].map((item) => (
                     <div
-                      className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-3 py-2.5"
+                      className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-3 py-2.5"
                       key={item.label}
                     >
                       <div className="app-muted text-xs">{item.label}</div>
@@ -3418,7 +3414,7 @@ function AutomationCockpitPanel({
             {primaryControlledOrderJourney ? (
               <div
                 data-testid="controlled-order-journey"
-                className="mt-4 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-accent)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-accent)_7%,transparent)] px-3 py-3"
+                className="mt-4 min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-accent)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-accent)_7%,transparent)] px-3 py-3"
               >
                 <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
@@ -3451,7 +3447,7 @@ function AutomationCockpitPanel({
                       !stage.required && !stage.complete;
                     return (
                       <div
-                        className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3 py-2.5"
+                        className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3 py-2.5"
                         key={stage.key}
                       >
                         <div className="app-muted text-[11px]">
@@ -3537,7 +3533,7 @@ function AutomationCockpitPanel({
                 {controlledOrderAttentionQueue.length > 1 ? (
                   <details
                     data-testid="controlled-order-attention-queue"
-                    className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_30%,transparent)] px-3 py-2.5"
+                    className="mt-3 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-warning)_30%,transparent)] px-3 py-2.5"
                   >
                     <summary className="cursor-pointer text-xs font-semibold text-[var(--app-warning)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)]">
                       {locale === 'zh'
@@ -3635,7 +3631,7 @@ function AutomationCockpitPanel({
         ) : null}
 
         {primaryOpenAlert ? (
-          <div className="mt-3 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_8%,transparent)] px-3 py-2.5">
+          <div className="mt-3 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-warning)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_8%,transparent)] px-3 py-2.5">
             <div className="text-sm font-semibold text-[var(--app-text)]">
               {primaryOpenAlert.title}
             </div>
@@ -3669,7 +3665,7 @@ function AutomationCockpitPanel({
                   <div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-4">
                     {openAlertManualExecutionEvidence.items.map((entry) => (
                       <div
-                        className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5"
+                        className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5"
                         key={entry.label}
                       >
                         <div className="app-muted text-xs">{entry.label}</div>
@@ -3724,7 +3720,7 @@ function AutomationCockpitPanel({
                 );
                 return (
                   <div
-                    className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5"
+                    className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5"
                     key={state.strategy_id}
                   >
                     <div className="flex min-w-0 items-start justify-between gap-3">
@@ -3812,7 +3808,7 @@ function AutomationCockpitPanel({
               <div className="mt-3 grid min-w-0 gap-2 md:grid-cols-2">
                 {brokerGatewayStatus.gateways.map((gateway) => (
                   <div
-                    className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5"
+                    className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5"
                     key={gateway.gateway_id}
                   >
                     <div className="flex min-w-0 items-start justify-between gap-3">
@@ -3898,7 +3894,7 @@ function AutomationCockpitPanel({
               </div>
             ) : null}
             {brokerGatewayStatus?.controlled_bridge_policy ? (
-              <div className="mt-3 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+              <div className="mt-3 min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
                 <div className="flex min-w-0 items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="text-sm font-semibold text-[var(--app-text)]">
@@ -3996,7 +3992,7 @@ function AutomationCockpitPanel({
               <div className="mt-3 grid min-w-0 gap-2 md:grid-cols-2">
                 {brokerConnectorHealth.connectors.map((connector) => (
                   <div
-                    className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5"
+                    className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5"
                     key={connector.connector_id}
                   >
                     <div className="flex min-w-0 items-start justify-between gap-3">
@@ -4146,7 +4142,7 @@ function AutomationCockpitPanel({
               </div>
             ) : brokerAccountFacts ? (
               <div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-3">
-                <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+                <div className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
                   <div className="app-muted text-xs">
                     {locale === 'zh' ? '资金' : 'Cash'}
                   </div>
@@ -4159,7 +4155,7 @@ function AutomationCockpitPanel({
                     )}
                   </div>
                 </div>
-                <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+                <div className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
                   <div className="app-muted text-xs">
                     {locale === 'zh' ? '持仓' : 'Positions'}
                   </div>
@@ -4172,7 +4168,7 @@ function AutomationCockpitPanel({
                     )}
                   </div>
                 </div>
-                <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+                <div className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
                   <div className="app-muted text-xs">
                     {locale === 'zh' ? '成交' : 'Fills'}
                   </div>
@@ -4220,7 +4216,7 @@ function AutomationCockpitPanel({
             ) : brokerFills ? (
               <>
                 <div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-3">
-                  <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+                  <div className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
                     <div className="app-muted text-xs">
                       {locale === 'zh' ? '券商证据事件' : 'Broker evidence'}
                     </div>
@@ -4235,7 +4231,7 @@ function AutomationCockpitPanel({
                       )}
                     </div>
                   </div>
-                  <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+                  <div className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
                     <div className="app-muted text-xs">
                       {locale === 'zh' ? '样本标的' : 'Sample symbols'}
                     </div>
@@ -4243,7 +4239,7 @@ function AutomationCockpitPanel({
                       {stagedFillSymbolSummary(brokerFills, locale)}
                     </div>
                   </div>
-                  <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+                  <div className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
                     <div className="app-muted text-xs">
                       {locale === 'zh' ? '安全边界' : 'Safety boundary'}
                     </div>
@@ -4260,7 +4256,7 @@ function AutomationCockpitPanel({
                   </div>
                 </div>
                 {stagedFillReviewHint ? (
-                  <div className="mt-3 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-warning)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_8%,transparent)] px-3 py-2.5">
+                  <div className="mt-3 min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-warning)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_8%,transparent)] px-3 py-2.5">
                     <div className="text-sm font-semibold text-[var(--app-text)]">
                       {stagedFillReviewHint.title}
                     </div>
@@ -4301,7 +4297,7 @@ function AutomationCockpitPanel({
                   : 'Execution reconciliation unavailable'}
               </div>
             ) : latestExecutionReconciliationRun ? (
-              <div className="mt-3 min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+              <div className="mt-3 min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
                 <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <div className="text-sm font-semibold text-[var(--app-text)]">
@@ -4367,7 +4363,7 @@ function AutomationCockpitPanel({
                       <div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-4">
                         {brokerTradeCostEvidence.items.map((entry) => (
                           <div
-                            className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5"
+                            className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5"
                             key={entry.label}
                           >
                             <div className="app-muted text-xs">
@@ -4407,7 +4403,7 @@ function AutomationCockpitPanel({
                       <div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-4">
                         {manualExecutionEvidence.items.map((entry) => (
                           <div
-                            className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5"
+                            className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5"
                             key={entry.label}
                           >
                             <div className="app-muted text-xs">
@@ -4449,7 +4445,7 @@ function AutomationCockpitPanel({
                     <div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
                       {manualBrokerComparisonEvidence.items.map((entry) => (
                         <div
-                          className={`min-w-0 rounded-2xl border px-3 py-2.5 ${
+                          className={`min-w-0 rounded-[var(--app-radius-surface)] border px-3 py-2.5 ${
                             entry.isMismatch
                               ? 'border-[color-mix(in_srgb,var(--app-warning)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_8%,transparent)]'
                               : 'border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)]'
@@ -4512,7 +4508,7 @@ function AutomationCockpitPanel({
                       </div>
                     ) : brokerOrderQuery ? (
                       <div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-4">
-                        <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+                        <div className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
                           <div className="app-muted text-xs">
                             {locale === 'zh' ? 'OMS 订单' : 'OMS order'}
                           </div>
@@ -4532,7 +4528,7 @@ function AutomationCockpitPanel({
                             )}
                           </div>
                         </div>
-                        <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+                        <div className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
                           <div className="app-muted text-xs">
                             {locale === 'zh' ? '网关审计' : 'Gateway audit'}
                           </div>
@@ -4545,7 +4541,7 @@ function AutomationCockpitPanel({
                             )}
                           </div>
                         </div>
-                        <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+                        <div className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
                           <div className="app-muted text-xs">
                             {locale === 'zh'
                               ? '暂存成交'
@@ -4562,7 +4558,7 @@ function AutomationCockpitPanel({
                             )}
                           </div>
                         </div>
-                        <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
+                        <div className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2.5">
                           <div className="app-muted text-xs">
                             {locale === 'zh' ? '安全边界' : 'Safety boundary'}
                           </div>
@@ -4677,7 +4673,7 @@ function DailyTradingPlanPanel({
           </div>
         ) : (
           <div className="mt-4 grid min-w-0 gap-3 xl:grid-cols-[0.9fr_1.1fr]">
-            <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-3">
+            <div className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-3">
               <div className="text-sm font-semibold text-[var(--app-text)]">
                 {tradingPlanConclusionLabel(plan.conclusion_status, labels)}
               </div>
@@ -4698,7 +4694,7 @@ function DailyTradingPlanPanel({
               </div>
             </div>
 
-            <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-3">
+            <div className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-3">
               <div className="flex min-w-0 items-center justify-between gap-3">
                 <div className="min-w-0 text-sm font-semibold text-[var(--app-text)]">
                   {labels.tradingPlanOrderIntentPreviews}
@@ -4787,7 +4783,7 @@ function DailyTradingPlanPanel({
               )}
             </div>
 
-            <div className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-3 xl:col-span-2">
+            <div className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-3 xl:col-span-2">
               <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0 text-sm font-semibold text-[var(--app-text)]">
                   {locale === 'zh'
@@ -5035,7 +5031,7 @@ function decisionGateMatrixItems(
         stateLabel,
         reason: blockers.join(' · ') || stateLabel,
         evidence: lane
-          ? `${locale === 'zh' ? '工作流投影' : 'Workflow projection'} · ${lane.generated_at}`
+          ? `${locale === 'zh' ? '工作流投影' : 'Workflow projection'} · ${formatTimestamp(lane.generated_at)}`
           : missingEvidence,
         unblockCondition:
           requiredActions.length > 0 ? requiredActions.join(' · ') : undefined,
@@ -5065,7 +5061,7 @@ function decisionGateMatrixItems(
         stateLabel,
         reason: blockers.join(' · ') || stateLabel,
         evidence: lane
-          ? `${locale === 'zh' ? '决策摘要' : 'Decision summary'} · ${lane.generated_at}`
+          ? `${locale === 'zh' ? '决策摘要' : 'Decision summary'} · ${formatTimestamp(lane.generated_at)}`
           : missingEvidence,
         unblockCondition:
           requiredActions.length > 0 ? requiredActions.join(' · ') : undefined,
@@ -5414,6 +5410,7 @@ function DecisionNextActionGuidePanel({
       </h2>
       <ExceptionList
         ariaLabel={labels.nextActionKicker}
+        density="compact"
         emptyState={labels.workflowDetail}
         labels={{
           reason: locale === 'zh' ? '阻断原因' : 'Reason',
@@ -5427,22 +5424,20 @@ function DecisionNextActionGuidePanel({
             severity: 'warning',
             statusLabel: guide.status,
             title: guide.title,
-            reason: `${guide.what} · ${guide.detail}`,
-            unblockCondition: guide.how,
-            nextAction: guide.after,
-            evidence: (
-              <span className="flex flex-wrap items-center gap-2">
-                <span>{guide.note}</span>
-                {guide.href && guide.cta ? (
-                  <a
-                    className="font-semibold text-[var(--app-accent)] underline decoration-transparent underline-offset-2 hover:decoration-current"
-                    href={guide.href}
-                  >
-                    {guide.cta}
-                  </a>
-                ) : null}
-              </span>
-            ),
+            reason: guide.reason,
+            unblockCondition: guide.unblockCondition,
+            nextAction:
+              guide.href && guide.cta ? (
+                <a
+                  className="font-semibold text-[var(--app-accent)] underline decoration-transparent underline-offset-2 hover:decoration-current"
+                  href={guide.href}
+                >
+                  {guide.cta}
+                </a>
+              ) : (
+                guide.unblockCondition
+              ),
+            evidence: guide.note,
           },
         ]}
       />
@@ -5511,11 +5506,13 @@ function DecisionWorkflowPanel({ lanes }: { lanes: DecisionResponse[] }) {
       <div className="min-w-0 px-1 sm:px-3">
         <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
-            <div className="app-product-mark">{labels.workflowKicker}</div>
-            <h2 className="app-card-title mt-1.5">{labels.workflowTitle}</h2>
+            <div className="app-product-mark">{labels.workflowLaneKicker}</div>
+            <h2 className="app-card-title mt-1.5">
+              {labels.workflowLaneTitle}
+            </h2>
           </div>
           <p className="app-muted max-w-2xl break-words text-sm leading-6 sm:text-right">
-            {labels.workflowDetail}
+            {labels.workflowLaneDetail}
           </p>
         </div>
 

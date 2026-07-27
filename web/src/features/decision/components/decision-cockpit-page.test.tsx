@@ -1173,7 +1173,7 @@ async function expandDecisionSummary(locale: 'en' | 'zh' = 'en') {
 async function expandDecisionWorkflow(locale: 'en' | 'zh' = 'en') {
   fireEvent.click(
     await screen.findByRole('button', {
-      name: locale === 'zh' ? '展开工作流明细' : 'Expand workflow details',
+      name: locale === 'zh' ? '展开通道明细' : 'Expand channel details',
     }),
   );
 }
@@ -4389,9 +4389,10 @@ test('renders localized decision workflow tasks before candidate actions', async
   await expandDecisionWorkflow('zh');
 
   const workflow = await screen.findByTestId('decision-workflow-tasks');
-  expect(await screen.findByText('决策工作流')).toBeTruthy();
+  expect(await screen.findByText('通道明细')).toBeTruthy();
+  expect(await screen.findByText('日级与盘中闸门明细')).toBeTruthy();
   expect(workflow.textContent).toContain(
-    '先检查数据和账户事实，再查看策略机会',
+    '仅在核对日级与盘中任务证据差异时展开',
   );
   expect(workflow.textContent).toContain('数据刷新');
   expect(workflow.textContent).toContain('刷新或确认行情');
@@ -4521,10 +4522,10 @@ test('surfaces the one next action before dense decision evidence', async () => 
   const workflow = await screen.findByTestId('decision-workflow-tasks');
   expect(guide.textContent).toContain('下一步');
   expect(guide.textContent).toContain('先运行下单前风控');
-  expect(workflow.textContent).toContain('50 个候选：复核顺序明细已收起');
-  expect(workflow.textContent).toContain('展开工作流明细');
+  expect(workflow.textContent).toContain('50 个候选：通道明细已收起');
+  expect(workflow.textContent).toContain('展开通道明细');
   expect(guide.textContent).toContain(
-    '50 个候选只是候选池；当前 0 个可人工确认。',
+    '50 个候选等待风控检查，当前 0 个可人工确认。',
   );
   expect(guide.textContent).toContain('候选池不是待下单清单');
   expect(
@@ -4532,6 +4533,12 @@ test('surfaces the one next action before dense decision evidence', async () => 
       .getByRole('link', { name: '打开风控中心：先运行下单前风控' })
       .getAttribute('href'),
   ).toBe('/risk');
+  expect(guide.textContent).not.toContain('要处理什么');
+  expect(guide.textContent).not.toContain('怎么处理');
+  expect(guide.textContent).not.toContain('处理后');
+  const gateMatrix = await screen.findByTestId('decision-gate-matrix');
+  expect(gateMatrix.textContent).toContain('06/12');
+  expect(gateMatrix.textContent).not.toContain('2026-06-12T09:31:00+08:00');
   const collapsedSummary = await screen.findByTestId(
     'decision-summary-collapsed',
   );

@@ -171,7 +171,7 @@ export function DecisionQualityPanel() {
               {target.dimensions.map((dimension) => (
                 <article
                   key={dimension.name}
-                  className={`min-w-0 rounded-2xl border bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-3 ${dimensionTone(
+                  className={`min-w-0 rounded-[var(--app-radius-surface)] border bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-3 ${dimensionTone(
                     dimension,
                   )}`}
                 >
@@ -193,20 +193,20 @@ export function DecisionQualityPanel() {
             </div>
 
             <div className="mt-4 grid min-w-0 gap-2 sm:grid-cols-3">
-              <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-3 py-2.5">
+              <div className="rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-3 py-2.5">
                 <div className="app-muted text-[11px]">{labels.current}</div>
                 <div className="mt-1 font-mono text-sm tabular-nums text-[var(--app-text)]">
                   {target.decision_date} · {target.passed_dimension_count}/
                   {target.dimension_count}
                 </div>
               </div>
-              <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-3 py-2.5">
+              <div className="rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-3 py-2.5">
                 <div className="app-muted text-[11px]">{labels.history}</div>
                 <div className="mt-1 font-mono text-sm tabular-nums text-[var(--app-text)]">
                   {report.evaluated_day_count}
                 </div>
               </div>
-              <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-3 py-2.5">
+              <div className="rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-3 py-2.5">
                 <div className="app-muted text-[11px]">{labels.score}</div>
                 <div className="mt-1 font-mono text-sm tabular-nums text-[var(--app-text)]">
                   {report.score_percent == null
