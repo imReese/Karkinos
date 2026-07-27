@@ -648,7 +648,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
           ? ('stale' as const)
           : ('ready' as const);
 
-  const summaryMetrics: DetailMetric[] = [
+  const positionSizeMetrics: DetailMetric[] = [
     { label: labels.quantity, value: formatQuantity(position.quantity) },
     {
       label: labels.availableFrozen,
@@ -656,6 +656,8 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
         position.frozen_qty,
       )}`,
     },
+  ];
+  const summaryMetrics: DetailMetric[] = [
     {
       label: labels.marketValue,
       value: formatCurrency(position.market_value),
@@ -840,62 +842,65 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
         />
       </div>
 
-      <WorkbenchEvidenceState
-        kind={evidenceStateKind}
-        statusLabel={
-          isHistoricalClosedPosition
-            ? labels.closedHistoryOnly
-            : evidenceReviewState
-        }
-        title={
-          quoteNeedsReview && evidenceIdentityConsistent
-            ? labels.cacheNotice
-            : labels.evidenceSummaryTitle
-        }
-        description={
-          isHistoricalClosedPosition
-            ? labels.closedNoCurrentExposure
-            : nextManualStep
-        }
-        evidence={`${labels.valuationTimestamp} ${formatTimestamp(
-          snapshot.data?.valuation_as_of,
-        )} · ${labels.quoteTimestamp} ${formatTimestamp(quoteTimestamp)}`}
-      />
+      <div
+        data-testid="holding-detail-overview"
+        className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.75fr)] md:items-stretch"
+      >
+        <WorkbenchEvidenceState
+          kind={evidenceStateKind}
+          statusLabel={
+            isHistoricalClosedPosition
+              ? labels.closedHistoryOnly
+              : evidenceReviewState
+          }
+          title={
+            quoteNeedsReview && evidenceIdentityConsistent
+              ? labels.cacheNotice
+              : labels.evidenceSummaryTitle
+          }
+          description={
+            isHistoricalClosedPosition
+              ? labels.closedNoCurrentExposure
+              : nextManualStep
+          }
+          evidence={`${labels.valuationTimestamp} ${formatTimestamp(
+            snapshot.data?.valuation_as_of,
+          )} · ${labels.quoteTimestamp} ${formatTimestamp(quoteTimestamp)}`}
+          className="md:col-start-2 md:row-start-1"
+        />
+        <section className="min-w-0 md:col-start-1 md:row-start-1">
+          <div
+            data-testid="holding-summary-header"
+            className="sr-only"
+            aria-hidden="true"
+          >
+            <span>{displayName}</span>
+            <span data-testid="holding-summary-symbol">{position.symbol}</span>
+          </div>
+          <h2
+            data-testid="holding-summary-title"
+            className="mb-2 text-sm font-semibold text-[var(--app-text)]"
+          >
+            {labels.summary}
+          </h2>
+          <div data-testid="holding-summary-metrics">
+            <WorkbenchMetricStrip
+              ariaLabel={labels.summary}
+              items={summaryMetrics.map((metric) => ({
+                id: metric.label,
+                label: metric.label,
+                value: metric.value,
+                detail: metric.detail,
+                tone: metric.tone,
+              }))}
+              className="sm:grid-flow-row sm:grid-cols-2 xl:grid-cols-4"
+            />
+          </div>
+        </section>
+      </div>
 
       <div className="space-y-5">
         <div className="min-w-0 space-y-5">
-          <section className="min-w-0">
-            <div
-              data-testid="holding-summary-header"
-              className="sr-only"
-              aria-hidden="true"
-            >
-              <span>{displayName}</span>
-              <span data-testid="holding-summary-symbol">
-                {position.symbol}
-              </span>
-            </div>
-            <h2
-              data-testid="holding-summary-title"
-              className="mb-2 text-sm font-semibold text-[var(--app-text)]"
-            >
-              {labels.summary}
-            </h2>
-            <div data-testid="holding-summary-metrics">
-              <WorkbenchMetricStrip
-                ariaLabel={labels.summary}
-                items={summaryMetrics.map((metric) => ({
-                  id: metric.label,
-                  label: metric.label,
-                  value: metric.value,
-                  detail: metric.detail,
-                  tone: metric.tone,
-                }))}
-                className="sm:grid-flow-row sm:grid-cols-3 xl:grid-cols-6"
-              />
-            </div>
-          </section>
-
           <div
             role="tablist"
             aria-label={labels.tabListLabel}
@@ -972,6 +977,18 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
                 rangeAriaLabel={copy.market.showKlineRange}
                 markers={tradeMarkers}
                 referenceLines={costReferenceLines}
+              />
+            </div>
+            <div data-testid="holding-position-size-metrics" className="mt-4">
+              <WorkbenchMetricStrip
+                ariaLabel={`${labels.quantity} · ${labels.availableFrozen}`}
+                items={positionSizeMetrics.map((metric) => ({
+                  id: metric.label,
+                  label: metric.label,
+                  value: metric.value,
+                  detail: metric.detail,
+                  tone: metric.tone,
+                }))}
               />
             </div>
           </section>
