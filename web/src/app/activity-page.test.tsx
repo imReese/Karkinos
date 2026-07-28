@@ -145,9 +145,13 @@ test('does not derive authoritative net cash impact from the visible ledger rows
   expect(await screen.findByText('Not exposed')).toBeTruthy();
   expect(
     await screen.findByText(
-      'Canonical aggregate not exposed; visible rows are not summed in-browser.',
+      'No persisted aggregate is available; visible rows are not summed here.',
     ),
   ).toBeTruthy();
+  expect(
+    document.querySelectorAll('.activity-summary-strip > div'),
+  ).toHaveLength(2);
+  expect(await screen.findByText('2 entries')).toBeTruthy();
   expect(await screen.findByText('Commission ¥5.00')).toBeTruthy();
   expect(await screen.findByText('Stamp tax ¥0.00')).toBeTruthy();
   expect(await screen.findByText('Transfer fee ¥0.16')).toBeTruthy();

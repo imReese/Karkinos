@@ -1200,16 +1200,6 @@ h3 {
   white-space: normal;
 }
 
-[data-workbench-route='activity']
-  .activity-summary-strip
-  .app-metric-strip-item
-  > .truncate {
-  overflow: visible;
-  overflow-wrap: anywhere;
-  text-overflow: clip;
-  white-space: normal;
-}
-
 [data-testid='operations-page'] > .app-metric-strip {
   grid-auto-flow: row;
   grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -2473,14 +2473,10 @@ export const copy = {
       summary: {
         pendingOrders: 'Pending fund orders',
         pendingOrdersDetail: 'Subscriptions waiting for NAV confirmation.',
-        recentEntries: 'Recent entries',
-        recentEntriesDetail: 'Visible audit rows in the current timeline.',
         netCashImpact: 'Net cash impact',
         netCashImpactUnavailable: 'Not exposed',
         netCashImpactDetail:
-          'Canonical aggregate not exposed; visible rows are not summed in-browser.',
-        latestActivity: 'Latest activity',
-        latestActivityDetail: 'Most recent audited ledger timestamp.',
+          'No persisted aggregate is available; visible rows are not summed here.',
       },
       entryTools: {
         kicker: 'Entry tools',
@@ -5215,14 +5211,9 @@ export const copy = {
       summary: {
         pendingOrders: '待确认申购',
         pendingOrdersDetail: '等待净值确认的基金申购。',
-        recentEntries: '近期流水',
-        recentEntriesDetail: '当前时间线可见的审计记录。',
         netCashImpact: '净现金影响',
         netCashImpactUnavailable: '未提供',
-        netCashImpactDetail:
-          '未提供 canonical 持久化汇总；浏览器不会合计可见流水。',
-        latestActivity: '最新活动',
-        latestActivityDetail: '最近一条账本审计时间。',
+        netCashImpactDetail: '后端没有提供持久化汇总；这里不会从可见流水估算。',
       },
       entryTools: {
         kicker: '录入工具',
