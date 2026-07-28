@@ -21,9 +21,12 @@ describe('trading workbench contract', () => {
     );
 
     expect(tradingPage).toContain('data-testid="trading-secondary-filters"');
+    expect(tradingPage).toContain('data-testid="trading-review-posture"');
+    expect(tradingPage).toContain('border-y border-[var(--app-divider)] py-3');
     expect(tradingPage).toContain('group-open:grid sm:contents');
     expect(tradingPage).toContain('app-workbench-section');
     expect(tradingPage).toContain('EvidenceState');
+    expect(tradingPage).not.toContain('<FilterBar');
     expect(tradingPage).not.toContain('app-panel');
     expect(tradingPage).not.toMatch(/rounded-(?:2xl|3xl)/);
   });
