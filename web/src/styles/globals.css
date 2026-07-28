@@ -1200,6 +1200,28 @@ h3 {
   white-space: normal;
 }
 
+@media (max-width: 639px) {
+  [data-workbench-route='backtest'] > .app-backtest-context-strip {
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(148px, 46vw);
+    grid-template-columns: none;
+    overflow-x: auto;
+    scroll-snap-type: inline proximity;
+    scrollbar-width: none;
+  }
+
+  [data-workbench-route='backtest']
+    > .app-backtest-context-strip
+    > .app-metric-strip-item {
+    scroll-snap-align: start;
+  }
+
+  [data-workbench-route='backtest']
+    > .app-backtest-context-strip::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 [data-testid='operations-page'] > .app-metric-strip {
   grid-auto-flow: row;
   grid-template-columns: repeat(2, minmax(0, 1fr));

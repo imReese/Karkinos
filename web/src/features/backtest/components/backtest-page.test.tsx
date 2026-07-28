@@ -1312,6 +1312,10 @@ test('renders the backtest workspace and saved report history', async () => {
   const equityChart = await within(persistedEvidence).findByRole('heading', {
     name: 'Equity and drawdown',
   });
+  const metrics = persistedEvidence.querySelector(
+    '[data-backtest-report-section="metrics"]',
+  );
+  expect(metrics).toBeTruthy();
   const validationEvidence = within(persistedEvidence).getByRole('heading', {
     name: 'Validation evidence',
   });
@@ -1321,6 +1325,10 @@ test('renders the backtest workspace and saved report history', async () => {
   const strategySnapshot = within(persistedEvidence).getByRole('heading', {
     name: 'Strategy snapshot',
   });
+  expect(
+    equityChart.compareDocumentPosition(metrics!) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
   expect(
     equityChart.compareDocumentPosition(validationEvidence) &
       Node.DOCUMENT_POSITION_FOLLOWING,
@@ -1358,6 +1366,7 @@ test('keeps setup and current results in one primary workspace with mobile tabs'
 
   expect(setup).toBeTruthy();
   expect(contextMetrics?.className).toContain('app-backtest-evidence-strip');
+  expect(contextMetrics?.className).toContain('app-backtest-context-strip');
   expect(primary.contains(setup)).toBe(true);
   expect(primary.contains(results)).toBe(true);
   expect(tabs.getAttribute('role')).toBe('tablist');
@@ -2148,6 +2157,13 @@ test('keeps portfolio handoff context visible beside the run evidence chain', as
   fireEvent.submit(runButton.closest('form') as HTMLFormElement);
 
   const runContext = await screen.findByTestId('backtest-run-context-summary');
+  const equityChart = screen.getByRole('heading', {
+    name: 'Equity and drawdown',
+  });
+  expect(
+    equityChart.compareDocumentPosition(runContext) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
   expect(runContext.textContent).toContain('Run context');
   expect(runContext.textContent).toContain('From holding detail');
   expect(runContext.textContent).toContain('600519');
