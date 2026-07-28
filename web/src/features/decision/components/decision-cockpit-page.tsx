@@ -4650,321 +4650,314 @@ function DailyTradingPlanPanel({
   return (
     <section
       data-testid="decision-daily-trading-plan"
-      className="app-terminal-panel min-w-0 overflow-hidden rounded-[28px] p-[1px]"
+      className="min-w-0 border-y border-[var(--app-divider)] py-4 sm:py-5"
     >
-      <div className="app-terminal-inner min-w-0 rounded-[27px] p-4 sm:p-5">
-        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0">
-            <div className="app-product-mark">{labels.tradingPlanKicker}</div>
-            <h2 className="app-card-title mt-1.5">{labels.tradingPlanTitle}</h2>
-          </div>
-          <p className="app-muted max-w-2xl break-words text-sm leading-6 sm:text-right">
-            {labels.tradingPlanDetail}
-          </p>
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="app-product-mark">{labels.tradingPlanKicker}</div>
+          <h2 className="app-card-title mt-1.5">{labels.tradingPlanTitle}</h2>
         </div>
+        <p className="app-muted max-w-2xl break-words text-sm leading-6 sm:text-right">
+          {labels.tradingPlanDetail}
+        </p>
+      </div>
 
-        {loading ? (
-          <div className="app-muted mt-4 text-sm">
-            {labels.tradingPlanLoading}
-          </div>
-        ) : error || !plan ? (
-          <div className="app-error-text mt-4 text-sm">
-            {labels.tradingPlanError}
-          </div>
-        ) : (
-          <div className="mt-4 grid min-w-0 gap-3 xl:grid-cols-[0.9fr_1.1fr]">
-            <div className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-3">
-              <div className="text-sm font-semibold text-[var(--app-text)]">
-                {tradingPlanConclusionLabel(plan.conclusion_status, labels)}
-              </div>
-              <div className="app-muted mt-2 text-sm">
-                {labels.tradingPlanCounts(
-                  plan.candidate_pool_count,
-                  plan.order_intent_count,
-                  plan.blocked_count,
-                )}
-              </div>
-              <div className="mt-3 flex min-w-0 flex-wrap gap-2">
-                <span className="app-chip">
-                  {labels.tradingPlanDefaultManual}
-                </span>
-                <span className="app-chip">
-                  {labels.tradingPlanBrokerDisabled}
-                </span>
-              </div>
+      {loading ? (
+        <div className="app-muted mt-4 text-sm">
+          {labels.tradingPlanLoading}
+        </div>
+      ) : error || !plan ? (
+        <div className="app-error-text mt-4 text-sm">
+          {labels.tradingPlanError}
+        </div>
+      ) : (
+        <div className="mt-4 grid min-w-0 gap-x-6 gap-y-4 xl:grid-cols-[0.9fr_1.1fr]">
+          <div className="min-w-0 border-l-2 border-[var(--app-accent)] py-1 pl-3">
+            <div className="text-sm font-semibold text-[var(--app-text)]">
+              {tradingPlanConclusionLabel(plan.conclusion_status, labels)}
             </div>
-
-            <div className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-3">
-              <div className="flex min-w-0 items-center justify-between gap-3">
-                <div className="min-w-0 text-sm font-semibold text-[var(--app-text)]">
-                  {labels.tradingPlanOrderIntentPreviews}
-                </div>
-                <span className="app-chip">{plan.order_intent_count}</span>
-              </div>
-              {firstIntent ? (
-                <div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-2">
-                  <div className="min-w-0 break-words">
-                    {firstIntent.symbol} ·{' '}
-                    {formatPublicStatus(firstIntent.side, locale)}
-                  </div>
-                  <div className="font-mono tabular-nums">
-                    {labels.tradingPlanQuantity}:{' '}
-                    {firstIntent.estimated_quantity}
-                  </div>
-                  <div className="font-mono tabular-nums">
-                    {labels.targetWeight}:{' '}
-                    {formatPercent(firstIntent.target_weight)}
-                  </div>
-                  <div className="font-mono tabular-nums">
-                    {labels.price}: {formatPrice(firstIntent.estimated_price)}
-                  </div>
-                  <div className="font-mono tabular-nums">
-                    {labels.tradingPlanFee}:{' '}
-                    {formatCurrency(firstIntent.estimated_total_fee)}
-                  </div>
-                  <div className="font-mono tabular-nums">
-                    {labels.tradingPlanNetCash}:{' '}
-                    {formatCurrency(firstIntent.estimated_net_cash_impact)}
-                  </div>
-                  {firstIntent.cash_shortfall > 0 ? (
-                    <div className="font-mono tabular-nums text-[var(--app-warning)]">
-                      {labels.tradingPlanCashShortfallAmount}:{' '}
-                      {formatCurrency(firstIntent.cash_shortfall)}
-                    </div>
-                  ) : null}
-                  {constraintChecks.length > 0 ? (
-                    <div className="sm:col-span-2">
-                      <div className="app-muted mb-2 text-xs font-semibold uppercase tracking-[0.16em]">
-                        {labels.tradingPlanConstraintChecks}
-                      </div>
-                      <div className="flex min-w-0 flex-wrap gap-2">
-                        {constraintChecks.map((check) => (
-                          <span
-                            className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
-                              check.status === 'blocked'
-                                ? 'border-[color-mix(in_srgb,var(--app-danger)_40%,transparent)] text-[var(--app-danger)]'
-                                : 'border-[color-mix(in_srgb,var(--app-success)_35%,transparent)] text-[var(--app-success)]'
-                            }`}
-                            key={check.id}
-                          >
-                            {tradingPlanConstraintLabel(check.id, locale)} ·{' '}
-                            {formatPublicStatus(check.status, locale)}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                  {firstIntent.position_effect ? (
-                    <>
-                      <div className="font-mono tabular-nums">
-                        {labels.tradingPlanPositionAfter}:{' '}
-                        {firstIntent.position_effect.estimated_quantity_after}
-                      </div>
-                      <div className="font-mono tabular-nums">
-                        {labels.tradingPlanCostBasis}:{' '}
-                        {firstIntent.position_effect
-                          .estimated_avg_cost_after === null
-                          ? firstIntent.position_effect.cost_basis_method
-                          : `${formatPrice(
-                              firstIntent.position_effect
-                                .estimated_avg_cost_after,
-                            )} · ${firstIntent.position_effect.cost_basis_method}`}
-                      </div>
-                    </>
-                  ) : null}
-                  <div className="app-muted sm:col-span-2">
-                    {labels.tradingPlanDoesNotSubmit}
-                  </div>
-                </div>
-              ) : (
-                <div className="app-muted mt-3 text-sm">
-                  {labels.tradingPlanNoOrderIntents}
-                </div>
+            <div className="app-muted mt-2 text-sm">
+              {labels.tradingPlanCounts(
+                plan.candidate_pool_count,
+                plan.order_intent_count,
+                plan.blocked_count,
               )}
             </div>
-
-            <div className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-3 xl:col-span-2">
-              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0 text-sm font-semibold text-[var(--app-text)]">
-                  {locale === 'zh'
-                    ? 'Paper/shadow 模拟复核'
-                    : 'Paper/shadow simulation review'}
-                </div>
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <span className="app-chip">
-                    {paperShadowStatusLabel(currentShadowStatus, locale)}
-                  </span>
-                  <button
-                    type="button"
-                    className="app-button-secondary inline-flex min-h-8 items-center justify-center rounded-xl px-3 py-1.5 text-center text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!canRunPaperShadow || paperShadowRunPending}
-                    onClick={onRunPaperShadow}
-                  >
-                    {paperShadowRunPending
-                      ? locale === 'zh'
-                        ? '运行中'
-                        : 'Running'
-                      : runPaperShadowLabel}
-                  </button>
-                </div>
-              </div>
-              <div className="app-muted mt-2 text-sm">
-                {paperShadowNextStepLabel(
-                  operationsToday?.paper_shadow.next_manual_review_step ??
-                    'run_paper_shadow_daily',
-                  locale,
-                )}
-              </div>
-              {paperShadowInputSnapshotItems.length > 0 ? (
-                <div className="mt-3 grid min-w-0 gap-1 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2 text-xs text-[var(--app-text)]">
-                  {paperShadowInputSnapshotItems.map((item) => (
-                    <div className="min-w-0 break-words" key={item}>
-                      {item}
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-              {paperShadowManualHandoffItems.length > 0 ? (
-                <div className="mt-3 grid min-w-0 gap-1 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2 text-xs text-[var(--app-text)]">
-                  {paperShadowManualHandoffItems.map((item) => (
-                    <div className="min-w-0 break-words" key={item}>
-                      {item}
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-              {paperShadowRunError ? (
-                <div className="mt-2 text-sm font-semibold text-[var(--app-danger)]">
-                  {locale === 'zh'
-                    ? '模拟复核运行失败，请查看后端日志。'
-                    : 'Simulation run failed; check backend logs.'}
-                </div>
-              ) : null}
-              <div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-4">
-                <div>
-                  <div className="app-muted text-xs">
-                    {locale === 'zh' ? '订单意图' : 'Order intents'}
-                  </div>
-                  <div className="font-mono tabular-nums">
-                    {operationsToday?.paper_shadow.order_intent_count ??
-                      plan.order_intent_count}
-                  </div>
-                </div>
-                <div>
-                  <div className="app-muted text-xs">
-                    {locale === 'zh' ? '模拟订单' : 'Sim orders'}
-                  </div>
-                  <div className="font-mono tabular-nums">
-                    {operationsToday?.paper_shadow.simulated_order_count ?? 0}
-                  </div>
-                </div>
-                <div>
-                  <div className="app-muted text-xs">
-                    {locale === 'zh' ? '模拟成交' : 'Sim fills'}
-                  </div>
-                  <div className="font-mono tabular-nums">
-                    {operationsToday?.paper_shadow.simulated_fill_count ?? 0}
-                  </div>
-                </div>
-                <div>
-                  <div className="app-muted text-xs">
-                    {locale === 'zh' ? '偏差复核' : 'Divergence reviews'}
-                  </div>
-                  <div className="font-mono tabular-nums">
-                    {operationsToday?.paper_shadow.divergence_reviewed_count ??
-                      0}
-                  </div>
-                </div>
-              </div>
-              {paperShadowReviewQueue.length > 0 ? (
-                <div className="mt-3 min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-warning)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_8%,transparent)] px-3 py-2 text-sm">
-                  <div className="text-xs font-semibold uppercase text-[var(--app-muted)]">
-                    {locale === 'zh' ? '复核队列' : 'Review queue'}
-                  </div>
-                  <div className="mt-2 grid min-w-0 gap-2">
-                    {paperShadowReviewQueue.slice(0, 3).map((item) => {
-                      const safetyText = paperShadowReviewQueueSafetyText(
-                        item,
-                        locale,
-                      );
-                      const detailItems = paperShadowReviewQueueDetailItems(
-                        item,
-                        locale,
-                      );
-                      return (
-                        <div
-                          className="min-w-0"
-                          key={item.review_id || item.order_id || item.symbol}
-                        >
-                          <div className="min-w-0 break-words font-semibold text-[var(--app-text)]">
-                            {paperShadowReviewQueueItemTitle(item, locale)}
-                          </div>
-                          {safetyText ? (
-                            <div className="app-muted mt-1 min-w-0 break-words text-xs">
-                              {safetyText}
-                            </div>
-                          ) : null}
-                          {detailItems.length > 0 ? (
-                            <div className="mt-1 grid min-w-0 gap-1 text-xs text-[var(--app-text)]">
-                              {detailItems.map((detail) => (
-                                <div
-                                  className="min-w-0 break-words"
-                                  key={detail}
-                                >
-                                  {detail}
-                                </div>
-                              ))}
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : null}
-              {paperShadowCostItems.length > 0 ? (
-                <div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-2 xl:grid-cols-5">
-                  {paperShadowCostItems.map((item) => (
-                    <div
-                      className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-3 py-2"
-                      key={item.label}
-                    >
-                      <div className="app-muted text-xs">{item.label}</div>
-                      <div className="min-w-0 break-words font-mono tabular-nums text-[var(--app-text)]">
-                        {item.value}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-              {paperShadowDivergenceBlocks.length > 0 ? (
-                <div className="mt-3 grid min-w-0 gap-2 text-sm lg:grid-cols-2">
-                  {paperShadowDivergenceBlocks.map((block) => (
-                    <div
-                      className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_8%,transparent)] px-3 py-2"
-                      key={block.title}
-                    >
-                      <div className="text-xs font-semibold uppercase text-[var(--app-muted)]">
-                        {block.title}
-                      </div>
-                      <div className="mt-2 grid min-w-0 gap-1">
-                        {block.items.map((item) => (
-                          <div
-                            className="min-w-0 break-words text-[var(--app-text)]"
-                            key={item}
-                          >
-                            {item}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
+            <div className="mt-3 flex min-w-0 flex-wrap gap-2">
+              <span className="app-chip">
+                {labels.tradingPlanDefaultManual}
+              </span>
+              <span className="app-chip">
+                {labels.tradingPlanBrokerDisabled}
+              </span>
             </div>
           </div>
-        )}
-      </div>
+
+          <div className="min-w-0 border-l-2 border-[var(--app-divider)] py-1 pl-3">
+            <div className="flex min-w-0 items-center justify-between gap-3">
+              <div className="min-w-0 text-sm font-semibold text-[var(--app-text)]">
+                {labels.tradingPlanOrderIntentPreviews}
+              </div>
+              <span className="app-chip">{plan.order_intent_count}</span>
+            </div>
+            {firstIntent ? (
+              <div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-2">
+                <div className="min-w-0 break-words">
+                  {firstIntent.symbol} ·{' '}
+                  {formatPublicStatus(firstIntent.side, locale)}
+                </div>
+                <div className="font-mono tabular-nums">
+                  {labels.tradingPlanQuantity}: {firstIntent.estimated_quantity}
+                </div>
+                <div className="font-mono tabular-nums">
+                  {labels.targetWeight}:{' '}
+                  {formatPercent(firstIntent.target_weight)}
+                </div>
+                <div className="font-mono tabular-nums">
+                  {labels.price}: {formatPrice(firstIntent.estimated_price)}
+                </div>
+                <div className="font-mono tabular-nums">
+                  {labels.tradingPlanFee}:{' '}
+                  {formatCurrency(firstIntent.estimated_total_fee)}
+                </div>
+                <div className="font-mono tabular-nums">
+                  {labels.tradingPlanNetCash}:{' '}
+                  {formatCurrency(firstIntent.estimated_net_cash_impact)}
+                </div>
+                {firstIntent.cash_shortfall > 0 ? (
+                  <div className="font-mono tabular-nums text-[var(--app-warning-text)]">
+                    {labels.tradingPlanCashShortfallAmount}:{' '}
+                    {formatCurrency(firstIntent.cash_shortfall)}
+                  </div>
+                ) : null}
+                {constraintChecks.length > 0 ? (
+                  <div className="sm:col-span-2">
+                    <div className="app-muted mb-2 text-xs font-semibold uppercase tracking-[0.16em]">
+                      {labels.tradingPlanConstraintChecks}
+                    </div>
+                    <div className="flex min-w-0 flex-wrap gap-2">
+                      {constraintChecks.map((check) => (
+                        <span
+                          className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                            check.status === 'blocked'
+                              ? 'border-[color-mix(in_srgb,var(--app-danger)_40%,transparent)] text-[var(--app-danger-text)]'
+                              : 'border-[color-mix(in_srgb,var(--app-success)_35%,transparent)] text-[var(--app-success-text)]'
+                          }`}
+                          key={check.id}
+                        >
+                          {tradingPlanConstraintLabel(check.id, locale)} ·{' '}
+                          {formatPublicStatus(check.status, locale)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {firstIntent.position_effect ? (
+                  <>
+                    <div className="font-mono tabular-nums">
+                      {labels.tradingPlanPositionAfter}:{' '}
+                      {firstIntent.position_effect.estimated_quantity_after}
+                    </div>
+                    <div className="font-mono tabular-nums">
+                      {labels.tradingPlanCostBasis}:{' '}
+                      {firstIntent.position_effect.estimated_avg_cost_after ===
+                      null
+                        ? firstIntent.position_effect.cost_basis_method
+                        : `${formatPrice(
+                            firstIntent.position_effect
+                              .estimated_avg_cost_after,
+                          )} · ${firstIntent.position_effect.cost_basis_method}`}
+                    </div>
+                  </>
+                ) : null}
+                <div className="app-muted sm:col-span-2">
+                  {labels.tradingPlanDoesNotSubmit}
+                </div>
+              </div>
+            ) : (
+              <div className="app-muted mt-3 text-sm">
+                {labels.tradingPlanNoOrderIntents}
+              </div>
+            )}
+          </div>
+
+          <div className="min-w-0 border-t border-[var(--app-divider)] pt-4 xl:col-span-2">
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 text-sm font-semibold text-[var(--app-text)]">
+                {locale === 'zh'
+                  ? 'Paper/shadow 模拟复核'
+                  : 'Paper/shadow simulation review'}
+              </div>
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="app-chip">
+                  {paperShadowStatusLabel(currentShadowStatus, locale)}
+                </span>
+                <button
+                  type="button"
+                  className="app-button-secondary inline-flex min-h-10 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-center text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!canRunPaperShadow || paperShadowRunPending}
+                  onClick={onRunPaperShadow}
+                >
+                  {paperShadowRunPending
+                    ? locale === 'zh'
+                      ? '运行中'
+                      : 'Running'
+                    : runPaperShadowLabel}
+                </button>
+              </div>
+            </div>
+            <div className="app-muted mt-2 text-sm">
+              {paperShadowNextStepLabel(
+                operationsToday?.paper_shadow.next_manual_review_step ??
+                  'run_paper_shadow_daily',
+                locale,
+              )}
+            </div>
+            {paperShadowInputSnapshotItems.length > 0 ? (
+              <div className="mt-3 grid min-w-0 gap-1 border-l-2 border-[var(--app-divider)] py-1 pl-3 text-xs text-[var(--app-text)]">
+                {paperShadowInputSnapshotItems.map((item) => (
+                  <div className="min-w-0 break-words" key={item}>
+                    {item}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {paperShadowManualHandoffItems.length > 0 ? (
+              <div className="mt-3 grid min-w-0 gap-1 border-l-2 border-[var(--app-divider)] py-1 pl-3 text-xs text-[var(--app-text)]">
+                {paperShadowManualHandoffItems.map((item) => (
+                  <div className="min-w-0 break-words" key={item}>
+                    {item}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {paperShadowRunError ? (
+              <div className="mt-2 text-sm font-semibold text-[var(--app-danger-text)]">
+                {locale === 'zh'
+                  ? '模拟复核运行失败，请查看后端日志。'
+                  : 'Simulation run failed; check backend logs.'}
+              </div>
+            ) : null}
+            <div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-4">
+              <div>
+                <div className="app-muted text-xs">
+                  {locale === 'zh' ? '订单意图' : 'Order intents'}
+                </div>
+                <div className="font-mono tabular-nums">
+                  {operationsToday?.paper_shadow.order_intent_count ??
+                    plan.order_intent_count}
+                </div>
+              </div>
+              <div>
+                <div className="app-muted text-xs">
+                  {locale === 'zh' ? '模拟订单' : 'Sim orders'}
+                </div>
+                <div className="font-mono tabular-nums">
+                  {operationsToday?.paper_shadow.simulated_order_count ?? 0}
+                </div>
+              </div>
+              <div>
+                <div className="app-muted text-xs">
+                  {locale === 'zh' ? '模拟成交' : 'Sim fills'}
+                </div>
+                <div className="font-mono tabular-nums">
+                  {operationsToday?.paper_shadow.simulated_fill_count ?? 0}
+                </div>
+              </div>
+              <div>
+                <div className="app-muted text-xs">
+                  {locale === 'zh' ? '偏差复核' : 'Divergence reviews'}
+                </div>
+                <div className="font-mono tabular-nums">
+                  {operationsToday?.paper_shadow.divergence_reviewed_count ?? 0}
+                </div>
+              </div>
+            </div>
+            {paperShadowReviewQueue.length > 0 ? (
+              <div className="mt-3 min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-warning)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_8%,transparent)] px-3 py-2 text-sm">
+                <div className="text-xs font-semibold uppercase text-[var(--app-muted)]">
+                  {locale === 'zh' ? '复核队列' : 'Review queue'}
+                </div>
+                <div className="mt-2 grid min-w-0 gap-2">
+                  {paperShadowReviewQueue.slice(0, 3).map((item) => {
+                    const safetyText = paperShadowReviewQueueSafetyText(
+                      item,
+                      locale,
+                    );
+                    const detailItems = paperShadowReviewQueueDetailItems(
+                      item,
+                      locale,
+                    );
+                    return (
+                      <div
+                        className="min-w-0"
+                        key={item.review_id || item.order_id || item.symbol}
+                      >
+                        <div className="min-w-0 break-words font-semibold text-[var(--app-text)]">
+                          {paperShadowReviewQueueItemTitle(item, locale)}
+                        </div>
+                        {safetyText ? (
+                          <div className="app-muted mt-1 min-w-0 break-words text-xs">
+                            {safetyText}
+                          </div>
+                        ) : null}
+                        {detailItems.length > 0 ? (
+                          <div className="mt-1 grid min-w-0 gap-1 text-xs text-[var(--app-text)]">
+                            {detailItems.map((detail) => (
+                              <div className="min-w-0 break-words" key={detail}>
+                                {detail}
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+            {paperShadowCostItems.length > 0 ? (
+              <div className="mt-3 grid min-w-0 border-y border-[var(--app-divider)] text-sm sm:grid-cols-2 xl:grid-cols-5">
+                {paperShadowCostItems.map((item) => (
+                  <div
+                    className="min-w-0 border-l border-[var(--app-divider)] px-3 py-2 first:border-l-0"
+                    key={item.label}
+                  >
+                    <div className="app-muted text-xs">{item.label}</div>
+                    <div className="min-w-0 break-words font-mono tabular-nums text-[var(--app-text)]">
+                      {item.value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {paperShadowDivergenceBlocks.length > 0 ? (
+              <div className="mt-3 grid min-w-0 gap-2 text-sm lg:grid-cols-2">
+                {paperShadowDivergenceBlocks.map((block) => (
+                  <div
+                    className="min-w-0 border-l-2 border-[var(--app-divider)] py-1 pl-3"
+                    key={block.title}
+                  >
+                    <div className="text-xs font-semibold uppercase text-[var(--app-muted)]">
+                      {block.title}
+                    </div>
+                    <div className="mt-2 grid min-w-0 gap-1">
+                      {block.items.map((item) => (
+                        <div
+                          className="min-w-0 break-words text-[var(--app-text)]"
+                          key={item}
+                        >
+                          {item}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
     </section>
   );
 }
