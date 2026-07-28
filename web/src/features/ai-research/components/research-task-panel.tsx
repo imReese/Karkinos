@@ -1,7 +1,11 @@
 import { useState, type FormEvent } from 'react';
 
 import { useCopy } from '../../../app/copy';
-import { EvidenceIdentityDisclosure } from '../../../app/components/workbench';
+import {
+  EvidenceIdentityDisclosure,
+  EvidenceState,
+  StatusBadge,
+} from '../../../app/components/workbench';
 import { usePreferences } from '../../../app/preferences';
 import {
   useCreateHumanResearchTaskMutation,
@@ -42,7 +46,22 @@ const COPY = {
     closedDetail:
       'This boundary is idle until you open it. It never polls a model or provider.',
     open: 'Open research tasks',
-    close: 'Close',
+    close: 'Collapse research workspace',
+    queueKicker: 'Review queue',
+    queueTitle: 'Frozen evidence tasks',
+    queueDetail:
+      'Persisted tasks and exact evidence bindings remain the primary review surface.',
+    taskCount: (count: number) => `${count} task${count === 1 ? '' : 's'}`,
+    newTask: 'Draft research task',
+    closeDraft: 'Close task draft',
+    formKicker: 'Human capture',
+    formTitle: 'Record a research task',
+    formDetail:
+      'Define the question and explicitly choose which persisted evidence to freeze. Recording does not run a model.',
+    loadingTitle: 'Loading frozen task evidence',
+    loadErrorTitle: 'Research task evidence unavailable',
+    emptyTitle: 'No frozen research task',
+    successTitle: 'Research task recorded',
     noModel: 'External models off',
     noAuthority: 'No trading authority',
     operator: 'Human operator',
@@ -126,7 +145,21 @@ const COPY = {
       '先冻结 canonical 证据并人工复核，再由人显式运行离线 deterministic fixture；外部模型继续关闭。',
     closedDetail: '显式打开前保持空闲；不会轮询模型或 provider。',
     open: '打开研究任务',
-    close: '收起',
+    close: '收起研究工作区',
+    queueKicker: '复核队列',
+    queueTitle: '已冻结证据任务',
+    queueDetail: '持久化任务与精确证据绑定始终是主要复核界面。',
+    taskCount: (count: number) => `${count} 个任务`,
+    newTask: '起草研究任务',
+    closeDraft: '关闭任务草稿',
+    formKicker: '人工采集',
+    formTitle: '记录研究任务',
+    formDetail:
+      '定义问题，并显式选择需要冻结的持久化证据；记录任务不会运行任何模型。',
+    loadingTitle: '正在读取已冻结任务证据',
+    loadErrorTitle: '研究任务证据不可用',
+    emptyTitle: '暂无已冻结研究任务',
+    successTitle: '研究任务已记录',
     noModel: '外部模型关闭',
     noAuthority: '无交易权限',
     operator: '人工操作人',
@@ -215,6 +248,7 @@ export function ResearchTaskPanel({
   const { locale } = usePreferences();
   const copy = COPY[locale];
   const [open, setOpen] = useState(defaultOpen);
+  const [composerOpen, setComposerOpen] = useState(false);
   const tasks = useResearchTasksQuery(open);
   const analyses = useResearchTaskFixtureAnalysesQuery(open);
   const createTask = useCreateHumanResearchTaskMutation();
@@ -259,6 +293,7 @@ export function ResearchTaskPanel({
       });
       setCaptureKey(newAuditKey('ai-context-capture'));
       setTaskKey(newAuditKey('ai-research-task'));
+      setComposerOpen(false);
       setSuccessMessage(copy.success);
     } catch {
       // Mutation state renders the fail-closed response while keys remain stable.
@@ -350,27 +385,68 @@ export function ResearchTaskPanel({
       </div>
 
       {open ? (
-        <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(300px,0.82fr)_minmax(0,1.18fr)]">
-          <div className="min-w-0">
-            <label className="block text-xs font-semibold text-[var(--app-muted)]">
-              {copy.reviewNote}
-              <input
-                className="app-input mt-1 w-full px-3 py-2 text-sm text-[var(--app-text)]"
-                onChange={(event) => setReviewNote(event.target.value)}
-                value={reviewNote}
-              />
-            </label>
+        <div
+          className={`mt-5 grid gap-5 ${
+            composerOpen
+              ? 'xl:grid-cols-[minmax(320px,0.92fr)_minmax(0,1.08fr)]'
+              : ''
+          }`}
+        >
+          <section
+            aria-labelledby="ai-research-queue-title"
+            className="min-w-0 border-t border-[var(--app-divider)] pt-4"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="app-product-mark">{copy.queueKicker}</div>
+                <h3
+                  className="mt-1.5 text-base font-semibold text-[var(--app-text)]"
+                  id="ai-research-queue-title"
+                >
+                  {copy.queueTitle}
+                </h3>
+                <p className="app-muted mt-1 max-w-2xl text-xs leading-5">
+                  {copy.queueDetail}
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <StatusBadge tone="neutral">
+                  {copy.taskCount(tasks.data?.tasks.length ?? 0)}
+                </StatusBadge>
+                <button
+                  aria-expanded={composerOpen}
+                  className="app-button-secondary px-3 py-2 text-xs font-semibold"
+                  onClick={() => setComposerOpen((current) => !current)}
+                  type="button"
+                >
+                  {composerOpen ? copy.closeDraft : copy.newTask}
+                </button>
+              </div>
+            </div>
+            {tasks.data?.tasks.length ? (
+              <label className="mt-4 block text-xs font-semibold text-[var(--app-muted)]">
+                {copy.reviewNote}
+                <input
+                  className="app-input mt-1 w-full px-3 py-2 text-sm text-[var(--app-text)]"
+                  onChange={(event) => setReviewNote(event.target.value)}
+                  value={reviewNote}
+                />
+              </label>
+            ) : null}
             {tasks.isLoading ? (
-              <p className="app-muted mt-4 text-sm" role="status">
-                {copy.loading}
-              </p>
+              <EvidenceState
+                className="mt-4"
+                description={copy.loading}
+                kind="loading"
+                title={copy.loadingTitle}
+              />
             ) : tasks.isError ? (
-              <p
-                className="mt-4 text-sm text-[var(--app-danger-text)]"
-                role="alert"
-              >
-                {copy.loadError}
-              </p>
+              <EvidenceState
+                className="mt-4"
+                description={copy.loadError}
+                kind="error"
+                title={copy.loadErrorTitle}
+              />
             ) : tasks.data?.tasks.length ? (
               <div className="mt-3 space-y-3">
                 {tasks.data.tasks.map((task) => (
@@ -389,8 +465,21 @@ export function ResearchTaskPanel({
                 ))}
               </div>
             ) : (
-              <p className="app-muted mt-4 text-sm">{copy.empty}</p>
+              <EvidenceState
+                className="mt-4"
+                description={copy.empty}
+                kind="empty"
+                title={copy.emptyTitle}
+              />
             )}
+            {successMessage ? (
+              <EvidenceState
+                className="mt-3"
+                description={successMessage}
+                kind="ready"
+                title={copy.successTitle}
+              />
+            ) : null}
             {reviewTask.isPending ? (
               <p className="app-muted mt-3 text-xs" role="status">
                 {copy.reviewing}
@@ -425,119 +514,124 @@ export function ResearchTaskPanel({
                 {startFixture.error.message}
               </p>
             ) : null}
-          </div>
+          </section>
 
-          <form
-            className="border border-[var(--app-divider)] bg-[var(--app-surface-raised)] p-4"
-            onSubmit={(event) => void submit(event)}
-          >
-            <div className="grid gap-3 sm:grid-cols-2">
-              <LabeledInput
-                label={copy.operator}
-                onChange={setOperator}
-                required
-                value={operator}
-              />
-              <LabeledInput
-                label={copy.account}
-                onChange={setAccountAlias}
-                required
-                value={accountAlias}
-              />
-            </div>
-            <div className="mt-3">
-              <LabeledInput
-                label={copy.taskTitle}
-                onChange={setTitle}
-                required
-                value={title}
-              />
-            </div>
-            <label className="mt-3 block text-xs font-semibold text-[var(--app-muted)]">
-              {copy.question}
-              <textarea
-                className="app-input mt-1 min-h-24 w-full resize-y px-3 py-2 text-sm text-[var(--app-text)]"
-                onChange={(event) => setQuestion(event.target.value)}
-                required
-                value={question}
-              />
-            </label>
-            <label className="mt-3 flex items-start gap-2 text-sm text-[var(--app-text)]">
-              <input
-                checked={includeBacktest}
-                className="mt-1"
-                disabled={backtestResultId === null}
-                onChange={(event) => setIncludeBacktest(event.target.checked)}
-                type="checkbox"
-              />
-              <span>
-                {copy.includeBacktest}
-                {backtestResultId === null ? (
-                  <span className="app-muted mt-1 block text-xs">
-                    {copy.noBacktest}
-                  </span>
-                ) : (
-                  <span className="app-muted mt-1 block font-mono text-xs">
-                    backtest_result_id={backtestResultId}
-                  </span>
-                )}
-              </span>
-            </label>
-            <label className="mt-3 flex items-start gap-2 text-sm text-[var(--app-text)]">
-              <input
-                checked={includeContribution}
-                className="mt-1"
-                disabled={strategyId === null}
-                onChange={(event) =>
-                  setIncludeContribution(event.target.checked)
-                }
-                type="checkbox"
-              />
-              <span>
-                {copy.includeContribution}
-                {strategyId === null ? (
-                  <span className="app-muted mt-1 block text-xs">
-                    {copy.noContribution}
-                  </span>
-                ) : (
-                  <span className="app-muted mt-1 block font-mono text-xs">
-                    strategy_id={strategyId}
-                  </span>
-                )}
-              </span>
-            </label>
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <button
-                className="app-button-primary px-4 py-2 text-sm font-semibold"
-                disabled={
-                  createTask.isPending ||
-                  (includeContribution && strategyId === null)
-                }
-                type="submit"
+          {composerOpen ? (
+            <form
+              aria-labelledby="ai-research-composer-title"
+              className="border-t border-[var(--app-divider)] bg-[var(--app-surface-raised)] p-4"
+              onSubmit={(event) => void submit(event)}
+            >
+              <div className="app-product-mark">{copy.formKicker}</div>
+              <h3
+                className="mt-1.5 text-base font-semibold text-[var(--app-text)]"
+                id="ai-research-composer-title"
               >
-                {createTask.isPending ? copy.submitting : copy.submit}
-              </button>
-              <span className="text-xs text-[var(--app-muted)]">
-                {copy.persistedOnly}
-              </span>
-            </div>
-            {createTask.isError ? (
-              <p
-                className="mt-3 text-sm text-[var(--app-danger-text)]"
-                role="alert"
-              >
-                {createTask.error.message}
+                {copy.formTitle}
+              </h3>
+              <p className="app-muted mt-1 text-xs leading-5">
+                {copy.formDetail}
               </p>
-            ) : null}
-            {successMessage ? (
-              <p
-                className="mt-3 text-sm text-[var(--app-success-text)]"
-                role="status"
-              >
-                {successMessage}
-              </p>
-            ) : null}
-          </form>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <LabeledInput
+                  label={copy.operator}
+                  onChange={setOperator}
+                  required
+                  value={operator}
+                />
+                <LabeledInput
+                  label={copy.account}
+                  onChange={setAccountAlias}
+                  required
+                  value={accountAlias}
+                />
+              </div>
+              <div className="mt-3">
+                <LabeledInput
+                  label={copy.taskTitle}
+                  onChange={setTitle}
+                  required
+                  value={title}
+                />
+              </div>
+              <label className="mt-3 block text-xs font-semibold text-[var(--app-muted)]">
+                {copy.question}
+                <textarea
+                  className="app-input mt-1 min-h-24 w-full resize-y px-3 py-2 text-sm text-[var(--app-text)]"
+                  onChange={(event) => setQuestion(event.target.value)}
+                  required
+                  value={question}
+                />
+              </label>
+              <label className="mt-3 flex items-start gap-2 text-sm text-[var(--app-text)]">
+                <input
+                  checked={includeBacktest}
+                  className="mt-1"
+                  disabled={backtestResultId === null}
+                  onChange={(event) => setIncludeBacktest(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>
+                  {copy.includeBacktest}
+                  {backtestResultId === null ? (
+                    <span className="app-muted mt-1 block text-xs">
+                      {copy.noBacktest}
+                    </span>
+                  ) : (
+                    <span className="app-muted mt-1 block font-mono text-xs">
+                      backtest_result_id={backtestResultId}
+                    </span>
+                  )}
+                </span>
+              </label>
+              <label className="mt-3 flex items-start gap-2 text-sm text-[var(--app-text)]">
+                <input
+                  checked={includeContribution}
+                  className="mt-1"
+                  disabled={strategyId === null}
+                  onChange={(event) =>
+                    setIncludeContribution(event.target.checked)
+                  }
+                  type="checkbox"
+                />
+                <span>
+                  {copy.includeContribution}
+                  {strategyId === null ? (
+                    <span className="app-muted mt-1 block text-xs">
+                      {copy.noContribution}
+                    </span>
+                  ) : (
+                    <span className="app-muted mt-1 block font-mono text-xs">
+                      strategy_id={strategyId}
+                    </span>
+                  )}
+                </span>
+              </label>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <button
+                  className="app-button-primary px-4 py-2 text-sm font-semibold"
+                  disabled={
+                    createTask.isPending ||
+                    (includeContribution && strategyId === null)
+                  }
+                  type="submit"
+                >
+                  {createTask.isPending ? copy.submitting : copy.submit}
+                </button>
+                <span className="text-xs text-[var(--app-muted)]">
+                  {copy.persistedOnly}
+                </span>
+              </div>
+              {createTask.isError ? (
+                <p
+                  className="mt-3 text-sm text-[var(--app-danger-text)]"
+                  role="alert"
+                >
+                  {createTask.error.message}
+                </p>
+              ) : null}
+            </form>
+          ) : null}
         </div>
       ) : null}
     </section>

@@ -283,6 +283,7 @@ test('captures exact persisted context before recording a task', async () => {
   const { requests } = renderPanel();
   fireEvent.click(screen.getByRole('button', { name: 'Open research tasks' }));
   await screen.findByText('No human research task has been recorded yet.');
+  fireEvent.click(screen.getByRole('button', { name: 'Draft research task' }));
   fireEvent.change(screen.getByLabelText('Research question'), {
     target: { value: 'Review the frozen portfolio and saved backtest.' },
   });
@@ -328,6 +329,7 @@ test('explicitly binds current strategy outcome evidence by exact strategy id', 
   const { requests } = renderPanel();
   fireEvent.click(screen.getByRole('button', { name: 'Open research tasks' }));
   await screen.findByText('No human research task has been recorded yet.');
+  fireEvent.click(screen.getByRole('button', { name: 'Draft research task' }));
   fireEvent.change(screen.getByLabelText('Research question'), {
     target: { value: 'Review actual strategy outcomes and limitations.' },
   });
@@ -364,6 +366,7 @@ test('does not offer strategy outcome capture without an exact strategy id', asy
   renderPanel({ strategyId: null });
   fireEvent.click(screen.getByRole('button', { name: 'Open research tasks' }));
   await screen.findByText('No human research task has been recorded yet.');
+  fireEvent.click(screen.getByRole('button', { name: 'Draft research task' }));
 
   const contributionCheckbox = screen.getByRole('checkbox', {
     name: /Bind current strategy outcome evidence/,

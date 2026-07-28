@@ -210,6 +210,61 @@ test('backtest preserves result-first evidence and complete metrics across all a
   }
 });
 
+test('AI research keeps frozen evidence ahead of human capture across all acceptance viewports', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await page.setViewportSize(overviewAcceptanceViewports[0]);
+  await page.goto('/ai-research');
+  const queue = page.locator(
+    'section[aria-labelledby="ai-research-queue-title"]',
+  );
+  const composer = page.locator(
+    'form[aria-labelledby="ai-research-composer-title"]',
+  );
+  await expect(queue).toBeVisible({ timeout: 15_000 });
+  await expect(composer).toHaveCount(0);
+
+  for (const viewport of overviewAcceptanceViewports) {
+    await page.setViewportSize(viewport);
+    const openComposer = page.getByRole('button', {
+      name: 'Draft research task',
+      exact: true,
+    });
+    await expect(openComposer).toHaveAttribute('aria-expanded', 'false');
+    await openComposer.click();
+    await expect(composer).toBeVisible();
+
+    const queueBox = (await queue.boundingBox())!;
+    const composerBox = (await composer.boundingBox())!;
+    const geometry = await page.evaluate(() => {
+      const content = document.querySelector(
+        '.app-shell-content',
+      ) as HTMLElement;
+      return {
+        contentOverflow: content.scrollWidth - content.clientWidth,
+        documentOverflow:
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+      };
+    });
+
+    expect(geometry.documentOverflow, JSON.stringify(viewport)).toBe(0);
+    expect(geometry.contentOverflow, JSON.stringify(viewport)).toBe(0);
+    expect(queueBox.y, JSON.stringify(viewport)).toBeLessThan(1100);
+    if (viewport.width >= 1280) {
+      expect(queueBox.x, JSON.stringify(viewport)).toBeLessThan(composerBox.x);
+    } else {
+      expect(queueBox.y, JSON.stringify(viewport)).toBeLessThan(composerBox.y);
+    }
+
+    await page
+      .getByRole('button', { name: 'Close task draft', exact: true })
+      .click();
+    await expect(composer).toHaveCount(0);
+  }
+});
+
 test('portfolio keeps filtering ordered above a compact holdings projection', async ({
   page,
 }) => {
@@ -816,12 +871,26 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
           page.getByTestId('ai-research-primary-canvas'),
         ).toBeVisible();
         await expect(page.getByTestId('ai-research-task-panel')).toBeVisible();
+        const taskComposer = page.locator(
+          'form[aria-labelledby="ai-research-composer-title"]',
+        );
+        await expect(taskComposer).toHaveCount(0);
+        await page
+          .getByRole('button', {
+            name: /Draft research task|起草研究任务/,
+          })
+          .click();
+        await expect(taskComposer).toBeVisible();
         const researchGeometry = await page.evaluate(() => {
           const panel = document.querySelector(
             '[data-testid="ai-research-task-panel"]',
           ) as HTMLElement;
-          const form = panel.querySelector('form') as HTMLFormElement;
-          const reviewQueue = form.previousElementSibling as HTMLElement;
+          const form = panel.querySelector(
+            'form[aria-labelledby="ai-research-composer-title"]',
+          ) as HTMLFormElement;
+          const reviewQueue = panel.querySelector(
+            'section[aria-labelledby="ai-research-queue-title"]',
+          ) as HTMLElement;
           const panelStyle = getComputedStyle(panel);
           return {
             formTop: form.getBoundingClientRect().top,
