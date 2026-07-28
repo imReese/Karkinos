@@ -411,8 +411,8 @@ export function ResearchTaskPanel({
                   {copy.queueDetail}
                 </p>
               </div>
-              <div className="flex shrink-0 flex-wrap items-center gap-2">
-                <StatusBadge tone="neutral">
+              <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
+                <StatusBadge className="max-w-full truncate" tone="neutral">
                   {tasks.isLoading
                     ? copy.loading
                     : copy.taskCount(tasks.data?.tasks.length ?? 0)}

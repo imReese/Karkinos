@@ -54,9 +54,13 @@ test('keeps canonical context neutral until persisted queries settle', async () 
     });
   expect(screen.queryByText('No canonical report is available')).toBeNull();
   expect(screen.queryByText('No persisted strategy assignment')).toBeNull();
-  expect(
-    (await screen.findAllByText('Loading persisted research tasks…')).length,
-  ).toBeGreaterThan(0);
+  const loadingTasks = await screen.findAllByText(
+    'Loading persisted research tasks…',
+  );
+  expect(loadingTasks.length).toBeGreaterThan(0);
+  expect(loadingTasks[0]?.className).toContain('max-w-full');
+  expect(loadingTasks[0]?.parentElement?.className).toContain('min-w-0');
+  expect(loadingTasks[0]?.parentElement?.className).not.toContain('shrink-0');
   expect(screen.queryByText('0 tasks')).toBeNull();
   expect(metrics).toBeTruthy();
 });
