@@ -2373,6 +2373,22 @@ function DashboardTodayQueue({
       evidence: item.meta,
     }));
   const normalCount = items.length - actionableCount;
+  const primaryExceptionItems = exceptionItems.slice(0, 1);
+  const additionalExceptionItems = exceptionItems.slice(1);
+  const exceptionLabels =
+    locale === 'zh'
+      ? {
+          reason: '阻断原因',
+          unblockCondition: '解除条件',
+          nextAction: '安全下一步',
+          evidence: '证据',
+        }
+      : {
+          reason: 'Reason',
+          unblockCondition: 'Unblock condition',
+          nextAction: 'Safe next step',
+          evidence: 'Evidence',
+        };
 
   return (
     <section className="min-w-0" data-testid="overview-today-queue">
@@ -2390,26 +2406,39 @@ function DashboardTodayQueue({
         </span>
       </div>
       <ExceptionList
-        items={exceptionItems}
+        items={primaryExceptionItems}
         ariaLabel={labels.todayToReview}
         emptyState={labels.noActionItems}
         density="compact"
-        labels={
-          locale === 'zh'
-            ? {
-                reason: '阻断原因',
-                unblockCondition: '解除条件',
-                nextAction: '安全下一步',
-                evidence: '证据',
-              }
-            : {
-                reason: 'Reason',
-                unblockCondition: 'Unblock condition',
-                nextAction: 'Safe next step',
-                evidence: 'Evidence',
-              }
-        }
+        className="app-overview-primary-exception"
+        labels={exceptionLabels}
       />
+      {additionalExceptionItems.length > 0 ? (
+        <details
+          data-testid="overview-today-queue-more"
+          className="group border-b border-[var(--app-divider)]"
+        >
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-semibold text-[var(--app-text-secondary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
+            <span>
+              {labels.additionalReviewItems(additionalExceptionItems.length)}
+            </span>
+            <ChevronDown
+              className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180 motion-reduce:transition-none"
+              aria-hidden="true"
+            />
+          </summary>
+          <ExceptionList
+            items={additionalExceptionItems}
+            ariaLabel={labels.additionalReviewItems(
+              additionalExceptionItems.length,
+            )}
+            emptyState={labels.noActionItems}
+            density="compact"
+            className="border-b-0"
+            labels={exceptionLabels}
+          />
+        </details>
+      ) : null}
       {normalCount > 0 ? (
         <div
           data-testid="overview-today-queue-normal"

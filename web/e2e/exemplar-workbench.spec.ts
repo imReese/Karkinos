@@ -1,5 +1,14 @@
 import { expect, test, type Page } from '@playwright/test';
 
+const overviewAcceptanceViewports = [
+  { width: 1440, height: 900 },
+  { width: 1280, height: 800 },
+  { width: 1024, height: 768 },
+  { width: 834, height: 1112 },
+  { width: 768, height: 1024 },
+  { width: 390, height: 844 },
+] as const;
+
 async function selectMobileTheme(page: Page, theme: 'light' | 'dark') {
   await page.getByTestId('mobile-preferences-toggle').click();
   const preferences = page.getByRole('dialog', {
@@ -60,6 +69,54 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
     (await resultPanel.boundingBox())!.x,
   );
   await expect(page.getByTestId('backtest-mobile-workspace-tabs')).toBeHidden();
+});
+
+test('overview preserves the queue-to-holdings hierarchy across all acceptance viewports', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await page.setViewportSize(overviewAcceptanceViewports[0]);
+  await page.goto('/overview');
+  await expect(page.getByTestId('overview-holdings-section')).toBeVisible({
+    timeout: 15_000,
+  });
+
+  for (const viewport of overviewAcceptanceViewports) {
+    await page.setViewportSize(viewport);
+
+    const queue = page.getByTestId('overview-today-queue');
+    const holdings = page.getByTestId('overview-holdings-section');
+    const queueBox = (await queue.boundingBox())!;
+    const holdingsBox = (await holdings.boundingBox())!;
+    const overflow = await page.evaluate(() => {
+      const content = document.querySelector(
+        '.app-shell-content',
+      ) as HTMLElement;
+      return {
+        document:
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+        content: content.scrollWidth - content.clientWidth,
+      };
+    });
+
+    expect(overflow.document, JSON.stringify(viewport)).toBe(0);
+    expect(overflow.content, JSON.stringify(viewport)).toBe(0);
+    expect(holdingsBox.y, JSON.stringify(viewport)).toBeLessThan(1100);
+    if (viewport.width >= 1280) {
+      expect(holdingsBox.x, JSON.stringify(viewport)).toBeLessThan(queueBox.x);
+      expect(holdingsBox.width, JSON.stringify(viewport)).toBeGreaterThan(
+        queueBox.width,
+      );
+    } else {
+      expect(queueBox.y, JSON.stringify(viewport)).toBeLessThan(holdingsBox.y);
+    }
+
+    const additionalReviewItems = page.getByTestId('overview-today-queue-more');
+    if ((await additionalReviewItems.count()) > 0) {
+      await expect(additionalReviewItems).not.toHaveAttribute('open', '');
+    }
+  }
 });
 
 test('portfolio keeps filtering ordered above a compact holdings projection', async ({
@@ -448,6 +505,19 @@ test('exemplar routes remain task-reordered and overflow safe on mobile themes',
       expect(geometry.documentOverflow, `${path} ${theme}`).toBeLessThanOrEqual(
         0,
       );
+      if (path === '/overview') {
+        const holdingsBox = await page
+          .getByTestId('overview-holdings-section')
+          .boundingBox();
+        expect(holdingsBox?.y ?? Number.POSITIVE_INFINITY).toBeLessThan(1100);
+        const additionalReviewItems = page.getByTestId(
+          'overview-today-queue-more',
+        );
+        if ((await additionalReviewItems.count()) > 0) {
+          await expect(additionalReviewItems).toBeVisible();
+          await expect(additionalReviewItems).not.toHaveAttribute('open', '');
+        }
+      }
       expect(geometry.contentOverflow, `${path} ${theme}`).toBeLessThanOrEqual(
         0,
       );
@@ -619,7 +689,9 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
       );
 
       if (path === '/ai-research') {
-        await expect(page.getByTestId('ai-research-primary-canvas')).toBeVisible();
+        await expect(
+          page.getByTestId('ai-research-primary-canvas'),
+        ).toBeVisible();
         await expect(page.getByTestId('ai-research-task-panel')).toBeVisible();
         const researchGeometry = await page.evaluate(() => {
           const panel = document.querySelector(
@@ -794,9 +866,7 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
             expect(
               reportGeometry.chartTop - reportGeometry.workspaceTop,
               theme,
-            ).toBeLessThanOrEqual(
-              reportGeometry.viewportHeight * 0.75,
-            );
+            ).toBeLessThanOrEqual(reportGeometry.viewportHeight * 0.75);
           }
         }
 
