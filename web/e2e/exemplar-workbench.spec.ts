@@ -222,11 +222,31 @@ test('AI research keeps frozen evidence ahead of human capture across all accept
   const composer = page.locator(
     'form[aria-labelledby="ai-research-composer-title"]',
   );
+  const primaryCanvas = page.getByTestId('ai-research-primary-canvas');
+  const contextMetrics = page.getByTestId('ai-research-context-metrics');
+  const emptyState = page.getByRole('heading', {
+    name: 'No frozen research task',
+  });
   await expect(queue).toBeVisible({ timeout: 15_000 });
   await expect(composer).toHaveCount(0);
 
   for (const viewport of overviewAcceptanceViewports) {
     await page.setViewportSize(viewport);
+    const primaryCanvasBox = (await primaryCanvas.boundingBox())!;
+    const contextMetricsBox = (await contextMetrics.boundingBox())!;
+    if (viewport.width < 640) {
+      expect(primaryCanvasBox.y, JSON.stringify(viewport)).toBeLessThan(
+        contextMetricsBox.y,
+      );
+      expect(
+        (await emptyState.boundingBox())!.y,
+        JSON.stringify(viewport),
+      ).toBeLessThan(viewport.height);
+    } else {
+      expect(contextMetricsBox.y, JSON.stringify(viewport)).toBeLessThan(
+        primaryCanvasBox.y,
+      );
+    }
     const openComposer = page.getByRole('button', {
       name: 'Draft research task',
       exact: true,
@@ -843,6 +863,13 @@ test('core review routes keep audit drill-downs closed and mobile reading paths 
   await expect(
     page.getByTestId('decision-automation-disclosure'),
   ).not.toHaveAttribute('open', '');
+  const gateDisclosure = page.getByTestId('decision-gate-disclosure');
+  const gateToggle = gateDisclosure.getByRole('button');
+  await expect(gateToggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByTestId('gate-matrix-responsive-table')).toBeHidden();
+  await gateToggle.click();
+  await expect(gateToggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByTestId('gate-matrix-responsive-table')).toBeVisible();
   await expect(
     page.locator('[data-testid^="decision-candidate-card-"]'),
   ).toHaveCount(0);

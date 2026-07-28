@@ -5111,6 +5111,8 @@ export function DecisionCockpitPage() {
   const signalActions = useSignalActionsQuery();
   const signalJournal = useSignalJournalQuery();
   const [summaryExpanded, setSummaryExpanded] = useState(false);
+  const [healthyGateMatrixExpanded, setHealthyGateMatrixExpanded] =
+    useState(false);
   const loading = today.isLoading || intraday.isLoading;
   const error = today.error ?? intraday.error;
   const lanes = useMemo(
@@ -5130,6 +5132,11 @@ export function DecisionCockpitPage() {
     () => decisionGateMatrixItems(today.data, labels, locale),
     [labels, locale, today.data],
   );
+  const allDecisionGatesPass =
+    gateItems.length > 0 && gateItems.every((item) => item.state === 'pass');
+  const decisionGateAttentionCount = gateItems.filter(
+    (item) => item.state !== 'pass',
+  ).length;
 
   if (loading) {
     return (
@@ -5215,7 +5222,7 @@ export function DecisionCockpitPage() {
       />
 
       <section className="min-w-0 space-y-2" data-testid="decision-gate-matrix">
-        <div>
+        <div className="hidden sm:block">
           <h2 className="text-base font-semibold text-[var(--app-text)]">
             {labels.workflowTitle}
           </h2>
@@ -5223,18 +5230,47 @@ export function DecisionCockpitPage() {
             {labels.workflowDetail}
           </p>
         </div>
-        <GateMatrix
-          caption={labels.workflowTitle}
-          items={gateItems}
-          labels={{
-            gate: locale === 'zh' ? '闸门' : 'Gate',
-            state: locale === 'zh' ? '状态' : 'State',
-            reason:
-              locale === 'zh' ? '阻断原因 / 结论' : 'Blocker / conclusion',
-            evidence:
-              locale === 'zh' ? '证据 / 解除条件' : 'Evidence / unblock',
-          }}
-        />
+        <div className="min-w-0" data-testid="decision-gate-disclosure">
+          <button
+            aria-controls="decision-gate-matrix-content"
+            aria-expanded={!allDecisionGatesPass || healthyGateMatrixExpanded}
+            className="flex min-h-11 w-full cursor-pointer items-center justify-between gap-3 border-y border-[var(--app-divider)] py-2.5 text-left text-sm font-semibold text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] sm:hidden"
+            onClick={() => setHealthyGateMatrixExpanded((current) => !current)}
+            type="button"
+          >
+            <span className="min-w-0">{labels.workflowTitle}</span>
+            <StatusBadge tone={allDecisionGatesPass ? 'success' : 'warning'}>
+              {allDecisionGatesPass
+                ? locale === 'zh'
+                  ? `${gateItems.length}/${gateItems.length} 已通过`
+                  : `${gateItems.length}/${gateItems.length} passed`
+                : locale === 'zh'
+                  ? `${decisionGateAttentionCount} 项待复核`
+                  : `${decisionGateAttentionCount} need review`}
+            </StatusBadge>
+          </button>
+          <div
+            className={`${
+              !allDecisionGatesPass || healthyGateMatrixExpanded
+                ? 'block'
+                : 'hidden'
+            } pt-2 sm:block sm:pt-0`}
+            id="decision-gate-matrix-content"
+          >
+            <GateMatrix
+              caption={labels.workflowTitle}
+              items={gateItems}
+              labels={{
+                gate: locale === 'zh' ? '闸门' : 'Gate',
+                state: locale === 'zh' ? '状态' : 'State',
+                reason:
+                  locale === 'zh' ? '阻断原因 / 结论' : 'Blocker / conclusion',
+                evidence:
+                  locale === 'zh' ? '证据 / 解除条件' : 'Evidence / unblock',
+              }}
+            />
+          </div>
+        </div>
       </section>
 
       <details

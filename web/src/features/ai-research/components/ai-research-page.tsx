@@ -18,7 +18,7 @@ export function AiResearchPage() {
 
   return (
     <section
-      className="app-workbench-route space-y-5 sm:space-y-6"
+      className="app-workbench-route flex flex-col gap-5 sm:gap-6"
       data-workbench-route="ai-research"
     >
       <WorkspaceHeader
@@ -36,59 +36,69 @@ export function AiResearchPage() {
         }
       />
 
-      <MetricStrip
-        ariaLabel={labels.title}
-        items={[
-          {
-            id: 'activation',
-            label: labels.activation,
-            value: labels.manualOnly,
-            detail: labels.noImplicitModel,
-          },
-          {
-            id: 'backtest-context',
-            label: labels.backtestContext,
-            value: savedBacktests.isLoading
-              ? copy.shell.checking
-              : latestBacktest
-                ? labels.available
-                : labels.unavailable,
-            detail: latestBacktest
-              ? labels.savedBacktest(latestBacktest.id)
-              : savedBacktests.isError
-                ? labels.backtestLoadFailed
-                : labels.noSavedBacktest,
-            tone:
-              savedBacktests.isError || !latestBacktest ? 'warning' : 'neutral',
-          },
-          {
-            id: 'strategy-context',
-            label: labels.strategyContext,
-            value: accountStrategy.isLoading
-              ? copy.shell.checking
-              : accountStrategy.data
-                ? labels.available
-                : labels.unavailable,
-            detail: accountStrategy.data
-              ? labels.persistedAssignment
-              : accountStrategy.isError
-                ? labels.strategyLoadFailed
-                : labels.noStrategyAssignment,
-            tone:
-              accountStrategy.isError || !accountStrategy.data
-                ? 'warning'
-                : 'neutral',
-          },
-          {
-            id: 'authority',
-            label: labels.authority,
-            value: labels.none,
-            detail: labels.noBrokerOrCapital,
-          },
-        ]}
-      />
+      <div
+        className="order-2 sm:order-none"
+        data-testid="ai-research-context-metrics"
+      >
+        <MetricStrip
+          ariaLabel={labels.title}
+          items={[
+            {
+              id: 'activation',
+              label: labels.activation,
+              value: labels.manualOnly,
+              detail: labels.noImplicitModel,
+            },
+            {
+              id: 'backtest-context',
+              label: labels.backtestContext,
+              value: savedBacktests.isLoading
+                ? copy.shell.checking
+                : latestBacktest
+                  ? labels.available
+                  : labels.unavailable,
+              detail: latestBacktest
+                ? labels.savedBacktest(latestBacktest.id)
+                : savedBacktests.isError
+                  ? labels.backtestLoadFailed
+                  : labels.noSavedBacktest,
+              tone:
+                savedBacktests.isError || !latestBacktest
+                  ? 'warning'
+                  : 'neutral',
+            },
+            {
+              id: 'strategy-context',
+              label: labels.strategyContext,
+              value: accountStrategy.isLoading
+                ? copy.shell.checking
+                : accountStrategy.data
+                  ? labels.available
+                  : labels.unavailable,
+              detail: accountStrategy.data
+                ? labels.persistedAssignment
+                : accountStrategy.isError
+                  ? labels.strategyLoadFailed
+                  : labels.noStrategyAssignment,
+              tone:
+                accountStrategy.isError || !accountStrategy.data
+                  ? 'warning'
+                  : 'neutral',
+            },
+            {
+              id: 'authority',
+              label: labels.authority,
+              value: labels.none,
+              detail: labels.noBrokerOrCapital,
+            },
+          ]}
+        />
+      </div>
 
-      <div data-testid="ai-research-primary-canvas">
+      <div
+        className="order-1 sm:order-none"
+        data-testid="ai-research-primary-canvas"
+      >
         <ResearchTaskPanel
           backtestResultId={latestBacktest?.id ?? null}
           defaultOpen
