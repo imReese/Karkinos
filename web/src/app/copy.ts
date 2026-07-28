@@ -571,29 +571,29 @@ export const copy = {
       currentHoldingsCount: (count: number) => `${count} open holdings`,
       filteredHoldingsCount: (count: number) => `${count} shown`,
       summary: {
-        ariaLabel: 'Canonical portfolio snapshot',
-        loading: 'Loading canonical portfolio snapshot',
+        ariaLabel: 'Portfolio account summary',
+        loading: 'Loading portfolio summary',
         loadingDetail:
-          'Waiting for persisted valuation and ledger evidence. No provider refresh is triggered.',
-        error: 'Canonical portfolio snapshot unavailable',
+          'Loading the latest saved account valuation and activity. Market data is not refreshed automatically.',
+        error: 'Portfolio summary unavailable',
         errorDetail:
-          'Current holdings may still load independently; summary metrics remain unavailable until the persisted projection can be read.',
-        missing: 'Canonical portfolio snapshot is missing',
+          'Current holdings may still load separately. Summary metrics remain unavailable until the saved account view can be read.',
+        missing: 'Portfolio summary not available',
         missingDetail:
-          'No persisted snapshot is available, so the UI does not infer account totals from the holdings table.',
+          'No account summary has been saved. The interface will not calculate account totals from the holdings table.',
         totalEquity: 'Total equity',
-        totalEquityDetail: 'Canonical valuation snapshot',
+        totalEquityDetail: 'Latest saved account value',
         cash: 'Cash',
-        cashDetail: 'Persisted account cash',
+        cashDetail: 'Available account cash',
         openHoldings: 'Open holdings',
-        openHoldingsDetail: 'Snapshot members',
+        openHoldingsDetail: 'Current non-zero holdings',
         realizedPnl: 'Realized PnL',
-        realizedPnlDetail: 'Ledger-derived total',
+        realizedPnlDetail: 'Cumulative realized result',
       },
       currentHoldings: {
         title: 'Current holdings',
         detail:
-          'Primary account positions from the persisted portfolio projection. Open a row for cost, quantity, quote provenance, and ledger detail.',
+          'Current account positions. Open a row for cost, quantity, quote source, and transaction evidence.',
       },
       analysis: {
         title: 'Allocation & attribution',
@@ -611,7 +611,7 @@ export const copy = {
       sidebarEmpty: 'No allocation view is available yet.',
       toolbar: {
         view: 'View',
-        helper: 'Filter and sort the current persisted holdings projection.',
+        helper: 'Filter and sort current holdings.',
         search: 'Search',
         searchPlaceholder: 'Filter by symbol',
         assetClass: 'Asset Class',
@@ -3414,29 +3414,28 @@ export const copy = {
       currentHoldingsCount: (count: number) => `当前持仓 ${count} 项`,
       filteredHoldingsCount: (count: number) => `筛选后展示 ${count} 项`,
       summary: {
-        ariaLabel: '权威组合快照',
-        loading: '正在加载权威组合快照',
+        ariaLabel: '组合账户摘要',
+        loading: '正在加载组合摘要',
         loadingDetail:
-          '正在等待读取持久化估值与账本证据；不会触发 provider 刷新。',
-        error: '权威组合快照暂不可用',
+          '正在读取最近保存的账户估值与交易记录；不会自动刷新行情。',
+        error: '组合摘要暂不可用',
         errorDetail:
-          '当前持仓可能仍可独立加载；读取到持久化投影前，摘要指标保持不可用。',
-        missing: '缺少权威组合快照',
-        missingDetail:
-          '当前没有可用的持久化快照，UI 不会根据持仓表反推账户汇总。',
+          '当前持仓可能仍可单独读取；恢复已保存账户视图前，摘要指标保持不可用。',
+        missing: '尚无组合摘要',
+        missingDetail: '尚未保存账户汇总；页面不会用持仓表自行拼算总资产。',
         totalEquity: '总权益',
-        totalEquityDetail: '权威估值快照',
+        totalEquityDetail: '最近保存的账户估值',
         cash: '现金',
-        cashDetail: '持久化账户现金',
+        cashDetail: '可用账户现金',
         openHoldings: '当前持仓',
-        openHoldingsDetail: '快照内成员',
+        openHoldingsDetail: '当前非零持仓',
         realizedPnl: '已实现盈亏',
-        realizedPnlDetail: '账本推导汇总',
+        realizedPnlDetail: '累计已实现结果',
       },
       currentHoldings: {
         title: '当前持仓',
         detail:
-          '主表仅展示持久化组合投影中的核心账户事实；成本、数量、行情来源和流水证据在单只持仓详情中展开。',
+          '当前账户持仓。打开任一标的查看成本、数量、行情来源和流水证据。',
       },
       analysis: {
         title: '配置与归因',
@@ -3453,7 +3452,7 @@ export const copy = {
       sidebarEmpty: '还没有可用的配置视图。',
       toolbar: {
         view: '视角',
-        helper: '筛选并排序当前持久化持仓投影。',
+        helper: '筛选并排序当前持仓。',
         search: '搜索',
         searchPlaceholder: '按代码过滤',
         assetClass: '资产类别',
