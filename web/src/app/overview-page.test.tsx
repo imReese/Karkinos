@@ -2377,6 +2377,13 @@ test('orders overview workbench items by user-facing priority', async () => {
   const queue = await screen.findByTestId('overview-today-queue');
   expect(within(queue).getByText('Handle first')).toBeTruthy();
   expect(within(queue).getByText('Watch today')).toBeTruthy();
+  const additionalReviewItems = within(queue).getByTestId(
+    'overview-today-queue-more',
+  );
+  expect(additionalReviewItems.hasAttribute('open')).toBe(false);
+  expect(
+    within(additionalReviewItems).getByText('1 more review item'),
+  ).toBeTruthy();
   expect(
     within(queue).getByTestId('overview-today-queue-normal').textContent,
   ).toContain('Normal status');

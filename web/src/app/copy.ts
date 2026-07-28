@@ -269,6 +269,8 @@ export const copy = {
         opsPanel: 'Review queue',
         dailyWorkbench: "Today's to-dos",
         todayToReview: 'Today to review',
+        additionalReviewItems: (count: number) =>
+          count === 1 ? '1 more review item' : `${count} more review items`,
         noActionItems: 'No urgent items right now.',
         noActionItemsDetail:
           'Market data, approvals, and strategy evidence do not need immediate action.',
@@ -3134,6 +3136,7 @@ export const copy = {
         opsPanel: '复核队列',
         dailyWorkbench: '今日待办',
         todayToReview: '今天需要处理',
+        additionalReviewItems: (count: number) => `${count} 个其他待复核项`,
         noActionItems: '当前没有紧急事项。',
         noActionItemsDetail: '行情、审批和策略证据暂时不需要立即处理。',
         operationsTower: '执行状态',

@@ -195,3 +195,51 @@ modified.
   valuation, ledger, risk, OMS, kill-switch, broker, capital, or authorization
   behavior and therefore adds no trading authority or financial-calculation
   risk.
+
+## Batch B validation record — 2026-07-28
+
+### Assumptions and scope
+
+- Account metrics, valuation evidence, the highest-priority exception, and
+  current holdings remain the Overview reading path; secondary analysis stays
+  below it.
+- Additional actionable exceptions remain fully available but no longer carry
+  the same initial visual weight as the highest-priority blocker.
+- The queue keeps its existing persisted inputs, deduplication, ordering,
+  priority, tone, evidence, resolution condition, and safe-action links.
+
+### Validation
+
+- Runtime: Node `v24.18.0`.
+- Focused `overview-page.test.tsx`: 39 tests passed.
+- `npm test`: 66 files and 562 tests passed.
+- `npm run format:check`: passed.
+- `npm run build`: production build passed.
+- The existing nine-test exemplar Playwright suite completed with
+  `test-results/.last-run.json` reporting `passed` and no failed tests.
+- The new focused Overview acceptance-viewport Playwright contract passed
+  separately against the production bundle.
+
+### Visual result
+
+- Desktop keeps current holdings wider and to the left of the review queue;
+  the queue now shows one primary blocker plus a named count of additional
+  review items.
+- Additional blockers use native `details` disclosure and preserve keyboard,
+  focus, evidence, unblock conditions, and safe next actions.
+- The 390px current-holdings start moved from approximately 1467px to 977px.
+- Holdings begin at approximately 363px, 363px, 735px, 871px, 871px, and 977px
+  at 1440x900, 1280x800, 1024x768, 834x1112, 768x1024, and 390x844.
+- All six viewports had zero document overflow and zero app-content overflow.
+  Latte and Mocha were visually checked at desktop and mobile endpoints.
+
+### Limits and risk impact
+
+- This batch does not change which item is highest priority; it displays the
+  first item from the already sorted canonical queue.
+- GitNexus reported both `OverviewPage` and `DashboardTodayQueue` upstream
+  impact as LOW with no graph-level callers or affected processes. The direct
+  source consumer remains the `/overview` route.
+- No query, provider behavior, data refresh, financial calculation, valuation
+  identity, ledger cutoff, OMS, broker bridge, kill switch, or authorization
+  behavior changed. Trading authority remains unchanged and default-closed.
