@@ -178,7 +178,10 @@ import {
   type QuoteFetchRun,
 } from '../features/market/api';
 import { CurrentHoldingMarketEvidenceReviewPanel } from '../features/market/components/current-holding-market-evidence-review-panel';
-import { MarketInstrumentWorkspace } from '../features/market/components/market-instrument-workspace';
+import {
+  MarketInstrumentWorkspace,
+  MarketInstrumentWorkspaceLoading,
+} from '../features/market/components/market-instrument-workspace';
 import { MarketRefreshButton } from '../features/market/components/market-refresh-button';
 import { SettingsPage } from '../features/settings/components/settings-page';
 import {
@@ -4219,8 +4222,7 @@ export function MarketPage() {
         />
 
         {board.isLoading ? (
-          <EvidenceState
-            kind="loading"
+          <MarketInstrumentWorkspaceLoading
             title={copy.states.loading}
             description={copy.market.loading}
           />

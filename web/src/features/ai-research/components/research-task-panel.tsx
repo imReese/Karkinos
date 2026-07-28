@@ -413,7 +413,9 @@ export function ResearchTaskPanel({
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-2">
                 <StatusBadge tone="neutral">
-                  {copy.taskCount(tasks.data?.tasks.length ?? 0)}
+                  {tasks.isLoading
+                    ? copy.loading
+                    : copy.taskCount(tasks.data?.tasks.length ?? 0)}
                 </StatusBadge>
                 <button
                   aria-expanded={composerOpen}

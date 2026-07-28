@@ -92,6 +92,7 @@ function installMarketFetchMock(
     marketEvidenceReview?: Record<string, unknown>;
     items?: Array<Record<string, unknown>>;
     notes?: Array<Record<string, unknown>>;
+    boardResponse?: Promise<Response>;
     klineResponse?: Promise<Response>;
   } = {},
 ) {
@@ -110,6 +111,9 @@ function installMarketFetchMock(
             : input.toString();
 
       if (url.includes('/api/market/research-board')) {
+        if (overrides.boardResponse) {
+          return overrides.boardResponse;
+        }
         return jsonResponse({
           health: boardHealth,
           items: overrides.items ?? [
@@ -258,6 +262,51 @@ function renderMarketPage(
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+test('preserves the market master-detail composition while persisted evidence loads', async () => {
+  let resolveBoard!: (response: Response) => void;
+  const boardResponse = new Promise<Response>((resolve) => {
+    resolveBoard = resolve;
+  });
+  renderMarketPage({ boardResponse });
+
+  const loadingWorkspace = await screen.findByTestId(
+    'market-instrument-loading-workspace',
+  );
+  expect(loadingWorkspace.getAttribute('aria-busy')).toBe('true');
+  expect(loadingWorkspace.className).toContain(
+    'md:grid-cols-[minmax(220px,256px)_minmax(0,1fr)]',
+  );
+  expect(screen.queryByTestId('market-instrument-workspace')).toBeNull();
+  expect(screen.queryByText('测试标的')).toBeNull();
+  expect(screen.queryByText('¥100.00')).toBeNull();
+
+  resolveBoard(
+    jsonResponse({
+      health,
+      items: [
+        {
+          symbol: '600519',
+          asset_class: 'stock',
+          name: '测试标的',
+          is_holding: true,
+          quantity: 100,
+          avg_cost: 90,
+          market_value: 10000,
+          unrealized_pnl: 1000,
+          realized_pnl: 0,
+          last_snapshot_at: '2026-06-17T14:10:00+08:00',
+          price: 100,
+          volume: 1000,
+          research_count: 1,
+          last_research_at: '2026-06-17T10:00:00+08:00',
+        },
+      ],
+    }),
+  );
+
+  expect(await screen.findByTestId('market-instrument-workspace')).toBeTruthy();
 });
 
 test('renders market data operations and triggers manual backfills', async () => {

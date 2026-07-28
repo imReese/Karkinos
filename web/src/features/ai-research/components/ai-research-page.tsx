@@ -59,11 +59,14 @@ export function AiResearchPage() {
                   : labels.unavailable,
               detail: latestBacktest
                 ? labels.savedBacktest(latestBacktest.id)
-                : savedBacktests.isError
-                  ? labels.backtestLoadFailed
-                  : labels.noSavedBacktest,
+                : savedBacktests.isLoading
+                  ? copy.shell.checking
+                  : savedBacktests.isError
+                    ? labels.backtestLoadFailed
+                    : labels.noSavedBacktest,
               tone:
-                savedBacktests.isError || !latestBacktest
+                !savedBacktests.isLoading &&
+                (savedBacktests.isError || !latestBacktest)
                   ? 'warning'
                   : 'neutral',
             },
@@ -77,11 +80,14 @@ export function AiResearchPage() {
                   : labels.unavailable,
               detail: accountStrategy.data
                 ? labels.persistedAssignment
-                : accountStrategy.isError
-                  ? labels.strategyLoadFailed
-                  : labels.noStrategyAssignment,
+                : accountStrategy.isLoading
+                  ? copy.shell.checking
+                  : accountStrategy.isError
+                    ? labels.strategyLoadFailed
+                    : labels.noStrategyAssignment,
               tone:
-                accountStrategy.isError || !accountStrategy.data
+                !accountStrategy.isLoading &&
+                (accountStrategy.isError || !accountStrategy.data)
                   ? 'warning'
                   : 'neutral',
             },

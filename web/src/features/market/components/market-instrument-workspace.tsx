@@ -57,6 +57,72 @@ function moveTone(value: number | null | undefined) {
     : 'text-[var(--app-pnl-negative)]';
 }
 
+export function MarketInstrumentWorkspaceLoading({
+  title,
+  description,
+}: {
+  title: ReactNode;
+  description?: ReactNode;
+}) {
+  return (
+    <div
+      aria-busy="true"
+      className="grid min-w-0 items-start gap-4 md:grid-cols-[minmax(220px,256px)_minmax(0,1fr)] xl:grid-cols-[minmax(264px,296px)_minmax(0,1fr)]"
+      data-testid="market-instrument-loading-workspace"
+    >
+      <aside
+        aria-hidden="true"
+        className="min-w-0 border-y border-[var(--app-divider)] md:sticky md:top-3"
+      >
+        <div className="border-b border-[var(--app-divider)] px-3 py-3">
+          <span className="block h-3 w-24 rounded-full bg-[var(--app-surface-overlay)] motion-safe:animate-pulse" />
+          <span className="mt-2 block h-2 w-40 max-w-full rounded-full bg-[var(--app-surface-overlay)] motion-safe:animate-pulse" />
+        </div>
+        <div className="grid auto-cols-[minmax(15rem,85%)] grid-flow-col divide-x divide-[var(--app-divider)] overflow-hidden sm:auto-cols-[minmax(15rem,48%)] md:block md:divide-x-0 md:divide-y">
+          {Array.from({ length: 3 }, (_, index) => (
+            <div
+              key={index}
+              className="grid min-w-0 grid-cols-[minmax(0,1fr)_4.5rem] gap-3 px-3 py-3"
+            >
+              <span className="min-w-0">
+                <span className="block h-3 w-28 max-w-full rounded-full bg-[var(--app-surface-overlay)] motion-safe:animate-pulse" />
+                <span className="mt-2 block h-2 w-20 rounded-full bg-[var(--app-surface-overlay)] motion-safe:animate-pulse" />
+                <span className="mt-2 block h-2 w-32 max-w-full rounded-full bg-[var(--app-surface-overlay)] motion-safe:animate-pulse" />
+              </span>
+              <span className="min-w-0">
+                <span className="ml-auto block h-3 w-16 rounded-full bg-[var(--app-surface-overlay)] motion-safe:animate-pulse" />
+                <span className="ml-auto mt-2 block h-2 w-12 rounded-full bg-[var(--app-surface-overlay)] motion-safe:animate-pulse" />
+              </span>
+            </div>
+          ))}
+        </div>
+      </aside>
+
+      <section className="min-w-0">
+        <EvidenceState kind="loading" title={title} description={description} />
+        <div aria-hidden="true" className="mt-4 min-w-0">
+          <div className="flex items-end justify-between gap-4 border-b border-[var(--app-divider)] pb-4">
+            <span className="min-w-0 flex-1">
+              <span className="block h-2 w-24 rounded-full bg-[var(--app-surface-overlay)] motion-safe:animate-pulse" />
+              <span className="mt-2 block h-6 w-44 max-w-full rounded-full bg-[var(--app-surface-overlay)] motion-safe:animate-pulse" />
+            </span>
+            <span className="block h-6 w-20 shrink-0 rounded-full bg-[var(--app-surface-overlay)] motion-safe:animate-pulse" />
+          </div>
+          <div className="mt-3 h-44 border-y border-[var(--app-divider)] bg-[linear-gradient(to_right,var(--app-divider)_1px,transparent_1px),linear-gradient(to_bottom,var(--app-divider)_1px,transparent_1px)] bg-[size:25%_100%,100%_33.333%] opacity-70 motion-safe:animate-pulse sm:h-56" />
+          <div className="mt-3 grid grid-cols-3 divide-x divide-[var(--app-divider)] border-y border-[var(--app-divider)]">
+            {Array.from({ length: 3 }, (_, index) => (
+              <span key={index} className="min-w-0 px-3 py-3">
+                <span className="block h-2 w-14 max-w-full rounded-full bg-[var(--app-surface-overlay)] motion-safe:animate-pulse" />
+                <span className="mt-2 block h-3 w-20 max-w-full rounded-full bg-[var(--app-surface-overlay)] motion-safe:animate-pulse" />
+              </span>
+            ))}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export function MarketInstrumentWorkspace({
   items,
   healthBySymbol,
