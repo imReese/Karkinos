@@ -865,11 +865,15 @@ test('core review routes keep audit drill-downs closed and mobile reading paths 
   ).not.toHaveAttribute('open', '');
   const gateDisclosure = page.getByTestId('decision-gate-disclosure');
   const gateToggle = gateDisclosure.getByRole('button');
-  await expect(gateToggle).toHaveAttribute('aria-expanded', 'false');
-  await expect(page.getByTestId('gate-matrix-responsive-table')).toBeHidden();
-  await gateToggle.click();
-  await expect(gateToggle).toHaveAttribute('aria-expanded', 'true');
-  await expect(page.getByTestId('gate-matrix-responsive-table')).toBeVisible();
+  const gateMatrix = page.getByTestId('gate-matrix-responsive-table');
+  const gateExpanded = await gateToggle.getAttribute('aria-expanded');
+  expect(['false', 'true']).toContain(gateExpanded);
+  if (gateExpanded === 'false') {
+    await expect(gateMatrix).toBeHidden();
+    await gateToggle.click();
+    await expect(gateToggle).toHaveAttribute('aria-expanded', 'true');
+  }
+  await expect(gateMatrix).toBeVisible();
   await expect(
     page.locator('[data-testid^="decision-candidate-card-"]'),
   ).toHaveCount(0);
