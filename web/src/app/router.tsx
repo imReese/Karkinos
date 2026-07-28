@@ -5188,24 +5188,10 @@ export function ActivityPage() {
                   : 'neutral',
             },
             {
-              id: 'recent-entries',
-              label: copy.activity.summary.recentEntries,
-              value: entries.isLoading ? '--' : String(ledgerRows.length),
-              detail: copy.activity.summary.recentEntriesDetail,
-            },
-            {
               id: 'net-cash-impact',
               label: copy.activity.summary.netCashImpact,
               value: copy.activity.summary.netCashImpactUnavailable,
               detail: copy.activity.summary.netCashImpactDetail,
-            },
-            {
-              id: 'latest-activity',
-              label: copy.activity.summary.latestActivity,
-              value: latestEntry
-                ? formatTimestamp(latestEntry.timestamp)
-                : '--',
-              detail: copy.activity.summary.latestActivityDetail,
             },
           ]}
         />
