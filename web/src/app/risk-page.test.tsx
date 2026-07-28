@@ -420,8 +420,18 @@ test('renders risk boundaries and blocking register without execution controls',
   );
   expect(resolutionGuidance.textContent).toContain('Shared unblock condition');
   expect(resolutionGuidance.textContent).toContain(
+    'A newer risk record confirms a lower-severity state.',
+  );
+  expect(resolutionGuidance.textContent).toContain(
     'Review pending recommendations before any execution.',
   );
+  const evidenceIdentityTrigger = within(blockRegister).getByRole('button', {
+    name: 'View evidence identity',
+  });
+  expect(
+    priorityList.compareDocumentPosition(evidenceIdentityTrigger) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
   expect(within(priorityList).queryByText('Safe next step')).toBeNull();
   expect(
     within(handoff)

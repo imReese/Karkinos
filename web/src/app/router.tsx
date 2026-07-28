@@ -3606,46 +3606,6 @@ export function RiskPage() {
               )
             : undefined
         }
-        actions={
-          state.data ? (
-            <EvidenceIdentityDisclosure
-              triggerLabel={copy.common.viewEvidenceIdentity}
-              title={copy.common.evidenceIdentityTitle}
-              description={copy.common.evidenceIdentityDescription}
-              closeLabel={copy.common.closeEvidenceIdentity}
-              copyLabel={copy.common.copyEvidenceValue}
-              copiedLabel={copy.common.evidenceValueCopied}
-              fields={[
-                {
-                  label: copy.common.valuationSnapshot,
-                  value: state.data.summary.valuation_snapshot_id ?? '--',
-                  mono: true,
-                },
-                {
-                  label: copy.common.ledgerCutoff,
-                  value: state.data.summary.ledger_cutoff_id ?? '--',
-                  mono: true,
-                },
-                {
-                  label: copy.common.valuationAsOf,
-                  value: formatTimestamp(
-                    state.data.summary.valuation_as_of ??
-                      state.data.summary.valuation_timestamp,
-                  ),
-                  mono: true,
-                },
-                {
-                  label: copy.common.valuationStatus,
-                  value: formatPublicStatus(
-                    state.data.summary.valuation_status ??
-                      state.data.summary.quote_status,
-                    locale,
-                  ),
-                },
-              ]}
-            />
-          ) : undefined
-        }
       />
 
       {isInitialRiskLoad ? (
@@ -3722,6 +3682,44 @@ export function RiskPage() {
                 </div>
               </dl>
             ) : null}
+            <div className="flex justify-end border-b border-[var(--app-divider)] pb-2.5">
+              <EvidenceIdentityDisclosure
+                triggerLabel={copy.common.viewEvidenceIdentity}
+                title={copy.common.evidenceIdentityTitle}
+                description={copy.common.evidenceIdentityDescription}
+                closeLabel={copy.common.closeEvidenceIdentity}
+                copyLabel={copy.common.copyEvidenceValue}
+                copiedLabel={copy.common.evidenceValueCopied}
+                fields={[
+                  {
+                    label: copy.common.valuationSnapshot,
+                    value: state.data.summary.valuation_snapshot_id ?? '--',
+                    mono: true,
+                  },
+                  {
+                    label: copy.common.ledgerCutoff,
+                    value: state.data.summary.ledger_cutoff_id ?? '--',
+                    mono: true,
+                  },
+                  {
+                    label: copy.common.valuationAsOf,
+                    value: formatTimestamp(
+                      state.data.summary.valuation_as_of ??
+                        state.data.summary.valuation_timestamp,
+                    ),
+                    mono: true,
+                  },
+                  {
+                    label: copy.common.valuationStatus,
+                    value: formatPublicStatus(
+                      state.data.summary.valuation_status ??
+                        state.data.summary.quote_status,
+                      locale,
+                    ),
+                  },
+                ]}
+              />
+            </div>
           </section>
 
           <MetricStrip
