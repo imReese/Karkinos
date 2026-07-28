@@ -2480,9 +2480,9 @@ export const copy = {
         recentEntries: 'Recent entries',
         recentEntriesDetail: 'Visible audit rows in the current timeline.',
         netCashImpact: 'Net cash impact',
-        netCashImpactUnavailable: 'Not available',
+        netCashImpactUnavailable: 'Not exposed',
         netCashImpactDetail:
-          'No canonical persisted summary is exposed for this timeline; visible rows are not aggregated in the browser.',
+          'Canonical aggregate not exposed; visible rows are not summed in-browser.',
         latestActivity: 'Latest activity',
         latestActivityDetail: 'Most recent audited ledger timestamp.',
       },
@@ -5229,9 +5229,9 @@ export const copy = {
         recentEntries: '近期流水',
         recentEntriesDetail: '当前时间线可见的审计记录。',
         netCashImpact: '净现金影响',
-        netCashImpactUnavailable: '不可用',
+        netCashImpactUnavailable: '未提供',
         netCashImpactDetail:
-          '当前时间线没有 canonical 持久化汇总；浏览器不会把可见流水相加为账户事实。',
+          '未提供 canonical 持久化汇总；浏览器不会合计可见流水。',
         latestActivity: '最新活动',
         latestActivityDetail: '最近一条账本审计时间。',
       },

@@ -150,7 +150,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
 
   return (
     <div className="app-workbench-section min-w-0 overflow-hidden">
-      <div className="flex flex-wrap items-start justify-between gap-3 px-5 py-4">
+      <div className="flex flex-wrap items-start justify-between gap-3 px-3 py-4 sm:px-5">
         <div>
           <div className="app-product-mark">{labels.kicker}</div>
           <h2 className="mt-2 text-base font-semibold">{labels.title}</h2>
@@ -159,11 +159,11 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
           {labels.count(visibleEntries.length)}
         </span>
       </div>
-      <div className="border-t border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-5 py-3">
+      <div className="border-t border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-3 py-3 sm:px-5">
         <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div
             aria-label={labels.categoryFilter}
-            className="flex min-w-0 flex-wrap gap-2"
+            className="app-activity-filter-rail app-horizontal-scroll-cue flex min-w-0 max-w-full flex-nowrap gap-1.5 overflow-x-auto overscroll-x-contain pb-1 sm:flex-wrap sm:overflow-visible sm:pb-0"
             role="group"
           >
             {LEDGER_ENTRY_CATEGORIES.map((category) => {
@@ -172,8 +172,9 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
               return (
                 <button
                   key={category}
+                  aria-label={`${labels.categoryLabels[category]} ${labels.count(count)}`}
                   aria-pressed={isSelected}
-                  className={`min-h-10 rounded-[var(--app-radius-control)] border px-2.5 py-1.5 text-xs font-semibold transition-colors xl:min-h-8 ${
+                  className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-[var(--app-radius-control)] border px-2.5 py-1.5 text-xs font-semibold transition-colors xl:min-h-8 ${
                     isSelected
                       ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-bg)] text-[var(--app-accent-strong)]'
                       : 'border-transparent bg-transparent text-[var(--app-muted)] hover:border-[var(--app-border)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] hover:text-[var(--app-soft)]'
@@ -184,7 +185,13 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                   }}
                   type="button"
                 >
-                  {labels.categoryLabels[category]} {labels.count(count)}
+                  <span>{labels.categoryLabels[category]}</span>
+                  <span
+                    aria-hidden="true"
+                    className="font-mono text-[11px] tabular-nums opacity-75"
+                  >
+                    {count}
+                  </span>
                 </button>
               );
             })}
@@ -204,7 +211,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
         {subcategoryOptions.length > 1 ? (
           <div
             aria-label={labels.subcategoryFilter}
-            className="mt-3 flex min-w-0 flex-wrap gap-2"
+            className="app-activity-filter-rail app-horizontal-scroll-cue mt-3 flex min-w-0 max-w-full flex-nowrap gap-1.5 overflow-x-auto overscroll-x-contain pb-1 sm:flex-wrap sm:overflow-visible sm:pb-0"
             role="group"
           >
             {subcategoryOptions.map((option) => {
@@ -212,8 +219,9 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
               return (
                 <button
                   key={option.key}
+                  aria-label={`${option.label} ${labels.count(option.count)}`}
                   aria-pressed={isSelected}
-                  className={`min-h-10 rounded-[var(--app-radius-control)] border px-2.5 py-1.5 text-xs font-semibold transition-colors xl:min-h-8 ${
+                  className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-[var(--app-radius-control)] border px-2.5 py-1.5 text-xs font-semibold transition-colors xl:min-h-8 ${
                     isSelected
                       ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-bg)] text-[var(--app-accent-strong)]'
                       : 'border-transparent bg-transparent text-[var(--app-muted)] hover:border-[var(--app-border)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] hover:text-[var(--app-soft)]'
@@ -221,7 +229,13 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                   onClick={() => setSelectedSubcategory(option.key)}
                   type="button"
                 >
-                  {option.label} {labels.count(option.count)}
+                  <span>{option.label}</span>
+                  <span
+                    aria-hidden="true"
+                    className="font-mono text-[11px] tabular-nums opacity-75"
+                  >
+                    {option.count}
+                  </span>
                 </button>
               );
             })}

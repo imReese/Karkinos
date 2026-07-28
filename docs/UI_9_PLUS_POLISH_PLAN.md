@@ -33,16 +33,16 @@ Every dimension is scored independently. A route passes only when every
 dimension is at least 9.0 and the hard gates below pass. A strong average cannot
 hide a weak dimension.
 
-| Dimension | 9+ acceptance evidence |
-| --- | --- |
-| Professional trust | The first viewport exposes the authoritative state, evidence time, and authority boundary without marketing ambiguity. |
-| Information hierarchy | A three-second scan identifies the route purpose, visual owner, highest-priority state, and next safe action. No more than two regions compete at the top level. |
-| Brand identity | The page is recognizably Karkinos without relying only on the purple accent, logo, or repeated shell chrome. |
-| Visual craft | Typography, spacing, dividers, alignment, selected states, and surface hierarchy remain deliberate in Latte and Mocha at every target width. |
-| Data and chart expression | Tables and charts answer a named question, own sufficient canvas, preserve evidence identity, and remain readable without decorative filler. |
-| Interaction and state | Loading, empty, missing, stale, partial, blocked, error, and controlled actions are distinct, stable, and appropriately weighted. |
-| Responsive composition | Desktop, laptop, tablet, and mobile reorder by operator priority with no document overflow; wide content uses local overflow. |
-| Accessibility | Keyboard reachability, focus visibility, ARIA names, touch targets, reduced motion, and contrast pass the changed contract. |
+| Dimension                 | 9+ acceptance evidence                                                                                                                                           |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Professional trust        | The first viewport exposes the authoritative state, evidence time, and authority boundary without marketing ambiguity.                                           |
+| Information hierarchy     | A three-second scan identifies the route purpose, visual owner, highest-priority state, and next safe action. No more than two regions compete at the top level. |
+| Brand identity            | The page is recognizably Karkinos without relying only on the purple accent, logo, or repeated shell chrome.                                                     |
+| Visual craft              | Typography, spacing, dividers, alignment, selected states, and surface hierarchy remain deliberate in Latte and Mocha at every target width.                     |
+| Data and chart expression | Tables and charts answer a named question, own sufficient canvas, preserve evidence identity, and remain readable without decorative filler.                     |
+| Interaction and state     | Loading, empty, missing, stale, partial, blocked, error, and controlled actions are distinct, stable, and appropriately weighted.                                |
+| Responsive composition    | Desktop, laptop, tablet, and mobile reorder by operator priority with no document overflow; wide content uses local overflow.                                    |
+| Accessibility             | Keyboard reachability, focus visibility, ARIA names, touch targets, reduced motion, and contrast pass the changed contract.                                      |
 
 ### Hard gates
 
@@ -60,33 +60,33 @@ hide a weak dimension.
 
 References are used for composition principles rather than visual imitation.
 
-| Reference | Karkinos application |
-| --- | --- |
+| Reference            | Karkinos application                                                                                |
+| -------------------- | --------------------------------------------------------------------------------------------------- |
 | Apple / Apple Stocks | Strong identity, quiet chrome, list-detail continuity, and a chart that owns the analytical canvas. |
-| Google Finance | Search-first orientation, compact summaries, and comparable watchlists. |
-| Cursor / Linear | One dominant task, explicit state, restrained interaction, and low-noise operational chrome. |
-| Stripe / Vercel | Editorial public-home hierarchy, credible product proof, and disciplined calls to action. |
-| Bloomberg | Stable information architecture, tabular precision, and professional density. |
-| Koyfin / TradingView | Contextual analytical workspaces, local chart controls, and sufficient chart area. |
+| Google Finance       | Search-first orientation, compact summaries, and comparable watchlists.                             |
+| Cursor / Linear      | One dominant task, explicit state, restrained interaction, and low-noise operational chrome.        |
+| Stripe / Vercel      | Editorial public-home hierarchy, credible product proof, and disciplined calls to action.           |
+| Bloomberg            | Stable information architecture, tabular precision, and professional density.                       |
+| Koyfin / TradingView | Contextual analytical workspaces, local chart controls, and sufficient chart area.                  |
 
 ## Route art direction
 
-| Route | Visual owner | Required 9+ composition |
-| --- | --- | --- |
-| `/` | Evidence-to-action product proof | Editorial hero plus a realistic, non-financial workbench preview; concise proof, workflow, and a non-repeated closing action. |
-| `/overview` | Account truth and today's priority | Account metrics first, evidence state adjacent, one ranked action queue, current holdings before secondary analysis. |
-| `/portfolio` | Current holdings table | Compact summary and filters lead directly into the primary table; historical and secondary analysis remain downstream. |
-| `/portfolio/:symbol` | Instrument identity and price evidence | Instrument facts and evidence state lead into a chart-first position workspace with stable tabs. |
-| `/activity` | Immutable ledger history | Audit timeline/table owns the page; append-only entry is explicit and secondary. |
-| `/account-truth` | Reconciliation result | Score and unresolved difference lead; matched detail stays quiet and progressively disclosed. |
-| `/market` | Watchlist-detail chart workspace | Persistent list-detail relationship, strong instrument identity, and chart-owned detail canvas. |
-| `/backtest` | Reproducible result evidence | Result, cost/OOS limitations, and equity/drawdown evidence dominate configuration chrome. |
-| `/ai-research` | Cited human research task | Frozen canonical context, cited artifact, human conclusion, and zero-authority boundary form one workspace. |
-| `/decision` | Gate matrix | Highest blocker and safe next step lead into the evidence gate matrix and candidate detail. |
-| `/risk` | Active exceptions and thresholds | Risk metric strip, exception list, threshold table, and isolated controlled action zone. |
-| `/operations` | Priority queue versus immutable timeline | Operator priority and chronological evidence remain visually and structurally distinct. |
-| `/trading` | Persisted-only review queue | Order evidence and human review status lead; kill switch and signed controls stay isolated and collapsed. |
-| `/settings` | Control-center index | Data, runtime, research, ingestion, and safety sections are navigable without one uninterrupted form wall. |
+| Route                | Visual owner                             | Required 9+ composition                                                                                                       |
+| -------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `/`                  | Evidence-to-action product proof         | Editorial hero plus a realistic, non-financial workbench preview; concise proof, workflow, and a non-repeated closing action. |
+| `/overview`          | Account truth and today's priority       | Account metrics first, evidence state adjacent, one ranked action queue, current holdings before secondary analysis.          |
+| `/portfolio`         | Current holdings table                   | Compact summary and filters lead directly into the primary table; historical and secondary analysis remain downstream.        |
+| `/portfolio/:symbol` | Instrument identity and price evidence   | Instrument facts and evidence state lead into a chart-first position workspace with stable tabs.                              |
+| `/activity`          | Immutable ledger history                 | Audit timeline/table owns the page; append-only entry is explicit and secondary.                                              |
+| `/account-truth`     | Reconciliation result                    | Score and unresolved difference lead; matched detail stays quiet and progressively disclosed.                                 |
+| `/market`            | Watchlist-detail chart workspace         | Persistent list-detail relationship, strong instrument identity, and chart-owned detail canvas.                               |
+| `/backtest`          | Reproducible result evidence             | Result, cost/OOS limitations, and equity/drawdown evidence dominate configuration chrome.                                     |
+| `/ai-research`       | Cited human research task                | Frozen canonical context, cited artifact, human conclusion, and zero-authority boundary form one workspace.                   |
+| `/decision`          | Gate matrix                              | Highest blocker and safe next step lead into the evidence gate matrix and candidate detail.                                   |
+| `/risk`              | Active exceptions and thresholds         | Risk metric strip, exception list, threshold table, and isolated controlled action zone.                                      |
+| `/operations`        | Priority queue versus immutable timeline | Operator priority and chronological evidence remain visually and structurally distinct.                                       |
+| `/trading`           | Persisted-only review queue              | Order evidence and human review status lead; kill switch and signed controls stay isolated and collapsed.                     |
+| `/settings`          | Control-center index                     | Data, runtime, research, ingestion, and safety sections are navigable without one uninterrupted form wall.                    |
 
 ## Delivery sequence
 
@@ -467,3 +467,53 @@ modified.
   review decision, provider, strategy, OMS, broker, kill switch, capital, or
   authorization contract changed. AI output remains non-authorizing and all
   execution remains human-started and default-closed.
+
+## Batch E2 validation record — 2026-07-28
+
+### Assumptions and scope
+
+- The immutable persisted ledger table remains the Activity visual owner. Entry
+  tools are an explicit secondary action and stay closed until requested.
+- The route must not synthesize a net-cash total from visible rows. An absent
+  canonical aggregate remains a named missing fact rather than a placeholder
+  amount.
+- Mobile category controls may use intentional local horizontal overflow while
+  the table keeps its existing local overflow and the document remains fixed.
+
+### Validation
+
+- Runtime: Node `v24.18.0`.
+- Focused Activity Vitest: 2 files and 21 tests passed.
+- `npm test`: 66 files and 563 tests passed.
+- `npm run format:check`: passed.
+- `npm run build`: production build passed.
+- The new six-viewport Activity hierarchy contract passed in 3.5 seconds. The
+  remaining-route Latte/Mocha mobile audit, including the entry drawer and new
+  density limits, passed in 58 seconds.
+- Manual browser inspection covered Latte and Mocha at 1440x900 and 390x844.
+
+### Visual result
+
+- The header entry action now uses the secondary hierarchy. Persisted history,
+  not the write affordance, is the strongest first-screen surface.
+- Metric labels, values, and details wrap inside the Activity strip. The missing
+  aggregate is now the concise `Not exposed` / `未提供`, with the canonical
+  no-browser-summing boundary still visible.
+- Visual filter counts are compact while their ARIA labels retain the localized
+  full count. At 390px the category rail changed from a 184px wrapped block to
+  a 44px local-scroll rail; the ledger table moved from about y=802px to y=710px.
+- At 1440px the filters changed from two rows to one and the table moved from
+  about y=503px to y=473px. All six viewports had zero document and app-content
+  overflow; only the named filter rail and wide ledger table overflow locally.
+
+### Limits and risk impact
+
+- This completes the Activity visual-owner sub-batch. Settings and the final
+  cross-route accessibility/token/legacy-style audit remain before the all-route
+  9+ goal can be complete.
+- GitNexus reported `ActivityPage` and `ActivityFeed` upstream impact as LOW
+  with no graph-level callers or affected processes. The direct production path
+  is the Activity route into `ActivityPage`, then `ActivityFeed`.
+- No query, ledger entry, trade preview, mutation payload, amount, fee, P&L,
+  classification, timestamp, provider, OMS, broker, kill switch, capital, or
+  authorization behavior changed. The missing aggregate remains fail-closed.
