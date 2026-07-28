@@ -268,8 +268,8 @@ afterEach(() => {
 test('stays idle until explicitly opened', async () => {
   const { fetchMock } = renderPanel();
 
-  expect(screen.getByText('External models off')).toBeTruthy();
-  expect(screen.getByText('No trading authority')).toBeTruthy();
+  expect(screen.getByText('No background AI')).toBeTruthy();
+  expect(screen.getByText('Advisory only')).toBeTruthy();
   expect(fetchMock).not.toHaveBeenCalled();
 
   fireEvent.click(screen.getByRole('button', { name: 'Open research tasks' }));
@@ -424,7 +424,9 @@ test('blocks acceptance for incomplete evidence and records revision only', asyn
     screen.queryByRole('button', { name: /submit|cancel|resume/i }),
   ).toBeNull();
   expect(
-    screen.queryByRole('button', { name: 'Run offline fixture analysis' }),
+    screen.queryByRole('button', {
+      name: 'Run local deterministic analysis',
+    }),
   ).toBeNull();
 });
 
@@ -438,10 +440,12 @@ test('starts the offline fixture only after accepted context and renders artifac
   expect(await screen.findByText('Context accepted')).toBeTruthy();
 
   fireEvent.click(
-    screen.getByRole('button', { name: 'Run offline fixture analysis' }),
+    screen.getByRole('button', {
+      name: 'Run local deterministic analysis',
+    }),
   );
 
-  expect(await screen.findByText('Fixture workflow')).toBeTruthy();
+  expect(await screen.findByText('Analysis workflow')).toBeTruthy();
   expect(screen.getByText('Exact context valid')).toBeTruthy();
   expect(
     screen.getByText('Human review required; exact context only'),
@@ -497,7 +501,9 @@ test('invalidates fixture report and memory when exact evidence binding drifts',
     screen.getByText('canonical evidence payload fingerprint drift'),
   ).toBeTruthy();
   expect(
-    screen.queryByRole('button', { name: 'Run offline fixture analysis' }),
+    screen.queryByRole('button', {
+      name: 'Run local deterministic analysis',
+    }),
   ).toBeNull();
   fireEvent.change(await screen.findByLabelText('Analysis review note'), {
     target: { value: 'Recapture evidence before accepting memory.' },

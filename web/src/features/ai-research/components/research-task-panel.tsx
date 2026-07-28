@@ -39,31 +39,31 @@ function newAuditKey(prefix: string) {
 
 const COPY = {
   en: {
-    kicker: 'AI research boundary',
-    title: 'Human research tasks',
+    kicker: 'Research boundary',
+    title: 'Research tasks',
     detail:
-      'Freeze canonical evidence, review the context, then explicitly run an offline deterministic fixture. External models remain off.',
+      'Review saved evidence, then explicitly run a local deterministic analysis. Nothing starts in the background.',
     closedDetail:
-      'This boundary is idle until you open it. It never polls a model or provider.',
+      'This workspace stays idle until you open it. Nothing starts in the background.',
     open: 'Open research tasks',
     close: 'Collapse research workspace',
     queueKicker: 'Review queue',
-    queueTitle: 'Frozen evidence tasks',
+    queueTitle: 'Research task queue',
     queueDetail:
-      'Persisted tasks and exact evidence bindings remain the primary review surface.',
+      'Every task keeps its saved evidence and citations attached for review.',
     taskCount: (count: number) => `${count} task${count === 1 ? '' : 's'}`,
     newTask: 'Draft research task',
     closeDraft: 'Close task draft',
     formKicker: 'Human capture',
     formTitle: 'Record a research task',
     formDetail:
-      'Define the question and explicitly choose which persisted evidence to freeze. Recording does not run a model.',
+      'Define the question and choose which saved evidence to attach. Recording the task does not start an analysis.',
     loadingTitle: 'Loading frozen task evidence',
     loadErrorTitle: 'Research task evidence unavailable',
     emptyTitle: 'No frozen research task',
     successTitle: 'Research task recorded',
-    noModel: 'External models off',
-    noAuthority: 'No trading authority',
+    noModel: 'No background AI',
+    noAuthority: 'Advisory only',
     operator: 'Human operator',
     account: 'Account alias',
     taskTitle: 'Task title',
@@ -77,8 +77,8 @@ const COPY = {
     submit: 'Capture evidence and record task',
     submitting: 'Recording…',
     success: 'The task was recorded without starting model execution.',
-    loading: 'Loading persisted research tasks…',
-    loadError: 'Persisted research tasks could not be loaded.',
+    loading: 'Loading saved research tasks…',
+    loadError: 'Saved research tasks could not be loaded.',
     empty: 'No human research task has been recorded yet.',
     evidence: 'Evidence',
     authoritative: 'Authoritative',
@@ -91,14 +91,14 @@ const COPY = {
     closeWithout: 'Close without analysis',
     reviewing: 'Recording review…',
     acceptBlocked: 'Acceptance requires complete authoritative evidence.',
-    persistedOnly: 'Persisted facts only',
-    analysisLoading: 'Loading persisted fixture analyses…',
-    analysisLoadError: 'Fixture analysis records could not be loaded.',
-    runFixture: 'Run offline fixture analysis',
-    runningFixture: 'Running local fixture…',
-    fixtureOnly: 'Deterministic fixture only',
+    persistedOnly: 'Saved facts only',
+    analysisLoading: 'Loading saved local analyses…',
+    analysisLoadError: 'Local analysis records could not be loaded.',
+    runFixture: 'Run local deterministic analysis',
+    runningFixture: 'Running local analysis…',
+    fixtureOnly: 'Local deterministic analysis',
     noNetwork: 'No network or external model',
-    analysisStatus: 'Fixture workflow',
+    analysisStatus: 'Analysis workflow',
     bindingStatus: 'Evidence binding',
     memoryStatus: 'Memory draft',
     auditValid: 'Audit replay valid',
@@ -107,7 +107,7 @@ const COPY = {
     bindingDrift: 'Evidence drift — output invalidated',
     memoryPending: 'Human review required; exact context only',
     memoryInvalid: 'Invalidated by evidence drift',
-    report: 'Fixture report',
+    report: 'Analysis report',
     artifacts: 'Artifacts',
     analysisReview: 'Human analysis review',
     analysisReviewBoundary:
@@ -116,7 +116,7 @@ const COPY = {
     analysisReviewNote: 'Analysis review note',
     acceptMemory: 'Accept as reviewed memory',
     requestAnalysisRevision: 'Request analysis revision',
-    rejectAnalysis: 'Reject fixture output',
+    rejectAnalysis: 'Reject analysis output',
     recordingAnalysisReview: 'Recording analysis review…',
     analysisReviewLoadError: 'Analysis review could not be loaded.',
     analysisReviewRequired: 'A reviewer and note are required.',
@@ -139,29 +139,28 @@ const COPY = {
     },
   },
   zh: {
-    kicker: 'AI 投研边界',
-    title: '人工研究任务',
+    kicker: '研究边界',
+    title: '研究任务',
     detail:
-      '先冻结 canonical 证据并人工复核，再由人显式运行离线 deterministic fixture；外部模型继续关闭。',
-    closedDetail: '显式打开前保持空闲；不会轮询模型或 provider。',
+      '先复核已保存证据，再由人显式运行本地确定性分析；后台不会自行启动。',
+    closedDetail: '显式打开前保持空闲；后台不会自行启动任何分析。',
     open: '打开研究任务',
     close: '收起研究工作区',
     queueKicker: '复核队列',
-    queueTitle: '已冻结证据任务',
-    queueDetail: '持久化任务与精确证据绑定始终是主要复核界面。',
+    queueTitle: '研究任务队列',
+    queueDetail: '每项任务都保留已保存证据与引用，供人工复核。',
     taskCount: (count: number) => `${count} 个任务`,
     newTask: '起草研究任务',
     closeDraft: '关闭任务草稿',
     formKicker: '人工采集',
     formTitle: '记录研究任务',
-    formDetail:
-      '定义问题，并显式选择需要冻结的持久化证据；记录任务不会运行任何模型。',
+    formDetail: '定义问题，并选择需要附带的已保存证据；记录任务不会启动分析。',
     loadingTitle: '正在读取已冻结任务证据',
     loadErrorTitle: '研究任务证据不可用',
     emptyTitle: '暂无已冻结研究任务',
     successTitle: '研究任务已记录',
-    noModel: '外部模型关闭',
-    noAuthority: '无交易权限',
+    noModel: '无后台 AI',
+    noAuthority: '仅供研究',
     operator: '人工操作人',
     account: '账户别名',
     taskTitle: '任务标题',
@@ -169,12 +168,12 @@ const COPY = {
     includeBacktest: '绑定已保存回测证据',
     includeContribution: '绑定当前策略结果证据',
     noContribution: '当前没有可供精确选择的策略贡献证据。',
-    noBacktest: '请先运行并保存回测，才能绑定精确 research evidence。',
+    noBacktest: '请先运行并保存回测，才能绑定对应研究证据。',
     submit: '冻结证据并记录任务',
     submitting: '记录中…',
     success: '任务已记录，未启动任何模型执行。',
-    loading: '正在读取持久化研究任务…',
-    loadError: '无法读取持久化研究任务。',
+    loading: '正在读取已保存研究任务…',
+    loadError: '无法读取已保存研究任务。',
     empty: '尚未记录人工研究任务。',
     evidence: '证据',
     authoritative: '权威完整',
@@ -187,14 +186,14 @@ const COPY = {
     closeWithout: '不分析并关闭',
     reviewing: '正在记录复核…',
     acceptBlocked: '只有完整、权威的证据上下文才可接受。',
-    persistedOnly: '仅持久化事实',
-    analysisLoading: '正在读取持久化 fixture analysis…',
-    analysisLoadError: '无法读取 fixture analysis 记录。',
-    runFixture: '运行离线 fixture analysis',
-    runningFixture: '本地 fixture 运行中…',
-    fixtureOnly: '仅 deterministic fixture',
+    persistedOnly: '仅已保存事实',
+    analysisLoading: '正在读取已保存的本地分析…',
+    analysisLoadError: '无法读取本地分析记录。',
+    runFixture: '运行本地确定性分析',
+    runningFixture: '本地分析运行中…',
+    fixtureOnly: '本地确定性分析',
     noNetwork: '无网络、无外部模型',
-    analysisStatus: 'Fixture workflow',
+    analysisStatus: '分析流程',
     bindingStatus: '证据绑定',
     memoryStatus: '记忆草稿',
     auditValid: '审计回放有效',
@@ -203,7 +202,7 @@ const COPY = {
     bindingDrift: '证据漂移——产物已失效',
     memoryPending: '等待人工复核；仅对精确上下文有效',
     memoryInvalid: '已因证据漂移失效',
-    report: 'Fixture 报告',
+    report: '分析报告',
     artifacts: '产物',
     analysisReview: '人工分析复核',
     analysisReviewBoundary:
@@ -212,7 +211,7 @@ const COPY = {
     analysisReviewNote: '分析复核备注',
     acceptMemory: '接受为已复核研究记忆',
     requestAnalysisRevision: '要求修订分析',
-    rejectAnalysis: '驳回 fixture 产物',
+    rejectAnalysis: '驳回分析产物',
     recordingAnalysisReview: '正在记录分析复核…',
     analysisReviewLoadError: '无法读取分析复核记录。',
     analysisReviewRequired: '必须填写复核人和备注。',
@@ -239,10 +238,12 @@ const COPY = {
 export function ResearchTaskPanel({
   backtestResultId,
   defaultOpen = false,
+  routePrimary = false,
   strategyId,
 }: {
   backtestResultId: number | null;
   defaultOpen?: boolean;
+  routePrimary?: boolean;
   strategyId: string | null;
 }) {
   const { locale } = usePreferences();
@@ -352,32 +353,52 @@ export function ResearchTaskPanel({
   return (
     <section
       aria-labelledby="ai-research-task-title"
-      className="app-ai-research-boundary p-3 sm:p-5"
+      className={`app-ai-research-boundary ${routePrimary ? 'p-0' : 'p-3 sm:p-5'}`}
       data-evidence-kind="cited-ai-research"
       data-testid="ai-research-task-panel"
     >
-      <div className="flex items-center justify-between gap-3 sm:items-start">
-        <div className="min-w-0">
-          <div className="app-kicker hidden text-[10px] uppercase tracking-[0.14em] sm:block">
-            {copy.kicker}
+      <div
+        className={`flex items-center justify-between gap-3 ${
+          routePrimary
+            ? 'min-h-11 flex-wrap border-b border-[var(--app-divider)] pb-3'
+            : 'sm:items-start'
+        }`}
+      >
+        {routePrimary ? (
+          <>
+            <h2 className="sr-only" id="ai-research-task-title">
+              {copy.title}
+            </h2>
+            <div className="flex min-w-0 flex-1 flex-wrap gap-2">
+              <BoundaryBadge label={copy.noModel} />
+              <BoundaryBadge label={copy.noAuthority} />
+            </div>
+          </>
+        ) : (
+          <div className="min-w-0">
+            <div className="app-kicker hidden text-[10px] uppercase tracking-[0.14em] sm:block">
+              {copy.kicker}
+            </div>
+            <h2
+              className="text-base font-semibold text-[var(--app-text)] sm:mt-2 sm:text-lg"
+              id="ai-research-task-title"
+            >
+              {copy.title}
+            </h2>
+            <p className="app-muted mt-2 hidden max-w-3xl text-sm leading-6 sm:block">
+              {open ? copy.detail : copy.closedDetail}
+            </p>
           </div>
-          <h2
-            className="text-base font-semibold text-[var(--app-text)] sm:mt-2 sm:text-lg"
-            id="ai-research-task-title"
-          >
-            {copy.title}
-          </h2>
-          <p className="app-muted mt-2 hidden max-w-3xl text-sm leading-6 sm:block">
-            {open ? copy.detail : copy.closedDetail}
-          </p>
-        </div>
+        )}
         <div className="flex shrink-0 items-center gap-2">
-          <div className="hidden flex-wrap gap-2 sm:flex">
-            <BoundaryBadge label={copy.noModel} />
-            <BoundaryBadge label={copy.noAuthority} />
-          </div>
+          {!routePrimary ? (
+            <div className="hidden flex-wrap gap-2 sm:flex">
+              <BoundaryBadge label={copy.noModel} />
+              <BoundaryBadge label={copy.noAuthority} />
+            </div>
+          ) : null}
           <button
-            className="app-button-secondary px-3 py-2 text-xs font-semibold"
+            className="app-button-secondary min-h-11 px-3 py-2 text-xs font-semibold"
             onClick={() => setOpen((current) => !current)}
             type="button"
           >
@@ -388,7 +409,7 @@ export function ResearchTaskPanel({
 
       {open ? (
         <div
-          className={`mt-5 grid gap-5 ${
+          className={`${routePrimary ? 'mt-4' : 'mt-5'} grid gap-5 ${
             composerOpen
               ? 'xl:grid-cols-[minmax(320px,0.92fr)_minmax(0,1.08fr)]'
               : ''
@@ -396,7 +417,9 @@ export function ResearchTaskPanel({
         >
           <section
             aria-labelledby="ai-research-queue-title"
-            className="min-w-0 border-t border-[var(--app-divider)] pt-4"
+            className={`min-w-0 ${
+              routePrimary ? '' : 'border-t border-[var(--app-divider)] pt-4'
+            }`}
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
@@ -419,7 +442,7 @@ export function ResearchTaskPanel({
                 </StatusBadge>
                 <button
                   aria-expanded={composerOpen}
-                  className="app-button-secondary px-3 py-2 text-xs font-semibold"
+                  className="app-button-secondary min-h-11 px-3 py-2 text-xs font-semibold"
                   onClick={() => setComposerOpen((current) => !current)}
                   type="button"
                 >
@@ -431,7 +454,7 @@ export function ResearchTaskPanel({
               <label className="mt-4 block text-xs font-semibold text-[var(--app-muted)]">
                 {copy.reviewNote}
                 <input
-                  className="app-input mt-1 w-full px-3 py-2 text-sm text-[var(--app-text)]"
+                  className="app-input mt-1 min-h-11 w-full px-3 py-2 text-sm text-[var(--app-text)]"
                   onChange={(event) => setReviewNote(event.target.value)}
                   value={reviewNote}
                 />
@@ -613,7 +636,7 @@ export function ResearchTaskPanel({
               </label>
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <button
-                  className="app-button-primary px-4 py-2 text-sm font-semibold"
+                  className="app-button-primary min-h-11 px-4 py-2 text-sm font-semibold"
                   disabled={
                     createTask.isPending ||
                     (includeContribution && strategyId === null)
@@ -742,7 +765,7 @@ function ResearchTaskCard({
       {reviewable ? (
         <div className="mt-3 flex flex-wrap gap-2">
           <button
-            className="app-button-secondary px-3 py-1.5 text-xs font-semibold"
+            className="app-button-secondary min-h-11 px-3 py-1.5 text-xs font-semibold"
             disabled={reviewDisabled || !task.all_evidence_authoritative}
             onClick={() => onReview('context_accepted')}
             title={
@@ -753,7 +776,7 @@ function ResearchTaskCard({
             {copy.accept}
           </button>
           <button
-            className="app-button-secondary px-3 py-1.5 text-xs font-semibold"
+            className="app-button-secondary min-h-11 px-3 py-1.5 text-xs font-semibold"
             disabled={reviewDisabled}
             onClick={() => onReview('context_revision_requested')}
             type="button"
@@ -761,7 +784,7 @@ function ResearchTaskCard({
             {copy.revise}
           </button>
           <button
-            className="app-button-secondary px-3 py-1.5 text-xs font-semibold"
+            className="app-button-secondary min-h-11 px-3 py-1.5 text-xs font-semibold"
             disabled={reviewDisabled}
             onClick={() => onReview('closed_without_analysis')}
             type="button"
@@ -778,7 +801,7 @@ function ResearchTaskCard({
               <BoundaryBadge label={copy.noNetwork} />
             </div>
             <button
-              className="app-button-primary px-3 py-1.5 text-xs font-semibold"
+              className="app-button-primary min-h-11 px-3 py-1.5 text-xs font-semibold"
               disabled={analysisPending}
               onClick={onStartAnalysis}
               type="button"
@@ -960,7 +983,7 @@ function FixtureAnalysisReviewControl({
           </label>
           <div className="flex flex-wrap gap-2">
             <button
-              className="app-button-primary px-3 py-1.5 text-xs font-semibold"
+              className="app-button-primary min-h-11 px-3 py-1.5 text-xs font-semibold"
               disabled={
                 recordReview.isPending || !formReady || !acceptanceEligible
               }
@@ -973,7 +996,7 @@ function FixtureAnalysisReviewControl({
               {copy.acceptMemory}
             </button>
             <button
-              className="app-button-secondary px-3 py-1.5 text-xs font-semibold"
+              className="app-button-secondary min-h-11 px-3 py-1.5 text-xs font-semibold"
               disabled={recordReview.isPending || !formReady}
               onClick={() => void submitReview('request_revision')}
               type="button"
@@ -981,7 +1004,7 @@ function FixtureAnalysisReviewControl({
               {copy.requestAnalysisRevision}
             </button>
             <button
-              className="app-button-secondary px-3 py-1.5 text-xs font-semibold"
+              className="app-button-secondary min-h-11 px-3 py-1.5 text-xs font-semibold"
               disabled={recordReview.isPending || !formReady}
               onClick={() => void submitReview('reject')}
               type="button"
@@ -1059,7 +1082,7 @@ function LabeledInput({
     <label className="block text-xs font-semibold text-[var(--app-muted)]">
       {label}
       <input
-        className="app-input mt-1 w-full px-3 py-2 text-sm text-[var(--app-text)]"
+        className="app-input mt-1 min-h-11 w-full px-3 py-2 text-sm text-[var(--app-text)]"
         onChange={(event) => onChange(event.target.value)}
         required={required}
         value={value}
@@ -1069,11 +1092,7 @@ function LabeledInput({
 }
 
 function BoundaryBadge({ label }: { label: string }) {
-  return (
-    <span className="rounded-full border border-[color-mix(in_srgb,var(--app-warning)_42%,var(--app-border))] bg-[var(--app-warning-bg)] px-2.5 py-1.5 text-[10px] font-semibold text-[var(--app-warning)]">
-      {label}
-    </span>
-  );
+  return <StatusBadge tone="neutral">{label}</StatusBadge>;
 }
 
 function EvidenceIdentity({ label, value }: { label: string; value: string }) {

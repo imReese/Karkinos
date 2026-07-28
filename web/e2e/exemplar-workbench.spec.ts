@@ -227,6 +227,14 @@ test('AI research keeps frozen evidence ahead of human capture across all accept
   const emptyState = page.getByRole('heading', {
     name: 'No frozen research task',
   });
+  const collapseWorkspace = page.getByRole('button', {
+    name: 'Collapse research workspace',
+    exact: true,
+  });
+  const openStrategyLab = page.getByRole('link', {
+    name: 'Open Strategy Lab',
+    exact: true,
+  });
   await expect(queue).toBeVisible({ timeout: 15_000 });
   await expect(composer).toHaveCount(0);
 
@@ -234,24 +242,28 @@ test('AI research keeps frozen evidence ahead of human capture across all accept
     await page.setViewportSize(viewport);
     const primaryCanvasBox = (await primaryCanvas.boundingBox())!;
     const contextMetricsBox = (await contextMetrics.boundingBox())!;
-    if (viewport.width < 640) {
-      expect(primaryCanvasBox.y, JSON.stringify(viewport)).toBeLessThan(
-        contextMetricsBox.y,
-      );
-      expect(
-        (await emptyState.boundingBox())!.y,
-        JSON.stringify(viewport),
-      ).toBeLessThan(viewport.height);
-    } else {
-      expect(contextMetricsBox.y, JSON.stringify(viewport)).toBeLessThan(
-        primaryCanvasBox.y,
-      );
-    }
+    expect(primaryCanvasBox.y, JSON.stringify(viewport)).toBeLessThan(
+      contextMetricsBox.y,
+    );
+    expect(
+      (await emptyState.boundingBox())!.y,
+      JSON.stringify(viewport),
+    ).toBeLessThan(viewport.height);
     const openComposer = page.getByRole('button', {
       name: 'Draft research task',
       exact: true,
     });
     await expect(openComposer).toHaveAttribute('aria-expanded', 'false');
+    for (const [name, target] of Object.entries({
+      openComposer,
+      collapseWorkspace,
+      openStrategyLab,
+    })) {
+      expect(
+        (await target.boundingBox())!.height,
+        `${name} ${JSON.stringify(viewport)}`,
+      ).toBeGreaterThanOrEqual(44);
+    }
     await openComposer.click();
     await expect(composer).toBeVisible();
 

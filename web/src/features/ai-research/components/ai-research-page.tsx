@@ -28,7 +28,7 @@ export function AiResearchPage() {
         context={labels.context}
         actions={
           <a
-            className="app-button-secondary min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
+            className="app-button-secondary min-h-11 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
             href="/backtest"
           >
             {labels.openStrategyLab}
@@ -36,19 +36,31 @@ export function AiResearchPage() {
         }
       />
 
-      <div
-        className="order-2 sm:order-none"
+      <div data-testid="ai-research-primary-canvas">
+        <ResearchTaskPanel
+          backtestResultId={latestBacktest?.id ?? null}
+          defaultOpen
+          routePrimary
+          strategyId={accountStrategy.data?.strategy_id ?? null}
+        />
+      </div>
+
+      <section
+        aria-labelledby="ai-research-context-title"
+        className="min-w-0 border-t border-[var(--app-divider)] pt-4"
         data-testid="ai-research-context-metrics"
       >
+        <div className="mb-3 min-w-0">
+          <h2 className="app-product-mark" id="ai-research-context-title">
+            {labels.contextTitle}
+          </h2>
+          <p className="app-muted mt-1 text-xs leading-5">
+            {labels.contextDetail}
+          </p>
+        </div>
         <MetricStrip
-          ariaLabel={labels.title}
+          ariaLabel={labels.contextTitle}
           items={[
-            {
-              id: 'activation',
-              label: labels.activation,
-              value: labels.manualOnly,
-              detail: labels.noImplicitModel,
-            },
             {
               id: 'backtest-context',
               label: labels.backtestContext,
@@ -91,26 +103,9 @@ export function AiResearchPage() {
                   ? 'warning'
                   : 'neutral',
             },
-            {
-              id: 'authority',
-              label: labels.authority,
-              value: labels.none,
-              detail: labels.noBrokerOrCapital,
-            },
           ]}
         />
-      </div>
-
-      <div
-        className="order-1 sm:order-none"
-        data-testid="ai-research-primary-canvas"
-      >
-        <ResearchTaskPanel
-          backtestResultId={latestBacktest?.id ?? null}
-          defaultOpen
-          strategyId={accountStrategy.data?.strategy_id ?? null}
-        />
-      </div>
+      </section>
     </section>
   );
 }
