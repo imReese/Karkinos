@@ -1152,7 +1152,7 @@ export const copy = {
         kicker: 'Manual review',
         title: 'Trading review',
         subtitle:
-          'Review canonical manual-order evidence and record operator decisions. Karkinos does not submit broker orders.',
+          'Review persisted manual-order evidence and record the operator decision. This page does not submit broker orders.',
         statusCheck: 'Status check',
         operatingMode: 'Operating mode',
         manualDefault: 'Manual confirmation default',
@@ -3977,7 +3977,7 @@ export const copy = {
         kicker: '人工复核',
         title: '交易复核',
         subtitle:
-          '复核 canonical 人工订单证据并记录操作决定；Karkinos 不会提交券商订单。',
+          '复核已落库的人工订单证据并记录操作决定；本页不会向券商提交订单。',
         statusCheck: '状态检查',
         operatingMode: '运行模式',
         manualDefault: '默认人工确认',

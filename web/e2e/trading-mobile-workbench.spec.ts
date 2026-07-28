@@ -10,12 +10,14 @@ test('trading mobile keeps the review task ahead of secondary filters', async ({
 
   const secondaryFilters = page.getByTestId('trading-secondary-filters');
   const symbolFilter = page.locator('[name="trading-symbol-filter"]');
+  const reviewPosture = page.getByTestId('trading-review-posture');
   const reviewQueue = page.getByTestId('trading-review-queue');
   const metrics = page.locator('[data-workbench-primitive="metric-strip"]');
   const killSwitch = page.getByTestId('kill-switch-panel');
 
   await expect(secondaryFilters).not.toHaveAttribute('open', '');
   await expect(symbolFilter).toBeHidden();
+  await expect(reviewPosture).toBeVisible();
   await expect(reviewQueue).toBeVisible();
   await expect(killSwitch).toHaveAttribute(
     'data-kill-switch-state',
@@ -36,12 +38,17 @@ test('trading mobile keeps the review task ahead of secondary filters', async ({
     const queue = document.querySelector(
       '[data-testid="trading-review-queue"]',
     ) as HTMLElement;
+    const posture = document.querySelector(
+      '[data-testid="trading-review-posture"]',
+    ) as HTMLElement;
     const control = document.querySelector(
       '[data-testid="kill-switch-panel"]',
     ) as HTMLElement;
     return {
       viewportWidth: window.innerWidth,
       documentWidth: document.documentElement.scrollWidth,
+      postureTop: posture.getBoundingClientRect().top,
+      postureHeight: posture.getBoundingClientRect().height,
       queueTop: queue.getBoundingClientRect().top,
       metricsTop: (
         document.querySelector(
@@ -54,6 +61,8 @@ test('trading mobile keeps the review task ahead of secondary filters', async ({
   });
   expect(geometry.documentWidth).toBeLessThanOrEqual(geometry.viewportWidth);
   await expect(metrics).toBeVisible();
+  expect(geometry.postureTop).toBeLessThan(geometry.queueTop);
+  expect(geometry.postureHeight).toBeLessThan(160);
   expect(geometry.queueTop).toBeLessThan(geometry.metricsTop);
   expect(geometry.queueTop).toBeLessThan(geometry.controlTop);
   expect(geometry.controlHeight).toBeLessThan(120);

@@ -4,7 +4,6 @@ import { useCopy } from '../../../app/copy';
 import {
   ControlledActionZone,
   EvidenceState,
-  FilterBar,
   MetricStrip,
   StatusBadge as WorkbenchStatusBadge,
   WorkspaceHeader,
@@ -977,21 +976,34 @@ export function TradingPage() {
         description={labels.subtitle}
       />
 
-      <FilterBar
-        label={labels.operatingMode}
-        summary={
+      <section
+        className="grid min-w-0 gap-3 border-y border-[var(--app-divider)] py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+        data-testid="trading-review-posture"
+      >
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span className="app-product-mark">{labels.statusCheck}</span>
+          <span className="font-mono text-3xl font-semibold leading-none tabular-nums text-[var(--app-text)]">
+            {counts.pending}
+          </span>
+          <span className="text-sm font-semibold text-[var(--app-text-secondary)]">
+            {labels.pending}
+          </span>
+          <span className="app-muted min-w-0 text-xs">
+            {labels.lastUpdated}: {formatTimestamp(latestTimestamp)}
+          </span>
+        </div>
+        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
+          <span className="app-muted text-xs font-semibold">
+            {labels.operatingMode}
+          </span>
+          <WorkbenchStatusBadge tone="success">
+            {labels.manualDefault}
+          </WorkbenchStatusBadge>
           <WorkbenchStatusBadge tone="neutral">
             {labels.brokerBridgeDisabled}
           </WorkbenchStatusBadge>
-        }
-      >
-        <span className="text-xs font-semibold text-[var(--app-text-secondary)]">
-          {labels.operatingMode}
-        </span>
-        <WorkbenchStatusBadge tone="success">
-          {labels.manualDefault}
-        </WorkbenchStatusBadge>
-      </FilterBar>
+        </div>
+      </section>
 
       <div className="flex min-w-0 flex-col gap-5 sm:gap-6">
         <section
@@ -1140,12 +1152,6 @@ export function TradingPage() {
             ariaLabel={labels.ordersTitle}
             items={[
               {
-                id: 'pending',
-                label: labels.pending,
-                value: String(counts.pending),
-                tone: counts.pending > 0 ? 'warning' : 'neutral',
-              },
-              {
                 id: 'confirmed',
                 label: labels.confirmed,
                 value: String(counts.confirmed),
@@ -1159,11 +1165,6 @@ export function TradingPage() {
                 id: 'canceled',
                 label: labels.canceled,
                 value: String(counts.canceled),
-              },
-              {
-                id: 'last-updated',
-                label: labels.lastUpdated,
-                value: formatTimestamp(latestTimestamp),
               },
             ]}
           />
