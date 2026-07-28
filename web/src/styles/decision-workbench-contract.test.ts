@@ -11,6 +11,10 @@ const DECISION = readFileSync(
 const DECISION_CORE = DECISION.slice(
   DECISION.indexOf('function DecisionSummaryCollapsedPanel'),
 );
+const DAILY_TRADING_PLAN = DECISION.slice(
+  DECISION.indexOf('function DailyTradingPlanPanel'),
+  DECISION.indexOf('const DECISION_GATE_IDS'),
+);
 
 describe('decision workbench contract', () => {
   it('keeps the core human-review path flat and evidence-first', () => {
@@ -46,6 +50,23 @@ describe('decision workbench contract', () => {
     expect(controlledZoneEnd).toBeGreaterThan(prepareButton);
     expect(signalQueue).toContain(
       "action.manual_confirmation_status ===\n                            'ready_for_manual_confirmation'",
+    );
+  });
+
+  it('keeps the daily trading plan flat, compact, and touch-safe', () => {
+    expect(DAILY_TRADING_PLAN).toContain(
+      'data-testid="decision-daily-trading-plan"',
+    );
+    expect(DAILY_TRADING_PLAN).toContain(
+      'border-y border-[var(--app-divider)]',
+    );
+    expect(DAILY_TRADING_PLAN).toContain('min-h-10');
+    expect(DAILY_TRADING_PLAN).not.toContain('app-terminal-panel');
+    expect(DAILY_TRADING_PLAN).not.toContain('app-terminal-inner');
+    expect(DAILY_TRADING_PLAN).not.toMatch(/rounded-(?:xl|2xl|3xl)/);
+    expect(DAILY_TRADING_PLAN).not.toMatch(/rounded-\[(?:18|20|22|27|28)px\]/);
+    expect(DAILY_TRADING_PLAN).not.toMatch(
+      /text-\[var\(--app-(?:success|warning|danger)\)\]/,
     );
   });
 });
