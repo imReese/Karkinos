@@ -436,9 +436,10 @@ test('blocks TuShare selection until the environment credential is configured', 
 
   expect(
     await screen.findByText(
-      'Missing; configure TUSHARE_TOKEN before switching',
+      'Missing; configure the runtime credential before switching',
     ),
   ).toBeTruthy();
+  expect(screen.queryByText(/TUSHARE_TOKEN/)).toBeNull();
   expect(
     (
       screen.getByRole('button', {
@@ -628,7 +629,7 @@ test('guides users to configure asset metadata when none is available', async ()
   ).toBeTruthy();
   expect(
     await screen.findByText(
-      'Backfill asset names and provider symbols into the local instrument metadata table. Keep config.json for runtime settings and watchlist symbols only.',
+      'Complete missing asset names and quote symbols in local persisted metadata. Keep private runtime configuration local.',
     ),
   ).toBeTruthy();
   expect(await screen.findByText('Assets missing metadata')).toBeTruthy();
@@ -645,10 +646,33 @@ test('shows configured asset metadata state when no symbols are missing', async 
   expect(await screen.findByText('Asset metadata configured')).toBeTruthy();
   expect(
     await screen.findByText(
-      'Current holdings have configured asset identities or safe fallbacks.',
+      'Current holdings have traceable asset identities.',
     ),
   ).toBeTruthy();
+  expect(await screen.findByText('Local persisted configuration')).toBeTruthy();
+  expect((await screen.findAllByText('05/16, 22:40')).length).toBeGreaterThan(
+    0,
+  );
+  expect(screen.queryByText('2026-05-16T22:40:00+08:00')).toBeNull();
   expect(screen.queryByText('undefined')).toBeNull();
+});
+
+test('keeps persisted source identity operator-facing without implementation keys', async () => {
+  renderSettingsPage({
+    assetMetadataStatus: {
+      ...defaultAssetMetadataStatus,
+      metadata_source: 'db+watchlist+legacy_config',
+    },
+  });
+
+  expect(
+    await screen.findByText('Persisted register and watchlist'),
+  ).toBeTruthy();
+  expect(screen.queryByText('db+watchlist+legacy_config')).toBeNull();
+  expect(screen.queryByText('provider_symbol')).toBeNull();
+  expect(screen.queryByText(/TUSHARE_TOKEN/)).toBeNull();
+  expect(screen.queryByText(/live status/i)).toBeNull();
+  expect(screen.queryByText(/live-like/i)).toBeNull();
 });
 
 test('handles missing backend status without crashing', async () => {

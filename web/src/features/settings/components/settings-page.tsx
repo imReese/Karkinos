@@ -184,6 +184,19 @@ export function SettingsPage() {
   const metadataSnippet = assetMetadataStatus.data?.suggested_config
     ? JSON.stringify(assetMetadataStatus.data.suggested_config, null, 2)
     : '';
+  const latestPersistentQuoteTime = dataSourceStatus.data
+    ?.latest_persistent_quote_timestamp
+    ? formatTimestamp(dataSourceStatus.data.latest_persistent_quote_timestamp)
+    : copy.settings.noValuationTime;
+  const metadataSource = assetMetadataStatus.data?.metadata_source;
+  const metadataSourceLabel =
+    metadataSource === 'db+watchlist+legacy_config'
+      ? copy.settings.assetMetadataSourcePersisted
+      : metadataSource === 'config'
+        ? copy.settings.assetMetadataSourceLocal
+        : metadataSource
+          ? copy.settings.assetMetadataSourceProvided
+          : copy.shell.statusUnknown;
   const providerNextAction =
     dataSourceStatus.data?.next_action ?? marketHealth.data?.next_action;
   const providerActionLabel =
@@ -317,7 +330,9 @@ export function SettingsPage() {
     },
     {
       label: copy.settings.registerStrategy,
-      value: settings.data?.strategy ?? copy.shell.statusUnknown,
+      value: settings.data?.strategy
+        ? formatPublicCode(settings.data.strategy, locale)
+        : copy.shell.statusUnknown,
       tone: 'neutral',
     },
     {
@@ -620,8 +635,7 @@ export function SettingsPage() {
                     {copy.settings.operationsRegister}
                   </div>
                   <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-2.5 py-1 text-[11px] font-semibold text-[var(--app-soft)]">
-                    {dataSourceStatus.data?.latest_persistent_quote_timestamp ??
-                      copy.settings.noValuationTime}
+                    {latestPersistentQuoteTime}
                   </span>
                 </div>
                 <div className="grid gap-2">
@@ -902,10 +916,7 @@ export function SettingsPage() {
                   />
                   <StatusMetric
                     label={copy.settings.assetMetadataSource}
-                    value={
-                      assetMetadataStatus.data?.metadata_source ??
-                      copy.shell.statusUnknown
-                    }
+                    value={metadataSourceLabel}
                     tone="neutral"
                   />
                 </div>
