@@ -106,10 +106,12 @@ export function MetricsGrid({ report }: { report: BacktestReport }) {
     >
       <MetricStrip
         ariaLabel={`${labels.totalReturn} · ${labels.maxDrawdown}`}
+        className="app-backtest-evidence-strip"
         items={metricStripItems.slice(0, 4)}
       />
       <MetricStrip
         ariaLabel={`${labels.volatility} · ${labels.totalSlippage}`}
+        className="app-backtest-evidence-strip"
         items={metricStripItems.slice(4)}
       />
     </section>

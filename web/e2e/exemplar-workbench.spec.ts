@@ -119,6 +119,97 @@ test('overview preserves the queue-to-holdings hierarchy across all acceptance v
   }
 });
 
+test('backtest preserves result-first evidence and complete metrics across all acceptance viewports', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await page.setViewportSize(overviewAcceptanceViewports[0]);
+  const resultsResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'GET' &&
+      response.url().endsWith('/api/backtest/results'),
+  );
+  await page.goto('/backtest');
+  const response = await resultsResponse;
+  expect(response.ok()).toBe(true);
+  const savedResults = (await response.json()) as unknown;
+  const hasSavedResults =
+    Array.isArray(savedResults) && savedResults.length > 0;
+
+  if (hasSavedResults) {
+    await expect(
+      page.locator('[data-backtest-report-section="metrics"]'),
+    ).toBeVisible({ timeout: 15_000 });
+  }
+
+  for (const viewport of overviewAcceptanceViewports) {
+    await page.setViewportSize(viewport);
+
+    const geometry = await page.evaluate(() => {
+      const content = document.querySelector(
+        '.app-shell-content',
+      ) as HTMLElement;
+      const setup = document.querySelector(
+        '[data-testid="backtest-parameter-panel"]',
+      ) as HTMLElement;
+      const results = document.querySelector(
+        '[data-testid="backtest-result-panel"]',
+      ) as HTMLElement;
+      const tabs = document.querySelector(
+        '[data-testid="backtest-mobile-workspace-tabs"]',
+      ) as HTMLElement;
+      const evidenceText = Array.from(
+        document.querySelectorAll(
+          '.app-backtest-evidence-strip .app-metric-strip-item > .truncate',
+        ),
+      );
+      return {
+        contentOverflow: content.scrollWidth - content.clientWidth,
+        contextUnclipped:
+          evidenceText.length > 0 &&
+          evidenceText.every((element) => {
+            const style = getComputedStyle(element);
+            return (
+              style.whiteSpace === 'normal' && style.overflow === 'visible'
+            );
+          }),
+        documentOverflow:
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+        resultWidth: results.getBoundingClientRect().width,
+        resultX: results.getBoundingClientRect().x,
+        resultY: results.getBoundingClientRect().y,
+        setupWidth: setup.getBoundingClientRect().width,
+        setupX: setup.getBoundingClientRect().x,
+        tabsVisible: getComputedStyle(tabs).display !== 'none',
+        workspaceView: tabs.dataset.workspaceView,
+      };
+    });
+
+    expect(geometry.documentOverflow, JSON.stringify(viewport)).toBe(0);
+    expect(geometry.contentOverflow, JSON.stringify(viewport)).toBe(0);
+    expect(geometry.contextUnclipped, JSON.stringify(viewport)).toBe(true);
+
+    if (viewport.width >= 1280) {
+      expect(geometry.tabsVisible, JSON.stringify(viewport)).toBe(false);
+      expect(geometry.setupX, JSON.stringify(viewport)).toBeLessThan(
+        geometry.resultX,
+      );
+      expect(geometry.resultWidth, JSON.stringify(viewport)).toBeGreaterThan(
+        geometry.setupWidth,
+      );
+    } else {
+      expect(geometry.tabsVisible, JSON.stringify(viewport)).toBe(true);
+      expect(geometry.workspaceView, JSON.stringify(viewport)).toBe(
+        hasSavedResults ? 'results' : 'setup',
+      );
+      if (hasSavedResults) {
+        expect(geometry.resultY, JSON.stringify(viewport)).toBeLessThan(700);
+      }
+    }
+  }
+});
+
 test('portfolio keeps filtering ordered above a compact holdings projection', async ({
   page,
 }) => {
@@ -558,6 +649,21 @@ test('exemplar routes remain task-reordered and overflow safe on mobile themes',
         }
         await expect(resultTab).toHaveAttribute('aria-selected', 'true');
         await expect(page.getByTestId('backtest-result-panel')).toBeVisible();
+        const evidenceText = page.locator(
+          '.app-backtest-evidence-strip .app-metric-strip-item > .truncate',
+        );
+        expect(await evidenceText.count()).toBeGreaterThan(0);
+        expect(
+          await evidenceText.evaluateAll((elements) =>
+            elements.every((element) => {
+              const style = getComputedStyle(element);
+              return (
+                style.whiteSpace === 'normal' && style.overflow === 'visible'
+              );
+            }),
+          ),
+          theme,
+        ).toBe(true);
       }
     }
   }
