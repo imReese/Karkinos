@@ -38,15 +38,12 @@ function ResultSelector({
 
   return (
     <FilterBar label={labels.kicker}>
-      <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <div className="app-kicker text-xs uppercase tracking-[0.16em]">
-            {labels.kicker}
-          </div>
-          <div className="app-card-title mt-1.5">{labels.title}</div>
+      <div className="flex w-full min-w-0 items-center gap-3">
+        <div className="shrink-0 text-sm font-semibold text-[var(--app-text)]">
+          {labels.title}
         </div>
         <select
-          className="app-field min-h-10 w-full rounded-[var(--app-radius-control)] px-3 py-2 text-sm sm:w-auto sm:min-w-[260px]"
+          className="app-field min-h-11 min-w-0 flex-1 rounded-[var(--app-radius-control)] px-3 py-2 text-sm sm:ml-auto sm:max-w-[320px]"
           value={selectedId ?? ''}
           onChange={(event) => onSelect(Number(event.target.value))}
           aria-label={labels.ariaLabel}
@@ -142,11 +139,11 @@ export function BacktestReportView() {
         <EvidenceState kind="error" title={labels.selection.selectedFailed} />
       ) : report.data ? (
         <>
-          <MetricsGrid report={report.data} />
           <EquityDrawdownChart
             fills={report.data.fills ?? []}
             points={report.data.equity_curve}
           />
+          <MetricsGrid report={report.data} />
           <ValidationEvidencePanel report={report.data} />
           <DatasetSnapshotPanel report={report.data} />
           <StrategyMetadataSnapshotPanel report={report.data} />

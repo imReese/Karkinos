@@ -777,7 +777,7 @@ export function BacktestPage() {
 
       <MetricStrip
         ariaLabel={labels.title}
-        className="app-backtest-evidence-strip"
+        className="app-backtest-context-strip app-backtest-evidence-strip"
         items={[
           {
             id: 'strategy',
@@ -1169,6 +1169,10 @@ export function BacktestPage() {
                   ) : null}
                 </div>
                 <div className="mt-5 space-y-5">
+                  <EquityDrawdownChart
+                    fills={latestReport.fills ?? []}
+                    points={latestReport.equity_curve}
+                  />
                   <section
                     className="border-l-2 border-[var(--app-info-indicator)] py-1 pl-3"
                     data-testid="backtest-run-context-summary"
@@ -1292,10 +1296,6 @@ export function BacktestPage() {
                       singleAsset={latestReport.config.assets?.[0] ?? null}
                     />
                   </div>
-                  <EquityDrawdownChart
-                    fills={latestReport.fills ?? []}
-                    points={latestReport.equity_curve}
-                  />
                   <FillsTable fills={latestReport.fills ?? []} />
                 </div>
               </>
