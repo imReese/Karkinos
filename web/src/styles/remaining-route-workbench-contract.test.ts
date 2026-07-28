@@ -107,6 +107,14 @@ describe('remaining route workbench contract', () => {
 
   it('marks AI output as cited research rather than deterministic account fact', () => {
     expect(RESEARCH_TASK).toContain('data-evidence-kind="cited-ai-research"');
+    expect(AI_RESEARCH).toContain('routePrimary');
+    expect(
+      AI_RESEARCH.indexOf('data-testid="ai-research-primary-canvas"'),
+    ).toBeLessThan(
+      AI_RESEARCH.indexOf('data-testid="ai-research-context-metrics"'),
+    );
+    expect(RESEARCH_TASK).not.toContain("kicker: 'AI research boundary'");
+    expect(RESEARCH_TASK).not.toContain('Freeze canonical evidence');
     expect(STRATEGY_RESEARCH).toContain(
       'data-evidence-kind="cited-ai-research"',
     );
@@ -124,6 +132,9 @@ describe('remaining route workbench contract', () => {
     expect(CSS).toContain('overscroll-behavior-inline: contain');
     expect(CSS).toMatch(
       /max-width:\s*767px[\s\S]*min-width:\s*var\(--app-touch-target\)[\s\S]*min-height:\s*var\(--app-touch-target\)/,
+    );
+    expect(CSS).toMatch(
+      /data-workbench-route='ai-research'[\s\S]*min-height:\s*44px/,
     );
     expect(CSS).toMatch(
       /\.app-shell-sidebar[\s\S]*\.app-toolbar-shell[\s\S]*min-height:\s*var\(--app-touch-target\)/,

@@ -52,10 +52,10 @@ test('keeps canonical context neutral until persisted queries settle', async () 
       expect(element.className).toContain('text-[var(--app-text)]');
       expect(element.className).not.toContain('text-[var(--app-warning-text)]');
     });
-  expect(screen.queryByText('No canonical report is available')).toBeNull();
-  expect(screen.queryByText('No persisted strategy assignment')).toBeNull();
+  expect(screen.queryByText('No saved backtest is available')).toBeNull();
+  expect(screen.queryByText('No account strategy is assigned')).toBeNull();
   const loadingTasks = await screen.findAllByText(
-    'Loading persisted research tasks…',
+    'Loading saved research tasks…',
   );
   expect(loadingTasks.length).toBeGreaterThan(0);
   expect(loadingTasks[0]?.className).toContain('max-w-full');
@@ -118,19 +118,19 @@ test('opens the cited research canvas from canonical persisted context', async (
   );
 
   expect(
-    await screen.findByRole('heading', { name: 'Cited research review' }),
+    await screen.findByRole('heading', { name: 'Research review' }),
   ).toBeTruthy();
-  expect(await screen.findByText('Canonical report #17')).toBeTruthy();
+  expect(await screen.findByText('Saved backtest #17')).toBeTruthy();
+  expect(await screen.findByText('Current account assignment')).toBeTruthy();
+  const primaryCanvas = screen.getByTestId('ai-research-primary-canvas');
+  const contextMetrics = screen.getByTestId('ai-research-context-metrics');
   expect(
-    await screen.findByText('Exact persisted account assignment'),
+    primaryCanvas.compareDocumentPosition(contextMetrics) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
-  expect(screen.getByTestId('ai-research-primary-canvas').className).toContain(
-    'order-1',
-  );
-  expect(screen.getByTestId('ai-research-context-metrics').className).toContain(
-    'order-2',
-  );
-  expect(await screen.findByText('Human research tasks')).toBeTruthy();
+  expect(
+    await screen.findByRole('heading', { name: 'Research tasks' }),
+  ).toBeTruthy();
   const reviewQueue = await screen.findByText(
     'No human research task has been recorded yet.',
   );
@@ -141,9 +141,7 @@ test('opens the cited research canvas from canonical persisted context', async (
     reviewQueue.compareDocumentPosition(researchQuestion) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
-  expect(
-    screen.getByText('No broker, order, or capital authority'),
-  ).toBeTruthy();
+  expect(screen.getByText('Advisory only')).toBeTruthy();
   expect(
     fetchMock.mock.calls.some(([input]) =>
       String(input).includes('/api/ai/research-tasks?limit=20'),
