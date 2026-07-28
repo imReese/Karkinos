@@ -22,13 +22,14 @@ const publicHomeCopy = {
       docs: 'Docs',
     },
     enter: 'Open private workbench',
+    enterShort: 'Workbench',
     language: 'Switch to Chinese',
     lightTheme: 'Switch to Latte theme',
     darkTheme: 'Switch to Mocha theme',
     hero: {
       eyebrow: 'China market · Personal quant workspace',
       title: 'Every decision should leave evidence.',
-      body: 'Karkinos connects persisted account facts, research, risk gates, paper and shadow rehearsal, and human review into one auditable path—from evidence to controlled action.',
+      body: 'Karkinos connects account truth, research, risk, and human review into one auditable path. Evidence moves first; authority stays explicit.',
       explore: 'Explore the workflow',
     },
     evidence: {
@@ -38,8 +39,34 @@ const publicHomeCopy = {
       publicRoute: 'Public overview',
       privateRoute: 'Private workbench',
       flowLabel: 'Decision evidence path',
+      previewLabel: 'Workbench structure',
       caption:
         'Structural product proof only. It contains no account, return, order, or execution data.',
+      metrics: [
+        {
+          label: 'Account facts',
+          value: 'Persisted',
+          detail: 'One canonical view',
+        },
+        {
+          label: 'Evidence quality',
+          value: 'Visible',
+          detail: 'Freshness and gaps',
+        },
+        {
+          label: 'Authority',
+          value: 'Human',
+          detail: 'Read and review',
+        },
+      ],
+      priority: {
+        eyebrow: 'Operator priority',
+        title: 'Resolve the highest blocker first.',
+        reasonLabel: 'Why',
+        reason: 'Missing or stale evidence stays visible.',
+        nextLabel: 'Safe next step',
+        next: 'Open the exact evidence surface.',
+      },
       rows: [
         {
           label: 'Account truth',
@@ -69,8 +96,8 @@ const publicHomeCopy = {
     },
     proof: {
       eyebrow: 'Product proof',
-      title: 'Proof is a product surface—not a footnote.',
-      body: 'The interface is organized around what is known, what is missing, what is blocked, and what a person can safely do next.',
+      title: 'See the fact. See the boundary.',
+      body: 'Every route makes the authoritative state, the evidence gap, and the next permitted human step part of the main reading path.',
       items: [
         {
           number: '01',
@@ -151,8 +178,8 @@ const publicHomeCopy = {
     },
     cta: {
       eyebrow: 'Personal capital deserves professional evidence',
-      title: 'See the workbench built around facts.',
-      body: 'Enter the private workspace to inspect account truth, holdings, priorities, research, risk, and operations.',
+      title: 'Inspect the evidence before the action.',
+      body: 'The private workbench keeps account facts, blockers, and the currently permitted next step in one operational reading path.',
     },
     footer: {
       tagline:
@@ -182,13 +209,14 @@ const publicHomeCopy = {
       docs: '文档',
     },
     enter: '进入私有工作台',
+    enterShort: '工作台',
     language: '切换为英文',
     lightTheme: '切换为 Latte 浅色主题',
     darkTheme: '切换为 Mocha 深色主题',
     hero: {
       eyebrow: '中国市场 · 个人量化投资工作台',
       title: '让每一个投资决定，都有证据可回放。',
-      body: 'Karkinos 将持久化账户事实、研究、风控门禁、paper/shadow 演练与人工复核连成可审计的路径，让证据走向受控行动。',
+      body: 'Karkinos 把账户事实、研究、风控与人工复核连成一条可审计路径；证据先行，权限始终显式。',
       explore: '了解能力流程',
     },
     evidence: {
@@ -198,7 +226,21 @@ const publicHomeCopy = {
       publicRoute: '公开产品首页',
       privateRoute: '私有证据工作台',
       flowLabel: '决策证据路径',
+      previewLabel: '工作台结构',
       caption: '仅展示产品结构，不包含任何账户、收益、订单或成交数据。',
+      metrics: [
+        { label: '账户事实', value: '已持久化', detail: '唯一 canonical 视图' },
+        { label: '证据质量', value: '保持可见', detail: '新鲜度与缺口' },
+        { label: '默认权限', value: '人工控制', detail: '仅查看与复核' },
+      ],
+      priority: {
+        eyebrow: '操作优先级',
+        title: '先处理最高优先级阻断。',
+        reasonLabel: '原因',
+        reason: '缺失或过期证据始终保持可见。',
+        nextLabel: '安全下一步',
+        next: '打开对应的证据界面。',
+      },
       rows: [
         { label: '账户事实', detail: 'Canonical 投影', state: '已持久化' },
         { label: '研究结论', detail: '数据集与运行身份', state: '已绑定' },
@@ -211,8 +253,8 @@ const publicHomeCopy = {
     },
     proof: {
       eyebrow: '产品证明',
-      title: '证据是产品界面，不是页脚附注。',
-      body: '界面围绕“已知什么、缺少什么、什么被阻断、下一步可以安全做什么”来组织。',
+      title: '看见事实，也看见边界。',
+      body: '每个界面都把权威状态、证据缺口和当前允许的人工下一步放在主阅读路径中。',
       items: [
         {
           number: '01',
@@ -289,8 +331,8 @@ const publicHomeCopy = {
     },
     cta: {
       eyebrow: '个人资本，也值得专业证据',
-      title: '进入一个围绕事实建立的工作台。',
-      body: '在私有工作台中查看账户事实、当前持仓、优先任务、研究、风险与运营。',
+      title: '先检查证据，再决定是否行动。',
+      body: '私有工作台把账户事实、阻断原因和当前允许的安全下一步放在同一条操作路径中。',
     },
     footer: {
       tagline: '面向中国市场的证据优先个人量化投资工作台。',
@@ -378,8 +420,12 @@ export function PublicHomePage() {
             <Link
               to="/overview"
               className="app-button-primary app-public-header-cta"
+              aria-label={copy.enter}
             >
-              <span>{copy.enter}</span>
+              <span className="app-public-header-cta-long">{copy.enter}</span>
+              <span className="app-public-header-cta-short" aria-hidden="true">
+                {copy.enterShort}
+              </span>
               <ArrowRight aria-hidden="true" />
             </Link>
           </div>
@@ -390,7 +436,18 @@ export function PublicHomePage() {
         <section className="app-public-container app-public-hero">
           <div className="app-public-hero-copy">
             <p className="app-kicker app-public-eyebrow">{copy.hero.eyebrow}</p>
-            <h1 className="app-public-hero-title">{copy.hero.title}</h1>
+            <h1 className="app-public-hero-title">
+              {locale === 'zh' ? (
+                <>
+                  让每一个
+                  <span className="app-public-title-phrase">投资决定</span>，
+                  <span className="app-public-title-phrase">都有</span>
+                  证据可回放。
+                </>
+              ) : (
+                copy.hero.title
+              )}
+            </h1>
             <p className="app-public-hero-body">{copy.hero.body}</p>
             <div className="app-public-hero-actions">
               <Link
@@ -434,27 +491,64 @@ export function PublicHomePage() {
               </div>
               <ShieldCheck aria-hidden="true" />
             </div>
-            <ol
-              className="app-public-evidence-flow"
-              aria-label={copy.evidence.flowLabel}
+            <dl
+              className="app-public-preview-metrics"
+              aria-label={copy.evidence.previewLabel}
             >
-              {copy.evidence.rows.map((row, index) => (
-                <li className="app-public-evidence-step" key={row.label}>
-                  <span className="app-public-evidence-index">
-                    {String(index + 1).padStart(2, '0')}
-                  </span>
-                  <span
-                    className="app-public-evidence-node"
-                    aria-hidden="true"
-                  />
-                  <span className="app-public-evidence-copy">
-                    <strong>{row.label}</strong>
-                    <small>{row.detail}</small>
-                  </span>
-                  <span className="app-public-evidence-state">{row.state}</span>
-                </li>
+              {copy.evidence.metrics.map((metric) => (
+                <div key={metric.label}>
+                  <dt>{metric.label}</dt>
+                  <dd>{metric.value}</dd>
+                  <small>{metric.detail}</small>
+                </div>
               ))}
-            </ol>
+            </dl>
+            <div className="app-public-preview-workspace">
+              <section
+                className="app-public-priority-preview"
+                aria-labelledby="public-priority-title"
+              >
+                <p className="app-kicker app-public-eyebrow">
+                  {copy.evidence.priority.eyebrow}
+                </p>
+                <h3 id="public-priority-title">
+                  {copy.evidence.priority.title}
+                </h3>
+                <dl>
+                  <div>
+                    <dt>{copy.evidence.priority.reasonLabel}</dt>
+                    <dd>{copy.evidence.priority.reason}</dd>
+                  </div>
+                  <div>
+                    <dt>{copy.evidence.priority.nextLabel}</dt>
+                    <dd>{copy.evidence.priority.next}</dd>
+                  </div>
+                </dl>
+              </section>
+              <ol
+                className="app-public-evidence-flow"
+                aria-label={copy.evidence.flowLabel}
+              >
+                {copy.evidence.rows.map((row, index) => (
+                  <li className="app-public-evidence-step" key={row.label}>
+                    <span className="app-public-evidence-index">
+                      {String(index + 1).padStart(2, '0')}
+                    </span>
+                    <span
+                      className="app-public-evidence-node"
+                      aria-hidden="true"
+                    />
+                    <span className="app-public-evidence-copy">
+                      <strong>{row.label}</strong>
+                      <small>{row.detail}</small>
+                    </span>
+                    <span className="app-public-evidence-state">
+                      {row.state}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </div>
             <div className="app-public-evidence-boundary">
               <LockKeyhole aria-hidden="true" />
               <span>
