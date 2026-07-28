@@ -3100,8 +3100,8 @@ export function PortfolioPage() {
         }
       />
 
-      {snapshot.data ? (
-        <div data-testid="portfolio-summary-strip">
+      <div data-testid="portfolio-summary-strip">
+        {snapshot.data ? (
           <MetricStrip
             ariaLabel={copy.portfolio.summary.ariaLabel}
             items={[
@@ -3138,8 +3138,50 @@ export function PortfolioPage() {
               },
             ]}
           />
-        </div>
-      ) : null}
+        ) : (
+          <EvidenceState
+            kind={
+              snapshot.isError
+                ? 'error'
+                : snapshot.isLoading
+                  ? 'loading'
+                  : 'missing'
+            }
+            statusLabel={
+              snapshot.isError
+                ? copy.states.error
+                : snapshot.isLoading
+                  ? copy.states.loading
+                  : copy.states.empty
+            }
+            title={
+              snapshot.isError
+                ? copy.portfolio.summary.error
+                : snapshot.isLoading
+                  ? copy.portfolio.summary.loading
+                  : copy.portfolio.summary.missing
+            }
+            description={
+              snapshot.isError
+                ? copy.portfolio.summary.errorDetail
+                : snapshot.isLoading
+                  ? copy.portfolio.summary.loadingDetail
+                  : copy.portfolio.summary.missingDetail
+            }
+            action={
+              snapshot.isError ? (
+                <button
+                  type="button"
+                  className="app-button-secondary inline-flex min-h-10 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-sm font-semibold sm:min-h-9"
+                  onClick={() => void snapshot.refetch()}
+                >
+                  {copy.states.retry}
+                </button>
+              ) : undefined
+            }
+          />
+        )}
+      </div>
 
       {evidenceFilter !== 'clear' ? (
         <PortfolioEvidenceReviewPanel items={evidenceReviewItems} />
@@ -3479,7 +3521,7 @@ export function RiskPage() {
       id: `${item.kind}-${item.title}`,
       severity: item.level === 'high' ? 'danger' : 'warning',
       statusLabel: formatRiskAlertLevel(item.level, locale),
-      title: item.title,
+      title: formatRiskAlertTitle(item.title, locale),
       reason: formatRiskAlertDetail(item.detail, locale),
       evidence: `${getRiskAlertKindLabel(
         copy,
@@ -3672,7 +3714,7 @@ export function RiskPage() {
                     {locale === 'zh' ? '安全下一步' : 'Safe next step'}
                   </dt>
                   <dd className="mt-0.5 leading-[18px] text-[var(--app-text-secondary)] [overflow-wrap:anywhere]">
-                    {state.data.next_step}
+                    {formatRiskNextStep(state.data.next_step, locale)}
                   </dd>
                 </div>
               </dl>
@@ -7791,6 +7833,8 @@ function getRiskMetricDetail(copy: AppCopy, value: string) {
 
 function getRiskAlertKindLabel(copy: AppCopy, value: string) {
   switch (value) {
+    case 'risk':
+      return copy.overview.risk.registerKicker;
     case 'cash_buffer':
       return copy.overview.risk.cashBuffer;
     case 'concentration':
@@ -7814,6 +7858,22 @@ function getRiskAlertKindLabel(copy: AppCopy, value: string) {
 }
 
 function formatRiskAlertDetail(value: string, locale: Locale) {
+  const concentration = /^(.+)\s+占总资产\s+([\d.]+%)$/u.exec(value.trim());
+  if (concentration) {
+    const [, instrument, weight] = concentration;
+    return locale === 'zh'
+      ? value
+      : `${instrument} accounts for ${weight} of total equity.`;
+  }
+  const cashBuffer = /^当前现金占比\s+([\d.]+%)，可用调仓空间有限$/u.exec(
+    value.trim(),
+  );
+  if (cashBuffer) {
+    const [, ratio] = cashBuffer;
+    return locale === 'zh'
+      ? value
+      : `Cash is ${ratio} of total equity; rebalance capacity is limited.`;
+  }
   const quoteTimestamp = /^(\S+)\s+最新快照时间\s+(.+)$/u.exec(value.trim());
   if (quoteTimestamp) {
     const [, symbol, timestamp] = quoteTimestamp;
@@ -7822,6 +7882,30 @@ function formatRiskAlertDetail(value: string, locale: Locale) {
       : `${symbol} quote evidence as of ${formatTimestamp(timestamp)}`;
   }
   return formatPublicNote(value, locale);
+}
+
+function formatRiskAlertTitle(value: string, locale: Locale) {
+  if (locale === 'zh') {
+    return value;
+  }
+  const labels: Record<string, string> = {
+    仓位集中度偏高: 'Position concentration is elevated',
+    现金缓冲偏低: 'Cash buffer is low',
+    行情数据可能过旧: 'Market quote evidence may be stale',
+    当前风险可控: 'Current risk is manageable',
+  };
+  return labels[value.trim()] ?? formatPublicNote(value, locale);
+}
+
+function formatRiskNextStep(value: string, locale: Locale) {
+  if (locale === 'zh') {
+    return value;
+  }
+  const labels: Record<string, string> = {
+    确认待执行建议: 'Review pending recommendations before any execution.',
+    继续观察市场: 'Continue monitoring the market.',
+  };
+  return labels[value.trim()] ?? formatPublicNote(value, locale);
 }
 
 function formatRiskAlertLevel(level: string, locale: Locale) {

@@ -351,3 +351,67 @@ modified.
   any broker/authorization behavior.
 - Batch C is now complete. Decision, Risk, Operations, and Trading remain the
   next distinct visual-owner batch and are not yet claimed complete.
+
+## Batch D validation record — 2026-07-28
+
+### Assumptions and scope
+
+- Decision, Operations, and Trading already had a clear evidence-first visual
+  owner. They were audited before editing and were not rewritten merely to
+  create churn.
+- Risk alert titles, dynamic details, and the account-state next step are
+  canonical persisted facts. The English UI may translate those known natural
+  language templates, but it must preserve their instruments, percentages,
+  timestamps, severity, and meaning.
+- A portfolio summary that is still loading, unavailable, or missing must stay
+  explicit. The UI must not hide the region, infer totals from independently
+  loaded holdings, or use placeholder financial values.
+
+### Validation
+
+- Runtime: Node `v24.18.0`.
+- Focused Risk and copy Vitest: 2 files and 17 tests passed.
+- `npm test`: 66 files and 563 tests passed.
+- `npm run format:check`: passed.
+- `npm run build`: production build passed.
+- The complete exemplar plus Trading-mobile Playwright set passed: 12 tests in
+  5.8 minutes. It covered six acceptance viewports, Latte and Mocha, mobile
+  route ordering, closed audit drill-downs, reduced motion, and local overflow.
+- An initial full Playwright run exposed the Portfolio summary disappearing
+  while its canonical snapshot GET was pending. The loading/error/missing state
+  fix passed the focused regression, a four-test route subset, and the final
+  complete 12-test run.
+
+### Visual result
+
+- Risk now translates the persisted Chinese concentration, cash-buffer, quote
+  age, and next-step templates in the English UI without changing any numeric
+  fact. No Chinese system sentence remains in the English priority register.
+- Risk keeps active blocked and warning evidence first. The shared unblock
+  condition and safe next step remain adjacent to that list, followed by the
+  metric strip and persisted threshold table.
+- Decision retains a single next action, a compact gate matrix, and quieter
+  audit drill-downs. Operations retains the review queue before health totals
+  and the immutable-history empty state. Trading retains the manual-order queue
+  before collapsed kill-switch and broker-boundary controls.
+- Portfolio now reserves the canonical summary region immediately. Its loading
+  state measured about 74px high and the settled metric strip about 80px, so the
+  page no longer silently loses or later inserts a major first-screen region.
+- Manual browser review covered Decision and Operations in Latte desktop, Risk
+  in Latte desktop and Mocha mobile, Trading in Latte and Mocha at desktop and
+  mobile, and Portfolio loading-to-settled behavior. Measured document and app
+  content overflow remained zero.
+
+### Limits and risk impact
+
+- This completes the Decision, Risk, Operations, and Trading visual-owner
+  batch. It does not complete the all-route 9+ goal; Activity, AI Research,
+  Settings, and the final system-wide accessibility/token cleanup remain.
+- GitNexus reported `RiskPage`, `formatRiskAlertDetail`, and `PortfolioPage`
+  upstream impact as LOW. `formatRiskAlertDetail` has one direct caller,
+  `RiskPage`; the two route components have no graph-level callers or affected
+  processes.
+- No risk score, threshold, price, cost, P&L, valuation identity, ledger cutoff,
+  OMS, broker adapter, kill switch, capital, execution, or authorization
+  contract changed. Retry is the existing read-only GET; it does not refresh a
+  provider or write the database.

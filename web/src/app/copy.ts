@@ -576,6 +576,15 @@ export const copy = {
       filteredHoldingsCount: (count: number) => `${count} shown`,
       summary: {
         ariaLabel: 'Canonical portfolio snapshot',
+        loading: 'Loading canonical portfolio snapshot',
+        loadingDetail:
+          'Waiting for persisted valuation and ledger evidence. No provider refresh is triggered.',
+        error: 'Canonical portfolio snapshot unavailable',
+        errorDetail:
+          'Current holdings may still load independently; summary metrics remain unavailable until the persisted projection can be read.',
+        missing: 'Canonical portfolio snapshot is missing',
+        missingDetail:
+          'No persisted snapshot is available, so the UI does not infer account totals from the holdings table.',
         totalEquity: 'Total equity',
         totalEquityDetail: 'Canonical valuation snapshot',
         cash: 'Cash',
@@ -3414,6 +3423,15 @@ export const copy = {
       filteredHoldingsCount: (count: number) => `筛选后展示 ${count} 项`,
       summary: {
         ariaLabel: '权威组合快照',
+        loading: '正在加载权威组合快照',
+        loadingDetail:
+          '正在等待读取持久化估值与账本证据；不会触发 provider 刷新。',
+        error: '权威组合快照暂不可用',
+        errorDetail:
+          '当前持仓可能仍可独立加载；读取到持久化投影前，摘要指标保持不可用。',
+        missing: '缺少权威组合快照',
+        missingDetail:
+          '当前没有可用的持久化快照，UI 不会根据持仓表反推账户汇总。',
         totalEquity: '总权益',
         totalEquityDetail: '权威估值快照',
         cash: '现金',
