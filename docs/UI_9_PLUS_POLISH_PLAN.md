@@ -490,6 +490,10 @@ modified.
 - The new six-viewport Activity hierarchy contract passed in 3.5 seconds. The
   remaining-route Latte/Mocha mobile audit, including the entry drawer and new
   density limits, passed in 58 seconds.
+- The first clean-data CI run exposed a test-only assumption that ledger history
+  was non-empty. The browser contracts now branch on the canonical
+  `/api/ledger/entries` response and validate either the persisted table or the
+  explicit empty state; no fixture or mock financial data was added.
 - Manual browser inspection covered Latte and Mocha at 1440x900 and 390x844.
 
 ### Visual result
