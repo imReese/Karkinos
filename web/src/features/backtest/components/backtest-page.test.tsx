@@ -1352,8 +1352,12 @@ test('keeps setup and current results in one primary workspace with mobile tabs'
   const setup = screen.getByTestId('backtest-parameter-panel').parentElement;
   const results = screen.getByTestId('backtest-result-panel');
   const tabs = screen.getByTestId('backtest-mobile-workspace-tabs');
+  const contextMetrics = screen
+    .getAllByLabelText('Strategy replay')
+    .find((element) => element.tagName === 'DL');
 
   expect(setup).toBeTruthy();
+  expect(contextMetrics?.className).toContain('app-backtest-evidence-strip');
   expect(primary.contains(setup)).toBe(true);
   expect(primary.contains(results)).toBe(true);
   expect(tabs.getAttribute('role')).toBe('tablist');

@@ -302,3 +302,52 @@ modified.
   valuation identity, ledger cutoff, OMS, broker, kill-switch, capital, or
   authorization contract changed. The browser checks triggered no refresh or
   controlled action, and the UI remains read-only and default-closed.
+
+## Batch C2 validation record — 2026-07-28
+
+### Assumptions and scope
+
+- Backtest already had the correct large-screen composition: setup stays left,
+  saved result evidence stays wider on the right, and mobile defaults to result
+  evidence when a saved report exists.
+- The remaining 9+ blocker was loss of exact evidence through ellipsis, not the
+  simulation, result, validation, or promotion model.
+- Route-scoped wrapping is preferable to changing the shared `MetricStrip`
+  contract for every route.
+
+### Validation
+
+- Runtime: Node `v24.18.0`.
+- Focused Backtest and route-contract Vitest: 2 files and 53 tests passed.
+- `npm test`: 66 files and 562 tests passed.
+- `npm run format:check`: passed.
+- `npm run build`: production build passed.
+- The focused six-viewport Backtest Playwright contract passed in 8.3 seconds.
+- The mobile route-order and overflow Playwright contract passed in Latte and
+  Mocha in 41.1 seconds.
+
+### Visual result
+
+- Strategy identity, current-run state, review status, and their details now
+  wrap only inside the Backtest evidence strips instead of ending in ellipsis.
+- Saved-result metrics preserve exact initial/final equity, fee descriptions,
+  and execution-drift descriptions on 390px screens.
+- Desktop retains the 0.68/1.32 setup-to-result composition; the result panel
+  begins at x=645px at 1440px and x=616px at 1280px.
+- At narrower widths the result panel begins near y=403px, 415px, 431px, and
+  626px at 1024px, 834px, 768px, and 390px. All six viewports had zero document
+  and app-content overflow.
+- The mobile results tab remains the default when saved evidence exists, and
+  the equity/drawdown chart follows the complete headline metrics directly.
+
+### Limits and risk impact
+
+- GitNexus reported `BacktestPage` and `MetricsGrid` upstream impact as LOW with
+  no graph-level callers or affected processes. Direct source consumers are the
+  `/backtest` route and `BacktestReportView`.
+- This batch changes only route-scoped text overflow. It does not change
+  datasets, parameters, simulations, costs, fills, OOS evidence, validation
+  gates, promotion readiness, research assignment, paper/shadow previews, or
+  any broker/authorization behavior.
+- Batch C is now complete. Decision, Risk, Operations, and Trading remain the
+  next distinct visual-owner batch and are not yet claimed complete.

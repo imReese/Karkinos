@@ -777,6 +777,7 @@ export function BacktestPage() {
 
       <MetricStrip
         ariaLabel={labels.title}
+        className="app-backtest-evidence-strip"
         items={[
           {
             id: 'strategy',

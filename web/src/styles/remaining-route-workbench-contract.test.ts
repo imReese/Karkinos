@@ -259,6 +259,11 @@ describe('remaining route workbench contract', () => {
     expect(BACKTEST_REPORT).toContain('<EvidenceState');
     expect(BACKTEST_REPORT).toContain('selectedSummary && !report.data');
     expect(BACKTEST_METRICS.match(/<MetricStrip\s/g)).toHaveLength(2);
+    expect(BACKTEST_METRICS.match(/app-backtest-evidence-strip/g)).toHaveLength(
+      2,
+    );
+    expect(CSS).toContain("[data-workbench-route='backtest']");
+    expect(CSS).toContain('overflow-wrap: anywhere');
 
     for (const reportSurface of [
       BACKTEST_REPORT,
