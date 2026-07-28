@@ -29,3 +29,33 @@ test('uses user-readable English simulation-review wording in strategy loop copy
   expect(backtestCopy).not.toContain('paper/shadow');
   expect(backtestCopy).not.toContain('Paper/shadow');
 });
+
+test('keeps the primary portfolio path free of implementation jargon', () => {
+  const primaryPaths = [
+    {
+      summary: copy.en.portfolio.summary,
+      currentHoldings: copy.en.portfolio.currentHoldings,
+      toolbarHelper: copy.en.portfolio.toolbar.helper,
+    },
+    {
+      summary: copy.zh.portfolio.summary,
+      currentHoldings: copy.zh.portfolio.currentHoldings,
+      toolbarHelper: copy.zh.portfolio.toolbar.helper,
+    },
+  ];
+
+  for (const path of primaryPaths) {
+    const primaryCopy = JSON.stringify(path);
+
+    expect(primaryCopy).not.toMatch(
+      /canonical|persisted|provider|snapshot|ledger|权威|持久化|快照|账本/i,
+    );
+  }
+
+  expect(copy.en.portfolio.summary.missingDetail).toContain(
+    'will not calculate account totals',
+  );
+  expect(copy.zh.portfolio.summary.missingDetail).toContain(
+    '不会用持仓表自行拼算总资产',
+  );
+});
