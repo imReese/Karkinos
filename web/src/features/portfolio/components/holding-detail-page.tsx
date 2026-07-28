@@ -796,7 +796,9 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
         <WorkbenchWorkspaceHeader
           eyebrow={labels.kicker}
           title={`${displayName} · ${position.symbol}`}
-          description={assetClassDisplay}
+          description={`${assetClassDisplay} · ${labels.quantity} ${formatQuantity(
+            position.quantity,
+          )}`}
           context={`${copy.common.valuationAsOf} ${formatTimestamp(
             snapshot.data?.valuation_as_of,
           )}`}
@@ -908,7 +910,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
             role="tablist"
             aria-label={labels.tabListLabel}
             data-testid="holding-detail-tabs"
-            className="flex min-w-0 gap-1 overflow-x-auto border-b border-[var(--app-divider)] pb-px"
+            className="app-horizontal-scroll-cue flex min-w-0 gap-1 overflow-x-auto border-b border-[var(--app-divider)] pb-px"
           >
             {HOLDING_DETAIL_TABS.map((tab) => {
               const selected = activeTab === tab;

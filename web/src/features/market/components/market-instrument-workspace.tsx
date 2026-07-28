@@ -225,13 +225,13 @@ export function MarketInstrumentWorkspace({
       >
         {selectedItem ? (
           <>
-            <header className="flex min-w-0 items-end justify-between gap-3 border-b border-[var(--app-divider)] pb-3">
+            <header className="flex min-w-0 items-end justify-between gap-4 border-b border-[var(--app-divider)] pb-4">
               <div className="min-w-0">
                 <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
                   {formatAssetClassLabel(selectedItem.asset_class, copy.common)}{' '}
                   · {selectedItem.symbol}
                 </div>
-                <h2 className="mt-1 truncate text-xl font-semibold tracking-[-0.02em] text-[var(--app-text)] sm:text-2xl">
+                <h2 className="mt-1 truncate text-2xl font-semibold tracking-[-0.025em] text-[var(--app-text)] sm:text-[1.75rem] xl:text-3xl">
                   {selectedItem.name || selectedItem.symbol}
                 </h2>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--app-text-secondary)]">
@@ -247,7 +247,7 @@ export function MarketInstrumentWorkspace({
               </div>
               <div className="shrink-0 text-right">
                 <div
-                  className="text-xl font-semibold tabular-nums text-[var(--app-text)] sm:text-2xl"
+                  className="text-2xl font-semibold tabular-nums tracking-[-0.025em] text-[var(--app-text)] sm:text-[1.75rem] xl:text-3xl"
                   data-testid="market-selected-price"
                 >
                   {formatCurrency(selectedItem.price)}

@@ -325,12 +325,7 @@ test('market keeps context, evidence review, and provider telemetry task-ordered
   test.setTimeout(120_000);
 
   for (const theme of ['light', 'dark'] as const) {
-    for (const viewport of [
-      { width: 1440, height: 900 },
-      { width: 1280, height: 800 },
-      { width: 834, height: 900 },
-      { width: 390, height: 844 },
-    ]) {
+    for (const viewport of overviewAcceptanceViewports) {
       await page.setViewportSize(viewport);
       await page.goto('/market');
       await page.evaluate((nextTheme) => {
@@ -366,6 +361,9 @@ test('market keeps context, evidence review, and provider telemetry task-ordered
         const mobileNavigation = document.querySelector(
           '.app-mobile-primary-nav',
         ) as HTMLElement | null;
+        const chartScroll = document.querySelector(
+          '[data-testid="price-structure-chart-scroll"]',
+        ) as HTMLElement | null;
         return {
           routeOverflow: route.scrollWidth - route.clientWidth,
           documentOverflow:
@@ -386,6 +384,12 @@ test('market keeps context, evidence review, and provider telemetry task-ordered
           detailWidth: detail?.getBoundingClientRect().width ?? 0,
           detailX: detail?.getBoundingClientRect().x ?? 0,
           detailY: detail?.getBoundingClientRect().y ?? 0,
+          chartExists: chartScroll !== null,
+          chartScrollLeft: chartScroll?.scrollLeft ?? 0,
+          chartScrollMax: chartScroll
+            ? chartScroll.scrollWidth - chartScroll.clientWidth
+            : 0,
+          chartMask: chartScroll ? getComputedStyle(chartScroll).maskImage : '',
           mobileNavigationTop:
             mobileNavigation?.getBoundingClientRect().top ?? 0,
           reviewAfterList:
@@ -421,6 +425,19 @@ test('market keeps context, evidence review, and provider telemetry task-ordered
           geometry.detailWidth,
           `${theme} ${viewport.width}`,
         ).toBeGreaterThan(0);
+        if (geometry.chartExists && viewport.width < 768) {
+          expect(
+            geometry.chartScrollMax,
+            `${theme} ${viewport.width}`,
+          ).toBeGreaterThan(0);
+          expect(
+            Math.abs(geometry.chartScrollMax - geometry.chartScrollLeft),
+            `${theme} ${viewport.width}`,
+          ).toBeLessThanOrEqual(2);
+          expect(geometry.chartMask, `${theme} ${viewport.width}`).toContain(
+            'linear-gradient',
+          );
+        }
       }
 
       if (geometry.listExists) {

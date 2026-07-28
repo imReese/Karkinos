@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { EvidenceState } from '../../../app/components/workbench';
 import { formatCurrency } from '../../../shared/format';
@@ -20,6 +20,7 @@ export type KlineRangeLabels = Record<KlineRangeKey, string>;
 export type KlineAxisLabels = {
   price: string;
   date: string;
+  volume?: string;
 };
 
 export type PriceStructureMarker = {
@@ -145,6 +146,27 @@ export function PriceStructureChart({
     () => filterBarsByRange(validBars, selectedRange),
     [selectedRange, validBars],
   );
+  const plottedBars = visibleBars.length > 0 ? visibleBars : validBars;
+  const chartScrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const scrollToLatest = () => {
+      const container = chartScrollRef.current;
+      if (!container) {
+        return;
+      }
+      container.scrollLeft = Math.max(
+        0,
+        container.scrollWidth - container.clientWidth,
+      );
+    };
+    const frame = window.requestAnimationFrame(scrollToLatest);
+    window.addEventListener('resize', scrollToLatest);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('resize', scrollToLatest);
+    };
+  }, [plottedBars.length, selectedRange]);
 
   if (validBars.length === 0) {
     return (
@@ -160,9 +182,13 @@ export function PriceStructureChart({
     );
   }
 
-  const plottedBars = visibleBars.length > 0 ? visibleBars : validBars;
   const lows = plottedBars.map((bar) => toFiniteNumber(bar.low) ?? bar.close);
   const highs = plottedBars.map((bar) => toFiniteNumber(bar.high) ?? bar.close);
+  const volumes = plottedBars.map((bar) =>
+    Math.max(0, toFiniteNumber(bar.volume) ?? 0),
+  );
+  const maxVolume = Math.max(...volumes, 0);
+  const hasVolume = maxVolume > 0;
   const plottedTimes = plottedBars.map((bar) => parseBarTime(bar));
   const finitePlottedTimes = plottedTimes.filter(
     (value): value is number => value !== null,
@@ -220,8 +246,13 @@ export function PriceStructureChart({
     left: 64,
     right: 620,
     top: 18,
-    bottom: 198,
+    bottom: hasVolume ? 174 : 218,
   };
+  const volumePlot = {
+    top: 190,
+    bottom: 218,
+  };
+  const xAxisY = hasVolume ? volumePlot.bottom : plot.bottom;
   const plotWidth = plot.right - plot.left;
   const plotHeight = plot.bottom - plot.top;
   const plotY = (value: number) =>
@@ -247,44 +278,51 @@ export function PriceStructureChart({
       className="min-w-0 border-y border-[var(--app-divider)] py-3"
       aria-label={titleLabel}
     >
-      <div className="mb-3 app-kicker text-[11px] uppercase tracking-[0.16em]">
-        {titleLabel}
-      </div>
-      <div className="mb-4 flex min-w-0 flex-wrap gap-2">
-        {KLINE_RANGES.map((rangeOption) => {
-          const label = rangeLabels[rangeOption.key];
-          const selected = selectedRange === rangeOption.key;
-          return (
-            <button
-              key={rangeOption.key}
-              type="button"
-              className={`rounded-[var(--app-radius-control)] border px-3 py-1.5 text-[11px] font-semibold transition-colors ${
-                selected
-                  ? 'border-[color-mix(in_srgb,var(--app-accent)_58%,transparent)] bg-[color-mix(in_srgb,var(--app-accent)_16%,transparent)] text-[var(--app-text)]'
-                  : 'border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] text-[var(--app-muted)] hover:border-[color-mix(in_srgb,var(--app-accent)_34%,transparent)] hover:text-[var(--app-soft)]'
-              }`}
-              aria-pressed={selected}
-              aria-label={rangeAriaLabel(label)}
-              onClick={() => {
-                setSelectedRange(rangeOption.key);
-              }}
-            >
-              {label}
-            </button>
-          );
-        })}
+      <div className="mb-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+          {titleLabel}
+        </div>
+        <div
+          className="flex min-w-0 flex-wrap gap-2"
+          role="group"
+          aria-label={titleLabel}
+        >
+          {KLINE_RANGES.map((rangeOption) => {
+            const label = rangeLabels[rangeOption.key];
+            const selected = selectedRange === rangeOption.key;
+            return (
+              <button
+                key={rangeOption.key}
+                type="button"
+                className={`rounded-[var(--app-radius-control)] border px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+                  selected
+                    ? 'border-[color-mix(in_srgb,var(--app-accent)_58%,transparent)] bg-[color-mix(in_srgb,var(--app-accent)_16%,transparent)] text-[var(--app-text)]'
+                    : 'border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] text-[var(--app-muted)] hover:border-[color-mix(in_srgb,var(--app-accent)_34%,transparent)] hover:text-[var(--app-soft)]'
+                }`}
+                aria-pressed={selected}
+                aria-label={rangeAriaLabel(label)}
+                onClick={() => {
+                  setSelectedRange(rangeOption.key);
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
       </div>
       <div
+        ref={chartScrollRef}
         data-testid="price-structure-chart-scroll"
-        className="min-w-0 max-w-full overflow-x-auto overscroll-x-contain pb-2"
+        className="app-horizontal-scroll-cue min-w-0 max-w-full overflow-x-auto overscroll-x-contain pb-2"
       >
         <div
           data-testid="price-structure-chart-canvas"
-          className="min-w-[640px]"
+          className="min-w-[720px]"
         >
           <svg
-            viewBox="0 0 640 244"
-            className="h-60 w-full overflow-visible text-[var(--app-soft)] sm:h-72"
+            viewBox="0 0 640 270"
+            className="h-64 w-full overflow-visible text-[var(--app-soft)] sm:h-80 xl:h-[21rem]"
             role="img"
             aria-label={`${titleLabel} ${priceLabel}`}
           >
@@ -293,7 +331,7 @@ export function PriceStructureChart({
             </text>
             <text
               x={(plot.left + plot.right) / 2}
-              y="240"
+              y="266"
               textAnchor="middle"
               className="fill-current text-[10px]"
             >
@@ -303,15 +341,15 @@ export function PriceStructureChart({
               x1={plot.left}
               x2={plot.left}
               y1={plot.top}
-              y2={plot.bottom}
+              y2={xAxisY}
               stroke="currentColor"
               strokeOpacity="0.22"
             />
             <line
               x1={plot.left}
               x2={plot.right}
-              y1={plot.bottom}
-              y2={plot.bottom}
+              y1={xAxisY}
+              y2={xAxisY}
               stroke="currentColor"
               strokeOpacity="0.22"
             />
@@ -345,6 +383,7 @@ export function PriceStructureChart({
                   key={`${line.label}-${line.value}`}
                   data-testid="kline-reference-line"
                 >
+                  <title>{line.label}</title>
                   <line
                     x1={plot.left}
                     x2={plot.right}
@@ -355,15 +394,6 @@ export function PriceStructureChart({
                     strokeOpacity="0.8"
                     strokeWidth="1.2"
                   />
-                  <text
-                    x={plot.right - 4}
-                    y={plotY(line.value) - 5}
-                    textAnchor="end"
-                    fill={tone}
-                    className="text-[9px] tabular-nums"
-                  >
-                    {line.label}
-                  </text>
                 </g>
               );
             })}
@@ -375,14 +405,14 @@ export function PriceStructureChart({
                   <line
                     x1={x}
                     x2={x}
-                    y1={plot.bottom}
-                    y2={plot.bottom + 5}
+                    y1={xAxisY}
+                    y2={xAxisY + 5}
                     stroke="currentColor"
                     strokeOpacity="0.22"
                   />
                   <text
                     x={x}
-                    y={plot.bottom + 20}
+                    y={xAxisY + 20}
                     textAnchor="middle"
                     className="fill-current text-[10px] tabular-nums"
                   >
@@ -434,6 +464,49 @@ export function PriceStructureChart({
                 </g>
               );
             })}
+            {hasVolume ? (
+              <g data-testid="kline-volume-series">
+                <line
+                  x1={plot.left}
+                  x2={plot.right}
+                  y1={volumePlot.top - 7}
+                  y2={volumePlot.top - 7}
+                  stroke="currentColor"
+                  strokeOpacity="0.08"
+                />
+                <text
+                  x={plot.right}
+                  y={volumePlot.top - 7}
+                  textAnchor="end"
+                  className="fill-current text-[9px]"
+                >
+                  {axisLabels.volume ?? 'Volume'}
+                </text>
+                {volumes.map((volume, index) => {
+                  if (volume <= 0) {
+                    return null;
+                  }
+                  const x = plot.left + step * index + step / 2;
+                  const height = Math.max(
+                    1,
+                    (volume / maxVolume) * (volumePlot.bottom - volumePlot.top),
+                  );
+                  return (
+                    <rect
+                      key={`${plottedBars[index]?.timestamp ?? index}-volume`}
+                      data-testid="kline-volume-bar"
+                      x={x - candleWidth / 2}
+                      y={volumePlot.bottom - height}
+                      width={candleWidth}
+                      height={height}
+                      rx="0.75"
+                      fill="var(--app-chart-label)"
+                      fillOpacity="0.24"
+                    />
+                  );
+                })}
+              </g>
+            ) : null}
             {plottedMarkers.map((marker, index) => {
               const x = plot.left + step * marker.barIndex + step / 2;
               const y = plotY(marker.price);

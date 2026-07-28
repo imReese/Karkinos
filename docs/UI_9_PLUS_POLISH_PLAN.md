@@ -243,3 +243,62 @@ modified.
 - No query, provider behavior, data refresh, financial calculation, valuation
   identity, ledger cutoff, OMS, broker bridge, kill switch, or authorization
   behavior changed. Trading authority remains unchanged and default-closed.
+
+## Batch C1 validation record — 2026-07-28
+
+### Assumptions and scope
+
+- Market and Holding Detail establish the analytical-workspace benchmark before
+  Backtest and the remaining research routes are aligned to it.
+- Price, OHLC, volume, trades, and cost-reference lines remain persisted inputs;
+  the chart only scales and renders them and does not derive a new financial
+  fact.
+- On a locally overflowing mobile chart, the latest saved bar is the initial
+  reading position. Older saved history remains available by horizontal scroll.
+
+### Validation
+
+- Runtime: Node `v24.18.0`.
+- Focused Market, chart, Holding Detail, and route-contract Vitest: 4 files and
+  50 tests passed.
+- `npm test`: 66 files and 562 tests passed.
+- `npm run format:check`: passed.
+- `npm run build`: production build passed.
+- Focused Market Playwright acceptance passed in 1.6 minutes across Latte and
+  Mocha at 1440x900, 1280x800, 1024x768, 834x1112, 768x1024, and 390x844.
+- The complete ten-test exemplar Playwright suite passed in 4.9 minutes,
+  including reduced motion and the remaining-route Latte/Mocha overflow audit.
+- Holding Detail was inspected in Latte and Mocha at desktop and mobile, then
+  measured at all six acceptance viewports.
+
+### Visual result
+
+- Market now gives the selected instrument name and price greater visual
+  authority while preserving the persistent watchlist-detail relationship.
+- The shared K-line canvas places range controls on the chart header, renders
+  persisted volume below price, and keeps cost references in a quieter legend
+  instead of duplicating labels over trade markers.
+- At 1440px the Market chart measured about 857x361px; the Holding Detail chart
+  measured about 1169px wide and began near 417px in the 900px viewport.
+- Holding Detail now carries canonical quantity into the instrument identity
+  line, while the existing evidence state remains adjacent to the summary.
+- At 390px the 720px analytical canvas measured 369px of intentional local
+  overflow and automatically settled at that latest-data edge. The tab rail
+  retained 193px of intentional local overflow with a right-edge scroll cue.
+- Holding Detail had zero document and app-content overflow at all six target
+  viewports. Its chart began near 417px, 437px, 557px, 553px, 553px, and 659px
+  respectively from desktop through mobile.
+
+### Limits and risk impact
+
+- This record covers Market and Holding Detail only. Backtest still needs to be
+  aligned to the same chart and evidence typography benchmark before Batch C is
+  complete.
+- GitNexus reported `MarketInstrumentWorkspace`, `PriceStructureChart`, and
+  `HoldingDetailPage` upstream impact as LOW with no graph-level callers or
+  affected processes. Direct source consumers are `MarketPage`,
+  `HoldingDetailRoutePage`, and the two shared chart call sites.
+- No query, refresh mutation, provider action, price, cost, P&L, risk,
+  valuation identity, ledger cutoff, OMS, broker, kill-switch, capital, or
+  authorization contract changed. The browser checks triggered no refresh or
+  controlled action, and the UI remains read-only and default-closed.

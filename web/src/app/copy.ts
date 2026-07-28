@@ -2266,6 +2266,7 @@ export const copy = {
       klineAxes: {
         price: 'Price axis',
         date: 'Date axis',
+        volume: 'Volume',
       },
       showKlineRange: (label: string) => `Show ${label} K-line range`,
       snapshotLabel: 'Snapshot time',
@@ -4891,6 +4892,7 @@ export const copy = {
       klineAxes: {
         price: '价格轴',
         date: '日期轴',
+        volume: '成交量',
       },
       showKlineRange: (label: string) => `显示 ${label} K 线区间`,
       addSymbol: '新增标的',
