@@ -17,6 +17,50 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+test('keeps canonical context neutral until persisted queries settle', async () => {
+  window.matchMedia = vi.fn().mockReturnValue({
+    matches: false,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  });
+  const pending = new Promise<Response>(() => undefined);
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() => pending),
+  );
+
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>
+        <AiResearchPage />
+      </QueryClientProvider>
+    </PreferencesProvider>,
+  );
+
+  const metrics = screen.getByTestId('ai-research-context-metrics');
+  const checking = await screen.findAllByText('Checking');
+  expect(checking).toHaveLength(4);
+  expect(checking.filter((element) => element.tagName === 'DD')).toHaveLength(
+    2,
+  );
+  checking
+    .filter((element) => element.tagName === 'DD')
+    .forEach((element) => {
+      expect(element.className).toContain('text-[var(--app-text)]');
+      expect(element.className).not.toContain('text-[var(--app-warning-text)]');
+    });
+  expect(screen.queryByText('No canonical report is available')).toBeNull();
+  expect(screen.queryByText('No persisted strategy assignment')).toBeNull();
+  expect(
+    (await screen.findAllByText('Loading persisted research tasks…')).length,
+  ).toBeGreaterThan(0);
+  expect(screen.queryByText('0 tasks')).toBeNull();
+  expect(metrics).toBeTruthy();
+});
+
 test('opens the cited research canvas from canonical persisted context', async () => {
   window.matchMedia = vi.fn().mockReturnValue({
     matches: false,
