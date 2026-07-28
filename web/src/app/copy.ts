@@ -942,7 +942,7 @@ export const copy = {
         'Only persisted warning and blocked states are promoted here; normal boundaries stay quiet.',
       noBlockingItems: 'No persisted warning or blocked risk states.',
       clearsWithNewProjection:
-        'A newer canonical risk projection records a lower-severity state.',
+        'A newer risk record confirms a lower-severity state.',
       nextStep: 'Suggested next step',
       equityBridge: 'Equity bridge',
       recentDrivers: 'Recent impact events',
@@ -3770,8 +3770,7 @@ export const copy = {
       blockingRegisterDetail:
         '这里只提升持久化的警告与阻断状态；正常边界保持安静。',
       noBlockingItems: '当前没有持久化的警告或阻断风险状态。',
-      clearsWithNewProjection:
-        '更新后的 canonical 风险投影记录为更低严重度时解除。',
+      clearsWithNewProjection: '更新后的风险记录确认严重度已降低时解除。',
       nextStep: '建议动作',
       equityBridge: '净值桥',
       recentDrivers: '最近影响事件',
