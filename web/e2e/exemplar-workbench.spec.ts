@@ -9,6 +9,21 @@ const overviewAcceptanceViewports = [
   { width: 390, height: 844 },
 ] as const;
 
+const workbenchRoutePaths = [
+  '/overview',
+  '/portfolio',
+  '/activity',
+  '/risk',
+  '/account-truth',
+  '/decision',
+  '/operations',
+  '/market',
+  '/trading',
+  '/backtest',
+  '/ai-research',
+  '/settings',
+] as const;
+
 async function selectMobileTheme(page: Page, theme: 'light' | 'dark') {
   await page.getByTestId('mobile-preferences-toggle').click();
   const preferences = page.getByRole('dialog', {
@@ -21,6 +36,71 @@ async function selectMobileTheme(page: Page, theme: 'light' | 'dark') {
     .click();
   await expect(preferences).toBeHidden();
 }
+
+test('all workbench routes keep mobile interaction targets at least 44px', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  for (const path of workbenchRoutePaths) {
+    await page.goto(path);
+    const route = page.locator('.app-shell-content');
+    await expect(route, path).toBeVisible({ timeout: 15_000 });
+
+    const undersizedTargets = await route.evaluate((element) => {
+      const selector = [
+        'button',
+        '[role="button"]',
+        'a[href]',
+        'select',
+        'summary',
+        'textarea',
+        'input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"])',
+      ].join(',');
+
+      return Array.from(element.querySelectorAll<HTMLElement>(selector))
+        .filter((target) => {
+          const style = getComputedStyle(target);
+          const bounds = target.getBoundingClientRect();
+          return (
+            style.display !== 'none' &&
+            style.visibility !== 'hidden' &&
+            bounds.width > 0 &&
+            bounds.height > 0
+          );
+        })
+        .map((target) => {
+          const bounds = target.getBoundingClientRect();
+          return {
+            height: Math.round(bounds.height * 10) / 10,
+            label:
+              target.getAttribute('aria-label') ??
+              target.textContent?.trim().replace(/\s+/g, ' ').slice(0, 80) ??
+              target.tagName.toLowerCase(),
+            tag: target.tagName.toLowerCase(),
+            width: Math.round(bounds.width * 10) / 10,
+          };
+        })
+        .filter((target) => target.height < 44 || target.width < 44);
+    });
+
+    expect(undersizedTargets, path).toEqual([]);
+    const overflow = await page.evaluate(() => {
+      const content = document.querySelector(
+        '.app-shell-content',
+      ) as HTMLElement;
+      return {
+        content: content.scrollWidth - content.clientWidth,
+        document:
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+      };
+    });
+    expect(overflow.document, path).toBeLessThanOrEqual(0);
+    expect(overflow.content, path).toBeLessThanOrEqual(0);
+  }
+});
 
 test('exemplar pages keep one evidence-first desktop reading path', async ({
   page,
@@ -503,7 +583,7 @@ test('portfolio mobile keeps holdings or an explicit empty state below disclosed
     .evaluateAll((elements) =>
       elements.map((element) => element.getBoundingClientRect().height),
     );
-  expect(Math.min(...compactControlHeights)).toBeGreaterThanOrEqual(40);
+  expect(Math.min(...compactControlHeights)).toBeGreaterThanOrEqual(44);
   const collapsedHoldingsTop = (await holdingsSurface.boundingBox())!.y;
 
   await moreFilters.click();
@@ -1147,7 +1227,7 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
         expect(
           activityGeometry.triggerHeight ?? 0,
           theme,
-        ).toBeGreaterThanOrEqual(40);
+        ).toBeGreaterThanOrEqual(44);
 
         await entryTrigger.click();
         const entryDialog = page.getByRole('dialog', {
@@ -1184,7 +1264,7 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
           drawerGeometry.viewportHeight,
         );
         expect(drawerGeometry.minControlHeight, theme).toBeGreaterThanOrEqual(
-          40,
+          44,
         );
         await entryDialog
           .getByRole('button', {
