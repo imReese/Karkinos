@@ -143,6 +143,21 @@ describe('remaining route workbench contract', () => {
     expect(APP_SHELL).not.toContain('lg:relative lg:h-full');
   });
 
+  it('keeps Operations readiness and subsystem metrics visibly scoped', () => {
+    expect(CSS).toContain(
+      "[data-testid='operations-page'] > .app-metric-strip::before",
+    );
+    expect(CSS).toMatch(
+      /operations-page[^}]+app-metric-strip::before[\s\S]*content:\s*attr\(aria-label\)/,
+    );
+    expect(CSS).toMatch(
+      /operations-page[^}]+app-metric-strip\s*{[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/,
+    );
+    expect(CSS).toMatch(
+      /min-width:\s*640px[\s\S]*operations-page[^}]+app-metric-strip[\s\S]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/,
+    );
+  });
+
   it('removes superseded route-local metric card components', () => {
     expect(ROUTER).not.toContain('function ActivityMetric');
     expect(TRADING).not.toContain('function StatusTile');
