@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { PreferencesProvider } from '../../../app/preferences';
@@ -81,6 +81,8 @@ test('opens the cited research canvas from canonical persisted context', async (
   const reviewQueue = await screen.findByText(
     'No human research task has been recorded yet.',
   );
+  expect(screen.queryByLabelText('Research question')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Draft research task' }));
   const researchQuestion = screen.getByLabelText('Research question');
   expect(
     reviewQueue.compareDocumentPosition(researchQuestion) &

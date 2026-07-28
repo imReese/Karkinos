@@ -415,3 +415,55 @@ modified.
   OMS, broker adapter, kill switch, capital, execution, or authorization
   contract changed. Retry is the existing read-only GET; it does not refresh a
   provider or write the database.
+
+## Batch E1 validation record — 2026-07-28
+
+### Assumptions and scope
+
+- Frozen persisted tasks, exact evidence bindings, and their human-review state
+  are the AI Research visual owner. Task capture is a secondary human action,
+  not the default page canvas.
+- Opening a draft may reveal the existing capture form, but it must stay after
+  the review queue on narrow screens and beside it only on wide desktops.
+- Recording a task still freezes the existing explicitly selected evidence and
+  starts no model, provider, broker, order, or capital action.
+
+### Validation
+
+- Runtime: Node `v24.18.0`.
+- Focused AI Research Vitest: 2 files and 10 tests passed.
+- `npm test`: 66 files and 563 tests passed.
+- `npm run format:check`: passed.
+- `npm run build`: production build passed.
+- A new six-viewport AI Research Playwright contract passed, and the existing
+  remaining-route Latte/Mocha mobile audit passed after being updated for the
+  progressive capture form: 2 tests in 52 seconds.
+- Manual browser inspection covered Mocha mobile and desktop plus Latte desktop;
+  the default and open-draft states were both inspected.
+
+### Visual result
+
+- AI Research now opens on a named frozen-evidence review queue with an honest
+  loading/error/empty state. The capture form is absent until the operator
+  explicitly chooses `Draft research task`.
+- The ambiguous `Close` action is now `Collapse research workspace`, while the
+  independent capture state uses `Close task draft` and `aria-expanded`.
+- On 1440x900 the open-draft queue begins near x=252px at 510px wide and the
+  capture surface begins near x=782px at 599px wide. On 390x844 the queue begins
+  near y=509px and the composer follows near y=826px.
+- All six acceptance viewports preserved queue-before-capture order and zero
+  document/app-content overflow. Latte and Mocha kept the same hierarchy.
+
+### Limits and risk impact
+
+- This completes the AI Research visual-owner sub-batch only. Activity and the
+  final Settings/accessibility/token cleanup remain before Batch E and the
+  all-route 9+ goal can be complete.
+- GitNexus reported `ResearchTaskPanel` and `ResearchTaskCard` upstream impact
+  as LOW with no graph-level callers or affected processes. Direct source
+  consumers are `AiResearchPage` and the default-closed Backtest research
+  boundary in `BacktestPage`.
+- No query, payload, evidence type, valuation snapshot, ledger cutoff, fixture,
+  review decision, provider, strategy, OMS, broker, kill switch, capital, or
+  authorization contract changed. AI output remains non-authorizing and all
+  execution remains human-started and default-closed.
