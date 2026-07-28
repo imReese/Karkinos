@@ -11,6 +11,7 @@ test('trading mobile keeps the review task ahead of secondary filters', async ({
   const secondaryFilters = page.getByTestId('trading-secondary-filters');
   const symbolFilter = page.locator('[name="trading-symbol-filter"]');
   const reviewQueue = page.getByTestId('trading-review-queue');
+  const metrics = page.locator('[data-workbench-primitive="metric-strip"]');
   const killSwitch = page.getByTestId('kill-switch-panel');
 
   await expect(secondaryFilters).not.toHaveAttribute('open', '');
@@ -42,11 +43,18 @@ test('trading mobile keeps the review task ahead of secondary filters', async ({
       viewportWidth: window.innerWidth,
       documentWidth: document.documentElement.scrollWidth,
       queueTop: queue.getBoundingClientRect().top,
+      metricsTop: (
+        document.querySelector(
+          '[data-workbench-primitive="metric-strip"]',
+        ) as HTMLElement
+      ).getBoundingClientRect().top,
       controlTop: control.getBoundingClientRect().top,
       controlHeight: control.getBoundingClientRect().height,
     };
   });
   expect(geometry.documentWidth).toBeLessThanOrEqual(geometry.viewportWidth);
+  await expect(metrics).toBeVisible();
+  expect(geometry.queueTop).toBeLessThan(geometry.metricsTop);
   expect(geometry.queueTop).toBeLessThan(geometry.controlTop);
   expect(geometry.controlHeight).toBeLessThan(120);
 });
