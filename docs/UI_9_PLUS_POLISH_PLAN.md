@@ -521,3 +521,84 @@ modified.
 - No query, ledger entry, trade preview, mutation payload, amount, fee, P&L,
   classification, timestamp, provider, OMS, broker, kill switch, capital, or
   authorization behavior changed. The missing aggregate remains fail-closed.
+
+## Batch E3 validation record — 2026-07-28
+
+### Assumptions and scope
+
+- Settings already had the correct macro composition: data status and persisted
+  configuration lead, safety stays adjacent, and secondary provider,
+  notification, and ingestion tools remain closed until requested. No Settings
+  production change was required after the full-page audit.
+- Account Truth must not present an earlier score beside unresolved loading
+  state or interpret an unresolved report response as a canonical empty result.
+- A narrow filter rail may scroll locally on mobile, but it must not expose a
+  routine browser scrollbar or move the document horizontally.
+
+### Validation
+
+- Runtime: Node `v24.18.0`.
+- Focused Account Truth and system-contract Vitest: 3 files and 36 tests passed.
+- `npm test`: 66 files and 564 tests passed.
+- `npm run format:check`: passed.
+- `npm run build`: production build passed.
+- The complete safety-surface and shell Playwright suites passed 9 tests in 1.5
+  minutes. They cover real human-review routes, Account Truth initial loading,
+  both themes at all six acceptance viewports, default-disabled execution
+  authority, keyboard order, a named command target, a visible 2px focus ring,
+  shell geometry, and cross-device overflow.
+- The remaining-route Latte/Mocha mobile contract passed in 45.6 seconds and the
+  reduced-motion browser contract passed in 1.9 seconds.
+- The deterministic token contract passed with no duplicate, unresolved, or
+  unused `--app-*` token; symmetric Latte/Mocha roles; passing text, state, P&L,
+  and focus contrast; no hardcoded-color budget increase; and no deprecated
+  token consumer increase.
+- Manual browser inspection covered Settings and Account Truth in Latte and
+  Mocha at 1440x900 and 390x844.
+
+### Visual result
+
+- Account Truth now renders only its WorkspaceHeader and explicit EvidenceState
+  until score, import runs, reconciliation summaries, and any selected report
+  detail have canonical responses. It no longer shows `Score 100`, `0 items`, or
+  an empty-report conclusion while supporting evidence is unresolved.
+- Once evidence resolves, score and freshness lead directly into the current
+  reconciliation. Matched rows stay quiet, report history and import tools stay
+  progressively disclosed, and no write affordance competes with the result.
+- At 390px the Account Truth filter rail has 32px of intentional local overflow,
+  a right-edge cue, and no native scrollbar. The document and app content remain
+  overflow-free in both themes at all six target widths.
+- Settings keeps one clear control-center index rather than an uninterrupted
+  form wall. Its desktop two-column composition and mobile single reading path
+  preserve data status, persisted defaults, safety, and explicit authority.
+
+### Final 9+ acceptance score
+
+These are evidence-based internal acceptance scores against this document's
+reference matrix, not an external usability study.
+
+| Dimension                 | Score | Acceptance evidence                                                                 |
+| ------------------------- | ----: | ----------------------------------------------------------------------------------- |
+| Professional trust        |   9.4 | Canonical evidence, freshness, blockers, and authority remain explicit and ordered. |
+| Information hierarchy     |   9.3 | Every route has one named visual owner and a stable first reading path.              |
+| Brand identity            |   9.1 | Quiet Karkinos product marks, evidence language, and shell rhythm remain distinct.   |
+| Visual craft              |   9.2 | Flat surfaces, compact radii, alignment, typography, and both themes are coherent.  |
+| Data and chart expression |   9.2 | Analytical routes give tables and persisted charts sufficient task-owned canvas.    |
+| Interaction and state     |   9.4 | Loading, empty, missing, stale, blocked, error, disclosure, and actions stay honest. |
+| Responsive composition    |   9.3 | Six target widths pass with document-safe and explicitly local overflow.            |
+| Accessibility             |   9.2 | Contrast, ARIA names, keyboard focus, touch targets, and reduced motion pass.        |
+
+### Limits and risk impact
+
+- This closes Batch E and the internal all-route 9+ acceptance matrix. It does
+  not claim an external user study, broker-connected validation, or native
+  assistive-technology lab certification.
+- GitNexus reported `AccountTruthReviewPage` and the test fetch helper as LOW
+  impact with no graph-level callers or affected processes. The direct product
+  consumer is the `/account-truth` route; direct test consumers remain local to
+  the Account Truth component suite.
+- No GET, API schema, query key, persisted projection, score, reconciliation,
+  review mutation, ledger, provider, strategy, OMS, broker, kill switch, capital,
+  or authorization contract changed. Initial evidence now fails closed visually;
+  existing complete cached evidence remains renderable with an explicit error if
+  a later refresh fails.

@@ -1,5 +1,14 @@
 import { expect, test } from '@playwright/test';
 
+const accountTruthAcceptanceViewports = [
+  { width: 1440, height: 900 },
+  { width: 1280, height: 800 },
+  { width: 1024, height: 768 },
+  { width: 834, height: 1112 },
+  { width: 768, height: 1024 },
+  { width: 390, height: 844 },
+];
+
 test('critical human-review surfaces load from the product runtime', async ({
   page,
 }) => {
@@ -35,6 +44,117 @@ test('critical human-review surfaces load from the product runtime', async ({
   await page.goto('/trading');
   await expect(page.getByTestId('kill-switch-panel')).toBeVisible();
   await expect(page.getByText(/Global kill switch|全局紧急停止/)).toBeVisible();
+});
+
+test('Account Truth stays fail closed until required persisted evidence resolves', async ({
+  page,
+}) => {
+  await page.route(
+    '**/api/account-truth/reconciliation-reports**',
+    async (route) => {
+      const requestUrl = new URL(route.request().url());
+      if (requestUrl.pathname !== '/api/account-truth/reconciliation-reports') {
+        await route.continue();
+        return;
+      }
+      const response = await route.fetch();
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await route.fulfill({ response });
+    },
+  );
+
+  await page.goto('/account-truth');
+
+  await expect(
+    page.getByRole('heading', { name: 'Loading Account Truth evidence.' }),
+  ).toBeVisible();
+  expect(
+    await page.locator('[data-workbench-primitive="metric-strip"]').count(),
+  ).toBe(0);
+  expect(await page.getByText('0 items', { exact: true }).count()).toBe(0);
+  expect(
+    await page.getByText('No reconciliation reports for this filter.').count(),
+  ).toBe(0);
+
+  await expect(page.getByTestId('account-truth-review-workspace')).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(
+    page.locator('[data-workbench-primitive="metric-strip"]'),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Loading Account Truth evidence.' }),
+  ).toHaveCount(0);
+});
+
+test('Account Truth preserves its evidence hierarchy across themes and acceptance viewports', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await page.setViewportSize(accountTruthAcceptanceViewports[0]);
+  await page.goto('/account-truth');
+  await expect(page.getByTestId('account-truth-review-workspace')).toBeVisible({
+    timeout: 15_000,
+  });
+
+  for (const theme of ['light', 'dark'] as const) {
+    await page.evaluate((nextTheme) => {
+      window.localStorage.setItem('karkinos.theme', nextTheme);
+    }, theme);
+    await page.reload();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    await expect(
+      page.getByTestId('account-truth-review-workspace'),
+    ).toBeVisible({ timeout: 15_000 });
+
+    for (const viewport of accountTruthAcceptanceViewports) {
+      await page.setViewportSize(viewport);
+      const geometry = await page.evaluate(() => {
+        const content = document.querySelector(
+          '.app-shell-content',
+        ) as HTMLElement;
+        const header = document.querySelector(
+          '[data-workbench-primitive="workspace-header"]',
+        ) as HTMLElement;
+        const metrics = document.querySelector(
+          '[data-workbench-primitive="metric-strip"]',
+        ) as HTMLElement;
+        const reviewWorkspace = document.querySelector(
+          '[data-testid="account-truth-review-workspace"]',
+        ) as HTMLElement;
+        const filterRail = reviewWorkspace.querySelector(
+          '.app-account-truth-filter-rail',
+        ) as HTMLElement;
+        return {
+          contentOverflow: content.scrollWidth - content.clientWidth,
+          documentOverflow:
+            document.documentElement.scrollWidth -
+            document.documentElement.clientWidth,
+          filterLocalOverflow: filterRail.scrollWidth - filterRail.clientWidth,
+          filterScrollbarWidth: getComputedStyle(filterRail).scrollbarWidth,
+          headerTop: header.getBoundingClientRect().top,
+          metricsTop: metrics.getBoundingClientRect().top,
+          reviewTop: reviewWorkspace.getBoundingClientRect().top,
+        };
+      });
+
+      expect(geometry.documentOverflow, `${theme} ${viewport.width}`).toBe(0);
+      expect(geometry.contentOverflow, `${theme} ${viewport.width}`).toBe(0);
+      expect(geometry.metricsTop, `${theme} ${viewport.width}`).toBeGreaterThan(
+        geometry.headerTop,
+      );
+      expect(geometry.reviewTop, `${theme} ${viewport.width}`).toBeGreaterThan(
+        geometry.metricsTop,
+      );
+      expect(
+        geometry.filterLocalOverflow,
+        `${theme} ${viewport.width}`,
+      ).toBeGreaterThanOrEqual(0);
+      expect(geometry.filterScrollbarWidth, `${theme} ${viewport.width}`).toBe(
+        'none',
+      );
+    }
+  }
 });
 
 test('browser-visible execution contracts start fail closed', async ({

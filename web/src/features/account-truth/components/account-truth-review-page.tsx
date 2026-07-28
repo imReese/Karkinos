@@ -424,11 +424,6 @@ export function AccountTruthReviewPage() {
     }
   }, [reports.data, selectedImportRunId]);
 
-  const loading =
-    score.isLoading ||
-    importRuns.isLoading ||
-    reports.isLoading ||
-    detail.isLoading;
   const hasError =
     score.isError || importRuns.isError || reports.isError || detail.isError;
   const scoreData = score.data;
@@ -492,6 +487,32 @@ export function AccountTruthReviewPage() {
     setSavedReviewStatus(null);
   };
 
+  const hasRequiredEvidence =
+    score.data !== undefined &&
+    importRuns.data !== undefined &&
+    reports.data !== undefined &&
+    (selectedReport === null || detail.data !== undefined);
+
+  if (!hasRequiredEvidence) {
+    return (
+      <section
+        className="app-account-truth-route app-workbench-route mx-auto grid w-full max-w-[1440px] gap-5 sm:gap-6"
+        data-workbench-route="account-truth"
+      >
+        <WorkspaceHeader
+          eyebrow={text.kicker}
+          title={text.title}
+          description={text.subtitle}
+          context={text.safety}
+        />
+        <EvidenceState
+          kind={hasError ? 'error' : 'loading'}
+          title={hasError ? text.error : text.loading}
+        />
+      </section>
+    );
+  }
+
   return (
     <section
       className="app-account-truth-route app-workbench-route mx-auto grid w-full max-w-[1440px] gap-5 sm:gap-6"
@@ -505,7 +526,6 @@ export function AccountTruthReviewPage() {
       />
 
       {hasError ? <EvidenceState kind="error" title={text.error} /> : null}
-      {loading ? <EvidenceState kind="loading" title={text.loading} /> : null}
 
       <MetricStrip
         ariaLabel={text.score}
@@ -564,14 +584,14 @@ export function AccountTruthReviewPage() {
 
         <div
           aria-label={text.reportListLabel}
-          className="mt-4 flex max-w-full gap-2 overflow-x-auto border-y border-[var(--app-divider)] py-2"
+          className="app-account-truth-filter-rail app-horizontal-scroll-cue mt-4 flex max-w-full gap-1.5 overflow-x-auto overscroll-x-contain border-y border-[var(--app-divider)] py-2 sm:gap-2"
         >
           {filters.map((option) => (
             <button
               key={option.value}
               aria-pressed={filter === option.value}
               type="button"
-              className={`min-h-10 shrink-0 rounded-[var(--app-radius-control)] border px-3 text-xs font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] ${
+              className={`min-h-10 shrink-0 rounded-[var(--app-radius-control)] border px-2.5 text-xs font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] sm:px-3 ${
                 filter === option.value
                   ? 'border-[var(--app-accent)] bg-[var(--app-accent-bg)] text-[var(--app-text)]'
                   : 'border-[var(--app-divider)] text-[var(--app-text-secondary)]'
