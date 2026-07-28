@@ -61,7 +61,7 @@ const accountState = {
     allocation_grouped: [],
   },
   risks: [],
-  next_step: 'Review manual confirmations before any execution.',
+  next_step: '确认待执行建议',
 };
 
 const riskAlerts = [
@@ -420,7 +420,7 @@ test('renders risk boundaries and blocking register without execution controls',
   );
   expect(resolutionGuidance.textContent).toContain('Shared unblock condition');
   expect(resolutionGuidance.textContent).toContain(
-    'Review manual confirmations before any execution.',
+    'Review pending recommendations before any execution.',
   );
   expect(within(priorityList).queryByText('Safe next step')).toBeNull();
   expect(
@@ -611,6 +611,63 @@ test('formats persisted quote timestamps for the primary risk reading path', asy
     within(blockRegister).getByText('000001 最新行情截至 07/21 15:00'),
   ).toBeTruthy();
   expect(blockRegister.textContent).not.toContain('T15:00:00');
+});
+
+test('localizes canonical Chinese risk evidence without changing its facts', async () => {
+  renderRiskPage({
+    locale: 'en',
+    riskAlertsResponse: [
+      {
+        kind: 'risk',
+        level: 'high',
+        title: '仓位集中度偏高',
+        detail: '示例制造 占总资产 60.0%',
+      },
+      {
+        kind: 'risk',
+        level: 'medium',
+        title: '现金缓冲偏低',
+        detail: '当前现金占比 14.9%，可用调仓空间有限',
+      },
+      {
+        kind: 'data',
+        level: 'medium',
+        title: '行情数据可能过旧',
+        detail: '000001 最新快照时间 2026-07-21T15:00:00+08:00',
+      },
+    ],
+  });
+
+  const blockRegister = await screen.findByTestId('risk-blocking-register');
+  expect(
+    within(blockRegister).getByText('Position concentration is elevated'),
+  ).toBeTruthy();
+  expect(
+    within(blockRegister).getByText(
+      '示例制造 accounts for 60.0% of total equity.',
+    ),
+  ).toBeTruthy();
+  expect(within(blockRegister).getByText('Cash buffer is low')).toBeTruthy();
+  expect(
+    within(blockRegister).getByText(
+      'Cash is 14.9% of total equity; rebalance capacity is limited.',
+    ),
+  ).toBeTruthy();
+  expect(
+    within(blockRegister).getByText('Market quote evidence may be stale'),
+  ).toBeTruthy();
+  expect(
+    within(blockRegister).getByText('000001 quote evidence as of 07/21, 15:00'),
+  ).toBeTruthy();
+  expect(
+    within(blockRegister).getByText(
+      'Review pending recommendations before any execution.',
+    ),
+  ).toBeTruthy();
+  expect(blockRegister.textContent).not.toContain('risk ·');
+  expect(within(blockRegister).getAllByText(/Risk boundary ·/u)).toHaveLength(
+    2,
+  );
 });
 
 test('keeps low-severity summary rows quiet while promoting persisted metric warnings', async () => {
