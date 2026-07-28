@@ -92,6 +92,51 @@ test('workspace command menu navigates without adding execution authority', asyn
   ).toBeVisible();
 });
 
+test('desktop keyboard order reaches a named command with a visible focus ring', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/settings');
+  await expect(
+    page.getByRole('heading', { name: 'Control center' }),
+  ).toBeVisible();
+
+  const focusSequence: Array<{
+    name: string;
+    outlineStyle: string;
+    outlineWidth: number;
+    testId: string | null;
+  }> = [];
+  for (let step = 0; step < 24; step += 1) {
+    await page.keyboard.press('Tab');
+    const focused = await page.evaluate(() => {
+      const element = document.activeElement as HTMLElement | null;
+      const style = element ? getComputedStyle(element) : null;
+      return {
+        name:
+          element?.getAttribute('aria-label') ??
+          element?.textContent?.trim().replace(/\s+/g, ' ') ??
+          '',
+        outlineStyle: style?.outlineStyle ?? 'none',
+        outlineWidth: Number.parseFloat(style?.outlineWidth ?? '0'),
+        testId: element?.getAttribute('data-testid') ?? null,
+      };
+    });
+    focusSequence.push(focused);
+    if (focused.testId === 'workspace-command-trigger') {
+      break;
+    }
+  }
+
+  const commandFocus = focusSequence.find(
+    (entry) => entry.testId === 'workspace-command-trigger',
+  );
+  expect(commandFocus).toBeDefined();
+  expect(commandFocus?.name).toBe('Go to a workspace route');
+  expect(commandFocus?.outlineStyle).not.toBe('none');
+  expect(commandFocus?.outlineWidth).toBeGreaterThanOrEqual(2);
+});
+
 test('desktop utility controls align and overview holdings avoid partial columns', async ({
   page,
 }) => {

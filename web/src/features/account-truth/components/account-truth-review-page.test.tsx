@@ -232,7 +232,7 @@ function installFetchMock({
         url.includes('/api/account-truth/reconciliation-reports') &&
         init?.method !== 'POST'
       ) {
-        return jsonResponse(reportSummaryResponse);
+        return jsonResponse(await reportSummaryResponse);
       }
       if (url.includes('/items/position%3ASYN001/review')) {
         return jsonResponse({
@@ -295,6 +295,36 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+test('keeps score and empty reports hidden until required evidence resolves', async () => {
+  let resolveReportSummaries: (value: unknown) => void = () => undefined;
+  const pendingReportSummaries = new Promise<unknown>((resolve) => {
+    resolveReportSummaries = resolve;
+  });
+
+  renderAccountTruthReviewPage({
+    reportSummaryResponse: pendingReportSummaries,
+  });
+
+  expect(
+    await screen.findByText('Loading Account Truth evidence.'),
+  ).toBeTruthy();
+  expect(screen.queryByText('42')).toBeNull();
+  expect(screen.queryByText('0 items')).toBeNull();
+  expect(
+    screen.queryByText('No reconciliation reports for this filter.'),
+  ).toBeNull();
+
+  resolveReportSummaries(reportSummaries);
+
+  expect(await screen.findByText('42')).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'Cash difference ¥120.00 · Fee difference ¥0.00 · Tax difference ¥2.50',
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByText('Loading Account Truth evidence.')).toBeNull();
+});
+
 test('renders Account Truth score, import runs, reconciliation detail, and review actions', async () => {
   const { fetchMock } = renderAccountTruthReviewPage();
 
@@ -305,10 +335,10 @@ test('renders Account Truth score, import runs, reconciliation detail, and revie
   expect(
     document.querySelector('[data-workbench-primitive="workspace-header"]'),
   ).toBeTruthy();
+  expect(await screen.findByText('42')).toBeTruthy();
   expect(
     document.querySelector('[data-workbench-primitive="metric-strip"]'),
   ).toBeTruthy();
-  expect(await screen.findByText('42')).toBeTruthy();
   await waitFor(() =>
     expect(screen.getAllByText('Blocked').length).toBeGreaterThan(0),
   );
@@ -446,9 +476,8 @@ test('keeps repeated reconciliation evidence rows as distinct selectable instanc
 test('shows the enabled local collector as evidence-only automatic reading', async () => {
   renderAccountTruthReviewPage();
 
-  await userEvent.click(
-    screen.getByText('Stage new broker evidence').closest('summary')!,
-  );
+  const importToolsTitle = await screen.findByText('Stage new broker evidence');
+  await userEvent.click(importToolsTitle.closest('summary')!);
 
   const status = await screen.findByTestId('broker-statement-collector-status');
 
@@ -474,9 +503,8 @@ test('shows the enabled local collector as evidence-only automatic reading', asy
 test('previews and stages broker evidence from pasted CSV', async () => {
   const { fetchMock } = renderAccountTruthReviewPage();
 
-  await userEvent.click(
-    screen.getByText('Stage new broker evidence').closest('summary')!,
-  );
+  const importToolsTitle = await screen.findByText('Stage new broker evidence');
+  await userEvent.click(importToolsTitle.closest('summary')!);
 
   const wizard = await screen.findByTestId('account-truth-import-wizard');
   await userEvent.clear(within(wizard).getByLabelText('CSV content'));
@@ -952,7 +980,9 @@ test('explains the blocked empty state without exposing internal action codes', 
     reportSummaryResponse: [],
   });
 
-  expect(await screen.findByText('Account facts are not ready')).toBeTruthy();
+  expect(
+    (await screen.findAllByText('Account facts are not ready')).length,
+  ).toBeGreaterThan(0);
   expect(
     await screen.findByText(
       'No broker statement, position snapshot, or cash snapshot has been staged yet.',

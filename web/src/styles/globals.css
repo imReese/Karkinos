@@ -1218,6 +1218,14 @@ h3 {
   display: none;
 }
 
+.app-account-truth-filter-rail {
+  scrollbar-width: none;
+}
+
+.app-account-truth-filter-rail::-webkit-scrollbar {
+  display: none;
+}
+
 .app-public-home {
   min-height: 100dvh;
   overflow-x: clip;
