@@ -87,6 +87,15 @@ test('renders an evidence-first public home without loading financial data', asy
   ).toBeTruthy();
 
   const evidenceTrace = screen.getByTestId('public-evidence-trace');
+  const workbenchStructure = within(evidenceTrace).getByLabelText(
+    'Workbench structure',
+  );
+  expect(within(workbenchStructure).getByText('Evidence quality')).toBeTruthy();
+  expect(
+    within(evidenceTrace).getByRole('heading', {
+      name: 'Resolve the highest blocker first.',
+    }),
+  ).toBeTruthy();
   expect(
     within(evidenceTrace).getByLabelText('Public-to-private route'),
   ).toBeTruthy();
@@ -109,6 +118,7 @@ test('renders an evidence-first public home without loading financial data', asy
   });
   expect(workbenchLinks.length).toBeGreaterThanOrEqual(2);
   expect(workbenchLinks[0]?.getAttribute('href')).toBe('/overview');
+  expect(screen.getByText('Workbench')).toBeTruthy();
   expect(
     screen
       .getByRole('link', { name: 'Open surface: Account Truth' })
