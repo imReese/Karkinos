@@ -143,9 +143,16 @@ test('Account Truth preserves its evidence hierarchy across themes and acceptanc
       expect(geometry.metricsTop, `${theme} ${viewport.width}`).toBeGreaterThan(
         geometry.headerTop,
       );
-      expect(geometry.reviewTop, `${theme} ${viewport.width}`).toBeGreaterThan(
-        geometry.metricsTop,
-      );
+      if (viewport.width < 640) {
+        expect(geometry.reviewTop, `${theme} ${viewport.width}`).toBeLessThan(
+          geometry.metricsTop,
+        );
+      } else {
+        expect(
+          geometry.reviewTop,
+          `${theme} ${viewport.width}`,
+        ).toBeGreaterThan(geometry.metricsTop);
+      }
       expect(
         geometry.filterLocalOverflow,
         `${theme} ${viewport.width}`,
