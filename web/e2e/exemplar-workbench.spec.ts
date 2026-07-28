@@ -270,11 +270,31 @@ test('activity keeps immutable history in the first reading path across all acce
 }) => {
   test.setTimeout(60_000);
   await page.setViewportSize(overviewAcceptanceViewports[0]);
+  const entriesResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'GET' &&
+      new URL(response.url()).pathname === '/api/ledger/entries',
+  );
   await page.goto('/activity');
+  const response = await entriesResponse;
+  expect(response.ok()).toBe(true);
+  const entries = (await response.json()) as unknown;
+  const hasEntries = Array.isArray(entries) && entries.length > 0;
+  const historySurface = page.locator(
+    '[data-activity-surface="audit-history"]',
+  );
   const historyRegion = page.locator(
     '[data-activity-surface="audit-history"] [role="region"]',
   );
-  await expect(historyRegion).toBeVisible({ timeout: 15_000 });
+  const emptyState = page.getByTestId('activity-history-empty');
+  await expect(historySurface).toBeVisible({ timeout: 15_000 });
+  if (hasEntries) {
+    await expect(historyRegion).toBeVisible();
+    await expect(emptyState).toHaveCount(0);
+  } else {
+    await expect(emptyState).toBeVisible();
+    await expect(historyRegion).toHaveCount(0);
+  }
 
   for (const viewport of overviewAcceptanceViewports) {
     await page.setViewportSize(viewport);
@@ -284,42 +304,66 @@ test('activity keeps immutable history in the first reading path across all acce
       ) as HTMLElement;
       const categoryFilter = document.querySelector(
         '[aria-label="Ledger category filter"], [aria-label="流水分类筛选"]',
+      ) as HTMLElement | null;
+      const historySurface = document.querySelector(
+        '[data-activity-surface="audit-history"]',
       ) as HTMLElement;
       const region = document.querySelector(
         '[data-activity-surface="audit-history"] [role="region"]',
-      ) as HTMLElement;
-      const table = region.querySelector('table') as HTMLTableElement;
+      ) as HTMLElement | null;
+      const table = region?.querySelector('table') ?? null;
+      const emptyState = document.querySelector(
+        '[data-testid="activity-history-empty"]',
+      ) as HTMLElement | null;
       return {
-        categoryFilterHeight: categoryFilter.getBoundingClientRect().height,
+        categoryFilterHeight:
+          categoryFilter?.getBoundingClientRect().height ?? null,
         categoryFilterOverflow:
-          categoryFilter.scrollWidth - categoryFilter.clientWidth,
+          categoryFilter === null
+            ? null
+            : categoryFilter.scrollWidth - categoryFilter.clientWidth,
         contentOverflow: content.scrollWidth - content.clientWidth,
         documentOverflow:
           document.documentElement.scrollWidth -
           document.documentElement.clientWidth,
-        historyLocalOverflow: region.scrollWidth - region.clientWidth,
-        tableTop: table.getBoundingClientRect().top,
+        emptyStateTop: emptyState?.getBoundingClientRect().top ?? null,
+        historyLocalOverflow:
+          region === null ? null : region.scrollWidth - region.clientWidth,
+        historySurfaceTop: historySurface.getBoundingClientRect().top,
+        tableTop: table?.getBoundingClientRect().top ?? null,
       };
     });
 
     expect(geometry.documentOverflow, JSON.stringify(viewport)).toBe(0);
     expect(geometry.contentOverflow, JSON.stringify(viewport)).toBe(0);
-    expect(
-      geometry.categoryFilterHeight,
-      JSON.stringify(viewport),
-    ).toBeLessThanOrEqual(48);
-    expect(geometry.tableTop, JSON.stringify(viewport)).toBeLessThan(
-      viewport.width < 640 ? viewport.height * 0.9 : 700,
+    expect(geometry.historySurfaceTop, JSON.stringify(viewport)).toBeLessThan(
+      viewport.height,
     );
-    if (viewport.width < 640) {
+    if (hasEntries) {
       expect(
-        geometry.categoryFilterOverflow,
+        geometry.categoryFilterHeight ?? Number.POSITIVE_INFINITY,
         JSON.stringify(viewport),
-      ).toBeGreaterThan(0);
+      ).toBeLessThanOrEqual(48);
       expect(
-        geometry.historyLocalOverflow,
+        geometry.tableTop ?? Number.POSITIVE_INFINITY,
         JSON.stringify(viewport),
-      ).toBeGreaterThan(0);
+      ).toBeLessThan(viewport.width < 640 ? viewport.height * 0.9 : 700);
+      if (viewport.width < 640) {
+        expect(
+          geometry.categoryFilterOverflow ?? 0,
+          JSON.stringify(viewport),
+        ).toBeGreaterThan(0);
+        expect(
+          geometry.historyLocalOverflow ?? 0,
+          JSON.stringify(viewport),
+        ).toBeGreaterThan(0);
+      }
+    } else {
+      expect(geometry.emptyStateTop, JSON.stringify(viewport)).not.toBeNull();
+      expect(
+        geometry.emptyStateTop ?? Number.POSITIVE_INFINITY,
+        JSON.stringify(viewport),
+      ).toBeLessThan(viewport.height);
     }
   }
 });
@@ -893,14 +937,29 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
                 response.url().endsWith('/api/backtest/results'),
             )
           : null;
+      const activityEntriesResponse =
+        path === '/activity'
+          ? page.waitForResponse(
+              (response) =>
+                response.request().method() === 'GET' &&
+                new URL(response.url()).pathname === '/api/ledger/entries',
+            )
+          : null;
       await page.goto(path);
       let hasSavedResults = false;
+      let hasActivityEntries = false;
       if (backtestResultsResponse) {
         const response = await backtestResultsResponse;
         expect(response.ok()).toBe(true);
         const savedResults = (await response.json()) as unknown;
         hasSavedResults =
           Array.isArray(savedResults) && savedResults.length > 0;
+      }
+      if (activityEntriesResponse) {
+        const response = await activityEntriesResponse;
+        expect(response.ok()).toBe(true);
+        const entries = (await response.json()) as unknown;
+        hasActivityEntries = Array.isArray(entries) && entries.length > 0;
       }
       await selectMobileTheme(page, theme as 'light' | 'dark');
 
@@ -978,6 +1037,19 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
         await expect(historySurface).toBeVisible();
         await expect(legacyEntrySurface).toHaveCount(0);
         await expect(entryTrigger).toBeVisible();
+        if (hasActivityEntries) {
+          await expect(historySurface.locator('[role="region"]')).toBeVisible();
+          await expect(page.getByTestId('activity-history-empty')).toHaveCount(
+            0,
+          );
+        } else {
+          await expect(
+            page.getByTestId('activity-history-empty'),
+          ).toBeVisible();
+          await expect(historySurface.locator('[role="region"]')).toHaveCount(
+            0,
+          );
+        }
         const activityGeometry = await page.evaluate(() => {
           const historyRegion = document.querySelector(
             '[data-activity-surface="audit-history"] [role="region"]',
@@ -1005,25 +1077,29 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
             viewportHeight: window.innerHeight,
           };
         });
-        if (activityGeometry.historyRegionHeight !== null) {
+        if (hasActivityEntries) {
           expect(
-            activityGeometry.historyRegionHeight,
+            activityGeometry.historyRegionHeight ?? Number.POSITIVE_INFINITY,
             theme,
           ).toBeLessThanOrEqual(activityGeometry.viewportHeight * 0.8);
+          expect(activityGeometry.categoryFilterHeight, theme).not.toBeNull();
+          expect(
+            activityGeometry.categoryFilterHeight ?? Number.POSITIVE_INFINITY,
+            theme,
+          ).toBeLessThanOrEqual(48);
+          expect(
+            activityGeometry.categoryFilterLocalOverflow ?? -1,
+            theme,
+          ).toBeGreaterThanOrEqual(0);
+          expect(activityGeometry.historyTableTop, theme).not.toBeNull();
+          expect(
+            activityGeometry.historyTableTop ?? Number.POSITIVE_INFINITY,
+          ).toBeLessThan(activityGeometry.viewportHeight * 0.9);
+        } else {
+          expect(activityGeometry.historyRegionHeight, theme).toBeNull();
+          expect(activityGeometry.categoryFilterHeight, theme).toBeNull();
+          expect(activityGeometry.historyTableTop, theme).toBeNull();
         }
-        expect(activityGeometry.categoryFilterHeight, theme).not.toBeNull();
-        expect(
-          activityGeometry.categoryFilterHeight ?? Number.POSITIVE_INFINITY,
-          theme,
-        ).toBeLessThanOrEqual(48);
-        expect(
-          activityGeometry.categoryFilterLocalOverflow ?? -1,
-          theme,
-        ).toBeGreaterThanOrEqual(0);
-        expect(activityGeometry.historyTableTop, theme).not.toBeNull();
-        expect(
-          activityGeometry.historyTableTop ?? Number.POSITIVE_INFINITY,
-        ).toBeLessThan(activityGeometry.viewportHeight * 0.9);
         expect(activityGeometry.triggerHeight, theme).not.toBeNull();
         expect(
           activityGeometry.triggerHeight ?? 0,

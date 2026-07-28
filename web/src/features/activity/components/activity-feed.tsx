@@ -142,7 +142,10 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
 
   if (entries.length === 0) {
     return (
-      <div className="app-workbench-section p-5 text-sm app-muted">
+      <div
+        className="app-workbench-section p-5 text-sm app-muted"
+        data-testid="activity-history-empty"
+      >
         {labels.empty}
       </div>
     );
