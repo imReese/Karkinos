@@ -76,7 +76,12 @@ test('opens the cited research canvas from canonical persisted context', async (
   expect(
     await screen.findByText('Exact persisted account assignment'),
   ).toBeTruthy();
-  expect(screen.getByTestId('ai-research-primary-canvas')).toBeTruthy();
+  expect(screen.getByTestId('ai-research-primary-canvas').className).toContain(
+    'order-1',
+  );
+  expect(screen.getByTestId('ai-research-context-metrics').className).toContain(
+    'order-2',
+  );
   expect(await screen.findByText('Human research tasks')).toBeTruthy();
   const reviewQueue = await screen.findByText(
     'No human research task has been recorded yet.',

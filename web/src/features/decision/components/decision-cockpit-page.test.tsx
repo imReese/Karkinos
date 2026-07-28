@@ -3903,6 +3903,11 @@ test('surfaces degraded and blocked account-truth gates in decision summaries', 
   await expandDecisionCandidates();
 
   const gateMatrix = await screen.findByTestId('decision-gate-matrix');
+  expect(
+    within(screen.getByTestId('decision-gate-disclosure'))
+      .getByRole('button')
+      .getAttribute('aria-expanded'),
+  ).toBe('true');
   expect(gateMatrix.textContent).toContain('Account truth');
   expect(gateMatrix.textContent).toContain('Degraded');
   expect(gateMatrix.textContent).toContain('Review position difference');
@@ -3929,6 +3934,41 @@ test('surfaces degraded and blocked account-truth gates in decision summaries', 
     await screen.findByText('Manual: Account truth review required'),
   ).toBeTruthy();
   expect(await screen.findByText('Account truth: Degraded')).toBeTruthy();
+});
+
+test('collapses an all-pass gate matrix for the compact mobile reading path', async () => {
+  const allPassToday = {
+    ...dailyDecision,
+    summary: {
+      ...dailyDecision.summary,
+      workflow_tasks: [
+        'account_truth',
+        'strategy_evidence',
+        'risk_review',
+        'paper_shadow_review',
+        'manual_confirmation',
+      ].map((id, index) => ({
+        id,
+        priority: (index + 1) * 10,
+        status: 'pass',
+        title: id,
+        description: 'Persisted gate evidence passed.',
+        required_actions: [],
+        blocking_reasons: [],
+        evidence: {},
+      })),
+    },
+  } as DecisionResponse;
+
+  renderDecisionCockpit({ todayResponse: allPassToday });
+
+  const disclosure = await screen.findByTestId('decision-gate-disclosure');
+  const toggle = within(disclosure).getByRole('button');
+  expect(toggle.getAttribute('aria-expanded')).toBe('false');
+  expect(within(disclosure).getByText('5/5 passed')).toBeTruthy();
+  expect(disclosure.textContent).toContain('Manual confirmation');
+  fireEvent.click(toggle);
+  expect(toggle.getAttribute('aria-expanded')).toBe('true');
 });
 
 test('surfaces strategy-attribution gate status in decision summaries', async () => {

@@ -352,28 +352,30 @@ export function ResearchTaskPanel({
   return (
     <section
       aria-labelledby="ai-research-task-title"
-      className="app-ai-research-boundary p-4 sm:p-5"
+      className="app-ai-research-boundary p-3 sm:p-5"
       data-evidence-kind="cited-ai-research"
       data-testid="ai-research-task-panel"
     >
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex items-center justify-between gap-3 sm:items-start">
         <div className="min-w-0">
-          <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+          <div className="app-kicker hidden text-[10px] uppercase tracking-[0.14em] sm:block">
             {copy.kicker}
           </div>
           <h2
-            className="mt-2 text-lg font-semibold text-[var(--app-text)]"
+            className="text-base font-semibold text-[var(--app-text)] sm:mt-2 sm:text-lg"
             id="ai-research-task-title"
           >
             {copy.title}
           </h2>
-          <p className="app-muted mt-2 max-w-3xl text-sm leading-6">
+          <p className="app-muted mt-2 hidden max-w-3xl text-sm leading-6 sm:block">
             {open ? copy.detail : copy.closedDetail}
           </p>
         </div>
-        <div className="flex shrink-0 flex-wrap gap-2">
-          <BoundaryBadge label={copy.noModel} />
-          <BoundaryBadge label={copy.noAuthority} />
+        <div className="flex shrink-0 items-center gap-2">
+          <div className="hidden flex-wrap gap-2 sm:flex">
+            <BoundaryBadge label={copy.noModel} />
+            <BoundaryBadge label={copy.noAuthority} />
+          </div>
           <button
             className="app-button-secondary px-3 py-2 text-xs font-semibold"
             onClick={() => setOpen((current) => !current)}
