@@ -249,7 +249,7 @@ describe('application design token contract', () => {
     expect(MOCHA.get('--app-radius-overlay')).toBe('12px');
     expect(MOCHA.get('--app-control-height')).toBe('32px');
     expect(MOCHA.get('--app-row-height-dense')).toBe('40px');
-    expect(MOCHA.get('--app-touch-target')).toBe('40px');
+    expect(MOCHA.get('--app-touch-target')).toBe('44px');
   });
 
   it('defines the product typography and motion contract', () => {

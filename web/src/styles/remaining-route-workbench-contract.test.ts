@@ -131,16 +131,17 @@ describe('remaining route workbench contract', () => {
     expect(CSS).toContain('.app-workbench-route');
     expect(CSS).toContain('overscroll-behavior-inline: contain');
     expect(CSS).toMatch(
-      /max-width:\s*767px[\s\S]*min-width:\s*var\(--app-touch-target\)[\s\S]*min-height:\s*var\(--app-touch-target\)/,
+      /max-width:\s*767px[\s\S]*\.app-shell-content[\s\S]*min-width:\s*var\(--app-touch-target\)[\s\S]*min-height:\s*var\(--app-touch-target\)/,
     );
-    expect(CSS).toMatch(
-      /data-workbench-route='ai-research'[\s\S]*min-height:\s*44px/,
-    );
+    expect(CSS).toContain('summary');
+    expect(CSS).toContain("input:not([type='checkbox'])");
+    expect(CSS).toContain("[role='dialog']\n    :where(");
+    expect(CSS).not.toContain("[data-workbench-route='ai-research'] :is(");
     expect(CSS).toMatch(
       /\.app-shell-sidebar[\s\S]*\.app-toolbar-shell[\s\S]*min-height:\s*var\(--app-touch-target\)/,
     );
     expect(CSS).toMatch(
-      /\.app-workbench-route a\[href\][\s\S]*display:\s*inline-flex/,
+      /\.app-shell-content a\[href\][\s\S]*display:\s*inline-flex/,
     );
     expect(CSS).toMatch(
       /prefers-reduced-motion:\s*reduce[\s\S]*transition-duration:\s*0\.01ms\s*!important/,
