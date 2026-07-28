@@ -265,6 +265,65 @@ test('AI research keeps frozen evidence ahead of human capture across all accept
   }
 });
 
+test('activity keeps immutable history in the first reading path across all acceptance viewports', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await page.setViewportSize(overviewAcceptanceViewports[0]);
+  await page.goto('/activity');
+  const historyRegion = page.locator(
+    '[data-activity-surface="audit-history"] [role="region"]',
+  );
+  await expect(historyRegion).toBeVisible({ timeout: 15_000 });
+
+  for (const viewport of overviewAcceptanceViewports) {
+    await page.setViewportSize(viewport);
+    const geometry = await page.evaluate(() => {
+      const content = document.querySelector(
+        '.app-shell-content',
+      ) as HTMLElement;
+      const categoryFilter = document.querySelector(
+        '[aria-label="Ledger category filter"], [aria-label="流水分类筛选"]',
+      ) as HTMLElement;
+      const region = document.querySelector(
+        '[data-activity-surface="audit-history"] [role="region"]',
+      ) as HTMLElement;
+      const table = region.querySelector('table') as HTMLTableElement;
+      return {
+        categoryFilterHeight: categoryFilter.getBoundingClientRect().height,
+        categoryFilterOverflow:
+          categoryFilter.scrollWidth - categoryFilter.clientWidth,
+        contentOverflow: content.scrollWidth - content.clientWidth,
+        documentOverflow:
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+        historyLocalOverflow: region.scrollWidth - region.clientWidth,
+        tableTop: table.getBoundingClientRect().top,
+      };
+    });
+
+    expect(geometry.documentOverflow, JSON.stringify(viewport)).toBe(0);
+    expect(geometry.contentOverflow, JSON.stringify(viewport)).toBe(0);
+    expect(
+      geometry.categoryFilterHeight,
+      JSON.stringify(viewport),
+    ).toBeLessThanOrEqual(48);
+    expect(geometry.tableTop, JSON.stringify(viewport)).toBeLessThan(
+      viewport.width < 640 ? viewport.height * 0.9 : 700,
+    );
+    if (viewport.width < 640) {
+      expect(
+        geometry.categoryFilterOverflow,
+        JSON.stringify(viewport),
+      ).toBeGreaterThan(0);
+      expect(
+        geometry.historyLocalOverflow,
+        JSON.stringify(viewport),
+      ).toBeGreaterThan(0);
+    }
+  }
+});
+
 test('portfolio keeps filtering ordered above a compact holdings projection', async ({
   page,
 }) => {
@@ -923,6 +982,10 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
           const historyRegion = document.querySelector(
             '[data-activity-surface="audit-history"] [role="region"]',
           ) as HTMLElement | null;
+          const categoryFilter = document.querySelector(
+            '[aria-label="Ledger category filter"], [aria-label="流水分类筛选"]',
+          ) as HTMLElement | null;
+          const historyTable = historyRegion?.querySelector('table');
           const entryButton = Array.from(
             document.querySelectorAll('button'),
           ).find((button) =>
@@ -931,6 +994,13 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
           return {
             historyRegionHeight:
               historyRegion?.getBoundingClientRect().height ?? null,
+            categoryFilterHeight:
+              categoryFilter?.getBoundingClientRect().height ?? null,
+            categoryFilterLocalOverflow:
+              categoryFilter === null
+                ? null
+                : categoryFilter.scrollWidth - categoryFilter.clientWidth,
+            historyTableTop: historyTable?.getBoundingClientRect().top ?? null,
             triggerHeight: entryButton?.getBoundingClientRect().height ?? null,
             viewportHeight: window.innerHeight,
           };
@@ -941,6 +1011,19 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
             theme,
           ).toBeLessThanOrEqual(activityGeometry.viewportHeight * 0.8);
         }
+        expect(activityGeometry.categoryFilterHeight, theme).not.toBeNull();
+        expect(
+          activityGeometry.categoryFilterHeight ?? Number.POSITIVE_INFINITY,
+          theme,
+        ).toBeLessThanOrEqual(48);
+        expect(
+          activityGeometry.categoryFilterLocalOverflow ?? -1,
+          theme,
+        ).toBeGreaterThanOrEqual(0);
+        expect(activityGeometry.historyTableTop, theme).not.toBeNull();
+        expect(
+          activityGeometry.historyTableTop ?? Number.POSITIVE_INFINITY,
+        ).toBeLessThan(activityGeometry.viewportHeight * 0.9);
         expect(activityGeometry.triggerHeight, theme).not.toBeNull();
         expect(
           activityGeometry.triggerHeight ?? 0,

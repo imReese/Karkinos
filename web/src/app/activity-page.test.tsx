@@ -142,10 +142,10 @@ test('does not derive authoritative net cash impact from the visible ledger rows
   renderActivityPage();
 
   expect(await screen.findByText('Net cash impact')).toBeTruthy();
-  expect(await screen.findByText('Not available')).toBeTruthy();
+  expect(await screen.findByText('Not exposed')).toBeTruthy();
   expect(
     await screen.findByText(
-      'No canonical persisted summary is exposed for this timeline; visible rows are not aggregated in the browser.',
+      'Canonical aggregate not exposed; visible rows are not summed in-browser.',
     ),
   ).toBeTruthy();
   expect(await screen.findByText('Commission ¥5.00')).toBeTruthy();
@@ -332,7 +332,15 @@ test('keeps immutable history as the primary surface and opens entry tools on de
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(screen.queryByRole('group', { name: '流水录入工具选择' })).toBeNull();
 
-  fireEvent.click(screen.getByRole('button', { name: '新增流水' }));
+  const entryTrigger = screen.getByRole('button', { name: '新增流水' });
+  expect(entryTrigger.className).toContain('app-button-secondary');
+  expect(entryTrigger.className).not.toContain('app-button-primary');
+  expect(document.querySelector('.activity-summary-strip')).toBeTruthy();
+  expect(
+    screen.getByRole('group', { name: '流水分类筛选' }).className,
+  ).toContain('overflow-x-auto');
+
+  fireEvent.click(entryTrigger);
 
   const dialog = await screen.findByRole('dialog', { name: '新增流水' });
   const toolButtons = within(dialog)

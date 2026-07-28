@@ -5163,7 +5163,7 @@ export function ActivityPage() {
           actions={
             <button
               type="button"
-              className="app-button-primary px-3 py-2 text-xs"
+              className="app-button-secondary px-3 py-2 text-xs"
               onClick={() => setEntryDrawerOpen(true)}
             >
               {copy.activity.entryTools.openAction}
@@ -5173,6 +5173,7 @@ export function ActivityPage() {
 
         <MetricStrip
           ariaLabel={copy.activity.title}
+          className="activity-summary-strip"
           items={[
             {
               id: 'pending-orders',
