@@ -51,10 +51,14 @@ test('renders OHLC price range as a K-line chart', () => {
   ).toBe('true');
   expect(screen.getByText('Price axis')).toBeTruthy();
   expect(screen.getByText('Date axis')).toBeTruthy();
+  expect(screen.getByText('Volume')).toBeTruthy();
   expect(screen.getByText('2025-04-19')).toBeTruthy();
   expect(screen.getByText('2026-04-20')).toBeTruthy();
   expect(
     container.querySelectorAll('[data-testid="kline-candle"]').length,
+  ).toBe(2);
+  expect(
+    container.querySelectorAll('[data-testid="kline-volume-bar"]').length,
   ).toBe(2);
   expect(
     container.querySelector('[data-testid="close-price-trend"]'),
@@ -63,7 +67,14 @@ test('renders OHLC price range as a K-line chart', () => {
   const chartCanvas = screen.getByTestId('price-structure-chart-canvas');
   expect(chartScroll.className).toContain('overflow-x-auto');
   expect(chartScroll.className).toContain('pb-2');
-  expect(chartCanvas.className).toContain('min-w-[640px]');
+  expect(chartScroll.className).toContain('app-horizontal-scroll-cue');
+  expect(chartCanvas.className).toContain('min-w-[720px]');
+  Object.defineProperties(chartScroll, {
+    clientWidth: { configurable: true, value: 320 },
+    scrollWidth: { configurable: true, value: 720 },
+  });
+  fireEvent(window, new Event('resize'));
+  expect(chartScroll.scrollLeft).toBe(400);
   expect(container.querySelector('.rounded-2xl')).toBeNull();
   expect(container.querySelector('.rounded-3xl')).toBeNull();
 

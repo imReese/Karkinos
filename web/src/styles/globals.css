@@ -2140,6 +2140,15 @@ h3 {
 }
 
 @media (max-width: 767px) {
+  .app-horizontal-scroll-cue {
+    mask-image: linear-gradient(
+      to right,
+      var(--app-text) 0,
+      var(--app-text) calc(100% - 28px),
+      transparent 100%
+    );
+  }
+
   .app-overview-primary-exception .app-exception-item dl {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

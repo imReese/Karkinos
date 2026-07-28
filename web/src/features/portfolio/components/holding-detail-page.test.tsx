@@ -738,7 +738,8 @@ test('keeps holding summary and kline regions responsive on narrow screens', asy
   ).toBeTruthy();
   expect(chartPanel.className).toContain('overflow-hidden');
   expect(chartScroll.className).toContain('overflow-x-auto');
-  expect(chartCanvas.className).toContain('min-w-[640px]');
+  expect(chartScroll.className).toContain('app-horizontal-scroll-cue');
+  expect(chartCanvas.className).toContain('min-w-[720px]');
 });
 
 test('keeps canonical position facts primary when persisted price structure is missing', async () => {
