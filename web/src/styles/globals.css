@@ -1210,6 +1210,22 @@ h3 {
   white-space: normal;
 }
 
+[data-testid='operations-page'] > .app-metric-strip {
+  grid-auto-flow: row;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+[data-testid='operations-page'] > .app-metric-strip::before {
+  grid-column: 1 / -1;
+  padding: 0.625rem 0.75rem;
+  border-bottom: 1px solid var(--app-divider);
+  color: var(--app-text);
+  content: attr(aria-label);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+}
+
 .app-activity-filter-rail {
   scrollbar-width: none;
 }
@@ -2233,6 +2249,10 @@ h3 {
 
   .app-metric-strip-item:last-child {
     border-right: 0;
+  }
+
+  [data-testid='operations-page'] > .app-metric-strip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
