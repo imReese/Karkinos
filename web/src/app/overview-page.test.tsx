@@ -961,7 +961,7 @@ test('surfaces paper shadow next action in today todos', async () => {
   expect(within(todayQueue).getByText('2 manual review')).toBeTruthy();
   expect(
     within(todayQueue)
-      .getByRole('link', { name: /Review paper\/shadow simulation/ })
+      .getByRole('link', { name: /Review simulation evidence/ })
       .getAttribute('href'),
   ).toBe('/trading');
 });
@@ -3251,7 +3251,7 @@ test('scopes the homepage data review count to canonical current holdings', asyn
   expect(within(queue).getByText('1 stale/cache')).toBeTruthy();
   expect(within(queue).getByText('1 holding needs review')).toBeTruthy();
   expect(queue.textContent).toContain(
-    'Clears only after newer confirmed evidence produces a complete current-holding projection bound to one consistent valuation snapshot and ledger cutoff.',
+    'Newer confirmed quote or NAV evidence covers every current holding and shares one valuation and activity scope.',
   );
   expect(within(queue).queryByText('2 holdings need review')).toBeNull();
   expect(queue.textContent).not.toContain('Closed fixture holding');
@@ -3344,7 +3344,7 @@ test('fails closed when the holding review and portfolio snapshot identities dri
   const queue = await screen.findByTestId('overview-today-queue');
   expect(
     within(queue).getByText(
-      'Canonical current-holding evidence is unavailable; authoritative interpretation stays blocked.',
+      'Current-holding evidence is unavailable; interpretation remains blocked.',
     ),
   ).toBeTruthy();
   expect(

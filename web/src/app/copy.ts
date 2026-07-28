@@ -222,8 +222,8 @@ export const copy = {
         'Confirm account truth first, then review exceptions and current holdings before analysis.',
       modeHelper:
         'Account view focuses on capital structure. Strategy view focuses on return quality.',
-      loading: 'Loading account overview and portfolio snapshot.',
-      error: 'Failed to load account overview or snapshot.',
+      loading: 'Loading account overview and holdings.',
+      error: 'Failed to load account overview or holdings.',
       curveLoading: 'Loading equity curve.',
       curveError: 'Failed to load equity curve.',
       empty: 'No account data available yet.',
@@ -308,25 +308,25 @@ export const copy = {
         operationsViewLedger: 'Review ledger',
         operationsViewAccountTruth: 'Review account truth',
         operationsViewMarket: 'Review market data',
-        operationsViewPaperShadow: 'Review paper/shadow simulation',
+        operationsViewPaperShadow: 'Review simulation evidence',
         queuePriorityFirst: 'Handle first',
         queuePriorityWatch: 'Watch today',
         queuePriorityNormal: 'Normal status',
         resolutionCondition: (condition: string) =>
           `Clears when: ${condition}. Viewing or acknowledging alone does not clear it.`,
         dataResolutionCondition:
-          'Clears only after newer confirmed evidence produces a complete current-holding projection bound to one consistent valuation snapshot and ledger cutoff.',
+          'Newer confirmed quote or NAV evidence covers every current holding and shares one valuation and activity scope.',
         strategyNoLinkedFillsResolution:
-          'No action required: contribution appears only after a production-ledger fill is explicitly linked to strategy evidence.',
+          'No action required: contribution appears only after a reconciled fill is explicitly linked to strategy evidence.',
         strategyEvidenceResolution:
-          'Clears only after the missing signal, review, order, fill, ledger, and valuation references form one canonical evidence chain.',
+          'The signal, review, order, fill, activity record, and valuation references form one auditable evidence chain.',
         dataUsable: 'Market data and NAV are usable.',
         dataNeedsReview: 'Market data or NAV needs review.',
-        dataReviewLoading: 'Loading the canonical holding evidence review.',
+        dataReviewLoading: 'Loading the current-holding evidence review.',
         dataReviewUnavailable:
-          'Canonical current-holding evidence is unavailable; authoritative interpretation stays blocked.',
+          'Current-holding evidence is unavailable; interpretation remains blocked.',
         dataReviewIdentityBlocked:
-          'Valuation snapshot or ledger identity is incomplete; restore the evidence binding first.',
+          'The account valuation or activity scope is incomplete; restore the evidence link first.',
         dataReviewConfirmedCount: (count: number) =>
           `${count} current holding${count === 1 ? '' : 's'} confirmed`,
         dataReviewSummary: (
@@ -422,7 +422,7 @@ export const copy = {
           `${available}/${total} moves available`,
         marketHeatmapUnavailable: 'Market heatmap awaiting evidence',
         marketHeatmapUnavailableDetail:
-          'Persisted facts currently cover index levels only. No auditable market-wide or sector breadth snapshot is available, so no heatmap is generated.',
+          'Saved data currently covers index levels only. Market-wide and sector breadth data is unavailable, so no heatmap is shown.',
         viewMarket: 'Open Market',
         viewHoldingDetail: 'Open holding detail',
         todayMove: 'Today move',
@@ -438,7 +438,7 @@ export const copy = {
         ledgerEmpty: 'No ledger entries yet.',
         positionsPanel: 'Current positions',
         positionsDetail:
-          'Quote price, cost basis, market value, and floating PnL from backend projections.',
+          'Quote price, cost basis, market value, and floating PnL from the current account view.',
         quickActions: 'Quick actions',
         refreshQuotes: 'Refresh quotes',
         refreshingQuotes: 'Refreshing',
@@ -489,7 +489,7 @@ export const copy = {
         emptyDetail:
           'Record the first cash flow or trade to start building the equity curve.',
         emptyHint:
-          'The curve appears after the portfolio has time-series ledger points.',
+          'The curve appears after the account has recorded history over time.',
         currentPoint: 'Current valuation point',
         categoryDailyChange: (label: string) => `${label} change at this point`,
         unconfirmedCategoryDailyChange: (label: string) =>
@@ -3097,8 +3097,8 @@ export const copy = {
       title: '今日投资工作台',
       subtitle: '先确认账户事实，再处理异常与当前持仓，最后进入分析与历史。',
       modeHelper: '账户视角看资本结构，策略视角看收益质量和执行结果。',
-      loading: '正在加载账户总览和组合快照。',
-      error: '账户总览或组合快照读取失败。',
+      loading: '正在加载账户总览和当前持仓。',
+      error: '账户总览或当前持仓读取失败。',
       curveLoading: '正在加载净值曲线。',
       curveError: '净值曲线读取失败。',
       empty: '还没有可展示的账户数据。',
@@ -3169,25 +3169,24 @@ export const copy = {
         operationsViewLedger: '核对账本',
         operationsViewAccountTruth: '复核账户事实',
         operationsViewMarket: '复核行情数据',
-        operationsViewPaperShadow: '复核 paper/shadow 模拟',
+        operationsViewPaperShadow: '复核模拟证据',
         queuePriorityFirst: '先处理',
         queuePriorityWatch: '今日关注',
         queuePriorityNormal: '正常状态',
         resolutionCondition: (condition: string) =>
           `解除条件：${condition}。仅查看或确认不会清除此状态。`,
         dataResolutionCondition:
-          '解除条件：更新且已确认的证据必须生成绑定同一 valuation snapshot 与 ledger cutoff 的完整当前持仓投影；仅查看不会清除。',
+          '更新且已确认的行情或净值覆盖全部当前持仓，并绑定同一估值与流水范围；仅查看不会清除。',
         strategyNoLinkedFillsResolution:
-          '无需处理：只有生产账本成交被显式关联到策略证据后，系统才会展示策略贡献。',
+          '无需处理：只有完成对账的成交被明确关联到策略证据后，系统才会展示策略贡献。',
         strategyEvidenceResolution:
-          '解除条件：缺失的信号、复核、订单、成交、账本与估值引用形成同一条 canonical 证据链。',
+          '信号、复核、订单、成交、流水记录与估值引用形成同一条可审计证据链。',
         dataUsable: '行情与净值可用于解读。',
         dataNeedsReview: '行情或净值需要复核。',
-        dataReviewLoading: '正在读取 canonical 当前持仓证据。',
-        dataReviewUnavailable:
-          '当前持仓 canonical 证据暂不可用；权威解读继续阻断。',
+        dataReviewLoading: '正在读取当前持仓证据。',
+        dataReviewUnavailable: '当前持仓证据暂不可用；账户解读继续阻断。',
         dataReviewIdentityBlocked:
-          '估值快照或 ledger identity 不完整；需要先恢复证据绑定。',
+          '账户估值或流水范围不完整；需要先恢复证据关联。',
         dataReviewConfirmedCount: (count: number) =>
           `${count} 个当前持仓已确认`,
         dataReviewSummary: (
@@ -3274,7 +3273,7 @@ export const copy = {
           `涨跌覆盖 ${available}/${total}`,
         marketHeatmapUnavailable: '市场热力图待证据',
         marketHeatmapUnavailableDetail:
-          '当前持久化事实仅覆盖指数点位，尚无可审计的全市场或行业广度快照，因此不生成热力图。',
+          '当前数据仅覆盖指数点位，尚无可核对的全市场或行业广度数据，因此不显示热力图。',
         viewMarket: '打开 Market',
         viewHoldingDetail: '查看持仓详情',
         todayMove: '今日变化',
@@ -3288,7 +3287,7 @@ export const copy = {
         ledgerCount: (count: number) => `${count} 条流水`,
         ledgerEmpty: '还没有账本流水。',
         positionsPanel: '当前持仓',
-        positionsDetail: '来自后端投影的行情价格、成本、市值与浮动盈亏。',
+        positionsDetail: '行情价格、成本、市值与浮动盈亏均来自当前账户视图。',
         quickActions: '快捷操作',
         refreshQuotes: '刷新行情',
         refreshingQuotes: '刷新中',
@@ -3336,7 +3335,7 @@ export const copy = {
         emptyPeriod: '当前区间暂无可用数据。',
         insufficientData: '该区间数据不足。',
         emptyDetail: '先录入首笔资金流水或交易，系统才会开始生成净值曲线。',
-        emptyHint: '净值曲线依赖按时间累计的账本历史点。',
+        emptyHint: '账户形成连续历史记录后，净值曲线会出现在这里。',
         currentPoint: '当前估值点',
         categoryDailyChange: (label: string) => `${label}截至此时变化`,
         unconfirmedCategoryDailyChange: (label: string) => `${label}变化待确认`,
