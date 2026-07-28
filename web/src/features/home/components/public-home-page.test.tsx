@@ -109,7 +109,7 @@ test('renders an evidence-first public home without loading financial data', asy
   expect(within(evidenceTrace).getByText('Read and review only')).toBeTruthy();
   expect(
     within(evidenceTrace).getByText(
-      'No broker submit, cancel, recovery, or capital expansion authority.',
+      'No order placement, cancellation, recovery, or capital expansion by default.',
     ),
   ).toBeTruthy();
 
@@ -126,7 +126,7 @@ test('renders an evidence-first public home without loading financial data', asy
   ).toBe('/account-truth');
   expect(
     screen
-      .getByRole('link', { name: 'Open surface: Activity ledger' })
+      .getByRole('link', { name: 'Open surface: Activity history' })
       .getAttribute('href'),
   ).toBe('/activity');
   expect(
@@ -135,6 +135,9 @@ test('renders an evidence-first public home without loading financial data', asy
       .getAttribute('href'),
   ).toBe('/decision');
   expect(document.querySelector('.app-shell-frame')).toBeNull();
+  expect(document.body.textContent).not.toMatch(
+    /canonical|persisted|provider|paper\/shadow|snapshot|ledger cutoff|fail[- ]closed|\bGET\b/i,
+  );
   expect(fetchMock).not.toHaveBeenCalled();
 });
 

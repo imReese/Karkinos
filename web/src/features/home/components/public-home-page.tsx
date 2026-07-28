@@ -45,8 +45,8 @@ const publicHomeCopy = {
       metrics: [
         {
           label: 'Account facts',
-          value: 'Persisted',
-          detail: 'One canonical view',
+          value: 'Consistent',
+          detail: 'One account view',
         },
         {
           label: 'Evidence quality',
@@ -70,29 +70,29 @@ const publicHomeCopy = {
       rows: [
         {
           label: 'Account truth',
-          detail: 'Canonical projection',
-          state: 'Persisted',
+          detail: 'One account view',
+          state: 'Saved',
         },
         {
           label: 'Research',
-          detail: 'Dataset and run identity',
-          state: 'Bound',
+          detail: 'Data and result linked',
+          state: 'Traceable',
         },
         {
           label: 'Risk',
-          detail: 'Threshold evidence',
+          detail: 'Threshold and reason',
           state: 'Evaluated',
         },
         {
           label: 'Human review',
-          detail: 'Explicit authority boundary',
+          detail: 'Permission stays explicit',
           state: 'Required',
         },
       ],
       outcomeLabel: 'Default authority',
       outcome: 'Read and review only',
       outcomeNote:
-        'No broker submit, cancel, recovery, or capital expansion authority.',
+        'No order placement, cancellation, recovery, or capital expansion by default.',
     },
     proof: {
       eyebrow: 'Product proof',
@@ -104,21 +104,21 @@ const publicHomeCopy = {
           route: '/account-truth',
           surface: 'Account Truth',
           title: 'One account truth',
-          body: 'Overview, Portfolio, Decision, and Operations project the same canonical persisted facts.',
+          body: 'Overview, Portfolio, Decision, and Operations always read the same saved account view.',
         },
         {
           number: '02',
           route: '/activity',
-          surface: 'Activity ledger',
+          surface: 'Activity history',
           title: 'Replayable evidence',
-          body: 'Snapshot, ledger cutoff, policy, and run identity remain available without dominating the reading path.',
+          body: 'Valuation time, activity scope, policy, and run record remain available on demand without crowding the main view.',
         },
         {
           number: '03',
           route: '/decision',
           surface: 'Decision gates',
           title: 'Controlled authority',
-          body: 'Paper and shadow come first. Submission, recovery, and capital expansion are not ambient permissions.',
+          body: 'Simulation and observation come first. Submission, recovery, and capital expansion always require a separate grant.',
         },
       ],
       action: 'Open surface',
@@ -126,17 +126,17 @@ const publicHomeCopy = {
     principles: {
       eyebrow: 'Trust principles',
       title: 'Trust begins where convenience stops.',
-      body: 'Karkinos treats accuracy, provenance, deterministic replay, and fail-closed behavior as product qualities—not backend trivia.',
+      body: 'Karkinos treats accuracy, source transparency, repeatable evidence, and safe stopping as product qualities—not implementation details.',
       rows: [
         {
           label: 'Read behavior',
           value:
-            'GET reads persisted projections; it does not contact providers or refresh facts.',
+            'Opening a page reads saved evidence. It never refreshes data sources or changes account facts in the background.',
         },
         {
           label: 'Evidence identity',
           value:
-            'Human-readable state first; technical fingerprints remain copyable on demand.',
+            'Human-readable state comes first; full evidence references remain copyable on demand.',
         },
         {
           label: 'Missing data',
@@ -146,7 +146,7 @@ const publicHomeCopy = {
         {
           label: 'Broker boundary',
           value:
-            'Strategies and AI never receive direct broker authority; manual review remains the default.',
+            'Research and AI cannot place broker orders; manual review remains the default.',
         },
       ],
     },
@@ -167,7 +167,7 @@ const publicHomeCopy = {
         {
           number: '03',
           title: 'Review',
-          body: 'Bring account facts, research, risk, paper or shadow, and human judgment together.',
+          body: 'Bring account facts, research, risk, simulation evidence, and human judgment together.',
         },
         {
           number: '04',
@@ -192,9 +192,9 @@ const publicHomeCopy = {
       workflow: 'Capability flow',
       docs: 'Project documentation',
       source: 'Source repository',
-      persisted: 'Persisted truth',
+      persisted: 'Saved evidence',
       human: 'Human confirmation',
-      closed: 'Fail closed',
+      closed: 'Stops on incomplete evidence',
       note: 'Research and controlled decision support. No default real-money automation.',
     },
   },
@@ -229,7 +229,7 @@ const publicHomeCopy = {
       previewLabel: '工作台结构',
       caption: '仅展示产品结构，不包含任何账户、收益、订单或成交数据。',
       metrics: [
-        { label: '账户事实', value: '已持久化', detail: '唯一 canonical 视图' },
+        { label: '账户事实', value: '保持一致', detail: '一份账户视图' },
         { label: '证据质量', value: '保持可见', detail: '新鲜度与缺口' },
         { label: '默认权限', value: '人工控制', detail: '仅查看与复核' },
       ],
@@ -242,14 +242,14 @@ const publicHomeCopy = {
         next: '打开对应的证据界面。',
       },
       rows: [
-        { label: '账户事实', detail: 'Canonical 投影', state: '已持久化' },
-        { label: '研究结论', detail: '数据集与运行身份', state: '已绑定' },
-        { label: '风控门禁', detail: '阈值证据', state: '已评估' },
-        { label: '人工复核', detail: '显式权限边界', state: '必须' },
+        { label: '账户事实', detail: '同一账户视图', state: '已保存' },
+        { label: '研究结论', detail: '数据与结论关联', state: '可追溯' },
+        { label: '风控门禁', detail: '阈值与原因', state: '已评估' },
+        { label: '人工复核', detail: '权限始终明确', state: '必须' },
       ],
       outcomeLabel: '默认权限',
       outcome: '仅查看与复核',
-      outcomeNote: '不默认拥有券商提交、撤单、恢复或资本扩容权限。',
+      outcomeNote: '默认不允许下单、撤单、自动恢复或资本扩容。',
     },
     proof: {
       eyebrow: '产品证明',
@@ -259,39 +259,40 @@ const publicHomeCopy = {
         {
           number: '01',
           route: '/account-truth',
-          surface: 'Account Truth',
+          surface: '账户事实',
           title: '唯一账户事实',
-          body: '首页、组合、决策和运营只投影同一份 canonical persisted facts。',
+          body: '首页、组合、决策和运营始终读取同一份已保存账户视图。',
         },
         {
           number: '02',
           route: '/activity',
-          surface: '活动账本',
+          surface: '交易流水',
           title: '证据可重放',
-          body: 'snapshot、ledger cutoff、policy 与 run identity 完整保留，但不抢占主阅读路径。',
+          body: '估值时间、流水范围、规则和运行记录按需可查，不占用主阅读路径。',
         },
         {
           number: '03',
           route: '/decision',
           surface: '决策门禁',
           title: '权限受控',
-          body: '从 paper/shadow 开始；submit、恢复与资本扩容从不是环境默认权限。',
+          body: '先模拟、再观察；提交、恢复与资本扩容始终需要单独授权。',
         },
       ],
       action: '查看界面',
     },
     principles: {
       eyebrow: '可信原则',
-      title: '可信，从拒绝便利的假象开始。',
-      body: 'Karkinos 把准确性、数据来源、确定性重放和 fail-closed 行为视为产品品质，而非后端细节。',
+      title: '可信，不靠隐藏不确定性。',
+      body: 'Karkinos 把准确性、来源透明、证据可复查和证据不足时安全停下视为产品品质。',
       rows: [
         {
           label: '读取行为',
-          value: 'GET 只读持久化投影，不联系 provider，不隐式刷新事实。',
+          value:
+            '打开页面只读取已保存证据；不会在后台刷新数据源或改写账户事实。',
         },
         {
           label: '证据身份',
-          value: '先显示人能理解的状态，技术指纹在需要时仍可复制。',
+          value: '先显示人能理解的状态，完整证据标识在需要时仍可复制。',
         },
         {
           label: '缺失数据',
@@ -299,7 +300,7 @@ const publicHomeCopy = {
         },
         {
           label: '券商边界',
-          value: '策略与 AI 不获得直连券商权限，人工复核始终是默认。',
+          value: '研究与 AI 不能向券商下单，人工复核始终是默认路径。',
         },
       ],
     },
@@ -320,7 +321,7 @@ const publicHomeCopy = {
         {
           number: '03',
           title: '复核',
-          body: '聚合账户事实、研究、风控、paper/shadow 和人工判断。',
+          body: '聚合账户事实、研究、风控、模拟证据和人工判断。',
         },
         {
           number: '04',
@@ -344,9 +345,9 @@ const publicHomeCopy = {
       workflow: '能力流程',
       docs: '项目文档',
       source: '源码仓库',
-      persisted: '持久化事实',
+      persisted: '已保存证据',
       human: '人工确认',
-      closed: 'Fail closed',
+      closed: '证据不足即停止',
       note: '用于研究与受控决策支持，不默认启用真实资金自动化。',
     },
   },
