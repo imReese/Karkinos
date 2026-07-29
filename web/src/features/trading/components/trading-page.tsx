@@ -1764,7 +1764,7 @@ function ExecutionAuditPanel({
           <div className="mt-3 border-y border-[var(--app-divider)] px-3 py-3 text-sm">
             <div className="font-semibold text-[var(--app-text)]">
               {locale === 'zh'
-                ? '最新 paper/shadow 运行'
+                ? '最新模拟与影子运行'
                 : 'Latest paper/shadow run'}
             </div>
             <div className="mt-2 grid min-w-0 gap-1 sm:grid-cols-2">
