@@ -3936,7 +3936,7 @@ test('surfaces degraded and blocked account-truth gates in decision summaries', 
   expect(await screen.findByText('Account truth: Degraded')).toBeTruthy();
 });
 
-test('collapses an all-pass gate matrix for the compact mobile reading path', async () => {
+test('collapses an all-pass gate matrix across viewport breakpoints', async () => {
   const allPassToday = {
     ...dailyDecision,
     summary: {
@@ -3964,11 +3964,15 @@ test('collapses an all-pass gate matrix for the compact mobile reading path', as
 
   const disclosure = await screen.findByTestId('decision-gate-disclosure');
   const toggle = within(disclosure).getByRole('button');
+  const content = document.getElementById('decision-gate-matrix-content');
   expect(toggle.getAttribute('aria-expanded')).toBe('false');
   expect(within(disclosure).getByText('5/5 passed')).toBeTruthy();
   expect(disclosure.textContent).toContain('Manual confirmation');
+  expect(content?.className).toContain('hidden');
+  expect(content?.className).not.toContain('sm:block');
   fireEvent.click(toggle);
   expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  expect(content?.className).toContain('block');
 });
 
 test('surfaces strategy-attribution gate status in decision summaries', async () => {
