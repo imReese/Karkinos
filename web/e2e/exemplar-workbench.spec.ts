@@ -555,13 +555,14 @@ test('portfolio mobile keeps holdings or an explicit empty state below disclosed
   const moreFilters = filterBar.locator(
     'button[aria-controls="portfolio-secondary-filters"]',
   );
-  const populatedSurface = page.getByTestId('positions-mobile-list');
-  const emptySurface = page.getByText(
+  const currentHoldings = page.getByTestId('portfolio-current-holdings');
+  const populatedSurface = currentHoldings.getByTestId('positions-mobile-list');
+  const emptySurface = currentHoldings.getByText(
     'No holdings yet. Add trades from Activity first.',
     { exact: true },
   );
   const holdingsSurface = populatedSurface.or(emptySurface);
-  const desktopTable = page.getByTestId('positions-table-desktop');
+  const desktopTable = currentHoldings.getByTestId('positions-table-desktop');
 
   await expect(moreFilters).toBeVisible();
   await expect(filterBar.locator('select:visible')).toHaveCount(2);
