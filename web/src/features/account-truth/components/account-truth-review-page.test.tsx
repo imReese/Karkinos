@@ -886,6 +886,9 @@ test('keeps matched rows quiet until the operator explicitly inspects them', asy
       '3 matched rows are quiet because no current blocker was found.',
     ),
   ).toBeTruthy();
+  expect(
+    screen.getByRole('heading', { name: 'Reconciliation detail' }),
+  ).toBeTruthy();
   expect(screen.queryByTestId('account-truth-item-position:SYN001')).toBeNull();
   await userEvent.click(
     screen.getByRole('button', { name: 'Inspect 3 matched rows' }),
