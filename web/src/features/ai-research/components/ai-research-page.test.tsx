@@ -136,6 +136,10 @@ test('opens the cited research canvas from canonical persisted context', async (
   const reviewQueue = await screen.findByText(
     'No human research task has been recorded yet.',
   );
+  const emptyWorkflow = screen.getByTestId('ai-research-empty-workflow');
+  expect(emptyWorkflow.textContent).toContain('Freeze context');
+  expect(emptyWorkflow.textContent).toContain('Run explicitly');
+  expect(emptyWorkflow.textContent).toContain('Review the outcome');
   expect(screen.queryByLabelText('Research question')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Draft research task' }));
   const researchQuestion = screen.getByLabelText('Research question');
