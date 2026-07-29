@@ -5215,23 +5215,20 @@ export function DecisionCockpitPage() {
       />
 
       <section className="min-w-0 space-y-2" data-testid="decision-gate-matrix">
-        <div className="hidden sm:block">
-          <h2 className="text-base font-semibold text-[var(--app-text)]">
-            {labels.workflowTitle}
-          </h2>
-          <p className="mt-0.5 text-xs text-[var(--app-text-secondary)]">
-            {labels.workflowDetail}
-          </p>
-        </div>
         <div className="min-w-0" data-testid="decision-gate-disclosure">
           <button
             aria-controls="decision-gate-matrix-content"
             aria-expanded={!allDecisionGatesPass || healthyGateMatrixExpanded}
-            className="flex min-h-11 w-full cursor-pointer items-center justify-between gap-3 border-y border-[var(--app-divider)] py-2.5 text-left text-sm font-semibold text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] sm:hidden"
+            className="flex min-h-11 w-full cursor-pointer items-center justify-between gap-3 border-y border-[var(--app-divider)] py-2.5 text-left text-sm font-semibold text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
             onClick={() => setHealthyGateMatrixExpanded((current) => !current)}
             type="button"
           >
-            <span className="min-w-0">{labels.workflowTitle}</span>
+            <span className="min-w-0">
+              <span className="block">{labels.workflowTitle}</span>
+              <span className="mt-0.5 hidden text-xs font-normal text-[var(--app-text-secondary)] sm:block">
+                {labels.workflowDetail}
+              </span>
+            </span>
             <StatusBadge tone={allDecisionGatesPass ? 'success' : 'warning'}>
               {allDecisionGatesPass
                 ? locale === 'zh'
@@ -5247,7 +5244,7 @@ export function DecisionCockpitPage() {
               !allDecisionGatesPass || healthyGateMatrixExpanded
                 ? 'block'
                 : 'hidden'
-            } pt-2 sm:block sm:pt-0`}
+            } pt-2`}
             id="decision-gate-matrix-content"
           >
             <GateMatrix
