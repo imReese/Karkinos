@@ -1005,13 +1005,13 @@ export function TradingPage() {
         </div>
       </section>
 
-      <div className="flex min-w-0 flex-col gap-5 sm:gap-6">
+      <div className="app-trading-command-grid grid min-w-0 gap-5 sm:gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)] xl:items-start">
         <section
-          className="app-workbench-section order-1 min-w-0 overflow-hidden sm:order-2"
+          className="app-workbench-section order-1 min-w-0 overflow-hidden"
           data-testid="trading-review-queue"
         >
           <div className="min-w-0 px-1 py-4 sm:px-3">
-            <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+            <div className="flex min-w-0 flex-col gap-4 2xl:flex-row 2xl:items-end 2xl:justify-between">
               <div className="min-w-0">
                 <div className="app-product-mark">{labels.filterTitle}</div>
                 <h2 className="app-card-title mt-1.5">{labels.ordersTitle}</h2>
@@ -1019,7 +1019,7 @@ export function TradingPage() {
                   {labels.filteredCount(rows.length)}
                 </p>
               </div>
-              <div className="grid min-w-0 w-full gap-3 sm:grid-cols-3 xl:max-w-[680px]">
+              <div className="grid min-w-0 w-full gap-3 sm:grid-cols-[minmax(180px,220px)_minmax(0,1fr)] 2xl:max-w-[680px]">
                 <label className="grid gap-2 text-sm font-medium">
                   {labels.statusFilter}
                   <select
@@ -1040,16 +1040,16 @@ export function TradingPage() {
                   </select>
                 </label>
                 <details
-                  className="group min-w-0 sm:col-span-2 sm:contents"
+                  className="group min-w-0"
                   data-testid="trading-secondary-filters"
                 >
-                  <summary className="app-button-ghost flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 rounded-[var(--app-radius-control)] px-3 text-sm font-semibold text-[var(--app-text-secondary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] sm:hidden [&::-webkit-details-marker]:hidden">
+                  <summary className="app-button-ghost flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-[var(--app-radius-control)] px-3 text-sm font-semibold text-[var(--app-text-secondary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
                     <span>{labels.moreFilters}</span>
                     <span className="text-xs font-normal text-[var(--app-text-tertiary)]">
                       {labels.moreFiltersDetail}
                     </span>
                   </summary>
-                  <div className="hidden min-w-0 gap-3 pt-2 group-open:grid sm:contents sm:pt-0">
+                  <div className="hidden min-w-0 gap-3 pt-2 group-open:grid sm:grid-cols-2">
                     <label className="grid gap-2 text-sm font-medium">
                       {labels.symbolFilter}
                       <input
@@ -1147,9 +1147,13 @@ export function TradingPage() {
           </div>
         </section>
 
-        <div className="order-2 min-w-0 sm:order-1">
+        <aside
+          className="order-2 grid min-w-0 content-start gap-4"
+          data-testid="trading-safety-rail"
+        >
           <MetricStrip
             ariaLabel={labels.ordersTitle}
+            className="sm:grid-flow-row sm:auto-cols-auto sm:grid-cols-3"
             items={[
               {
                 id: 'confirmed',
@@ -1168,49 +1172,48 @@ export function TradingPage() {
               },
             ]}
           />
-        </div>
+          <KillSwitchPanel />
+
+          <details
+            className="min-w-0 border-y border-[var(--app-divider)]"
+            data-testid="trading-broker-boundary-disclosure"
+          >
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]">
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold text-[var(--app-text)]">
+                  {labels.brokerBoundaryEvidence}
+                </span>
+                <span className="mt-0.5 block text-xs font-normal text-[var(--app-text-secondary)]">
+                  {labels.brokerBoundaryEvidenceDetail}
+                </span>
+              </span>
+              <span className="shrink-0 text-xs text-[var(--app-text-secondary)]">
+                {labels.expandOnDemand}
+              </span>
+            </summary>
+            <div className="space-y-5 py-4">
+              <BrokerAdapterReadinessPanel
+                readiness={brokerAdapterReadiness}
+                loading={operationsToday.isLoading}
+                error={operationsToday.isError}
+                soak={brokerSoakPromotion.data ?? null}
+                soakLoading={brokerSoakPromotion.isLoading}
+                soakError={brokerSoakPromotion.isError}
+              />
+
+              <SignedBrokerAdapterReleaseReviewOperatorPanel locale={locale} />
+
+              <ControlledBrokerWriteReleaseOperatorPanel
+                locale={locale}
+                readiness={brokerAdapterReadiness}
+                soak={brokerSoakPromotion.data ?? null}
+              />
+
+              <CurrentPerOrderDossierOperatorPanel locale={locale} />
+            </div>
+          </details>
+        </aside>
       </div>
-
-      <KillSwitchPanel />
-
-      <details
-        className="min-w-0 border-y border-[var(--app-divider)]"
-        data-testid="trading-broker-boundary-disclosure"
-      >
-        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]">
-          <span className="min-w-0">
-            <span className="block text-sm font-semibold text-[var(--app-text)]">
-              {labels.brokerBoundaryEvidence}
-            </span>
-            <span className="mt-0.5 block text-xs font-normal text-[var(--app-text-secondary)]">
-              {labels.brokerBoundaryEvidenceDetail}
-            </span>
-          </span>
-          <span className="shrink-0 text-xs text-[var(--app-text-secondary)]">
-            {labels.expandOnDemand}
-          </span>
-        </summary>
-        <div className="space-y-5 py-4">
-          <BrokerAdapterReadinessPanel
-            readiness={brokerAdapterReadiness}
-            loading={operationsToday.isLoading}
-            error={operationsToday.isError}
-            soak={brokerSoakPromotion.data ?? null}
-            soakLoading={brokerSoakPromotion.isLoading}
-            soakError={brokerSoakPromotion.isError}
-          />
-
-          <SignedBrokerAdapterReleaseReviewOperatorPanel locale={locale} />
-
-          <ControlledBrokerWriteReleaseOperatorPanel
-            locale={locale}
-            readiness={brokerAdapterReadiness}
-            soak={brokerSoakPromotion.data ?? null}
-          />
-
-          <CurrentPerOrderDossierOperatorPanel locale={locale} />
-        </div>
-      </details>
 
       <ExecutionAuditPanel
         orders={orderFacts.data ?? []}

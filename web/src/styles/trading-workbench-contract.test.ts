@@ -22,8 +22,14 @@ describe('trading workbench contract', () => {
 
     expect(tradingPage).toContain('data-testid="trading-secondary-filters"');
     expect(tradingPage).toContain('data-testid="trading-review-posture"');
+    expect(tradingPage).toContain('data-testid="trading-safety-rail"');
+    expect(tradingPage).toContain('app-trading-command-grid');
+    expect(tradingPage).toContain(
+      'xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]',
+    );
     expect(tradingPage).toContain('border-y border-[var(--app-divider)] py-3');
-    expect(tradingPage).toContain('group-open:grid sm:contents');
+    expect(tradingPage).toContain('group-open:grid sm:grid-cols-2');
+    expect(tradingPage).not.toContain('sm:hidden [&::-webkit-details-marker]');
     expect(tradingPage).toContain('app-workbench-section');
     expect(tradingPage).toContain('EvidenceState');
     expect(tradingPage).not.toContain('<FilterBar');
