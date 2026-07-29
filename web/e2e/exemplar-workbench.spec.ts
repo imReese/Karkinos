@@ -601,6 +601,88 @@ test('portfolio mobile keeps holdings or an explicit empty state below disclosed
   expect(documentOverflow).toBeLessThanOrEqual(0);
 });
 
+test('portfolio mobile bounds long persisted holding rows in Latte and Mocha', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route('**/api/portfolio/positions', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          symbol: '012710',
+          display_name: '华夏核心成长混合型证券投资基金超长持久化名称C',
+          asset_class: 'fund',
+          quantity: 898.3131,
+          available_qty: 898.3131,
+          frozen_qty: 0,
+          avg_cost: 1.0018,
+          latest_price: 0.6399,
+          market_value: 574.83,
+          today_change: 13.74,
+          unrealized_pnl: -325.17,
+          realized_pnl: 0,
+          commission_paid: 0,
+          quote_timestamp: '2026-07-27T15:00:00+08:00',
+          quote_status: 'stale',
+          quote_source: 'market_bar_close',
+          quote_age_seconds: 162000,
+          stale_reason: 'quote_older_than_expected_session',
+          using_persistent_cache: true,
+        },
+      ]),
+    });
+  });
+
+  await page.goto('/portfolio');
+  const list = page.getByTestId('positions-mobile-list');
+  const row = page.getByTestId('position-mobile-row-012710');
+  await expect(row).toBeVisible();
+
+  for (const theme of ['light', 'dark'] as const) {
+    await selectMobileTheme(page, theme);
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+
+    const geometry = await page.evaluate(() => {
+      const content = document.querySelector(
+        '.app-shell-content',
+      ) as HTMLElement;
+      const list = document.querySelector(
+        '[data-testid="positions-mobile-list"]',
+      ) as HTMLElement;
+      const row = document.querySelector(
+        '[data-testid="position-mobile-row-012710"]',
+      ) as HTMLAnchorElement;
+      const listBounds = list.getBoundingClientRect();
+      const rowBounds = row.getBoundingClientRect();
+      return {
+        contentOverflow: content.scrollWidth - content.clientWidth,
+        documentOverflow:
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+        listOverflow: list.scrollWidth - list.clientWidth,
+        rowLeft: rowBounds.left,
+        rowRight: rowBounds.right,
+        listLeft: listBounds.left,
+        listRight: listBounds.right,
+      };
+    });
+
+    expect(geometry.documentOverflow, `${theme} document`).toBeLessThanOrEqual(
+      0,
+    );
+    expect(geometry.contentOverflow, `${theme} content`).toBeLessThanOrEqual(0);
+    expect(geometry.listOverflow, `${theme} list`).toBeLessThanOrEqual(0);
+    expect(geometry.rowLeft, `${theme} row left`).toBeGreaterThanOrEqual(
+      geometry.listLeft,
+    );
+    expect(geometry.rowRight, `${theme} row right`).toBeLessThanOrEqual(
+      geometry.listRight,
+    );
+  }
+});
+
 test('portfolio account and strategy evidence stay flat across themes and target widths', async ({
   page,
 }) => {
