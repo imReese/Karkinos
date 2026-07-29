@@ -36,15 +36,6 @@ export function AiResearchPage() {
         }
       />
 
-      <div data-testid="ai-research-primary-canvas">
-        <ResearchTaskPanel
-          backtestResultId={latestBacktest?.id ?? null}
-          defaultOpen
-          routePrimary
-          strategyId={accountStrategy.data?.strategy_id ?? null}
-        />
-      </div>
-
       <section
         aria-labelledby="ai-research-context-title"
         className="min-w-0 border-t border-[var(--app-divider)] pt-4"
@@ -106,6 +97,15 @@ export function AiResearchPage() {
           ]}
         />
       </section>
+
+      <div data-testid="ai-research-primary-canvas">
+        <ResearchTaskPanel
+          backtestResultId={latestBacktest?.id ?? null}
+          defaultOpen
+          routePrimary
+          strategyId={accountStrategy.data?.strategy_id ?? null}
+        />
+      </div>
     </section>
   );
 }

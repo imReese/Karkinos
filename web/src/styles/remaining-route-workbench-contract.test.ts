@@ -109,9 +109,9 @@ describe('remaining route workbench contract', () => {
     expect(RESEARCH_TASK).toContain('data-evidence-kind="cited-ai-research"');
     expect(AI_RESEARCH).toContain('routePrimary');
     expect(
-      AI_RESEARCH.indexOf('data-testid="ai-research-primary-canvas"'),
-    ).toBeLessThan(
       AI_RESEARCH.indexOf('data-testid="ai-research-context-metrics"'),
+    ).toBeLessThan(
+      AI_RESEARCH.indexOf('data-testid="ai-research-primary-canvas"'),
     );
     expect(RESEARCH_TASK).not.toContain("kicker: 'AI research boundary'");
     expect(RESEARCH_TASK).not.toContain('Freeze canonical evidence');
