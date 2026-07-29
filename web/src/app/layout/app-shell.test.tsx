@@ -447,7 +447,8 @@ test('keeps the desktop toolbar controls in a single centered row', async () => 
 
   expect(screen.queryByLabelText('Current workspace')).toBeNull();
   expect(await screen.findByLabelText('Mode: Paper / shadow')).toBeTruthy();
-  expect(await screen.findByLabelText(/Evidence: .* · Data: .*/i)).toBeTruthy();
+  expect(screen.queryByLabelText(/Evidence: .* · Data: .*/i)).toBeNull();
+  expect(screen.getAllByTestId('karkinos-mark')).toHaveLength(2);
   const commandTrigger = await screen.findByTestId('workspace-command-trigger');
   expect(commandTrigger.getAttribute('aria-haspopup')).toBe('dialog');
   expect(commandTrigger.getAttribute('aria-expanded')).toBe('false');
@@ -511,12 +512,14 @@ test('surfaces compact persisted status in the desktop footer', async () => {
   expect(marketStatus).toBeTruthy();
   const valuationShell = valuationStatus.closest('.group');
   const marketShell = marketStatus.closest('.group');
-  expect(valuationShell?.className).toContain('h-8');
-  expect(valuationShell?.className).toContain('w-[11.5rem]');
+  expect(valuationShell?.className).toContain('h-7');
+  expect(valuationShell?.className).not.toContain('w-[11.5rem]');
+  expect(valuationShell?.className).toContain('border-r');
   expect(valuationStatus.className).toContain('text-xs');
   expect(valuationStatus.className).toContain('whitespace-nowrap');
-  expect(marketShell?.className).toContain('h-8');
-  expect(marketShell?.className).toContain('w-[11.5rem]');
+  expect(marketShell?.className).toContain('h-7');
+  expect(marketShell?.className).not.toContain('w-[11.5rem]');
+  expect(marketShell?.className).toContain('border-r');
   expect(marketStatus.className).toContain('text-xs');
   expect(marketStatus.className).toContain('whitespace-nowrap');
   expect(

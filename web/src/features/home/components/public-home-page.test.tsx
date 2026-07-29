@@ -80,6 +80,7 @@ test('renders an evidence-first public home without loading financial data', asy
     screen.getByRole('navigation', { name: 'Public navigation' }),
   ).toBeTruthy();
   expect(screen.getByRole('contentinfo')).toBeTruthy();
+  expect(screen.getAllByTestId('karkinos-mark')).toHaveLength(2);
   expect(
     screen.getByText(
       'Structural product proof only. It contains no account, return, order, or execution data.',

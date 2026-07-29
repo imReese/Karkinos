@@ -180,7 +180,7 @@ export function OverviewCards({
             </dt>
             <dd
               data-testid="overview-total-assets-value"
-              className="account-primary-metric-value mt-1 truncate text-[1.75rem] leading-8 font-semibold tracking-[-0.035em] text-[var(--app-text)]"
+              className="account-primary-metric-value mt-1 truncate text-[2rem] leading-9 font-semibold tracking-[-0.045em] text-[var(--app-text)] sm:text-[2.125rem] xl:text-[2.25rem]"
             >
               {totalAssets.value}
             </dd>

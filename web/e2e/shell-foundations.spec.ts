@@ -206,22 +206,24 @@ test('desktop utility controls align and overview holdings avoid partial columns
     .poll(() =>
       valuationStatus.evaluate((element) => {
         const style = getComputedStyle(element);
+        const statusShell = element.closest('.app-status-chip') as HTMLElement;
+        const statusFooter = element.closest(
+          '.app-status-footer',
+        ) as HTMLElement;
         const selectedTheme = document.querySelector(
           '.app-theme-switcher-option[aria-pressed="true"]',
-        ) as HTMLElement;
-        const themeSwitcher = document.querySelector(
-          '.app-theme-switcher',
         ) as HTMLElement;
         return {
           backgroundMatches:
             style.backgroundColor ===
             getComputedStyle(selectedTheme).backgroundColor,
-          borderMatches:
-            style.borderColor === getComputedStyle(themeSwitcher).borderColor,
+          dividerMatches:
+            getComputedStyle(statusShell).borderRightColor ===
+            getComputedStyle(statusFooter).borderTopColor,
         };
       }),
     )
-    .toEqual({ backgroundMatches: true, borderMatches: true });
+    .toEqual({ backgroundMatches: true, dividerMatches: true });
 });
 
 test('shell remains local-overflow safe in Latte and Mocha across tablet and mobile', async ({

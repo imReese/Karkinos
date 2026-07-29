@@ -46,26 +46,22 @@ export function WorkspaceHeader({
     <header
       data-workbench-primitive="workspace-header"
       className={cn(
-        'app-workspace-header flex min-w-0 flex-col gap-2.5 border-b border-[var(--app-divider)] pb-3 sm:flex-row sm:items-start sm:justify-between',
+        'app-workspace-header flex min-w-0 flex-col gap-3 border-b border-[var(--app-divider)] pb-4 sm:flex-row sm:items-start sm:justify-between',
         className,
       )}
     >
       <div className="min-w-0">
         {eyebrow ? (
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
-            {eyebrow}
-          </div>
+          <div className="app-workspace-eyebrow mb-1.5">{eyebrow}</div>
         ) : null}
-        <h1 className="text-[1.375rem] leading-7 font-semibold tracking-[-0.025em] text-[var(--app-text)] sm:text-2xl sm:leading-8">
-          {title}
-        </h1>
+        <h1 className="app-workspace-title">{title}</h1>
         {description ? (
-          <p className="mt-0.5 max-w-4xl text-[13px] leading-5 text-[var(--app-text-secondary)]">
+          <p className="app-workspace-description mt-1 max-w-4xl">
             {description}
           </p>
         ) : null}
         {context ? (
-          <div className="mt-1.5 max-w-full overflow-hidden text-ellipsis text-[11px] leading-4 text-[var(--app-text-tertiary)] [overflow-wrap:anywhere]">
+          <div className="app-workspace-context mt-2 max-w-full overflow-hidden text-ellipsis [overflow-wrap:anywhere]">
             {context}
           </div>
         ) : null}
