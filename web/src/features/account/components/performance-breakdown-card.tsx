@@ -112,7 +112,7 @@ export function PerformanceBreakdownCard({
         {items.map((item, index) => (
           <div
             key={item.label}
-            className={`px-4 py-3 transition-colors duration-200 hover:bg-[color-mix(in_srgb,var(--app-surface-1)_12%,transparent)] ${
+            className={`app-interactive-surface px-4 py-3 hover:bg-[color-mix(in_srgb,var(--app-surface-1)_12%,transparent)] ${
               index > 0
                 ? 'border-t border-[color-mix(in_srgb,var(--app-border)_24%,transparent)]'
                 : ''

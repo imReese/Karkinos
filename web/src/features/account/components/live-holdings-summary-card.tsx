@@ -67,10 +67,10 @@ export function LiveHoldingsSummaryCard({
             key={group.asset_class}
             type="button"
             onClick={() => onSelectAssetClass?.(group.asset_class)}
-            className="group relative px-4 py-3 text-left transition-colors duration-200 hover:bg-[color-mix(in_srgb,var(--app-surface-1)_12%,transparent)] sm:px-5"
+            className="app-interactive-surface group relative px-4 py-3 text-left hover:bg-[color-mix(in_srgb,var(--app-surface-1)_12%,transparent)] sm:px-5"
           >
             <span
-              className="absolute left-0 top-3 h-7 w-px bg-[var(--app-accent)] opacity-0 transition-opacity duration-200 group-hover:opacity-50"
+              className="app-interactive-surface absolute left-0 top-3 h-7 w-px bg-[var(--app-accent)] opacity-0 group-hover:opacity-50"
               aria-hidden="true"
             />
             <div className="text-base font-semibold">

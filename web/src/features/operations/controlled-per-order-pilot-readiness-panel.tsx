@@ -491,7 +491,7 @@ export function ControlledPerOrderPilotReadinessPanel({
           </StatusBadge>
           <span
             aria-hidden="true"
-            className="text-[var(--app-text-tertiary)] transition-transform duration-150 group-open:rotate-180 motion-reduce:transition-none"
+            className="app-disclosure-chevron text-[var(--app-text-tertiary)] group-open:rotate-180"
           >
             ▾
           </span>
@@ -558,7 +558,7 @@ export function ControlledPerOrderPilotReadinessPanel({
                           : `${gate.evidence_refs.length} persisted evidence ${gate.evidence_refs.length === 1 ? 'reference' : 'references'}`}
                         <span
                           aria-hidden="true"
-                          className="ml-1 inline-block text-[var(--app-text-tertiary)] transition-transform duration-150 group-open/evidence:rotate-180 motion-reduce:transition-none"
+                          className="app-disclosure-chevron ml-1 inline-block text-[var(--app-text-tertiary)] group-open/evidence:rotate-180"
                         >
                           ▾
                         </span>
@@ -613,7 +613,7 @@ export function ControlledPerOrderPilotReadinessPanel({
                       </span>
                       <span
                         aria-hidden="true"
-                        className="text-[var(--app-text-tertiary)] transition-transform duration-150 group-open/identity:rotate-180 motion-reduce:transition-none"
+                        className="app-disclosure-chevron text-[var(--app-text-tertiary)] group-open/identity:rotate-180"
                       >
                         ▾
                       </span>

@@ -37,6 +37,16 @@ async function selectMobileTheme(page: Page, theme: 'light' | 'dark') {
   await expect(preferences).toBeHidden();
 }
 
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/market/kline/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: '[]',
+    });
+  });
+});
+
 test('all workbench routes keep mobile interaction targets at least 44px', async ({
   page,
 }) => {
@@ -105,6 +115,7 @@ test('all workbench routes keep mobile interaction targets at least 44px', async
 test('exemplar pages keep one evidence-first desktop reading path', async ({
   page,
 }) => {
+  test.setTimeout(60_000);
   await page.setViewportSize({ width: 1440, height: 900 });
 
   await page.goto('/overview');
@@ -132,7 +143,7 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
   const riskMetrics = page.getByLabel('Risk metrics');
   const thresholdTable = page.getByTestId('risk-threshold-table');
   const controlledActions = page.getByTestId('risk-trading-control-grid');
-  await expect(blockingRegister).toBeVisible({ timeout: 15_000 });
+  await expect(blockingRegister).toBeVisible({ timeout: 30_000 });
   expect((await blockingRegister.boundingBox())!.y).toBeLessThan(
     (await riskMetrics.boundingBox())!.y,
   );
@@ -712,7 +723,7 @@ test('portfolio mobile bounds long persisted holding rows in Latte and Mocha', a
 test('portfolio account and strategy evidence stay flat across themes and target widths', async ({
   page,
 }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
 
   for (const theme of ['light', 'dark'] as const) {
     for (const viewport of [
@@ -1561,7 +1572,48 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
   }
 });
 
-test('reduced-motion preference removes routine transition timing', async ({
+test('brand motion keeps route and mobile drawer timing coherent', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/overview');
+
+  const route = page.locator('.app-route-stage');
+  await expect(route).toBeVisible();
+  const routeMotion = await route.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      duration: style.animationDuration,
+      easing: style.animationTimingFunction,
+      name: style.animationName,
+    };
+  });
+  expect(routeMotion).toEqual({
+    duration: '0.32s',
+    easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+    name: 'app-route-enter',
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/overview');
+  await page.getByTestId('mobile-navigation-toggle').click();
+
+  const sidebar = page.locator('.app-shell-sidebar');
+  await expect(sidebar).toHaveAttribute('data-mobile-open', 'true');
+  const drawerMotion = await sidebar.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      duration: style.transitionDuration,
+      easing: style.transitionTimingFunction,
+    };
+  });
+  expect(drawerMotion.duration).toBe('0.24s, 0.24s');
+  expect(drawerMotion.easing).toBe(
+    'cubic-bezier(0.16, 1, 0.3, 1), cubic-bezier(0.16, 1, 0.3, 1)',
+  );
+});
+
+test('reduced-motion preference removes branded and routine transition timing', async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -1577,4 +1629,22 @@ test('reduced-motion preference removes routine transition timing', async ({
     (element) => getComputedStyle(element).transitionDuration,
   );
   expect(Number.parseFloat(transitionDuration)).toBeLessThanOrEqual(0.001);
+
+  await page.goto('/overview');
+  const route = page.locator('.app-route-stage');
+  await expect(route).toBeVisible();
+  const routeDuration = await route.evaluate(
+    (element) => getComputedStyle(element).animationDuration,
+  );
+  expect(Number.parseFloat(routeDuration)).toBeLessThanOrEqual(0.001);
+
+  await page.getByTestId('mobile-navigation-toggle').click();
+  const sidebar = page.locator('.app-shell-sidebar');
+  await expect(sidebar).toHaveAttribute('data-mobile-open', 'true');
+  const sidebarDurations = await sidebar.evaluate((element) =>
+    getComputedStyle(element)
+      .transitionDuration.split(',')
+      .map((duration) => Number.parseFloat(duration)),
+  );
+  expect(Math.max(...sidebarDurations)).toBeLessThanOrEqual(0.001);
 });

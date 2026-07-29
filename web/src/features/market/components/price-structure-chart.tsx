@@ -294,7 +294,7 @@ export function PriceStructureChart({
               <button
                 key={rangeOption.key}
                 type="button"
-                className={`rounded-[var(--app-radius-control)] border px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+                className={`app-chart-control rounded-[var(--app-radius-control)] border px-3 py-1.5 text-[11px] font-semibold ${
                   selected
                     ? 'border-[color-mix(in_srgb,var(--app-accent)_58%,transparent)] bg-[color-mix(in_srgb,var(--app-accent)_16%,transparent)] text-[var(--app-text)]'
                     : 'border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] text-[var(--app-muted)] hover:border-[color-mix(in_srgb,var(--app-accent)_34%,transparent)] hover:text-[var(--app-soft)]'
@@ -321,8 +321,9 @@ export function PriceStructureChart({
           className="min-w-[720px]"
         >
           <svg
+            key={selectedRange}
             viewBox="0 0 640 246"
-            className="h-64 w-full overflow-visible text-[var(--app-soft)] sm:h-80 xl:h-[21rem]"
+            className="app-chart-stage h-64 w-full overflow-visible text-[var(--app-soft)] sm:h-80 xl:h-[21rem]"
             role="img"
             aria-label={`${titleLabel} · ${axisLabels.price} · ${axisLabels.date}`}
           >

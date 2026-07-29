@@ -17,6 +17,7 @@ import {
 
 import { useCopy } from '../../../app/copy';
 import { EvidenceState } from '../../../app/components/workbench';
+import { APP_MOTION, useReducedMotion } from '../../../app/motion';
 import { usePreferences, type Locale } from '../../../app/preferences';
 import {
   formatCompactNumber,
@@ -575,7 +576,7 @@ function renderHighPointDot({
           strokeOpacity="0.38"
           strokeWidth="1.5"
         />
-        <g className="transition-opacity duration-150 group-hover/equity-chart:opacity-0">
+        <g className="app-chart-annotation group-hover/equity-chart:opacity-0">
           <line
             x1="0"
             y1={isNearTop ? 8 : -8}
@@ -673,7 +674,7 @@ function CustomTooltip({
     includesTotalSeries || categoryChangeRows.length > 0;
 
   return (
-    <div className="z-[90] max-w-[min(18rem,calc(100vw-2rem))] rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_92%,transparent)] px-3 py-2.5 text-xs shadow-[0_18px_54px_color-mix(in_srgb,var(--app-mantle)_54%,transparent),inset_0_1px_0_color-mix(in_srgb,var(--app-text)_6%,transparent)] backdrop-blur-md tabular-nums">
+    <div className="app-chart-tooltip z-[90] max-w-[min(18rem,calc(100vw-2rem))] rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_42%,transparent)] bg-[color-mix(in_srgb,var(--app-panel-strong)_92%,transparent)] px-3 py-2.5 text-xs shadow-[0_18px_54px_color-mix(in_srgb,var(--app-mantle)_54%,transparent),inset_0_1px_0_color-mix(in_srgb,var(--app-text)_6%,transparent)] backdrop-blur-md tabular-nums">
       <div className="mb-2 font-medium text-[var(--app-text)]">
         {formatChartTimestamp(point.timestamp)}
       </div>
@@ -793,6 +794,7 @@ export function EquityCurveCard({
 }) {
   const copy = useCopy();
   const { locale } = usePreferences();
+  const reducedMotion = useReducedMotion();
   const labels = copy.overview.equityCurve;
   const [uncontrolledRange, setUncontrolledRange] =
     useState<EquityCurveRange>('all');
@@ -881,7 +883,7 @@ export function EquityCurveCard({
                   allSeriesSelected ? NO_VISIBLE_SERIES : ALL_VISIBLE_SERIES,
                 );
               }}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-[background-color,border-color,color,opacity,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.98] ${
+              className={`app-chart-control inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${
                 allSeriesSelected
                   ? 'border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)] text-[var(--app-text)]'
                   : 'border-transparent bg-transparent text-[var(--app-muted)] opacity-55 hover:border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] hover:opacity-100'
@@ -904,7 +906,7 @@ export function EquityCurveCard({
                       [series.key]: !current[series.key],
                     }));
                   }}
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-[background-color,border-color,color,opacity,transform] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] active:scale-[0.98] ${
+                  className={`app-chart-control inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${
                     active
                       ? 'border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)] text-[var(--app-text)]'
                       : 'border-transparent bg-transparent text-[var(--app-muted)] opacity-55 hover:border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] hover:opacity-100'
@@ -939,7 +941,7 @@ export function EquityCurveCard({
                   onRangeChange?.(value);
                 });
               }}
-              className={`h-7 min-w-0 rounded-full px-2 font-mono text-[11px] font-semibold transition-[background-color,box-shadow,color,transform] duration-300 active:scale-[0.98] ${
+              className={`app-chart-control h-7 min-w-0 rounded-full px-2 font-mono text-[11px] font-semibold ${
                 range === value
                   ? 'bg-[color-mix(in_srgb,var(--app-accent)_26%,transparent)] text-[var(--app-accent)] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_8%,transparent)]'
                   : 'text-[var(--app-muted)]'
@@ -959,6 +961,7 @@ export function EquityCurveCard({
         >
           {chartSize ? (
             <LineChart
+              className="app-chart-stage"
               width={chartSize.width}
               height={chartSize.height}
               data={chartPoints}
@@ -1059,8 +1062,8 @@ export function EquityCurveCard({
                     strokeOpacity={isPrimarySeries ? 1 : 0.86}
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    animationDuration={520}
-                    animationEasing="ease-out"
+                    animationDuration={APP_MOTION.chartDurationMs}
+                    animationEasing={APP_MOTION.easing}
                     dot={
                       high
                         ? renderHighPointDot({
@@ -1080,7 +1083,7 @@ export function EquityCurveCard({
                       strokeWidth: 2,
                       fill: series.color,
                     }}
-                    isAnimationActive
+                    isAnimationActive={!reducedMotion}
                   />
                 );
               })}

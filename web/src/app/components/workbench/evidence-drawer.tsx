@@ -77,10 +77,10 @@ export function EvidenceDrawer({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[120]">
+    <div className="app-evidence-drawer-root fixed inset-0 z-[120]">
       <button
         type="button"
-        className="absolute inset-0 h-full w-full bg-[color-mix(in_srgb,var(--app-bg)_72%,transparent)]"
+        className="app-evidence-drawer-backdrop absolute inset-0 h-full w-full bg-[color-mix(in_srgb,var(--app-bg)_72%,transparent)]"
         aria-label={closeLabel}
         onClick={onClose}
       />
