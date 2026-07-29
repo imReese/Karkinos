@@ -9,6 +9,8 @@ const acceptanceViewports = [
   { width: 390, height: 844 },
 ];
 
+const headlessSubpixelTolerance = 1;
+
 test('Operations keeps pilot readiness and subsystem metrics visibly scoped', async ({
   page,
 }) => {
@@ -27,6 +29,10 @@ test('Operations keeps pilot readiness and subsystem metrics visibly scoped', as
       '[data-testid="operations-page"] > .app-metric-strip',
     );
     await expect(metrics).toBeVisible({ timeout: 15_000 });
+    const readiness = page.getByTestId('controlled-pilot-readiness');
+    await expect(readiness).toBeVisible();
+    await expect(readiness).not.toHaveAttribute('open', '');
+    await expect(readiness).toContainText('Prerequisites unmet');
 
     for (const viewport of acceptanceViewports) {
       await page.setViewportSize(viewport);
@@ -70,5 +76,24 @@ test('Operations keeps pilot readiness and subsystem metrics visibly scoped', as
         `${theme} ${viewport.width}`,
       ).toBe(true);
     }
+
+    await page.setViewportSize(acceptanceViewports.at(-1)!);
+    await readiness.locator('summary').click();
+    await expect(readiness).toHaveAttribute('open', '');
+    await expect(readiness).not.toContainText('Status needs review');
+    const expandedGeometry = await readiness.evaluate((element) => ({
+      localOverflow: element.scrollWidth - element.clientWidth,
+      documentOverflow:
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+    }));
+    expect(
+      expandedGeometry.localOverflow,
+      `${theme} expanded`,
+    ).toBeLessThanOrEqual(headlessSubpixelTolerance);
+    expect(
+      expandedGeometry.documentOverflow,
+      `${theme} expanded`,
+    ).toBeLessThanOrEqual(0);
   }
 });

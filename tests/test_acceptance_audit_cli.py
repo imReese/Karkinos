@@ -603,6 +603,27 @@ def test_acceptance_audit_cli_persisted_operator_view_filter_outputs_one_audit()
     }
 
 
+def test_acceptance_audit_cli_controlled_per_order_pilot_readiness_filter() -> None:
+    result = _run_cli("--audit", "controlled_per_order_pilot_readiness")
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["selected_audit"] == "controlled_per_order_pilot_readiness"
+    assert [audit["key"] for audit in payload["audits"]] == [
+        "controlled_per_order_pilot_readiness"
+    ]
+    audit = payload["audits"][0]
+    assert audit["required_count"] == 8
+    assert audit["completed_count"] == audit["required_count"]
+    assert {criterion["key"] for criterion in audit["criteria"]} >= {
+        "canonical_six_gate_persisted_admission_projection",
+        "source_failure_and_contract_drift_fail_closed",
+        "scoped_read_only_gate_matrix_surfaces_contract_failure",
+        "review_entry_only_not_release_or_execution_authority",
+    }
+
+
 def test_acceptance_audit_cli_all_outputs_every_registered_audit() -> None:
     result = _run_cli("--audit", "all")
 
@@ -643,6 +664,7 @@ def test_acceptance_audit_cli_all_outputs_every_registered_audit() -> None:
         "controlled_submission_interlock",
         "controlled_submission_reconciliation_clearance",
         "persisted_controlled_execution_operator_view",
+        "controlled_per_order_pilot_readiness",
         "capital_scaling_review_foundation",
         "capital_scaling_evidence_resolution",
         "capital_scaling_evidence_window",

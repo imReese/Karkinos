@@ -324,6 +324,24 @@ fingerprint; evidence-status drift changes it. Viewing or acknowledging an item 
 read-only payload may enter an explicit AI context capture, but it performs no
 provider contact or database write and grants no execution authority.
 
+`karkinos.controlled_per_order_pilot_readiness.v1` is the separate rollout-level
+admission projection for an optional real per-order pilot. It composes the
+persisted adapter-readiness, signed soak-promotion, expiring write-release, and
+controlled-order operator projections into six fail-closed gates: safe source
+contracts, exactly one observing read-only release, matching signed soak,
+exactly one active `manual_each_order` write release, one consistent provider /
+gateway / account / connector scope, and no unresolved order journey or active
+session authority. Source failure, ambiguity, drift, truncation, or any
+authorizing read-side flag blocks the projection. A pass means only that the
+operator may open the separate exact-order review; it does not satisfy the v1.8
+release gate, replace any per-order evidence, contact a provider, write the
+database, submit or cancel, mutate financial facts, or change capital authority.
+Because unmet prerequisites for an unconfigured optional pilot are not a daily
+paper/shadow failure, a contract-safe projection stays compact and neutral in
+Operations. A projection that violates its read-only, non-authorizing contract
+opens immediately as a danger state. Neither state alters the canonical
+Operations health summary.
+
 The `/operations` workbench is the read-side operator surface for this contract.
 It validates the top-level schema and every attention-item non-authority flag
 before rendering any drill-down, then shows source evidence, deterministic

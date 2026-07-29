@@ -23,6 +23,7 @@ import {
   type OperationsTodayResponse,
   useOperationsTodayQuery,
 } from '../api';
+import { ControlledPerOrderPilotReadinessPanel } from '../controlled-per-order-pilot-readiness-panel';
 import {
   operationsAttentionResolutionLabel,
   operationsNextActionLabel,
@@ -149,6 +150,9 @@ export function OperationsPage() {
     useState<string | null>(null);
   const projection = operations.data;
   const projectionIsSafe = operationsProjectionIsSafe(projection);
+  const pilotReadiness = projectionIsSafe
+    ? projection.controlled_per_order_pilot_readiness
+    : undefined;
   const attentionItems = projectionIsSafe
     ? (projection.attention_items ?? [])
     : [];
@@ -344,6 +348,11 @@ export function OperationsPage() {
               })}
             />
           </section>
+
+          <ControlledPerOrderPilotReadinessPanel
+            readiness={pilotReadiness}
+            locale={locale}
+          />
 
           <MetricStrip
             ariaLabel={labels.subsystemHealth}

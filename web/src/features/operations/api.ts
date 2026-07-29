@@ -283,6 +283,52 @@ export type BrokerAdapterReadiness = {
   authorizes_execution: boolean;
 };
 
+export type ControlledPerOrderPilotReadinessGate = {
+  key: string;
+  status: 'pass' | 'blocked';
+  blockers: string[];
+  evidence_refs: string[];
+  resolution_condition: string;
+  manual_acknowledgement_clears_status: false;
+};
+
+export type ControlledPerOrderPilotReadiness = {
+  schema_version: 'karkinos.controlled_per_order_pilot_readiness.v1';
+  status: 'ready_for_exact_order_review' | 'blocked';
+  scope: {
+    provider: string;
+    gateway_id: string;
+    account_alias: string;
+    connector_id: string;
+    readonly_release_evidence_ref: string;
+    write_release_evidence_id: string;
+  };
+  gates: ControlledPerOrderPilotReadinessGate[];
+  required_next_order_gates: string[];
+  readiness_fingerprint: string;
+  observed_at: string | null;
+  gate_count: number;
+  passed_gate_count: number;
+  blocked_gate_count: number;
+  blockers: string[];
+  next_safe_action: string;
+  release_scope: 'pilot_admission_prerequisites_not_v1_8_completion';
+  persisted_facts_only: true;
+  read_only_projection: true;
+  provider_contacted: false;
+  database_writes_performed: false;
+  broker_submission_enabled: false;
+  broker_cancellation_enabled: false;
+  does_not_mutate_oms: true;
+  does_not_mutate_production_ledger: true;
+  does_not_mutate_risk_state: true;
+  does_not_mutate_kill_switch: true;
+  does_not_mutate_capital_authority: true;
+  authorizes_execution: false;
+  automatic_scale_up_enabled: false;
+  limitations: string[];
+};
+
 export type BrokerConnectorSoakPromotionConnector = {
   connector_id: string;
   account_alias: string;
@@ -632,6 +678,7 @@ export type OperationsTodayResponse = {
   attention_items?: OperationsAttentionItem[];
   daily_operations: DailyOperationsSummary;
   broker_adapter_readiness?: BrokerAdapterReadiness;
+  controlled_per_order_pilot_readiness?: ControlledPerOrderPilotReadiness;
   daily_plan: {
     candidate_pool_count: number;
     manual_ready_count: number;
