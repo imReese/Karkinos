@@ -324,29 +324,11 @@ fingerprint; evidence-status drift changes it. Viewing or acknowledging an item 
 read-only payload may enter an explicit AI context capture, but it performs no
 provider contact or database write and grants no execution authority.
 
-`karkinos.controlled_per_order_pilot_readiness.v1` is the separate rollout-level
-admission projection for an optional real per-order pilot. It composes the
-persisted adapter-readiness, signed soak-promotion, expiring write-release, and
-controlled-order operator projections into six fail-closed gates: safe source
-contracts, exactly one observing read-only release, matching signed soak,
-exactly one active `manual_each_order` write release, one consistent provider /
-gateway / account / connector scope, and no unresolved order journey or active
-session authority. Source failure, ambiguity, drift, truncation, or any
-authorizing read-side flag blocks the projection. A pass means only that the
-operator may open the separate exact-order review; it does not satisfy the v1.8
-release gate, replace any per-order evidence, contact a provider, write the
-database, submit or cancel, mutate financial facts, or change capital authority.
-Because unmet prerequisites for an unconfigured optional pilot are not a daily
-paper/shadow failure, a contract-safe projection stays compact and neutral in
-Operations. A projection that violates its read-only, non-authorizing contract
-opens immediately as a danger state. Neither state alters the canonical
-Operations health summary.
-
-The `/operations` workbench is the read-side operator surface for this contract.
-It validates the top-level schema and every attention-item non-authority flag
-before rendering any drill-down, then shows source evidence, deterministic
-fingerprint, safe next action, and exact resolution condition. A boundary
-violation blocks the projection; the page has no mutation or broker capability.
+The `/operations` workbench is the read-side operator surface for this contract and for `karkinos.controlled_per_order_pilot_readiness.v1`, the optional real-pilot admission projection over persisted adapter, signed-soak, expiring-write-release, and controlled-order evidence.
+Its six fail-closed gates require safe source contracts, exactly one observing read-only release, matching signed soak, exactly one active `manual_each_order` write release, one coherent provider/gateway/account/connector scope, and no unresolved order journey or active session authority.
+Source failure, ambiguity, drift, truncation, or authorizing read-side flags block admission; a pass permits only the separate exact-order review and does not complete v1.8, replace per-order evidence, contact a provider, write the database, submit/cancel, mutate financial facts, or change capital authority.
+Contract-safe unmet optional prerequisites stay compact and neutral outside canonical Operations health, while a read-only or non-authority contract violation opens immediately as danger.
+The workbench validates top-level and attention-item non-authority flags before drill-down, shows source evidence, deterministic fingerprint, safe next action, and exact resolution condition, and has no mutation or broker capability.
 
 An open exact-identity lifecycle may be projected through
 `karkinos.manual_broker_cancellation_ticket.v1`. This provider-neutral boundary

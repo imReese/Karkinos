@@ -73,12 +73,7 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
   绑定、最新结果优先与 prepare/commit 复核；不宣称支持真实 adapter。
 - connector-scoped soak recovery evidence：无 scope、无关或混合 connector 的 drill 不能满足
   promotion，同 scope 的最新失败会使旧 pass 与其签名 dossier acceptance 失效。
-- Trading 只读投影精确 20 日 soak 与签名 owner acceptance，并提供默认折叠、无需编辑数据库的 write-edge release 签发/撤销复核；含凭据键的 manifest 会在本地拦截，生产 submit/cancel 只在 release 当前有效时解析，Web 不提供 submit/cancel、adapter 注册或资本授权动作。
-- Operations 新增有范围语义的逐单试点准入矩阵，组合 persisted adapter、签名 soak、短时效 write
-  release、精确 scope 与未闭合 controlled journey 证据；缺失、歧义、漂移、截断或读侧授权输入会
-  fail closed。它只能下钻到另一套精确逐单复核，不完成 v1.8、不选择/联系 provider、不 submit/
-  cancel、不修改财务事实或权限，也不自动扩大资本。共享 CLI/API registry 现已提供八项 capability
-  audit，覆盖服务端投影、Operations 组合，以及安全状态紧凑、合同违规立即展开且非授权的 Web 契约。
+- Trading 只读投影精确 20 日 soak 与签名 owner acceptance，并提供默认折叠、无需编辑数据库的 write-edge release 签发/撤销复核；含凭据键的 manifest 会在本地拦截，生产 submit/cancel 只在 release 当前有效时解析，Web 不提供 submit/cancel、adapter 注册或资本授权动作。Operations 另把 persisted adapter、签名 soak、短时效 release、精确 scope 与未闭合 journey 组合为经八项 audit 覆盖的试点准入矩阵：合同违规立即展开，安全但未满足的条件保持紧凑，任何状态都不完成 v1.8、不联系 provider、不修改财务事实/权限、不 submit/cancel 或扩大资本。
 
 本文故意不维护历史测试总数，因为每次变更都会使其过期。CI artifact 与 acceptance-audit export
 负责当前数量和证据。
@@ -136,23 +131,9 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
 
 M4 当前逐单 dossier 与 write-release 的假设和风险记录：
 
-- 最新精确 order-matching capital evaluation 即使 blocked 也优先；dossier v5 会解析唯一前序批次/gateway 以及精确 Account Truth、Decision、risk、paper/shadow 与 accepted 只读 adapter 证据。操作员只粘贴已审查且无凭据的 execution manifest；服务端仍权威核验严格 manifest/conformance、精确只读 release、签名 soak acceptance、七类所有者复核引用、provider/gateway/account scope、`manual_each_order` 与最长 12 小时窗口。
-- 确定性验证覆盖 dossier 来源解析/drift、write-release 签发/精确重试、严格 route、GET 不建表、伪造 scope、manifest/conformance/soak 漂移、同 scope 较新只读 release 不回退、过期、可信公钥轮换、重算哈希篡改、上游漂移后仍可单向撤销、provider 异常净化、零 broker/财务写入、注入 provider 优先、生产只解析当前有效 release，以及 Web 折叠态零读取、精确签发/撤销 request、离线 proof 与嵌套凭据键本地拦截且敏感值不外发。
-- 风险影响在 execution-edge 接线层仍为 high，因为生产 submit/cancel 可消费已复核的持久化 release；Web 集成 blast radius 为 LOW 且安全性正向。来源漂移使旧 proof 失效，缺失/过期/撤销仍默认关闭；界面与 release 不注册 adapter、不联系 provider、不创建订单，也不改变 OMS、ledger、Account Truth、risk、kill switch、lifecycle、逐单或资本权限事实。
-
-M4 受控逐单试点准入的假设和风险记录：
-
-- rollout-level clear 假设恰好一个已持久化且处于只读观测的 adapter release 与一个匹配的签名
-  soak acceptance；随后还要求恰好一个当前有效的短时 `manual_each_order` write release，且 provider、
-  gateway、account alias、connector、read-only release 与 soak acceptance 全部一致。出现多个候选时
-  fail closed，不做隐式选择。
-- 投影还要求可信的 persisted-only controlled-execution operator view 不存在未解决订单关注项、
-  截断队列、当前 runtime session 或 blocked session。确定性 fingerprint 排除仅由请求时间造成的
-  漂移；证据身份或门禁状态变化会改变结果。
-- 确定性验证覆盖空来源默认关闭、同域 clear 证据、scope drift、未完成订单/session、危险读侧
-  边界、非法计数、Operations GET、安全准入紧凑展示、合同违规立即展开、精确阻断文案与无
-  submit/cancel 控件。风险影响为 LOW
-  且安全性正向：这是 Operations health 之外的只读 rollout aid，不是订单门禁或执行/资本授权。
+- 最新精确 order-matching capital evaluation 即使 blocked 也优先；dossier v5 会解析唯一前序批次/gateway 以及精确 Account Truth、Decision、risk、paper/shadow 与 accepted 只读 adapter 证据。操作员只粘贴已审查且无凭据的 execution manifest；服务端仍权威核验严格 manifest/conformance、精确只读 release、签名 soak acceptance、七类所有者复核引用、provider/gateway/account scope、`manual_each_order` 与最长 12 小时窗口。试点准入还要求恰好一个只读观测 release、匹配签名 soak、一个当前短时 `manual_each_order` release、一致的 provider/gateway/account/connector/release scope，且无未解决订单、截断队列、当前或阻断 session；歧义一律 fail closed。
+- 确定性验证覆盖 dossier 来源解析/drift、write-release 签发/精确重试、严格 route、GET 不建表、伪造 scope、manifest/conformance/soak 漂移、同 scope 较新只读 release 不回退、过期、可信公钥轮换、重算哈希篡改、上游漂移后仍可单向撤销、provider 异常净化、零 broker/财务写入、注入 provider 优先、生产只解析当前有效 release，以及 Web 折叠态零读取、精确签发/撤销 request、离线 proof 与嵌套凭据键本地拦截且敏感值不外发。试点测试另覆盖空来源关闭、同域 clear、scope/来源 drift、未完成订单/session、非法计数、稳定 fingerprint、Operations GET、安全状态紧凑、合同违规立即展开、精确阻断文案与无 submit/cancel 控件。
+- 风险影响在 execution-edge 接线层仍为 high，因为生产 submit/cancel 可消费已复核的持久化 release；Web 集成 blast radius 为 LOW 且安全性正向。来源漂移使旧 proof 失效，缺失/过期/撤销仍默认关闭；界面与 release 不注册 adapter、不联系 provider、不创建订单，也不改变 OMS、ledger、Account Truth、risk、kill switch、lifecycle、逐单或资本权限事实。试点投影本身是 Operations health 之外、LOW-risk 的 persisted-only rollout 证据，不是订单门禁或执行/资本授权；fingerprint 排除请求时间漂移并随证据身份或门禁状态变化。
 
 M4 非授权操作资料包的假设与风险记录：
 

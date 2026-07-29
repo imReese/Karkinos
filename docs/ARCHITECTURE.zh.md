@@ -244,20 +244,9 @@ Account Truth 后续复核及已经闭环的拒单。紧凑关注队列会让较
 会得到相同 fingerprint，证据状态漂移时 fingerprint 随之变化。查看或确认本身不能清除任务。同一只读 payload
 可以进入人工显式创建的 AI context capture，但不会联系 provider、写数据库或授予执行权限。
 
-`karkinos.controlled_per_order_pilot_readiness.v1` 是可选真实逐单试点的独立 rollout-level 准入投影。
-它把已持久化的 adapter readiness、签名 soak promotion、短时效 write release 与 controlled-order
-operator view 组合成六个 fail-closed 门禁：安全来源合同、恰好一个处于只读观测的 release、匹配的
-签名 soak、恰好一个 `manual_each_order` write release、唯一一致的 provider/gateway/account/connector
-scope，以及不存在未闭合订单旅程或 active session authority。来源失败、歧义、漂移、截断或任一
-读侧授权标志都会阻断。通过只表示操作员可以打开另一套精确逐单复核；它不满足 v1.8 发布门、不
-替代任何逐单证据、不联系 provider、不写数据库、不 submit/cancel、不修改财务事实或资本权限。
-由于未配置的可选真实试点尚未满足准入条件并不是日常 paper/shadow 故障，合同安全的投影会在
-Operations 中保持紧凑、中性；一旦只读或非授权合同被破坏，则立即展开并显示 danger 状态。
-两种状态都不改变 canonical Operations health summary。
-
-`/operations` 是该契约的只读操作员界面。它会在提供任何下钻之前核验顶层 schema 与每个
-attention item 的无权限标记，再展示来源证据、确定性 fingerprint、安全下一步和精确解除条件。
-任何边界违规都会阻断整份投影；页面不具备 mutation 或 broker 能力。
+`/operations` 是该契约及可选真实试点准入投影 `karkinos.controlled_per_order_pilot_readiness.v1` 的只读操作员界面；后者只组合已持久化的 adapter、签名 soak、短时效 write release 与 controlled-order 证据。
+六个 fail-closed 门禁要求安全来源合同、恰好一个只读观测 release、匹配的签名 soak、一个有效的 `manual_each_order` write release、一致的 provider/gateway/account/connector scope，且无未闭合订单旅程或 active session authority；来源失败、歧义、漂移、截断或读侧授权标志都会阻断，通过也只允许进入独立逐单复核，不完成 v1.8、不联系 provider、不写库、不 submit/cancel、不修改财务事实或资本权限。
+合同安全但未满足的可选条件在 canonical Operations health 外保持紧凑中性，合同违规则立即以 danger 展开；界面会先核验顶层与 attention-item 非授权标志，再展示来源、fingerprint、安全下一步和精确解除条件，且不具备 mutation 或 broker 能力。
 
 精确持久化且仍开放的 lifecycle 可通过
 `karkinos.manual_broker_cancellation_ticket.v1` 投影。该 provider-neutral 边界根据 persisted

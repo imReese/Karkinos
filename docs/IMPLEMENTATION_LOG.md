@@ -73,16 +73,7 @@ The latest completed cross-cutting work includes:
 - connector-scoped soak recovery evidence where unscoped, unrelated, or mixed
   drills cannot satisfy promotion, and the newest scoped failure invalidates an
   older pass and its signed dossier acceptance.
-- a read-only Trading projection of exact 20-day soak evidence and signed owner acceptance, plus a default-collapsed, no-database-edit operator review for the separately signed, expiring, one-way-revocable persisted write-edge release that production submit/cancel can resolve only while current; the Web review blocks credential-key manifests locally and exposes no submit/cancel, adapter-registration, or capital-authority action.
-- a scoped Operations pilot-admission matrix that composes persisted
-  adapter, signed soak, expiring write-release, exact scope, and outstanding
-  controlled-journey evidence. It fails closed on missing, ambiguous, drifted,
-  truncated, or authorizing inputs and can only hand off to a separate exact-
-  order review; it does not complete v1.8, select/contact a provider, submit,
-  cancel, mutate financial facts, change authority, or scale capital. Its
-  eight-criterion capability audit is available through the shared CLI/API
-  registry and covers the service, Operations composition, and compact-safe /
-  open-on-contract-failure non-authorizing Web contract.
+- a read-only Trading projection of exact 20-day soak evidence and signed owner acceptance, plus a default-collapsed, no-database-edit operator review for the separately signed, expiring, one-way-revocable persisted write-edge release that production submit/cancel can resolve only while current; the Web review blocks credential-key manifests locally and exposes no submit/cancel, adapter-registration, or capital-authority action. Operations separately composes persisted adapter, signed soak, expiring release, exact scope, and unresolved-journey evidence into an eight-criterion-audited pilot-admission matrix: unsafe contracts open immediately, safe unmet conditions remain compact, and no state completes v1.8, contacts a provider, mutates financial facts/authority, submits, cancels, or scales capital.
 
 Exact historical test totals are intentionally not maintained here because
 they become stale after every change. CI artifacts and the acceptance-audit
@@ -149,29 +140,9 @@ Implemented foundation:
 
 M4 current adapter/per-order dossier and write-release assumptions and risk record:
 
-- The adapter reviewer supplies an already reviewed credential-free provider-neutral manifest and stable external refs; its signed acceptance binds the exact newest conformance/current review/approval id but does not mean a provider is selected or deployed. Separately, the newest exact order-matching capital evaluation is authoritative even when blocked; dossier v5 resolves unique prior-batch/gateway plus Account Truth, Decision, risk, paper/shadow, and accepted read-only adapter evidence, while the server owns the strict write-release scope and at-most-12-hour window.
-- Deterministic tests cover adapter strict manifest and nested credential-key rejection, exact signature/retry, accept/reject/revoke, changed conformance/current-review drift, GET-without-schema creation, collapsed Web zero-read/no-broker behavior, plus dossier source drift and write-release issue/revoke, expiry, scope, soak, trusted-key, tamper, zero-financial-write, provider-resolution, and local credential tests.
-- Risk is HIGH only where production submit/cancel consumes a separately reviewed persisted write-edge release; adapter review and Web wiring are safety-positive LOW/MEDIUM scope. Missing/drifted/revoked evidence remains default-closed, rejection/revocation can only block, and these UIs select/contact/register no provider, create no order, and change no OMS, ledger, Account Truth, risk, kill switch, lifecycle, per-order, or capital-authority fact.
-
-M4 controlled per-order pilot admission assumptions and risk record:
-
-- A rollout-level clear state assumes exactly one persisted read-only-observing
-  adapter release and one matching signed soak acceptance, then requires exactly
-  one current short-lived `manual_each_order` write release whose provider,
-  gateway, account alias, connector, read-only release, and soak acceptance all
-  match. Multiple candidates fail closed rather than selecting implicitly.
-- The projection separately requires a trusted persisted-only controlled-
-  execution operator view with no unresolved order attention, truncated queue,
-  current runtime session, or blocked session. Its deterministic fingerprint
-  excludes request-time-only drift while evidence identity or gate status drift
-  changes the result.
-- Validation covers empty-source closure, coherent ready evidence, scope drift,
-  unfinished order/session state, unsafe source boundaries, invalid source
-  counts, the Operations GET contract, compact safe readiness, immediate unsafe
-  contract visibility, exact blocker copy, and absence of submit/cancel controls.
-  Risk impact is LOW and safety-positive:
-  this is a read-only rollout aid outside Operations health, not an order gate
-  or execution/capital authorization.
+- The adapter reviewer supplies an already reviewed credential-free provider-neutral manifest and stable external refs; its signed acceptance binds the exact newest conformance/current review/approval id but does not mean a provider is selected or deployed. Separately, the newest exact order-matching capital evaluation is authoritative even when blocked; dossier v5 resolves unique prior-batch/gateway plus Account Truth, Decision, risk, paper/shadow, and accepted read-only adapter evidence, while the server owns the strict write-release scope and at-most-12-hour window. Pilot admission additionally requires exactly one persisted observing release, its matching signed soak, one current short-lived `manual_each_order` release, one matching provider/gateway/account/connector/release scope, and no unresolved order attention, truncated queue, current session, or blocked session; ambiguity fails closed.
+- Deterministic tests cover adapter strict manifest and nested credential-key rejection, exact signature/retry, accept/reject/revoke, changed conformance/current-review drift, GET-without-schema creation, collapsed Web zero-read/no-broker behavior, plus dossier source drift and write-release issue/revoke, expiry, scope, soak, trusted-key, tamper, zero-financial-write, provider-resolution, and local credential tests. Pilot tests add empty-source closure, coherent ready evidence, scope and source drift, unfinished order/session state, invalid counts, deterministic fingerprinting, Operations GET composition, compact safe readiness, immediate unsafe-contract visibility, exact blocker copy, and no submit/cancel controls.
+- Risk is HIGH only where production submit/cancel consumes a separately reviewed persisted write-edge release; adapter review and Web wiring are safety-positive LOW/MEDIUM scope. Missing/drifted/revoked evidence remains default-closed, rejection/revocation can only block, and these UIs select/contact/register no provider, create no order, and change no OMS, ledger, Account Truth, risk, kill switch, lifecycle, per-order, or capital-authority fact. The pilot projection itself is LOW-risk, persisted-only rollout evidence outside Operations health—not an order gate or execution/capital authorization—and its fingerprint excludes request-time drift while changing on evidence identity or gate status.
 
 M4 non-authorizing operator-package assumptions and risk record:
 
