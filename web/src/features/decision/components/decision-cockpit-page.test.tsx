@@ -3967,6 +3967,14 @@ test('collapses an all-pass gate matrix across viewport breakpoints', async () =
   const content = document.getElementById('decision-gate-matrix-content');
   expect(toggle.getAttribute('aria-expanded')).toBe('false');
   expect(within(disclosure).getByText('5/5 passed')).toBeTruthy();
+  const track = within(disclosure).getByTestId('decision-gate-track');
+  expect(track.tagName).toBe('OL');
+  expect(track.children).toHaveLength(5);
+  expect(
+    Array.from(track.children).every(
+      (step) => step.getAttribute('data-gate-state') === 'pass',
+    ),
+  ).toBe(true);
   expect(disclosure.textContent).toContain('Manual confirmation');
   expect(content?.className).toContain('hidden');
   expect(content?.className).not.toContain('sm:block');

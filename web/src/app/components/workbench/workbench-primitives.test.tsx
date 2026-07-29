@@ -303,6 +303,11 @@ test('prioritizes blockers, gate evidence, and immutable history', () => {
   expect(
     gateMatrix.querySelector('[data-gate-id="account-truth"]'),
   ).toBeTruthy();
+  expect(
+    gateMatrix
+      .querySelector('[data-gate-id="account-truth"]')
+      ?.getAttribute('data-gate-state'),
+  ).toBe('block');
   expect(screen.getByRole('list', { name: 'Immutable history' })).toBeTruthy();
 });
 
@@ -342,6 +347,9 @@ test('offers a flat compact exception register without changing evidence fields'
   expect(list.querySelector('.app-exception-item')?.className).not.toContain(
     'rounded-',
   );
+  expect(
+    list.querySelector('.app-exception-item')?.getAttribute('data-severity'),
+  ).toBe('warning');
 });
 
 test('closes the evidence drawer with Escape and restores focus', async () => {

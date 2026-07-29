@@ -271,88 +271,95 @@ export function OperationsPage() {
         </div>
       ) : (
         <>
-          <section
-            className="min-w-0 space-y-2"
-            aria-labelledby="operations-attention-heading"
-            data-testid="operations-attention-queue"
+          <div
+            className="app-operations-command-grid min-w-0"
+            data-testid="operations-command-grid"
           >
-            <div className="flex items-baseline justify-between gap-3">
-              <h2
-                id="operations-attention-heading"
-                className="text-base font-semibold text-[var(--app-text)]"
-              >
-                {labels.attentionQueue}
-              </h2>
-              <span className="font-mono text-xs tabular-nums text-[var(--app-text-tertiary)]">
-                {attentionItems.length}
-              </span>
-            </div>
-            <ExceptionList
-              ariaLabel={labels.attentionQueue}
-              emptyState={labels.attentionEmpty}
-              density="compact"
-              className="min-w-0 [&>li>dl]:grid-cols-2 lg:[&>li>dl]:grid-cols-4"
-              labels={{
-                reason: labels.evidenceStatus,
-                unblockCondition: labels.resolution,
-                nextAction: labels.nextAction,
-                evidence: labels.observedAt,
-              }}
-              items={attentionItems.map((item) => {
-                const href = operationsTargetHref(item.target);
-                return {
-                  id: item.task_fingerprint,
-                  severity: exceptionTone(item.status),
-                  statusLabel: formatPublicStatus(item.status, locale),
-                  title: operationsSubsystemLabel(item.subsystem_id, locale),
-                  reason: formatPublicStatus(item.evidence.status, locale),
-                  unblockCondition: (
-                    <span>
-                      {operationsAttentionResolutionLabel(
-                        item.resolution_condition,
-                        locale,
-                      )}{' '}
-                      <span className="text-[var(--app-text-tertiary)]">
-                        {labels.viewingDoesNotClear}
-                      </span>
-                    </span>
-                  ),
-                  nextAction: (
-                    <span className="flex flex-wrap items-center gap-2">
+            <section
+              className="min-w-0 space-y-2"
+              aria-labelledby="operations-attention-heading"
+              data-testid="operations-attention-queue"
+            >
+              <div className="flex items-baseline justify-between gap-3">
+                <h2
+                  id="operations-attention-heading"
+                  className="text-base font-semibold text-[var(--app-text)]"
+                >
+                  {labels.attentionQueue}
+                </h2>
+                <span className="font-mono text-xs tabular-nums text-[var(--app-text-tertiary)]">
+                  {attentionItems.length}
+                </span>
+              </div>
+              <ExceptionList
+                ariaLabel={labels.attentionQueue}
+                emptyState={labels.attentionEmpty}
+                density="compact"
+                className="min-w-0 [&>li>dl]:grid-cols-2 lg:[&>li>dl]:grid-cols-4"
+                labels={{
+                  reason: labels.evidenceStatus,
+                  unblockCondition: labels.resolution,
+                  nextAction: labels.nextAction,
+                  evidence: labels.observedAt,
+                }}
+                items={attentionItems.map((item) => {
+                  const href = operationsTargetHref(item.target);
+                  return {
+                    id: item.task_fingerprint,
+                    severity: exceptionTone(item.status),
+                    statusLabel: formatPublicStatus(item.status, locale),
+                    title: operationsSubsystemLabel(item.subsystem_id, locale),
+                    reason: formatPublicStatus(item.evidence.status, locale),
+                    unblockCondition: (
                       <span>
-                        {operationsNextActionLabel(item.next_action, locale)}
+                        {operationsAttentionResolutionLabel(
+                          item.resolution_condition,
+                          locale,
+                        )}{' '}
+                        <span className="text-[var(--app-text-tertiary)]">
+                          {labels.viewingDoesNotClear}
+                        </span>
                       </span>
-                      {href !== '/operations' ? (
-                        <a
-                          className="font-semibold text-[var(--app-accent)] underline decoration-transparent underline-offset-2 hover:decoration-current"
-                          href={href}
+                    ),
+                    nextAction: (
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span>
+                          {operationsNextActionLabel(item.next_action, locale)}
+                        </span>
+                        {href !== '/operations' ? (
+                          <a
+                            className="font-semibold text-[var(--app-accent)] underline decoration-transparent underline-offset-2 hover:decoration-current"
+                            href={href}
+                          >
+                            {labels.openEvidence}
+                          </a>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="app-button-secondary px-2 py-1 text-[11px]"
+                          onClick={() =>
+                            setSelectedAttentionFingerprint(
+                              item.task_fingerprint,
+                            )
+                          }
                         >
-                          {labels.openEvidence}
-                        </a>
-                      ) : null}
-                      <button
-                        type="button"
-                        className="app-button-secondary px-2 py-1 text-[11px]"
-                        onClick={() =>
-                          setSelectedAttentionFingerprint(item.task_fingerprint)
-                        }
-                      >
-                        {labels.reviewDetails}
-                      </button>
-                    </span>
-                  ),
-                  evidence:
-                    formatEvidenceTime(item.evidence.observed_at, locale) ??
-                    labels.noTimestamp,
-                } satisfies ExceptionItem;
-              })}
-            />
-          </section>
+                          {labels.reviewDetails}
+                        </button>
+                      </span>
+                    ),
+                    evidence:
+                      formatEvidenceTime(item.evidence.observed_at, locale) ??
+                      labels.noTimestamp,
+                  } satisfies ExceptionItem;
+                })}
+              />
+            </section>
 
-          <ControlledPerOrderPilotReadinessPanel
-            readiness={pilotReadiness}
-            locale={locale}
-          />
+            <ControlledPerOrderPilotReadinessPanel
+              readiness={pilotReadiness}
+              locale={locale}
+            />
+          </div>
 
           <MetricStrip
             ariaLabel={labels.subsystemHealth}

@@ -5239,6 +5239,35 @@ export function DecisionCockpitPage() {
                   : `${decisionGateAttentionCount} need review`}
             </StatusBadge>
           </button>
+          {allDecisionGatesPass ? (
+            <ol
+              aria-label={labels.workflowTitle}
+              className="app-decision-gate-track"
+              data-testid="decision-gate-track"
+            >
+              {gateItems.map((item, index) => (
+                <li
+                  key={item.id}
+                  className="app-decision-gate-step"
+                  data-gate-state={item.state}
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span
+                      className="app-decision-gate-index"
+                      aria-hidden="true"
+                    >
+                      {String(index + 1).padStart(2, '0')}
+                    </span>
+                    <span
+                      className="app-decision-gate-connector"
+                      aria-hidden="true"
+                    />
+                  </div>
+                  <span className="app-decision-gate-label">{item.gate}</span>
+                </li>
+              ))}
+            </ol>
+          ) : null}
           <div
             className={`${
               !allDecisionGatesPass || healthyGateMatrixExpanded

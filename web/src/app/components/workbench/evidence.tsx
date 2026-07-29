@@ -205,6 +205,7 @@ export function GateMatrix({
               key={item.id}
               className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 px-3 py-3 sm:table-row sm:px-0 sm:py-0"
               data-gate-id={item.id}
+              data-gate-state={item.state}
             >
               <th
                 scope="row"
