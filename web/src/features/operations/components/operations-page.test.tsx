@@ -272,10 +272,12 @@ test('renders persisted attention evidence without write or execution affordance
     name: 'Evidence review queue',
   });
   const attentionQueue = screen.getByTestId('operations-attention-queue');
+  const commandGrid = screen.getByTestId('operations-command-grid');
   const healthMetrics = page.querySelector(
     '[data-workbench-primitive="metric-strip"]',
   );
   expect(attention.getAttribute('data-density')).toBe('compact');
+  expect(commandGrid.className).toContain('app-operations-command-grid');
   expect(attention.className).toContain('divide-y');
   expect(healthMetrics).toBeTruthy();
   expect(
