@@ -238,6 +238,12 @@ test('backtest preserves result-first evidence and complete metrics across all a
       const tabs = document.querySelector(
         '[data-testid="backtest-mobile-workspace-tabs"]',
       ) as HTMLElement;
+      const catalogHeader = document.querySelector(
+        '[data-testid="backtest-strategy-catalog-header"]',
+      ) as HTMLElement;
+      const catalogControl = catalogHeader.querySelector(
+        'label',
+      ) as HTMLElement;
       const evidenceText = Array.from(
         document.querySelectorAll(
           '.app-backtest-evidence-strip .app-metric-strip-item > .truncate',
@@ -245,6 +251,10 @@ test('backtest preserves result-first evidence and complete metrics across all a
       );
       return {
         contentOverflow: content.scrollWidth - content.clientWidth,
+        catalogColumnCount:
+          getComputedStyle(catalogHeader).gridTemplateColumns.split(' ').length,
+        catalogControlWidth: catalogControl.getBoundingClientRect().width,
+        catalogHeaderWidth: catalogHeader.getBoundingClientRect().width,
         contextUnclipped:
           evidenceText.length > 0 &&
           evidenceText.every((element) => {
@@ -271,6 +281,11 @@ test('backtest preserves result-first evidence and complete metrics across all a
     expect(geometry.contextUnclipped, JSON.stringify(viewport)).toBe(true);
 
     if (viewport.width >= 1280) {
+      expect(geometry.catalogColumnCount, JSON.stringify(viewport)).toBe(1);
+      expect(
+        Math.abs(geometry.catalogControlWidth - geometry.catalogHeaderWidth),
+        JSON.stringify(viewport),
+      ).toBeLessThanOrEqual(1);
       expect(geometry.tabsVisible, JSON.stringify(viewport)).toBe(false);
       expect(geometry.setupX, JSON.stringify(viewport)).toBeLessThan(
         geometry.resultX,

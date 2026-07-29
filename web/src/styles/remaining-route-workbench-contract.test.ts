@@ -366,4 +366,16 @@ describe('remaining route workbench contract', () => {
     expect(summaryValue).toContain('var(--app-pnl-negative)');
     expect(summaryValue).not.toContain('var(--app-danger)');
   });
+
+  it('gives expanded Operations gates and constrained Backtest copy enough width', () => {
+    expect(CSS).toMatch(
+      /\.app-operations-command-grid:has\(\s*> \[data-testid='controlled-pilot-readiness'\]\[open\]\s*\) \{\s*grid-template-columns: minmax\(0, 1fr\);/,
+    );
+    expect(BACKTEST).toContain(
+      '2xl:grid-cols-[minmax(0,1fr)_minmax(180px,240px)]',
+    );
+    expect(BACKTEST).not.toContain(
+      'sm:grid-cols-[minmax(0,1fr)_minmax(180px,240px)]',
+    );
+  });
 });
