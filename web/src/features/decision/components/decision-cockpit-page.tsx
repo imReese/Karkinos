@@ -1079,15 +1079,15 @@ function paperShadowNextStepLabel(value: string, locale: Locale) {
     none: { en: 'No additional simulation review', zh: '无需额外模拟复核' },
     run_paper_shadow_daily: {
       en: 'Run paper/shadow simulation before manual confirmation',
-      zh: '人工确认前先运行 paper/shadow 模拟',
+      zh: '人工确认前先运行模拟与影子检验',
     },
     review_shadow_divergence: {
       en: 'Review paper/shadow divergence evidence',
-      zh: '复核 paper/shadow 偏差证据',
+      zh: '复核模拟与影子检验的偏差证据',
     },
     wait_for_paper_shadow_run: {
       en: 'Paper/shadow simulation is running; wait for completion',
-      zh: 'Paper/shadow 模拟正在运行，等待完成',
+      zh: '模拟与影子检验正在运行，等待完成',
     },
     review_manual_confirmation: {
       en: 'Simulation reviewed; continue with manual confirmation',
@@ -1099,7 +1099,7 @@ function paperShadowNextStepLabel(value: string, locale: Locale) {
     },
     inspect_failed_run: {
       en: 'Inspect failed paper/shadow run before approval',
-      zh: '批准前先检查失败的 paper/shadow 运行',
+      zh: '批准前先检查失败的模拟与影子检验',
     },
   };
   return labels[value]?.[locale] ?? formatPublicStatus(value, locale);
@@ -3148,7 +3148,7 @@ function AutomationCockpitPanel({
                 </div>
                 <div className="app-muted mt-1 break-words text-xs leading-5">
                   {locale === 'zh'
-                    ? '只投影 canonical manually_confirmed OMS 订单与持久化证据；复核本身不提交或撤销券商订单。'
+                    ? '只展示已人工确认的订单与持久化证据；复核本身不提交或撤销券商订单。'
                     : 'Canonical manually_confirmed OMS orders and persisted evidence only; review itself cannot submit or cancel a broker order.'}
                 </div>
               </div>
@@ -3231,7 +3231,7 @@ function AutomationCockpitPanel({
             <div className="mt-3 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className="app-muted min-w-0 break-words text-xs leading-5">
                 {locale === 'zh'
-                  ? '持久化事实 · 不联系 provider · OMS/账本/风控/资本授权不变'
+                  ? '持久化事实 · 不联系外部服务 · 订单状态/账本/风控/资本授权不变'
                   : 'Persisted facts · no provider contact · OMS/ledger/risk/capital authority unchanged'}
               </div>
               {currentPerOrderHandoffEnabled ? (
@@ -3614,7 +3614,7 @@ function AutomationCockpitPanel({
             <div className="mt-3 flex min-w-0 flex-wrap gap-2">
               {[
                 locale === 'zh' ? '仅持久化事实' : 'Persisted facts only',
-                locale === 'zh' ? '未联系 provider' : 'No provider contact',
+                locale === 'zh' ? '未联系外部服务' : 'No provider contact',
                 locale === 'zh' ? '提交关闭' : 'Submission off',
                 locale === 'zh' ? '撤单关闭' : 'Cancellation off',
                 locale === 'zh'
@@ -4090,10 +4090,10 @@ function AutomationCockpitPanel({
                     <div className="app-muted mt-2 break-words text-xs leading-5">
                       {connector.provider_contact_performed
                         ? locale === 'zh'
-                          ? '阻断：读取期间联系了 provider'
+                          ? '阻断：读取期间联系了外部服务'
                           : 'Blocked: provider contact occurred during read'
                         : locale === 'zh'
-                          ? '仅持久化事实 · 未联系 provider · 无提交/撤单权限'
+                          ? '仅持久化事实 · 未联系外部服务 · 无提交/撤单权限'
                           : 'Persisted facts only · no provider contact · no submit/cancel authority'}
                     </div>
                     {connector.blockers?.length ? (
@@ -4785,7 +4785,7 @@ function DailyTradingPlanPanel({
             <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0 text-sm font-semibold text-[var(--app-text)]">
                 {locale === 'zh'
-                  ? 'Paper/shadow 模拟复核'
+                  ? '模拟与影子复核'
                   : 'Paper/shadow simulation review'}
               </div>
               <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -5005,7 +5005,7 @@ function decisionGateMatrixItems(
   );
   const missingEvidence =
     locale === 'zh'
-      ? 'canonical 投影未提供该闸门证据'
+      ? '权威投影未提供该闸门证据'
       : 'Canonical projection did not provide this gate evidence';
 
   return DECISION_GATE_IDS.map((gateId) => {

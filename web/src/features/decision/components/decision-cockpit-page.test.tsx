@@ -1570,7 +1570,7 @@ test('captures the evidence-bound Decision Quality Score without authority contr
   expect(within(panel).getByText('决策已入日志')).toBeTruthy();
   expect(within(panel).getByText('后续可复盘')).toBeTruthy();
   expect(panel.textContent).toContain('100%');
-  expect(panel.textContent).toContain('不会联系 provider');
+  expect(panel.textContent).toContain('不会联系外部服务');
 
   fireEvent.click(
     within(panel).getByRole('button', { name: '固化今日质量证据' }),

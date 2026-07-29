@@ -58,7 +58,7 @@ export function DecisionQualityPanel() {
           kicker: '北极星指标',
           title: '决策质量证据',
           detail:
-            '衡量每日决策是否同时具备完整数据、Account Truth、风控、基准、日志与复盘身份。',
+            '衡量每日决策是否同时具备完整数据、账户事实、风控、基准、日志与复盘身份。',
           current: '当前决策',
           history: '已捕获日期',
           score: '历史合格率',
@@ -71,7 +71,7 @@ export function DecisionQualityPanel() {
           blocked: '当前未满足全部质量维度，仍可如实捕获为 blocked。',
           retry: '重新读取证据',
           safety:
-            '只追加决策质量审计；不会联系 provider、调用 AI、修改账本或产生交易/资本权限。',
+            '只追加决策质量审计；不会联系外部服务、调用 AI、修改账本或产生交易/资本权限。',
           error: '决策质量证据读取或捕获失败。',
         }
       : {

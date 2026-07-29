@@ -179,11 +179,11 @@ function paperShadowNextStepLabel(
     none: { en: 'No additional action', zh: '无需额外处理' },
     review_shadow_divergence: {
       en: 'Review paper/shadow divergence evidence',
-      zh: '复核 paper/shadow 偏差证据',
+      zh: '复核模拟与影子检验的偏差证据',
     },
     resolve_shadow_divergence: {
       en: 'Resolve paper/shadow divergence before approval',
-      zh: '批准前处理 paper/shadow 偏差',
+      zh: '批准前处理模拟与影子检验偏差',
     },
     review_manual_confirmation: {
       en: 'Review manual order confirmation',
@@ -191,15 +191,15 @@ function paperShadowNextStepLabel(
     },
     run_paper_shadow_daily: {
       en: 'Run paper/shadow simulation before manual confirmation',
-      zh: '人工确认前先运行 paper/shadow 模拟',
+      zh: '人工确认前先运行模拟与影子检验',
     },
     wait_for_paper_shadow_run: {
       en: 'Paper/shadow simulation is running; wait for completion',
-      zh: 'Paper/shadow 模拟正在运行，等待完成',
+      zh: '模拟与影子检验正在运行，等待完成',
     },
     inspect_failed_run: {
       en: 'Inspect failed paper/shadow run before approval',
-      zh: '批准前检查失败的 paper/shadow 运行',
+      zh: '批准前检查失败的模拟与影子检验',
     },
   };
   const key = value || 'none';
@@ -1553,7 +1553,7 @@ function brokerAdapterReadinessCopy(locale: Locale) {
       kicker: '只读账户事实',
       title: '券商适配器证据',
       detail:
-        '统一查看 release、确定性一致性验证与 collector 运行证据；这里不会注册或连接券商。',
+        '统一查看放行凭证、确定性一致性验证与采集器运行证据；这里不会注册或连接券商。',
       loading: '读取中',
       unavailable: '不可用',
       loadFailed: '券商适配器证据读取失败；未改变任何交易或资本权限。',
@@ -1561,17 +1561,17 @@ function brokerAdapterReadinessCopy(locale: Locale) {
       notConfigured:
         '尚未选择或授权真实券商环境。Karkinos 保持无默认适配器、无提交与撤单权限。',
       provider: '来源标识',
-      releaseEvidence: 'Release 证据：',
-      releaseReview: 'Release 审查',
+      releaseEvidence: '放行证据：',
+      releaseReview: '放行审查',
       conformance: '一致性验证',
-      collector: 'Collector 证据',
+      collector: '采集器证据',
       soakTitle: '只读券商试运行门禁',
       soakDetail:
-        '核对 20 个交易日、每日三阶段、恢复演练、Account Truth 与签名 owner acceptance；这里只展示证据，不执行 promotion。',
+        '核对 20 个交易日、每日三阶段、恢复演练、账户事实与已签名的所有者验收；这里只展示证据，不执行启用。',
       soakDays: '合格交易日',
       soakPhases: '运行阶段',
       soakDrills: '恢复演练',
-      accountTruthBinding: 'Account Truth',
+      accountTruthBinding: '账户事实',
       accountTruthLinked: '已绑定并通过',
       accountTruthMissing: '尚未绑定通过',
       ownerAcceptance: '所有者验收',
@@ -1583,10 +1583,10 @@ function brokerAdapterReadinessCopy(locale: Locale) {
       soakBlockers: (count: number) => `${count} 项试运行阻断：`,
       nextAction: '下一步：',
       lastEvidence: '最近证据',
-      noCollectorRun: '尚无 collector 运行',
+      noCollectorRun: '尚无采集器运行',
       blockers: (count: number) => `${count} 项证据阻断`,
       boundary:
-        '第三方适配器仍需单独审查和用户显式授权；本视图只读持久化证据，不联系 provider，不修改 OMS、账本、风控、kill switch 或资本授权。',
+        '第三方适配器仍需单独审查和用户显式授权；本视图只读持久化证据，不联系外部服务，不修改订单状态、账本、风控、紧急停止或资本授权。',
       status: {
         not_configured: '未配置',
         review_required: '等待人工审查',

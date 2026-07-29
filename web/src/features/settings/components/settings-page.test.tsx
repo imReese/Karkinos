@@ -389,6 +389,10 @@ test('updates local theme and language preferences', async () => {
   await user.click(screen.getByRole('button', { name: '中文' }));
   expect(window.localStorage.getItem('karkinos.locale')).toBe('zh');
   expect(await screen.findByText('控制中心')).toBeTruthy();
+  expect(screen.getByText('行情源配置')).toBeTruthy();
+  expect(screen.getByText('行情源能力矩阵')).toBeTruthy();
+  expect(document.body.textContent).not.toContain('供应商配置');
+  expect(document.body.textContent).not.toContain('需要 token');
 });
 
 test('saves data source settings through the settings endpoint', async () => {
