@@ -302,9 +302,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="app-root min-h-[100dvh] w-full">
       <div className="app-shell-frame flex h-[100dvh] min-h-[100dvh] w-full min-w-0">
         <div
-          className={`fixed inset-0 z-[90] bg-[color-mix(in_srgb,var(--app-bg)_72%,transparent)] transition-opacity xl:hidden ${
+          className={`app-mobile-navigation-backdrop fixed inset-0 z-[90] bg-[color-mix(in_srgb,var(--app-bg)_72%,transparent)] xl:hidden ${
             mobileNavOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
           }`}
+          data-mobile-open={mobileNavOpen}
           data-testid="mobile-navigation-backdrop"
           aria-hidden={!mobileNavOpen}
           onClick={() => setMobileNavOpen(false)}
@@ -312,7 +313,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <aside
           id="app-shell-navigation"
-          className={`app-shell-sidebar fixed inset-y-0 left-0 z-[100] flex w-[min(84vw,280px)] flex-col border-r border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-2 py-3 transition-[width,transform] duration-200 xl:relative xl:h-full ${desktopNavExpanded ? 'xl:w-52' : 'xl:w-14'} xl:translate-x-0 ${
+          data-mobile-open={mobileNavOpen}
+          data-desktop-expanded={desktopNavExpanded}
+          className={`app-shell-sidebar fixed inset-y-0 left-0 z-[100] flex w-[min(84vw,280px)] flex-col border-r border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-2 py-3 xl:relative xl:h-full ${desktopNavExpanded ? 'xl:w-52' : 'xl:w-14'} xl:translate-x-0 ${
             mobileNavOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
@@ -327,9 +330,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <span className="app-brand-glyph" aria-hidden="true">
                 <KarkinosMark />
               </span>
-              <div
-                className={`min-w-0 ${desktopNavExpanded ? '' : 'xl:hidden'}`}
-              >
+              <div className="app-sidebar-brand-copy min-w-0">
                 <div className="app-product-mark truncate whitespace-nowrap">
                   Karkinos
                 </div>
@@ -354,9 +355,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           >
             {navGroups.map((group) => (
               <div key={group.key} className="grid gap-1">
-                <div
-                  className={`app-nav-group-label app-type-micro px-2 pt-1 pb-1 font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)] ${desktopNavExpanded ? '' : 'xl:hidden'}`}
-                >
+                <div className="app-nav-group-label app-type-micro px-2 pt-1 pb-1 font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
                   {group.label[locale]}
                 </div>
                 {group.items.map((item) => {
@@ -386,9 +385,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                         className="app-nav-icon h-4 w-4 shrink-0"
                         aria-hidden="true"
                       />
-                      <span
-                        className={`truncate ${desktopNavExpanded ? '' : 'xl:hidden'}`}
-                      >
+                      <span className="app-nav-copy truncate">
                         {copy.shell.nav[item.key]}
                       </span>
                     </Link>
@@ -417,13 +414,11 @@ export function AppShell({ children }: { children: ReactNode }) {
                 strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                className={`app-nav-icon h-4 w-4 shrink-0 transition-transform duration-200 ${desktopNavExpanded ? '' : 'rotate-180'}`}
+                className="app-nav-icon app-nav-collapse-icon h-4 w-4 shrink-0"
               >
                 <path d="M15 18l-6-6 6-6" />
               </svg>
-              <span
-                className={`truncate ${desktopNavExpanded ? '' : 'xl:hidden'}`}
-              >
+              <span className="app-nav-copy truncate">
                 {copy.shell.closeNavigation}
               </span>
             </button>
@@ -565,7 +560,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <div className="app-shell-content min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto [contain:layout_paint]">
             <div className="w-full min-w-0 px-3 py-3 sm:px-4 sm:py-4 lg:px-5 lg:py-5 xl:px-6">
-              {children}
+              <div className="app-route-stage" key={pathname}>
+                {children}
+              </div>
             </div>
           </div>
 
@@ -1235,7 +1232,7 @@ function StatusChip({
       </button>
       {hoverHint && !expanded ? (
         <div
-          className={`pointer-events-none absolute left-1/2 z-[75] -translate-x-1/2 rounded-[var(--app-radius-overlay)] border border-[var(--app-border)] bg-[var(--app-surface-overlay)] px-2.5 py-1.5 text-xs text-[var(--app-text)] opacity-0 shadow-[var(--app-shadow-overlay)] transition-opacity duration-75 group-hover:opacity-100 group-focus-within:opacity-100 ${
+          className={`app-status-tooltip pointer-events-none absolute left-1/2 z-[75] -translate-x-1/2 rounded-[var(--app-radius-overlay)] border border-[var(--app-border)] bg-[var(--app-surface-overlay)] px-2.5 py-1.5 text-xs text-[var(--app-text)] opacity-0 shadow-[var(--app-shadow-overlay)] group-hover:opacity-100 group-focus-within:opacity-100 ${
             popupPlacement === 'top'
               ? 'bottom-[calc(100%+6px)]'
               : 'top-[calc(100%+6px)]'

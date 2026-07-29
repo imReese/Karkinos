@@ -37,9 +37,23 @@
   --app-line-height-label: 18px;
   --app-line-height-micro: 16px;
   --app-letter-spacing-product: 0.18em;
+  --app-space-section: 24px;
+  --app-space-section-relaxed: 32px;
+  /* Brand motion: quick, calm, and causal. */
+  --app-motion-instant: 80ms;
   --app-motion-fast: 120ms;
-  --app-motion-standard: 160ms;
+  --app-motion-standard: 180ms;
+  --app-motion-deliberate: 240ms;
+  --app-motion-route: 320ms;
+  --app-motion-loading: 1600ms;
+  --app-motion-spin: 900ms;
+  --app-motion-stagger: 36ms;
+  --app-motion-distance-xs: 2px;
+  --app-motion-distance-sm: 6px;
+  --app-motion-distance-md: 12px;
   --app-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --app-ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --app-ease-exit: cubic-bezier(0.4, 0, 1, 1);
   font-family: var(--app-font-sans);
   /* Catppuccin Mocha palette foundations. Components consume --app-* roles. */
   --ctp-base: #1e1e2e;
@@ -418,6 +432,8 @@ textarea {
   justify-content: center;
   background: color-mix(in srgb, var(--app-bg) 78%, transparent);
   padding: 72px 16px 16px;
+  animation: app-overlay-fade-in var(--app-motion-standard)
+    var(--app-ease-standard) both;
 }
 
 .app-command-panel {
@@ -428,6 +444,8 @@ textarea {
   border-radius: var(--app-radius-overlay);
   background: var(--app-surface-overlay);
   box-shadow: var(--app-shadow-overlay);
+  animation: app-overlay-enter var(--app-motion-deliberate)
+    var(--app-ease-enter) both;
 }
 
 .app-command-input-row {
@@ -504,12 +522,20 @@ textarea {
   color: var(--app-text-secondary);
   font-size: var(--app-font-size-compact);
   font-weight: var(--app-font-weight-medium);
+  transition:
+    background-color var(--app-motion-fast) var(--app-ease-standard),
+    color var(--app-motion-fast) var(--app-ease-standard),
+    translate var(--app-motion-fast) var(--app-ease-enter);
 }
 
 .app-command-result:hover,
 .app-command-result-active {
   background: var(--app-accent-bg);
   color: var(--app-text);
+}
+
+.app-command-result:hover {
+  translate: var(--app-motion-distance-xs) 0;
 }
 
 .app-command-result > svg,
@@ -684,7 +710,8 @@ textarea {
   color: var(--app-text-inverse);
   transition:
     border-color var(--app-motion-standard) var(--app-ease-standard),
-    background-color var(--app-motion-standard) var(--app-ease-standard);
+    background-color var(--app-motion-standard) var(--app-ease-standard),
+    translate var(--app-motion-fast) var(--app-ease-enter);
 }
 
 .app-button-secondary {
@@ -694,7 +721,8 @@ textarea {
   color: var(--app-text);
   transition:
     border-color var(--app-motion-standard) var(--app-ease-standard),
-    background-color var(--app-motion-standard) var(--app-ease-standard);
+    background-color var(--app-motion-standard) var(--app-ease-standard),
+    translate var(--app-motion-fast) var(--app-ease-enter);
 }
 
 .app-button-danger {
@@ -704,13 +732,20 @@ textarea {
   color: var(--app-danger-text);
   transition:
     border-color var(--app-motion-standard) var(--app-ease-standard),
-    background-color var(--app-motion-standard) var(--app-ease-standard);
+    background-color var(--app-motion-standard) var(--app-ease-standard),
+    translate var(--app-motion-fast) var(--app-ease-enter);
 }
 
 .app-button-primary:hover,
 .app-button-secondary:hover,
 .app-button-danger:hover {
   border-color: var(--app-accent-border);
+}
+
+.app-button-primary:active,
+.app-button-secondary:active,
+.app-button-danger:active {
+  translate: 0 var(--app-motion-distance-xs);
 }
 
 .app-button-primary:hover {
@@ -794,7 +829,11 @@ textarea {
   border-radius: var(--app-radius-control);
   background: var(--app-accent);
   opacity: 0;
-  transition: opacity var(--app-motion-standard) var(--app-ease-standard);
+  scale: 1 0.35;
+  transform-origin: center;
+  transition:
+    opacity var(--app-motion-standard) var(--app-ease-standard),
+    scale var(--app-motion-deliberate) var(--app-ease-enter);
 }
 
 .app-nav-item:hover {
@@ -817,12 +856,69 @@ textarea {
 
 .app-nav-item-active .app-nav-active-rail {
   opacity: 1;
+  scale: 1;
+}
+
+.app-mobile-navigation-backdrop {
+  transition: opacity var(--app-motion-standard) var(--app-ease-standard);
+}
+
+.app-mobile-navigation-backdrop[data-mobile-open='false'] {
+  transition-timing-function: var(--app-ease-exit);
+}
+
+.app-shell-sidebar {
+  transition:
+    width var(--app-motion-deliberate) var(--app-ease-enter),
+    transform var(--app-motion-deliberate) var(--app-ease-enter);
+}
+
+.app-shell-sidebar[data-mobile-open='false'] {
+  transition-timing-function: var(--app-ease-exit);
+}
+
+.app-nav-copy,
+.app-sidebar-brand-copy {
+  max-width: 160px;
+  white-space: nowrap;
+  transition:
+    opacity var(--app-motion-fast) var(--app-ease-standard),
+    translate var(--app-motion-deliberate) var(--app-ease-enter),
+    max-width var(--app-motion-deliberate) var(--app-ease-enter);
+}
+
+.app-nav-group-label {
+  max-height: 28px;
+  transition:
+    opacity var(--app-motion-fast) var(--app-ease-standard),
+    translate var(--app-motion-deliberate) var(--app-ease-enter),
+    max-height var(--app-motion-deliberate) var(--app-ease-enter),
+    padding var(--app-motion-deliberate) var(--app-ease-enter);
+}
+
+.app-nav-collapse-icon {
+  transition:
+    color var(--app-motion-standard) var(--app-ease-standard),
+    opacity var(--app-motion-standard) var(--app-ease-standard),
+    rotate var(--app-motion-deliberate) var(--app-ease-enter);
+}
+
+.app-shell-sidebar[data-desktop-expanded='false'] .app-nav-collapse-icon {
+  rotate: 180deg;
 }
 
 .app-page-header {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.app-workspace-header {
+  padding-bottom: var(--app-space-section);
+}
+
+.app-workbench-route {
+  padding-bottom: var(--app-space-section-relaxed);
 }
 
 .app-workspace-eyebrow {
@@ -1026,9 +1122,9 @@ textarea {
   letter-spacing: 0.01em;
   cursor: pointer;
   transition:
-    background-color 260ms cubic-bezier(0.16, 1, 0.3, 1),
-    color 260ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
+    background-color var(--app-motion-deliberate) var(--app-ease-enter),
+    color var(--app-motion-deliberate) var(--app-ease-enter),
+    translate var(--app-motion-fast) var(--app-ease-enter);
 }
 
 .app-inline-segmented-btn:hover {
@@ -1113,8 +1209,8 @@ textarea {
 
 .app-data-table tbody tr {
   transition:
-    background-color 150ms ease,
-    color 150ms ease;
+    background-color var(--app-motion-fast) var(--app-ease-standard),
+    color var(--app-motion-fast) var(--app-ease-standard);
 }
 
 .app-data-table tbody tr:hover {
@@ -1140,6 +1236,334 @@ textarea {
 
 .app-positions-table .app-data-table tbody tr:hover td:first-child {
   background: var(--app-surface-overlay);
+}
+
+/*
+ * Karkinos motion language
+ * Motion communicates hierarchy, state causality, and spatial continuity. It
+ * never implies fresher financial evidence or additional authority.
+ */
+@keyframes app-route-enter {
+  from {
+    opacity: 0;
+    translate: 0 var(--app-motion-distance-sm);
+  }
+  to {
+    opacity: 1;
+    translate: 0;
+  }
+}
+
+@keyframes app-content-enter {
+  from {
+    opacity: 0;
+    translate: 0 var(--app-motion-distance-xs);
+  }
+  to {
+    opacity: 1;
+    translate: 0;
+  }
+}
+
+@keyframes app-overlay-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes app-overlay-enter {
+  from {
+    opacity: 0;
+    scale: 0.985;
+    translate: 0 calc(-1 * var(--app-motion-distance-sm));
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+    translate: 0;
+  }
+}
+
+@keyframes app-drawer-enter {
+  from {
+    opacity: 0.86;
+    scale: 0.985 1;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+@keyframes app-chart-enter {
+  from {
+    opacity: 0.72;
+    translate: 0 var(--app-motion-distance-xs);
+  }
+  to {
+    opacity: 1;
+    translate: 0;
+  }
+}
+
+@keyframes app-section-reveal {
+  from {
+    clip-path: inset(0 0 var(--app-motion-distance-md) 0);
+    opacity: 0.72;
+  }
+  to {
+    clip-path: inset(0);
+    opacity: 1;
+  }
+}
+
+.app-route-stage {
+  min-width: 0;
+  animation: app-route-enter var(--app-motion-route) var(--app-ease-enter) both;
+}
+
+.app-route-stage [data-workbench-primitive='workspace-header'] {
+  animation: app-content-enter var(--app-motion-deliberate)
+    var(--app-ease-enter) both;
+}
+
+.app-route-stage
+  [data-workbench-primitive='metric-strip']
+  > .app-metric-strip-item {
+  animation: app-content-enter var(--app-motion-deliberate)
+    var(--app-ease-enter) both;
+}
+
+.app-route-stage
+  [data-workbench-primitive='metric-strip']
+  > .app-metric-strip-item:nth-child(2) {
+  animation-delay: calc(var(--app-motion-stagger) * 1);
+}
+
+.app-route-stage
+  [data-workbench-primitive='metric-strip']
+  > .app-metric-strip-item:nth-child(3) {
+  animation-delay: calc(var(--app-motion-stagger) * 2);
+}
+
+.app-route-stage
+  [data-workbench-primitive='metric-strip']
+  > .app-metric-strip-item:nth-child(4) {
+  animation-delay: calc(var(--app-motion-stagger) * 3);
+}
+
+.app-route-stage
+  [data-workbench-primitive='metric-strip']
+  > .app-metric-strip-item:nth-child(n + 5) {
+  animation-delay: calc(var(--app-motion-stagger) * 4);
+}
+
+[data-workbench-primitive='status-badge'] {
+  transition:
+    border-color var(--app-motion-standard) var(--app-ease-standard),
+    background-color var(--app-motion-standard) var(--app-ease-standard),
+    color var(--app-motion-standard) var(--app-ease-standard);
+}
+
+.app-interactive-surface {
+  transition:
+    border-color var(--app-motion-standard) var(--app-ease-standard),
+    background-color var(--app-motion-standard) var(--app-ease-standard),
+    color var(--app-motion-standard) var(--app-ease-standard),
+    opacity var(--app-motion-standard) var(--app-ease-standard),
+    translate var(--app-motion-fast) var(--app-ease-enter);
+}
+
+.app-interactive-surface:active {
+  translate: 0 var(--app-motion-distance-xs);
+}
+
+.app-disclosure-chevron {
+  transition:
+    rotate var(--app-motion-standard) var(--app-ease-enter),
+    transform var(--app-motion-standard) var(--app-ease-enter);
+}
+
+[data-workbench-primitive='evidence-state'] {
+  animation: app-content-enter var(--app-motion-deliberate)
+    var(--app-ease-enter) both;
+  transition:
+    border-color var(--app-motion-standard) var(--app-ease-standard),
+    background-color var(--app-motion-standard) var(--app-ease-standard);
+}
+
+[data-workbench-primitive='exception-list'] > li,
+[data-workbench-primitive='timeline'] > li,
+[data-workbench-primitive='gate-matrix'] tbody > tr {
+  animation: app-content-enter var(--app-motion-deliberate)
+    var(--app-ease-enter) both;
+}
+
+[data-workbench-primitive='exception-list'] > li:nth-child(2),
+[data-workbench-primitive='timeline'] > li:nth-child(2),
+[data-workbench-primitive='gate-matrix'] tbody > tr:nth-child(2) {
+  animation-delay: calc(var(--app-motion-stagger) * 1);
+}
+
+[data-workbench-primitive='exception-list'] > li:nth-child(3),
+[data-workbench-primitive='timeline'] > li:nth-child(3),
+[data-workbench-primitive='gate-matrix'] tbody > tr:nth-child(3) {
+  animation-delay: calc(var(--app-motion-stagger) * 2);
+}
+
+[data-workbench-primitive='exception-list'] > li:nth-child(4),
+[data-workbench-primitive='timeline'] > li:nth-child(4),
+[data-workbench-primitive='gate-matrix'] tbody > tr:nth-child(4) {
+  animation-delay: calc(var(--app-motion-stagger) * 3);
+}
+
+[data-workbench-primitive='exception-list'] > li:nth-child(n + 5),
+[data-workbench-primitive='timeline'] > li:nth-child(n + 5),
+[data-workbench-primitive='gate-matrix'] tbody > tr:nth-child(n + 5) {
+  animation-delay: calc(var(--app-motion-stagger) * 4);
+}
+
+[data-workbench-primitive='data-table'] tbody {
+  animation: app-content-enter var(--app-motion-deliberate)
+    var(--app-ease-enter) both;
+}
+
+[data-workbench-primitive='controlled-action-zone'] {
+  transition:
+    border-color var(--app-motion-standard) var(--app-ease-standard),
+    background-color var(--app-motion-standard) var(--app-ease-standard);
+}
+
+.app-evidence-drawer-backdrop {
+  animation: app-overlay-fade-in var(--app-motion-standard)
+    var(--app-ease-standard) both;
+}
+
+.app-evidence-drawer {
+  animation: app-drawer-enter var(--app-motion-deliberate) var(--app-ease-enter)
+    both;
+  transform-origin: right center;
+}
+
+.app-toolbar-shell :where([role='dialog'], [role='menu']),
+.app-status-footer [role='dialog'] {
+  animation: app-overlay-enter var(--app-motion-deliberate)
+    var(--app-ease-enter) both;
+  transform-origin: top right;
+}
+
+.app-status-tooltip {
+  transition: opacity var(--app-motion-instant) var(--app-ease-standard);
+}
+
+.app-chart-control,
+.app-shell-content :where([role='tab'], button[aria-pressed]) {
+  transition:
+    border-color var(--app-motion-standard) var(--app-ease-standard),
+    background-color var(--app-motion-standard) var(--app-ease-standard),
+    box-shadow var(--app-motion-standard) var(--app-ease-standard),
+    color var(--app-motion-standard) var(--app-ease-standard),
+    opacity var(--app-motion-standard) var(--app-ease-standard),
+    translate var(--app-motion-fast) var(--app-ease-enter);
+}
+
+.app-chart-control:active,
+.app-shell-content :where([role='tab'], button[aria-pressed]):active {
+  translate: 0 var(--app-motion-distance-xs);
+}
+
+.app-chart-stage,
+[data-workbench-primitive='responsive-chart-frame'] > * {
+  animation: app-chart-enter var(--app-motion-route) var(--app-ease-enter) both;
+}
+
+.app-chart-tooltip,
+.recharts-tooltip-wrapper {
+  animation: app-overlay-enter var(--app-motion-standard) var(--app-ease-enter)
+    both;
+}
+
+.app-chart-annotation {
+  transition: opacity var(--app-motion-fast) var(--app-ease-standard);
+}
+
+:where(.motion-safe\:animate-pulse) {
+  animation-duration: var(--app-motion-loading);
+  animation-timing-function: var(--app-ease-standard);
+}
+
+:where(.animate-spin) {
+  animation-duration: var(--app-motion-spin);
+}
+
+/* Normalize legacy Tailwind motion utilities while their callers migrate. */
+:where(
+  .transition,
+  .transition-colors,
+  .transition-opacity,
+  .transition-transform
+) {
+  transition-timing-function: var(--app-ease-standard);
+}
+
+.duration-75 {
+  transition-duration: var(--app-motion-instant);
+}
+
+.duration-150 {
+  transition-duration: var(--app-motion-standard);
+}
+
+.duration-200 {
+  transition-duration: var(--app-motion-deliberate);
+}
+
+.duration-300 {
+  transition-duration: var(--app-motion-route);
+}
+
+.app-public-header,
+.app-public-hero-copy,
+.app-public-evidence-frame {
+  animation: app-content-enter var(--app-motion-route) var(--app-ease-enter)
+    both;
+}
+
+.app-public-hero-copy {
+  animation-delay: var(--app-motion-stagger);
+}
+
+.app-public-evidence-frame {
+  animation-delay: calc(var(--app-motion-stagger) * 2);
+}
+
+.app-public-evidence-step {
+  animation: app-content-enter var(--app-motion-deliberate)
+    var(--app-ease-enter) both;
+}
+
+.app-public-evidence-step:nth-child(2) {
+  animation-delay: calc(var(--app-motion-stagger) * 1);
+}
+
+.app-public-evidence-step:nth-child(3) {
+  animation-delay: calc(var(--app-motion-stagger) * 2);
+}
+
+.app-public-evidence-step:nth-child(4) {
+  animation-delay: calc(var(--app-motion-stagger) * 3);
+}
+
+@supports (animation-timeline: view()) {
+  .app-public-section,
+  .app-public-cta-section {
+    animation: app-section-reveal linear both;
+    animation-range: entry 8% cover 24%;
+    animation-timeline: view();
+  }
 }
 
 ::-webkit-scrollbar {
@@ -2468,17 +2892,6 @@ h3 {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}
-
 @media (max-width: 767px) {
   .app-horizontal-scroll-cue {
     mask-image: linear-gradient(
@@ -2592,6 +3005,25 @@ h3 {
     box-shadow: none;
   }
 
+  .app-shell-sidebar[data-desktop-expanded='false']
+    :where(.app-nav-copy, .app-sidebar-brand-copy) {
+    width: 0;
+    max-width: 0;
+    opacity: 0;
+    overflow: hidden;
+    pointer-events: none;
+    translate: calc(-1 * var(--app-motion-distance-sm)) 0;
+    white-space: nowrap;
+  }
+
+  .app-shell-sidebar[data-desktop-expanded='false'] .app-nav-group-label {
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    padding-block: 0;
+    translate: calc(-1 * var(--app-motion-distance-sm)) 0;
+  }
+
   .app-shell-main {
     border-width: 0;
     border-radius: 0;
@@ -2614,8 +3046,16 @@ h3 {
   *::before,
   *::after {
     scroll-behavior: auto !important;
+    animation-delay: 0ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .app-public-section,
+  .app-public-cta-section {
+    animation: none !important;
+    opacity: 1 !important;
+    translate: 0 !important;
   }
 }

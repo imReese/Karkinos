@@ -795,7 +795,7 @@ export function SettingsPage() {
                         <button
                           key={option}
                           type="button"
-                          className={`rounded-[var(--app-radius-control)] border px-3 py-2 text-sm font-semibold transition-[transform,border-color,background-color] duration-200 active:scale-[0.98] ${
+                          className={`app-interactive-surface rounded-[var(--app-radius-control)] border px-3 py-2 text-sm font-semibold ${
                             selected
                               ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-ghost)] text-[var(--app-accent)]'
                               : 'border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] text-[var(--app-soft)] hover:border-[color-mix(in_srgb,var(--app-border)_48%,transparent)]'

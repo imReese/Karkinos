@@ -289,7 +289,7 @@ describe('application design token contract', () => {
     expect(MOCHA.get('--app-line-height-micro')).toBe('16px');
     expect(MOCHA.get('--app-letter-spacing-product')).toBe('0.18em');
     expect(MOCHA.get('--app-motion-fast')).toBe('120ms');
-    expect(MOCHA.get('--app-motion-standard')).toBe('160ms');
+    expect(MOCHA.get('--app-motion-standard')).toBe('180ms');
     expect(MOCHA.get('--app-ease-standard')).toBe('cubic-bezier(0.2, 0, 0, 1)');
   });
 

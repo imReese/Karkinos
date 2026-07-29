@@ -29,7 +29,7 @@ export function DataTable<TData extends RowData>({
   className,
 }: {
   data: ReadonlyArray<TData>;
-  columns: ReadonlyArray<ColumnDef<TData, unknown>>;
+  columns: ReadonlyArray<ColumnDef<TData, any>>;
   caption: string;
   emptyState: ReactNode;
   getRowId?: (row: TData, index: number) => string;
