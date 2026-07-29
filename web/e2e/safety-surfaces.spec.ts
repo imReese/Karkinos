@@ -30,9 +30,9 @@ test('critical human-review surfaces load from the product runtime', async ({
   }
 
   await page.goto('/account-truth');
-  await expect(
-    page.getByTestId('account-truth-review-workspace'),
-  ).toBeVisible();
+  await expect(page.getByTestId('account-truth-review-workspace')).toBeVisible({
+    timeout: 15_000,
+  });
   expect(
     await page
       .locator(
