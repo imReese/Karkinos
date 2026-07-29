@@ -244,6 +244,17 @@ describe('remaining route workbench contract', () => {
     expect(PRICE_STRUCTURE_CHART).not.toContain('formatPercent');
     expect(settingsSection).toContain('border-y border-[var(--app-divider)]');
     expect(settingsSection).not.toContain('app-panel');
+    const flatSettingsSurfaces = [
+      ...SETTINGS.matchAll(
+        /className="([^"]+)"\s+data-settings-surface="flat"/g,
+      ),
+    ];
+    expect(flatSettingsSurfaces).toHaveLength(5);
+    for (const [, className] of flatSettingsSurfaces) {
+      expect(className).toContain('border-y border-[var(--app-divider)]');
+      expect(className).not.toContain('rounded-');
+      expect(className).not.toContain('bg-[');
+    }
     expect(APP_SHELL).toContain('data-testid="mobile-preferences-toggle"');
     expect(APP_SHELL).toContain(
       'hidden min-w-0 flex-row items-center gap-2 sm:flex',

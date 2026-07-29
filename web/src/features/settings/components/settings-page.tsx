@@ -629,7 +629,10 @@ export function SettingsPage() {
               title={copy.settings.backendSettings}
               detail={copy.settings.persistedSettingsDetail}
             >
-              <div className="grid gap-3 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+              <div
+                className="grid gap-3 border-y border-[var(--app-divider)] py-3"
+                data-settings-surface="flat"
+              >
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-sm font-semibold">
                     {copy.settings.operationsRegister}
@@ -674,7 +677,8 @@ export function SettingsPage() {
               ) : null}
 
               <form
-                className="grid gap-4 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4"
+                className="grid gap-4 border-y border-[var(--app-divider)] py-4"
+                data-settings-surface="flat"
                 onSubmit={submitAccountCommission}
               >
                 <div>
@@ -762,7 +766,8 @@ export function SettingsPage() {
               ) : null}
 
               <form
-                className="grid gap-4 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4"
+                className="grid gap-4 border-y border-[var(--app-divider)] py-4"
+                data-settings-surface="flat"
                 onSubmit={submitDataSource}
               >
                 <div>
@@ -884,7 +889,10 @@ export function SettingsPage() {
                 />
               ) : null}
 
-              <div className="grid gap-3 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+              <div
+                className="grid gap-3 border-y border-[var(--app-divider)] py-4"
+                data-settings-surface="flat"
+              >
                 <div>
                   <div className="text-sm font-semibold">
                     {copy.settings.metadataReadiness}
@@ -893,33 +901,36 @@ export function SettingsPage() {
                     {copy.settings.metadataReadinessDetail}
                   </div>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <StatusMetric
-                    label={copy.settings.metadataConfigured}
-                    value={
-                      assetMetadataStatus.isLoading
+                <MetricStrip
+                  ariaLabel={copy.settings.metadataReadiness}
+                  items={[
+                    {
+                      id: 'metadata-configured',
+                      label: copy.settings.metadataConfigured,
+                      value: assetMetadataStatus.isLoading
                         ? copy.shell.checking
-                        : metadataConfiguredCount
-                    }
-                    tone={metadataConfiguredCount > 0 ? 'success' : 'warning'}
-                  />
-                  <StatusMetric
-                    label={copy.settings.assetMetadataMissingCount}
-                    value={
-                      assetMetadataStatus.isLoading
+                        : metadataConfiguredCount,
+                      tone: metadataConfiguredCount > 0 ? 'neutral' : 'warning',
+                    },
+                    {
+                      id: 'metadata-missing',
+                      label: copy.settings.assetMetadataMissingCount,
+                      value: assetMetadataStatus.isLoading
                         ? copy.shell.checking
-                        : missingMetadataSymbols.length
-                    }
-                    tone={
-                      missingMetadataSymbols.length > 0 ? 'warning' : 'success'
-                    }
-                  />
-                  <StatusMetric
-                    label={copy.settings.assetMetadataSource}
-                    value={metadataSourceLabel}
-                    tone="neutral"
-                  />
-                </div>
+                        : missingMetadataSymbols.length,
+                      tone:
+                        missingMetadataSymbols.length > 0
+                          ? 'warning'
+                          : 'neutral',
+                    },
+                    {
+                      id: 'metadata-source',
+                      label: copy.settings.assetMetadataSource,
+                      value: metadataSourceLabel,
+                      tone: 'neutral',
+                    },
+                  ]}
+                />
                 {assetMetadataStatus.isLoading ? (
                   <InlineNotice
                     tone="neutral"
@@ -1170,7 +1181,10 @@ export function SettingsPage() {
             title={copy.settings.dataSafety}
             detail={copy.settings.dataSafetyDetail}
           >
-            <div className="grid gap-3 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
+            <div
+              className="grid gap-3 border-y border-[var(--app-divider)] py-3"
+              data-settings-surface="flat"
+            >
               <div className="flex items-center justify-between gap-3">
                 <div className="text-sm font-semibold">
                   {copy.settings.safetyRegister}
