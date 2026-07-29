@@ -3847,7 +3847,7 @@ export function RiskPage() {
               </h2>
               <p className="mt-0.5 text-xs text-[var(--app-text-secondary)]">
                 {locale === 'zh'
-                  ? '仅展示 canonical 投影持久化的数值、等级和说明；未提供的阈值不会在 UI 中推导。'
+                  ? '仅展示权威持久化投影中的数值、等级和说明；未提供的阈值不会在界面中推导。'
                   : 'Shows only values, levels, and details persisted by the canonical projection; missing thresholds are not inferred in the UI.'}
               </p>
             </div>
@@ -3988,7 +3988,7 @@ export function RiskPage() {
               </h2>
               <p className="mt-0.5 max-w-3xl text-xs text-[var(--app-text-secondary)]">
                 {locale === 'zh'
-                  ? '熔断与人工审批独立于风险事实展示；操作不会改变上方 canonical 风险证据。'
+                  ? '熔断与人工审批独立于风险事实展示；操作不会改变上方权威风险证据。'
                   : 'Kill-switch and manual approval controls remain separate from risk facts and do not alter the canonical evidence above.'}
               </p>
             </div>

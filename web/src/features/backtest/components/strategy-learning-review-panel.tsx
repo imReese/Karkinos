@@ -84,7 +84,7 @@ const COPY = {
     kicker: '已复盘学习证据',
     title: '策略学习复核队列',
     detail:
-      '把每个信号最新的持久化人工结果复盘转换为安全下一步；历史标签必须先用当前 canonical 证据重新校验，才能进入队列。',
+      '把每个信号最新的持久化人工结果复盘转换为安全下一步；历史标签必须先用当前权威证据重新校验，才能进入队列。',
     reviewed: '已复盘信号',
     actions: '待办项',
     critical: '完整性阻断',
@@ -140,10 +140,9 @@ const COPY = {
       repair_post_decision_review_integrity_before_learning:
         '先修复并回放决策后复盘，再从中学习',
       re_preview_post_decision_review_against_current_evidence:
-        '用当前 canonical 证据重新预览结果复盘',
+        '用当前权威证据重新预览结果复盘',
       open_human_strategy_research_task: '另行打开人工启动的策略研究任务',
-      resolve_or_wait_for_canonical_outcome_evidence:
-        '补齐或等待 canonical 结果证据',
+      resolve_or_wait_for_canonical_outcome_evidence: '补齐或等待权威结果证据',
       review_why_the_signal_was_not_executed: '复核该信号为何未执行',
       none: '无需动作',
     },

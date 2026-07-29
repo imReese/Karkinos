@@ -3061,7 +3061,7 @@ export const copy = {
       captureIdentity: '捕获标识',
       contextSnapshot: '上下文快照',
       contextFingerprint: '上下文指纹',
-      providerContact: '联系 provider',
+      providerContact: '联系外部服务',
       databaseWrites: '数据库写入',
       executionAuthority: '执行权限',
       yes: '是',
@@ -3659,7 +3659,7 @@ export const copy = {
         evidenceNextSteps: {
           reviewHistory: '复核保留的账本流水与已实现盈亏。',
           reloadIdentity: '重新读取并确认同一估值快照和账本截止。',
-          reconcileCost: '到 Account Truth 复核成本证据。',
+          reconcileCost: '到账户事实页复核成本证据。',
           reviewQuote: '到 Market 复核持久化行情证据。',
           none: '当前无需额外人工操作。',
         },
@@ -4307,7 +4307,7 @@ export const copy = {
           '账户/标的策略绑定与已复盘学习保持独立，不授予执行权限。',
         promotionEvidenceTitle: '推广证据',
         promotionEvidenceDetail:
-          '复核扣费后、样本外、风控、模拟、Account Truth 与归因闸门。',
+          '复核扣费后、样本外、风控、模拟、账户事实与归因闸门。',
         researchArchiveTitle: 'AI 研究与已保存报告',
         researchArchiveDetail:
           '人工启动的 AI 任务与权威持久化实验仍然只是研究证据。',
@@ -4954,10 +4954,10 @@ export const copy = {
       confirmedFundNavAuditRun: '审计批次',
       holdingEvidenceReview: '当前持仓证据复核',
       holdingEvidenceReviewDetail:
-        '仅纳入 canonical 非零当前持仓；只有更新且已确认的持久化行情或净值证据才能清除复核项。',
+        '仅纳入权威持久化投影中的非零当前持仓；只有更新且已确认的持久化行情或净值证据才能清除复核项。',
       holdingEvidenceReviewComplete: '所有当前持仓均已有确认行情证据。',
       holdingEvidenceReviewEmpty: '当前没有需要复核的持仓。',
-      holdingEvidenceReviewUnavailable: '当前持仓 canonical 证据报告暂不可用。',
+      holdingEvidenceReviewUnavailable: '当前持仓权威证据报告暂不可用。',
       holdingEvidenceReviewBlocked:
         '估值 identity 不完整；需要先恢复快照绑定，不能把该报告当作完整证据。',
       holdingEvidenceReviewCount: (count: number) =>
@@ -4992,9 +4992,9 @@ export const copy = {
         quote_status_not_confirmed: '持久化行情状态尚未被识别为已确认。',
       },
       holdingEvidenceExplicitRefresh:
-        '该按钮会执行显式 ingestion：可能联系已配置的行情源并记录批次，但不会修改账本、OMS、风控或任何权限。',
+        '该按钮会显式采集行情：可能联系已配置的行情源并记录批次，但不会修改账本、订单状态、风控或任何权限。',
       holdingEvidenceConfirmedNavRefresh:
-        '基金净值使用独立的 confirmation-only 采集批次；估值与前一日净值不能清除复核，每次尝试均留存审计且不会改变交易权限。',
+        '基金净值使用独立的仅确认采集批次；估值与前一日净值不能清除复核，每次尝试均留存审计且不会改变交易权限。',
       holdingEvidenceSnapshot: '估值快照',
       holdingEvidenceLedgerCutoff: '账本截止',
       holdingEvidenceFingerprint: '复核指纹',
@@ -5009,7 +5009,7 @@ export const copy = {
         review_unknown_quote_status_before_refresh: '刷新前先复核未知行情状态',
       },
       providerActions: {
-        configure_data_source_token: '配置数据源 token',
+        configure_data_source_token: '配置数据源凭证',
         switch_to_fund_supported_provider: '切换到支持基金的数据源',
         check_provider_network_or_use_cache:
           '检查行情源网络，或继续使用缓存行情',
@@ -5472,7 +5472,7 @@ export const copy = {
       currentProvider: '当前数据源',
       providerConfigured: '配置状态',
       providerSupportsFunds: '基金支持',
-      providerRequiresToken: '需要 token',
+      providerRequiresToken: '需要凭证',
       metadataConfigured: '资产元数据',
       persistentCache: '持久化缓存',
       lastSuccessfulSync: '最近成功同步',
@@ -5482,18 +5482,18 @@ export const copy = {
       selectDataSource: '选择数据源',
       providerTimeoutNotice: '当前行情源请求超时。',
       operationsRegister: '运营登记',
-      registerProvider: '供应商',
+      registerProvider: '行情源',
       registerPollInterval: '轮询间隔',
       registerTrackedAssets: '跟踪资产',
       registerStrategy: '策略',
-      providerConfiguration: '供应商配置',
+      providerConfiguration: '行情源配置',
       providerConfigurationDetail: '数据源变更保持显式，不改变交易执行行为。',
       metadataReadiness: '元数据就绪',
       metadataReadinessDetail: '资产名称与行情代码在展示前必须具有可追溯身份。',
       dataSourceOperations: '数据源运营',
       dataSourceOperationsDetail:
         '按需查看数据源能力、权限缺口、备用行情路径和 TuShare 手工任务。',
-      providerCapabilityMatrix: '供应商能力矩阵',
+      providerCapabilityMatrix: '行情源能力矩阵',
       capabilityStockRealtime: '股票实时',
       capabilityStockDaily: '股票日线',
       capabilityFundEstimate: 'Eastmoney 基金估算',
@@ -5535,7 +5535,7 @@ export const copy = {
       token: 'TuShare 凭证',
       credentialConfigured: '已通过运行环境配置',
       credentialMissing: '尚未配置；切换前请先配置运行环境凭证',
-      credentialNotRequired: '当前供应商不需要凭证',
+      credentialNotRequired: '当前行情源不需要凭证',
       credentialEnvironmentDetail:
         '本页不接收或展示凭证；请配置运行环境后重启 Karkinos。',
       accountCostProfile: '账户成本配置',
@@ -5605,10 +5605,10 @@ export const copy = {
         '缓存行情表示最新已知价格来自本地存储，可能不等于当前市场价格。',
       safetyNoAdvice:
         'Karkinos 是个人量化投研与交易平台，不构成投资建议或成交保证。',
-      safetyPrivateData: '券商 token、账户导出和真实对账单不应进入公开仓库。',
+      safetyPrivateData: '券商凭证、账户导出和真实对账单不应进入公开仓库。',
       deferred: '暂缓项',
       deferredDetail:
-        'AI 研究供应商、证据摄取策略、券商凭证和通知编辑，在受控界面完成评审前继续由运行环境或配置文件管理。',
+        'AI 研究服务、证据采集策略、券商凭证和通知编辑，在受控界面完成评审前继续由运行环境或配置文件管理。',
     },
     placeholder: '这个页面还在继续建设中。',
   },

@@ -484,6 +484,8 @@ test('localizes decision risk handoff without asking users to inspect every risk
   const blockRegister = await screen.findByTestId('risk-blocking-register');
   expect(within(blockRegister).getByText('当前风险优先项')).toBeTruthy();
   expect(blockRegister.textContent).not.toContain('当前风险可控');
+  expect(document.body.textContent).toContain('权威持久化投影');
+  expect(document.body.textContent).not.toContain('canonical 投影');
   const thresholdTable = await screen.findByTestId('risk-threshold-table');
   expect(
     within(thresholdTable).getByText('当前净值距离最近峰值的回撤幅度。'),
