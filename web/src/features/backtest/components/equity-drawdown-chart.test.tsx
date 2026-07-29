@@ -101,10 +101,12 @@ test('keeps drawdown gradient identities unique across coexisting reports', () =
   );
 
   const gradientIds = Array.from(
-    document.querySelectorAll('linearGradient[id^="backtest-drawdown-"]'),
+    document.querySelectorAll(
+      'linearGradient[id^="backtest-equity-"], linearGradient[id^="backtest-drawdown-"]',
+    ),
     (gradient) => gradient.id,
   );
-  expect(gradientIds).toHaveLength(2);
-  expect(new Set(gradientIds).size).toBe(2);
+  expect(gradientIds).toHaveLength(4);
+  expect(new Set(gradientIds).size).toBe(4);
   expect(document.querySelectorAll('.recharts-wrapper')).toHaveLength(4);
 });

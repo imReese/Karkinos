@@ -124,6 +124,8 @@ test('opens the cited research canvas from canonical persisted context', async (
   expect(await screen.findByText('Current account assignment')).toBeTruthy();
   const primaryCanvas = screen.getByTestId('ai-research-primary-canvas');
   const contextMetrics = screen.getByTestId('ai-research-context-metrics');
+  const commandGrid = screen.getByTestId('ai-research-command-grid');
+  expect(commandGrid.className).toContain('app-ai-research-command-grid');
   expect(
     contextMetrics.compareDocumentPosition(primaryCanvas) &
       Node.DOCUMENT_POSITION_FOLLOWING,
