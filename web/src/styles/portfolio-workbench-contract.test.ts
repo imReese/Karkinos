@@ -32,6 +32,11 @@ const globalStyles = readFileSync(
   resolve(SRC_ROOT, 'styles/globals.css'),
   'utf8',
 );
+const routerSource = readFileSync(resolve(SRC_ROOT, 'app/router.tsx'), 'utf8');
+const portfolioPageSource = routerSource.slice(
+  routerSource.indexOf('export function PortfolioPage()'),
+  routerSource.indexOf('export function RiskPage()'),
+);
 
 test('portfolio strategy evidence uses flat standard workbench primitives', () => {
   expect(strategyContributionSource).toContain('<MetricStrip');
@@ -69,4 +74,10 @@ test('portfolio tables expose primary facts and a mobile master-detail list', ()
   expect(liveHoldingsSource).toContain('minmax(84px,1fr)');
   expect(liveHoldingsSource).toContain('overflow-x-auto');
   expect(liveHoldingsSource).not.toContain('overflow-hidden');
+});
+
+test('portfolio lifecycle states stay flat instead of rebuilding a card wall', () => {
+  expect(portfolioPageSource).toContain('<EvidenceState');
+  expect(portfolioPageSource).not.toContain('<StatusCard');
+  expect(portfolioPageSource).not.toMatch(/rounded-(?:xl|2xl|3xl)/);
 });

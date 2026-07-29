@@ -3256,22 +3256,31 @@ export function PortfolioPage() {
           {copy.portfolio.filteredHoldingsCount(filteredPositions.length)}
         </div>
         {positions.isLoading ? (
-          <StatusCard
+          <EvidenceState
+            kind="loading"
             title={copy.states.loading}
-            detail={copy.portfolio.positionsLoading}
+            description={copy.portfolio.positionsLoading}
           />
         ) : positions.isError ? (
-          <StatusCard
-            tone="danger"
+          <EvidenceState
+            kind="error"
             title={copy.states.error}
-            detail={copy.portfolio.positionsError}
-            actionLabel={copy.states.retry}
-            onAction={() => void positions.refetch()}
+            description={copy.portfolio.positionsError}
+            action={
+              <button
+                type="button"
+                className="app-button-secondary inline-flex min-h-10 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-sm font-semibold sm:min-h-9"
+                onClick={() => void positions.refetch()}
+              >
+                {copy.states.retry}
+              </button>
+            }
           />
         ) : filteredPositions.length === 0 ? (
-          <StatusCard
+          <EvidenceState
+            kind="empty"
             title={copy.states.empty}
-            detail={
+            description={
               (positions.data ?? []).length === 0
                 ? copy.portfolio.positionsEmpty
                 : copy.portfolio.filterEmpty
@@ -3335,17 +3344,25 @@ export function PortfolioPage() {
         <div className="grid min-w-0 gap-4 xl:grid-cols-2">
           {mode === 'account' ? (
             liveHoldings.isLoading ? (
-              <StatusCard
+              <EvidenceState
+                kind="loading"
                 title={copy.states.loading}
-                detail={copy.portfolio.liveBoard.loading}
+                description={copy.portfolio.liveBoard.loading}
               />
             ) : liveHoldings.isError ? (
-              <StatusCard
-                tone="danger"
+              <EvidenceState
+                kind="error"
                 title={copy.states.error}
-                detail={copy.portfolio.liveBoard.error}
-                actionLabel={copy.states.retry}
-                onAction={() => void liveHoldings.refetch()}
+                description={copy.portfolio.liveBoard.error}
+                action={
+                  <button
+                    type="button"
+                    className="app-button-secondary inline-flex min-h-10 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-sm font-semibold sm:min-h-9"
+                    onClick={() => void liveHoldings.refetch()}
+                  >
+                    {copy.states.retry}
+                  </button>
+                }
               />
             ) : (
               <LiveHoldingsBoard groups={liveHoldings.data?.groups ?? []} />
@@ -3368,24 +3385,33 @@ export function PortfolioPage() {
               onRetry={() => void cockpit.refetch()}
             />
           ) : snapshot.isLoading ? (
-            <StatusCard
+            <EvidenceState
+              kind="loading"
               title={copy.states.loading}
-              detail={copy.portfolio.sidebarLoading}
+              description={copy.portfolio.sidebarLoading}
             />
           ) : snapshot.isError ? (
-            <StatusCard
-              tone="danger"
+            <EvidenceState
+              kind="error"
               title={copy.states.error}
-              detail={copy.portfolio.sidebarError}
-              actionLabel={copy.states.retry}
-              onAction={() => void snapshot.refetch()}
+              description={copy.portfolio.sidebarError}
+              action={
+                <button
+                  type="button"
+                  className="app-button-secondary inline-flex min-h-10 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-sm font-semibold sm:min-h-9"
+                  onClick={() => void snapshot.refetch()}
+                >
+                  {copy.states.retry}
+                </button>
+              }
             />
           ) : snapshot.data ? (
             <AllocationCard items={snapshot.data.allocation} />
           ) : (
-            <StatusCard
+            <EvidenceState
+              kind="empty"
               title={copy.states.empty}
-              detail={copy.portfolio.sidebarEmpty}
+              description={copy.portfolio.sidebarEmpty}
             />
           )}
         </div>
