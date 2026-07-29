@@ -323,7 +323,13 @@ describe('remaining route workbench contract', () => {
       BACKTEST_REPORT_SECTIONS.join('\n').match(/isAnimationActive=\{false\}/g),
     ).toHaveLength(2);
     expect(BACKTEST_REPORT_SECTIONS.join('\n')).toContain(
-      'backtest-drawdown-${useId().replace',
+      "const chartId = useId().replace(/:/g, '')",
+    );
+    expect(BACKTEST_REPORT_SECTIONS.join('\n')).toContain(
+      'backtest-equity-${chartId}',
+    );
+    expect(BACKTEST_REPORT_SECTIONS.join('\n')).toContain(
+      'backtest-drawdown-${chartId}',
     );
   });
 

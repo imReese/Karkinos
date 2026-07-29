@@ -36,75 +36,80 @@ export function AiResearchPage() {
         }
       />
 
-      <section
-        aria-labelledby="ai-research-context-title"
-        className="min-w-0 border-t border-[var(--app-divider)] pt-4"
-        data-testid="ai-research-context-metrics"
+      <div
+        className="app-ai-research-command-grid min-w-0"
+        data-testid="ai-research-command-grid"
       >
-        <div className="mb-3 min-w-0">
-          <h2 className="app-product-mark" id="ai-research-context-title">
-            {labels.contextTitle}
-          </h2>
-          <p className="app-muted mt-1 text-xs leading-5">
-            {labels.contextDetail}
-          </p>
-        </div>
-        <MetricStrip
-          ariaLabel={labels.contextTitle}
-          items={[
-            {
-              id: 'backtest-context',
-              label: labels.backtestContext,
-              value: savedBacktests.isLoading
-                ? copy.shell.checking
-                : latestBacktest
-                  ? labels.available
-                  : labels.unavailable,
-              detail: latestBacktest
-                ? labels.savedBacktest(latestBacktest.id)
-                : savedBacktests.isLoading
+        <section
+          aria-labelledby="ai-research-context-title"
+          className="min-w-0 border-t border-[var(--app-divider)] pt-4"
+          data-testid="ai-research-context-metrics"
+        >
+          <div className="mb-3 min-w-0">
+            <h2 className="app-product-mark" id="ai-research-context-title">
+              {labels.contextTitle}
+            </h2>
+            <p className="app-muted mt-1 text-xs leading-5">
+              {labels.contextDetail}
+            </p>
+          </div>
+          <MetricStrip
+            ariaLabel={labels.contextTitle}
+            items={[
+              {
+                id: 'backtest-context',
+                label: labels.backtestContext,
+                value: savedBacktests.isLoading
                   ? copy.shell.checking
-                  : savedBacktests.isError
-                    ? labels.backtestLoadFailed
-                    : labels.noSavedBacktest,
-              tone:
-                !savedBacktests.isLoading &&
-                (savedBacktests.isError || !latestBacktest)
-                  ? 'warning'
-                  : 'neutral',
-            },
-            {
-              id: 'strategy-context',
-              label: labels.strategyContext,
-              value: accountStrategy.isLoading
-                ? copy.shell.checking
-                : accountStrategy.data
-                  ? labels.available
-                  : labels.unavailable,
-              detail: accountStrategy.data
-                ? labels.persistedAssignment
-                : accountStrategy.isLoading
+                  : latestBacktest
+                    ? labels.available
+                    : labels.unavailable,
+                detail: latestBacktest
+                  ? labels.savedBacktest(latestBacktest.id)
+                  : savedBacktests.isLoading
+                    ? copy.shell.checking
+                    : savedBacktests.isError
+                      ? labels.backtestLoadFailed
+                      : labels.noSavedBacktest,
+                tone:
+                  !savedBacktests.isLoading &&
+                  (savedBacktests.isError || !latestBacktest)
+                    ? 'warning'
+                    : 'neutral',
+              },
+              {
+                id: 'strategy-context',
+                label: labels.strategyContext,
+                value: accountStrategy.isLoading
                   ? copy.shell.checking
-                  : accountStrategy.isError
-                    ? labels.strategyLoadFailed
-                    : labels.noStrategyAssignment,
-              tone:
-                !accountStrategy.isLoading &&
-                (accountStrategy.isError || !accountStrategy.data)
-                  ? 'warning'
-                  : 'neutral',
-            },
-          ]}
-        />
-      </section>
+                  : accountStrategy.data
+                    ? labels.available
+                    : labels.unavailable,
+                detail: accountStrategy.data
+                  ? labels.persistedAssignment
+                  : accountStrategy.isLoading
+                    ? copy.shell.checking
+                    : accountStrategy.isError
+                      ? labels.strategyLoadFailed
+                      : labels.noStrategyAssignment,
+                tone:
+                  !accountStrategy.isLoading &&
+                  (accountStrategy.isError || !accountStrategy.data)
+                    ? 'warning'
+                    : 'neutral',
+              },
+            ]}
+          />
+        </section>
 
-      <div data-testid="ai-research-primary-canvas">
-        <ResearchTaskPanel
-          backtestResultId={latestBacktest?.id ?? null}
-          defaultOpen
-          routePrimary
-          strategyId={accountStrategy.data?.strategy_id ?? null}
-        />
+        <div className="min-w-0" data-testid="ai-research-primary-canvas">
+          <ResearchTaskPanel
+            backtestResultId={latestBacktest?.id ?? null}
+            defaultOpen
+            routePrimary
+            strategyId={accountStrategy.data?.strategy_id ?? null}
+          />
+        </div>
       </div>
     </section>
   );

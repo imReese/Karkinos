@@ -4,8 +4,6 @@ import {
   Area,
   AreaChart,
   CartesianGrid,
-  Line,
-  LineChart,
   ReferenceDot,
   Tooltip,
   XAxis,
@@ -133,7 +131,9 @@ export function EquityDrawdownChart({
   const { locale } = usePreferences();
   const data = toChartPoints(points);
   const fillMarkers = toFillMarkers(fills, data, locale);
-  const drawdownGradientId = `backtest-drawdown-${useId().replace(/:/g, '')}`;
+  const chartId = useId().replace(/:/g, '');
+  const equityGradientId = `backtest-equity-${chartId}`;
+  const drawdownGradientId = `backtest-drawdown-${chartId}`;
 
   if (data.length === 0) {
     return (
@@ -171,13 +171,34 @@ export function EquityDrawdownChart({
           testId="backtest-equity-chart-frame"
         >
           {({ height, width }) => (
-            <LineChart
+            <AreaChart
               accessibilityLayer
+              baseValue="dataMin"
               data={data}
               height={height}
               margin={{ top: 18, right: 18, bottom: 8, left: 8 }}
               width={width}
             >
+              <defs>
+                <linearGradient
+                  id={equityGradientId}
+                  x1="0"
+                  x2="0"
+                  y1="0"
+                  y2="1"
+                >
+                  <stop
+                    offset="0%"
+                    stopColor="var(--app-accent)"
+                    stopOpacity={0.2}
+                  />
+                  <stop
+                    offset="100%"
+                    stopColor="var(--app-accent)"
+                    stopOpacity={0.015}
+                  />
+                </linearGradient>
+              </defs>
               <CartesianGrid stroke="var(--app-chart-grid)" vertical={false} />
               <XAxis
                 dataKey="timestampMs"
@@ -215,16 +236,24 @@ export function EquityDrawdownChart({
                   y={marker.equity}
                 />
               ))}
-              <Line
+              <Area
                 type="monotone"
                 dataKey="equity"
-                stroke="var(--app-accent-secondary)"
-                strokeWidth={2}
+                stroke="var(--app-accent)"
+                strokeWidth={2.25}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                fill={`url(#${equityGradientId})`}
                 dot={false}
-                activeDot={{ r: 4 }}
+                activeDot={{
+                  fill: 'var(--app-accent)',
+                  r: 4,
+                  stroke: 'var(--app-bg)',
+                  strokeWidth: 2,
+                }}
                 isAnimationActive={false}
               />
-            </LineChart>
+            </AreaChart>
           )}
         </ResponsiveChartFrame>
 

@@ -1302,9 +1302,19 @@ h3 {
   align-items: start;
 }
 
+.app-ai-research-command-grid {
+  display: grid;
+  gap: var(--app-section-gap);
+  align-items: start;
+}
+
 @media (min-width: 1024px) {
   .app-operations-command-grid {
     grid-template-columns: minmax(0, 1.35fr) minmax(310px, 0.65fr);
+  }
+
+  .app-ai-research-command-grid {
+    grid-template-columns: minmax(340px, 0.72fr) minmax(0, 1.28fr);
   }
 }
 
