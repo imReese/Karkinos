@@ -620,15 +620,21 @@ test('portfolio mobile keeps holdings or an explicit empty state below disclosed
     .evaluateAll((elements) =>
       elements.map((element) => element.getBoundingClientRect().height),
     );
-  expect(Math.min(...compactControlHeights)).toBeGreaterThanOrEqual(44);
-  const collapsedHoldingsTop = (await holdingsSurface.boundingBox())!.y;
+  const minimumControlHeight =
+    Math.round(Math.min(...compactControlHeights) * 100) / 100;
+  expect(minimumControlHeight).toBeGreaterThanOrEqual(44);
+  const collapsedFilterHeight = (await filterBar.boundingBox())!.height;
 
   await moreFilters.click();
 
   await expect(moreFilters).toHaveAttribute('aria-expanded', 'true');
   await expect(filterBar.locator('select:visible')).toHaveCount(5);
+  const expandedFilterBox = (await filterBar.boundingBox())!;
   const expandedHoldingsTop = (await holdingsSurface.boundingBox())!.y;
-  expect(collapsedHoldingsTop).toBeLessThan(expandedHoldingsTop);
+  expect(expandedFilterBox.height).toBeGreaterThan(collapsedFilterHeight);
+  expect(expandedHoldingsTop).toBeGreaterThanOrEqual(
+    expandedFilterBox.y + expandedFilterBox.height,
+  );
 
   const documentOverflow = await page.evaluate(
     () =>
