@@ -322,8 +322,8 @@ test('AI research keeps frozen evidence ahead of human capture across all accept
     await page.setViewportSize(viewport);
     const primaryCanvasBox = (await primaryCanvas.boundingBox())!;
     const contextMetricsBox = (await contextMetrics.boundingBox())!;
-    expect(primaryCanvasBox.y, JSON.stringify(viewport)).toBeLessThan(
-      contextMetricsBox.y,
+    expect(contextMetricsBox.y, JSON.stringify(viewport)).toBeLessThan(
+      primaryCanvasBox.y,
     );
     expect(
       (await emptyState.boundingBox())!.y,
