@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 
+import { KarkinosMark } from '../../../app/components/brand/karkinos-mark';
 import { usePreferences } from '../../../app/preferences';
 
 const publicHomeCopy = {
@@ -378,7 +379,7 @@ export function PublicHomePage() {
               className="app-brand-glyph app-public-brand-glyph"
               aria-hidden="true"
             >
-              K
+              <KarkinosMark />
             </span>
             <span className="app-product-mark app-public-product-mark">
               Karkinos
@@ -662,7 +663,7 @@ export function PublicHomePage() {
                 className="app-brand-glyph app-public-brand-glyph"
                 aria-hidden="true"
               >
-                K
+                <KarkinosMark />
               </span>
               <span className="app-product-mark app-public-product-mark">
                 Karkinos

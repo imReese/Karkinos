@@ -11,6 +11,7 @@ import { Link, useRouterState } from '@tanstack/react-router';
 
 import { useAccountOverviewQuery } from '../../features/account/api';
 import { useMarketDataHealthQuery } from '../../features/market/api';
+import { KarkinosMark } from '../components/brand/karkinos-mark';
 import { useCopy } from '../copy';
 import {
   usePreferences,
@@ -324,7 +325,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               className="flex min-w-0 flex-1 items-center gap-2.5"
             >
               <span className="app-brand-glyph" aria-hidden="true">
-                K
+                <KarkinosMark />
               </span>
               <div
                 className={`min-w-0 ${desktopNavExpanded ? '' : 'xl:hidden'}`}
@@ -466,7 +467,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   className="app-brand-glyph app-brand-glyph-compact"
                   aria-hidden="true"
                 >
-                  K
+                  <KarkinosMark />
                 </span>
                 <span className="app-product-mark truncate">Karkinos</span>
               </div>
@@ -478,31 +479,6 @@ export function AppShell({ children }: { children: ReactNode }) {
                 >
                   <span>{copy.shell.accountMode}</span>
                   <strong>{executionMode}</strong>
-                </div>
-                <div
-                  className="app-toolbar-health"
-                  aria-label={`${copy.shell.evidenceStatus}: ${valuationStatus.value} · ${copy.shell.dataStatus}: ${marketStatus.value}`}
-                >
-                  <span className="app-toolbar-health-item">
-                    <span
-                      className="app-toolbar-health-dot"
-                      style={{
-                        backgroundColor: STATUS_COLORS[valuationStatus.tone],
-                      }}
-                      aria-hidden="true"
-                    />
-                    {copy.shell.evidenceStatus}
-                  </span>
-                  <span className="app-toolbar-health-item">
-                    <span
-                      className="app-toolbar-health-dot"
-                      style={{
-                        backgroundColor: STATUS_COLORS[marketStatus.tone],
-                      }}
-                      aria-hidden="true"
-                    />
-                    {copy.shell.dataStatus}
-                  </span>
                 </div>
               </div>
 
@@ -595,10 +571,10 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <div
             ref={statusRailRef}
-            className="app-status-footer relative z-[80] hidden h-10 shrink-0 items-center gap-2 overflow-visible border-t border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-3 xl:flex"
+            className="app-status-footer relative z-[80] hidden h-8 shrink-0 items-center gap-2 overflow-visible border-t border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-3 xl:flex"
             aria-label={copy.shell.accountStatus}
           >
-            <div className="app-status-rail flex min-w-0 flex-1 flex-row flex-nowrap items-center gap-2 overflow-visible">
+            <div className="app-status-rail flex min-w-0 flex-1 flex-row flex-nowrap items-center gap-1 overflow-visible">
               <StatusChip
                 testId="status-pill-valuation"
                 label={copy.shell.navStatus}
@@ -1197,7 +1173,7 @@ function StatusChip({
   testId?: string;
 }) {
   return (
-    <div className="app-status-chip group relative inline-flex h-8 w-[11.5rem] shrink-0">
+    <div className="app-status-chip group relative inline-flex h-7 min-w-0 shrink-0 border-r border-[var(--app-divider)] pr-1">
       <button
         type="button"
         data-testid={testId}
@@ -1208,20 +1184,20 @@ function StatusChip({
         aria-haspopup={popup ? 'dialog' : undefined}
         title={title ?? hoverHint}
         onClick={onClick}
-        className={`inline-flex h-full w-full items-center overflow-hidden whitespace-nowrap rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-transparent text-xs text-[var(--app-text-secondary)] transition-colors hover:bg-[var(--app-surface-overlay)] hover:text-[var(--app-text)] ${
+        className={`inline-flex h-full min-w-0 items-center overflow-hidden whitespace-nowrap rounded-[var(--app-radius-control)] border border-transparent bg-transparent px-1 text-xs text-[var(--app-text-secondary)] transition-colors hover:bg-[var(--app-surface-overlay)] hover:text-[var(--app-text)] ${
           expanded
             ? 'bg-[var(--app-surface-overlay)] text-[var(--app-text)]'
             : ''
         }`}
       >
-        <span className="inline-flex h-full w-12 shrink-0 items-center justify-center border-r border-[var(--app-divider)] px-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--app-text-tertiary)]">
+        <span className="inline-flex h-full shrink-0 items-center px-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
           {label}
         </span>
-        <span className="grid h-full min-w-0 flex-1 grid-cols-[14px_minmax(0,1fr)_auto_14px] items-center gap-1 px-1.5 tabular-nums">
+        <span className="grid h-full min-w-0 grid-cols-[12px_minmax(0,auto)_auto_12px] items-center gap-1 px-1 tabular-nums">
           <span className="relative col-start-1 flex h-3.5 w-3.5 items-center justify-center">
             {indicator === 'syncing' ? (
               <RotateCwIcon
-                className="h-3.5 w-3.5 animate-spin"
+                className="h-3 w-3 animate-spin"
                 color={STATUS_COLORS.warning}
                 data-testid={testId ? `${testId}-indicator` : undefined}
               />
@@ -1237,21 +1213,21 @@ function StatusChip({
             )}
           </span>
           <span
-            className="col-start-2 min-w-0 truncate text-[12px] font-semibold text-[var(--app-text)]"
+            className="col-start-2 min-w-0 max-w-28 truncate text-[11px] font-semibold text-[var(--app-text)]"
             data-status-chip-part="value"
           >
             {value}
           </span>
           {meta ? (
             <span
-              className="col-start-3 shrink-0 font-mono text-[11px] font-medium text-[var(--app-text-secondary)]"
+              className="col-start-3 shrink-0 font-mono text-[10px] font-medium text-[var(--app-text-secondary)]"
               data-status-chip-part="meta"
             >
               {meta}
             </span>
           ) : null}
           <ChevronDownIcon
-            className={`col-start-4 h-3.5 w-3.5 shrink-0 text-[var(--app-text-tertiary)] transition-transform ${expanded ? 'rotate-180' : ''}`}
+            className={`col-start-4 h-3 w-3 shrink-0 text-[var(--app-text-tertiary)] transition-transform ${expanded ? 'rotate-180' : ''}`}
             data-status-chip-part="chevron"
             aria-hidden="true"
           />
