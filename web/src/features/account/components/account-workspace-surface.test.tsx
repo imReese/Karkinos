@@ -6,7 +6,7 @@ import { expect, test, vi } from 'vitest';
 import { PreferencesProvider } from '../../../app/preferences';
 import type { PortfolioSnapshot } from '../../portfolio/api';
 import type { AccountOverview } from '../api';
-import { OverviewCards, OverviewCardsSkeleton } from './overview-cards';
+import { OverviewCards } from './overview-cards';
 import { PerformanceBreakdownCard } from './performance-breakdown-card';
 
 function renderWithPreferences(ui: ReactNode) {
@@ -113,18 +113,6 @@ test('renders account metrics in a compact homepage workbench layout', async () 
   expect(screen.getByText('Cash Ratio 74.8%')).toBeTruthy();
   expect(screen.getByText('¥220.00')).toBeTruthy();
   expect(screen.queryByText(/\+1\.55%/)).toBeNull();
-});
-
-test('renders a responsive shimmering metrics rail skeleton', () => {
-  render(<OverviewCardsSkeleton />);
-
-  const skeleton = screen.getByTestId('account-metrics-skeleton');
-
-  expect(skeleton.className).toContain('animate-pulse');
-  expect(skeleton.className).toContain('account-overview-summary');
-  expect(skeleton.className).not.toContain('rounded-');
-  expect(skeleton.querySelector('.account-primary-metric')).toBeTruthy();
-  expect(skeleton.querySelectorAll('.app-metric-strip-item')).toHaveLength(5);
 });
 
 test('shows cached quote copy on stale overview metrics', () => {

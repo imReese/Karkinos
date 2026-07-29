@@ -913,10 +913,15 @@ test('renders a terminal empty state for periods without chart data', async () =
   expect(emptyState.className).toContain('text-[var(--app-subtext-0)]');
 });
 
-test('renders chart skeleton with shimmer and terminal surface colors', () => {
+test('renders a compact evidence-first chart loading state without a fake curve', () => {
   render(<EquityCurveSkeleton />);
 
   const skeleton = screen.getByTestId('equity-curve-skeleton');
-  expect(skeleton.className).toContain('animate-pulse');
-  expect(skeleton.className).toContain('var(--app-surface-0)');
+  const frame = screen.getByTestId('equity-curve-loading-frame');
+
+  expect(screen.getByText('Loading equity curve.')).toBeTruthy();
+  expect(skeleton.className).not.toContain('animate-pulse');
+  expect(frame.className).toContain('h-28');
+  expect(frame.className).not.toContain('rounded-');
+  expect(frame.className).not.toContain('gradient');
 });

@@ -597,6 +597,25 @@ function renderOverviewPage({
   );
 }
 
+test('uses a compact evidence-first layout while persisted overview projections load', () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() => new Promise<Response>(() => undefined)),
+  );
+
+  renderOverviewPage({ installFetch: false });
+
+  expect(
+    screen.getByText('Loading account facts and current holdings.'),
+  ).toBeTruthy();
+  expect(screen.getByTestId('evidence-loading-metrics').children).toHaveLength(
+    6,
+  );
+  expect(screen.getByTestId('evidence-loading-rows').children).toHaveLength(3);
+  expect(screen.queryByTestId('account-metrics-skeleton')).toBeNull();
+  expect(screen.queryByTestId('equity-curve-skeleton')).toBeNull();
+});
+
 test('keeps a fully closed asset out of current holdings while retaining sell activity', async () => {
   window.localStorage.setItem('karkinos.locale', 'zh');
   installOverviewFetchMock(
