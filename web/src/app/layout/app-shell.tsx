@@ -333,7 +333,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <div className="app-product-mark truncate whitespace-nowrap">
                   Karkinos
                 </div>
-                <div className="mt-1 truncate text-[10px] font-medium text-[var(--app-text-tertiary)]">
+                <div className="app-type-micro mt-1 truncate font-medium text-[var(--app-text-tertiary)]">
                   {copy.shell.workspaceLabel}
                 </div>
               </div>
@@ -355,7 +355,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             {navGroups.map((group) => (
               <div key={group.key} className="grid gap-1">
                 <div
-                  className={`app-nav-group-label px-2 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)] ${desktopNavExpanded ? '' : 'xl:hidden'}`}
+                  className={`app-nav-group-label app-type-micro px-2 pt-1 pb-1 font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)] ${desktopNavExpanded ? '' : 'xl:hidden'}`}
                 >
                   {group.label[locale]}
                 </div>
@@ -648,7 +648,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 }
               />
             </div>
-            <div className="flex shrink-0 items-center gap-2 text-[11px] font-medium text-[var(--app-text-tertiary)]">
+            <div className="app-type-micro flex shrink-0 items-center gap-2 font-medium text-[var(--app-text-tertiary)]">
               <span className="h-1.5 w-1.5 rounded-full bg-[var(--app-info-indicator)]" />
               {copy.shell.persistedEvidence}
             </div>
@@ -878,7 +878,7 @@ function PreferenceMenu({
           aria-label={menuLabel}
           className="absolute right-0 top-[calc(100%+6px)] z-[70] w-[min(18rem,calc(100vw-1.5rem))] rounded-[var(--app-radius-overlay)] border border-[var(--app-border)] bg-[var(--app-surface-overlay)] p-3 shadow-[var(--app-shadow-overlay)]"
         >
-          <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+          <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
             {themeLabel}
           </div>
           <div className="mt-2 grid grid-cols-3 gap-1" role="group">
@@ -908,7 +908,7 @@ function PreferenceMenu({
             })}
           </div>
           <div className="my-3 border-t border-[var(--app-divider)]" />
-          <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+          <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
             {languageLabel}
           </div>
           <div className="mt-2 grid grid-cols-2 gap-1" role="group">
@@ -1190,7 +1190,7 @@ function StatusChip({
             : ''
         }`}
       >
-        <span className="inline-flex h-full shrink-0 items-center px-1.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
+        <span className="inline-flex h-full shrink-0 items-center px-1.5 text-[length:var(--app-font-size-micro)] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
           {label}
         </span>
         <span className="grid h-full min-w-0 grid-cols-[12px_minmax(0,auto)_auto_12px] items-center gap-1 px-1 tabular-nums">
@@ -1220,7 +1220,7 @@ function StatusChip({
           </span>
           {meta ? (
             <span
-              className="col-start-3 shrink-0 font-mono text-[10px] font-medium text-[var(--app-text-secondary)]"
+              className="col-start-3 shrink-0 font-mono text-[length:var(--app-font-size-micro)] font-medium text-[var(--app-text-secondary)]"
               data-status-chip-part="meta"
             >
               {meta}

@@ -257,7 +257,7 @@ function SweepResults({ response }: { response: BacktestSweepResponse }) {
     <div className="mt-5 space-y-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+          <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
             {labels.resultsKicker}
           </div>
           <h4 className="text-base font-semibold">{labels.resultsTitle}</h4>

@@ -537,7 +537,7 @@ export function AccountTruthReviewPage() {
           <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <div className="app-product-mark">{text.reports}</div>
-              <h2 className="mt-1 text-base font-semibold text-[var(--app-text)]">
+              <h2 className="app-type-section-title mt-1 text-[var(--app-text)]">
                 {text.reviewWorkspace}
               </h2>
               <p className="mt-1 max-w-3xl text-xs leading-5 text-[var(--app-text-secondary)]">
@@ -576,7 +576,7 @@ export function AccountTruthReviewPage() {
           {selectedReport ? (
             <div className="mt-4 grid min-w-0 gap-4 xl:grid-cols-[minmax(230px,0.55fr)_minmax(0,1.45fr)]">
               <div className="min-w-0">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
+                <div className="text-[length:var(--app-font-size-micro)] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
                   {text.currentReport}
                 </div>
                 <div
@@ -659,7 +659,7 @@ export function AccountTruthReviewPage() {
 
               <div className="min-w-0">
                 <div className="flex min-w-0 items-center justify-between gap-3 border-b border-[var(--app-divider)] pb-2">
-                  <h3 className="truncate text-sm font-semibold text-[var(--app-text)]">
+                  <h3 className="app-type-subsection-title truncate text-[var(--app-text)]">
                     {attentionItems.length > 0
                       ? text.attentionItems
                       : text.reconciliationItems}
@@ -821,7 +821,7 @@ export function AccountTruthReviewPage() {
             data-testid="account-truth-score"
           >
             <div className="flex items-start justify-between gap-4">
-              <h2 className="text-base font-semibold text-[var(--app-text)]">
+              <h2 className="app-type-section-title text-[var(--app-text)]">
                 {text.components}
               </h2>
               <StatusBadge
@@ -1403,7 +1403,7 @@ function BrokerStatementPreviewPanel({
       ) : null}
       {preview.events_preview.length > 0 ? (
         <div className="mt-3">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
+          <div className="text-[length:var(--app-font-size-micro)] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
             {text.eventPreview}
           </div>
           <div className="mt-2 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]">
@@ -1453,7 +1453,7 @@ function MissingEvidenceCallout({ locale }: { locale: 'en' | 'zh' }) {
         {text.notReadyBody}
       </p>
       <div className="mt-3 border-t border-[var(--app-divider)] pt-3">
-        <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
+        <div className="text-[length:var(--app-font-size-micro)] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
           {text.workflowTitle}
         </div>
         <ol className="mt-2 grid gap-2 text-xs font-medium text-[var(--app-text-secondary)]">
@@ -1462,7 +1462,7 @@ function MissingEvidenceCallout({ locale }: { locale: 'en' | 'zh' }) {
               key={step}
               className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-2"
             >
-              <span className="inline-flex h-5 w-5 items-center justify-center rounded-[var(--app-radius-control)] border border-[var(--app-accent-border)] text-[10px] font-semibold text-[var(--app-accent)]">
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded-[var(--app-radius-control)] border border-[var(--app-accent-border)] text-[length:var(--app-font-size-micro)] font-semibold text-[var(--app-accent)]">
                 {index + 1}
               </span>
               <span>{step}</span>
@@ -1645,7 +1645,7 @@ function ReviewItemCard({
               key={key}
               className="grid min-w-0 gap-1 py-2 sm:border-b sm:border-[var(--app-divider)] sm:px-2"
             >
-              <dt className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--app-text-tertiary)]">
+              <dt className="text-[length:var(--app-font-size-micro)] font-semibold uppercase tracking-[0.06em] text-[var(--app-text-tertiary)]">
                 {formatCode(key, locale, 'code')}
               </dt>
               <dd className="text-[var(--app-text-secondary)]">
@@ -1685,7 +1685,7 @@ function ReviewItemCard({
 
       {item.suggested_review_action ? (
         <div className="border-t border-[var(--app-divider)] py-3">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
+          <div className="text-[length:var(--app-font-size-micro)] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
             {text.suggestedAction}
           </div>
           <div className="mt-1 text-sm font-semibold text-[var(--app-text)]">

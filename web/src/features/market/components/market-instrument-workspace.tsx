@@ -169,7 +169,7 @@ export function MarketInstrumentWorkspace({
             <div className="app-kicker hidden text-[11px] uppercase tracking-[0.16em] md:block">
               {labels.personalUniverse}
             </div>
-            <h2 className="text-sm font-semibold text-[var(--app-text)] md:mt-1 md:text-base">
+            <h2 className="app-type-section-title text-[var(--app-text)] md:mt-1">
               {labels.watchlist}
             </h2>
             <p className="mt-1 hidden text-[11px] leading-4 text-[var(--app-text-tertiary)] md:block">

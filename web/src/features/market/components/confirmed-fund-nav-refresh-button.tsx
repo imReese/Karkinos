@@ -80,7 +80,7 @@ export function ConfirmedFundNavRefreshButton({
             : summary}
       </div>
       {lastResponse ? (
-        <div className="grid max-w-[20rem] gap-1 text-right text-[10px] text-[var(--app-muted)]">
+        <div className="grid max-w-[20rem] gap-1 text-right text-[length:var(--app-font-size-micro)] text-[var(--app-muted)]">
           {lastResponse.idempotent_replay ? (
             <span>{copy.market.confirmedFundNavIdempotentReplay}</span>
           ) : null}

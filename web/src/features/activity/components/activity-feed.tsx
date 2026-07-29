@@ -156,7 +156,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
       <div className="flex flex-wrap items-start justify-between gap-3 px-3 py-4 sm:px-5">
         <div>
           <div className="app-product-mark">{labels.kicker}</div>
-          <h2 className="mt-2 text-base font-semibold">{labels.title}</h2>
+          <h2 className="app-type-section-title mt-2">{labels.title}</h2>
         </div>
         <span className="app-chip px-2.5 py-1 text-xs font-semibold">
           {labels.count(visibleEntries.length)}
@@ -315,7 +315,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                       <div className="font-semibold">--</div>
                     )}
                     <div className="app-muted mt-1 flex items-center gap-2 text-xs">
-                      <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em]">
+                      <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-2 py-0.5 text-[length:var(--app-font-size-micro)] font-semibold uppercase tracking-[0.08em]">
                         {formatAssetClass(entry.asset_class, copy)}
                       </span>
                     </div>

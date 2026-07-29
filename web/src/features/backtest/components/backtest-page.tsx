@@ -899,10 +899,10 @@ export function BacktestPage() {
                 >
                   <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
-                      <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+                      <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
                         {handoffLabels.kicker}
                       </div>
-                      <h3 className="mt-1 text-sm font-semibold text-[var(--app-text)]">
+                      <h3 className="app-type-subsection-title mt-1 text-[var(--app-text)]">
                         {handoffLabels.title}
                       </h3>
                       <p className="app-muted mt-1.5 text-xs leading-5">
@@ -1179,10 +1179,10 @@ export function BacktestPage() {
                   >
                     <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0">
-                        <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+                        <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
                           {labels.runContextKicker}
                         </div>
-                        <h3 className="mt-1.5 text-base font-semibold text-[var(--app-text)]">
+                        <h3 className="app-type-subsection-title mt-1.5 text-[var(--app-text)]">
                           {labels.runContextTitle}
                         </h3>
                         <p className="app-muted mt-2 text-sm leading-6">
@@ -1451,7 +1451,7 @@ function RunReadinessSummary({
       data-testid="backtest-run-readiness-summary"
     >
       <div className="min-w-0">
-        <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+        <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
           {labels.runReadinessTitle}
         </div>
         <p className="app-muted mt-2 text-sm leading-6">
@@ -1649,10 +1649,10 @@ function SingleInstrumentLoopReadinessCard({
     <section className="rounded-3xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] p-4">
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+          <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
             {labels.singleInstrumentLoopKicker}
           </div>
-          <h3 className="mt-1.5 text-base font-semibold text-[var(--app-text)]">
+          <h3 className="app-type-subsection-title mt-1.5 text-[var(--app-text)]">
             {labels.singleInstrumentLoopTitle}
           </h3>
           <p className="app-muted mt-2 text-sm leading-6">
@@ -1678,7 +1678,7 @@ function SingleInstrumentLoopReadinessCard({
       </div>
       <div className="mt-4 flex min-w-0 flex-col gap-2 rounded-2xl border border-[color-mix(in_srgb,var(--app-accent)_30%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_9%,transparent)] px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+          <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
             {labels.singleInstrumentLoopNextStep}
           </div>
           <p className="mt-1 text-sm font-semibold text-[var(--app-text)]">
@@ -1702,7 +1702,7 @@ function SingleInstrumentLoopReadinessCard({
         }`}
       >
         <div className="min-w-0">
-          <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+          <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
             {labels.singleInstrumentLoopAuditCoverage}
           </div>
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
@@ -1791,10 +1791,10 @@ function StrategyCatalogPanel({
         data-testid="backtest-strategy-catalog-header"
       >
         <div className="min-w-0">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
+          <div className="text-[length:var(--app-font-size-micro)] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
             {labels.strategyCatalogKicker}
           </div>
-          <h2 className="mt-1 text-base font-semibold text-[var(--app-text)]">
+          <h2 className="app-type-section-title mt-1 text-[var(--app-text)]">
             {labels.strategyCatalogTitle}
           </h2>
           <p className="mt-1 text-xs leading-5 text-[var(--app-text-secondary)]">
@@ -1821,10 +1821,10 @@ function StrategyCatalogPanel({
       <div className="mt-3 min-w-0 border-t border-[var(--app-divider)] pt-3">
         <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
-            <div className="text-[10px] font-medium text-[var(--app-text-tertiary)]">
+            <div className="text-[length:var(--app-font-size-micro)] font-medium text-[var(--app-text-tertiary)]">
               {labels.selectedStrategy}
             </div>
-            <h3 className="mt-0.5 truncate text-sm font-semibold text-[var(--app-text)]">
+            <h3 className="app-type-subsection-title mt-0.5 truncate text-[var(--app-text)]">
               {selectedStrategyDisplayName}
             </h3>
             <p className="mt-1 text-xs leading-5 text-[var(--app-text-secondary)]">
@@ -2078,7 +2078,7 @@ function AccountStrategyPanel({
 
         <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+            <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
               {labels.accountStrategyScopedAssignmentsTitle}
             </div>
             {scopedAssignmentsLoading ? (
@@ -2132,7 +2132,7 @@ function AccountStrategyPanel({
         </div>
 
         <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
-          <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+          <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
             {labels.accountStrategyPnlAttributionStatus}
           </div>
           <div className="mt-2 text-lg font-semibold text-[var(--app-text)]">
@@ -2173,7 +2173,7 @@ function AccountStrategyPanel({
 
         <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+            <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
               {labels.accountStrategyAttributionEvidence}
             </div>
             {attributionLoading ? (
@@ -2228,7 +2228,7 @@ function AccountStrategyPanel({
 
         <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+            <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
               {labels.accountStrategyContributionReport}
             </div>
             {contributionLoading ? (
@@ -2523,10 +2523,10 @@ function StrategySignalPreviewPanel({
     <div className="rounded-3xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] p-4">
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+          <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
             {labels.signalPreviewKicker}
           </div>
-          <h3 className="mt-1.5 text-base font-semibold text-[var(--app-text)]">
+          <h3 className="app-type-subsection-title mt-1.5 text-[var(--app-text)]">
             {labels.signalPreviewTitle}
           </h3>
           <p className="app-muted mt-2 text-sm leading-6">
@@ -3408,7 +3408,7 @@ function StrategyMetadataPanel({
 
   return (
     <section className="border-y border-[var(--app-divider)] py-3">
-      <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+      <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
         {labels.strategyMetadata}
       </div>
       <div className="mt-2 grid gap-x-4 sm:grid-cols-2">
@@ -3491,7 +3491,7 @@ function SummaryValue({
 }) {
   return (
     <div>
-      <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+      <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
         {label}
       </div>
       <div

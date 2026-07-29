@@ -125,7 +125,7 @@ export function DailyOperationsTower({
       </div>
 
       <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
-        <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
+        <div className="app-kicker text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
           {labels.operationsTower}
         </div>
         <div className="mt-4 grid min-w-0 grid-cols-2 gap-2">
@@ -134,7 +134,7 @@ export function DailyOperationsTower({
               key={label}
               className="min-w-0 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2"
             >
-              <div className="truncate text-[10px] font-semibold uppercase text-[var(--app-subtext-0)]">
+              <div className="truncate text-[length:var(--app-font-size-micro)] font-semibold uppercase text-[var(--app-subtext-0)]">
                 {label}
               </div>
               <div className="mt-1 font-mono text-lg font-semibold text-[var(--app-soft)] tabular-nums">

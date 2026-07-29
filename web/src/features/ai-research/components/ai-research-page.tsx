@@ -46,7 +46,10 @@ export function AiResearchPage() {
           data-testid="ai-research-context-metrics"
         >
           <div className="mb-3 min-w-0">
-            <h2 className="app-product-mark" id="ai-research-context-title">
+            <h2
+              className="app-type-section-title text-[var(--app-text)]"
+              id="ai-research-context-title"
+            >
               {labels.contextTitle}
             </h2>
             <p className="app-muted mt-1 text-xs leading-5">

@@ -78,7 +78,7 @@ export function PerformanceBreakdownCard({
     <div className="app-surface-card p-4 sm:p-5">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <div className="app-kicker text-[10px] uppercase tracking-[0.18em]">
+          <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.18em]">
             {mode === 'account' ? labels.accountKicker : labels.strategyKicker}
           </div>
           <div className="app-card-title mt-1.5">

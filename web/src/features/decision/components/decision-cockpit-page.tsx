@@ -3141,7 +3141,7 @@ function AutomationCockpitPanel({
           >
             <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
-                <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
+                <div className="app-kicker text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
                   {locale === 'zh'
                     ? '当前逐单证据复核'
                     : 'Current per-order evidence review'}
@@ -3255,7 +3255,7 @@ function AutomationCockpitPanel({
           >
             <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
-                <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
+                <div className="app-kicker text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
                   {locale === 'zh'
                     ? '受控执行操作视图'
                     : 'Controlled execution operator view'}
@@ -3471,14 +3471,14 @@ function AutomationCockpitPanel({
                         </div>
                         {stage.evidence_id ? (
                           <div
-                            className="app-muted mt-1 truncate font-mono text-[10px]"
+                            className="app-muted mt-1 truncate font-mono text-[length:var(--app-font-size-micro)]"
                             title={stage.evidence_id}
                           >
                             {stage.evidence_id}
                           </div>
                         ) : null}
                         {stage.terminal_status ? (
-                          <div className="app-muted mt-1 text-[10px]">
+                          <div className="app-muted mt-1 text-[length:var(--app-font-size-micro)]">
                             {locale === 'zh' ? '终态' : 'Terminal'}:{' '}
                             {formatPublicStatus(stage.terminal_status, locale)}{' '}
                             · {locale === 'zh' ? '成交笔数' : 'Fills'}{' '}
@@ -3486,12 +3486,12 @@ function AutomationCockpitPanel({
                           </div>
                         ) : null}
                         {(stage.post_ledger_cutoff_id ?? 0) > 0 ? (
-                          <div className="app-muted mt-1 text-[10px]">
+                          <div className="app-muted mt-1 text-[length:var(--app-font-size-micro)]">
                             ledger cutoff #{stage.post_ledger_cutoff_id}
                           </div>
                         ) : null}
                         {stage.key === 'post_ledger_account_truth' ? (
-                          <div className="app-muted mt-1 break-words text-[10px]">
+                          <div className="app-muted mt-1 break-words text-[length:var(--app-font-size-micro)]">
                             {locale === 'zh' ? '账户事实' : 'Account Truth'}:{' '}
                             {formatPublicStatus(
                               stage.account_truth_gate_status ?? 'missing',
@@ -3507,7 +3507,7 @@ function AutomationCockpitPanel({
                         ) : null}
                         {(stage.blockers?.length ?? 0) > 0 ? (
                           <div
-                            className="mt-1 break-words text-[10px] text-[var(--app-warning)]"
+                            className="mt-1 break-words text-[length:var(--app-font-size-micro)] text-[var(--app-warning)]"
                             title={stage.blockers?.join(', ')}
                           >
                             {locale === 'zh' ? '复核原因' : 'Review reason'}:{' '}
@@ -3652,7 +3652,7 @@ function AutomationCockpitPanel({
             {openAlertManualExecutionEvidence ? (
               <div className="mt-3 border-t border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] pt-3">
                 <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
+                  <div className="app-kicker text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
                     {locale === 'zh'
                       ? '手工成交证据'
                       : 'Manual execution evidence'}
@@ -3695,7 +3695,7 @@ function AutomationCockpitPanel({
         {cockpit.promotion_states.length ? (
           <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
             <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
+              <div className="app-kicker text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
                 {locale === 'zh' ? '策略晋级状态' : 'Strategy promotion state'}
               </div>
               <span className="app-chip">
@@ -3786,7 +3786,7 @@ function AutomationCockpitPanel({
         {brokerGatewayStatus || brokerGatewayLoading || brokerGatewayError ? (
           <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
             <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
+              <div className="app-kicker text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
                 {locale === 'zh' ? '券商网关状态' : 'Broker gateway status'}
               </div>
               <span
@@ -3971,7 +3971,7 @@ function AutomationCockpitPanel({
 
         {showConnectorHealth ? (
           <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
-            <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
+            <div className="app-kicker text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
               {locale === 'zh'
                 ? '持久化券商生命周期证据'
                 : 'Persisted broker lifecycle evidence'}
@@ -4114,7 +4114,7 @@ function AutomationCockpitPanel({
         {showAccountFacts ? (
           <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
             <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
+              <div className="app-kicker text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
                 {locale === 'zh' ? '暂存账户事实' : 'Staged account facts'}
               </div>
               <span className="app-chip">
@@ -4189,7 +4189,7 @@ function AutomationCockpitPanel({
         {showBrokerFills ? (
           <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
             <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
+              <div className="app-kicker text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
                 {locale === 'zh' ? '暂存成交轮询' : 'Staged fill polling'}
               </div>
               <span className="app-chip">
@@ -4273,7 +4273,7 @@ function AutomationCockpitPanel({
         {showExecutionReconciliation ? (
           <div className="mt-4 border-t border-[color-mix(in_srgb,var(--app-border)_30%,transparent)] pt-4">
             <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
+              <div className="app-kicker text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
                 {locale === 'zh' ? '执行对账' : 'Execution reconciliation'}
               </div>
               <span className="app-chip">
@@ -4350,7 +4350,7 @@ function AutomationCockpitPanel({
                 {brokerTradeCostEvidence ? (
                   <div className="mt-3 border-t border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] pt-3">
                     <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
+                      <div className="app-kicker text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
                         {locale === 'zh'
                           ? '券商成本证据'
                           : 'Broker cost evidence'}
@@ -4390,7 +4390,7 @@ function AutomationCockpitPanel({
                 {manualExecutionEvidence ? (
                   <div className="mt-3 border-t border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] pt-3">
                     <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
+                      <div className="app-kicker text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
                         {locale === 'zh'
                           ? '手工成交证据'
                           : 'Manual execution evidence'}
@@ -4433,7 +4433,7 @@ function AutomationCockpitPanel({
                     data-testid="manual-broker-comparison-evidence"
                   >
                     <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
+                      <div className="app-kicker text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
                         {locale === 'zh'
                           ? '手工成交 / 券商证据对比'
                           : 'Manual / broker evidence comparison'}
@@ -4478,7 +4478,7 @@ function AutomationCockpitPanel({
                 {showBrokerOrderQuery ? (
                   <div className="mt-3 border-t border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] pt-3">
                     <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="app-kicker text-[10px] text-[var(--app-text-tertiary)]">
+                      <div className="app-kicker text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
                         {locale === 'zh'
                           ? '只读订单查询'
                           : 'Read-only order query'}
@@ -5460,7 +5460,7 @@ function DecisionNextActionGuidePanel({
       data-testid="decision-next-action-guide"
       className="min-w-0 space-y-2"
     >
-      <h2 className="text-base font-semibold text-[var(--app-text)]">
+      <h2 className="app-type-section-title text-[var(--app-text)]">
         {labels.nextActionKicker}
       </h2>
       <ExceptionList

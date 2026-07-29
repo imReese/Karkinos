@@ -361,7 +361,7 @@ export function PriceStructureChart({
                   x={plot.left - 8}
                   y={tick.y + 4}
                   textAnchor="end"
-                  className="fill-current text-[10px] tabular-nums"
+                  className="fill-current text-[length:var(--app-font-size-micro)] tabular-nums"
                 >
                   {formatCurrency(tick.value)}
                 </text>
@@ -414,7 +414,7 @@ export function PriceStructureChart({
                     x={x}
                     y={xAxisY + 20}
                     textAnchor={textAnchor}
-                    className="fill-current text-[10px] tabular-nums"
+                    className="fill-current text-[length:var(--app-font-size-micro)] tabular-nums"
                   >
                     {formatDateTick(bar.timestamp, index)}
                   </text>
@@ -478,7 +478,7 @@ export function PriceStructureChart({
                   x={plot.right}
                   y={volumePlot.top - 7}
                   textAnchor="end"
-                  className="fill-current text-[9px]"
+                  className="fill-current text-[length:var(--app-font-size-micro)]"
                 >
                   {axisLabels.volume ?? 'Volume'}
                 </text>
@@ -533,7 +533,7 @@ export function PriceStructureChart({
                     y={y + 3}
                     textAnchor="middle"
                     fill={tone}
-                    className="text-[8px] font-bold"
+                    className="text-[length:var(--app-font-size-micro)] font-bold"
                   >
                     {isBuy ? 'B' : 'S'}
                   </text>
@@ -554,7 +554,7 @@ export function PriceStructureChart({
             </span>
           </div>
           {plottedMarkers.length > 0 || referenceLines.length > 0 ? (
-            <div className="mt-3 flex min-w-0 flex-wrap gap-2 text-[10px] font-semibold text-[var(--app-muted)]">
+            <div className="mt-3 flex min-w-0 flex-wrap gap-2 text-[length:var(--app-font-size-micro)] font-semibold text-[var(--app-muted)]">
               {plottedMarkers.some((marker) => marker.kind === 'buy') ? (
                 <span className="rounded-full border border-[color-mix(in_srgb,var(--app-chart-buy)_42%,transparent)] px-2 py-0.5 text-[var(--app-chart-buy)]">
                   B ·{' '}

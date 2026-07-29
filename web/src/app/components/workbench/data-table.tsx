@@ -68,7 +68,7 @@ export function DataTable<TData extends RowData>({
         >
           <table
             data-testid={tableTestId}
-            className="app-data-table w-full min-w-max border-collapse text-left text-xs"
+            className="app-data-table app-type-compact w-full min-w-max border-collapse text-left"
           >
             <caption className="sr-only">{caption}</caption>
             <thead className="sticky top-0 z-10 bg-[var(--app-surface-raised)] text-[var(--app-text-secondary)] shadow-[var(--app-shadow-sticky)]">

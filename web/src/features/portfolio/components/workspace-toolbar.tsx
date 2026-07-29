@@ -125,7 +125,7 @@ export function WorkspaceToolbar({
           >
             <span>{moreFiltersLabel}</span>
             {activeSecondaryFilterCount > 0 ? (
-              <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-[var(--app-accent-bg)] px-1.5 text-[10px] tabular-nums text-[var(--app-accent)]">
+              <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-[var(--app-accent-bg)] px-1.5 text-[length:var(--app-font-size-micro)] tabular-nums text-[var(--app-accent)]">
                 {activeSecondaryFilterCount}
               </span>
             ) : null}

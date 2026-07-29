@@ -149,9 +149,9 @@ export function PortfolioConstructionRecommendationsCard({
   return (
     <section className="min-w-0">
       <div className="mb-3 space-y-1">
-        <h2 className="text-sm font-semibold text-[var(--app-text)]">
+        <h3 className="app-type-subsection-title text-[var(--app-text)]">
           {labels.title}
-        </h2>
+        </h3>
         <p className="text-xs leading-5 text-[var(--app-text-secondary)]">
           {labels.subtitle}
         </p>

@@ -116,6 +116,12 @@ test('renders the workspace hierarchy without routine card nesting', () => {
   expect(metrics.getAttribute('data-workbench-primitive')).toBe('metric-strip');
   expect(filters.getAttribute('data-workbench-primitive')).toBe('filter-bar');
   expect(metrics.className).not.toContain('rounded-');
+  expect(within(metrics).getByText('Equity').className).toContain(
+    'app-type-label',
+  );
+  expect(
+    within(filters).getByText('No authoritative rows').className,
+  ).toContain('app-type-compact');
 });
 
 test('keeps operational state and financial direction on separate roles', () => {
@@ -151,6 +157,7 @@ test('keeps operational state and financial direction on separate roles', () => 
   expect(screen.getByText('reconciled').className).toContain(
     'app-success-text',
   );
+  expect(screen.getByText('reconciled').className).toContain('app-type-label');
   expect(screen.getByText('Positive').className).toContain('app-pnl-positive');
   expect(screen.getByText('Negative').className).toContain('app-pnl-negative');
   expect(screen.getByText('Blocked').className).toContain('app-danger-text');
@@ -190,6 +197,9 @@ test('exposes explicit evidence lifecycle states', () => {
   expect(screen.queryByText('missing')).toBeNull();
   expect(screen.queryByTestId('evidence-loading-indicator')).toBeNull();
   expect(screen.getByText('Authoritative result is blocked')).toBeTruthy();
+  expect(
+    screen.getByText('Authoritative result is blocked').className,
+  ).toContain('app-type-body');
 });
 
 test('reserves workbench geometry while evidence is loading without publishing values', () => {
@@ -232,6 +242,7 @@ test('renders a dense accessible TanStack data table and a real empty state', ()
   const tableShell = table.closest('[data-workbench-primitive="data-table"]');
   expect(tableShell).toBeTruthy();
   expect(tableShell?.className).not.toContain('rounded-');
+  expect(table.className).toContain('app-type-compact');
   expect(
     within(table).getByRole('columnheader', { name: 'Evidence' }),
   ).toBeTruthy();
@@ -297,6 +308,9 @@ test('prioritizes blockers, gate evidence, and immutable history', () => {
   );
 
   expect(screen.getByText('Safe next step')).toBeTruthy();
+  expect(screen.getByText('Safe next step').className).toContain(
+    'app-type-label',
+  );
   const gateMatrix = screen.getByRole('table', { name: 'Decision gates' });
   expect(gateMatrix).toBeTruthy();
   expect(gateMatrix.getAttribute('data-mobile-layout')).toBe('stacked');

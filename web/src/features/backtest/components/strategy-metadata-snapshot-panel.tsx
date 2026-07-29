@@ -168,7 +168,7 @@ export function StrategyMetadataSnapshotPanel({
           <div className="app-kicker text-xs uppercase tracking-[0.16em]">
             {labels.kicker}
           </div>
-          <h3 className="mt-1 text-base font-semibold text-[var(--app-text)]">
+          <h3 className="app-type-subsection-title mt-1 text-[var(--app-text)]">
             {labels.title}
           </h3>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-[var(--app-text-secondary)]">
@@ -244,7 +244,7 @@ export function StrategyMetadataSnapshotPanel({
 
       {params.length ? (
         <div className="mt-4">
-          <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+          <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
             {labels.runParams}
           </div>
           <div className="mt-2 flex flex-wrap gap-2">
@@ -315,7 +315,7 @@ export function StrategyMetadataSnapshotPanel({
 
       {snapshot.validation_notes?.length ? (
         <div className="mt-4 border-t border-[var(--app-divider)] pt-3">
-          <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+          <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
             {labels.validationNotes}
           </div>
           <ul className="mt-2 space-y-2 text-sm leading-6 text-[var(--app-text)]">
@@ -342,7 +342,7 @@ function SnapshotStat({
 }) {
   return (
     <div className="min-w-0 border-l border-[var(--app-divider)] py-1 pl-3">
-      <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+      <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
         {label}
       </div>
       <div

@@ -155,7 +155,7 @@ export function EquityDrawdownChart({
           <div className="app-kicker text-xs uppercase tracking-[0.16em]">
             {labels.kicker}
           </div>
-          <h3 className="mt-1 text-base font-semibold text-[var(--app-text)]">
+          <h3 className="app-type-subsection-title mt-1 text-[var(--app-text)]">
             {labels.title}
           </h3>
         </div>
@@ -261,7 +261,7 @@ export function EquityDrawdownChart({
           <div className="border-t border-[var(--app-divider)] pt-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+                <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
                   {labels.markersKicker}
                 </div>
                 <div className="mt-1 text-sm font-semibold text-[var(--app-text)]">

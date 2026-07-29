@@ -524,7 +524,7 @@ export function OverviewPage() {
             >
               <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
                 <div>
-                  <h2 className="text-base font-semibold text-[var(--app-text)]">
+                  <h2 className="app-type-section-title text-[var(--app-text)]">
                     {copy.overview.dashboard.positionsPanel}
                   </h2>
                   <p className="mt-1 text-xs text-[var(--app-text-secondary)]">
@@ -628,7 +628,7 @@ export function OverviewPage() {
             />
             <section className="min-w-0 border-y border-[var(--app-divider)] bg-transparent py-3 sm:py-4">
               <div className="mb-3 flex items-end justify-between gap-3">
-                <h2 className="text-base font-semibold text-[var(--app-text)]">
+                <h2 className="app-type-section-title text-[var(--app-text)]">
                   {copy.overview.dashboard.pendingApprovals}
                 </h2>
                 <span className="font-mono text-xs tabular-nums text-[var(--app-text-tertiary)]">
@@ -2393,10 +2393,10 @@ function DashboardTodayQueue({
     <section className="min-w-0" data-testid="overview-today-queue">
       <div className="mb-2 flex items-end justify-between gap-3">
         <div>
-          <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
+          <div className="app-type-micro font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
             {labels.dailyWorkbench}
           </div>
-          <h2 className="mt-1 text-base font-semibold text-[var(--app-text)]">
+          <h2 className="app-type-section-title mt-1 text-[var(--app-text)]">
             {labels.todayToReview}
           </h2>
         </div>
@@ -2627,7 +2627,7 @@ function DashboardMarketPulse({
     >
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--app-divider)] py-2.5">
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold text-[var(--app-text)]">
+          <h2 className="app-type-section-title text-[var(--app-text)]">
             {labels.marketPulse}
           </h2>
           <div className="mt-1 max-w-3xl text-xs text-[var(--app-text-secondary)]">
@@ -2717,7 +2717,7 @@ function DashboardMarketPulse({
                       {changePct !== null && changeAmount !== null ? (
                         <span
                           data-testid={`market-pulse-change-pct-${quote.symbol}`}
-                          className={`font-mono text-[10px] font-semibold tabular-nums ${marketPulseToneClass(
+                          className={`font-mono text-[length:var(--app-font-size-micro)] font-semibold tabular-nums ${marketPulseToneClass(
                             changePct,
                           )}`}
                         >
@@ -2922,7 +2922,7 @@ function DashboardLedger({
 function MetricLine({ label, value }: { label: string; value: string }) {
   return (
     <dl className="min-w-0">
-      <dt className="text-[10px] font-medium text-[var(--app-text-tertiary)]">
+      <dt className="text-[length:var(--app-font-size-micro)] font-medium text-[var(--app-text-tertiary)]">
         {label}
       </dt>
       <dd className="mt-0.5 truncate font-mono font-semibold text-[var(--app-text)]">
@@ -2949,7 +2949,7 @@ function PortfolioEvidenceReviewPanel({
     >
       <div className="mb-2 flex min-w-0 flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold text-[var(--app-text)]">
+          <h2 className="app-type-section-title text-[var(--app-text)]">
             {copy.portfolio.evidenceReview.title}
           </h2>
           <p className="mt-1 text-xs leading-5 text-[var(--app-text-secondary)]">
@@ -3191,7 +3191,7 @@ export function PortfolioPage() {
         data-testid="portfolio-current-holdings"
       >
         <div>
-          <h2 className="text-base font-semibold text-[var(--app-text)]">
+          <h2 className="app-type-section-title text-[var(--app-text)]">
             {copy.portfolio.currentHoldings.title}
           </h2>
           <p className="mt-0.5 max-w-4xl text-xs leading-5 text-[var(--app-text-secondary)]">
@@ -3308,7 +3308,7 @@ export function PortfolioPage() {
       <section className="min-w-0 space-y-3" data-testid="portfolio-analysis">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold text-[var(--app-text)]">
+            <h2 className="app-type-section-title text-[var(--app-text)]">
               {copy.portfolio.analysis.title}
             </h2>
             <p className="mt-0.5 text-xs text-[var(--app-text-secondary)]">
@@ -3420,7 +3420,7 @@ export function PortfolioPage() {
       <section className="min-w-0" data-testid="portfolio-history">
         <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold text-[var(--app-text)]">
+            <h2 className="app-type-section-title text-[var(--app-text)]">
               {copy.portfolio.detail.closedHistoryOnly}
             </h2>
             <p className="mt-1 text-xs text-[var(--app-text-secondary)]">
@@ -3658,7 +3658,7 @@ export function RiskPage() {
             className="min-w-0 space-y-2"
           >
             <div>
-              <h2 className="text-base font-semibold text-[var(--app-text)]">
+              <h2 className="app-type-section-title text-[var(--app-text)]">
                 {copy.riskPage.blockingRegister}
               </h2>
               <p className="mt-0.5 max-w-3xl text-xs text-[var(--app-text-secondary)]">
@@ -3685,7 +3685,7 @@ export function RiskPage() {
                 className="grid grid-cols-2 gap-3 border-b border-[var(--app-divider)] px-3 py-2.5 text-xs"
               >
                 <div className="min-w-0">
-                  <dt className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--app-text-tertiary)]">
+                  <dt className="text-[length:var(--app-font-size-micro)] font-semibold uppercase tracking-[0.06em] text-[var(--app-text-tertiary)]">
                     {locale === 'zh'
                       ? '统一解除条件'
                       : 'Shared unblock condition'}
@@ -3695,7 +3695,7 @@ export function RiskPage() {
                   </dd>
                 </div>
                 <div className="min-w-0">
-                  <dt className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--app-text-tertiary)]">
+                  <dt className="text-[length:var(--app-font-size-micro)] font-semibold uppercase tracking-[0.06em] text-[var(--app-text-tertiary)]">
                     {locale === 'zh' ? '安全下一步' : 'Safe next step'}
                   </dt>
                   <dd className="mt-0.5 leading-[18px] text-[var(--app-text-secondary)] [overflow-wrap:anywhere]">
@@ -3765,7 +3765,7 @@ export function RiskPage() {
               data-testid="risk-decision-handoff"
               className="min-w-0 space-y-2"
             >
-              <h2 className="text-base font-semibold text-[var(--app-text)]">
+              <h2 className="app-type-section-title text-[var(--app-text)]">
                 {copy.riskPage.decisionHandoffKicker}
               </h2>
               <ExceptionList
@@ -3840,7 +3840,7 @@ export function RiskPage() {
 
           <section className="min-w-0 space-y-2">
             <div>
-              <h2 className="text-base font-semibold text-[var(--app-text)]">
+              <h2 className="app-type-section-title text-[var(--app-text)]">
                 {locale === 'zh'
                   ? '风险指标与阈值证据'
                   : 'Risk metric and threshold evidence'}
@@ -3983,7 +3983,7 @@ export function RiskPage() {
 
           <section className="min-w-0 space-y-2">
             <div>
-              <h2 className="text-base font-semibold text-[var(--app-text)]">
+              <h2 className="app-type-section-title text-[var(--app-text)]">
                 {locale === 'zh' ? '受控操作' : 'Controlled actions'}
               </h2>
               <p className="mt-0.5 max-w-3xl text-xs text-[var(--app-text-secondary)]">
@@ -5483,7 +5483,7 @@ function PendingFundOrdersCard({
       <div className="flex items-start justify-between gap-3 border-b border-[var(--app-divider)] px-4 py-3">
         <div>
           <div className="app-product-mark">{copy.activity.pending.kicker}</div>
-          <h2 className="mt-2 text-base font-semibold">
+          <h2 className="app-type-section-title mt-2">
             {copy.activity.pending.title}
           </h2>
         </div>
@@ -7407,10 +7407,10 @@ function ReturnCalendarCell({
     ? 'flex min-h-[4.25rem] min-w-0 flex-col overflow-hidden rounded-md px-1.5 py-2'
     : 'flex min-h-[5.75rem] min-w-0 flex-col overflow-hidden rounded-lg px-3 py-3';
   const valueClass = compact
-    ? 'mt-auto self-end whitespace-nowrap text-right text-[10px] font-semibold leading-4 sm:text-[11px]'
+    ? 'mt-auto self-end whitespace-nowrap text-right text-[length:var(--app-font-size-micro)] font-semibold leading-4 sm:text-[11px]'
     : 'mt-auto max-w-full self-end break-words text-right text-base font-semibold leading-tight';
   const metaClass = compact
-    ? 'mt-1 self-end text-right text-[10px] opacity-80'
+    ? 'mt-1 self-end text-right text-[length:var(--app-font-size-micro)] opacity-80'
     : 'mt-2 self-end text-right text-[11px] opacity-80';
   const { headingText, sublabelText } = formatReturnCalendarCellHeading(
     heading,
