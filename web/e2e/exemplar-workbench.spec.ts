@@ -1036,6 +1036,98 @@ test('core review routes keep audit drill-downs closed and mobile reading paths 
   }
 });
 
+test('mobile trading review keeps one persisted order and its controlled actions in one bounded row', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route('**/api/trading/orders**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          id: 1,
+          order_id: 'ORD-RESPONSIVE-AUDIT',
+          timestamp: '2026-07-29T09:00:00+08:00',
+          symbol: '600519',
+          side: 'buy',
+          order_type: 'limit',
+          quantity: 100,
+          price: 1720.25,
+          intent_id: 'INT-RESPONSIVE-AUDIT',
+          risk_decision_id: 'RISK-RESPONSIVE-AUDIT',
+          execution_mode: 'manual',
+          status: 'pending_confirm',
+          payload_json:
+            '{"intent_id":"INT-RESPONSIVE-AUDIT","risk_decision_id":"RISK-RESPONSIVE-AUDIT"}',
+          note: null,
+          created_at: '2026-07-29T09:00:00+08:00',
+          updated_at: '2026-07-29T09:00:00+08:00',
+        },
+      ]),
+    });
+  });
+
+  await page.goto('/trading');
+  const row = page.getByTestId('trading-order-row-ORD-RESPONSIVE-AUDIT');
+  await expect(row).toBeVisible();
+
+  for (const theme of ['light', 'dark'] as const) {
+    await selectMobileTheme(page, theme);
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    await expect(
+      page.getByRole('button', {
+        name: /Confirm:.*600519|确认:.*600519/,
+      }),
+    ).toBeVisible();
+
+    const geometry = await page.evaluate(() => {
+      const content = document.querySelector(
+        '.app-shell-content',
+      ) as HTMLElement;
+      const table = document.querySelector(
+        '[data-testid="trading-review-queue"] table',
+      ) as HTMLTableElement;
+      const row = document.querySelector(
+        '[data-testid="trading-order-row-ORD-RESPONSIVE-AUDIT"]',
+      ) as HTMLTableRowElement;
+      const bounds = row.getBoundingClientRect();
+      return {
+        contentOverflow: content.scrollWidth - content.clientWidth,
+        documentOverflow:
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+        undersizedTargets: Array.from(
+          row.querySelectorAll<HTMLElement>('button,input'),
+        )
+          .map((target) => {
+            const targetBounds = target.getBoundingClientRect();
+            return {
+              height: targetBounds.height,
+              label:
+                target.getAttribute('aria-label') ??
+                target.textContent?.trim() ??
+                target.tagName,
+              width: targetBounds.width,
+            };
+          })
+          .filter((target) => target.height < 44 || target.width < 44),
+        tableOverflow: table.scrollWidth - table.clientWidth,
+        rowLeft: bounds.left,
+        rowRight: bounds.right,
+      };
+    });
+    expect(geometry.documentOverflow, `${theme} document`).toBeLessThanOrEqual(
+      0,
+    );
+    expect(geometry.contentOverflow, `${theme} content`).toBeLessThanOrEqual(0);
+    expect(geometry.tableOverflow, `${theme} table`).toBeLessThanOrEqual(0);
+    expect(geometry.undersizedTargets, `${theme} touch targets`).toEqual([]);
+    expect(geometry.rowLeft, `${theme} row left`).toBeGreaterThanOrEqual(0);
+    expect(geometry.rowRight, `${theme} row right`).toBeLessThanOrEqual(390);
+  }
+});
+
 test('remaining phase-four routes stay overflow safe in Latte and Mocha', async ({
   page,
 }) => {

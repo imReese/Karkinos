@@ -46,6 +46,14 @@ describe('trading workbench contract', () => {
     expect(executionAudit).not.toMatch(/rounded-(?:2xl|3xl)/);
 
     expect(orderQueue).toContain('<ControlledActionZone');
+    expect(orderQueue).toContain(
+      'overflow-x-visible md:overflow-x-auto md:overscroll-x-contain',
+    );
+    expect(orderQueue).toContain('md:min-w-[1180px] md:table-fixed');
+    expect(orderQueue).toContain('grid grid-cols-2');
+    expect(orderQueue).toContain('md:table-row');
+    expect(orderQueue).toContain('md:hidden');
+    expect(orderQueue).not.toContain('className="min-w-[1180px]');
     expect(orderQueue).toContain('onClick={() => void onConfirm()}');
     expect(orderQueue).toContain('onClick={() => void onReject()}');
     expect(orderQueue).toContain('<WorkbenchStatusBadge');
