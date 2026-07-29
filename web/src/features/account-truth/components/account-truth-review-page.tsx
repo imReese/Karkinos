@@ -98,6 +98,7 @@ const labels = {
       `${count} earlier ${count === 1 ? 'report' : 'reports'}`,
     reportListLabel: 'Reconciliation report selection',
     currentReport: 'Selected report',
+    reconciliationItems: 'Reconciliation detail',
     attentionItems: 'Items requiring review',
     matchedItems: 'Matched rows',
     matchedItemsQuiet: (count: number) =>
@@ -220,6 +221,7 @@ const labels = {
     reportHistoryCount: (count: number) => `${count} 份较早报告`,
     reportListLabel: '选择对账报告',
     currentReport: '当前报告',
+    reconciliationItems: '对账明细',
     attentionItems: '待复核明细',
     matchedItems: '已匹配明细',
     matchedItemsQuiet: (count: number) =>
@@ -660,7 +662,7 @@ export function AccountTruthReviewPage() {
                   <h3 className="truncate text-sm font-semibold text-[var(--app-text)]">
                     {attentionItems.length > 0
                       ? text.attentionItems
-                      : text.matchedItems}
+                      : text.reconciliationItems}
                   </h3>
                   <StatusBadge
                     tone={attentionItems.length > 0 ? 'warning' : 'success'}
