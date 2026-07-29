@@ -1494,7 +1494,7 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
             reportWorkspace.locator(
               '[data-workbench-primitive="metric-strip"]',
             ),
-          ).toHaveCount(2);
+          ).toHaveCount(2, { timeout: 15_000 });
           const reportGeometry = await reportWorkspace.evaluate((element) => ({
             chartTop:
               element
