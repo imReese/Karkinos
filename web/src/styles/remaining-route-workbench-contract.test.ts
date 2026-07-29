@@ -22,7 +22,7 @@ const MARKET_INSTRUMENT_WORKSPACE = source(
 );
 const MARKET_DATA_OPERATIONS = ROUTER.slice(
   ROUTER.indexOf('function MarketDataOperationsPanel'),
-  ROUTER.indexOf('function MetricBlock'),
+  ROUTER.indexOf('function formatAge'),
 );
 const ACTIVITY_FORMS = [
   source('features/activity/components/trade-form.tsx'),

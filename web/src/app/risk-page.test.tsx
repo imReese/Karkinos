@@ -113,7 +113,26 @@ const riskWorkspace = {
 };
 
 const explainability = {
-  equity_bridge: [],
+  equity_bridge: [
+    {
+      key: 'deposits',
+      label: 'Net deposits',
+      value: 3000,
+      detail: 'Persisted external capital flow.',
+    },
+    {
+      key: 'unrealized',
+      label: 'Unrealized PnL',
+      value: -3.16,
+      detail: 'Persisted mark-to-market movement.',
+    },
+    {
+      key: 'equity',
+      label: 'Total equity',
+      value: 2996.84,
+      detail: 'Persisted account equity.',
+    },
+  ],
   recent_drivers: [
     {
       kind: 'trade_buy',
@@ -757,10 +776,56 @@ test('uses account instrument names for risk explainability events that only car
 test('keeps explainability columns compact with local event scrolling', async () => {
   renderRiskPage();
 
+  const equityBridge = await screen.findByTestId('risk-equity-bridge-section');
+  expect(
+    equityBridge.querySelector('[data-workbench-primitive="metric-strip"]'),
+  ).toBeTruthy();
+  const depositsMetric = within(equityBridge)
+    .getByText('Net Deposits')
+    .closest('.app-metric-strip-item');
+  const unrealizedMetric = within(equityBridge)
+    .getByText('Unrealized PnL')
+    .closest('.app-metric-strip-item');
+  const equityMetric = within(equityBridge)
+    .getByText('Total Equity')
+    .closest('.app-metric-strip-item');
+  expect(depositsMetric?.querySelector('dd')?.className).not.toContain(
+    '--app-pnl-positive',
+  );
+  expect(unrealizedMetric?.querySelector('dd')?.className).toContain(
+    '--app-pnl-negative',
+  );
+  expect(equityMetric?.querySelector('dd')?.className).not.toContain(
+    '--app-pnl-positive',
+  );
+  expect(equityBridge.textContent).not.toContain(
+    'Persisted external capital flow.',
+  );
+
   const topGrid = await screen.findByTestId('risk-explainability-top-grid');
   expect(topGrid.className).toContain('items-start');
+  expect(topGrid.querySelector('.app-panel')).toBeNull();
+  expect(topGrid.querySelector('.app-panel-strong')).toBeNull();
 
   const recentList = await screen.findByTestId('risk-recent-impact-list');
   expect(recentList.className).toContain('max-h');
   expect(recentList.className).toContain('overflow-y-auto');
+
+  const positionList = await screen.findByTestId('risk-position-impact-list');
+  expect(positionList.tagName).toBe('UL');
+
+  const timelineSection = await screen.findByTestId(
+    'risk-impact-timeline-section',
+  );
+  expect(
+    timelineSection.querySelector('[data-workbench-primitive="timeline"]'),
+  ).toBeTruthy();
+  const timelineScroll = await screen.findByTestId(
+    'risk-impact-timeline-scroll',
+  );
+  expect(timelineScroll.className).toContain('max-h');
+  expect(timelineScroll.className).toContain('overflow-y-auto');
+  expect(timelineScroll.tabIndex).toBe(0);
+  expect(timelineSection.querySelector('.app-panel')).toBeNull();
+  expect(timelineSection.querySelector('.app-panel-strong')).toBeNull();
 });
