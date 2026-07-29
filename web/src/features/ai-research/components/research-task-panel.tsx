@@ -61,6 +61,25 @@ const COPY = {
     loadingTitle: 'Loading frozen task evidence',
     loadErrorTitle: 'Research task evidence unavailable',
     emptyTitle: 'No frozen research task',
+    emptyWorkflowLabel: 'Research review sequence',
+    emptyWorkflow: [
+      {
+        title: 'Freeze context',
+        detail: 'Bind only saved account and backtest facts.',
+      },
+      {
+        title: 'Record the question',
+        detail: 'A human drafts the task; no analysis starts.',
+      },
+      {
+        title: 'Run explicitly',
+        detail: 'Local deterministic analysis runs only on request.',
+      },
+      {
+        title: 'Review the outcome',
+        detail: 'A human decides whether the result may be recalled.',
+      },
+    ],
     successTitle: 'Research task recorded',
     noModel: 'No background AI',
     noAuthority: 'Advisory only',
@@ -158,6 +177,25 @@ const COPY = {
     loadingTitle: '正在读取已冻结任务证据',
     loadErrorTitle: '研究任务证据不可用',
     emptyTitle: '暂无已冻结研究任务',
+    emptyWorkflowLabel: '研究复核顺序',
+    emptyWorkflow: [
+      {
+        title: '冻结上下文',
+        detail: '仅绑定已保存的账户与回测事实。',
+      },
+      {
+        title: '记录问题',
+        detail: '由人起草任务，不会启动分析。',
+      },
+      {
+        title: '显式运行',
+        detail: '本地确定性分析只在人工请求后运行。',
+      },
+      {
+        title: '人工复核',
+        detail: '由人决定结果能否进入研究记忆。',
+      },
+    ],
     successTitle: '研究任务已记录',
     noModel: '无后台 AI',
     noAuthority: '仅供研究',
@@ -492,12 +530,35 @@ export function ResearchTaskPanel({
                 ))}
               </div>
             ) : (
-              <EvidenceState
-                className="mt-4"
-                description={copy.empty}
-                kind="empty"
-                title={copy.emptyTitle}
-              />
+              <div className="mt-4">
+                <EvidenceState
+                  description={copy.empty}
+                  kind="empty"
+                  title={copy.emptyTitle}
+                />
+                <ol
+                  aria-label={copy.emptyWorkflowLabel}
+                  className="mt-4 grid grid-cols-2 gap-x-4 gap-y-5 xl:grid-cols-4"
+                  data-testid="ai-research-empty-workflow"
+                >
+                  {copy.emptyWorkflow.map((step, index) => (
+                    <li
+                      className="min-w-0 border-t border-[var(--app-divider)] pt-3"
+                      key={step.title}
+                    >
+                      <span className="font-mono text-[10px] font-semibold tracking-[0.12em] text-[var(--app-accent)]">
+                        {String(index + 1).padStart(2, '0')}
+                      </span>
+                      <strong className="mt-1 block text-xs font-semibold text-[var(--app-text)]">
+                        {step.title}
+                      </strong>
+                      <span className="app-muted mt-1 block text-[11px] leading-[1.55]">
+                        {step.detail}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
             )}
             {successMessage ? (
               <EvidenceState
