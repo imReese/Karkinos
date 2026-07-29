@@ -245,7 +245,7 @@ export function PriceStructureChart({
   const plot = {
     left: 64,
     right: 620,
-    top: 18,
+    top: 10,
     bottom: hasVolume ? 174 : 218,
   };
   const volumePlot = {
@@ -321,22 +321,16 @@ export function PriceStructureChart({
           className="min-w-[720px]"
         >
           <svg
-            viewBox="0 0 640 270"
+            viewBox="0 0 640 246"
             className="h-64 w-full overflow-visible text-[var(--app-soft)] sm:h-80 xl:h-[21rem]"
             role="img"
-            aria-label={`${titleLabel} ${priceLabel}`}
+            aria-label={`${titleLabel} · ${axisLabels.price} · ${axisLabels.date}`}
           >
-            <text x={plot.left} y="10" className="fill-current text-[10px]">
-              {axisLabels.price}
-            </text>
-            <text
-              x={(plot.left + plot.right) / 2}
-              y="266"
-              textAnchor="middle"
-              className="fill-current text-[10px]"
-            >
-              {axisLabels.date}
-            </text>
+            <desc>
+              {`${priceLabel} · ${axisLabels.price} · ${axisLabels.date}${
+                hasVolume ? ` · ${axisLabels.volume ?? 'Volume'}` : ''
+              }`}
+            </desc>
             <line
               x1={plot.left}
               x2={plot.left}
@@ -400,6 +394,12 @@ export function PriceStructureChart({
             {xTickIndexes.map((index) => {
               const bar = plottedBars[index];
               const x = plot.left + step * index + step / 2;
+              const textAnchor =
+                index === 0
+                  ? 'start'
+                  : index === plottedBars.length - 1
+                    ? 'end'
+                    : 'middle';
               return (
                 <g key={`${bar.timestamp ?? index}-tick`}>
                   <line
@@ -413,7 +413,7 @@ export function PriceStructureChart({
                   <text
                     x={x}
                     y={xAxisY + 20}
-                    textAnchor="middle"
+                    textAnchor={textAnchor}
                     className="fill-current text-[10px] tabular-nums"
                   >
                     {formatDateTick(bar.timestamp, index)}
