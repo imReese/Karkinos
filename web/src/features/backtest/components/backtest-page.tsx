@@ -1786,7 +1786,10 @@ function StrategyCatalogPanel({
 
   return (
     <section className="min-w-0 border-y border-[var(--app-divider)] py-3 sm:py-4">
-      <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(180px,240px)] sm:items-end">
+      <div
+        className="grid min-w-0 gap-3 2xl:grid-cols-[minmax(0,1fr)_minmax(180px,240px)] 2xl:items-end"
+        data-testid="backtest-strategy-catalog-header"
+      >
         <div className="min-w-0">
           <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
             {labels.strategyCatalogKicker}

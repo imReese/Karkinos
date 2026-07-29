@@ -34,6 +34,53 @@ test('Operations keeps pilot readiness and subsystem metrics visibly scoped', as
     await expect(readiness).not.toHaveAttribute('open', '');
     await expect(readiness).toContainText('Prerequisites unmet');
 
+    const commandGrid = page.getByTestId('operations-command-grid');
+    const attentionQueue = page.getByTestId('operations-attention-queue');
+    await readiness.locator('summary').click();
+    await expect(readiness).toHaveAttribute('open', '');
+    const desktopExpandedGeometry = await commandGrid.evaluate((element) => {
+      const attentionQueue = element.querySelector(
+        '[data-testid="operations-attention-queue"]',
+      ) as HTMLElement;
+      const readiness = element.querySelector(
+        '[data-testid="controlled-pilot-readiness"]',
+      ) as HTMLElement;
+      return {
+        attentionWidth: attentionQueue.getBoundingClientRect().width,
+        columnCount:
+          getComputedStyle(element).gridTemplateColumns.split(' ').length,
+        gridWidth: element.getBoundingClientRect().width,
+        pilotBelowAttention:
+          readiness.getBoundingClientRect().top >=
+          attentionQueue.getBoundingClientRect().bottom,
+        pilotWidth: readiness.getBoundingClientRect().width,
+      };
+    });
+    expect(
+      desktopExpandedGeometry.columnCount,
+      `${theme} expanded desktop`,
+    ).toBe(1);
+    expect(
+      Math.abs(
+        desktopExpandedGeometry.attentionWidth -
+          desktopExpandedGeometry.gridWidth,
+      ),
+      `${theme} expanded desktop attention width`,
+    ).toBeLessThanOrEqual(headlessSubpixelTolerance);
+    expect(
+      Math.abs(
+        desktopExpandedGeometry.pilotWidth - desktopExpandedGeometry.gridWidth,
+      ),
+      `${theme} expanded desktop pilot width`,
+    ).toBeLessThanOrEqual(headlessSubpixelTolerance);
+    expect(
+      desktopExpandedGeometry.pilotBelowAttention,
+      `${theme} expanded desktop order`,
+    ).toBe(true);
+    await expect(attentionQueue).toBeVisible();
+    await readiness.locator('summary').click();
+    await expect(readiness).not.toHaveAttribute('open', '');
+
     for (const viewport of acceptanceViewports) {
       await page.setViewportSize(viewport);
       const geometry = await metrics.evaluate((element) => {

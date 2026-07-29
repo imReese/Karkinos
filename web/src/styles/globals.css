@@ -1313,6 +1313,12 @@ h3 {
     grid-template-columns: minmax(0, 1.35fr) minmax(310px, 0.65fr);
   }
 
+  .app-operations-command-grid:has(
+    > [data-testid='controlled-pilot-readiness'][open]
+  ) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .app-ai-research-command-grid {
     grid-template-columns: minmax(340px, 0.72fr) minmax(0, 1.28fr);
   }
