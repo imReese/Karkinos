@@ -129,7 +129,7 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
 
   await page.goto('/risk');
   const blockingRegister = page.getByTestId('risk-blocking-register');
-  const riskMetrics = page.locator('[data-workbench-primitive="metric-strip"]');
+  const riskMetrics = page.getByLabel('Risk metrics');
   const thresholdTable = page.getByTestId('risk-threshold-table');
   const controlledActions = page.getByTestId('risk-trading-control-grid');
   await expect(blockingRegister).toBeVisible({ timeout: 15_000 });
