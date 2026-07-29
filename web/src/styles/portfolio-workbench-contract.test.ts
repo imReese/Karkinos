@@ -28,6 +28,10 @@ const liveHoldingsSource = readFileSync(
   resolve(SRC_ROOT, 'features/portfolio/components/live-holdings-board.tsx'),
   'utf8',
 );
+const globalStyles = readFileSync(
+  resolve(SRC_ROOT, 'styles/globals.css'),
+  'utf8',
+);
 
 test('portfolio strategy evidence uses flat standard workbench primitives', () => {
   expect(strategyContributionSource).toContain('<MetricStrip');
@@ -54,8 +58,12 @@ test('portfolio tables expose primary facts and a mobile master-detail list', ()
   expect(positionsTableSource).toContain("id: 'quote-state'");
   expect(positionsTableSource).toContain('positions-mobile-list');
   expect(positionsTableSource).toContain('position-mobile-row-');
+  expect(positionsTableSource).toContain('app-position-mobile-row');
   expect(positionsTableSource).toContain('md:hidden');
   expect(positionsTableSource).toContain('hidden min-w-0 md:block');
+  expect(globalStyles).toContain(
+    '.app-shell-content a.app-position-mobile-row',
+  );
   expect(positionsTableSource).not.toContain('useRefreshMarketQuotesMutation');
   expect(positionsTableSource).not.toContain("id: 'actions'");
   expect(liveHoldingsSource).toContain('minmax(84px,1fr)');

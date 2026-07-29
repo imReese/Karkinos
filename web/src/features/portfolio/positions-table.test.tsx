@@ -163,6 +163,10 @@ test('provides a task-focused mobile holdings list without table-width dependenc
   const list = screen.getByTestId('positions-mobile-list');
   const row = within(list).getByTestId('position-mobile-row-600519');
   expect(list.className).toContain('md:hidden');
+  expect(list.className).toContain('max-w-full');
+  expect(row.className).toContain('app-position-mobile-row');
+  expect(row.className).toContain('w-full');
+  expect(row.className).toContain('max-w-full');
   expect(row.getAttribute('href')).toBe('/portfolio/600519');
   expect(row.textContent).toContain('贵州茅台');
   expect(row.textContent).toContain('¥96,000.00');

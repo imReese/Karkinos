@@ -248,7 +248,7 @@ export function PositionsTable({
       {positions.length > 0 ? (
         <ul
           data-testid="positions-mobile-list"
-          className="divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)] md:hidden"
+          className="min-w-0 max-w-full divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)] md:hidden"
         >
           {positions.map((position) => {
             const displayName = resolvePositionName(position);
@@ -258,12 +258,12 @@ export function PositionsTable({
               copy.common.staleReasons,
             );
             return (
-              <li key={position.symbol}>
+              <li className="min-w-0 max-w-full" key={position.symbol}>
                 <a
                   href={holdingDetailHref(position.symbol)}
                   data-testid={`position-mobile-row-${position.symbol}`}
                   aria-label={`${labels.detailsTitle}: ${displayName} ${position.symbol}`}
-                  className={`block px-1 text-[var(--app-text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] ${
+                  className={`app-position-mobile-row block w-full min-w-0 max-w-full px-1 text-[var(--app-text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] ${
                     variant === 'dashboard' ? 'py-2.5' : 'py-3'
                   }`}
                 >
