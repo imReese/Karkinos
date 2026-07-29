@@ -5585,80 +5585,63 @@ function ExplainabilityWorkspace({
   const { locale } = usePreferences();
 
   if (loading) {
-    return (
-      <div className="app-panel rounded-2xl p-4 sm:p-5">
-        {copy.states.loading}
-      </div>
-    );
+    return <EvidenceState kind="loading" title={copy.states.loading} />;
   }
 
   const equityBridge = explainability?.equity_bridge ?? [];
-  const equityBridgeTotalPnl = equityBridge
-    .filter(
-      (bridgeItem) =>
-        bridgeItem.key === 'realized' || bridgeItem.key === 'unrealized',
-    )
-    .reduce((sum, bridgeItem) => sum + bridgeItem.value, 0);
 
   return (
     <div className="space-y-5">
-      <div
-        className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]"
-        data-testid="risk-explainability-top-grid"
-      >
-        <div className="app-panel rounded-2xl p-4 sm:p-5">
-          <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-            {title}
-          </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {equityBridge.map((item) => {
+      <section className="space-y-3" data-testid="risk-equity-bridge-section">
+        <h2 className="app-kicker text-xs uppercase tracking-[0.18em]">
+          {title}
+        </h2>
+        {equityBridge.length > 0 ? (
+          <MetricStrip
+            ariaLabel={title}
+            items={equityBridge.map((item) => {
               const label =
                 copy.explainability.equityBridgeLabels[
                   item.key as keyof typeof copy.explainability.equityBridgeLabels
                 ] ?? item.label;
-              const detailTemplate =
-                copy.explainability.equityBridgeDetails[
-                  item.key as keyof typeof copy.explainability.equityBridgeDetails
-                ];
-              const detail =
-                typeof detailTemplate === 'function'
-                  ? detailTemplate(formatCurrency(equityBridgeTotalPnl))
-                  : (detailTemplate ?? item.detail);
+              const isPnlMetric =
+                item.key === 'realized' || item.key === 'unrealized';
 
-              return (
-                <div
-                  key={item.key}
-                  className="app-panel-strong rounded-2xl px-4 py-4"
-                >
-                  <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
-                    {label}
-                  </div>
-                  <div className="mt-2 text-lg font-semibold tabular-nums">
-                    {formatCurrency(item.value)}
-                  </div>
-                  <div className="app-muted mt-2 text-sm">{detail}</div>
-                </div>
-              );
+              return {
+                id: item.key,
+                label,
+                value: formatCurrency(item.value),
+                tone:
+                  isPnlMetric && item.value > 0
+                    ? ('pnl-positive' as const)
+                    : isPnlMetric && item.value < 0
+                      ? ('pnl-negative' as const)
+                      : ('neutral' as const),
+              };
             })}
-          </div>
-        </div>
+          />
+        ) : (
+          <EvidenceState kind="empty" title={emptyLabel} />
+        )}
+      </section>
 
-        <div className="space-y-5">
-          <div className="app-panel rounded-2xl p-4 sm:p-5">
-            <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-              {stateLabelRecent}
-            </div>
-            <div
-              className="mt-4 grid max-h-[620px] gap-3 overflow-y-auto pr-1"
+      <div
+        className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]"
+        data-testid="risk-explainability-top-grid"
+      >
+        <section className="min-w-0 space-y-3">
+          <h2 className="app-kicker text-xs uppercase tracking-[0.18em]">
+            {stateLabelRecent}
+          </h2>
+          {explainability?.recent_drivers?.length ? (
+            <ol
+              className="max-h-[620px] divide-y divide-[var(--app-divider)] overflow-y-auto border-y border-[var(--app-divider)]"
               data-testid="risk-recent-impact-list"
             >
-              {(explainability?.recent_drivers?.length
-                ? explainability.recent_drivers
-                : [{ title: emptyLabel, detail: '', timestamp: '' }]
-              ).map((item) => (
-                <div
+              {explainability.recent_drivers.map((item) => (
+                <li
                   key={`${item.title}-${item.timestamp}`}
-                  className="app-panel-strong rounded-2xl px-4 py-4"
+                  className="px-3 py-3"
                 >
                   <div className="flex min-w-0 items-start justify-between gap-3">
                     <div className="min-w-0 text-sm font-semibold leading-6">
@@ -5687,7 +5670,7 @@ function ExplainabilityWorkspace({
                     locale,
                     instrumentNames,
                   ) ? (
-                    <div className="app-muted mt-2 break-words text-sm leading-6">
+                    <div className="app-muted mt-1 break-words text-sm leading-6">
                       {formatLedgerExplainabilityDetail(
                         item,
                         locale,
@@ -5696,106 +5679,100 @@ function ExplainabilityWorkspace({
                     </div>
                   ) : null}
                   {item.timestamp ? (
-                    <div className="app-kicker mt-3 text-[11px] tracking-[0.08em]">
+                    <time className="app-kicker mt-2 block text-[11px] tracking-[0.08em]">
                       {formatAuditTimestamp(item.timestamp)}
-                    </div>
+                    </time>
                   ) : null}
-                </div>
+                </li>
               ))}
-            </div>
-          </div>
+            </ol>
+          ) : (
+            <EvidenceState kind="empty" title={emptyLabel} />
+          )}
+        </section>
 
-          <div className="app-panel rounded-2xl p-4 sm:p-5">
-            <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-              {stateLabelPositions}
-            </div>
-            <div className="mt-4 grid gap-3">
-              {(explainability?.positions ?? []).map((item) => (
-                <div
+        <section className="min-w-0 space-y-3">
+          <h2 className="app-kicker text-xs uppercase tracking-[0.18em]">
+            {stateLabelPositions}
+          </h2>
+          {explainability?.positions?.length ? (
+            <ul
+              className="divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]"
+              data-testid="risk-position-impact-list"
+            >
+              {explainability.positions.map((item) => (
+                <li
                   key={item.symbol}
-                  className="app-panel-strong rounded-2xl px-4 py-4"
+                  className="grid gap-1 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-x-4"
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-sm font-semibold">
-                      {formatInstrumentDisplayLabel(
-                        item.symbol,
-                        instrumentNames,
-                      )}
-                    </div>
-                    <div className="text-sm font-medium">
-                      {formatCurrency(item.market_value)}
-                    </div>
+                  <div className="min-w-0 text-sm font-semibold">
+                    {formatInstrumentDisplayLabel(item.symbol, instrumentNames)}
                   </div>
-                  <div className="app-muted mt-2 text-sm">
+                  <div className="text-sm font-medium tabular-nums sm:text-right">
+                    {formatCurrency(item.market_value)}
+                  </div>
+                  <div className="app-muted text-sm">
                     {copy.explainability.quantity}{' '}
                     {formatQuantity(item.quantity)} ·{' '}
                     {copy.portfolio.table.unrealized}{' '}
-                    {formatCurrency(item.unrealized_pnl)}
+                    <span
+                      className={
+                        item.unrealized_pnl < 0
+                          ? 'text-[var(--app-pnl-negative)]'
+                          : item.unrealized_pnl > 0
+                            ? 'text-[var(--app-pnl-positive)]'
+                            : 'text-[var(--app-pnl-neutral)]'
+                      }
+                    >
+                      {formatCurrency(item.unrealized_pnl)}
+                    </span>
                   </div>
                   {item.last_activity_at ? (
-                    <div className="app-kicker mt-3 text-[11px] tracking-[0.08em]">
+                    <time className="app-kicker text-[11px] tracking-[0.08em] sm:text-right">
                       {formatAuditTimestamp(item.last_activity_at)}
-                    </div>
+                    </time>
                   ) : null}
-                </div>
+                </li>
               ))}
-            </div>
-          </div>
-        </div>
+            </ul>
+          ) : (
+            <EvidenceState kind="empty" title={emptyLabel} />
+          )}
+        </section>
       </div>
 
-      <div className="app-panel rounded-2xl p-4 sm:p-5">
-        <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+      <section className="space-y-3" data-testid="risk-impact-timeline-section">
+        <h2 className="app-kicker text-xs uppercase tracking-[0.18em]">
           {copy.explainability.timeline}
-        </div>
+        </h2>
         {filters ? <div className="mt-4">{filters}</div> : null}
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {(explainability?.timeline?.length
-            ? explainability.timeline.slice().reverse()
-            : [
-                {
-                  date: '',
-                  equity: 0,
-                  delta: 0,
-                  external_flow: 0,
-                  market_pnl: 0,
-                  events: [],
-                },
-              ]
-          ).map((point) => (
-            <div
-              key={`${point.date}-${point.equity}`}
-              className="app-panel-strong rounded-2xl px-4 py-4"
-            >
-              {point.date ? (
-                <>
-                  <div className="text-sm font-semibold">{point.date}</div>
-                  <div className="mt-3 grid gap-2">
-                    <MetricBlock
-                      label={copy.explainability.equity}
-                      value={formatCurrency(point.equity)}
-                    />
-                    <MetricBlock
-                      label={copy.explainability.netChange}
-                      value={formatCurrency(point.delta)}
-                    />
-                    <MetricBlock
-                      label={copy.explainability.externalFlow}
-                      value={formatCurrency(point.external_flow)}
-                    />
-                    <MetricBlock
-                      label={copy.explainability.marketPnl}
-                      value={formatCurrency(point.market_pnl)}
-                    />
-                  </div>
-                  {point.events.length > 0 ? (
-                    <div className="mt-3 grid gap-2">
+        <div
+          aria-label={copy.explainability.timeline}
+          className="max-h-[min(72vh,52rem)] overflow-y-auto overscroll-y-contain border-y border-[var(--app-divider)] py-3 pr-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
+          data-testid="risk-impact-timeline-scroll"
+          role="region"
+          tabIndex={0}
+        >
+          <Timeline
+            ariaLabel={copy.explainability.timeline}
+            emptyState={copy.explainability.timelineEmpty}
+            items={(explainability?.timeline ?? [])
+              .slice()
+              .reverse()
+              .map((point) => ({
+                id: `${point.date}-${point.equity}`,
+                timestamp: point.date,
+                title: `${copy.explainability.equity} ${formatCurrency(point.equity)}`,
+                description: `${copy.explainability.netChange} ${formatCurrency(point.delta)} · ${copy.explainability.externalFlow} ${formatCurrency(point.external_flow)} · ${copy.explainability.marketPnl} ${formatCurrency(point.market_pnl)}`,
+                evidence:
+                  point.events.length > 0 ? (
+                    <ul className="divide-y divide-[var(--app-divider)] border-t border-[var(--app-divider)] font-sans normal-case">
                       {point.events.map((event) => (
-                        <div
+                        <li
                           key={`${event.timestamp}-${event.title}`}
-                          className="rounded-xl border border-[color-mix(in_srgb,var(--app-border)_40%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_50%,transparent)] px-3 py-2"
+                          className="py-2 first:pt-2 last:pb-0"
                         >
-                          <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+                          <div className="text-xs font-semibold text-[var(--app-text-secondary)]">
                             {formatLedgerExplainabilityTitle(
                               event,
                               locale,
@@ -5810,7 +5787,7 @@ function ExplainabilityWorkspace({
                             locale,
                             instrumentNames,
                           ) ? (
-                            <div className="app-muted mt-1 text-xs leading-5">
+                            <div className="mt-1 text-xs leading-5 text-[var(--app-text-tertiary)]">
                               {formatLedgerExplainabilityDetail(
                                 event,
                                 locale,
@@ -5818,20 +5795,16 @@ function ExplainabilityWorkspace({
                               )}
                             </div>
                           ) : null}
-                        </div>
+                        </li>
                       ))}
-                    </div>
-                  ) : null}
-                </>
-              ) : (
-                <div className="app-muted text-sm">
-                  {copy.explainability.timelineEmpty}
-                </div>
-              )}
-            </div>
-          ))}
+                    </ul>
+                  ) : undefined,
+                tone: 'neutral' as const,
+              }))}
+            className="pt-1"
+          />
         </div>
-      </div>
+      </section>
 
       {showReturnCalendar ? (
         <ReturnCalendarCard timeline={explainability?.timeline ?? []} />
@@ -5914,17 +5887,6 @@ function MarketDataOperationsPanel({
           }))}
         />
       )}
-    </div>
-  );
-}
-
-function MetricBlock({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0 bg-[var(--app-surface-raised)] px-4 py-3">
-      <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
-        {label}
-      </div>
-      <div className="mt-1.5 break-words text-sm font-medium">{value}</div>
     </div>
   );
 }
