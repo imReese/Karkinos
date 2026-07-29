@@ -28,8 +28,8 @@ export function operationsSubsystemLabel(value: string, locale: Locale) {
     strategy_candidates: { en: 'Strategy evidence', zh: '策略证据' },
     risk: { en: 'Deterministic risk', zh: '确定性风控' },
     daily_trading_plan: { en: 'Daily trading plan', zh: '日度交易计划' },
-    paper_shadow: { en: 'Paper/shadow', zh: 'Paper/shadow' },
-    scheduler: { en: 'Scheduler', zh: '调度器' },
+    paper_shadow: { en: 'Paper/shadow', zh: '模拟与影子检验' },
+    scheduler: { en: 'Scheduler', zh: '自动任务调度' },
     execution_reconciliation: {
       en: 'Execution reconciliation',
       zh: '执行对账',
@@ -37,7 +37,7 @@ export function operationsSubsystemLabel(value: string, locale: Locale) {
     acceptance_audit: { en: 'Acceptance audit', zh: '验收审计' },
     broker_adapter_evidence: {
       en: 'Broker adapter evidence',
-      zh: '券商适配器证据',
+      zh: '券商接入证据',
     },
   };
   return labels[value]?.[locale] ?? formatPublicStatus(value, locale);
@@ -52,15 +52,15 @@ export function operationsNextActionLabel(
     none: { en: 'No additional action', zh: '无需额外处理' },
     run_paper_shadow_daily: {
       en: 'Run paper/shadow simulation before manual confirmation',
-      zh: '人工确认前先运行 paper/shadow 模拟',
+      zh: '人工确认前先运行模拟与影子检验',
     },
     review_shadow_divergence: {
       en: 'Review paper/shadow divergence evidence',
-      zh: '复核 paper/shadow 偏差证据',
+      zh: '复核模拟与影子检验的偏差证据',
     },
     wait_for_paper_shadow_run: {
       en: 'Paper/shadow simulation is running; wait for completion',
-      zh: 'Paper/shadow 模拟正在运行，等待完成',
+      zh: '模拟与影子检验正在运行，等待完成',
     },
     review_manual_confirmation: {
       en: 'Review manual order confirmation',
@@ -68,11 +68,11 @@ export function operationsNextActionLabel(
     },
     resolve_shadow_divergence: {
       en: 'Resolve paper/shadow divergence before approval',
-      zh: '批准前处理 paper/shadow 偏差',
+      zh: '批准前处理模拟与影子检验偏差',
     },
     inspect_failed_run: {
       en: 'Inspect failed paper/shadow run before approval',
-      zh: '批准前检查失败的 paper/shadow 运行',
+      zh: '批准前检查失败的模拟与影子检验',
     },
     inspect_scheduler_failure: {
       en: 'Inspect scheduler failure evidence before manual review',
@@ -80,7 +80,7 @@ export function operationsNextActionLabel(
     },
     resolve_kill_switch: {
       en: 'Resolve kill switch state before continuing',
-      zh: '继续前处理 kill switch 状态',
+      zh: '继续前处理紧急停止状态',
     },
     review_scheduler_run: {
       en: 'Review scheduler run evidence',
@@ -149,7 +149,7 @@ export function operationsAttentionResolutionLabel(
     },
     candidate_strategy_evidence_must_pass: {
       en: 'candidate strategy evidence passes the canonical gate',
-      zh: '候选策略证据通过 canonical 门禁',
+      zh: '候选策略证据通过权威门禁',
     },
     new_daily_plan_with_deterministic_risk_pass_required: {
       en: 'a new daily plan passes deterministic risk gates',
@@ -165,19 +165,19 @@ export function operationsAttentionResolutionLabel(
     },
     new_paper_shadow_run_evidence_required: {
       en: 'a new paper/shadow run is persisted',
-      zh: '新的 paper/shadow 运行证据已持久化',
+      zh: '新的模拟与影子检验证据已持久化',
     },
     current_paper_shadow_run_must_reach_terminal_evidence: {
       en: 'the current paper/shadow run reaches a terminal evidence state',
-      zh: '当前 paper/shadow 运行形成终态证据',
+      zh: '当前模拟与影子检验形成终态证据',
     },
     accepted_paper_shadow_review_evidence_required: {
       en: 'accepted paper/shadow review evidence is recorded',
-      zh: 'paper/shadow 复核形成明确的接受证据',
+      zh: '模拟与影子检验复核形成明确的接受证据',
     },
     new_terminal_paper_shadow_run_evidence_required: {
       en: 'a new terminal paper/shadow run is persisted',
-      zh: '新的 paper/shadow 终态运行证据已持久化',
+      zh: '新的模拟与影子检验终态证据已持久化',
     },
     new_recognized_terminal_scheduler_run_required: {
       en: 'a new scheduler run reaches a recognized terminal status',
@@ -185,11 +185,11 @@ export function operationsAttentionResolutionLabel(
     },
     kill_switch_clear_and_new_scheduler_evidence_required: {
       en: 'the kill switch is explicitly cleared and a new scheduler run is persisted',
-      zh: 'kill switch 经显式处理且新的调度运行证据已持久化',
+      zh: '紧急停止状态经显式处理，且新的调度证据已持久化',
     },
     canonical_execution_reconciliation_must_close: {
       en: 'canonical execution reconciliation has no open item',
-      zh: 'canonical 执行对账不再有未关闭事项',
+      zh: '权威执行对账不再有未关闭事项',
     },
     complete_acceptance_audit_evidence_required: {
       en: 'the required acceptance audit is complete',
@@ -197,11 +197,11 @@ export function operationsAttentionResolutionLabel(
     },
     explicit_provider_authorization_and_new_release_evidence_required: {
       en: 'explicit provider authorization and new release evidence exist',
-      zh: '存在明确 provider 授权与新的 release 证据',
+      zh: '具备明确接入方授权与新的放行证据',
     },
     new_canonical_evidence_required: {
       en: 'new canonical evidence resolves the source status',
-      zh: '新的 canonical 证据解除源状态',
+      zh: '新的权威持久化证据解除来源状态',
     },
   };
   return labels[condition]?.[locale] ?? formatPublicStatus(condition, locale);

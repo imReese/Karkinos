@@ -36,7 +36,7 @@ test('Operations keeps pilot readiness and subsystem metrics visibly scoped', as
 
     const commandGrid = page.getByTestId('operations-command-grid');
     const attentionQueue = page.getByTestId('operations-attention-queue');
-    await readiness.locator('summary').click();
+    await readiness.locator(':scope > summary').click();
     await expect(readiness).toHaveAttribute('open', '');
     const desktopExpandedGeometry = await commandGrid.evaluate((element) => {
       const attentionQueue = element.querySelector(
@@ -78,7 +78,7 @@ test('Operations keeps pilot readiness and subsystem metrics visibly scoped', as
       `${theme} expanded desktop order`,
     ).toBe(true);
     await expect(attentionQueue).toBeVisible();
-    await readiness.locator('summary').click();
+    await readiness.locator(':scope > summary').click();
     await expect(readiness).not.toHaveAttribute('open', '');
 
     for (const viewport of acceptanceViewports) {
@@ -125,7 +125,7 @@ test('Operations keeps pilot readiness and subsystem metrics visibly scoped', as
     }
 
     await page.setViewportSize(acceptanceViewports.at(-1)!);
-    await readiness.locator('summary').click();
+    await readiness.locator(':scope > summary').click();
     await expect(readiness).toHaveAttribute('open', '');
     await expect(readiness).not.toContainText('Status needs review');
     const expandedGeometry = await readiness.evaluate((element) => {

@@ -2996,14 +2996,14 @@ export const copy = {
       title: '运行证据中心',
       subtitle:
         '查看持久化子系统证据、安全下一步，以及每个复核项的精确解除条件。',
-      loading: '正在读取 canonical Operations 投影。',
-      error: 'Operations 证据投影读取失败。',
+      loading: '正在读取权威运营投影。',
+      error: '运行证据投影读取失败。',
       retry: '重新读取',
-      projectionBlocked: 'Operations 证据契约已阻断',
+      projectionBlocked: '运行证据契约已阻断',
       projectionBlockedDetail:
-        '响应或 attention item 越过只读安全边界，当前不提供下钻动作。',
+        '响应或复核项越过只读安全边界，当前不提供下钻动作。',
       readOnly: '只读投影',
-      providerFree: '未联系 provider',
+      providerFree: '未联系外部服务',
       noAuthority: '无执行权限',
       attentionQueue: '证据复核队列',
       attentionEmpty: '当前没有需要证据复核的子系统。',
@@ -3014,7 +3014,7 @@ export const copy = {
       projectedAt: '投影时间',
       nextAction: '安全下一步',
       resolution: '证据解除条件',
-      fingerprint: '任务 fingerprint',
+      fingerprint: '任务指纹',
       openEvidence: '打开证据',
       reviewDetails: '查看详情',
       evidenceDetail: '证据详情',
@@ -3033,7 +3033,7 @@ export const copy = {
       manualReview: '人工复核',
       skipped: '跳过',
       sourceBoundary:
-        '本页每次读取都只对持久化事实执行 GET；不能刷新 provider、提交或撤单、修改 OMS/账本/风控/kill switch，或改变资本授权。',
+        '本页只读取已持久化事实；不会刷新外部服务、提交或撤销订单，也不会改动订单管理、账本、风控、紧急停止或资本授权。',
     },
     states: {
       loading: '加载中',
