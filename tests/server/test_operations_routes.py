@@ -317,10 +317,48 @@ def test_today_operations_route_returns_read_only_runbook(monkeypatch):
         "manual confirmation remains" in limitation
         for limitation in acceptance_audit["limitations"]
     )
+    pilot_readiness = response["controlled_per_order_pilot_readiness"]
+    assert pilot_readiness["schema_version"] == (
+        "karkinos.controlled_per_order_pilot_readiness.v1"
+    )
+    assert pilot_readiness["status"] == "blocked"
+    assert pilot_readiness["read_only_projection"] is True
+    assert pilot_readiness["provider_contacted"] is False
+    assert pilot_readiness["database_writes_performed"] is False
+    assert pilot_readiness["authorizes_execution"] is False
     assert response["limitations"][0].startswith("Operations summary is read-only")
     assert fake_db.saved_manual_orders == []
     assert fake_db.recorded_orders == []
     assert fake_db.ledger_writes == []
+
+
+def test_pilot_readiness_factory_failure_is_a_blocker(monkeypatch):
+    state = SimpleNamespace(
+        db=FakeOperationsDb(),
+        config=SimpleNamespace(
+            broker_connectors=[],
+            trusted_operator_identities=[],
+        ),
+    )
+
+    def fail_write_release_factory(_state):
+        raise RuntimeError("fixture source failure")
+
+    monkeypatch.setattr(
+        "server.routes.controlled_broker_write_release."
+        "build_controlled_broker_write_release_service",
+        fail_write_release_factory,
+    )
+
+    readiness = operations_routes._build_controlled_per_order_pilot_readiness(state)
+
+    assert readiness["status"] == "blocked"
+    assert any(
+        "write_release_source_failed" in blocker for blocker in readiness["blockers"]
+    )
+    assert readiness["provider_contacted"] is False
+    assert readiness["database_writes_performed"] is False
+    assert readiness["authorizes_execution"] is False
 
 
 def test_today_operations_route_surfaces_execution_reconciliation_open_items(

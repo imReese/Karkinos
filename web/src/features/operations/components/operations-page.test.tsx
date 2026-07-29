@@ -102,6 +102,105 @@ const safeProjection: OperationsTodayResponse = {
   limitations: [],
 };
 
+const blockedPilotReadiness: NonNullable<
+  OperationsTodayResponse['controlled_per_order_pilot_readiness']
+> = {
+  schema_version: 'karkinos.controlled_per_order_pilot_readiness.v1',
+  status: 'blocked',
+  scope: {
+    provider: '',
+    gateway_id: '',
+    account_alias: '',
+    connector_id: '',
+    readonly_release_evidence_ref: '',
+    write_release_evidence_id: '',
+  },
+  gates: [
+    {
+      key: 'persisted_source_contracts',
+      status: 'pass',
+      blockers: [],
+      evidence_refs: ['karkinos.broker_adapter_readiness.v1'],
+      resolution_condition: 'restore_safe_persisted_only_source_contracts',
+      manual_acknowledgement_clears_status: false,
+    },
+    {
+      key: 'one_observing_readonly_adapter_release',
+      status: 'blocked',
+      blockers: ['readonly_adapter_release_missing'],
+      evidence_refs: [],
+      resolution_condition:
+        'accept_and_observe_one_exact_readonly_adapter_release',
+      manual_acknowledgement_clears_status: false,
+    },
+    {
+      key: 'signed_readonly_soak_promotion',
+      status: 'blocked',
+      blockers: ['readonly_adapter_scope_unresolved'],
+      evidence_refs: [],
+      resolution_condition:
+        'complete_exact_scope_soak_and_record_owner_acceptance',
+      manual_acknowledgement_clears_status: false,
+    },
+    {
+      key: 'one_active_manual_each_order_write_release',
+      status: 'blocked',
+      blockers: ['active_manual_each_order_write_release_missing'],
+      evidence_refs: [],
+      resolution_condition: 'issue_one_short_lived_exact_scope_write_release',
+      manual_acknowledgement_clears_status: false,
+    },
+    {
+      key: 'one_exact_provider_account_gateway_scope',
+      status: 'blocked',
+      blockers: ['pilot_scope_evidence_incomplete'],
+      evidence_refs: [],
+      resolution_condition:
+        'resolve_provider_account_gateway_connector_scope_drift',
+      manual_acknowledgement_clears_status: false,
+    },
+    {
+      key: 'no_unresolved_order_or_session_authority',
+      status: 'blocked',
+      blockers: ['controlled_operator_view_untrusted'],
+      evidence_refs: [],
+      resolution_condition:
+        'close_controlled_journeys_and_remove_session_authority',
+      manual_acknowledgement_clears_status: false,
+    },
+  ],
+  required_next_order_gates: [
+    'canonical_manually_confirmed_oms_order',
+    'fresh_offline_operator_signature',
+  ],
+  readiness_fingerprint: `sha256:${'a'.repeat(64)}`,
+  observed_at: null,
+  gate_count: 6,
+  passed_gate_count: 1,
+  blocked_gate_count: 5,
+  blockers: [
+    'one_observing_readonly_adapter_release:readonly_adapter_release_missing',
+  ],
+  next_safe_action: 'owner_select_and_review_real_broker_provider',
+  release_scope: 'pilot_admission_prerequisites_not_v1_8_completion',
+  persisted_facts_only: true,
+  read_only_projection: true,
+  provider_contacted: false,
+  database_writes_performed: false,
+  broker_submission_enabled: false,
+  broker_cancellation_enabled: false,
+  does_not_mutate_oms: true,
+  does_not_mutate_production_ledger: true,
+  does_not_mutate_risk_state: true,
+  does_not_mutate_kill_switch: true,
+  does_not_mutate_capital_authority: true,
+  authorizes_execution: false,
+  automatic_scale_up_enabled: false,
+  limitations: [
+    'Ready means only that the owner may open a separate exact-order review.',
+  ],
+};
+
 function jsonResponse(body: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -245,6 +344,132 @@ test('blocks drill-down when an attention item violates the read-only contract',
     within(blocked).getByText('Operations evidence contract blocked'),
   ).toBeTruthy();
   expect(screen.queryByRole('link', { name: 'Open evidence' })).toBeNull();
+});
+
+test('shows the fail-closed pilot admission gate without execution controls', async () => {
+  renderOperationsPage({
+    ...safeProjection,
+    controlled_per_order_pilot_readiness: blockedPilotReadiness,
+  });
+
+  const disclosure = await screen.findByTestId('controlled-pilot-readiness');
+  expect(disclosure.hasAttribute('open')).toBe(false);
+  expect(disclosure.textContent).toContain(
+    'Controlled per-order pilot admission evidence',
+  );
+  expect(disclosure.textContent).toContain('Prerequisites unmet');
+  fireEvent.click(
+    within(disclosure).getByText(
+      'Controlled per-order pilot admission evidence',
+    ),
+  );
+
+  expect(disclosure.hasAttribute('open')).toBe(true);
+  expect(disclosure.textContent).toContain('One read-only adapter release');
+  expect(disclosure.textContent).toContain(
+    'A read-only adapter release has not been recorded',
+  );
+  expect(disclosure.textContent).toContain(
+    'Accept and observe one exact read-only adapter release',
+  );
+  expect(disclosure.textContent).toContain(
+    'Owner selects and reviews one real broker provider',
+  );
+  expect(disclosure.textContent).toContain(
+    'not proof of v1.8 completion and not order, broker, or capital authority',
+  );
+  expect(disclosure.textContent).toContain(
+    blockedPilotReadiness.readiness_fingerprint,
+  );
+  expect(within(disclosure).queryByRole('button')).toBeNull();
+  expect(within(disclosure).queryByText(/submit order/i)).toBeNull();
+  expect(within(disclosure).queryByText(/cancel order/i)).toBeNull();
+  expect(disclosure.textContent).not.toContain('Status needs review');
+});
+
+test('blocks an unsafe pilot admission projection independently', async () => {
+  renderOperationsPage({
+    ...safeProjection,
+    controlled_per_order_pilot_readiness: {
+      ...blockedPilotReadiness,
+      authorizes_execution: true,
+    },
+  });
+
+  const disclosure = await screen.findByTestId('controlled-pilot-readiness');
+
+  expect(disclosure.hasAttribute('open')).toBe(true);
+  expect(disclosure.textContent).toContain('Pilot admission contract blocked');
+  expect(disclosure.textContent).toContain('do not enter exact-order review');
+  expect(within(disclosure).queryByRole('button')).toBeNull();
+});
+
+test('opens an invalid pilot evidence fingerprint as a contract failure', async () => {
+  renderOperationsPage({
+    ...safeProjection,
+    controlled_per_order_pilot_readiness: {
+      ...blockedPilotReadiness,
+      readiness_fingerprint: 'sha256:not-a-valid-fingerprint',
+    },
+  });
+
+  const disclosure = await screen.findByTestId('controlled-pilot-readiness');
+
+  expect(disclosure.hasAttribute('open')).toBe(true);
+  expect(disclosure.textContent).toContain('Contract blocked');
+  expect(disclosure.textContent).toContain('Pilot admission contract blocked');
+});
+
+test('labels a clear optional pilot without granting execution authority', async () => {
+  renderOperationsPage({
+    ...safeProjection,
+    controlled_per_order_pilot_readiness: {
+      ...blockedPilotReadiness,
+      status: 'ready_for_exact_order_review',
+      gates: blockedPilotReadiness.gates.map((gate) => ({
+        ...gate,
+        status: 'pass',
+        blockers: [],
+        evidence_refs: [`evidence:${gate.key}`],
+      })),
+      passed_gate_count: 6,
+      blocked_gate_count: 0,
+      blockers: [],
+      next_safe_action: 'open_exact_order_review_without_submission',
+    },
+  });
+
+  const disclosure = await screen.findByTestId('controlled-pilot-readiness');
+
+  expect(disclosure.hasAttribute('open')).toBe(false);
+  expect(disclosure.textContent).toContain('Ready for review');
+  expect(within(disclosure).queryByRole('button')).toBeNull();
+});
+
+test('preserves an unknown upstream blocker instead of hiding it behind a generic status', async () => {
+  renderOperationsPage({
+    ...safeProjection,
+    controlled_per_order_pilot_readiness: {
+      ...blockedPilotReadiness,
+      gates: blockedPilotReadiness.gates.map((gate) =>
+        gate.key === 'one_observing_readonly_adapter_release'
+          ? { ...gate, blockers: ['new_persisted_evidence_blocker'] }
+          : gate,
+      ),
+    },
+  });
+
+  const disclosure = await screen.findByTestId('controlled-pilot-readiness');
+  fireEvent.click(
+    within(disclosure).getByText(
+      'Controlled per-order pilot admission evidence',
+    ),
+  );
+
+  expect(disclosure.textContent).toContain(
+    'Evidence code: new persisted evidence blocker',
+  );
+  expect(disclosure.textContent).not.toContain('Status needs review');
 });
 
 test('keeps subsystem evidence visible when the review queue is empty', async () => {

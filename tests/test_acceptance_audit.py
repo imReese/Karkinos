@@ -16,6 +16,7 @@ from analytics.acceptance_audit import (
     build_capital_scaling_review_foundation_acceptance_audit,
     build_controlled_broker_bridge_foundation_acceptance_audit,
     build_controlled_broker_submission_acceptance_audit,
+    build_controlled_per_order_pilot_readiness_acceptance_audit,
     build_controlled_session_automatic_pause_acceptance_audit,
     build_controlled_session_budget_reservation_acceptance_audit,
     build_controlled_session_envelope_foundation_acceptance_audit,
@@ -1014,3 +1015,27 @@ def test_controlled_broker_bridge_foundation_acceptance_audit_has_evidence() -> 
         "manual versus broker reconciliation differences" in command
         for command in audit_chain.validation_commands
     )
+
+
+def test_controlled_per_order_pilot_readiness_acceptance_audit_is_complete() -> None:
+    audit = build_controlled_per_order_pilot_readiness_acceptance_audit()
+
+    assert audit.required_count == 8
+    assert audit.completed_count == audit.required_count
+    assert audit.is_complete is True
+    assert {criterion.key for criterion in audit.criteria} == {
+        "canonical_six_gate_persisted_admission_projection",
+        "exact_release_soak_write_scope_binding",
+        "unfinished_order_and_session_authority_interlock",
+        "source_failure_and_contract_drift_fail_closed",
+        "stable_fingerprint_and_exact_resolution_evidence",
+        "operations_api_non_authority_contract",
+        "scoped_read_only_gate_matrix_surfaces_contract_failure",
+        "review_entry_only_not_release_or_execution_authority",
+    }
+    for criterion in audit.criteria:
+        assert criterion.is_complete, criterion.key
+        assert criterion.evidence_paths, criterion.key
+        assert criterion.validation_commands, criterion.key
+        for evidence_path in criterion.evidence_paths:
+            assert Path(evidence_path).exists(), evidence_path

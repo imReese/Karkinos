@@ -185,6 +185,15 @@ A rejected intent now exposes a drift-checked,
 sanitized copy-only package plus an append-only, exactly-once no-retry acknowledgement. The v4 view prioritizes every unfinished journey and closes post-ledger follow-up only from complete canonical Account Truth evidence.
 Trading can now resolve each canonical `manually_confirmed` OMS candidate's newest capital, prior-batch, and gateway evidence into a separately signed, append-only review without operator-supplied fingerprints. Its v5 fingerprint binds the newest exact-scope accepted, conformance-clear, read-only-observing adapter release plus exact persisted Account Truth, Decision action, risk, and paper/shadow source facts referenced by the same capital evaluation; forged refs, source/order drift, revocation, or scope drift invalidate prior approval. Missing, ambiguous, newer blocked, or scan-truncated evidence fails closed; Web cannot submit/cancel or mutate OMS, ledger, risk, kill switch, or capital authority. Automation Cockpit and Decision validate and summarize the same persisted-only contract, then provide only a non-submitting handoff to Trading; source drift blocks it. An explicit scan writes idempotent blocker alerts from that same projection while ready candidates remain normal tasks. Operations Today now fingerprints every non-normal subsystem together with its safe next action and exact evidence-based resolution condition; the dedicated `/operations` read-only workbench validates the non-authority contract and exposes source evidence plus safe drill-down, while viewing cannot clear status and AI capture receives the same non-authorizing payload. Overview and Market also consume one valuation/ledger-bound current-holding market-evidence review; fund NAV uses a request-idempotent confirmation-only ingestion command that rejects estimates and previous-day NAV, and only newer confirmed persisted evidence can clear the review. Signed one-shot submission and broker-neutral signed-cancel foundations are implemented; real-adapter integration/recovery evidence and a complete provider-approved operator journey remain open.
 
+Operations also exposes a separate persisted-only per-order pilot admission
+matrix. Contract-safe optional readiness stays compact and neutral; a read-side
+contract violation opens immediately. The matrix requires exactly one observing read-only adapter
+release, matching signed soak promotion, one current `manual_each_order` write
+release, coherent provider/account/gateway/connector scope, and no unfinished
+controlled journey or active session authority. A clear matrix permits only
+opening the separate exact-order review; it neither completes M5 nor authorizes
+submission, cancellation, capital, provider selection, or automatic scale-up.
+
 **Exit gate:** an operator can complete every normal and recovery flow without
 editing the database. Refresh, duplicate clicks, and service restart do not
 repeat a side effect. Submission gates are rechecked inside the write

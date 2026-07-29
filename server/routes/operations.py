@@ -16,6 +16,16 @@ from server.routes.decision import (
 from server.services.broker_adapter_readiness import (
     build_broker_adapter_readiness,
 )
+from server.services.broker_connector_runtime import build_broker_connectors
+from server.services.broker_connector_soak_promotion import (
+    BrokerConnectorSoakPromotionService,
+)
+from server.services.controlled_execution_operator_view import (
+    ControlledExecutionOperatorViewService,
+)
+from server.services.controlled_per_order_pilot_readiness import (
+    build_controlled_per_order_pilot_readiness,
+)
 from server.services.daily_operations import build_daily_operations_summary
 from server.services.daily_trading_plan import build_daily_trading_plan
 from server.services.operations_today import build_operations_today_summary
@@ -88,7 +98,8 @@ async def build_today_operations_payload(state: Any) -> dict[str, Any]:
             trading_plan.get("plan_date") or decision_payload.get("decision_date") or ""
         ),
     )
-    return build_operations_today_summary(
+    broker_adapter_readiness = build_broker_adapter_readiness(state.db)
+    summary = build_operations_today_summary(
         decision_payload=decision_payload,
         trading_plan=trading_plan,
         daily_operations=daily_operations,
@@ -100,8 +111,17 @@ async def build_today_operations_payload(state: Any) -> dict[str, Any]:
         acceptance_audit_export=build_acceptance_audit_export(
             selected_audit="operations_runbook",
         ),
-        broker_adapter_readiness=build_broker_adapter_readiness(state.db),
+        broker_adapter_readiness=broker_adapter_readiness,
     )
+    return {
+        **summary,
+        "controlled_per_order_pilot_readiness": (
+            _build_controlled_per_order_pilot_readiness(
+                state,
+                broker_adapter_readiness=broker_adapter_readiness,
+            )
+        ),
+    }
 
 
 def create_router() -> APIRouter:
@@ -205,3 +225,108 @@ def _latest_paper_shadow_run(
         return reader(plan_date=plan_date) if plan_date else reader()
     except TypeError:
         return reader()
+
+
+def _build_controlled_per_order_pilot_readiness(
+    state: Any,
+    *,
+    broker_adapter_readiness: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Compose pilot admission evidence without contacting an edge."""
+
+    from server.account_truth_gate import (
+        build_latest_account_truth_promotion_evidence,
+    )
+    from server.routes.controlled_broker_write_release import (
+        build_controlled_broker_write_release_service,
+    )
+
+    config = getattr(state, "config", None)
+    connector_configs = getattr(config, "broker_connectors", []) or []
+    trusted_identities = getattr(config, "trusted_operator_identities", []) or []
+
+    def account_truth_reader() -> dict[str, Any]:
+        return build_latest_account_truth_promotion_evidence(state)
+
+    adapter = _safe_pilot_source(
+        lambda: (
+            broker_adapter_readiness
+            if broker_adapter_readiness is not None
+            else build_broker_adapter_readiness(state.db)
+        ),
+        schema_version="karkinos.broker_adapter_readiness.v1",
+        source_name="broker_adapter_readiness",
+    )
+    soak = _safe_pilot_source(
+        lambda: BrokerConnectorSoakPromotionService(
+            db=state.db,
+            connectors=build_broker_connectors(connector_configs),
+            trusted_operator_identities=trusted_identities,
+            account_truth_evidence_provider=account_truth_reader,
+        ).get_status(),
+        schema_version="karkinos.broker_connector_soak_promotion_status.v1",
+        source_name="broker_soak_promotion",
+    )
+    try:
+        write_service = build_controlled_broker_write_release_service(state)
+    except Exception as exc:
+        write_status = {
+            "schema_version": "karkinos.controlled_broker_write_release_status.v1",
+            "source_error": f"broker_write_release_status:{type(exc).__name__}",
+        }
+        write_releases = []
+    else:
+        write_status = _safe_pilot_source(
+            write_service.get_status,
+            schema_version="karkinos.controlled_broker_write_release_status.v1",
+            source_name="broker_write_release_status",
+        )
+        write_releases = _safe_pilot_source_list(
+            lambda: write_service.list_releases(limit=100),
+        )
+    operator_view = _safe_pilot_source(
+        lambda: ControlledExecutionOperatorViewService(
+            db=state.db,
+            account_truth_evidence_reader=account_truth_reader,
+        ).summary(),
+        schema_version="karkinos.controlled_execution_operator_view.v4",
+        source_name="controlled_execution_operator_view",
+    )
+    return build_controlled_per_order_pilot_readiness(
+        broker_adapter_readiness=adapter,
+        broker_soak_promotion=soak,
+        broker_write_release_status=write_status,
+        broker_write_releases=write_releases,
+        controlled_execution_operator_view=operator_view,
+    )
+
+
+def _safe_pilot_source(
+    reader: Any,
+    *,
+    schema_version: str,
+    source_name: str,
+) -> dict[str, Any]:
+    try:
+        value = reader()
+    except Exception as exc:
+        return {
+            "schema_version": schema_version,
+            "source_error": f"{source_name}:{type(exc).__name__}",
+        }
+    if not isinstance(value, dict):
+        return {
+            "schema_version": schema_version,
+            "source_error": f"{source_name}:invalid_payload",
+        }
+    return value
+
+
+def _safe_pilot_source_list(reader: Any) -> list[dict[str, Any]]:
+    try:
+        value = reader()
+    except Exception:
+        return []
+    if not isinstance(value, list):
+        return []
+    return [dict(item) for item in value if isinstance(item, dict)]

@@ -21,6 +21,7 @@ from analytics.acceptance_audit import (
     build_capital_scaling_review_foundation_acceptance_audit,
     build_controlled_broker_bridge_foundation_acceptance_audit,
     build_controlled_broker_submission_acceptance_audit,
+    build_controlled_per_order_pilot_readiness_acceptance_audit,
     build_controlled_session_automatic_pause_acceptance_audit,
     build_controlled_session_budget_reservation_acceptance_audit,
     build_controlled_session_envelope_foundation_acceptance_audit,
@@ -180,6 +181,10 @@ AUDIT_REGISTRY: dict[str, tuple[str, AuditBuilder]] = {
     "persisted_controlled_execution_operator_view": (
         "Persisted Controlled-Execution Operator View acceptance audit",
         build_persisted_controlled_execution_operator_view_acceptance_audit,
+    ),
+    "controlled_per_order_pilot_readiness": (
+        "Controlled Per-Order Pilot Readiness acceptance audit",
+        build_controlled_per_order_pilot_readiness_acceptance_audit,
     ),
     "capital_scaling_review_foundation": (
         "Capital Scaling Review Foundation acceptance audit",

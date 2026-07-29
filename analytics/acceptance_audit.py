@@ -7261,3 +7261,143 @@ def build_strategy_learning_review_acceptance_audit() -> AcceptanceAudit:
             ),
         )
     )
+
+
+def build_controlled_per_order_pilot_readiness_acceptance_audit() -> AcceptanceAudit:
+    """Return evidence for the non-authorizing per-order pilot admission view."""
+
+    backend = (
+        "uv run pytest tests/test_controlled_per_order_pilot_readiness.py "
+        "tests/server/test_operations_routes.py tests/test_operations_today.py -q"
+    )
+    web = (
+        "npm --prefix web test -- --run "
+        "src/features/operations/components/operations-page.test.tsx"
+    )
+    return AcceptanceAudit(
+        criteria=(
+            AcceptanceCriterion(
+                key="canonical_six_gate_persisted_admission_projection",
+                checkbox_text=(
+                    "* [x] One deterministic projection composes exactly six "
+                    "persisted-only gates for source safety, read-only release, "
+                    "signed soak, manual-each-order write release, exact scope, "
+                    "and absence of unresolved execution or session authority."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_per_order_pilot_readiness.py",
+                    "tests/test_controlled_per_order_pilot_readiness.py",
+                    "docs/ARCHITECTURE.md",
+                ),
+                validation_commands=(backend,),
+            ),
+            AcceptanceCriterion(
+                key="exact_release_soak_write_scope_binding",
+                checkbox_text=(
+                    "* [x] Admission requires exactly one observing accepted and "
+                    "conformance-clear read-only release, its matching signed soak, "
+                    "one current manual-each-order write release, and one coherent "
+                    "provider, gateway, account, connector, and release scope."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_per_order_pilot_readiness.py",
+                    "server/services/controlled_broker_write_release.py",
+                    "server/services/broker_connector_soak_promotion.py",
+                    "tests/test_controlled_per_order_pilot_readiness.py",
+                ),
+                validation_commands=(backend,),
+            ),
+            AcceptanceCriterion(
+                key="unfinished_order_and_session_authority_interlock",
+                checkbox_text=(
+                    "* [x] Any unresolved controlled-order journey, truncated "
+                    "attention scan, or active or blocked session authority fails "
+                    "closed before an exact-order review may be opened."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_per_order_pilot_readiness.py",
+                    "server/services/controlled_execution_operator_view.py",
+                    "tests/test_controlled_per_order_pilot_readiness.py",
+                ),
+                validation_commands=(backend,),
+            ),
+            AcceptanceCriterion(
+                key="source_failure_and_contract_drift_fail_closed",
+                checkbox_text=(
+                    "* [x] Missing, malformed, authorizing, or exception-producing "
+                    "source contracts become explicit blockers; Operations reuses "
+                    "one adapter projection so a single response cannot mix two "
+                    "read-side snapshots."
+                ),
+                evidence_paths=(
+                    "server/routes/operations.py",
+                    "server/services/controlled_per_order_pilot_readiness.py",
+                    "tests/server/test_operations_routes.py",
+                    "tests/test_controlled_per_order_pilot_readiness.py",
+                ),
+                validation_commands=(backend,),
+            ),
+            AcceptanceCriterion(
+                key="stable_fingerprint_and_exact_resolution_evidence",
+                checkbox_text=(
+                    "* [x] Unchanged persisted evidence reproduces one fingerprint, "
+                    "while gate or scope drift changes it; every blocked gate keeps "
+                    "its evidence and safe next action visible."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_per_order_pilot_readiness.py",
+                    "tests/test_controlled_per_order_pilot_readiness.py",
+                    "web/src/features/operations/controlled-per-order-pilot-readiness-panel.tsx",
+                ),
+                validation_commands=(backend, web),
+            ),
+            AcceptanceCriterion(
+                key="operations_api_non_authority_contract",
+                checkbox_text=(
+                    "* [x] The Operations GET response carries the complete "
+                    "non-authority contract and degrades unsafe runtime flags or "
+                    "source construction failures into a blocked projection rather "
+                    "than a false pass or provider call."
+                ),
+                evidence_paths=(
+                    "server/routes/operations.py",
+                    "tests/server/test_operations_routes.py",
+                    "web/src/features/operations/api.ts",
+                ),
+                validation_commands=(backend,),
+            ),
+            AcceptanceCriterion(
+                key="scoped_read_only_gate_matrix_surfaces_contract_failure",
+                checkbox_text=(
+                    "* [x] Operations keeps safe optional readiness compact, opens "
+                    "an unsafe read-side contract immediately, preserves every "
+                    "blocker and resolution without a generic status placeholder, "
+                    "validates all six "
+                    "unique gates, and exposes no submit, cancel, provider-selection, "
+                    "or capital control."
+                ),
+                evidence_paths=(
+                    "web/src/features/operations/controlled-per-order-pilot-readiness-panel.tsx",
+                    "web/src/features/operations/components/operations-page.tsx",
+                    "web/src/features/operations/components/operations-page.test.tsx",
+                ),
+                validation_commands=(web,),
+            ),
+            AcceptanceCriterion(
+                key="review_entry_only_not_release_or_execution_authority",
+                checkbox_text=(
+                    "* [x] A clear matrix permits only a handoff to the separate "
+                    "exact-order evidence review; it does not complete v1.8, select "
+                    "or contact a provider, submit or cancel, mutate financial "
+                    "facts, grant capital authority, or enable automatic scale-up."
+                ),
+                evidence_paths=(
+                    "server/services/controlled_per_order_pilot_readiness.py",
+                    "web/src/features/operations/controlled-per-order-pilot-readiness-panel.tsx",
+                    "docs/ROADMAP.md",
+                    "docs/CONTROLLED_EXECUTION_PLAN.md",
+                ),
+                validation_commands=(backend, web),
+            ),
+        )
+    )
