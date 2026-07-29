@@ -49,11 +49,20 @@ test('renders OHLC price range as a K-line chart', () => {
       .getByRole('button', { name: 'Show All K-line range' })
       .getAttribute('aria-pressed'),
   ).toBe('true');
-  expect(screen.getByText('Price axis')).toBeTruthy();
-  expect(screen.getByText('Date axis')).toBeTruthy();
+  expect(screen.queryByText('Price axis')).toBeNull();
+  expect(screen.queryByText('Date axis')).toBeNull();
+  expect(
+    screen.getByRole('img', {
+      name: 'Price range / K-line · Price axis · Date axis',
+    }),
+  ).toBeTruthy();
   expect(screen.getByText('Volume')).toBeTruthy();
-  expect(screen.getByText('2025-04-19')).toBeTruthy();
-  expect(screen.getByText('2026-04-20')).toBeTruthy();
+  expect(screen.getByText('2025-04-19').getAttribute('text-anchor')).toBe(
+    'start',
+  );
+  expect(screen.getByText('2026-04-20').getAttribute('text-anchor')).toBe(
+    'end',
+  );
   expect(
     container.querySelectorAll('[data-testid="kline-candle"]').length,
   ).toBe(2);
