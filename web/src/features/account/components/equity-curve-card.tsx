@@ -16,6 +16,7 @@ import {
 } from 'recharts';
 
 import { useCopy } from '../../../app/copy';
+import { EvidenceState } from '../../../app/components/workbench';
 import { usePreferences, type Locale } from '../../../app/preferences';
 import {
   formatCompactNumber,
@@ -753,37 +754,29 @@ function CustomTooltip({
 }
 
 export function EquityCurveSkeleton() {
+  const copy = useCopy();
+
   return (
     <section
       data-testid="equity-curve-skeleton"
-      aria-hidden="true"
-      className="w-full animate-pulse bg-[color-mix(in_srgb,var(--app-surface-0)_0%,transparent)] px-0 py-1"
+      className="w-full space-y-3 py-1"
     >
-      <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-        <div className="min-w-0">
-          <div className="h-5 w-44 rounded-full bg-[color-mix(in_srgb,var(--app-surface-0)_48%,transparent)]" />
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {Array.from({ length: 5 }).map((_, index) => (
-              <div
-                key={index}
-                className="h-6 w-16 rounded-full bg-[color-mix(in_srgb,var(--app-surface-0)_38%,transparent)]"
-              />
-            ))}
-          </div>
-        </div>
-        <div className="h-8 w-60 max-w-full rounded-full bg-[color-mix(in_srgb,var(--app-surface-0)_82%,transparent)]" />
-      </div>
-
-      <div className="relative h-[320px] overflow-hidden bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] sm:h-[380px]">
-        <div className="absolute inset-x-8 top-12 space-y-12">
-          {Array.from({ length: 5 }).map((_, index) => (
-            <div
-              key={index}
-              className="h-px bg-[color-mix(in_srgb,var(--app-surface-0)_68%,transparent)]"
-            />
+      <EvidenceState kind="loading" title={copy.overview.curveLoading} />
+      <div
+        aria-hidden="true"
+        data-testid="equity-curve-loading-frame"
+        className="relative h-28 overflow-hidden border-y border-[var(--app-divider)] sm:h-36"
+      >
+        <div className="absolute inset-0 grid grid-rows-3 divide-y divide-[color-mix(in_srgb,var(--app-divider)_72%,transparent)]">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <span key={index} />
           ))}
         </div>
-        <div className="absolute bottom-12 left-8 right-8 h-36 rounded-[55%_45%_50%_50%/60%_46%_54%_40%] border-t-2 border-[color-mix(in_srgb,var(--app-accent)_48%,transparent)] bg-gradient-to-t from-transparent to-[color-mix(in_srgb,var(--app-accent)_14%,transparent)]" />
+        <div className="absolute inset-0 grid grid-cols-4 divide-x divide-[color-mix(in_srgb,var(--app-divider)_72%,transparent)] sm:grid-cols-6">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <span key={index} className={index > 3 ? 'hidden sm:block' : ''} />
+          ))}
+        </div>
       </div>
     </section>
   );

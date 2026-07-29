@@ -222,7 +222,7 @@ export const copy = {
         'Confirm account truth first, then review exceptions and current holdings before analysis.',
       modeHelper:
         'Account view focuses on capital structure. Strategy view focuses on return quality.',
-      loading: 'Loading account overview and holdings.',
+      loading: 'Loading account facts and current holdings.',
       error: 'Failed to load account overview or holdings.',
       curveLoading: 'Loading equity curve.',
       curveError: 'Failed to load equity curve.',
@@ -3097,7 +3097,7 @@ export const copy = {
       title: '今日投资工作台',
       subtitle: '先确认账户事实，再处理异常与当前持仓，最后进入分析与历史。',
       modeHelper: '账户视角看资本结构，策略视角看收益质量和执行结果。',
-      loading: '正在加载账户总览和当前持仓。',
+      loading: '正在读取账户事实和当前持仓。',
       error: '账户总览或当前持仓读取失败。',
       curveLoading: '正在加载净值曲线。',
       curveError: '净值曲线读取失败。',

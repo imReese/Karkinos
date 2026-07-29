@@ -76,10 +76,7 @@ import {
   operationsNextActionLabel,
   operationsTargetHref,
 } from '../features/operations/presentation';
-import {
-  OverviewCards,
-  OverviewCardsSkeleton,
-} from '../features/account/components/overview-cards';
+import { OverviewCards } from '../features/account/components/overview-cards';
 import { PortfolioExposureSummary } from '../features/account/components/portfolio-exposure-summary';
 import { KillSwitchPanel } from '../features/trading/components/kill-switch-panel';
 import { OrderApprovalTable } from '../features/trading/components/order-approval-table';
@@ -462,14 +459,13 @@ export function OverviewPage() {
       />
 
       {overview.isLoading || snapshot.isLoading ? (
-        <div className="space-y-5">
-          <OverviewCardsSkeleton />
-          <section className="app-terminal-panel min-w-0 overflow-hidden rounded-[2rem] p-1.5">
-            <div className="app-terminal-inner min-w-0 p-4 sm:p-5">
-              <EquityCurveSkeleton />
-            </div>
-          </section>
-        </div>
+        <EvidenceLoadingLayout
+          title={copy.states.loading}
+          description={copy.overview.loading}
+          metricCount={6}
+          rowCount={3}
+          className="pt-1"
+        />
       ) : overview.isError || snapshot.isError ? (
         <StatusCard
           tone="danger"

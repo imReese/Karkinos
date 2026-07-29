@@ -257,27 +257,3 @@ export function OverviewCards({
     </section>
   );
 }
-
-export function OverviewCardsSkeleton() {
-  return (
-    <div
-      data-testid="account-metrics-skeleton"
-      aria-hidden="true"
-      className="account-overview-summary min-w-0 animate-pulse overflow-hidden"
-    >
-      <div className="account-primary-metric px-3 py-3 sm:px-4">
-        <div className="h-3 w-20 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)]" />
-        <div className="mt-2 h-8 w-36 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)]" />
-        <div className="mt-2 h-3 w-28 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)]" />
-      </div>
-      <div className="account-support-metric-strip grid min-w-0 grid-cols-2 sm:grid-cols-2 lg:grid-cols-5">
-        {Array.from({ length: 5 }).map((_, index) => (
-          <div key={index} className="app-metric-strip-item px-3 py-2.5">
-            <div className="h-3 w-20 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)]" />
-            <div className="mt-2 h-5 w-28 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)]" />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
