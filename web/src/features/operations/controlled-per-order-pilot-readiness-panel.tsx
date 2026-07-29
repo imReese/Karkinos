@@ -16,15 +16,15 @@ const PILOT_BLOCKER_LABELS: Record<string, LocalizedLabel> = {
   },
   readonly_adapter_release_missing: {
     en: 'A read-only adapter release has not been recorded',
-    zh: '尚未记录只读适配器 release',
+    zh: '尚未记录只读适配器发布记录',
   },
   multiple_observing_readonly_adapter_releases: {
     en: 'More than one read-only adapter release is observing',
-    zh: '存在多个处于观测状态的只读适配器 release',
+    zh: '存在多个处于观测状态的只读适配器发布记录',
   },
   readonly_adapter_release_not_accepted: {
     en: 'The read-only adapter release has not been accepted',
-    zh: '只读适配器 release 尚未接受',
+    zh: '只读适配器发布记录尚未接受',
   },
   readonly_adapter_conformance_not_clear: {
     en: 'Adapter conformance evidence is not clear',
@@ -36,7 +36,7 @@ const PILOT_BLOCKER_LABELS: Record<string, LocalizedLabel> = {
   },
   readonly_adapter_release_boundary_invalid: {
     en: 'The adapter release crosses its read-only boundary',
-    zh: '适配器 release 越过只读边界',
+    zh: '适配器发布记录越过只读边界',
   },
   readonly_adapter_scope_unresolved: {
     en: 'The read-only adapter scope is unresolved',
@@ -44,23 +44,23 @@ const PILOT_BLOCKER_LABELS: Record<string, LocalizedLabel> = {
   },
   matching_readonly_soak_promotion_missing: {
     en: 'A matching read-only soak promotion is missing',
-    zh: '缺少匹配的只读 soak promotion',
+    zh: '缺少匹配的只读稳定性观察准入记录',
   },
   multiple_matching_readonly_soak_promotions: {
     en: 'More than one matching soak promotion exists',
-    zh: '存在多个匹配的 soak promotion',
+    zh: '存在多个匹配的稳定性观察准入记录',
   },
   readonly_soak_promotion_not_ready: {
     en: 'The read-only soak is not ready for promotion',
-    zh: '只读 soak 尚未满足 promotion 条件',
+    zh: '只读稳定性观察尚未满足准入条件',
   },
   readonly_soak_account_truth_not_linked: {
     en: 'The soak is not linked to Account Truth reconciliation',
-    zh: 'soak 尚未关联 Account Truth 对账',
+    zh: '稳定性观察尚未关联账户事实对账',
   },
   readonly_soak_owner_acceptance_missing: {
     en: 'Signed owner acceptance is missing',
-    zh: '缺少 owner 签署接受证据',
+    zh: '缺少账户所有者签署确认',
   },
   readonly_soak_operator_identity_unverified: {
     en: 'The accepting operator identity is unverified',
@@ -68,47 +68,47 @@ const PILOT_BLOCKER_LABELS: Record<string, LocalizedLabel> = {
   },
   readonly_soak_acceptance_boundary_invalid: {
     en: 'The soak acceptance crosses its non-authorizing boundary',
-    zh: 'soak 接受证据越过非授权边界',
+    zh: '稳定性观察的接受证据越过非授权边界',
   },
   write_release_status_count_mismatch: {
     en: 'The write-release status count conflicts with persisted releases',
-    zh: 'write release 状态计数与持久化记录不一致',
+    zh: '写入放行状态计数与持久化记录不一致',
   },
   active_manual_each_order_write_release_missing: {
     en: 'An active manual-each-order write release is missing',
-    zh: '缺少有效的逐单人工 write release',
+    zh: '缺少有效的逐单人工写入放行凭证',
   },
   multiple_active_write_releases: {
     en: 'More than one active write release exists',
-    zh: '存在多个有效 write release',
+    zh: '存在多个有效写入放行凭证',
   },
   write_release_schema_invalid: {
     en: 'The write-release schema is invalid',
-    zh: 'write release schema 无效',
+    zh: '写入放行数据契约无效',
   },
   write_release_execution_mode_invalid: {
     en: 'The write release is not manual-each-order',
-    zh: 'write release 不是逐单人工模式',
+    zh: '写入放行不是逐单人工模式',
   },
   write_release_order_authority_boundary_invalid: {
     en: 'The write release improperly grants order authority',
-    zh: 'write release 错误授予订单权限',
+    zh: '写入放行错误授予订单权限',
   },
   write_release_capital_authority_boundary_invalid: {
     en: 'The write release improperly grants capital authority',
-    zh: 'write release 错误授予资本权限',
+    zh: '写入放行错误授予资本权限',
   },
   write_release_revoked: {
     en: 'The write release has been revoked',
-    zh: 'write release 已撤销',
+    zh: '写入放行已撤销',
   },
   pilot_scope_evidence_incomplete: {
     en: 'Provider, account, gateway, or connector evidence is incomplete',
-    zh: 'provider、账户、gateway 或 connector 证据不完整',
+    zh: '接入方、账户、执行网关或连接器证据不完整',
   },
   controlled_operator_view_untrusted: {
     en: 'The controlled-execution operator view is not trusted',
-    zh: '受控执行 operator view 不可信',
+    zh: '受控执行操作视图不可信',
   },
   controlled_order_attention_count_invalid: {
     en: 'The unresolved-order count is invalid',
@@ -136,31 +136,31 @@ const PILOT_BLOCKER_LABELS: Record<string, LocalizedLabel> = {
   },
   blocked_runtime_session_present: {
     en: 'A blocked runtime session remains unresolved',
-    zh: '仍有未解决的阻断 runtime session',
+    zh: '仍有未解决的阻断运行会话',
   },
   connector_observations_missing: {
     en: 'Persisted connector observations are missing',
-    zh: '缺少已持久化的 connector 观测',
+    zh: '缺少已持久化的连接器观测',
   },
   latest_snapshot_not_healthy: {
     en: 'The latest connector snapshot is not healthy',
-    zh: '最新 connector 快照不健康',
+    zh: '最新连接器快照不健康',
   },
   signed_owner_acceptance_missing: {
     en: 'Signed owner acceptance has not been recorded',
-    zh: '尚未记录 owner 签署接受证据',
+    zh: '尚未记录账户所有者签署确认',
   },
   account_truth_evidence_not_clear: {
     en: 'Account Truth evidence is not clear',
-    zh: 'Account Truth 证据尚未清晰',
+    zh: '账户事实证据尚未清晰',
   },
   account_truth_not_fresh: {
     en: 'Account Truth evidence is stale',
-    zh: 'Account Truth 证据已过期',
+    zh: '账户事实证据已过期',
   },
   account_truth_unresolved_mismatches: {
     en: 'Account Truth still has unresolved mismatches',
-    zh: 'Account Truth 仍有未解决差异',
+    zh: '账户事实仍有未解决差异',
   },
 };
 
@@ -171,19 +171,19 @@ const PILOT_RESOLUTION_LABELS: Record<string, LocalizedLabel> = {
   },
   accept_and_observe_one_exact_readonly_adapter_release: {
     en: 'Accept and observe one exact read-only adapter release',
-    zh: '接受并观测一个精确的只读适配器 release',
+    zh: '接受并观测一份精确的只读适配器发布记录',
   },
   complete_exact_scope_soak_and_record_owner_acceptance: {
     en: 'Complete the exact-scope soak and record signed owner acceptance',
-    zh: '完成精确范围 soak，并记录 owner 签署接受证据',
+    zh: '完成精确范围稳定性观察，并记录账户所有者签署确认',
   },
   issue_one_short_lived_exact_scope_write_release: {
     en: 'Issue one short-lived, exact-scope manual-each-order write release',
-    zh: '签发一个短时效、精确范围的逐单人工 write release',
+    zh: '签发一份短时效、精确范围的逐单人工写入放行凭证',
   },
   resolve_provider_account_gateway_connector_scope_drift: {
     en: 'Resolve provider, account, gateway, and connector scope drift',
-    zh: '解决 provider、账户、gateway 与 connector 的范围漂移',
+    zh: '解决接入方、账户、执行网关与连接器的范围漂移',
   },
   close_controlled_journeys_and_remove_session_authority: {
     en: 'Close controlled journeys and remove all session authority',
@@ -293,19 +293,19 @@ function gateLabel(value: string, locale: Locale) {
     },
     one_observing_readonly_adapter_release: {
       en: 'One read-only adapter release',
-      zh: '单一只读适配器 release',
+      zh: '单一只读适配器发布记录',
     },
     signed_readonly_soak_promotion: {
       en: 'Signed read-only soak',
-      zh: '已签署只读 soak',
+      zh: '已签署只读稳定性观察',
     },
     one_active_manual_each_order_write_release: {
       en: 'One manual-each-order write release',
-      zh: '单一逐单写入 release',
+      zh: '单一逐单写入放行',
     },
     one_exact_provider_account_gateway_scope: {
       en: 'Exact provider and account scope',
-      zh: '精确 provider 与账户范围',
+      zh: '精确接入方与账户范围',
     },
     no_unresolved_order_or_session_authority: {
       en: 'No unresolved order or session authority',
@@ -323,19 +323,19 @@ function actionLabel(value: string, locale: Locale) {
     },
     owner_select_and_review_real_broker_provider: {
       en: 'Owner selects and reviews one real broker provider',
-      zh: '由 owner 选择并复核一个真实券商 provider',
+      zh: '由账户所有者选择并复核一家真实券商接入方',
     },
     complete_readonly_soak_and_signed_acceptance: {
       en: 'Complete the read-only soak and signed owner acceptance',
-      zh: '完成只读 soak 与 owner 签署接受',
+      zh: '完成只读稳定性观察与账户所有者签署确认',
     },
     issue_short_lived_manual_each_order_write_release: {
       en: 'Issue one short-lived manual-each-order write release',
-      zh: '签发一个短时效逐单写入 release',
+      zh: '签发一份短时效逐单写入放行凭证',
     },
     resolve_pilot_scope_drift: {
       en: 'Resolve provider, account, gateway, or connector scope drift',
-      zh: '处理 provider、账户、gateway 或 connector 范围漂移',
+      zh: '处理接入方、账户、执行网关或连接器范围漂移',
     },
     close_controlled_execution_attention: {
       en: 'Close unresolved controlled journeys and session authority',
@@ -369,18 +369,18 @@ function blockerLabel(value: string, locale: Locale) {
   if (value.startsWith('pilot_scope_mismatch:')) {
     const field = value.slice('pilot_scope_mismatch:'.length);
     const fields: Record<string, LocalizedLabel> = {
-      provider: { en: 'provider', zh: 'provider' },
-      gateway_id: { en: 'gateway', zh: 'gateway' },
+      provider: { en: 'provider', zh: '接入方' },
+      gateway_id: { en: 'gateway', zh: '执行网关' },
       account_alias: { en: 'account', zh: '账户' },
       readonly_release: {
         en: 'read-only release',
-        zh: '只读 release',
+        zh: '只读发布记录',
       },
-      connector: { en: 'connector', zh: 'connector' },
-      soak_account: { en: 'soak account', zh: 'soak 账户' },
+      connector: { en: 'connector', zh: '连接器' },
+      soak_account: { en: 'soak account', zh: '稳定性观察账户' },
       soak_acceptance: {
         en: 'soak acceptance',
-        zh: 'soak 接受证据',
+        zh: '稳定性观察接受证据',
       },
     };
     const label = fields[field]?.[locale] ?? field;
@@ -392,20 +392,36 @@ function blockerLabel(value: string, locale: Locale) {
     /^(adapter|soak|write_release|operator_view)_(schema_invalid|source_failed)$/,
   );
   if (sourceFailure) {
-    const source = sourceFailure[1].replace(/_/g, ' ');
+    const sourceLabels: Record<string, LocalizedLabel> = {
+      adapter: { en: 'adapter', zh: '适配器' },
+      soak: { en: 'soak', zh: '稳定性观察' },
+      write_release: { en: 'write release', zh: '写入放行' },
+      operator_view: { en: 'operator view', zh: '操作视图' },
+    };
+    const source =
+      sourceLabels[sourceFailure[1]]?.[locale] ??
+      sourceFailure[1].replace(/_/g, ' ');
     const failed = sourceFailure[2] === 'source_failed';
     return locale === 'zh'
-      ? `${source} ${failed ? '来源读取失败' : 'schema 无效'}`
+      ? `${source}${failed ? '来源读取失败' : '数据契约无效'}`
       : `${source} ${failed ? 'source read failed' : 'schema is invalid'}`;
   }
   const boundary = value.match(
     /^(adapter|soak|soak_safety|write_status|operator_view)_(.+)_boundary_invalid$/,
   );
   if (boundary) {
-    const source = boundary[1].replace(/_/g, ' ');
+    const sourceLabels: Record<string, LocalizedLabel> = {
+      adapter: { en: 'adapter', zh: '适配器' },
+      soak: { en: 'soak', zh: '稳定性观察' },
+      soak_safety: { en: 'soak safety', zh: '稳定性观察安全项' },
+      write_status: { en: 'write status', zh: '写入状态' },
+      operator_view: { en: 'operator view', zh: '操作视图' },
+    };
+    const source =
+      sourceLabels[boundary[1]]?.[locale] ?? boundary[1].replace(/_/g, ' ');
     const field = boundary[2].replace(/_/g, ' ');
     return locale === 'zh'
-      ? `${source} 的 ${field} 安全边界无效`
+      ? `${source}的 ${field} 安全边界无效`
       : `${source} ${field} safety boundary is invalid`;
   }
   const incompleteDays = value.match(
@@ -413,7 +429,7 @@ function blockerLabel(value: string, locale: Locale) {
   );
   if (incompleteDays) {
     return locale === 'zh'
-      ? `清晰且已对账的 soak 日不足（${incompleteDays[1]}/${incompleteDays[2]}）`
+      ? `清晰且已对账的稳定性观察日不足（${incompleteDays[1]}/${incompleteDays[2]}）`
       : `Clear reconciled soak days are incomplete (${incompleteDays[1]}/${incompleteDays[2]})`;
   }
   const recoveryDrill = value.match(/^recovery_drill_missing:(.+)$/);
@@ -531,11 +547,38 @@ export function ControlledPerOrderPilotReadinessPanel({
                       ? '持久化证据满足当前门禁'
                       : 'Persisted evidence satisfies this gate',
                 evidence:
-                  gate.evidence_refs.length > 0
-                    ? gate.evidence_refs.join(' · ')
-                    : locale === 'zh'
-                      ? '尚无匹配证据标识'
-                      : 'No matching evidence identity',
+                  gate.evidence_refs.length > 0 ? (
+                    <details
+                      className="group/evidence min-w-0"
+                      data-testid={`pilot-gate-evidence-${gate.key}`}
+                    >
+                      <summary className="cursor-pointer list-none font-medium text-[var(--app-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)]">
+                        {locale === 'zh'
+                          ? `${gate.evidence_refs.length} 条已持久化证据`
+                          : `${gate.evidence_refs.length} persisted evidence ${gate.evidence_refs.length === 1 ? 'reference' : 'references'}`}
+                        <span
+                          aria-hidden="true"
+                          className="ml-1 inline-block text-[var(--app-text-tertiary)] transition-transform duration-150 group-open/evidence:rotate-180 motion-reduce:transition-none"
+                        >
+                          ▾
+                        </span>
+                      </summary>
+                      <div className="mt-1 space-y-1">
+                        {gate.evidence_refs.map((reference) => (
+                          <code
+                            key={reference}
+                            className="block break-all text-[11px] leading-4 text-[var(--app-text-tertiary)]"
+                          >
+                            {reference}
+                          </code>
+                        ))}
+                      </div>
+                    </details>
+                  ) : locale === 'zh' ? (
+                    '尚无匹配证据标识'
+                  ) : (
+                    'No matching evidence identity'
+                  ),
                 unblockCondition:
                   gate.status === 'blocked'
                     ? resolutionLabel(gate.resolution_condition, locale)
@@ -552,17 +595,39 @@ export function ControlledPerOrderPilotReadinessPanel({
                 </dd>
               </div>
               <div>
-                <dt className="font-medium text-[var(--app-text-tertiary)]">
-                  {locale === 'zh' ? '证据指纹' : 'Evidence fingerprint'}
+                <dt className="sr-only">
+                  {locale === 'zh'
+                    ? '技术证据身份'
+                    : 'Technical evidence identity'}
                 </dt>
-                <dd className="mt-1 break-all font-mono text-[var(--app-text-secondary)]">
-                  {readiness.readiness_fingerprint}
+                <dd>
+                  <details
+                    className="group/identity min-w-0 border-y border-[var(--app-divider)] py-1.5"
+                    data-testid="pilot-readiness-identity"
+                  >
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-2 font-medium text-[var(--app-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)]">
+                      <span>
+                        {locale === 'zh'
+                          ? '技术证据身份'
+                          : 'Technical evidence identity'}
+                      </span>
+                      <span
+                        aria-hidden="true"
+                        className="text-[var(--app-text-tertiary)] transition-transform duration-150 group-open/identity:rotate-180 motion-reduce:transition-none"
+                      >
+                        ▾
+                      </span>
+                    </summary>
+                    <code className="mt-1.5 block break-all font-mono text-[11px] leading-4 text-[var(--app-text-tertiary)]">
+                      {readiness.readiness_fingerprint}
+                    </code>
+                  </details>
                 </dd>
               </div>
             </dl>
             <p className="text-xs leading-5 text-[var(--app-text-secondary)]">
               {locale === 'zh'
-                ? '即使所有行通过，每一笔订单仍须重新通过 Account Truth、Decision、风控、paper/shadow、资本、gateway、生命周期、对账、入账与短时效人工签名。'
+                ? '即使所有行通过，每一笔订单仍须重新通过账户事实、决策门禁、风控、模拟与影子检验、资本权限、执行网关、生命周期、对账、入账与短时效人工签名。'
                 : 'Even when every row passes, each order must separately re-pass Account Truth, Decision, risk, paper/shadow, capital, gateway, lifecycle, reconciliation, posting, and short-lived human-signature gates.'}
             </p>
           </>

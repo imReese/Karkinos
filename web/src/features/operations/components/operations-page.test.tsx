@@ -209,9 +209,12 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
   });
 }
 
-function renderOperationsPage(projection: unknown = safeProjection) {
+function renderOperationsPage(
+  projection: unknown = safeProjection,
+  locale: 'en' | 'zh' = 'en',
+) {
   window.localStorage.clear();
-  window.localStorage.setItem('karkinos.locale', 'en');
+  window.localStorage.setItem('karkinos.locale', locale);
   installMatchMediaMock();
   const fetchMock = vi.fn(async () => jsonResponse(projection));
   vi.stubGlobal('fetch', fetchMock);
@@ -387,6 +390,49 @@ test('shows the fail-closed pilot admission gate without execution controls', as
   expect(within(disclosure).queryByText(/submit order/i)).toBeNull();
   expect(within(disclosure).queryByText(/cancel order/i)).toBeNull();
   expect(disclosure.textContent).not.toContain('Status needs review');
+});
+
+test('keeps Chinese operations copy product-facing and technical identities progressively disclosed', async () => {
+  renderOperationsPage(
+    {
+      ...safeProjection,
+      controlled_per_order_pilot_readiness: blockedPilotReadiness,
+    },
+    'zh',
+  );
+
+  const page = await screen.findByTestId('operations-page');
+  expect(page.textContent).toContain('本页只读取已持久化事实');
+  expect(page.textContent).not.toContain('GET');
+  expect(page.textContent).not.toContain('provider');
+  expect(page.textContent).not.toContain('kill switch');
+
+  const disclosure = await screen.findByTestId('controlled-pilot-readiness');
+  fireEvent.click(within(disclosure).getByText('受控逐单试点准入证据'));
+  expect(disclosure.textContent).toContain('单一只读适配器发布记录');
+  expect(disclosure.textContent).toContain(
+    '由账户所有者选择并复核一家真实券商接入方',
+  );
+  expect(disclosure.textContent).not.toMatch(
+    /\b(?:release|soak|provider|gateway|connector|owner|schema|runtime|operator)\b/i,
+  );
+
+  const evidenceIdentity = within(disclosure).getByTestId(
+    'pilot-readiness-identity',
+  );
+  expect(evidenceIdentity.hasAttribute('open')).toBe(false);
+  expect(evidenceIdentity.textContent).toContain(
+    blockedPilotReadiness.readiness_fingerprint,
+  );
+
+  const persistedEvidence = within(disclosure).getByTestId(
+    'pilot-gate-evidence-persisted_source_contracts',
+  );
+  expect(persistedEvidence.hasAttribute('open')).toBe(false);
+  expect(persistedEvidence.textContent).toContain('1 条已持久化证据');
+  expect(persistedEvidence.textContent).toContain(
+    blockedPilotReadiness.gates[0].evidence_refs[0],
+  );
 });
 
 test('blocks an unsafe pilot admission projection independently', async () => {

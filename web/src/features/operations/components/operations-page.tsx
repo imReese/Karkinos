@@ -440,7 +440,7 @@ export function OperationsPage() {
               kind="empty"
               title={
                 locale === 'zh'
-                  ? '暂无 canonical 历史事件'
+                  ? '暂无权威历史事件'
                   : 'No canonical history events'
               }
               description={
