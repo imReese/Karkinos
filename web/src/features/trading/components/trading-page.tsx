@@ -2723,9 +2723,9 @@ function OrderQueue({
   }
 
   return (
-    <div className="mt-5 min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
-      <table className="min-w-[1180px] table-fixed text-left text-sm">
-        <thead>
+    <div className="mt-5 min-w-0 max-w-full overflow-x-visible md:overflow-x-auto md:overscroll-x-contain">
+      <table className="block w-full text-left text-sm md:table md:min-w-[1180px] md:table-fixed">
+        <thead className="hidden md:table-header-group">
           <tr className="app-kicker border-b border-[var(--app-divider)] text-[11px] uppercase tracking-[0.12em]">
             <th className="w-[150px] px-3 py-3">{labels.symbol}</th>
             <th className="w-[90px] px-3 py-3">{labels.side}</th>
@@ -2738,7 +2738,7 @@ function OrderQueue({
             <th className="w-[340px] px-3 py-3">{labels.actions}</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody className="block md:table-row-group">
           {orders.map((order) => (
             <OrderRow
               key={order.order_id}
@@ -2798,26 +2798,47 @@ function OrderRow({
   const publicNote = formatPublicOperationalNote(order.note, locale);
 
   return (
-    <tr className="border-b border-[var(--app-divider)] align-top transition-colors hover:bg-[var(--app-surface-raised)]">
-      <td className="px-3 py-4">
+    <tr
+      className="grid grid-cols-2 gap-x-4 border-b border-[var(--app-divider)] px-1 py-3 align-top transition-colors hover:bg-[var(--app-surface-raised)] md:table-row md:px-0 md:py-0"
+      data-testid={`trading-order-row-${order.order_id}`}
+    >
+      <td className="col-span-2 block py-2 md:table-cell md:px-3 md:py-4">
+        <span className="app-kicker mb-1 block text-[10px] md:hidden">
+          {labels.symbol}
+        </span>
         <div className="font-semibold">{displayLabel}</div>
         <div className="app-muted mt-1 text-xs">
           {formatTimestamp(order.timestamp)}
         </div>
       </td>
-      <td className="px-3 py-4">
+      <td className="block py-2 md:table-cell md:px-3 md:py-4">
+        <span className="app-kicker mb-1 block text-[10px] md:hidden">
+          {labels.side}
+        </span>
         <SideBadge side={order.side} />
       </td>
-      <td className="px-3 py-4 text-right tabular-nums">
+      <td className="block py-2 text-right tabular-nums md:table-cell md:px-3 md:py-4">
+        <span className="app-kicker mb-1 block text-[10px] md:hidden">
+          {labels.quantity}
+        </span>
         {formatQuantity(order.quantity)}
       </td>
-      <td className="px-3 py-4 text-right tabular-nums">
+      <td className="block py-2 text-left tabular-nums md:table-cell md:px-3 md:py-4 md:text-right">
+        <span className="app-kicker mb-1 block text-[10px] md:hidden">
+          {labels.price}
+        </span>
         {formatPrice(order.price)}
       </td>
-      <td className="px-3 py-4">
+      <td className="block py-2 text-right md:table-cell md:px-3 md:py-4 md:text-left">
+        <span className="app-kicker mb-1 block text-[10px] md:hidden">
+          {pageLabels.statusFilter}
+        </span>
         <StatusBadge status={order.status} />
       </td>
-      <td className="px-3 py-4">
+      <td className="col-span-2 block border-t border-[var(--app-divider)] py-3 md:table-cell md:border-t-0 md:px-3 md:py-4">
+        <span className="app-kicker mb-1 block text-[10px] md:hidden">
+          {labels.riskHint}
+        </span>
         <div className="space-y-1">
           <div className="font-medium">{labels.riskApproved}</div>
           <div className="app-muted break-all text-xs">
@@ -2831,7 +2852,7 @@ function OrderRow({
           ) : null}
         </div>
       </td>
-      <td className="px-3 py-4">
+      <td className="col-span-2 block pb-2 md:table-cell md:px-3 md:py-4">
         {isPending ? (
           <ControlledActionZone
             tone="info"
