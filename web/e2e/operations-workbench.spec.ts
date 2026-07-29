@@ -128,15 +128,32 @@ test('Operations keeps pilot readiness and subsystem metrics visibly scoped', as
     await readiness.locator('summary').click();
     await expect(readiness).toHaveAttribute('open', '');
     await expect(readiness).not.toContainText('Status needs review');
-    const expandedGeometry = await readiness.evaluate((element) => ({
-      localOverflow: element.scrollWidth - element.clientWidth,
-      documentOverflow:
-        document.documentElement.scrollWidth -
-        document.documentElement.clientWidth,
-    }));
+    const expandedGeometry = await readiness.evaluate((element) => {
+      const content = element.querySelector(':scope > div') as HTMLElement;
+      const gateMatrix = element.querySelector(
+        '[data-workbench-primitive="gate-matrix"]',
+      ) as HTMLElement;
+      const summary = element.querySelector(':scope > summary') as HTMLElement;
+      return {
+        contentOverflow: content.scrollWidth - content.clientWidth,
+        documentOverflow:
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+        gateMatrixOverflow: gateMatrix.scrollWidth - gateMatrix.clientWidth,
+        summaryOverflow: summary.scrollWidth - summary.clientWidth,
+      };
+    });
     expect(
-      expandedGeometry.localOverflow,
-      `${theme} expanded`,
+      expandedGeometry.contentOverflow,
+      `${theme} expanded content`,
+    ).toBeLessThanOrEqual(headlessSubpixelTolerance);
+    expect(
+      expandedGeometry.gateMatrixOverflow,
+      `${theme} expanded gate matrix`,
+    ).toBeLessThanOrEqual(headlessSubpixelTolerance);
+    expect(
+      expandedGeometry.summaryOverflow,
+      `${theme} expanded summary`,
     ).toBeLessThanOrEqual(headlessSubpixelTolerance);
     expect(
       expandedGeometry.documentOverflow,
