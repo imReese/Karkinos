@@ -106,19 +106,19 @@ export function MetricStrip({
           key={item.id}
           className="app-metric-strip-item min-w-0 px-3 py-2.5"
         >
-          <dt className="truncate text-[11px] leading-4 font-medium text-[var(--app-text-secondary)]">
+          <dt className="app-type-label truncate font-medium text-[var(--app-text-secondary)]">
             {item.label}
           </dt>
           <dd
             className={cn(
-              'mt-0.5 truncate text-[17px] leading-[22px] font-semibold tracking-[-0.015em] tabular-nums',
+              'mt-0.5 truncate text-lg leading-6 font-semibold tracking-[-0.015em] tabular-nums',
               METRIC_TONE_CLASSES[item.tone ?? 'neutral'],
             )}
           >
             {item.value}
           </dd>
           {item.detail ? (
-            <div className="mt-0.5 truncate text-[11px] leading-4 text-[var(--app-text-tertiary)]">
+            <div className="app-type-label mt-0.5 truncate text-[var(--app-text-tertiary)]">
               {item.detail}
             </div>
           ) : null}
@@ -152,7 +152,7 @@ export function FilterBar({
         {children}
       </div>
       {summary ? (
-        <div className="shrink-0 text-xs text-[var(--app-text-tertiary)]">
+        <div className="app-type-compact shrink-0 text-[var(--app-text-tertiary)]">
           {summary}
         </div>
       ) : null}
@@ -173,7 +173,7 @@ export function StatusBadge({
     <span
       data-workbench-primitive="status-badge"
       className={cn(
-        'inline-flex min-h-[22px] items-center rounded-[var(--app-radius-control)] border px-1.5 py-0.5 text-[11px] leading-4 font-semibold',
+        'app-type-label inline-flex min-h-6 items-center rounded-[var(--app-radius-control)] border px-1.5 py-0.5 font-semibold',
         STATUS_TONE_CLASSES[tone],
         className,
       )}
@@ -238,17 +238,17 @@ export function EvidenceState({
               {statusLabel}
             </StatusBadge>
           ) : null}
-          <h2 className="text-sm font-semibold text-[var(--app-text)]">
+          <h2 className="app-type-subsection-title text-[var(--app-text)]">
             {title}
           </h2>
         </div>
         {description ? (
-          <p className="mt-1 text-xs leading-[18px] text-[var(--app-text-secondary)]">
+          <div className="app-type-body mt-1 text-[var(--app-text-secondary)]">
             {description}
-          </p>
+          </div>
         ) : null}
         {evidence ? (
-          <div className="mt-1 font-mono text-[11px] leading-4 text-[var(--app-text-tertiary)] [overflow-wrap:anywhere]">
+          <div className="app-type-micro mt-1 font-mono text-[var(--app-text-tertiary)] [overflow-wrap:anywhere]">
             {evidence}
           </div>
         ) : null}

@@ -102,6 +102,22 @@ const REQUIRED_TYPOGRAPHY_TOKENS = [
   '--app-font-weight-semibold',
   '--app-font-weight-title',
   '--app-font-weight-brand',
+  '--app-font-size-page-title-mobile',
+  '--app-font-size-page-title',
+  '--app-font-size-section-title',
+  '--app-font-size-subsection-title',
+  '--app-font-size-body',
+  '--app-font-size-compact',
+  '--app-font-size-label',
+  '--app-font-size-micro',
+  '--app-line-height-page-title-mobile',
+  '--app-line-height-page-title',
+  '--app-line-height-section-title',
+  '--app-line-height-subsection-title',
+  '--app-line-height-body',
+  '--app-line-height-compact',
+  '--app-line-height-label',
+  '--app-line-height-micro',
   '--app-letter-spacing-product',
 ] as const;
 
@@ -259,10 +275,32 @@ describe('application design token contract', () => {
     ]) {
       expect(MOCHA.has(token), token).toBe(true);
     }
+    expect(MOCHA.get('--app-font-size-page-title-mobile')).toBe('24px');
+    expect(MOCHA.get('--app-font-size-page-title')).toBe('28px');
+    expect(MOCHA.get('--app-font-size-section-title')).toBe('18px');
+    expect(MOCHA.get('--app-font-size-subsection-title')).toBe('15px');
+    expect(MOCHA.get('--app-font-size-body')).toBe('14px');
+    expect(MOCHA.get('--app-font-size-compact')).toBe('13px');
+    expect(MOCHA.get('--app-font-size-label')).toBe('12px');
+    expect(MOCHA.get('--app-font-size-micro')).toBe('11px');
+    expect(MOCHA.get('--app-line-height-body')).toBe('22px');
+    expect(MOCHA.get('--app-line-height-compact')).toBe('20px');
+    expect(MOCHA.get('--app-line-height-label')).toBe('18px');
+    expect(MOCHA.get('--app-line-height-micro')).toBe('16px');
     expect(MOCHA.get('--app-letter-spacing-product')).toBe('0.18em');
     expect(MOCHA.get('--app-motion-fast')).toBe('120ms');
     expect(MOCHA.get('--app-motion-standard')).toBe('160ms');
     expect(MOCHA.get('--app-ease-standard')).toBe('cubic-bezier(0.2, 0, 0, 1)');
+  });
+
+  it('does not ship production text below the 11px micro role', () => {
+    const subMicroPattern = /text-\[(?:8|9|10)px\]|font-size:\s*(?:8|9|10)px/g;
+    const violations = AUDITED_FILES.flatMap((path) => {
+      const source = readFileSync(path, 'utf8');
+      const count = source.match(subMicroPattern)?.length ?? 0;
+      return count > 0 ? [{ path: relative(SRC_ROOT, path), count }] : [];
+    });
+    expect(violations).toEqual([]);
   });
 
   it('provides a deterministic reduced-motion fallback', () => {

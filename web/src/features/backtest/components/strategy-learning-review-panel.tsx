@@ -249,7 +249,7 @@ export function StrategyLearningReviewPanel() {
         )}
 
         {queue.data ? (
-          <div className="app-muted mt-4 break-all font-mono text-[10px] leading-4">
+          <div className="app-muted mt-4 break-all font-mono text-[length:var(--app-font-size-micro)] leading-4">
             {copy.status[queue.data.status]} · {copy.queueFingerprint}:{' '}
             {queue.data.queue_fingerprint}
           </div>
@@ -325,7 +325,7 @@ function LearningItemCard({
       ) : null}
 
       <div className="mt-4">
-        <div className="app-kicker text-[10px] uppercase tracking-[0.14em]">
+        <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
           {copy.exactEvidence}
         </div>
         <ul className="mt-2 grid gap-1.5 text-xs sm:grid-cols-2">
@@ -360,7 +360,9 @@ function LearningItemCard({
 function Count({ label, value }: { label: string; value?: number }) {
   return (
     <div className="min-w-24 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-3 py-2">
-      <div className="app-muted text-[10px]">{label}</div>
+      <div className="app-muted text-[length:var(--app-font-size-micro)]">
+        {label}
+      </div>
       <div className="mt-1 text-lg font-semibold text-[var(--app-text)]">
         {value ?? '--'}
       </div>
@@ -387,7 +389,7 @@ function Fact({
 }) {
   return (
     <div>
-      <dt className="app-muted text-[10px] uppercase tracking-[0.12em]">
+      <dt className="app-muted text-[length:var(--app-font-size-micro)] uppercase tracking-[0.12em]">
         {label}
       </dt>
       <dd

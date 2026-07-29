@@ -2806,7 +2806,7 @@ function OrderRow({
       data-testid={`trading-order-row-${order.order_id}`}
     >
       <td className="col-span-2 block py-2 md:table-cell md:px-3 md:py-4">
-        <span className="app-kicker mb-1 block text-[10px] md:hidden">
+        <span className="app-kicker mb-1 block text-[length:var(--app-font-size-micro)] md:hidden">
           {labels.symbol}
         </span>
         <div className="font-semibold">{displayLabel}</div>
@@ -2815,31 +2815,31 @@ function OrderRow({
         </div>
       </td>
       <td className="block py-2 md:table-cell md:px-3 md:py-4">
-        <span className="app-kicker mb-1 block text-[10px] md:hidden">
+        <span className="app-kicker mb-1 block text-[length:var(--app-font-size-micro)] md:hidden">
           {labels.side}
         </span>
         <SideBadge side={order.side} />
       </td>
       <td className="block py-2 text-right tabular-nums md:table-cell md:px-3 md:py-4">
-        <span className="app-kicker mb-1 block text-[10px] md:hidden">
+        <span className="app-kicker mb-1 block text-[length:var(--app-font-size-micro)] md:hidden">
           {labels.quantity}
         </span>
         {formatQuantity(order.quantity)}
       </td>
       <td className="block py-2 text-left tabular-nums md:table-cell md:px-3 md:py-4 md:text-right">
-        <span className="app-kicker mb-1 block text-[10px] md:hidden">
+        <span className="app-kicker mb-1 block text-[length:var(--app-font-size-micro)] md:hidden">
           {labels.price}
         </span>
         {formatPrice(order.price)}
       </td>
       <td className="block py-2 text-right md:table-cell md:px-3 md:py-4 md:text-left">
-        <span className="app-kicker mb-1 block text-[10px] md:hidden">
+        <span className="app-kicker mb-1 block text-[length:var(--app-font-size-micro)] md:hidden">
           {pageLabels.statusFilter}
         </span>
         <StatusBadge status={order.status} />
       </td>
       <td className="col-span-2 block border-t border-[var(--app-divider)] py-3 md:table-cell md:border-t-0 md:px-3 md:py-4">
-        <span className="app-kicker mb-1 block text-[10px] md:hidden">
+        <span className="app-kicker mb-1 block text-[length:var(--app-font-size-micro)] md:hidden">
           {labels.riskHint}
         </span>
         <div className="space-y-1">

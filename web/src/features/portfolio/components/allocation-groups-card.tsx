@@ -21,9 +21,9 @@ export function AllocationGroupsCard({
 
   return (
     <section className="min-w-0">
-      <h2 className="mb-2 text-sm font-semibold text-[var(--app-text)]">
+      <h3 className="app-type-subsection-title mb-2 text-[var(--app-text)]">
         {copy.portfolio.allocationGroups.title}
-      </h2>
+      </h3>
       <MetricStrip
         ariaLabel={copy.portfolio.allocationGroups.title}
         items={groups.map((group) => ({

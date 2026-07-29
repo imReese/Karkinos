@@ -242,7 +242,9 @@ test('keeps the compact calendar toolbar and day cells readable on narrow viewpo
     'return-calendar-cell-value',
   );
   expect(cellValue.className).toContain('whitespace-nowrap');
-  expect(cellValue.className).toContain('text-[10px]');
+  expect(cellValue.className).toContain(
+    'text-[length:var(--app-font-size-micro)]',
+  );
   expect(cellValue.className).toContain('sm:text-[11px]');
   expect(cellValue.textContent).toBe('+600.00');
 });
@@ -656,7 +658,9 @@ test('supports a compact cockpit layout for the overview page', async () => {
   const januaryCellValue = within(januaryCell).getByTestId(
     'return-calendar-cell-value',
   );
-  expect(januaryCellValue.className).toContain('text-[10px]');
+  expect(januaryCellValue.className).toContain(
+    'text-[length:var(--app-font-size-micro)]',
+  );
   expect(januaryCellValue.className).toContain('sm:text-[11px]');
 });
 

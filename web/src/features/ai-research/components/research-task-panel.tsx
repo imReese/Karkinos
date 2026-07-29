@@ -414,7 +414,7 @@ export function ResearchTaskPanel({
           </>
         ) : (
           <div className="min-w-0">
-            <div className="app-kicker hidden text-[10px] uppercase tracking-[0.14em] sm:block">
+            <div className="app-kicker hidden text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em] sm:block">
               {copy.kicker}
             </div>
             <h2
@@ -463,7 +463,7 @@ export function ResearchTaskPanel({
               <div className="min-w-0">
                 <div className="app-product-mark">{copy.queueKicker}</div>
                 <h3
-                  className="mt-1.5 text-base font-semibold text-[var(--app-text)]"
+                  className="app-type-section-title mt-1.5 text-[var(--app-text)]"
                   id="ai-research-queue-title"
                 >
                   {copy.queueTitle}
@@ -546,7 +546,7 @@ export function ResearchTaskPanel({
                       className="min-w-0 border-t border-[var(--app-divider)] pt-3"
                       key={step.title}
                     >
-                      <span className="font-mono text-[10px] font-semibold tracking-[0.12em] text-[var(--app-accent)]">
+                      <span className="font-mono text-[length:var(--app-font-size-micro)] font-semibold tracking-[0.12em] text-[var(--app-accent)]">
                         {String(index + 1).padStart(2, '0')}
                       </span>
                       <strong className="mt-1 block text-xs font-semibold text-[var(--app-text)]">
@@ -612,7 +612,7 @@ export function ResearchTaskPanel({
             >
               <div className="app-product-mark">{copy.formKicker}</div>
               <h3
-                className="mt-1.5 text-base font-semibold text-[var(--app-text)]"
+                className="app-type-section-title mt-1.5 text-[var(--app-text)]"
                 id="ai-research-composer-title"
               >
                 {copy.formTitle}
@@ -799,7 +799,7 @@ function ResearchTaskCard({
               },
             ]}
           />
-          <span className="rounded-full border border-[var(--app-border)] px-2.5 py-1 text-[10px] font-semibold text-[var(--app-text)]">
+          <span className="rounded-full border border-[var(--app-border)] px-2.5 py-1 text-[length:var(--app-font-size-micro)] font-semibold text-[var(--app-text)]">
             {copy.statuses[task.status]}
           </span>
         </div>
@@ -807,17 +807,17 @@ function ResearchTaskCard({
       <div className="mt-3 flex flex-wrap gap-1.5">
         {task.evidence.map((evidence) => (
           <span
-            className="rounded-full border border-[var(--app-border)] px-2 py-1 text-[10px] text-[var(--app-muted)]"
+            className="rounded-full border border-[var(--app-border)] px-2 py-1 text-[length:var(--app-font-size-micro)] text-[var(--app-muted)]"
             key={evidence.evidence_reference_id}
             title={evidence.evidence_reference_id}
           >
             {evidence.tool_name} · {evidence.status}
           </span>
         ))}
-        <span className="rounded-full border border-[var(--app-border)] px-2 py-1 text-[10px] text-[var(--app-muted)]">
+        <span className="rounded-full border border-[var(--app-border)] px-2 py-1 text-[length:var(--app-font-size-micro)] text-[var(--app-muted)]">
           {copy.evidence}: {task.evidence.length}
         </span>
-        <span className="rounded-full border border-[var(--app-border)] px-2 py-1 text-[10px] text-[var(--app-muted)]">
+        <span className="rounded-full border border-[var(--app-border)] px-2 py-1 text-[length:var(--app-font-size-micro)] text-[var(--app-muted)]">
           {task.all_evidence_authoritative
             ? copy.authoritative
             : `${copy.blocked}: ${task.blockers.length}`}
@@ -929,7 +929,7 @@ function FixtureAnalysisSummary({
       <div className="mt-3 flex flex-wrap gap-1.5" aria-label={copy.artifacts}>
         {analysis.artifacts.map((artifact) => (
           <span
-            className="rounded-full border border-[var(--app-border)] px-2 py-1 text-[10px] text-[var(--app-muted)]"
+            className="rounded-full border border-[var(--app-border)] px-2 py-1 text-[length:var(--app-font-size-micro)] text-[var(--app-muted)]"
             key={artifact.artifact_id}
             title={artifact.artifact_id}
           >
@@ -939,7 +939,7 @@ function FixtureAnalysisSummary({
       </div>
       {reportSummary ? (
         <div className="mt-3 rounded-xl border border-[var(--app-border)] p-3">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--app-muted)]">
+          <div className="text-[length:var(--app-font-size-micro)] font-semibold uppercase tracking-[0.12em] text-[var(--app-muted)]">
             {copy.report}
           </div>
           <p className="mt-1 text-xs leading-5 text-[var(--app-text)]">
@@ -1009,7 +1009,7 @@ function FixtureAnalysisReviewControl({
       aria-label={copy.analysisReview}
       className="mt-4 rounded-xl border border-[var(--app-border)] p-3"
     >
-      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--app-muted)]">
+      <div className="text-[length:var(--app-font-size-micro)] font-semibold uppercase tracking-[0.12em] text-[var(--app-muted)]">
         {copy.analysisReview}
       </div>
       <p className="app-muted mt-1 text-xs leading-5">
@@ -1102,7 +1102,7 @@ function RecordedAnalysisReview({
   return (
     <div className="mt-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded-full border border-[var(--app-border)] px-2.5 py-1 text-[10px] font-semibold text-[var(--app-text)]">
+        <span className="rounded-full border border-[var(--app-border)] px-2.5 py-1 text-[length:var(--app-font-size-micro)] font-semibold text-[var(--app-text)]">
           {copy.analysisReviewStatuses[review.effective_status]}
         </span>
         <span className="text-xs text-[var(--app-muted)]">
@@ -1114,7 +1114,7 @@ function RecordedAnalysisReview({
       <p className="mt-2 text-xs leading-5 text-[var(--app-text)]">
         {review.note}
       </p>
-      <p className="app-muted mt-1 text-[10px]">
+      <p className="app-muted mt-1 text-[length:var(--app-font-size-micro)]">
         {review.reviewed_by} · {review.created_at}
       </p>
       {review.invalidation_reasons.length ? (
@@ -1159,7 +1159,7 @@ function BoundaryBadge({ label }: { label: string }) {
 function EvidenceIdentity({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-[10px] uppercase tracking-[0.12em] text-[var(--app-muted)]">
+      <dt className="text-[length:var(--app-font-size-micro)] uppercase tracking-[0.12em] text-[var(--app-muted)]">
         {label}
       </dt>
       <dd

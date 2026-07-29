@@ -283,7 +283,7 @@ export function OperationsPage() {
               <div className="flex items-baseline justify-between gap-3">
                 <h2
                   id="operations-attention-heading"
-                  className="text-base font-semibold text-[var(--app-text)]"
+                  className="app-type-section-title text-[var(--app-text)]"
                 >
                   {labels.attentionQueue}
                 </h2>
@@ -426,7 +426,7 @@ export function OperationsPage() {
             <div>
               <h2
                 id="operations-timeline-heading"
-                className="text-base font-semibold text-[var(--app-text)]"
+                className="app-type-section-title text-[var(--app-text)]"
               >
                 {locale === 'zh'
                   ? '持久化证据时间线'
@@ -512,7 +512,7 @@ export function OperationsPage() {
               ))}
             </dl>
             <section className="min-w-0 space-y-2">
-              <h3 className="text-sm font-semibold text-[var(--app-text)]">
+              <h3 className="app-type-subsection-title text-[var(--app-text)]">
                 {labels.technicalIdentity}
               </h3>
               <div className="border-y border-[var(--app-divider)] py-3">

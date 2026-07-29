@@ -16,9 +16,9 @@ export function AllocationCard({ items }: { items: AllocationItem[] }) {
 
   return (
     <section className="min-w-0">
-      <h2 className="mb-2 text-sm font-semibold text-[var(--app-text)]">
+      <h3 className="app-type-subsection-title mb-2 text-[var(--app-text)]">
         {copy.portfolio.allocation.title}
-      </h2>
+      </h3>
       <DataTable
         data={items}
         caption={copy.portfolio.allocation.title}

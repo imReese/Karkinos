@@ -721,7 +721,7 @@ test('keeps holding summary and kline regions responsive on narrow screens', asy
   const chartScroll = screen.getByTestId('price-structure-chart-scroll');
   const chartCanvas = screen.getByTestId('price-structure-chart-canvas');
 
-  expect(summaryTitle.className).toContain('text-sm');
+  expect(summaryTitle.className).toContain('app-type-section-title');
   expect(overview.className).toContain('xl:grid-cols-');
   expect(overview.className).not.toContain('md:grid-cols-');
   expect(metricStrip?.className).toContain('min-w-0');

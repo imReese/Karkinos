@@ -326,7 +326,7 @@ test('keeps immutable history as the primary surface and opens entry tools on de
 
   expect(await screen.findByRole('heading', { name: '账本流水' })).toBeTruthy();
   const ledgerTitle = await screen.findByText('最近流水');
-  expect(ledgerTitle).toBeTruthy();
+  expect(ledgerTitle.className).toContain('app-type-section-title');
   expect(
     document.querySelector('[data-activity-surface="audit-history"]'),
   ).toBeTruthy();

@@ -172,13 +172,13 @@ export function PositionsTable({
               ? formatPublicStatus(position.quote_status, locale)
               : '--'}
           </StatusBadge>
-          <div className="mt-1 max-w-44 truncate text-[10px] text-[var(--app-text-tertiary)]">
+          <div className="mt-1 max-w-44 truncate text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
             {formatAge(position.quote_age_seconds)} ·{' '}
             {formatTimestamp(position.quote_timestamp)}
           </div>
           {position.stale_reason ? (
             <div
-              className="mt-0.5 max-w-44 truncate text-[10px] text-[var(--app-warning-text)]"
+              className="mt-0.5 max-w-44 truncate text-[length:var(--app-font-size-micro)] text-[var(--app-warning-text)]"
               title={staleReason}
             >
               {staleReason}
@@ -299,7 +299,7 @@ export function PositionsTable({
                             : position.market_value,
                         )}
                       </div>
-                      <div className="mt-0.5 text-[10px] text-[var(--app-text-tertiary)]">
+                      <div className="mt-0.5 text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
                         {showHistoryColumns
                           ? labels.realized
                           : labels.marketValue}
@@ -317,7 +317,7 @@ export function PositionsTable({
                             {formatCurrency(position.today_change)}
                           </div>
                           <div
-                            className={`mt-0.5 text-[10px] tabular-nums ${resolveTone(
+                            className={`mt-0.5 text-[length:var(--app-font-size-micro)] tabular-nums ${resolveTone(
                               position.unrealized_pnl,
                             )}`}
                           >
@@ -333,7 +333,7 @@ export function PositionsTable({
                     <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2">
                       {showHistoryColumns ? (
                         <div className="min-w-0">
-                          <dt className="text-[10px] text-[var(--app-text-tertiary)]">
+                          <dt className="text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
                             {detailLabels.commissionPaid}
                           </dt>
                           <dd className="mt-0.5 truncate text-xs tabular-nums text-[var(--app-text-secondary)]">
@@ -344,7 +344,7 @@ export function PositionsTable({
                         <>
                           {showFullColumns ? (
                             <div className="min-w-0">
-                              <dt className="text-[10px] text-[var(--app-text-tertiary)]">
+                              <dt className="text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
                                 {labels.weight}
                               </dt>
                               <dd className="mt-0.5 truncate text-xs font-medium tabular-nums">
@@ -353,7 +353,7 @@ export function PositionsTable({
                             </div>
                           ) : null}
                           <div className="min-w-0">
-                            <dt className="text-[10px] text-[var(--app-text-tertiary)]">
+                            <dt className="text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
                               {labels.todayChange}
                             </dt>
                             <dd
@@ -365,7 +365,7 @@ export function PositionsTable({
                             </dd>
                           </div>
                           <div className="min-w-0">
-                            <dt className="text-[10px] text-[var(--app-text-tertiary)]">
+                            <dt className="text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
                               {labels.unrealized}
                             </dt>
                             <dd
@@ -378,7 +378,7 @@ export function PositionsTable({
                           </div>
                           {showFullColumns ? (
                             <div className="min-w-0">
-                              <dt className="text-[10px] text-[var(--app-text-tertiary)]">
+                              <dt className="text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
                                 {labels.realized}
                               </dt>
                               <dd
@@ -408,13 +408,13 @@ export function PositionsTable({
                           ? formatPublicStatus(position.quote_status, locale)
                           : '--'}
                       </StatusBadge>
-                      <span className="min-w-0 truncate text-[10px] text-[var(--app-text-tertiary)]">
+                      <span className="min-w-0 truncate text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
                         {formatAge(position.quote_age_seconds)} ·{' '}
                         {formatTimestamp(position.quote_timestamp)}
                       </span>
                       {position.stale_reason ? (
                         <span
-                          className="min-w-0 truncate text-[10px] text-[var(--app-warning-text)]"
+                          className="min-w-0 truncate text-[length:var(--app-font-size-micro)] text-[var(--app-warning-text)]"
                           title={staleReason}
                         >
                           {staleReason}

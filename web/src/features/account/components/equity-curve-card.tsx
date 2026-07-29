@@ -598,7 +598,7 @@ function renderHighPointDot({
           <text
             x={textX}
             y={labelY + 14}
-            className="fill-current text-[10px] font-semibold"
+            className="fill-current text-[length:var(--app-font-size-micro)] font-semibold"
           >
             <tspan>{high.label}</tspan>
             <tspan dx="7" className="opacity-70">

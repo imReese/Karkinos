@@ -53,14 +53,19 @@ export function ControlledActionZone({
         )}
       >
         <div className="min-w-0">
-          <h2 className={cn('text-sm font-semibold', TONE_CLASSES[tone].title)}>
+          <h2
+            className={cn(
+              'app-type-subsection-title',
+              TONE_CLASSES[tone].title,
+            )}
+          >
             {title}
           </h2>
-          <p className="mt-1 text-xs leading-5 text-[var(--app-text-secondary)]">
+          <p className="app-type-body mt-1 text-[var(--app-text-secondary)]">
             {description}
           </p>
           {evidence ? (
-            <div className="mt-1 font-mono text-[11px] leading-4 text-[var(--app-text-tertiary)] [overflow-wrap:anywhere]">
+            <div className="app-type-micro mt-1 font-mono text-[var(--app-text-tertiary)] [overflow-wrap:anywhere]">
               {evidence}
             </div>
           ) : null}

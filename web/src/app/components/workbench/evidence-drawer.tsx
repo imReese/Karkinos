@@ -100,14 +100,14 @@ export function EvidenceDrawer({
           <div className="min-w-0">
             <h2
               id={titleId}
-              className="text-base font-semibold text-[var(--app-text)]"
+              className="app-type-section-title text-[var(--app-text)]"
             >
               {title}
             </h2>
             {description ? (
               <p
                 id={descriptionId}
-                className="mt-1 text-xs leading-5 text-[var(--app-text-secondary)]"
+                className="app-type-body mt-1 text-[var(--app-text-secondary)]"
               >
                 {description}
               </p>

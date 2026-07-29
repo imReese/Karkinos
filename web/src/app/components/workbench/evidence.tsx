@@ -80,13 +80,13 @@ export function ExceptionList({
             <StatusBadge tone={item.severity}>
               {item.statusLabel ?? item.severity}
             </StatusBadge>
-            <h3 className="text-sm font-semibold text-[var(--app-text)]">
+            <h3 className="app-type-subsection-title text-[var(--app-text)]">
               {item.title}
             </h3>
           </div>
           <dl
             className={cn(
-              'grid text-xs sm:grid-cols-2',
+              'app-type-compact grid sm:grid-cols-2',
               density === 'compact' ? 'mt-1.5 gap-x-3 gap-y-1' : 'mt-2 gap-1.5',
             )}
           >
@@ -120,10 +120,10 @@ function EvidenceRow({
 }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--app-text-tertiary)]">
+      <dt className="app-type-label font-semibold text-[var(--app-text-tertiary)]">
         {label}
       </dt>
-      <dd className="mt-0.5 leading-[18px] text-[var(--app-text-secondary)] [overflow-wrap:anywhere]">
+      <dd className="mt-0.5 text-[var(--app-text-secondary)] [overflow-wrap:anywhere]">
         {children}
       </dd>
     </div>
@@ -179,7 +179,7 @@ export function GateMatrix({
       )}
     >
       <table
-        className="w-full border-collapse text-left text-xs"
+        className="app-type-compact w-full border-collapse text-left"
         data-mobile-layout="stacked"
         data-testid="gate-matrix-responsive-table"
       >
@@ -209,7 +209,7 @@ export function GateMatrix({
             >
               <th
                 scope="row"
-                className="col-start-1 px-0 py-0 text-sm font-semibold sm:table-cell sm:px-3 sm:py-2.5 sm:text-xs"
+                className="col-start-1 px-0 py-0 text-sm font-semibold sm:table-cell sm:px-3 sm:py-2.5 sm:text-[length:var(--app-font-size-compact)]"
               >
                 {item.gate}
               </th>
@@ -219,13 +219,13 @@ export function GateMatrix({
                 </StatusBadge>
               </td>
               <td className="col-span-2 px-0 py-0 text-[var(--app-text-secondary)] sm:table-cell sm:px-3 sm:py-2.5">
-                <span className="mb-0.5 block text-[11px] font-semibold text-[var(--app-text-tertiary)] sm:hidden">
+                <span className="app-type-label mb-0.5 block font-semibold text-[var(--app-text-tertiary)] sm:hidden">
                   {labels.reason}
                 </span>
                 {item.reason}
               </td>
               <td className="col-span-2 px-0 py-0 text-[var(--app-text-secondary)] sm:table-cell sm:px-3 sm:py-2.5">
-                <span className="mb-0.5 block text-[11px] font-semibold text-[var(--app-text-tertiary)] sm:hidden">
+                <span className="app-type-label mb-0.5 block font-semibold text-[var(--app-text-tertiary)] sm:hidden">
                   {labels.evidence}
                 </span>
                 {item.evidence}
@@ -297,20 +297,20 @@ export function Timeline({
             aria-hidden="true"
           />
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <time className="font-mono text-[11px] tabular-nums text-[var(--app-text-tertiary)]">
+            <time className="app-type-micro font-mono tabular-nums text-[var(--app-text-tertiary)]">
               {item.timestamp}
             </time>
-            <h3 className="text-sm font-semibold text-[var(--app-text)]">
+            <h3 className="app-type-subsection-title text-[var(--app-text)]">
               {item.title}
             </h3>
           </div>
           {item.description ? (
-            <p className="mt-1 text-xs leading-5 text-[var(--app-text-secondary)]">
+            <p className="app-type-body mt-1 text-[var(--app-text-secondary)]">
               {item.description}
             </p>
           ) : null}
           {item.evidence ? (
-            <div className="mt-1 font-mono text-[11px] leading-4 text-[var(--app-text-tertiary)] [overflow-wrap:anywhere]">
+            <div className="app-type-micro mt-1 font-mono text-[var(--app-text-tertiary)] [overflow-wrap:anywhere]">
               {item.evidence}
             </div>
           ) : null}

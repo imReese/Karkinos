@@ -38,6 +38,9 @@ const RESEARCH_TASK = source(
 const AI_RESEARCH = source(
   'features/ai-research/components/ai-research-page.tsx',
 );
+const HOLDING_DETAIL = source(
+  'features/portfolio/components/holding-detail-page.tsx',
+);
 const STRATEGY_RESEARCH = source(
   'features/ai-research/components/strategy-hypothesis-panel.tsx',
 );
@@ -77,6 +80,16 @@ describe('remaining route workbench contract', () => {
       expect(page).toContain('WorkspaceHeader');
       expect(page).toContain('MetricStrip');
     }
+  });
+
+  it('keeps primary route sections on the semantic 18px title role', () => {
+    expect(ACTIVITY_FEED).toContain('app-type-section-title mt-2');
+    expect(AI_RESEARCH).toContain('app-type-section-title');
+    expect(BACKTEST).toContain('app-type-section-title mt-1');
+    expect(ACCOUNT_TRUTH).toContain('app-type-section-title');
+    expect(HOLDING_DETAIL).toContain(
+      'app-type-section-title mb-2 text-[var(--app-text)]',
+    );
   });
 
   it('keeps controlled review first and makes Activity history primary by viewport', () => {

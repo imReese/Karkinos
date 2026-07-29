@@ -41,6 +41,9 @@ test('keeps canonical context neutral until persisted queries settle', async () 
   );
 
   const metrics = screen.getByTestId('ai-research-context-metrics');
+  expect(metrics.querySelector('h2')?.className).toContain(
+    'app-type-section-title',
+  );
   const checking = await screen.findAllByText('Checking');
   expect(checking).toHaveLength(4);
   expect(checking.filter((element) => element.tagName === 'DD')).toHaveLength(

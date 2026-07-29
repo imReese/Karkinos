@@ -884,7 +884,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
           </div>
           <h2
             data-testid="holding-summary-title"
-            className="mb-2 text-sm font-semibold text-[var(--app-text)]"
+            className="app-type-section-title mb-2 text-[var(--app-text)]"
           >
             {labels.summary}
           </h2>

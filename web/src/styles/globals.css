@@ -20,6 +20,22 @@
   --app-font-weight-semibold: 600;
   --app-font-weight-title: 700;
   --app-font-weight-brand: 750;
+  --app-font-size-page-title-mobile: 24px;
+  --app-font-size-page-title: 28px;
+  --app-font-size-section-title: 18px;
+  --app-font-size-subsection-title: 15px;
+  --app-font-size-body: 14px;
+  --app-font-size-compact: 13px;
+  --app-font-size-label: 12px;
+  --app-font-size-micro: 11px;
+  --app-line-height-page-title-mobile: 28px;
+  --app-line-height-page-title: 32px;
+  --app-line-height-section-title: 24px;
+  --app-line-height-subsection-title: 22px;
+  --app-line-height-body: 22px;
+  --app-line-height-compact: 20px;
+  --app-line-height-label: 18px;
+  --app-line-height-micro: 16px;
   --app-letter-spacing-product: 0.18em;
   --app-motion-fast: 120ms;
   --app-motion-standard: 160ms;
@@ -325,7 +341,7 @@ textarea {
 
 .app-toolbar-mode > span {
   color: var(--app-text-tertiary);
-  font-size: 9px;
+  font-size: var(--app-font-size-micro);
   font-weight: var(--app-font-weight-semibold);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -335,7 +351,7 @@ textarea {
   max-width: 160px;
   overflow: hidden;
   color: var(--app-text);
-  font-size: 11px;
+  font-size: var(--app-font-size-compact);
   font-weight: var(--app-font-weight-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -353,7 +369,7 @@ textarea {
   background: var(--app-surface-raised);
   padding-inline: 9px;
   color: var(--app-text-secondary);
-  font-size: 11px;
+  font-size: var(--app-font-size-compact);
   text-align: left;
   transition:
     border-color var(--app-motion-fast) var(--app-ease-standard),
@@ -389,7 +405,7 @@ textarea {
   padding: 2px 5px;
   color: var(--app-text-tertiary);
   font-family: var(--app-font-mono);
-  font-size: 9px;
+  font-size: var(--app-font-size-micro);
   font-weight: var(--app-font-weight-medium);
 }
 
@@ -471,7 +487,7 @@ textarea {
   padding: 5px 8px;
   color: var(--app-text-tertiary);
   font-family: var(--app-font-mono);
-  font-size: 9px;
+  font-size: var(--app-font-size-micro);
   font-weight: var(--app-font-weight-medium);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -486,7 +502,7 @@ textarea {
   border-radius: var(--app-radius-control);
   padding-inline: 9px;
   color: var(--app-text-secondary);
-  font-size: 12px;
+  font-size: var(--app-font-size-compact);
   font-weight: var(--app-font-weight-medium);
 }
 
@@ -508,7 +524,7 @@ textarea {
 .app-command-empty {
   padding: 28px 12px;
   color: var(--app-text-tertiary);
-  font-size: 12px;
+  font-size: var(--app-font-size-compact);
   text-align: center;
 }
 
@@ -534,9 +550,9 @@ textarea {
   border: 0;
   background: transparent;
   color: var(--app-text-tertiary);
-  font-size: 10px;
+  font-size: var(--app-font-size-label);
   font-weight: var(--app-font-weight-semibold);
-  line-height: 1;
+  line-height: var(--app-line-height-label);
   transition:
     color var(--app-motion-standard) var(--app-ease-standard),
     background-color var(--app-motion-standard) var(--app-ease-standard);
@@ -549,6 +565,27 @@ textarea {
 
 .app-mobile-primary-item-active {
   color: var(--app-accent);
+}
+
+.app-language-control {
+  font-size: var(--app-font-size-compact);
+  line-height: var(--app-line-height-compact);
+}
+
+.app-status-chip > button {
+  font-size: var(--app-font-size-label);
+  line-height: var(--app-line-height-label);
+}
+
+.app-status-chip > button > span:first-child,
+.app-status-chip [data-status-chip-part='meta'] {
+  font-size: var(--app-font-size-micro);
+  line-height: var(--app-line-height-micro);
+}
+
+.app-status-chip [data-status-chip-part='value'] {
+  font-size: var(--app-font-size-label);
+  line-height: var(--app-line-height-label);
 }
 
 .account-overview-summary {
@@ -691,8 +728,10 @@ textarea {
 .app-kicker {
   color: var(--app-text-secondary);
   font-family: var(--app-font-mono);
+  font-size: var(--app-font-size-micro);
   font-variant-numeric: tabular-nums;
   font-weight: var(--app-font-weight-medium);
+  line-height: var(--app-line-height-micro);
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -702,7 +741,7 @@ textarea {
   align-items: center;
   white-space: nowrap;
   color: var(--app-text);
-  font-size: 11.5px;
+  font-size: var(--app-font-size-label);
   font-weight: var(--app-font-weight-brand);
   line-height: 1;
   letter-spacing: var(--app-letter-spacing-product);
@@ -792,7 +831,7 @@ textarea {
   gap: 8px;
   color: var(--app-accent);
   font-family: var(--app-font-mono);
-  font-size: 10px;
+  font-size: var(--app-font-size-micro);
   font-weight: var(--app-font-weight-semibold);
   letter-spacing: 0.1em;
   line-height: 1.4;
@@ -809,28 +848,29 @@ textarea {
 
 .app-workspace-title {
   color: var(--app-text);
-  font-size: 1.5rem;
+  font-size: var(--app-font-size-page-title-mobile);
   font-weight: var(--app-font-weight-title);
   letter-spacing: -0.035em;
-  line-height: 1.12;
+  line-height: var(--app-line-height-page-title-mobile);
 }
 
 .app-workspace-description {
   color: var(--app-text-secondary);
-  font-size: 13.5px;
-  line-height: 1.55;
+  font-size: var(--app-font-size-body);
+  line-height: var(--app-line-height-body);
 }
 
 .app-workspace-context {
   color: var(--app-text-tertiary);
   font-family: var(--app-font-mono);
-  font-size: 10.5px;
-  line-height: 1.45;
+  font-size: var(--app-font-size-micro);
+  line-height: var(--app-line-height-micro);
 }
 
 @media (min-width: 640px) {
   .app-workspace-title {
-    font-size: 1.75rem;
+    font-size: var(--app-font-size-page-title);
+    line-height: var(--app-line-height-page-title);
   }
 }
 
@@ -841,17 +881,24 @@ textarea {
 }
 
 .app-page-title {
-  font-size: 1.5rem;
+  font-size: var(--app-font-size-page-title-mobile);
   font-weight: var(--app-font-weight-title);
-  line-height: 1.25;
+  line-height: var(--app-line-height-page-title-mobile);
   letter-spacing: -0.025em;
 }
 
 .app-page-subtitle {
   max-width: 42rem;
   color: var(--app-text-secondary);
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: var(--app-font-size-body);
+  line-height: var(--app-line-height-body);
+}
+
+@media (min-width: 640px) {
+  .app-page-title {
+    font-size: var(--app-font-size-page-title);
+    line-height: var(--app-line-height-page-title);
+  }
 }
 
 [lang^='zh'] .app-page-title,
@@ -890,9 +937,9 @@ textarea {
 }
 
 .app-card-title {
-  font-size: 1.05rem;
-  font-weight: 700;
-  line-height: 1.22;
+  font-size: var(--app-font-size-section-title);
+  font-weight: var(--app-font-weight-semibold);
+  line-height: var(--app-line-height-section-title);
   letter-spacing: -0.025em;
 }
 
@@ -903,15 +950,15 @@ textarea {
 }
 
 .app-toolbar-section-title {
-  font-size: 0.9375rem;
+  font-size: var(--app-font-size-subsection-title);
   font-weight: 600;
-  line-height: 1.25;
+  line-height: var(--app-line-height-subsection-title);
   letter-spacing: -0.015em;
 }
 
 .app-tier-4-label {
   color: var(--app-text-secondary);
-  font-size: 11px;
+  font-size: var(--app-font-size-label);
   font-weight: 500;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -1021,10 +1068,42 @@ textarea {
   border-bottom: 1px solid var(--app-divider);
   background: var(--app-surface-raised);
   font-family: inherit;
-  font-size: 11px;
+  font-size: var(--app-font-size-label);
   font-weight: 600;
   letter-spacing: 0.01em;
   text-transform: none;
+}
+
+.app-type-section-title {
+  font-size: var(--app-font-size-section-title);
+  font-weight: var(--app-font-weight-semibold);
+  line-height: var(--app-line-height-section-title);
+}
+
+.app-type-subsection-title {
+  font-size: var(--app-font-size-subsection-title);
+  font-weight: var(--app-font-weight-semibold);
+  line-height: var(--app-line-height-subsection-title);
+}
+
+.app-type-body {
+  font-size: var(--app-font-size-body);
+  line-height: var(--app-line-height-body);
+}
+
+.app-type-compact {
+  font-size: var(--app-font-size-compact);
+  line-height: var(--app-line-height-compact);
+}
+
+.app-type-label {
+  font-size: var(--app-font-size-label);
+  line-height: var(--app-line-height-label);
+}
+
+.app-type-micro {
+  font-size: var(--app-font-size-micro);
+  line-height: var(--app-line-height-micro);
 }
 
 .app-data-table td {
@@ -1259,8 +1338,9 @@ h3 {
   align-items: center;
   gap: 5px;
   font-family: var(--app-font-mono);
-  font-size: 10px;
+  font-size: var(--app-font-size-micro);
   font-variant-numeric: tabular-nums;
+  line-height: var(--app-line-height-micro);
   color: var(--app-text-tertiary);
 }
 
@@ -1547,7 +1627,7 @@ h3 {
   border-radius: var(--app-radius-control);
   background: transparent;
   color: var(--app-text-secondary);
-  font-size: 10px;
+  font-size: var(--app-font-size-micro);
   font-weight: var(--app-font-weight-semibold);
   transition:
     border-color var(--app-motion-fast) var(--app-ease-standard),
@@ -1608,7 +1688,7 @@ h3 {
   display: grid;
   align-items: center;
   gap: clamp(40px, 6vw, 88px);
-  padding-block: clamp(44px, 4vw, 52px);
+  padding-block: clamp(40px, 3.6vw, 46px);
 }
 
 .app-public-hero-copy {
@@ -1717,7 +1797,7 @@ h3 {
 .app-public-route-identity small {
   overflow: hidden;
   color: var(--app-text-tertiary);
-  font-size: 9px;
+  font-size: var(--app-font-size-micro);
   font-weight: var(--app-font-weight-medium);
   letter-spacing: 0.06em;
   text-overflow: ellipsis;
@@ -1728,7 +1808,7 @@ h3 {
 .app-public-route-identity code {
   color: var(--app-text);
   font-family: var(--app-font-mono);
-  font-size: 10px;
+  font-size: var(--app-font-size-micro);
 }
 
 .app-public-route-identity > svg {
@@ -1783,7 +1863,7 @@ h3 {
 .app-public-preview-metrics dt,
 .app-public-priority-preview dt {
   color: var(--app-text-tertiary);
-  font-size: 9px;
+  font-size: var(--app-font-size-micro);
   font-weight: var(--app-font-weight-medium);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1800,7 +1880,7 @@ h3 {
 .app-public-preview-metrics small {
   overflow: hidden;
   color: var(--app-text-tertiary);
-  font-size: 9px;
+  font-size: var(--app-font-size-micro);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1840,7 +1920,7 @@ h3 {
 .app-public-priority-preview dd {
   margin: 0;
   color: var(--app-text-secondary);
-  font-size: 10px;
+  font-size: var(--app-font-size-micro);
   line-height: 1.55;
 }
 
@@ -1873,7 +1953,7 @@ h3 {
 .app-public-evidence-index {
   color: var(--app-text-tertiary);
   font-family: var(--app-font-mono);
-  font-size: 10px;
+  font-size: var(--app-font-size-micro);
 }
 
 .app-public-evidence-node {
@@ -1903,7 +1983,7 @@ h3 {
 .app-public-evidence-copy small {
   overflow: hidden;
   color: var(--app-text-tertiary);
-  font-size: 10px;
+  font-size: var(--app-font-size-micro);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1911,7 +1991,7 @@ h3 {
 .app-public-evidence-state {
   color: var(--app-accent);
   font-family: var(--app-font-mono);
-  font-size: 9px;
+  font-size: var(--app-font-size-micro);
   font-weight: var(--app-font-weight-medium);
   letter-spacing: 0.04em;
   text-align: right;
@@ -1942,7 +2022,7 @@ h3 {
 
 .app-public-evidence-boundary small {
   color: var(--app-text-tertiary);
-  font-size: 9px;
+  font-size: var(--app-font-size-micro);
   font-weight: var(--app-font-weight-medium);
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -1955,7 +2035,7 @@ h3 {
 
 .app-public-evidence-boundary span span {
   color: var(--app-text-secondary);
-  font-size: 10px;
+  font-size: var(--app-font-size-micro);
   line-height: 1.5;
 }
 
@@ -1963,7 +2043,7 @@ h3 {
   padding: 10px clamp(20px, 3.4vw, 32px) 16px;
   border-top: 1px solid var(--app-divider);
   color: var(--app-text-tertiary);
-  font-size: 10px;
+  font-size: var(--app-font-size-micro);
   line-height: 1.55;
 }
 
@@ -2021,7 +2101,7 @@ h3 {
 .app-public-workflow li > span {
   color: var(--app-accent);
   font-family: var(--app-font-mono);
-  font-size: 10px;
+  font-size: var(--app-font-size-micro);
   font-weight: var(--app-font-weight-medium);
   letter-spacing: 0.08em;
 }
@@ -2037,7 +2117,7 @@ h3 {
   overflow: hidden;
   color: var(--app-text-tertiary);
   font-family: var(--app-font-mono);
-  font-size: 9px;
+  font-size: var(--app-font-size-micro);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2112,7 +2192,7 @@ h3 {
 .app-public-principle-list dt span {
   color: var(--app-accent);
   font-family: var(--app-font-mono);
-  font-size: 10px;
+  font-size: var(--app-font-size-micro);
   font-weight: var(--app-font-weight-medium);
 }
 
@@ -2200,7 +2280,7 @@ h3 {
   margin: 0 0 7px;
   color: var(--app-text);
   font-family: var(--app-font-mono);
-  font-size: 10px;
+  font-size: var(--app-font-size-micro);
   font-weight: var(--app-font-weight-medium);
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -2230,7 +2310,7 @@ h3 {
   border-top: 1px solid var(--app-divider);
   padding-block: 18px 26px;
   color: var(--app-text-tertiary);
-  font-size: 10px;
+  font-size: var(--app-font-size-micro);
   line-height: 1.5;
 }
 
@@ -2365,7 +2445,7 @@ h3 {
   }
 
   .app-public-product-mark {
-    font-size: 10px;
+    font-size: var(--app-font-size-micro);
   }
 
   .app-public-hero-title {

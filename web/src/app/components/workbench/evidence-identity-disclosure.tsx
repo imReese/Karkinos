@@ -66,7 +66,7 @@ export function EvidenceIdentityDisclosure({
         type="button"
         className={
           className ??
-          'app-button-secondary inline-flex min-h-8 items-center rounded-[var(--app-radius-control)] px-2.5 text-xs font-semibold'
+          'app-button-secondary app-type-compact inline-flex min-h-8 items-center rounded-[var(--app-radius-control)] px-2.5 font-semibold'
         }
         aria-expanded={open}
         aria-haspopup="dialog"
@@ -94,12 +94,12 @@ export function EvidenceIdentityDisclosure({
                 key={`${String(field.label)}-${index}`}
                 className="grid min-w-0 gap-1 py-3 sm:grid-cols-[minmax(0,9rem)_minmax(0,1fr)] sm:gap-4"
               >
-                <dt className="text-xs font-medium text-[var(--app-text-secondary)]">
+                <dt className="app-type-label font-medium text-[var(--app-text-secondary)]">
                   {field.label}
                 </dt>
                 <dd className="flex min-w-0 items-start justify-between gap-2">
                   <span
-                    className={`min-w-0 break-all text-xs leading-5 text-[var(--app-text)] ${field.mono ? 'font-mono tabular-nums' : ''}`}
+                    className={`app-type-compact min-w-0 break-all text-[var(--app-text)] ${field.mono ? 'font-mono tabular-nums' : ''}`}
                   >
                     {field.value}
                   </span>
