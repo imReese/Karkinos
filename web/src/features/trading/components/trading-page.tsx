@@ -2729,7 +2729,7 @@ function OrderQueue({
     <div className="mt-5 min-w-0 max-w-full overflow-x-visible md:overflow-x-auto md:overscroll-x-contain">
       <table className="block w-full text-left text-sm md:table md:min-w-[1180px] md:table-fixed">
         <thead className="hidden md:table-header-group">
-          <tr className="app-kicker border-b border-[var(--app-divider)] text-[11px] uppercase tracking-[0.12em]">
+          <tr className="app-kicker app-type-overline border-b border-[var(--app-divider)]">
             <th className="w-[150px] px-3 py-3">{labels.symbol}</th>
             <th className="w-[90px] px-3 py-3">{labels.side}</th>
             <th className="w-[100px] px-3 py-3 text-right">

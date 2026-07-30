@@ -70,9 +70,7 @@ export function OrderApprovalTable() {
     >
       <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <div className="app-kicker text-xs uppercase tracking-[0.18em]">
-            {labels.kicker}
-          </div>
+          <div className="app-kicker app-type-overline">{labels.kicker}</div>
           <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-2">
             <h2 className="text-lg font-semibold">{labels.title}</h2>
             <span
@@ -100,7 +98,7 @@ export function OrderApprovalTable() {
         <div className="mt-4 min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
           <table className="min-w-[920px] table-fixed text-left text-sm">
             <thead>
-              <tr className="app-kicker border-b border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] text-[11px] uppercase tracking-[0.16em]">
+              <tr className="app-kicker app-type-overline border-b border-[color-mix(in_srgb,var(--app-border)_32%,transparent)]">
                 <th className="w-[180px] px-3 py-3">{labels.symbol}</th>
                 <th className="w-[90px] px-3 py-3">{labels.side}</th>
                 <th className="w-[110px] px-3 py-3">{labels.quantity}</th>
