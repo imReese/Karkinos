@@ -4389,7 +4389,7 @@ export function MarketPage() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+                    <div className="app-kicker app-type-overline">
                       {copy.market.health}
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -4613,7 +4613,7 @@ export function MarketPage() {
             </div>
             <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
               <div className="app-workbench-section min-w-0 p-4 sm:p-5">
-                <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+                <div className="app-kicker app-type-overline">
                   {copy.market.notesTitle}
                 </div>
                 {selectedItem ? (
@@ -4774,7 +4774,7 @@ export function MarketPage() {
               </div>
 
               <div className="app-workbench-section min-w-0 p-4 sm:p-5">
-                <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+                <div className="app-kicker app-type-overline">
                   {copy.market.notesTitle}
                 </div>
                 <FilterBar
@@ -4871,12 +4871,12 @@ export function MarketPage() {
                             <div className="text-sm font-semibold">
                               {note.title}
                             </div>
-                            <div className="app-kicker mt-2 text-[11px] uppercase tracking-[0.16em]">
+                            <div className="app-kicker app-type-overline mt-2">
                               {getNoteTypeLabel(copy, note.entry_kind)} ·{' '}
                               {getPriorityLabel(copy, note.priority)}
                               {note.event_date ? ` · ${note.event_date}` : ''}
                             </div>
-                            <div className="app-kicker mt-2 text-[11px] uppercase tracking-[0.16em]">
+                            <div className="app-kicker app-type-overline mt-2">
                               {copy.market.noteUpdatedAt} ·{' '}
                               <time dateTime={note.updated_at}>
                                 {formatTimestamp(note.updated_at)}
@@ -5615,9 +5615,7 @@ function ExplainabilityWorkspace({
   return (
     <div className="space-y-5">
       <section className="space-y-3" data-testid="risk-equity-bridge-section">
-        <h2 className="app-kicker text-xs uppercase tracking-[0.18em]">
-          {title}
-        </h2>
+        <h2 className="app-kicker app-type-overline">{title}</h2>
         {equityBridge.length > 0 ? (
           <MetricStrip
             ariaLabel={title}
@@ -5652,9 +5650,7 @@ function ExplainabilityWorkspace({
         data-testid="risk-explainability-top-grid"
       >
         <section className="min-w-0 space-y-3">
-          <h2 className="app-kicker text-xs uppercase tracking-[0.18em]">
-            {stateLabelRecent}
-          </h2>
+          <h2 className="app-kicker app-type-overline">{stateLabelRecent}</h2>
           {explainability?.recent_drivers?.length ? (
             <ol
               className="max-h-[620px] divide-y divide-[var(--app-divider)] overflow-y-auto border-y border-[var(--app-divider)]"
@@ -5701,7 +5697,7 @@ function ExplainabilityWorkspace({
                     </div>
                   ) : null}
                   {item.timestamp ? (
-                    <time className="app-kicker mt-2 block text-[11px] tracking-[0.08em]">
+                    <time className="app-kicker app-type-micro mt-2 block">
                       {formatAuditTimestamp(item.timestamp)}
                     </time>
                   ) : null}
@@ -5714,7 +5710,7 @@ function ExplainabilityWorkspace({
         </section>
 
         <section className="min-w-0 space-y-3">
-          <h2 className="app-kicker text-xs uppercase tracking-[0.18em]">
+          <h2 className="app-kicker app-type-overline">
             {stateLabelPositions}
           </h2>
           {explainability?.positions?.length ? (
@@ -5750,7 +5746,7 @@ function ExplainabilityWorkspace({
                     </span>
                   </div>
                   {item.last_activity_at ? (
-                    <time className="app-kicker text-[11px] tracking-[0.08em] sm:text-right">
+                    <time className="app-kicker app-type-micro sm:text-right">
                       {formatAuditTimestamp(item.last_activity_at)}
                     </time>
                   ) : null}
@@ -5764,7 +5760,7 @@ function ExplainabilityWorkspace({
       </div>
 
       <section className="space-y-3" data-testid="risk-impact-timeline-section">
-        <h2 className="app-kicker text-xs uppercase tracking-[0.18em]">
+        <h2 className="app-kicker app-type-overline">
           {copy.explainability.timeline}
         </h2>
         {filters ? <div className="mt-4">{filters}</div> : null}
@@ -5858,7 +5854,7 @@ function MarketDataOperationsPanel({
     <div className="space-y-3">
       <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
-          <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+          <div className="app-kicker app-type-overline">
             {copy.market.dataOperations}
           </div>
           <p className="app-muted mt-2 break-words text-sm leading-6">
