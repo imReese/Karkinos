@@ -414,7 +414,7 @@ export function ResearchTaskPanel({
           </>
         ) : (
           <div className="min-w-0">
-            <div className="app-kicker hidden text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em] sm:block">
+            <div className="app-kicker app-type-overline hidden sm:block">
               {copy.kicker}
             </div>
             <h2
@@ -546,13 +546,13 @@ export function ResearchTaskPanel({
                       className="min-w-0 border-t border-[var(--app-divider)] pt-3"
                       key={step.title}
                     >
-                      <span className="font-mono text-[length:var(--app-font-size-micro)] font-semibold tracking-[0.12em] text-[var(--app-accent)]">
+                      <span className="app-type-micro font-mono font-semibold text-[var(--app-accent)]">
                         {String(index + 1).padStart(2, '0')}
                       </span>
                       <strong className="mt-1 block text-xs font-semibold text-[var(--app-text)]">
                         {step.title}
                       </strong>
-                      <span className="app-muted mt-1 block text-[11px] leading-[1.55]">
+                      <span className="app-muted app-type-micro mt-1 block">
                         {step.detail}
                       </span>
                     </li>
@@ -939,7 +939,7 @@ function FixtureAnalysisSummary({
       </div>
       {reportSummary ? (
         <div className="mt-3 rounded-xl border border-[var(--app-border)] p-3">
-          <div className="text-[length:var(--app-font-size-micro)] font-semibold uppercase tracking-[0.12em] text-[var(--app-muted)]">
+          <div className="app-type-overline text-[var(--app-muted)]">
             {copy.report}
           </div>
           <p className="mt-1 text-xs leading-5 text-[var(--app-text)]">
@@ -1009,7 +1009,7 @@ function FixtureAnalysisReviewControl({
       aria-label={copy.analysisReview}
       className="mt-4 rounded-xl border border-[var(--app-border)] p-3"
     >
-      <div className="text-[length:var(--app-font-size-micro)] font-semibold uppercase tracking-[0.12em] text-[var(--app-muted)]">
+      <div className="app-type-overline text-[var(--app-muted)]">
         {copy.analysisReview}
       </div>
       <p className="app-muted mt-1 text-xs leading-5">
@@ -1159,9 +1159,7 @@ function BoundaryBadge({ label }: { label: string }) {
 function EvidenceIdentity({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-[length:var(--app-font-size-micro)] uppercase tracking-[0.12em] text-[var(--app-muted)]">
-        {label}
-      </dt>
+      <dt className="app-type-overline text-[var(--app-muted)]">{label}</dt>
       <dd
         className="mt-1 truncate font-mono text-[var(--app-text)]"
         title={value}
