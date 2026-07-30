@@ -7,7 +7,7 @@ import {
   Outlet,
   RouterProvider,
 } from '@tanstack/react-router';
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test, vi } from 'vitest';
 
@@ -139,9 +139,7 @@ function installMatchMediaMock(initialDark = false): MatchMediaMock {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation((query: string) => ({
-      matches: query.includes('prefers-color-scheme: dark')
-        ? darkMode
-        : !darkMode,
+      matches: query.includes('prefers-color-scheme: dark') ? darkMode : false,
       media: query,
       onchange: null,
       addEventListener: vi.fn(
@@ -334,6 +332,13 @@ test('consolidates mobile display preferences behind one compact control', async
   expect(document.documentElement.dataset.theme).toBe('dark');
   expect(window.localStorage.getItem('karkinos.theme')).toBe('dark');
   expect(toggle.getAttribute('aria-expanded')).toBe('false');
+  expect(document.activeElement).toBe(toggle);
+  expect(preferences.getAttribute('data-motion-state')).toBe('closing');
+  expect(preferences.getAttribute('aria-hidden')).toBe('true');
+  expect(preferences.hasAttribute('inert')).toBe(true);
+  await waitFor(() =>
+    expect(document.querySelector('.app-shell-popover')).toBeNull(),
+  );
 });
 
 test('keeps one branded lockup per responsive shell context', async () => {
@@ -490,11 +495,25 @@ test('opens a keyboard-accessible route command menu', async () => {
   expect(document.activeElement).toBe(search);
 
   await user.type(search, 'risk');
-  expect(within(dialog).getByRole('link', { name: 'Risk' })).toBeTruthy();
+  const riskLink = within(dialog).getByRole('link', { name: 'Risk' });
+  expect(riskLink).toBeTruthy();
   expect(within(dialog).queryByRole('link', { name: 'Portfolio' })).toBeNull();
+
+  await user.tab({ shift: true });
+  expect(document.activeElement).toBe(riskLink);
+  await user.tab();
+  expect(document.activeElement).toBe(search);
 
   await user.keyboard('{Escape}');
   expect(screen.queryByRole('dialog', { name: 'Go to workspace' })).toBeNull();
+  expect(
+    document
+      .querySelector('.app-command-backdrop')
+      ?.getAttribute('data-motion-state'),
+  ).toBe('closing');
+  await waitFor(() =>
+    expect(document.querySelector('.app-command-backdrop')).toBeNull(),
+  );
 });
 
 test('surfaces compact persisted status in the desktop footer', async () => {
@@ -622,6 +641,18 @@ test('uses full language names and fluid menu width', async () => {
   expect(
     await screen.findByRole('menuitemradio', { name: '中文' }),
   ).toBeTruthy();
+
+  await user.keyboard('{Escape}');
+  expect(document.activeElement).toBe(languageButton);
+  const closingMenu = document.querySelector(
+    '.app-shell-popover[role="menu"]',
+  ) as HTMLElement | null;
+  expect(closingMenu).toBeTruthy();
+  expect(closingMenu?.getAttribute('data-motion-state')).toBe('closing');
+  expect(closingMenu?.getAttribute('aria-hidden')).toBe('true');
+  await waitFor(() =>
+    expect(document.querySelector('.app-shell-popover')).toBeNull(),
+  );
 });
 
 test('shows cached quote status and valuation time from account overview', async () => {
@@ -655,6 +686,17 @@ test('shows cached quote status and valuation time from account overview', async
   expect(screen.queryByText('行情实时')).toBeNull();
   expect(screen.queryByText('估值已启用')).toBeNull();
   expect(screen.queryByText('账本已同步')).toBeNull();
+
+  await user.click(valuationStatus);
+  const closingPopover = document.querySelector(
+    '.app-status-popover-root',
+  ) as HTMLElement | null;
+  expect(closingPopover?.getAttribute('data-motion-state')).toBe('closing');
+  expect(closingPopover?.getAttribute('aria-hidden')).toBe('true');
+  expect(closingPopover?.hasAttribute('inert')).toBe(true);
+  await waitFor(() =>
+    expect(document.querySelector('.app-status-popover-root')).toBeNull(),
+  );
 });
 
 test('keeps compact header status read-only and provider-free', async () => {

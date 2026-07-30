@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 export const APP_MOTION = {
   chartDurationMs: 320,
   easing: 'ease-out',
+  exitDurationMs: 180,
   reducedMotionQuery: '(prefers-reduced-motion: reduce)',
 } as const;
 
@@ -38,4 +39,33 @@ export function useReducedMotion() {
   }, []);
 
   return reducedMotion;
+}
+
+export function useMotionPresence(
+  open: boolean,
+  exitDurationMs = APP_MOTION.exitDurationMs,
+) {
+  const reducedMotion = useReducedMotion();
+  const [retained, setRetained] = useState(open);
+
+  useEffect(() => {
+    if (open) {
+      setRetained(true);
+      return undefined;
+    }
+    if (!retained) {
+      return undefined;
+    }
+
+    const timeout = window.setTimeout(
+      () => setRetained(false),
+      reducedMotion ? 0 : exitDurationMs,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [exitDurationMs, open, reducedMotion, retained]);
+
+  return {
+    mounted: open || retained,
+    state: open ? ('open' as const) : ('closing' as const),
+  };
 }

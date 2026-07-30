@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import { createColumnHelper } from '@tanstack/react-table';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 
@@ -412,6 +412,14 @@ test('closes the evidence drawer with Escape and restores focus', async () => {
   await user.keyboard('{Escape}');
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(document.activeElement).toBe(trigger);
+  expect(
+    document
+      .querySelector('.app-evidence-drawer-root')
+      ?.getAttribute('data-motion-state'),
+  ).toBe('closing');
+  await waitFor(() =>
+    expect(document.querySelector('.app-evidence-drawer-root')).toBeNull(),
+  );
 });
 
 test('isolates privileged controls in a controlled action zone', () => {
