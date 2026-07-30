@@ -355,7 +355,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           >
             {navGroups.map((group) => (
               <div key={group.key} className="grid gap-1">
-                <div className="app-nav-group-label app-type-micro px-2 pt-1 pb-1 font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
+                <div className="app-nav-group-label app-type-micro px-2 pt-1 pb-1 font-semibold uppercase text-[var(--app-text-tertiary)]">
                   {group.label[locale]}
                 </div>
                 {group.items.map((item) => {
@@ -875,9 +875,7 @@ function PreferenceMenu({
           aria-label={menuLabel}
           className="absolute right-0 top-[calc(100%+6px)] z-[70] w-[min(18rem,calc(100vw-1.5rem))] rounded-[var(--app-radius-overlay)] border border-[var(--app-border)] bg-[var(--app-surface-overlay)] p-3 shadow-[var(--app-shadow-overlay)]"
         >
-          <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
-            {themeLabel}
-          </div>
+          <div className="app-kicker">{themeLabel}</div>
           <div className="mt-2 grid grid-cols-3 gap-1" role="group">
             {themeOptions.map((option) => {
               const Icon = option.icon;
@@ -888,7 +886,7 @@ function PreferenceMenu({
                   type="button"
                   aria-label={option.label}
                   aria-pressed={active}
-                  className={`inline-flex min-h-9 items-center justify-center gap-1.5 rounded-[var(--app-radius-control)] px-2 text-[11px] font-semibold transition-colors ${
+                  className={`app-type-label inline-flex min-h-11 items-center justify-center gap-1.5 rounded-[var(--app-radius-control)] px-2 font-semibold transition-colors ${
                     active
                       ? 'bg-[var(--app-accent-bg)] text-[var(--app-accent)]'
                       : 'text-[var(--app-text-secondary)] hover:bg-[var(--app-accent-bg)] hover:text-[var(--app-text)]'
@@ -905,9 +903,7 @@ function PreferenceMenu({
             })}
           </div>
           <div className="my-3 border-t border-[var(--app-divider)]" />
-          <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
-            {languageLabel}
-          </div>
+          <div className="app-kicker">{languageLabel}</div>
           <div className="mt-2 grid grid-cols-2 gap-1" role="group">
             {(
               [
@@ -922,7 +918,7 @@ function PreferenceMenu({
                   type="button"
                   aria-label={label}
                   aria-pressed={active}
-                  className={`min-h-9 rounded-[var(--app-radius-control)] px-3 text-xs font-semibold transition-colors ${
+                  className={`app-type-label min-h-11 rounded-[var(--app-radius-control)] px-3 font-semibold transition-colors ${
                     active
                       ? 'bg-[var(--app-accent-bg)] text-[var(--app-accent)]'
                       : 'text-[var(--app-text-secondary)] hover:bg-[var(--app-accent-bg)] hover:text-[var(--app-text)]'
@@ -1187,7 +1183,7 @@ function StatusChip({
             : ''
         }`}
       >
-        <span className="inline-flex h-full shrink-0 items-center px-1.5 text-[length:var(--app-font-size-micro)] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
+        <span className="app-status-chip-label app-type-micro inline-flex h-full shrink-0 items-center px-1.5 font-semibold uppercase text-[var(--app-text-tertiary)]">
           {label}
         </span>
         <span className="grid h-full min-w-0 grid-cols-[12px_minmax(0,auto)_auto_12px] items-center gap-1 px-1 tabular-nums">
@@ -1210,14 +1206,14 @@ function StatusChip({
             )}
           </span>
           <span
-            className="col-start-2 min-w-0 max-w-28 truncate text-[11px] font-semibold text-[var(--app-text)]"
+            className="col-start-2 min-w-0 max-w-28 truncate font-semibold text-[var(--app-text)]"
             data-status-chip-part="value"
           >
             {value}
           </span>
           {meta ? (
             <span
-              className="col-start-3 shrink-0 font-mono text-[length:var(--app-font-size-micro)] font-medium text-[var(--app-text-secondary)]"
+              className="app-type-micro col-start-3 shrink-0 font-mono font-medium text-[var(--app-text-secondary)]"
               data-status-chip-part="meta"
             >
               {meta}
@@ -1269,16 +1265,16 @@ function StatusPopover({
       role="dialog"
       aria-label={title}
     >
-      <div className="mb-2 text-xs font-semibold tracking-[-0.01em] text-[var(--app-text)]">
+      <div className="app-type-label mb-2 font-semibold text-[var(--app-text)]">
         {title}
       </div>
       <div className="grid gap-2">
         {rows.map((row) => (
           <div
             key={`${row.label}-${row.value}`}
-            className="flex items-center justify-between gap-4 text-xs"
+            className="app-type-label flex items-center justify-between gap-4"
           >
-            <span className="text-[11px] font-medium text-[var(--app-text-tertiary)]">
+            <span className="app-type-micro font-medium text-[var(--app-text-tertiary)]">
               {row.label}
             </span>
             <span className="tabular-nums font-medium text-[var(--app-text)]">

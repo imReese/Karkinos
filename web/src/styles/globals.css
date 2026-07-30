@@ -43,6 +43,9 @@
   --app-line-height-label: 18px;
   --app-line-height-micro: 16px;
   --app-letter-spacing-product: 0.18em;
+  --app-letter-spacing-kicker: 0.14em;
+  --app-letter-spacing-overline: 0.08em;
+  --app-letter-spacing-label: 0.01em;
   --app-letter-spacing-metric: -0.015em;
   --app-letter-spacing-primary-metric: -0.045em;
   --app-space-section: 24px;
@@ -365,7 +368,7 @@ textarea {
   color: var(--app-text-tertiary);
   font-size: var(--app-font-size-micro);
   font-weight: var(--app-font-weight-semibold);
-  letter-spacing: 0.08em;
+  letter-spacing: var(--app-letter-spacing-overline);
   text-transform: uppercase;
 }
 
@@ -515,7 +518,7 @@ textarea {
   font-family: var(--app-font-mono);
   font-size: var(--app-font-size-micro);
   font-weight: var(--app-font-weight-medium);
-  letter-spacing: 0.08em;
+  letter-spacing: var(--app-letter-spacing-overline);
   text-transform: uppercase;
 }
 
@@ -620,6 +623,10 @@ textarea {
 .app-status-chip [data-status-chip-part='value'] {
   font-size: var(--app-font-size-label);
   line-height: var(--app-line-height-label);
+}
+
+.app-status-chip-label {
+  letter-spacing: var(--app-letter-spacing-overline);
 }
 
 .account-overview-summary {
@@ -792,7 +799,7 @@ textarea {
   font-variant-numeric: tabular-nums;
   font-weight: var(--app-font-weight-medium);
   line-height: var(--app-line-height-micro);
-  letter-spacing: 0.14em;
+  letter-spacing: var(--app-letter-spacing-kicker);
   text-transform: uppercase;
 }
 
@@ -914,6 +921,7 @@ textarea {
 
 .app-nav-group-label {
   max-height: 28px;
+  letter-spacing: var(--app-letter-spacing-overline);
   transition:
     opacity var(--app-motion-fast) var(--app-ease-standard),
     translate var(--app-motion-deliberate) var(--app-ease-enter),
@@ -1142,9 +1150,10 @@ textarea {
   background: transparent;
   color: var(--app-text-secondary);
   padding: 0 10px;
-  font-size: 11px;
+  font-size: var(--app-font-size-micro);
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: var(--app-letter-spacing-label);
+  line-height: var(--app-line-height-micro);
   cursor: pointer;
   transition:
     background-color var(--app-motion-deliberate) var(--app-ease-enter),
@@ -1191,7 +1200,7 @@ textarea {
   font-family: inherit;
   font-size: var(--app-font-size-label);
   font-weight: 600;
-  letter-spacing: 0.01em;
+  letter-spacing: var(--app-letter-spacing-label);
   text-transform: none;
 }
 
@@ -1328,12 +1337,10 @@ textarea {
 @keyframes app-overlay-enter {
   from {
     opacity: 0;
-    scale: 0.985;
     translate: 0 calc(-1 * var(--app-motion-distance-sm));
   }
   to {
     opacity: 1;
-    scale: 1;
     translate: 0;
   }
 }
