@@ -777,7 +777,7 @@ export function BacktestPage() {
 
       <MetricStrip
         ariaLabel={labels.title}
-        className="app-backtest-context-strip app-backtest-evidence-strip"
+        className="app-backtest-context-strip app-backtest-evidence-strip app-horizontal-scroll-cue"
         items={[
           {
             id: 'strategy',
@@ -885,9 +885,7 @@ export function BacktestPage() {
             data-testid="backtest-parameter-panel"
           >
             <div className="p-4 sm:p-5">
-              <div className="app-kicker text-xs uppercase tracking-[0.16em]">
-                {labels.formKicker}
-              </div>
+              <div className="app-kicker">{labels.formKicker}</div>
               <h2 className="app-card-title mt-1.5">{labels.formTitle}</h2>
               <p className="app-muted mt-2 text-sm leading-6">
                 {labels.formDetail}
@@ -899,9 +897,7 @@ export function BacktestPage() {
                 >
                   <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
-                      <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
-                        {handoffLabels.kicker}
-                      </div>
+                      <div className="app-kicker">{handoffLabels.kicker}</div>
                       <h3 className="app-type-subsection-title mt-1 text-[var(--app-text)]">
                         {handoffLabels.title}
                       </h3>
@@ -1139,9 +1135,7 @@ export function BacktestPage() {
               <>
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
-                    <div className="app-kicker text-xs uppercase tracking-[0.16em]">
-                      {labels.currentKicker}
-                    </div>
+                    <div className="app-kicker">{labels.currentKicker}</div>
                     <h2 className="app-card-title mt-1.5">
                       {labels.currentTitle}
                     </h2>
@@ -1179,7 +1173,7 @@ export function BacktestPage() {
                   >
                     <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0">
-                        <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
+                        <div className="app-kicker">
                           {labels.runContextKicker}
                         </div>
                         <h3 className="app-type-subsection-title mt-1.5 text-[var(--app-text)]">

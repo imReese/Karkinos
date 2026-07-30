@@ -1367,6 +1367,7 @@ test('keeps setup and current results in one primary workspace with mobile tabs'
   expect(setup).toBeTruthy();
   expect(contextMetrics?.className).toContain('app-backtest-evidence-strip');
   expect(contextMetrics?.className).toContain('app-backtest-context-strip');
+  expect(contextMetrics?.className).toContain('app-horizontal-scroll-cue');
   expect(primary.contains(setup)).toBe(true);
   expect(primary.contains(results)).toBe(true);
   expect(tabs.getAttribute('role')).toBe('tablist');

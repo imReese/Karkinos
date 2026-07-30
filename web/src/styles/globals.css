@@ -1945,7 +1945,7 @@ h3 {
 }
 
 [data-workbench-route='backtest']
-  .app-backtest-evidence-strip
+  .app-backtest-evidence-strip:not(.app-backtest-context-strip)
   .app-metric-strip-item
   > .truncate {
   overflow: visible;
@@ -1960,6 +1960,7 @@ h3 {
     grid-auto-columns: minmax(148px, 46vw);
     grid-template-columns: none;
     overflow-x: auto;
+    scroll-padding-inline: 0.75rem;
     scroll-snap-type: inline proximity;
     scrollbar-width: none;
   }

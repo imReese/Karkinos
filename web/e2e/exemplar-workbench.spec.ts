@@ -1109,6 +1109,19 @@ test('exemplar routes remain task-reordered and overflow safe on mobile themes',
       );
 
       if (path === '/backtest') {
+        const contextStrip = page.locator('.app-backtest-context-strip');
+        await expect(contextStrip).toBeVisible();
+        const contextGeometry = await contextStrip.evaluate((element) => ({
+          height: element.getBoundingClientRect().height,
+          horizontalOverflow: element.scrollWidth - element.clientWidth,
+          singleLine: Array.from(element.querySelectorAll('.truncate')).every(
+            (item) => getComputedStyle(item).whiteSpace === 'nowrap',
+          ),
+        }));
+        expect(contextGeometry.height, theme).toBeLessThanOrEqual(96);
+        expect(contextGeometry.horizontalOverflow, theme).toBeGreaterThan(0);
+        expect(contextGeometry.singleLine, theme).toBe(true);
+
         const tabs = page.getByTestId('backtest-mobile-workspace-tabs');
         const resultTab = tabs.getByRole('tab', {
           name: /Results and evidence|结果与证据/,
@@ -1127,21 +1140,25 @@ test('exemplar routes remain task-reordered and overflow safe on mobile themes',
         }
         await expect(resultTab).toHaveAttribute('aria-selected', 'true');
         await expect(page.getByTestId('backtest-result-panel')).toBeVisible();
-        const evidenceText = page.locator(
-          '.app-backtest-evidence-strip .app-metric-strip-item > .truncate',
-        );
-        expect(await evidenceText.count()).toBeGreaterThan(0);
-        expect(
-          await evidenceText.evaluateAll((elements) =>
-            elements.every((element) => {
-              const style = getComputedStyle(element);
-              return (
-                style.whiteSpace === 'normal' && style.overflow === 'visible'
-              );
-            }),
-          ),
-          theme,
-        ).toBe(true);
+        if (hasSavedResults) {
+          const evidenceText = page.locator(
+            '.app-backtest-evidence-strip:not(.app-backtest-context-strip) .app-metric-strip-item > .truncate',
+          );
+          await expect(evidenceText.first()).toBeVisible({ timeout: 15_000 });
+          expect(await evidenceText.count()).toBeGreaterThan(0);
+          expect(
+            await evidenceText.evaluateAll((elements) =>
+              elements.every((element) => {
+                const style = getComputedStyle(element);
+                return (
+                  style.whiteSpace === 'normal' &&
+                  style.overflow === 'visible'
+                );
+              }),
+            ),
+            theme,
+          ).toBe(true);
+        }
       }
     }
   }
