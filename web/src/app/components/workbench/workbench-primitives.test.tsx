@@ -120,6 +120,11 @@ test('renders the workspace hierarchy without routine card nesting', () => {
     'app-type-label',
   );
   expect(
+    within(metrics)
+      .getAllByText('Unavailable')
+      .every((value) => value.className.includes('app-type-metric')),
+  ).toBe(true);
+  expect(
     within(filters).getByText('No authoritative rows').className,
   ).toContain('app-type-compact');
 });

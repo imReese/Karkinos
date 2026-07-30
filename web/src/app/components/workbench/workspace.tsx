@@ -111,7 +111,7 @@ export function MetricStrip({
           </dt>
           <dd
             className={cn(
-              'mt-0.5 truncate text-lg leading-6 font-semibold tracking-[-0.015em] tabular-nums',
+              'app-type-metric mt-0.5 truncate tabular-nums',
               METRIC_TONE_CLASSES[item.tone ?? 'neutral'],
             )}
           >

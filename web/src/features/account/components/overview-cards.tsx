@@ -175,17 +175,17 @@ export function OverviewCards({
             className="account-primary-metric min-w-0 tabular-nums"
             aria-label={copy.overview.cards.totalAssets}
           >
-            <dt className="text-[11px] leading-4 font-medium text-[var(--app-text-secondary)]">
+            <dt className="app-type-micro font-medium text-[var(--app-text-secondary)]">
               {totalAssets.label}
             </dt>
             <dd
               data-testid="overview-total-assets-value"
-              className="account-primary-metric-value mt-1 truncate text-[2rem] leading-9 font-semibold tracking-[-0.045em] text-[var(--app-text)] sm:text-[2.125rem] xl:text-[2.25rem]"
+              className="account-primary-metric-value app-type-primary-metric mt-1 truncate text-[var(--app-text)]"
             >
               {totalAssets.value}
             </dd>
             {totalAssets.detail ? (
-              <div className="mt-1 truncate text-[11px] leading-4 text-[var(--app-text-tertiary)]">
+              <div className="app-type-micro mt-1 truncate text-[var(--app-text-tertiary)]">
                 {totalAssets.detail}
               </div>
             ) : null}
@@ -252,7 +252,7 @@ export function OverviewCards({
             />
           ) : undefined
         }
-        className="mt-2"
+        className="account-overview-evidence mt-2"
       />
     </section>
   );

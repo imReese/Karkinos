@@ -1009,6 +1009,13 @@ test('exemplar routes remain task-reordered and overflow safe on mobile themes',
         0,
       );
       if (path === '/overview') {
+        const queueBox = await page
+          .getByTestId('overview-today-queue')
+          .boundingBox();
+        expect(
+          queueBox?.y ?? Number.POSITIVE_INFINITY,
+          `${path} ${theme} queue first-screen priority`,
+        ).toBeLessThan(680);
         const holdingsBox = await page
           .getByTestId('overview-holdings-section')
           .boundingBox();
