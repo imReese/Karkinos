@@ -294,6 +294,7 @@ test('shell remains local-overflow safe in Latte and Mocha across tablet and mob
       await expect(
         page.getByRole('navigation', { name: 'Navigation', exact: true }),
       ).toBeHidden();
+      await expect(toggle).toBeFocused();
     }
   }
 });

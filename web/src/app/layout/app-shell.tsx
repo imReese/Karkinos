@@ -123,12 +123,17 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [commandOpen, setCommandOpen] = useState(false);
   const [openStatusPanel, setOpenStatusPanel] =
     useState<ToolbarPopoverKey>(null);
+  const mobileNavRef = useRef<HTMLElement | null>(null);
+  const mobileNavCloseRef = useRef<HTMLButtonElement | null>(null);
   const statusRailRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!mobileNavOpen) {
       return;
     }
+
+    const returnFocus = document.activeElement as HTMLElement | null;
+    mobileNavCloseRef.current?.focus();
 
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -137,7 +142,17 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
 
     window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
+    return () => {
+      window.removeEventListener('keydown', handleEscape);
+      const activeElement = document.activeElement as HTMLElement | null;
+      if (
+        !activeElement ||
+        activeElement === document.body ||
+        mobileNavRef.current?.contains(activeElement)
+      ) {
+        returnFocus?.focus();
+      }
+    };
   }, [mobileNavOpen]);
 
   useEffect(() => {
@@ -313,6 +328,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         />
 
         <aside
+          ref={mobileNavRef}
           id="app-shell-navigation"
           data-mobile-open={mobileNavOpen}
           data-desktop-expanded={desktopNavExpanded}
@@ -341,6 +357,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               </div>
             </Link>
             <button
+              ref={mobileNavCloseRef}
               type="button"
               className="app-button-secondary h-8 w-8 rounded-[var(--app-radius-control)] p-0 text-sm xl:hidden"
               aria-label={copy.shell.closeNavigation}
