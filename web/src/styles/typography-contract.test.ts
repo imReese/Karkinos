@@ -31,7 +31,6 @@ const NUMERIC_OVERRIDE_CEILINGS: Readonly<Record<string, number>> = {
   'features/portfolio/components/live-holdings-board.tsx': 1,
   'features/portfolio/components/portfolio-construction-recommendations-card.tsx': 2,
   'features/portfolio/components/positions-table.tsx': 2,
-  'features/settings/components/settings-page.tsx': 5,
   'features/trading/components/kill-switch-panel.tsx': 1,
   'features/trading/components/order-approval-table.tsx': 3,
   'features/trading/components/trading-page.tsx': 2,
