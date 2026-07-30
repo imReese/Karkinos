@@ -637,7 +637,7 @@ export function SettingsPage() {
                   <div className="text-sm font-semibold">
                     {copy.settings.operationsRegister}
                   </div>
-                  <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-2.5 py-1 text-[11px] font-semibold text-[var(--app-soft)]">
+                  <span className="app-type-micro rounded-full border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-2.5 py-1 font-semibold text-[var(--app-soft)]">
                     {latestPersistentQuoteTime}
                   </span>
                 </div>
@@ -1189,7 +1189,7 @@ export function SettingsPage() {
                 <div className="text-sm font-semibold">
                   {copy.settings.safetyRegister}
                 </div>
-                <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-2.5 py-1 text-[11px] font-semibold text-[var(--app-soft)]">
+                <span className="app-type-micro rounded-full border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-2.5 py-1 font-semibold text-[var(--app-soft)]">
                   {copy.settings.noAutoTrading}
                 </span>
               </div>
@@ -1322,9 +1322,7 @@ function StatusMetric({
       title={`${label}: ${value}`}
       aria-label={`${label}: ${value}`}
     >
-      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-75">
-        {label}
-      </div>
+      <div className="app-type-overline opacity-75">{label}</div>
       <div className="mt-2 break-words font-mono text-sm font-semibold tabular-nums">
         {value}
       </div>
@@ -1353,7 +1351,7 @@ function RegisterRow({
       {legacyLabel ? (
         <span className="sr-only" aria-label={`${legacyLabel}: ${value}`} />
       ) : null}
-      <div className="min-w-0 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--app-muted)]">
+      <div className="app-type-overline min-w-0 text-[var(--app-muted)]">
         {label}
       </div>
       <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 justify-self-end text-right">
