@@ -238,6 +238,9 @@ test('keeps the compact calendar toolbar and day cells readable on narrow viewpo
     name: '2026-02-10 · ¥600.00',
   });
   expect(populatedValue.className).toContain('overflow-hidden');
+  expect(populatedValue.className).toContain('transition-colors');
+  expect(populatedValue.className).not.toContain('hover:-translate-y');
+  expect(populatedValue.getAttribute('data-motion')).toBe('stable-fact');
   const cellValue = within(populatedValue).getByTestId(
     'return-calendar-cell-value',
   );

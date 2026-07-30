@@ -1452,7 +1452,8 @@ textarea {
 }
 
 .app-chart-control,
-.app-shell-content :where([role='tab'], button[aria-pressed]) {
+.app-shell-content
+  :where([role='tab'], button[aria-pressed]:not([data-motion='stable-fact'])) {
   transition:
     border-color var(--app-motion-standard) var(--app-ease-standard),
     background-color var(--app-motion-standard) var(--app-ease-standard),
@@ -1463,7 +1464,11 @@ textarea {
 }
 
 .app-chart-control:active,
-.app-shell-content :where([role='tab'], button[aria-pressed]):active {
+.app-shell-content
+  :where(
+    [role='tab'],
+    button[aria-pressed]:not([data-motion='stable-fact'])
+  ):active {
   translate: 0 var(--app-motion-distance-xs);
 }
 

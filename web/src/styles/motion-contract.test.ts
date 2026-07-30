@@ -76,6 +76,41 @@ describe('Karkinos brand motion contract', () => {
     }
   });
 
+  it('limits looping motion to explicit loading indicators', () => {
+    const uses = sourceFiles(SRC_ROOT)
+      .filter((file) => file !== GLOBALS_PATH)
+      .flatMap((path) => {
+        const file = relative(SRC_ROOT, path);
+        const source = readFileSync(path, 'utf8');
+        return Array.from(
+          source.matchAll(/(?:motion-safe:)?animate-(?:pulse|spin)/g),
+          (match) => ({ file, token: match[0] }),
+        );
+      });
+
+    expect([...new Set(uses.map(({ file }) => file))].sort()).toEqual([
+      'app/components/workbench/workspace.tsx',
+      'app/layout/app-shell.tsx',
+      'features/market/components/market-instrument-workspace.tsx',
+    ]);
+    for (const use of uses.filter(({ token }) => token.endsWith('pulse'))) {
+      expect(use.token, use.file).toBe('motion-safe:animate-pulse');
+    }
+  });
+
+  it('keeps dense facts spatially stable on hover', () => {
+    for (const path of sourceFiles(SRC_ROOT).filter(
+      (file) => file !== GLOBALS_PATH,
+    )) {
+      expect(readFileSync(path, 'utf8'), relative(SRC_ROOT, path)).not.toMatch(
+        /hover:-?translate-y/,
+      );
+    }
+    expect(GLOBALS).toContain(
+      "button[aria-pressed]:not([data-motion='stable-fact'])",
+    );
+  });
+
   it('keeps production animations named and reduced-motion aware', () => {
     const files = sourceFiles(SRC_ROOT);
     const animationFiles = files.filter((file) =>

@@ -1758,6 +1758,41 @@ test('brand motion keeps route and mobile drawer timing coherent', async ({
   );
 });
 
+test('dense return evidence stays spatially stable through hover and selection', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/overview');
+
+  const calendarTab = page.getByRole('tab', {
+    name: /Return calendar|收益日历/,
+  });
+  await expect(calendarTab).toBeVisible({ timeout: 30_000 });
+  await calendarTab.click();
+
+  const cell = page
+    .getByTestId('return-calendar-month-grid')
+    .getByRole('button')
+    .first();
+  await expect(cell).toBeVisible();
+  const initialBox = await cell.boundingBox();
+  const transitionProperties = await cell.evaluate(
+    (element) => getComputedStyle(element).transitionProperty,
+  );
+  expect(transitionProperties).not.toMatch(/transform|translate/);
+
+  await cell.hover();
+  await page.waitForTimeout(150);
+  const hoverBox = await cell.boundingBox();
+  expect(hoverBox?.y).toBeCloseTo(initialBox?.y ?? 0, 1);
+
+  await cell.click();
+  await expect(cell).toHaveAttribute('aria-pressed', 'true');
+  const selectedBox = await cell.boundingBox();
+  expect(selectedBox?.y).toBeCloseTo(initialBox?.y ?? 0, 1);
+});
+
 test('reduced-motion preference removes branded and routine transition timing', async ({
   page,
 }) => {
