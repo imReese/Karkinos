@@ -1744,10 +1744,7 @@ test('brand motion keeps route and mobile drawer timing coherent', async ({
     name: 'app-overlay-enter',
   });
   await page.getByRole('button', { name: /Close command menu/ }).click();
-  await expect(commandBackdrop).toHaveAttribute(
-    'data-motion-state',
-    'closing',
-  );
+  await expect(commandBackdrop).toHaveAttribute('data-motion-state', 'closing');
   const commandExit = await commandPanel.evaluate((element) => {
     const style = getComputedStyle(element);
     return {
@@ -1786,14 +1783,39 @@ test('brand motion keeps route and mobile drawer timing coherent', async ({
   const drawerMotion = await sidebar.evaluate((element) => {
     const style = getComputedStyle(element);
     return {
+      delay: style.transitionDelay,
       duration: style.transitionDuration,
       easing: style.transitionTimingFunction,
+      property: style.transitionProperty,
     };
   });
-  expect(drawerMotion.duration).toBe('0.24s, 0.24s');
-  expect(drawerMotion.easing).toBe(
-    'cubic-bezier(0.16, 1, 0.3, 1), cubic-bezier(0.16, 1, 0.3, 1)',
-  );
+  expect(drawerMotion.property).toBe('transform, visibility');
+  expect(drawerMotion.duration).toBe('0.24s, 0s');
+  expect(drawerMotion.delay).toBe('0s, 0s');
+  expect(drawerMotion.easing).toBe('cubic-bezier(0.16, 1, 0.3, 1), linear');
+
+  await sidebar
+    .getByRole('button', { name: 'Close navigation', exact: true })
+    .click();
+  await expect(sidebar).toHaveAttribute('data-mobile-open', 'false');
+  await expect(sidebar).toHaveCSS('visibility', 'hidden');
+  const drawerExit = await sidebar.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      delay: style.transitionDelay,
+      duration: style.transitionDuration,
+      easing: style.transitionTimingFunction,
+      property: style.transitionProperty,
+      visibility: style.visibility,
+    };
+  });
+  expect(drawerExit).toEqual({
+    delay: '0s, 0.24s',
+    duration: '0.24s, 0s',
+    easing: 'cubic-bezier(0.4, 0, 1, 1), linear',
+    property: 'transform, visibility',
+    visibility: 'hidden',
+  });
 });
 
 test('dense return evidence stays spatially stable through hover and selection', async ({
