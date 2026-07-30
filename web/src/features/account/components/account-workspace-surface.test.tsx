@@ -99,7 +99,9 @@ test('renders account metrics in a compact homepage workbench layout', async () 
 
   expect(rail.className).toContain('self-start');
   expect(totalAssetsValue.className).toContain('account-primary-metric-value');
+  expect(totalAssetsValue.className).toContain('app-type-primary-metric');
   expect(rail.querySelector('.account-overview-summary')).toBeTruthy();
+  expect(rail.querySelector('.account-overview-evidence')).toBeTruthy();
   expect(screen.getByLabelText('Supporting account metrics')).toBeTruthy();
   expect(screen.getByText('Evidence complete')).toBeTruthy();
   expect(screen.getByText('Valuation as of 02-10 15:00')).toBeTruthy();

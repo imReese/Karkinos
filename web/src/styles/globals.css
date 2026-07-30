@@ -23,6 +23,10 @@
   --app-font-size-page-title-mobile: 24px;
   --app-font-size-page-title: 28px;
   --app-font-size-section-title: 18px;
+  --app-font-size-metric: 18px;
+  --app-font-size-primary-metric-mobile: 32px;
+  --app-font-size-primary-metric: 34px;
+  --app-font-size-primary-metric-wide: 36px;
   --app-font-size-subsection-title: 15px;
   --app-font-size-body: 14px;
   --app-font-size-compact: 13px;
@@ -31,12 +35,16 @@
   --app-line-height-page-title-mobile: 28px;
   --app-line-height-page-title: 32px;
   --app-line-height-section-title: 24px;
+  --app-line-height-metric: 24px;
+  --app-line-height-primary-metric: 36px;
   --app-line-height-subsection-title: 22px;
   --app-line-height-body: 22px;
   --app-line-height-compact: 20px;
   --app-line-height-label: 18px;
   --app-line-height-micro: 16px;
   --app-letter-spacing-product: 0.18em;
+  --app-letter-spacing-metric: -0.015em;
+  --app-letter-spacing-primary-metric: -0.045em;
   --app-space-section: 24px;
   --app-space-section-relaxed: 32px;
   /* Brand motion: quick, calm, and causal. */
@@ -644,6 +652,23 @@ textarea {
   border-bottom: 0;
 }
 
+@media (min-width: 360px) and (max-width: 639px) {
+  .account-overview-evidence {
+    position: relative;
+    display: block;
+  }
+
+  .account-overview-evidence > div:first-child > .app-type-micro {
+    max-width: calc(100% - 168px);
+  }
+
+  .account-overview-evidence > div:last-child {
+    position: absolute;
+    right: 12px;
+    bottom: 10px;
+  }
+}
+
 @media (min-width: 1024px) {
   .account-support-metric-strip .app-metric-strip-item,
   .account-support-metric-strip .app-metric-strip-item:nth-child(odd) {
@@ -1174,6 +1199,32 @@ textarea {
   font-size: var(--app-font-size-section-title);
   font-weight: var(--app-font-weight-semibold);
   line-height: var(--app-line-height-section-title);
+}
+
+.app-type-metric {
+  font-size: var(--app-font-size-metric);
+  font-weight: var(--app-font-weight-semibold);
+  letter-spacing: var(--app-letter-spacing-metric);
+  line-height: var(--app-line-height-metric);
+}
+
+.app-type-primary-metric {
+  font-size: var(--app-font-size-primary-metric-mobile);
+  font-weight: var(--app-font-weight-semibold);
+  letter-spacing: var(--app-letter-spacing-primary-metric);
+  line-height: var(--app-line-height-primary-metric);
+}
+
+@media (min-width: 640px) {
+  .app-type-primary-metric {
+    font-size: var(--app-font-size-primary-metric);
+  }
+}
+
+@media (min-width: 1280px) {
+  .app-type-primary-metric {
+    font-size: var(--app-font-size-primary-metric-wide);
+  }
 }
 
 .app-type-subsection-title {
