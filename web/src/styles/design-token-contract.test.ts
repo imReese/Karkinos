@@ -125,6 +125,9 @@ const REQUIRED_TYPOGRAPHY_TOKENS = [
   '--app-line-height-label',
   '--app-line-height-micro',
   '--app-letter-spacing-product',
+  '--app-letter-spacing-kicker',
+  '--app-letter-spacing-overline',
+  '--app-letter-spacing-label',
   '--app-letter-spacing-metric',
   '--app-letter-spacing-primary-metric',
 ] as const;
@@ -302,6 +305,9 @@ describe('application design token contract', () => {
     expect(MOCHA.get('--app-line-height-label')).toBe('18px');
     expect(MOCHA.get('--app-line-height-micro')).toBe('16px');
     expect(MOCHA.get('--app-letter-spacing-product')).toBe('0.18em');
+    expect(MOCHA.get('--app-letter-spacing-kicker')).toBe('0.14em');
+    expect(MOCHA.get('--app-letter-spacing-overline')).toBe('0.08em');
+    expect(MOCHA.get('--app-letter-spacing-label')).toBe('0.01em');
     expect(MOCHA.get('--app-letter-spacing-metric')).toBe('-0.015em');
     expect(MOCHA.get('--app-letter-spacing-primary-metric')).toBe('-0.045em');
     expect(MOCHA.get('--app-motion-fast')).toBe('120ms');

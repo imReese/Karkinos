@@ -241,10 +241,13 @@ test('shell remains local-overflow safe in Latte and Mocha across tablet and mob
       const themeName = theme === 'light' ? 'Light theme' : 'Dark theme';
       if (viewport.width < 640) {
         await page.getByTestId('mobile-preferences-toggle').click();
-        await page
+        const themeButton = page
           .getByRole('dialog', { name: 'Theme · Language' })
-          .getByRole('button', { name: themeName })
-          .click();
+          .getByRole('button', { name: themeName });
+        expect(
+          Math.round((await themeButton.boundingBox())?.height ?? 0),
+        ).toBeGreaterThanOrEqual(44);
+        await themeButton.click();
       } else {
         await page.getByRole('button', { name: themeName }).click();
       }

@@ -12,7 +12,6 @@ const NUMERIC_TYPOGRAPHY_OVERRIDE =
 // This is a one-way debt ratchet, not the 9.5 certification target. Every
 // ceiling may only decrease; certification requires this inventory to be empty.
 const NUMERIC_OVERRIDE_CEILINGS: Readonly<Record<string, number>> = {
-  'app/layout/app-shell.tsx': 8,
   'app/router.tsx': 53,
   'features/account-truth/components/account-truth-review-page.tsx': 12,
   'features/account/components/dashboard-quick-actions.tsx': 1,
@@ -61,6 +60,7 @@ const NUMERIC_OVERRIDE_CEILINGS: Readonly<Record<string, number>> = {
 
 const CERTIFIED_CORE_SURFACES = [
   'app/components/workbench/workspace.tsx',
+  'app/layout/app-shell.tsx',
   'features/account/components/overview-cards.tsx',
 ] as const;
 

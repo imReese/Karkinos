@@ -24,6 +24,12 @@ const workbenchRoutePaths = [
   '/settings',
 ] as const;
 
+const certificationRoutePaths = [
+  '/',
+  ...workbenchRoutePaths,
+  '/portfolio/TEST-MISSING',
+] as const;
+
 async function selectMobileTheme(page: Page, theme: 'light' | 'dark') {
   await page.getByTestId('mobile-preferences-toggle').click();
   const preferences = page.getByRole('dialog', {
@@ -109,6 +115,38 @@ test('all workbench routes keep mobile interaction targets at least 44px', async
     });
     expect(overflow.document, path).toBeLessThanOrEqual(0);
     expect(overflow.content, path).toBeLessThanOrEqual(0);
+  }
+});
+
+test('all route identities remain visible at a 200 percent layout-zoom equivalent', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 720, height: 450 });
+
+  for (const path of certificationRoutePaths) {
+    await page.goto(path);
+    const heading = page.locator('h1').first();
+    await expect(heading, path).toBeVisible({ timeout: 15_000 });
+
+    const geometry = await page.evaluate(() => {
+      const heading = document.querySelector('h1') as HTMLElement;
+      const main = document.querySelector('main') as HTMLElement;
+      const headingBounds = heading.getBoundingClientRect();
+      return {
+        documentOverflow:
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+        headingBottom: headingBounds.bottom,
+        headingTop: headingBounds.top,
+        mainOverflow: main.scrollWidth - main.clientWidth,
+      };
+    });
+
+    expect(geometry.documentOverflow, path).toBeLessThanOrEqual(0);
+    expect(geometry.mainOverflow, path).toBeLessThanOrEqual(0);
+    expect(geometry.headingTop, path).toBeGreaterThanOrEqual(0);
+    expect(geometry.headingBottom, path).toBeLessThanOrEqual(450);
   }
 });
 
