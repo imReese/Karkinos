@@ -310,9 +310,7 @@ export function DashboardQuickActions({
               key={row.label}
               className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2"
             >
-              <div className="app-kicker text-[length:var(--app-font-size-micro)] tracking-[0.14em]">
-                {row.label}
-              </div>
+              <div className="app-kicker app-type-overline">{row.label}</div>
               <div className="mt-1 break-words font-mono text-xs font-semibold text-[var(--app-soft)] tabular-nums">
                 {row.value}
               </div>

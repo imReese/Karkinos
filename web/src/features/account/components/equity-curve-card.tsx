@@ -599,7 +599,7 @@ function renderHighPointDot({
           <text
             x={textX}
             y={labelY + 14}
-            className="fill-current text-[length:var(--app-font-size-micro)] font-semibold"
+            className="app-type-micro fill-current font-semibold"
           >
             <tspan>{high.label}</tspan>
             <tspan dx="7" className="opacity-70">
@@ -609,7 +609,7 @@ function renderHighPointDot({
           <text
             x={textX}
             y={labelY + 30}
-            className="fill-current text-[11px] font-semibold"
+            className="app-type-micro fill-current font-semibold"
           >
             {displayValue}
           </text>
@@ -864,7 +864,7 @@ export function EquityCurveCard({
             {labels.title}
           </div>
           {valuationStatusText ? (
-            <div className="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] px-2.5 py-1 text-[11px] font-semibold text-[var(--app-warning)]">
+            <div className="app-type-micro mt-2 inline-flex max-w-full items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--app-warning)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-warning)_10%,transparent)] px-2.5 py-1 font-semibold text-[var(--app-warning)]">
               <span className="h-1.5 w-1.5 rounded-full bg-[var(--app-warning)]" />
               <span className="truncate">{valuationStatusText}</span>
             </div>
@@ -883,7 +883,7 @@ export function EquityCurveCard({
                   allSeriesSelected ? NO_VISIBLE_SERIES : ALL_VISIBLE_SERIES,
                 );
               }}
-              className={`app-chart-control inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${
+              className={`app-chart-control app-type-micro inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-medium ${
                 allSeriesSelected
                   ? 'border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)] text-[var(--app-text)]'
                   : 'border-transparent bg-transparent text-[var(--app-muted)] opacity-55 hover:border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] hover:opacity-100'
@@ -906,7 +906,7 @@ export function EquityCurveCard({
                       [series.key]: !current[series.key],
                     }));
                   }}
-                  className={`app-chart-control inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${
+                  className={`app-chart-control app-type-micro inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-medium ${
                     active
                       ? 'border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_18%,transparent)] text-[var(--app-text)]'
                       : 'border-transparent bg-transparent text-[var(--app-muted)] opacity-55 hover:border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] hover:opacity-100'
@@ -941,7 +941,7 @@ export function EquityCurveCard({
                   onRangeChange?.(value);
                 });
               }}
-              className={`app-chart-control h-7 min-w-0 rounded-full px-2 font-mono text-[11px] font-semibold ${
+              className={`app-chart-control app-type-micro h-7 min-w-0 rounded-full px-2 font-mono font-semibold ${
                 range === value
                   ? 'bg-[color-mix(in_srgb,var(--app-accent)_26%,transparent)] text-[var(--app-accent)] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--app-text)_8%,transparent)]'
                   : 'text-[var(--app-muted)]'
@@ -1098,7 +1098,7 @@ export function EquityCurveCard({
                 ? labels.insufficientData
                 : labels.emptyPeriod}
             </div>
-            <div className="app-kicker mt-3 text-[11px] uppercase tracking-[0.16em]">
+            <div className="app-kicker app-type-overline mt-3">
               {labels.emptyHint}
             </div>
             {latestPoint ? (
