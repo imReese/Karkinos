@@ -5,6 +5,7 @@ import type { ColumnDef } from '@tanstack/react-table';
 import {
   DataTable,
   EvidenceDrawer,
+  EvidenceLoadingLayout,
   EvidenceState,
   ExceptionList,
   MetricStrip,
@@ -237,10 +238,11 @@ export function OperationsPage() {
 
       {operations.isLoading && !projection ? (
         <div data-testid="operations-loading">
-          <EvidenceState
-            kind="loading"
+          <EvidenceLoadingLayout
             title={labels.loading}
             description={labels.sourceBoundary}
+            metricCount={4}
+            rowCount={4}
           />
         </div>
       ) : operations.isError || !projection ? (

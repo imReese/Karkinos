@@ -11,6 +11,7 @@ import { usePreferences } from '../../../app/preferences';
 import {
   ControlledActionZone,
   EvidenceIdentityDisclosure,
+  EvidenceLoadingLayout,
   EvidenceState,
   MetricStrip,
   StatusBadge,
@@ -507,10 +508,15 @@ export function AccountTruthReviewPage() {
           description={text.subtitle}
           context={text.safety}
         />
-        <EvidenceState
-          kind={hasError ? 'error' : 'loading'}
-          title={hasError ? text.error : text.loading}
-        />
+        {hasError ? (
+          <EvidenceState kind="error" title={text.error} />
+        ) : (
+          <EvidenceLoadingLayout
+            title={text.loading}
+            metricCount={4}
+            rowCount={4}
+          />
+        )}
       </section>
     );
   }
