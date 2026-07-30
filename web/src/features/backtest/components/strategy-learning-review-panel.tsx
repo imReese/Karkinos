@@ -311,9 +311,7 @@ function LearningItemCard({
 
       {item.blockers.length > 0 ? (
         <div className="mt-4 rounded-2xl border border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] px-4 py-3 text-sm text-[var(--app-danger-text)]">
-          <div className="text-xs font-semibold uppercase tracking-[0.12em]">
-            {copy.blocker}
-          </div>
+          <div className="app-type-overline">{copy.blocker}</div>
           <ul className="mt-2 space-y-1">
             {item.blockers.map((blocker) => (
               <li key={blocker} className="break-all font-mono text-xs">
@@ -325,9 +323,7 @@ function LearningItemCard({
       ) : null}
 
       <div className="mt-4">
-        <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
-          {copy.exactEvidence}
-        </div>
+        <div className="app-kicker app-type-overline">{copy.exactEvidence}</div>
         <ul className="mt-2 grid gap-1.5 text-xs sm:grid-cols-2">
           {item.evidence_refs.map((reference) => (
             <li
@@ -342,7 +338,7 @@ function LearningItemCard({
 
       {item.research_handoff ? (
         <div className="mt-4 rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-4">
-          <div className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--app-warning-text)]">
+          <div className="app-type-overline text-[var(--app-warning-text)]">
             {copy.researchHandoff}
           </div>
           <p className="mt-2 select-text text-sm leading-6 text-[var(--app-text)]">
@@ -389,9 +385,7 @@ function Fact({
 }) {
   return (
     <div>
-      <dt className="app-muted text-[length:var(--app-font-size-micro)] uppercase tracking-[0.12em]">
-        {label}
-      </dt>
+      <dt className="app-muted app-type-overline">{label}</dt>
       <dd
         className={`mt-1 break-words font-semibold ${
           danger ? 'text-[var(--app-danger-text)]' : 'text-[var(--app-text)]'
