@@ -1763,6 +1763,27 @@ test('dense return evidence stays spatially stable through hover and selection',
 }) => {
   test.setTimeout(60_000);
   await page.setViewportSize({ width: 1280, height: 800 });
+  await page.route('**/api/portfolio/explainability**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        equity_bridge: [],
+        recent_drivers: [],
+        positions: [],
+        timeline: [
+          {
+            date: '2026-02-10',
+            equity: 101_000,
+            delta: 800,
+            external_flow: 200,
+            market_pnl: 600,
+            events: [],
+          },
+        ],
+      }),
+    });
+  });
   await page.goto('/overview');
 
   const calendarTab = page.getByRole('tab', {
