@@ -2393,7 +2393,7 @@ function DashboardTodayQueue({
     <section className="min-w-0" data-testid="overview-today-queue">
       <div className="mb-2 flex items-end justify-between gap-3">
         <div>
-          <div className="app-type-micro font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
+          <div className="app-type-overline text-[var(--app-text-tertiary)]">
             {labels.dailyWorkbench}
           </div>
           <h2 className="app-type-section-title mt-1 text-[var(--app-text)]">
@@ -2693,7 +2693,7 @@ function DashboardMarketPulse({
                       <div className="truncate text-sm font-semibold text-[var(--app-text)]">
                         {displayName}
                       </div>
-                      <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[var(--app-text-tertiary)]">
+                      <div className="app-type-micro mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[var(--app-text-tertiary)]">
                         <span className="font-mono">{quote.symbol}</span>
                         <span>{quoteStatus}</span>
                         <span>{formatTimestamp(quote.timestamp)}</span>
@@ -2739,7 +2739,7 @@ function DashboardMarketPulse({
               <div className="text-xs font-semibold text-[var(--app-warning-text)]">
                 {labels.marketHeatmapUnavailable}
               </div>
-              <div className="mt-1 text-[11px] leading-5 text-[var(--app-text-secondary)]">
+              <div className="app-type-compact mt-1 text-[var(--app-text-secondary)]">
                 {labels.marketHeatmapUnavailableDetail}
               </div>
             </div>
@@ -2809,7 +2809,7 @@ function DashboardPendingOrders({
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <div className="truncate text-base font-semibold tracking-[-0.02em]">
+                <div className="app-type-subsection-title truncate">
                   {instrumentLabel}
                 </div>
                 <div className="app-muted mt-1 text-xs">
@@ -3685,20 +3685,20 @@ export function RiskPage() {
                 className="grid grid-cols-2 gap-3 border-b border-[var(--app-divider)] px-3 py-2.5 text-xs"
               >
                 <div className="min-w-0">
-                  <dt className="text-[length:var(--app-font-size-micro)] font-semibold uppercase tracking-[0.06em] text-[var(--app-text-tertiary)]">
+                  <dt className="app-type-overline text-[var(--app-text-tertiary)]">
                     {locale === 'zh'
                       ? '统一解除条件'
                       : 'Shared unblock condition'}
                   </dt>
-                  <dd className="mt-0.5 leading-[18px] text-[var(--app-text-secondary)] [overflow-wrap:anywhere]">
+                  <dd className="app-type-compact mt-0.5 text-[var(--app-text-secondary)] [overflow-wrap:anywhere]">
                     {copy.riskPage.clearsWithNewProjection}
                   </dd>
                 </div>
                 <div className="min-w-0">
-                  <dt className="text-[length:var(--app-font-size-micro)] font-semibold uppercase tracking-[0.06em] text-[var(--app-text-tertiary)]">
+                  <dt className="app-type-overline text-[var(--app-text-tertiary)]">
                     {locale === 'zh' ? '安全下一步' : 'Safe next step'}
                   </dt>
-                  <dd className="mt-0.5 leading-[18px] text-[var(--app-text-secondary)] [overflow-wrap:anywhere]">
+                  <dd className="app-type-compact mt-0.5 text-[var(--app-text-secondary)] [overflow-wrap:anywhere]">
                     {formatRiskNextStep(state.data.next_step, locale)}
                   </dd>
                 </div>
@@ -3909,7 +3909,7 @@ export function RiskPage() {
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
             <section className="min-w-0 border-y border-[var(--app-divider)] py-3 sm:py-4">
-              <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
+              <div className="app-type-overline text-[var(--app-text-tertiary)]">
                 {copy.riskPage.drawdown}
               </div>
               <div className="mt-3">
@@ -3918,7 +3918,7 @@ export function RiskPage() {
             </section>
             <div className="min-w-0 space-y-4">
               <section className="min-w-0 border-y border-[var(--app-divider)] py-3 sm:py-4">
-                <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
+                <div className="app-type-overline text-[var(--app-text-tertiary)]">
                   {copy.riskPage.exposure}
                 </div>
                 <div className="mt-3 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]">
@@ -3939,7 +3939,7 @@ export function RiskPage() {
                         )}
                       </div>
                       {bucket.symbols.length > 0 ? (
-                        <div className="mt-2 font-mono text-[11px] text-[var(--app-text-tertiary)]">
+                        <div className="app-type-micro mt-2 font-mono text-[var(--app-text-tertiary)]">
                           {bucket.symbols.join(' · ')}
                         </div>
                       ) : null}
@@ -3949,7 +3949,7 @@ export function RiskPage() {
               </section>
 
               <section className="min-w-0 border-y border-[var(--app-divider)] py-3 sm:py-4">
-                <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
+                <div className="app-type-overline text-[var(--app-text-tertiary)]">
                   {copy.riskPage.concentration}
                 </div>
                 <div className="mt-3 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]">
