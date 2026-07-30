@@ -305,10 +305,16 @@ test('keeps a compact mobile navigation control visible in the header', async ()
   expect(
     (await screen.findByTestId('mobile-navigation-backdrop')).className,
   ).toContain('z-[90]');
+  const drawerClose = within(navigation as HTMLElement)
+    .getAllByRole('button', { name: 'Close navigation' })
+    .find((button) => button.className.includes('xl:hidden'));
+  expect(drawerClose).toBeTruthy();
+  expect(document.activeElement).toBe(drawerClose);
 
   await user.keyboard('{Escape}');
   expect(toggle.getAttribute('aria-expanded')).toBe('false');
   expect(toggle.getAttribute('aria-label')).toBe('Open navigation');
+  expect(document.activeElement).toBe(toggle);
 });
 
 test('consolidates mobile display preferences behind one compact control', async () => {
