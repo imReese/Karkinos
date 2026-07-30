@@ -272,7 +272,7 @@ export function PortfolioConstructionRecommendationsCard({
 
             {recommendation.required_actions.length > 0 ? (
               <div className="mt-3 border-t border-[var(--app-divider)] pt-2">
-                <div className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] app-muted">
+                <div className="app-muted app-type-overline">
                   {labels.nextActions}
                 </div>
                 <ul className="mt-1.5 grid gap-1 text-xs leading-5 text-[var(--app-text-secondary)]">

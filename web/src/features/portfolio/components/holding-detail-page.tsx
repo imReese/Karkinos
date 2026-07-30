@@ -1498,7 +1498,7 @@ function MetricGrid({
           data-testid={metricTestId}
           className="min-w-0 border-b border-[var(--app-divider)] px-3 py-2.5 sm:border-r sm:[&:nth-child(2n)]:border-r-0 xl:[&:nth-child(2n)]:border-r xl:[&:nth-child(3n)]:border-r-0"
         >
-          <dt className="text-[11px] font-medium text-[var(--app-text-secondary)]">
+          <dt className="app-type-micro font-medium text-[var(--app-text-secondary)]">
             {metric.label}
           </dt>
           <dd
@@ -1515,7 +1515,7 @@ function MetricGrid({
             {metric.value}
           </dd>
           {metric.detail ? (
-            <div className="mt-0.5 text-[11px] leading-4 text-[var(--app-text-tertiary)]">
+            <div className="app-type-micro mt-0.5 text-[var(--app-text-tertiary)]">
               {metric.detail}
             </div>
           ) : null}
@@ -1592,7 +1592,7 @@ function LedgerTrace({
         data-testid="holding-ledger-table"
         className="app-data-table w-full min-w-[760px] text-left text-sm"
       >
-        <thead className="app-kicker text-xs uppercase tracking-[0.16em]">
+        <thead className="app-kicker app-type-overline">
           <tr>
             <th className="px-4 py-3">{labels.entryType}</th>
             <th className="px-4 py-3">{labels.quantity}</th>

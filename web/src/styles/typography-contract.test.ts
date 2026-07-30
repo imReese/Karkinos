@@ -27,10 +27,6 @@ const NUMERIC_OVERRIDE_CEILINGS: Readonly<Record<string, number>> = {
   'features/operations/current-per-order-dossier-operator-panel.tsx': 1,
   'features/operations/manual-broker-cancellation-ticket-panel.tsx': 3,
   'features/operations/signed-broker-adapter-release-review-operator-panel.tsx': 1,
-  'features/portfolio/components/holding-detail-page.tsx': 3,
-  'features/portfolio/components/live-holdings-board.tsx': 1,
-  'features/portfolio/components/portfolio-construction-recommendations-card.tsx': 2,
-  'features/portfolio/components/positions-table.tsx': 2,
 };
 
 const CERTIFIED_CORE_SURFACES = [
