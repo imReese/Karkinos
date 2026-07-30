@@ -260,6 +260,38 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+test('renders a structured workspace while Operations evidence loads', () => {
+  window.localStorage.clear();
+  window.localStorage.setItem('karkinos.locale', 'en');
+  installMatchMediaMock();
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() => new Promise<Response>(() => undefined)),
+  );
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+
+  render(
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>
+        <OperationsPage />
+      </QueryClientProvider>
+    </PreferencesProvider>,
+  );
+
+  expect(screen.getByTestId('operations-loading')).toBeTruthy();
+  expect(
+    document.querySelector(
+      '[data-workbench-primitive="evidence-loading-layout"]',
+    ),
+  ).toBeTruthy();
+  expect(screen.getByTestId('evidence-loading-metrics').children).toHaveLength(
+    4,
+  );
+  expect(screen.getByTestId('evidence-loading-rows').children).toHaveLength(4);
+});
+
 test('renders persisted attention evidence without write or execution affordances', async () => {
   const fetchMock = renderOperationsPage();
 

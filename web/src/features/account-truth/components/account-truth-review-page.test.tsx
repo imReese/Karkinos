@@ -308,6 +308,15 @@ test('keeps score and empty reports hidden until required evidence resolves', as
   expect(
     await screen.findByText('Loading Account Truth evidence.'),
   ).toBeTruthy();
+  expect(
+    document.querySelector(
+      '[data-workbench-primitive="evidence-loading-layout"]',
+    ),
+  ).toBeTruthy();
+  expect(screen.getByTestId('evidence-loading-metrics').children).toHaveLength(
+    4,
+  );
+  expect(screen.getByTestId('evidence-loading-rows').children).toHaveLength(4);
   expect(screen.queryByText('42')).toBeNull();
   expect(screen.queryByText('0 items')).toBeNull();
   expect(

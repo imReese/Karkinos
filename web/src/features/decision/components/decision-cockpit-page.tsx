@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 
 import {
   ControlledActionZone,
+  EvidenceLoadingLayout,
   EvidenceState,
   ExceptionList,
   GateMatrix,
@@ -5135,10 +5136,11 @@ export function DecisionCockpitPage() {
     return (
       <section className="space-y-5">
         <PageHeader title={labels.title} subtitle={labels.subtitle} />
-        <EvidenceState
-          kind="loading"
+        <EvidenceLoadingLayout
           title={copy.states.loading}
           description={labels.loading}
+          metricCount={4}
+          rowCount={4}
         />
       </section>
     );

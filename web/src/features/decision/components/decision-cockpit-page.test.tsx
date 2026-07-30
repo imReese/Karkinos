@@ -1192,6 +1192,41 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+test('renders a structured workspace while primary decision evidence loads', () => {
+  window.localStorage.clear();
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: query.includes('prefers-color-scheme: dark'),
+    media: query,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() => new Promise<Response>(() => undefined)),
+  );
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+
+  render(
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>
+        <DecisionCockpitPage />
+      </QueryClientProvider>
+    </PreferencesProvider>,
+  );
+
+  expect(
+    document.querySelector(
+      '[data-workbench-primitive="evidence-loading-layout"]',
+    ),
+  ).toBeTruthy();
+  expect(screen.getByTestId('evidence-loading-metrics').children).toHaveLength(
+    4,
+  );
+  expect(screen.getByTestId('evidence-loading-rows').children).toHaveLength(4);
+});
+
 function contributionDecision(): DecisionResponse {
   return {
     ...dailyDecision,
