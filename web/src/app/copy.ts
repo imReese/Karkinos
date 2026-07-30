@@ -2383,7 +2383,7 @@ export const copy = {
       unconfirmedValuationShort: 'Unconfirmed',
       missingValuationShort: 'Price gap',
       marketHolidayShort: 'Holiday',
-      marketWeekendShort: 'Weekend',
+      marketWeekendShort: 'W/E',
       marketClosedShort: 'Closed',
       missingHistoricalPrices: 'Missing historical prices',
       timelineEmpty: 'No daily attribution available yet.',
