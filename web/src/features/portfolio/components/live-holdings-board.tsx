@@ -115,7 +115,7 @@ function SummaryMetric({
 }) {
   return (
     <dl data-testid={testId} className="min-w-0 sm:text-right">
-      <dt className="truncate text-[11px] text-[var(--app-text-secondary)]">
+      <dt className="app-type-micro truncate text-[var(--app-text-secondary)]">
         {label}
       </dt>
       <dd

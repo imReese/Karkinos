@@ -95,7 +95,7 @@ export function PositionsTable({
           title={`${displayName} · ${position.symbol}`}
         >
           <span className="block max-w-52 truncate">{displayName}</span>
-          <span className="mt-0.5 flex items-center gap-1.5 text-[11px] font-medium text-[var(--app-text-tertiary)]">
+          <span className="app-type-micro mt-0.5 flex items-center gap-1.5 font-medium text-[var(--app-text-tertiary)]">
             <span className="font-mono">{position.symbol}</span>
             <span aria-hidden="true">·</span>
             <span className="truncate">
@@ -272,7 +272,7 @@ export function PositionsTable({
                       <div className="truncate text-sm font-semibold">
                         {displayName}
                       </div>
-                      <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-[var(--app-text-tertiary)]">
+                      <div className="app-type-micro mt-0.5 flex min-w-0 items-center gap-1.5 text-[var(--app-text-tertiary)]">
                         <span className="shrink-0 font-mono font-medium">
                           {position.symbol}
                         </span>
