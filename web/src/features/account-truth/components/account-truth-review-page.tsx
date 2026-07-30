@@ -582,7 +582,7 @@ export function AccountTruthReviewPage() {
           {selectedReport ? (
             <div className="mt-4 grid min-w-0 gap-4 xl:grid-cols-[minmax(230px,0.55fr)_minmax(0,1.45fr)]">
               <div className="min-w-0">
-                <div className="text-[length:var(--app-font-size-micro)] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
+                <div className="app-type-overline text-[var(--app-text-tertiary)]">
                   {text.currentReport}
                 </div>
                 <div
@@ -620,7 +620,7 @@ export function AccountTruthReviewPage() {
                       locale,
                     )}
                   </div>
-                  <div className="mt-1 text-[11px] text-[var(--app-text-tertiary)]">
+                  <div className="app-type-micro mt-1 text-[var(--app-text-tertiary)]">
                     {formatDateTime(selectedReport.created_at)}
                   </div>
                 </div>
@@ -651,7 +651,7 @@ export function AccountTruthReviewPage() {
                             <span className="block truncate text-xs font-semibold text-[var(--app-text)]">
                               {report.source_name}
                             </span>
-                            <span className="block text-[11px] text-[var(--app-text-tertiary)]">
+                            <span className="app-type-micro block text-[var(--app-text-tertiary)]">
                               {formatDateTime(report.created_at)} ·{' '}
                               {report.unresolved_count} {text.unresolved}
                             </span>
@@ -888,7 +888,7 @@ export function AccountTruthReviewPage() {
                     {text.rows} {run.row_count} · {text.duplicates}{' '}
                     {run.row_duplicate_count + run.file_duplicate_count}
                   </span>
-                  <span className="flex items-center gap-2 text-[11px] text-[var(--app-text-tertiary)]">
+                  <span className="app-type-micro flex items-center gap-2 text-[var(--app-text-tertiary)]">
                     <StatusBadge tone={statusTone(run.validation_status)}>
                       {formatCode(run.validation_status, locale, 'status')}
                     </StatusBadge>
@@ -1017,7 +1017,7 @@ function ReconciliationItemList({
                 <span className="block truncate text-xs font-semibold text-[var(--app-text)]">
                   {itemTitle}
                 </span>
-                <span className="mt-0.5 block truncate text-[11px] text-[var(--app-text-secondary)]">
+                <span className="app-type-micro mt-0.5 block truncate text-[var(--app-text-secondary)]">
                   {formatCode(item.category, locale, 'code')} ·{' '}
                   {text.difference}{' '}
                   {formatReconciliationValue(
@@ -1286,7 +1286,7 @@ function BrokerStatementCollectorCallout({
           ]}
         />
       ) : null}
-      <p className="mt-2 text-[11px] leading-5 text-[var(--app-text-tertiary)]">
+      <p className="app-type-micro mt-2 text-[var(--app-text-tertiary)]">
         {text.collectorFallback}
       </p>
     </div>
@@ -1409,7 +1409,7 @@ function BrokerStatementPreviewPanel({
       ) : null}
       {preview.events_preview.length > 0 ? (
         <div className="mt-3">
-          <div className="text-[length:var(--app-font-size-micro)] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
+          <div className="app-type-overline text-[var(--app-text-tertiary)]">
             {text.eventPreview}
           </div>
           <div className="mt-2 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]">
@@ -1438,7 +1438,7 @@ function BrokerStatementPreviewPanel({
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 px-3 py-2.5">
-      <div className="truncate text-[11px] font-medium text-[var(--app-text-secondary)]">
+      <div className="app-type-micro truncate font-medium text-[var(--app-text-secondary)]">
         {label}
       </div>
       <div className="mt-0.5 text-base font-semibold text-[var(--app-text)] tabular-nums">
@@ -1459,7 +1459,7 @@ function MissingEvidenceCallout({ locale }: { locale: 'en' | 'zh' }) {
         {text.notReadyBody}
       </p>
       <div className="mt-3 border-t border-[var(--app-divider)] pt-3">
-        <div className="text-[length:var(--app-font-size-micro)] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
+        <div className="app-type-overline text-[var(--app-text-tertiary)]">
           {text.workflowTitle}
         </div>
         <ol className="mt-2 grid gap-2 text-xs font-medium text-[var(--app-text-secondary)]">
@@ -1519,9 +1519,7 @@ function ReasonList({
   }
   return (
     <div className="mt-4">
-      <div className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--app-muted)]">
-        {title}
-      </div>
+      <div className="app-type-overline text-[var(--app-muted)]">{title}</div>
       <div className="mt-2 grid gap-2">
         {values.map((value) => (
           <div
@@ -1651,7 +1649,7 @@ function ReviewItemCard({
               key={key}
               className="grid min-w-0 gap-1 py-2 sm:border-b sm:border-[var(--app-divider)] sm:px-2"
             >
-              <dt className="text-[length:var(--app-font-size-micro)] font-semibold uppercase tracking-[0.06em] text-[var(--app-text-tertiary)]">
+              <dt className="app-type-overline text-[var(--app-text-tertiary)]">
                 {formatCode(key, locale, 'code')}
               </dt>
               <dd className="text-[var(--app-text-secondary)]">
@@ -1691,7 +1689,7 @@ function ReviewItemCard({
 
       {item.suggested_review_action ? (
         <div className="border-t border-[var(--app-divider)] py-3">
-          <div className="text-[length:var(--app-font-size-micro)] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
+          <div className="app-type-overline text-[var(--app-text-tertiary)]">
             {text.suggestedAction}
           </div>
           <div className="mt-1 text-sm font-semibold text-[var(--app-text)]">

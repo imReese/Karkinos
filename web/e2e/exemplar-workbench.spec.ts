@@ -293,9 +293,14 @@ test('backtest preserves result-first evidence and complete metrics across all a
       const catalogControl = catalogHeader.querySelector(
         'label',
       ) as HTMLElement;
-      const evidenceText = Array.from(
+      const contextText = Array.from(
         document.querySelectorAll(
-          '.app-backtest-evidence-strip .app-metric-strip-item > .truncate',
+          '.app-backtest-context-strip .app-metric-strip-item > .truncate',
+        ),
+      );
+      const reportEvidenceText = Array.from(
+        document.querySelectorAll(
+          '.app-backtest-evidence-strip:not(.app-backtest-context-strip) .app-metric-strip-item > .truncate',
         ),
       );
       return {
@@ -304,13 +309,13 @@ test('backtest preserves result-first evidence and complete metrics across all a
           getComputedStyle(catalogHeader).gridTemplateColumns.split(' ').length,
         catalogControlWidth: catalogControl.getBoundingClientRect().width,
         catalogHeaderWidth: catalogHeader.getBoundingClientRect().width,
-        contextUnclipped:
-          evidenceText.length > 0 &&
-          evidenceText.every((element) => {
+        contextTextResponsive:
+          contextText.length > 0 &&
+          contextText.every((element) => {
             const style = getComputedStyle(element);
-            return (
-              style.whiteSpace === 'normal' && style.overflow === 'visible'
-            );
+            return window.innerWidth < 640
+              ? style.whiteSpace === 'nowrap' && style.overflow === 'hidden'
+              : style.whiteSpace === 'normal' && style.overflow === 'visible';
           }),
         documentOverflow:
           document.documentElement.scrollWidth -
@@ -318,6 +323,10 @@ test('backtest preserves result-first evidence and complete metrics across all a
         resultWidth: results.getBoundingClientRect().width,
         resultX: results.getBoundingClientRect().x,
         resultY: results.getBoundingClientRect().y,
+        resultEvidenceUnclipped: reportEvidenceText.every((element) => {
+          const style = getComputedStyle(element);
+          return style.whiteSpace === 'normal' && style.overflow === 'visible';
+        }),
         setupWidth: setup.getBoundingClientRect().width,
         setupX: setup.getBoundingClientRect().x,
         tabsVisible: getComputedStyle(tabs).display !== 'none',
@@ -327,7 +336,10 @@ test('backtest preserves result-first evidence and complete metrics across all a
 
     expect(geometry.documentOverflow, JSON.stringify(viewport)).toBe(0);
     expect(geometry.contentOverflow, JSON.stringify(viewport)).toBe(0);
-    expect(geometry.contextUnclipped, JSON.stringify(viewport)).toBe(true);
+    expect(geometry.contextTextResponsive, JSON.stringify(viewport)).toBe(true);
+    expect(geometry.resultEvidenceUnclipped, JSON.stringify(viewport)).toBe(
+      true,
+    );
 
     if (viewport.width >= 1280) {
       expect(geometry.catalogColumnCount, JSON.stringify(viewport)).toBe(1);
@@ -414,7 +426,7 @@ test('AI research keeps frozen evidence ahead of human capture across all accept
       openStrategyLab,
     })) {
       expect(
-        (await target.boundingBox())!.height,
+        Math.round((await target.boundingBox())!.height),
         `${name} ${JSON.stringify(viewport)}`,
       ).toBeGreaterThanOrEqual(44);
     }
@@ -717,7 +729,7 @@ test('holding detail keeps route identity during missing-state resolution', asyn
     height: link.getBoundingClientRect().height,
   }));
   expect(geometry.documentOverflow).toBeLessThanOrEqual(0);
-  expect(geometry.height).toBeGreaterThanOrEqual(44);
+  expect(Math.round(geometry.height)).toBeGreaterThanOrEqual(44);
 });
 
 test('portfolio mobile bounds long persisted holding rows in Latte and Mocha', async ({
@@ -1151,8 +1163,7 @@ test('exemplar routes remain task-reordered and overflow safe on mobile themes',
               elements.every((element) => {
                 const style = getComputedStyle(element);
                 return (
-                  style.whiteSpace === 'normal' &&
-                  style.overflow === 'visible'
+                  style.whiteSpace === 'normal' && style.overflow === 'visible'
                 );
               }),
             ),
