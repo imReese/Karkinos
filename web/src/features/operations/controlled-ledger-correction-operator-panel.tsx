@@ -394,7 +394,7 @@ export function ControlledLedgerCorrectionOperatorPanel({
                       locale,
                     )}
                   </div>
-                  <div className="mt-2 grid min-w-0 gap-1 font-mono text-[11px] tabular-nums sm:grid-cols-2 xl:grid-cols-3">
+                  <div className="app-type-micro mt-2 grid min-w-0 gap-1 font-mono tabular-nums sm:grid-cols-2 xl:grid-cols-3">
                     <div>
                       {locale === 'zh' ? '现金补偿' : 'Cash compensation'}:{' '}
                       {preview.data.correction_plan.cash_delta}

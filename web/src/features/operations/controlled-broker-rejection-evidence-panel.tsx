@@ -243,14 +243,14 @@ export function ControlledBrokerRejectionEvidencePanel({
                 </div>
               </div>
 
-              <div className="app-muted mt-2 break-words text-[11px] leading-5">
+              <div className="app-muted app-type-compact mt-2 break-words">
                 {preview.data.order.symbol} · {preview.data.order.side} ·{' '}
                 {preview.data.order.quantity} ·{' '}
                 {locale === 'zh' ? '证据时间：' : 'Evidence as of: '}
                 {preview.data.rejection_evidence.evidence_as_of || '—'}
               </div>
               {preview.data.rejection_evidence.reason_codes.length ? (
-                <div className="app-muted mt-1 break-words text-[11px] leading-5">
+                <div className="app-muted app-type-compact mt-1 break-words">
                   {locale === 'zh' ? '原因：' : 'Reasons: '}
                   {preview.data.rejection_evidence.reason_codes
                     .map((item) => formatPublicCode(item, locale))
@@ -342,7 +342,7 @@ export function ControlledBrokerRejectionEvidencePanel({
                       ? '记录不得重试复核'
                       : 'Record no-retry review'}
                 </button>
-                <span className="app-muted text-[11px]">
+                <span className="app-muted app-type-micro">
                   {locale === 'zh'
                     ? '无查询、重试、提交、撤单、账本或权限副作用'
                     : 'No query, retry, submit, cancel, ledger, or authority side effects'}
@@ -373,12 +373,12 @@ export function ControlledBrokerRejectionEvidencePanel({
                   ? '拒绝已复核并记录；不得重试原 intent。'
                   : 'Rejection review recorded; the original intent must not be retried.'}
               </div>
-              <div className="app-muted mt-1 break-all font-mono text-[11px]">
+              <div className="app-muted app-type-micro mt-1 break-all font-mono">
                 {shortenedIdentity(recordReview.data.review_id)} ·{' '}
                 {recordReview.data.reviewer_id} ·{' '}
                 {recordReview.data.recorded_at}
               </div>
-              <div className="app-muted mt-1 text-[11px]">
+              <div className="app-muted app-type-compact mt-1">
                 {locale === 'zh'
                   ? '如仍需交易，请新建 Decision 并重新通过账户事实、风控、逐单确认和授权门禁。'
                   : 'If the trade is still needed, create a new Decision and pass Account Truth, risk, per-order confirmation, and authority gates again.'}
@@ -395,7 +395,7 @@ export function ControlledBrokerRejectionEvidencePanel({
               </label>
               <textarea
                 id="controlled-rejection-evidence-content"
-                className="app-input mt-2 min-h-40 w-full resize-y font-mono text-[11px]"
+                className="app-input app-type-micro mt-2 min-h-40 w-full resize-y font-mono"
                 readOnly
                 value={exportEvidence.data.content}
               />

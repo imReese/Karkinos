@@ -494,7 +494,7 @@ export function SignedBrokerAdapterReleaseReviewOperatorPanel({
                   </span>
                 </div>
                 <div
-                  className="app-muted mt-2 break-all font-mono text-[11px]"
+                  className="app-muted app-type-micro mt-2 break-all font-mono"
                   title={preview.data.dossier_fingerprint}
                 >
                   dossier {shortenedIdentity(preview.data.dossier_fingerprint)}

@@ -567,7 +567,7 @@ export function ControlledPerOrderPilotReadinessPanel({
                         {gate.evidence_refs.map((reference) => (
                           <code
                             key={reference}
-                            className="block break-all text-[11px] leading-4 text-[var(--app-text-tertiary)]"
+                            className="app-type-micro block break-all text-[var(--app-text-tertiary)]"
                           >
                             {reference}
                           </code>
@@ -618,7 +618,7 @@ export function ControlledPerOrderPilotReadinessPanel({
                         ▾
                       </span>
                     </summary>
-                    <code className="mt-1.5 block break-all font-mono text-[11px] leading-4 text-[var(--app-text-tertiary)]">
+                    <code className="app-type-micro mt-1.5 block break-all font-mono text-[var(--app-text-tertiary)]">
                       {readiness.readiness_fingerprint}
                     </code>
                   </details>

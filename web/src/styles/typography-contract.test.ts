@@ -13,17 +13,6 @@ const NUMERIC_TYPOGRAPHY_OVERRIDE =
 // ceiling may only decrease; certification requires this inventory to be empty.
 const NUMERIC_OVERRIDE_CEILINGS: Readonly<Record<string, number>> = {
   'app/router.tsx': 53,
-  'features/operations/components/operations-page.tsx': 1,
-  'features/operations/controlled-broker-recovery-operator-panel.tsx': 2,
-  'features/operations/controlled-broker-rejection-evidence-panel.tsx': 6,
-  'features/operations/controlled-ledger-correction-operator-panel.tsx': 1,
-  'features/operations/controlled-ledger-posting-operator-panel.tsx': 1,
-  'features/operations/controlled-per-order-pilot-readiness-panel.tsx': 2,
-  'features/operations/controlled-session-revocation-operator-panel.tsx': 3,
-  'features/operations/controlled-terminal-clearance-operator-panel.tsx': 3,
-  'features/operations/current-per-order-dossier-operator-panel.tsx': 1,
-  'features/operations/manual-broker-cancellation-ticket-panel.tsx': 3,
-  'features/operations/signed-broker-adapter-release-review-operator-panel.tsx': 1,
 };
 
 const CERTIFIED_CORE_SURFACES = [

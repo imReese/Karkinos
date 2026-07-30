@@ -272,7 +272,7 @@ export function ControlledLedgerPostingOperatorPanel({
                           {formatPublicStatus(entry.settlement_status, locale)}
                         </span>
                       </div>
-                      <div className="mt-2 grid min-w-0 gap-1 font-mono text-[11px] tabular-nums sm:grid-cols-2 xl:grid-cols-4">
+                      <div className="app-type-micro mt-2 grid min-w-0 gap-1 font-mono tabular-nums sm:grid-cols-2 xl:grid-cols-4">
                         <div>
                           {locale === 'zh' ? '数量' : 'Quantity'}{' '}
                           {entry.quantity}

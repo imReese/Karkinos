@@ -298,7 +298,7 @@ export function ControlledTerminalClearanceOperatorPanel({
                           {formatPublicStatus(fill.asset_class, locale)}
                         </span>
                       </div>
-                      <div className="app-muted mt-1 flex min-w-0 flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] tabular-nums">
+                      <div className="app-muted app-type-micro mt-1 flex min-w-0 flex-wrap gap-x-4 gap-y-1 font-mono tabular-nums">
                         <span>
                           {locale === 'zh' ? '数量' : 'Quantity'}{' '}
                           {fill.fill_quantity}
@@ -432,7 +432,7 @@ export function ControlledTerminalClearanceOperatorPanel({
                           ? '待签名 Payload Base64'
                           : 'Payload to sign Base64'
                       }
-                      className="app-input min-h-24 w-full resize-y break-all font-mono text-[11px]"
+                      className="app-input app-type-micro min-h-24 w-full resize-y break-all font-mono"
                       readOnly
                       value={challenge.data.signing_payload_base64}
                     />
@@ -457,7 +457,7 @@ export function ControlledTerminalClearanceOperatorPanel({
                           ? 'Detached signature Base64'
                           : 'Detached signature Base64'
                       }
-                      className="app-input min-h-20 w-full resize-y break-all font-mono text-[11px]"
+                      className="app-input app-type-micro min-h-20 w-full resize-y break-all font-mono"
                       value={signature}
                       onChange={(event) => {
                         setSignature(event.target.value);
