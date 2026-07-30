@@ -7464,8 +7464,9 @@ function ReturnCalendarCell({
       type="button"
       aria-pressed={selected}
       aria-label={`${label} · ${cellAccessibleValue}`}
+      data-motion="stable-fact"
       onClick={() => onSelect(label)}
-      className={`${cellClass} border text-left transition hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--app-accent)_58%,transparent)] ${
+      className={`${cellClass} border text-left transition-colors focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--app-accent)_58%,transparent)] ${
         selected ? 'ring-2 ring-[var(--app-accent)]' : ''
       } ${tone}`}
     >
