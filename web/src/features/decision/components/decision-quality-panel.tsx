@@ -178,11 +178,11 @@ export function DecisionQualityPanel() {
                   <div className="text-xs font-semibold leading-5">
                     {DIMENSION_LABELS[locale][dimension.name]}
                   </div>
-                  <div className="app-muted mt-1 text-[11px] leading-5">
+                  <div className="app-muted app-type-compact mt-1">
                     {formatPublicStatus(dimension.status, locale)}
                   </div>
                   {dimension.blockers.length > 0 ? (
-                    <div className="mt-2 text-[11px] leading-5">
+                    <div className="app-type-compact mt-2">
                       {dimension.blockers
                         .map((item) => formatPublicCode(item, locale))
                         .join(' · ')}
@@ -194,20 +194,20 @@ export function DecisionQualityPanel() {
 
             <div className="mt-4 grid min-w-0 gap-2 sm:grid-cols-3">
               <div className="rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-3 py-2.5">
-                <div className="app-muted text-[11px]">{labels.current}</div>
+                <div className="app-muted app-type-micro">{labels.current}</div>
                 <div className="mt-1 font-mono text-sm tabular-nums text-[var(--app-text)]">
                   {target.decision_date} · {target.passed_dimension_count}/
                   {target.dimension_count}
                 </div>
               </div>
               <div className="rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-3 py-2.5">
-                <div className="app-muted text-[11px]">{labels.history}</div>
+                <div className="app-muted app-type-micro">{labels.history}</div>
                 <div className="mt-1 font-mono text-sm tabular-nums text-[var(--app-text)]">
                   {report.evaluated_day_count}
                 </div>
               </div>
               <div className="rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-3 py-2.5">
-                <div className="app-muted text-[11px]">{labels.score}</div>
+                <div className="app-muted app-type-micro">{labels.score}</div>
                 <div className="mt-1 font-mono text-sm tabular-nums text-[var(--app-text)]">
                   {report.score_percent == null
                     ? labels.empty
@@ -261,9 +261,7 @@ export function DecisionQualityPanel() {
                 {labels.error} {labels.retry}
               </p>
             ) : null}
-            <p className="app-muted mt-3 text-[11px] leading-5">
-              {labels.safety}
-            </p>
+            <p className="app-muted app-type-compact mt-3">{labels.safety}</p>
           </>
         )}
       </div>
