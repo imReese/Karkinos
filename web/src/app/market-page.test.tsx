@@ -746,7 +746,7 @@ test('routes confirmed NAV blockers through confirmation-only ingestion', async 
   ]) {
     expect(action.className).toContain('h-10');
     expect(action.className).toContain('sm:h-8');
-    expect(action.className).toContain('text-[11px]');
+    expect(action.className).toContain('app-type-micro');
   }
   await user.click(
     within(panel).getByRole('button', { name: 'View evidence identity' }),

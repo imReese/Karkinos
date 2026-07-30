@@ -174,9 +174,7 @@ export function PriceStructureChart({
         className="border-y border-[var(--app-divider)] py-3"
         aria-label={titleLabel}
       >
-        <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
-          {titleLabel}
-        </div>
+        <div className="app-kicker app-type-overline">{titleLabel}</div>
         <EvidenceState className="mt-3" kind="empty" title={emptyLabel} />
       </div>
     );
@@ -279,9 +277,7 @@ export function PriceStructureChart({
       aria-label={titleLabel}
     >
       <div className="mb-4 flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
-          {titleLabel}
-        </div>
+        <div className="app-kicker app-type-overline">{titleLabel}</div>
         <div
           className="flex min-w-0 flex-wrap gap-2"
           role="group"
@@ -294,7 +290,7 @@ export function PriceStructureChart({
               <button
                 key={rangeOption.key}
                 type="button"
-                className={`app-chart-control rounded-[var(--app-radius-control)] border px-3 py-1.5 text-[11px] font-semibold ${
+                className={`app-chart-control app-type-micro rounded-[var(--app-radius-control)] border px-3 py-1.5 font-semibold ${
                   selected
                     ? 'border-[color-mix(in_srgb,var(--app-accent)_58%,transparent)] bg-[color-mix(in_srgb,var(--app-accent)_16%,transparent)] text-[var(--app-text)]'
                     : 'border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] text-[var(--app-muted)] hover:border-[color-mix(in_srgb,var(--app-accent)_34%,transparent)] hover:text-[var(--app-soft)]'
@@ -542,7 +538,7 @@ export function PriceStructureChart({
               );
             })}
           </svg>
-          <div className="mt-2 flex flex-col gap-1 text-[11px] tabular-nums text-[var(--app-muted)] sm:flex-row sm:items-center sm:justify-between">
+          <div className="app-type-micro mt-2 flex flex-col gap-1 tabular-nums text-[var(--app-muted)] sm:flex-row sm:items-center sm:justify-between">
             <span>
               {formatDateTick(plottedBars[0]?.timestamp, 0)} -{' '}
               {formatDateTick(

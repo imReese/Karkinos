@@ -166,13 +166,13 @@ export function MarketInstrumentWorkspace({
       <aside className="min-w-0 border-y border-[var(--app-divider)] md:sticky md:top-3">
         <div className="flex items-center justify-between gap-3 border-b border-[var(--app-divider)] px-3 py-2.5 md:items-start md:py-3">
           <div className="min-w-0">
-            <div className="app-kicker hidden text-[11px] uppercase tracking-[0.16em] md:block">
+            <div className="app-kicker app-type-overline hidden md:block">
               {labels.personalUniverse}
             </div>
             <h2 className="app-type-section-title text-[var(--app-text)] md:mt-1">
               {labels.watchlist}
             </h2>
-            <p className="mt-1 hidden text-[11px] leading-4 text-[var(--app-text-tertiary)] md:block">
+            <p className="app-type-micro mt-1 hidden text-[var(--app-text-tertiary)] md:block">
               {labels.scopeBoundary}
             </p>
           </div>
@@ -239,11 +239,11 @@ export function MarketInstrumentWorkspace({
                       <span className="block truncate text-sm font-semibold text-[var(--app-text)]">
                         {item.name || item.symbol}
                       </span>
-                      <span className="mt-0.5 block truncate font-mono text-[11px] tabular-nums text-[var(--app-text-tertiary)]">
+                      <span className="app-type-micro mt-0.5 block truncate font-mono tabular-nums text-[var(--app-text-tertiary)]">
                         {item.symbol} ·{' '}
                         {formatAssetClassLabel(item.asset_class, copy.common)}
                       </span>
-                      <span className="mt-1 block truncate text-[11px] text-[var(--app-text-tertiary)]">
+                      <span className="app-type-micro mt-1 block truncate text-[var(--app-text-tertiary)]">
                         {statusLabel} · {formatAge(quote?.quote_age_seconds)} ·{' '}
                         {labels.researchCount} {item.research_count}
                       </span>
@@ -256,7 +256,7 @@ export function MarketInstrumentWorkspace({
                         {formatCurrency(item.price)}
                       </span>
                       <span
-                        className={`mt-1 block text-[11px] font-semibold tabular-nums ${moveTone(dailyMove)}`}
+                        className={`app-type-micro mt-1 block font-semibold tabular-nums ${moveTone(dailyMove)}`}
                       >
                         {dailyMove == null ? '--' : formatCurrency(dailyMove)}
                       </span>
@@ -293,11 +293,11 @@ export function MarketInstrumentWorkspace({
           <>
             <header className="flex min-w-0 items-end justify-between gap-4 border-b border-[var(--app-divider)] pb-4">
               <div className="min-w-0">
-                <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+                <div className="app-kicker app-type-overline">
                   {formatAssetClassLabel(selectedItem.asset_class, copy.common)}{' '}
                   · {selectedItem.symbol}
                 </div>
-                <h2 className="mt-1 truncate text-2xl font-semibold tracking-[-0.025em] text-[var(--app-text)] sm:text-[1.75rem] xl:text-3xl">
+                <h2 className="app-page-title mt-1 truncate text-[var(--app-text)]">
                   {selectedItem.name || selectedItem.symbol}
                 </h2>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--app-text-secondary)]">
@@ -313,7 +313,7 @@ export function MarketInstrumentWorkspace({
               </div>
               <div className="shrink-0 text-right">
                 <div
-                  className="text-2xl font-semibold tabular-nums tracking-[-0.025em] text-[var(--app-text)] sm:text-[1.75rem] xl:text-3xl"
+                  className="app-page-title tabular-nums text-[var(--app-text)]"
                   data-testid="market-selected-price"
                 >
                   {formatCurrency(selectedItem.price)}
