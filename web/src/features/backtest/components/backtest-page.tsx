@@ -1445,7 +1445,7 @@ function RunReadinessSummary({
       data-testid="backtest-run-readiness-summary"
     >
       <div className="min-w-0">
-        <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
+        <div className="app-kicker app-type-overline">
           {labels.runReadinessTitle}
         </div>
         <p className="app-muted mt-2 text-sm leading-6">
@@ -1494,7 +1494,7 @@ function RunContextValue({
 }) {
   return (
     <div className="min-w-0 border-t border-[var(--app-divider)] py-2.5">
-      <div className="text-[11px] font-medium text-[var(--app-text-secondary)]">
+      <div className="app-type-micro font-medium text-[var(--app-text-secondary)]">
         {label}
       </div>
       <div
@@ -1643,7 +1643,7 @@ function SingleInstrumentLoopReadinessCard({
     <section className="rounded-3xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] p-4">
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
+          <div className="app-kicker app-type-overline">
             {labels.singleInstrumentLoopKicker}
           </div>
           <h3 className="app-type-subsection-title mt-1.5 text-[var(--app-text)]">
@@ -1672,7 +1672,7 @@ function SingleInstrumentLoopReadinessCard({
       </div>
       <div className="mt-4 flex min-w-0 flex-col gap-2 rounded-2xl border border-[color-mix(in_srgb,var(--app-accent)_30%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-accent)_9%,transparent)] px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
+          <div className="app-kicker app-type-overline">
             {labels.singleInstrumentLoopNextStep}
           </div>
           <p className="mt-1 text-sm font-semibold text-[var(--app-text)]">
@@ -1696,7 +1696,7 @@ function SingleInstrumentLoopReadinessCard({
         }`}
       >
         <div className="min-w-0">
-          <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
+          <div className="app-kicker app-type-overline">
             {labels.singleInstrumentLoopAuditCoverage}
           </div>
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
@@ -1711,7 +1711,7 @@ function SingleInstrumentLoopReadinessCard({
             >
               {auditCoverageLabel}
             </span>
-            <code className="min-w-0 break-all rounded-full border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-2.5 py-1 text-[11px] font-semibold text-[var(--app-muted)]">
+            <code className="app-type-micro min-w-0 break-all rounded-full border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-2.5 py-1 font-semibold text-[var(--app-muted)]">
               {auditDisplayName}
             </code>
           </div>
@@ -1735,7 +1735,7 @@ function SingleInstrumentLoopReadinessCard({
             <div className="min-w-0">{step.label}</div>
             <a
               aria-label={step.evidenceLabel}
-              className="mt-2 inline-flex max-w-full items-center rounded-full border border-[color-mix(in_srgb,currentColor_24%,transparent)] px-2.5 py-1 text-[11px] font-semibold text-inherit opacity-85 transition hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
+              className="app-type-micro mt-2 inline-flex max-w-full items-center rounded-full border border-[color-mix(in_srgb,currentColor_24%,transparent)] px-2.5 py-1 font-semibold text-inherit opacity-85 transition hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
               href={step.evidenceHref}
             >
               {labels.singleInstrumentLoopEvidenceCta}
@@ -1785,7 +1785,7 @@ function StrategyCatalogPanel({
         data-testid="backtest-strategy-catalog-header"
       >
         <div className="min-w-0">
-          <div className="text-[length:var(--app-font-size-micro)] font-semibold uppercase tracking-[0.08em] text-[var(--app-text-tertiary)]">
+          <div className="app-type-overline text-[var(--app-text-tertiary)]">
             {labels.strategyCatalogKicker}
           </div>
           <h2 className="app-type-section-title mt-1 text-[var(--app-text)]">
@@ -1825,7 +1825,7 @@ function StrategyCatalogPanel({
               {selectedDescription}
             </p>
           </div>
-          <code className="shrink-0 break-all font-mono text-[11px] text-[var(--app-text-tertiary)]">
+          <code className="app-type-micro shrink-0 break-all font-mono text-[var(--app-text-tertiary)]">
             {selectedStrategy.strategy_id}
           </code>
         </div>
@@ -1833,7 +1833,7 @@ function StrategyCatalogPanel({
           <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
             {badges.map((badge) => (
               <span
-                className="text-[11px] font-medium text-[var(--app-text-tertiary)]"
+                className="app-type-micro font-medium text-[var(--app-text-tertiary)]"
                 key={badge}
               >
                 {badge}
@@ -2072,7 +2072,7 @@ function AccountStrategyPanel({
 
         <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
+            <div className="app-kicker app-type-overline">
               {labels.accountStrategyScopedAssignmentsTitle}
             </div>
             {scopedAssignmentsLoading ? (
@@ -2126,7 +2126,7 @@ function AccountStrategyPanel({
         </div>
 
         <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
-          <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
+          <div className="app-kicker app-type-overline">
             {labels.accountStrategyPnlAttributionStatus}
           </div>
           <div className="mt-2 text-lg font-semibold text-[var(--app-text)]">
@@ -2167,7 +2167,7 @@ function AccountStrategyPanel({
 
         <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
+            <div className="app-kicker app-type-overline">
               {labels.accountStrategyAttributionEvidence}
             </div>
             {attributionLoading ? (
@@ -2222,7 +2222,7 @@ function AccountStrategyPanel({
 
         <div className="mt-4 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
+            <div className="app-kicker app-type-overline">
               {labels.accountStrategyContributionReport}
             </div>
             {contributionLoading ? (
@@ -2517,7 +2517,7 @@ function StrategySignalPreviewPanel({
     <div className="rounded-3xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] p-4">
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
+          <div className="app-kicker app-type-overline">
             {labels.signalPreviewKicker}
           </div>
           <h3 className="app-type-subsection-title mt-1.5 text-[var(--app-text)]">
@@ -2558,7 +2558,7 @@ function StrategySignalPreviewPanel({
               )}
             />
             <div className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-1)_22%,transparent)] px-3 py-2">
-              <div className="app-muted text-[11px]">
+              <div className="app-muted app-type-micro">
                 {labels.signalPreviewReferencePriceLabel}
               </div>
               <div className="mt-1 truncate text-sm font-semibold tabular-nums">
@@ -3236,7 +3236,7 @@ function StrategyEvidenceGatePanel({
           <div className="mt-4 min-w-0 overflow-x-auto overscroll-x-contain">
             <table className="min-w-[1060px] table-fixed text-left text-sm">
               <thead>
-                <tr className="app-kicker border-b border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] text-[11px] uppercase tracking-[0.16em]">
+                <tr className="app-kicker app-type-overline border-b border-[color-mix(in_srgb,var(--app-border)_28%,transparent)]">
                   <th className="w-[190px] px-3 py-3">{labels.strategy}</th>
                   <th className="w-[150px] px-3 py-3">
                     {labels.validationMatrix}
@@ -3356,7 +3356,7 @@ function StrategyEvidenceGatePanel({
 function EvidenceCount({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] px-3 py-2">
-      <div className="app-muted text-[11px]">{label}</div>
+      <div className="app-muted app-type-micro">{label}</div>
       <div className="mt-1 text-lg font-semibold text-[var(--app-text)]">
         {value}
       </div>
@@ -3402,7 +3402,7 @@ function StrategyMetadataPanel({
 
   return (
     <section className="border-y border-[var(--app-divider)] py-3">
-      <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
+      <div className="app-kicker app-type-overline">
         {labels.strategyMetadata}
       </div>
       <div className="mt-2 grid gap-x-4 sm:grid-cols-2">
@@ -3423,7 +3423,7 @@ function StrategyMetadataPanel({
           )}
         />
         <div className="min-w-0 border-t border-[var(--app-divider)] py-2.5">
-          <div className="text-[11px] font-medium text-[var(--app-text-secondary)]">
+          <div className="app-type-micro font-medium text-[var(--app-text-secondary)]">
             {labels.validationRequirements}
           </div>
           {validationBadges.length > 0 ? (
@@ -3460,7 +3460,7 @@ function StrategyMetadataPanel({
 function MetadataItem({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 border-t border-[var(--app-divider)] py-2.5">
-      <div className="text-[11px] font-medium text-[var(--app-text-secondary)]">
+      <div className="app-type-micro font-medium text-[var(--app-text-secondary)]">
         {label}
       </div>
       <div className="mt-0.5 truncate text-sm font-semibold tabular-nums text-[var(--app-text)]">
@@ -3485,9 +3485,7 @@ function SummaryValue({
 }) {
   return (
     <div>
-      <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
-        {label}
-      </div>
+      <div className="app-kicker app-type-overline">{label}</div>
       <div
         className={`mt-1 font-semibold ${tone === 'pnl-negative' ? 'text-[var(--app-pnl-negative)]' : 'text-[var(--app-text)]'}`}
       >
