@@ -13,9 +13,6 @@ const NUMERIC_TYPOGRAPHY_OVERRIDE =
 // ceiling may only decrease; certification requires this inventory to be empty.
 const NUMERIC_OVERRIDE_CEILINGS: Readonly<Record<string, number>> = {
   'app/router.tsx': 53,
-  'features/account/components/dashboard-quick-actions.tsx': 1,
-  'features/account/components/equity-curve-card.tsx': 7,
-  'features/account/components/performance-breakdown-card.tsx': 2,
   'features/operations/components/operations-page.tsx': 1,
   'features/operations/controlled-broker-recovery-operator-panel.tsx': 2,
   'features/operations/controlled-broker-rejection-evidence-panel.tsx': 6,
