@@ -206,7 +206,7 @@ export function ManualBrokerCancellationTicketPanel({
                 </div>
               </div>
 
-              <div className="app-muted mt-2 break-words text-[11px] leading-5">
+              <div className="app-muted app-type-compact mt-2 break-words">
                 {locale === 'zh' ? '证据：' : 'Evidence: '}
                 {preview.data.provider || '—'} ·{' '}
                 {shortenedIdentity(
@@ -260,7 +260,7 @@ export function ManualBrokerCancellationTicketPanel({
                       ? '生成可复制证据包'
                       : 'Create copyable evidence package'}
                 </button>
-                <span className="app-muted text-[11px]">
+                <span className="app-muted app-type-micro">
                   {locale === 'zh'
                     ? '无提交、撤单、权限或账本副作用'
                     : 'No submit, cancel, authority, or ledger side effects'}
@@ -285,7 +285,7 @@ export function ManualBrokerCancellationTicketPanel({
               </label>
               <textarea
                 id="manual-cancel-ticket-content"
-                className="app-input mt-2 min-h-40 w-full resize-y font-mono text-[11px]"
+                className="app-input app-type-micro mt-2 min-h-40 w-full resize-y font-mono"
                 readOnly
                 value={exportTicket.data.content}
               />

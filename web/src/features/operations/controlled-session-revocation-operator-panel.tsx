@@ -292,7 +292,7 @@ export function ControlledSessionRevocationOperatorPanel({
                   {formatPublicStatus(preview.data.status, locale)}
                 </span>
               </div>
-              <div className="mt-2 grid min-w-0 gap-2 font-mono text-[11px] sm:grid-cols-2">
+              <div className="app-type-micro mt-2 grid min-w-0 gap-2 font-mono sm:grid-cols-2">
                 <div
                   className="min-w-0 truncate"
                   title={preview.data.revocation_id}
@@ -410,7 +410,7 @@ export function ControlledSessionRevocationOperatorPanel({
                           ? '待签名 Payload Base64'
                           : 'Payload to sign Base64'
                       }
-                      className="app-input min-h-24 w-full resize-y break-all font-mono text-[11px]"
+                      className="app-input app-type-micro min-h-24 w-full resize-y break-all font-mono"
                       readOnly
                       value={challenge.data.signing_payload_base64}
                     />
@@ -435,7 +435,7 @@ export function ControlledSessionRevocationOperatorPanel({
                           ? 'Detached signature Base64'
                           : 'Detached signature Base64'
                       }
-                      className="app-input min-h-20 w-full resize-y break-all font-mono text-[11px]"
+                      className="app-input app-type-micro min-h-20 w-full resize-y break-all font-mono"
                       value={signature}
                       onChange={(event) => {
                         setSignature(event.target.value);

@@ -369,7 +369,7 @@ export function ControlledBrokerRecoveryOperatorPanel({
                           ? '待签名 Payload Base64'
                           : 'Payload to sign Base64'
                       }
-                      className="app-input min-h-24 w-full resize-y break-all font-mono text-[11px]"
+                      className="app-input app-type-micro min-h-24 w-full resize-y break-all font-mono"
                       readOnly
                       value={challenge.data.signing_payload_base64}
                     />
@@ -385,7 +385,7 @@ export function ControlledBrokerRecoveryOperatorPanel({
                     </span>
                     <textarea
                       aria-label="Detached signature Base64"
-                      className="app-input min-h-20 w-full resize-y break-all font-mono text-[11px]"
+                      className="app-input app-type-micro min-h-20 w-full resize-y break-all font-mono"
                       value={signature}
                       onChange={(event) => {
                         setSignature(event.target.value);

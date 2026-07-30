@@ -338,7 +338,7 @@ export function OperationsPage() {
                         ) : null}
                         <button
                           type="button"
-                          className="app-button-secondary px-2 py-1 text-[11px]"
+                          className="app-button-secondary app-type-micro px-2 py-1"
                           onClick={() =>
                             setSelectedAttentionFingerprint(
                               item.task_fingerprint,
