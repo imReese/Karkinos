@@ -122,7 +122,7 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
           title: (
             <span className="min-w-0">
               <span className="block truncate">{item.name}</span>
-              <span className="mt-0.5 block font-mono text-[11px] font-normal tabular-nums text-[var(--app-text-tertiary)]">
+              <span className="app-type-micro mt-0.5 block font-mono font-normal tabular-nums text-[var(--app-text-tertiary)]">
                 {item.symbol} · {formatQuantity(item.quantity)}
               </span>
             </span>
@@ -166,7 +166,7 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
     >
       <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
-          <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+          <div className="app-kicker app-type-overline">
             {labels.holdingEvidenceReview}
           </div>
           <h2
@@ -193,7 +193,7 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
           >
             {report ? (
               <EvidenceIdentityDisclosure
-                className="app-button-secondary inline-flex h-10 items-center rounded-[var(--app-radius-control)] px-2.5 text-[11px] font-semibold sm:h-8"
+                className="app-button-secondary app-type-micro inline-flex h-10 items-center rounded-[var(--app-radius-control)] px-2.5 font-semibold sm:h-8"
                 triggerLabel={copy.common.viewEvidenceIdentity}
                 title={copy.common.evidenceIdentityTitle}
                 description={copy.common.evidenceIdentityDescription}
@@ -268,7 +268,7 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
       ) : null}
 
       {report && !showReviewWorkspace ? (
-        <div className="flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-[11px] tabular-nums text-[var(--app-text-tertiary)]">
+        <div className="app-type-micro flex min-w-0 flex-wrap gap-x-4 gap-y-1 tabular-nums text-[var(--app-text-tertiary)]">
           <span>
             {report.confirmed_holding_count}/{report.current_holding_count}
           </span>
@@ -299,13 +299,13 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
                       </StatusBadge>
                     </div>
                   </div>
-                  <div className="min-w-0 text-[11px] leading-4 text-[var(--app-text-secondary)]">
+                  <div className="app-type-micro min-w-0 text-[var(--app-text-secondary)]">
                     <span className="font-semibold text-[var(--app-text)]">
                       {labels.holdingEvidenceReasonLabel}:{' '}
                     </span>
                     {item.reason}
                   </div>
-                  <div className="grid min-w-0 gap-1 text-[11px] leading-4 text-[var(--app-text-secondary)]">
+                  <div className="app-type-micro grid min-w-0 gap-1 text-[var(--app-text-secondary)]">
                     <div className="min-w-0">
                       <span className="font-semibold text-[var(--app-text)]">
                         {labels.holdingEvidenceSafeNextStepLabel}:{' '}
@@ -322,7 +322,7 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
                 </div>
               ))}
             </div>
-            <p className="text-[11px] leading-4 text-[var(--app-text-secondary)]">
+            <p className="app-type-micro text-[var(--app-text-secondary)]">
               <span className="font-semibold text-[var(--app-text)]">
                 {labels.holdingEvidenceClearingConditionLabel}:{' '}
               </span>
