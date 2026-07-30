@@ -370,7 +370,7 @@ function TradePreviewPanel({
   return (
     <section className="border-y border-[var(--app-divider)] py-3">
       <div className="flex min-w-0 items-center justify-between gap-3">
-        <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+        <div className="app-kicker app-type-overline">
           {labels.previewTitle}
         </div>
         <div className="app-chip min-w-0 truncate">

@@ -191,7 +191,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                   <span>{labels.categoryLabels[category]}</span>
                   <span
                     aria-hidden="true"
-                    className="font-mono text-[11px] tabular-nums opacity-75"
+                    className="app-type-micro font-mono tabular-nums opacity-75"
                   >
                     {count}
                   </span>
@@ -235,7 +235,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                   <span>{option.label}</span>
                   <span
                     aria-hidden="true"
-                    className="font-mono text-[11px] tabular-nums opacity-75"
+                    className="app-type-micro font-mono tabular-nums opacity-75"
                   >
                     {option.count}
                   </span>
@@ -282,14 +282,14 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                     <div className="font-mono text-xs font-semibold text-[var(--app-soft)]">
                       {formatTimestamp(entry.timestamp)}
                     </div>
-                    <div className="app-muted mt-1 text-[11px]">
+                    <div className="app-muted app-type-micro mt-1">
                       {formatLedgerSourceLabel(entry.source, locale)}
                     </div>
                   </td>
                   <td className="px-4 py-3 align-top">
                     <div className="flex items-center gap-2.5">
                       <span
-                        className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--app-radius-control)] text-[11px] font-bold ${activityBadgeClass(summary.tone)}`}
+                        className={`app-type-micro inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--app-radius-control)] font-bold ${activityBadgeClass(summary.tone)}`}
                       >
                         {summary.shortLabel}
                       </span>
@@ -315,7 +315,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                       <div className="font-semibold">--</div>
                     )}
                     <div className="app-muted mt-1 flex items-center gap-2 text-xs">
-                      <span className="rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-2 py-0.5 text-[length:var(--app-font-size-micro)] font-semibold uppercase tracking-[0.08em]">
+                      <span className="app-type-overline rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-2 py-0.5">
                         {formatAssetClass(entry.asset_class, copy)}
                       </span>
                     </div>
@@ -381,11 +381,11 @@ function LedgerExecutionDetails({
   );
 
   if (details.length === 0) {
-    return <div className="app-muted mt-1 text-[11px]">--</div>;
+    return <div className="app-muted app-type-micro mt-1">--</div>;
   }
 
   return (
-    <div className="app-muted mt-1 ml-auto flex max-w-[240px] flex-wrap items-center justify-end gap-x-2 gap-y-0.5 text-[11px] leading-4">
+    <div className="app-muted app-type-micro mt-1 ml-auto flex max-w-[240px] flex-wrap items-center justify-end gap-x-2 gap-y-0.5">
       {details.map((item) => (
         <span key={item.label} className="whitespace-nowrap">
           {item.label} {item.value}
