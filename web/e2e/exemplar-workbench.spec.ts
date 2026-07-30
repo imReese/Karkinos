@@ -644,6 +644,44 @@ test('portfolio mobile keeps holdings or an explicit empty state below disclosed
   expect(documentOverflow).toBeLessThanOrEqual(0);
 });
 
+test('holding detail keeps route identity during missing-state resolution', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/portfolio/TEST-MISSING');
+
+  const header = page.getByTestId('holding-detail-header');
+  const returnLink = header.getByRole('link', {
+    name: 'Return to holdings list',
+  });
+  await expect(
+    header.getByRole('heading', {
+      level: 1,
+      name: 'TEST-MISSING Position',
+    }),
+  ).toBeVisible();
+  await expect(returnLink).toBeVisible();
+  await expect(
+    page
+      .getByText('Loading holding detail.')
+      .or(
+        page.getByText(
+          'This symbol is not present in the current portfolio snapshot.',
+        ),
+      )
+      .first(),
+  ).toBeVisible();
+
+  const geometry = await returnLink.evaluate((link) => ({
+    documentOverflow:
+      document.documentElement.scrollWidth -
+      document.documentElement.clientWidth,
+    height: link.getBoundingClientRect().height,
+  }));
+  expect(geometry.documentOverflow).toBeLessThanOrEqual(0);
+  expect(geometry.height).toBeGreaterThanOrEqual(44);
+});
+
 test('portfolio mobile bounds long persisted holding rows in Latte and Mocha', async ({
   page,
 }) => {
