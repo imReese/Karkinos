@@ -1710,6 +1710,34 @@ test('brand motion keeps route and mobile drawer timing coherent', async ({
     easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
     name: 'app-route-enter',
   });
+  const nestedRouteReveals = await route.evaluate((element) =>
+    element.getAnimations({ subtree: true }).flatMap((animation) => {
+      const effect = animation.effect;
+      if (!(effect instanceof KeyframeEffect) || effect.target === element) {
+        return [];
+      }
+      const name =
+        animation instanceof CSSAnimation ? animation.animationName : '';
+      return name === 'app-content-enter' || name === 'app-chart-enter'
+        ? [name]
+        : [];
+    }),
+  );
+  expect(nestedRouteReveals).toEqual([]);
+
+  await page.goto('/');
+  const publicEvidenceFrame = page.locator('.app-public-evidence-frame');
+  await expect(publicEvidenceFrame).toBeVisible();
+  const nestedPublicReveals = await publicEvidenceFrame.evaluate((element) =>
+    element.getAnimations({ subtree: true }).flatMap((animation) => {
+      const effect = animation.effect;
+      if (!(effect instanceof KeyframeEffect) || effect.target === element) {
+        return [];
+      }
+      return animation instanceof CSSAnimation ? [animation.animationName] : [];
+    }),
+  );
+  expect(nestedPublicReveals).toEqual([]);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/overview');
