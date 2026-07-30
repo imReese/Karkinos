@@ -86,8 +86,35 @@ describe('Karkinos brand motion contract', () => {
     expect(names).toContain('styles/globals.css');
     expect(GLOBALS).toContain('app-route-enter');
     expect(GLOBALS).toContain('app-overlay-enter');
+    expect(GLOBALS).toContain('app-popover-enter');
     expect(GLOBALS).toContain('app-drawer-enter');
-    expect(GLOBALS).toContain('app-chart-enter');
+    expect(GLOBALS).not.toContain('app-chart-enter');
     expect(GLOBALS).not.toMatch(/animation:\s*(?:pulse|spin)\s/);
+  });
+
+  it('keeps route, evidence, chart, and public-hero reveals single-layered', () => {
+    expect(GLOBALS.match(/\.app-route-stage[^{]*\{/g)).toEqual([
+      '.app-route-stage {',
+    ]);
+    expect(GLOBALS).not.toMatch(
+      /\[data-workbench-primitive='(?:evidence-state|data-table)'\][^{]*\{[^}]*animation:/,
+    );
+    expect(GLOBALS).not.toMatch(
+      /\[data-workbench-primitive='(?:exception-list|timeline|gate-matrix)'\][^{]*\{[^}]*animation:/,
+    );
+    expect(GLOBALS).not.toMatch(/\.app-chart-stage[\s\S]{0,160}animation:/);
+    expect(GLOBALS).not.toMatch(
+      /\.app-public-evidence-step(?:[^,{]|,(?!\s*\.app-public))*\{[^}]*animation:/,
+    );
+    expect(GLOBALS).not.toMatch(
+      /\.app-chart-tooltip\s*,\s*\.recharts-tooltip-wrapper/,
+    );
+
+    const overlayEnter =
+      GLOBALS.match(/@keyframes app-overlay-enter\s*\{[\s\S]*?\n\}/)?.[0] ?? '';
+    const drawerEnter =
+      GLOBALS.match(/@keyframes app-drawer-enter\s*\{[\s\S]*?\n\}/)?.[0] ?? '';
+    expect(overlayEnter).not.toContain('opacity');
+    expect(drawerEnter).not.toContain('opacity');
   });
 });

@@ -1348,6 +1348,15 @@ textarea {
 
 @keyframes app-overlay-enter {
   from {
+    translate: 0 calc(-1 * var(--app-motion-distance-sm));
+  }
+  to {
+    translate: 0;
+  }
+}
+
+@keyframes app-popover-enter {
+  from {
     opacity: 0;
     translate: 0 calc(-1 * var(--app-motion-distance-sm));
   }
@@ -1359,23 +1368,10 @@ textarea {
 
 @keyframes app-drawer-enter {
   from {
-    opacity: 0.86;
     scale: 0.985 1;
   }
   to {
-    opacity: 1;
     scale: 1;
-  }
-}
-
-@keyframes app-chart-enter {
-  from {
-    opacity: 0.72;
-    translate: 0 var(--app-motion-distance-xs);
-  }
-  to {
-    opacity: 1;
-    translate: 0;
   }
 }
 
@@ -1393,42 +1389,6 @@ textarea {
 .app-route-stage {
   min-width: 0;
   animation: app-route-enter var(--app-motion-route) var(--app-ease-enter) both;
-}
-
-.app-route-stage [data-workbench-primitive='workspace-header'] {
-  animation: app-content-enter var(--app-motion-deliberate)
-    var(--app-ease-enter) both;
-}
-
-.app-route-stage
-  [data-workbench-primitive='metric-strip']
-  > .app-metric-strip-item {
-  animation: app-content-enter var(--app-motion-deliberate)
-    var(--app-ease-enter) both;
-}
-
-.app-route-stage
-  [data-workbench-primitive='metric-strip']
-  > .app-metric-strip-item:nth-child(2) {
-  animation-delay: calc(var(--app-motion-stagger) * 1);
-}
-
-.app-route-stage
-  [data-workbench-primitive='metric-strip']
-  > .app-metric-strip-item:nth-child(3) {
-  animation-delay: calc(var(--app-motion-stagger) * 2);
-}
-
-.app-route-stage
-  [data-workbench-primitive='metric-strip']
-  > .app-metric-strip-item:nth-child(4) {
-  animation-delay: calc(var(--app-motion-stagger) * 3);
-}
-
-.app-route-stage
-  [data-workbench-primitive='metric-strip']
-  > .app-metric-strip-item:nth-child(n + 5) {
-  animation-delay: calc(var(--app-motion-stagger) * 4);
 }
 
 [data-workbench-primitive='status-badge'] {
@@ -1458,47 +1418,9 @@ textarea {
 }
 
 [data-workbench-primitive='evidence-state'] {
-  animation: app-content-enter var(--app-motion-deliberate)
-    var(--app-ease-enter) both;
   transition:
     border-color var(--app-motion-standard) var(--app-ease-standard),
     background-color var(--app-motion-standard) var(--app-ease-standard);
-}
-
-[data-workbench-primitive='exception-list'] > li,
-[data-workbench-primitive='timeline'] > li,
-[data-workbench-primitive='gate-matrix'] tbody > tr {
-  animation: app-content-enter var(--app-motion-deliberate)
-    var(--app-ease-enter) both;
-}
-
-[data-workbench-primitive='exception-list'] > li:nth-child(2),
-[data-workbench-primitive='timeline'] > li:nth-child(2),
-[data-workbench-primitive='gate-matrix'] tbody > tr:nth-child(2) {
-  animation-delay: calc(var(--app-motion-stagger) * 1);
-}
-
-[data-workbench-primitive='exception-list'] > li:nth-child(3),
-[data-workbench-primitive='timeline'] > li:nth-child(3),
-[data-workbench-primitive='gate-matrix'] tbody > tr:nth-child(3) {
-  animation-delay: calc(var(--app-motion-stagger) * 2);
-}
-
-[data-workbench-primitive='exception-list'] > li:nth-child(4),
-[data-workbench-primitive='timeline'] > li:nth-child(4),
-[data-workbench-primitive='gate-matrix'] tbody > tr:nth-child(4) {
-  animation-delay: calc(var(--app-motion-stagger) * 3);
-}
-
-[data-workbench-primitive='exception-list'] > li:nth-child(n + 5),
-[data-workbench-primitive='timeline'] > li:nth-child(n + 5),
-[data-workbench-primitive='gate-matrix'] tbody > tr:nth-child(n + 5) {
-  animation-delay: calc(var(--app-motion-stagger) * 4);
-}
-
-[data-workbench-primitive='data-table'] tbody {
-  animation: app-content-enter var(--app-motion-deliberate)
-    var(--app-ease-enter) both;
 }
 
 [data-workbench-primitive='controlled-action-zone'] {
@@ -1520,7 +1442,7 @@ textarea {
 
 .app-toolbar-shell :where([role='dialog'], [role='menu']),
 .app-status-footer [role='dialog'] {
-  animation: app-overlay-enter var(--app-motion-deliberate)
+  animation: app-popover-enter var(--app-motion-deliberate)
     var(--app-ease-enter) both;
   transform-origin: top right;
 }
@@ -1545,14 +1467,8 @@ textarea {
   translate: 0 var(--app-motion-distance-xs);
 }
 
-.app-chart-stage,
-[data-workbench-primitive='responsive-chart-frame'] > * {
-  animation: app-chart-enter var(--app-motion-route) var(--app-ease-enter) both;
-}
-
-.app-chart-tooltip,
 .recharts-tooltip-wrapper {
-  animation: app-overlay-enter var(--app-motion-standard) var(--app-ease-enter)
+  animation: app-popover-enter var(--app-motion-standard) var(--app-ease-enter)
     both;
 }
 
@@ -1608,23 +1524,6 @@ textarea {
 
 .app-public-evidence-frame {
   animation-delay: calc(var(--app-motion-stagger) * 2);
-}
-
-.app-public-evidence-step {
-  animation: app-content-enter var(--app-motion-deliberate)
-    var(--app-ease-enter) both;
-}
-
-.app-public-evidence-step:nth-child(2) {
-  animation-delay: calc(var(--app-motion-stagger) * 1);
-}
-
-.app-public-evidence-step:nth-child(3) {
-  animation-delay: calc(var(--app-motion-stagger) * 2);
-}
-
-.app-public-evidence-step:nth-child(4) {
-  animation-delay: calc(var(--app-motion-stagger) * 3);
 }
 
 @supports (animation-timeline: view()) {
