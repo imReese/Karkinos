@@ -19,7 +19,6 @@ const NUMERIC_OVERRIDE_CEILINGS: Readonly<Record<string, number>> = {
   'features/activity/components/activity-feed.tsx': 7,
   'features/activity/components/trade-form.tsx': 1,
   'features/ai-research/components/research-task-panel.tsx': 7,
-  'features/backtest/components/backtest-page.tsx': 23,
   'features/backtest/components/dataset-snapshot-panel.tsx': 3,
   'features/backtest/components/equity-drawdown-chart.tsx': 2,
   'features/backtest/components/fills-table.tsx': 1,
@@ -61,6 +60,7 @@ const CERTIFIED_CORE_SURFACES = [
   'app/layout/app-shell.tsx',
   'features/account-truth/components/account-truth-review-page.tsx',
   'features/account/components/overview-cards.tsx',
+  'features/backtest/components/backtest-page.tsx',
   'features/decision/components/decision-cockpit-page.tsx',
 ] as const;
 
@@ -92,7 +92,7 @@ describe('Karkinos typography certification ratchet', () => {
     expect(overline).toContain('text-transform: uppercase');
   });
 
-  it('keeps certified shared account surfaces on semantic typography roles', () => {
+  it('keeps certified core surfaces on semantic typography roles', () => {
     const violations = CERTIFIED_CORE_SURFACES.flatMap((file) => {
       const count = numericOverrideCount(join(SRC_ROOT, file));
       return count > 0 ? [{ file, count }] : [];
