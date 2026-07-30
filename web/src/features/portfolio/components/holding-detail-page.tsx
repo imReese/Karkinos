@@ -286,6 +286,24 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     useHoldingStrategyAttributionQuery(decodedSymbol);
   const refreshQuote = useRefreshMarketQuotesMutation();
   const [activeTab, setActiveTab] = useState<HoldingDetailTab>('position');
+  const stateHeader = (
+    <div data-testid="holding-detail-header">
+      <WorkbenchWorkspaceHeader
+        eyebrow={labels.kicker}
+        title={labels.title(decodedSymbol)}
+        description={labels.subtitle}
+        actions={
+          <a
+            href="/portfolio"
+            className="app-button-secondary app-type-compact inline-flex min-h-11 items-center rounded-[var(--app-radius-control)] px-3 py-2 font-semibold"
+            aria-label={labels.returnToPortfolio}
+          >
+            {labels.backToPortfolio}
+          </a>
+        }
+      />
+    </div>
+  );
 
   const currentPositions = positions.data ?? snapshot.data?.positions ?? [];
   const currentPosition = currentPositions.find(
@@ -326,33 +344,34 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
 
   if (coreLoading) {
     return (
-      <StatusPanel
-        title={copy.states.loading}
-        detail={labels.loading}
-        kind="loading"
-      />
+      <section className="space-y-5 sm:space-y-6">
+        {stateHeader}
+        <StatusPanel
+          title={copy.states.loading}
+          detail={labels.loading}
+          kind="loading"
+        />
+      </section>
     );
   }
 
   if (coreError) {
     return (
-      <StatusPanel
-        title={copy.states.error}
-        detail={labels.error}
-        kind="error"
-      />
+      <section className="space-y-5 sm:space-y-6">
+        {stateHeader}
+        <StatusPanel
+          title={copy.states.error}
+          detail={labels.error}
+          kind="error"
+        />
+      </section>
     );
   }
 
   if (!position) {
     return (
       <section className="space-y-5 sm:space-y-6">
-        <a
-          href="/portfolio"
-          className="app-button-secondary inline-flex min-h-10 items-center rounded-[var(--app-radius-control)] px-3 py-2 text-sm font-semibold"
-        >
-          {labels.backToPortfolio}
-        </a>
+        {stateHeader}
         <StatusPanel
           title={labels.notFoundTitle}
           detail={labels.notFoundDetail}

@@ -85,6 +85,7 @@ function installHoldingFetchMock({
   klineBarsOverride,
   failKline = false,
   deferKline = false,
+  deferCore = false,
   accountStrategy = {
     strategy_id: 'dual_ma',
     strategy_name: 'dual_ma',
@@ -173,6 +174,7 @@ function installHoldingFetchMock({
   klineBarsOverride?: Array<Record<string, unknown>>;
   failKline?: boolean;
   deferKline?: boolean;
+  deferCore?: boolean;
   accountStrategy?: Record<string, unknown>;
   accountStrategyAttribution?: Record<string, unknown>;
   accountStrategyContribution?: Record<string, unknown>;
@@ -187,6 +189,16 @@ function installHoldingFetchMock({
         : input instanceof Request
           ? input.url
           : input.toString();
+
+    if (
+      deferCore &&
+      (url.includes('/api/portfolio/positions') ||
+        url.includes('/api/portfolio/live-holdings') ||
+        url.endsWith('/api/portfolio') ||
+        url.includes('/api/portfolio/overview'))
+    ) {
+      return await new Promise<Response>(() => undefined);
+    }
 
     if (url.includes('/api/portfolio/positions')) {
       return failCore
@@ -1433,12 +1445,33 @@ test('shows a next action when holding-level attribution readiness is unavailabl
 test('shows not found state when the symbol is absent', async () => {
   renderHoldingDetail({ includePosition: false });
 
+  expect(
+    screen.getByRole('heading', { level: 1, name: '600519 Position' }),
+  ).toBeTruthy();
   expect(await screen.findByText('Holding not found')).toBeTruthy();
   expect(
     await screen.findByText(
       'This symbol is not present in the current portfolio snapshot.',
     ),
   ).toBeTruthy();
+});
+
+test('keeps the holding route identity visible while core evidence loads', () => {
+  renderHoldingDetail({ deferCore: true });
+
+  const header = screen.getByTestId('holding-detail-header');
+  expect(
+    within(header).getByRole('heading', {
+      level: 1,
+      name: '600519 Position',
+    }),
+  ).toBeTruthy();
+  expect(screen.getByText('Loading holding detail.')).toBeTruthy();
+  expect(
+    within(header)
+      .getByRole('link', { name: 'Return to holdings list' })
+      .getAttribute('href'),
+  ).toBe('/portfolio');
 });
 
 test('shows ledger empty state without breaking the page', async () => {
@@ -1455,6 +1488,9 @@ test('shows ledger empty state without breaking the page', async () => {
 test('shows core error state when portfolio detail cannot load', async () => {
   renderHoldingDetail({ failCore: true });
 
+  expect(
+    screen.getByRole('heading', { level: 1, name: '600519 Position' }),
+  ).toBeTruthy();
   expect(
     await screen.findByText('Failed to load holding detail.'),
   ).toBeTruthy();
