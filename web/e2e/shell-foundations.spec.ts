@@ -287,7 +287,10 @@ test('shell remains local-overflow safe in Latte and Mocha across tablet and mob
       );
       expect(documentOverflow).toBeLessThanOrEqual(0);
 
-      await toggle.click();
+      await page
+        .locator('#app-shell-navigation')
+        .getByRole('button', { name: 'Close navigation', exact: true })
+        .click();
       await expect(
         page.getByRole('navigation', { name: 'Navigation', exact: true }),
       ).toBeHidden();
