@@ -165,9 +165,7 @@ export function StrategyMetadataSnapshotPanel({
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
-          <div className="app-kicker text-xs uppercase tracking-[0.16em]">
-            {labels.kicker}
-          </div>
+          <div className="app-kicker app-type-overline">{labels.kicker}</div>
           <h3 className="app-type-subsection-title mt-1 text-[var(--app-text)]">
             {labels.title}
           </h3>
@@ -244,9 +242,7 @@ export function StrategyMetadataSnapshotPanel({
 
       {params.length ? (
         <div className="mt-4">
-          <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
-            {labels.runParams}
-          </div>
+          <div className="app-kicker app-type-overline">{labels.runParams}</div>
           <div className="mt-2 flex flex-wrap gap-2">
             {params.map(([name, value]) => (
               <span
@@ -257,7 +253,7 @@ export function StrategyMetadataSnapshotPanel({
                   {translatedParameterLabel(name, pageLabels)}=
                   {formatValue(value)}
                 </span>
-                <span className="app-muted mt-0.5 text-[11px]">
+                <span className="app-muted app-type-micro mt-0.5">
                   {labels.apiField(name)}
                 </span>
               </span>
@@ -269,7 +265,7 @@ export function StrategyMetadataSnapshotPanel({
       {schema.length ? (
         <div className="mt-4 max-w-full overflow-x-auto overscroll-x-contain border-y border-[var(--app-divider)]">
           <table className="min-w-[860px] w-full text-left text-sm">
-            <thead className="sticky top-0 z-10 bg-[var(--app-surface-raised)] text-xs uppercase tracking-[0.12em] text-[var(--app-text-secondary)] shadow-[var(--app-shadow-sticky)]">
+            <thead className="app-type-overline sticky top-0 z-10 bg-[var(--app-surface-raised)] text-[var(--app-text-secondary)] shadow-[var(--app-shadow-sticky)]">
               <tr>
                 <th className="px-4 py-3 font-semibold">{labels.parameter}</th>
                 <th className="px-4 py-3 font-semibold">{labels.type}</th>
@@ -292,7 +288,7 @@ export function StrategyMetadataSnapshotPanel({
                     <div className="font-semibold">
                       {translatedParameterLabel(parameter.name, pageLabels)}
                     </div>
-                    <div className="app-muted mt-0.5 text-[11px]">
+                    <div className="app-muted app-type-micro mt-0.5">
                       {labels.apiField(parameter.name)}
                     </div>
                   </td>
@@ -315,7 +311,7 @@ export function StrategyMetadataSnapshotPanel({
 
       {snapshot.validation_notes?.length ? (
         <div className="mt-4 border-t border-[var(--app-divider)] pt-3">
-          <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
+          <div className="app-kicker app-type-overline">
             {labels.validationNotes}
           </div>
           <ul className="mt-2 space-y-2 text-sm leading-6 text-[var(--app-text)]">
@@ -342,9 +338,7 @@ function SnapshotStat({
 }) {
   return (
     <div className="min-w-0 border-l border-[var(--app-divider)] py-1 pl-3">
-      <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
-        {label}
-      </div>
+      <div className="app-kicker app-type-overline">{label}</div>
       <div
         className={`mt-1.5 truncate text-sm font-semibold ${mono ? 'font-mono' : ''}`}
         title={value}

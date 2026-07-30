@@ -241,9 +241,7 @@ export function ParameterComparePanel({
 
   return (
     <section className="mt-5 rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] p-4">
-      <div className="app-kicker text-xs uppercase tracking-[0.16em]">
-        {labels.kicker}
-      </div>
+      <div className="app-kicker app-type-overline">{labels.kicker}</div>
       <h3 className="app-card-title mt-1.5">{labels.title}</h3>
       <p className="app-muted mt-2 text-sm leading-6">{labels.subtitle}</p>
 
@@ -292,7 +290,7 @@ function CompareResults({ response }: { response: BacktestCompareResponse }) {
     <div className="mt-5 space-y-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
+          <div className="app-kicker app-type-overline">
             {labels.resultsKicker}
           </div>
           <h4 className="text-base font-semibold">{labels.resultsTitle}</h4>
@@ -310,7 +308,7 @@ function CompareResults({ response }: { response: BacktestCompareResponse }) {
       </div>
       <div className="overflow-x-auto rounded-2xl border border-[color-mix(in_srgb,var(--app-border)_22%,transparent)]">
         <table className="min-w-[760px] w-full text-left text-sm">
-          <thead className="bg-[color-mix(in_srgb,var(--app-surface-0)_35%,transparent)] text-xs uppercase tracking-[0.12em] text-[var(--app-muted)]">
+          <thead className="app-type-overline bg-[color-mix(in_srgb,var(--app-surface-0)_35%,transparent)] text-[var(--app-muted)]">
             <tr>
               <th className="px-4 py-3 font-semibold">{labels.result}</th>
               <th className="px-4 py-3 font-semibold">{labels.params}</th>

@@ -115,9 +115,7 @@ export function ValidationEvidencePanel({
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
-          <div className="app-kicker text-xs uppercase tracking-[0.16em]">
-            {labels.kicker}
-          </div>
+          <div className="app-kicker app-type-overline">{labels.kicker}</div>
           <h3 className="app-type-subsection-title mt-1 text-[var(--app-text)]">
             {labels.title}
           </h3>
@@ -277,9 +275,7 @@ function EvidenceStat({
 }) {
   return (
     <div className="min-w-0 border-l border-[var(--app-divider)] py-1 pl-3">
-      <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
-        {label}
-      </div>
+      <div className="app-kicker app-type-overline">{label}</div>
       <div
         className={`mt-1 truncate text-sm font-semibold tabular-nums ${valueClassName}`}
         title={value}
@@ -301,9 +297,7 @@ function EvidenceList({
 }) {
   return (
     <div className="mt-4 border-t border-[var(--app-divider)] pt-3">
-      <div className="app-kicker text-[length:var(--app-font-size-micro)] uppercase tracking-[0.14em]">
-        {title}
-      </div>
+      <div className="app-kicker app-type-overline">{title}</div>
       <ul className="mt-2 space-y-1.5 text-sm leading-6 text-[var(--app-text-secondary)]">
         {items.map((item) => (
           <li key={item}>{formatPublicNote(item, locale)}</li>

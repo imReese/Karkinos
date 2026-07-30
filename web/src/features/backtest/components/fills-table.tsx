@@ -83,9 +83,7 @@ export function FillsTable({ fills }: { fills: BacktestFill[] }) {
     >
       <div className="flex flex-wrap items-end justify-between gap-3 pb-3">
         <div>
-          <div className="app-kicker text-xs uppercase tracking-[0.16em]">
-            {labels.kicker}
-          </div>
+          <div className="app-kicker app-type-overline">{labels.kicker}</div>
           <div className="app-card-title mt-1.5">{labels.title}</div>
         </div>
         <div className="app-muted text-xs tabular-nums">
