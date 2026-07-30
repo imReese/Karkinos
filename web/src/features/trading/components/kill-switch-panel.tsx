@@ -143,7 +143,7 @@ export function KillSwitchPanel() {
           </span>
         </span>
         <span className="flex w-full shrink-0 items-center justify-between gap-2 text-right sm:w-auto sm:flex-col sm:items-end sm:gap-1">
-          <span className="flex flex-wrap items-center justify-end gap-2 font-mono text-[11px] text-[var(--app-text-tertiary)]">
+          <span className="app-type-micro flex flex-wrap items-center justify-end gap-2 font-mono text-[var(--app-text-tertiary)]">
             <KillSwitchBadge enabled={enabled} snapshot={snapshot} />
             <span>
               {formatTimestamp(snapshot?.updated_at) ?? labels.neverUpdated}
