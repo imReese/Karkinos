@@ -20,7 +20,7 @@ const NUMERIC_OVERRIDE_CEILINGS: Readonly<Record<string, number>> = {
   'features/activity/components/activity-feed.tsx': 7,
   'features/activity/components/trade-form.tsx': 1,
   'features/ai-research/components/research-task-panel.tsx': 7,
-  'features/backtest/components/backtest-page.tsx': 27,
+  'features/backtest/components/backtest-page.tsx': 23,
   'features/backtest/components/dataset-snapshot-panel.tsx': 3,
   'features/backtest/components/equity-drawdown-chart.tsx': 2,
   'features/backtest/components/fills-table.tsx': 1,
