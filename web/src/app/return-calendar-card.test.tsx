@@ -242,11 +242,9 @@ test('keeps the compact calendar toolbar and day cells readable on narrow viewpo
     'return-calendar-cell-value',
   );
   expect(cellValue.className).toContain('whitespace-nowrap');
-  expect(cellValue.className).toContain(
-    'text-[length:var(--app-font-size-micro)]',
-  );
-  expect(cellValue.className).toContain('sm:text-[11px]');
-  expect(cellValue.textContent).toBe('+600.00');
+  expect(cellValue.className).toContain('app-type-micro');
+  expect(cellValue.textContent).toBe('+600');
+  expect(screen.getAllByText('W/E').length).toBeGreaterThan(0);
 });
 
 test('uses Sunday as the first weekday column in the return calendar', async () => {
@@ -616,9 +614,15 @@ test('renders axes when the return calendar switches to curve view', async () =>
 
   await userEvent.click(screen.getByRole('button', { name: 'Curve' }));
 
+  const chartScroll = await screen.findByTestId('return-curve-chart-scroll');
+  expect(chartScroll.className).toContain('overflow-x-auto');
+  expect(chartScroll.getAttribute('role')).toBe('region');
+  expect(chartScroll.getAttribute('tabindex')).toBe('0');
   const chart = await screen.findByTestId('return-curve-chart');
   expect(chart.getAttribute('viewBox')).toBe('0 0 820 420');
   expect(chart.getAttribute('class')).toContain('h-[360px]');
+  expect(chart.getAttribute('class')).toContain('min-w-[720px]');
+  expect(chart.getAttribute('class')).toContain('sm:min-w-0');
   expect(chart.getAttribute('class')).toContain('sm:h-[420px]');
   expect(await screen.findByTestId('return-curve-x-axis')).toBeTruthy();
   expect(screen.getByTestId('return-curve-y-axis')).toBeTruthy();
@@ -658,10 +662,7 @@ test('supports a compact cockpit layout for the overview page', async () => {
   const januaryCellValue = within(januaryCell).getByTestId(
     'return-calendar-cell-value',
   );
-  expect(januaryCellValue.className).toContain(
-    'text-[length:var(--app-font-size-micro)]',
-  );
-  expect(januaryCellValue.className).toContain('sm:text-[11px]');
+  expect(januaryCellValue.className).toContain('app-type-micro');
 });
 
 test('shows a current-position fallback when daily attribution is not available', async () => {

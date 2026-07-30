@@ -6082,7 +6082,7 @@ export function ReturnCalendarCard({
     <div className={panelClass} data-testid="return-calendar-card">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
-          <div className="app-kicker text-xs uppercase tracking-[0.18em]">
+          <div className="app-kicker app-type-overline">
             {copy.explainability.returnCalendar}
           </div>
           <div className="app-muted mt-2 max-w-2xl text-sm">
@@ -6233,7 +6233,7 @@ export function ReturnCalendarCard({
       ) : viewMode === 'table' ? (
         <div className="mt-4 min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
           <table className="min-w-full text-left text-sm">
-            <thead className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+            <thead className="app-kicker app-type-overline">
               <tr>
                 <th className="px-3 py-2">{copy.explainability.bucketLabel}</th>
                 <th className="px-3 py-2">{copy.explainability.netChange}</th>
@@ -6370,7 +6370,7 @@ function ReturnCalendarDataStatus({
       className={`${compact ? 'px-3 py-1.5' : 'px-3 py-2'} flex min-w-0 items-center gap-2 rounded-full border ${tone}`}
       data-testid="return-calendar-status-chip"
     >
-      <div className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.12em]">
+      <div className="app-type-overline shrink-0">
         {copy.explainability.dataStatus}
       </div>
       <div className="min-w-0 truncate text-xs font-semibold">{detail}</div>
@@ -6425,7 +6425,7 @@ function ReturnCalendarEmptyState({
   return (
     <div className={wrapperClass} data-testid="return-calendar-empty-state">
       <div className="min-w-0 rounded-md border border-dashed border-[var(--app-border)] bg-[color-mix(in_srgb,var(--app-surface-0)_58%,transparent)] p-3">
-        <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+        <div className="app-kicker app-type-overline">
           {copy.explainability.currentPositionPnl}
         </div>
         <div className="mt-3 grid gap-2 sm:grid-cols-3">
@@ -6475,7 +6475,7 @@ function ReturnCalendarEmptyState({
                       {formatCurrency(positionPnl)}
                     </span>
                   </div>
-                  <div className="app-muted mt-1 flex items-center gap-2 text-[11px] uppercase">
+                  <div className="app-muted app-type-micro mt-1 flex items-center gap-2 uppercase">
                     <span>{position.symbol}</span>
                     <span aria-hidden="true">/</span>
                     <span>{assetClassDisplay}</span>
@@ -6487,7 +6487,7 @@ function ReturnCalendarEmptyState({
         ) : null}
       </div>
       <div className="rounded-md border border-[var(--app-border)] bg-[color-mix(in_srgb,var(--app-surface-1)_72%,transparent)] p-3">
-        <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+        <div className="app-kicker app-type-overline">
           {copy.explainability.returnCalendarWarmingUp}
         </div>
         <div className="app-muted mt-2 text-sm">
@@ -6521,7 +6521,7 @@ function CalendarFallbackMetric({
 }) {
   return (
     <div className="rounded-md border border-[var(--app-border)] bg-[color-mix(in_srgb,var(--app-surface-1)_72%,transparent)] px-3 py-2">
-      <div className="app-muted text-[11px]">{label}</div>
+      <div className="app-muted app-type-micro">{label}</div>
       <div className="mt-1 text-sm font-semibold">{value}</div>
     </div>
   );
@@ -6532,6 +6532,7 @@ function ReturnCurveChart({
 }: {
   points: Array<{ label: string; value: number }>;
 }) {
+  const copy = useCopy();
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   if (points.length === 0) {
     return null;
@@ -6572,142 +6573,150 @@ function ReturnCurveChart({
   const tooltipY = activePoint ? Math.max(top + 6, activePoint.y - 54) : 0;
 
   return (
-    <svg
-      viewBox={`0 0 ${width} ${height}`}
-      className="h-[360px] w-full sm:h-[420px]"
-      data-testid="return-curve-chart"
+    <div
+      aria-label={copy.explainability.curveView}
+      className="max-w-full overflow-x-auto overscroll-x-contain focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
+      data-testid="return-curve-chart-scroll"
+      role="region"
+      tabIndex={0}
     >
-      <line
-        data-testid="return-curve-y-axis"
-        x1={left}
-        y1={top}
-        x2={left}
-        y2={top + chartHeight}
-        stroke="currentColor"
-        strokeOpacity="0.48"
-        strokeWidth="1.2"
-      />
-      <line
-        data-testid="return-curve-x-axis"
-        x1={left}
-        y1={top + chartHeight}
-        x2={left + chartWidth}
-        y2={top + chartHeight}
-        stroke="currentColor"
-        strokeOpacity="0.48"
-        strokeWidth="1.2"
-      />
-      <line
-        data-testid="return-curve-zero-axis"
-        x1={left}
-        y1={zeroY}
-        x2={left + chartWidth}
-        y2={zeroY}
-        stroke="currentColor"
-        strokeDasharray="4 5"
-        strokeOpacity="0.34"
-        strokeWidth="1.2"
-      />
-      {ticks.map((tick) => {
-        const y = top + chartHeight - ((tick - min) / range) * chartHeight;
-        return (
-          <g key={tick}>
-            <line
-              x1={left}
-              y1={y}
-              x2={left + chartWidth}
-              y2={y}
-              stroke="currentColor"
-              strokeOpacity="0.16"
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="block h-[360px] w-full min-w-[720px] sm:h-[420px] sm:min-w-0"
+        data-testid="return-curve-chart"
+      >
+        <line
+          data-testid="return-curve-y-axis"
+          x1={left}
+          y1={top}
+          x2={left}
+          y2={top + chartHeight}
+          stroke="currentColor"
+          strokeOpacity="0.48"
+          strokeWidth="1.2"
+        />
+        <line
+          data-testid="return-curve-x-axis"
+          x1={left}
+          y1={top + chartHeight}
+          x2={left + chartWidth}
+          y2={top + chartHeight}
+          stroke="currentColor"
+          strokeOpacity="0.48"
+          strokeWidth="1.2"
+        />
+        <line
+          data-testid="return-curve-zero-axis"
+          x1={left}
+          y1={zeroY}
+          x2={left + chartWidth}
+          y2={zeroY}
+          stroke="currentColor"
+          strokeDasharray="4 5"
+          strokeOpacity="0.34"
+          strokeWidth="1.2"
+        />
+        {ticks.map((tick) => {
+          const y = top + chartHeight - ((tick - min) / range) * chartHeight;
+          return (
+            <g key={tick}>
+              <line
+                x1={left}
+                y1={y}
+                x2={left + chartWidth}
+                y2={y}
+                stroke="currentColor"
+                strokeOpacity="0.16"
+              />
+              <text
+                x={left - 10}
+                y={y + 5}
+                textAnchor="end"
+                className="app-type-compact fill-current font-semibold opacity-85"
+              >
+                {formatCurrency(tick)}
+              </text>
+            </g>
+          );
+        })}
+        <text
+          x={left}
+          y={height - 16}
+          textAnchor="start"
+          className="app-type-compact fill-current font-semibold opacity-85"
+        >
+          {firstLabel}
+        </text>
+        <text
+          x={left + chartWidth}
+          y={height - 16}
+          textAnchor="end"
+          className="app-type-compact fill-current font-semibold opacity-85"
+        >
+          {lastLabel}
+        </text>
+        <polyline
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="4"
+          points={line}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+        {positionedPoints.map((point, index) => (
+          <circle
+            key={point.label}
+            cx={point.x}
+            cy={point.y}
+            r={activeIndex === index ? 6 : 4}
+            tabIndex={0}
+            role="img"
+            aria-label={`${point.label} · ${formatCurrency(point.value)}`}
+            data-testid={`return-curve-point-${index}`}
+            fill="var(--app-text)"
+            stroke="var(--app-mantle)"
+            strokeWidth="2.4"
+            opacity={activeIndex === null || activeIndex === index ? 1 : 0.56}
+            onClick={() => setActiveIndex(index)}
+            onFocus={() => setActiveIndex(index)}
+            onBlur={() => setActiveIndex(null)}
+            onPointerEnter={() => setActiveIndex(index)}
+            onPointerMove={() => setActiveIndex(index)}
+            onPointerLeave={() => setActiveIndex(null)}
+            onMouseEnter={() => setActiveIndex(index)}
+            onMouseLeave={() => setActiveIndex(null)}
+          />
+        ))}
+        {activePoint ? (
+          <g data-testid="return-curve-tooltip">
+            <rect
+              x={tooltipX}
+              y={tooltipY}
+              width="162"
+              height="46"
+              rx="10"
+              fill="var(--app-panel-strong)"
+              stroke="var(--app-border)"
+              opacity="0.98"
             />
             <text
-              x={left - 10}
-              y={y + 5}
-              textAnchor="end"
-              className="fill-current text-[13px] font-semibold opacity-85"
+              x={tooltipX + 12}
+              y={tooltipY + 18}
+              className="app-type-label fill-current font-semibold"
             >
-              {formatCurrency(tick)}
+              {activePoint.label}
+            </text>
+            <text
+              x={tooltipX + 12}
+              y={tooltipY + 36}
+              className="app-type-compact fill-current font-bold"
+            >
+              {formatCurrency(activePoint.value)}
             </text>
           </g>
-        );
-      })}
-      <text
-        x={left}
-        y={height - 16}
-        textAnchor="start"
-        className="fill-current text-[13px] font-semibold opacity-85"
-      >
-        {firstLabel}
-      </text>
-      <text
-        x={left + chartWidth}
-        y={height - 16}
-        textAnchor="end"
-        className="fill-current text-[13px] font-semibold opacity-85"
-      >
-        {lastLabel}
-      </text>
-      <polyline
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="4"
-        points={line}
-        strokeLinejoin="round"
-        strokeLinecap="round"
-      />
-      {positionedPoints.map((point, index) => (
-        <circle
-          key={point.label}
-          cx={point.x}
-          cy={point.y}
-          r={activeIndex === index ? 6 : 4}
-          tabIndex={0}
-          role="img"
-          aria-label={`${point.label} · ${formatCurrency(point.value)}`}
-          data-testid={`return-curve-point-${index}`}
-          fill="var(--app-text)"
-          stroke="var(--app-mantle)"
-          strokeWidth="2.4"
-          opacity={activeIndex === null || activeIndex === index ? 1 : 0.56}
-          onClick={() => setActiveIndex(index)}
-          onFocus={() => setActiveIndex(index)}
-          onBlur={() => setActiveIndex(null)}
-          onPointerEnter={() => setActiveIndex(index)}
-          onPointerMove={() => setActiveIndex(index)}
-          onPointerLeave={() => setActiveIndex(null)}
-          onMouseEnter={() => setActiveIndex(index)}
-          onMouseLeave={() => setActiveIndex(null)}
-        />
-      ))}
-      {activePoint ? (
-        <g data-testid="return-curve-tooltip">
-          <rect
-            x={tooltipX}
-            y={tooltipY}
-            width="162"
-            height="46"
-            rx="10"
-            fill="var(--app-panel-strong)"
-            stroke="var(--app-border)"
-            opacity="0.98"
-          />
-          <text
-            x={tooltipX + 12}
-            y={tooltipY + 18}
-            className="fill-current text-[12px] font-semibold"
-          >
-            {activePoint.label}
-          </text>
-          <text
-            x={tooltipX + 12}
-            y={tooltipY + 36}
-            className="fill-current text-[13px] font-bold"
-          >
-            {formatCurrency(activePoint.value)}
-          </text>
-        </g>
-      ) : null}
-    </svg>
+        ) : null}
+      </svg>
+    </div>
   );
 }
 
@@ -6978,10 +6987,28 @@ function formatCurrency(value: number) {
 
 function formatCompactReturnCurrency(value: number) {
   if (value === 0) {
-    return '0.00';
+    return '0';
   }
   const sign = value > 0 ? '+' : '-';
-  return `${sign}${Math.abs(value).toFixed(2)}`;
+  const absoluteValue = Math.abs(value);
+  if (absoluteValue < 10) {
+    return `${sign}${absoluteValue.toFixed(1)}`;
+  }
+  if (absoluteValue < 1_000) {
+    return `${sign}${Math.round(absoluteValue)}`;
+  }
+
+  const { divisor, suffix } =
+    absoluteValue >= 1_000_000_000
+      ? { divisor: 1_000_000_000, suffix: 'b' }
+      : absoluteValue >= 1_000_000
+        ? { divisor: 1_000_000, suffix: 'm' }
+        : { divisor: 1_000, suffix: 'k' };
+  const scaledValue = absoluteValue / divisor;
+  const compactValue = scaledValue
+    .toFixed(scaledValue < 10 ? 1 : 0)
+    .replace(/\.0$/, '');
+  return `${sign}${compactValue}${suffix}`;
 }
 
 function formatAuditTimestamp(timestamp: string) {
@@ -7149,7 +7176,7 @@ function ReturnMonthGrid({
   return (
     <div className="min-w-0">
       <div
-        className={`app-kicker grid grid-cols-7 ${gapClass} text-center text-[11px] uppercase tracking-[0.14em]`}
+        className={`app-kicker app-type-overline grid grid-cols-7 ${gapClass} text-center`}
       >
         {copy.explainability.weekdays.map((day) => (
           <div key={day} data-testid="return-calendar-weekday">
@@ -7403,11 +7430,11 @@ function ReturnCalendarCell({
     ? 'flex min-h-[4.25rem] min-w-0 flex-col overflow-hidden rounded-md px-1.5 py-2'
     : 'flex min-h-[5.75rem] min-w-0 flex-col overflow-hidden rounded-lg px-3 py-3';
   const valueClass = compact
-    ? 'mt-auto self-end whitespace-nowrap text-right text-[length:var(--app-font-size-micro)] font-semibold leading-4 sm:text-[11px]'
+    ? 'app-type-micro mt-auto self-end whitespace-nowrap text-right font-semibold'
     : 'mt-auto max-w-full self-end break-words text-right text-base font-semibold leading-tight';
   const metaClass = compact
-    ? 'mt-1 self-end text-right text-[length:var(--app-font-size-micro)] opacity-80'
-    : 'mt-2 self-end text-right text-[11px] opacity-80';
+    ? 'app-type-micro mt-1 self-end text-right opacity-80'
+    : 'app-type-micro mt-2 self-end text-right opacity-80';
   const { headingText, sublabelText } = formatReturnCalendarCellHeading(
     heading,
     sublabel,
@@ -7423,7 +7450,7 @@ function ReturnCalendarCell({
           {headingText}
         </div>
         {sublabelText ? (
-          <div className="app-muted mt-1 text-[11px]">{sublabelText}</div>
+          <div className="app-muted app-type-micro mt-1">{sublabelText}</div>
         ) : null}
         <div className={valueClass} data-testid="return-calendar-cell-value">
           {cellDisplayValue}
@@ -7449,7 +7476,7 @@ function ReturnCalendarCell({
         {headingText}
       </div>
       {sublabelText ? (
-        <div className="mt-1 text-[11px] opacity-70">{sublabelText}</div>
+        <div className="app-type-micro mt-1 opacity-70">{sublabelText}</div>
       ) : null}
       <div className={valueClass} data-testid="return-calendar-cell-value">
         {cellDisplayValue}
@@ -7517,7 +7544,7 @@ function ReturnCalendarDetail({
 
   return (
     <div className={detailClass}>
-      <div className="app-kicker text-[11px] uppercase tracking-[0.16em]">
+      <div className="app-kicker app-type-overline">
         {copy.explainability.selectedPeriod}
       </div>
       <div
@@ -7927,7 +7954,7 @@ function StatusCard({
           : 'app-terminal-panel rounded-3xl p-4 sm:p-5'
       }
     >
-      <div className="text-sm font-semibold tracking-[-0.01em]">{title}</div>
+      <div className="app-type-subsection-title">{title}</div>
       <div className="mt-2 text-sm opacity-80">{detail}</div>
       {actionLabel && onAction ? (
         <button
