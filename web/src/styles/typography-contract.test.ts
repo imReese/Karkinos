@@ -19,8 +19,6 @@ const NUMERIC_OVERRIDE_CEILINGS: Readonly<Record<string, number>> = {
   'features/activity/components/activity-feed.tsx': 7,
   'features/activity/components/trade-form.tsx': 1,
   'features/ai-research/components/research-task-panel.tsx': 7,
-  'features/decision/components/decision-outcome-review-panel.tsx': 10,
-  'features/decision/components/decision-quality-panel.tsx': 6,
   'features/operations/components/operations-page.tsx': 1,
   'features/operations/controlled-broker-recovery-operator-panel.tsx': 2,
   'features/operations/controlled-broker-rejection-evidence-panel.tsx': 6,

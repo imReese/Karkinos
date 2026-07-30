@@ -202,7 +202,7 @@ export function DecisionOutcomeReviewPanel({
     <div className="mt-2 border-t border-[color-mix(in_srgb,var(--app-border)_18%,transparent)] pt-2">
       <button
         type="button"
-        className="app-button-secondary inline-flex min-h-8 items-center justify-center rounded-xl px-2.5 py-1.5 text-[11px] font-semibold"
+        className="app-button-secondary app-type-micro inline-flex min-h-8 items-center justify-center rounded-xl px-2.5 py-1.5 font-semibold"
         aria-expanded={expanded}
         onClick={() => void openPreview()}
       >
@@ -223,7 +223,7 @@ export function DecisionOutcomeReviewPanel({
               </p>
               <button
                 type="button"
-                className="app-button-secondary min-h-8 rounded-xl px-2.5 py-1.5 text-[11px] font-semibold"
+                className="app-button-secondary app-type-micro min-h-8 rounded-xl px-2.5 py-1.5 font-semibold"
                 onClick={() => void refreshPreview()}
               >
                 {labels.retry}
@@ -258,7 +258,7 @@ export function DecisionOutcomeReviewPanel({
                   ]}
                 />
               </div>
-              <dl className="grid gap-2 text-[11px] sm:grid-cols-2">
+              <dl className="app-type-micro grid gap-2 sm:grid-cols-2">
                 <div>
                   <dt className="app-muted">{labels.execution}</dt>
                   <dd className="mt-0.5 font-semibold text-[var(--app-soft)]">
@@ -278,7 +278,7 @@ export function DecisionOutcomeReviewPanel({
                 </div>
               </dl>
               {target.blockers.length > 0 ? (
-                <p className="rounded-lg border border-[color-mix(in_srgb,var(--app-warning)_32%,transparent)] px-2.5 py-2 text-[11px] leading-5 text-[var(--app-warning)]">
+                <p className="app-type-compact rounded-lg border border-[color-mix(in_srgb,var(--app-warning)_32%,transparent)] px-2.5 py-2 text-[var(--app-warning)]">
                   {labels.blocked}:{' '}
                   {target.blockers
                     .map((item) => formatPublicCode(item, locale))
@@ -295,7 +295,7 @@ export function DecisionOutcomeReviewPanel({
                 </div>
               ) : (
                 <div className="grid gap-2">
-                  <label className="grid gap-1 text-[11px] text-[var(--app-muted)]">
+                  <label className="app-type-micro grid gap-1 text-[var(--app-muted)]">
                     {labels.reviewer}
                     <input
                       className="app-field rounded-xl px-2.5 py-2 text-xs text-[var(--app-text)]"
@@ -304,7 +304,7 @@ export function DecisionOutcomeReviewPanel({
                     />
                   </label>
                   <div className="grid gap-2 sm:grid-cols-2">
-                    <label className="grid gap-1 text-[11px] text-[var(--app-muted)]">
+                    <label className="app-type-micro grid gap-1 text-[var(--app-muted)]">
                       {labels.decision}
                       <select
                         className="app-field rounded-xl px-2.5 py-2 text-xs text-[var(--app-text)]"
@@ -327,7 +327,7 @@ export function DecisionOutcomeReviewPanel({
                         </option>
                       </select>
                     </label>
-                    <label className="grid gap-1 text-[11px] text-[var(--app-muted)]">
+                    <label className="app-type-micro grid gap-1 text-[var(--app-muted)]">
                       {labels.outcome}
                       <select
                         className="app-field rounded-xl px-2.5 py-2 text-xs text-[var(--app-text)]"
@@ -344,7 +344,7 @@ export function DecisionOutcomeReviewPanel({
                       </select>
                     </label>
                   </div>
-                  <label className="grid gap-1 text-[11px] text-[var(--app-muted)]">
+                  <label className="app-type-micro grid gap-1 text-[var(--app-muted)]">
                     {labels.note}
                     <textarea
                       className="app-field min-h-20 rounded-xl px-2.5 py-2 text-xs leading-5 text-[var(--app-text)]"
@@ -353,11 +353,11 @@ export function DecisionOutcomeReviewPanel({
                       onChange={(event) => setNote(event.target.value)}
                     />
                   </label>
-                  <p className="app-muted text-[11px] leading-5">
+                  <p className="app-muted app-type-compact">
                     {labels.noAuthority}
                   </p>
                   {record.isError ? (
-                    <p role="alert" className="app-error-text text-[11px]">
+                    <p role="alert" className="app-error-text app-type-micro">
                       {labels.error}
                     </p>
                   ) : null}
