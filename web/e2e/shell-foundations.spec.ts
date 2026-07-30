@@ -269,6 +269,9 @@ test('shell remains local-overflow safe in Latte and Mocha across tablet and mob
         primaryNavigation.getByRole('link', { name: 'Decision' }),
       ).toBeVisible();
       await expect(page.locator('#app-shell-navigation')).not.toBeInViewport();
+      await expect(
+        page.getByRole('navigation', { name: 'Navigation', exact: true }),
+      ).toBeHidden();
       await toggle.click();
       await expect(
         page.getByRole('navigation', { name: 'Navigation', exact: true }),
@@ -283,11 +286,11 @@ test('shell remains local-overflow safe in Latte and Mocha across tablet and mob
           document.documentElement.clientWidth,
       );
       expect(documentOverflow).toBeLessThanOrEqual(0);
-      await page
-        .locator('#app-shell-navigation')
-        .getByRole('button', { name: 'Close navigation' })
-        .first()
-        .click();
+
+      await toggle.click();
+      await expect(
+        page.getByRole('navigation', { name: 'Navigation', exact: true }),
+      ).toBeHidden();
     }
   }
 });

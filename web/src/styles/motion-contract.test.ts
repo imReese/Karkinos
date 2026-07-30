@@ -48,6 +48,7 @@ describe('Karkinos brand motion contract', () => {
       expect(GLOBALS).toContain(token);
     }
     expect(APP_MOTION.chartDurationMs).toBe(320);
+    expect(APP_MOTION.exitDurationMs).toBe(180);
   });
 
   it('keeps one deterministic reduced-motion override', () => {
@@ -121,8 +122,11 @@ describe('Karkinos brand motion contract', () => {
     expect(names).toContain('styles/globals.css');
     expect(GLOBALS).toContain('app-route-enter');
     expect(GLOBALS).toContain('app-overlay-enter');
+    expect(GLOBALS).toContain('app-overlay-exit');
     expect(GLOBALS).toContain('app-popover-enter');
+    expect(GLOBALS).toContain('app-popover-exit');
     expect(GLOBALS).toContain('app-drawer-enter');
+    expect(GLOBALS).toContain('app-drawer-exit');
     expect(GLOBALS).not.toContain('app-chart-enter');
     expect(GLOBALS).not.toMatch(/animation:\s*(?:pulse|spin)\s/);
   });
@@ -149,7 +153,56 @@ describe('Karkinos brand motion contract', () => {
       GLOBALS.match(/@keyframes app-overlay-enter\s*\{[\s\S]*?\n\}/)?.[0] ?? '';
     const drawerEnter =
       GLOBALS.match(/@keyframes app-drawer-enter\s*\{[\s\S]*?\n\}/)?.[0] ?? '';
+    const overlayExit =
+      GLOBALS.match(/@keyframes app-overlay-exit\s*\{[\s\S]*?\n\}/)?.[0] ?? '';
+    const drawerExit =
+      GLOBALS.match(/@keyframes app-drawer-exit\s*\{[\s\S]*?\n\}/)?.[0] ?? '';
     expect(overlayEnter).not.toContain('opacity');
     expect(drawerEnter).not.toContain('opacity');
+    expect(overlayExit).not.toContain('opacity');
+    expect(drawerExit).not.toContain('opacity');
+  });
+
+  it('keeps overlays mounted through a semantic, non-interactive exit', () => {
+    const shell = readFileSync(
+      join(SRC_ROOT, 'app', 'layout', 'app-shell.tsx'),
+      'utf8',
+    );
+    const drawer = readFileSync(
+      join(SRC_ROOT, 'app', 'components', 'workbench', 'evidence-drawer.tsx'),
+      'utf8',
+    );
+
+    for (const source of [shell, drawer]) {
+      expect(source).toContain('useMotionPresence(open)');
+      expect(source).toContain('data-motion-state={presence.state}');
+      expect(source).toContain("presence.state === 'closing'");
+    }
+    expect(GLOBALS).toContain(
+      ".app-command-backdrop[data-motion-state='closing']",
+    );
+    expect(GLOBALS).toContain(
+      ".app-evidence-drawer-root[data-motion-state='closing']",
+    );
+    expect(GLOBALS).toContain(
+      ".app-shell-popover[data-motion-state='closing']",
+    );
+    expect(GLOBALS).toContain(
+      ".app-status-popover-root[data-motion-state='closing']",
+    );
+    expect(shell.match(/useMotionPresence\(open\)/g)).toHaveLength(3);
+    expect(shell).toContain('useMotionPresence(Boolean(popup && expanded))');
+  });
+
+  it('removes closed mobile navigation from focus without contaminating desktop easing', () => {
+    expect(GLOBALS).toMatch(
+      /@media \(max-width: 1279px\)[\s\S]*\.app-shell-sidebar\[data-mobile-open='false'\][\s\S]*visibility: hidden;[\s\S]*visibility 0s linear var\(--app-motion-deliberate\)/,
+    );
+    expect(GLOBALS).toMatch(
+      /@media \(min-width: 1280px\)[\s\S]*\.app-shell-sidebar\[data-desktop-expanded='false'\][\s\S]*var\(--app-ease-exit\)[\s\S]*\.app-shell-sidebar\[data-desktop-expanded='true'\][\s\S]*var\(--app-ease-enter\)/,
+    );
+    expect(GLOBALS).not.toMatch(
+      /\.app-shell-sidebar\[data-mobile-open='false'\]\s*\{\s*transition-timing-function:/,
+    );
   });
 });

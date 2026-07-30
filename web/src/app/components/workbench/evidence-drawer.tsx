@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 
 import { X } from 'lucide-react';
 
+import { useMotionPresence } from '../../motion';
 import { cn } from '../../../lib/utils/cn';
 
 export function EvidenceDrawer({
@@ -28,6 +29,7 @@ export function EvidenceDrawer({
   const descriptionId = useId();
   const drawerRef = useRef<HTMLElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const presence = useMotionPresence(open);
 
   useEffect(() => {
     if (!open) {
@@ -72,12 +74,17 @@ export function EvidenceDrawer({
     };
   }, [onClose, open]);
 
-  if (!open || typeof document === 'undefined') {
+  if (!presence.mounted || typeof document === 'undefined') {
     return null;
   }
 
   return createPortal(
-    <div className="app-evidence-drawer-root fixed inset-0 z-[120]">
+    <div
+      className="app-evidence-drawer-root fixed inset-0 z-[120]"
+      data-motion-state={presence.state}
+      aria-hidden={presence.state === 'closing' ? true : undefined}
+      inert={presence.state === 'closing'}
+    >
       <button
         type="button"
         className="app-evidence-drawer-backdrop absolute inset-0 h-full w-full bg-[color-mix(in_srgb,var(--app-bg)_72%,transparent)]"
@@ -87,7 +94,7 @@ export function EvidenceDrawer({
       <aside
         ref={drawerRef}
         role="dialog"
-        aria-modal="true"
+        aria-modal={open ? 'true' : undefined}
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
         data-workbench-primitive="evidence-drawer"

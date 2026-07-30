@@ -1725,6 +1725,44 @@ test('brand motion keeps route and mobile drawer timing coherent', async ({
   );
   expect(nestedRouteReveals).toEqual([]);
 
+  await page.getByTestId('workspace-command-trigger').click();
+  const commandBackdrop = page.locator('.app-command-backdrop');
+  const commandPanel = page.locator('.app-command-panel');
+  await expect(commandBackdrop).toHaveAttribute('data-motion-state', 'open');
+  await expect(commandPanel).toBeVisible();
+  const commandEnter = await commandPanel.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      duration: style.animationDuration,
+      easing: style.animationTimingFunction,
+      name: style.animationName,
+    };
+  });
+  expect(commandEnter).toEqual({
+    duration: '0.24s',
+    easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+    name: 'app-overlay-enter',
+  });
+  await page.getByRole('button', { name: /Close command menu/ }).click();
+  await expect(commandBackdrop).toHaveAttribute(
+    'data-motion-state',
+    'closing',
+  );
+  const commandExit = await commandPanel.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      duration: style.animationDuration,
+      easing: style.animationTimingFunction,
+      name: style.animationName,
+    };
+  });
+  expect(commandExit).toEqual({
+    duration: '0.18s',
+    easing: 'cubic-bezier(0.4, 0, 1, 1)',
+    name: 'app-overlay-exit',
+  });
+  await expect(commandBackdrop).toHaveCount(0);
+
   await page.goto('/');
   const publicEvidenceFrame = page.locator('.app-public-evidence-frame');
   await expect(publicEvidenceFrame).toBeVisible();

@@ -13,6 +13,7 @@ import { useAccountOverviewQuery } from '../../features/account/api';
 import { useMarketDataHealthQuery } from '../../features/market/api';
 import { KarkinosMark } from '../components/brand/karkinos-mark';
 import { useCopy } from '../copy';
+import { useMotionPresence } from '../motion';
 import {
   usePreferences,
   type Locale,
@@ -705,13 +706,45 @@ function WorkspaceCommandMenu({
   });
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const panelRef = useRef<HTMLElement | null>(null);
+  const presence = useMotionPresence(open);
 
   useEffect(() => {
     if (!open) {
       return;
     }
+    const returnFocus = document.activeElement as HTMLElement | null;
     setQuery('');
     inputRef.current?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') {
+        return;
+      }
+      const focusable = Array.from(
+        panelRef.current?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      ).filter((element) => !element.hasAttribute('hidden'));
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      returnFocus?.focus();
+    };
   }, [open]);
 
   const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -724,13 +757,16 @@ function WorkspaceCommandMenu({
     }))
     .filter((group) => group.items.length > 0);
 
-  if (!open) {
+  if (!presence.mounted) {
     return null;
   }
 
   return (
     <div
       className="app-command-backdrop"
+      data-motion-state={presence.state}
+      aria-hidden={presence.state === 'closing' ? true : undefined}
+      inert={presence.state === 'closing'}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
           onClose();
@@ -738,9 +774,10 @@ function WorkspaceCommandMenu({
       }}
     >
       <section
+        ref={panelRef}
         className="app-command-panel"
         role="dialog"
-        aria-modal="true"
+        aria-modal={open ? 'true' : undefined}
         aria-label={copy.shell.commandTitle}
       >
         <div className="app-command-input-row">
@@ -822,7 +859,10 @@ function PreferenceMenu({
   }>;
 }) {
   const [open, setOpen] = useState(false);
+  const presence = useMotionPresence(open);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const wasOpenRef = useRef(false);
   const activeTheme =
     themeOptions.find((option) => option.value === theme) ?? themeOptions[0];
   const ActiveThemeIcon = activeTheme?.icon ?? SystemThemeIcon;
@@ -852,9 +892,21 @@ function PreferenceMenu({
     };
   }, [open]);
 
+  useEffect(() => {
+    if (
+      wasOpenRef.current &&
+      !open &&
+      rootRef.current?.contains(document.activeElement)
+    ) {
+      triggerRef.current?.focus();
+    }
+    wasOpenRef.current = open;
+  }, [open]);
+
   return (
     <div ref={rootRef} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         className={`app-button-secondary inline-flex h-8 w-8 items-center justify-center rounded-[var(--app-radius-control)] p-0 ${
           open
@@ -869,11 +921,14 @@ function PreferenceMenu({
       >
         <ActiveThemeIcon className="h-4 w-4" aria-hidden="true" />
       </button>
-      {open ? (
+      {presence.mounted ? (
         <div
           role="dialog"
           aria-label={menuLabel}
-          className="absolute right-0 top-[calc(100%+6px)] z-[70] w-[min(18rem,calc(100vw-1.5rem))] rounded-[var(--app-radius-overlay)] border border-[var(--app-border)] bg-[var(--app-surface-overlay)] p-3 shadow-[var(--app-shadow-overlay)]"
+          aria-hidden={presence.state === 'closing' ? true : undefined}
+          inert={presence.state === 'closing'}
+          data-motion-state={presence.state}
+          className="app-shell-popover absolute right-0 top-[calc(100%+6px)] z-[70] w-[min(18rem,calc(100vw-1.5rem))] rounded-[var(--app-radius-overlay)] border border-[var(--app-border)] bg-[var(--app-surface-overlay)] p-3 shadow-[var(--app-shadow-overlay)]"
         >
           <div className="app-kicker">{themeLabel}</div>
           <div className="mt-2 grid grid-cols-3 gap-1" role="group">
@@ -949,7 +1004,10 @@ function LanguageMenu({
   onChange: (value: Locale) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const presence = useMotionPresence(open);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const wasOpenRef = useRef(false);
   const currentLabel = value === 'zh' ? '中文' : 'English';
 
   useEffect(() => {
@@ -978,9 +1036,21 @@ function LanguageMenu({
     };
   }, [open]);
 
+  useEffect(() => {
+    if (
+      wasOpenRef.current &&
+      !open &&
+      rootRef.current?.contains(document.activeElement)
+    ) {
+      triggerRef.current?.focus();
+    }
+    wasOpenRef.current = open;
+  }, [open]);
+
   return (
     <div ref={rootRef} className="relative w-auto">
       <button
+        ref={triggerRef}
         type="button"
         className={`app-language-control inline-flex h-8 w-auto items-center gap-2 whitespace-nowrap rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-transparent px-2.5 text-xs font-semibold text-[var(--app-text-secondary)] transition-colors hover:bg-[var(--app-surface-overlay)] hover:text-[var(--app-text)] ${
           open ? 'bg-[var(--app-surface-overlay)] text-[var(--app-text)]' : ''
@@ -995,11 +1065,14 @@ function LanguageMenu({
           {currentLabel}
         </span>
       </button>
-      {open ? (
+      {presence.mounted ? (
         <div
-          className="absolute right-0 top-[calc(100%+6px)] z-[60] min-w-max rounded-[var(--app-radius-overlay)] border border-[var(--app-border)] bg-[var(--app-surface-overlay)] p-1 shadow-[var(--app-shadow-overlay)]"
+          className="app-shell-popover absolute right-0 top-[calc(100%+6px)] z-[60] min-w-max rounded-[var(--app-radius-overlay)] border border-[var(--app-border)] bg-[var(--app-surface-overlay)] p-1 shadow-[var(--app-shadow-overlay)]"
           role="menu"
           aria-label={label}
+          aria-hidden={presence.state === 'closing' ? true : undefined}
+          inert={presence.state === 'closing'}
+          data-motion-state={presence.state}
         >
           {(
             [
@@ -1165,6 +1238,8 @@ function StatusChip({
   expanded?: boolean;
   testId?: string;
 }) {
+  const popupPresence = useMotionPresence(Boolean(popup && expanded));
+
   return (
     <div className="app-status-chip group relative inline-flex h-7 min-w-0 shrink-0 border-r border-[var(--app-divider)] pr-1">
       <button
@@ -1237,15 +1312,18 @@ function StatusChip({
           {hoverHint}
         </div>
       ) : null}
-      {popup ? (
+      {popup && popupPresence.mounted ? (
         <div
-          className={`absolute right-0 z-[70] ${
+          className={`app-status-popover-root absolute right-0 z-[70] ${
             popupPlacement === 'top'
               ? 'bottom-[calc(100%+8px)]'
               : 'top-[calc(100%+8px)]'
           }`}
+          data-motion-state={popupPresence.state}
+          aria-hidden={popupPresence.state === 'closing' ? true : undefined}
+          inert={popupPresence.state === 'closing'}
         >
-          {expanded ? popup : null}
+          {popup}
         </div>
       ) : null}
     </div>
