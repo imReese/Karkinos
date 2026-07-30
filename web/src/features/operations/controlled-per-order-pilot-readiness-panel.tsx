@@ -467,14 +467,14 @@ export function ControlledPerOrderPilotReadinessPanel({
       open={safe ? undefined : true}
     >
       <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 text-sm font-semibold text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]">
-        <span className="min-w-0">
+        <span className="min-w-0 break-words">
           {locale === 'zh'
             ? '受控逐单试点准入证据'
             : 'Controlled per-order pilot admission evidence'}
         </span>
-        <span className="flex shrink-0 items-center gap-2">
+        <span className="flex min-w-0 shrink items-center justify-end gap-2">
           <StatusBadge
-            className="whitespace-nowrap"
+            className="min-w-0 max-w-full text-right whitespace-normal"
             tone={!safe ? 'danger' : ready ? 'success' : 'neutral'}
           >
             {!safe
@@ -491,7 +491,7 @@ export function ControlledPerOrderPilotReadinessPanel({
           </StatusBadge>
           <span
             aria-hidden="true"
-            className="app-disclosure-chevron text-[var(--app-text-tertiary)] group-open:rotate-180"
+            className="app-disclosure-chevron inline-flex h-5 w-5 shrink-0 items-center justify-center text-[var(--app-text-tertiary)] group-open:rotate-180"
           >
             ▾
           </span>

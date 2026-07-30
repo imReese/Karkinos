@@ -85,6 +85,9 @@ test('keeps the overview dashboard table compact', () => {
   );
 
   const table = screen.getByTestId('positions-table-desktop');
+  expect(table.closest('.app-data-table-shell')?.className).toContain(
+    'app-positions-table-dashboard',
+  );
   const headers = within(table)
     .getAllByRole('columnheader')
     .map((header) => header.textContent);

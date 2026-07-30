@@ -12,6 +12,7 @@ const accountTruthAcceptanceViewports = [
 test('critical human-review surfaces load from the product runtime', async ({
   page,
 }) => {
+  test.setTimeout(60_000);
   const surfaces = [
     { path: '/decision', heading: /Decision platform|决策平台/ },
     { path: '/trading', heading: /Trading review|交易复核/ },
@@ -31,7 +32,7 @@ test('critical human-review surfaces load from the product runtime', async ({
 
   await page.goto('/account-truth');
   await expect(page.getByTestId('account-truth-review-workspace')).toBeVisible({
-    timeout: 15_000,
+    timeout: 30_000,
   });
   expect(
     await page

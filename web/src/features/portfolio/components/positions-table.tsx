@@ -435,7 +435,9 @@ export function PositionsTable({
 
       <div className="hidden min-w-0 md:block">
         <DataTable
-          className="app-positions-table"
+          className={`app-positions-table ${
+            variant === 'dashboard' ? 'app-positions-table-dashboard' : ''
+          }`}
           data={positions}
           columns={columns}
           caption={labels.symbol}

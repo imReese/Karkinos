@@ -13,7 +13,6 @@ const NUMERIC_TYPOGRAPHY_OVERRIDE =
 // ceiling may only decrease; certification requires this inventory to be empty.
 const NUMERIC_OVERRIDE_CEILINGS: Readonly<Record<string, number>> = {
   'app/router.tsx': 53,
-  'features/account-truth/components/account-truth-review-page.tsx': 12,
   'features/account/components/dashboard-quick-actions.tsx': 1,
   'features/account/components/equity-curve-card.tsx': 7,
   'features/account/components/performance-breakdown-card.tsx': 2,
@@ -29,7 +28,6 @@ const NUMERIC_OVERRIDE_CEILINGS: Readonly<Record<string, number>> = {
   'features/backtest/components/strategy-learning-review-panel.tsx': 4,
   'features/backtest/components/strategy-metadata-snapshot-panel.tsx': 7,
   'features/backtest/components/validation-evidence-panel.tsx': 3,
-  'features/decision/components/decision-cockpit-page.tsx': 8,
   'features/decision/components/decision-outcome-review-panel.tsx': 10,
   'features/decision/components/decision-quality-panel.tsx': 6,
   'features/market/components/confirmed-fund-nav-refresh-button.tsx': 1,
@@ -61,7 +59,9 @@ const NUMERIC_OVERRIDE_CEILINGS: Readonly<Record<string, number>> = {
 const CERTIFIED_CORE_SURFACES = [
   'app/components/workbench/workspace.tsx',
   'app/layout/app-shell.tsx',
+  'features/account-truth/components/account-truth-review-page.tsx',
   'features/account/components/overview-cards.tsx',
+  'features/decision/components/decision-cockpit-page.tsx',
 ] as const;
 
 function productionSourceFiles(directory: string): string[] {
@@ -81,6 +81,17 @@ function numericOverrideCount(path: string): number {
 }
 
 describe('Karkinos typography certification ratchet', () => {
+  it('defines the overline role from semantic typography tokens', () => {
+    const css = readFileSync(join(SRC_ROOT, 'styles/globals.css'), 'utf8');
+    const overline = css.match(/\.app-type-overline\s*\{[^}]+\}/)?.[0] ?? '';
+
+    expect(overline).toContain('var(--app-font-size-micro)');
+    expect(overline).toContain('var(--app-line-height-micro)');
+    expect(overline).toContain('var(--app-font-weight-semibold)');
+    expect(overline).toContain('var(--app-letter-spacing-overline)');
+    expect(overline).toContain('text-transform: uppercase');
+  });
+
   it('keeps certified shared account surfaces on semantic typography roles', () => {
     const violations = CERTIFIED_CORE_SURFACES.flatMap((file) => {
       const count = numericOverrideCount(join(SRC_ROOT, file));

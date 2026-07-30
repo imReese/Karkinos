@@ -3451,13 +3451,13 @@ function AutomationCockpitPanel({
                         className="min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_16%,transparent)] px-3 py-2.5"
                         key={stage.key}
                       >
-                        <div className="app-muted text-[11px]">
+                        <div className="app-muted app-type-micro">
                           {controlledOrderJourneyStageLabel(stage.key, locale)}
                         </div>
                         <div className="mt-1 break-words text-sm font-semibold text-[var(--app-text)]">
                           {formatPublicStatus(stage.status, locale)}
                         </div>
-                        <div className="app-muted mt-1 text-[11px]">
+                        <div className="app-muted app-type-micro mt-1">
                           {stage.complete
                             ? locale === 'zh'
                               ? '证据已记录'
@@ -4733,7 +4733,7 @@ function DailyTradingPlanPanel({
                 ) : null}
                 {constraintChecks.length > 0 ? (
                   <div className="sm:col-span-2">
-                    <div className="app-muted mb-2 text-xs font-semibold uppercase tracking-[0.16em]">
+                    <div className="app-muted app-type-overline mb-2">
                       {labels.tradingPlanConstraintChecks}
                     </div>
                     <div className="flex min-w-0 flex-wrap gap-2">
@@ -5934,14 +5934,14 @@ function SignalQueuePanel({
                         </div>
                         <div className="mt-2 flex flex-wrap gap-2">
                           <a
-                            className="app-button-secondary inline-flex min-h-8 items-center justify-center rounded-[var(--app-radius-control)] px-2.5 py-1.5 text-center text-[11px] font-semibold whitespace-normal"
+                            className="app-button-secondary app-type-micro inline-flex min-h-8 items-center justify-center rounded-[var(--app-radius-control)] px-2.5 py-1.5 text-center font-semibold whitespace-normal"
                             href={signalBacktestHref(entry.signal)}
                             aria-label={`${labels.openBacktestEvidence}: ${instrumentLabel}`}
                           >
                             {labels.openBacktestEvidence}
                           </a>
                           <a
-                            className="app-button-secondary inline-flex min-h-8 items-center justify-center rounded-[var(--app-radius-control)] px-2.5 py-1.5 text-center text-[11px] font-semibold whitespace-normal"
+                            className="app-button-secondary app-type-micro inline-flex min-h-8 items-center justify-center rounded-[var(--app-radius-control)] px-2.5 py-1.5 text-center font-semibold whitespace-normal"
                             href={signalHoldingAttributionHref(entry.signal)}
                             aria-label={`${labels.openAttributionReview}: ${instrumentLabel}`}
                           >
@@ -6359,7 +6359,7 @@ function CandidateEvidenceChain({
   );
   return (
     <section className="mt-4 min-w-0 border-t border-[var(--app-divider)] pt-3">
-      <div className="text-xs font-semibold tracking-[0.08em] text-[var(--app-muted)] uppercase">
+      <div className="app-type-overline text-[var(--app-muted)]">
         {labels.candidateEvidenceChain}
       </div>
       <dl className="mt-2 grid min-w-0 md:grid-cols-3 md:gap-x-4">
@@ -6382,7 +6382,7 @@ function EvidenceChainCell({ item }: { item: CandidateEvidenceChainItem }) {
           : 'text-[var(--app-text)]';
   return (
     <div className="min-w-0 border-b border-[var(--app-divider)] py-2">
-      <dt className="app-muted text-[11px]">{item.label}</dt>
+      <dt className="app-muted app-type-micro">{item.label}</dt>
       <dd className={`mt-1 break-words text-sm font-semibold ${textColor}`}>
         {item.value}
       </dd>
@@ -6423,7 +6423,7 @@ function EvidenceLine({
       data-testid="decision-evidence-line"
       className="min-w-0 border-b border-[var(--app-divider)] py-2"
     >
-      <dt className="app-muted break-words text-[11px] uppercase">{label}</dt>
+      <dt className="app-muted app-type-overline break-words">{label}</dt>
       <dd className={`mt-1 break-words text-sm font-semibold ${textColor}`}>
         {label}: {value}
       </dd>
