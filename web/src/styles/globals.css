@@ -670,6 +670,31 @@ textarea {
   border-bottom: 0;
 }
 
+@media (max-width: 639px) {
+  .account-support-metric-strip {
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(138px, 43vw);
+    grid-template-columns: none;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scroll-padding-inline: 12px;
+    scroll-snap-type: inline proximity;
+    scrollbar-width: thin;
+  }
+
+  .account-support-metric-strip .app-metric-strip-item,
+  .account-support-metric-strip .app-metric-strip-item:nth-child(odd) {
+    border-right: 1px solid var(--app-divider);
+    border-bottom: 0;
+    scroll-snap-align: start;
+  }
+
+  .account-support-metric-strip .app-metric-strip-item:last-child {
+    grid-column: auto;
+    border-right: 0;
+  }
+}
+
 @media (min-width: 360px) and (max-width: 639px) {
   .account-overview-evidence {
     position: relative;
@@ -2976,6 +3001,22 @@ h3 {
 
   .app-overview-primary-exception .app-exception-item dl {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .app-overview-primary-exception [data-evidence-field='reason'] {
+    order: 1;
+  }
+
+  .app-overview-primary-exception [data-evidence-field='next-action'] {
+    order: 2;
+  }
+
+  .app-overview-primary-exception [data-evidence-field='unblock-condition'] {
+    order: 3;
+  }
+
+  .app-overview-primary-exception [data-evidence-field='evidence'] {
+    order: 4;
   }
 
   .app-metric-strip-item:nth-child(odd) {

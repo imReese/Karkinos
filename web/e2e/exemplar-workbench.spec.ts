@@ -204,6 +204,12 @@ test('overview preserves the queue-to-holdings hierarchy across all acceptance v
   page,
 }) => {
   test.setTimeout(60_000);
+  await page.route('**/api/portfolio/market-evidence-review', async (route) => {
+    await route.fulfill({
+      status: 503,
+      body: 'persisted evidence unavailable',
+    });
+  });
   await page.setViewportSize(overviewAcceptanceViewports[0]);
   await page.goto('/overview');
   await expect(page.getByTestId('overview-holdings-section')).toBeVisible({
@@ -239,6 +245,36 @@ test('overview preserves the queue-to-holdings hierarchy across all acceptance v
       );
     } else {
       expect(queueBox.y, JSON.stringify(viewport)).toBeLessThan(holdingsBox.y);
+    }
+
+    if (viewport.width === 390) {
+      const content = page.locator('.app-shell-content');
+      const supportMetrics = page.locator('.account-support-metric-strip');
+      const safeNext = queue.getByRole('link', {
+        name: /View data status|查看数据状态/,
+      });
+      await expect(safeNext).toBeVisible();
+
+      const [contentBox, safeNextBox, supportMetricGeometry] =
+        await Promise.all([
+          content.boundingBox(),
+          safeNext.boundingBox(),
+          supportMetrics.evaluate((element) => ({
+            clientWidth: element.clientWidth,
+            scrollWidth: element.scrollWidth,
+            itemTops: Array.from(element.children).map((item) =>
+              Math.round(item.getBoundingClientRect().top),
+            ),
+          })),
+        ]);
+
+      expect(new Set(supportMetricGeometry.itemTops).size).toBe(1);
+      expect(supportMetricGeometry.scrollWidth).toBeGreaterThan(
+        supportMetricGeometry.clientWidth,
+      );
+      expect(safeNextBox!.y + safeNextBox!.height).toBeLessThanOrEqual(
+        contentBox!.y + contentBox!.height,
+      );
     }
 
     const additionalReviewItems = page.getByTestId('overview-today-queue-more');

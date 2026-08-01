@@ -144,6 +144,10 @@ describe('remaining route workbench contract', () => {
     expect(CSS).toContain('.app-workbench-route');
     expect(CSS).toContain('overscroll-behavior-inline: contain');
     expect(CSS).toMatch(
+      /max-width:\s*639px[\s\S]*\.account-support-metric-strip\s*{[\s\S]*grid-auto-flow:\s*column[\s\S]*overflow-x:\s*auto/,
+    );
+    expect(CSS).toContain("[data-evidence-field='next-action']");
+    expect(CSS).toMatch(
       /max-width:\s*767px[\s\S]*\.app-shell-content[\s\S]*min-width:\s*var\(--app-touch-target\)[\s\S]*min-height:\s*var\(--app-touch-target\)/,
     );
     expect(CSS).toContain('summary');

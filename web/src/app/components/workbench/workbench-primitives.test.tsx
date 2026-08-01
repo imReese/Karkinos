@@ -316,6 +316,12 @@ test('prioritizes blockers, gate evidence, and immutable history', () => {
   expect(screen.getByText('Safe next step').className).toContain(
     'app-type-label',
   );
+  expect(
+    screen
+      .getByText('Safe next step')
+      .closest('[data-evidence-field]')
+      ?.getAttribute('data-evidence-field'),
+  ).toBe('next-action');
   const gateMatrix = screen.getByRole('table', { name: 'Decision gates' });
   expect(gateMatrix).toBeTruthy();
   expect(gateMatrix.getAttribute('data-mobile-layout')).toBe('stacked');
