@@ -297,7 +297,7 @@ export function OperationsPage() {
                 ariaLabel={labels.attentionQueue}
                 emptyState={labels.attentionEmpty}
                 density="compact"
-                className="min-w-0 [&>li>dl]:grid-cols-2 lg:[&>li>dl]:grid-cols-4"
+                className="app-operations-attention-list min-w-0 [&>li>dl]:grid-cols-2 lg:[&>li>dl]:grid-cols-4"
                 labels={{
                   reason: labels.evidenceStatus,
                   unblockCondition: labels.resolution,

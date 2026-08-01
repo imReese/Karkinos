@@ -313,6 +313,7 @@ test('renders persisted attention evidence without write or execution affordance
   );
   expect(attention.getAttribute('data-density')).toBe('compact');
   expect(commandGrid.className).toContain('app-operations-command-grid');
+  expect(attention.className).toContain('app-operations-attention-list');
   expect(attention.className).toContain('divide-y');
   expect(healthMetrics).toBeTruthy();
   expect(
@@ -391,6 +392,12 @@ test('shows the fail-closed pilot admission gate without execution controls', as
 
   const disclosure = await screen.findByTestId('controlled-pilot-readiness');
   expect(disclosure.hasAttribute('open')).toBe(false);
+  expect(disclosure.querySelector('summary')?.className).toContain(
+    'app-pilot-readiness-summary',
+  );
+  expect(disclosure.querySelector('summary')?.className).toContain(
+    'focus-visible:ring-inset',
+  );
   expect(disclosure.textContent).toContain(
     'Controlled per-order pilot admission evidence',
   );

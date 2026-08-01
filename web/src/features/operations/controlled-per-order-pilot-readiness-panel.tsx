@@ -466,13 +466,13 @@ export function ControlledPerOrderPilotReadinessPanel({
       data-testid="controlled-pilot-readiness"
       open={safe ? undefined : true}
     >
-      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 text-sm font-semibold text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]">
+      <summary className="app-pilot-readiness-summary flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 py-2.5 text-sm font-semibold text-[var(--app-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--app-focus-ring)] sm:gap-4">
         <span className="min-w-0 break-words">
           {locale === 'zh'
             ? '受控逐单试点准入证据'
             : 'Controlled per-order pilot admission evidence'}
         </span>
-        <span className="flex min-w-0 shrink items-center justify-end gap-2">
+        <span className="flex min-w-0 max-w-28 shrink items-center justify-end gap-2 sm:max-w-none">
           <StatusBadge
             className="min-w-0 max-w-full text-right whitespace-normal"
             tone={!safe ? 'danger' : ready ? 'success' : 'neutral'}
