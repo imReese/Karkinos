@@ -1893,7 +1893,22 @@ test('dense return evidence stays spatially stable through hover and selection',
     .getByRole('button')
     .first();
   await expect(cell).toBeVisible();
-  const initialBox = await cell.boundingBox();
+  const grid = page.getByTestId('return-calendar-month-grid');
+  const localGeometry = async () => {
+    const [cellBox, gridBox] = await Promise.all([
+      cell.boundingBox(),
+      grid.boundingBox(),
+    ]);
+    if (!cellBox || !gridBox) {
+      throw new Error('Return calendar geometry is unavailable');
+    }
+    return {
+      height: cellBox.height,
+      localY: cellBox.y - gridBox.y,
+      width: cellBox.width,
+    };
+  };
+  const initialGeometry = await localGeometry();
   const transitionProperties = await cell.evaluate(
     (element) => getComputedStyle(element).transitionProperty,
   );
@@ -1901,13 +1916,13 @@ test('dense return evidence stays spatially stable through hover and selection',
 
   await cell.hover();
   await page.waitForTimeout(150);
-  const hoverBox = await cell.boundingBox();
-  expect(hoverBox?.y).toBeCloseTo(initialBox?.y ?? 0, 1);
+  const hoverGeometry = await localGeometry();
+  expect(hoverGeometry).toEqual(initialGeometry);
 
   await cell.click();
   await expect(cell).toHaveAttribute('aria-pressed', 'true');
-  const selectedBox = await cell.boundingBox();
-  expect(selectedBox?.y).toBeCloseTo(initialBox?.y ?? 0, 1);
+  const selectedGeometry = await localGeometry();
+  expect(selectedGeometry).toEqual(initialGeometry);
 });
 
 test('reduced-motion preference removes branded and routine transition timing', async ({
