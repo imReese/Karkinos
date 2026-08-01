@@ -85,22 +85,49 @@ test('Operations keeps pilot readiness and subsystem metrics visibly scoped', as
       await page.setViewportSize(viewport);
       const geometry = await metrics.evaluate((element) => {
         const before = getComputedStyle(element, '::before');
+        const commandGrid = document.querySelector(
+          '[data-testid="operations-command-grid"]',
+        ) as HTMLElement;
+        const attentionQueue = document.querySelector(
+          '[data-testid="operations-attention-queue"]',
+        ) as HTMLElement;
         const readiness = document.querySelector(
           '[data-testid="controlled-pilot-readiness"]',
-        );
+        ) as HTMLElement;
+        const firstAttention = attentionQueue.querySelector('li');
+        const fieldTops = firstAttention
+          ? Object.fromEntries(
+              Array.from(
+                firstAttention.querySelectorAll<HTMLElement>(
+                  '[data-evidence-field]',
+                ),
+              ).map((field) => [
+                field.dataset.evidenceField,
+                field.getBoundingClientRect().top,
+              ]),
+            )
+          : {};
         return {
           ariaLabel: element.getAttribute('aria-label'),
+          attentionWidthDelta:
+            commandGrid.getBoundingClientRect().width -
+            attentionQueue.getBoundingClientRect().width,
+          commandColumnCount:
+            getComputedStyle(commandGrid).gridTemplateColumns.split(' ').length,
           documentOverflow:
             document.documentElement.scrollWidth -
             document.documentElement.clientWidth,
+          fieldTops,
           metricOverflow: element.scrollWidth - element.clientWidth,
           labelContent: before.content.replace(/^['"]|['"]$/g, ''),
           columnCount:
             getComputedStyle(element).gridTemplateColumns.split(' ').length,
+          pilotBelowAttention:
+            readiness.getBoundingClientRect().top >=
+            attentionQueue.getBoundingClientRect().bottom,
           readinessBeforeMetrics:
-            readiness === null ||
             readiness.getBoundingClientRect().bottom <=
-              element.getBoundingClientRect().top,
+            element.getBoundingClientRect().top,
         };
       });
 
@@ -115,6 +142,18 @@ test('Operations keeps pilot readiness and subsystem metrics visibly scoped', as
         geometry.metricOverflow,
         `${theme} ${viewport.width}`,
       ).toBeLessThanOrEqual(0);
+      expect(
+        geometry.commandColumnCount,
+        `${theme} ${viewport.width} command grid`,
+      ).toBe(1);
+      expect(
+        Math.abs(geometry.attentionWidthDelta),
+        `${theme} ${viewport.width} attention width`,
+      ).toBeLessThanOrEqual(headlessSubpixelTolerance);
+      expect(
+        geometry.pilotBelowAttention,
+        `${theme} ${viewport.width} pilot order`,
+      ).toBe(true);
       expect(geometry.columnCount, `${theme} ${viewport.width}`).toBe(
         viewport.width < 640 ? 2 : 4,
       );
@@ -122,6 +161,16 @@ test('Operations keeps pilot readiness and subsystem metrics visibly scoped', as
         geometry.readinessBeforeMetrics,
         `${theme} ${viewport.width}`,
       ).toBe(true);
+      if (viewport.width < 640) {
+        expect(
+          geometry.fieldTops['reason'],
+          `${theme} ${viewport.width} evidence status row`,
+        ).toBe(geometry.fieldTops['evidence']);
+        expect(
+          geometry.fieldTops['next-action'],
+          `${theme} ${viewport.width} safe action order`,
+        ).toBeLessThan(geometry.fieldTops['unblock-condition']);
+      }
     }
 
     await page.setViewportSize(acceptanceViewports.at(-1)!);
@@ -134,13 +183,34 @@ test('Operations keeps pilot readiness and subsystem metrics visibly scoped', as
         '[data-workbench-primitive="gate-matrix"]',
       ) as HTMLElement;
       const summary = element.querySelector(':scope > summary') as HTMLElement;
+      const summaryStyle = getComputedStyle(summary);
+      const summaryRect = summary.getBoundingClientRect();
+      const summaryChildRects = Array.from(summary.children).map((child) =>
+        child.getBoundingClientRect(),
+      );
       return {
         contentOverflow: content.scrollWidth - content.clientWidth,
         documentOverflow:
           document.documentElement.scrollWidth -
           document.documentElement.clientWidth,
         gateMatrixOverflow: gateMatrix.scrollWidth - gateMatrix.clientWidth,
-        summaryOverflow: summary.scrollWidth - summary.clientWidth,
+        summaryContentOverflow: Math.max(
+          0,
+          ...summaryChildRects.map((rect) => rect.right - summaryRect.right),
+          ...summaryChildRects.map((rect) => summaryRect.left - rect.left),
+        ),
+        summaryGeometry: {
+          childWidths: summaryChildRects.map(
+            (rect) => Math.round(rect.width * 100) / 100,
+          ),
+          clientWidth: summary.clientWidth,
+          display: summaryStyle.display,
+          gap: summaryStyle.gap,
+          listStyle: summaryStyle.listStyleType,
+          rectWidth:
+            Math.round(summary.getBoundingClientRect().width * 100) / 100,
+          scrollWidth: summary.scrollWidth,
+        },
       };
     });
     expect(
@@ -152,8 +222,8 @@ test('Operations keeps pilot readiness and subsystem metrics visibly scoped', as
       `${theme} expanded gate matrix`,
     ).toBeLessThanOrEqual(headlessSubpixelTolerance);
     expect(
-      expandedGeometry.summaryOverflow,
-      `${theme} expanded summary`,
+      expandedGeometry.summaryContentOverflow,
+      `${theme} expanded summary content ${JSON.stringify(expandedGeometry.summaryGeometry)}`,
     ).toBeLessThanOrEqual(headlessSubpixelTolerance);
     expect(
       expandedGeometry.documentOverflow,

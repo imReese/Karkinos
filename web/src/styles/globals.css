@@ -1889,8 +1889,17 @@ h3 {
 
 .app-operations-command-grid {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--app-section-gap);
   align-items: start;
+}
+
+.app-pilot-readiness-summary::marker {
+  content: '';
+}
+
+.app-pilot-readiness-summary::-webkit-details-marker {
+  display: none;
 }
 
 .app-ai-research-command-grid {
@@ -1900,16 +1909,6 @@ h3 {
 }
 
 @media (min-width: 1024px) {
-  .app-operations-command-grid {
-    grid-template-columns: minmax(0, 1.35fr) minmax(310px, 0.65fr);
-  }
-
-  .app-operations-command-grid:has(
-    > [data-testid='controlled-pilot-readiness'][open]
-  ) {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .app-ai-research-command-grid {
     grid-template-columns: minmax(340px, 0.72fr) minmax(0, 1.28fr);
   }
@@ -1922,6 +1921,21 @@ h3 {
 
   .app-decision-gate-label {
     display: none;
+  }
+
+  .app-operations-attention-list [data-evidence-field='reason'],
+  .app-operations-attention-list [data-evidence-field='evidence'] {
+    order: 1;
+  }
+
+  .app-operations-attention-list [data-evidence-field='next-action'] {
+    grid-column: 1 / -1;
+    order: 2;
+  }
+
+  .app-operations-attention-list [data-evidence-field='unblock-condition'] {
+    grid-column: 1 / -1;
+    order: 3;
   }
 }
 

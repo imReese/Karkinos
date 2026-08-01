@@ -395,9 +395,19 @@ describe('remaining route workbench contract', () => {
     expect(summaryValue).not.toContain('var(--app-danger)');
   });
 
-  it('gives expanded Operations gates and constrained Backtest copy enough width', () => {
+  it('keeps Operations priority evidence full-width and constrained Backtest copy readable', () => {
     expect(CSS).toMatch(
-      /\.app-operations-command-grid:has\(\s*> \[data-testid='controlled-pilot-readiness'\]\[open\]\s*\) \{\s*grid-template-columns: minmax\(0, 1fr\);/,
+      /\.app-operations-command-grid \{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\);/,
+    );
+    expect(CSS).not.toContain(
+      'grid-template-columns: minmax(0, 1.35fr) minmax(310px, 0.65fr)',
+    );
+    expect(CSS).toContain('.app-pilot-readiness-summary::marker');
+    expect(CSS).toContain(
+      '.app-pilot-readiness-summary::-webkit-details-marker',
+    );
+    expect(CSS).toMatch(
+      /max-width:\s*639px[\s\S]*\.app-operations-attention-list \[data-evidence-field='next-action'\][\s\S]*grid-column:\s*1 \/ -1;[\s\S]*order:\s*2;[\s\S]*\.app-operations-attention-list \[data-evidence-field='unblock-condition'\][\s\S]*grid-column:\s*1 \/ -1;[\s\S]*order:\s*3;/,
     );
     expect(BACKTEST).toContain(
       '2xl:grid-cols-[minmax(0,1fr)_minmax(180px,240px)]',
