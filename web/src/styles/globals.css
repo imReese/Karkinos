@@ -486,7 +486,7 @@ textarea {
   border: 0;
   background: transparent;
   color: var(--app-text);
-  font-size: 13px;
+  font-size: var(--app-font-size-compact);
   outline: 0;
 }
 
@@ -1011,8 +1011,8 @@ textarea {
   font-family: var(--app-font-mono);
   font-size: var(--app-font-size-micro);
   font-weight: var(--app-font-weight-semibold);
-  letter-spacing: 0.1em;
-  line-height: 1.4;
+  letter-spacing: var(--app-letter-spacing-overline);
+  line-height: var(--app-line-height-micro);
   text-transform: uppercase;
 }
 
@@ -1122,14 +1122,14 @@ textarea {
 }
 
 .app-shell-section-title {
-  font-size: 1.25rem;
-  font-weight: 700;
-  line-height: 1.2;
+  font-size: var(--app-font-size-section-title);
+  font-weight: var(--app-font-weight-title);
+  line-height: var(--app-line-height-section-title);
 }
 
 .app-toolbar-section-title {
   font-size: var(--app-font-size-subsection-title);
-  font-weight: 600;
+  font-weight: var(--app-font-weight-semibold);
   line-height: var(--app-line-height-subsection-title);
   letter-spacing: -0.015em;
 }
@@ -1137,8 +1137,8 @@ textarea {
 .app-tier-4-label {
   color: var(--app-text-secondary);
   font-size: var(--app-font-size-label);
-  font-weight: 500;
-  letter-spacing: 0.14em;
+  font-weight: var(--app-font-weight-medium);
+  letter-spacing: var(--app-letter-spacing-kicker);
   text-transform: uppercase;
 }
 
@@ -1200,7 +1200,7 @@ textarea {
   color: var(--app-text-secondary);
   padding: 0 10px;
   font-size: var(--app-font-size-micro);
-  font-weight: 600;
+  font-weight: var(--app-font-weight-semibold);
   letter-spacing: var(--app-letter-spacing-label);
   line-height: var(--app-line-height-micro);
   cursor: pointer;
@@ -1248,7 +1248,7 @@ textarea {
   background: var(--app-surface-raised);
   font-family: inherit;
   font-size: var(--app-font-size-label);
-  font-weight: 600;
+  font-weight: var(--app-font-weight-semibold);
   letter-spacing: var(--app-letter-spacing-label);
   text-transform: none;
 }
@@ -1697,7 +1697,7 @@ textarea {
 h1,
 h2,
 h3 {
-  font-weight: 600;
+  font-weight: var(--app-font-weight-semibold);
 }
 
 .app-error-text {
@@ -1881,8 +1881,8 @@ h3 {
   padding-right: 8px;
   overflow: hidden;
   color: var(--app-text-secondary);
-  font-size: 11px;
-  line-height: 16px;
+  font-size: var(--app-font-size-micro);
+  line-height: var(--app-line-height-micro);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2040,9 +2040,9 @@ h3 {
   border-bottom: 1px solid var(--app-divider);
   color: var(--app-text);
   content: attr(aria-label);
-  font-size: 0.875rem;
-  font-weight: 600;
-  line-height: 1.25rem;
+  font-size: var(--app-font-size-body);
+  font-weight: var(--app-font-weight-semibold);
+  line-height: var(--app-line-height-compact);
 }
 
 .app-activity-filter-rail {
@@ -2085,7 +2085,7 @@ h3 {
   background: var(--app-surface-overlay);
   padding: 10px 14px;
   color: var(--app-text);
-  font-size: 13px;
+  font-size: var(--app-font-size-compact);
   font-weight: var(--app-font-weight-semibold);
   transition: translate var(--app-motion-fast) var(--app-ease-standard);
 }
@@ -2122,7 +2122,7 @@ h3 {
 }
 
 .app-public-product-mark {
-  font-size: 12px;
+  font-size: var(--app-font-size-label);
 }
 
 .app-public-nav {
@@ -2131,7 +2131,7 @@ h3 {
   gap: 30px;
   margin-left: auto;
   color: var(--app-text-secondary);
-  font-size: 13px;
+  font-size: var(--app-font-size-compact);
   font-weight: var(--app-font-weight-medium);
 }
 
@@ -2198,7 +2198,7 @@ h3 {
 .app-public-header-cta {
   min-height: 36px;
   padding-inline: 14px;
-  font-size: 12px;
+  font-size: var(--app-font-size-label);
 }
 
 .app-public-header-cta-short {
@@ -2233,7 +2233,7 @@ h3 {
 .app-public-eyebrow {
   margin: 0;
   color: var(--app-accent);
-  font-size: 11px;
+  font-size: var(--app-font-size-micro);
   line-height: 1.5;
 }
 
@@ -2278,13 +2278,13 @@ h3 {
 .app-public-primary-cta {
   min-height: 44px;
   padding-inline: 20px;
-  font-size: 13px;
+  font-size: var(--app-font-size-compact);
 }
 
 .app-public-text-link {
   min-height: 44px;
   color: var(--app-text-secondary);
-  font-size: 13px;
+  font-size: var(--app-font-size-compact);
 }
 
 .app-public-text-link:hover {
@@ -2408,7 +2408,7 @@ h3 {
   margin: 0;
   color: var(--app-text);
   font-family: var(--app-font-mono);
-  font-size: 12px;
+  font-size: var(--app-font-size-label);
   font-weight: var(--app-font-weight-semibold);
 }
 
@@ -2511,7 +2511,7 @@ h3 {
 
 .app-public-evidence-copy strong {
   color: var(--app-text);
-  font-size: 12px;
+  font-size: var(--app-font-size-label);
   font-weight: var(--app-font-weight-semibold);
 }
 
@@ -2564,7 +2564,7 @@ h3 {
 }
 
 .app-public-evidence-boundary strong {
-  font-size: 13px;
+  font-size: var(--app-font-size-compact);
   font-weight: var(--app-font-weight-semibold);
 }
 
@@ -2616,7 +2616,7 @@ h3 {
   max-width: 720px;
   margin: 0;
   color: var(--app-text-secondary);
-  font-size: 15px;
+  font-size: var(--app-font-size-subsection-title);
   line-height: 1.75;
 }
 
@@ -2669,7 +2669,7 @@ h3 {
 .app-public-workflow p {
   margin: 14px 0 0;
   color: var(--app-text-secondary);
-  font-size: 13px;
+  font-size: var(--app-font-size-compact);
   line-height: 1.7;
 }
 
@@ -2680,7 +2680,7 @@ h3 {
   gap: 8px;
   margin-top: 22px;
   color: var(--app-accent);
-  font-size: 11px;
+  font-size: var(--app-font-size-micro);
   font-weight: var(--app-font-weight-semibold);
 }
 
@@ -2720,7 +2720,7 @@ h3 {
   align-items: baseline;
   gap: 14px;
   color: var(--app-text);
-  font-size: 13px;
+  font-size: var(--app-font-size-compact);
   font-weight: var(--app-font-weight-semibold);
 }
 
@@ -2734,7 +2734,7 @@ h3 {
 .app-public-principle-list dd {
   margin: 0;
   color: var(--app-text-secondary);
-  font-size: 13px;
+  font-size: var(--app-font-size-compact);
   line-height: 1.7;
 }
 
@@ -2808,7 +2808,7 @@ h3 {
   align-items: flex-start;
   gap: 11px;
   color: var(--app-text-secondary);
-  font-size: 12px;
+  font-size: var(--app-font-size-label);
 }
 
 .app-public-footer-grid h2 {
@@ -2833,7 +2833,7 @@ h3 {
   max-width: 360px;
   margin: 22px 0 0;
   color: var(--app-text-secondary);
-  font-size: 13px;
+  font-size: var(--app-font-size-compact);
   line-height: 1.65;
 }
 
