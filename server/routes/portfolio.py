@@ -23,6 +23,7 @@ from server.models import (
     AllocationItem,
     CashFlowCreate,
     CashFlowResponse,
+    ClosedPositionResponse,
     CurrentHoldingMarketEvidenceReviewResponse,
     DailyOperationsSummary,
     EquityPoint,
@@ -3907,7 +3908,7 @@ async def build_portfolio_snapshot(state) -> PortfolioSnapshot:
         {str(symbol) for symbol in portfolio.positions},
     )
     positions: list[PositionResponse] = []
-    closed_positions: list[PositionResponse] = []
+    closed_positions: list[ClosedPositionResponse] = []
     position_review_items: list[PositionEvidenceReviewResponse] = []
     realized_pnl_total = 0.0
     for sym, pos in portfolio.positions.items():
@@ -3988,7 +3989,12 @@ async def build_portfolio_snapshot(state) -> PortfolioSnapshot:
         if presence == "current":
             positions.append(response_position)
         elif presence == "closed":
-            closed_positions.append(response_position)
+            closed_positions.append(
+                ClosedPositionResponse(
+                    **response_position.model_dump(),
+                    closed_at=getattr(pos, "closed_at", None),
+                )
+            )
         else:
             position_review_items.append(
                 PositionEvidenceReviewResponse(

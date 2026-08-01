@@ -61,6 +61,7 @@ function renderPublicHome(locale: 'en' | 'zh' = 'en') {
 
 afterEach(() => {
   window.localStorage.clear();
+  window.history.replaceState(null, '', '/');
   vi.unstubAllGlobals();
 });
 
@@ -140,6 +141,43 @@ test('renders an evidence-first public home without loading financial data', asy
     /canonical|persisted|provider|paper\/shadow|snapshot|ledger cutoff|fail[- ]closed|\bGET\b/i,
   );
   expect(fetchMock).not.toHaveBeenCalled();
+});
+
+test('keeps desktop home detail content available through panel navigation', async () => {
+  renderPublicHome();
+  const user = userEvent.setup();
+  const navigation = await screen.findByRole('navigation', {
+    name: 'Public navigation',
+  });
+
+  await user.click(within(navigation).getByRole('link', { name: 'Product' }));
+  expect(
+    within(navigation)
+      .getByRole('link', { name: 'Product' })
+      .getAttribute('aria-current'),
+  ).toBe('location');
+  expect(
+    screen.getByRole('link', { name: 'Open surface: Account Truth' }),
+  ).toBeTruthy();
+
+  await user.click(within(navigation).getByRole('link', { name: 'Trust' }));
+  expect(
+    within(navigation)
+      .getByRole('link', { name: 'Trust' })
+      .getAttribute('aria-current'),
+  ).toBe('location');
+
+  await user.click(within(navigation).getByRole('link', { name: 'Workflow' }));
+  expect(
+    within(navigation)
+      .getByRole('link', { name: 'Workflow' })
+      .getAttribute('aria-current'),
+  ).toBe('location');
+  expect(
+    screen.getByRole('heading', {
+      name: 'From an idea to a controlled decision.',
+    }),
+  ).toBeTruthy();
 });
 
 test('supports localized copy and direct Latte or Mocha switching', async () => {

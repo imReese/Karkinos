@@ -1331,11 +1331,12 @@ function StatusChip({
       ) : null}
       {popup && popupPresence.mounted ? (
         <div
-          className={`app-status-popover-root absolute right-0 z-[70] ${
+          className={`app-status-popover-root z-[90] ${
             popupPlacement === 'top'
-              ? 'bottom-[calc(100%+8px)]'
-              : 'top-[calc(100%+8px)]'
+              ? 'app-status-popover-root-footer'
+              : 'absolute right-0 top-[calc(100%+8px)]'
           }`}
+          data-popup-placement={popupPlacement}
           data-motion-state={popupPresence.state}
           aria-hidden={popupPresence.state === 'closing' ? true : undefined}
           inert={popupPresence.state === 'closing'}

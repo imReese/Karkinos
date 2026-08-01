@@ -2,6 +2,19 @@ import { expect, test } from 'vitest';
 
 import { copy } from './copy';
 
+function collectStaticText(value: unknown): string[] {
+  if (typeof value === 'string') {
+    return [value];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap(collectStaticText);
+  }
+  if (value && typeof value === 'object') {
+    return Object.values(value).flatMap(collectStaticText);
+  }
+  return [];
+}
+
 test('keeps generic submit errors user-readable in both locales', () => {
   expect(copy.en.common.genericSubmitError).toBe(
     'Request failed. Check the form values and service status.',
@@ -28,6 +41,12 @@ test('uses user-readable English simulation-review wording in strategy loop copy
   expect(backtestCopy).toContain('simulation review');
   expect(backtestCopy).not.toContain('paper/shadow');
   expect(backtestCopy).not.toContain('Paper/shadow');
+});
+
+test('keeps static user-facing copy free of frontend and backend jargon', () => {
+  const userFacingCopy = collectStaticText(copy).join('\n');
+
+  expect(userFacingCopy).not.toMatch(/\b(?:back|front)end\b|后端|前端/iu);
 });
 
 test('keeps the primary portfolio path free of implementation jargon', () => {

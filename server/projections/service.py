@@ -278,7 +278,14 @@ def _apply_trade_entry(projection: PortfolioProjection, entry: LedgerEntry) -> N
         return
 
     if side == "sell":
-        _apply_sell(projection, position, quantity, price, commission)
+        _apply_sell(
+            projection,
+            position,
+            quantity,
+            price,
+            commission,
+            closed_at=entry.timestamp,
+        )
         return
 
     raise ValueError(f"Unknown trade direction for entry_type={entry.entry_type!r}")
@@ -291,6 +298,8 @@ def _apply_buy(
     price: Decimal,
     commission: Decimal,
 ) -> None:
+    if position.quantity == ZERO:
+        position.closed_at = None
     added_cost = quantity * price + commission
     projection.cash -= added_cost
     if position.quantity == ZERO:
@@ -313,6 +322,8 @@ def _apply_sell(
     quantity: Decimal,
     price: Decimal,
     commission: Decimal,
+    *,
+    closed_at: str,
 ) -> None:
     if quantity > position.quantity:
         raise ValueError(
@@ -328,6 +339,7 @@ def _apply_sell(
     if position.quantity == ZERO:
         position.avg_cost = ZERO
         position.broker_displayed_cost_basis = ZERO
+        position.closed_at = closed_at
     _sync_broker_cost_basis(position)
     position.sync_available_qty()
 
@@ -413,6 +425,10 @@ def _apply_manual_adjustment(
     position.quantity = previous_quantity + delta
     if position.quantity == ZERO:
         position.avg_cost = ZERO
+        if previous_quantity != ZERO:
+            position.closed_at = entry.timestamp
+    elif previous_quantity == ZERO:
+        position.closed_at = None
     position.sync_available_qty()
 
 
@@ -456,6 +472,7 @@ def _apply_controlled_projection_correction(
     projection.total_deposits += deposits_delta
 
     normalized_after = _normalized_position_state(after)
+    previous_quantity = position.quantity
     position.quantity = normalized_after["quantity"]
     position.available_qty = normalized_after["available_qty"]
     position.frozen_qty = normalized_after["frozen_qty"]
@@ -471,6 +488,10 @@ def _apply_controlled_projection_correction(
     ]
     position.broker_cost_basis_method = normalized_after["broker_cost_basis_method"]
     position.broker_cost_basis_status = normalized_after["broker_cost_basis_status"]
+    if position.quantity == ZERO and previous_quantity != ZERO:
+        position.closed_at = entry.timestamp
+    elif position.quantity != ZERO and previous_quantity == ZERO:
+        position.closed_at = None
     if position.available_qty != position.quantity - position.frozen_qty:
         raise ValueError("Controlled ledger correction availability is invalid")
     projection.positions[symbol] = position

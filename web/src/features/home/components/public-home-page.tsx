@@ -6,6 +6,7 @@ import {
   ShieldCheck,
   Sun,
 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 
 import { KarkinosMark } from '../../../app/components/brand/karkinos-mark';
@@ -357,13 +358,31 @@ const publicHomeCopy = {
 const docsUrl = 'https://github.com/imReese/Karkinos/tree/main/docs';
 const sourceUrl = 'https://github.com/imReese/Karkinos';
 
+type PublicHomePanel = 'home' | 'product' | 'principles' | 'workflow';
+
+function initialPublicHomePanel(): PublicHomePanel {
+  const panel = window.location.hash.slice(1);
+  return panel === 'product' || panel === 'principles' || panel === 'workflow'
+    ? panel
+    : 'home';
+}
+
 export function PublicHomePage() {
   const { locale, setLocale, resolvedTheme, setTheme } = usePreferences();
   const copy = publicHomeCopy[locale];
   const nextTheme = resolvedTheme === 'dark' ? 'light' : 'dark';
+  const [activePanel, setActivePanel] = useState<PublicHomePanel>(
+    initialPublicHomePanel,
+  );
+
+  useEffect(() => {
+    const syncPanelWithHash = () => setActivePanel(initialPublicHomePanel());
+    window.addEventListener('hashchange', syncPanelWithHash);
+    return () => window.removeEventListener('hashchange', syncPanelWithHash);
+  }, []);
 
   return (
-    <div className="app-public-home">
+    <div className="app-public-home" data-active-panel={activePanel}>
       <a className="app-public-skip-link" href="#public-home-main">
         {copy.skip}
       </a>
@@ -374,6 +393,7 @@ export function PublicHomePage() {
             to="/"
             className="app-public-brand"
             aria-label={copy.brandLabel}
+            onClick={() => setActivePanel('home')}
           >
             <span
               className="app-brand-glyph app-public-brand-glyph"
@@ -387,9 +407,29 @@ export function PublicHomePage() {
           </Link>
 
           <nav className="app-public-nav" aria-label={copy.navLabel}>
-            <a href="#product">{copy.nav.product}</a>
-            <a href="#principles">{copy.nav.principles}</a>
-            <a href="#workflow">{copy.nav.workflow}</a>
+            <a
+              href="#product"
+              aria-current={activePanel === 'product' ? 'location' : undefined}
+              onClick={() => setActivePanel('product')}
+            >
+              {copy.nav.product}
+            </a>
+            <a
+              href="#principles"
+              aria-current={
+                activePanel === 'principles' ? 'location' : undefined
+              }
+              onClick={() => setActivePanel('principles')}
+            >
+              {copy.nav.principles}
+            </a>
+            <a
+              href="#workflow"
+              aria-current={activePanel === 'workflow' ? 'location' : undefined}
+              onClick={() => setActivePanel('workflow')}
+            >
+              {copy.nav.workflow}
+            </a>
             <a href={docsUrl} target="_blank" rel="noreferrer">
               {copy.nav.docs}
             </a>
@@ -434,8 +474,12 @@ export function PublicHomePage() {
         </div>
       </header>
 
-      <main id="public-home-main">
-        <section className="app-public-container app-public-hero">
+      <main className="app-public-main" id="public-home-main">
+        <section
+          className="app-public-container app-public-hero app-public-panel"
+          data-active={activePanel === 'home'}
+          data-public-panel="home"
+        >
           <div className="app-public-hero-copy">
             <p className="app-kicker app-public-eyebrow">{copy.hero.eyebrow}</p>
             <h1 className="app-public-hero-title">
@@ -459,7 +503,11 @@ export function PublicHomePage() {
                 <span>{copy.enter}</span>
                 <ArrowRight aria-hidden="true" />
               </Link>
-              <a className="app-public-text-link" href="#workflow">
+              <a
+                className="app-public-text-link"
+                href="#workflow"
+                onClick={() => setActivePanel('workflow')}
+              >
                 {copy.hero.explore}
                 <ArrowRight aria-hidden="true" />
               </a>
@@ -565,7 +613,9 @@ export function PublicHomePage() {
 
         <section
           id="product"
-          className="app-public-container app-public-section"
+          className="app-public-container app-public-section app-public-panel"
+          data-active={activePanel === 'product'}
+          data-public-panel="product"
         >
           <div className="app-public-section-heading">
             <p className="app-kicker app-public-eyebrow">
@@ -596,7 +646,9 @@ export function PublicHomePage() {
 
         <section
           id="principles"
-          className="app-public-container app-public-section app-public-principles"
+          className="app-public-container app-public-section app-public-principles app-public-panel"
+          data-active={activePanel === 'principles'}
+          data-public-panel="principles"
         >
           <div className="app-public-section-heading app-public-principles-heading">
             <p className="app-kicker app-public-eyebrow">
@@ -618,41 +670,49 @@ export function PublicHomePage() {
           </dl>
         </section>
 
-        <section
-          id="workflow"
-          className="app-public-container app-public-section"
+        <div
+          className="app-public-workflow-panel app-public-panel"
+          data-active={activePanel === 'workflow'}
+          data-public-panel="workflow"
         >
-          <div className="app-public-section-heading">
-            <p className="app-kicker app-public-eyebrow">
-              {copy.workflow.eyebrow}
-            </p>
-            <h2>{copy.workflow.title}</h2>
-          </div>
-          <ol className="app-public-workflow">
-            {copy.workflow.steps.map((step) => (
-              <li key={step.number}>
-                <span>{step.number}</span>
-                <h3>{step.title}</h3>
-                <p>{step.body}</p>
-              </li>
-            ))}
-          </ol>
-        </section>
-
-        <section className="app-public-container app-public-cta-section">
-          <div>
-            <p className="app-kicker app-public-eyebrow">{copy.cta.eyebrow}</p>
-            <h2>{copy.cta.title}</h2>
-            <p>{copy.cta.body}</p>
-          </div>
-          <Link
-            to="/overview"
-            className="app-button-primary app-public-primary-cta"
+          <section
+            id="workflow"
+            className="app-public-container app-public-section"
           >
-            <span>{copy.enter}</span>
-            <ArrowRight aria-hidden="true" />
-          </Link>
-        </section>
+            <div className="app-public-section-heading">
+              <p className="app-kicker app-public-eyebrow">
+                {copy.workflow.eyebrow}
+              </p>
+              <h2>{copy.workflow.title}</h2>
+            </div>
+            <ol className="app-public-workflow">
+              {copy.workflow.steps.map((step) => (
+                <li key={step.number}>
+                  <span>{step.number}</span>
+                  <h3>{step.title}</h3>
+                  <p>{step.body}</p>
+                </li>
+              ))}
+            </ol>
+          </section>
+
+          <section className="app-public-container app-public-cta-section">
+            <div>
+              <p className="app-kicker app-public-eyebrow">
+                {copy.cta.eyebrow}
+              </p>
+              <h2>{copy.cta.title}</h2>
+              <p>{copy.cta.body}</p>
+            </div>
+            <Link
+              to="/overview"
+              className="app-button-primary app-public-primary-cta"
+            >
+              <span>{copy.enter}</span>
+              <ArrowRight aria-hidden="true" />
+            </Link>
+          </section>
+        </div>
       </main>
 
       <footer className="app-public-footer">
@@ -674,8 +734,12 @@ export function PublicHomePage() {
           <div>
             <h2>{copy.footer.product}</h2>
             <Link to="/overview">{copy.footer.overview}</Link>
-            <a href="#principles">{copy.footer.evidence}</a>
-            <a href="#workflow">{copy.footer.workflow}</a>
+            <a href="#principles" onClick={() => setActivePanel('principles')}>
+              {copy.footer.evidence}
+            </a>
+            <a href="#workflow" onClick={() => setActivePanel('workflow')}>
+              {copy.footer.workflow}
+            </a>
           </div>
           <div>
             <h2>{copy.footer.resources}</h2>
@@ -696,6 +760,14 @@ export function PublicHomePage() {
         <div className="app-public-container app-public-footer-note">
           <span>Karkinos</span>
           <span>{copy.footer.note}</span>
+          <span className="app-public-footer-links">
+            <a href={docsUrl} target="_blank" rel="noreferrer">
+              {copy.footer.docs}
+            </a>
+            <a href={sourceUrl} target="_blank" rel="noreferrer">
+              {copy.footer.source}
+            </a>
+          </span>
         </div>
       </footer>
     </div>

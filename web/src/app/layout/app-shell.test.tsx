@@ -357,7 +357,7 @@ test('keeps one branded lockup per responsive shell context', async () => {
   expect(sidebarBrand.className).toContain('whitespace-nowrap');
   expect(sidebarBrand.className).toContain('truncate');
   expect(sidebarBrand.closest('.app-brand-lockup')).toBeTruthy();
-  expect(await screen.findByText('Personal investing workbench')).toBeTruthy();
+  expect(await screen.findByText('Quant workbench')).toBeTruthy();
   expect(toolbarBrand.closest('.app-toolbar-brand')).toBeTruthy();
   expect(toolbarBrand.closest('.app-toolbar-brand')?.className).toContain(
     'xl:hidden',
@@ -689,6 +689,14 @@ test('shows cached quote status and valuation time from account overview', async
   ).toContain('rotate-180');
   const valuationDialog = await screen.findByRole('dialog', { name: '净值' });
   expect(within(valuationDialog).getByText('估值 22:40')).toBeTruthy();
+  const valuationPopover = valuationDialog.closest(
+    '.app-status-popover-root',
+  ) as HTMLElement | null;
+  expect(valuationPopover?.className).toContain(
+    'app-status-popover-root-footer',
+  );
+  expect(valuationPopover?.className).toContain('z-[90]');
+  expect(valuationPopover?.getAttribute('data-popup-placement')).toBe('top');
   expect(screen.queryByText('行情实时')).toBeNull();
   expect(screen.queryByText('估值已启用')).toBeNull();
   expect(screen.queryByText('账本已同步')).toBeNull();
@@ -702,6 +710,24 @@ test('shows cached quote status and valuation time from account overview', async
   expect(closingPopover?.hasAttribute('inert')).toBe(true);
   await waitFor(() =>
     expect(document.querySelector('.app-status-popover-root')).toBeNull(),
+  );
+
+  await user.click(valuationStatus);
+  expect(await screen.findByRole('dialog', { name: '净值' })).toBeTruthy();
+  await user.keyboard('{Escape}');
+  await waitFor(() =>
+    expect(screen.queryByRole('dialog', { name: '净值' })).toBeNull(),
+  );
+  expect(document.activeElement).toBe(valuationStatus);
+
+  await user.hover(valuationStatus);
+  expect(screen.getByText('查看估值详情')).toBeTruthy();
+  await user.click(valuationStatus);
+  expect(screen.queryByText('查看估值详情')).toBeNull();
+  expect(await screen.findByRole('dialog', { name: '净值' })).toBeTruthy();
+  await user.click(await screen.findByText('Overview page'));
+  await waitFor(() =>
+    expect(screen.queryByRole('dialog', { name: '净值' })).toBeNull(),
   );
 });
 

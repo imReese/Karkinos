@@ -200,6 +200,7 @@ import {
   formatMarketDataStatusNextAction,
   isCacheLikeMarketDataStatus,
   isUnconfirmedMarketDataStatus,
+  normalizeMarketDataStatus,
 } from '../shared/market-data-status';
 
 type PortfolioSearchState = {
@@ -4136,16 +4137,38 @@ export function MarketPage() {
     formatMarketDataStatusNextAction(health?.source_health, locale) ??
     formatMarketDataStatusNextAction(health?.refresh_policy, locale) ??
     providerReportedAction;
+  const providerActionIsFundCoverage =
+    health?.next_action === 'switch_to_fund_supported_provider';
+  const selectedAssetClass = selectedItem?.asset_class.trim().toLowerCase();
+  const selectedQuoteAssetClass = selectedHealthQuote?.asset_class
+    .trim()
+    .toLowerCase();
+  const selectedHasFundOnlyStatus = [
+    selectedHealthQuote?.stale_reason,
+    selectedHealthQuote?.quote_status,
+  ].some(
+    (status) => normalizeMarketDataStatus(status) === 'confirmed_nav_missing',
+  );
+  const selectedFundIdentityIsConsistent =
+    selectedAssetClass === 'fund' &&
+    (!selectedQuoteAssetClass || selectedQuoteAssetClass === 'fund');
+  const selectedProviderAction =
+    health?.next_action === 'switch_to_fund_supported_provider' &&
+    selectedAssetClass !== 'fund'
+      ? null
+      : providerAction;
   const selectedQuoteNextAction =
-    formatMarketDataStatusNextAction(
-      selectedHealthQuote?.stale_reason,
-      locale,
-    ) ??
-    formatMarketDataStatusNextAction(
-      selectedHealthQuote?.quote_status,
-      locale,
-    ) ??
-    providerAction;
+    selectedHasFundOnlyStatus && !selectedFundIdentityIsConsistent
+      ? copy.market.providerActions.configure_asset_metadata
+      : (formatMarketDataStatusNextAction(
+          selectedHealthQuote?.stale_reason,
+          locale,
+        ) ??
+        formatMarketDataStatusNextAction(
+          selectedHealthQuote?.quote_status,
+          locale,
+        ) ??
+        selectedProviderAction);
   const sourceHealthLabel = health?.source_health
     ? formatPublicStatus(health.source_health, locale)
     : copy.market.unknown;
@@ -4469,7 +4492,19 @@ export function MarketPage() {
                 />
 
                 {providerAction ? (
-                  <div className="mt-3 border-l-2 border-[var(--app-warning-border)] pl-3 text-xs leading-5 text-[var(--app-text-secondary)]">
+                  <div
+                    className="mt-3 border-l-2 border-[var(--app-warning-border)] pl-3 text-xs leading-5 text-[var(--app-text-secondary)]"
+                    data-action-scope={
+                      providerActionIsFundCoverage
+                        ? 'fund-coverage'
+                        : 'provider'
+                    }
+                  >
+                    {providerActionIsFundCoverage ? (
+                      <span className="app-type-overline mb-0.5 block text-[var(--app-warning-text)]">
+                        {copy.market.providerFundCoverageScope}
+                      </span>
+                    ) : null}
                     <span className="font-semibold text-[var(--app-text)]">
                       {copy.market.providerNextAction}:
                     </span>{' '}

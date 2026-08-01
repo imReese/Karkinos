@@ -232,6 +232,7 @@ def test_closed_ledger_position_is_historical_but_not_current_across_consumers(
     assert [position.symbol for position in snapshot.positions] == ["000001"]
     assert [position.symbol for position in positions] == ["000001"]
     assert [position.symbol for position in snapshot.closed_positions] == ["600066"]
+    assert snapshot.closed_positions[0].closed_at == "2026-07-04T10:00:00+08:00"
     assert snapshot.position_review_items == []
 
     allocation_symbols = {

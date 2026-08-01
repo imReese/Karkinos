@@ -759,6 +759,7 @@ afterEach(() => {
 });
 
 test('renders the trading approvals workspace', async () => {
+  const user = userEvent.setup();
   renderTradingPage();
 
   expect(await screen.findByText('Trading review')).toBeTruthy();
@@ -781,6 +782,23 @@ test('renders the trading approvals workspace', async () => {
   expect(await screen.findByText('Order facts')).toBeTruthy();
   expect(await screen.findByText('Fill facts')).toBeTruthy();
   expect(await screen.findByText('Order queue')).toBeTruthy();
+  const secondaryFilters = screen.getByTestId('trading-secondary-filters');
+  const secondaryFiltersSummary = secondaryFilters.querySelector('summary');
+  expect((secondaryFilters as HTMLDetailsElement).open).toBe(false);
+  expect(secondaryFiltersSummary?.getAttribute('aria-controls')).toBe(
+    'trading-secondary-filter-fields',
+  );
+  expect(
+    screen
+      .getByTestId('trading-secondary-filters-chevron')
+      .getAttribute('class')
+      ?.includes('group-open:rotate-180'),
+  ).toBe(true);
+  await user.click(secondaryFiltersSummary as HTMLElement);
+  expect((secondaryFilters as HTMLDetailsElement).open).toBe(true);
+  expect(
+    document.getElementById('trading-secondary-filter-fields'),
+  ).toBeTruthy();
   expect(await screen.findByText('贵州茅台 600519')).toBeTruthy();
   expect(await screen.findByText('示例成长混合C 019999')).toBeTruthy();
   expect(

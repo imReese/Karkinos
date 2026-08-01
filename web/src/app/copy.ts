@@ -16,7 +16,7 @@ export const copy = {
       closeNavigation: 'Close navigation',
       currentWorkspace: 'Current workspace',
       publicHome: 'Public home',
-      workspaceLabel: 'Personal investing workbench',
+      workspaceLabel: 'Quant workbench',
       accountMode: 'Mode',
       paperShadowMode: 'Paper / shadow',
       manualConfirmationMode: 'Manual confirmation',
@@ -125,7 +125,10 @@ export const copy = {
       noAuthority: 'No execution authority',
       attentionQueue: 'Evidence review queue',
       attentionEmpty: 'No subsystem currently requires evidence review.',
+      healthOverview: 'Health overview',
       subsystemHealth: 'Subsystem health',
+      subsystemRegister: 'Subsystem evidence register',
+      subsystem: 'Subsystem',
       status: 'Status',
       evidenceStatus: 'Evidence status',
       observedAt: 'Observed at',
@@ -664,6 +667,7 @@ export const copy = {
         trade: 'Trade',
         ledger: 'Ledger',
         realized: 'Realized PnL',
+        closedOn: 'Closed on',
         detailsTitle: 'Holding Details',
       },
       detail: {
@@ -680,6 +684,7 @@ export const copy = {
         error: 'Failed to load holding detail.',
         summary: 'Summary',
         tabListLabel: 'Holding detail views',
+        tabScrollHint: 'Scroll for more views →',
         tabPosition: 'Position',
         tabPnlCosts: 'P&L & Costs',
         tabTransactions: 'Transactions',
@@ -879,8 +884,12 @@ export const copy = {
         actionAccountTruth: 'Open Account Truth review',
       },
       allocation: {
-        title: 'Allocation',
-        empty: 'No allocation matches the current scope yet.',
+        title: 'Account composition',
+        empty: 'No account assets match the current scope yet.',
+        asset: 'Asset',
+        valuationAmount: 'Valuation amount',
+        navShare: 'Share of NAV',
+        cashBalance: 'Cash balance',
       },
       allocationGroups: {
         title: 'Allocation Groups',
@@ -983,6 +992,8 @@ export const copy = {
         'Review daily and intraday candidates with risk gates, strategy evidence, quote health, and manual-confirmation readiness.',
       loading: 'Loading decision platform.',
       error: 'Failed to load decision platform.',
+      simulationReviewRunFailed:
+        'The simulation review could not run. Try again; if the problem persists, review the service logs.',
       commandRegister: 'Decision evidence register',
       commandRegisterTitle: 'Today operating posture',
       commandRegisterDetail:
@@ -1320,7 +1331,7 @@ export const copy = {
         formKicker: 'Run setup',
         formTitle: 'Backtest configuration',
         formDetail:
-          'Uses the backtest interface boundary. Leave assets empty to use configured coverage.',
+          'Choose an explicit asset list, or leave it blank to use the saved research universe.',
         decisionHandoffKicker: 'Decision handoff',
         decisionHandoffTitle: 'Decision handoff context',
         decisionHandoffDetail:
@@ -1682,7 +1693,7 @@ export const copy = {
         symbolPlaceholder: '600002',
         assetClass: 'Asset class',
         singleSymbolHint:
-          'Leave symbol empty to use the backend configured universe. Single-symbol runs are research evidence only.',
+          'Leave the symbol blank to test the saved research universe. A single-symbol run remains research evidence only.',
         assets: 'Assets',
         assetsPlaceholder: 'SYMBOL Stock\nSYMBOL Fund',
         assetsHint:
@@ -1936,7 +1947,7 @@ export const copy = {
         kicker: 'Strategy comparison',
         title: 'Same-dataset comparison',
         subtitle:
-          'Compare explicit parameter sets for the selected strategy. Results are saved only when the backend confirms every run used the same frozen dataset snapshot.',
+          'Compare explicit parameter sets for the selected strategy. Results are saved only after every run is verified against the same frozen data snapshot.',
         parameterSets: 'Comparison parameter sets',
         setsHint: (count: number, example: string) =>
           `${count} parameter sets parsed; use one set per line${
@@ -2145,6 +2156,7 @@ export const copy = {
       providerSupportsFunds: 'Fund support',
       providerTimeout: 'Provider timeout',
       providerNextAction: 'Next action',
+      providerFundCoverageScope: 'Portfolio-wide fund coverage',
       metadataConfiguredCount: 'Configured metadata',
       latestQuote: 'Latest quote timestamp',
       cacheAge: 'Cache age',
@@ -2474,9 +2486,9 @@ export const copy = {
         pendingOrders: 'Pending fund orders',
         pendingOrdersDetail: 'Subscriptions waiting for NAV confirmation.',
         netCashImpact: 'Net cash impact',
-        netCashImpactUnavailable: 'Not exposed',
+        netCashImpactUnavailable: 'Full-history total unavailable',
         netCashImpactDetail:
-          'No persisted aggregate is available; visible rows are not summed here.',
+          'The entries below show recent activity only and do not represent total cash movement over the full history.',
       },
       entryTools: {
         kicker: 'Entry tools',
@@ -2701,10 +2713,11 @@ export const copy = {
         'Configure persisted defaults, inspect runtime state, and review safety boundaries without changing trading authority.',
       dataStatus: 'Data status',
       dataStatusDetail:
-        'Portfolio valuation uses backend quote status and market refresh policy.',
+        'Portfolio valuations follow the recorded quote state and refresh policy.',
       refreshActionDetail:
         'Runs explicit quote ingestion and updates persisted quote evidence. It does not write ledger entries or submit orders.',
       refreshActionEvidence: 'Explicit ingestion · persisted quote cache',
+      reviewRefreshControls: 'Review controlled refresh',
       liveServices: 'Live services',
       liveServicesDetail:
         'Shows background data polling and interface readiness; it does not change trading authority.',
@@ -2713,7 +2726,7 @@ export const copy = {
         'Theme and language are local browser preferences for this platform.',
       notifications: 'Notifications',
       notificationsDetail:
-        'Readiness comes from the backend; delivery credentials remain environment-owned and are never editable here.',
+        'Notification readiness is shown here. Delivery credentials are managed by the runtime environment and cannot be edited on this page.',
       dataSafety: 'Data safety',
       dataSafetyDetail:
         'Trading authority, evidence requirements, and private-data ownership remain explicit.',
@@ -2787,7 +2800,7 @@ export const copy = {
       assetMetadataSource: 'Metadata source',
       assetMetadataSourcePersisted: 'Persisted register and watchlist',
       assetMetadataSourceLocal: 'Local persisted configuration',
-      assetMetadataSourceProvided: 'Backend-provided metadata',
+      assetMetadataSourceProvided: 'System-provided metadata',
       assetMetadataMissingSymbols: 'Assets missing metadata',
       assetMetadataSnippet: 'Suggested config snippet',
       assetMetadataSnippetDetail:
@@ -2900,7 +2913,7 @@ export const copy = {
       closeNavigation: '关闭导航',
       currentWorkspace: '当前工作区',
       publicHome: '公开首页',
-      workspaceLabel: '个人投资工作台',
+      workspaceLabel: '个人量化工作台',
       accountMode: '模式',
       paperShadowMode: '模拟 / 影子',
       manualConfirmationMode: '人工确认',
@@ -3007,7 +3020,10 @@ export const copy = {
       noAuthority: '无执行权限',
       attentionQueue: '证据复核队列',
       attentionEmpty: '当前没有需要证据复核的子系统。',
+      healthOverview: '健康概览',
       subsystemHealth: '子系统健康度',
+      subsystemRegister: '子系统证据台账',
+      subsystem: '子系统',
       status: '状态',
       evidenceStatus: '证据状态',
       observedAt: '证据时间',
@@ -3502,6 +3518,7 @@ export const copy = {
         trade: '交易',
         ledger: '流水',
         realized: '已实现盈亏',
+        closedOn: '清仓日期',
         detailsTitle: '持仓明细',
       },
       detail: {
@@ -3517,6 +3534,7 @@ export const copy = {
         error: '持仓详情加载失败。',
         summary: '摘要',
         tabListLabel: '持仓详情视图',
+        tabScrollHint: '横向滑动查看更多 →',
         tabPosition: '持仓',
         tabPnlCosts: '盈亏与成本',
         tabTransactions: '流水',
@@ -3715,8 +3733,12 @@ export const copy = {
         actionAccountTruth: '打开账户事实复核',
       },
       allocation: {
-        title: '配置明细',
-        empty: '当前筛选范围下还没有可展示的配置。',
+        title: '账户资产构成',
+        empty: '当前筛选范围下还没有可展示的账户资产。',
+        asset: '资产',
+        valuationAmount: '估值金额',
+        navShare: '净值占比',
+        cashBalance: '现金余额',
       },
       allocationGroups: {
         title: '分组配置',
@@ -3806,6 +3828,8 @@ export const copy = {
         '查看日级与盘中候选动作、风控闸门、策略证据、行情健康和人工确认状态。',
       loading: '正在加载决策平台。',
       error: '决策平台加载失败。',
+      simulationReviewRunFailed:
+        '模拟复核未能运行，请重试；若仍然失败，请检查服务日志。',
       commandRegister: '决策证据登记',
       commandRegisterTitle: '今日运行姿态',
       commandRegisterDetail: '汇总日级与盘中候选池，先于任何人工审批路径。',
@@ -4132,7 +4156,7 @@ export const copy = {
         subtitle: '运行受控历史模拟，并查看风险、成本、净值路径与成交覆盖。',
         formKicker: '运行设置',
         formTitle: '回测配置',
-        formDetail: '使用后端回测接口约定。资产留空时使用后端配置资产池。',
+        formDetail: '可明确填写资产列表；留空时使用已保存的研究资产池。',
         decisionHandoffKicker: '决策交接',
         decisionHandoffTitle: '来自决策候选动作',
         decisionHandoffDetail:
@@ -4464,7 +4488,7 @@ export const copy = {
         symbolPlaceholder: '600002',
         assetClass: '资产类别',
         singleSymbolHint:
-          '标的留空时使用后端配置资产池；单标的回测仅作为研究证据。',
+          '标的代码留空时，将使用已保存的研究资产池；单标的回测仅作为研究证据。',
         assets: '资产',
         assetsPlaceholder: '标的代码 股票\n标的代码 基金',
         assetsHint:
@@ -4698,7 +4722,7 @@ export const copy = {
         kicker: '策略对比',
         title: '同数据快照对比',
         subtitle:
-          '对当前策略的显式参数集做对比；只有后端确认每次运行使用同一个冻结数据快照时才保存结果。',
+          '对比当前策略的多组明确参数；仅当所有运行使用同一份冻结数据快照并通过一致性校验时，结果才会保存。',
         parameterSets: '对比参数集',
         setsHint: (count: number, example: string) =>
           `已解析 ${count} 组参数；每行一组${
@@ -4918,6 +4942,7 @@ export const copy = {
       providerSupportsFunds: '基金支持',
       providerTimeout: '超时保护',
       providerNextAction: '下一步',
+      providerFundCoverageScope: '组合级基金覆盖',
       metadataConfiguredCount: '已配置元数据',
       latestQuote: '最近行情时间',
       cacheAge: '缓存年龄',
@@ -5216,8 +5241,9 @@ export const copy = {
         pendingOrders: '待确认申购',
         pendingOrdersDetail: '等待净值确认的基金申购。',
         netCashImpact: '净现金影响',
-        netCashImpactUnavailable: '未提供',
-        netCashImpactDetail: '后端没有提供持久化汇总；这里不会从可见流水估算。',
+        netCashImpactUnavailable: '暂无完整汇总',
+        netCashImpactDetail:
+          '下方仅展示最近流水，不能代表完整历史的现金净变动。',
       },
       entryTools: {
         kicker: '录入工具',
@@ -5439,17 +5465,18 @@ export const copy = {
       subtitle:
         '配置持久化默认值、检查运行状态并复核安全边界，不改变交易权限。',
       dataStatus: '数据状态',
-      dataStatusDetail: '组合估值读取后端行情状态与市场刷新策略。',
+      dataStatusDetail: '组合估值以已记录的行情状态和刷新策略为准。',
       refreshActionDetail:
         '显式执行行情摄取并更新持久化行情证据；不会写入账本，也不会提交订单。',
       refreshActionEvidence: '显式摄取 · 持久化行情缓存',
+      reviewRefreshControls: '查看受控刷新入口',
       liveServices: '服务状态',
       liveServicesDetail: '展示后台数据轮询与接口就绪状态；不会改变交易权限。',
       preferences: '偏好设置',
       preferencesDetail: '主题和语言是当前浏览器的本地偏好。',
       notifications: '通知',
       notificationsDetail:
-        '就绪状态来自后端；投递凭证归运行环境所有，本页不提供编辑。',
+        '这里展示通知是否就绪；投递凭证由运行环境管理，不能在本页编辑。',
       dataSafety: '数据安全',
       dataSafetyDetail: '交易权限、证据要求和私有数据归属保持显式。',
       loading: '正在加载设置状态。',
@@ -5518,7 +5545,7 @@ export const copy = {
       assetMetadataSource: '元数据来源',
       assetMetadataSourcePersisted: '持久化登记与关注列表',
       assetMetadataSourceLocal: '本地持久化配置',
-      assetMetadataSourceProvided: '后端提供的元数据',
+      assetMetadataSourceProvided: '系统补充的元数据',
       assetMetadataMissingSymbols: '缺少元数据的资产',
       assetMetadataSnippet: '建议配置片段',
       assetMetadataSnippetDetail:

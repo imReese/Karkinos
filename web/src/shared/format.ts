@@ -112,6 +112,22 @@ export function formatTimestamp(value: string | null | undefined) {
   }).format(date);
 }
 
+export function formatDate(value: string | null | undefined) {
+  if (!value) {
+    return '--';
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '--';
+  }
+  return new Intl.DateTimeFormat(resolveLocale(), {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: 'Asia/Shanghai',
+  }).format(date);
+}
+
 export function formatDateTime(
   value: string | number | Date | null | undefined,
 ) {

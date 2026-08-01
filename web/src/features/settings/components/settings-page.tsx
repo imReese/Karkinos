@@ -598,27 +598,44 @@ export function SettingsPage() {
         />
 
         {refreshPolicyNeedsReview || quoteNeedsReview ? (
-          <InlineNotice
-            tone="warning"
-            title={
-              isStaleQuote
-                ? copy.settings.cachedQuotes
-                : isCacheOnly
-                  ? copy.settings.cacheOnly
-                  : copy.settings.valuationRequiresReview
-            }
-            detail={
-              isStaleQuote
-                ? marketDataNoticeDetail(copy.settings.cachedQuotesDetail)
-                : isCacheOnly
-                  ? marketDataNoticeDetail(copy.settings.cacheOnlyDetail)
-                  : marketDataNoticeDetail(
-                      copy.settings.valuationRequiresReviewDetail(
-                        quoteStatusLabel,
-                      ),
-                    )
-            }
-          />
+          <div className="grid gap-2">
+            <InlineNotice
+              tone="warning"
+              title={
+                isStaleQuote
+                  ? copy.settings.cachedQuotes
+                  : isCacheOnly
+                    ? copy.settings.cacheOnly
+                    : copy.settings.valuationRequiresReview
+              }
+              detail={
+                isStaleQuote
+                  ? marketDataNoticeDetail(copy.settings.cachedQuotesDetail)
+                  : isCacheOnly
+                    ? marketDataNoticeDetail(copy.settings.cacheOnlyDetail)
+                    : marketDataNoticeDetail(
+                        copy.settings.valuationRequiresReviewDetail(
+                          quoteStatusLabel,
+                        ),
+                      )
+              }
+            />
+            <a
+              aria-controls="settings-data-source-disclosure"
+              className="app-button-secondary inline-flex min-h-10 w-max max-w-full items-center rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
+              href="#settings-data-source-disclosure"
+              onClick={() => {
+                const disclosure = document.getElementById(
+                  'settings-data-source-disclosure',
+                );
+                if (disclosure instanceof HTMLDetailsElement) {
+                  disclosure.open = true;
+                }
+              }}
+            >
+              {copy.settings.reviewRefreshControls}
+            </a>
+          </div>
         ) : null}
       </SettingsSection>
 
@@ -1284,6 +1301,7 @@ function SettingsDisclosure({
   return (
     <details
       className="min-w-0 border-y border-[var(--app-divider)]"
+      id={testId}
       data-testid={testId}
     >
       <summary className="flex min-h-11 cursor-pointer list-none items-start justify-between gap-4 py-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]">

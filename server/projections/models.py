@@ -26,6 +26,7 @@ class ProjectedPosition:
     broker_cost_basis_difference: Decimal = ZERO
     broker_cost_basis_method: str | None = None
     broker_cost_basis_status: str | None = None
+    closed_at: str | None = None
 
     def sync_available_qty(self) -> None:
         self.available_qty = self.quantity - self.frozen_qty

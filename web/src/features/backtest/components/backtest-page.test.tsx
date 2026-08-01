@@ -2048,8 +2048,9 @@ test('uses user-readable chinese copy for the backtest configuration contract', 
 
   await screen.findByText('回测配置');
   const pageText = document.body.textContent ?? '';
-  expect(pageText).toContain('使用后端回测接口约定');
+  expect(pageText).toContain('留空时使用已保存的研究资产池');
   expect(pageText).not.toContain('contract');
+  expect(pageText).not.toContain('后端');
 });
 
 test('uses user-readable english copy for the backtest configuration interface', async () => {
@@ -2057,8 +2058,11 @@ test('uses user-readable english copy for the backtest configuration interface',
 
   await screen.findByText('Backtest configuration');
   const pageText = document.body.textContent ?? '';
-  expect(pageText).toContain('Uses the backtest interface boundary.');
+  expect(pageText).toContain(
+    'leave it blank to use the saved research universe',
+  );
   expect(pageText).not.toContain('backend backtest contract');
+  expect(pageText).not.toContain('interface boundary');
 });
 
 test('localizes built-in parameter labels and descriptions without changing payload keys', async () => {
