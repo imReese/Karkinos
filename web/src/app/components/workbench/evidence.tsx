@@ -90,19 +90,26 @@ export function ExceptionList({
               density === 'compact' ? 'mt-1.5 gap-x-3 gap-y-1' : 'mt-2 gap-1.5',
             )}
           >
-            <EvidenceRow label={labels.reason}>{item.reason}</EvidenceRow>
+            <EvidenceRow field="reason" label={labels.reason}>
+              {item.reason}
+            </EvidenceRow>
             {item.unblockCondition ? (
-              <EvidenceRow label={labels.unblockCondition}>
+              <EvidenceRow
+                field="unblock-condition"
+                label={labels.unblockCondition}
+              >
                 {item.unblockCondition}
               </EvidenceRow>
             ) : null}
             {item.nextAction ? (
-              <EvidenceRow label={labels.nextAction}>
+              <EvidenceRow field="next-action" label={labels.nextAction}>
                 {item.nextAction}
               </EvidenceRow>
             ) : null}
             {item.evidence ? (
-              <EvidenceRow label={labels.evidence}>{item.evidence}</EvidenceRow>
+              <EvidenceRow field="evidence" label={labels.evidence}>
+                {item.evidence}
+              </EvidenceRow>
             ) : null}
           </dl>
         </li>
@@ -112,14 +119,16 @@ export function ExceptionList({
 }
 
 function EvidenceRow({
+  field,
   label,
   children,
 }: {
+  field: 'reason' | 'unblock-condition' | 'next-action' | 'evidence';
   label: string;
   children: ReactNode;
 }) {
   return (
-    <div className="min-w-0">
+    <div data-evidence-field={field} className="min-w-0">
       <dt className="app-type-label font-semibold text-[var(--app-text-tertiary)]">
         {label}
       </dt>
