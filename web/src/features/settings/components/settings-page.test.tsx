@@ -326,6 +326,7 @@ test('prioritizes persisted configuration before ingestion and runtime controls'
 });
 
 test('shows cached quote guidance for cache-only and stale valuation states', async () => {
+  const user = userEvent.setup();
   renderSettingsPage({
     marketHealth: {
       ...defaultMarketHealth,
@@ -346,6 +347,18 @@ test('shows cached quote guidance for cache-only and stale valuation states', as
       'Current valuation is based on cached market data. Next action: Refresh quotes or check the data source',
     ),
   ).toBeTruthy();
+  const refreshControlsLink = await screen.findByRole('link', {
+    name: 'Review controlled refresh',
+  });
+  expect(refreshControlsLink.getAttribute('href')).toBe(
+    '#settings-data-source-disclosure',
+  );
+  const dataSourceDisclosure = screen.getByTestId(
+    'settings-data-source-disclosure',
+  ) as HTMLDetailsElement;
+  expect(dataSourceDisclosure.open).toBe(false);
+  await user.click(refreshControlsLink);
+  expect(dataSourceDisclosure.open).toBe(true);
   expect(screen.queryByText(/real-time/i)).toBeNull();
 });
 

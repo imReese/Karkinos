@@ -1,4 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react';
+import { ChevronDown } from 'lucide-react';
 
 import { useCopy } from '../../../app/copy';
 import {
@@ -1040,16 +1041,29 @@ export function TradingPage() {
                   </select>
                 </label>
                 <details
-                  className="group min-w-0"
+                  className="group min-w-0 border-y border-[var(--app-divider)] sm:border-y-0"
                   data-testid="trading-secondary-filters"
                 >
-                  <summary className="app-button-ghost flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-[var(--app-radius-control)] px-3 text-sm font-semibold text-[var(--app-text-secondary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
-                    <span>{labels.moreFilters}</span>
-                    <span className="text-xs font-normal text-[var(--app-text-tertiary)]">
-                      {labels.moreFiltersDetail}
+                  <summary
+                    aria-controls="trading-secondary-filter-fields"
+                    className="app-button-ghost flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 rounded-[var(--app-radius-control)] px-3 text-left text-sm font-semibold text-[var(--app-text-secondary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] sm:min-h-11 [&::-webkit-details-marker]:hidden"
+                  >
+                    <span className="min-w-0">
+                      <span className="block">{labels.moreFilters}</span>
+                      <span className="mt-0.5 block text-xs font-normal text-[var(--app-text-tertiary)]">
+                        {labels.moreFiltersDetail}
+                      </span>
                     </span>
+                    <ChevronDown
+                      aria-hidden="true"
+                      className="size-4 shrink-0 transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] motion-reduce:transition-none group-open:rotate-180"
+                      data-testid="trading-secondary-filters-chevron"
+                    />
                   </summary>
-                  <div className="hidden min-w-0 gap-3 pt-2 group-open:grid sm:grid-cols-2">
+                  <div
+                    className="hidden min-w-0 gap-3 pb-3 pt-2 group-open:grid sm:grid-cols-2 sm:pb-0"
+                    id="trading-secondary-filter-fields"
+                  >
                     <label className="grid gap-2 text-sm font-medium">
                       {labels.symbolFilter}
                       <input

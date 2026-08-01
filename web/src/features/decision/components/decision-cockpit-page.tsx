@@ -4834,9 +4834,7 @@ function DailyTradingPlanPanel({
             ) : null}
             {paperShadowRunError ? (
               <div className="mt-2 text-sm font-semibold text-[var(--app-danger-text)]">
-                {locale === 'zh'
-                  ? '模拟复核运行失败，请查看后端日志。'
-                  : 'Simulation run failed; check backend logs.'}
+                {labels.simulationReviewRunFailed}
               </div>
             ) : null}
             <div className="mt-3 grid min-w-0 gap-2 text-sm sm:grid-cols-4">

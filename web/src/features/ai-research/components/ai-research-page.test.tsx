@@ -129,6 +129,9 @@ test('opens the cited research canvas from canonical persisted context', async (
   const contextMetrics = screen.getByTestId('ai-research-context-metrics');
   const commandGrid = screen.getByTestId('ai-research-command-grid');
   expect(commandGrid.className).toContain('app-ai-research-command-grid');
+  expect(contextMetrics.querySelector('dl')?.className).toContain(
+    'app-ai-research-context-strip',
+  );
   expect(
     contextMetrics.compareDocumentPosition(primaryCanvas) &
       Node.DOCUMENT_POSITION_FOLLOWING,
@@ -140,10 +143,18 @@ test('opens the cited research canvas from canonical persisted context', async (
     'No human research task has been recorded yet.',
   );
   const emptyWorkflow = screen.getByTestId('ai-research-empty-workflow');
+  expect(emptyWorkflow.className).toContain('grid-cols-1');
+  expect(emptyWorkflow.className).toContain('sm:grid-cols-2');
   expect(emptyWorkflow.textContent).toContain('Freeze context');
   expect(emptyWorkflow.textContent).toContain('Run explicitly');
   expect(emptyWorkflow.textContent).toContain('Review the outcome');
   expect(screen.queryByLabelText('Research question')).toBeNull();
+  const collapseWorkspace = screen.getByRole('button', {
+    name: 'Collapse research workspace',
+  });
+  expect(collapseWorkspace.querySelector('.sm\\:hidden')?.textContent).toBe(
+    'Collapse',
+  );
   fireEvent.click(screen.getByRole('button', { name: 'Draft research task' }));
   const researchQuestion = screen.getByLabelText('Research question');
   expect(

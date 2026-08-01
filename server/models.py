@@ -263,6 +263,12 @@ class PositionEvidenceReviewResponse(BaseModel):
     position: PositionResponse
 
 
+class ClosedPositionResponse(PositionResponse):
+    """Historical position with its canonical ledger close timestamp."""
+
+    closed_at: str | None = None
+
+
 class CurrentHoldingMarketEvidenceReviewItem(BaseModel):
     """One current holding whose persisted quote evidence is not authoritative."""
 
@@ -344,7 +350,7 @@ class PortfolioSnapshot(BaseModel):
     positions: list[PositionResponse]
     allocation: list[AllocationItem]
     allocation_grouped: list[AllocationGroup] = Field(default_factory=list)
-    closed_positions: list[PositionResponse] = Field(default_factory=list)
+    closed_positions: list[ClosedPositionResponse] = Field(default_factory=list)
     position_review_items: list[PositionEvidenceReviewResponse] = Field(
         default_factory=list
     )

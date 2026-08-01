@@ -10,6 +10,7 @@ import { usePreferences } from '../../../app/preferences';
 import { formatAssetClassLabel } from '../../../shared/asset-class';
 import {
   formatCurrency,
+  formatDate,
   formatPercent,
   formatTimestamp,
 } from '../../../shared/format';
@@ -155,6 +156,18 @@ export function PositionsTable({
       </span>
     ),
   };
+  const closedAtColumn: ColumnDef<Position, unknown> = {
+    id: 'closed-at',
+    header: labels.closedOn,
+    cell: ({ row }) => (
+      <span
+        className="block whitespace-nowrap font-mono text-[var(--app-text-secondary)] tabular-nums"
+        data-testid={`position-closed-at-${row.original.symbol}`}
+      >
+        {formatDate(row.original.closed_at)}
+      </span>
+    ),
+  };
   const quoteColumn: ColumnDef<Position, unknown> = {
     id: 'quote-state',
     header: labels.quoteState,
@@ -191,6 +204,7 @@ export function PositionsTable({
   const columns: ColumnDef<Position, unknown>[] = showHistoryColumns
     ? [
         symbolColumn,
+        closedAtColumn,
         realizedColumn,
         {
           id: 'commission-paid',
@@ -332,14 +346,24 @@ export function PositionsTable({
                   {variant !== 'dashboard' ? (
                     <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2">
                       {showHistoryColumns ? (
-                        <div className="min-w-0">
-                          <dt className="text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
-                            {detailLabels.commissionPaid}
-                          </dt>
-                          <dd className="mt-0.5 truncate text-xs tabular-nums text-[var(--app-text-secondary)]">
-                            {formatCurrency(position.commission_paid)}
-                          </dd>
-                        </div>
+                        <>
+                          <div className="min-w-0">
+                            <dt className="text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
+                              {labels.closedOn}
+                            </dt>
+                            <dd className="mt-0.5 truncate font-mono text-xs tabular-nums text-[var(--app-text-secondary)]">
+                              {formatDate(position.closed_at)}
+                            </dd>
+                          </div>
+                          <div className="min-w-0">
+                            <dt className="text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
+                              {detailLabels.commissionPaid}
+                            </dt>
+                            <dd className="mt-0.5 truncate text-xs tabular-nums text-[var(--app-text-secondary)]">
+                              {formatCurrency(position.commission_paid)}
+                            </dd>
+                          </div>
+                        </>
                       ) : (
                         <>
                           {showFullColumns ? (

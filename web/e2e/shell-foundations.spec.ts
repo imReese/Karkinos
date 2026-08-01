@@ -201,7 +201,14 @@ test('desktop utility controls align and overview holdings avoid partial columns
   ).toBeLessThanOrEqual(1);
 
   const valuationStatus = page.getByTestId('status-pill-valuation');
+  await valuationStatus.hover();
+  await expect(page.getByText('查看估值详情', { exact: true })).toBeVisible();
+  await valuationStatus.focus();
+  await expect(valuationStatus).toBeFocused();
   await valuationStatus.click();
+  const valuationDialog = page.getByRole('dialog', { name: '净值' });
+  await expect(valuationDialog).toBeVisible();
+  await expect(page.getByText('查看估值详情', { exact: true })).toHaveCount(0);
   await expect
     .poll(() =>
       valuationStatus.evaluate((element) => {
@@ -224,6 +231,74 @@ test('desktop utility controls align and overview holdings avoid partial columns
       }),
     )
     .toEqual({ backgroundMatches: true, dividerMatches: true });
+
+  const overlayGeometry = await page.evaluate(() => {
+    const content = document.querySelector('.app-shell-content') as HTMLElement;
+    const footer = document.querySelector('.app-status-footer') as HTMLElement;
+    const trigger = document.querySelector(
+      '[data-testid="status-pill-valuation"]',
+    ) as HTMLElement;
+    const popover = document.querySelector(
+      '.app-status-popover-root',
+    ) as HTMLElement;
+    const contentBox = content.getBoundingClientRect();
+    const footerBox = footer.getBoundingClientRect();
+    const triggerBox = trigger.getBoundingClientRect();
+    const popoverBox = popover.getBoundingClientRect();
+    return {
+      contentBottom: contentBox.bottom,
+      footerTop: footerBox.top,
+      popoverBottom: popoverBox.bottom,
+      popoverLeft: popoverBox.left,
+      popoverRight: popoverBox.right,
+      triggerLeft: triggerBox.left,
+      triggerTop: triggerBox.top,
+      viewportWidth: window.innerWidth,
+    };
+  });
+  expect(
+    Math.abs(overlayGeometry.footerTop - overlayGeometry.contentBottom),
+  ).toBeLessThanOrEqual(1);
+  expect(
+    overlayGeometry.triggerTop - overlayGeometry.popoverBottom,
+  ).toBeGreaterThanOrEqual(8);
+  expect(
+    overlayGeometry.viewportWidth - overlayGeometry.popoverRight,
+  ).toBeGreaterThanOrEqual(12);
+  expect(
+    Math.abs(overlayGeometry.popoverLeft - overlayGeometry.triggerLeft),
+  ).toBeLessThanOrEqual(1);
+
+  await page.keyboard.press('Escape');
+  await expect(valuationDialog).toHaveCount(0);
+  await expect(valuationStatus).toBeFocused();
+
+  await valuationStatus.click();
+  await expect(valuationDialog).toBeVisible();
+  await page.getByRole('heading', { name: '当前持仓' }).click();
+  await expect(valuationDialog).toHaveCount(0);
+
+  const marketStatus = page.getByTestId('status-pill-market');
+  await marketStatus.click();
+  const marketDialog = page.getByRole('dialog', { name: '行情' });
+  await expect(marketDialog).toBeVisible();
+  const marketOverlayGeometry = await marketDialog.evaluate((dialog) => {
+    const trigger = document.querySelector(
+      '[data-testid="status-pill-market"]',
+    ) as HTMLElement;
+    const popover = dialog.closest('.app-status-popover-root') as HTMLElement;
+    const triggerBox = trigger.getBoundingClientRect();
+    const popoverBox = popover.getBoundingClientRect();
+    return {
+      popoverLeft: popoverBox.left,
+      triggerLeft: triggerBox.left,
+    };
+  });
+  expect(
+    Math.abs(
+      marketOverlayGeometry.popoverLeft - marketOverlayGeometry.triggerLeft,
+    ),
+  ).toBeLessThanOrEqual(1);
 });
 
 test('shell remains local-overflow safe in Latte and Mocha across tablet and mobile', async ({

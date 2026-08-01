@@ -178,13 +178,31 @@ test('provides a task-focused mobile holdings list without table-width dependenc
 });
 
 test('keeps closed-position realized results and fees as read-only history', () => {
-  renderTable(<PositionsTable positions={[basePosition]} variant="history" />);
+  renderTable(
+    <PositionsTable
+      positions={[
+        {
+          ...basePosition,
+          closed_at: '2026-07-18T14:30:00+08:00',
+        },
+      ]}
+      variant="history"
+    />,
+  );
 
   const table = screen.getByTestId('positions-table-desktop');
   const headers = within(table)
     .getAllByRole('columnheader')
     .map((header) => header.textContent);
-  expect(headers).toEqual(['Symbol', 'Realized PnL', 'Commission Paid']);
+  expect(headers).toEqual([
+    'Symbol',
+    'Closed on',
+    'Realized PnL',
+    'Commission Paid',
+  ]);
+  expect(screen.getByTestId('position-closed-at-600519').textContent).toBe(
+    '07/18/2026',
+  );
   expect(screen.getByTestId('position-realized-600519').textContent).toBe(
     '¥120.00',
   );
@@ -198,4 +216,15 @@ test('keeps closed-position realized results and fees as read-only history', () 
       .getByRole('link', { name: 'Holding Details: 贵州茅台 600519' })
       .getAttribute('href'),
   ).toBe('/portfolio/600519');
+});
+
+test('fails closed when a historical close timestamp is unavailable', () => {
+  renderTable(<PositionsTable positions={[basePosition]} variant="history" />);
+
+  expect(screen.getByTestId('position-closed-at-600519').textContent).toBe(
+    '--',
+  );
+  expect(
+    screen.getByTestId('position-mobile-row-600519').textContent,
+  ).toContain('Closed on--');
 });

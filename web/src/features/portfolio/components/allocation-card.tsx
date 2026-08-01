@@ -27,24 +27,37 @@ export function AllocationCard({ items }: { items: AllocationItem[] }) {
         columns={[
           {
             id: 'instrument',
-            header: copy.portfolio.table.symbol,
-            cell: ({ row }) => (
-              <a
-                href={`/portfolio/${encodeURIComponent(row.original.symbol)}`}
-                className="font-semibold text-[var(--app-text)] hover:text-[var(--app-accent)]"
-              >
-                {row.original.name} ·{' '}
-                <span className="font-mono text-[var(--app-text-tertiary)]">
-                  {row.original.symbol}
-                </span>
-              </a>
-            ),
+            header: copy.portfolio.allocation.asset,
+            cell: ({ row }) => {
+              if (row.original.asset_class === 'cash') {
+                return (
+                  <span
+                    className="font-semibold text-[var(--app-text)]"
+                    data-allocation-kind="cash"
+                  >
+                    {copy.portfolio.allocation.cashBalance}
+                  </span>
+                );
+              }
+
+              return (
+                <a
+                  href={`/portfolio/${encodeURIComponent(row.original.symbol)}`}
+                  className="font-semibold text-[var(--app-text)] hover:text-[var(--app-accent)]"
+                >
+                  {row.original.name} ·{' '}
+                  <span className="font-mono text-[var(--app-text-tertiary)]">
+                    {row.original.symbol}
+                  </span>
+                </a>
+              );
+            },
           },
           {
             id: 'value',
             header: () => (
               <span className="block text-right">
-                {copy.portfolio.table.marketValue}
+                {copy.portfolio.allocation.valuationAmount}
               </span>
             ),
             cell: ({ row }) => (
@@ -57,7 +70,7 @@ export function AllocationCard({ items }: { items: AllocationItem[] }) {
             id: 'weight',
             header: () => (
               <span className="block text-right">
-                {copy.portfolio.table.weight}
+                {copy.portfolio.allocation.navShare}
               </span>
             ),
             cell: ({ row }) => (

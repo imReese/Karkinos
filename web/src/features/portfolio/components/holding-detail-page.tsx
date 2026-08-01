@@ -917,7 +917,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
                 detail: metric.detail,
                 tone: metric.tone,
               }))}
-              className="sm:grid-flow-row sm:grid-cols-2 xl:grid-cols-4"
+              className="app-holding-summary-metrics sm:grid-flow-row sm:grid-cols-2 xl:grid-cols-4"
             />
           </div>
         </section>
@@ -925,61 +925,73 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
 
       <div className="space-y-5">
         <div className="min-w-0 space-y-5">
-          <div
-            role="tablist"
-            aria-label={labels.tabListLabel}
-            data-testid="holding-detail-tabs"
-            className="app-horizontal-scroll-cue flex min-w-0 gap-1 overflow-x-auto border-b border-[var(--app-divider)] pb-px"
-          >
-            {HOLDING_DETAIL_TABS.map((tab) => {
-              const selected = activeTab === tab;
-              return (
-                <button
-                  key={tab}
-                  id={`holding-tab-${tab}`}
-                  type="button"
-                  role="tab"
-                  aria-selected={selected}
-                  aria-controls={`holding-panel-${tab}`}
-                  tabIndex={selected ? 0 : -1}
-                  className={`min-h-10 shrink-0 border-b-2 px-3 py-2 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] ${
-                    selected
-                      ? 'border-[var(--app-accent)] text-[var(--app-text)]'
-                      : 'border-transparent text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
-                  }`}
-                  onClick={() => setActiveTab(tab)}
-                  onKeyDown={(event) => {
-                    if (
-                      !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(
-                        event.key,
-                      )
-                    ) {
-                      return;
-                    }
-                    event.preventDefault();
-                    const currentIndex = HOLDING_DETAIL_TABS.indexOf(tab);
-                    const nextIndex =
-                      event.key === 'Home'
-                        ? 0
-                        : event.key === 'End'
-                          ? HOLDING_DETAIL_TABS.length - 1
-                          : event.key === 'ArrowRight'
-                            ? (currentIndex + 1) % HOLDING_DETAIL_TABS.length
-                            : (currentIndex - 1 + HOLDING_DETAIL_TABS.length) %
-                              HOLDING_DETAIL_TABS.length;
-                    const nextTab = HOLDING_DETAIL_TABS[nextIndex];
-                    setActiveTab(nextTab);
-                    event.currentTarget.parentElement
-                      ?.querySelector<HTMLButtonElement>(
-                        `#holding-tab-${nextTab}`,
-                      )
-                      ?.focus();
-                  }}
-                >
-                  {tabLabels[tab]}
-                </button>
-              );
-            })}
+          <div className="min-w-0">
+            <div
+              className="app-type-micro mb-1.5 text-right font-medium text-[var(--app-text-tertiary)] sm:hidden"
+              data-testid="holding-tabs-scroll-hint"
+              id="holding-tabs-scroll-hint"
+            >
+              {labels.tabScrollHint}
+            </div>
+            <div
+              role="tablist"
+              aria-label={labels.tabListLabel}
+              aria-describedby="holding-tabs-scroll-hint"
+              data-testid="holding-detail-tabs"
+              className="app-horizontal-scroll-cue flex min-w-0 gap-1 overflow-x-auto border-b border-[var(--app-divider)] pb-px"
+            >
+              {HOLDING_DETAIL_TABS.map((tab) => {
+                const selected = activeTab === tab;
+                return (
+                  <button
+                    key={tab}
+                    id={`holding-tab-${tab}`}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    aria-controls={`holding-panel-${tab}`}
+                    tabIndex={selected ? 0 : -1}
+                    className={`min-h-10 shrink-0 border-b-2 px-3 py-2 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] ${
+                      selected
+                        ? 'border-[var(--app-accent)] text-[var(--app-text)]'
+                        : 'border-transparent text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
+                    }`}
+                    onClick={() => setActiveTab(tab)}
+                    onKeyDown={(event) => {
+                      if (
+                        !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(
+                          event.key,
+                        )
+                      ) {
+                        return;
+                      }
+                      event.preventDefault();
+                      const currentIndex = HOLDING_DETAIL_TABS.indexOf(tab);
+                      const nextIndex =
+                        event.key === 'Home'
+                          ? 0
+                          : event.key === 'End'
+                            ? HOLDING_DETAIL_TABS.length - 1
+                            : event.key === 'ArrowRight'
+                              ? (currentIndex + 1) % HOLDING_DETAIL_TABS.length
+                              : (currentIndex -
+                                  1 +
+                                  HOLDING_DETAIL_TABS.length) %
+                                HOLDING_DETAIL_TABS.length;
+                      const nextTab = HOLDING_DETAIL_TABS[nextIndex];
+                      setActiveTab(nextTab);
+                      event.currentTarget.parentElement
+                        ?.querySelector<HTMLButtonElement>(
+                          `#holding-tab-${nextTab}`,
+                        )
+                        ?.focus();
+                    }}
+                  >
+                    {tabLabels[tab]}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <section

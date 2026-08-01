@@ -47,6 +47,8 @@ const COPY = {
       'This workspace stays idle until you open it. Nothing starts in the background.',
     open: 'Open research tasks',
     close: 'Collapse research workspace',
+    openCompact: 'Open tasks',
+    closeCompact: 'Collapse',
     queueKicker: 'Review queue',
     queueTitle: 'Research task queue',
     queueDetail:
@@ -165,6 +167,8 @@ const COPY = {
     closedDetail: '显式打开前保持空闲；后台不会自行启动任何分析。',
     open: '打开研究任务',
     close: '收起研究工作区',
+    openCompact: '打开任务',
+    closeCompact: '收起',
     queueKicker: '复核队列',
     queueTitle: '研究任务队列',
     queueDetail: '每项任务都保留已保存证据与引用，供人工复核。',
@@ -436,11 +440,25 @@ export function ResearchTaskPanel({
             </div>
           ) : null}
           <button
+            aria-label={open ? copy.close : copy.open}
             className="app-button-secondary min-h-11 px-3 py-2 text-xs font-semibold"
             onClick={() => setOpen((current) => !current)}
             type="button"
           >
-            {open ? copy.close : copy.open}
+            {routePrimary ? (
+              <>
+                <span className="sm:hidden">
+                  {open ? copy.closeCompact : copy.openCompact}
+                </span>
+                <span className="hidden sm:inline">
+                  {open ? copy.close : copy.open}
+                </span>
+              </>
+            ) : open ? (
+              copy.close
+            ) : (
+              copy.open
+            )}
           </button>
         </div>
       </div>
@@ -538,7 +556,7 @@ export function ResearchTaskPanel({
                 />
                 <ol
                   aria-label={copy.emptyWorkflowLabel}
-                  className="mt-4 grid grid-cols-2 gap-x-4 gap-y-5 xl:grid-cols-4"
+                  className="mt-4 grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2 xl:grid-cols-4 xl:gap-y-5"
                   data-testid="ai-research-empty-workflow"
                 >
                   {copy.emptyWorkflow.map((step, index) => (

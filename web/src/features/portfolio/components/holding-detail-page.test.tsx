@@ -737,6 +737,7 @@ test('keeps holding summary and kline regions responsive on narrow screens', asy
   expect(overview.className).toContain('xl:grid-cols-');
   expect(overview.className).not.toContain('md:grid-cols-');
   expect(metricStrip?.className).toContain('min-w-0');
+  expect(metricStrip?.className).toContain('app-holding-summary-metrics');
   expect(metricStrip?.className).toContain('sm:grid-cols-2');
   expect(metricStrip?.className).toContain('xl:grid-cols-4');
   expect(metricCells.length).toBe(4);
@@ -829,6 +830,15 @@ test('exposes five keyboard-operable holding evidence views', async () => {
 
   expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
   const tabs = screen.getAllByRole('tab');
+  const tabList = screen.getByRole('tablist', {
+    name: 'Holding detail views',
+  });
+  expect(tabList.getAttribute('aria-describedby')).toBe(
+    'holding-tabs-scroll-hint',
+  );
+  expect(screen.getByTestId('holding-tabs-scroll-hint').textContent).toBe(
+    'Scroll for more views →',
+  );
   expect(tabs.map((tab) => tab.textContent)).toEqual([
     'Position',
     'P&L & Costs',

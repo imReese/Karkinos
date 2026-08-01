@@ -165,7 +165,7 @@ export function OperationsPage() {
     () => [
       {
         accessorKey: 'id',
-        header: labels.subsystemHealth,
+        header: labels.subsystem,
         cell: ({ row }) => (
           <a
             className="font-semibold text-[var(--app-accent)] underline decoration-transparent underline-offset-2 hover:decoration-current"
@@ -188,8 +188,15 @@ export function OperationsPage() {
         accessorKey: 'detail_status',
         header: labels.evidenceStatus,
         cell: ({ row }) => (
-          <span className="block max-w-48 whitespace-normal leading-5">
-            {formatPublicStatus(row.original.detail_status, locale)}
+          <span className="block min-w-40 max-w-56 whitespace-normal leading-5">
+            <span className="block text-[var(--app-text)]">
+              {formatPublicStatus(row.original.detail_status, locale)}
+            </span>
+            <span className="mt-1 block font-mono text-xs tabular-nums text-[var(--app-text-tertiary)]">
+              {labels.observedAt}:{' '}
+              {formatEvidenceTime(row.original.last_run_at, locale) ??
+                labels.noTimestamp}
+            </span>
           </span>
         ),
       },
@@ -197,26 +204,16 @@ export function OperationsPage() {
         accessorKey: 'next_action',
         header: labels.nextAction,
         cell: ({ row }) => (
-          <span className="block max-w-64 whitespace-normal leading-5">
-            {operationsNextActionLabel(row.original.next_action, locale)}
-          </span>
-        ),
-      },
-      {
-        accessorKey: 'last_run_at',
-        header: labels.observedAt,
-        cell: ({ row }) =>
-          formatEvidenceTime(row.original.last_run_at, locale) ??
-          labels.noTimestamp,
-      },
-      {
-        id: 'limitations',
-        header: labels.limitations,
-        cell: ({ row }) => (
-          <span className="block max-w-72 whitespace-normal leading-5">
-            {row.original.limitations.length > 0
-              ? row.original.limitations.join(' · ')
-              : labels.noLimitations}
+          <span className="block min-w-48 max-w-80 whitespace-normal leading-5">
+            <span className="block text-[var(--app-text)]">
+              {operationsNextActionLabel(row.original.next_action, locale)}
+            </span>
+            <span className="mt-1 block text-xs text-[var(--app-text-tertiary)]">
+              {labels.limitations}:{' '}
+              {row.original.limitations.length > 0
+                ? row.original.limitations.join(' · ')
+                : labels.noLimitations}
+            </span>
           </span>
         ),
       },
@@ -364,7 +361,7 @@ export function OperationsPage() {
           </div>
 
           <MetricStrip
-            ariaLabel={labels.subsystemHealth}
+            ariaLabel={labels.healthOverview}
             items={[
               {
                 id: 'total',
@@ -400,7 +397,7 @@ export function OperationsPage() {
             data-testid="operations-subsystem-register"
           >
             <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-[var(--app-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)]">
-              <span>{labels.subsystemHealth}</span>
+              <span>{labels.subsystemRegister}</span>
               <span className="flex items-center gap-2 font-mono text-xs font-normal tabular-nums text-[var(--app-text-tertiary)]">
                 {projection.subsystems.length}
                 <span aria-hidden="true" className="group-open:rotate-180">
@@ -412,7 +409,7 @@ export function OperationsPage() {
               <DataTable
                 data={projection.subsystems}
                 columns={subsystemColumns}
-                caption={labels.subsystemHealth}
+                caption={labels.subsystemRegister}
                 emptyState={labels.attentionEmpty}
                 getRowId={(row) => row.id}
                 tableTestId="operations-subsystem-table"

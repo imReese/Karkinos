@@ -77,6 +77,68 @@ def test_build_portfolio_projection_handles_deposit_buy_and_sell():
     assert position.unrealized_pnl == Decimal("5.40")
 
 
+def test_portfolio_projection_tracks_close_reopen_and_reclose_timestamps():
+    first_lifecycle = [
+        LedgerEntry(
+            entry_type="trade_buy",
+            timestamp="2026-07-01T09:30:00+08:00",
+            symbol="600519",
+            direction="buy",
+            quantity=10.0,
+            price=10.0,
+        ),
+        LedgerEntry(
+            entry_type="trade_sell",
+            timestamp="2026-07-02T14:30:00+08:00",
+            symbol="600519",
+            direction="sell",
+            quantity=10.0,
+            price=11.0,
+        ),
+    ]
+
+    first_close = build_portfolio_projection(first_lifecycle)
+    assert first_close.positions["600519"].closed_at == ("2026-07-02T14:30:00+08:00")
+
+    reopened = build_portfolio_projection(
+        [
+            *first_lifecycle,
+            LedgerEntry(
+                entry_type="trade_buy",
+                timestamp="2026-07-03T09:45:00+08:00",
+                symbol="600519",
+                direction="buy",
+                quantity=5.0,
+                price=10.5,
+            ),
+        ]
+    )
+    assert reopened.positions["600519"].closed_at is None
+
+    reclosed = build_portfolio_projection(
+        [
+            *first_lifecycle,
+            LedgerEntry(
+                entry_type="trade_buy",
+                timestamp="2026-07-03T09:45:00+08:00",
+                symbol="600519",
+                direction="buy",
+                quantity=5.0,
+                price=10.5,
+            ),
+            LedgerEntry(
+                entry_type="trade_sell",
+                timestamp="2026-07-04T14:55:00+08:00",
+                symbol="600519",
+                direction="sell",
+                quantity=5.0,
+                price=12.0,
+            ),
+        ]
+    )
+    assert reclosed.positions["600519"].closed_at == ("2026-07-04T14:55:00+08:00")
+
+
 def test_build_portfolio_projection_treats_cash_interest_as_cash_income():
     projection = build_portfolio_projection(
         [

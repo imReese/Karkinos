@@ -58,6 +58,7 @@ export function AiResearchPage() {
           </div>
           <MetricStrip
             ariaLabel={labels.contextTitle}
+            className="app-ai-research-context-strip"
             items={[
               {
                 id: 'backtest-context',

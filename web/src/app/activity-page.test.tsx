@@ -142,10 +142,12 @@ test('does not derive authoritative net cash impact from the visible ledger rows
   renderActivityPage();
 
   expect(await screen.findByText('Net cash impact')).toBeTruthy();
-  expect(await screen.findByText('Not exposed')).toBeTruthy();
+  expect(
+    await screen.findByText('Full-history total unavailable'),
+  ).toBeTruthy();
   expect(
     await screen.findByText(
-      'No persisted aggregate is available; visible rows are not summed here.',
+      'The entries below show recent activity only and do not represent total cash movement over the full history.',
     ),
   ).toBeTruthy();
   expect(

@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 
 const publicHomeViewports = [
   { width: 1440, height: 900 },
+  { width: 1366, height: 768 },
   { width: 1280, height: 800 },
   { width: 1024, height: 768 },
   { width: 834, height: 1112 },
@@ -36,25 +37,20 @@ test('public home presents the brand contract before entering the workbench', as
   expect(apiRequests).toEqual([]);
 
   const composition = await page.evaluate(() => {
-    const ids = ['product', 'principles', 'workflow'];
-    const readingOrder = ids.map((id) =>
-      Math.round(document.getElementById(id)?.getBoundingClientRect().top ?? 0),
-    );
     const evidenceTop = Math.round(
       document
         .querySelector('.app-public-evidence-frame')
         ?.getBoundingClientRect().top ?? 0,
     );
-    return { evidenceTop, readingOrder };
+    return {
+      evidenceTop,
+      verticalOverflow:
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight,
+    };
   });
-  expect(composition.readingOrder[0]).toBeLessThan(900);
-  expect(composition.readingOrder[0]).toBeLessThan(
-    composition.readingOrder[1] ?? 0,
-  );
-  expect(composition.readingOrder[1]).toBeLessThan(
-    composition.readingOrder[2] ?? 0,
-  );
   expect(composition.evidenceTop).toBeLessThan(500);
+  expect(composition.verticalOverflow).toBeLessThanOrEqual(0);
 
   await expect(
     page.getByLabel('Public-to-private route').getByText('/overview'),
@@ -66,9 +62,25 @@ test('public home presents the brand contract before entering the workbench', as
     }),
   ).toBeVisible();
   await expect(page.getByText('Read and review only')).toBeVisible();
+  const publicNavigation = page.getByRole('navigation', {
+    name: 'Public navigation',
+  });
+  await publicNavigation.getByRole('link', { name: 'Product' }).click();
+  await expect(page.locator('#product')).toBeVisible();
   await expect(
     page.getByRole('link', { name: 'Open surface: Account Truth' }),
   ).toHaveAttribute('href', '/account-truth');
+  await publicNavigation.getByRole('link', { name: 'Trust' }).click();
+  await expect(page.locator('#principles')).toBeVisible();
+  await publicNavigation.getByRole('link', { name: 'Workflow' }).click();
+  await expect(page.locator('#workflow')).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight,
+    ),
+  ).toBeLessThanOrEqual(0);
 
   const documentOverflow = await page.evaluate(
     () =>
@@ -160,12 +172,21 @@ test('public home preserves its composition across the six visual acceptance vie
           overflow: element.scrollWidth - element.clientWidth,
         }))
         .filter(({ overflow }) => overflow > 0),
+      verticalOverflow:
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight,
     }));
     expect(latteGeometry.documentOverflow, JSON.stringify(viewport)).toBe(0);
     expect(latteGeometry.localOverflow, JSON.stringify(viewport)).toEqual([]);
     expect(latteGeometry.evidenceTop, JSON.stringify(viewport)).toBeLessThan(
       700,
     );
+    if (viewport.width >= 1024 && viewport.width > viewport.height) {
+      expect(
+        latteGeometry.verticalOverflow,
+        JSON.stringify(viewport),
+      ).toBeLessThanOrEqual(0);
+    }
     await expect(
       page
         .getByRole('banner')

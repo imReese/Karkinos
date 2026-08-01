@@ -316,6 +316,7 @@ test('renders persisted attention evidence without write or execution affordance
   expect(attention.className).toContain('app-operations-attention-list');
   expect(attention.className).toContain('divide-y');
   expect(healthMetrics).toBeTruthy();
+  expect(healthMetrics?.getAttribute('aria-label')).toBe('Health overview');
   expect(
     attentionQueue.compareDocumentPosition(healthMetrics as HTMLElement) &
       Node.DOCUMENT_POSITION_FOLLOWING,
@@ -355,6 +356,17 @@ test('renders persisted attention evidence without write or execution affordance
       .getByRole('link', { name: 'Open evidence' })
       .getAttribute('href'),
   ).toBe('/market');
+  const subsystemRegister = screen.getByTestId('operations-subsystem-register');
+  expect(subsystemRegister.querySelector('summary')?.textContent).toContain(
+    'Subsystem evidence register',
+  );
+  fireEvent.click(subsystemRegister.querySelector('summary') as HTMLElement);
+  const subsystemTable = screen.getByTestId('operations-subsystem-table');
+  expect(within(subsystemTable).getAllByRole('columnheader')).toHaveLength(4);
+  expect(subsystemTable.textContent).toContain('Observed at:');
+  expect(subsystemTable.textContent).toContain(
+    'Limitations: Three fund NAV observations require confirmation.',
+  );
 
   await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
   expect(fetchMock).toHaveBeenCalledWith(
@@ -587,8 +599,8 @@ test('keeps subsystem evidence visible when the review queue is empty', async ()
     }),
   ).toBeTruthy();
   expect(
-    screen.getByText('Three fund NAV observations require confirmation.'),
-  ).toBeTruthy();
+    screen.getByTestId('operations-subsystem-register').textContent,
+  ).toContain('Three fund NAV observations require confirmation.');
   expect(screen.getByText('No canonical history events')).toBeTruthy();
   expect(
     screen.getByText(

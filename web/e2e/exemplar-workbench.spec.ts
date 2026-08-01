@@ -434,18 +434,27 @@ test('AI research keeps frozen evidence ahead of human capture across all accept
     await page.setViewportSize(viewport);
     const primaryCanvasBox = (await primaryCanvas.boundingBox())!;
     const contextMetricsBox = (await contextMetrics.boundingBox())!;
+    expect(
+      contextMetricsBox.y,
+      JSON.stringify(viewport),
+    ).toBeLessThan(primaryCanvasBox.y);
+    const evidenceToCanvasGap =
+      primaryCanvasBox.y - (contextMetricsBox.y + contextMetricsBox.height);
+    expect(evidenceToCanvasGap, JSON.stringify(viewport)).toBeGreaterThanOrEqual(
+      16,
+    );
+    expect(evidenceToCanvasGap, JSON.stringify(viewport)).toBeLessThanOrEqual(
+      32,
+    );
     if (viewport.width >= 1024) {
       expect(
-        Math.abs(contextMetricsBox.y - primaryCanvasBox.y),
+        Math.abs(contextMetricsBox.x - primaryCanvasBox.x),
         JSON.stringify(viewport),
       ).toBeLessThanOrEqual(1);
-      expect(contextMetricsBox.x, JSON.stringify(viewport)).toBeLessThan(
-        primaryCanvasBox.x,
-      );
-    } else {
-      expect(contextMetricsBox.y, JSON.stringify(viewport)).toBeLessThan(
-        primaryCanvasBox.y,
-      );
+      expect(
+        Math.abs(contextMetricsBox.width - primaryCanvasBox.width),
+        JSON.stringify(viewport),
+      ).toBeLessThanOrEqual(1);
     }
     expect(
       (await emptyState.boundingBox())!.y,
@@ -575,7 +584,9 @@ test('activity keeps immutable history in the first reading path across all acce
     );
     if (hasEntries) {
       expect(
-        geometry.categoryFilterHeight ?? Number.POSITIVE_INFINITY,
+        Math.round(
+          geometry.categoryFilterHeight ?? Number.POSITIVE_INFINITY,
+        ),
         JSON.stringify(viewport),
       ).toBeLessThanOrEqual(48);
       expect(

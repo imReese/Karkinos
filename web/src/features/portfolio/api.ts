@@ -46,6 +46,7 @@ export type Position = {
   refresh_policy?: string | null;
   using_persistent_cache?: boolean;
   nav_date?: string | null;
+  closed_at?: string | null;
 };
 
 export type AllocationItem = {

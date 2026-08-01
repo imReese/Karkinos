@@ -524,9 +524,28 @@ test('surfaces selected symbol next action without leaking raw data status codes
     quotes: [
       {
         ...health.quotes[0],
+        asset_class: 'fund',
         quote_status: 'confirmed_nav_missing',
         quote_source: 'eastmoney_fund_estimate',
         stale_reason: 'confirmed_fund_nav_missing_estimate_only',
+      },
+    ],
+    items: [
+      {
+        symbol: '600519',
+        asset_class: 'fund',
+        name: '测试基金',
+        is_holding: true,
+        quantity: 100,
+        avg_cost: 90,
+        market_value: 10000,
+        unrealized_pnl: 1000,
+        realized_pnl: 0,
+        last_snapshot_at: '2026-06-17T14:10:00+08:00',
+        price: 100,
+        volume: 1000,
+        research_count: 1,
+        last_research_at: '2026-06-17T10:00:00+08:00',
       },
     ],
   });
@@ -544,6 +563,56 @@ test('surfaces selected symbol next action without leaking raw data status codes
   ).toBeTruthy();
   expect(
     screen.queryByText('confirmed_fund_nav_missing_estimate_only'),
+  ).toBeNull();
+});
+
+test('does not inherit a fund-only provider action into a selected stock', async () => {
+  renderMarketPage({
+    health: {
+      next_action: 'switch_to_fund_supported_provider',
+    },
+  });
+
+  const selectedInstrument = await screen.findByTestId(
+    'market-selected-instrument',
+  );
+  expect(
+    within(selectedInstrument).queryByText('Switch to a fund-capable source'),
+  ).toBeNull();
+  expect(
+    within(selectedInstrument).getByText('Next action').nextElementSibling
+      ?.textContent,
+  ).toBe('--');
+  const sourceHealth = screen.getByTestId('market-data-health-summary');
+  expect(
+    within(sourceHealth).getByText('Portfolio-wide fund coverage'),
+  ).toBeTruthy();
+  expect(
+    within(sourceHealth).getByText('Switch to a fund-capable source'),
+  ).toBeTruthy();
+});
+
+test('fails closed to asset metadata review when fund-only status targets a stock', async () => {
+  renderMarketPage({
+    quotes: [
+      {
+        ...health.quotes[0],
+        quote_status: 'confirmed_nav_missing',
+        stale_reason: 'confirmed_fund_nav_missing_estimate_only',
+      },
+    ],
+  });
+
+  const selectedInstrument = await screen.findByTestId(
+    'market-selected-instrument',
+  );
+  expect(
+    within(selectedInstrument).getByText('Configure asset metadata'),
+  ).toBeTruthy();
+  expect(
+    within(selectedInstrument).queryByText(
+      'Wait for confirmed fund NAV or sync NAV data',
+    ),
   ).toBeNull();
 });
 
