@@ -182,9 +182,10 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
   const thresholdTable = page.getByTestId('risk-threshold-table');
   const controlledActions = page.getByTestId('risk-trading-control-grid');
   await expect(blockingRegister).toBeVisible({ timeout: 30_000 });
-  expect((await blockingRegister.boundingBox())!.y).toBeLessThan(
-    (await riskMetrics.boundingBox())!.y,
-  );
+  const blockingRegisterBox = (await blockingRegister.boundingBox())!;
+  const riskMetricsBox = (await riskMetrics.boundingBox())!;
+  expect(blockingRegisterBox.x).toBeLessThan(riskMetricsBox.x);
+  expect(Math.abs(blockingRegisterBox.y - riskMetricsBox.y)).toBeLessThan(8);
   expect((await thresholdTable.boundingBox())!.y).toBeLessThan(
     (await controlledActions.boundingBox())!.y,
   );
@@ -434,27 +435,40 @@ test('AI research keeps frozen evidence ahead of human capture across all accept
     await page.setViewportSize(viewport);
     const primaryCanvasBox = (await primaryCanvas.boundingBox())!;
     const contextMetricsBox = (await contextMetrics.boundingBox())!;
-    expect(
-      contextMetricsBox.y,
-      JSON.stringify(viewport),
-    ).toBeLessThan(primaryCanvasBox.y);
-    const evidenceToCanvasGap =
-      primaryCanvasBox.y - (contextMetricsBox.y + contextMetricsBox.height);
-    expect(evidenceToCanvasGap, JSON.stringify(viewport)).toBeGreaterThanOrEqual(
-      16,
-    );
-    expect(evidenceToCanvasGap, JSON.stringify(viewport)).toBeLessThanOrEqual(
-      32,
-    );
-    if (viewport.width >= 1024) {
+    if (viewport.width >= 1280) {
       expect(
-        Math.abs(contextMetricsBox.x - primaryCanvasBox.x),
+        Math.abs(contextMetricsBox.y - primaryCanvasBox.y),
         JSON.stringify(viewport),
-      ).toBeLessThanOrEqual(1);
+      ).toBeLessThan(8);
+      expect(primaryCanvasBox.x, JSON.stringify(viewport)).toBeLessThan(
+        contextMetricsBox.x,
+      );
+      expect(primaryCanvasBox.width, JSON.stringify(viewport)).toBeGreaterThan(
+        contextMetricsBox.width,
+      );
+    } else {
+      expect(contextMetricsBox.y, JSON.stringify(viewport)).toBeLessThan(
+        primaryCanvasBox.y,
+      );
+      const evidenceToCanvasGap =
+        primaryCanvasBox.y - (contextMetricsBox.y + contextMetricsBox.height);
       expect(
-        Math.abs(contextMetricsBox.width - primaryCanvasBox.width),
+        evidenceToCanvasGap,
         JSON.stringify(viewport),
-      ).toBeLessThanOrEqual(1);
+      ).toBeGreaterThanOrEqual(16);
+      expect(evidenceToCanvasGap, JSON.stringify(viewport)).toBeLessThanOrEqual(
+        32,
+      );
+      if (viewport.width >= 1024) {
+        expect(
+          Math.abs(contextMetricsBox.x - primaryCanvasBox.x),
+          JSON.stringify(viewport),
+        ).toBeLessThanOrEqual(1);
+        expect(
+          Math.abs(contextMetricsBox.width - primaryCanvasBox.width),
+          JSON.stringify(viewport),
+        ).toBeLessThanOrEqual(1);
+      }
     }
     expect(
       (await emptyState.boundingBox())!.y,

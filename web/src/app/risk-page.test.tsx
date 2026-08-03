@@ -428,8 +428,11 @@ test('renders risk boundaries and blocking register without execution controls',
     name: 'Active risk priorities',
   });
   const metrics = screen.getByLabelText('Risk metrics');
+  const metricRail = screen.getByTestId('risk-metric-rail');
   expect(within(metrics).getByText('Healthy')).toBeTruthy();
   expect(within(metrics).queryByText('Review required')).toBeNull();
+  expect(metricRail.className).toContain('content-start');
+  expect(metrics.className).toContain('app-risk-metric-strip');
   expect(blockRegister.className).toContain('min-w-0');
   expect(priorityList.getAttribute('data-density')).toBe('compact');
   expect(priorityList.className).not.toContain('md:grid-cols-2');
@@ -484,9 +487,16 @@ test('localizes decision risk handoff without asking users to inspect every risk
   const blockRegister = await screen.findByTestId('risk-blocking-register');
   expect(within(blockRegister).getByText('当前风险优先项')).toBeTruthy();
   expect(blockRegister.textContent).not.toContain('当前风险可控');
-  expect(document.body.textContent).toContain('权威持久化投影');
+  expect(document.body.textContent).toContain(
+    '仅展示风险服务已记录的数值、状态与说明',
+  );
+  expect(document.body.textContent).not.toContain('权威持久化投影');
   expect(document.body.textContent).not.toContain('canonical 投影');
   const thresholdTable = await screen.findByTestId('risk-threshold-table');
+  expect(within(thresholdTable).getByText('当前值')).toBeTruthy();
+  expect(within(thresholdTable).getByText('依据')).toBeTruthy();
+  expect(thresholdTable.textContent).not.toContain('投影值');
+  expect(thresholdTable.textContent).not.toContain('持久化说明');
   expect(
     within(thresholdTable).getByText('当前净值距离最近峰值的回撤幅度。'),
   ).toBeTruthy();
