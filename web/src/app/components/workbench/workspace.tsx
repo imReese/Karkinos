@@ -288,30 +288,58 @@ export function EvidenceLoadingLayout({
       <EvidenceState kind="loading" title={title} description={description} />
       <div
         aria-hidden="true"
-        className="grid min-w-0 grid-cols-2 divide-x divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)] lg:grid-cols-4 lg:divide-y-0"
+        className="grid min-w-0 grid-cols-2 divide-x divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)] lg:grid-flow-col lg:auto-cols-fr lg:grid-cols-none lg:divide-y-0"
         data-testid="evidence-loading-metrics"
       >
         {Array.from({ length: metricCount }, (_, index) => (
           <div key={index} className="min-w-0 px-3 py-3">
-            <span className="block h-2 w-16 rounded-full bg-[var(--app-surface-overlay)] motion-safe:animate-pulse" />
-            <span className="mt-2 block h-4 w-24 max-w-full rounded-full bg-[var(--app-surface-overlay)] motion-safe:animate-pulse" />
+            <span className="block h-2 w-16 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] motion-safe:animate-pulse" />
+            <span className="mt-2 block h-4 w-24 max-w-full rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] motion-safe:animate-pulse" />
           </div>
         ))}
       </div>
       <div
         aria-hidden="true"
-        className="min-w-0 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]"
-        data-testid="evidence-loading-rows"
+        className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(15rem,0.72fr)]"
+        data-testid="evidence-loading-workspace"
       >
-        {Array.from({ length: rowCount }, (_, index) => (
-          <div
-            key={index}
-            className="grid min-w-0 gap-3 px-3 py-3 sm:grid-cols-[minmax(9rem,0.55fr)_minmax(0,1fr)]"
-          >
-            <span className="block h-3 w-28 max-w-full rounded-full bg-[var(--app-surface-overlay)] motion-safe:animate-pulse" />
-            <span className="block h-3 w-full max-w-md rounded-full bg-[var(--app-surface-overlay)] motion-safe:animate-pulse" />
+        <div className="min-w-0 border-y border-[var(--app-divider)]">
+          <div className="flex min-h-12 items-center justify-between gap-4 border-b border-[var(--app-divider)] px-3 py-3">
+            <span className="block h-3 w-32 max-w-[55%] rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] motion-safe:animate-pulse" />
+            <span className="block h-3 w-16 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] motion-safe:animate-pulse" />
           </div>
-        ))}
+          <div
+            className="min-w-0 divide-y divide-[var(--app-divider)]"
+            data-testid="evidence-loading-rows"
+          >
+            {Array.from({ length: rowCount }, (_, index) => (
+              <div
+                key={index}
+                className="grid min-h-14 min-w-0 items-center gap-3 px-3 py-3 sm:grid-cols-[minmax(9rem,0.55fr)_minmax(0,1fr)]"
+              >
+                <span className="block h-3 w-28 max-w-full rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] motion-safe:animate-pulse" />
+                <span className="block h-3 w-full max-w-md rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] motion-safe:animate-pulse" />
+              </div>
+            ))}
+          </div>
+        </div>
+        <div
+          className="hidden min-w-0 border-y border-[var(--app-divider)] lg:block"
+          data-testid="evidence-loading-sidebar"
+        >
+          <div className="border-b border-[var(--app-divider)] px-3 py-3">
+            <span className="block h-3 w-24 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] motion-safe:animate-pulse" />
+            <span className="mt-2 block h-2 w-40 max-w-full rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] motion-safe:animate-pulse" />
+          </div>
+          <div className="divide-y divide-[var(--app-divider)]">
+            {Array.from({ length: Math.min(rowCount, 3) }, (_, index) => (
+              <div key={index} className="px-3 py-3">
+                <span className="block h-3 w-2/3 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] motion-safe:animate-pulse" />
+                <span className="mt-2 block h-2 w-full rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] motion-safe:animate-pulse" />
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );

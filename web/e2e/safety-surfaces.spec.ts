@@ -59,7 +59,7 @@ test('Account Truth stays fail closed until required persisted evidence resolves
         return;
       }
       const response = await route.fetch();
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
       await route.fulfill({ response });
     },
   );
@@ -69,12 +69,25 @@ test('Account Truth stays fail closed until required persisted evidence resolves
   await expect(
     page.getByRole('heading', { name: 'Loading Account Truth evidence.' }),
   ).toBeVisible();
+  await expect(page.getByTestId('evidence-loading-workspace')).toBeVisible();
+  await expect(page.getByTestId('evidence-loading-sidebar')).toBeVisible();
   expect(
     await page.locator('[data-workbench-primitive="metric-strip"]').count(),
   ).toBe(0);
   expect(await page.getByText('0 items', { exact: true }).count()).toBe(0);
   expect(
     await page.getByText('No reconciliation reports for this filter.').count(),
+  ).toBe(0);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId('evidence-loading-workspace')).toBeVisible();
+  await expect(page.getByTestId('evidence-loading-sidebar')).toBeHidden();
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+    ),
   ).toBe(0);
 
   await expect(page.getByTestId('account-truth-review-workspace')).toBeVisible({

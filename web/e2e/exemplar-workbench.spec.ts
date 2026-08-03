@@ -760,6 +760,11 @@ test('portfolio mobile keeps holdings or an explicit empty state below disclosed
 test('holding detail keeps route identity during missing-state resolution', async ({
   page,
 }) => {
+  await page.route('**/api/portfolio/positions', async (route) => {
+    const response = await route.fetch();
+    await new Promise((resolve) => setTimeout(resolve, 1_200));
+    await route.fulfill({ response });
+  });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/portfolio/TEST-MISSING');
 
@@ -774,16 +779,9 @@ test('holding detail keeps route identity during missing-state resolution', asyn
     }),
   ).toBeVisible();
   await expect(returnLink).toBeVisible();
-  await expect(
-    page
-      .getByText('Loading holding detail.')
-      .or(
-        page.getByText(
-          'This symbol is not present in the current portfolio snapshot.',
-        ),
-      )
-      .first(),
-  ).toBeVisible();
+  await expect(page.getByText('Loading holding detail.')).toBeVisible();
+  await expect(page.getByTestId('evidence-loading-workspace')).toBeVisible();
+  await expect(page.getByTestId('evidence-loading-sidebar')).toBeHidden();
 
   const geometry = await returnLink.evaluate((link) => ({
     documentOverflow:
@@ -793,6 +791,11 @@ test('holding detail keeps route identity during missing-state resolution', asyn
   }));
   expect(geometry.documentOverflow).toBeLessThanOrEqual(0);
   expect(Math.round(geometry.height)).toBeGreaterThanOrEqual(44);
+  await expect(
+    page.getByText(
+      'This symbol is not present in the current portfolio snapshot.',
+    ),
+  ).toBeVisible({ timeout: 15_000 });
 });
 
 test('portfolio mobile bounds long persisted holding rows in Latte and Mocha', async ({
