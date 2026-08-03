@@ -2110,6 +2110,15 @@ h3 {
   word-break: break-word;
 }
 
+.app-settings-metadata-strip
+  .app-metric-strip-item
+  > .app-type-metric.truncate {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .app-account-truth-filter-rail {
   scrollbar-width: none;
 }

@@ -7,7 +7,7 @@ import {
   MetricStrip,
   StatusBadge,
 } from '../../../app/components/workbench';
-import { usePreferences } from '../../../app/preferences';
+import { usePreferences, type Locale } from '../../../app/preferences';
 import { formatAssetClassLabel } from '../../../shared/asset-class';
 import {
   formatCurrency,
@@ -23,19 +23,31 @@ import { formatStaleReason } from '../../../shared/stale-reason';
 import type { KlineBar, MarketHealthQuote, ResearchBoardItem } from '../api';
 import { PriceStructureChart } from './price-structure-chart';
 
-function formatAge(seconds: number | null | undefined) {
+function formatAge(seconds: number | null | undefined, locale: Locale) {
   if (typeof seconds !== 'number' || !Number.isFinite(seconds)) {
     return '--';
   }
   if (seconds < 60) {
-    return `${Math.max(0, Math.round(seconds))}s`;
+    const value = Math.max(0, Math.round(seconds));
+    return locale === 'zh' ? `${value}秒` : `${value}s`;
   }
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) {
-    return `${minutes}m`;
+    return locale === 'zh' ? `${minutes}分钟` : `${minutes}m`;
   }
   const hours = Math.round(minutes / 60);
-  return hours < 48 ? `${hours}h` : `${Math.round(hours / 24)}d`;
+  if (hours < 48) {
+    return locale === 'zh' ? `${hours}小时` : `${hours}h`;
+  }
+  const days = Math.round(hours / 24);
+  return locale === 'zh' ? `${days}天` : `${days}d`;
+}
+
+function formatResearchCount(count: number, locale: Locale) {
+  if (locale === 'zh') {
+    return `${count} 条研究记录`;
+  }
+  return `${count} research ${count === 1 ? 'record' : 'records'}`;
 }
 
 function quoteTone(status: string | null | undefined) {
@@ -196,6 +208,12 @@ export function MarketInstrumentWorkspace({
               const statusLabel = quote?.quote_status
                 ? formatPublicStatus(quote.quote_status, locale)
                 : labels.unknown;
+              const statusId = `market-instrument-state-${encodeURIComponent(item.symbol)}`;
+              const ageLabel = formatAge(quote?.quote_age_seconds, locale);
+              const researchCountLabel = formatResearchCount(
+                item.research_count,
+                locale,
+              );
               const dailyMove = quote?.daily_change ?? null;
               return (
                 <li
@@ -210,6 +228,7 @@ export function MarketInstrumentWorkspace({
                   <button
                     type="button"
                     aria-controls="market-instrument-detail"
+                    aria-describedby={statusId}
                     aria-pressed={isActive}
                     aria-label={`${item.name || item.symbol} ${item.symbol}`}
                     className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] gap-3 px-3 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--app-focus-ring)]"
@@ -243,9 +262,17 @@ export function MarketInstrumentWorkspace({
                         {item.symbol} ·{' '}
                         {formatAssetClassLabel(item.asset_class, copy.common)}
                       </span>
-                      <span className="app-type-micro mt-1 block truncate text-[var(--app-text-tertiary)]">
-                        {statusLabel} · {formatAge(quote?.quote_age_seconds)} ·{' '}
-                        {labels.researchCount} {item.research_count}
+                      <span
+                        className="app-type-micro mt-1 grid gap-0.5 leading-4 text-[var(--app-text-tertiary)]"
+                        data-testid={`market-instrument-status-${item.symbol}`}
+                        id={statusId}
+                      >
+                        <span className="block break-words">
+                          {statusLabel} · {ageLabel}
+                        </span>
+                        <span className="block break-words">
+                          {researchCountLabel}
+                        </span>
                       </span>
                     </span>
                     <span className="text-right">
@@ -384,7 +411,10 @@ export function MarketInstrumentWorkspace({
                 {
                   id: 'quote-age',
                   label: labels.quoteAge,
-                  value: formatAge(selectedHealthQuote?.quote_age_seconds),
+                  value: formatAge(
+                    selectedHealthQuote?.quote_age_seconds,
+                    locale,
+                  ),
                   detail: formatTimestamp(selectedHealthQuote?.timestamp),
                   tone: isUnconfirmedMarketDataStatus(selectedQuoteStatus)
                     ? 'warning'

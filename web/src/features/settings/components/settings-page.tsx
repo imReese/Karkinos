@@ -924,6 +924,7 @@ export function SettingsPage() {
               >
                 <MetricStrip
                   ariaLabel={copy.settings.metadataReadiness}
+                  className="app-settings-metadata-strip"
                   items={[
                     {
                       id: 'metadata-configured',

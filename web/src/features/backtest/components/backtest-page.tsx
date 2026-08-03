@@ -1498,9 +1498,10 @@ function RunContextValue({
         {label}
       </div>
       <div
-        className={`mt-0.5 truncate text-sm font-semibold text-[var(--app-text)] ${
+        className={`mt-0.5 break-words text-sm leading-5 font-semibold text-[var(--app-text)] ${
           numeric ? 'tabular-nums' : ''
         }`}
+        title={value}
       >
         {value}
       </div>
@@ -3476,7 +3477,10 @@ function MetadataItem({ label, value }: { label: string; value: string }) {
       <div className="app-type-micro font-medium text-[var(--app-text-secondary)]">
         {label}
       </div>
-      <div className="mt-0.5 truncate text-sm font-semibold tabular-nums text-[var(--app-text)]">
+      <div
+        className="mt-0.5 break-words text-sm leading-5 font-semibold tabular-nums text-[var(--app-text)]"
+        title={value}
+      >
         {value}
       </div>
     </div>
