@@ -179,3 +179,9 @@ test('uses native route names and consistent trading-review actions', () => {
   ]).join('\n');
   expect(chinesePrimaryRoutes).not.toMatch(/(?:打开|前往|到|在) Market\b/u);
 });
+
+test('uses natural English number agreement for open positions', () => {
+  expect(copy.en.overview.risk.positionsHint(0)).toBe('0 open positions');
+  expect(copy.en.overview.risk.positionsHint(1)).toBe('1 open position');
+  expect(copy.en.overview.risk.positionsHint(2)).toBe('2 open positions');
+});

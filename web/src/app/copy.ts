@@ -528,7 +528,8 @@ export const copy = {
         deploymentBoundary: 'Capital-at-work pressure',
         positions: 'Active Positions',
         positionsBoundary: 'Open risk surface',
-        positionsHint: (count: number) => `${count} open positions`,
+        positionsHint: (count: number) =>
+          `${count} open ${count === 1 ? 'position' : 'positions'}`,
         boundary: 'Boundary',
         current: 'Current',
         cashHealthy: 'Healthy reserve',
