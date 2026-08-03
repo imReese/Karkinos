@@ -1317,6 +1317,12 @@ test('core review routes keep audit drill-downs closed and mobile reading paths 
   await expect(
     page.getByTestId('trading-broker-boundary-disclosure'),
   ).not.toHaveAttribute('open', '');
+  await expect(
+    page.getByTestId('trading-execution-audit-disclosure'),
+  ).not.toHaveAttribute('open', '');
+  await expect(
+    page.getByTestId('trading-history-disclosure'),
+  ).not.toHaveAttribute('open', '');
 
   await page.goto('/settings');
   await expect(
@@ -1382,6 +1388,18 @@ test('core review routes keep audit drill-downs closed and mobile reading paths 
     expect(geometry.documentOverflow, path).toBeLessThanOrEqual(0);
     expect(geometry.contentOverflow, path).toBeLessThanOrEqual(0);
   }
+
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto('/trading');
+  const reviewQueueBox = (await page
+    .getByTestId('trading-review-queue')
+    .boundingBox())!;
+  const safetyRailBox = (await page
+    .getByTestId('trading-safety-rail')
+    .boundingBox())!;
+  expect(Math.abs(reviewQueueBox.x - safetyRailBox.x)).toBeLessThan(8);
+  expect(Math.abs(reviewQueueBox.width - safetyRailBox.width)).toBeLessThan(8);
+  expect(safetyRailBox.y).toBeGreaterThan(reviewQueueBox.y);
 });
 
 test('mobile trading review keeps one persisted order and its controlled actions in one bounded row', async ({

@@ -24,9 +24,11 @@ describe('trading workbench contract', () => {
     expect(tradingPage).toContain('data-testid="trading-review-posture"');
     expect(tradingPage).toContain('data-testid="trading-safety-rail"');
     expect(tradingPage).toContain('app-trading-command-grid');
-    expect(tradingPage).toContain(
+    expect(tradingPage).not.toContain(
       'xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]',
     );
+    expect(tradingPage).toContain('sm:grid-cols-2');
+    expect(tradingPage).toContain('data-testid="trading-history-disclosure"');
     expect(tradingPage).toContain('border-y border-[var(--app-divider)] py-3');
     expect(tradingPage).toContain('xl:flex-row');
     expect(tradingPage).toContain('xl:max-w-[440px]');
@@ -47,6 +49,10 @@ describe('trading workbench contract', () => {
     const orderQueue = TRADING.slice(TRADING.indexOf('function OrderQueue'));
 
     expect(executionAudit).toContain('<ControlledActionZone');
+    expect(executionAudit).toContain(
+      'data-testid="trading-execution-audit-disclosure"',
+    );
+    expect(executionAudit).toContain('<summary');
     expect(executionAudit).toContain('onRunShadowReview');
     expect(executionAudit).toContain('onAcceptSimulationReview');
     expect(executionAudit).not.toContain('app-terminal-panel');
@@ -57,11 +63,11 @@ describe('trading workbench contract', () => {
     expect(orderQueue).toContain(
       'overflow-x-visible md:overflow-x-auto md:overscroll-x-contain',
     );
-    expect(orderQueue).toContain('md:min-w-[1180px] md:table-fixed');
+    expect(orderQueue).toContain('md:min-w-[1100px] md:table-fixed');
     expect(orderQueue).toContain('grid grid-cols-2');
     expect(orderQueue).toContain('md:table-row');
     expect(orderQueue).toContain('md:hidden');
-    expect(orderQueue).not.toContain('className="min-w-[1180px]');
+    expect(orderQueue).not.toContain('className="min-w-[1100px]');
     expect(orderQueue).toContain('onClick={() => void onConfirm()}');
     expect(orderQueue).toContain('onClick={() => void onReject()}');
     expect(orderQueue).toContain('<WorkbenchStatusBadge');

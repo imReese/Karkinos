@@ -1006,7 +1006,7 @@ export function TradingPage() {
         </div>
       </section>
 
-      <div className="app-trading-command-grid grid min-w-0 gap-5 sm:gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)] xl:items-start">
+      <div className="app-trading-command-grid grid min-w-0 gap-5 sm:gap-6">
         <section
           className="app-workbench-section order-1 min-w-0 overflow-hidden"
           data-testid="trading-review-queue"
@@ -1162,7 +1162,7 @@ export function TradingPage() {
         </section>
 
         <aside
-          className="order-2 grid min-w-0 content-start gap-4"
+          className="order-2 grid min-w-0 content-start gap-4 sm:grid-cols-2"
           data-testid="trading-safety-rail"
         >
           <MetricStrip
@@ -1189,7 +1189,7 @@ export function TradingPage() {
           <KillSwitchPanel />
 
           <details
-            className="min-w-0 border-y border-[var(--app-divider)]"
+            className="min-w-0 border-y border-[var(--app-divider)] sm:col-span-2"
             data-testid="trading-broker-boundary-disclosure"
           >
             <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]">
@@ -1247,13 +1247,34 @@ export function TradingPage() {
         onAcceptSimulationReview={() => void handleAcceptSimulationReview()}
       />
 
-      <section className="app-workbench-section min-w-0 py-4">
-        <div className="px-1 sm:px-3">
-          <div>
-            <div className="app-product-mark">{labels.historyKicker}</div>
-            <h2 className="app-card-title mt-1.5">{labels.historyTitle}</h2>
-            <p className="app-muted mt-2 text-sm">{labels.historyDetail}</p>
-          </div>
+      <details
+        className="group app-workbench-section min-w-0"
+        data-testid="trading-history-disclosure"
+      >
+        <summary className="flex min-h-16 cursor-pointer list-none items-center justify-between gap-4 px-1 py-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] sm:px-3 [&::-webkit-details-marker]:hidden">
+          <span className="min-w-0">
+            <span className="app-product-mark block">
+              {labels.historyKicker}
+            </span>
+            <span className="app-card-title mt-1.5 block">
+              {labels.historyTitle}
+            </span>
+            <span className="app-muted mt-1 block text-sm">
+              {locale === 'zh'
+                ? `${completedOrders.length} 条已完成决策`
+                : `${completedOrders.length} completed decision${completedOrders.length === 1 ? '' : 's'}`}
+            </span>
+          </span>
+          <span className="flex shrink-0 items-center gap-2 text-xs font-semibold text-[var(--app-text-secondary)]">
+            <span>{labels.expandOnDemand}</span>
+            <ChevronDown
+              aria-hidden="true"
+              className="size-4 transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] motion-reduce:transition-none group-open:rotate-180"
+            />
+          </span>
+        </summary>
+        <div className="border-t border-[var(--app-divider)] px-1 py-4 sm:px-3">
+          <p className="app-muted text-sm">{labels.historyDetail}</p>
           {completedOrders.length === 0 ? (
             <EvidenceState
               className="mt-4"
@@ -1274,7 +1295,7 @@ export function TradingPage() {
             </div>
           )}
         </div>
-      </section>
+      </details>
     </section>
   );
 }
@@ -1696,11 +1717,12 @@ function ExecutionAuditPanel({
   const { locale } = usePreferences();
   const latestOrders = orders.slice(0, 4);
   const latestFills = fills.slice(0, 4);
-  const needsSimulationReview = paperShadowRunNeedsReview(paperShadowRun);
   const reviewAccepted =
     reviewResult?.review_status === 'accepted_for_manual_confirmation' ||
     paperShadowRun?.review_status === 'accepted_for_manual_confirmation';
-  const canRecordSimulationReview = needsSimulationReview && !reviewAccepted;
+  const needsSimulationReview =
+    paperShadowRunNeedsReview(paperShadowRun) && !reviewAccepted;
+  const canRecordSimulationReview = needsSimulationReview;
   const latestPaperShadowEvidenceItems = paperShadowRun?.run_id
     ? latestPaperShadowRunEvidenceItems(paperShadowRun, locale)
     : [];
@@ -1711,21 +1733,64 @@ function ExecutionAuditPanel({
         locale,
       )
     : [];
+  const evidenceCountLabel =
+    locale === 'zh'
+      ? `${orders.length} 条订单事实 · ${fills.length} 条成交事实`
+      : `${orders.length} order fact${orders.length === 1 ? '' : 's'} · ${fills.length} fill fact${fills.length === 1 ? '' : 's'}`;
+  const disclosureStatus = loading
+    ? labels.auditLoading
+    : error
+      ? labels.auditLoadFailed
+      : needsSimulationReview
+        ? labels.simulationReviewNeedsAttention
+        : reviewAccepted
+          ? labels.simulationReviewAccepted
+          : paperShadowRun?.status
+            ? formatPublicStatus(paperShadowRun.status, locale)
+            : evidenceCountLabel;
+  const disclosureTone = error
+    ? 'danger'
+    : needsSimulationReview
+      ? 'warning'
+      : reviewAccepted
+        ? 'success'
+        : 'neutral';
 
   return (
-    <section className="app-workbench-section min-w-0 py-4">
-      <div className="min-w-0 px-1 sm:px-3">
-        <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
-            <div className="app-product-mark">{labels.executionAudit}</div>
-            <h2 className="app-card-title mt-1.5">
-              {labels.executionAuditTitle}
-            </h2>
-            <p className="app-muted mt-2 max-w-3xl break-words text-sm leading-6">
-              {labels.executionAuditDetail}
-            </p>
-          </div>
-        </div>
+    <details
+      className="group app-workbench-section min-w-0"
+      data-testid="trading-execution-audit-disclosure"
+    >
+      <summary className="flex min-h-16 cursor-pointer list-none items-center justify-between gap-4 px-1 py-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] sm:px-3 [&::-webkit-details-marker]:hidden">
+        <span className="min-w-0">
+          <span className="app-product-mark block">
+            {labels.executionAudit}
+          </span>
+          <span className="app-card-title mt-1.5 block">
+            {labels.executionAuditTitle}
+          </span>
+          <span className="app-muted mt-1 block text-sm">
+            {evidenceCountLabel}
+          </span>
+        </span>
+        <span className="flex shrink-0 items-center gap-2">
+          <WorkbenchStatusBadge tone={disclosureTone}>
+            {disclosureStatus}
+          </WorkbenchStatusBadge>
+          <span className="hidden text-xs font-semibold text-[var(--app-text-secondary)] sm:inline">
+            {labels.expandOnDemand}
+          </span>
+          <ChevronDown
+            aria-hidden="true"
+            className="size-4 text-[var(--app-text-secondary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] motion-reduce:transition-none group-open:rotate-180"
+          />
+        </span>
+      </summary>
+
+      <div className="min-w-0 border-t border-[var(--app-divider)] px-1 py-4 sm:px-3">
+        <p className="app-muted max-w-3xl break-words text-sm leading-6">
+          {labels.executionAuditDetail}
+        </p>
 
         <ControlledActionZone
           className="mt-4"
@@ -1794,26 +1859,23 @@ function ExecutionAuditPanel({
           </div>
         ) : null}
 
-        {needsSimulationReview || reviewAccepted ? (
-          <EvidenceState
-            className="mt-3"
-            kind={reviewAccepted ? 'ready' : 'partial'}
-            statusLabel={labels.executionAudit}
-            title={
-              reviewAccepted
-                ? labels.simulationReviewAccepted
-                : labels.simulationReviewNeedsAttention
-            }
-            description={
-              reviewAccepted
-                ? acceptedReviewEvidenceItems.map((item) => (
-                    <span className="block" key={item}>
-                      {item}
-                    </span>
-                  ))
-                : labels.simulationReviewNeedsAttentionDetail
-            }
-          />
+        {needsSimulationReview ? (
+          <p className="mt-3 text-sm text-[var(--app-warning-text)]">
+            {labels.simulationReviewNeedsAttentionDetail}
+          </p>
+        ) : null}
+
+        {reviewAccepted && acceptedReviewEvidenceItems.length > 0 ? (
+          <div
+            className="mt-3 grid gap-1 border-y border-[var(--app-divider)] px-3 py-3 text-sm text-[var(--app-soft)]"
+            data-testid="trading-simulation-review-evidence"
+          >
+            {acceptedReviewEvidenceItems.map((item) => (
+              <div className="min-w-0 break-words" key={item}>
+                {item}
+              </div>
+            ))}
+          </div>
         ) : null}
 
         {reviewError ? (
@@ -1876,7 +1938,7 @@ function ExecutionAuditPanel({
           </div>
         )}
       </div>
-    </section>
+    </details>
   );
 }
 
@@ -2741,17 +2803,15 @@ function OrderQueue({
 
   return (
     <div className="mt-5 min-w-0 max-w-full overflow-x-visible md:overflow-x-auto md:overscroll-x-contain">
-      <table className="block w-full text-left text-sm md:table md:min-w-[1180px] md:table-fixed">
+      <table className="block w-full text-left text-sm md:table md:min-w-[1100px] md:table-fixed">
         <thead className="hidden md:table-header-group">
           <tr className="app-kicker app-type-overline border-b border-[var(--app-divider)]">
             <th className="w-[150px] px-3 py-3">{labels.symbol}</th>
-            <th className="w-[90px] px-3 py-3">{labels.side}</th>
-            <th className="w-[100px] px-3 py-3 text-right">
-              {labels.quantity}
-            </th>
-            <th className="w-[110px] px-3 py-3 text-right">{labels.price}</th>
-            <th className="w-[130px] px-3 py-3">{pageLabels.statusFilter}</th>
-            <th className="w-[260px] px-3 py-3">{labels.riskHint}</th>
+            <th className="w-[80px] px-3 py-3">{labels.side}</th>
+            <th className="w-[90px] px-3 py-3 text-right">{labels.quantity}</th>
+            <th className="w-[100px] px-3 py-3 text-right">{labels.price}</th>
+            <th className="w-[120px] px-3 py-3">{pageLabels.statusFilter}</th>
+            <th className="w-[220px] px-3 py-3">{labels.riskHint}</th>
             <th className="w-[340px] px-3 py-3">{labels.actions}</th>
           </tr>
         </thead>
