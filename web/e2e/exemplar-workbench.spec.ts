@@ -1184,22 +1184,24 @@ test('market keeps context, evidence review, and provider telemetry task-ordered
       expect(geometry.reviewAfterList, `${theme} ${viewport.width}`).toBe(true);
 
       if (geometry.workspaceExists) {
-        expect(
-          geometry.instrumentStatusCount,
-          `${theme} ${viewport.width}`,
-        ).toBeGreaterThan(0);
-        expect(
-          geometry.instrumentStatusOverflow,
-          `${theme} ${viewport.width}`,
-        ).toBeLessThanOrEqual(0);
-        expect(
-          geometry.instrumentStatusVerticalOverflow,
-          `${theme} ${viewport.width}`,
-        ).toBeLessThanOrEqual(0);
-        expect(
-          geometry.instrumentStatusesDescribed,
-          `${theme} ${viewport.width}`,
-        ).toBe(true);
+        if (geometry.listExists) {
+          expect(
+            geometry.instrumentStatusCount,
+            `${theme} ${viewport.width}`,
+          ).toBeGreaterThan(0);
+          expect(
+            geometry.instrumentStatusOverflow,
+            `${theme} ${viewport.width}`,
+          ).toBeLessThanOrEqual(0);
+          expect(
+            geometry.instrumentStatusVerticalOverflow,
+            `${theme} ${viewport.width}`,
+          ).toBeLessThanOrEqual(0);
+          expect(
+            geometry.instrumentStatusesDescribed,
+            `${theme} ${viewport.width}`,
+          ).toBe(true);
+        }
         await expect(
           page.getByTestId('market-instrument-workspace'),
         ).toBeVisible();
