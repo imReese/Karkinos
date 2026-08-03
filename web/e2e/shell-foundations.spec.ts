@@ -14,9 +14,9 @@ test('desktop shell defaults to labeled business groups and remains collapsible'
 
     const sidebar = page.locator('#app-shell-navigation');
     const header = page.locator('.app-toolbar-shell');
-    const statusFooter = page.locator('.app-status-footer');
+    const statusRail = page.locator('.app-toolbar-status-rail');
     await expect(sidebar).toBeVisible();
-    await expect(statusFooter).toBeVisible();
+    await expect(statusRail).toBeVisible();
     await expect(
       page.getByText('Decision & Risk', { exact: true }),
     ).toBeVisible();
@@ -33,7 +33,8 @@ test('desktop shell defaults to labeled business groups and remains collapsible'
     } else {
       await expect(page.locator('.app-toolbar-state')).toBeHidden();
     }
-    await expect(statusFooter).toContainText('Recorded evidence');
+    await expect(statusRail.getByTestId('status-pill-valuation')).toBeVisible();
+    await expect(statusRail.getByTestId('status-pill-market')).toBeVisible();
     await expect(
       page.getByRole('button', { name: /Refresh quotes: Market/ }),
     ).toHaveCount(0);
@@ -214,9 +215,7 @@ test('desktop utility controls align and overview holdings avoid partial columns
       valuationStatus.evaluate((element) => {
         const style = getComputedStyle(element);
         const statusShell = element.closest('.app-status-chip') as HTMLElement;
-        const statusFooter = element.closest(
-          '.app-status-footer',
-        ) as HTMLElement;
+        const toolbar = element.closest('.app-toolbar-shell') as HTMLElement;
         const selectedTheme = document.querySelector(
           '.app-theme-switcher-option[aria-pressed="true"]',
         ) as HTMLElement;
@@ -226,7 +225,7 @@ test('desktop utility controls align and overview holdings avoid partial columns
             getComputedStyle(selectedTheme).backgroundColor,
           dividerMatches:
             getComputedStyle(statusShell).borderRightColor ===
-            getComputedStyle(statusFooter).borderTopColor,
+            getComputedStyle(toolbar).borderBottomColor,
         };
       }),
     )
@@ -234,7 +233,7 @@ test('desktop utility controls align and overview holdings avoid partial columns
 
   const overlayGeometry = await page.evaluate(() => {
     const content = document.querySelector('.app-shell-content') as HTMLElement;
-    const footer = document.querySelector('.app-status-footer') as HTMLElement;
+    const header = document.querySelector('.app-toolbar-shell') as HTMLElement;
     const trigger = document.querySelector(
       '[data-testid="status-pill-valuation"]',
     ) as HTMLElement;
@@ -242,25 +241,30 @@ test('desktop utility controls align and overview holdings avoid partial columns
       '.app-status-popover-root',
     ) as HTMLElement;
     const contentBox = content.getBoundingClientRect();
-    const footerBox = footer.getBoundingClientRect();
+    const headerBox = header.getBoundingClientRect();
     const triggerBox = trigger.getBoundingClientRect();
     const popoverBox = popover.getBoundingClientRect();
     return {
+      contentTop: contentBox.top,
       contentBottom: contentBox.bottom,
-      footerTop: footerBox.top,
-      popoverBottom: popoverBox.bottom,
+      headerBottom: headerBox.bottom,
+      popoverTop: popoverBox.top,
       popoverLeft: popoverBox.left,
       popoverRight: popoverBox.right,
       triggerLeft: triggerBox.left,
-      triggerTop: triggerBox.top,
+      triggerBottom: triggerBox.bottom,
+      viewportHeight: window.innerHeight,
       viewportWidth: window.innerWidth,
     };
   });
   expect(
-    Math.abs(overlayGeometry.footerTop - overlayGeometry.contentBottom),
+    Math.abs(overlayGeometry.headerBottom - overlayGeometry.contentTop),
   ).toBeLessThanOrEqual(1);
   expect(
-    overlayGeometry.triggerTop - overlayGeometry.popoverBottom,
+    Math.abs(overlayGeometry.viewportHeight - overlayGeometry.contentBottom),
+  ).toBeLessThanOrEqual(1);
+  expect(
+    overlayGeometry.popoverTop - overlayGeometry.triggerBottom,
   ).toBeGreaterThanOrEqual(8);
   expect(
     overlayGeometry.viewportWidth - overlayGeometry.popoverRight,
