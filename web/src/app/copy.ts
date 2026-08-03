@@ -28,7 +28,7 @@ export const copy = {
       commandResults: 'Workspace routes',
       commandEmpty: 'No matching route.',
       closeCommand: 'Close command menu',
-      persistedEvidence: 'Persisted evidence',
+      persistedEvidence: 'Recorded evidence',
       toolbarTitle: 'Workspace toolbar',
       toolbarSubtitle:
         'Keep preferences and portfolio status in one consistent global toolbar.',
@@ -113,15 +113,15 @@ export const copy = {
       kicker: 'Operations',
       title: 'Operations evidence',
       subtitle:
-        'Inspect persisted subsystem evidence, safe next actions, and the exact conditions that clear each review item.',
-      loading: 'Loading the canonical Operations projection.',
-      error: 'The Operations evidence projection could not be loaded.',
+        'Review recorded system evidence, the next safe action, and what will clear each item.',
+      loading: 'Loading Operations evidence.',
+      error: 'Operations evidence could not be loaded.',
       retry: 'Retry read',
-      projectionBlocked: 'Operations evidence contract blocked',
+      projectionBlocked: 'Operations evidence is unavailable',
       projectionBlockedDetail:
-        'The response or an attention item crossed the read-only safety boundary. No drill-down action is available.',
-      readOnly: 'Read-only projection',
-      providerFree: 'Provider not contacted',
+        'The returned evidence did not meet the read-only safety checks, so details remain unavailable.',
+      readOnly: 'Read only',
+      providerFree: 'No external connection',
       noAuthority: 'No execution authority',
       attentionQueue: 'Evidence review queue',
       attentionEmpty: 'No subsystem currently requires evidence review.',
@@ -132,18 +132,18 @@ export const copy = {
       status: 'Status',
       evidenceStatus: 'Evidence status',
       observedAt: 'Observed at',
-      projectedAt: 'Projected at',
+      projectedAt: 'Recorded at',
       nextAction: 'Safe next action',
-      resolution: 'Evidence condition to clear',
+      resolution: 'Clears when',
       fingerprint: 'Task fingerprint',
       openEvidence: 'Open evidence',
       reviewDetails: 'Review details',
       evidenceDetail: 'Evidence detail',
       evidenceDetailDescription:
-        'Review the persisted reason, clearing condition, safe next action, and technical identity.',
+        'Review why this item is open, what will clear it, the next safe action, and its audit identity.',
       closeEvidenceDetail: 'Close evidence detail',
       technicalIdentity: 'Technical identity',
-      noTimestamp: 'No persisted observation time',
+      noTimestamp: 'No observation time recorded',
       viewingDoesNotClear:
         'Viewing or acknowledging this item does not clear its source status.',
       limitations: 'Limitations',
@@ -155,7 +155,7 @@ export const copy = {
       manualReview: 'Manual review',
       skipped: 'Skipped',
       sourceBoundary:
-        'Each page read is a GET over persisted facts. It cannot refresh a provider, submit or cancel an order, mutate OMS/ledger/risk/kill switch, or change capital authority.',
+        'This page reads recorded facts only. It cannot contact an external service, place or cancel an order, change the ledger or risk controls, or grant capital authority.',
     },
     states: {
       loading: 'Loading',
@@ -171,7 +171,7 @@ export const copy = {
       viewEvidenceIdentity: 'View evidence identity',
       evidenceIdentityTitle: 'Evidence identity',
       evidenceIdentityDescription:
-        'Full persisted identifiers are kept here for audit and deterministic replay.',
+        'Full evidence identifiers are kept here for audit and reproducible review.',
       closeEvidenceIdentity: 'Close evidence identity',
       copyEvidenceValue: (label: string) => `Copy ${label}`,
       evidenceValueCopied: (label: string) => `${label} copied`,
@@ -828,19 +828,19 @@ export const copy = {
           reviewHistory: 'Review the retained ledger and realized PnL.',
           reloadIdentity: 'Reload and confirm one snapshot and ledger cutoff.',
           reconcileCost: 'Review cost evidence in Account Truth.',
-          reviewQuote: 'Review the persisted quote evidence in Market.',
+          reviewQuote: 'Review the recorded quote evidence in Market.',
           none: 'No additional manual action is required.',
         },
         chartBuyMarker: 'Buy',
         chartSellMarker: 'Sell',
         chartLocalCostLine: 'Local moving-average cost',
-        chartEvidenceCostLine: 'Persisted evidence cost',
-        positionFacts: 'Canonical position facts',
+        chartEvidenceCostLine: 'Recorded evidence cost',
+        positionFacts: 'Recorded position facts',
         positionFactsDetail:
-          'Quantity state remains available from the persisted portfolio projection even when saved price history is unavailable.',
+          'Position quantity remains available from the account record even when saved price history is unavailable.',
         priceStructureMissing: 'Price evidence missing',
         priceStructureMissingDetail:
-          'No persisted bars are available for this instrument. The position is still shown from canonical portfolio facts without inferring a price history.',
+          'No saved price bars are available for this instrument. The position is still shown from the account record without inferring missing price history.',
         persistedPriceBoundary:
           'This read did not contact a provider or trigger a market-data refresh.',
         quoteTimestamp: 'Quote Timestamp',
@@ -862,9 +862,9 @@ export const copy = {
         price: 'Price',
         note: 'Note',
         refreshQuote: 'Refresh this quote',
-        quoteRefreshTitle: 'Ingest newer quote evidence',
+        quoteRefreshTitle: 'Refresh quote evidence',
         quoteRefreshDetail:
-          'This explicit command may contact the configured market-data provider and persist an audited refresh result for this instrument.',
+          'This controlled action may contact the configured market-data source and records an auditable result for this instrument.',
         quoteRefreshBoundary:
           'It does not rewrite the ledger, recalculate account facts in the UI, or grant trading authority',
         refreshingQuote: 'Refreshing quote…',
@@ -928,7 +928,7 @@ export const copy = {
       loading: 'Loading risk control center.',
       error: 'Failed to load risk control center.',
       refreshError:
-        'Some risk data could not be refreshed. Showing the last successful persisted projection; review data status before acting.',
+        'Some risk data could not be refreshed. Showing the latest successful risk record; review data status before acting.',
       decisionHandoffKicker: 'Decision handoff',
       decisionHandoffTitle: 'Run pre-trade risk gate for candidates',
       decisionHandoffDetail: (candidates: number, checked: number) =>
@@ -948,8 +948,8 @@ export const copy = {
       alerts: 'Active alerts',
       blockingRegister: 'Active risk priorities',
       blockingRegisterDetail:
-        'Only persisted warning and blocked states are promoted here; normal boundaries stay quiet.',
-      noBlockingItems: 'No persisted warning or blocked risk states.',
+        'Only warning and blocked risk states appear here; normal boundaries stay quiet.',
+      noBlockingItems: 'No warning or blocked risk states are recorded.',
       clearsWithNewProjection:
         'A newer risk record confirms a lower-severity state.',
       nextStep: 'Suggested next step',
@@ -1159,7 +1159,7 @@ export const copy = {
         kicker: 'Manual review',
         title: 'Trading review',
         subtitle:
-          'Review persisted manual-order evidence and record the operator decision. This page does not submit broker orders.',
+          'Review the recorded manual-order evidence and capture the operator decision. This page does not submit broker orders.',
         statusCheck: 'Status check',
         operatingMode: 'Operating mode',
         manualDefault: 'Manual confirmation default',
@@ -1526,7 +1526,7 @@ export const copy = {
           'Review after-cost, OOS, risk, simulation, Account Truth, and attribution gates.',
         researchArchiveTitle: 'AI research and saved reports',
         researchArchiveDetail:
-          'Human-started AI tasks and canonical saved experiments remain research-only evidence.',
+          'AI tasks start only when you request them, and saved experiments remain research evidence only.',
         accountStrategyKicker: 'Account strategy',
         accountStrategyTitle: 'Current account strategy',
         accountStrategyDetail:
@@ -2181,7 +2181,7 @@ export const copy = {
       refreshConfirmedFundNav: 'Sync confirmed NAV',
       refreshingConfirmedFundNav: 'Syncing confirmed NAV',
       confirmedFundNavRefreshComplete: (count: number) =>
-        `${count} confirmed fund NAV${count === 1 ? '' : 's'} persisted`,
+        `${count} confirmed fund NAV${count === 1 ? '' : 's'} recorded`,
       confirmedFundNavRefreshPartial: (refreshed: number, failed: number) =>
         `${refreshed} confirmed, ${failed} still need review`,
       confirmedFundNavRefreshUnavailable:
@@ -2189,12 +2189,12 @@ export const copy = {
       confirmedFundNavRefreshInProgress:
         'The same audited ingestion run is still in progress.',
       confirmedFundNavIdempotentReplay:
-        'Repeated request: reused the persisted audit run without contacting the data source again.',
+        'Repeated request: reused the existing audited refresh without contacting the data source again.',
       confirmedFundNavRefreshFailed: 'Confirmed NAV ingestion failed',
       confirmedFundNavAuditRun: 'Audit run',
       holdingEvidenceReview: 'Current holding evidence review',
       holdingEvidenceReviewDetail:
-        'Only canonical non-zero holdings are included. A review clears only after newer persisted quote or NAV evidence is confirmed.',
+        'Only current non-zero holdings from the account record are included. A review clears only after newer confirmed quote or NAV evidence is recorded.',
       holdingEvidenceReviewComplete:
         'All current holdings have confirmed market evidence.',
       holdingEvidenceReviewEmpty: 'There are no current holdings to review.',
@@ -2214,31 +2214,31 @@ export const copy = {
       holdingEvidenceReasonLabel: 'Evidence gap',
       holdingEvidenceClearingConditionLabel: 'Clearing condition',
       holdingEvidenceSafeNextStepLabel: 'Safe next step',
-      holdingEvidenceEvidenceLabel: 'Persisted evidence',
+      holdingEvidenceEvidenceLabel: 'Recorded evidence',
       holdingEvidenceClearingCondition:
-        'A newer persisted confirmed quote or NAV must replace this evidence.',
+        'A newer confirmed quote or NAV must replace this record.',
       holdingEvidenceBlocksAuthoritativeDecisions:
         'Authoritative decisions remain blocked for this holding.',
       holdingEvidenceIdentityBlockedStatus: 'Identity blocked',
       holdingEvidenceIdentityTitle: 'Valuation identity',
       holdingEvidenceIdentityReason:
-        'The persisted snapshot is missing required valuation, ledger, or quote-set identity.',
+        'The saved snapshot is missing required valuation, ledger, or quote-set identity.',
       holdingEvidenceIdentityClearingCondition:
-        'Persist and validate a complete snapshot binding before reviewing quote evidence.',
+        'Save and validate a complete snapshot binding before reviewing quote evidence.',
       holdingEvidenceIdentityNextAction:
-        'Restore the missing persisted identity in Account Truth.',
+        'Restore the missing snapshot identity in Account Truth.',
       holdingEvidenceIdentityEvidence: (count: number) =>
         `${count} required identity field${count === 1 ? ' is' : 's are'} missing`,
       holdingEvidenceReasons: {
         confirmed_nav_missing:
-          'Confirmed NAV has not been published or persisted.',
+          'Confirmed NAV has not been published or recorded.',
         estimated_quote_not_authoritative:
           'The estimated quote is not authoritative market evidence.',
         quote_stale_or_cached:
-          'The persisted quote is stale or bound to cached evidence.',
-        quote_missing_or_error: 'No usable persisted quote is available.',
+          'The recorded quote is stale or bound to cached evidence.',
+        quote_missing_or_error: 'No usable recorded quote is available.',
         quote_status_not_confirmed:
-          'The persisted quote status is not recognized as confirmed.',
+          'The recorded quote status is not recognized as confirmed.',
       },
       holdingEvidenceExplicitRefresh:
         'This button performs an explicit ingestion run. It may contact the configured market-data source, records the batch, and does not change ledger, OMS, risk, or authority.',
@@ -2470,7 +2470,7 @@ export const copy = {
       kicker: 'Ledger',
       title: 'Ledger history',
       subtitle:
-        'Review persisted ledger activity first. New trades, cash flows, dividends, and adjustments remain explicit controlled entries.',
+        'Review the account ledger first. New trades, cash movements, dividends, and adjustments are added only through explicit, controlled actions.',
       loading: 'Loading ledger activity.',
       error: 'Failed to load ledger activity.',
       tradeSaved: 'Trade saved',
@@ -2499,7 +2499,7 @@ export const copy = {
         detail:
           'Preview public ledger impact before writing to the local ledger, then refresh the portfolio path.',
         boundary:
-          'Explicit submit writes a persisted ledger entry. It does not place a broker order or grant trading authority.',
+          'Submitting writes the reviewed entry to the account ledger. It never places a broker order or grants trading authority.',
         ariaLabel: 'Ledger entry tool selector',
       },
       feed: {
@@ -2710,17 +2710,17 @@ export const copy = {
       kicker: 'Settings',
       title: 'Control center',
       subtitle:
-        'Configure persisted defaults, inspect runtime state, and review safety boundaries without changing trading authority.',
+        'Manage saved defaults, review service status, and verify safety boundaries without changing trading authority.',
       dataStatus: 'Data status',
       dataStatusDetail:
         'Portfolio valuations follow the recorded quote state and refresh policy.',
       refreshActionDetail:
-        'Runs explicit quote ingestion and updates persisted quote evidence. It does not write ledger entries or submit orders.',
-      refreshActionEvidence: 'Explicit ingestion · persisted quote cache',
+        'Starts a controlled quote refresh and records the result. It does not write ledger entries or submit orders.',
+      refreshActionEvidence: 'Controlled refresh · recorded quote cache',
       reviewRefreshControls: 'Review controlled refresh',
       liveServices: 'Live services',
       liveServicesDetail:
-        'Shows background data polling and interface readiness; it does not change trading authority.',
+        'Shows scheduled quote updates and service readiness; it does not change trading authority.',
       preferences: 'Preferences',
       preferencesDetail:
         'Theme and language are local browser preferences for this platform.',
@@ -2753,7 +2753,7 @@ export const copy = {
       providerSupportsFunds: 'Fund support',
       providerRequiresToken: 'Token required',
       metadataConfigured: 'Asset metadata',
-      persistentCache: 'Persistent cache',
+      persistentCache: 'Local quote cache',
       lastSuccessfulSync: 'Last successful sync',
       providerNextAction: 'Next action',
       providerAkshare: 'AKShare',
@@ -2761,13 +2761,13 @@ export const copy = {
       selectDataSource: 'Select data source',
       providerTimeoutNotice: 'The configured quote source is timing out.',
       operationsRegister: 'Operations register',
-      registerProvider: 'Provider',
+      registerProvider: 'Quote source',
       registerPollInterval: 'Poll interval',
       registerTrackedAssets: 'Tracked assets',
       registerStrategy: 'Strategy',
-      providerConfiguration: 'Provider configuration',
+      providerConfiguration: 'Quote source configuration',
       providerConfigurationDetail:
-        'Data-source changes stay explicit and do not alter execution behavior.',
+        'Data-source changes take effect only after you save them and do not alter execution behavior.',
       metadataReadiness: 'Metadata readiness',
       metadataReadinessDetail:
         'Asset names and quote symbols must have traceable identities before display.',
@@ -2778,7 +2778,7 @@ export const copy = {
       capabilityStockRealtime: 'Stock realtime',
       capabilityStockDaily: 'Stock daily',
       capabilityFundEstimate: 'Eastmoney fund estimate',
-      capabilityPersistentCache: 'Persistent cache',
+      capabilityPersistentCache: 'Local quote cache',
       tusharePermissions: 'TuShare permissions',
       fundFallback: 'Fund backup quote',
       eastmoneyFundEstimate: 'Eastmoney fund estimate',
@@ -2793,13 +2793,13 @@ export const copy = {
       available: 'Available',
       assetMetadataMissing: 'Asset metadata is not configured',
       assetMetadataMissingDetail:
-        'Complete missing asset names and quote symbols in local persisted metadata. Keep private runtime configuration local.',
+        'Complete missing asset names and quote symbols in locally saved metadata. Keep private runtime configuration local.',
       assetMetadataDetail:
-        'Asset identity comes from persisted metadata rather than temporary runtime inference.',
+        'Asset identity comes from saved metadata rather than temporary runtime state.',
       assetMetadataMissingCount: 'Missing metadata',
       assetMetadataSource: 'Metadata source',
-      assetMetadataSourcePersisted: 'Persisted register and watchlist',
-      assetMetadataSourceLocal: 'Local persisted configuration',
+      assetMetadataSourcePersisted: 'Saved register and watchlist',
+      assetMetadataSourceLocal: 'Local saved configuration',
       assetMetadataSourceProvided: 'System-provided metadata',
       assetMetadataMissingSymbols: 'Assets missing metadata',
       assetMetadataSnippet: 'Suggested config snippet',
@@ -2819,7 +2819,7 @@ export const copy = {
       credentialConfigured: 'Configured in the runtime environment',
       credentialMissing:
         'Missing; configure the runtime credential before switching',
-      credentialNotRequired: 'Not required by the selected provider',
+      credentialNotRequired: 'Not required by the selected quote source',
       credentialEnvironmentDetail:
         'This page never accepts or displays credentials. Configure the runtime environment and restart Karkinos.',
       accountCostProfile: 'Account cost profile',
@@ -2849,7 +2849,7 @@ export const copy = {
       brokerDegraded: 'Interface not running',
       runtimeBoundary: 'Runtime boundary',
       schedulerBoundaryDetail:
-        'Background polling refreshes market and service state; it does not submit orders.',
+        'The scheduler updates quotes and service status on its configured interval. It never submits orders.',
       executionDefault: 'Execution default',
       manualConfirmation: 'Manual confirmation',
       manualConfirmationRequired: 'Manual confirmation required',
@@ -2867,9 +2867,9 @@ export const copy = {
       stopScheduler: 'Stop scheduler',
       updatingScheduler: 'Updating scheduler',
       schedulerUpdateFailed: 'Failed to update scheduler state',
-      backendSettings: 'Persisted configuration',
+      backendSettings: 'Saved configuration',
       persistedSettingsDetail:
-        'Non-secret account and data defaults are persisted here; credentials stay in the runtime environment.',
+        'Non-secret account and data defaults are saved here. Credentials remain in the local runtime environment.',
       assetsTracked: (count: number) => `${count} tracked assets`,
       initialCash: 'Initial cash',
       strategy: 'Strategy',
@@ -2896,7 +2896,7 @@ export const copy = {
         'Keep broker tokens, account exports, and real statements out of public repositories.',
       deferred: 'Deferred',
       deferredDetail:
-        'AI research providers, evidence-ingestion policy, broker credentials, and notification editing remain environment- or config-owned until reviewed controls exist.',
+        'AI research services, evidence collection rules, broker credentials, and notification delivery remain managed outside this page until reviewed controls are available.',
     },
     placeholder: 'This page is still under construction.',
   },
@@ -2925,7 +2925,7 @@ export const copy = {
       commandResults: '工作台页面',
       commandEmpty: '没有匹配的页面。',
       closeCommand: '关闭命令菜单',
-      persistedEvidence: '持久化证据',
+      persistedEvidence: '已记录证据',
       toolbarTitle: '全局工具栏',
       toolbarSubtitle: '把偏好设置与组合状态统一收口，避免页面级分散控制。',
       accountStatus: '账户状态',
@@ -3008,14 +3008,14 @@ export const copy = {
       kicker: '运营',
       title: '运行证据中心',
       subtitle:
-        '查看持久化子系统证据、安全下一步，以及每个复核项的精确解除条件。',
-      loading: '正在读取权威运营投影。',
-      error: '运行证据投影读取失败。',
+        '查看各子系统已记录的证据、安全下一步，以及每个复核项的解除条件。',
+      loading: '正在加载运行证据。',
+      error: '运行证据加载失败。',
       retry: '重新读取',
-      projectionBlocked: '运行证据契约已阻断',
+      projectionBlocked: '运行证据暂不可用',
       projectionBlockedDetail:
-        '响应或复核项越过只读安全边界，当前不提供下钻动作。',
-      readOnly: '只读投影',
+        '返回的证据未通过只读安全校验，因此暂不提供详情。',
+      readOnly: '仅查看',
       providerFree: '未联系外部服务',
       noAuthority: '无执行权限',
       attentionQueue: '证据复核队列',
@@ -3027,18 +3027,18 @@ export const copy = {
       status: '状态',
       evidenceStatus: '证据状态',
       observedAt: '证据时间',
-      projectedAt: '投影时间',
+      projectedAt: '记录时间',
       nextAction: '安全下一步',
-      resolution: '证据解除条件',
+      resolution: '解除条件',
       fingerprint: '任务指纹',
       openEvidence: '打开证据',
       reviewDetails: '查看详情',
       evidenceDetail: '证据详情',
       evidenceDetailDescription:
-        '复核持久化原因、解除条件、安全下一步与技术身份。',
+        '查看该事项为何未解除、解除条件、安全下一步和审计标识。',
       closeEvidenceDetail: '关闭证据详情',
       technicalIdentity: '技术身份',
-      noTimestamp: '没有持久化观察时间',
+      noTimestamp: '暂无记录时间',
       viewingDoesNotClear: '仅查看或确认该事项不会清除源状态。',
       limitations: '限制',
       noLimitations: '未记录额外限制。',
@@ -3049,7 +3049,7 @@ export const copy = {
       manualReview: '人工复核',
       skipped: '跳过',
       sourceBoundary:
-        '本页只读取已持久化事实；不会刷新外部服务、提交或撤销订单，也不会改动订单管理、账本、风控、紧急停止或资本授权。',
+        '本页只读取已记录事实；不会联系外部服务、提交或撤销订单，也不会改动账本、风控、紧急停止或资本授权。',
     },
     states: {
       loading: '加载中',
@@ -3063,7 +3063,7 @@ export const copy = {
       genericSubmitError: '请求失败，请检查录入内容或系统状态。',
       viewEvidenceIdentity: '查看证据身份',
       evidenceIdentityTitle: '证据身份',
-      evidenceIdentityDescription: '完整持久化标识仅在此用于审计与确定性复现。',
+      evidenceIdentityDescription: '完整证据标识仅在此用于审计与可复现复核。',
       closeEvidenceIdentity: '关闭证据身份',
       copyEvidenceValue: (label: string) => `复制${label}`,
       evidenceValueCopied: (label: string) => `已复制${label}`,
@@ -3553,9 +3553,9 @@ export const copy = {
         quoteStatus: '行情与数据状态',
         marketEvidence: '市场证据',
         marketEvidenceDetail:
-          '展示该标的持久化行情来源与新鲜度；读取本页不会联系数据提供方。',
+          '展示该标的已记录行情来源与新鲜度；打开本页不会联系数据源。',
         ledgerTrace: '流水轨迹',
-        productionLedgerOnly: '仅持久化账户账本',
+        productionLedgerOnly: '仅账户账本记录',
         riskExposure: '风险暴露',
         relatedActions: '相关操作',
         strategyAttributionBoundary: '策略归因边界',
@@ -3678,19 +3678,19 @@ export const copy = {
           reviewHistory: '复核保留的账本流水与已实现盈亏。',
           reloadIdentity: '重新读取并确认同一估值快照和账本截止。',
           reconcileCost: '到账户事实页复核成本证据。',
-          reviewQuote: '到 Market 复核持久化行情证据。',
+          reviewQuote: '到 Market 复核已记录的行情证据。',
           none: '当前无需额外人工操作。',
         },
         chartBuyMarker: '买入',
         chartSellMarker: '卖出',
         chartLocalCostLine: '本地移动平均成本',
-        chartEvidenceCostLine: '持久化证据成本',
-        positionFacts: '权威持仓事实',
+        chartEvidenceCostLine: '证据成本',
+        positionFacts: '持仓事实',
         positionFactsDetail:
-          '即使没有可用的历史价格，数量状态仍来自持久化组合投影并继续可见。',
+          '即使没有价格历史，持仓数量仍来自账户记录并继续可见。',
         priceStructureMissing: '价格证据缺失',
         priceStructureMissingDetail:
-          '当前标的没有持久化 K 线；页面继续展示权威组合事实，不会据此推算价格历史。',
+          '当前标的没有已保存 K 线；页面仍展示账户持仓事实，不会推算缺失的价格历史。',
         persistedPriceBoundary:
           '本次读取没有联系数据提供方，也没有触发行情刷新。',
         quoteTimestamp: '行情时间',
@@ -3712,9 +3712,9 @@ export const copy = {
         price: '价格',
         note: '备注',
         refreshQuote: '刷新该标的行情',
-        quoteRefreshTitle: '摄取更新的行情证据',
+        quoteRefreshTitle: '刷新行情证据',
         quoteRefreshDetail:
-          '这是显式命令，可能联系已配置的数据提供方，并为该标的持久化一条可审计刷新结果。',
+          '这是受控操作，可能联系已配置的数据源，并记录一条可审计的刷新结果。',
         quoteRefreshBoundary: '不会改写账本、在 UI 重算账户事实或授予交易权限',
         refreshingQuote: '正在刷新行情…',
         refreshDone: '行情刷新请求已完成。',
@@ -3727,7 +3727,7 @@ export const copy = {
         actionViewActivity: '查看历史流水',
         actionPortfolio: '查看全部持仓',
         reconciliationTitle: '对账证据',
-        reconciliationStateTitle: '权威身份与成本对齐',
+        reconciliationStateTitle: '证据身份与成本对齐',
         reconciliationDetail:
           '只读核对估值快照、账本截止、行情证据与成本状态；本视图不会执行对账或修改账户事实。',
         actionAccountTruth: '打开账户事实复核',
@@ -3772,7 +3772,7 @@ export const copy = {
       loading: '正在加载风控中心。',
       error: '风控中心加载失败。',
       refreshError:
-        '部分风控数据暂时无法刷新。当前显示最近一次成功加载的持久化投影，继续操作前请复核数据状态。',
+        '部分风控数据暂时无法刷新。当前显示最近一次成功记录；继续操作前请复核数据状态。',
       decisionHandoffKicker: '决策交接',
       decisionHandoffTitle: '候选动作需要下单前风控',
       decisionHandoffDetail: (candidates: number, checked: number) =>
@@ -3789,9 +3789,8 @@ export const copy = {
       returnToDecision: '回到决策平台',
       alerts: '当前风险提示',
       blockingRegister: '当前风险优先项',
-      blockingRegisterDetail:
-        '这里只提升持久化的警告与阻断状态；正常边界保持安静。',
-      noBlockingItems: '当前没有持久化的警告或阻断风险状态。',
+      blockingRegisterDetail: '这里只展示警告与阻断状态；正常边界保持安静。',
+      noBlockingItems: '当前没有已记录的警告或阻断状态。',
       clearsWithNewProjection: '更新后的风险记录确认严重度已降低时解除。',
       nextStep: '建议动作',
       equityBridge: '净值桥',
@@ -3990,7 +3989,7 @@ export const copy = {
         kicker: '人工复核',
         title: '交易复核',
         subtitle:
-          '复核已落库的人工订单证据并记录操作决定；本页不会向券商提交订单。',
+          '复核已记录的人工订单证据并登记操作决定；本页不会向券商提交订单。',
         statusCheck: '状态检查',
         operatingMode: '运行模式',
         manualDefault: '默认人工确认',
@@ -4334,7 +4333,7 @@ export const copy = {
           '复核扣费后、样本外、风控、模拟、账户事实与归因闸门。',
         researchArchiveTitle: 'AI 研究与已保存报告',
         researchArchiveDetail:
-          '人工启动的 AI 任务与权威持久化实验仍然只是研究证据。',
+          'AI 任务只会在你明确发起后运行；已保存的实验仍仅作为研究证据。',
         accountStrategyKicker: '账户策略',
         accountStrategyTitle: '当前账户策略',
         accountStrategyDetail:
@@ -4967,19 +4966,19 @@ export const copy = {
       refreshConfirmedFundNav: '同步确认净值',
       refreshingConfirmedFundNav: '正在同步确认净值',
       confirmedFundNavRefreshComplete: (count: number) =>
-        `已持久化 ${count} 个基金的确认净值`,
+        `${count} 个基金确认净值已记录`,
       confirmedFundNavRefreshPartial: (refreshed: number, failed: number) =>
         `${refreshed} 个已确认，${failed} 个仍需复核`,
       confirmedFundNavRefreshUnavailable:
         '暂未取得当日确认净值，复核项继续保留。',
       confirmedFundNavRefreshInProgress: '同一审计采集批次仍在运行中。',
       confirmedFundNavIdempotentReplay:
-        '重复请求已复用持久化审计批次，未再次联系数据源。',
+        '重复请求已复用原审计批次，未再次联系数据源。',
       confirmedFundNavRefreshFailed: '确认净值采集失败',
       confirmedFundNavAuditRun: '审计批次',
       holdingEvidenceReview: '当前持仓证据复核',
       holdingEvidenceReviewDetail:
-        '仅纳入权威持久化投影中的非零当前持仓；只有更新且已确认的持久化行情或净值证据才能清除复核项。',
+        '仅纳入账户记录中的非零当前持仓；只有更新且已确认的行情或净值证据才能解除复核。',
       holdingEvidenceReviewComplete: '所有当前持仓均已有确认行情证据。',
       holdingEvidenceReviewEmpty: '当前没有需要复核的持仓。',
       holdingEvidenceReviewUnavailable: '当前持仓权威证据报告暂不可用。',
@@ -4996,25 +4995,25 @@ export const copy = {
       holdingEvidenceReasonLabel: '证据缺口',
       holdingEvidenceClearingConditionLabel: '解除条件',
       holdingEvidenceSafeNextStepLabel: '安全下一步',
-      holdingEvidenceEvidenceLabel: '持久化证据',
+      holdingEvidenceEvidenceLabel: '已记录证据',
       holdingEvidenceClearingCondition:
-        '必须由更新且已确认的持久化行情或净值证据替代后才能解除。',
+        '必须由更新且已确认的行情或净值证据替代。',
       holdingEvidenceBlocksAuthoritativeDecisions: '该持仓仍不能用于权威决策。',
       holdingEvidenceIdentityBlockedStatus: '身份阻断',
       holdingEvidenceIdentityTitle: '估值身份',
       holdingEvidenceIdentityReason:
-        '持久化快照缺少必需的估值、账本或行情集身份。',
+        '已保存快照缺少必需的估值、账本或行情集标识。',
       holdingEvidenceIdentityClearingCondition:
-        '必须先持久化并验证完整的快照绑定，才能继续复核行情证据。',
-      holdingEvidenceIdentityNextAction: '前往账户事实页恢复缺失的持久化身份。',
+        '必须先保存并验证完整的快照绑定，才能继续复核行情证据。',
+      holdingEvidenceIdentityNextAction: '前往账户事实页恢复缺失的快照标识。',
       holdingEvidenceIdentityEvidence: (count: number) =>
         `${count} 个必需身份字段缺失`,
       holdingEvidenceReasons: {
-        confirmed_nav_missing: '确认净值尚未发布或持久化。',
+        confirmed_nav_missing: '确认净值尚未发布或记录。',
         estimated_quote_not_authoritative: '估算行情不属于权威行情证据。',
-        quote_stale_or_cached: '持久化行情已过期或仍受缓存证据约束。',
-        quote_missing_or_error: '当前没有可用的持久化行情。',
-        quote_status_not_confirmed: '持久化行情状态尚未被识别为已确认。',
+        quote_stale_or_cached: '已记录行情已过期或仍受缓存证据约束。',
+        quote_missing_or_error: '当前没有可用的已记录行情。',
+        quote_status_not_confirmed: '已记录行情状态尚未被识别为已确认。',
       },
       holdingEvidenceExplicitRefresh:
         '该按钮会显式采集行情：可能联系已配置的行情源并记录批次，但不会修改账本、订单状态、风控或任何权限。',
@@ -5055,7 +5054,7 @@ export const copy = {
         '这里只展示关注列表与当前持仓研究，不代表大盘表现，也不等同于个人组合贡献。',
       noSelection: '先选择或新增一个标的，再开始研究。',
       noChart: '当前标的没有可用的价格结构数据。',
-      klineLoading: '正在读取持久化价格结构',
+      klineLoading: '正在读取已保存价格历史',
       klineLoadingDetail:
         '正在等待当前标的的已保存 K 线，尚不能判定为数据缺失。',
       klineError: '价格结构加载失败',
@@ -5225,7 +5224,7 @@ export const copy = {
       kicker: '账本',
       title: '账本流水',
       subtitle:
-        '优先复核持久化账本历史；交易、资金流水、分红和调整仍通过明确受控入口新增。',
+        '先核对账户账本；交易、资金流水、分红和调整只能通过明确受控的入口新增。',
       loading: '正在加载账本流水。',
       error: '账本流水加载失败。',
       tradeSaved: '交易已保存',
@@ -5253,7 +5252,7 @@ export const copy = {
         boundaryTitle: '账本写入边界',
         detail: '写入本地账本前，先预览公开账本影响，再刷新组合路径。',
         boundary:
-          '仅在明确提交后写入持久化账本；不会向券商下单，也不会授予交易权限。',
+          '确认提交后才会写入账户账本；不会向券商下单，也不会授予交易权限。',
         ariaLabel: '流水录入工具选择',
       },
       feed: {
@@ -5463,15 +5462,15 @@ export const copy = {
       kicker: '设置',
       title: '控制中心',
       subtitle:
-        '配置持久化默认值、检查运行状态并复核安全边界，不改变交易权限。',
+        '管理已保存的默认配置、检查服务状态并复核安全边界，不改变交易权限。',
       dataStatus: '数据状态',
       dataStatusDetail: '组合估值以已记录的行情状态和刷新策略为准。',
       refreshActionDetail:
-        '显式执行行情摄取并更新持久化行情证据；不会写入账本，也不会提交订单。',
-      refreshActionEvidence: '显式摄取 · 持久化行情缓存',
+        '主动刷新行情并记录结果；不会写入账本，也不会提交订单。',
+      refreshActionEvidence: '受控刷新 · 已记录行情缓存',
       reviewRefreshControls: '查看受控刷新入口',
       liveServices: '服务状态',
-      liveServicesDetail: '展示后台数据轮询与接口就绪状态；不会改变交易权限。',
+      liveServicesDetail: '展示定时行情更新与服务就绪状态；不会改变交易权限。',
       preferences: '偏好设置',
       preferencesDetail: '主题和语言是当前浏览器的本地偏好。',
       notifications: '通知',
@@ -5501,7 +5500,7 @@ export const copy = {
       providerSupportsFunds: '基金支持',
       providerRequiresToken: '需要凭证',
       metadataConfigured: '资产元数据',
-      persistentCache: '持久化缓存',
+      persistentCache: '本地行情缓存',
       lastSuccessfulSync: '最近成功同步',
       providerNextAction: '下一步',
       providerAkshare: 'AKShare',
@@ -5514,7 +5513,8 @@ export const copy = {
       registerTrackedAssets: '跟踪资产',
       registerStrategy: '策略',
       providerConfiguration: '行情源配置',
-      providerConfigurationDetail: '数据源变更保持显式，不改变交易执行行为。',
+      providerConfigurationDetail:
+        '只有保存后才会应用数据源变更；不会改变交易执行行为。',
       metadataReadiness: '元数据就绪',
       metadataReadinessDetail: '资产名称与行情代码在展示前必须具有可追溯身份。',
       dataSourceOperations: '数据源运营',
@@ -5524,7 +5524,7 @@ export const copy = {
       capabilityStockRealtime: '股票实时',
       capabilityStockDaily: '股票日线',
       capabilityFundEstimate: 'Eastmoney 基金估算',
-      capabilityPersistentCache: '持久化缓存',
+      capabilityPersistentCache: '本地行情缓存',
       tusharePermissions: 'TuShare 权限',
       fundFallback: '基金备用行情',
       eastmoneyFundEstimate: 'Eastmoney 基金估算',
@@ -5539,12 +5539,13 @@ export const copy = {
       available: '可用',
       assetMetadataMissing: '尚未配置资产元数据',
       assetMetadataMissingDetail:
-        '在本地持久化元数据中补齐缺少的资产名称与行情代码；私有运行配置继续留在本地。',
-      assetMetadataDetail: '资产身份以持久化元数据为准，不从临时运行状态推断。',
+        '在本地保存的元数据中补齐缺少的资产名称与行情代码；私有运行配置继续留在本机。',
+      assetMetadataDetail:
+        '资产身份以已保存元数据为准，不根据临时运行状态推断。',
       assetMetadataMissingCount: '缺失元数据',
       assetMetadataSource: '元数据来源',
-      assetMetadataSourcePersisted: '持久化登记与关注列表',
-      assetMetadataSourceLocal: '本地持久化配置',
+      assetMetadataSourcePersisted: '已保存登记与关注列表',
+      assetMetadataSourceLocal: '本地已保存配置',
       assetMetadataSourceProvided: '系统补充的元数据',
       assetMetadataMissingSymbols: '缺少元数据的资产',
       assetMetadataSnippet: '建议配置片段',
@@ -5590,7 +5591,8 @@ export const copy = {
       brokerReady: '接口状态可用',
       brokerDegraded: '接口未运行',
       runtimeBoundary: '运行边界',
-      schedulerBoundaryDetail: '后台轮询刷新行情与服务状态；它不会提交订单。',
+      schedulerBoundaryDetail:
+        '调度器按设定间隔更新行情与服务状态；不会提交订单。',
       executionDefault: '执行默认值',
       manualConfirmation: '人工确认',
       manualConfirmationRequired: '必须人工确认',
@@ -5607,9 +5609,9 @@ export const copy = {
       stopScheduler: '停止调度器',
       updatingScheduler: '更新调度器',
       schedulerUpdateFailed: '调度器状态更新失败',
-      backendSettings: '持久化配置',
+      backendSettings: '已保存配置',
       persistedSettingsDetail:
-        '账户与数据的非敏感默认值在此持久化；凭证继续由运行环境管理。',
+        '账户与数据的非敏感默认值保存在这里；凭证仍由本地运行环境管理。',
       assetsTracked: (count: number) => `${count} 个跟踪资产`,
       initialCash: '初始现金',
       strategy: '策略',
@@ -5635,7 +5637,7 @@ export const copy = {
       safetyPrivateData: '券商凭证、账户导出和真实对账单不应进入公开仓库。',
       deferred: '暂缓项',
       deferredDetail:
-        'AI 研究服务、证据采集策略、券商凭证和通知编辑，在受控界面完成评审前继续由运行环境或配置文件管理。',
+        'AI 研究服务、证据采集规则、券商凭证和通知投递，在受控界面通过评审前仍在本页之外管理。',
     },
     placeholder: '这个页面还在继续建设中。',
   },

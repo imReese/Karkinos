@@ -140,16 +140,16 @@ export function operationsAttentionResolutionLabel(
 ) {
   const labels: Record<string, { en: string; zh: string }> = {
     new_complete_market_evidence_required: {
-      en: 'new complete market evidence is persisted',
-      zh: '新的完整行情证据已持久化',
+      en: 'new complete market evidence is recorded',
+      zh: '新的完整行情证据已记录',
     },
     new_complete_account_truth_evidence_required: {
-      en: 'new complete Account Truth evidence is persisted',
-      zh: '新的完整 Account Truth 证据已持久化',
+      en: 'new complete Account Truth evidence is recorded',
+      zh: '新的完整 Account Truth 证据已记录',
     },
     candidate_strategy_evidence_must_pass: {
-      en: 'candidate strategy evidence passes the canonical gate',
-      zh: '候选策略证据通过权威门禁',
+      en: 'candidate strategy evidence passes the required review',
+      zh: '候选策略证据通过规定复核',
     },
     new_daily_plan_with_deterministic_risk_pass_required: {
       en: 'a new daily plan passes deterministic risk gates',
@@ -164,20 +164,20 @@ export function operationsAttentionResolutionLabel(
       zh: '显式人工订单复核证据已记录',
     },
     new_paper_shadow_run_evidence_required: {
-      en: 'a new paper/shadow run is persisted',
-      zh: '新的模拟与影子检验证据已持久化',
+      en: 'a new simulation review run is recorded',
+      zh: '新的模拟与影子检验证据已记录',
     },
     current_paper_shadow_run_must_reach_terminal_evidence: {
-      en: 'the current paper/shadow run reaches a terminal evidence state',
+      en: 'the current simulation review reaches a final evidence state',
       zh: '当前模拟与影子检验形成终态证据',
     },
     accepted_paper_shadow_review_evidence_required: {
-      en: 'accepted paper/shadow review evidence is recorded',
+      en: 'accepted simulation review evidence is recorded',
       zh: '模拟与影子检验复核形成明确的接受证据',
     },
     new_terminal_paper_shadow_run_evidence_required: {
-      en: 'a new terminal paper/shadow run is persisted',
-      zh: '新的模拟与影子检验终态证据已持久化',
+      en: 'a new final simulation review is recorded',
+      zh: '新的模拟与影子检验终态证据已记录',
     },
     new_recognized_terminal_scheduler_run_required: {
       en: 'a new scheduler run reaches a recognized terminal status',

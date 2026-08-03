@@ -49,6 +49,23 @@ test('keeps static user-facing copy free of frontend and backend jargon', () => 
   expect(userFacingCopy).not.toMatch(/\b(?:back|front)end\b|后端|前端/iu);
 });
 
+test('keeps primary product copy free of storage and projection jargon', () => {
+  const primaryProductCopy = collectStaticText([
+    copy.en.operationsPage,
+    copy.zh.operationsPage,
+    copy.en.activity,
+    copy.zh.activity,
+    copy.en.settings,
+    copy.zh.settings,
+    copy.en.portfolio.detail,
+    copy.zh.portfolio.detail,
+  ]).join('\n');
+
+  expect(primaryProductCopy).not.toMatch(
+    /canonical Operations projection|persisted subsystem|read-only projection|evidence condition to clear|explicit ingestion|持久化子系统|权威运营投影|只读投影|证据解除条件|显式摄取/iu,
+  );
+});
+
 test('keeps the primary portfolio path free of implementation jargon', () => {
   const primaryPaths = [
     {

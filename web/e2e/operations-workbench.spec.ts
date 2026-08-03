@@ -118,6 +118,7 @@ test('Operations keeps pilot readiness and subsystem metrics visibly scoped', as
             document.documentElement.scrollWidth -
             document.documentElement.clientWidth,
           fieldTops,
+          firstAttentionExists: firstAttention !== null,
           metricOverflow: element.scrollWidth - element.clientWidth,
           labelContent: before.content.replace(/^['"]|['"]$/g, ''),
           columnCount:
@@ -161,7 +162,7 @@ test('Operations keeps pilot readiness and subsystem metrics visibly scoped', as
         geometry.readinessBeforeMetrics,
         `${theme} ${viewport.width}`,
       ).toBe(true);
-      if (viewport.width < 640) {
+      if (viewport.width < 640 && geometry.firstAttentionExists) {
         expect(
           geometry.fieldTops['reason'],
           `${theme} ${viewport.width} evidence status row`,

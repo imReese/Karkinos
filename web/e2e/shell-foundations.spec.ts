@@ -33,7 +33,7 @@ test('desktop shell defaults to labeled business groups and remains collapsible'
     } else {
       await expect(page.locator('.app-toolbar-state')).toBeHidden();
     }
-    await expect(statusFooter).toContainText('Persisted evidence');
+    await expect(statusFooter).toContainText('Recorded evidence');
     await expect(
       page.getByRole('button', { name: /Refresh quotes: Market/ }),
     ).toHaveCount(0);

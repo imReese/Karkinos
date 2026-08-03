@@ -427,9 +427,7 @@ export function OperationsPage() {
                 id="operations-timeline-heading"
                 className="app-type-section-title text-[var(--app-text)]"
               >
-                {locale === 'zh'
-                  ? '持久化证据时间线'
-                  : 'Persisted evidence timeline'}
+                {locale === 'zh' ? '证据历史' : 'Evidence history'}
               </h2>
               <p className="mt-0.5 text-xs text-[var(--app-text-secondary)]">
                 {labels.sourceBoundary}
@@ -438,14 +436,12 @@ export function OperationsPage() {
             <EvidenceState
               kind="empty"
               title={
-                locale === 'zh'
-                  ? '暂无权威历史事件'
-                  : 'No canonical history events'
+                locale === 'zh' ? '暂无历史事件' : 'No history events recorded'
               }
               description={
                 locale === 'zh'
-                  ? '当前投影只包含子系统最新状态；不会把它改写成不可变历史。'
-                  : 'The current projection contains latest subsystem state only; it is not rewritten as immutable history.'
+                  ? '当前只保存各子系统的最新状态，尚未形成不可变的历史记录。'
+                  : 'Only the latest state for each subsystem is available; no immutable history has been recorded yet.'
               }
             />
           </section>

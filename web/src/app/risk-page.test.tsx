@@ -596,7 +596,7 @@ test('keeps the last persisted risk projection visible when a post-run refresh f
 
   expect(
     await screen.findByText(
-      '部分风控数据暂时无法刷新。当前显示最近一次成功加载的持久化投影，继续操作前请复核数据状态。',
+      '部分风控数据暂时无法刷新。当前显示最近一次成功记录；继续操作前请复核数据状态。',
     ),
   ).toBeTruthy();
   expect((await screen.findAllByText('现金占比')).length).toBeGreaterThan(0);
