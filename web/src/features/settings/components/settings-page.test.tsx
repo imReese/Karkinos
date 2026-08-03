@@ -677,7 +677,7 @@ test('shows configured asset metadata state when no symbols are missing', async 
   expect(await screen.findByText('Asset metadata configured')).toBeTruthy();
   expect(
     await screen.findByText(
-      'Current holdings have traceable asset identities.',
+      'Current holdings have traceable names and quote symbols.',
     ),
   ).toBeTruthy();
   expect(await screen.findByText('Local saved configuration')).toBeTruthy();

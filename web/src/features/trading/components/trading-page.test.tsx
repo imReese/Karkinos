@@ -767,6 +767,10 @@ test('renders the trading approvals workspace', async () => {
   expect(await screen.findByText('Operating mode')).toBeTruthy();
   expect(await screen.findByText('Manual confirmation default')).toBeTruthy();
   expect(await screen.findByText('Broker bridge disabled')).toBeTruthy();
+  const reviewPosture = screen.getByTestId('trading-review-posture');
+  const pendingMetric = reviewPosture.querySelector('.app-type-primary-metric');
+  expect(pendingMetric?.textContent).toBe('1');
+  expect(pendingMetric?.className).not.toContain('text-3xl');
   await waitFor(() => {
     expect(
       screen

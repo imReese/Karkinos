@@ -107,7 +107,7 @@ test('renders account metrics in a compact homepage workbench layout', async () 
   expect(screen.getByText('Valuation as of 02-10 15:00')).toBeTruthy();
   expect(screen.queryByText(/valuation-private-fixture/)).toBeNull();
   await user.click(
-    screen.getByRole('button', { name: 'View evidence identity' }),
+    screen.getByRole('button', { name: 'View evidence details' }),
   );
   expect(screen.getByText('valuation-private-fixture')).toBeTruthy();
   expect(screen.getByText('42')).toBeTruthy();

@@ -577,7 +577,7 @@ export function ControlledPerOrderPilotReadinessPanel({
                   ) : locale === 'zh' ? (
                     '尚无匹配证据标识'
                   ) : (
-                    'No matching evidence identity'
+                    'No matching evidence reference'
                   ),
                 unblockCondition:
                   gate.status === 'blocked'
@@ -596,9 +596,7 @@ export function ControlledPerOrderPilotReadinessPanel({
               </div>
               <div>
                 <dt className="sr-only">
-                  {locale === 'zh'
-                    ? '技术证据身份'
-                    : 'Technical evidence identity'}
+                  {locale === 'zh' ? '技术证据标识' : 'Technical evidence ID'}
                 </dt>
                 <dd>
                   <details
@@ -608,8 +606,8 @@ export function ControlledPerOrderPilotReadinessPanel({
                     <summary className="flex cursor-pointer list-none items-center justify-between gap-2 font-medium text-[var(--app-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)]">
                       <span>
                         {locale === 'zh'
-                          ? '技术证据身份'
-                          : 'Technical evidence identity'}
+                          ? '技术证据标识'
+                          : 'Technical evidence ID'}
                       </span>
                       <span
                         aria-hidden="true"

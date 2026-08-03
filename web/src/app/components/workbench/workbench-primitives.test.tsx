@@ -31,8 +31,8 @@ test('keeps full evidence identifiers behind an explicit disclosure', async () =
 
   render(
     <EvidenceIdentityDisclosure
-      triggerLabel="View evidence identity"
-      title="Evidence identity"
+      triggerLabel="View evidence details"
+      title="Evidence details"
       description="Persisted audit identity"
       closeLabel="Close evidence identity"
       copyLabel={(label) => `Copy ${label}`}
@@ -50,12 +50,10 @@ test('keeps full evidence identifiers behind an explicit disclosure', async () =
 
   expect(screen.queryByText('valuation-private-full-identity')).toBeNull();
   await user.click(
-    screen.getByRole('button', { name: 'View evidence identity' }),
+    screen.getByRole('button', { name: 'View evidence details' }),
   );
   expect(screen.getByText('valuation-private-full-identity')).toBeTruthy();
-  expect(
-    screen.getByRole('dialog', { name: 'Evidence identity' }),
-  ).toBeTruthy();
+  expect(screen.getByRole('dialog', { name: 'Evidence details' })).toBeTruthy();
   await user.click(
     screen.getByRole('button', { name: 'Copy Valuation snapshot' }),
   );

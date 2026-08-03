@@ -860,7 +860,7 @@ export function EquityCurveCard({
           <div className="app-product-mark">
             {copy.overview.dashboard.equityPanel}
           </div>
-          <div className="app-card-title mt-1.5 text-xl text-[var(--app-text)]">
+          <div className="app-card-title mt-1.5 text-[var(--app-text)]">
             {labels.title}
           </div>
           {valuationStatusText ? (

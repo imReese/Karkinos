@@ -87,6 +87,7 @@ test('renders an evidence-first public home without loading financial data', asy
       'Structural product proof only. It contains no account, return, order, or execution data.',
     ),
   ).toBeTruthy();
+  expect(screen.getByText('Evidence references')).toBeTruthy();
 
   const evidenceTrace = screen.getByTestId('public-evidence-trace');
   const workbenchStructure = within(evidenceTrace).getByLabelText(

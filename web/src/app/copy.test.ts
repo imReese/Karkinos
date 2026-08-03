@@ -49,6 +49,18 @@ test('keeps static user-facing copy free of frontend and backend jargon', () => 
   expect(userFacingCopy).not.toMatch(/\b(?:back|front)end\b|后端|前端/iu);
 });
 
+test('uses human-readable evidence labels instead of identity jargon', () => {
+  expect(copy.en.common.viewEvidenceIdentity).toBe('View evidence details');
+  expect(copy.en.common.evidenceIdentityTitle).toBe('Evidence details');
+  expect(copy.zh.common.viewEvidenceIdentity).toBe('查看证据明细');
+  expect(copy.zh.common.evidenceIdentityTitle).toBe('证据明细');
+
+  const userFacingCopy = collectStaticText(copy).join('\n');
+  expect(userFacingCopy).not.toMatch(
+    /evidence identity|valuation identity|证据身份|估值 identity|估值身份/iu,
+  );
+});
+
 test('keeps primary product copy free of storage and projection jargon', () => {
   const primaryProductCopy = collectStaticText([
     copy.en.operationsPage,
