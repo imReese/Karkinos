@@ -308,11 +308,19 @@ describe('remaining route workbench contract', () => {
         /className="([^"]+)"\s+data-settings-surface="flat"/g,
       ),
     ];
-    expect(flatSettingsSurfaces).toHaveLength(5);
+    expect(flatSettingsSurfaces).toHaveLength(4);
     for (const [, className] of flatSettingsSurfaces) {
       expect(className).toContain('border-y border-[var(--app-divider)]');
       expect(className).not.toContain('rounded-');
       expect(className).not.toContain('bg-[');
+    }
+    for (const disclosureId of [
+      'settings-metadata-disclosure',
+      'settings-live-services-disclosure',
+      'settings-data-safety-disclosure',
+      'settings-preferences-disclosure',
+    ]) {
+      expect(SETTINGS).toContain(`testId="${disclosureId}"`);
     }
     expect(APP_SHELL).toContain('data-testid="mobile-preferences-toggle"');
     expect(APP_SHELL).toContain(
