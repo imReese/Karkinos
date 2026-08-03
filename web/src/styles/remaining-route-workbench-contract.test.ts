@@ -10,6 +10,7 @@ const ROUTER = source('app/router.tsx');
 const BACKTEST = source('features/backtest/components/backtest-page.tsx');
 const TRADING = source('features/trading/components/trading-page.tsx');
 const SETTINGS = source('features/settings/components/settings-page.tsx');
+const OPERATIONS = source('features/operations/components/operations-page.tsx');
 const ACCOUNT_TRUTH = source(
   'features/account-truth/components/account-truth-review-page.tsx',
 );
@@ -182,17 +183,17 @@ describe('remaining route workbench contract', () => {
   });
 
   it('keeps Operations readiness and subsystem metrics visibly scoped', () => {
-    expect(CSS).toContain(
+    expect(OPERATIONS).toContain('data-testid="operations-health-overview"');
+    expect(OPERATIONS).toContain('className="app-operations-health-strip"');
+    expect(OPERATIONS).toContain('xl:col-span-2');
+    expect(CSS).toMatch(
+      /\.app-operations-health-strip\s*{[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/,
+    );
+    expect(CSS).toMatch(
+      /min-width:\s*1280px[\s\S]*\.app-operations-command-grid\s*{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(300px,\s*360px\)/,
+    );
+    expect(CSS).not.toContain(
       "[data-testid='operations-page'] > .app-metric-strip::before",
-    );
-    expect(CSS).toMatch(
-      /operations-page[^}]+app-metric-strip::before[\s\S]*content:\s*attr\(aria-label\)/,
-    );
-    expect(CSS).toMatch(
-      /operations-page[^}]+app-metric-strip\s*{[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/,
-    );
-    expect(CSS).toMatch(
-      /min-width:\s*640px[\s\S]*operations-page[^}]+app-metric-strip[\s\S]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/,
     );
   });
 
@@ -205,6 +206,13 @@ describe('remaining route workbench contract', () => {
   });
 
   it('keeps routine route structure flat and mobile preferences compact', () => {
+    expect(SETTINGS).toContain(
+      'className="contents min-w-0 xl:block xl:space-y-5"',
+    );
+    expect(SETTINGS).toContain(
+      'className="order-2 min-w-0 space-y-5 xl:order-none"',
+    );
+    expect(SETTINGS).toContain('className="order-3 min-w-0 xl:order-none"');
     const activityFeed = ACTIVITY_FEED.slice(
       ACTIVITY_FEED.indexOf('export function ActivityFeed'),
       ACTIVITY_FEED.indexOf('function activityAmountClass'),
@@ -404,12 +412,12 @@ describe('remaining route workbench contract', () => {
     expect(summaryValue).not.toContain('var(--app-danger)');
   });
 
-  it('keeps Operations priority evidence full-width and constrained Backtest copy readable', () => {
+  it('pairs Operations priority evidence with health posture and keeps Backtest copy readable', () => {
     expect(CSS).toMatch(
       /\.app-operations-command-grid \{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\);/,
     );
-    expect(CSS).not.toContain(
-      'grid-template-columns: minmax(0, 1.35fr) minmax(310px, 0.65fr)',
+    expect(CSS).toContain(
+      'grid-template-columns: minmax(0, 1fr) minmax(300px, 360px)',
     );
     expect(CSS).toContain('.app-pilot-readiness-summary::marker');
     expect(CSS).toContain(

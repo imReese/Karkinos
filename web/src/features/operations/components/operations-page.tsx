@@ -354,43 +354,58 @@ export function OperationsPage() {
               />
             </section>
 
-            <ControlledPerOrderPilotReadinessPanel
-              readiness={pilotReadiness}
-              locale={locale}
-            />
-          </div>
+            <aside
+              className="min-w-0 space-y-2"
+              data-testid="operations-health-overview"
+            >
+              <h2 className="app-type-section-title text-[var(--app-text)]">
+                {labels.healthOverview}
+              </h2>
+              <MetricStrip
+                ariaLabel={labels.healthOverview}
+                className="app-operations-health-strip"
+                items={[
+                  {
+                    id: 'total',
+                    label: labels.total,
+                    value: projection.health.total,
+                  },
+                  {
+                    id: 'degraded',
+                    label: labels.degraded,
+                    value: projection.health.degraded,
+                    tone:
+                      projection.health.degraded > 0 ? 'warning' : 'neutral',
+                  },
+                  {
+                    id: 'blocked',
+                    label: labels.blocked,
+                    value: projection.health.blocked,
+                    tone: projection.health.blocked > 0 ? 'warning' : 'neutral',
+                  },
+                  {
+                    id: 'manual-review',
+                    label: labels.manualReview,
+                    value: projection.health.manual_action_required,
+                    tone:
+                      projection.health.manual_action_required > 0
+                        ? 'warning'
+                        : 'neutral',
+                  },
+                ]}
+              />
+            </aside>
 
-          <MetricStrip
-            ariaLabel={labels.healthOverview}
-            items={[
-              {
-                id: 'total',
-                label: labels.total,
-                value: projection.health.total,
-              },
-              {
-                id: 'degraded',
-                label: labels.degraded,
-                value: projection.health.degraded,
-                tone: projection.health.degraded > 0 ? 'warning' : 'neutral',
-              },
-              {
-                id: 'blocked',
-                label: labels.blocked,
-                value: projection.health.blocked,
-                tone: projection.health.blocked > 0 ? 'warning' : 'neutral',
-              },
-              {
-                id: 'manual-review',
-                label: labels.manualReview,
-                value: projection.health.manual_action_required,
-                tone:
-                  projection.health.manual_action_required > 0
-                    ? 'warning'
-                    : 'neutral',
-              },
-            ]}
-          />
+            <div
+              className="min-w-0 xl:col-span-2"
+              data-testid="operations-pilot-readiness-zone"
+            >
+              <ControlledPerOrderPilotReadinessPanel
+                readiness={pilotReadiness}
+                locale={locale}
+              />
+            </div>
+          </div>
 
           <details
             className="group min-w-0 border-y border-[var(--app-divider)] py-2"

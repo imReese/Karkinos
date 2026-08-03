@@ -308,6 +308,8 @@ test('renders persisted attention evidence without write or execution affordance
   });
   const attentionQueue = screen.getByTestId('operations-attention-queue');
   const commandGrid = screen.getByTestId('operations-command-grid');
+  const healthOverview = screen.getByTestId('operations-health-overview');
+  const readiness = screen.getByTestId('operations-pilot-readiness-zone');
   const healthMetrics = page.querySelector(
     '[data-workbench-primitive="metric-strip"]',
   );
@@ -316,9 +318,15 @@ test('renders persisted attention evidence without write or execution affordance
   expect(attention.className).toContain('app-operations-attention-list');
   expect(attention.className).toContain('divide-y');
   expect(healthMetrics).toBeTruthy();
+  expect(commandGrid.contains(healthOverview)).toBe(true);
+  expect(healthOverview.contains(healthMetrics)).toBe(true);
   expect(healthMetrics?.getAttribute('aria-label')).toBe('Health overview');
   expect(
-    attentionQueue.compareDocumentPosition(healthMetrics as HTMLElement) &
+    attentionQueue.compareDocumentPosition(healthOverview) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    healthOverview.compareDocumentPosition(readiness) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(
