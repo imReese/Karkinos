@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 
-from scripts.import_qmt_order_lifecycle import main as retired_main
 from scripts.migrate_legacy_qmt_order_lifecycle import main as migrate_main
 
 
@@ -35,16 +34,6 @@ def _legacy_payload() -> dict:
         ],
         "fills": [],
     }
-
-
-def test_retired_import_entrypoint_refuses_implicit_legacy_ingestion(capsys) -> None:
-    exit_code = retired_main([])
-    output = json.loads(capsys.readouterr().out)
-
-    assert exit_code == 2
-    assert output["blockers"] == ["legacy_qmt_import_entrypoint_retired"]
-    assert output["qmt_runtime_supported"] is False
-    assert output["provider_contacted"] is False
 
 
 def test_explicit_legacy_migration_previews_canonical_contract(

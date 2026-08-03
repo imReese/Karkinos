@@ -8,10 +8,15 @@ import getpass
 import json
 import os
 import re
+import sys
 from pathlib import Path
 from typing import Any, Callable
 
 from dotenv import set_key
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from server.config_contract import SUPPORTED_DATA_SOURCES
 

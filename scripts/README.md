@@ -1,0 +1,69 @@
+# Karkinos scripts
+
+Run these commands from the repository root. The files in this directory are
+thin operational or CI entry points; canonical financial and safety logic lives
+in the application packages such as `data`, `account_truth`, `analytics`, and
+`server`.
+
+## Daily development
+
+| Command | Purpose | Local writes or external contact |
+| --- | --- | --- |
+| `./scripts/start_server.sh dev` | Build the product bundle, start the reloadable backend, and start Vite on port 5173. Live monitoring is enabled unless `--no-live` is passed. | Writes PID and log files; may install missing frontend dependencies. |
+| `./scripts/start_server.sh prod` | Start the backend against the existing `web/dist` bundle without code hot reload. | Writes a PID and server log. |
+| `./scripts/stop_server.sh` | Stop tracked backend and Vite processes and clean matching orphan listeners. | Terminates tracked or matching processes and, as a fallback, listeners on the configured ports. |
+| `uv run python scripts/configure_data_source.py` | Select AKShare or Tushare without placing credentials in `config.json` or command history. | Updates ignored local `config.json` and `.env`; Tushare tokens are entered interactively. |
+
+Use `http://127.0.0.1:5173` while editing the frontend in `dev` mode. Port 8000
+continues to serve the product-style `web/dist` bundle and backend API.
+
+## Market-data maintenance
+
+| Command | Purpose | Safety boundary |
+| --- | --- | --- |
+| `uv run python scripts/sync_market_bars_to_db.py` | Import existing Parquet bar mirrors into `data/store/meta.db.market_bars`. | Does not fetch remote data. It updates the selected local `DataStore`. |
+| `uv run python scripts/verify_market_bars.py --symbol SYMBOL --start YYYY-MM-DD --end YYYY-MM-DD` | Fetch one provider range and compare it with persisted local bars. | Contacts the selected market-data provider but does not overwrite local bars. |
+
+These commands maintain or verify historical bars. They do not start the live
+quote scheduler.
+
+## Broker evidence and compatibility
+
+| Command | Purpose |
+| --- | --- |
+| `uv run python scripts/import_broker_order_lifecycle.py --file FILE` | Validate one broker-neutral exact-order lifecycle export. |
+| `uv run python scripts/ingest_broker_order_lifecycle_collector_batch.py --file FILE` | Validate one broker-neutral collector batch and its cursor transition. |
+| `uv run python scripts/migrate_legacy_qmt_order_lifecycle.py --file FILE` | Explicitly convert the retired QMT v1 export schema into the canonical broker-neutral schema. It does not import the QMT SDK or contact a broker. |
+
+Preview is the default for all three commands. Persistence requires `--record`
+and the exact acknowledgement printed by the command contract. Recording only
+stores validated evidence; it does not submit or cancel orders, mutate the
+production ledger, or grant execution authority.
+
+The retired `scripts/import_qmt_order_lifecycle.py` compatibility entry point
+was removed. Use the explicit migration command for old QMT exports or the
+canonical import command for current broker-neutral exports.
+
+## Broker release validation and operator approval
+
+| Command | Purpose |
+| --- | --- |
+| `uv run python scripts/review_broker_adapter_release.py --file FILE --db DB` | Preview or explicitly record an adapter release decision. |
+| `uv run python scripts/run_broker_adapter_conformance.py --file FILE --db DB --run-id ID` | Run deterministic provider-neutral adapter fixtures. |
+| `uv run python scripts/run_broker_execution_edge_conformance.py --file FILE --db DB --run-id ID` | Run deterministic submit/query/cancel boundary fixtures without contacting a broker. |
+| `uv run python scripts/operator_signer.py init ...` | Create a local Ed25519 private key and print its public configuration fragment. |
+| `uv run python scripts/operator_signer.py sign ...` | Validate and sign one short-lived canonical challenge read from standard input. |
+
+`operator_signer.py` never calls the Karkinos API or edits `config.json`. Keep
+the private key outside the repository with permissions `0600` or stricter.
+
+## CI and release checks
+
+| Command | Purpose |
+| --- | --- |
+| `uv run python scripts/check_docs_health.py` | Check core documentation budgets, local links, language pairs, and roadmap/test separation. |
+| `uv run python scripts/export_acceptance_audit.py --audit all` | Export acceptance manifests and optionally bind deterministic test evidence. |
+| `uv run python scripts/verify_docker_runtime.py` | Confirm a built container starts with broker and capital authority disabled. |
+
+Do not delete or rename CI entry points without updating their workflow,
+acceptance-registry, documentation, and test consumers.
