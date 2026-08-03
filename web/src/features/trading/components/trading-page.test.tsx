@@ -779,12 +779,26 @@ test('renders the trading approvals workspace', async () => {
     ).toBe('inactive');
   });
   expect(screen.getAllByText('Global kill switch').length).toBeGreaterThan(0);
+  const executionAudit = screen.getByTestId(
+    'trading-execution-audit-disclosure',
+  ) as HTMLDetailsElement;
+  const orderHistory = screen.getByTestId(
+    'trading-history-disclosure',
+  ) as HTMLDetailsElement;
+  expect(executionAudit.open).toBe(false);
+  expect(orderHistory.open).toBe(false);
   expect(await screen.findByText('Execution audit')).toBeTruthy();
   expect(
     await screen.findByText('Order facts, fills, and simulation review'),
   ).toBeTruthy();
+  expect(await screen.findByText('1 order fact · 1 fill fact')).toBeTruthy();
+  expect(await screen.findByText('1 completed decision')).toBeTruthy();
+  await user.click(executionAudit.querySelector('summary') as HTMLElement);
+  expect(executionAudit.open).toBe(true);
   expect(await screen.findByText('Order facts')).toBeTruthy();
   expect(await screen.findByText('Fill facts')).toBeTruthy();
+  await user.click(orderHistory.querySelector('summary') as HTMLElement);
+  expect(orderHistory.open).toBe(true);
   expect(await screen.findByText('Order queue')).toBeTruthy();
   const secondaryFilters = screen.getByTestId('trading-secondary-filters');
   const secondaryFiltersSummary = secondaryFilters.querySelector('summary');
@@ -1160,6 +1174,11 @@ test('runs daily simulation review from the execution audit panel', async () => 
 
   await screen.findByText('Execution audit');
   await user.click(
+    screen
+      .getByTestId('trading-execution-audit-disclosure')
+      .querySelector('summary') as HTMLElement,
+  );
+  await user.click(
     screen.getByRole('button', { name: 'Run daily simulation review' }),
   );
 
@@ -1455,6 +1474,11 @@ test('records accepted simulation review for the latest diverged run', async () 
     await screen.findByText('Simulation review needs attention'),
   ).toBeTruthy();
   await user.click(
+    screen
+      .getByTestId('trading-execution-audit-disclosure')
+      .querySelector('summary') as HTMLElement,
+  );
+  await user.click(
     screen.getByRole('button', { name: 'Record simulation review' }),
   );
 
@@ -1497,6 +1521,11 @@ test('uses consistent Chinese simulation-review wording in execution audit', asy
     ),
   ).toBeTruthy();
 
+  await user.click(
+    screen
+      .getByTestId('trading-execution-audit-disclosure')
+      .querySelector('summary') as HTMLElement,
+  );
   await user.click(screen.getByRole('button', { name: '运行当日模拟复核' }));
 
   await waitFor(() => {

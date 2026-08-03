@@ -14,6 +14,8 @@ test('trading mobile keeps the review task ahead of secondary filters', async ({
   const reviewQueue = page.getByTestId('trading-review-queue');
   const metrics = page.locator('[data-workbench-primitive="metric-strip"]');
   const killSwitch = page.getByTestId('kill-switch-panel');
+  const executionAudit = page.getByTestId('trading-execution-audit-disclosure');
+  const orderHistory = page.getByTestId('trading-history-disclosure');
 
   await expect(secondaryFilters).not.toHaveAttribute('open', '');
   await expect(symbolFilter).toBeHidden();
@@ -24,6 +26,8 @@ test('trading mobile keeps the review task ahead of secondary filters', async ({
     'inactive',
   );
   await expect(killSwitch).not.toHaveAttribute('open', '');
+  await expect(executionAudit).not.toHaveAttribute('open', '');
+  await expect(orderHistory).not.toHaveAttribute('open', '');
 
   const taskSurface = reviewQueue
     .locator('[data-evidence-kind], table')
