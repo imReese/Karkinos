@@ -51,6 +51,15 @@ const BACKTEST_REPORT = source(
 const BACKTEST_METRICS = source(
   'features/backtest/components/metrics-grid.tsx',
 );
+const EQUITY_CURVE = source(
+  'features/account/components/equity-curve-card.tsx',
+);
+const DAILY_OPERATIONS = source(
+  'features/account/components/daily-operations-tower.tsx',
+);
+const DECISION_QUALITY = source(
+  'features/decision/components/decision-quality-panel.tsx',
+);
 const BACKTEST_REPORT_SECTIONS = [
   source('features/backtest/components/validation-evidence-panel.tsx'),
   source('features/backtest/components/strategy-metadata-snapshot-panel.tsx'),
@@ -91,6 +100,22 @@ describe('remaining route workbench contract', () => {
     expect(HOLDING_DETAIL).toContain(
       'app-type-section-title mb-2 text-[var(--app-text)]',
     );
+    expect(EQUITY_CURVE).toContain(
+      'app-card-title mt-1.5 text-[var(--app-text)]',
+    );
+    expect(EQUITY_CURVE).not.toContain('app-card-title mt-1.5 text-xl');
+    expect(DAILY_OPERATIONS).toContain('app-card-title mt-1.5');
+    expect(DAILY_OPERATIONS).not.toContain('app-card-title mt-1.5 text-xl');
+  });
+
+  it('keeps high-salience facts and review copy on semantic product roles', () => {
+    expect(TRADING).toContain('app-type-primary-metric font-mono');
+    expect(TRADING).not.toContain('font-mono text-3xl');
+    expect(ACTIVITY_FEED).toContain('app-muted app-type-label mt-1 ml-auto');
+    expect(ACTIVITY_FEED).not.toContain(
+      'app-muted app-type-micro mt-1 ml-auto',
+    );
+    expect(DECISION_QUALITY).not.toMatch(/复盘身份|review identities/);
   });
 
   it('keeps controlled review first and makes Activity history primary by viewport', () => {

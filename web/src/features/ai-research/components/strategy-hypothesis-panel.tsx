@@ -93,7 +93,7 @@ const COPY = {
     externalError:
       'The research stage failed closed. No automatic retry was started; use a new human request to retry.',
     validationErrors: 'Validation blockers',
-    identity: 'Evidence identity',
+    identity: 'Evidence reference',
     providerEvidence: 'Model provenance',
     invalidated:
       'This historical research binding is no longer current. Evidence or audit drift blocks backtest and critique.',

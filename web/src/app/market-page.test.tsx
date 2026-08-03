@@ -810,7 +810,7 @@ test('routes confirmed NAV blockers through confirmation-only ingestion', async 
   const actionCluster = within(panel).getByTestId('holding-evidence-actions');
   expect(actionCluster.className).toContain('gap-2');
   for (const action of [
-    within(panel).getByRole('button', { name: 'View evidence identity' }),
+    within(panel).getByRole('button', { name: 'View evidence details' }),
     within(panel).getByRole('button', { name: 'Sync confirmed NAV' }),
   ]) {
     expect(action.className).toContain('h-10');
@@ -818,7 +818,7 @@ test('routes confirmed NAV blockers through confirmation-only ingestion', async 
     expect(action.className).toContain('app-type-micro');
   }
   await user.click(
-    within(panel).getByRole('button', { name: 'View evidence identity' }),
+    within(panel).getByRole('button', { name: 'View evidence details' }),
   );
   expect(await screen.findByText('valuation-market-fixture')).toBeTruthy();
   await user.keyboard('{Escape}');
@@ -844,7 +844,7 @@ test('routes confirmed NAV blockers through confirmation-only ingestion', async 
   ).toBeTruthy();
 });
 
-test('keeps valuation identity blockers ahead of quote review', async () => {
+test('keeps incomplete valuation-basis blockers ahead of quote review', async () => {
   renderMarketPage({
     marketEvidenceReview: {
       ...currentHoldingMarketEvidenceReview,
@@ -858,9 +858,9 @@ test('keeps valuation identity blockers ahead of quote review', async () => {
   const panel = await screen.findByTestId(
     'current-holding-market-evidence-review',
   );
-  expect(await within(panel).findByText('Valuation identity')).toBeTruthy();
+  expect(await within(panel).findByText('Valuation basis')).toBeTruthy();
   expect(
-    within(panel).getByText('1 required identity field is missing'),
+    within(panel).getByText('1 required reference field is missing'),
   ).toBeTruthy();
   expect(
     within(panel).getByText(

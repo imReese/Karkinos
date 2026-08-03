@@ -136,7 +136,7 @@ const publicHomeCopy = {
             'Opening a page reads saved evidence. It never refreshes data sources or changes account facts in the background.',
         },
         {
-          label: 'Evidence identity',
+          label: 'Evidence references',
           value:
             'Human-readable state comes first; full evidence references remain copyable on demand.',
         },
@@ -293,7 +293,7 @@ const publicHomeCopy = {
             '打开页面只读取已保存证据；不会在后台刷新数据源或改写账户事实。',
         },
         {
-          label: '证据身份',
+          label: '证据明细',
           value: '先显示人能理解的状态，完整证据标识在需要时仍可复制。',
         },
         {

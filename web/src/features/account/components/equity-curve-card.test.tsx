@@ -307,7 +307,9 @@ function renderCard({
 test('renders premium performance dashboard controls', async () => {
   renderCard();
 
-  expect(await screen.findByText('Performance Analysis')).toBeTruthy();
+  const title = await screen.findByText('Performance Analysis');
+  expect(title.className).toContain('app-card-title');
+  expect(title.className).not.toContain('text-xl');
   const seriesControls = await screen.findByTestId('equity-series-controls');
   expect(
     within(seriesControls)

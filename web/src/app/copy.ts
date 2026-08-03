@@ -111,7 +111,7 @@ export const copy = {
     },
     operationsPage: {
       kicker: 'Operations',
-      title: 'Operations evidence',
+      title: 'Operations review',
       subtitle:
         'Review recorded system evidence, the next safe action, and what will clear each item.',
       loading: 'Loading Operations evidence.',
@@ -140,9 +140,9 @@ export const copy = {
       reviewDetails: 'Review details',
       evidenceDetail: 'Evidence detail',
       evidenceDetailDescription:
-        'Review why this item is open, what will clear it, the next safe action, and its audit identity.',
+        'Review why this item is open, what will clear it, the next safe action, and its audit references.',
       closeEvidenceDetail: 'Close evidence detail',
-      technicalIdentity: 'Technical identity',
+      technicalIdentity: 'Technical evidence ID',
       noTimestamp: 'No observation time recorded',
       viewingDoesNotClear:
         'Viewing or acknowledging this item does not clear its source status.',
@@ -168,11 +168,11 @@ export const copy = {
       mustBePositive: 'Enter a value greater than zero.',
       genericSubmitError:
         'Request failed. Check the form values and service status.',
-      viewEvidenceIdentity: 'View evidence identity',
-      evidenceIdentityTitle: 'Evidence identity',
+      viewEvidenceIdentity: 'View evidence details',
+      evidenceIdentityTitle: 'Evidence details',
       evidenceIdentityDescription:
-        'Full evidence identifiers are kept here for audit and reproducible review.',
-      closeEvidenceIdentity: 'Close evidence identity',
+        'Full audit identifiers are available here when you need to verify or reproduce this view.',
+      closeEvidenceIdentity: 'Close evidence details',
       copyEvidenceValue: (label: string) => `Copy ${label}`,
       evidenceValueCopied: (label: string) => `${label} copied`,
       valuationEvidenceAsOf: (time: string, status: string) =>
@@ -182,7 +182,7 @@ export const copy = {
       valuationAsOf: 'Valuation as of',
       valuationStatus: 'Valuation status',
       reviewFingerprint: 'Review fingerprint',
-      captureIdentity: 'Capture identity',
+      captureIdentity: 'Capture reference',
       contextSnapshot: 'Context snapshot',
       contextFingerprint: 'Context fingerprint',
       providerContact: 'Provider contact',
@@ -698,7 +698,7 @@ export const copy = {
         closedNoCurrentExposure:
           'This asset is closed and has no current portfolio exposure. Historical trades, fees, and realized PnL remain available for review.',
         evidenceIdentityMismatch:
-          'Snapshot or ledger identity changed during the request. Review before treating these figures as one authoritative result.',
+          'The valuation snapshot or ledger scope changed during the request. Review the recorded basis before treating these figures as one result.',
         evidenceSummaryTitle: 'Holding evidence state',
         quoteStatus: 'Quote & Data State',
         marketEvidence: 'Market evidence',
@@ -819,7 +819,7 @@ export const copy = {
         nextManualStep: 'Next manual step',
         evidenceStates: {
           historicalClosed: 'Historical closed position',
-          identityMismatch: 'Snapshot identity mismatch',
+          identityMismatch: 'Valuation scope mismatch',
           costBasisReview: 'Cost basis needs reconciliation',
           staleQuote: 'Quote is stale or estimated',
           complete: 'No current evidence issue',
@@ -878,7 +878,7 @@ export const copy = {
         actionViewActivity: 'View historical activity',
         actionPortfolio: 'View all holdings',
         reconciliationTitle: 'Reconciliation evidence',
-        reconciliationStateTitle: 'Canonical identity and cost alignment',
+        reconciliationStateTitle: 'Valuation basis and cost alignment',
         reconciliationDetail:
           'Read-only alignment of the valuation snapshot, ledger cutoff, quote evidence, and cost-basis status. This view does not reconcile or mutate account facts.',
         actionAccountTruth: 'Open Account Truth review',
@@ -1653,7 +1653,7 @@ export const copy = {
           ledger_evidence_drift: 'Fill / ledger mismatch',
           valuation_snapshot_missing: 'Valuation snapshot missing',
           valuation_snapshot_invalid: 'Valuation snapshot invalid',
-          valuation_identity_drift: 'Valuation identity drift',
+          valuation_identity_drift: 'Valuation scope changed',
           inventory_lineage_incomplete: 'Inventory lineage incomplete',
         },
         accountStrategyNextActionMap: {
@@ -1664,7 +1664,7 @@ export const copy = {
           complete_execution_reconciliation_and_explicit_ledger_posting:
             'Complete execution reconciliation and explicitly post the fill to the production ledger.',
           review_strategy_fill_and_ledger_identity:
-            'Compare the fill with its production-ledger entry and repair the identity mismatch.',
+            'Compare the fill with its recorded ledger entry and resolve the mismatch.',
           publish_or_repair_persisted_valuation_snapshot:
             'Review persisted market/NAV facts, then publish or repair the valuation snapshot.',
           publish_persisted_valuation_snapshot:
@@ -2005,7 +2005,7 @@ export const copy = {
         kicker: 'Data audit',
         title: 'Dataset snapshot',
         subtitle:
-          'Frozen data identity for this research result. Use it to compare runs without silently changing inputs.',
+          'Frozen input scope for this research result. Use it to compare runs without silently changing inputs.',
         snapshotId: 'Snapshot id',
         dataSource: 'Data source',
         dateRange: 'Date range',
@@ -2034,7 +2034,7 @@ export const copy = {
         kicker: 'Strategy audit',
         title: 'Strategy snapshot',
         subtitle:
-          'Frozen strategy identity, normalized params, and validation requirements saved with this report.',
+          'The strategy definition, normalized parameters, and validation requirements saved with this report.',
         strategy: 'Strategy',
         strategyId: 'Strategy id',
         internalStrategyId: 'Strategy audit id',
@@ -2201,7 +2201,7 @@ export const copy = {
       holdingEvidenceReviewUnavailable:
         'The canonical current-holding evidence report is unavailable.',
       holdingEvidenceReviewBlocked:
-        'Valuation identity is incomplete; restore the snapshot binding before review.',
+        'The valuation basis is incomplete. Restore the snapshot binding before reviewing market evidence.',
       holdingEvidenceReviewCount: (count: number) =>
         `${count} current holding${count === 1 ? ' needs' : 's need'} review`,
       holdingEvidenceConfirmedCount: (count: number) =>
@@ -2219,16 +2219,16 @@ export const copy = {
         'A newer confirmed quote or NAV must replace this record.',
       holdingEvidenceBlocksAuthoritativeDecisions:
         'Authoritative decisions remain blocked for this holding.',
-      holdingEvidenceIdentityBlockedStatus: 'Identity blocked',
-      holdingEvidenceIdentityTitle: 'Valuation identity',
+      holdingEvidenceIdentityBlockedStatus: 'Valuation basis incomplete',
+      holdingEvidenceIdentityTitle: 'Valuation basis',
       holdingEvidenceIdentityReason:
-        'The saved snapshot is missing required valuation, ledger, or quote-set identity.',
+        'The saved snapshot is missing a required valuation, ledger, or quote-set reference.',
       holdingEvidenceIdentityClearingCondition:
         'Save and validate a complete snapshot binding before reviewing quote evidence.',
       holdingEvidenceIdentityNextAction:
-        'Restore the missing snapshot identity in Account Truth.',
+        'Restore the missing snapshot reference in Account Truth.',
       holdingEvidenceIdentityEvidence: (count: number) =>
-        `${count} required identity field${count === 1 ? ' is' : 's are'} missing`,
+        `${count} required reference field${count === 1 ? ' is' : 's are'} missing`,
       holdingEvidenceReasons: {
         confirmed_nav_missing:
           'Confirmed NAV has not been published or recorded.',
@@ -2798,7 +2798,7 @@ export const copy = {
       assetMetadataMissingDetail:
         'Complete missing asset names and quote symbols in locally saved metadata. Keep private runtime configuration local.',
       assetMetadataDetail:
-        'Asset identity comes from saved metadata rather than temporary runtime state.',
+        'Asset names and quote symbols come from saved metadata rather than temporary runtime state.',
       assetMetadataMissingCount: 'Missing metadata',
       assetMetadataSource: 'Metadata source',
       assetMetadataSourcePersisted: 'Saved register and watchlist',
@@ -2810,7 +2810,7 @@ export const copy = {
         'Use this payload as a reference for metadata backfill or manual metadata repair. Do not commit private runtime config.',
       assetMetadataComplete: 'Asset metadata configured',
       assetMetadataCompleteDetail:
-        'Current holdings have traceable asset identities.',
+        'Current holdings have traceable names and quote symbols.',
       requiresRestart: 'Restart required',
       hotSwitchAvailable:
         'Quote refresh uses the selected source immediately. Broader data-manager tasks may still use startup configuration.',
@@ -3040,7 +3040,7 @@ export const copy = {
       evidenceDetailDescription:
         '查看该事项为何未解除、解除条件、安全下一步和审计标识。',
       closeEvidenceDetail: '关闭证据详情',
-      technicalIdentity: '技术身份',
+      technicalIdentity: '技术证据标识',
       noTimestamp: '暂无记录时间',
       viewingDoesNotClear: '仅查看或确认该事项不会清除源状态。',
       limitations: '限制',
@@ -3064,10 +3064,11 @@ export const copy = {
       required: '该字段不能为空。',
       mustBePositive: '请输入大于零的数值。',
       genericSubmitError: '请求失败，请检查录入内容或系统状态。',
-      viewEvidenceIdentity: '查看证据身份',
-      evidenceIdentityTitle: '证据身份',
-      evidenceIdentityDescription: '完整证据标识仅在此用于审计与可复现复核。',
-      closeEvidenceIdentity: '关闭证据身份',
+      viewEvidenceIdentity: '查看证据明细',
+      evidenceIdentityTitle: '证据明细',
+      evidenceIdentityDescription:
+        '需要核验或复现当前视图时，可在此查看完整审计标识。',
+      closeEvidenceIdentity: '关闭证据明细',
       copyEvidenceValue: (label: string) => `复制${label}`,
       evidenceValueCopied: (label: string) => `已复制${label}`,
       valuationEvidenceAsOf: (time: string, status: string) =>
@@ -3077,7 +3078,7 @@ export const copy = {
       valuationAsOf: '估值时间',
       valuationStatus: '估值状态',
       reviewFingerprint: '复核指纹',
-      captureIdentity: '捕获标识',
+      captureIdentity: '采集标识',
       contextSnapshot: '上下文快照',
       contextFingerprint: '上下文指纹',
       providerContact: '联系外部服务',
@@ -3730,7 +3731,7 @@ export const copy = {
         actionViewActivity: '查看历史流水',
         actionPortfolio: '查看全部持仓',
         reconciliationTitle: '对账证据',
-        reconciliationStateTitle: '证据身份与成本对齐',
+        reconciliationStateTitle: '估值依据与成本口径核对',
         reconciliationDetail:
           '只读核对估值快照、账本截止、行情证据与成本状态；本视图不会执行对账或修改账户事实。',
         actionAccountTruth: '打开账户事实复核',
@@ -4451,7 +4452,7 @@ export const copy = {
           ledger_evidence_drift: '成交与账本记录不一致',
           valuation_snapshot_missing: '缺少持久化估值快照',
           valuation_snapshot_invalid: '持久化估值快照无效',
-          valuation_identity_drift: '估值身份已漂移',
+          valuation_identity_drift: '估值范围已变化',
           inventory_lineage_incomplete: '策略持仓来源不完整',
         },
         accountStrategyNextActionMap: {
@@ -4462,7 +4463,7 @@ export const copy = {
           complete_execution_reconciliation_and_explicit_ledger_posting:
             '完成执行对账，并将成交明确记入生产账本。',
           review_strategy_fill_and_ledger_identity:
-            '逐项核对成交与生产账本记录，修复身份不一致。',
+            '逐项核对成交与生产账本记录，解决记录不一致。',
           publish_or_repair_persisted_valuation_snapshot:
             '核对持久化行情或净值事实后，发布或修复估值快照。',
           publish_persisted_valuation_snapshot:
@@ -4781,7 +4782,7 @@ export const copy = {
         kicker: '数据审计',
         title: '数据快照',
         subtitle:
-          '本次研究结果使用的数据身份。用于比较运行结果，避免静默更换输入数据。',
+          '本次研究结果固定使用的数据范围；用于比较不同运行，避免静默更换输入。',
         snapshotId: '快照 ID',
         dataSource: '数据源',
         dateRange: '日期范围',
@@ -4810,7 +4811,7 @@ export const copy = {
         kicker: '策略审计',
         title: '策略快照',
         subtitle:
-          '本次报告固定保存的策略身份、归一化参数和验证要求，用于复盘历史结果。',
+          '本次报告保存的策略定义、归一化参数和验证要求，用于复盘历史结果。',
         strategy: '策略',
         strategyId: '策略 ID',
         internalStrategyId: '策略审计标识',
@@ -4986,7 +4987,7 @@ export const copy = {
       holdingEvidenceReviewEmpty: '当前没有需要复核的持仓。',
       holdingEvidenceReviewUnavailable: '当前持仓权威证据报告暂不可用。',
       holdingEvidenceReviewBlocked:
-        '估值 identity 不完整；需要先恢复快照绑定，不能把该报告当作完整证据。',
+        '估值依据不完整；需要先恢复快照绑定，不能把该报告当作完整证据。',
       holdingEvidenceReviewCount: (count: number) =>
         `${count} 个当前持仓需要复核`,
       holdingEvidenceConfirmedCount: (count: number) =>
@@ -5002,15 +5003,15 @@ export const copy = {
       holdingEvidenceClearingCondition:
         '必须由更新且已确认的行情或净值证据替代。',
       holdingEvidenceBlocksAuthoritativeDecisions: '该持仓仍不能用于权威决策。',
-      holdingEvidenceIdentityBlockedStatus: '身份阻断',
-      holdingEvidenceIdentityTitle: '估值身份',
+      holdingEvidenceIdentityBlockedStatus: '估值依据不完整',
+      holdingEvidenceIdentityTitle: '估值依据',
       holdingEvidenceIdentityReason:
         '已保存快照缺少必需的估值、账本或行情集标识。',
       holdingEvidenceIdentityClearingCondition:
         '必须先保存并验证完整的快照绑定，才能继续复核行情证据。',
       holdingEvidenceIdentityNextAction: '前往账户事实页恢复缺失的快照标识。',
       holdingEvidenceIdentityEvidence: (count: number) =>
-        `${count} 个必需身份字段缺失`,
+        `${count} 个必需标识字段缺失`,
       holdingEvidenceReasons: {
         confirmed_nav_missing: '确认净值尚未发布或记录。',
         estimated_quote_not_authoritative: '估算行情不属于权威行情证据。',
@@ -5521,7 +5522,7 @@ export const copy = {
       configurationEditor: '编辑账户与数据设置',
       configurationEditorDetail: '仅在修改账户成本默认值或已保存行情源时展开。',
       metadataReadiness: '元数据就绪',
-      metadataReadinessDetail: '资产名称与行情代码在展示前必须具有可追溯身份。',
+      metadataReadinessDetail: '展示前必须能追溯资产名称与行情代码的来源。',
       dataSourceOperations: '数据源运营',
       dataSourceOperationsDetail:
         '按需查看数据源能力、权限缺口、备用行情路径和 TuShare 手工任务。',
@@ -5546,7 +5547,7 @@ export const copy = {
       assetMetadataMissingDetail:
         '在本地保存的元数据中补齐缺少的资产名称与行情代码；私有运行配置继续留在本机。',
       assetMetadataDetail:
-        '资产身份以已保存元数据为准，不根据临时运行状态推断。',
+        '资产名称与行情代码以已保存元数据为准，不根据临时运行状态推断。',
       assetMetadataMissingCount: '缺失元数据',
       assetMetadataSource: '元数据来源',
       assetMetadataSourcePersisted: '已保存登记与关注列表',
@@ -5557,7 +5558,7 @@ export const copy = {
       assetMetadataSnippetDetail:
         '可将此内容作为元数据补齐或手工修复参考。不要提交私有运行配置。',
       assetMetadataComplete: '资产元数据已配置',
-      assetMetadataCompleteDetail: '当前持仓已有可追溯资产身份。',
+      assetMetadataCompleteDetail: '当前持仓的资产名称与行情代码均可追溯。',
       requiresRestart: '需要重启',
       hotSwitchAvailable:
         '行情刷新会立即使用所选数据源；更广泛的数据管理任务可能仍使用启动时配置。',

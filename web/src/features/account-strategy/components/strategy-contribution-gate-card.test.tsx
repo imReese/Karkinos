@@ -104,7 +104,7 @@ test('shows strategy contribution only when linked-fill evidence supports it', a
   expect(screen.getByText('¥0.50')).toBeTruthy();
   expect(screen.queryByText('valuation-fixture-1')).toBeNull();
   await user.click(
-    screen.getByRole('button', { name: 'View evidence identity' }),
+    screen.getByRole('button', { name: 'View evidence details' }),
   );
   expect(screen.getByText('valuation-fixture-1')).toBeTruthy();
   expect(screen.getByText('dual_ma')).toBeTruthy();

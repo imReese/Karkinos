@@ -58,7 +58,7 @@ export function DecisionQualityPanel() {
           kicker: '北极星指标',
           title: '决策质量证据',
           detail:
-            '衡量每日决策是否同时具备完整数据、账户事实、风控、基准、日志与复盘身份。',
+            '衡量每日决策是否同时具备完整数据、账户事实、风控、基准、日志与可追溯复盘记录。',
           current: '当前决策',
           history: '已捕获日期',
           score: '历史合格率',
@@ -67,7 +67,7 @@ export function DecisionQualityPanel() {
           capture: '固化今日质量证据',
           capturing: '正在固化…',
           captured: '当前证据已固化',
-          stale: '已保存证据与当前投影不一致，请重新复核后捕获。',
+          stale: '已保存证据与当前事实不一致，请重新复核后采集。',
           blocked: '当前未满足全部质量维度，仍可如实捕获为 blocked。',
           retry: '重新读取证据',
           safety:
@@ -78,7 +78,7 @@ export function DecisionQualityPanel() {
           kicker: 'North Star metric',
           title: 'Decision quality evidence',
           detail:
-            'Measures whether each daily decision has complete data and Account Truth, risk, benchmark, journal, and review identities.',
+            'Measures whether each daily decision has complete data and Account Truth, risk, benchmark, journal, and a traceable review record.',
           current: 'Current decision',
           history: 'Captured days',
           score: 'Historical qualification rate',
@@ -88,7 +88,7 @@ export function DecisionQualityPanel() {
           capturing: 'Capturing…',
           captured: 'Current evidence captured',
           stale:
-            'Stored evidence no longer matches the current projection; review and capture again.',
+            'Saved evidence no longer matches the current facts; review and capture again.',
           blocked:
             'Not every quality dimension passes; it can still be captured honestly as blocked.',
           retry: 'Read evidence again',

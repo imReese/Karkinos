@@ -983,7 +983,7 @@ export function TradingPage() {
       >
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
           <span className="app-product-mark">{labels.statusCheck}</span>
-          <span className="font-mono text-3xl font-semibold leading-none tabular-nums text-[var(--app-text)]">
+          <span className="app-type-primary-metric font-mono tabular-nums text-[var(--app-text)]">
             {counts.pending}
           </span>
           <span className="text-sm font-semibold text-[var(--app-text-secondary)]">

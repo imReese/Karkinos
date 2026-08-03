@@ -296,7 +296,7 @@ test('renders persisted attention evidence without write or execution affordance
   const fetchMock = renderOperationsPage();
 
   expect(
-    await screen.findByRole('heading', { name: 'Operations evidence' }),
+    await screen.findByRole('heading', { name: 'Operations review' }),
   ).toBeTruthy();
   const page = await screen.findByTestId('operations-page');
   expect(page.textContent).toContain('Read only');
@@ -480,6 +480,7 @@ test('keeps Chinese operations copy product-facing and technical identities prog
     'pilot-readiness-identity',
   );
   expect(evidenceIdentity.hasAttribute('open')).toBe(false);
+  expect(evidenceIdentity.textContent).toContain('技术证据标识');
   expect(evidenceIdentity.textContent).toContain(
     blockedPilotReadiness.readiness_fingerprint,
   );

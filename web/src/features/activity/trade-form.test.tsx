@@ -448,6 +448,11 @@ test('renders ledger entries as a user-facing audit table', () => {
   ).toBe('/portfolio/600003');
   expect(screen.getByText('-¥3,255.16')).toBeTruthy();
   expect(screen.getByText('Gross amount ¥3,250.00')).toBeTruthy();
+  const executionDetails = screen.getByText(
+    'Gross amount ¥3,250.00',
+  ).parentElement;
+  expect(executionDetails?.className).toContain('app-type-label');
+  expect(executionDetails?.className).not.toContain('app-type-micro');
   expect(screen.getByText('Net cash impact -¥3,255.16')).toBeTruthy();
   expect(screen.getByText('Commission ¥5.00')).toBeTruthy();
   expect(screen.getByText('Stamp tax ¥0.00')).toBeTruthy();

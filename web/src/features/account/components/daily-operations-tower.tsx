@@ -109,7 +109,7 @@ export function DailyOperationsTower({
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="app-product-mark">{labels.dailyWorkbench}</div>
-          <h2 className="app-card-title mt-1.5 text-xl">
+          <h2 className="app-card-title mt-1.5">
             {conclusionText(summary, labels)}
           </h2>
           <div className="app-muted mt-2 text-xs">

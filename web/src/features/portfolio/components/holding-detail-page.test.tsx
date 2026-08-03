@@ -445,7 +445,7 @@ test('renders holding detail with cached quote status and ledger trace', async (
   expect(screen.queryByText('valuation-1')).toBeNull();
   await user.click(
     within(screen.getByTestId('holding-detail-header')).getByRole('button', {
-      name: 'View evidence identity',
+      name: 'View evidence details',
     }),
   );
   expect(await screen.findByText('valuation-1')).toBeTruthy();

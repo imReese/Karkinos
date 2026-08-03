@@ -385,7 +385,7 @@ function LedgerExecutionDetails({
   }
 
   return (
-    <div className="app-muted app-type-micro mt-1 ml-auto flex max-w-[240px] flex-wrap items-center justify-end gap-x-2 gap-y-0.5">
+    <div className="app-muted app-type-label mt-1 ml-auto flex max-w-[240px] flex-wrap items-center justify-end gap-x-2 gap-y-0.5">
       {details.map((item) => (
         <span key={item.label} className="whitespace-nowrap">
           {item.label} {item.value}

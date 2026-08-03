@@ -380,7 +380,7 @@ test('renders risk boundaries and blocking register without execution controls',
   expect(await screen.findByText('Risk control center')).toBeTruthy();
   expect(screen.queryByText('valuation-risk-private-fixture')).toBeNull();
   await user.click(
-    await screen.findByRole('button', { name: 'View evidence identity' }),
+    await screen.findByRole('button', { name: 'View evidence details' }),
   );
   expect(screen.getByText('valuation-risk-private-fixture')).toBeTruthy();
   await user.keyboard('{Escape}');
@@ -448,7 +448,7 @@ test('renders risk boundaries and blocking register without execution controls',
     'Review pending recommendations before any execution.',
   );
   const evidenceIdentityTrigger = within(blockRegister).getByRole('button', {
-    name: 'View evidence identity',
+    name: 'View evidence details',
   });
   expect(
     priorityList.compareDocumentPosition(evidenceIdentityTrigger) &
