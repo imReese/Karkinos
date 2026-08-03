@@ -319,7 +319,10 @@ export function useEquityCurveQuery() {
   });
 }
 
-export function useEquityCurveSeriesQuery(range: EquityCurveRange = 'all') {
+export function useEquityCurveSeriesQuery(
+  range: EquityCurveRange = 'all',
+  enabled = true,
+) {
   return useQuery({
     queryKey: ['account-equity-curve-series', range],
     queryFn: () =>
@@ -327,6 +330,7 @@ export function useEquityCurveSeriesQuery(range: EquityCurveRange = 'all') {
         `/api/portfolio/equity-curve/series?range=${range}`,
       ),
     staleTime: 15_000,
+    enabled,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
   });
@@ -349,11 +353,14 @@ export function useRiskSummaryQuery() {
   });
 }
 
-export function useExplainabilityQuery(filters?: {
-  from_date?: string;
-  to_date?: string;
-  event_kind?: string;
-}) {
+export function useExplainabilityQuery(
+  filters?: {
+    from_date?: string;
+    to_date?: string;
+    event_kind?: string;
+  },
+  enabled = true,
+) {
   return useQuery({
     queryKey: ['portfolio-explainability', filters],
     queryFn: () => {
@@ -367,6 +374,7 @@ export function useExplainabilityQuery(filters?: {
       );
     },
     staleTime: 15_000,
+    enabled,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
   });

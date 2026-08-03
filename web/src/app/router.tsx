@@ -384,16 +384,25 @@ export function OverviewPage() {
   >('performance');
   const overview = useAccountOverviewQuery();
   const snapshot = usePortfolioSnapshotQuery();
-  const equityCurve = useEquityCurveSeriesQuery(equityCurveRange);
-  const explainability = useExplainabilityQuery();
-  const ledgerEntries = useLedgerEntriesQuery(8);
-  const pendingOrders = usePendingManualOrdersQuery();
+  const secondaryQueriesEnabled = Boolean(overview.data && snapshot.data);
+  const equityCurve = useEquityCurveSeriesQuery(
+    equityCurveRange,
+    secondaryQueriesEnabled,
+  );
+  const explainability = useExplainabilityQuery(
+    undefined,
+    secondaryQueriesEnabled,
+  );
+  const ledgerEntries = useLedgerEntriesQuery(8, secondaryQueriesEnabled);
+  const pendingOrders = usePendingManualOrdersQuery(secondaryQueriesEnabled);
   const marketHealth = useMarketDataHealthQuery();
   const holdingMarketEvidenceReview =
-    useCurrentHoldingMarketEvidenceReviewQuery();
-  const strategyContribution = useAccountStrategyContributionQuery();
-  const todayDecision = useTodayDecisionQuery();
-  const tradingPlan = useDailyTradingPlanQuery();
+    useCurrentHoldingMarketEvidenceReviewQuery(secondaryQueriesEnabled);
+  const strategyContribution = useAccountStrategyContributionQuery(
+    secondaryQueriesEnabled,
+  );
+  const todayDecision = useTodayDecisionQuery(secondaryQueriesEnabled);
+  const tradingPlan = useDailyTradingPlanQuery(secondaryQueriesEnabled);
   const operationsToday = useOperationsTodayQuery();
   const assetClassBySymbol = useMemo(
     () =>

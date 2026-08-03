@@ -281,7 +281,7 @@ export function usePortfolioSnapshotQuery() {
   });
 }
 
-export function useCurrentHoldingMarketEvidenceReviewQuery() {
+export function useCurrentHoldingMarketEvidenceReviewQuery(enabled = true) {
   return useQuery({
     queryKey: ['current-holding-market-evidence-review'],
     queryFn: () =>
@@ -289,6 +289,7 @@ export function useCurrentHoldingMarketEvidenceReviewQuery() {
         '/api/portfolio/market-evidence-review',
       ),
     staleTime: 10_000,
+    enabled,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
   });

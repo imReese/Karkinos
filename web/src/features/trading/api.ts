@@ -352,11 +352,14 @@ export function useSetKillSwitchMutation() {
   });
 }
 
-export function usePendingManualOrdersQuery() {
-  return useManualOrdersQuery('pending_confirm');
+export function usePendingManualOrdersQuery(enabled = true) {
+  return useManualOrdersQuery('pending_confirm', enabled);
 }
 
-export function useManualOrdersQuery(status: ManualOrderStatus = 'all') {
+export function useManualOrdersQuery(
+  status: ManualOrderStatus = 'all',
+  enabled = true,
+) {
   const normalizedStatus = status || 'all';
   const suffix =
     normalizedStatus === 'all'
@@ -366,6 +369,7 @@ export function useManualOrdersQuery(status: ManualOrderStatus = 'all') {
     queryKey: ['trading-manual-orders', normalizedStatus],
     queryFn: () => apiClient<ManualOrder[]>(`/api/trading/orders${suffix}`),
     staleTime: 2_000,
+    enabled,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
   });
