@@ -181,6 +181,7 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
   const riskMetrics = page.getByLabel('Risk metrics');
   const thresholdTable = page.getByTestId('risk-threshold-table');
   const controlledActions = page.getByTestId('risk-trading-control-grid');
+  const riskHistory = page.getByTestId('risk-history-disclosure');
   await expect(blockingRegister).toBeVisible({ timeout: 30_000 });
   const blockingRegisterBox = (await blockingRegister.boundingBox())!;
   const riskMetricsBox = (await riskMetrics.boundingBox())!;
@@ -189,6 +190,27 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
   expect((await thresholdTable.boundingBox())!.y).toBeLessThan(
     (await controlledActions.boundingBox())!.y,
   );
+  await expect(riskHistory).not.toHaveAttribute('open', '');
+  await expect(page.getByTestId('risk-recent-impact-list')).toBeHidden();
+  const historySummary = riskHistory.locator('summary');
+  await expect(historySummary).toBeVisible();
+  await historySummary.click();
+  await expect(riskHistory).toHaveAttribute('open', '');
+  await expect(page.getByTestId('risk-recent-impact-list')).toBeVisible();
+  const historyOverflow = await page.evaluate(() => ({
+    recent: getComputedStyle(
+      document.querySelector(
+        '[data-testid="risk-recent-impact-list"]',
+      ) as HTMLElement,
+    ).overflowY,
+    timeline: getComputedStyle(
+      document.querySelector(
+        '[data-testid="risk-impact-timeline-scroll"]',
+      ) as HTMLElement,
+    ).overflowY,
+  }));
+  expect(historyOverflow.recent).toBe('visible');
+  expect(historyOverflow.timeline).toBe('visible');
 
   await page.goto('/backtest');
   const primaryResearch = page.getByTestId('backtest-primary-workbench');

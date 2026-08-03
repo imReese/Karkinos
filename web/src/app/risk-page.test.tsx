@@ -785,8 +785,25 @@ test('uses account instrument names for risk explainability events that only car
   expect(recentList.textContent).not.toContain('买入 600003');
 });
 
-test('keeps explainability columns compact with local event scrolling', async () => {
+test('keeps historical attribution collapsed by default without nested event scrolling', async () => {
+  const user = userEvent.setup();
   renderRiskPage();
+
+  const historyDisclosure = await screen.findByTestId(
+    'risk-history-disclosure',
+  );
+  expect(historyDisclosure.tagName).toBe('DETAILS');
+  expect(historyDisclosure.hasAttribute('open')).toBe(false);
+  expect(historyDisclosure.textContent).toContain(
+    'Equity and event explanation path',
+  );
+  expect(historyDisclosure.textContent).toContain('2 impact events');
+  expect(historyDisclosure.textContent).toContain('1 valuation day');
+
+  const historySummary = historyDisclosure.querySelector('summary');
+  expect(historySummary).toBeTruthy();
+  await user.click(historySummary as HTMLElement);
+  expect(historyDisclosure.hasAttribute('open')).toBe(true);
 
   const equityBridge = await screen.findByTestId('risk-equity-bridge-section');
   expect(
@@ -820,8 +837,8 @@ test('keeps explainability columns compact with local event scrolling', async ()
   expect(topGrid.querySelector('.app-panel-strong')).toBeNull();
 
   const recentList = await screen.findByTestId('risk-recent-impact-list');
-  expect(recentList.className).toContain('max-h');
-  expect(recentList.className).toContain('overflow-y-auto');
+  expect(recentList.className).not.toContain('max-h');
+  expect(recentList.className).not.toContain('overflow-y-auto');
 
   const positionList = await screen.findByTestId('risk-position-impact-list');
   expect(positionList.tagName).toBe('UL');
@@ -835,9 +852,9 @@ test('keeps explainability columns compact with local event scrolling', async ()
   const timelineScroll = await screen.findByTestId(
     'risk-impact-timeline-scroll',
   );
-  expect(timelineScroll.className).toContain('max-h');
-  expect(timelineScroll.className).toContain('overflow-y-auto');
-  expect(timelineScroll.tabIndex).toBe(0);
+  expect(timelineScroll.className).not.toContain('max-h');
+  expect(timelineScroll.className).not.toContain('overflow-y-auto');
+  expect(timelineScroll.hasAttribute('tabindex')).toBe(false);
   expect(timelineSection.querySelector('.app-panel')).toBeNull();
   expect(timelineSection.querySelector('.app-panel-strong')).toBeNull();
 });

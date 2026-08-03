@@ -3581,6 +3581,10 @@ export function RiskPage() {
     (left, right) =>
       Number(left.severity !== 'danger') - Number(right.severity !== 'danger'),
   );
+  const riskHistoryImpactCount =
+    explainability.data?.recent_drivers.length ?? 0;
+  const riskHistoryValuationDayCount =
+    explainability.data?.timeline.length ?? 0;
   const runBatchRiskGate = async () => {
     setBatchRiskMessage(null);
     setBatchRiskBlockedMessage(null);
@@ -4013,78 +4017,133 @@ export function RiskPage() {
             </div>
           </section>
 
-          <ExplainabilityWorkspace
-            title={copy.riskPage.equityBridge}
-            stateLabelRecent={copy.riskPage.recentDrivers}
-            stateLabelPositions={copy.riskPage.positionDrivers}
-            emptyLabel={copy.riskPage.emptyDrivers}
-            explainability={explainability.data}
-            loading={explainability.isLoading}
-            instrumentNames={instrumentNames}
-            filters={
-              <div className="grid gap-3 md:grid-cols-3">
-                <label className="grid gap-2">
-                  <span className="text-sm font-medium">
-                    {copy.market.noteDateFrom}
-                  </span>
-                  <input
-                    type="date"
-                    value={timelineFromDate}
-                    onChange={(event) =>
-                      setTimelineFromDate(event.target.value)
-                    }
-                    className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
-                    aria-label={copy.market.noteDateFrom}
-                  />
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-medium">
-                    {copy.market.noteDateTo}
-                  </span>
-                  <input
-                    type="date"
-                    value={timelineToDate}
-                    onChange={(event) => setTimelineToDate(event.target.value)}
-                    className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
-                    aria-label={copy.market.noteDateTo}
-                  />
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-medium">
-                    {copy.explainability.timelineEventKind}
-                  </span>
-                  <select
-                    value={timelineEventKind}
-                    onChange={(event) =>
-                      setTimelineEventKind(event.target.value)
-                    }
-                    className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
-                    aria-label={copy.explainability.timelineEventKind}
-                  >
-                    <option value="">{copy.explainability.allEvents}</option>
-                    <option value="cash_deposit">
-                      {copy.explainability.deposits}
-                    </option>
-                    <option value="cash_withdrawal">
-                      {copy.explainability.withdrawals}
-                    </option>
-                    <option value="dividend">
-                      {copy.explainability.dividends}
-                    </option>
-                    <option value="trade_buy">
-                      {copy.explainability.buys}
-                    </option>
-                    <option value="trade_sell">
-                      {copy.explainability.sells}
-                    </option>
-                    <option value="manual_adjustment">
-                      {copy.explainability.adjustments}
-                    </option>
-                  </select>
-                </label>
+          <details
+            className="group min-w-0 border-y border-[var(--app-divider)]"
+            data-testid="risk-history-disclosure"
+          >
+            <summary className="flex min-h-16 cursor-pointer list-none flex-col gap-3 py-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] sm:flex-row sm:items-center sm:justify-between sm:gap-5 [&::-webkit-details-marker]:hidden">
+              <div className="min-w-0">
+                <div className="app-product-mark">
+                  {locale === 'zh' ? '历史与归因' : 'History & attribution'}
+                </div>
+                <h2 className="app-type-section-title mt-1 text-[var(--app-text)]">
+                  {locale === 'zh'
+                    ? '净值与事件解释路径'
+                    : 'Equity and event explanation path'}
+                </h2>
+                <p className="mt-1 max-w-3xl text-xs leading-5 text-[var(--app-text-secondary)]">
+                  {locale === 'zh'
+                    ? '按需查看净值桥、影响事件、持仓驱动和时间序列归因；当前风险与受控操作保持在上方。'
+                    : 'Expand for the equity bridge, impact events, position drivers, and timeline attribution. Current risk and controlled actions stay above.'}
+                </p>
               </div>
-            }
-          />
+              <div className="flex shrink-0 items-center gap-2 text-xs text-[var(--app-text-tertiary)]">
+                {explainability.isLoading ? (
+                  <StatusBadge tone="neutral">
+                    {copy.states.loading}
+                  </StatusBadge>
+                ) : (
+                  <>
+                    <StatusBadge tone="neutral">
+                      {locale === 'zh'
+                        ? `${riskHistoryImpactCount} 条影响事件`
+                        : `${riskHistoryImpactCount} impact ${riskHistoryImpactCount === 1 ? 'event' : 'events'}`}
+                    </StatusBadge>
+                    <StatusBadge tone="neutral">
+                      {locale === 'zh'
+                        ? `${riskHistoryValuationDayCount} 个估值日`
+                        : `${riskHistoryValuationDayCount} valuation ${riskHistoryValuationDayCount === 1 ? 'day' : 'days'}`}
+                    </StatusBadge>
+                  </>
+                )}
+                <span className="sr-only">
+                  {locale === 'zh' ? '按需展开' : 'Expand on demand'}
+                </span>
+                <ChevronDown
+                  aria-hidden="true"
+                  className="size-4 transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] motion-reduce:transition-none group-open:rotate-180"
+                />
+              </div>
+            </summary>
+            <div className="border-t border-[var(--app-divider)] py-4 sm:py-5">
+              <ExplainabilityWorkspace
+                title={copy.riskPage.equityBridge}
+                stateLabelRecent={copy.riskPage.recentDrivers}
+                stateLabelPositions={copy.riskPage.positionDrivers}
+                emptyLabel={copy.riskPage.emptyDrivers}
+                explainability={explainability.data}
+                loading={explainability.isLoading}
+                instrumentNames={instrumentNames}
+                filters={
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <label className="grid gap-2">
+                      <span className="text-sm font-medium">
+                        {copy.market.noteDateFrom}
+                      </span>
+                      <input
+                        type="date"
+                        value={timelineFromDate}
+                        onChange={(event) =>
+                          setTimelineFromDate(event.target.value)
+                        }
+                        className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
+                        aria-label={copy.market.noteDateFrom}
+                      />
+                    </label>
+                    <label className="grid gap-2">
+                      <span className="text-sm font-medium">
+                        {copy.market.noteDateTo}
+                      </span>
+                      <input
+                        type="date"
+                        value={timelineToDate}
+                        onChange={(event) =>
+                          setTimelineToDate(event.target.value)
+                        }
+                        className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
+                        aria-label={copy.market.noteDateTo}
+                      />
+                    </label>
+                    <label className="grid gap-2">
+                      <span className="text-sm font-medium">
+                        {copy.explainability.timelineEventKind}
+                      </span>
+                      <select
+                        value={timelineEventKind}
+                        onChange={(event) =>
+                          setTimelineEventKind(event.target.value)
+                        }
+                        className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
+                        aria-label={copy.explainability.timelineEventKind}
+                      >
+                        <option value="">
+                          {copy.explainability.allEvents}
+                        </option>
+                        <option value="cash_deposit">
+                          {copy.explainability.deposits}
+                        </option>
+                        <option value="cash_withdrawal">
+                          {copy.explainability.withdrawals}
+                        </option>
+                        <option value="dividend">
+                          {copy.explainability.dividends}
+                        </option>
+                        <option value="trade_buy">
+                          {copy.explainability.buys}
+                        </option>
+                        <option value="trade_sell">
+                          {copy.explainability.sells}
+                        </option>
+                        <option value="manual_adjustment">
+                          {copy.explainability.adjustments}
+                        </option>
+                      </select>
+                    </label>
+                  </div>
+                }
+              />
+            </div>
+          </details>
         </div>
       )}
     </section>
@@ -5699,7 +5758,7 @@ function ExplainabilityWorkspace({
           <h2 className="app-kicker app-type-overline">{stateLabelRecent}</h2>
           {explainability?.recent_drivers?.length ? (
             <ol
-              className="max-h-[620px] divide-y divide-[var(--app-divider)] overflow-y-auto border-y border-[var(--app-divider)]"
+              className="divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]"
               data-testid="risk-recent-impact-list"
             >
               {explainability.recent_drivers.map((item) => (
@@ -5811,11 +5870,8 @@ function ExplainabilityWorkspace({
         </h2>
         {filters ? <div className="mt-4">{filters}</div> : null}
         <div
-          aria-label={copy.explainability.timeline}
-          className="max-h-[min(72vh,52rem)] overflow-y-auto overscroll-y-contain border-y border-[var(--app-divider)] py-3 pr-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
+          className="border-y border-[var(--app-divider)] py-3"
           data-testid="risk-impact-timeline-scroll"
-          role="region"
-          tabIndex={0}
         >
           <Timeline
             ariaLabel={copy.explainability.timeline}
