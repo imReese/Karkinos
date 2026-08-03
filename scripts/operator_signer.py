@@ -23,6 +23,10 @@ from typing import Any, Callable, Sequence
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 from server.services.operator_approval import (
     MAX_CHALLENGE_TTL_SECONDS,
     OPERATOR_APPROVAL_ACTION_ARTIFACT_TYPES,

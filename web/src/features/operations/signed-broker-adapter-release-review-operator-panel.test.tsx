@@ -322,6 +322,19 @@ async function completeSignedDecision() {
     }),
   );
   expect(await screen.findByDisplayValue('c2lnbi10aGlz')).toBeTruthy();
+  const signingCommand = screen.getByText((content) =>
+    content.includes('scripts/operator_signer.py sign'),
+  );
+  expect(signingCommand.textContent).toContain(
+    "printf '%s' 'c2lnbi10aGlz' | uv run python scripts/operator_signer.py sign",
+  );
+  expect(signingCommand.textContent).toContain(
+    "--operator-id 'local-owner' --key-id 'adapter-review-key-1'",
+  );
+  expect(signingCommand.textContent).toContain(
+    "--expected-action 'review_broker_adapter_release' --expected-artifact-type 'broker_adapter_release_review_dossier'",
+  );
+  expect(signingCommand.textContent).not.toContain('--payload-base64');
   fireEvent.change(
     screen.getByLabelText('Adapter review offline signature Base64'),
     { target: { value: signature } },

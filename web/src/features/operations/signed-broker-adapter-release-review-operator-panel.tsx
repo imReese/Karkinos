@@ -578,7 +578,7 @@ export function SignedBrokerAdapterReleaseReviewOperatorPanel({
                       />
                     </label>
                     <pre className="app-muted min-w-0 overflow-x-auto whitespace-pre-wrap break-all rounded-xl border border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] p-2 text-[length:var(--app-font-size-micro)] leading-5">
-                      {`uv run python scripts/operator_signer.py --private-key-file /secure/path/operator.pem --payload-base64 '${challenge.data.signing_payload_base64}'`}
+                      {`printf '%s' '${challenge.data.signing_payload_base64}' | uv run python scripts/operator_signer.py sign --private-key /secure/path/operator.pem --operator-id '${challenge.data.operator_id}' --key-id '${challenge.data.key_id}' --expected-action '${challenge.data.action}' --expected-artifact-type '${challenge.data.artifact_type}'`}
                     </pre>
                     <label className="grid min-w-0 gap-1.5 text-xs font-semibold text-[var(--app-text-secondary)]">
                       {locale === 'zh'
