@@ -194,7 +194,11 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
   const primaryResearch = page.getByTestId('backtest-primary-workbench');
   const parameterPanel = page.getByTestId('backtest-parameter-panel');
   const resultPanel = page.getByTestId('backtest-result-panel');
+  const strategyDetail = page.getByTestId(
+    'backtest-strategy-detail-disclosure',
+  );
   await expect(primaryResearch).toBeVisible();
+  await expect(strategyDetail).not.toHaveAttribute('open', '');
   expect((await parameterPanel.boundingBox())!.x).toBeLessThan(
     (await resultPanel.boundingBox())!.x,
   );
@@ -598,9 +602,7 @@ test('activity keeps immutable history in the first reading path across all acce
     );
     if (hasEntries) {
       expect(
-        Math.round(
-          geometry.categoryFilterHeight ?? Number.POSITIVE_INFINITY,
-        ),
+        Math.round(geometry.categoryFilterHeight ?? Number.POSITIVE_INFINITY),
         JSON.stringify(viewport),
       ).toBeLessThanOrEqual(48);
       expect(
@@ -1290,6 +1292,7 @@ test('core review routes keep audit drill-downs closed and mobile reading paths 
     page.getByTestId('settings-persisted-configuration'),
   ).toBeVisible();
   for (const testId of [
+    'settings-configuration-editor',
     'settings-data-source-disclosure',
     'settings-notifications-disclosure',
   ]) {
@@ -1298,11 +1301,25 @@ test('core review routes keep audit drill-downs closed and mobile reading paths 
   await expect(
     page.getByRole('heading', { name: /Refresh quotes|刷新行情/ }),
   ).not.toBeVisible();
+  const persistedSettingsBox = (await page
+    .getByTestId('settings-persisted-configuration')
+    .boundingBox())!;
+  const notificationsBox = (await page
+    .getByTestId('settings-notifications-disclosure')
+    .boundingBox())!;
+  const dataOperationsBox = (await page
+    .getByTestId('settings-data-source-disclosure')
+    .boundingBox())!;
+  expect(notificationsBox.y).toBeGreaterThan(persistedSettingsBox.y);
+  expect(dataOperationsBox.y).toBeGreaterThan(notificationsBox.y);
 
   await page.goto('/backtest');
   await expect(
     page.getByRole('heading', { name: /Strategy replay|策略回放/ }),
   ).toBeVisible();
+  await expect(
+    page.getByTestId('backtest-strategy-detail-disclosure'),
+  ).not.toHaveAttribute('open', '');
   for (const testId of [
     'backtest-advanced-tools-disclosure',
     'backtest-research-governance-disclosure',

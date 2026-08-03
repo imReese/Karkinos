@@ -276,8 +276,12 @@ test('renders backend data status and service state', async () => {
     ),
   ).toBeTruthy();
   expect(
-    await screen.findByRole('button', { name: 'Data source: AKShare' }),
+    await screen.findByTestId('settings-configuration-editor'),
   ).toBeTruthy();
+  expect(
+    (screen.getByTestId('settings-configuration-editor') as HTMLDetailsElement)
+      .open,
+  ).toBe(false);
   expect(
     await screen.findByLabelText('Current provider: akshare'),
   ).toBeTruthy();
@@ -409,6 +413,10 @@ test('updates local theme and language preferences', async () => {
 test('saves data source settings through the settings endpoint', async () => {
   const user = userEvent.setup();
   const { fetchMock } = renderSettingsPage();
+  const configurationEditor = await screen.findByTestId(
+    'settings-configuration-editor',
+  );
+  await user.click(configurationEditor.querySelector(':scope > summary')!);
 
   const intervalInput = (await screen.findByRole('spinbutton', {
     name: 'Poll interval',
@@ -444,6 +452,10 @@ test('blocks TuShare selection until the environment credential is configured', 
   renderSettingsPage({
     settings: { ...defaultSettings, tushare_token_configured: false },
   });
+  const configurationEditor = await screen.findByTestId(
+    'settings-configuration-editor',
+  );
+  await user.click(configurationEditor.querySelector(':scope > summary')!);
 
   await user.click(
     await screen.findByRole('button', { name: 'Data source: Tushare' }),
@@ -470,6 +482,10 @@ test('blocks TuShare selection until the environment credential is configured', 
 test('saves account commission settings through the settings endpoint', async () => {
   const user = userEvent.setup();
   const { fetchMock } = renderSettingsPage();
+  const configurationEditor = await screen.findByTestId(
+    'settings-configuration-editor',
+  );
+  await user.click(configurationEditor.querySelector(':scope > summary')!);
 
   const rateInput = (await screen.findByRole('spinbutton', {
     name: 'Stock commission rate',

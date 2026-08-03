@@ -25,10 +25,12 @@ test('Operations keeps pilot readiness and subsystem metrics visibly scoped', as
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
 
-    const metrics = page.locator(
-      '[data-testid="operations-page"] > .app-metric-strip',
-    );
+    const healthOverview = page.getByTestId('operations-health-overview');
+    const metrics = healthOverview.locator('.app-metric-strip');
     await expect(metrics).toBeVisible({ timeout: 15_000 });
+    await expect(
+      healthOverview.getByRole('heading', { name: 'Health overview' }),
+    ).toBeVisible();
     const readiness = page.getByTestId('controlled-pilot-readiness');
     await expect(readiness).toBeVisible();
     await expect(readiness).not.toHaveAttribute('open', '');
@@ -45,28 +47,36 @@ test('Operations keeps pilot readiness and subsystem metrics visibly scoped', as
       const readiness = element.querySelector(
         '[data-testid="controlled-pilot-readiness"]',
       ) as HTMLElement;
+      const healthOverview = element.querySelector(
+        '[data-testid="operations-health-overview"]',
+      ) as HTMLElement;
       return {
         attentionWidth: attentionQueue.getBoundingClientRect().width,
         columnCount:
           getComputedStyle(element).gridTemplateColumns.split(' ').length,
         gridWidth: element.getBoundingClientRect().width,
-        pilotBelowAttention:
+        healthAlignedWithAttention:
+          Math.abs(
+            healthOverview.getBoundingClientRect().top -
+              attentionQueue.getBoundingClientRect().top,
+          ) < 8,
+        pilotBelowPrimary:
           readiness.getBoundingClientRect().top >=
-          attentionQueue.getBoundingClientRect().bottom,
+          Math.max(
+            attentionQueue.getBoundingClientRect().bottom,
+            healthOverview.getBoundingClientRect().bottom,
+          ),
         pilotWidth: readiness.getBoundingClientRect().width,
       };
     });
     expect(
       desktopExpandedGeometry.columnCount,
       `${theme} expanded desktop`,
-    ).toBe(1);
+    ).toBe(2);
     expect(
-      Math.abs(
-        desktopExpandedGeometry.attentionWidth -
-          desktopExpandedGeometry.gridWidth,
-      ),
+      desktopExpandedGeometry.attentionWidth,
       `${theme} expanded desktop attention width`,
-    ).toBeLessThanOrEqual(headlessSubpixelTolerance);
+    ).toBeLessThan(desktopExpandedGeometry.gridWidth);
     expect(
       Math.abs(
         desktopExpandedGeometry.pilotWidth - desktopExpandedGeometry.gridWidth,
@@ -74,7 +84,11 @@ test('Operations keeps pilot readiness and subsystem metrics visibly scoped', as
       `${theme} expanded desktop pilot width`,
     ).toBeLessThanOrEqual(headlessSubpixelTolerance);
     expect(
-      desktopExpandedGeometry.pilotBelowAttention,
+      desktopExpandedGeometry.healthAlignedWithAttention,
+      `${theme} expanded desktop health alignment`,
+    ).toBe(true);
+    expect(
+      desktopExpandedGeometry.pilotBelowPrimary,
       `${theme} expanded desktop order`,
     ).toBe(true);
     await expect(attentionQueue).toBeVisible();
@@ -84,7 +98,6 @@ test('Operations keeps pilot readiness and subsystem metrics visibly scoped', as
     for (const viewport of acceptanceViewports) {
       await page.setViewportSize(viewport);
       const geometry = await metrics.evaluate((element) => {
-        const before = getComputedStyle(element, '::before');
         const commandGrid = document.querySelector(
           '[data-testid="operations-command-grid"]',
         ) as HTMLElement;
@@ -94,6 +107,10 @@ test('Operations keeps pilot readiness and subsystem metrics visibly scoped', as
         const readiness = document.querySelector(
           '[data-testid="controlled-pilot-readiness"]',
         ) as HTMLElement;
+        const healthOverview = document.querySelector(
+          '[data-testid="operations-health-overview"]',
+        ) as HTMLElement;
+        const healthHeading = healthOverview.querySelector('h2') as HTMLElement;
         const firstAttention = attentionQueue.querySelector('li');
         const fieldTops = firstAttention
           ? Object.fromEntries(
@@ -119,20 +136,31 @@ test('Operations keeps pilot readiness and subsystem metrics visibly scoped', as
             document.documentElement.clientWidth,
           fieldTops,
           firstAttentionExists: firstAttention !== null,
+          healthAfterAttention:
+            healthOverview.getBoundingClientRect().top >=
+            attentionQueue.getBoundingClientRect().bottom,
+          healthAlignedWithAttention:
+            Math.abs(
+              healthOverview.getBoundingClientRect().top -
+                attentionQueue.getBoundingClientRect().top,
+            ) < 8,
+          healthHeading: healthHeading.textContent?.trim(),
           metricOverflow: element.scrollWidth - element.clientWidth,
-          labelContent: before.content.replace(/^['"]|['"]$/g, ''),
           columnCount:
             getComputedStyle(element).gridTemplateColumns.split(' ').length,
-          pilotBelowAttention:
+          metricsBeforeReadiness:
+            element.getBoundingClientRect().bottom <=
+            readiness.getBoundingClientRect().top,
+          pilotBelowPrimary:
             readiness.getBoundingClientRect().top >=
-            attentionQueue.getBoundingClientRect().bottom,
-          readinessBeforeMetrics:
-            readiness.getBoundingClientRect().bottom <=
-            element.getBoundingClientRect().top,
+            Math.max(
+              attentionQueue.getBoundingClientRect().bottom,
+              healthOverview.getBoundingClientRect().bottom,
+            ),
         };
       });
 
-      expect(geometry.labelContent, `${theme} ${viewport.width}`).toBe(
+      expect(geometry.healthHeading, `${theme} ${viewport.width}`).toBe(
         geometry.ariaLabel,
       );
       expect(
@@ -146,20 +174,29 @@ test('Operations keeps pilot readiness and subsystem metrics visibly scoped', as
       expect(
         geometry.commandColumnCount,
         `${theme} ${viewport.width} command grid`,
-      ).toBe(1);
+      ).toBe(viewport.width >= 1280 ? 2 : 1);
+      if (viewport.width < 1280) {
+        expect(
+          Math.abs(geometry.attentionWidthDelta),
+          `${theme} ${viewport.width} attention width`,
+        ).toBeLessThanOrEqual(headlessSubpixelTolerance);
+        expect(
+          geometry.healthAfterAttention,
+          `${theme} ${viewport.width} health order`,
+        ).toBe(true);
+      } else {
+        expect(
+          geometry.healthAlignedWithAttention,
+          `${theme} ${viewport.width} health alignment`,
+        ).toBe(true);
+      }
       expect(
-        Math.abs(geometry.attentionWidthDelta),
-        `${theme} ${viewport.width} attention width`,
-      ).toBeLessThanOrEqual(headlessSubpixelTolerance);
-      expect(
-        geometry.pilotBelowAttention,
+        geometry.pilotBelowPrimary,
         `${theme} ${viewport.width} pilot order`,
       ).toBe(true);
-      expect(geometry.columnCount, `${theme} ${viewport.width}`).toBe(
-        viewport.width < 640 ? 2 : 4,
-      );
+      expect(geometry.columnCount, `${theme} ${viewport.width}`).toBe(2);
       expect(
-        geometry.readinessBeforeMetrics,
+        geometry.metricsBeforeReadiness,
         `${theme} ${viewport.width}`,
       ).toBe(true);
       if (viewport.width < 640 && geometry.firstAttentionExists) {

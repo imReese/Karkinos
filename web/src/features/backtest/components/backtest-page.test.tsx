@@ -1370,6 +1370,13 @@ test('keeps setup and current results in one primary workspace with mobile tabs'
   expect(contextMetrics?.className).toContain('app-horizontal-scroll-cue');
   expect(primary.contains(setup)).toBe(true);
   expect(primary.contains(results)).toBe(true);
+  expect(
+    (
+      screen.getByTestId(
+        'backtest-strategy-detail-disclosure',
+      ) as HTMLDetailsElement
+    ).open,
+  ).toBe(false);
   expect(tabs.getAttribute('role')).toBe('tablist');
   expect(tabs.getAttribute('data-workspace-view')).toBe('setup');
   expect(

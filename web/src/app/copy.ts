@@ -2768,6 +2768,9 @@ export const copy = {
       providerConfiguration: 'Quote source configuration',
       providerConfigurationDetail:
         'Data-source changes take effect only after you save them and do not alter execution behavior.',
+      configurationEditor: 'Edit account and data settings',
+      configurationEditorDetail:
+        'Open only when changing account cost defaults or the saved quote source.',
       metadataReadiness: 'Metadata readiness',
       metadataReadinessDetail:
         'Asset names and quote symbols must have traceable identities before display.',
@@ -5515,6 +5518,8 @@ export const copy = {
       providerConfiguration: '行情源配置',
       providerConfigurationDetail:
         '只有保存后才会应用数据源变更；不会改变交易执行行为。',
+      configurationEditor: '编辑账户与数据设置',
+      configurationEditorDetail: '仅在修改账户成本默认值或已保存行情源时展开。',
       metadataReadiness: '元数据就绪',
       metadataReadinessDetail: '资产名称与行情代码在展示前必须具有可追溯身份。',
       dataSourceOperations: '数据源运营',
