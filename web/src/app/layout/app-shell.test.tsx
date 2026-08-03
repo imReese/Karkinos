@@ -465,11 +465,9 @@ test('keeps the desktop toolbar controls in a single centered row', async () => 
   expect(commandTrigger.getAttribute('aria-expanded')).toBe('false');
 
   const accountStatus = await screen.findByLabelText('Account Status');
-  expect(accountStatus.className).toContain('app-status-footer');
-  expect(accountStatus.className).toContain('border-t');
-  const statusRail = accountStatus.querySelector('.app-status-rail');
-  expect(statusRail?.className).toContain('flex-nowrap');
-  expect(statusRail?.className).not.toContain('flex-wrap');
+  expect(accountStatus.className).toContain('app-toolbar-status-rail');
+  expect(accountStatus.className).toContain('xl:flex');
+  expect(document.querySelector('.app-status-footer')).toBeNull();
 
   const themeSwitcher = await screen.findByRole('group', { name: 'Theme' });
   expect(themeSwitcher.className).toContain('flex-row');
@@ -522,17 +520,17 @@ test('opens a keyboard-accessible route command menu', async () => {
   );
 });
 
-test('surfaces compact persisted status in the desktop footer', async () => {
+test('surfaces compact persisted status in the desktop toolbar', async () => {
   renderShell();
 
-  const statusFooter = await screen.findByLabelText('Account Status');
-  expect(statusFooter.className).toContain('xl:flex');
-  expect(statusFooter.className).toContain('app-status-footer');
-  expect(within(statusFooter).getByText('Recorded evidence')).toBeTruthy();
-  const valuationStatus = within(statusFooter).getByTestId(
+  const statusRail = await screen.findByLabelText('Account Status');
+  expect(statusRail.className).toContain('xl:flex');
+  expect(statusRail.className).toContain('app-toolbar-status-rail');
+  expect(within(statusRail).queryByText('Recorded evidence')).toBeNull();
+  const valuationStatus = within(statusRail).getByTestId(
     'status-pill-valuation',
   );
-  const marketStatus = within(statusFooter).getByTestId('status-pill-market');
+  const marketStatus = within(statusRail).getByTestId('status-pill-market');
   expect(valuationStatus).toBeTruthy();
   expect(marketStatus).toBeTruthy();
   const valuationShell = valuationStatus.closest('.group');
@@ -548,17 +546,15 @@ test('surfaces compact persisted status in the desktop footer', async () => {
   expect(marketStatus.className).toContain('text-xs');
   expect(marketStatus.className).toContain('whitespace-nowrap');
   expect(
-    within(statusFooter).queryByRole('button', {
+    within(statusRail).queryByRole('button', {
       name: 'Refresh quotes: Market',
     }),
   ).toBeNull();
-  expect(within(statusFooter).queryByTestId('status-pill-ledger')).toBeNull();
-  expect(within(statusFooter).queryByTestId('status-pill-broker')).toBeNull();
+  expect(within(statusRail).queryByTestId('status-pill-ledger')).toBeNull();
+  expect(within(statusRail).queryByTestId('status-pill-broker')).toBeNull();
+  expect(within(statusRail).queryByRole('link', { name: 'Market' })).toBeNull();
   expect(
-    within(statusFooter).queryByRole('link', { name: 'Market' }),
-  ).toBeNull();
-  expect(
-    within(statusFooter).queryByRole('link', { name: 'Execution' }),
+    within(statusRail).queryByRole('link', { name: 'Execution' }),
   ).toBeNull();
 });
 
@@ -692,11 +688,9 @@ test('shows cached quote status and valuation time from account overview', async
   const valuationPopover = valuationDialog.closest(
     '.app-status-popover-root',
   ) as HTMLElement | null;
-  expect(valuationPopover?.className).toContain(
-    'app-status-popover-root-footer',
-  );
+  expect(valuationPopover?.className).toContain('top-[calc(100%+8px)]');
   expect(valuationPopover?.className).toContain('z-[90]');
-  expect(valuationPopover?.getAttribute('data-popup-placement')).toBe('top');
+  expect(valuationPopover?.getAttribute('data-popup-placement')).toBe('bottom');
   expect(screen.queryByText('行情实时')).toBeNull();
   expect(screen.queryByText('估值已启用')).toBeNull();
   expect(screen.queryByText('账本已同步')).toBeNull();
