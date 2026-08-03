@@ -1477,6 +1477,9 @@ test('keeps the holding route identity visible while core evidence loads', () =>
     }),
   ).toBeTruthy();
   expect(screen.getByText('Loading holding detail.')).toBeTruthy();
+  expect(screen.getByTestId('evidence-loading-workspace')).toBeTruthy();
+  expect(screen.getByTestId('evidence-loading-sidebar')).toBeTruthy();
+  expect(screen.queryByText('--')).toBeNull();
   expect(
     within(header)
       .getByRole('link', { name: 'Return to holdings list' })

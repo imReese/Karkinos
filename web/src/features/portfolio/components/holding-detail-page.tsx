@@ -27,6 +27,7 @@ import { PriceStructureChart } from '../../market/components/price-structure-cha
 import { useCopy } from '../../../app/copy';
 import {
   ControlledActionZone,
+  EvidenceLoadingLayout as WorkbenchEvidenceLoadingLayout,
   EvidenceState as WorkbenchEvidenceState,
   EvidenceIdentityDisclosure,
   MetricStrip as WorkbenchMetricStrip,
@@ -346,10 +347,11 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     return (
       <section className="space-y-5 sm:space-y-6">
         {stateHeader}
-        <StatusPanel
+        <WorkbenchEvidenceLoadingLayout
           title={copy.states.loading}
-          detail={labels.loading}
-          kind="loading"
+          description={labels.loading}
+          metricCount={4}
+          rowCount={4}
         />
       </section>
     );

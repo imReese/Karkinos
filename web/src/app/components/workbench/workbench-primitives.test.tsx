@@ -220,6 +220,14 @@ test('reserves workbench geometry while evidence is loading without publishing v
     4,
   );
   expect(screen.getByTestId('evidence-loading-rows').children).toHaveLength(3);
+  expect(
+    screen
+      .getByTestId('evidence-loading-workspace')
+      .getAttribute('aria-hidden'),
+  ).toBe('true');
+  expect(screen.getByTestId('evidence-loading-sidebar').children).toHaveLength(
+    2,
+  );
   expect(screen.queryByText('--')).toBeNull();
 });
 
