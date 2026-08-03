@@ -28,6 +28,8 @@ describe('trading workbench contract', () => {
       'xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]',
     );
     expect(tradingPage).toContain('border-y border-[var(--app-divider)] py-3');
+    expect(tradingPage).toContain('xl:flex-row');
+    expect(tradingPage).toContain('xl:max-w-[440px]');
     expect(tradingPage).toContain('group-open:grid sm:grid-cols-2');
     expect(tradingPage).not.toContain('sm:hidden [&::-webkit-details-marker]');
     expect(tradingPage).toContain('app-workbench-section');

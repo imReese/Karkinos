@@ -1012,7 +1012,7 @@ export function TradingPage() {
           data-testid="trading-review-queue"
         >
           <div className="min-w-0 px-1 py-4 sm:px-3">
-            <div className="flex min-w-0 flex-col gap-4 2xl:flex-row 2xl:items-end 2xl:justify-between">
+            <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
               <div className="min-w-0">
                 <div className="app-product-mark">{labels.filterTitle}</div>
                 <h2 className="app-card-title mt-1.5">{labels.ordersTitle}</h2>
@@ -1020,7 +1020,7 @@ export function TradingPage() {
                   {labels.filteredCount(rows.length)}
                 </p>
               </div>
-              <div className="grid min-w-0 w-full gap-3 sm:grid-cols-[minmax(180px,220px)_minmax(0,1fr)] 2xl:max-w-[680px]">
+              <div className="grid min-w-0 w-full gap-3 sm:grid-cols-[minmax(180px,220px)_minmax(0,1fr)] xl:max-w-[440px] xl:grid-cols-[minmax(150px,180px)_minmax(0,1fr)] 2xl:max-w-[680px] 2xl:grid-cols-[minmax(180px,220px)_minmax(0,1fr)]">
                 <label className="grid gap-2 text-sm font-medium">
                   {labels.statusFilter}
                   <select

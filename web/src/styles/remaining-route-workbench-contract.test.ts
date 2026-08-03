@@ -135,6 +135,12 @@ describe('remaining route workbench contract', () => {
     expect(CSS).toContain(
       "[data-workbench-route='ai-research'] .app-ai-research-boundary",
     );
+    expect(CSS).toMatch(
+      /min-width:\s*1280px[\s\S]*\.app-ai-research-command-grid\s*{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(288px,\s*0\.46fr\)/,
+    );
+    expect(CSS).toMatch(
+      /\.app-ai-research-context-strip\s*{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/,
+    );
     expect(RESEARCH_TASK.indexOf('{copy.reviewNote}')).toBeLessThan(
       RESEARCH_TASK.indexOf('<form'),
     );
@@ -154,6 +160,9 @@ describe('remaining route workbench contract', () => {
     expect(CSS).toContain("input:not([type='checkbox'])");
     expect(CSS).toContain("[role='dialog']\n    :where(");
     expect(CSS).not.toContain("[data-workbench-route='ai-research'] :is(");
+    expect(CSS).toMatch(
+      /\.app-risk-metric-strip\s*{[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/,
+    );
     expect(CSS).toMatch(
       /\.app-shell-sidebar[\s\S]*\.app-toolbar-shell[\s\S]*min-height:\s*var\(--app-touch-target\)/,
     );

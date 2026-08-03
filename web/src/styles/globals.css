@@ -1928,6 +1928,41 @@ h3 {
   align-items: start;
 }
 
+@media (min-width: 1280px) {
+  .app-ai-research-command-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(288px, 0.46fr);
+  }
+
+  .app-ai-research-context-strip,
+  .app-risk-metric-strip {
+    grid-auto-flow: row;
+    grid-auto-columns: auto;
+  }
+
+  .app-ai-research-context-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-risk-metric-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .app-ai-research-context-strip .app-metric-strip-item,
+  .app-risk-metric-strip .app-metric-strip-item {
+    border-right: 0;
+    border-bottom: 1px solid var(--app-divider);
+  }
+
+  .app-risk-metric-strip .app-metric-strip-item:nth-child(odd) {
+    border-right: 1px solid var(--app-divider);
+  }
+
+  .app-ai-research-context-strip .app-metric-strip-item:last-child,
+  .app-risk-metric-strip .app-metric-strip-item:nth-last-child(-n + 2) {
+    border-bottom: 0;
+  }
+}
+
 @media (max-width: 639px) {
   [data-workbench-route='ai-research']
     [data-workbench-primitive='status-badge'] {

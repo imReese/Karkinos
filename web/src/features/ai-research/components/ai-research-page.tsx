@@ -42,7 +42,7 @@ export function AiResearchPage() {
       >
         <section
           aria-labelledby="ai-research-context-title"
-          className="min-w-0 border-t border-[var(--app-divider)] pt-4"
+          className="min-w-0 border-t border-[var(--app-divider)] pt-4 xl:order-2"
           data-testid="ai-research-context-metrics"
         >
           <div className="mb-3 min-w-0">
@@ -106,7 +106,10 @@ export function AiResearchPage() {
           />
         </section>
 
-        <div className="min-w-0" data-testid="ai-research-primary-canvas">
+        <div
+          className="min-w-0 xl:order-1"
+          data-testid="ai-research-primary-canvas"
+        >
           <ResearchTaskPanel
             backtestResultId={latestBacktest?.id ?? null}
             defaultOpen

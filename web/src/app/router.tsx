@@ -3609,7 +3609,10 @@ export function RiskPage() {
   };
 
   return (
-    <section className="space-y-5 sm:space-y-6">
+    <section
+      className="app-workbench-route space-y-5 sm:space-y-6"
+      data-workbench-route="risk"
+    >
       <WorkspaceHeader
         eyebrow={copy.riskPage.kicker}
         title={copy.riskPage.title}
@@ -3649,117 +3652,125 @@ export function RiskPage() {
           {hasRiskRefreshError ? (
             <div
               role="status"
-              className="rounded-2xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3 text-sm font-semibold leading-6 text-[var(--app-warning-text)]"
+              className="rounded-[var(--app-radius-surface)] border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-4 py-3 text-sm font-semibold leading-6 text-[var(--app-warning-text)]"
             >
               {copy.riskPage.refreshError}
             </div>
           ) : null}
-          <section
-            data-testid="risk-blocking-register"
-            className="min-w-0 space-y-2"
-          >
-            <div>
-              <h2 className="app-type-section-title text-[var(--app-text)]">
-                {copy.riskPage.blockingRegister}
-              </h2>
-              <p className="mt-0.5 max-w-3xl text-xs text-[var(--app-text-secondary)]">
-                {copy.riskPage.blockingRegisterDetail}
-              </p>
-            </div>
-            <ExceptionList
-              ariaLabel={copy.riskPage.blockingRegister}
-              emptyState={copy.riskPage.noBlockingItems}
-              density="compact"
-              labels={{
-                reason: locale === 'zh' ? '阻断原因' : 'Reason',
-                unblockCondition:
-                  locale === 'zh' ? '解除条件' : 'Unblock condition',
-                nextAction: locale === 'zh' ? '安全下一步' : 'Safe next step',
-                evidence: locale === 'zh' ? '证据' : 'Evidence',
-              }}
-              items={activeRiskItems}
-              className="[&>li>dl]:grid-cols-2 lg:[&>li>dl]:grid-cols-4"
-            />
-            {activeRiskItems.length > 0 ? (
-              <dl
-                data-testid="risk-resolution-guidance"
-                className="grid grid-cols-2 gap-3 border-b border-[var(--app-divider)] px-3 py-2.5 text-xs"
-              >
-                <div className="min-w-0">
-                  <dt className="app-type-overline text-[var(--app-text-tertiary)]">
-                    {locale === 'zh'
-                      ? '统一解除条件'
-                      : 'Shared unblock condition'}
-                  </dt>
-                  <dd className="app-type-compact mt-0.5 text-[var(--app-text-secondary)] [overflow-wrap:anywhere]">
-                    {copy.riskPage.clearsWithNewProjection}
-                  </dd>
-                </div>
-                <div className="min-w-0">
-                  <dt className="app-type-overline text-[var(--app-text-tertiary)]">
-                    {locale === 'zh' ? '安全下一步' : 'Safe next step'}
-                  </dt>
-                  <dd className="app-type-compact mt-0.5 text-[var(--app-text-secondary)] [overflow-wrap:anywhere]">
-                    {formatRiskNextStep(state.data.next_step, locale)}
-                  </dd>
-                </div>
-              </dl>
-            ) : null}
-            <div className="flex justify-end border-b border-[var(--app-divider)] pb-2.5">
-              <EvidenceIdentityDisclosure
-                triggerLabel={copy.common.viewEvidenceIdentity}
-                title={copy.common.evidenceIdentityTitle}
-                description={copy.common.evidenceIdentityDescription}
-                closeLabel={copy.common.closeEvidenceIdentity}
-                copyLabel={copy.common.copyEvidenceValue}
-                copiedLabel={copy.common.evidenceValueCopied}
-                fields={[
-                  {
-                    label: copy.common.valuationSnapshot,
-                    value: state.data.summary.valuation_snapshot_id ?? '--',
-                    mono: true,
-                  },
-                  {
-                    label: copy.common.ledgerCutoff,
-                    value: state.data.summary.ledger_cutoff_id ?? '--',
-                    mono: true,
-                  },
-                  {
-                    label: copy.common.valuationAsOf,
-                    value: formatTimestamp(
-                      state.data.summary.valuation_as_of ??
-                        state.data.summary.valuation_timestamp,
-                    ),
-                    mono: true,
-                  },
-                  {
-                    label: copy.common.valuationStatus,
-                    value: formatPublicStatus(
-                      state.data.summary.valuation_status ??
-                        state.data.summary.quote_status,
-                      locale,
-                    ),
-                  },
-                ]}
+          <div className="app-risk-command-grid grid min-w-0 gap-5 sm:gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)] xl:items-start">
+            <section
+              data-testid="risk-blocking-register"
+              className="min-w-0 space-y-2"
+            >
+              <div>
+                <h2 className="app-type-section-title text-[var(--app-text)]">
+                  {copy.riskPage.blockingRegister}
+                </h2>
+                <p className="mt-0.5 max-w-3xl text-xs text-[var(--app-text-secondary)]">
+                  {copy.riskPage.blockingRegisterDetail}
+                </p>
+              </div>
+              <ExceptionList
+                ariaLabel={copy.riskPage.blockingRegister}
+                emptyState={copy.riskPage.noBlockingItems}
+                density="compact"
+                labels={{
+                  reason: locale === 'zh' ? '阻断原因' : 'Reason',
+                  unblockCondition:
+                    locale === 'zh' ? '解除条件' : 'Unblock condition',
+                  nextAction: locale === 'zh' ? '安全下一步' : 'Safe next step',
+                  evidence: locale === 'zh' ? '证据' : 'Evidence',
+                }}
+                items={activeRiskItems}
+                className="[&>li>dl]:grid-cols-2 2xl:[&>li>dl]:grid-cols-4"
               />
-            </div>
-          </section>
+              {activeRiskItems.length > 0 ? (
+                <dl
+                  data-testid="risk-resolution-guidance"
+                  className="grid grid-cols-2 gap-3 border-b border-[var(--app-divider)] px-3 py-2.5 text-xs"
+                >
+                  <div className="min-w-0">
+                    <dt className="app-type-overline text-[var(--app-text-tertiary)]">
+                      {locale === 'zh'
+                        ? '统一解除条件'
+                        : 'Shared unblock condition'}
+                    </dt>
+                    <dd className="app-type-compact mt-0.5 text-[var(--app-text-secondary)] [overflow-wrap:anywhere]">
+                      {copy.riskPage.clearsWithNewProjection}
+                    </dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="app-type-overline text-[var(--app-text-tertiary)]">
+                      {locale === 'zh' ? '安全下一步' : 'Safe next step'}
+                    </dt>
+                    <dd className="app-type-compact mt-0.5 text-[var(--app-text-secondary)] [overflow-wrap:anywhere]">
+                      {formatRiskNextStep(state.data.next_step, locale)}
+                    </dd>
+                  </div>
+                </dl>
+              ) : null}
+              <div className="flex justify-end border-b border-[var(--app-divider)] pb-2.5">
+                <EvidenceIdentityDisclosure
+                  triggerLabel={copy.common.viewEvidenceIdentity}
+                  title={copy.common.evidenceIdentityTitle}
+                  description={copy.common.evidenceIdentityDescription}
+                  closeLabel={copy.common.closeEvidenceIdentity}
+                  copyLabel={copy.common.copyEvidenceValue}
+                  copiedLabel={copy.common.evidenceValueCopied}
+                  fields={[
+                    {
+                      label: copy.common.valuationSnapshot,
+                      value: state.data.summary.valuation_snapshot_id ?? '--',
+                      mono: true,
+                    },
+                    {
+                      label: copy.common.ledgerCutoff,
+                      value: state.data.summary.ledger_cutoff_id ?? '--',
+                      mono: true,
+                    },
+                    {
+                      label: copy.common.valuationAsOf,
+                      value: formatTimestamp(
+                        state.data.summary.valuation_as_of ??
+                          state.data.summary.valuation_timestamp,
+                      ),
+                      mono: true,
+                    },
+                    {
+                      label: copy.common.valuationStatus,
+                      value: formatPublicStatus(
+                        state.data.summary.valuation_status ??
+                          state.data.summary.quote_status,
+                        locale,
+                      ),
+                    },
+                  ]}
+                />
+              </div>
+            </section>
 
-          <MetricStrip
-            ariaLabel={copy.riskPage.metrics}
-            items={workspace.data.metrics.map((metric) => ({
-              id: metric.key,
-              label: getRiskMetricLabel(copy, metric.key),
-              value: metric.display_value,
-              detail: formatRiskAlertLevel(metric.level, locale),
-              tone:
-                metric.level === 'high'
-                  ? ('danger' as const)
-                  : metric.level === 'medium'
-                    ? ('warning' as const)
-                    : ('neutral' as const),
-            }))}
-          />
+            <aside
+              className="grid min-w-0 content-start gap-3"
+              data-testid="risk-metric-rail"
+            >
+              <MetricStrip
+                ariaLabel={copy.riskPage.metrics}
+                className="app-risk-metric-strip"
+                items={workspace.data.metrics.map((metric) => ({
+                  id: metric.key,
+                  label: getRiskMetricLabel(copy, metric.key),
+                  value: metric.display_value,
+                  detail: formatRiskAlertLevel(metric.level, locale),
+                  tone:
+                    metric.level === 'high'
+                      ? ('danger' as const)
+                      : metric.level === 'medium'
+                        ? ('warning' as const)
+                        : ('neutral' as const),
+                }))}
+              />
+            </aside>
+          </div>
 
           {riskReviewTask ? (
             <section
@@ -3848,8 +3859,8 @@ export function RiskPage() {
               </h2>
               <p className="mt-0.5 text-xs text-[var(--app-text-secondary)]">
                 {locale === 'zh'
-                  ? '仅展示权威持久化投影中的数值、等级和说明；未提供的阈值不会在界面中推导。'
-                  : 'Shows only values, levels, and details persisted by the canonical projection; missing thresholds are not inferred in the UI.'}
+                  ? '仅展示风险服务已记录的数值、状态与说明；未提供的阈值不会在页面中推算。'
+                  : 'Shows recorded risk values, states, and explanations. Missing thresholds are not inferred on this page.'}
               </p>
             </div>
             <div className="max-w-full overflow-x-auto border-y border-[var(--app-divider)]">
@@ -3862,9 +3873,9 @@ export function RiskPage() {
                   <tr>
                     {[
                       locale === 'zh' ? '指标' : 'Metric',
-                      locale === 'zh' ? '投影值' : 'Projected value',
-                      locale === 'zh' ? '等级' : 'Level',
-                      locale === 'zh' ? '持久化说明' : 'Persisted detail',
+                      locale === 'zh' ? '当前值' : 'Current value',
+                      locale === 'zh' ? '状态' : 'State',
+                      locale === 'zh' ? '依据' : 'Evidence',
                     ].map((label) => (
                       <th
                         key={label}
@@ -3989,8 +4000,8 @@ export function RiskPage() {
               </h2>
               <p className="mt-0.5 max-w-3xl text-xs text-[var(--app-text-secondary)]">
                 {locale === 'zh'
-                  ? '熔断与人工审批独立于风险事实展示；操作不会改变上方权威风险证据。'
-                  : 'Kill-switch and manual approval controls remain separate from risk facts and do not alter the canonical evidence above.'}
+                  ? '熔断与人工审批独立于风险事实展示；操作不会改动上方已记录的风险证据。'
+                  : 'Kill-switch and manual approval controls remain separate from risk facts and do not alter the recorded evidence above.'}
               </p>
             </div>
             <div
@@ -4022,7 +4033,7 @@ export function RiskPage() {
                     onChange={(event) =>
                       setTimelineFromDate(event.target.value)
                     }
-                    className="app-field rounded-2xl px-3 py-2 text-sm"
+                    className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
                     aria-label={copy.market.noteDateFrom}
                   />
                 </label>
@@ -4034,7 +4045,7 @@ export function RiskPage() {
                     type="date"
                     value={timelineToDate}
                     onChange={(event) => setTimelineToDate(event.target.value)}
-                    className="app-field rounded-2xl px-3 py-2 text-sm"
+                    className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
                     aria-label={copy.market.noteDateTo}
                   />
                 </label>
@@ -4047,7 +4058,7 @@ export function RiskPage() {
                     onChange={(event) =>
                       setTimelineEventKind(event.target.value)
                     }
-                    className="app-field rounded-2xl px-3 py-2 text-sm"
+                    className="app-field rounded-[var(--app-radius-control)] px-3 py-2 text-sm"
                     aria-label={copy.explainability.timelineEventKind}
                   >
                     <option value="">{copy.explainability.allEvents}</option>
