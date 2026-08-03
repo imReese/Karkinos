@@ -4,9 +4,9 @@ version = "0.1.0"
 description = "面向中国市场的个人量化投研与交易平台"
 requires-python = ">=3.12"
 dependencies = [
-    "akshare>=1.18.64",
+    "akshare>=1.18.81",
     "tushare>=1.4.29",
-    "pandas>=3.0.3",
+    "pandas>=3.0.5",
     "numpy>=2.5.1",
     "pyarrow>=25.0.0",
     "pytest>=9.1.1",
@@ -20,12 +20,12 @@ dev = [
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "pip-audit==2.10.1",
-    "pre-commit>=4.6.0",
+    "pre-commit>=4.6.1",
     "isort>=8.0.1",
     "black>=26.5.1",
 ]
 server = [
-    "fastapi>=0.139.0",
+    "fastapi>=0.141.1",
     "uvicorn[standard]>=0.51.0",
     "python-dotenv>=1.2.2",
     "aiosqlite>=0.22.1",
@@ -64,7 +64,7 @@ dev-dependencies = [
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "pip-audit==2.10.1",
-    "pre-commit>=4.6.0",
+    "pre-commit>=4.6.1",
     "isort>=8.0.1",
     "black>=26.5.1",
 ]
