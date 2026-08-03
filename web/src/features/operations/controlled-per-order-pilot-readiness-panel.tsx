@@ -544,8 +544,8 @@ export function ControlledPerOrderPilotReadinessPanel({
                         .map((item) => blockerLabel(item, locale))
                         .join(' · ')
                     : locale === 'zh'
-                      ? '持久化证据满足当前门禁'
-                      : 'Persisted evidence satisfies this gate',
+                      ? '已记录证据满足当前门禁'
+                      : 'Recorded evidence satisfies this gate',
                 evidence:
                   gate.evidence_refs.length > 0 ? (
                     <details
@@ -554,8 +554,8 @@ export function ControlledPerOrderPilotReadinessPanel({
                     >
                       <summary className="cursor-pointer list-none font-medium text-[var(--app-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-focus-ring)]">
                         {locale === 'zh'
-                          ? `${gate.evidence_refs.length} 条已持久化证据`
-                          : `${gate.evidence_refs.length} persisted evidence ${gate.evidence_refs.length === 1 ? 'reference' : 'references'}`}
+                          ? `${gate.evidence_refs.length} 条已记录证据`
+                          : `${gate.evidence_refs.length} recorded evidence ${gate.evidence_refs.length === 1 ? 'reference' : 'references'}`}
                         <span
                           aria-hidden="true"
                           className="app-disclosure-chevron ml-1 inline-block text-[var(--app-text-tertiary)] group-open/evidence:rotate-180"

@@ -299,8 +299,8 @@ test('renders persisted attention evidence without write or execution affordance
     await screen.findByRole('heading', { name: 'Operations evidence' }),
   ).toBeTruthy();
   const page = await screen.findByTestId('operations-page');
-  expect(page.textContent).toContain('Read-only projection');
-  expect(page.textContent).toContain('Provider not contacted');
+  expect(page.textContent).toContain('Read only');
+  expect(page.textContent).toContain('No external connection');
   expect(page.textContent).toContain('No execution authority');
 
   const attention = await screen.findByRole('list', {
@@ -329,7 +329,7 @@ test('renders persisted attention evidence without write or execution affordance
     within(attention).getByText('Review market data freshness'),
   ).toBeTruthy();
   expect(
-    within(attention).getByText('new complete market evidence is persisted'),
+    within(attention).getByText('new complete market evidence is recorded'),
   ).toBeTruthy();
   expect(
     within(attention).getByText(
@@ -349,7 +349,7 @@ test('renders persisted attention evidence without write or execution affordance
     'sha256:market-attention-fixture',
   );
   expect(evidenceDetail.textContent).toContain(
-    'Each page read is a GET over persisted facts.',
+    'This page reads recorded facts only.',
   );
   expect(
     within(attention)
@@ -391,7 +391,7 @@ test('blocks drill-down when an attention item violates the read-only contract',
 
   const blocked = await screen.findByTestId('operations-contract-blocked');
   expect(
-    within(blocked).getByText('Operations evidence contract blocked'),
+    within(blocked).getByText('Operations evidence is unavailable'),
   ).toBeTruthy();
   expect(screen.queryByRole('link', { name: 'Open evidence' })).toBeNull();
 });
@@ -453,7 +453,7 @@ test('keeps Chinese operations copy product-facing and technical identities prog
   );
 
   const page = await screen.findByTestId('operations-page');
-  expect(page.textContent).toContain('本页只读取已持久化事实');
+  expect(page.textContent).toContain('本页只读取已记录事实');
   expect(page.textContent).not.toContain('GET');
   expect(page.textContent).not.toContain('provider');
   expect(page.textContent).not.toContain('kill switch');
@@ -480,7 +480,7 @@ test('keeps Chinese operations copy product-facing and technical identities prog
     'pilot-gate-evidence-persisted_source_contracts',
   );
   expect(persistedEvidence.hasAttribute('open')).toBe(false);
-  expect(persistedEvidence.textContent).toContain('1 条已持久化证据');
+  expect(persistedEvidence.textContent).toContain('1 条已记录证据');
   expect(persistedEvidence.textContent).toContain(
     blockedPilotReadiness.gates[0].evidence_refs[0],
   );
@@ -601,10 +601,10 @@ test('keeps subsystem evidence visible when the review queue is empty', async ()
   expect(
     screen.getByTestId('operations-subsystem-register').textContent,
   ).toContain('Three fund NAV observations require confirmation.');
-  expect(screen.getByText('No canonical history events')).toBeTruthy();
+  expect(screen.getByText('No history events recorded')).toBeTruthy();
   expect(
     screen.getByText(
-      'The current projection contains latest subsystem state only; it is not rewritten as immutable history.',
+      'Only the latest state for each subsystem is available; no immutable history has been recorded yet.',
     ),
   ).toBeTruthy();
 });
@@ -630,7 +630,7 @@ test('shows a retryable blocked read state without inventing evidence', async ()
   );
 
   expect((await screen.findByTestId('operations-error')).textContent).toContain(
-    'The Operations evidence projection could not be loaded.',
+    'Operations evidence could not be loaded.',
   );
   expect(screen.getByRole('button', { name: 'Retry read' })).toBeTruthy();
   expect(screen.queryByTestId('operations-attention-market_data')).toBeNull();

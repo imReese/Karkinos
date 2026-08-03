@@ -766,7 +766,7 @@ test('keeps canonical position facts primary when persisted price structure is m
   expect(fallback.className).toContain('lg:grid-cols-');
   expect(fallback.className).not.toContain('md:grid-cols-');
   expect(
-    within(positionFacts).getByText('Canonical position facts'),
+    within(positionFacts).getByText('Recorded position facts'),
   ).toBeTruthy();
   expect(within(positionFacts).getByText('60')).toBeTruthy();
   expect(within(priceState).getByText('Price evidence missing')).toBeTruthy();

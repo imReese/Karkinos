@@ -256,9 +256,9 @@ test('renders backend data status and service state', async () => {
   ).toBeTruthy();
   expect(await screen.findByLabelText('Refresh policy: Live')).toBeTruthy();
   expect(await screen.findByText('Scheduler running')).toBeTruthy();
-  expect(await screen.findByText('Persisted configuration')).toBeTruthy();
+  expect(await screen.findByText('Saved configuration')).toBeTruthy();
   expect(
-    await screen.findByText('Explicit ingestion · persisted quote cache'),
+    await screen.findByText('Controlled refresh · recorded quote cache'),
   ).toBeTruthy();
   expect(screen.queryByText('Runtime boundary')).toBeNull();
   expect(
@@ -284,22 +284,20 @@ test('renders backend data status and service state', async () => {
   expect(await screen.findByText('2 tracked assets')).toBeTruthy();
   expect(await screen.findByText('Operations register')).toBeTruthy();
   expect(
-    await screen.findByLabelText('Register item: Provider akshare'),
+    await screen.findByLabelText('Register item: Quote source akshare'),
   ).toBeTruthy();
   expect(
     await screen.findByLabelText('Register item: Poll interval 60s'),
   ).toBeTruthy();
-  expect(await screen.findByText('Provider configuration')).toBeTruthy();
+  expect(await screen.findByText('Quote source configuration')).toBeTruthy();
   expect(await screen.findByText('Metadata readiness')).toBeTruthy();
 });
 
-test('prioritizes persisted configuration before ingestion and runtime controls', async () => {
+test('prioritizes saved configuration before refresh and runtime controls', async () => {
   renderSettingsPage();
 
   const dataStatus = await screen.findByText('Data status');
-  const persistedConfiguration = await screen.findByText(
-    'Persisted configuration',
-  );
+  const persistedConfiguration = await screen.findByText('Saved configuration');
   const refreshAction = await screen.findByRole('heading', {
     name: 'Refresh quotes',
     level: 2,
@@ -436,7 +434,7 @@ test('saves data source settings through the settings endpoint', async () => {
     screen.queryByRole('textbox', { name: 'TuShare credential' }),
   ).toBeNull();
   expect(
-    await screen.findByText('Not required by the selected provider'),
+    await screen.findByText('Not required by the selected quote source'),
   ).toBeTruthy();
   expect(await screen.findByText('Data settings saved')).toBeTruthy();
 });
@@ -646,7 +644,7 @@ test('guides users to configure asset metadata when none is available', async ()
   ).toBeTruthy();
   expect(
     await screen.findByText(
-      'Complete missing asset names and quote symbols in local persisted metadata. Keep private runtime configuration local.',
+      'Complete missing asset names and quote symbols in locally saved metadata. Keep private runtime configuration local.',
     ),
   ).toBeTruthy();
   expect(await screen.findByText('Assets missing metadata')).toBeTruthy();
@@ -666,7 +664,7 @@ test('shows configured asset metadata state when no symbols are missing', async 
       'Current holdings have traceable asset identities.',
     ),
   ).toBeTruthy();
-  expect(await screen.findByText('Local persisted configuration')).toBeTruthy();
+  expect(await screen.findByText('Local saved configuration')).toBeTruthy();
   expect((await screen.findAllByText('05/16, 22:40')).length).toBeGreaterThan(
     0,
   );
@@ -674,7 +672,7 @@ test('shows configured asset metadata state when no symbols are missing', async 
   expect(screen.queryByText('undefined')).toBeNull();
 });
 
-test('keeps persisted source identity operator-facing without implementation keys', async () => {
+test('keeps saved source identity operator-facing without implementation keys', async () => {
   renderSettingsPage({
     assetMetadataStatus: {
       ...defaultAssetMetadataStatus,
@@ -682,9 +680,7 @@ test('keeps persisted source identity operator-facing without implementation key
     },
   });
 
-  expect(
-    await screen.findByText('Persisted register and watchlist'),
-  ).toBeTruthy();
+  expect(await screen.findByText('Saved register and watchlist')).toBeTruthy();
   expect(screen.queryByText('db+watchlist+legacy_config')).toBeNull();
   expect(screen.queryByText('provider_symbol')).toBeNull();
   expect(screen.queryByText(/TUSHARE_TOKEN/)).toBeNull();

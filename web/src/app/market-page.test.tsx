@@ -793,12 +793,12 @@ test('routes confirmed NAV blockers through confirmation-only ingestion', async 
   ).toBeTruthy();
   expect(
     within(panel).getByText(
-      'Confirmed NAV has not been published or persisted.',
+      'Confirmed NAV has not been published or recorded.',
     ),
   ).toBeTruthy();
   expect(
     within(panel).getByText(
-      'A newer persisted confirmed quote or NAV must replace this evidence.',
+      'A newer confirmed quote or NAV must replace this record.',
     ),
   ).toBeTruthy();
   expect(
@@ -840,7 +840,7 @@ test('routes confirmed NAV blockers through confirmation-only ingestion', async 
     expect(requestBody.request_id).toEqual(expect.any(String));
   });
   expect(
-    await within(panel).findByText('1 confirmed fund NAV persisted'),
+    await within(panel).findByText('1 confirmed fund NAV recorded'),
   ).toBeTruthy();
 });
 
@@ -864,7 +864,7 @@ test('keeps valuation identity blockers ahead of quote review', async () => {
   ).toBeTruthy();
   expect(
     within(panel).getByText(
-      'Persist and validate a complete snapshot binding before reviewing quote evidence.',
+      'Save and validate a complete snapshot binding before reviewing quote evidence.',
     ),
   ).toBeTruthy();
   expect(within(panel).queryByText('valuation_snapshot_id_missing')).toBeNull();

@@ -114,9 +114,7 @@ test('posts only requested funds and records the visible audit run', async () =>
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
   });
-  expect(
-    await screen.findByText('1 confirmed fund NAV persisted'),
-  ).toBeTruthy();
+  expect(await screen.findByText('1 confirmed fund NAV recorded')).toBeTruthy();
   expect(screen.getByTitle('confirmed-nav-success-fixture')).toBeTruthy();
 });
 
@@ -131,7 +129,7 @@ test('labels an idempotent replay without claiming another provider call', async
 
   expect(
     await screen.findByText(
-      'Repeated request: reused the persisted audit run without contacting the data source again.',
+      'Repeated request: reused the existing audited refresh without contacting the data source again.',
     ),
   ).toBeTruthy();
 });

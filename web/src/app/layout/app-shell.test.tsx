@@ -528,7 +528,7 @@ test('surfaces compact persisted status in the desktop footer', async () => {
   const statusFooter = await screen.findByLabelText('Account Status');
   expect(statusFooter.className).toContain('xl:flex');
   expect(statusFooter.className).toContain('app-status-footer');
-  expect(within(statusFooter).getByText('Persisted evidence')).toBeTruthy();
+  expect(within(statusFooter).getByText('Recorded evidence')).toBeTruthy();
   const valuationStatus = within(statusFooter).getByTestId(
     'status-pill-valuation',
   );
