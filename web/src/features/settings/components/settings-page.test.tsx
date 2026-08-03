@@ -246,6 +246,22 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+test('keeps secondary settings workflows behind explicit disclosures', async () => {
+  renderSettingsPage();
+
+  await screen.findByText('Control center');
+  for (const testId of [
+    'settings-metadata-disclosure',
+    'settings-live-services-disclosure',
+    'settings-data-safety-disclosure',
+    'settings-preferences-disclosure',
+  ]) {
+    const disclosure = screen.getByTestId(testId);
+    expect(disclosure.tagName).toBe('DETAILS');
+    expect(disclosure.hasAttribute('open')).toBe(false);
+  }
+});
+
 test('renders backend data status and service state', async () => {
   renderSettingsPage();
 

@@ -495,6 +495,83 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </div>
               </div>
 
+              <div
+                ref={statusRailRef}
+                className="app-toolbar-status-rail relative hidden min-w-0 shrink items-center gap-1 overflow-visible xl:flex"
+                aria-label={copy.shell.accountStatus}
+              >
+                <StatusChip
+                  testId="status-pill-valuation"
+                  label={copy.shell.navStatus}
+                  value={valuationStatus.value}
+                  meta={valuationTimestamp ?? undefined}
+                  tone={valuationStatus.tone}
+                  indicator={valuationStatus.indicator}
+                  hoverHint={copy.shell.viewValuationDetails}
+                  expanded={openStatusPanel === 'valuation'}
+                  title={`${copy.shell.navStatus}: ${valuationStatus.value}${
+                    valuationMeta ? ` · ${valuationMeta}` : ''
+                  }`}
+                  popup={
+                    <StatusPopover
+                      title={copy.shell.navStatus}
+                      rows={[
+                        {
+                          label: copy.shell.valuationUpdated,
+                          value: valuationMeta ?? copy.shell.statusUnknown,
+                        },
+                        {
+                          label: copy.shell.quoteStatus,
+                          value: quoteStatus,
+                        },
+                      ]}
+                    />
+                  }
+                  onClick={() =>
+                    setOpenStatusPanel((current) =>
+                      current === 'valuation' ? null : 'valuation',
+                    )
+                  }
+                />
+                <StatusChip
+                  testId="status-pill-market"
+                  label={copy.shell.marketStatus}
+                  value={marketStatus.value}
+                  meta={marketTimestamp ?? undefined}
+                  tone={marketStatus.tone}
+                  indicator={marketStatus.indicator}
+                  hoverHint={copy.shell.viewStatusDetails}
+                  expanded={openStatusPanel === 'market'}
+                  title={`${copy.shell.marketStatus}: ${marketStatus.value}${
+                    marketTimestamp ? ` · ${marketTimestamp}` : ''
+                  }`}
+                  popup={
+                    <StatusPopover
+                      title={copy.shell.marketStatus}
+                      rows={[
+                        {
+                          label: copy.shell.marketSession,
+                          value: marketOpenText,
+                        },
+                        {
+                          label: copy.shell.refreshPolicy,
+                          value: refreshPolicy,
+                        },
+                        {
+                          label: copy.shell.quoteStatus,
+                          value: quoteStatus,
+                        },
+                      ]}
+                    />
+                  }
+                  onClick={() =>
+                    setOpenStatusPanel((current) =>
+                      current === 'market' ? null : 'market',
+                    )
+                  }
+                />
+              </div>
+
               <button
                 type="button"
                 className="app-command-trigger ml-auto"
@@ -581,91 +658,6 @@ export function AppShell({ children }: { children: ReactNode }) {
               <div className="app-route-stage" key={pathname}>
                 {children}
               </div>
-            </div>
-          </div>
-
-          <div
-            ref={statusRailRef}
-            className="app-status-footer relative z-[80] hidden h-8 shrink-0 items-center gap-2 overflow-visible border-t border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-3 xl:flex"
-            aria-label={copy.shell.accountStatus}
-          >
-            <div className="app-status-rail flex min-w-0 flex-1 flex-row flex-nowrap items-center gap-1 overflow-visible">
-              <StatusChip
-                testId="status-pill-valuation"
-                label={copy.shell.navStatus}
-                value={valuationStatus.value}
-                meta={valuationTimestamp ?? undefined}
-                tone={valuationStatus.tone}
-                indicator={valuationStatus.indicator}
-                hoverHint={copy.shell.viewValuationDetails}
-                expanded={openStatusPanel === 'valuation'}
-                popupPlacement="top"
-                title={`${copy.shell.navStatus}: ${valuationStatus.value}${
-                  valuationMeta ? ` · ${valuationMeta}` : ''
-                }`}
-                popup={
-                  <StatusPopover
-                    title={copy.shell.navStatus}
-                    rows={[
-                      {
-                        label: copy.shell.valuationUpdated,
-                        value: valuationMeta ?? copy.shell.statusUnknown,
-                      },
-                      {
-                        label: copy.shell.quoteStatus,
-                        value: quoteStatus,
-                      },
-                    ]}
-                  />
-                }
-                onClick={() =>
-                  setOpenStatusPanel((current) =>
-                    current === 'valuation' ? null : 'valuation',
-                  )
-                }
-              />
-              <StatusChip
-                testId="status-pill-market"
-                label={copy.shell.marketStatus}
-                value={marketStatus.value}
-                meta={marketTimestamp ?? undefined}
-                tone={marketStatus.tone}
-                indicator={marketStatus.indicator}
-                hoverHint={copy.shell.viewStatusDetails}
-                expanded={openStatusPanel === 'market'}
-                popupPlacement="top"
-                title={`${copy.shell.marketStatus}: ${marketStatus.value}${
-                  marketTimestamp ? ` · ${marketTimestamp}` : ''
-                }`}
-                popup={
-                  <StatusPopover
-                    title={copy.shell.marketStatus}
-                    rows={[
-                      {
-                        label: copy.shell.marketSession,
-                        value: marketOpenText,
-                      },
-                      {
-                        label: copy.shell.refreshPolicy,
-                        value: refreshPolicy,
-                      },
-                      {
-                        label: copy.shell.quoteStatus,
-                        value: quoteStatus,
-                      },
-                    ]}
-                  />
-                }
-                onClick={() =>
-                  setOpenStatusPanel((current) =>
-                    current === 'market' ? null : 'market',
-                  )
-                }
-              />
-            </div>
-            <div className="app-type-micro flex shrink-0 items-center gap-2 font-medium text-[var(--app-text-tertiary)]">
-              <span className="h-1.5 w-1.5 rounded-full bg-[var(--app-info-indicator)]" />
-              {copy.shell.persistedEvidence}
             </div>
           </div>
 
@@ -1237,7 +1229,6 @@ function StatusChip({
   title,
   meta,
   popup,
-  popupPlacement = 'bottom',
   expanded = false,
   testId,
 }: {
@@ -1251,7 +1242,6 @@ function StatusChip({
   title?: string;
   meta?: string;
   popup?: ReactNode;
-  popupPlacement?: 'top' | 'bottom';
   expanded?: boolean;
   testId?: string;
 }) {
@@ -1319,24 +1309,14 @@ function StatusChip({
         </span>
       </button>
       {hoverHint && !expanded ? (
-        <div
-          className={`app-status-tooltip pointer-events-none absolute left-1/2 z-[75] -translate-x-1/2 rounded-[var(--app-radius-overlay)] border border-[var(--app-border)] bg-[var(--app-surface-overlay)] px-2.5 py-1.5 text-xs text-[var(--app-text)] opacity-0 shadow-[var(--app-shadow-overlay)] group-hover:opacity-100 group-focus-within:opacity-100 ${
-            popupPlacement === 'top'
-              ? 'bottom-[calc(100%+6px)]'
-              : 'top-[calc(100%+6px)]'
-          }`}
-        >
+        <div className="app-status-tooltip pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-[75] -translate-x-1/2 rounded-[var(--app-radius-overlay)] border border-[var(--app-border)] bg-[var(--app-surface-overlay)] px-2.5 py-1.5 text-xs text-[var(--app-text)] opacity-0 shadow-[var(--app-shadow-overlay)] group-hover:opacity-100 group-focus-within:opacity-100">
           {hoverHint}
         </div>
       ) : null}
       {popup && popupPresence.mounted ? (
         <div
-          className={`app-status-popover-root z-[90] ${
-            popupPlacement === 'top'
-              ? 'app-status-popover-root-footer'
-              : 'absolute right-0 top-[calc(100%+8px)]'
-          }`}
-          data-popup-placement={popupPlacement}
+          className="app-status-popover-root absolute left-0 top-[calc(100%+8px)] z-[90]"
+          data-popup-placement="bottom"
           data-motion-state={popupPresence.state}
           aria-hidden={popupPresence.state === 'closing' ? true : undefined}
           inert={popupPresence.state === 'closing'}

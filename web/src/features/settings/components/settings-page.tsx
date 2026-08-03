@@ -917,18 +917,11 @@ export function SettingsPage() {
                 ) : null}
               </SettingsDisclosure>
 
-              <div
-                className="grid gap-3 border-y border-[var(--app-divider)] py-4"
-                data-settings-surface="flat"
+              <SettingsDisclosure
+                testId="settings-metadata-disclosure"
+                title={copy.settings.metadataReadiness}
+                detail={copy.settings.metadataReadinessDetail}
               >
-                <div>
-                  <div className="text-sm font-semibold">
-                    {copy.settings.metadataReadiness}
-                  </div>
-                  <div className="app-muted mt-1 text-xs leading-5">
-                    {copy.settings.metadataReadinessDetail}
-                  </div>
-                </div>
                 <MetricStrip
                   ariaLabel={copy.settings.metadataReadiness}
                   items={[
@@ -994,7 +987,7 @@ export function SettingsPage() {
                     detail={copy.settings.assetMetadataCompleteDetail}
                   />
                 )}
-              </div>
+              </SettingsDisclosure>
             </SettingsSection>
           </div>
 
@@ -1101,7 +1094,8 @@ export function SettingsPage() {
           </div>
 
           <div className="order-4 min-w-0 xl:order-none">
-            <SettingsSection
+            <SettingsDisclosure
+              testId="settings-live-services-disclosure"
               title={copy.settings.liveServices}
               detail={copy.settings.liveServicesDetail}
             >
@@ -1156,7 +1150,7 @@ export function SettingsPage() {
                   )}
                 />
               ) : null}
-            </SettingsSection>
+            </SettingsDisclosure>
           </div>
         </div>
 
@@ -1209,7 +1203,8 @@ export function SettingsPage() {
             </div>
           </SettingsDisclosure>
 
-          <SettingsSection
+          <SettingsDisclosure
+            testId="settings-data-safety-disclosure"
             title={copy.settings.dataSafety}
             detail={copy.settings.dataSafetyDetail}
           >
@@ -1246,9 +1241,10 @@ export function SettingsPage() {
               title={copy.settings.deferred}
               detail={copy.settings.deferredDetail}
             />
-          </SettingsSection>
+          </SettingsDisclosure>
 
-          <SettingsSection
+          <SettingsDisclosure
+            testId="settings-preferences-disclosure"
             title={copy.settings.preferences}
             detail={copy.settings.preferencesDetail}
           >
@@ -1273,7 +1269,7 @@ export function SettingsPage() {
               value={locale}
               onChange={(value) => setLocale(value as Locale)}
             />
-          </SettingsSection>
+          </SettingsDisclosure>
         </aside>
       </div>
     </section>
