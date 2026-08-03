@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
@@ -616,6 +616,68 @@ test('uses a compact evidence-first layout while persisted overview projections 
   expect(screen.queryByTestId('equity-curve-skeleton')).toBeNull();
 });
 
+test('loads canonical overview facts before secondary workbench evidence', async () => {
+  let releasePrimary!: () => void;
+  const primaryGate = new Promise<void>((resolve) => {
+    releasePrimary = resolve;
+  });
+  const baseFetch = installOverviewFetchMock();
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof Request
+          ? input.url
+          : input.toString();
+    if (
+      url.includes('/api/portfolio/overview') ||
+      url.endsWith('/api/portfolio')
+    ) {
+      await primaryGate;
+    }
+    return baseFetch(input);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+
+  renderOverviewPage({ installFetch: false });
+
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+  const initialUrls = fetchMock.mock.calls.map(([input]) =>
+    typeof input === 'string'
+      ? input
+      : input instanceof Request
+        ? input.url
+        : input.toString(),
+  );
+  try {
+    expect(initialUrls).toEqual(
+      expect.arrayContaining([
+        '/api/portfolio/overview',
+        '/api/portfolio',
+        '/api/market/data-health',
+        '/api/operations/today',
+      ]),
+    );
+    expect(initialUrls).not.toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('/api/ledger/entries'),
+        expect.stringContaining('/api/decision/today'),
+      ]),
+    );
+  } finally {
+    releasePrimary();
+  }
+
+  await screen.findByTestId('overview-daily-workbench');
+  await waitFor(() =>
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).includes('/api/ledger/entries'),
+      ),
+    ).toBe(true),
+  );
+});
+
 test('keeps a fully closed asset out of current holdings while retaining sell activity', async () => {
   window.localStorage.setItem('karkinos.locale', 'zh');
   installOverviewFetchMock(
@@ -1123,7 +1185,9 @@ test('deduplicates manual-plan review and trusts confirmed quotes over provider 
   renderOverviewPage({ installFetch: false });
 
   const todayQueue = await screen.findByTestId('overview-today-queue');
-  expect(within(todayQueue).getByText('5 个交易计划意图待复核')).toBeTruthy();
+  expect(
+    await within(todayQueue).findByText('5 个交易计划意图待复核'),
+  ).toBeTruthy();
   expect(todayQueue.textContent).toContain('买入 · 宇通客车（600066） · 100');
   expect(todayQueue.textContent).toContain('买入 · 中国核电（601985） · 300');
   expect(todayQueue.textContent).toContain(
@@ -2394,7 +2458,7 @@ test('orders overview workbench items by user-facing priority', async () => {
   renderOverviewPage({ installFetch: false });
 
   const queue = await screen.findByTestId('overview-today-queue');
-  expect(within(queue).getByText('Handle first')).toBeTruthy();
+  expect(await within(queue).findByText('Handle first')).toBeTruthy();
   expect(within(queue).getByText('Watch today')).toBeTruthy();
   const additionalReviewItems = within(queue).getByTestId(
     'overview-today-queue-more',
@@ -2478,7 +2542,9 @@ test('surfaces strategy candidate signals in the overview workbench', async () =
   renderOverviewPage({ installFetch: false });
 
   const workbench = await screen.findByTestId('overview-daily-workbench');
-  expect(within(workbench).getByText('Strategy candidate signal')).toBeTruthy();
+  expect(
+    await within(workbench).findByText('Strategy candidate signal'),
+  ).toBeTruthy();
   expect(within(workbench).getByText('Buy candidate · 示例制造')).toBeTruthy();
   expect(
     within(workbench).getByText('0 plan review · 1 pool · 0 blocked'),
@@ -2557,7 +2623,7 @@ test('prioritizes daily trading plan cash shortfall on the overview workbench', 
   const queue = await screen.findByTestId('overview-today-queue');
 
   expect(
-    within(queue).getByText('Cash shortfall blocks buy preview'),
+    await within(queue).findByText('Cash shortfall blocks buy preview'),
   ).toBeTruthy();
   expect(
     within(queue).getByText(
@@ -2645,7 +2711,9 @@ test('keeps large candidate pools separate from manual-ready work in Chinese', a
   renderOverviewPage({ installFetch: false });
 
   const workbench = await screen.findByTestId('overview-daily-workbench');
-  expect(within(workbench).getByText('今日交易计划需要复核')).toBeTruthy();
+  expect(
+    await within(workbench).findByText('今日交易计划需要复核'),
+  ).toBeTruthy();
   expect(
     within(workbench).getByText(
       '50 个候选尚未通过风控/证据闸门；当前 0 个需要人工确认。',
@@ -2928,7 +2996,7 @@ test('keeps user-readable data work items on stale homepage status', async () =>
   const queue = await screen.findByTestId('overview-today-queue');
   expect(within(queue).getByText("Today's to-dos")).toBeTruthy();
   expect(
-    within(queue).getByText('Market data or NAV needs review.'),
+    await within(queue).findByText('Market data or NAV needs review.'),
   ).toBeTruthy();
   expect(within(queue).getByText('1 fund NAV')).toBeTruthy();
   expect(within(queue).queryByText('cache_only')).toBeNull();
@@ -3017,7 +3085,7 @@ test('shows the market evidence repair once before an awaiting risk gate', async
 
   const queue = await screen.findByTestId('overview-today-queue');
   expect(
-    within(queue).getByText('Market data or NAV needs review.'),
+    await within(queue).findByText('Market data or NAV needs review.'),
   ).toBeTruthy();
   expect(within(queue).queryByText('Risk gate checks pending')).toBeNull();
   expect(
@@ -3033,7 +3101,7 @@ test('renders overview ledger cards with shared public ledger formatting', async
   const ledgerPanel = await screen.findByText('Latest ledger');
   const ledgerSection = ledgerPanel.closest('div')?.parentElement;
   expect(ledgerSection).toBeTruthy();
-  expect(screen.getByText('2 entries')).toBeTruthy();
+  expect(await screen.findByText('2 entries')).toBeTruthy();
 
   expect(await screen.findByText('Buy 示例制造 600003')).toBeTruthy();
   const firstLedgerAmount = await screen.findByTestId(
@@ -3267,7 +3335,7 @@ test('scopes the homepage data review count to canonical current holdings', asyn
   renderOverviewPage({ installFetch: false });
 
   const queue = await screen.findByTestId('overview-today-queue');
-  expect(within(queue).getByText('1 stale/cache')).toBeTruthy();
+  expect(await within(queue).findByText('1 stale/cache')).toBeTruthy();
   expect(within(queue).getByText('1 holding needs review')).toBeTruthy();
   expect(queue.textContent).toContain(
     'Newer confirmed quote or NAV evidence covers every current holding and shares one valuation and activity scope.',
@@ -3337,7 +3405,7 @@ test('keeps market index diagnostics out of the current-holding review count', a
   renderOverviewPage({ installFetch: false });
 
   const queue = await screen.findByTestId('overview-today-queue');
-  expect(within(queue).getByText('3 基金净值')).toBeTruthy();
+  expect(await within(queue).findByText('3 基金净值')).toBeTruthy();
   expect(
     within(queue).queryByText(
       /个指数缺少持久化行情；在 Market 显式刷新并检查失败批次。/,
@@ -3362,7 +3430,7 @@ test('fails closed when the holding review and portfolio snapshot identities dri
 
   const queue = await screen.findByTestId('overview-today-queue');
   expect(
-    within(queue).getByText(
+    await within(queue).findByText(
       'Current-holding evidence is unavailable; interpretation remains blocked.',
     ),
   ).toBeTruthy();
@@ -3378,7 +3446,7 @@ test('keeps the return calendar inside the performance analysis card', async () 
     'overview-performance-card',
   );
   expect(
-    within(performanceCard).getByText('Performance Analysis'),
+    await within(performanceCard).findByText('Performance Analysis'),
   ).toBeTruthy();
   await userEvent.click(
     within(performanceCard).getByRole('tab', { name: 'Return calendar' }),

@@ -608,18 +608,19 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return (await response.json()) as T;
 }
 
-function decisionQuery(path: string, key: readonly string[]) {
+function decisionQuery(path: string, key: readonly string[], enabled = true) {
   return useQuery({
     queryKey: key,
     queryFn: () => apiClient<DecisionResponse>(path),
     staleTime: 5_000,
+    enabled,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
   });
 }
 
-export function useTodayDecisionQuery() {
-  return decisionQuery('/api/decision/today', ['decision', 'today']);
+export function useTodayDecisionQuery(enabled = true) {
+  return decisionQuery('/api/decision/today', ['decision', 'today'], enabled);
 }
 
 export function useIntradayDecisionQuery() {
@@ -657,12 +658,13 @@ export function useCaptureDecisionQualityMutation() {
   });
 }
 
-export function useDailyTradingPlanQuery() {
+export function useDailyTradingPlanQuery(enabled = true) {
   return useQuery({
     queryKey: ['decision', 'trading-plan'],
     queryFn: () =>
       apiClient<DailyTradingPlanResponse>('/api/decision/trading-plan'),
     staleTime: 5_000,
+    enabled,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
   });

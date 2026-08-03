@@ -138,12 +138,13 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return (await response.json()) as T;
 }
 
-export function useLedgerEntriesQuery(limit = 50) {
+export function useLedgerEntriesQuery(limit = 50, enabled = true) {
   return useQuery({
     queryKey: ['ledger-entries', limit],
     queryFn: () =>
       apiClient<LedgerEntry[]>(`/api/ledger/entries?limit=${limit}`),
     staleTime: 2_000,
+    enabled,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
   });

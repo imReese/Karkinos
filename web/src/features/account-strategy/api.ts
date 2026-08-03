@@ -134,7 +134,7 @@ export function useAccountStrategyAttributionQuery() {
   });
 }
 
-export function useAccountStrategyContributionQuery() {
+export function useAccountStrategyContributionQuery(enabled = true) {
   return useQuery({
     queryKey: ['account-strategy-contribution'],
     queryFn: () =>
@@ -142,5 +142,6 @@ export function useAccountStrategyContributionQuery() {
         '/api/account-strategy/contribution',
       ),
     staleTime: 10_000,
+    enabled,
   });
 }
