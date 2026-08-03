@@ -1445,7 +1445,7 @@ test('renders daily and intraday decision cockpit evidence without execution', a
   );
   expect(
     within(candidateCard)
-      .getByRole('link', { name: 'Open Trading approvals: 贵州茅台 600519' })
+      .getByRole('link', { name: 'Open trading review: 贵州茅台 600519' })
       .getAttribute('href'),
   ).toBe('/trading');
   const backtestEvidenceHref = within(candidateCard)
@@ -4511,7 +4511,7 @@ test('renders localized decision workflow tasks before candidate actions', async
   ).toBe('/backtest');
   expect(
     screen
-      .getByRole('link', { name: '打开交易审批：人工确认' })
+      .getByRole('link', { name: '打开交易复核：人工确认' })
       .getAttribute('href'),
   ).toBe('/trading');
   expect(workflow.textContent).not.toContain(
@@ -4898,7 +4898,7 @@ test('keeps decision cockpit candidates accessible on narrow responsive layouts'
   const summaryGrid = screen.getByTestId('decision-summary-grid');
   const laneGrid = screen.getByTestId('decision-lane-grid');
   const tradingLink = screen.getByRole('link', {
-    name: 'Open Trading approvals: 贵州茅台 600519',
+    name: 'Open trading review: 贵州茅台 600519',
   });
 
   expect(summaryGrid.className).toContain('min-w-0');

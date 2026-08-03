@@ -2115,6 +2115,13 @@ h3 {
   display: none;
 }
 
+.activity-summary-strip .app-metric-strip-item > .truncate {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .app-account-truth-filter-rail {
   scrollbar-width: none;
 }
