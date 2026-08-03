@@ -829,6 +829,58 @@ test('holding detail keeps route identity during missing-state resolution', asyn
   ).toBeVisible({ timeout: 15_000 });
 });
 
+test('holding detail keeps realized and unrealized PnL context readable on laptop', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.route('**/api/portfolio/positions', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          symbol: '603659',
+          display_name: '璞泰来',
+          asset_class: 'stock',
+          quantity: 400,
+          available_qty: 400,
+          frozen_qty: 0,
+          avg_cost: 25.97,
+          latest_price: 23.93,
+          market_value: 9556,
+          today_change: 36,
+          unrealized_pnl: -815.6,
+          realized_pnl: 192.9,
+          commission_paid: 5,
+          quote_timestamp: '2026-08-03T15:00:00+08:00',
+          quote_status: 'stale',
+          quote_source: 'market_bar_close',
+          quote_age_seconds: 18000,
+          stale_reason: 'market_closed',
+          using_persistent_cache: true,
+        },
+      ]),
+    });
+  });
+
+  await page.goto('/portfolio/603659');
+  const summary = page.getByTestId('holding-summary-metrics');
+  await expect(summary).toBeVisible({ timeout: 15_000 });
+  const unrealizedDetail = summary
+    .locator('.app-metric-strip-item')
+    .filter({ hasText: 'Unrealized PnL' })
+    .locator('div.app-type-label');
+  await expect(unrealizedDetail).toContainText('Realized PnL ¥192.90');
+
+  const geometry = await unrealizedDetail.evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+    whiteSpace: window.getComputedStyle(element).whiteSpace,
+  }));
+  expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth);
+  expect(geometry.whiteSpace).toBe('pre-line');
+});
+
 test('portfolio mobile bounds long persisted holding rows in Latte and Mocha', async ({
   page,
 }) => {

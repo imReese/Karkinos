@@ -363,6 +363,19 @@ describe('remaining route workbench contract', () => {
     expect(activitySummaryStyles).toContain('white-space: normal');
   });
 
+  it('keeps holding summary evidence text complete instead of ellipsized', () => {
+    expect(HOLDING_DETAIL).toContain('app-holding-summary-metrics');
+    const holdingSummaryStyles = CSS.slice(
+      CSS.indexOf('.app-holding-summary-metrics'),
+      CSS.indexOf('.app-account-truth-filter-rail'),
+    );
+    expect(holdingSummaryStyles).toContain('> div.app-type-label.truncate');
+    expect(holdingSummaryStyles).toContain('overflow-wrap: anywhere');
+    expect(holdingSummaryStyles).toContain('text-overflow: clip');
+    expect(holdingSummaryStyles).toContain('white-space: pre-line');
+    expect(holdingSummaryStyles).toContain('word-break: break-word');
+  });
+
   it('treats saved backtests as flat reproducible evidence instead of metric cards', () => {
     expect(BACKTEST_REPORT).toContain(
       'data-backtest-report-workspace="saved-evidence"',

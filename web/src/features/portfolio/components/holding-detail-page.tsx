@@ -706,7 +706,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
       value: formatCurrency(position.unrealized_pnl),
       detail: `${labels.pnlPct} ${formatReturnPercent(
         pnlPct,
-      )} · ${labels.realizedPnl} ${formatCurrency(position.realized_pnl)}`,
+      )}\n${labels.realizedPnl} ${formatCurrency(position.realized_pnl)}`,
       tone:
         position.unrealized_pnl > 0
           ? 'pnl-positive'

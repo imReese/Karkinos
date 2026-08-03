@@ -2100,6 +2100,16 @@ h3 {
   white-space: normal;
 }
 
+.app-holding-summary-metrics
+  .app-metric-strip-item
+  > div.app-type-label.truncate {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: pre-line;
+  word-break: break-word;
+}
+
 .app-account-truth-filter-rail {
   scrollbar-width: none;
 }
