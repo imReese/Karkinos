@@ -610,7 +610,7 @@ test('keeps a closed asset available as historical evidence without current expo
     screen.queryByRole('button', { name: /Refresh this quote/i }),
   ).toBeNull();
   expect(
-    screen.queryByRole('link', { name: 'Open Trading approvals' }),
+    screen.queryByRole('link', { name: 'Open trading review' }),
   ).toBeNull();
   expect(
     screen

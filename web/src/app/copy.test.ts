@@ -151,3 +151,31 @@ test('keeps the primary overview path free of implementation jargon', () => {
     /^Clears?/u,
   );
 });
+
+test('uses native route names and consistent trading-review actions', () => {
+  expect(copy.en.overview.dashboard.marketPulseMissing).toContain(
+    'on the Market page',
+  );
+  expect(copy.en.overview.dashboard.viewMarket).toBe('Open Market page');
+  expect(copy.en.portfolio.detail.evidenceNextSteps.reviewQuote).toContain(
+    'on the Market page',
+  );
+  expect(copy.en.portfolio.detail.actionTrading).toBe('Open trading review');
+  expect(copy.en.decision.workflowOpenTrading).toBe('Open trading review');
+  expect(copy.en.decision.openTradingApprovals).toBe('Open trading review');
+
+  expect(copy.zh.overview.dashboard.marketPulseMissing).toContain('前往市场页');
+  expect(copy.zh.overview.dashboard.viewMarket).toBe('打开市场页');
+  expect(copy.zh.portfolio.detail.evidenceNextSteps.reviewQuote).toContain(
+    '前往市场页',
+  );
+  expect(copy.zh.portfolio.detail.actionTrading).toBe('打开交易复核');
+  expect(copy.zh.decision.workflowOpenTrading).toBe('打开交易复核');
+  expect(copy.zh.decision.openTradingApprovals).toBe('打开交易复核');
+
+  const chinesePrimaryRoutes = collectStaticText([
+    copy.zh.overview,
+    copy.zh.portfolio.detail,
+  ]).join('\n');
+  expect(chinesePrimaryRoutes).not.toMatch(/(?:打开|前往|到|在) Market\b/u);
+});

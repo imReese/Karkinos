@@ -345,6 +345,14 @@ describe('remaining route workbench contract', () => {
       expect(form).not.toContain('rounded-2xl');
       expect(form).toContain('rounded-[var(--app-radius-control)]');
     }
+
+    const activitySummaryStyles = CSS.slice(
+      CSS.indexOf('.activity-summary-strip .app-metric-strip-item > .truncate'),
+      CSS.indexOf('.app-account-truth-filter-rail'),
+    );
+    expect(activitySummaryStyles).toContain('overflow-wrap: anywhere');
+    expect(activitySummaryStyles).toContain('text-overflow: clip');
+    expect(activitySummaryStyles).toContain('white-space: normal');
   });
 
   it('treats saved backtests as flat reproducible evidence instead of metric cards', () => {

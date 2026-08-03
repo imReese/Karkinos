@@ -142,12 +142,10 @@ test('does not derive authoritative net cash impact from the visible ledger rows
   renderActivityPage();
 
   expect(await screen.findByText('Net cash impact')).toBeTruthy();
-  expect(
-    await screen.findByText('Full-history total unavailable'),
-  ).toBeTruthy();
+  expect(await screen.findByText('Not available')).toBeTruthy();
   expect(
     await screen.findByText(
-      'The entries below show recent activity only and do not represent total cash movement over the full history.',
+      'Recent entries are not a complete account history, so no total is shown.',
     ),
   ).toBeTruthy();
   expect(
