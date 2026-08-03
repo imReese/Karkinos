@@ -375,6 +375,11 @@ test('backtest preserves result-first evidence and complete metrics across all a
           '.app-backtest-evidence-strip:not(.app-backtest-context-strip) .app-metric-strip-item > .truncate',
         ),
       );
+      const readinessEvidence = Array.from(
+        document.querySelectorAll(
+          '[data-testid="backtest-run-readiness-summary"] [title]',
+        ),
+      ) as HTMLElement[];
       return {
         contentOverflow: content.scrollWidth - content.clientWidth,
         catalogColumnCount:
@@ -399,6 +404,16 @@ test('backtest preserves result-first evidence and complete metrics across all a
           const style = getComputedStyle(element);
           return style.whiteSpace === 'normal' && style.overflow === 'visible';
         }),
+        readinessEvidenceOverflow: readinessEvidence.reduce(
+          (largest, element) =>
+            Math.max(largest, element.scrollWidth - element.clientWidth),
+          0,
+        ),
+        readinessEvidenceVerticalOverflow: readinessEvidence.reduce(
+          (largest, element) =>
+            Math.max(largest, element.scrollHeight - element.clientHeight),
+          0,
+        ),
         setupWidth: setup.getBoundingClientRect().width,
         setupX: setup.getBoundingClientRect().x,
         tabsVisible: getComputedStyle(tabs).display !== 'none',
@@ -412,6 +427,14 @@ test('backtest preserves result-first evidence and complete metrics across all a
     expect(geometry.resultEvidenceUnclipped, JSON.stringify(viewport)).toBe(
       true,
     );
+    expect(
+      geometry.readinessEvidenceOverflow,
+      JSON.stringify(viewport),
+    ).toBeLessThanOrEqual(0);
+    expect(
+      geometry.readinessEvidenceVerticalOverflow,
+      JSON.stringify(viewport),
+    ).toBeLessThanOrEqual(0);
 
     if (viewport.width >= 1280) {
       expect(geometry.catalogColumnCount, JSON.stringify(viewport)).toBe(1);
@@ -1087,6 +1110,11 @@ test('market keeps context, evidence review, and provider telemetry task-ordered
         const chartScroll = document.querySelector(
           '[data-testid="price-structure-chart-scroll"]',
         ) as HTMLElement | null;
+        const instrumentStatuses = Array.from(
+          document.querySelectorAll(
+            '[data-testid^="market-instrument-status-"]',
+          ),
+        ) as HTMLElement[];
         return {
           routeOverflow: route.scrollWidth - route.clientWidth,
           documentOverflow:
@@ -1115,6 +1143,23 @@ test('market keeps context, evidence review, and provider telemetry task-ordered
           chartMask: chartScroll ? getComputedStyle(chartScroll).maskImage : '',
           mobileNavigationTop:
             mobileNavigation?.getBoundingClientRect().top ?? 0,
+          instrumentStatusCount: instrumentStatuses.length,
+          instrumentStatusOverflow: instrumentStatuses.reduce(
+            (largest, element) =>
+              Math.max(largest, element.scrollWidth - element.clientWidth),
+            0,
+          ),
+          instrumentStatusVerticalOverflow: instrumentStatuses.reduce(
+            (largest, element) =>
+              Math.max(largest, element.scrollHeight - element.clientHeight),
+            0,
+          ),
+          instrumentStatusesDescribed: instrumentStatuses.every(
+            (element) =>
+              element.id.length > 0 &&
+              element.closest('button')?.getAttribute('aria-describedby') ===
+                element.id,
+          ),
           reviewAfterList:
             list !== null && review !== null
               ? review.getBoundingClientRect().top >
@@ -1132,6 +1177,22 @@ test('market keeps context, evidence review, and provider telemetry task-ordered
         `${theme} ${viewport.width}`,
       ).toBeLessThanOrEqual(0);
       expect(geometry.oversizedRadii, `${theme} ${viewport.width}`).toBe(0);
+      expect(
+        geometry.instrumentStatusCount,
+        `${theme} ${viewport.width}`,
+      ).toBeGreaterThan(0);
+      expect(
+        geometry.instrumentStatusOverflow,
+        `${theme} ${viewport.width}`,
+      ).toBeLessThanOrEqual(0);
+      expect(
+        geometry.instrumentStatusVerticalOverflow,
+        `${theme} ${viewport.width}`,
+      ).toBeLessThanOrEqual(0);
+      expect(
+        geometry.instrumentStatusesDescribed,
+        `${theme} ${viewport.width}`,
+      ).toBe(true);
       expect(
         geometry.listOverflow,
         `${theme} ${viewport.width}`,
@@ -1383,6 +1444,24 @@ test('core review routes keep audit drill-downs closed and mobile reading paths 
   await expect(
     page.getByTestId('settings-persisted-configuration'),
   ).toBeVisible();
+  const metadataDisclosure = page.getByTestId('settings-metadata-disclosure');
+  await expect(metadataDisclosure).not.toHaveAttribute('open', '');
+  await metadataDisclosure.locator('summary').click();
+  await expect(metadataDisclosure).toHaveAttribute('open', '');
+  const metadataSource = page.getByText('Saved register and watchlist', {
+    exact: true,
+  });
+  await expect(metadataSource).toBeVisible();
+  const metadataSourceGeometry = await metadataSource.evaluate((element) => ({
+    horizontalOverflow: element.scrollWidth - element.clientWidth,
+    verticalOverflow: element.scrollHeight - element.clientHeight,
+    whiteSpace: getComputedStyle(element).whiteSpace,
+  }));
+  expect(metadataSourceGeometry.horizontalOverflow).toBeLessThanOrEqual(0);
+  expect(metadataSourceGeometry.verticalOverflow).toBeLessThanOrEqual(0);
+  expect(metadataSourceGeometry.whiteSpace).toBe('normal');
+  await metadataDisclosure.locator('summary').click();
+  await expect(metadataDisclosure).not.toHaveAttribute('open', '');
   for (const testId of [
     'settings-configuration-editor',
     'settings-data-source-disclosure',

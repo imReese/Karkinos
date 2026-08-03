@@ -650,6 +650,13 @@ test('uses a compact master-detail instrument workspace with local list overflow
   expect(
     screen.getByTestId('market-instrument-price-600519').className,
   ).not.toContain('font-mono');
+  const instrumentStatus = screen.getByTestId(
+    'market-instrument-status-600519',
+  );
+  expect(instrumentStatus.className).not.toContain('truncate');
+  expect(instrumentStatus.textContent).toContain('Live · 1m');
+  expect(instrumentStatus.textContent).toContain('1 research record');
+  expect(selected.getAttribute('aria-describedby')).toBe(instrumentStatus.id);
   expect(screen.getByTestId('market-selected-price').className).not.toContain(
     'font-mono',
   );

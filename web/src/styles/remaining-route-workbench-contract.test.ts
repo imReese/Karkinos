@@ -376,6 +376,49 @@ describe('remaining route workbench contract', () => {
     expect(holdingSummaryStyles).toContain('word-break: break-word');
   });
 
+  it('keeps route-critical support copy readable instead of ellipsized', () => {
+    expect(MARKET_INSTRUMENT_WORKSPACE).toContain(
+      'data-testid={`market-instrument-status-${item.symbol}`}',
+    );
+    expect(MARKET_INSTRUMENT_WORKSPACE).toContain(
+      'aria-describedby={statusId}',
+    );
+    expect(MARKET_INSTRUMENT_WORKSPACE).toContain(
+      "return locale === 'zh' ? `${days}天` : `${days}d`;",
+    );
+
+    const runContextValue = BACKTEST.slice(
+      BACKTEST.indexOf('function RunContextValue'),
+      BACKTEST.indexOf('function SingleInstrumentLoopReadinessCard'),
+    );
+    expect(runContextValue).toContain('break-words');
+    expect(runContextValue).not.toContain('truncate');
+
+    const metadataItem = BACKTEST.slice(
+      BACKTEST.indexOf('function MetadataItem'),
+      BACKTEST.indexOf('function formatMetadataList'),
+    );
+    expect(metadataItem).toContain('break-words');
+    expect(metadataItem).not.toContain('truncate');
+
+    const reportSectionSource = BACKTEST_REPORT_SECTIONS.join('\n');
+    expect(
+      reportSectionSource.match(
+        /justify-between gap-1 border-t border-\[var\(--app-divider\)\]/g,
+      ),
+    ).toHaveLength(2);
+    expect(reportSectionSource.match(/title=\{label\}/g)?.length ?? 0).toBe(2);
+
+    expect(SETTINGS).toContain('className="app-settings-metadata-strip"');
+    const settingsMetadataStyles = CSS.slice(
+      CSS.indexOf('.app-settings-metadata-strip'),
+      CSS.indexOf('.app-account-truth-filter-rail'),
+    );
+    expect(settingsMetadataStyles).toContain('overflow-wrap: anywhere');
+    expect(settingsMetadataStyles).toContain('text-overflow: clip');
+    expect(settingsMetadataStyles).toContain('white-space: normal');
+  });
+
   it('treats saved backtests as flat reproducible evidence instead of metric cards', () => {
     expect(BACKTEST_REPORT).toContain(
       'data-backtest-report-workspace="saved-evidence"',

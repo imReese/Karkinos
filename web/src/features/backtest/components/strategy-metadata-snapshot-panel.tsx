@@ -351,8 +351,11 @@ function SnapshotStat({
 
 function BoundaryChip({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 border-t border-[var(--app-divider)] py-2">
-      <span className="min-w-0 truncate text-xs text-[var(--app-text-secondary)]">
+    <div className="flex min-w-0 items-center justify-between gap-1 border-t border-[var(--app-divider)] py-2">
+      <span
+        className="min-w-0 truncate text-xs text-[var(--app-text-secondary)]"
+        title={label}
+      >
         {label}
       </span>
       <span className="inline-flex items-center gap-1 text-sm font-semibold">
