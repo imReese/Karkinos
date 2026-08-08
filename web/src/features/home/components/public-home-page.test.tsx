@@ -6,7 +6,13 @@ import {
   Outlet,
   RouterProvider,
 } from '@tanstack/react-router';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test, vi } from 'vitest';
 
@@ -150,8 +156,31 @@ test('keeps desktop home detail content available through panel navigation', asy
   const navigation = await screen.findByRole('navigation', {
     name: 'Public navigation',
   });
+  const sectionNavigation = screen.getByRole('navigation', {
+    name: 'Page sections',
+  });
 
-  await user.click(within(navigation).getByRole('link', { name: 'Product' }));
+  for (const [name, id] of [
+    ['Product', 'product'],
+    ['Trust', 'principles'],
+    ['Workflow', 'workflow'],
+  ] as const) {
+    expect(
+      within(sectionNavigation)
+        .getByRole('link', { name })
+        .getAttribute('href'),
+    ).toBe(`#${id}`);
+    expect(document.getElementById(id)?.getAttribute('tabindex')).toBe('-1');
+    expect(document.getElementById(id)?.getAttribute('aria-labelledby')).toBe(
+      `public-${id}-title`,
+    );
+  }
+
+  const productNavigationLink = within(navigation).getByRole('link', {
+    name: 'Product',
+  });
+  productNavigationLink.focus();
+  await user.keyboard('{Enter}');
   expect(
     within(navigation)
       .getByRole('link', { name: 'Product' })
@@ -160,6 +189,9 @@ test('keeps desktop home detail content available through panel navigation', asy
   expect(
     screen.getByRole('link', { name: 'Open surface: Account Truth' }),
   ).toBeTruthy();
+  await waitFor(() => {
+    expect(document.activeElement).toBe(document.getElementById('product'));
+  });
 
   await user.click(within(navigation).getByRole('link', { name: 'Trust' }));
   expect(
@@ -179,6 +211,46 @@ test('keeps desktop home detail content available through panel navigation', asy
       name: 'From an idea to a controlled decision.',
     }),
   ).toBeTruthy();
+  await waitFor(() => {
+    expect(document.activeElement).toBe(document.getElementById('workflow'));
+  });
+
+  expect(
+    screen
+      .getByRole('list', { name: 'Product proof' })
+      .getAttribute('data-local-overflow'),
+  ).toBe('public-product-proof');
+  expect(
+    screen
+      .getByRole('list', { name: 'Capability flow' })
+      .getAttribute('data-local-overflow'),
+  ).toBe('public-workflow');
+  expect(
+    screen
+      .getByLabelText('Trust principles')
+      .getAttribute('data-local-overflow'),
+  ).toBe('public-principles');
+
+  const productRail = screen.getByRole('list', { name: 'Product proof' });
+  const scrollBy = vi.fn();
+  Object.defineProperties(productRail, {
+    clientWidth: { configurable: true, value: 340 },
+    scrollWidth: { configurable: true, value: 744 },
+    scrollBy: { configurable: true, value: scrollBy },
+  });
+  fireEvent.keyDown(productRail, { key: 'ArrowRight' });
+  expect(scrollBy).toHaveBeenCalledWith({
+    left: 340 * 0.78,
+    behavior: 'smooth',
+  });
+  vi.mocked(window.matchMedia).mockReturnValue({
+    matches: true,
+  } as MediaQueryList);
+  fireEvent.keyDown(productRail, { key: 'ArrowLeft' });
+  expect(scrollBy).toHaveBeenLastCalledWith({
+    left: -(340 * 0.78),
+    behavior: 'auto',
+  });
 });
 
 test('supports localized copy and direct Latte or Mocha switching', async () => {

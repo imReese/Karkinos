@@ -146,7 +146,7 @@ test('public home remains localized, themeable, and overflow safe on mobile', as
   ).toBeVisible();
 });
 
-test('public home preserves its composition across the six visual acceptance viewports', async ({
+test('public home preserves its composition across the seven visual acceptance viewports', async ({
   page,
 }) => {
   for (const viewport of publicHomeViewports) {
@@ -162,9 +162,9 @@ test('public home preserves its composition across the six visual acceptance vie
           .querySelector('.app-public-evidence-frame')
           ?.getBoundingClientRect().top ?? 0,
       ),
-      localOverflow: Array.from(
+      unexpectedOverflow: Array.from(
         document.querySelectorAll<HTMLElement>(
-          '.app-public-header, .app-public-hero, .app-public-evidence-frame, .app-public-proof-grid, .app-public-workflow, .app-public-footer',
+          '.app-public-header, .app-public-hero, .app-public-evidence-frame, .app-public-footer',
         ),
       )
         .map((element) => ({
@@ -172,12 +172,38 @@ test('public home preserves its composition across the six visual acceptance vie
           overflow: element.scrollWidth - element.clientWidth,
         }))
         .filter(({ overflow }) => overflow > 0),
+      localOverflow: Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '[data-local-overflow^="public-"]',
+        ),
+      )
+        .map((element) => ({
+          name: element.dataset.localOverflow,
+          overflow: element.scrollWidth - element.clientWidth,
+          overflowX: getComputedStyle(element).overflowX,
+          tabIndex: element.tabIndex,
+        }))
+        .filter(({ overflow }) => overflow > 0),
       verticalOverflow:
         document.documentElement.scrollHeight -
         document.documentElement.clientHeight,
     }));
     expect(latteGeometry.documentOverflow, JSON.stringify(viewport)).toBe(0);
-    expect(latteGeometry.localOverflow, JSON.stringify(viewport)).toEqual([]);
+    expect(latteGeometry.unexpectedOverflow, JSON.stringify(viewport)).toEqual(
+      [],
+    );
+    expect(
+      latteGeometry.localOverflow.map(({ name }) => name),
+      JSON.stringify(viewport),
+    ).toEqual(
+      viewport.width < 720
+        ? ['public-product-proof', 'public-principles', 'public-workflow']
+        : [],
+    );
+    for (const localOverflow of latteGeometry.localOverflow) {
+      expect(localOverflow.overflowX, localOverflow.name).toBe('auto');
+      expect(localOverflow.tabIndex, localOverflow.name).toBe(0);
+    }
     expect(latteGeometry.evidenceTop, JSON.stringify(viewport)).toBeLessThan(
       700,
     );
