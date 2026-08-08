@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { useCopy } from '../../../app/copy';
 import {
@@ -57,6 +58,48 @@ function ResultSelector({
         </select>
       </div>
     </FilterBar>
+  );
+}
+
+function ReportDisclosure({
+  children,
+  detail,
+  kicker,
+  testId,
+  title,
+}: {
+  children: ReactNode;
+  detail: string;
+  kicker: string;
+  testId: string;
+  title: string;
+}) {
+  return (
+    <details
+      className="group min-w-0 border-y border-[var(--app-divider)]"
+      data-testid={testId}
+    >
+      <summary className="flex min-h-16 cursor-pointer list-none items-start justify-between gap-4 py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
+        <span className="min-w-0">
+          <span className="app-kicker app-type-overline block">{kicker}</span>
+          <span className="mt-1 block text-sm font-semibold text-[var(--app-text)]">
+            {title}
+          </span>
+          <span className="mt-0.5 block max-w-3xl text-xs leading-5 text-[var(--app-text-secondary)]">
+            {detail}
+          </span>
+        </span>
+        <span
+          aria-hidden="true"
+          className="mt-1 inline-flex size-6 shrink-0 items-center justify-center text-[var(--app-text-secondary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] group-open:rotate-180 motion-reduce:transition-none"
+        >
+          <ChevronDown className="size-4" strokeWidth={1.75} />
+        </span>
+      </summary>
+      <div className="border-t border-[var(--app-divider)] py-4 [&>[data-backtest-report-section]]:border-t-0 [&>[data-backtest-report-section]]:pt-0 [&>[data-backtest-report-section]>:first-child]:hidden">
+        {children}
+      </div>
+    </details>
   );
 }
 
@@ -144,11 +187,43 @@ export function BacktestReportView() {
             points={report.data.equity_curve}
           />
           <MetricsGrid report={report.data} />
-          <ValidationEvidencePanel report={report.data} />
-          <DatasetSnapshotPanel report={report.data} />
-          <StrategyMetadataSnapshotPanel report={report.data} />
-          <StrategyHypothesisPanel report={report.data} />
-          <FillsTable fills={report.data.fills ?? []} />
+          <div className="space-y-3">
+            <ReportDisclosure
+              detail={labels.validationEvidence.subtitle}
+              kicker={labels.validationEvidence.kicker}
+              testId="backtest-validation-disclosure"
+              title={labels.validationEvidence.title}
+            >
+              <ValidationEvidencePanel report={report.data} />
+            </ReportDisclosure>
+            <ReportDisclosure
+              detail={labels.datasetSnapshot.subtitle}
+              kicker={labels.datasetSnapshot.kicker}
+              testId="backtest-dataset-disclosure"
+              title={labels.datasetSnapshot.title}
+            >
+              <DatasetSnapshotPanel report={report.data} />
+            </ReportDisclosure>
+            <ReportDisclosure
+              detail={labels.strategySnapshot.subtitle}
+              kicker={labels.strategySnapshot.kicker}
+              testId="backtest-strategy-evidence-disclosure"
+              title={labels.strategySnapshot.title}
+            >
+              <div className="space-y-5 [&>[data-backtest-report-section]]:border-t-0 [&>[data-backtest-report-section]]:pt-0 [&>[data-backtest-report-section]>:first-child]:hidden">
+                <StrategyMetadataSnapshotPanel report={report.data} />
+                <StrategyHypothesisPanel report={report.data} />
+              </div>
+            </ReportDisclosure>
+            <ReportDisclosure
+              detail={labels.fills.rows(report.data.fills?.length ?? 0)}
+              kicker={labels.fills.kicker}
+              testId="backtest-fills-disclosure"
+              title={labels.fills.title}
+            >
+              <FillsTable fills={report.data.fills ?? []} />
+            </ReportDisclosure>
+          </div>
         </>
       ) : null}
     </div>

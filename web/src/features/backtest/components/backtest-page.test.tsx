@@ -1312,6 +1312,16 @@ test('renders the backtest workspace and saved report history', async () => {
   const equityChart = await within(persistedEvidence).findByRole('heading', {
     name: 'Equity and drawdown',
   });
+  for (const testId of [
+    'backtest-validation-disclosure',
+    'backtest-dataset-disclosure',
+    'backtest-strategy-evidence-disclosure',
+    'backtest-fills-disclosure',
+  ]) {
+    const disclosure = within(persistedEvidence).getByTestId(testId);
+    expect(disclosure.tagName).toBe('DETAILS');
+    expect(disclosure.hasAttribute('open')).toBe(false);
+  }
   const metrics = persistedEvidence.querySelector(
     '[data-backtest-report-section="metrics"]',
   );
@@ -2700,7 +2710,16 @@ test('marks unconfirmed dataset rows in saved backtest reports', async () => {
 test('renders persisted strategy metadata for saved reports', async () => {
   renderBacktestPage();
 
-  expect(await screen.findByText('Strategy snapshot')).toBeTruthy();
+  const strategyDisclosure = await screen.findByTestId(
+    'backtest-strategy-evidence-disclosure',
+  );
+  fireEvent.click(strategyDisclosure.querySelector('summary')!);
+  expect(strategyDisclosure.hasAttribute('open')).toBe(true);
+  expect(
+    within(strategyDisclosure).getByRole('heading', {
+      name: 'Strategy snapshot',
+    }),
+  ).toBeTruthy();
   expect(
     (await screen.findAllByText('Dual Moving Average')).length,
   ).toBeGreaterThanOrEqual(2);
@@ -2741,7 +2760,14 @@ test('renders persisted strategy metadata for saved reports', async () => {
 test('localizes persisted strategy metadata for chinese reports', async () => {
   renderBacktestPage({ locale: 'zh' });
 
-  expect(await screen.findByText('策略快照')).toBeTruthy();
+  const strategyDisclosure = await screen.findByTestId(
+    'backtest-strategy-evidence-disclosure',
+  );
+  fireEvent.click(strategyDisclosure.querySelector('summary')!);
+  expect(strategyDisclosure.hasAttribute('open')).toBe(true);
+  expect(
+    within(strategyDisclosure).getByRole('heading', { name: '策略快照' }),
+  ).toBeTruthy();
   expect(
     (await screen.findAllByText('双均线策略')).length,
   ).toBeGreaterThanOrEqual(2);
@@ -2775,7 +2801,16 @@ test('localizes persisted strategy metadata for chinese reports', async () => {
 test('renders after-cost and out-of-sample evidence for saved reports', async () => {
   renderBacktestPage();
 
-  expect(await screen.findByText('Validation evidence')).toBeTruthy();
+  const validationDisclosure = await screen.findByTestId(
+    'backtest-validation-disclosure',
+  );
+  fireEvent.click(validationDisclosure.querySelector('summary')!);
+  expect(validationDisclosure.hasAttribute('open')).toBe(true);
+  expect(
+    within(validationDisclosure).getByRole('heading', {
+      name: 'Validation evidence',
+    }),
+  ).toBeTruthy();
   expect(await screen.findByText('After-cost evidence')).toBeTruthy();
   expect(await screen.findByText('Out-of-sample split')).toBeTruthy();
   expect(

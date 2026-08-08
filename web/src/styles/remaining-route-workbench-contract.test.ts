@@ -347,6 +347,29 @@ describe('remaining route workbench contract', () => {
     );
   });
 
+  it('keeps saved backtest evidence available behind compact disclosures', () => {
+    expect(BACKTEST_REPORT).toContain('function ReportDisclosure');
+    expect(BACKTEST_REPORT).toContain('border-y border-[var(--app-divider)]');
+    expect(BACKTEST_REPORT).toContain('motion-reduce:transition-none');
+    expect(BACKTEST_REPORT).not.toContain('<details open');
+
+    for (const disclosureId of [
+      'backtest-validation-disclosure',
+      'backtest-dataset-disclosure',
+      'backtest-strategy-evidence-disclosure',
+      'backtest-fills-disclosure',
+    ]) {
+      expect(BACKTEST_REPORT).toContain(`testId="${disclosureId}"`);
+    }
+
+    expect(BACKTEST_REPORT.indexOf('<EquityDrawdownChart')).toBeLessThan(
+      BACKTEST_REPORT.indexOf('testId="backtest-validation-disclosure"'),
+    );
+    expect(BACKTEST_REPORT.indexOf('<MetricsGrid')).toBeLessThan(
+      BACKTEST_REPORT.indexOf('testId="backtest-validation-disclosure"'),
+    );
+  });
+
   it('keeps Activity ledger entry surfaces flat and token-shaped', () => {
     const activityTools = ROUTER.slice(
       ROUTER.indexOf('function ActivityEntryToolsPanel'),
