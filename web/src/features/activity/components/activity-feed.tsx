@@ -247,7 +247,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
       </div>
       <div
         aria-label={labels.title}
-        className="min-w-0 max-h-[min(68vh,42rem)] max-w-full overflow-auto overscroll-contain [scrollbar-gutter:stable] xl:max-h-none"
+        className="min-w-0 max-h-[min(68vh,42rem)] max-w-full overflow-auto overscroll-contain [scrollbar-gutter:stable]"
         role="region"
         tabIndex={0}
       >

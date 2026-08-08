@@ -651,6 +651,8 @@ test('activity keeps immutable history in the first reading path across all acce
         emptyStateTop: emptyState?.getBoundingClientRect().top ?? null,
         historyLocalOverflow:
           region === null ? null : region.scrollWidth - region.clientWidth,
+        historyVerticalOverflow:
+          region === null ? null : region.scrollHeight - region.clientHeight,
         historySurfaceTop: historySurface.getBoundingClientRect().top,
         tableTop: table?.getBoundingClientRect().top ?? null,
       };
@@ -677,6 +679,12 @@ test('activity keeps immutable history in the first reading path across all acce
         ).toBeGreaterThan(0);
         expect(
           geometry.historyLocalOverflow ?? 0,
+          JSON.stringify(viewport),
+        ).toBeGreaterThan(0);
+      }
+      if (Array.isArray(entries) && entries.length > 8) {
+        expect(
+          geometry.historyVerticalOverflow ?? 0,
           JSON.stringify(viewport),
         ).toBeGreaterThan(0);
       }
