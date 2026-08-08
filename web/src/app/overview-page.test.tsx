@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
@@ -676,6 +676,34 @@ test('loads canonical overview facts before secondary workbench evidence', async
       ),
     ).toBe(true),
   );
+});
+
+test('reveals saved account metrics while the holdings projection is still loading', async () => {
+  const baseFetch = installOverviewFetchMock();
+  let resolveSnapshot!: (response: Response) => void;
+  const snapshotRequest = new Promise<Response>((resolve) => {
+    resolveSnapshot = resolve;
+  });
+  const fetchMock = vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith('/api/portfolio')) return snapshotRequest;
+    return baseFetch(input);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+
+  renderOverviewPage({ installFetch: false });
+
+  expect(await screen.findByTestId('account-metrics-rail')).toBeTruthy();
+  const holdings = screen.getByTestId('overview-holdings-section');
+  expect(within(holdings).getByText('Loading positions.')).toBeTruthy();
+  expect(screen.queryByTestId('overview-daily-workbench')).toBeNull();
+
+  await act(async () => {
+    resolveSnapshot(jsonResponse(portfolioSnapshot));
+  });
+
+  expect(await screen.findByTestId('overview-daily-workbench')).toBeTruthy();
+  expect(screen.queryByText('Loading positions.')).toBeNull();
 });
 
 test('keeps a fully closed asset out of current holdings while retaining sell activity', async () => {

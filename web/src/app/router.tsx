@@ -422,6 +422,14 @@ export function OverviewPage() {
     () => snapshot.data?.positions ?? [],
     [snapshot.data],
   );
+  const hasOverviewProjection = overview.data !== undefined;
+  const hasPortfolioProjection = snapshot.data !== undefined;
+  const hasAnyPrimaryProjection =
+    hasOverviewProjection || hasPortfolioProjection;
+  const isInitialOverviewLoad =
+    !hasAnyPrimaryProjection && (overview.isLoading || snapshot.isLoading);
+  const isInitialOverviewError =
+    !hasAnyPrimaryProjection && (overview.isError || snapshot.isError);
   const marketCalendarYear = useMemo(() => {
     const years = Array.from(
       new Set(
@@ -468,7 +476,7 @@ export function OverviewPage() {
         description={copy.overview.subtitle}
       />
 
-      {overview.isLoading || snapshot.isLoading ? (
+      {isInitialOverviewLoad ? (
         <EvidenceLoadingLayout
           title={copy.states.loading}
           description={copy.overview.loading}
@@ -476,7 +484,7 @@ export function OverviewPage() {
           rowCount={3}
           className="pt-1"
         />
-      ) : overview.isError || snapshot.isError ? (
+      ) : isInitialOverviewError ? (
         <StatusCard
           tone="danger"
           title={copy.states.error}
@@ -487,183 +495,274 @@ export function OverviewPage() {
             void snapshot.refetch();
           }}
         />
-      ) : overview.data && snapshot.data ? (
+      ) : hasAnyPrimaryProjection ? (
         <div className="space-y-5">
-          <OverviewCards
-            overview={overview.data}
-            variant="workbench"
-            todayPnlLabel={todayPnlLabel}
-            todayPnlContext={todayPnlContext}
-          />
+          {overview.data ? (
+            <OverviewCards
+              overview={overview.data}
+              variant="workbench"
+              todayPnlLabel={todayPnlLabel}
+              todayPnlContext={todayPnlContext}
+            />
+          ) : (
+            <EvidenceState
+              kind={overview.isError ? 'error' : 'loading'}
+              title={
+                overview.isError
+                  ? copy.portfolio.summary.error
+                  : copy.portfolio.summary.loading
+              }
+              description={
+                overview.isError
+                  ? copy.portfolio.summary.errorDetail
+                  : copy.portfolio.summary.loadingDetail
+              }
+              action={
+                overview.isError ? (
+                  <button
+                    type="button"
+                    className="app-button-secondary inline-flex min-h-9 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
+                    onClick={() => void overview.refetch()}
+                  >
+                    {copy.states.retry}
+                  </button>
+                ) : undefined
+              }
+            />
+          )}
 
-          <div
-            className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(340px,0.85fr)]"
-            data-testid="overview-daily-workbench"
-          >
-            <div className="min-w-0 xl:order-2">
-              <DashboardTodayQueue
-                overview={overview.data}
-                marketHealth={marketHealth.data}
-                portfolioSnapshot={snapshot.data}
-                marketEvidenceReview={holdingMarketEvidenceReview.data}
-                marketEvidenceReviewLoading={
-                  holdingMarketEvidenceReview.isLoading
-                }
-                marketEvidenceReviewError={holdingMarketEvidenceReview.isError}
-                quoteDiagnostics={positions}
-                pendingOrders={pendingOrders.data ?? []}
-                pendingOrdersLoading={pendingOrders.isLoading}
-                pendingOrdersError={pendingOrders.isError}
-                strategyContribution={strategyContribution.data}
-                strategyContributionLoading={strategyContribution.isLoading}
-                strategyContributionError={strategyContribution.isError}
-                todayDecision={todayDecision.data}
-                todayDecisionLoading={todayDecision.isLoading}
-                todayDecisionError={todayDecision.isError}
-                tradingPlan={tradingPlan.data}
-                tradingPlanLoading={tradingPlan.isLoading}
-                tradingPlanError={tradingPlan.isError}
-                operationsToday={operationsToday.data}
-                operationsTodayLoading={operationsToday.isLoading}
-                operationsTodayError={operationsToday.isError}
-              />
-            </div>
-            <section
-              className="min-w-0 xl:order-1"
-              data-testid="overview-holdings-section"
-            >
-              <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
-                <div>
-                  <h2 className="app-type-section-title text-[var(--app-text)]">
-                    {copy.overview.dashboard.positionsPanel}
-                  </h2>
-                  <p className="mt-1 text-xs text-[var(--app-text-secondary)]">
-                    {copy.overview.dashboard.positionsDetail}
-                  </p>
+          {snapshot.data ? (
+            overview.data ? (
+              <div
+                className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(340px,0.85fr)]"
+                data-testid="overview-daily-workbench"
+              >
+                <div className="min-w-0 xl:order-2">
+                  <DashboardTodayQueue
+                    overview={overview.data}
+                    marketHealth={marketHealth.data}
+                    portfolioSnapshot={snapshot.data}
+                    marketEvidenceReview={holdingMarketEvidenceReview.data}
+                    marketEvidenceReviewLoading={
+                      holdingMarketEvidenceReview.isLoading
+                    }
+                    marketEvidenceReviewError={
+                      holdingMarketEvidenceReview.isError
+                    }
+                    quoteDiagnostics={positions}
+                    pendingOrders={pendingOrders.data ?? []}
+                    pendingOrdersLoading={pendingOrders.isLoading}
+                    pendingOrdersError={pendingOrders.isError}
+                    strategyContribution={strategyContribution.data}
+                    strategyContributionLoading={strategyContribution.isLoading}
+                    strategyContributionError={strategyContribution.isError}
+                    todayDecision={todayDecision.data}
+                    todayDecisionLoading={todayDecision.isLoading}
+                    todayDecisionError={todayDecision.isError}
+                    tradingPlan={tradingPlan.data}
+                    tradingPlanLoading={tradingPlan.isLoading}
+                    tradingPlanError={tradingPlan.isError}
+                    operationsToday={operationsToday.data}
+                    operationsTodayLoading={operationsToday.isLoading}
+                    operationsTodayError={operationsToday.isError}
+                  />
                 </div>
-                <span className="text-xs tabular-nums text-[var(--app-text-tertiary)]">
-                  {positions.length} {copy.overview.risk.positions}
-                </span>
-              </div>
-              {positions.length === 0 ? (
-                <StatusCard
-                  title={copy.states.empty}
-                  detail={copy.portfolio.positionsEmpty}
-                />
-              ) : (
-                <PositionsTable
+                <OverviewHoldingsSection
                   positions={positions}
                   assetClassBySymbol={assetClassBySymbol}
-                  variant="dashboard"
+                  className="xl:order-1"
                 />
-              )}
-            </section>
-          </div>
-
-          <section
-            data-testid="overview-performance-card"
-            className="min-w-0 overflow-hidden border-y border-[var(--app-divider)] bg-transparent"
-          >
-            <div
-              role="tablist"
-              aria-label={copy.overview.dashboard.equityPanel}
-              className="flex max-w-full overflow-x-auto border-b border-[var(--app-divider)]"
-            >
-              {analysisTabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={analysisView === tab.id}
-                  onClick={() => setAnalysisView(tab.id)}
-                  className={`h-9 shrink-0 border-b-2 px-3 text-xs font-semibold ${
-                    analysisView === tab.id
-                      ? 'border-[var(--app-accent)] text-[var(--app-accent)]'
-                      : 'border-transparent text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-            <div className="min-w-0 py-3 sm:py-4">
-              {analysisView === 'performance' ? (
-                equityCurve.isLoading ? (
-                  <EquityCurveSkeleton />
-                ) : equityCurve.isError ? (
-                  <StatusCard
-                    tone="danger"
-                    title={copy.states.error}
-                    detail={copy.overview.curveError}
-                    actionLabel={copy.states.retry}
-                    onAction={() => void equityCurve.refetch()}
-                  />
-                ) : (
-                  <EquityCurveCard
-                    points={equityCurve.data ?? []}
-                    range={equityCurveRange}
-                    onRangeChange={setEquityCurveRange}
-                  />
-                )
-              ) : analysisView === 'allocation' ? (
-                <PortfolioExposureSummary snapshot={snapshot.data} />
-              ) : analysisView === 'attribution' ? (
-                <StrategyContributionGateCard
-                  report={strategyContribution.data}
-                  isLoading={strategyContribution.isLoading}
-                  isError={strategyContribution.isError}
-                  onRetry={() => void strategyContribution.refetch()}
-                  instruments={positions}
-                  variant="compact"
-                />
-              ) : (
-                <ReturnCalendarCard
-                  timeline={explainability.data?.timeline ?? []}
-                  positions={positions}
-                  marketCalendar={marketCalendar.data}
-                  compact
-                />
-              )}
-            </div>
-          </section>
-
-          <div
-            className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]"
-            data-testid="overview-review-strip"
-          >
-            <DashboardMarketPulse
-              marketHealth={marketHealth.data}
-              isLoading={marketHealth.isLoading}
-              isError={marketHealth.isError}
-            />
-            <section className="min-w-0 border-y border-[var(--app-divider)] bg-transparent py-3 sm:py-4">
-              <div className="mb-3 flex items-end justify-between gap-3">
-                <h2 className="app-type-section-title text-[var(--app-text)]">
-                  {copy.overview.dashboard.pendingApprovals}
-                </h2>
-                <span className="font-mono text-xs tabular-nums text-[var(--app-text-tertiary)]">
-                  {copy.overview.dashboard.pendingCount(
-                    pendingOrders.data?.length ?? 0,
-                  )}
-                </span>
               </div>
-              <DashboardPendingOrders
-                orders={pendingOrders.data ?? []}
-                isLoading={pendingOrders.isLoading}
-                isError={pendingOrders.isError}
-                copy={copy}
+            ) : (
+              <OverviewHoldingsSection
+                positions={positions}
+                assetClassBySymbol={assetClassBySymbol}
               />
-              <DashboardLedger
-                entries={ledgerEntries.data ?? []}
-                isLoading={ledgerEntries.isLoading}
-                isError={ledgerEntries.isError}
-                copy={copy}
+            )
+          ) : (
+            <section
+              className="min-w-0 space-y-2"
+              data-testid="overview-holdings-section"
+            >
+              <h2 className="app-type-section-title text-[var(--app-text)]">
+                {copy.overview.dashboard.positionsPanel}
+              </h2>
+              <EvidenceState
+                kind={snapshot.isError ? 'error' : 'loading'}
+                title={
+                  snapshot.isError
+                    ? copy.portfolio.positionsError
+                    : copy.portfolio.positionsLoading
+                }
+                description={copy.overview.dashboard.positionsDetail}
+                action={
+                  snapshot.isError ? (
+                    <button
+                      type="button"
+                      className="app-button-secondary inline-flex min-h-9 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
+                      onClick={() => void snapshot.refetch()}
+                    >
+                      {copy.states.retry}
+                    </button>
+                  ) : undefined
+                }
               />
             </section>
-          </div>
+          )}
+
+          {overview.data && snapshot.data ? (
+            <>
+              <section
+                data-testid="overview-performance-card"
+                className="min-w-0 overflow-hidden border-y border-[var(--app-divider)] bg-transparent"
+              >
+                <div
+                  role="tablist"
+                  aria-label={copy.overview.dashboard.equityPanel}
+                  className="flex max-w-full overflow-x-auto border-b border-[var(--app-divider)]"
+                >
+                  {analysisTabs.map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={analysisView === tab.id}
+                      onClick={() => setAnalysisView(tab.id)}
+                      className={`h-9 shrink-0 border-b-2 px-3 text-xs font-semibold ${
+                        analysisView === tab.id
+                          ? 'border-[var(--app-accent)] text-[var(--app-accent)]'
+                          : 'border-transparent text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="min-w-0 py-3 sm:py-4">
+                  {analysisView === 'performance' ? (
+                    equityCurve.isLoading ? (
+                      <EquityCurveSkeleton />
+                    ) : equityCurve.isError ? (
+                      <StatusCard
+                        tone="danger"
+                        title={copy.states.error}
+                        detail={copy.overview.curveError}
+                        actionLabel={copy.states.retry}
+                        onAction={() => void equityCurve.refetch()}
+                      />
+                    ) : (
+                      <EquityCurveCard
+                        points={equityCurve.data ?? []}
+                        range={equityCurveRange}
+                        onRangeChange={setEquityCurveRange}
+                      />
+                    )
+                  ) : analysisView === 'allocation' ? (
+                    <PortfolioExposureSummary snapshot={snapshot.data} />
+                  ) : analysisView === 'attribution' ? (
+                    <StrategyContributionGateCard
+                      report={strategyContribution.data}
+                      isLoading={strategyContribution.isLoading}
+                      isError={strategyContribution.isError}
+                      onRetry={() => void strategyContribution.refetch()}
+                      instruments={positions}
+                      variant="compact"
+                    />
+                  ) : (
+                    <ReturnCalendarCard
+                      timeline={explainability.data?.timeline ?? []}
+                      positions={positions}
+                      marketCalendar={marketCalendar.data}
+                      compact
+                    />
+                  )}
+                </div>
+              </section>
+
+              <div
+                className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]"
+                data-testid="overview-review-strip"
+              >
+                <DashboardMarketPulse
+                  marketHealth={marketHealth.data}
+                  isLoading={marketHealth.isLoading}
+                  isError={marketHealth.isError}
+                />
+                <section className="min-w-0 border-y border-[var(--app-divider)] bg-transparent py-3 sm:py-4">
+                  <div className="mb-3 flex items-end justify-between gap-3">
+                    <h2 className="app-type-section-title text-[var(--app-text)]">
+                      {copy.overview.dashboard.pendingApprovals}
+                    </h2>
+                    <span className="font-mono text-xs tabular-nums text-[var(--app-text-tertiary)]">
+                      {copy.overview.dashboard.pendingCount(
+                        pendingOrders.data?.length ?? 0,
+                      )}
+                    </span>
+                  </div>
+                  <DashboardPendingOrders
+                    orders={pendingOrders.data ?? []}
+                    isLoading={pendingOrders.isLoading}
+                    isError={pendingOrders.isError}
+                    copy={copy}
+                  />
+                  <DashboardLedger
+                    entries={ledgerEntries.data ?? []}
+                    isLoading={ledgerEntries.isLoading}
+                    isError={ledgerEntries.isError}
+                    copy={copy}
+                  />
+                </section>
+              </div>
+            </>
+          ) : null}
         </div>
       ) : (
         <StatusCard title={copy.states.empty} detail={copy.overview.empty} />
+      )}
+    </section>
+  );
+}
+
+function OverviewHoldingsSection({
+  positions,
+  assetClassBySymbol,
+  className,
+}: {
+  positions: PortfolioSnapshot['positions'];
+  assetClassBySymbol: Record<string, string>;
+  className?: string;
+}) {
+  const copy = useCopy();
+
+  return (
+    <section
+      className={`min-w-0 ${className ?? ''}`.trim()}
+      data-testid="overview-holdings-section"
+    >
+      <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h2 className="app-type-section-title text-[var(--app-text)]">
+            {copy.overview.dashboard.positionsPanel}
+          </h2>
+          <p className="mt-1 text-xs text-[var(--app-text-secondary)]">
+            {copy.overview.dashboard.positionsDetail}
+          </p>
+        </div>
+        <span className="text-xs tabular-nums text-[var(--app-text-tertiary)]">
+          {positions.length} {copy.overview.risk.positions}
+        </span>
+      </div>
+      {positions.length === 0 ? (
+        <StatusCard
+          title={copy.states.empty}
+          detail={copy.portfolio.positionsEmpty}
+        />
+      ) : (
+        <PositionsTable
+          positions={positions}
+          assetClassBySymbol={assetClassBySymbol}
+          variant="dashboard"
+        />
       )}
     </section>
   );
@@ -3505,12 +3604,10 @@ export function RiskPage() {
   const copy = useCopy();
   const { locale } = usePreferences();
   const state = useAccountStateQuery();
-  const risks = useRiskSummaryQuery();
   const workspace = useRiskWorkspaceQuery();
-  const primaryRiskQueriesSettled =
-    Boolean(state.data && workspace.data) &&
-    (!risks.isLoading || risks.data !== undefined);
-  const todayDecision = useTodayDecisionQuery(primaryRiskQueriesSettled);
+  const primaryRiskQueriesReady = Boolean(state.data && workspace.data);
+  const risks = useRiskSummaryQuery(primaryRiskQueriesReady);
+  const todayDecision = useTodayDecisionQuery(primaryRiskQueriesReady);
   const batchPreTradeRisk = useBatchPreTradeRiskMutation();
   const [timelineFromDate, setTimelineFromDate] = useState('');
   const [timelineToDate, setTimelineToDate] = useState('');
@@ -3526,7 +3623,7 @@ export function RiskPage() {
       to_date: timelineToDate || undefined,
       event_kind: timelineEventKind || undefined,
     },
-    primaryRiskQueriesSettled,
+    primaryRiskQueriesReady,
   );
   const instrumentNames = useMemo(() => {
     const names = new Map<string, string>();
@@ -3572,7 +3669,6 @@ export function RiskPage() {
   const riskCheckedCount = riskReviewEvidence?.risk_checked_count ?? 0;
   const isInitialRiskLoad =
     (!state.data && state.isLoading) ||
-    (!risks.data && risks.isLoading) ||
     (!workspace.data && workspace.isLoading);
   const isRiskWorkspaceUnavailable = !state.data || !workspace.data;
   const hasRiskRefreshError =
@@ -3733,6 +3829,18 @@ export function RiskPage() {
                   {copy.riskPage.blockingRegisterDetail}
                 </p>
               </div>
+              {risks.isLoading ? (
+                <div
+                  role="status"
+                  data-testid="risk-summary-loading-state"
+                  className="flex min-w-0 items-center gap-2 border-y border-[var(--app-divider)] px-3 py-2 text-xs text-[var(--app-text-secondary)]"
+                >
+                  <StatusBadge tone="neutral">
+                    {copy.states.loading}
+                  </StatusBadge>
+                  <span>{copy.riskPage.alerts}</span>
+                </div>
+              ) : null}
               <ExceptionList
                 ariaLabel={copy.riskPage.blockingRegister}
                 emptyState={copy.riskPage.noBlockingItems}

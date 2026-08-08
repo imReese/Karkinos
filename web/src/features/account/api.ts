@@ -343,11 +343,12 @@ export function useAccountStateQuery() {
   });
 }
 
-export function useRiskSummaryQuery() {
+export function useRiskSummaryQuery(enabled = true) {
   return useQuery({
     queryKey: ['portfolio-risk-summary'],
     queryFn: () => apiClient<RiskSummaryItem[]>('/api/portfolio/risk-summary'),
     staleTime: 15_000,
+    enabled,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
   });
