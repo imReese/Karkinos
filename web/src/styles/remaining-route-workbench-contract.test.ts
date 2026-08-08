@@ -262,6 +262,7 @@ describe('remaining route workbench contract', () => {
 
     expect(activityFeed).toContain('app-workbench-section');
     expect(activityFeed).toContain('max-h-[min(68vh,42rem)]');
+    expect(activityFeed).not.toContain('xl:max-h-none');
     expect(activityFeed).toContain('<thead className="sticky top-0 z-10">');
     expect(ACTIVITY_FEED).toContain('max-w-[240px] flex-wrap');
     expect(activityFeed).not.toContain(
