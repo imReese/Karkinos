@@ -193,7 +193,7 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
           >
             {report ? (
               <EvidenceIdentityDisclosure
-                className="app-button-secondary app-type-micro inline-flex h-10 items-center rounded-[var(--app-radius-control)] px-2.5 font-semibold sm:h-8"
+                className="app-button-secondary app-control-compact app-type-micro h-10 px-2.5 font-semibold sm:h-8"
                 triggerLabel={copy.common.viewEvidenceIdentity}
                 title={copy.common.evidenceIdentityTitle}
                 description={copy.common.evidenceIdentityDescription}

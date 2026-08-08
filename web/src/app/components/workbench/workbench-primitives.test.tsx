@@ -48,6 +48,9 @@ test('keeps full evidence identifiers behind an explicit disclosure', async () =
     />,
   );
 
+  expect(
+    screen.getByRole('button', { name: 'View evidence details' }).className,
+  ).toContain('app-control-compact');
   expect(screen.queryByText('valuation-private-full-identity')).toBeNull();
   await user.click(
     screen.getByRole('button', { name: 'View evidence details' }),

@@ -99,6 +99,9 @@ test('posts only requested funds and records the visible audit run', async () =>
   const user = userEvent.setup();
   renderButton();
 
+  expect(
+    screen.getByRole('button', { name: 'Sync confirmed NAV' }).className,
+  ).toContain('app-control-compact');
   await user.click(screen.getByRole('button', { name: 'Sync confirmed NAV' }));
 
   await waitFor(() => {
