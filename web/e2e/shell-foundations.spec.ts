@@ -150,10 +150,17 @@ test('desktop utility controls align and overview holdings avoid partial columns
   await expect(page.getByTestId('overview-holdings-section')).toBeVisible({
     timeout: 15_000,
   });
+  await expect(page.getByTestId('status-pill-market')).toHaveAttribute(
+    'aria-label',
+    /15:00/,
+  );
 
   const geometry = await page.evaluate(() => {
     const valuation = document.querySelector(
       '[data-testid="status-pill-valuation"]',
+    ) as HTMLElement;
+    const market = document.querySelector(
+      '[data-testid="status-pill-market"]',
     ) as HTMLElement;
     const value = valuation.querySelector(
       '[data-status-chip-part="value"]',
@@ -161,9 +168,6 @@ test('desktop utility controls align and overview holdings avoid partial columns
     const meta = valuation.querySelector(
       '[data-status-chip-part="meta"]',
     ) as HTMLElement;
-    const chevron = valuation.querySelector(
-      '[data-status-chip-part="chevron"]',
-    ) as SVGElement;
     const holdingsSection = document.querySelector(
       '[data-testid="overview-holdings-section"]',
     ) as HTMLElement;
@@ -177,8 +181,8 @@ test('desktop utility controls align and overview holdings avoid partial columns
       document.querySelector('.app-language-control') as HTMLElement,
     ].map((element) => element.getBoundingClientRect());
     const valueBox = value.getBoundingClientRect();
-    const metaBox = meta.getBoundingClientRect();
-    const chevronBox = chevron.getBoundingClientRect();
+    const marketBox = market.getBoundingClientRect();
+    const commandBox = toolbarControls[0];
 
     return {
       dashboardOverflow:
@@ -186,7 +190,10 @@ test('desktop utility controls align and overview holdings avoid partial columns
         dashboardOverflowTarget.clientWidth,
       statusValueWidth: valueBox.width,
       statusValueClipped: value.scrollWidth > value.clientWidth,
-      statusMetaChevronGap: chevronBox.left - metaBox.right,
+      statusMetaDisplay: getComputedStyle(meta).display,
+      marketAccessibleName: market.getAttribute('aria-label'),
+      marketCommandGap: commandBox.left - marketBox.right,
+      commandWidth: commandBox.width,
       toolbarHeights: toolbarControls.map((box) => box.height),
       toolbarCenters: toolbarControls.map((box) => box.top + box.height / 2),
     };
@@ -195,7 +202,10 @@ test('desktop utility controls align and overview holdings avoid partial columns
   expect(geometry.dashboardOverflow).toBeLessThanOrEqual(0);
   expect(geometry.statusValueWidth).toBeGreaterThan(0);
   expect(geometry.statusValueClipped).toBe(false);
-  expect(geometry.statusMetaChevronGap).toBeGreaterThanOrEqual(4);
+  expect(geometry.statusMetaDisplay).toBe('none');
+  expect(geometry.marketAccessibleName).toContain('15:00');
+  expect(geometry.marketCommandGap).toBeGreaterThanOrEqual(12);
+  expect(geometry.commandWidth).toBe(196);
   expect(geometry.toolbarHeights).toEqual([32, 32, 32]);
   expect(
     Math.max(...geometry.toolbarCenters) - Math.min(...geometry.toolbarCenters),
@@ -286,6 +296,10 @@ test('desktop utility controls align and overview holdings avoid partial columns
   await marketStatus.click();
   const marketDialog = page.getByRole('dialog', { name: '行情' });
   await expect(marketDialog).toBeVisible();
+  await expect(
+    marketDialog.getByText('上次状态检查', { exact: true }),
+  ).toBeVisible();
+  await expect(marketDialog.getByText('15:00', { exact: true })).toBeVisible();
   const marketOverlayGeometry = await marketDialog.evaluate((dialog) => {
     const trigger = document.querySelector(
       '[data-testid="status-pill-market"]',
@@ -303,6 +317,15 @@ test('desktop utility controls align and overview holdings avoid partial columns
       marketOverlayGeometry.popoverLeft - marketOverlayGeometry.triggerLeft,
     ),
   ).toBeLessThanOrEqual(1);
+
+  await page.keyboard.press('Escape');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(
+    valuationStatus.locator('[data-status-chip-part="meta"]'),
+  ).toBeVisible();
+  await expect(
+    marketStatus.locator('[data-status-chip-part="meta"]'),
+  ).toBeVisible();
 });
 
 test('shell remains local-overflow safe in Latte and Mocha across tablet and mobile', async ({
