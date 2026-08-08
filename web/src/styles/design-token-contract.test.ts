@@ -279,6 +279,22 @@ describe('application design token contract', () => {
     expect(MOCHA.get('--app-touch-target')).toBe('44px');
   });
 
+  it('keeps compact actions and native selects on deterministic geometry', () => {
+    const compactControl = blockFor('.app-control-compact');
+    expect(compactControl).toContain('min-height: var(--app-control-height)');
+    expect(compactControl).toContain('display: inline-flex');
+    expect(compactControl).toContain('align-items: center');
+    expect(compactControl).toContain('justify-content: center');
+    expect(compactControl).toContain('padding-block: 0');
+
+    const selectControl = blockFor('select.app-field:not([multiple])');
+    expect(selectControl).toContain('appearance: none');
+    expect(selectControl).toContain('padding-inline-end: 3rem');
+    expect(selectControl).toContain('var(--app-text-secondary)');
+    expect(selectControl).toContain('calc(100% - 1.75rem)');
+    expect(selectControl).toContain('calc(100% - 1.4375rem)');
+  });
+
   it('defines the product typography and motion contract', () => {
     for (const token of [
       ...REQUIRED_TYPOGRAPHY_TOKENS,

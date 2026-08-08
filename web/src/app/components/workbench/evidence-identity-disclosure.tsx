@@ -66,7 +66,7 @@ export function EvidenceIdentityDisclosure({
         type="button"
         className={
           className ??
-          'app-button-secondary app-type-compact inline-flex min-h-8 items-center rounded-[var(--app-radius-control)] px-2.5 font-semibold'
+          'app-button-secondary app-control-compact app-type-compact px-2.5 font-semibold'
         }
         aria-expanded={open}
         aria-haspopup="dialog"

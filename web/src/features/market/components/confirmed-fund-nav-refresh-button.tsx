@@ -49,7 +49,7 @@ export function ConfirmedFundNavRefreshButton({
     <div className="grid justify-items-end gap-2 text-right">
       <button
         type="button"
-        className="app-button-secondary app-type-micro h-10 rounded-[var(--app-radius-control)] px-2.5 font-semibold disabled:cursor-not-allowed disabled:opacity-60 sm:h-8"
+        className="app-button-secondary app-control-compact app-type-micro h-10 px-2.5 font-semibold disabled:cursor-not-allowed disabled:opacity-60 sm:h-8"
         disabled={refreshNav.isPending || symbols.length === 0}
         aria-busy={refreshNav.isPending}
         onClick={async () => {

@@ -127,6 +127,9 @@ test('calls refresh mutation when the button is clicked', async () => {
   const user = userEvent.setup();
   renderRefreshButton();
 
+  expect(
+    screen.getByRole('button', { name: 'Refresh quotes' }).className,
+  ).toContain('app-control-compact');
   await user.click(screen.getByRole('button', { name: 'Refresh quotes' }));
 
   await waitFor(() => {
