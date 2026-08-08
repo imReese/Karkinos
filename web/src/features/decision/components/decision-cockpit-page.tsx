@@ -5077,7 +5077,8 @@ export function DecisionCockpitPage() {
   const { locale } = usePreferences();
   const today = useTodayDecisionQuery();
   const intraday = useIntradayDecisionQuery();
-  const tradingPlan = useDailyTradingPlanQuery();
+  const primaryDecisionReady = Boolean(today.data && intraday.data);
+  const tradingPlan = useDailyTradingPlanQuery(primaryDecisionReady);
   const operationsToday = useOperationsTodayQuery();
   const automationCockpit = useAutomationCockpitQuery();
   const brokerGatewayStatus = useBrokerGatewayStatusQuery();
@@ -5100,8 +5101,8 @@ export function DecisionCockpitPage() {
     primaryExecutionReconciliationItem?.order_id,
   );
   const runPaperShadow = useRunPaperShadowMutation();
-  const signalActions = useSignalActionsQuery();
-  const signalJournal = useSignalJournalQuery();
+  const signalActions = useSignalActionsQuery(primaryDecisionReady);
+  const signalJournal = useSignalJournalQuery(primaryDecisionReady);
   const [summaryExpanded, setSummaryExpanded] = useState(false);
   const [healthyGateMatrixExpanded, setHealthyGateMatrixExpanded] =
     useState(false);

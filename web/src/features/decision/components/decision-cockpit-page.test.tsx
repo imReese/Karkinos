@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -1162,6 +1163,14 @@ function renderDecisionCockpit(options?: RenderDecisionOptions) {
   return { fetchMock };
 }
 
+async function findDailyTradingPlanWith(expectedText: string) {
+  const plan = await screen.findByTestId('decision-daily-trading-plan');
+  await waitFor(() => {
+    expect(plan.textContent).toContain(expectedText);
+  });
+  return plan;
+}
+
 async function expandDecisionSummary(locale: 'en' | 'zh' = 'en') {
   fireEvent.click(
     await screen.findByRole('button', {
@@ -1227,6 +1236,77 @@ test('renders a structured workspace while primary decision evidence loads', () 
   expect(screen.getByTestId('evidence-loading-rows').children).toHaveLength(4);
 });
 
+test('defers trading plan and signal reads until primary decision evidence settles', async () => {
+  window.localStorage.clear();
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: query.includes('prefers-color-scheme: dark'),
+    media: query,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
+  const baseFetch = installDecisionFetchMock();
+  let resolveToday!: (response: Response) => void;
+  let resolveIntraday!: (response: Response) => void;
+  const todayRequest = new Promise<Response>((resolve) => {
+    resolveToday = resolve;
+  });
+  const intradayRequest = new Promise<Response>((resolve) => {
+    resolveIntraday = resolve;
+  });
+  const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes('/api/decision/today')) return todayRequest;
+    if (url.includes('/api/decision/intraday')) return intradayRequest;
+    return baseFetch(input, init);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+
+  render(
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>
+        <DecisionCockpitPage />
+      </QueryClientProvider>
+    </PreferencesProvider>,
+  );
+
+  await waitFor(() => {
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).includes('/api/decision/intraday'),
+      ),
+    ).toBe(true);
+  });
+  for (const path of [
+    '/api/decision/trading-plan',
+    '/api/signals/actions',
+    '/api/signals/journal',
+  ]) {
+    expect(
+      fetchMock.mock.calls.some(([input]) => String(input).includes(path)),
+    ).toBe(false);
+  }
+
+  await act(async () => {
+    resolveToday(jsonResponse(dailyDecision));
+    resolveIntraday(jsonResponse(intradayDecision));
+  });
+
+  await waitFor(() => {
+    for (const path of [
+      '/api/decision/trading-plan',
+      '/api/signals/actions',
+      '/api/signals/journal',
+    ]) {
+      expect(
+        fetchMock.mock.calls.some(([input]) => String(input).includes(path)),
+      ).toBe(true);
+    }
+  });
+});
+
 function contributionDecision(): DecisionResponse {
   return {
     ...dailyDecision,
@@ -1260,7 +1340,7 @@ function contributionDecision(): DecisionResponse {
 test('renders read-only daily trading plan order intent preview', async () => {
   renderDecisionCockpit({ locale: 'en' });
 
-  const plan = await screen.findByTestId('decision-daily-trading-plan');
+  const plan = await findDailyTradingPlanWith('Manual confirmation ready');
 
   expect(plan.textContent).toContain('Daily trading plan');
   expect(plan.textContent).toContain('Manual confirmation ready');
@@ -1384,7 +1464,7 @@ test('renders cash shortfall in daily trading plan without manual readiness', as
     },
   });
 
-  const plan = await screen.findByTestId('decision-daily-trading-plan');
+  const plan = await findDailyTradingPlanWith('Cash shortfall');
 
   expect(plan.textContent).toContain('Cash shortfall');
   expect(plan.textContent).toContain(
@@ -1638,8 +1718,9 @@ test('captures the evidence-bound Decision Quality Score without authority contr
 test('prepares manual orders with public notes instead of internal action ids', async () => {
   const { fetchMock } = renderDecisionCockpit();
 
-  await screen.findByText('Signal action queue');
-  fireEvent.click(screen.getByRole('button', { name: 'Prepare manual order' }));
+  fireEvent.click(
+    await screen.findByRole('button', { name: 'Prepare manual order' }),
+  );
 
   await waitFor(() => {
     expect(fetchMock).toHaveBeenCalledWith(
@@ -1664,7 +1745,7 @@ test('prepares manual orders with public notes instead of internal action ids', 
 test('runs paper shadow simulation from the daily trading plan panel', async () => {
   const { fetchMock } = renderDecisionCockpit();
 
-  const plan = await screen.findByTestId('decision-daily-trading-plan');
+  const plan = await findDailyTradingPlanWith('Manual confirmation ready');
   fireEvent.click(
     within(plan).getByRole('button', { name: 'Run paper/shadow simulation' }),
   );
@@ -1726,7 +1807,7 @@ test('renders failed paper shadow runs with a public recovery action', async () 
     },
   });
 
-  const plan = await screen.findByTestId('decision-daily-trading-plan');
+  const plan = await findDailyTradingPlanWith('Failed');
 
   expect(plan.textContent).toContain('Failed');
   expect(plan.textContent).toContain(
@@ -1906,7 +1987,7 @@ test('renders paper shadow review queue as public operator review items', async 
     },
   });
 
-  const plan = await screen.findByTestId('decision-daily-trading-plan');
+  const plan = await findDailyTradingPlanWith('Review queue');
 
   expect(plan.textContent).toContain('Review queue');
   expect(plan.textContent).toContain(
@@ -2049,7 +2130,7 @@ test('renders terminal paper shadow review reasons without raw reason codes', as
     },
   });
 
-  const plan = await screen.findByTestId('decision-daily-trading-plan');
+  const plan = await findDailyTradingPlanWith('Terminal outcome: Cancelled');
 
   expect(plan.textContent).toContain(
     'Terminal outcome: Cancelled · Operator cancelled simulation before fill · OMS transition · SHADOW-CANCELLED #4 Cancelled',
@@ -2132,7 +2213,9 @@ test('renders paper shadow manual handoff gate as public operator evidence', asy
     },
   });
 
-  const plan = await screen.findByTestId('decision-daily-trading-plan');
+  const plan = await findDailyTradingPlanWith(
+    'Manual handoff: Blocked by unresolved simulation divergence',
+  );
 
   expect(plan.textContent).toContain(
     'Manual handoff: Blocked by unresolved simulation divergence',
@@ -2208,7 +2291,7 @@ test('renders running paper shadow runs as a wait state', async () => {
     },
   });
 
-  const plan = await screen.findByTestId('decision-daily-trading-plan');
+  const plan = await findDailyTradingPlanWith('Running');
 
   expect(plan.textContent).toContain('Running');
   expect(plan.textContent).toContain(
@@ -2282,7 +2365,9 @@ test('renders accepted paper shadow divergence review as manual confirmation han
     },
   });
 
-  const plan = await screen.findByTestId('decision-daily-trading-plan');
+  const plan = await findDailyTradingPlanWith(
+    'Accepted for manual confirmation',
+  );
 
   expect(plan.textContent).toContain('Accepted for manual confirmation');
   expect(plan.textContent).toContain(

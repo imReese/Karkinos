@@ -3463,7 +3463,10 @@ export function RiskPage() {
   const state = useAccountStateQuery();
   const risks = useRiskSummaryQuery();
   const workspace = useRiskWorkspaceQuery();
-  const todayDecision = useTodayDecisionQuery();
+  const primaryRiskQueriesSettled =
+    Boolean(state.data && workspace.data) &&
+    (!risks.isLoading || risks.data !== undefined);
+  const todayDecision = useTodayDecisionQuery(primaryRiskQueriesSettled);
   const batchPreTradeRisk = useBatchPreTradeRiskMutation();
   const [timelineFromDate, setTimelineFromDate] = useState('');
   const [timelineToDate, setTimelineToDate] = useState('');
@@ -3473,11 +3476,14 @@ export function RiskPage() {
     string | null
   >(null);
   const [batchRiskError, setBatchRiskError] = useState<string | null>(null);
-  const explainability = useExplainabilityQuery({
-    from_date: timelineFromDate || undefined,
-    to_date: timelineToDate || undefined,
-    event_kind: timelineEventKind || undefined,
-  });
+  const explainability = useExplainabilityQuery(
+    {
+      from_date: timelineFromDate || undefined,
+      to_date: timelineToDate || undefined,
+      event_kind: timelineEventKind || undefined,
+    },
+    primaryRiskQueriesSettled,
+  );
   const instrumentNames = useMemo(() => {
     const names = new Map<string, string>();
     const remember = (
