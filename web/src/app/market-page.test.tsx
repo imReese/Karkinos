@@ -269,7 +269,7 @@ test('preserves the market master-detail composition while persisted evidence lo
   const boardResponse = new Promise<Response>((resolve) => {
     resolveBoard = resolve;
   });
-  renderMarketPage({ boardResponse });
+  const { fetchMock } = renderMarketPage({ boardResponse });
 
   const loadingWorkspace = await screen.findByTestId(
     'market-instrument-loading-workspace',
@@ -281,6 +281,12 @@ test('preserves the market master-detail composition while persisted evidence lo
   expect(screen.queryByTestId('market-instrument-workspace')).toBeNull();
   expect(screen.queryByText('测试标的')).toBeNull();
   expect(screen.queryByText('¥100.00')).toBeNull();
+  expect(fetchMock.mock.calls.map(([input]) => String(input))).not.toContain(
+    '/api/market/quote-fetch-runs?limit=8',
+  );
+  expect(fetchMock.mock.calls.map(([input]) => String(input))).not.toContain(
+    '/api/portfolio/market-evidence-review',
+  );
 
   resolveBoard(
     jsonResponse({
@@ -307,6 +313,14 @@ test('preserves the market master-detail composition while persisted evidence lo
   );
 
   expect(await screen.findByTestId('market-instrument-workspace')).toBeTruthy();
+  await waitFor(() => {
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).toContain(
+      '/api/market/quote-fetch-runs?limit=8',
+    );
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).toContain(
+      '/api/portfolio/market-evidence-review',
+    );
+  });
 });
 
 test('renders market data operations and triggers manual backfills', async () => {

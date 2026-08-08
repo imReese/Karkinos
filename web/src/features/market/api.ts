@@ -394,12 +394,13 @@ export function useRefreshConfirmedFundNavMutation() {
   });
 }
 
-export function useQuoteFetchRunsQuery() {
+export function useQuoteFetchRunsQuery(enabled = true) {
   return useQuery({
     queryKey: ['market-quote-fetch-runs'],
     queryFn: () =>
       apiClient<QuoteFetchRun[]>('/api/market/quote-fetch-runs?limit=8'),
     staleTime: 10_000,
+    enabled,
     refetchOnWindowFocus: true,
   });
 }
