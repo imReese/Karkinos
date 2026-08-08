@@ -232,3 +232,50 @@ test('public home preserves its composition across the seven visual acceptance v
     await page.getByRole('button', { name: 'Switch to Latte theme' }).click();
   }
 });
+
+test('public home completes the evidence path inside the tablet first viewport', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 834, height: 1112 });
+  await page.goto('/');
+
+  const geometry = await page.evaluate(() => {
+    const hero = document.querySelector('.app-public-hero');
+    const evidence = document.querySelector('.app-public-evidence-frame');
+    const workspace = document.querySelector('.app-public-preview-workspace');
+    const priority = document.querySelector('.app-public-priority-preview');
+    const flow = document.querySelector('.app-public-evidence-flow');
+    const rect = (element: Element | null) => {
+      const bounds = element?.getBoundingClientRect();
+      return bounds
+        ? {
+            bottom: Math.round(bounds.bottom),
+            height: Math.round(bounds.height),
+            top: Math.round(bounds.top),
+          }
+        : null;
+    };
+
+    return {
+      documentOverflow:
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+      evidence: rect(evidence),
+      flow: rect(flow),
+      hero: rect(hero),
+      priority: rect(priority),
+      workspaceColumns: workspace
+        ? getComputedStyle(workspace).gridTemplateColumns
+        : '',
+    };
+  });
+
+  expect(geometry.documentOverflow).toBe(0);
+  expect(geometry.workspaceColumns.split(' ')).toHaveLength(2);
+  expect(geometry.priority?.top).toBe(geometry.flow?.top);
+  expect(geometry.priority?.height).toBeLessThanOrEqual(
+    geometry.flow?.height ?? 0,
+  );
+  expect(geometry.evidence?.bottom).toBeLessThanOrEqual(1112);
+  expect(geometry.hero?.bottom).toBeLessThanOrEqual(1112);
+});

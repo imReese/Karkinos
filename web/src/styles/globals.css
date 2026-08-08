@@ -3396,6 +3396,50 @@ h3 {
 }
 
 @media (min-width: 720px) and (max-width: 959px) {
+  .app-public-hero {
+    gap: 24px;
+    padding-block: 22px 18px;
+  }
+
+  .app-public-preview-workspace {
+    grid-template-columns: minmax(200px, 0.76fr) minmax(0, 1.24fr);
+  }
+
+  .app-public-route-identity {
+    padding-block: 10px;
+  }
+
+  .app-public-evidence-heading {
+    padding-block: 16px 14px;
+  }
+
+  .app-public-preview-metrics > div {
+    padding-block: 12px;
+  }
+
+  .app-public-priority-preview {
+    padding-inline: 20px;
+    border-right: 1px solid var(--app-divider);
+    border-bottom: 0;
+  }
+
+  .app-public-priority-preview dl > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .app-public-evidence-flow {
+    padding-inline: 20px;
+  }
+
+  .app-public-evidence-boundary {
+    padding-block: 12px;
+  }
+
+  .app-public-evidence-frame figcaption {
+    padding-block: 8px 10px;
+  }
+
   .app-public-principle-list {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
