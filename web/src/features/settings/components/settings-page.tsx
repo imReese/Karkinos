@@ -639,10 +639,10 @@ export function SettingsPage() {
         ) : null}
       </SettingsSection>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
-        <div className="contents min-w-0 xl:block xl:space-y-5">
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
+        <div className="contents">
           <div
-            className="order-1 min-w-0 xl:order-none"
+            className="order-1 min-w-0 xl:col-start-1 xl:row-span-3 xl:row-start-1"
             data-testid="settings-persisted-configuration"
           >
             <SettingsSection
@@ -992,7 +992,7 @@ export function SettingsPage() {
             </SettingsSection>
           </div>
 
-          <div className="order-3 min-w-0 xl:order-none">
+          <div className="order-3 min-w-0 xl:col-start-2 xl:row-start-2">
             <SettingsDisclosure
               testId="settings-data-source-disclosure"
               title={copy.settings.dataSourceOperations}
@@ -1094,7 +1094,7 @@ export function SettingsPage() {
             </SettingsDisclosure>
           </div>
 
-          <div className="order-4 min-w-0 xl:order-none">
+          <div className="order-4 min-w-0 xl:col-start-2 xl:row-start-3">
             <SettingsDisclosure
               testId="settings-live-services-disclosure"
               title={copy.settings.liveServices}
@@ -1155,7 +1155,7 @@ export function SettingsPage() {
           </div>
         </div>
 
-        <aside className="order-2 min-w-0 space-y-5 xl:order-none">
+        <aside className="order-2 min-w-0 space-y-5 xl:col-start-2 xl:row-start-1">
           <SettingsDisclosure
             testId="settings-notifications-disclosure"
             title={copy.settings.notifications}
