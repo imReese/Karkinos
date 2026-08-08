@@ -1236,7 +1236,7 @@ test('renders a structured workspace while primary decision evidence loads', () 
   expect(screen.getByTestId('evidence-loading-rows').children).toHaveLength(4);
 });
 
-test('defers trading plan and signal reads until primary decision evidence settles', async () => {
+test('shows saved daily decisions before intraday evidence and then starts dependent reads', async () => {
   window.localStorage.clear();
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({
     matches: query.includes('prefers-color-scheme: dark'),
@@ -1291,9 +1291,12 @@ test('defers trading plan and signal reads until primary decision evidence settl
 
   await act(async () => {
     resolveToday(jsonResponse(dailyDecision));
-    resolveIntraday(jsonResponse(intradayDecision));
   });
 
+  expect(await screen.findByText('Decision platform')).toBeTruthy();
+  expect(screen.getByTestId('decision-intraday-state').textContent).toContain(
+    'Intraday evidence is still loading.',
+  );
   await waitFor(() => {
     for (const path of [
       '/api/decision/trading-plan',
@@ -1305,6 +1308,14 @@ test('defers trading plan and signal reads until primary decision evidence settl
       ).toBe(true);
     }
   });
+
+  await act(async () => {
+    resolveIntraday(jsonResponse(intradayDecision));
+  });
+
+  await waitFor(() =>
+    expect(screen.queryByTestId('decision-intraday-state')).toBeNull(),
+  );
 });
 
 function contributionDecision(): DecisionResponse {

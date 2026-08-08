@@ -993,6 +993,10 @@ export const copy = {
         'Review daily and intraday candidates with risk gates, strategy evidence, quote health, and manual-confirmation readiness.',
       loading: 'Loading decision platform.',
       error: 'Failed to load decision platform.',
+      intradayLoadingDetail:
+        'Intraday evidence is still loading. Saved daily facts remain available.',
+      intradayErrorDetail:
+        'Intraday evidence is unavailable. The daily decision remains visible; do not infer an intraday conclusion.',
       simulationReviewRunFailed:
         'The simulation review could not run. Try again; if the problem persists, review the service logs.',
       commandRegister: 'Decision evidence register',
@@ -3832,6 +3836,9 @@ export const copy = {
         '查看日级与盘中候选动作、风控闸门、策略证据、行情健康和人工确认状态。',
       loading: '正在加载决策平台。',
       error: '决策平台加载失败。',
+      intradayLoadingDetail: '盘中证据仍在加载；当前先展示已保存的日级事实。',
+      intradayErrorDetail:
+        '盘中证据暂不可用；日级决策继续展示，但不要据此推断盘中结论。',
       simulationReviewRunFailed:
         '模拟复核未能运行，请重试；若仍然失败，请检查服务日志。',
       commandRegister: '决策证据登记',

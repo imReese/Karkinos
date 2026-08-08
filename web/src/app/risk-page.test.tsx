@@ -428,14 +428,23 @@ test('defers secondary risk reads until primary persisted evidence settles', asy
       String(input).includes('/api/portfolio/explainability'),
     ),
   ).toBe(false);
+  expect(
+    fetchMock.mock.calls.some(([input]) =>
+      String(input).includes('/api/portfolio/risk-summary'),
+    ),
+  ).toBe(false);
 
   await act(async () => {
     resolveState(jsonResponse(accountState));
-    resolveRiskSummary(jsonResponse(riskAlerts));
     resolveRiskWorkspace(jsonResponse(riskWorkspace));
   });
 
   await waitFor(() => {
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).includes('/api/portfolio/risk-summary'),
+      ),
+    ).toBe(true);
     expect(
       fetchMock.mock.calls.some(([input]) =>
         String(input).includes('/api/decision/today'),
@@ -447,6 +456,16 @@ test('defers secondary risk reads until primary persisted evidence settles', asy
       ),
     ).toBe(true);
   });
+  expect(screen.getByTestId('risk-blocking-register')).toBeTruthy();
+  expect(screen.getByTestId('risk-summary-loading-state')).toBeTruthy();
+
+  await act(async () => {
+    resolveRiskSummary(jsonResponse(riskAlerts));
+  });
+
+  await waitFor(() =>
+    expect(screen.queryByTestId('risk-summary-loading-state')).toBeNull(),
+  );
 });
 
 test('renders risk boundaries and blocking register without execution controls', async () => {
@@ -738,7 +757,9 @@ test('localizes risk blocking detail codes before rendering alerts', async () =>
 
   const blockRegister = await screen.findByTestId('risk-blocking-register');
 
-  expect(within(blockRegister).getByText('行情早于预期交易时段')).toBeTruthy();
+  expect(
+    await within(blockRegister).findByText('行情早于预期交易时段'),
+  ).toBeTruthy();
   expect(within(blockRegister).getByText(/市场数据/u)).toBeTruthy();
   expect(blockRegister.textContent).not.toContain(
     'quote_older_than_expected_session',
@@ -760,7 +781,7 @@ test('formats persisted quote timestamps for the primary risk reading path', asy
 
   const blockRegister = await screen.findByTestId('risk-blocking-register');
   expect(
-    within(blockRegister).getByText('000001 最新行情截至 07/21 15:00'),
+    await within(blockRegister).findByText('000001 最新行情截至 07/21 15:00'),
   ).toBeTruthy();
   expect(blockRegister.textContent).not.toContain('T15:00:00');
 });
@@ -792,7 +813,9 @@ test('localizes canonical Chinese risk evidence without changing its facts', asy
 
   const blockRegister = await screen.findByTestId('risk-blocking-register');
   expect(
-    within(blockRegister).getByText('Position concentration is elevated'),
+    await within(blockRegister).findByText(
+      'Position concentration is elevated',
+    ),
   ).toBeTruthy();
   expect(
     within(blockRegister).getByText(

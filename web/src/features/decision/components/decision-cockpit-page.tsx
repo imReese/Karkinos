@@ -5077,7 +5077,7 @@ export function DecisionCockpitPage() {
   const { locale } = usePreferences();
   const today = useTodayDecisionQuery();
   const intraday = useIntradayDecisionQuery();
-  const primaryDecisionReady = Boolean(today.data && intraday.data);
+  const primaryDecisionReady = Boolean(today.data);
   const tradingPlan = useDailyTradingPlanQuery(primaryDecisionReady);
   const operationsToday = useOperationsTodayQuery();
   const automationCockpit = useAutomationCockpitQuery();
@@ -5106,8 +5106,8 @@ export function DecisionCockpitPage() {
   const [summaryExpanded, setSummaryExpanded] = useState(false);
   const [healthyGateMatrixExpanded, setHealthyGateMatrixExpanded] =
     useState(false);
-  const loading = today.isLoading || intraday.isLoading;
-  const error = today.error ?? intraday.error;
+  const loading = !today.data && today.isLoading;
+  const error = today.data ? null : today.error;
   const lanes = useMemo(
     () =>
       [today.data, intraday.data].filter((item): item is DecisionResponse =>
@@ -5214,6 +5214,23 @@ export function DecisionCockpitPage() {
           },
         ]}
       />
+
+      {intraday.isLoading || intraday.isError ? (
+        <div
+          role="status"
+          data-testid="decision-intraday-state"
+          className="flex min-w-0 items-center gap-2 border-y border-[var(--app-divider)] px-3 py-2 text-xs text-[var(--app-text-secondary)]"
+        >
+          <StatusBadge tone={intraday.isError ? 'warning' : 'neutral'}>
+            {intraday.isError ? copy.states.error : copy.states.loading}
+          </StatusBadge>
+          <span>
+            {intraday.isError
+              ? labels.intradayErrorDetail
+              : labels.intradayLoadingDetail}
+          </span>
+        </div>
+      ) : null}
 
       <section className="min-w-0 space-y-2" data-testid="decision-gate-matrix">
         <div className="min-w-0" data-testid="decision-gate-disclosure">
