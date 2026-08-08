@@ -287,7 +287,9 @@ describe('application design token contract', () => {
     expect(compactControl).toContain('justify-content: center');
     expect(compactControl).toContain('padding-block: 0');
 
-    const selectControl = blockFor('select.app-field:not([multiple])');
+    const selectControl = blockFor(
+      'select:is(.app-field, .app-input):not([multiple])',
+    );
     expect(selectControl).toContain('appearance: none');
     expect(selectControl).toContain('padding-inline-end: 3rem');
     expect(selectControl).toContain('var(--app-text-secondary)');

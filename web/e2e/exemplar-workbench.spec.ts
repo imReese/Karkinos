@@ -286,9 +286,7 @@ test('overview preserves the queue-to-holdings hierarchy across all acceptance v
     if (viewport.width === 390) {
       const content = page.locator('.app-shell-content');
       const supportMetrics = page.locator('.account-support-metric-strip');
-      const safeNext = queue.getByRole('link', {
-        name: /View data status|查看数据状态/,
-      });
+      const safeNext = queue.getByRole('listitem').first().getByRole('link');
       await expect(safeNext).toBeVisible();
 
       const [contentBox, safeNextBox, supportMetricGeometry] =

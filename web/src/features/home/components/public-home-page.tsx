@@ -6,7 +6,7 @@ import {
   ShieldCheck,
   Sun,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type KeyboardEvent } from 'react';
 import { Link } from '@tanstack/react-router';
 
 import { KarkinosMark } from '../../../app/components/brand/karkinos-mark';
@@ -17,6 +17,7 @@ const publicHomeCopy = {
     skip: 'Skip to main content',
     brandLabel: 'Karkinos home',
     navLabel: 'Public navigation',
+    sectionNavLabel: 'Page sections',
     nav: {
       product: 'Product',
       principles: 'Trust',
@@ -204,6 +205,7 @@ const publicHomeCopy = {
     skip: '跳到主内容',
     brandLabel: 'Karkinos 首页',
     navLabel: '公开导航',
+    sectionNavLabel: '页面分区',
     nav: {
       product: '产品',
       principles: '可信原则',
@@ -374,10 +376,37 @@ export function PublicHomePage() {
   const [activePanel, setActivePanel] = useState<PublicHomePanel>(
     initialPublicHomePanel,
   );
+  const handleLocalOverflowKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (
+      (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') ||
+      event.currentTarget.scrollWidth <= event.currentTarget.clientWidth
+    ) {
+      return;
+    }
+    event.preventDefault();
+    const direction = event.key === 'ArrowRight' ? 1 : -1;
+    event.currentTarget.scrollBy({
+      left: direction * Math.max(240, event.currentTarget.clientWidth * 0.78),
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        ? 'auto'
+        : 'smooth',
+    });
+  };
 
   useEffect(() => {
-    const syncPanelWithHash = () => setActivePanel(initialPublicHomePanel());
+    const syncPanelWithHash = () => {
+      const panel = initialPublicHomePanel();
+      setActivePanel(panel);
+      if (panel !== 'home') {
+        window.requestAnimationFrame(() => {
+          document.getElementById(panel)?.focus({ preventScroll: true });
+        });
+      }
+    };
     window.addEventListener('hashchange', syncPanelWithHash);
+    if (window.location.hash) {
+      syncPanelWithHash();
+    }
     return () => window.removeEventListener('hashchange', syncPanelWithHash);
   }, []);
 
@@ -514,6 +543,35 @@ export function PublicHomePage() {
             </div>
           </div>
 
+          <nav
+            className="app-public-section-index"
+            aria-label={copy.sectionNavLabel}
+          >
+            <a
+              href="#product"
+              aria-current={activePanel === 'product' ? 'location' : undefined}
+              onClick={() => setActivePanel('product')}
+            >
+              {copy.nav.product}
+            </a>
+            <a
+              href="#principles"
+              aria-current={
+                activePanel === 'principles' ? 'location' : undefined
+              }
+              onClick={() => setActivePanel('principles')}
+            >
+              {copy.nav.principles}
+            </a>
+            <a
+              href="#workflow"
+              aria-current={activePanel === 'workflow' ? 'location' : undefined}
+              onClick={() => setActivePanel('workflow')}
+            >
+              {copy.nav.workflow}
+            </a>
+          </nav>
+
           <figure
             className="app-public-evidence-frame"
             data-testid="public-evidence-trace"
@@ -616,17 +674,26 @@ export function PublicHomePage() {
           className="app-public-container app-public-section app-public-panel"
           data-active={activePanel === 'product'}
           data-public-panel="product"
+          aria-labelledby="public-product-title"
+          tabIndex={-1}
         >
           <div className="app-public-section-heading">
             <p className="app-kicker app-public-eyebrow">
               {copy.proof.eyebrow}
             </p>
-            <h2>{copy.proof.title}</h2>
+            <h2 id="public-product-title">{copy.proof.title}</h2>
             <p>{copy.proof.body}</p>
           </div>
-          <div className="app-public-proof-grid">
+          <div
+            className="app-public-proof-grid"
+            role="list"
+            aria-label={copy.proof.eyebrow}
+            data-local-overflow="public-product-proof"
+            tabIndex={0}
+            onKeyDown={handleLocalOverflowKeyDown}
+          >
             {copy.proof.items.map((item) => (
-              <article key={item.number}>
+              <article key={item.number} role="listitem">
                 <div className="app-public-proof-route">
                   <span>{item.number}</span>
                   <code>{item.route}</code>
@@ -649,15 +716,23 @@ export function PublicHomePage() {
           className="app-public-container app-public-section app-public-principles app-public-panel"
           data-active={activePanel === 'principles'}
           data-public-panel="principles"
+          aria-labelledby="public-principles-title"
+          tabIndex={-1}
         >
           <div className="app-public-section-heading app-public-principles-heading">
             <p className="app-kicker app-public-eyebrow">
               {copy.principles.eyebrow}
             </p>
-            <h2>{copy.principles.title}</h2>
+            <h2 id="public-principles-title">{copy.principles.title}</h2>
             <p>{copy.principles.body}</p>
           </div>
-          <dl className="app-public-principle-list">
+          <dl
+            className="app-public-principle-list"
+            aria-label={copy.principles.eyebrow}
+            data-local-overflow="public-principles"
+            tabIndex={0}
+            onKeyDown={handleLocalOverflowKeyDown}
+          >
             {copy.principles.rows.map((row, index) => (
               <div key={row.label}>
                 <dt>
@@ -678,14 +753,22 @@ export function PublicHomePage() {
           <section
             id="workflow"
             className="app-public-container app-public-section"
+            aria-labelledby="public-workflow-title"
+            tabIndex={-1}
           >
             <div className="app-public-section-heading">
               <p className="app-kicker app-public-eyebrow">
                 {copy.workflow.eyebrow}
               </p>
-              <h2>{copy.workflow.title}</h2>
+              <h2 id="public-workflow-title">{copy.workflow.title}</h2>
             </div>
-            <ol className="app-public-workflow">
+            <ol
+              className="app-public-workflow"
+              aria-label={copy.workflow.eyebrow}
+              data-local-overflow="public-workflow"
+              tabIndex={0}
+              onKeyDown={handleLocalOverflowKeyDown}
+            >
               {copy.workflow.steps.map((step) => (
                 <li key={step.number}>
                   <span>{step.number}</span>

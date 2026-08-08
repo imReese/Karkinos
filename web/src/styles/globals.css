@@ -773,7 +773,7 @@ textarea {
   outline: none;
 }
 
-select.app-field:not([multiple]) {
+select:is(.app-field, .app-input):not([multiple]) {
   appearance: none;
   padding-inline-end: 3rem;
   background-color: var(--app-surface-raised);
@@ -2372,6 +2372,17 @@ h3 {
   margin-top: 28px;
 }
 
+.app-public-section-index {
+  display: none;
+}
+
+.app-public-section:focus-visible,
+[data-local-overflow^='public-']:focus-visible {
+  box-shadow: 0 0 0 3px var(--app-focus-shadow);
+  outline: 1px solid var(--app-focus-ring);
+  outline-offset: 2px;
+}
+
 .app-public-primary-cta {
   min-height: 44px;
   padding-inline: 20px;
@@ -3317,12 +3328,94 @@ h3 {
 }
 
 @media (max-width: 959px) {
+  .app-public-hero {
+    gap: clamp(30px, 5vw, 44px);
+  }
+
+  .app-public-section-index {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border-block: 1px solid var(--app-divider);
+    background: var(--app-surface-raised);
+  }
+
+  .app-public-section-index a {
+    display: inline-flex;
+    min-width: 0;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    padding-inline: 10px;
+    color: var(--app-text-secondary);
+    font-size: var(--app-font-size-label);
+    font-weight: var(--app-font-weight-semibold);
+    text-align: center;
+  }
+
+  .app-public-section-index a + a {
+    border-left: 1px solid var(--app-divider);
+  }
+
+  .app-public-section-index a:hover,
+  .app-public-section-index a[aria-current='location'] {
+    background: var(--app-accent-bg);
+    color: var(--app-text);
+  }
+
+  .app-public-section {
+    padding-block: clamp(48px, 7vw, 64px);
+  }
+
+  .app-public-proof-grid {
+    margin-top: clamp(34px, 5vw, 48px);
+  }
+
+  .app-public-principles {
+    gap: clamp(36px, 6vw, 52px);
+  }
+
+  .app-public-workflow {
+    margin-top: clamp(36px, 6vw, 52px);
+  }
+
+  .app-public-cta-section {
+    margin-bottom: clamp(52px, 7vw, 72px);
+    padding-block: clamp(44px, 6vw, 60px);
+  }
+
   .app-public-footer-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 32px;
+    padding-block: 44px;
   }
 
   .app-public-footer-brand {
     grid-column: 1 / -1;
+  }
+}
+
+@media (min-width: 720px) and (max-width: 959px) {
+  .app-public-principle-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .app-public-principle-list > div {
+    align-content: start;
+    padding: 20px;
+  }
+
+  .app-public-principle-list > div:nth-child(odd) {
+    border-right: 1px solid var(--app-divider);
+  }
+
+  .app-public-footer-grid {
+    grid-template-columns: minmax(200px, 1.55fr) repeat(3, minmax(92px, 1fr));
+    gap: 24px;
+  }
+
+  .app-public-footer-brand {
+    grid-column: auto;
   }
 }
 
@@ -3355,6 +3448,15 @@ h3 {
     font-size: var(--app-font-size-micro);
   }
 
+  .app-public-hero {
+    gap: 28px;
+    padding-block: 32px;
+  }
+
+  .app-public-section-index {
+    margin-top: -2px;
+  }
+
   .app-public-hero-title {
     font-size: clamp(2.65rem, 11.5vw, 3.2rem);
     letter-spacing: -0.038em;
@@ -3367,6 +3469,97 @@ h3 {
   }
 
   .app-public-preview-metrics small {
+    display: none;
+  }
+
+  .app-public-section {
+    padding-block: 44px;
+  }
+
+  .app-public-proof-grid,
+  .app-public-principle-list,
+  .app-public-workflow {
+    display: grid;
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(15.5rem, 82vw);
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-color: var(--app-border) transparent;
+    scrollbar-width: thin;
+    scroll-snap-type: inline proximity;
+  }
+
+  .app-public-proof-grid {
+    margin-top: 30px;
+  }
+
+  .app-public-proof-grid article,
+  .app-public-principle-list > div,
+  .app-public-workflow li {
+    height: 100%;
+    scroll-snap-align: start;
+    border-right: 1px solid var(--app-divider);
+    border-bottom: 0;
+  }
+
+  .app-public-proof-grid article {
+    padding: 24px 18px 26px;
+  }
+
+  .app-public-proof-grid h3,
+  .app-public-workflow h3 {
+    margin-top: 24px;
+  }
+
+  .app-public-principles {
+    gap: 30px;
+  }
+
+  .app-public-principle-list > div {
+    align-content: start;
+    padding: 22px 18px;
+  }
+
+  .app-public-workflow {
+    margin-top: 30px;
+  }
+
+  .app-public-workflow li {
+    min-height: 220px;
+    padding: 24px 18px;
+  }
+
+  .app-public-workflow li::before {
+    left: 18px;
+  }
+
+  .app-public-cta-section {
+    margin-bottom: 44px;
+    padding-block: 40px;
+  }
+
+  .app-public-footer-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 26px 20px;
+    padding-block: 34px;
+  }
+
+  .app-public-footer-brand {
+    grid-column: 1 / -1;
+  }
+
+  .app-public-footer-brand p {
+    margin-top: 14px;
+  }
+
+  .app-public-footer-note {
+    display: block;
+    padding-block: 16px 20px;
+  }
+
+  .app-public-footer-note > span:first-child,
+  .app-public-footer-note .app-public-footer-links {
     display: none;
   }
 
