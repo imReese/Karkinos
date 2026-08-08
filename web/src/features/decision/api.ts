@@ -692,20 +692,22 @@ export function useBatchPreTradeRiskMutation() {
   });
 }
 
-export function useSignalActionsQuery() {
+export function useSignalActionsQuery(enabled = true) {
   return useQuery({
     queryKey: ['signal-actions'],
     queryFn: () => apiClient<ActionCard[]>('/api/signals/actions'),
+    enabled,
     staleTime: 5_000,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
   });
 }
 
-export function useSignalJournalQuery() {
+export function useSignalJournalQuery(enabled = true) {
   return useQuery({
     queryKey: ['signal-journal'],
     queryFn: () => apiClient<SignalJournalEntry[]>('/api/signals/journal'),
+    enabled,
     staleTime: 10_000,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,

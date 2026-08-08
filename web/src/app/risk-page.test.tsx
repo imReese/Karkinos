@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
@@ -371,6 +371,82 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+test('defers secondary risk reads until primary persisted evidence settles', async () => {
+  const baseFetch = installRiskFetchMock();
+  let resolveState!: (response: Response) => void;
+  let resolveRiskSummary!: (response: Response) => void;
+  let resolveRiskWorkspace!: (response: Response) => void;
+  const stateRequest = new Promise<Response>((resolve) => {
+    resolveState = resolve;
+  });
+  const riskSummaryRequest = new Promise<Response>((resolve) => {
+    resolveRiskSummary = resolve;
+  });
+  const riskWorkspaceRequest = new Promise<Response>((resolve) => {
+    resolveRiskWorkspace = resolve;
+  });
+  const fetchMock = vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/api/portfolio/state')) return stateRequest;
+    if (url.includes('/api/portfolio/risk-summary')) {
+      return riskSummaryRequest;
+    }
+    if (url.includes('/api/portfolio/risk-workspace')) {
+      return riskWorkspaceRequest;
+    }
+    return baseFetch(input);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+
+  render(
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>
+        <RiskPage />
+      </QueryClientProvider>
+    </PreferencesProvider>,
+  );
+
+  await waitFor(() => {
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).includes('/api/portfolio/risk-workspace'),
+      ),
+    ).toBe(true);
+  });
+  expect(
+    fetchMock.mock.calls.some(([input]) =>
+      String(input).includes('/api/decision/today'),
+    ),
+  ).toBe(false);
+  expect(
+    fetchMock.mock.calls.some(([input]) =>
+      String(input).includes('/api/portfolio/explainability'),
+    ),
+  ).toBe(false);
+
+  await act(async () => {
+    resolveState(jsonResponse(accountState));
+    resolveRiskSummary(jsonResponse(riskAlerts));
+    resolveRiskWorkspace(jsonResponse(riskWorkspace));
+  });
+
+  await waitFor(() => {
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).includes('/api/decision/today'),
+      ),
+    ).toBe(true);
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).includes('/api/portfolio/explainability'),
+      ),
+    ).toBe(true);
+  });
 });
 
 test('renders risk boundaries and blocking register without execution controls', async () => {
@@ -797,8 +873,10 @@ test('keeps historical attribution collapsed by default without nested event scr
   expect(historyDisclosure.textContent).toContain(
     'Equity and event explanation path',
   );
-  expect(historyDisclosure.textContent).toContain('2 impact events');
-  expect(historyDisclosure.textContent).toContain('1 valuation day');
+  await waitFor(() => {
+    expect(historyDisclosure.textContent).toContain('2 impact events');
+    expect(historyDisclosure.textContent).toContain('1 valuation day');
+  });
 
   const historySummary = historyDisclosure.querySelector('summary');
   expect(historySummary).toBeTruthy();
