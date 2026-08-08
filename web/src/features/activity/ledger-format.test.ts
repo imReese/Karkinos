@@ -638,6 +638,39 @@ describe('ledger formatter', () => {
       ),
     ).toBe('Cash deposit');
     expect(
+      formatLedgerExplainabilityTitle(
+        {
+          kind: 'trade_sell',
+          title: '卖出 宇通客车 600066',
+          symbol: '600066',
+          amount: 2891,
+        },
+        'en',
+      ),
+    ).toBe('Sell 宇通客车 600066');
+    expect(
+      formatLedgerExplainabilityTitle(
+        {
+          kind: 'cash_deposit',
+          title: '资金转入',
+          symbol: null,
+          amount: 5000,
+        },
+        'en',
+      ),
+    ).toBe('Cash deposit');
+    expect(
+      formatLedgerExplainabilityTitle(
+        {
+          kind: 'cash_interest',
+          title: '现金利息',
+          symbol: null,
+          amount: 0.27,
+        },
+        'en',
+      ),
+    ).toBe('Cash interest');
+    expect(
       formatLedgerExplainabilityDetail(
         {
           kind: 'cash_deposit',
@@ -650,6 +683,41 @@ describe('ledger formatter', () => {
         instrumentNames,
       ),
     ).toBe('金额 ¥3,000.00');
+    expect(
+      formatLedgerExplainabilityDetail(
+        {
+          kind: 'cash_deposit',
+          title: '资金转入',
+          detail: '现金流入组合。',
+          amount: 5000,
+        },
+        'en',
+      ),
+    ).toBe('Amount ¥5,000.00');
+    expect(
+      formatLedgerExplainabilityDetail(
+        {
+          kind: 'trade_sell',
+          title: '卖出 璞泰来 603659',
+          detail: '璞泰来 卖出',
+          symbol: '603659',
+          amount: 3076,
+        },
+        'en',
+      ),
+    ).toBe('Amount ¥3,076.00');
+    expect(
+      formatLedgerExplainabilityDetail(
+        {
+          kind: 'trade_buy',
+          title: '买入 黄河旋风 600172',
+          detail: '用户补录：黄河旋风 1手=100股',
+          symbol: '600172',
+          amount: -1126,
+        },
+        'en',
+      ),
+    ).toBe('Amount -¥1,126.00 · User note (source text): 黄河旋风 1手=100股');
   });
 
   test('omits cost-basis method from public ledger execution details', () => {

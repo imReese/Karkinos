@@ -488,15 +488,41 @@ export function formatLedgerExplainabilityTitle(
   locale: Locale,
   instrumentNames?: Map<string, string>,
 ) {
-  if (!isGeneratedExplainabilityTitle(item) && item.title) {
+  const entry = toExplainabilityLedgerEntry(item, instrumentNames);
+  const normalizedKind = normalizeLedgerKind(entry.entry_type);
+  if (
+    normalizedKind === 'other' &&
+    !isGeneratedExplainabilityTitle(item) &&
+    item.title
+  ) {
     return item.title;
   }
-  const entry = toExplainabilityLedgerEntry(item, instrumentNames);
   const entryType = formatLedgerEntryTypeLabel(entry, locale);
   const shouldShowInstrument =
     !isCashLedgerEntry(entry) || Boolean(entry.symbol || entry.display_name);
+  const symbol = entry.symbol?.trim() ?? '';
+  const mappedName = entry.display_name?.trim() ?? '';
+  const title = item.title?.trim() ?? '';
+  const titleContainsSymbol = Boolean(
+    symbol &&
+    new RegExp(`(^|\\s)${escapeRegExp(symbol)}(\\s|$)`, 'u').test(title),
+  );
+  const titleInstrumentName = titleContainsSymbol
+    ? title
+        .replace(
+          /^(?:bought|sold|buy|sell|purchase|redeem|dividend|买入|卖出|申购|赎回|分红)\s*/iu,
+          '',
+        )
+        .replace(new RegExp(`\\s*${escapeRegExp(symbol)}$`, 'u'), '')
+        .trim()
+    : '';
+  const instrumentName = mappedName || titleInstrumentName;
   const instrument = shouldShowInstrument
-    ? formatLedgerInstrumentLabel(entry, locale)
+    ? symbol
+      ? instrumentName
+        ? `${instrumentName} ${symbol}`
+        : symbol
+      : instrumentName
     : '';
   return instrument ? `${entryType} ${instrument}` : entryType;
 }
@@ -515,7 +541,11 @@ export function formatLedgerExplainabilityDetail(
     EXPLAINABILITY_DETAIL_LABELS[locale],
     locale,
   ).map((line) => `${line.label} ${line.value}`);
-  const publicNote = formatLedgerPublicNote(entry, locale);
+  const publicNote = formatExplainabilityPublicNote(
+    formatLedgerPublicNote(entry, locale),
+    item,
+    locale,
+  );
   if (structuredDetails.length > 0 || publicNote) {
     return [...structuredDetails, publicNote].filter(Boolean).join(' · ');
   }
@@ -536,6 +566,45 @@ export function formatLedgerExplainabilityDetail(
     default:
       return item.detail || null;
   }
+}
+
+function formatExplainabilityPublicNote(
+  note: string | null,
+  item: LedgerExplainabilityItem,
+  locale: Locale,
+) {
+  const normalized = note?.trim();
+  if (!normalized) return null;
+
+  const kind = normalizeLedgerKind(item.kind ?? '');
+  if (
+    (kind === 'cash_deposit' && /^现金流入组合[。.]?$/u.test(normalized)) ||
+    (kind === 'cash_withdrawal' && /^现金流出组合[。.]?$/u.test(normalized)) ||
+    (kind === 'cash_interest' &&
+      /^现金(?:利息|结息)[。.]?$/u.test(normalized)) ||
+    (kind === 'dividend' && /^.+现金分红[。.]?$/u.test(normalized)) ||
+    ((kind === 'trade_buy' || kind === 'trade_sell') &&
+      /^[\u4e00-\u9fffA-Za-z0-9（）()·\-\s]+\s+(?:买入|卖出|申购|赎回)[。.]?$/u.test(
+        normalized,
+      ))
+  ) {
+    return null;
+  }
+
+  const sourceNote = normalized.match(/^(?:用户补录|手工记录)[:：]\s*(.+)$/u);
+  if (sourceNote?.[1]) {
+    return locale === 'zh'
+      ? `用户补录：${sourceNote[1]}`
+      : `User note (source text): ${sourceNote[1]}`;
+  }
+
+  if (locale === 'en' && /[\u4e00-\u9fff]/u.test(normalized)) {
+    return `Source note: ${normalized}`;
+  }
+  if (locale === 'zh' && /[A-Za-z]/u.test(normalized)) {
+    return `来源备注：${normalized}`;
+  }
+  return normalized;
 }
 
 export function formatLedgerInstrumentLabel(

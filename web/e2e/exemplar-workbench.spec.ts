@@ -198,28 +198,24 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
   await expect(riskHistory).toHaveAttribute('open', '');
   const recentImpactList = page.getByTestId('risk-recent-impact-list');
   const impactTimeline = page.getByTestId('risk-impact-timeline-scroll');
-  await expect(impactTimeline).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('tab', { name: /Recent impact events/ }).click();
   if ((await recentImpactList.count()) > 0) {
     await expect(recentImpactList).toBeVisible();
   }
-  const historyOverflow = await page.evaluate(() => ({
-    recent: document.querySelector('[data-testid="risk-recent-impact-list"]')
-      ? getComputedStyle(
-          document.querySelector(
-            '[data-testid="risk-recent-impact-list"]',
-          ) as HTMLElement,
-        ).overflowY
-      : null,
-    timeline: getComputedStyle(
-      document.querySelector(
-        '[data-testid="risk-impact-timeline-scroll"]',
-      ) as HTMLElement,
-    ).overflowY,
-  }));
-  if (historyOverflow.recent !== null) {
-    expect(historyOverflow.recent).toBe('visible');
+  await expect(impactTimeline).toHaveCount(0);
+  if ((await recentImpactList.count()) > 0) {
+    expect(
+      await recentImpactList.evaluate(
+        (node) => getComputedStyle(node).overflowY,
+      ),
+    ).toBe('visible');
   }
-  expect(historyOverflow.timeline).toBe('visible');
+  await page.getByRole('tab', { name: /Timeline attribution/ }).click();
+  await expect(recentImpactList).toHaveCount(0);
+  await expect(impactTimeline).toBeVisible({ timeout: 30_000 });
+  expect(
+    await impactTimeline.evaluate((node) => getComputedStyle(node).overflowY),
+  ).toBe('visible');
 
   await page.goto('/backtest');
   const primaryResearch = page.getByTestId('backtest-primary-workbench');
