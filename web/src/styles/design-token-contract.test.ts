@@ -290,11 +290,12 @@ describe('application design token contract', () => {
     const selectControl = blockFor(
       'select:is(.app-field, .app-input):not([multiple])',
     );
+    expect(selectControl).toContain('-webkit-appearance: none');
     expect(selectControl).toContain('appearance: none');
-    expect(selectControl).toContain('padding-inline-end: 3rem');
+    expect(selectControl).toContain('padding-inline-end: 3.25rem');
     expect(selectControl).toContain('var(--app-text-secondary)');
+    expect(selectControl).toContain('calc(100% - 2.0625rem)');
     expect(selectControl).toContain('calc(100% - 1.75rem)');
-    expect(selectControl).toContain('calc(100% - 1.4375rem)');
   });
 
   it('defines the product typography and motion contract', () => {
