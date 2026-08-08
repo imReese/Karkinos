@@ -737,20 +737,27 @@ test('keeps compact header status read-only and provider-free', async () => {
         source_health: 'cache',
         provider_status: 'cache',
         refresh_policy: 'live',
+        latest_quote_timestamp: '2026-05-16T22:40:01+08:00',
       });
     }
     return new Response('Not found', { status: 404 });
   });
   renderShell({ fetchImpl: fetchMock });
   const user = userEvent.setup();
-  await user.click(await screen.findByTestId('status-pill-market'));
+  const marketStatus = await screen.findByTestId('status-pill-market');
+  await waitFor(() =>
+    expect(marketStatus.getAttribute('aria-label')).toContain('22:40'),
+  );
+  await user.click(marketStatus);
 
   expect(
     fetchMock.mock.calls.some(([input]) =>
       input.toString().includes('/api/market/quotes/refresh'),
     ),
   ).toBe(false);
-  expect(await screen.findByRole('dialog', { name: 'Market' })).toBeTruthy();
+  const marketDialog = await screen.findByRole('dialog', { name: 'Market' });
+  expect(within(marketDialog).getByText('Last status check')).toBeTruthy();
+  expect(within(marketDialog).getByText('22:40')).toBeTruthy();
 });
 
 test('shows cache-only market state from data health', async () => {

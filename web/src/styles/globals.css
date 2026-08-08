@@ -3801,6 +3801,16 @@ h3 {
   }
 }
 
+@media (min-width: 1280px) and (max-width: 1439px) {
+  .app-command-trigger {
+    width: 196px;
+  }
+
+  .app-status-chip [data-status-chip-part='meta'] {
+    display: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

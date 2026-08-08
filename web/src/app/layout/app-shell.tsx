@@ -550,6 +550,10 @@ export function AppShell({ children }: { children: ReactNode }) {
                       title={copy.shell.marketStatus}
                       rows={[
                         {
+                          label: copy.shell.lastSync,
+                          value: marketTimestamp ?? copy.shell.statusUnknown,
+                        },
+                        {
                           label: copy.shell.marketSession,
                           value: marketOpenText,
                         },
@@ -1252,9 +1256,7 @@ function StatusChip({
       <button
         type="button"
         data-testid={testId}
-        aria-label={
-          actionLabel ? `${actionLabel}: ${value}` : `${label}: ${value}`
-        }
+        aria-label={`${actionLabel ? actionLabel : label}: ${value}${meta ? ` · ${meta}` : ''}`}
         aria-expanded={popup ? expanded : undefined}
         aria-haspopup={popup ? 'dialog' : undefined}
         title={title ?? hoverHint}
