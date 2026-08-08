@@ -5954,58 +5954,163 @@ function ExplainabilityWorkspace({
 }) {
   const copy = useCopy();
   const { locale } = usePreferences();
+  const [activeView, setActiveView] = useState<RiskHistoryView>('bridge');
+  const [recentDriverPage, setRecentDriverPage] = useState(0);
+  const [timelinePage, setTimelinePage] = useState(0);
 
   if (loading) {
     return <EvidenceState kind="loading" title={copy.states.loading} />;
   }
 
   const equityBridge = explainability?.equity_bridge ?? [];
+  const recentDrivers = explainability?.recent_drivers ?? [];
+  const positions = explainability?.positions ?? [];
+  const timeline = (explainability?.timeline ?? []).slice().reverse();
+  const recentDriverPageCount = Math.max(
+    1,
+    Math.ceil(recentDrivers.length / RISK_HISTORY_EVENT_PAGE_SIZE),
+  );
+  const timelinePageCount = Math.max(
+    1,
+    Math.ceil(timeline.length / RISK_HISTORY_TIMELINE_PAGE_SIZE),
+  );
+  const visibleRecentDriverPage = Math.min(
+    recentDriverPage,
+    recentDriverPageCount - 1,
+  );
+  const visibleTimelinePage = Math.min(timelinePage, timelinePageCount - 1);
+  const visibleRecentDrivers = recentDrivers.slice(
+    visibleRecentDriverPage * RISK_HISTORY_EVENT_PAGE_SIZE,
+    (visibleRecentDriverPage + 1) * RISK_HISTORY_EVENT_PAGE_SIZE,
+  );
+  const visibleTimeline = timeline.slice(
+    visibleTimelinePage * RISK_HISTORY_TIMELINE_PAGE_SIZE,
+    (visibleTimelinePage + 1) * RISK_HISTORY_TIMELINE_PAGE_SIZE,
+  );
+  const historyViews = [
+    { id: 'bridge', label: title, count: equityBridge.length },
+    { id: 'events', label: stateLabelRecent, count: recentDrivers.length },
+    { id: 'positions', label: stateLabelPositions, count: positions.length },
+    {
+      id: 'timeline',
+      label: copy.explainability.timeline,
+      count: timeline.length,
+    },
+  ] as const;
 
   return (
-    <div className="space-y-5">
-      <section className="space-y-3" data-testid="risk-equity-bridge-section">
-        <h2 className="app-kicker app-type-overline">{title}</h2>
-        {equityBridge.length > 0 ? (
-          <MetricStrip
-            ariaLabel={title}
-            items={equityBridge.map((item) => {
-              const label =
-                copy.explainability.equityBridgeLabels[
-                  item.key as keyof typeof copy.explainability.equityBridgeLabels
-                ] ?? item.label;
-              const isPnlMetric =
-                item.key === 'realized' || item.key === 'unrealized';
-
-              return {
-                id: item.key,
-                label,
-                value: formatCurrency(item.value),
-                tone:
-                  isPnlMetric && item.value > 0
-                    ? ('pnl-positive' as const)
-                    : isPnlMetric && item.value < 0
-                      ? ('pnl-negative' as const)
-                      : ('neutral' as const),
-              };
-            })}
-          />
-        ) : (
-          <EvidenceState kind="empty" title={emptyLabel} />
-        )}
-      </section>
-
+    <div className="min-w-0 space-y-4">
       <div
-        className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(320px,0.95fr)]"
-        data-testid="risk-explainability-top-grid"
+        role="tablist"
+        aria-label={
+          locale === 'zh' ? '风险历史分析视图' : 'Risk history analysis views'
+        }
+        className="flex max-w-full overflow-x-auto border-b border-[var(--app-divider)]"
+        data-testid="risk-history-tabs"
       >
-        <section className="min-w-0 space-y-3">
+        {historyViews.map((view) => (
+          <button
+            key={view.id}
+            id={`risk-history-tab-${view.id}`}
+            type="button"
+            role="tab"
+            aria-selected={activeView === view.id}
+            aria-controls={`risk-history-panel-${view.id}`}
+            tabIndex={activeView === view.id ? 0 : -1}
+            onClick={() => setActiveView(view.id)}
+            onKeyDown={(event) => {
+              if (
+                !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)
+              ) {
+                return;
+              }
+              event.preventDefault();
+              const tabs = Array.from(
+                event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
+                  '[role="tab"]',
+                ) ?? [],
+              );
+              const currentIndex = tabs.indexOf(event.currentTarget);
+              const nextIndex =
+                event.key === 'Home'
+                  ? 0
+                  : event.key === 'End'
+                    ? tabs.length - 1
+                    : event.key === 'ArrowRight'
+                      ? (currentIndex + 1) % tabs.length
+                      : (currentIndex - 1 + tabs.length) % tabs.length;
+              const nextView = historyViews[nextIndex];
+              if (!nextView) return;
+              setActiveView(nextView.id);
+              tabs[nextIndex]?.focus();
+            }}
+            className={`flex h-10 shrink-0 items-center gap-2 border-b-2 px-3 text-xs font-semibold transition-colors duration-[var(--app-motion-fast)] motion-reduce:transition-none ${
+              activeView === view.id
+                ? 'border-[var(--app-accent)] text-[var(--app-accent)]'
+                : 'border-transparent text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
+            }`}
+          >
+            <span>{view.label}</span>
+            <span className="font-mono text-xs tabular-nums text-[var(--app-text-tertiary)]">
+              {view.count}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {activeView === 'bridge' ? (
+        <section
+          id="risk-history-panel-bridge"
+          role="tabpanel"
+          aria-labelledby="risk-history-tab-bridge"
+          className="space-y-3"
+          data-testid="risk-equity-bridge-section"
+        >
+          <h2 className="app-kicker app-type-overline">{title}</h2>
+          {equityBridge.length > 0 ? (
+            <MetricStrip
+              ariaLabel={title}
+              items={equityBridge.map((item) => {
+                const label =
+                  copy.explainability.equityBridgeLabels[
+                    item.key as keyof typeof copy.explainability.equityBridgeLabels
+                  ] ?? item.label;
+                const isPnlMetric =
+                  item.key === 'realized' || item.key === 'unrealized';
+
+                return {
+                  id: item.key,
+                  label,
+                  value: formatCurrency(item.value),
+                  tone:
+                    isPnlMetric && item.value > 0
+                      ? ('pnl-positive' as const)
+                      : isPnlMetric && item.value < 0
+                        ? ('pnl-negative' as const)
+                        : ('neutral' as const),
+                };
+              })}
+            />
+          ) : (
+            <EvidenceState kind="empty" title={emptyLabel} />
+          )}
+        </section>
+      ) : null}
+
+      {activeView === 'events' ? (
+        <section
+          id="risk-history-panel-events"
+          role="tabpanel"
+          aria-labelledby="risk-history-tab-events"
+          className="min-w-0 space-y-3"
+        >
           <h2 className="app-kicker app-type-overline">{stateLabelRecent}</h2>
-          {explainability?.recent_drivers?.length ? (
+          {recentDrivers.length > 0 ? (
             <ol
               className="divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]"
               data-testid="risk-recent-impact-list"
             >
-              {explainability.recent_drivers.map((item) => (
+              {visibleRecentDrivers.map((item) => (
                 <li
                   key={`${item.title}-${item.timestamp}`}
                   className="px-3 py-3"
@@ -6056,18 +6161,33 @@ function ExplainabilityWorkspace({
           ) : (
             <EvidenceState kind="empty" title={emptyLabel} />
           )}
+          <RiskHistoryPager
+            kind="events"
+            page={visibleRecentDriverPage}
+            pageCount={recentDriverPageCount}
+            totalItems={recentDrivers.length}
+            locale={locale}
+            onPageChange={setRecentDriverPage}
+          />
         </section>
+      ) : null}
 
-        <section className="min-w-0 space-y-3">
+      {activeView === 'positions' ? (
+        <section
+          id="risk-history-panel-positions"
+          role="tabpanel"
+          aria-labelledby="risk-history-tab-positions"
+          className="min-w-0 space-y-3"
+        >
           <h2 className="app-kicker app-type-overline">
             {stateLabelPositions}
           </h2>
-          {explainability?.positions?.length ? (
+          {positions.length > 0 ? (
             <ul
               className="divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]"
               data-testid="risk-position-impact-list"
             >
-              {explainability.positions.map((item) => (
+              {positions.map((item) => (
                 <li
                   key={item.symbol}
                   className="grid gap-1 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-x-4"
@@ -6106,24 +6226,28 @@ function ExplainabilityWorkspace({
             <EvidenceState kind="empty" title={emptyLabel} />
           )}
         </section>
-      </div>
+      ) : null}
 
-      <section className="space-y-3" data-testid="risk-impact-timeline-section">
-        <h2 className="app-kicker app-type-overline">
-          {copy.explainability.timeline}
-        </h2>
-        {filters ? <div className="mt-4">{filters}</div> : null}
-        <div
-          className="border-y border-[var(--app-divider)] py-3"
-          data-testid="risk-impact-timeline-scroll"
+      {activeView === 'timeline' ? (
+        <section
+          id="risk-history-panel-timeline"
+          role="tabpanel"
+          aria-labelledby="risk-history-tab-timeline"
+          className="space-y-3"
+          data-testid="risk-impact-timeline-section"
         >
-          <Timeline
-            ariaLabel={copy.explainability.timeline}
-            emptyState={copy.explainability.timelineEmpty}
-            items={(explainability?.timeline ?? [])
-              .slice()
-              .reverse()
-              .map((point) => ({
+          <h2 className="app-kicker app-type-overline">
+            {copy.explainability.timeline}
+          </h2>
+          {filters ? <div className="mt-4">{filters}</div> : null}
+          <div
+            className="border-y border-[var(--app-divider)] py-3"
+            data-testid="risk-impact-timeline-scroll"
+          >
+            <Timeline
+              ariaLabel={copy.explainability.timeline}
+              emptyState={copy.explainability.timelineEmpty}
+              items={visibleTimeline.map((point) => ({
                 id: `${point.date}-${point.equity}`,
                 timestamp: point.date,
                 title: `${copy.explainability.equity} ${formatCurrency(point.equity)}`,
@@ -6165,14 +6289,87 @@ function ExplainabilityWorkspace({
                   ) : undefined,
                 tone: 'neutral' as const,
               }))}
-            className="pt-1"
+              className="pt-1"
+            />
+          </div>
+          <RiskHistoryPager
+            kind="timeline"
+            page={visibleTimelinePage}
+            pageCount={timelinePageCount}
+            totalItems={timeline.length}
+            locale={locale}
+            onPageChange={setTimelinePage}
           />
-        </div>
-      </section>
+        </section>
+      ) : null}
 
-      {showReturnCalendar ? (
+      {activeView === 'timeline' && showReturnCalendar ? (
         <ReturnCalendarCard timeline={explainability?.timeline ?? []} />
       ) : null}
+    </div>
+  );
+}
+
+type RiskHistoryView = 'bridge' | 'events' | 'positions' | 'timeline';
+
+const RISK_HISTORY_EVENT_PAGE_SIZE = 8;
+const RISK_HISTORY_TIMELINE_PAGE_SIZE = 12;
+
+function RiskHistoryPager({
+  kind,
+  page,
+  pageCount,
+  totalItems,
+  locale,
+  onPageChange,
+}: {
+  kind: 'events' | 'timeline';
+  page: number;
+  pageCount: number;
+  totalItems: number;
+  locale: Locale;
+  onPageChange: (page: number) => void;
+}) {
+  if (pageCount <= 1) return null;
+
+  return (
+    <div
+      role="group"
+      aria-label={
+        locale === 'zh'
+          ? kind === 'events'
+            ? '影响事件分页'
+            : '估值日分页'
+          : kind === 'events'
+            ? 'Impact event pagination'
+            : 'Valuation day pagination'
+      }
+      className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--app-divider)] pt-3"
+      data-testid={`risk-history-${kind}-pager`}
+    >
+      <span className="text-xs tabular-nums text-[var(--app-text-tertiary)]">
+        {locale === 'zh'
+          ? `第 ${page + 1} / ${pageCount} 页 · 共 ${totalItems} 条`
+          : `Page ${page + 1} of ${pageCount} · ${totalItems} items`}
+      </span>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          className="app-button-secondary inline-flex min-h-10 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={page === 0}
+          onClick={() => onPageChange(Math.max(0, page - 1))}
+        >
+          {locale === 'zh' ? '较新' : 'Newer'}
+        </button>
+        <button
+          type="button"
+          className="app-button-secondary inline-flex min-h-10 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={page >= pageCount - 1}
+          onClick={() => onPageChange(Math.min(pageCount - 1, page + 1))}
+        >
+          {locale === 'zh' ? '较早' : 'Older'}
+        </button>
+      </div>
     </div>
   );
 }

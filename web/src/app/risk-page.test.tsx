@@ -243,11 +243,13 @@ function installRiskFetchMock({
   riskAlertsResponse = riskAlerts,
   decisionResponse = decisionNeedsRiskGate,
   batchRiskResponse,
+  explainabilityResponse = explainability,
 }: {
   manualOrders?: unknown[];
   riskAlertsResponse?: unknown[];
   decisionResponse?: unknown;
   batchRiskResponse?: unknown;
+  explainabilityResponse?: unknown;
 } = {}) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url =
@@ -292,7 +294,7 @@ function installRiskFetchMock({
       return jsonResponse(decisionResponse);
     }
     if (url.includes('/api/portfolio/explainability')) {
-      return jsonResponse(explainability);
+      return jsonResponse(explainabilityResponse);
     }
     if (url.includes('/api/trading/kill-switch')) {
       return jsonResponse({
@@ -316,6 +318,7 @@ function renderRiskPage(options?: {
   riskAlertsResponse?: unknown[];
   decisionResponse?: unknown;
   batchRiskResponse?: unknown;
+  explainabilityResponse?: unknown;
 }) {
   window.localStorage.clear();
   if (options?.locale) {
@@ -326,6 +329,7 @@ function renderRiskPage(options?: {
     riskAlertsResponse: options?.riskAlertsResponse,
     decisionResponse: options?.decisionResponse,
     batchRiskResponse: options?.batchRiskResponse,
+    explainabilityResponse: options?.explainabilityResponse,
   });
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -873,10 +877,14 @@ test('shows instrument names before symbols in risk manual approval rows', async
 });
 
 test('renders recent risk drivers as readable audit events', async () => {
+  const user = userEvent.setup();
   renderRiskPage();
 
-  const recentDrivers = await screen.findByText('Recent impact events');
-  expect(recentDrivers).toBeTruthy();
+  const historyDisclosure = await screen.findByTestId(
+    'risk-history-disclosure',
+  );
+  await user.click(historyDisclosure.querySelector('summary') as HTMLElement);
+  await user.click(screen.getByRole('tab', { name: /Recent impact events/u }));
   expect(await screen.findByText('Buy 示例制造 600003')).toBeTruthy();
   expect(
     await screen.findByText(
@@ -889,7 +897,7 @@ test('renders recent risk drivers as readable audit events', async () => {
   expect(
     (await screen.findAllByText(/-.*¥3,255\.00/)).length,
   ).toBeGreaterThanOrEqual(2);
-  expect(await screen.findAllByText('Amount ¥3,000.00')).toHaveLength(2);
+  expect(await screen.findAllByText('Amount ¥3,000.00')).toHaveLength(1);
   expect(screen.queryByText('现金流入组合。')).toBeNull();
   expect(
     screen.queryByText('RMB cash deposit recorded from user request'),
@@ -898,17 +906,29 @@ test('renders recent risk drivers as readable audit events', async () => {
 });
 
 test('localizes risk explainability ledger titles instead of rendering internal kinds', async () => {
+  const user = userEvent.setup();
   renderRiskPage({ locale: 'zh' });
 
+  const historyDisclosure = await screen.findByTestId(
+    'risk-history-disclosure',
+  );
+  await user.click(historyDisclosure.querySelector('summary') as HTMLElement);
+  await user.click(screen.getByRole('tab', { name: /最近影响事件/u }));
   const recentList = await screen.findByTestId('risk-recent-impact-list');
   expect(within(recentList).getByText('资金转入')).toBeTruthy();
-  expect(await screen.findAllByText(/金额\s+¥3,000\.00/u)).toHaveLength(2);
+  expect(await screen.findAllByText(/金额\s+¥3,000\.00/u)).toHaveLength(1);
   expect(document.body.textContent).not.toContain('cash_deposit');
 });
 
 test('uses account instrument names for risk explainability events that only carry symbols', async () => {
+  const user = userEvent.setup();
   renderRiskPage({ locale: 'zh' });
 
+  const historyDisclosure = await screen.findByTestId(
+    'risk-history-disclosure',
+  );
+  await user.click(historyDisclosure.querySelector('summary') as HTMLElement);
+  await user.click(screen.getByRole('tab', { name: /最近影响事件/u }));
   const recentList = await screen.findByTestId('risk-recent-impact-list');
   expect(within(recentList).getByText('买入 示例制造 600003')).toBeTruthy();
   expect(
@@ -919,7 +939,7 @@ test('uses account instrument names for risk explainability events that only car
   expect(recentList.textContent).not.toContain('买入 600003');
 });
 
-test('keeps historical attribution collapsed by default without nested event scrolling', async () => {
+test('keeps historical attribution collapsed and mounts one analysis view at a time', async () => {
   const user = userEvent.setup();
   renderRiskPage();
 
@@ -940,6 +960,14 @@ test('keeps historical attribution collapsed by default without nested event scr
   expect(historySummary).toBeTruthy();
   await user.click(historySummary as HTMLElement);
   expect(historyDisclosure.hasAttribute('open')).toBe(true);
+
+  const historyTabs = screen.getByTestId('risk-history-tabs');
+  expect(within(historyTabs).getAllByRole('tab')).toHaveLength(4);
+  expect(
+    within(historyTabs)
+      .getByRole('tab', { name: /Equity bridge/u })
+      .getAttribute('aria-selected'),
+  ).toBe('true');
 
   const equityBridge = await screen.findByTestId('risk-equity-bridge-section');
   expect(
@@ -966,19 +994,28 @@ test('keeps historical attribution collapsed by default without nested event scr
   expect(equityBridge.textContent).not.toContain(
     'Persisted external capital flow.',
   );
+  expect(screen.queryByTestId('risk-recent-impact-list')).toBeNull();
+  expect(screen.queryByTestId('risk-position-impact-list')).toBeNull();
+  expect(screen.queryByTestId('risk-impact-timeline-section')).toBeNull();
 
-  const topGrid = await screen.findByTestId('risk-explainability-top-grid');
-  expect(topGrid.className).toContain('items-start');
-  expect(topGrid.querySelector('.app-panel')).toBeNull();
-  expect(topGrid.querySelector('.app-panel-strong')).toBeNull();
-
+  await user.click(
+    within(historyTabs).getByRole('tab', { name: /Recent impact events/u }),
+  );
   const recentList = await screen.findByTestId('risk-recent-impact-list');
   expect(recentList.className).not.toContain('max-h');
   expect(recentList.className).not.toContain('overflow-y-auto');
+  expect(screen.queryByTestId('risk-equity-bridge-section')).toBeNull();
 
+  await user.click(
+    within(historyTabs).getByRole('tab', { name: /Position drivers/u }),
+  );
   const positionList = await screen.findByTestId('risk-position-impact-list');
   expect(positionList.tagName).toBe('UL');
 
+  const timelineTab = within(historyTabs).getByRole('tab', {
+    name: /Timeline attribution/u,
+  });
+  await user.click(timelineTab);
   const timelineSection = await screen.findByTestId(
     'risk-impact-timeline-section',
   );
@@ -993,4 +1030,49 @@ test('keeps historical attribution collapsed by default without nested event scr
   expect(timelineScroll.hasAttribute('tabindex')).toBe(false);
   expect(timelineSection.querySelector('.app-panel')).toBeNull();
   expect(timelineSection.querySelector('.app-panel-strong')).toBeNull();
+
+  await user.keyboard('{Home}');
+  expect(
+    within(historyTabs)
+      .getByRole('tab', { name: /Equity bridge/u })
+      .getAttribute('aria-selected'),
+  ).toBe('true');
+  expect(await screen.findByTestId('risk-equity-bridge-section')).toBeTruthy();
+});
+
+test('paginates valuation history instead of mounting the full canonical timeline', async () => {
+  const user = userEvent.setup();
+  const longTimeline = Array.from({ length: 25 }, (_, index) => ({
+    date: `2026-04-${String(index + 1).padStart(2, '0')}`,
+    equity: 3000 + index,
+    delta: index,
+    external_flow: 0,
+    market_pnl: index,
+    events: [],
+  }));
+  renderRiskPage({
+    explainabilityResponse: { ...explainability, timeline: longTimeline },
+  });
+
+  const historyDisclosure = await screen.findByTestId(
+    'risk-history-disclosure',
+  );
+  await user.click(historyDisclosure.querySelector('summary') as HTMLElement);
+  await user.click(screen.getByRole('tab', { name: /Timeline attribution/u }));
+
+  const timelineScroll = await screen.findByTestId(
+    'risk-impact-timeline-scroll',
+  );
+  const timelineList = within(timelineScroll).getByRole('list', {
+    name: 'Timeline attribution',
+  });
+  expect(timelineList.children).toHaveLength(12);
+  expect(screen.getByText('Page 1 of 3 · 25 items')).toBeTruthy();
+  expect(within(timelineList).getByText('2026-04-25')).toBeTruthy();
+  expect(within(timelineList).queryByText('2026-04-13')).toBeNull();
+
+  await user.click(screen.getByRole('button', { name: 'Older' }));
+  expect(screen.getByText('Page 2 of 3 · 25 items')).toBeTruthy();
+  expect(within(timelineList).getByText('2026-04-13')).toBeTruthy();
+  expect(within(timelineList).queryByText('2026-04-25')).toBeNull();
 });
