@@ -79,7 +79,6 @@ import {
 import { OverviewCards } from '../features/account/components/overview-cards';
 import { PortfolioExposureSummary } from '../features/account/components/portfolio-exposure-summary';
 import { KillSwitchPanel } from '../features/trading/components/kill-switch-panel';
-import { OrderApprovalTable } from '../features/trading/components/order-approval-table';
 import { TradingPage } from '../features/trading/components/trading-page';
 import { PublicHomePage } from '../features/home/components/public-home-page';
 import {
@@ -3940,6 +3939,22 @@ export function RiskPage() {
                         : ('neutral' as const),
                 }))}
               />
+              <section
+                className="grid min-w-0 gap-2"
+                data-testid="risk-trading-control-grid"
+              >
+                <div>
+                  <h2 className="app-type-section-title text-[var(--app-text)]">
+                    {locale === 'zh' ? '受控操作' : 'Controlled action'}
+                  </h2>
+                  <p className="mt-0.5 text-xs leading-5 text-[var(--app-text-secondary)]">
+                    {locale === 'zh'
+                      ? '熔断状态独立于风险事实；仅在需要人工干预时展开。'
+                      : 'Kill-switch state stays separate from risk facts and expands only for deliberate operator intervention.'}
+                  </p>
+                </div>
+                <KillSwitchPanel />
+              </section>
             </aside>
           </div>
 
@@ -4090,171 +4105,196 @@ export function RiskPage() {
             </div>
           </section>
 
-          <div
-            className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]"
-            data-testid="risk-analysis-overview"
+          <details
+            className="group min-w-0 border-y border-[var(--app-divider)]"
+            data-testid="risk-analysis-disclosure"
           >
-            <section
-              className="min-w-0 border-y border-[var(--app-divider)] py-3 sm:py-4"
-              data-testid="risk-drawdown-section"
-            >
-              <div className="app-type-overline text-[var(--app-text-tertiary)]">
-                {copy.riskPage.drawdown}
+            <summary className="flex min-h-16 cursor-pointer list-none flex-col gap-3 py-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] sm:flex-row sm:items-center sm:justify-between sm:gap-5 [&::-webkit-details-marker]:hidden">
+              <div className="min-w-0">
+                <div className="app-product-mark">
+                  {locale === 'zh' ? '结构分析' : 'Structure analysis'}
+                </div>
+                <h2 className="app-type-section-title mt-1 text-[var(--app-text)]">
+                  {locale === 'zh'
+                    ? '回撤、暴露与持仓集中度'
+                    : 'Drawdown, exposure, and position concentration'}
+                </h2>
+                <p className="mt-1 max-w-3xl text-xs leading-5 text-[var(--app-text-secondary)]">
+                  {locale === 'zh'
+                    ? '按需查看图表与逐持仓结构；当前异常、指标、阈值和熔断状态保留在上方。'
+                    : 'Expand for charts and position-level structure. Current exceptions, metrics, thresholds, and kill-switch state remain above.'}
+                </p>
               </div>
-              <div className="mt-3">
-                <DrawdownChart points={workspace.data.drawdown_series} />
+              <div className="flex shrink-0 items-center gap-2 text-xs text-[var(--app-text-tertiary)]">
+                <StatusBadge tone="neutral">
+                  {locale === 'zh'
+                    ? `${workspace.data.exposure_buckets.length} 类暴露`
+                    : `${workspace.data.exposure_buckets.length} exposure ${workspace.data.exposure_buckets.length === 1 ? 'bucket' : 'buckets'}`}
+                </StatusBadge>
+                <StatusBadge tone="neutral">
+                  {locale === 'zh'
+                    ? `${workspace.data.concentration.length} 个持仓`
+                    : `${workspace.data.concentration.length} ${workspace.data.concentration.length === 1 ? 'position' : 'positions'}`}
+                </StatusBadge>
+                <span className="sr-only">
+                  {locale === 'zh' ? '按需展开' : 'Expand on demand'}
+                </span>
+                <ChevronDown
+                  aria-hidden="true"
+                  className="size-4 transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] motion-reduce:transition-none group-open:rotate-180"
+                />
               </div>
-            </section>
-            <section
-              className="min-w-0 border-y border-[var(--app-divider)] py-3 sm:py-4"
-              data-testid="risk-exposure-section"
-            >
-              <div className="app-type-overline text-[var(--app-text-tertiary)]">
-                {copy.riskPage.exposure}
-              </div>
-              <div className="mt-3 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]">
-                {workspace.data.exposure_buckets.map((bucket) => (
-                  <div key={bucket.bucket} className="px-2 py-2.5">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-sm font-semibold">
-                        {getRiskBucketLabel(copy, bucket.bucket)}
-                      </div>
-                      <div className="text-sm font-semibold tabular-nums">
-                        {formatPercentValue(bucket.weight)}
-                      </div>
-                    </div>
-                    <div className="app-muted mt-2 text-sm">
-                      {formatCurrency(bucket.value)} ·{' '}
-                      {copy.overview.risk.positionsHint(bucket.positions_count)}
-                    </div>
-                    {bucket.symbols.length > 0 ? (
-                      <div className="app-type-micro mt-2 font-mono text-[var(--app-text-tertiary)]">
-                        {bucket.symbols.join(' · ')}
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
-
-          <section
-            className="min-w-0 border-y border-[var(--app-divider)] py-3 sm:py-4"
-            data-testid="risk-concentration-section"
-          >
-            <div className="app-type-overline text-[var(--app-text-tertiary)]">
-              {copy.riskPage.concentration}
-            </div>
-            <div className="mt-3 max-w-full overflow-x-auto border-y border-[var(--app-divider)]">
-              <table
-                className="w-full min-w-[620px] border-collapse text-left text-xs"
-                data-testid="risk-concentration-table"
+            </summary>
+            <div className="space-y-5 border-t border-[var(--app-divider)] py-4 sm:space-y-6 sm:py-5">
+              <div
+                className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]"
+                data-testid="risk-analysis-overview"
               >
-                <caption className="sr-only">
-                  {copy.riskPage.concentration}
-                </caption>
-                <thead className="bg-[var(--app-surface-raised)] text-[var(--app-text-secondary)]">
-                  <tr>
-                    <th
-                      scope="col"
-                      className="sticky left-0 z-10 border-b border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-3 py-2 font-semibold"
-                    >
-                      {copy.portfolio.table.symbol}
-                    </th>
-                    <th
-                      scope="col"
-                      className="border-b border-[var(--app-divider)] px-3 py-2 text-right font-semibold"
-                    >
-                      {copy.portfolio.table.weight}
-                    </th>
-                    <th
-                      scope="col"
-                      className="border-b border-[var(--app-divider)] px-3 py-2 text-right font-semibold"
-                    >
-                      {copy.portfolio.table.marketValue}
-                    </th>
-                    <th
-                      scope="col"
-                      className="border-b border-[var(--app-divider)] px-3 py-2 text-right font-semibold"
-                    >
-                      {copy.portfolio.table.unrealized}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[var(--app-divider)] bg-[var(--app-surface)]">
-                  {workspace.data.concentration.length > 0 ? (
-                    workspace.data.concentration.map((item) => (
-                      <tr key={item.symbol}>
-                        <th
-                          scope="row"
-                          className="sticky left-0 bg-[var(--app-surface)] px-3 py-2.5 font-semibold"
-                        >
-                          <span
-                            className="block max-w-56 truncate"
-                            title={formatInstrumentDisplayLabel(
-                              item.symbol,
-                              instrumentNames,
-                            )}
-                          >
-                            {formatInstrumentDisplayLabel(
-                              item.symbol,
-                              instrumentNames,
-                            )}
-                          </span>
-                        </th>
-                        <td className="px-3 py-2.5 text-right font-medium tabular-nums">
-                          {formatPercentValue(item.weight)}
-                        </td>
-                        <td className="px-3 py-2.5 text-right font-medium tabular-nums">
-                          {formatCurrency(item.market_value)}
-                        </td>
-                        <td
-                          className={`px-3 py-2.5 text-right font-medium tabular-nums ${
-                            item.unrealized_pnl < 0
-                              ? 'text-[var(--app-pnl-negative)]'
-                              : item.unrealized_pnl > 0
-                                ? 'text-[var(--app-pnl-positive)]'
-                                : 'text-[var(--app-pnl-neutral)]'
-                          }`}
-                        >
-                          {formatCurrency(item.unrealized_pnl)}
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td
-                        colSpan={4}
-                        className="px-3 py-3 text-[var(--app-text-secondary)]"
-                      >
-                        {copy.riskPage.noConcentration}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                <section
+                  className="min-w-0 border-y border-[var(--app-divider)] py-3 sm:py-4"
+                  data-testid="risk-drawdown-section"
+                >
+                  <div className="app-type-overline text-[var(--app-text-tertiary)]">
+                    {copy.riskPage.drawdown}
+                  </div>
+                  <div className="mt-3">
+                    <DrawdownChart points={workspace.data.drawdown_series} />
+                  </div>
+                </section>
+                <section
+                  className="min-w-0 border-y border-[var(--app-divider)] py-3 sm:py-4"
+                  data-testid="risk-exposure-section"
+                >
+                  <div className="app-type-overline text-[var(--app-text-tertiary)]">
+                    {copy.riskPage.exposure}
+                  </div>
+                  <div className="mt-3 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]">
+                    {workspace.data.exposure_buckets.map((bucket) => (
+                      <div key={bucket.bucket} className="px-2 py-2.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-sm font-semibold">
+                            {getRiskBucketLabel(copy, bucket.bucket)}
+                          </div>
+                          <div className="text-sm font-semibold tabular-nums">
+                            {formatPercentValue(bucket.weight)}
+                          </div>
+                        </div>
+                        <div className="app-muted mt-2 text-sm">
+                          {formatCurrency(bucket.value)} ·{' '}
+                          {copy.overview.risk.positionsHint(
+                            bucket.positions_count,
+                          )}
+                        </div>
+                        {bucket.symbols.length > 0 ? (
+                          <div className="app-type-micro mt-2 font-mono text-[var(--app-text-tertiary)]">
+                            {bucket.symbols.join(' · ')}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              </div>
 
-          <section className="min-w-0 space-y-2">
-            <div>
-              <h2 className="app-type-section-title text-[var(--app-text)]">
-                {locale === 'zh' ? '受控操作' : 'Controlled actions'}
-              </h2>
-              <p className="mt-0.5 max-w-3xl text-xs text-[var(--app-text-secondary)]">
-                {locale === 'zh'
-                  ? '熔断与人工审批独立于风险事实展示；操作不会改动上方已记录的风险证据。'
-                  : 'Kill-switch and manual approval controls remain separate from risk facts and do not alter the recorded evidence above.'}
-              </p>
+              <section
+                className="min-w-0 border-y border-[var(--app-divider)] py-3 sm:py-4"
+                data-testid="risk-concentration-section"
+              >
+                <div className="app-type-overline text-[var(--app-text-tertiary)]">
+                  {copy.riskPage.concentration}
+                </div>
+                <div className="mt-3 max-w-full overflow-x-auto border-y border-[var(--app-divider)]">
+                  <table
+                    className="w-full min-w-[620px] border-collapse text-left text-xs"
+                    data-testid="risk-concentration-table"
+                  >
+                    <caption className="sr-only">
+                      {copy.riskPage.concentration}
+                    </caption>
+                    <thead className="bg-[var(--app-surface-raised)] text-[var(--app-text-secondary)]">
+                      <tr>
+                        <th
+                          scope="col"
+                          className="sticky left-0 z-10 border-b border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-3 py-2 font-semibold"
+                        >
+                          {copy.portfolio.table.symbol}
+                        </th>
+                        <th
+                          scope="col"
+                          className="border-b border-[var(--app-divider)] px-3 py-2 text-right font-semibold"
+                        >
+                          {copy.portfolio.table.weight}
+                        </th>
+                        <th
+                          scope="col"
+                          className="border-b border-[var(--app-divider)] px-3 py-2 text-right font-semibold"
+                        >
+                          {copy.portfolio.table.marketValue}
+                        </th>
+                        <th
+                          scope="col"
+                          className="border-b border-[var(--app-divider)] px-3 py-2 text-right font-semibold"
+                        >
+                          {copy.portfolio.table.unrealized}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--app-divider)] bg-[var(--app-surface)]">
+                      {workspace.data.concentration.length > 0 ? (
+                        workspace.data.concentration.map((item) => (
+                          <tr key={item.symbol}>
+                            <th
+                              scope="row"
+                              className="sticky left-0 bg-[var(--app-surface)] px-3 py-2.5 font-semibold"
+                            >
+                              <span
+                                className="block max-w-56 truncate"
+                                title={formatInstrumentDisplayLabel(
+                                  item.symbol,
+                                  instrumentNames,
+                                )}
+                              >
+                                {formatInstrumentDisplayLabel(
+                                  item.symbol,
+                                  instrumentNames,
+                                )}
+                              </span>
+                            </th>
+                            <td className="px-3 py-2.5 text-right font-medium tabular-nums">
+                              {formatPercentValue(item.weight)}
+                            </td>
+                            <td className="px-3 py-2.5 text-right font-medium tabular-nums">
+                              {formatCurrency(item.market_value)}
+                            </td>
+                            <td
+                              className={`px-3 py-2.5 text-right font-medium tabular-nums ${
+                                item.unrealized_pnl < 0
+                                  ? 'text-[var(--app-pnl-negative)]'
+                                  : item.unrealized_pnl > 0
+                                    ? 'text-[var(--app-pnl-positive)]'
+                                    : 'text-[var(--app-pnl-neutral)]'
+                              }`}
+                            >
+                              {formatCurrency(item.unrealized_pnl)}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td
+                            colSpan={4}
+                            className="px-3 py-3 text-[var(--app-text-secondary)]"
+                          >
+                            {copy.riskPage.noConcentration}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
             </div>
-            <div
-              className="grid min-w-0 gap-4"
-              data-testid="risk-trading-control-grid"
-            >
-              <KillSwitchPanel />
-              <OrderApprovalTable />
-            </div>
-          </section>
+          </details>
 
           <details
             className="group min-w-0 border-y border-[var(--app-divider)]"

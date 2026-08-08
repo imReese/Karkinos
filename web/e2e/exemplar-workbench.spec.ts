@@ -181,15 +181,28 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
   const riskMetrics = page.getByLabel('Risk metrics');
   const thresholdTable = page.getByTestId('risk-threshold-table');
   const controlledActions = page.getByTestId('risk-trading-control-grid');
+  const analysisDisclosure = page.getByTestId('risk-analysis-disclosure');
   const riskHistory = page.getByTestId('risk-history-disclosure');
   await expect(blockingRegister).toBeVisible({ timeout: 30_000 });
   const blockingRegisterBox = (await blockingRegister.boundingBox())!;
   const riskMetricsBox = (await riskMetrics.boundingBox())!;
+  const controlledActionsBox = (await controlledActions.boundingBox())!;
   expect(blockingRegisterBox.x).toBeLessThan(riskMetricsBox.x);
   expect(Math.abs(blockingRegisterBox.y - riskMetricsBox.y)).toBeLessThan(8);
-  expect((await thresholdTable.boundingBox())!.y).toBeLessThan(
-    (await controlledActions.boundingBox())!.y,
+  expect(Math.abs(controlledActionsBox.x - riskMetricsBox.x)).toBeLessThan(8);
+  expect(controlledActionsBox.y).toBeGreaterThan(riskMetricsBox.y);
+  expect(controlledActionsBox.y).toBeLessThan(
+    blockingRegisterBox.y + blockingRegisterBox.height,
   );
+  await expect(page.getByTestId('order-approval-panel')).toHaveCount(0);
+  expect((await thresholdTable.boundingBox())!.y).toBeGreaterThan(
+    blockingRegisterBox.y + blockingRegisterBox.height,
+  );
+  await expect(analysisDisclosure).not.toHaveAttribute('open', '');
+  await expect(page.getByTestId('risk-analysis-overview')).toBeHidden();
+  await analysisDisclosure.locator('summary').click();
+  await expect(analysisDisclosure).toHaveAttribute('open', '');
+  await expect(page.getByTestId('risk-analysis-overview')).toBeVisible();
   await expect(riskHistory).not.toHaveAttribute('open', '');
   await expect(page.getByTestId('risk-recent-impact-list')).toBeHidden();
   const historySummary = riskHistory.locator('summary');

@@ -472,7 +472,7 @@ test('defers secondary risk reads until primary persisted evidence settles', asy
   );
 });
 
-test('renders risk boundaries and blocking register without execution controls', async () => {
+test('renders risk boundaries and blocking register without order approval controls', async () => {
   const user = userEvent.setup();
   renderRiskPage();
 
@@ -500,17 +500,14 @@ test('renders risk boundaries and blocking register without execution controls',
   ).toBe('/decision');
 
   const controlGrid = await screen.findByTestId('risk-trading-control-grid');
-  expect(controlGrid.className).toContain('gap-4');
+  expect(controlGrid.className).toContain('gap-2');
   expect(
     within(controlGrid)
       .getByTestId('kill-switch-panel')
       .getAttribute('data-layout'),
   ).toBe('compact-control');
-  expect(
-    within(controlGrid)
-      .getByTestId('order-approval-panel')
-      .getAttribute('data-layout'),
-  ).toBe('compact-approval');
+  expect(within(controlGrid).queryByTestId('order-approval-panel')).toBeNull();
+  expect(screen.queryByTestId('order-approval-panel')).toBeNull();
 
   expect(await screen.findByText('Active risk priorities')).toBeTruthy();
 
@@ -567,9 +564,28 @@ test('renders risk boundaries and blocking register without execution controls',
     metrics.compareDocumentPosition(handoff) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(
-    thresholdTable.compareDocumentPosition(controlGrid) &
+    metrics.compareDocumentPosition(controlGrid) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
+  expect(within(metricRail).getByTestId('risk-trading-control-grid')).toBe(
+    controlGrid,
+  );
+  expect(
+    controlGrid.compareDocumentPosition(handoff) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    handoff.compareDocumentPosition(thresholdTable) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  const analysisDisclosure = screen.getByTestId('risk-analysis-disclosure');
+  expect(analysisDisclosure.tagName).toBe('DETAILS');
+  expect(analysisDisclosure.hasAttribute('open')).toBe(false);
+  expect(analysisDisclosure.textContent).toContain(
+    'Drawdown, exposure, and position concentration',
+  );
+  await user.click(analysisDisclosure.querySelector('summary') as HTMLElement);
+  expect(analysisDisclosure.hasAttribute('open')).toBe(true);
   const analysisOverview = screen.getByTestId('risk-analysis-overview');
   const drawdownSection = within(analysisOverview).getByTestId(
     'risk-drawdown-section',
@@ -867,13 +883,19 @@ test('keeps low-severity summary rows quiet while promoting persisted metric war
   expect(within(blockRegister).getByText('Warning')).toBeTruthy();
 });
 
-test('shows instrument names before symbols in risk manual approval rows', async () => {
-  renderRiskPage({ manualOrders: [pendingManualOrder] });
+test('keeps pending order approvals in the trading workspace', async () => {
+  const { fetchMock } = renderRiskPage({
+    manualOrders: [pendingManualOrder],
+  });
 
-  expect(await screen.findByText('Pending order approvals')).toBeTruthy();
-  expect(await screen.findByText('示例制造 600003')).toBeTruthy();
-  expect(screen.queryByText(/^600003$/u)).toBeNull();
-  expect(screen.getByLabelText('Reject reason: 示例制造 600003')).toBeTruthy();
+  expect(await screen.findByTestId('risk-blocking-register')).toBeTruthy();
+  expect(screen.queryByText('Pending order approvals')).toBeNull();
+  expect(screen.queryByTestId('order-approval-panel')).toBeNull();
+  expect(
+    fetchMock.mock.calls.some(([input]) =>
+      String(input).includes('/api/trading/orders?status=pending_confirm'),
+    ),
+  ).toBe(false);
 });
 
 test('renders recent risk drivers as readable audit events', async () => {
