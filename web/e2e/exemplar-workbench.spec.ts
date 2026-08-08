@@ -1926,6 +1926,30 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
               '[data-workbench-primitive="metric-strip"]',
             ),
           ).toHaveCount(2, { timeout: 15_000 });
+          for (const testId of [
+            'backtest-validation-disclosure',
+            'backtest-dataset-disclosure',
+            'backtest-strategy-evidence-disclosure',
+            'backtest-fills-disclosure',
+          ]) {
+            await expect(
+              reportWorkspace.getByTestId(testId),
+            ).not.toHaveAttribute('open', '');
+          }
+          const validationDisclosure = reportWorkspace.getByTestId(
+            'backtest-validation-disclosure',
+          );
+          const validationSummary = validationDisclosure.locator('summary');
+          await validationSummary.press('Enter');
+          await expect(validationDisclosure).toHaveAttribute('open', '');
+          await expect(
+            validationDisclosure.getByText(
+              /After-cost evidence|扣除成本后证据/,
+              { exact: true },
+            ),
+          ).toBeVisible();
+          await validationSummary.press('Enter');
+          await expect(validationDisclosure).not.toHaveAttribute('open', '');
           const reportGeometry = await reportWorkspace.evaluate((element) => ({
             chartTop:
               element
