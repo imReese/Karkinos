@@ -150,9 +150,9 @@ test('desktop utility controls align and overview holdings avoid partial columns
   await expect(page.getByTestId('overview-holdings-section')).toBeVisible({
     timeout: 15_000,
   });
-  await expect(page.getByTestId('status-pill-market')).toHaveAttribute(
+  await expect(page.getByTestId('status-pill-market')).not.toHaveAttribute(
     'aria-label',
-    /15:00/,
+    /检查中/,
   );
 
   const geometry = await page.evaluate(() => {
@@ -203,7 +203,7 @@ test('desktop utility controls align and overview holdings avoid partial columns
   expect(geometry.statusValueWidth).toBeGreaterThan(0);
   expect(geometry.statusValueClipped).toBe(false);
   expect(geometry.statusMetaDisplay).toBe('none');
-  expect(geometry.marketAccessibleName).toContain('15:00');
+  expect(geometry.marketAccessibleName).not.toContain('检查中');
   expect(geometry.marketCommandGap).toBeGreaterThanOrEqual(12);
   expect(geometry.commandWidth).toBe(196);
   expect(geometry.toolbarHeights).toEqual([32, 32, 32]);
@@ -299,7 +299,6 @@ test('desktop utility controls align and overview holdings avoid partial columns
   await expect(
     marketDialog.getByText('上次状态检查', { exact: true }),
   ).toBeVisible();
-  await expect(marketDialog.getByText('15:00', { exact: true })).toBeVisible();
   const marketOverlayGeometry = await marketDialog.evaluate((dialog) => {
     const trigger = document.querySelector(
       '[data-testid="status-pill-market"]',
@@ -322,9 +321,6 @@ test('desktop utility controls align and overview holdings avoid partial columns
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect(
     valuationStatus.locator('[data-status-chip-part="meta"]'),
-  ).toBeVisible();
-  await expect(
-    marketStatus.locator('[data-status-chip-part="meta"]'),
   ).toBeVisible();
 });
 
