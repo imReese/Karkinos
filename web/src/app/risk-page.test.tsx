@@ -547,6 +547,41 @@ test('renders risk boundaries and blocking register without execution controls',
     thresholdTable.compareDocumentPosition(controlGrid) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
+  const analysisOverview = screen.getByTestId('risk-analysis-overview');
+  const drawdownSection = within(analysisOverview).getByTestId(
+    'risk-drawdown-section',
+  );
+  const exposureSection = within(analysisOverview).getByTestId(
+    'risk-exposure-section',
+  );
+  const concentrationSection = screen.getByTestId('risk-concentration-section');
+  const concentrationTable = within(concentrationSection).getByTestId(
+    'risk-concentration-table',
+  );
+  expect(analysisOverview.className).toContain('xl:grid-cols-');
+  expect(
+    within(analysisOverview).queryByTestId('risk-concentration-section'),
+  ).toBeNull();
+  expect(
+    drawdownSection.compareDocumentPosition(exposureSection) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    analysisOverview.compareDocumentPosition(concentrationSection) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  const concentrationIdentityHeader =
+    within(concentrationTable).getByText('Symbol');
+  expect(concentrationIdentityHeader).toBeTruthy();
+  expect(concentrationIdentityHeader.className).toContain('sticky');
+  expect(within(concentrationTable).getByText('Weight')).toBeTruthy();
+  expect(within(concentrationTable).getByText('Market Value')).toBeTruthy();
+  expect(within(concentrationTable).getByText('Unrealized')).toBeTruthy();
+  expect(
+    within(concentrationTable).getByText(
+      'No active positions available for concentration analysis.',
+    ),
+  ).toBeTruthy();
   expect(within(blockRegister).getByText(/Cash Buffer/)).toBeTruthy();
   expect(within(blockRegister).queryByText('cash_buffer')).toBeNull();
   expect(within(blockRegister).getByText('Warning')).toBeTruthy();
