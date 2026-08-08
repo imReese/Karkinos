@@ -3025,9 +3025,13 @@ export function PortfolioPage() {
   const [sortBy, setSortBy] = useState<PositionSort>('market_value');
   const positions = usePositionsQuery();
   const snapshot = usePortfolioSnapshotQuery();
-  const cockpit = usePortfolioCockpitQuery();
-  const liveHoldings = useLiveHoldingsQuery();
-  const strategyContribution = useAccountStrategyContributionQuery();
+  const primaryPortfolioQueriesSettled =
+    positions.data !== undefined && snapshot.data !== undefined;
+  const cockpit = usePortfolioCockpitQuery(primaryPortfolioQueriesSettled);
+  const liveHoldings = useLiveHoldingsQuery(primaryPortfolioQueriesSettled);
+  const strategyContribution = useAccountStrategyContributionQuery(
+    primaryPortfolioQueriesSettled,
+  );
   const search = searchState.q;
   const assetClassFilter = searchState.assetClass;
   const pnlFilter = searchState.pnl as 'all' | 'winners' | 'losers';
@@ -3063,6 +3067,30 @@ export function PortfolioPage() {
         snapshot.data.valuation_as_of,
       )}`
     : undefined;
+  const isInitialPortfolioLoad =
+    (!positions.data && positions.isLoading) ||
+    (!snapshot.data && snapshot.isLoading);
+  const portfolioPrimaryFailureDetail = positions.isError
+    ? copy.portfolio.positionsError
+    : copy.portfolio.summary.errorDetail;
+
+  if (isInitialPortfolioLoad) {
+    return (
+      <section className="space-y-4 sm:space-y-5">
+        <WorkspaceHeader
+          eyebrow={copy.portfolio.kicker}
+          title={copy.portfolio.title}
+          description={copy.portfolio.subtitle}
+        />
+        <EvidenceLoadingLayout
+          title={copy.portfolio.summary.loading}
+          description={copy.portfolio.summary.loadingDetail}
+          metricCount={4}
+          rowCount={4}
+        />
+      </section>
+    );
+  }
 
   return (
     <section className="space-y-4 sm:space-y-5">
@@ -3352,7 +3380,13 @@ export function PortfolioPage() {
         </div>
 
         <div className="grid min-w-0 gap-4 xl:grid-cols-2">
-          {mode === 'account' ? (
+          {!primaryPortfolioQueriesSettled ? (
+            <EvidenceState
+              kind="error"
+              title={copy.states.error}
+              description={portfolioPrimaryFailureDetail}
+            />
+          ) : mode === 'account' ? (
             liveHoldings.isLoading ? (
               <EvidenceState
                 kind="loading"
@@ -3388,12 +3422,22 @@ export function PortfolioPage() {
           )}
 
           {mode === 'strategy' ? (
-            <PortfolioConstructionRecommendationsCard
-              recommendations={cockpit.data?.construction_recommendations ?? []}
-              isLoading={cockpit.isLoading}
-              isError={cockpit.isError}
-              onRetry={() => void cockpit.refetch()}
-            />
+            !primaryPortfolioQueriesSettled ? (
+              <EvidenceState
+                kind="error"
+                title={copy.states.error}
+                description={portfolioPrimaryFailureDetail}
+              />
+            ) : (
+              <PortfolioConstructionRecommendationsCard
+                recommendations={
+                  cockpit.data?.construction_recommendations ?? []
+                }
+                isLoading={cockpit.isLoading}
+                isError={cockpit.isError}
+                onRetry={() => void cockpit.refetch()}
+              />
+            )
           ) : snapshot.isLoading ? (
             <EvidenceState
               kind="loading"
@@ -4242,12 +4286,17 @@ export function MarketPage() {
   const { locale } = usePreferences();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const board = useResearchBoardQuery();
+  const primaryMarketProjectionAvailable = board.data !== undefined;
   const addWatchlistItem = useAddWatchlistItemMutation();
   const removeWatchlistItem = useRemoveWatchlistItemMutation();
   const createResearchNote = useCreateResearchNoteMutation();
-  const quoteFetchRuns = useQuoteFetchRunsQuery();
+  const quoteFetchRuns = useQuoteFetchRunsQuery(
+    primaryMarketProjectionAvailable,
+  );
   const holdingMarketEvidenceReview =
-    useCurrentHoldingMarketEvidenceReviewQuery();
+    useCurrentHoldingMarketEvidenceReviewQuery(
+      primaryMarketProjectionAvailable,
+    );
   const metadataBackfill = useInstrumentMetadataBackfillMutation();
   const barsBackfill = useMarketBarsBackfillMutation();
   const [selectedSymbol, setSelectedSymbol] = useState('');

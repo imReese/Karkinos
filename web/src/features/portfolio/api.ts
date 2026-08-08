@@ -295,22 +295,24 @@ export function useCurrentHoldingMarketEvidenceReviewQuery(enabled = true) {
   });
 }
 
-export function usePortfolioCockpitQuery() {
+export function usePortfolioCockpitQuery(enabled = true) {
   return useQuery({
     queryKey: ['portfolio-cockpit'],
     queryFn: () => apiClient<PortfolioCockpit>('/api/portfolio/cockpit'),
     staleTime: 10_000,
+    enabled,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
   });
 }
 
-export function useLiveHoldingsQuery() {
+export function useLiveHoldingsQuery(enabled = true) {
   return useQuery({
     queryKey: ['portfolio-live-holdings'],
     queryFn: () =>
       apiClient<LiveHoldingsResponse>('/api/portfolio/live-holdings'),
     staleTime: 10_000,
+    enabled,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
   });

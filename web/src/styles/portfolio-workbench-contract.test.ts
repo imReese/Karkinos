@@ -28,6 +28,10 @@ const liveHoldingsSource = readFileSync(
   resolve(SRC_ROOT, 'features/portfolio/components/live-holdings-board.tsx'),
   'utf8',
 );
+const portfolioApiSource = readFileSync(
+  resolve(SRC_ROOT, 'features/portfolio/api.ts'),
+  'utf8',
+);
 const globalStyles = readFileSync(
   resolve(SRC_ROOT, 'styles/globals.css'),
   'utf8',
@@ -80,4 +84,33 @@ test('portfolio lifecycle states stay flat instead of rebuilding a card wall', (
   expect(portfolioPageSource).toContain('<EvidenceState');
   expect(portfolioPageSource).not.toContain('<StatusCard');
   expect(portfolioPageSource).not.toMatch(/rounded-(?:xl|2xl|3xl)/);
+});
+
+test('portfolio defers secondary read models until primary holdings facts settle', () => {
+  expect(portfolioPageSource).toContain(
+    'const primaryPortfolioQueriesSettled =',
+  );
+  expect(portfolioPageSource).toContain('const isInitialPortfolioLoad =');
+  expect(portfolioPageSource).toContain('<EvidenceLoadingLayout');
+  expect(portfolioPageSource).toContain(
+    'usePortfolioCockpitQuery(primaryPortfolioQueriesSettled)',
+  );
+  expect(portfolioPageSource).toContain(
+    'useLiveHoldingsQuery(primaryPortfolioQueriesSettled)',
+  );
+  expect(portfolioPageSource).toContain(
+    'useAccountStrategyContributionQuery(\n    primaryPortfolioQueriesSettled,',
+  );
+  expect(portfolioPageSource).toContain(
+    'description={portfolioPrimaryFailureDetail}',
+  );
+  expect(portfolioPageSource).not.toContain(
+    '!primaryPortfolioQueriesSettled || liveHoldings.isLoading',
+  );
+  expect(portfolioApiSource).toContain(
+    'export function usePortfolioCockpitQuery(enabled = true)',
+  );
+  expect(portfolioApiSource).toContain(
+    'export function useLiveHoldingsQuery(enabled = true)',
+  );
 });
