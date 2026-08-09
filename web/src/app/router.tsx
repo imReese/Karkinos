@@ -3223,10 +3223,9 @@ export function PortfolioPage() {
   const [quoteFilter, setQuoteFilter] = useState<QuoteFilter>('all');
   const [evidenceFilter, setEvidenceFilter] = useState<EvidenceFilter>('all');
   const [sortBy, setSortBy] = useState<PositionSort>('market_value');
-  const positions = usePositionsQuery();
   const snapshot = usePortfolioSnapshotQuery();
-  const primaryPortfolioQueriesSettled =
-    positions.data !== undefined && snapshot.data !== undefined;
+  const portfolioPositions = snapshot.data?.positions ?? [];
+  const primaryPortfolioQueriesSettled = snapshot.data !== undefined;
   const cockpit = usePortfolioCockpitQuery(primaryPortfolioQueriesSettled);
   const liveHoldings = useLiveHoldingsQuery(primaryPortfolioQueriesSettled);
   const strategyContribution = useAccountStrategyContributionQuery(
@@ -3247,7 +3246,7 @@ export function PortfolioPage() {
     new Set((snapshot.data?.allocation ?? []).map((item) => item.asset_class)),
   );
   const filteredPositions = filterAndSortPortfolioPositions({
-    positions: positions.data ?? [],
+    positions: portfolioPositions,
     allocation: snapshot.data?.allocation ?? [],
     search,
     assetClassFilter,
@@ -3257,7 +3256,7 @@ export function PortfolioPage() {
     evidenceReviewSymbols,
     sortBy,
   });
-  const hasQuotesNeedingReview = (positions.data ?? []).some((position) =>
+  const hasQuotesNeedingReview = portfolioPositions.some((position) =>
     quoteNeedsReview(position.quote_status),
   );
 
@@ -3267,12 +3266,8 @@ export function PortfolioPage() {
         snapshot.data.valuation_as_of,
       )}`
     : undefined;
-  const isInitialPortfolioLoad =
-    (!positions.data && positions.isLoading) ||
-    (!snapshot.data && snapshot.isLoading);
-  const portfolioPrimaryFailureDetail = positions.isError
-    ? copy.portfolio.positionsError
-    : copy.portfolio.summary.errorDetail;
+  const isInitialPortfolioLoad = !snapshot.data && snapshot.isLoading;
+  const portfolioPrimaryFailureDetail = copy.portfolio.summary.errorDetail;
 
   if (isInitialPortfolioLoad) {
     return (
@@ -3550,23 +3545,23 @@ export function PortfolioPage() {
           sortBy={sortBy}
           onSortByChange={setSortBy}
           summary={`${copy.portfolio.currentHoldingsCount(
-            (positions.data ?? []).length,
+            portfolioPositions.length,
           )} · ${copy.portfolio.filteredHoldingsCount(
             filteredPositions.length,
           )}`}
         />
 
         <div data-testid="portfolio-current-holdings-count" className="sr-only">
-          {copy.portfolio.currentHoldingsCount((positions.data ?? []).length)} ·{' '}
+          {copy.portfolio.currentHoldingsCount(portfolioPositions.length)} ·{' '}
           {copy.portfolio.filteredHoldingsCount(filteredPositions.length)}
         </div>
-        {positions.isLoading ? (
+        {!snapshot.data && snapshot.isLoading ? (
           <EvidenceState
             kind="loading"
             title={copy.states.loading}
             description={copy.portfolio.positionsLoading}
           />
-        ) : positions.isError ? (
+        ) : !snapshot.data && snapshot.isError ? (
           <EvidenceState
             kind="error"
             title={copy.states.error}
@@ -3575,7 +3570,7 @@ export function PortfolioPage() {
               <button
                 type="button"
                 className="app-button-secondary inline-flex min-h-10 items-center justify-center rounded-[var(--app-radius-control)] px-3 py-1.5 text-sm font-semibold sm:min-h-9"
-                onClick={() => void positions.refetch()}
+                onClick={() => void snapshot.refetch()}
               >
                 {copy.states.retry}
               </button>
@@ -3586,7 +3581,7 @@ export function PortfolioPage() {
             kind="empty"
             title={copy.states.empty}
             description={
-              (positions.data ?? []).length === 0
+              portfolioPositions.length === 0
                 ? copy.portfolio.positionsEmpty
                 : copy.portfolio.filterEmpty
             }
@@ -3684,7 +3679,7 @@ export function PortfolioPage() {
               isLoading={strategyContribution.isLoading}
               isError={strategyContribution.isError}
               onRetry={() => void strategyContribution.refetch()}
-              instruments={positions.data ?? snapshot.data?.positions ?? []}
+              instruments={portfolioPositions}
             />
           )}
 
