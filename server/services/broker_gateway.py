@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from account_truth.broker_evidence import BrokerEvidenceRepository
 from server.services.broker_lifecycle_evidence_view import (
@@ -18,8 +19,10 @@ BROKER_GATEWAY_SCHEMA_VERSION = "karkinos.broker_gateway.v1"
 CONTROLLED_BRIDGE_POLICY_SCHEMA_VERSION = "karkinos.controlled_broker_bridge_policy.v1"
 MANUAL_EXECUTION_PREVIEW_FINGERPRINT_SCOPE = (
     "order_id, execution_preview, ledger_entry_draft, "
-    "position_cost_preview, controlled_bridge_policy"
+    "position_cost_preview, controlled_bridge_policy, "
+    "current_per_order_confirmation"
 )
+_FINGERPRINT_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 _CONTROLLED_BRIDGE_REQUIRED_GATES = (
     "account_truth",
     "research_evidence",
@@ -49,12 +52,18 @@ class BrokerGatewayService:
         broker_connectors: list[Any] | None = None,
         controlled_bridge_policy: Any | None = None,
         trading_controls: Any | None = None,
+        current_per_order_confirmation_provider: (
+            Callable[[str], dict[str, Any]] | None
+        ) = None,
     ) -> None:
         self._db = db
         self._oms = OmsService(db=db)
         self._broker_connectors = broker_connectors or []
         self._controlled_bridge_policy = controlled_bridge_policy
         self._trading_controls = trading_controls
+        self._current_per_order_confirmation_provider = (
+            current_per_order_confirmation_provider
+        )
 
     def get_status(self) -> dict[str, Any]:
         kill_switch = self._kill_switch_snapshot()
@@ -524,6 +533,9 @@ class BrokerGatewayService:
                 "ledger_entry_draft": ledger_entry_draft,
                 "position_cost_preview": position_cost_preview,
                 "controlled_bridge_policy": controlled_bridge_policy,
+                "current_per_order_confirmation": gateway_evidence[
+                    "current_per_order_confirmation"
+                ],
             }
         )
         return {
@@ -710,7 +722,158 @@ class BrokerGatewayService:
             raise ValueError("missing gateway evidence: " + ", ".join(missing))
         if blocked:
             raise ValueError("gateway evidence not passing: " + ", ".join(blocked))
-        return evidence
+        current_confirmation = self._resolve_current_per_order_confirmation(
+            order,
+            evidence=evidence,
+        )
+        return {
+            **evidence,
+            "account_truth_resolution": current_confirmation["gates"]["account_truth"],
+            "current_per_order_confirmation": current_confirmation,
+        }
+
+    def _resolve_current_per_order_confirmation(
+        self,
+        order: dict[str, Any],
+        *,
+        evidence: dict[str, Any],
+    ) -> dict[str, Any]:
+        provider = self._current_per_order_confirmation_provider
+        if not callable(provider):
+            raise ValueError(
+                "current per-order confirmation not passing: "
+                "current_per_order_confirmation_provider_unavailable"
+            )
+        try:
+            raw = provider(str(order.get("order_id") or "")) or {}
+        except Exception:
+            raise ValueError(
+                "current per-order confirmation not passing: "
+                "current_per_order_confirmation_provider_failed"
+            ) from None
+        source = raw if isinstance(raw, dict) else {}
+        blockers = [str(item) for item in source.get("blockers") or [] if str(item)]
+        if source.get("status") != "current_verified_non_authorizing_confirmation":
+            blockers.append("current_per_order_confirmation_not_verified")
+        if str(source.get("order_id") or "") != str(order.get("order_id") or ""):
+            blockers.append("current_per_order_confirmation_order_mismatch")
+        confirmation_id = str(source.get("confirmation_id") or "").lower()
+        dossier_fingerprint = str(source.get("dossier_fingerprint") or "").lower()
+        if not _FINGERPRINT_PATTERN.fullmatch(confirmation_id):
+            blockers.append("current_per_order_confirmation_id_invalid")
+        if not _FINGERPRINT_PATTERN.fullmatch(dossier_fingerprint):
+            blockers.append("current_per_order_dossier_fingerprint_invalid")
+        if source.get("unexpected_hard_blockers"):
+            blockers.append("current_per_order_confirmation_unexpected_hard_blockers")
+        if (
+            source.get("reads_persisted_facts_only") is not True
+            or source.get("provider_contact_performed") is not False
+            or source.get("runtime_connector_query_performed") is not False
+            or source.get("does_not_mutate_oms") is not True
+            or source.get("does_not_mutate_production_ledger") is not True
+            or source.get("does_not_mutate_risk") is not True
+            or source.get("does_not_mutate_kill_switch") is not True
+            or source.get("does_not_change_capital_authority") is not True
+            or source.get("broker_submission_enabled") is not False
+            or source.get("broker_cancel_enabled") is not False
+            or source.get("authorizes_execution") is not False
+        ):
+            blockers.append("current_per_order_confirmation_boundary_invalid")
+
+        dossier = source.get("current_dossier")
+        dossier = dossier if isinstance(dossier, dict) else {}
+        if (
+            dossier.get("review_ready") is not True
+            or dossier.get("review_status") != "review_ready_non_submitting"
+            or dossier.get("review_blockers")
+            or dossier.get("submission_status") != "blocked"
+            or dossier.get("authorizes_execution") is not False
+            or str(dossier.get("dossier_fingerprint") or "").lower()
+            != dossier_fingerprint
+        ):
+            blockers.append("current_per_order_dossier_not_review_ready")
+        capital = dossier.get("capital_evaluation")
+        capital = capital if isinstance(capital, dict) else {}
+        if (
+            capital.get("status") != "pass"
+            or capital.get("mode") != "manual_each_order"
+            or capital.get("does_not_enable_execution") is not True
+        ):
+            blockers.append("current_per_order_capital_evaluation_not_passing")
+
+        gateway = dossier.get("gateway_gates")
+        gateway = gateway if isinstance(gateway, dict) else {}
+        current_gates = gateway.get("gates")
+        current_gates = current_gates if isinstance(current_gates, dict) else {}
+        if (
+            gateway.get("status") != "pass"
+            or gateway.get("blockers")
+            or gateway.get("persisted_facts_only") is not True
+            or gateway.get("provider_contact_performed") is not False
+            or gateway.get("authorizes_execution") is not False
+        ):
+            blockers.append("current_per_order_gateway_gates_not_passing")
+        normalized_gates: dict[str, dict[str, Any]] = {}
+        for gate in _REQUIRED_GATEWAY_EVIDENCE:
+            raw_gate = evidence.get(gate)
+            raw_gate = raw_gate if isinstance(raw_gate, dict) else {}
+            current_gate = current_gates.get(gate)
+            current_gate = current_gate if isinstance(current_gate, dict) else {}
+            gate_blockers = [
+                str(item) for item in current_gate.get("blockers") or [] if str(item)
+            ]
+            if (
+                current_gate.get("status") != "pass"
+                or current_gate.get("resolution_status") != "resolved_clear"
+                or gate_blockers
+            ):
+                blockers.append(f"current_per_order_gateway_gate_not_passing:{gate}")
+            if str(current_gate.get("evidence_ref") or "") != str(
+                raw_gate.get("evidence_ref") or ""
+            ):
+                blockers.append(f"current_per_order_gateway_ref_mismatch:{gate}")
+            source_fingerprint = str(
+                current_gate.get("source_fingerprint") or ""
+            ).lower()
+            if not _FINGERPRINT_PATTERN.fullmatch(source_fingerprint):
+                blockers.append(
+                    f"current_per_order_gateway_source_fingerprint_invalid:{gate}"
+                )
+            normalized_gates[gate] = {
+                "resolution_status": str(current_gate.get("resolution_status") or ""),
+                "evidence_ref": str(current_gate.get("evidence_ref") or ""),
+                "source_identifier": str(current_gate.get("source_identifier") or ""),
+                "source_fingerprint": source_fingerprint,
+                "source_recorded_at": current_gate.get("source_recorded_at"),
+            }
+
+        blockers = list(dict.fromkeys(blockers))
+        if blockers:
+            raise ValueError(
+                "current per-order confirmation not passing: " + ", ".join(blockers)
+            )
+        return {
+            "status": "current_verified_non_authorizing_confirmation",
+            "confirmation_id": confirmation_id,
+            "dossier_fingerprint": dossier_fingerprint,
+            "capital_evaluation_input_fingerprint": str(
+                source.get("capital_evaluation_input_fingerprint") or ""
+            ),
+            "prior_batch_reconciliation_fingerprint": str(
+                source.get("prior_batch_reconciliation_fingerprint") or ""
+            ),
+            "execution_gateway_verification_fingerprint": str(
+                source.get("execution_gateway_verification_fingerprint") or ""
+            ),
+            "gateway_source_fingerprints": {
+                gate: normalized_gates[gate]["source_fingerprint"]
+                for gate in _REQUIRED_GATEWAY_EVIDENCE
+            },
+            "gates": normalized_gates,
+            "persisted_facts_only": True,
+            "provider_contact_performed": False,
+            "authorizes_execution": False,
+        }
 
     def _require_kill_switch_clear(self) -> None:
         kill_switch = self._kill_switch_snapshot()
@@ -944,6 +1107,29 @@ class BrokerGatewayService:
                     "evidence_ref": "",
                     "source": "oms_gateway_evidence",
                 }
+        current_confirmation = gateway_evidence.get("current_per_order_confirmation")
+        current_confirmation = (
+            current_confirmation if isinstance(current_confirmation, dict) else {}
+        )
+        current_gates = current_confirmation.get("gates")
+        current_gates = current_gates if isinstance(current_gates, dict) else {}
+        for gate in _REQUIRED_GATEWAY_EVIDENCE:
+            resolution = current_gates.get(gate)
+            if not isinstance(resolution, dict):
+                continue
+            gates[gate] = {
+                **gates[gate],
+                "source": "current_per_order_confirmation",
+                "confirmation_id": str(
+                    current_confirmation.get("confirmation_id") or ""
+                ),
+                "dossier_fingerprint": str(
+                    current_confirmation.get("dossier_fingerprint") or ""
+                ),
+                "source_fingerprint": str(resolution.get("source_fingerprint") or ""),
+                "source_recorded_at": resolution.get("source_recorded_at"),
+                "resolution_status": str(resolution.get("resolution_status") or ""),
+            }
         gates["manual_confirmation"] = {
             "status": "pass",
             "evidence_ref": (
@@ -1073,9 +1259,10 @@ class BrokerGatewayService:
         actor: str | None,
     ) -> dict[str, Any]:
         evidence_refs = {
-            key: str(value.get("evidence_ref"))
-            for key, value in gateway_evidence.items()
-            if isinstance(value, dict) and value.get("evidence_ref")
+            key: str(gateway_evidence[key].get("evidence_ref"))
+            for key in _REQUIRED_GATEWAY_EVIDENCE
+            if isinstance(gateway_evidence.get(key), dict)
+            and gateway_evidence[key].get("evidence_ref")
         }
         content = {
             "schema_version": "karkinos.manual_ticket_export_payload.v1",
@@ -1086,6 +1273,12 @@ class BrokerGatewayService:
             "ticket": ticket,
             "operator_form": ticket["operator_form"],
             "gateway_evidence_refs": dict(sorted(evidence_refs.items())),
+            "account_truth_resolution": gateway_evidence.get(
+                "account_truth_resolution"
+            ),
+            "current_per_order_confirmation": gateway_evidence.get(
+                "current_per_order_confirmation"
+            ),
             "controlled_bridge_policy": controlled_bridge_policy,
             "broker_submission_enabled": False,
             "submitted_to_broker": False,

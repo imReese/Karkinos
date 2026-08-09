@@ -436,7 +436,7 @@ def test_acceptance_audit_cli_account_truth_review_filter_outputs_one_audit() ->
     assert payload["selected_audit"] == "account_truth_review"
     assert [audit["key"] for audit in payload["audits"]] == ["account_truth_review"]
     audit = payload["audits"][0]
-    assert audit["required_count"] == 13
+    assert audit["required_count"] == 14
     assert audit["completed_count"] == audit["required_count"]
     assert audit["criteria"]
 

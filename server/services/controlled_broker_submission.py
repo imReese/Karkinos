@@ -11,7 +11,10 @@ from typing import Any, Callable
 from server.services.execution_gateway_verification_binding import (
     build_execution_gateway_order_contract,
 )
-from server.services.operator_approval import resolve_operator_approval_with_proof
+from server.services.operator_approval import (
+    resolve_operator_approval,
+    resolve_operator_approval_with_proof,
+)
 from server.services.per_order_confirmation import build_order_fingerprint
 
 CONTROLLED_BROKER_SUBMISSION_SCHEMA_VERSION = "karkinos.controlled_broker_submission.v1"
@@ -188,29 +191,13 @@ class ControlledBrokerSubmissionService:
         order_fingerprint = build_order_fingerprint(order) if order else ""
         order_contract = build_execution_gateway_order_contract(order)
 
-        confirmation = self._resolve_provider(
-            self._confirmation_provider,
-            normalized_confirmation_id,
-            unavailable="controlled_broker_submit_confirmation_provider_unavailable",
-            failed="controlled_broker_submit_confirmation_provider_failed",
-            blockers=blockers,
+        confirmation = self._resolve_confirmation_evidence(
+            confirmation_id=normalized_confirmation_id,
+            expected_order_id=normalized_order_id,
+            expected_order_fingerprint=order_fingerprint,
         )
-        if confirmation.get("status") != (
-            "current_verified_non_authorizing_confirmation"
-        ):
-            blockers.append("controlled_broker_submit_confirmation_not_current")
-            blockers.extend(
-                f"confirmation:{item}" for item in confirmation.get("blockers") or []
-            )
-        if str(confirmation.get("confirmation_id") or "") != (
-            normalized_confirmation_id
-        ):
-            blockers.append("controlled_broker_submit_confirmation_identity_mismatch")
-        if str(confirmation.get("order_id") or "") != normalized_order_id:
-            blockers.append("controlled_broker_submit_confirmation_order_mismatch")
+        blockers.extend(confirmation["blockers"])
         dossier = _mapping(confirmation.get("current_dossier"))
-        if str(dossier.get("order_fingerprint") or "") != order_fingerprint:
-            blockers.append("controlled_broker_submit_order_fingerprint_changed")
         gateway_verification = _mapping(dossier.get("execution_gateway_verification"))
         capital = _mapping(dossier.get("capital_evaluation"))
         scope = _mapping(capital.get("scope"))
@@ -386,6 +373,49 @@ class ControlledBrokerSubmissionService:
                 evidence=evidence,
             )
 
+        confirmation_recheck = self._resolve_confirmation_evidence(
+            confirmation_id=preview["confirmation_id"],
+            expected_order_id=preview["order_id"],
+            expected_order_fingerprint=preview["order_fingerprint"],
+        )
+        confirmation_recheck_blockers = list(confirmation_recheck["blockers"])
+        for field in (
+            "confirmation_id",
+            "order_id",
+            "order_fingerprint",
+            "dossier_fingerprint",
+            "gateway_id",
+            "gateway_verification_fingerprint",
+            "operator_id",
+            "account_alias",
+        ):
+            if str(confirmation_recheck.get(field) or "") != str(
+                preview.get(field) or ""
+            ):
+                confirmation_recheck_blockers.append(
+                    f"controlled_broker_submit_confirmation_recheck_mismatch:{field}"
+                )
+        confirmation_recheck_blockers = list(
+            dict.fromkeys(confirmation_recheck_blockers)
+        )
+        if confirmation_recheck_blockers:
+            evidence = self._record_rejection(
+                preview=preview,
+                submitted_fingerprint=submit_fingerprint,
+                operator_approval_id=operator_approval_id,
+                rejection_reasons=[
+                    "controlled_broker_submit_confirmation_changed_before_prepare"
+                ],
+                transaction_blockers=[
+                    f"confirmation_recheck:{item}"
+                    for item in confirmation_recheck_blockers
+                ],
+            )
+            raise ControlledBrokerSubmissionRejected(
+                "controlled broker submission confirmation changed before prepare",
+                evidence=evidence,
+            )
+
         now = _aware_utc(self._clock())
         order = self._db.get_oms_order_sync(preview["order_id"]) or {}
         payload = {
@@ -474,7 +504,10 @@ class ControlledBrokerSubmissionService:
                 external_call_performed=False,
             )
 
-        pre_call_blockers = self._pre_call_blockers(preview)
+        pre_call_blockers = self._pre_call_blockers(
+            preview,
+            operator_approval_id=operator_approval_id,
+        )
         if pre_call_blockers:
             finalized = self._finalize(
                 submit_intent_id=preview["submit_intent_id"],
@@ -730,6 +763,54 @@ class ControlledBrokerSubmissionService:
             }
 
         claimed = transaction.get("intent") or {}
+        approval, approval_blockers = resolve_operator_approval(
+            db=self._db,
+            trusted_identities=self._trusted_operator_identities,
+            approval_id=operator_approval_id,
+            expected_action="query_unknown_controlled_broker_submission",
+            expected_artifact_type="controlled_broker_submission_recovery",
+            expected_artifact_fingerprint=preview["recovery_fingerprint"],
+            clock=self._clock,
+        )
+        pre_query_blockers: list[str] = []
+        if approval_blockers:
+            pre_query_blockers.append(
+                "controlled_broker_recovery_query_operator_approval_changed"
+            )
+            pre_query_blockers.extend(
+                f"operator_approval:{item}" for item in approval_blockers
+            )
+        elif str(approval.get("operator_id") or "") != preview["operator_id"]:
+            pre_query_blockers.extend(
+                (
+                    "controlled_broker_recovery_query_operator_approval_changed",
+                    "operator_approval:operator_mismatch",
+                )
+            )
+        if pre_query_blockers:
+            evidence = self._record_recovery_rejection(
+                preview=preview,
+                submitted_fingerprint=submitted_fingerprint,
+                operator_approval_id=operator_approval_id,
+                rejection_reasons=[
+                    "controlled_broker_recovery_query_operator_approval_changed"
+                ],
+                transaction_blockers=pre_query_blockers,
+            )
+            return {
+                **_intent_response(
+                    claimed,
+                    reused=False,
+                    external_call_performed=False,
+                ),
+                "recovery_status": "rejected_before_gateway_query",
+                "recovery_fingerprint": preview["recovery_fingerprint"],
+                "recovery_operator_approval_id": operator_approval_id,
+                "recovery_claim_id": str(transaction.get("claim_id") or ""),
+                "recovery_rejection_event_id": int(evidence["event_id"]),
+                "recovery_blockers": list(dict.fromkeys(pre_query_blockers)),
+                "recovery_query_performed": False,
+            }
         gateway, gateway_blockers = self._gateway(str(claimed.get("gateway_id") or ""))
         query = getattr(gateway, "query_order", None) if not gateway_blockers else None
         external_call_performed = callable(query)
@@ -788,6 +869,56 @@ class ControlledBrokerSubmissionService:
                 "default_broker_submission_enabled": False,
             }
         return _intent_response(row, reused=False, external_call_performed=False)
+
+    def _resolve_confirmation_evidence(
+        self,
+        *,
+        confirmation_id: str,
+        expected_order_id: str,
+        expected_order_fingerprint: str,
+    ) -> dict[str, Any]:
+        blockers: list[str] = []
+        confirmation = self._resolve_provider(
+            self._confirmation_provider,
+            confirmation_id,
+            unavailable="controlled_broker_submit_confirmation_provider_unavailable",
+            failed="controlled_broker_submit_confirmation_provider_failed",
+            blockers=blockers,
+        )
+        if confirmation.get("status") != (
+            "current_verified_non_authorizing_confirmation"
+        ):
+            blockers.append("controlled_broker_submit_confirmation_not_current")
+            blockers.extend(
+                f"confirmation:{item}" for item in confirmation.get("blockers") or []
+            )
+        resolved_confirmation_id = str(confirmation.get("confirmation_id") or "")
+        if resolved_confirmation_id != confirmation_id:
+            blockers.append("controlled_broker_submit_confirmation_identity_mismatch")
+        resolved_order_id = str(confirmation.get("order_id") or "")
+        if resolved_order_id != expected_order_id:
+            blockers.append("controlled_broker_submit_confirmation_order_mismatch")
+        dossier = _mapping(confirmation.get("current_dossier"))
+        order_fingerprint = str(dossier.get("order_fingerprint") or "")
+        if order_fingerprint != expected_order_fingerprint:
+            blockers.append("controlled_broker_submit_order_fingerprint_changed")
+        gateway_verification = _mapping(dossier.get("execution_gateway_verification"))
+        capital = _mapping(dossier.get("capital_evaluation"))
+        scope = _mapping(capital.get("scope"))
+        return {
+            "confirmation_id": resolved_confirmation_id,
+            "order_id": resolved_order_id,
+            "order_fingerprint": order_fingerprint,
+            "dossier_fingerprint": str(confirmation.get("dossier_fingerprint") or ""),
+            "gateway_id": str(gateway_verification.get("gateway_id") or ""),
+            "gateway_verification_fingerprint": str(
+                gateway_verification.get("verification_fingerprint") or ""
+            ),
+            "operator_id": str(confirmation.get("operator_id") or ""),
+            "account_alias": str(scope.get("account_alias") or ""),
+            "current_dossier": dossier,
+            "blockers": list(dict.fromkeys(blockers)),
+        }
 
     def _resolve_provider(
         self,
@@ -930,8 +1061,32 @@ class ControlledBrokerSubmissionService:
             "updated_at": str(getattr(value, "updated_at", "") or ""),
         }
 
-    def _pre_call_blockers(self, preview: dict[str, Any]) -> list[str]:
+    def _pre_call_blockers(
+        self,
+        preview: dict[str, Any],
+        *,
+        operator_approval_id: str,
+    ) -> list[str]:
         blockers: list[str] = []
+        approval, approval_blockers = resolve_operator_approval(
+            db=self._db,
+            trusted_identities=self._trusted_operator_identities,
+            approval_id=operator_approval_id,
+            expected_action="submit_confirmed_broker_order",
+            expected_artifact_type="controlled_broker_submission",
+            expected_artifact_fingerprint=preview["submit_fingerprint"],
+            clock=self._clock,
+        )
+        if approval_blockers:
+            blockers.append("controlled_broker_submit_operator_approval_changed")
+            blockers.extend(f"operator_approval:{item}" for item in approval_blockers)
+        elif str(approval.get("operator_id") or "") != preview["operator_id"]:
+            blockers.extend(
+                (
+                    "controlled_broker_submit_operator_approval_changed",
+                    "operator_approval:operator_mismatch",
+                )
+            )
         if self._kill_switch().get("enabled") is not False:
             blockers.append("controlled_broker_submit_kill_switch_changed")
         release = self._resolve_release(

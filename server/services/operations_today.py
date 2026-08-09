@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Any, Iterable
 
 from server.models import DailyOperationsSummary
+from server.services.citic_source_follow_up import build_citic_source_follow_up
 
 _BLOCKING_MARKET_STATUSES = {"blocked", "error", "missing", "unavailable"}
 _DEGRADED_MARKET_STATUSES = {"partial", "stale", "estimated", "unknown"}
@@ -29,6 +30,7 @@ def build_operations_today_summary(
     execution_reconciliation_open_items: Iterable[dict[str, Any]] | None = None,
     acceptance_audit_export: dict[str, Any] | None = None,
     broker_adapter_readiness: dict[str, Any] | None = None,
+    citic_source_follow_up: dict[str, Any] | None = None,
     generated_at: str | None = None,
 ) -> dict[str, Any]:
     """Build a UI-facing operations summary without mutating trading state."""
@@ -78,6 +80,10 @@ def build_operations_today_summary(
     health = _health_summary(subsystems)
     conclusion_status, primary_target = _conclusion(subsystems)
     attention_items = _attention_items(subsystems)
+    source_follow_up = citic_source_follow_up or build_citic_source_follow_up(None)
+    attention_items.extend(
+        _attention_items([_citic_source_follow_up_attention(source_follow_up)])
+    )
 
     return {
         "schema_version": "karkinos.operations_today.v1",
@@ -104,10 +110,25 @@ def build_operations_today_summary(
         "execution_reconciliation": execution_reconciliation,
         "broker_adapter_readiness": broker_adapter_readiness
         or _broker_adapter_readiness_unavailable(),
+        "citic_source_follow_up": source_follow_up,
         "limitations": [
             "Operations summary is read-only and does not submit broker orders.",
             "Broker integration remains disabled; live-like workflows require manual confirmation.",
         ],
+    }
+
+
+def _citic_source_follow_up_attention(
+    projection: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "id": "citic_source_follow_up",
+        "status": str(projection.get("subsystem_status") or "blocked"),
+        "target": "account-truth",
+        "last_run_at": projection.get("latest_reviewed_at"),
+        "next_action": str(projection.get("next_manual_action") or "none"),
+        "detail_status": str(projection.get("status") or "unknown"),
+        "evidence_fingerprint": str(projection.get("evidence_fingerprint") or ""),
     }
 
 
@@ -1274,6 +1295,11 @@ def _attention_items(subsystems: list[dict[str, Any]]) -> list[dict[str, Any]]:
             **fingerprint_payload,
             "evidence": {"status": evidence["status"]},
         }
+        source_evidence_fingerprint = str(subsystem.get("evidence_fingerprint") or "")
+        if source_evidence_fingerprint:
+            fingerprint_basis["source_evidence_fingerprint"] = (
+                source_evidence_fingerprint
+            )
         encoded = json.dumps(
             fingerprint_basis,
             ensure_ascii=False,
@@ -1318,6 +1344,21 @@ def _attention_resolution_condition(
         "resolve_kill_switch": "kill_switch_clear_and_new_scheduler_evidence_required",
         "review_acceptance_audit_gaps": "complete_acceptance_audit_evidence_required",
         "export_acceptance_audit": "complete_acceptance_audit_evidence_required",
+        "provide_citic_account_truth_evidence_or_reject_source": (
+            "complete_account_truth_evidence_or_explicit_source_rejection_required"
+        ),
+        "review_citic_source_query_windows": (
+            "reviewed_query_window_for_each_pending_citic_source_required"
+        ),
+        "review_citic_source_intake_scan_limit": (
+            "complete_citic_source_intake_scan_required"
+        ),
+        "repair_citic_source_intake_metadata_store": (
+            "readable_citic_source_intake_metadata_required"
+        ),
+        "repair_citic_source_query_window_review_store": (
+            "readable_citic_source_query_window_review_metadata_required"
+        ),
     }
     if next_action in by_action:
         return by_action[next_action]

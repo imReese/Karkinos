@@ -11,6 +11,7 @@ from typing import Any, Callable
 from server.services.broker_connector_soak import (
     BROKER_CONNECTOR_SOAK_TARGET_TRADING_DAYS,
     BrokerConnectorSoakService,
+    reviewed_broker_soak_sequence_is_accepted,
 )
 from server.services.broker_connector_soak_runbook import (
     BROKER_CONNECTOR_SOAK_DRILL_ENTITY_TYPE,
@@ -275,6 +276,8 @@ class BrokerConnectorSoakPromotionService:
         latest = observations[-1] if observations else {}
         if observations and str(latest.get("soak_status") or "blocked") != "healthy":
             blockers.append("latest_snapshot_not_healthy")
+        elif observations and not reviewed_broker_soak_sequence_is_accepted(latest):
+            blockers.append("latest_source_sequence_not_accepted")
 
         latest_by_clear_day: dict[str, dict[str, Any]] = {}
         for item in observations:
@@ -282,7 +285,7 @@ class BrokerConnectorSoakPromotionService:
             reconciliation = item.get("execution_reconciliation") or {}
             if (
                 day
-                and item.get("qualifies_for_healthy_soak_day") is True
+                and reviewed_broker_soak_sequence_is_accepted(item)
                 and str(reconciliation.get("status") or "") == "clear"
                 and int(reconciliation.get("open_item_count") or 0) == 0
             ):
@@ -312,7 +315,7 @@ class BrokerConnectorSoakPromotionService:
 
         phase_coverage, phase_refs = self._phase_coverage(
             connector_id=connector_id,
-            selected_days=selected_days,
+            selected_observations=selected,
         )
         for phase in _REQUIRED_PHASES:
             covered = phase_coverage.get(phase, [])
@@ -333,6 +336,12 @@ class BrokerConnectorSoakPromotionService:
                 "event_id": item.get("event_id"),
                 "observation_id": str(item.get("observation_id") or ""),
                 "snapshot_fingerprint": str(item.get("snapshot_fingerprint") or ""),
+                "source_contract_fingerprint": _fingerprint(
+                    item.get("source_contract") or {}
+                ),
+                "source_sequence_fingerprint": _fingerprint(
+                    item.get("source_sequence") or {}
+                ),
                 "trading_day": str(item.get("trading_day") or ""),
                 "execution_reconciliation_ref": str(
                     (item.get("execution_reconciliation") or {}).get("evidence_ref")
@@ -369,13 +378,17 @@ class BrokerConnectorSoakPromotionService:
             "drill_evidence_refs": drill_refs,
             "latest_observation_id": str(latest.get("observation_id") or ""),
             "latest_soak_status": str(latest.get("soak_status") or "not_observed"),
-            "external_process_and_broker_terminal_recovery": (
-                "requires_signed_owner_assertion"
+            "karkinos_process_instance_recovery": (
+                "verified_by_karkinos_restart_drill"
+                if drill_coverage.get("karkinos_restart")
+                else "missing"
             ),
+            "broker_terminal_and_adapter_recovery": ("requires_signed_owner_assertion"),
             "blockers": unique_blockers,
             "limitations": [
                 "Persisted restart_recovery proves new-service-instance replay only.",
-                "Full process and broker-terminal recovery remains a signed owner assertion.",
+                "karkinos_restart proves a changed runtime-instance token and exact persisted replay; the operator must still confirm an actual process restart.",
+                "Broker-terminal and adapter restart recovery remain a signed owner assertion.",
             ],
         }
 
@@ -383,7 +396,7 @@ class BrokerConnectorSoakPromotionService:
         self,
         *,
         connector_id: str,
-        selected_days: list[str],
+        selected_observations: list[dict[str, Any]],
     ) -> tuple[dict[str, list[str]], list[str]]:
         rows = self._db.list_events_sync(
             event_type=BROKER_CONNECTOR_SOAK_RUN_EVENT_TYPE,
@@ -393,7 +406,11 @@ class BrokerConnectorSoakPromotionService:
         )
         coverage: dict[str, set[str]] = {phase: set() for phase in _REQUIRED_PHASES}
         refs: list[str] = []
-        selected_set = set(selected_days)
+        selected_by_day = {
+            str(item.get("trading_day") or ""): item
+            for item in selected_observations
+            if str(item.get("trading_day") or "")
+        }
         for row in rows:
             payload = _json_object(row.get("payload_json"))
             phase = str(payload.get("phase") or "")
@@ -404,10 +421,15 @@ class BrokerConnectorSoakPromotionService:
                 if not isinstance(observation, dict):
                     continue
                 day = str(observation.get("trading_day") or "")
+                selected = selected_by_day.get(day)
                 if (
                     str(observation.get("connector_id") or "") == connector_id
-                    and day in selected_set
+                    and selected is not None
                     and str(observation.get("soak_status") or "") == "healthy"
+                    and str(observation.get("observation_id") or "")
+                    == str(selected.get("observation_id") or "")
+                    and str(observation.get("snapshot_fingerprint") or "")
+                    == str(selected.get("snapshot_fingerprint") or "")
                 ):
                     coverage[phase].add(day)
                     matched = True
@@ -442,11 +464,32 @@ class BrokerConnectorSoakPromotionService:
             if first_scope != {connector_id}:
                 continue
             passed = payload.get("drill_status") == "passed"
-            if drill_type in {"duplicate_evidence", "restart_recovery"}:
+            if drill_type in {
+                "duplicate_evidence",
+                "restart_recovery",
+                "karkinos_restart",
+            }:
                 second_scope = _drill_connector_scope(
                     payload.get("second_observations"),
                 )
                 if passed and second_scope != {connector_id}:
+                    resolved.add(drill_type)
+                    continue
+            if drill_type == "karkinos_restart" and passed:
+                checkpoint_id = str(payload.get("restart_checkpoint_id") or "")
+                prepared_process = str(
+                    payload.get("prepared_process_instance_fingerprint") or ""
+                )
+                completed_process = str(
+                    payload.get("completed_process_instance_fingerprint") or ""
+                )
+                if (
+                    not _FINGERPRINT_PATTERN.fullmatch(checkpoint_id)
+                    or not _FINGERPRINT_PATTERN.fullmatch(prepared_process)
+                    or not _FINGERPRINT_PATTERN.fullmatch(completed_process)
+                    or prepared_process == completed_process
+                    or payload.get("process_instance_changed") is not True
+                ):
                     resolved.add(drill_type)
                     continue
             resolved.add(drill_type)

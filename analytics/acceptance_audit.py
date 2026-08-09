@@ -1122,6 +1122,35 @@ def build_account_truth_review_acceptance_audit() -> AcceptanceAudit:
                 ),
             ),
             AcceptanceCriterion(
+                key="citic_query_window_batch_non_authority",
+                checkbox_text=(
+                    "* [x] Reviewed CITIC query windows detect gaps and overlaps "
+                    "and unresolved source integrity blocks promotion evidence, "
+                    "without proving\n  complete account coverage or granting "
+                    "Account Truth, reconciliation, execution, or capital authority."
+                ),
+                evidence_paths=(
+                    "server/services/citic_source_query_window_review.py",
+                    "server/services/citic_source_follow_up.py",
+                    "server/services/account_truth_evidence_readiness.py",
+                    "server/account_truth_gate.py",
+                    "server/routes/account_truth.py",
+                    "tests/test_citic_query_window_batch_assessment.py",
+                    "tests/test_citic_source_follow_up.py",
+                    "tests/test_account_truth_evidence_readiness.py",
+                    "tests/server/test_account_truth_gate.py",
+                    "tests/server/test_account_truth_routes.py",
+                    "web/src/features/account-truth/api.ts",
+                    "web/src/features/account-truth/components/account-truth-review-page.tsx",
+                    "web/src/features/account-truth/components/account-truth-review-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/test_citic_query_window_batch_assessment.py tests/test_citic_source_follow_up.py tests/test_account_truth_evidence_readiness.py tests/server/test_account_truth_gate.py tests/server/test_account_truth_routes.py",
+                    "npm --prefix web test -- account-truth-review-page",
+                    "uv run python -m pytest",
+                ),
+            ),
+            AcceptanceCriterion(
                 key="backend_deterministic_review_tests",
                 checkbox_text=(
                     "* [x] Backend deterministic tests cover import-run "
@@ -2721,14 +2750,21 @@ def build_controlled_broker_bridge_foundation_acceptance_audit() -> AcceptanceAu
                 checkbox_text=(
                     "* [x] Manual-ticket preview, export, dry-run, and create "
                     "paths are non-submitting, require human broker entry, and "
-                    "keep preview/export read-only while preserving the "
-                    "controlled-bridge policy snapshot plus account-truth, "
-                    "research-evidence, risk, paper/shadow, and manual-"
-                    "confirmation gate evidence for audit."
+                    "keep preview/export read-only while requiring the latest "
+                    "signed current per-order confirmation, re-resolving its "
+                    "capital, Account Truth, Decision, risk, paper/shadow, "
+                    "adapter/soak, gateway, and reconciliation facts, and "
+                    "binding the confirmation, dossier, four source "
+                    "fingerprints, and controlled-bridge policy for audit."
                 ),
                 evidence_paths=(
                     "server/services/broker_gateway.py",
+                    "server/services/current_per_order_dossier.py",
+                    "server/services/current_per_order_dossier_factory.py",
+                    "server/services/per_order_confirmation.py",
+                    "server/services/per_order_gateway_evidence.py",
                     "server/routes/broker_gateway.py",
+                    "tests/test_current_per_order_dossier.py",
                     "tests/test_broker_gateway_service.py",
                     "tests/server/test_broker_gateway_routes.py",
                     "web/src/features/trading/api.ts",
@@ -2739,6 +2775,8 @@ def build_controlled_broker_bridge_foundation_acceptance_audit() -> AcceptanceAu
                     "uv run pytest tests/test_broker_gateway_service.py tests/server/test_broker_gateway_routes.py",
                     "uv run python -m pytest tests/test_broker_gateway_service.py::test_manual_ticket_gateway_creates_ticket_without_broker_submission tests/server/test_broker_gateway_routes.py::test_manual_ticket_route_returns_copyable_ticket -q",
                     "uv run python -m pytest tests/test_broker_gateway_service.py::test_manual_ticket_preview_is_dry_run_and_does_not_mutate_oms tests/test_broker_gateway_service.py::test_manual_ticket_export_is_read_only_and_copy_safe tests/test_broker_gateway_service.py::test_manual_ticket_dry_run_records_accepted_event_without_oms_mutation -q",
+                    "uv run python -m pytest tests/test_broker_gateway_service.py::test_manual_ticket_preview_requires_current_per_order_confirmation_provider tests/test_broker_gateway_service.py::test_manual_ticket_preview_rechecks_blocked_current_risk_source tests/test_broker_gateway_service.py::test_manual_ticket_dry_run_records_current_account_truth_rejection tests/server/test_broker_gateway_routes.py::test_manual_ticket_preview_route_rechecks_current_account_truth -q",
+                    "uv run python -m pytest tests/test_current_per_order_dossier.py::test_current_confirmation_resolution_requires_latest_signed_four_gate_dossier tests/test_current_per_order_dossier.py::test_current_confirmation_resolution_fails_closed_after_paper_source_drift tests/test_broker_gateway_service.py::test_manual_execution_preview_fingerprint_tracks_current_gate_drift -q",
                     "uv run python -m pytest tests/server/test_broker_gateway_routes.py::test_manual_ticket_preview_route_is_read_only -q",
                     'npm --prefix web test -- trading-page.test.tsx -t "exports confirmed manual ticket"',
                     "npm --prefix web test -- trading-page.test.tsx",
@@ -3017,15 +3055,36 @@ def build_controlled_broker_bridge_foundation_acceptance_audit() -> AcceptanceAu
             AcceptanceCriterion(
                 key="strategy_broker_boundary_static_guard",
                 checkbox_text=(
-                    "* [x] Strategy code has no broker adapter access; all "
-                    "bridge actions go through policy, risk, OMS, gateway, "
-                    "and reconciliation services, with a deterministic static "
-                    "guard covering the current strategy tree."
+                    "* [x] Strategy and research code, promotion and learning "
+                    "orchestration, deterministic risk, Decision, AI runtime and "
+                    "route entry points, and capital authorization/scaling evidence "
+                    "surfaces have no direct broker adapter or authority-service "
+                    "access. Controlled-session authority, budget, gate, pause, and "
+                    "rate services cannot cross into broker write authority; all "
+                    "bridge actions remain behind policy, Account Truth, risk, OMS, "
+                    "gateway, and reconciliation services, with deterministic static "
+                    "guards covering every protected domain."
                 ),
                 evidence_paths=(
                     "analytics/strategy_broker_boundary.py",
                     "tests/test_strategy_broker_boundary.py",
+                    "analytics/research_evidence.py",
                     "strategy/runtime.py",
+                    "risk",
+                    "server/ai_runtime",
+                    "server/routes/ai_research.py",
+                    "server/routes/decision.py",
+                    "server/routes/strategy_promotion.py",
+                    "server/services/strategy_promotion_pipeline.py",
+                    "server/routes/capital_scaling_review.py",
+                    "server/services/capital_authorization.py",
+                    "server/services/capital_scaling_review.py",
+                    "server/services/controlled_session_runtime_authority.py",
+                    "server/services/controlled_session_automatic_pause.py",
+                    "server/services/controlled_session_budget_reservation.py",
+                    "server/services/controlled_session_live_gates.py",
+                    "server/services/controlled_session_runtime_rate_limiter.py",
+                    "server/services/controlled_session_envelope.py",
                     "strategy/extensions/README.md",
                     "docs/ARCHITECTURE.md",
                     "docs/ROADMAP.md",
@@ -5423,8 +5482,9 @@ def build_controlled_broker_submission_acceptance_audit() -> AcceptanceAudit:
                     "must re-resolve its current per-order confirmation, "
                     "Account Truth, risk, paper/shadow, exact prior-batch "
                     "reconciliation, signed connector promotion, and runtime "
-                    "gateway verification; source or fingerprint drift fails "
-                    "closed."
+                    "gateway verification both in preview and again after the "
+                    "final submit-signature proof but before intent prepare; "
+                    "source or fingerprint drift fails closed."
                 ),
                 evidence_paths=(
                     "server/services/per_order_confirmation.py",
@@ -5433,7 +5493,7 @@ def build_controlled_broker_submission_acceptance_audit() -> AcceptanceAudit:
                 ),
                 validation_commands=(
                     "uv run pytest tests/test_per_order_confirmation.py -k recorded_confirmation_resolves -q",
-                    "uv run pytest tests/test_controlled_broker_submission.py -q",
+                    "uv run pytest tests/test_controlled_broker_submission.py -k 'confirmation_drift_after_final_signature' -q",
                 ),
             ),
             AcceptanceCriterion(
@@ -5443,7 +5503,10 @@ def build_controlled_broker_submission_acceptance_audit() -> AcceptanceAudit:
                     "Ed25519 `submit_confirmed_broker_order` approval and "
                     "signature-possession proof over the exact order, client "
                     "order id, gateway, release evidence, dry-run, and submit "
-                    "fingerprint; earlier approvals cannot be reused."
+                    "fingerprint; the same approval and trusted key are "
+                    "re-resolved after atomic prepare and must remain current "
+                    "at the final pre-call gate. Earlier or revoked approvals "
+                    "cannot be reused."
                 ),
                 evidence_paths=(
                     "server/services/operator_approval.py",
@@ -5513,8 +5576,11 @@ def build_controlled_broker_submission_acceptance_audit() -> AcceptanceAudit:
                 checkbox_text=(
                     "* [x] An unknown submission can never call submit again; "
                     "after a deterministic 30-second wait, recovery may only "
-                    "query the same idempotent client order id, and query "
-                    "failure or ambiguity remains unknown."
+                    "query the same idempotent client order id. Its exact "
+                    "short-lived approval and trusted key are re-resolved "
+                    "after the atomic query claim and must remain current "
+                    "before gateway contact; query failure or ambiguity "
+                    "remains unknown."
                 ),
                 evidence_paths=(
                     "server/services/controlled_broker_submission.py",
@@ -5575,8 +5641,10 @@ def build_controlled_broker_submission_acceptance_audit() -> AcceptanceAudit:
                     "ids, current persisted lifecycle observation, remaining "
                     "quantity, current signed release, fresh gateway health, "
                     "and a short-lived `cancel_exact_controlled_broker_order` "
-                    "signature. `BEGIN IMMEDIATE` permits at most one external "
-                    "cancel effect across duplicates, concurrency, and restart."
+                    "signature that is re-resolved after atomic prepare and "
+                    "must remain current at the final pre-call gate. `BEGIN "
+                    "IMMEDIATE` permits at most one external cancel effect "
+                    "across duplicates, concurrency, and restart."
                 ),
                 evidence_paths=(
                     "server/services/operator_approval.py",
@@ -5596,11 +5664,13 @@ def build_controlled_broker_submission_acceptance_audit() -> AcceptanceAudit:
                     "* [x] A prepared, requested, rejected, or unknown cancel "
                     "command is never re-cancelled. Recovery requires another "
                     "exact short-lived signature and may only query after a "
-                    "deterministic wait; gateway responses remain sanitized, "
-                    "non-authoritative telemetry and cannot mutate lifecycle, "
-                    "OMS, ledger, risk, kill switch, interlock, or capital "
-                    "authority. Only newer explicit lifecycle ingestion proves "
-                    "cancellation."
+                    "deterministic wait. Its approval and trusted key are "
+                    "re-resolved after the atomic query claim and must remain "
+                    "current before gateway contact; gateway responses remain "
+                    "sanitized, non-authoritative telemetry and cannot mutate "
+                    "lifecycle, OMS, ledger, risk, kill switch, interlock, or "
+                    "capital authority. Only newer explicit lifecycle "
+                    "ingestion proves cancellation."
                 ),
                 evidence_paths=(
                     "server/services/controlled_broker_cancellation.py",

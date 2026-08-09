@@ -591,10 +591,13 @@ def test_account_truth_review_acceptance_audit_has_evidence_for_every_completed_
 ):
     audit = build_account_truth_review_acceptance_audit()
 
-    assert audit.required_count == 13
+    assert audit.required_count == 14
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
     assert "not investment advice" in audit.limitations[0]
+    assert "citic_query_window_batch_non_authority" in {
+        criterion.key for criterion in audit.criteria
+    }
 
     for criterion in audit.criteria:
         assert criterion.is_complete, criterion.key

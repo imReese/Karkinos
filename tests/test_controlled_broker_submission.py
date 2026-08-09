@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from threading import Event
 from types import SimpleNamespace
@@ -525,6 +526,49 @@ def test_unknown_submit_never_resubmits_and_recovers_by_query_after_wait(
     assert env["db"].get_ledger_entries_sync() == []
 
 
+def test_submit_recovery_approval_revocation_after_claim_blocks_gateway_query(
+    tmp_path,
+) -> None:
+    env = _environment(tmp_path)
+    preview = _preview(env)
+    env["gateway"].submit_result = TimeoutError("private broker timeout")
+    unknown = _submit(env, preview, _approval(env, preview["submit_fingerprint"]))
+    env["clock"][0] = NOW + timedelta(seconds=31)
+    recovery_preview = env["service"].preview_recovery(
+        submit_intent_id=unknown["submit_intent_id"]
+    )
+    recovery_approval = _recovery_approval(
+        env, recovery_preview["recovery_fingerprint"]
+    )
+    original_claim = env["db"].claim_controlled_broker_recovery_query_sync
+
+    def claim_then_revoke(**kwargs) -> dict:
+        claimed = original_claim(**kwargs)
+        env["service"]._trusted_operator_identities = (
+            replace(env["identity"], enabled=False),
+        )
+        return claimed
+
+    env["db"].claim_controlled_broker_recovery_query_sync = claim_then_revoke
+
+    rejected = _recover(env, recovery_preview, recovery_approval)
+
+    assert rejected["status"] == "submission_unknown"
+    assert rejected["recovery_status"] == "rejected_before_gateway_query"
+    assert (
+        "controlled_broker_recovery_query_operator_approval_changed"
+        in rejected["recovery_blockers"]
+    )
+    assert rejected["recovery_query_performed"] is False
+    assert env["gateway"].submit_calls == 1
+    assert env["gateway"].query_calls == 0
+    events = env["db"].list_events_sync(
+        event_type="controlled_broker.recovery_query_rejected"
+    )
+    assert len(events) == 1
+    assert env["db"].get_ledger_entries_sync() == []
+
+
 def test_definitive_not_found_after_wait_closes_unknown_without_resubmit(
     tmp_path,
 ) -> None:
@@ -667,6 +711,78 @@ def test_kill_switch_change_after_prepare_blocks_external_call(tmp_path) -> None
     assert env["gateway"].submit_calls == 0
     assert env["db"].get_oms_order_sync(env["order"]["order_id"])["status"] == (
         "rejected"
+    )
+    assert env["db"].get_ledger_entries_sync() == []
+
+
+def test_submit_approval_revocation_after_prepare_blocks_external_call(
+    tmp_path,
+) -> None:
+    env = _environment(tmp_path)
+    preview = _preview(env)
+    approval = _approval(env, preview["submit_fingerprint"])
+    original_prepare = env["db"].prepare_controlled_broker_submit_intent_sync
+
+    def prepare_then_revoke(*, intent: dict) -> dict:
+        prepared = original_prepare(intent=intent)
+        env["service"]._trusted_operator_identities = (
+            replace(env["identity"], enabled=False),
+        )
+        return prepared
+
+    env["db"].prepare_controlled_broker_submit_intent_sync = prepare_then_revoke
+
+    rejected = _submit(env, preview, approval)
+
+    assert rejected["status"] == "rejected"
+    assert rejected["external_call_performed"] is False
+    assert rejected["gateway_result"]["status"] == "rejected_before_gateway_call"
+    assert (
+        "controlled_broker_submit_operator_approval_changed"
+        in rejected["gateway_result"]["blockers"]
+    )
+    assert env["gateway"].submit_calls == 0
+    intent = env["db"].get_controlled_broker_submit_intent_sync(
+        rejected["submit_intent_id"]
+    )
+    assert intent["status"] == "rejected"
+    assert env["db"].get_ledger_entries_sync() == []
+
+
+def test_confirmation_drift_after_final_signature_blocks_before_prepare(
+    tmp_path,
+) -> None:
+    env = _environment(tmp_path)
+    preview = _preview(env)
+    approval = _approval(env, preview["submit_fingerprint"])
+    original_provider = env["service"]._confirmation_provider
+    provider_calls = 0
+
+    def drifting_confirmation_provider(confirmation_id: str) -> dict:
+        nonlocal provider_calls
+        provider_calls += 1
+        current = original_provider(confirmation_id)
+        if provider_calls == 1:
+            return current
+        return {
+            **current,
+            "status": "blocked",
+            "blockers": ["per_order_confirmation_dossier_changed"],
+        }
+
+    env["service"]._confirmation_provider = drifting_confirmation_provider
+
+    with pytest.raises(ControlledBrokerSubmissionRejected) as exc_info:
+        _submit(env, preview, approval)
+
+    assert "controlled_broker_submit_confirmation_changed_before_prepare" in (
+        exc_info.value.evidence["rejection_reasons"]
+    )
+    assert provider_calls == 2
+    assert env["gateway"].submit_calls == 0
+    assert env["db"].list_controlled_broker_submit_intents_sync() == []
+    assert env["db"].get_oms_order_sync(env["order"]["order_id"])["status"] == (
+        "manually_confirmed"
     )
     assert env["db"].get_ledger_entries_sync() == []
 

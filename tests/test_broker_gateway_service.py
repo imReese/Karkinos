@@ -11,6 +11,7 @@ from server.db import AppDatabase
 from server.services.broker_gateway import BrokerGatewayService
 from server.services.oms import OmsService
 from server.services.trading_controls import TradingControlState
+from tests.broker_gateway_fixtures import clear_current_per_order_confirmation
 
 
 class _ConnectorWouldFailIfQueried:
@@ -32,6 +33,14 @@ def _required_gateway_evidence() -> dict:
             "evidence_ref": "paper_shadow:run-001",
         },
     }
+
+
+def _gateway_service(**kwargs) -> BrokerGatewayService:
+    kwargs.setdefault(
+        "current_per_order_confirmation_provider",
+        lambda order_id: clear_current_per_order_confirmation(order_id),
+    )
+    return BrokerGatewayService(**kwargs)
 
 
 def _controlled_bridge_policy() -> SimpleNamespace:
@@ -96,7 +105,7 @@ def test_gateway_status_exposes_manual_ticket_and_disabled_live_gateway(
 ) -> None:
     db = AppDatabase(tmp_path / "broker-gateway.db")
     db.init_sync()
-    service = BrokerGatewayService(db=db)
+    service = _gateway_service(db=db)
 
     gateways = {item["gateway_id"]: item for item in service.list_gateways()}
 
@@ -130,7 +139,7 @@ def test_gateway_status_marks_manual_ticket_blocked_by_kill_switch(
     db.init_sync()
     controls = TradingControlState(db=db)
     controls.set_kill_switch(True, "operator pause")
-    service = BrokerGatewayService(db=db, trading_controls=controls)
+    service = _gateway_service(db=db, trading_controls=controls)
 
     status = service.get_status()
     gateways = {item["gateway_id"]: item for item in status["gateways"]}
@@ -154,7 +163,7 @@ def test_gateway_status_exposes_disabled_controlled_bridge_policy(
 ) -> None:
     db = AppDatabase(tmp_path / "broker-gateway.db")
     db.init_sync()
-    service = BrokerGatewayService(db=db)
+    service = _gateway_service(db=db)
 
     status = service.get_status()
 
@@ -193,7 +202,7 @@ def test_gateway_status_keeps_configured_bridge_policy_non_submitting(
 ) -> None:
     db = AppDatabase(tmp_path / "broker-gateway.db")
     db.init_sync()
-    service = BrokerGatewayService(
+    service = _gateway_service(
         db=db,
         controlled_bridge_policy=_controlled_bridge_policy(),
     )
@@ -225,7 +234,7 @@ def test_gateway_status_keeps_configured_bridge_policy_non_submitting(
 def test_connector_health_contract_is_read_only_and_non_submitting(tmp_path) -> None:
     db = AppDatabase(tmp_path / "broker-gateway.db")
     db.init_sync()
-    service = BrokerGatewayService(
+    service = _gateway_service(
         db=db,
         broker_connectors=[
             BrokerConnectorConfig(
@@ -271,7 +280,7 @@ def test_connector_health_does_not_poll_registered_edge_adapter(
     db = AppDatabase(tmp_path / "broker-gateway.db")
     db.init_sync()
     connector = _ConnectorWouldFailIfQueried()
-    service = BrokerGatewayService(db=db, broker_connectors=[connector])
+    service = _gateway_service(db=db, broker_connectors=[connector])
 
     health = service.list_connector_health()
 
@@ -299,7 +308,7 @@ def test_legacy_connector_snapshot_is_explicit_persisted_evidence_migration(
     db = AppDatabase(tmp_path / "broker-gateway.db")
     db.init_sync()
     connector = _ConnectorWouldFailIfQueried()
-    service = BrokerGatewayService(db=db, broker_connectors=[connector])
+    service = _gateway_service(db=db, broker_connectors=[connector])
 
     result = service.query_connector_snapshot("fixture-readonly-edge")
 
@@ -328,7 +337,7 @@ def test_manual_ticket_gateway_creates_ticket_without_broker_submission(
     tmp_path,
 ) -> None:
     db, order = _confirmed_order(tmp_path)
-    service = BrokerGatewayService(
+    service = _gateway_service(
         db=db,
         controlled_bridge_policy=_controlled_bridge_policy(),
     )
@@ -370,7 +379,7 @@ def test_manual_ticket_preview_is_dry_run_and_does_not_mutate_oms(
     tmp_path,
 ) -> None:
     db, order = _confirmed_order(tmp_path)
-    service = BrokerGatewayService(
+    service = _gateway_service(
         db=db,
         controlled_bridge_policy=_controlled_bridge_policy(),
     )
@@ -422,9 +431,91 @@ def test_manual_ticket_preview_is_dry_run_and_does_not_mutate_oms(
     assert db.list_broker_gateway_events_sync(order_id=order["order_id"]) == []
 
 
+def test_manual_ticket_preview_requires_current_per_order_confirmation_provider(
+    tmp_path,
+) -> None:
+    db, order = _confirmed_order(tmp_path)
+    service = BrokerGatewayService(db=db)
+
+    try:
+        service.preview_manual_ticket(order["order_id"], actor="test")
+    except ValueError as exc:
+        assert "current per-order confirmation not passing" in str(exc)
+        assert "current_per_order_confirmation_provider_unavailable" in str(exc)
+    else:
+        raise AssertionError(
+            "expected missing current per-order confirmation to block manual ticket"
+        )
+
+    assert db.get_oms_order_sync(order["order_id"])["status"] == "manually_confirmed"
+    assert db.list_broker_gateway_events_sync(order_id=order["order_id"]) == []
+
+
+def test_manual_ticket_preview_rechecks_blocked_current_risk_source(tmp_path) -> None:
+    db, order = _confirmed_order(tmp_path)
+    blocked_confirmation = {
+        **clear_current_per_order_confirmation(order["order_id"]),
+        "status": "blocked",
+        "blockers": ["gateway_evidence_source_not_clear:risk"],
+    }
+    service = _gateway_service(
+        db=db,
+        current_per_order_confirmation_provider=lambda _order_id: blocked_confirmation,
+    )
+
+    try:
+        service.preview_manual_ticket(order["order_id"], actor="test")
+    except ValueError as exc:
+        assert "current per-order confirmation not passing" in str(exc)
+        assert "gateway_evidence_source_not_clear:risk" in str(exc)
+    else:
+        raise AssertionError(
+            "expected newly blocked risk evidence to invalidate manual ticket"
+        )
+
+    assert db.get_oms_order_sync(order["order_id"])["status"] == "manually_confirmed"
+    assert db.list_broker_gateway_events_sync(order_id=order["order_id"]) == []
+
+
+def test_manual_ticket_preview_binds_current_four_gate_fingerprints(
+    tmp_path,
+) -> None:
+    db, order = _confirmed_order(tmp_path)
+    service = _gateway_service(
+        db=db,
+    )
+
+    result = service.preview_manual_ticket(order["order_id"], actor="test")
+
+    evidence = result["validation"]["gateway_evidence"]
+    assert evidence["account_truth_resolution"] == {
+        "resolution_status": "resolved_clear",
+        "source_identifier": "1",
+        "source_fingerprint": "a" * 64,
+        "source_recorded_at": "2026-07-02T08:00:00+00:00",
+        "evidence_ref": "account-truth:1",
+    }
+    current = evidence["current_per_order_confirmation"]
+    assert current["confirmation_id"] == "c" * 64
+    assert current["dossier_fingerprint"] == "d" * 64
+    assert current["gateway_source_fingerprints"] == {
+        "account_truth": "a" * 64,
+        "research_evidence": "b" * 64,
+        "risk": "c" * 64,
+        "paper_shadow": "d" * 64,
+    }
+    gates = result["validation"]["required_gate_summary"]["gates"]
+    assert all(
+        gates[gate]["source"] == "current_per_order_confirmation"
+        for gate in ("account_truth", "research_evidence", "risk", "paper_shadow")
+    )
+    assert result["submitted_to_broker"] is False
+    assert db.get_oms_order_sync(order["order_id"])["status"] == "manually_confirmed"
+
+
 def test_manual_ticket_export_is_read_only_and_copy_safe(tmp_path) -> None:
     db, order = _confirmed_order(tmp_path)
-    service = BrokerGatewayService(
+    service = _gateway_service(
         db=db,
         controlled_bridge_policy=_controlled_bridge_policy(),
     )
@@ -536,7 +627,7 @@ def test_manual_ticket_operator_form_preserves_cash_and_position_preview(
             },
         },
     )
-    service = BrokerGatewayService(
+    service = _gateway_service(
         db=db,
         controlled_bridge_policy=_controlled_bridge_policy(),
     )
@@ -581,7 +672,7 @@ def test_manual_ticket_dry_run_records_accepted_event_without_oms_mutation(
     tmp_path,
 ) -> None:
     db, order = _confirmed_order(tmp_path)
-    service = BrokerGatewayService(
+    service = _gateway_service(
         db=db,
         controlled_bridge_policy=_controlled_bridge_policy(),
     )
@@ -610,7 +701,12 @@ def test_manual_ticket_dry_run_records_accepted_event_without_oms_mutation(
     assert payload["required_gate_summary"]["gates"]["paper_shadow"] == {
         "status": "pass",
         "evidence_ref": "paper_shadow:run-001",
-        "source": "oms_gateway_evidence",
+        "source": "current_per_order_confirmation",
+        "confirmation_id": "c" * 64,
+        "dossier_fingerprint": "d" * 64,
+        "source_fingerprint": "d" * 64,
+        "source_recorded_at": "2026-07-02T08:03:00+00:00",
+        "resolution_status": "resolved_clear",
     }
     assert payload["required_gate_summary"]["does_not_authorize_execution"] is True
     assert payload["controlled_bridge_policy"]["policy_id"] == (
@@ -623,7 +719,7 @@ def test_manual_ticket_dry_run_records_rejected_event_without_oms_mutation(
     tmp_path,
 ) -> None:
     db, order = _confirmed_order(tmp_path, gateway_evidence=False)
-    service = BrokerGatewayService(db=db)
+    service = _gateway_service(db=db)
 
     try:
         service.dry_run_manual_ticket(order["order_id"], actor="test")
@@ -644,11 +740,48 @@ def test_manual_ticket_dry_run_records_rejected_event_without_oms_mutation(
     assert "account_truth" in payload["rejection_reason"]
 
 
+def test_manual_ticket_dry_run_records_current_account_truth_rejection(
+    tmp_path,
+) -> None:
+    db, order = _confirmed_order(tmp_path)
+    blocked_confirmation = {
+        **clear_current_per_order_confirmation(order["order_id"]),
+        "status": "blocked",
+        "blockers": ["gateway_evidence_source_not_clear:account_truth"],
+    }
+    service = _gateway_service(
+        db=db,
+        current_per_order_confirmation_provider=lambda _order_id: (
+            blocked_confirmation
+        ),
+    )
+
+    try:
+        service.dry_run_manual_ticket(order["order_id"], actor="test")
+    except ValueError as exc:
+        assert "current per-order confirmation not passing" in str(exc)
+    else:
+        raise AssertionError("expected current Account Truth to reject dry-run")
+
+    assert db.get_oms_order_sync(order["order_id"])["status"] == "manually_confirmed"
+    events = db.list_broker_gateway_events_sync(order_id=order["order_id"])
+    assert len(events) == 1
+    assert events[0]["event_type"] == "manual_ticket_dry_run_rejected"
+    assert events[0]["status"] == "rejected"
+    payload = json.loads(events[0]["payload_json"])
+    assert payload["submitted_to_broker"] is False
+    assert payload["validation_result"] == "rejected"
+    assert (
+        "gateway_evidence_source_not_clear:account_truth" in payload["rejection_reason"]
+    )
+    assert "source_fingerprint" not in payload["rejection_reason"]
+
+
 def test_manual_ticket_preview_blocks_when_kill_switch_enabled(tmp_path) -> None:
     db, order = _confirmed_order(tmp_path)
     controls = TradingControlState(db=db)
     controls.set_kill_switch(True, "operator pause")
-    service = BrokerGatewayService(db=db, trading_controls=controls)
+    service = _gateway_service(db=db, trading_controls=controls)
 
     try:
         service.preview_manual_ticket(order["order_id"], actor="test")
@@ -668,7 +801,7 @@ def test_manual_ticket_dry_run_records_kill_switch_rejection_without_oms_mutatio
     db, order = _confirmed_order(tmp_path)
     controls = TradingControlState(db=db)
     controls.set_kill_switch(True, "operator pause")
-    service = BrokerGatewayService(db=db, trading_controls=controls)
+    service = _gateway_service(db=db, trading_controls=controls)
 
     try:
         service.dry_run_manual_ticket(order["order_id"], actor="test")
@@ -693,7 +826,7 @@ def test_manual_ticket_query_returns_local_audit_and_staged_broker_evidence(
     tmp_path,
 ) -> None:
     db, order = _confirmed_order(tmp_path)
-    service = BrokerGatewayService(db=db)
+    service = _gateway_service(db=db)
     service.dry_run_manual_ticket(order["order_id"], actor="test")
     service.create_manual_ticket(order["order_id"], actor="test")
     _import_broker_trade(Path(db._path), event_id="broker-buy-600519", quantity=100)
@@ -734,7 +867,7 @@ def test_manual_execution_preview_calculates_ledger_draft_without_mutation(
             },
         },
     )
-    service = BrokerGatewayService(
+    service = _gateway_service(
         db=db,
         controlled_bridge_policy=_controlled_bridge_policy(),
     )
@@ -802,22 +935,42 @@ def test_manual_execution_preview_calculates_ledger_draft_without_mutation(
     assert gate_summary["gates"]["account_truth"] == {
         "status": "pass",
         "evidence_ref": "account-truth:1",
-        "source": "oms_gateway_evidence",
+        "source": "current_per_order_confirmation",
+        "confirmation_id": "c" * 64,
+        "dossier_fingerprint": "d" * 64,
+        "source_fingerprint": "a" * 64,
+        "source_recorded_at": "2026-07-02T08:00:00+00:00",
+        "resolution_status": "resolved_clear",
     }
     assert gate_summary["gates"]["research_evidence"] == {
         "status": "pass",
         "evidence_ref": "research:1",
-        "source": "oms_gateway_evidence",
+        "source": "current_per_order_confirmation",
+        "confirmation_id": "c" * 64,
+        "dossier_fingerprint": "d" * 64,
+        "source_fingerprint": "b" * 64,
+        "source_recorded_at": "2026-07-02T08:01:00+00:00",
+        "resolution_status": "resolved_clear",
     }
     assert gate_summary["gates"]["risk"] == {
         "status": "pass",
         "evidence_ref": "risk:risk-001",
-        "source": "oms_gateway_evidence",
+        "source": "current_per_order_confirmation",
+        "confirmation_id": "c" * 64,
+        "dossier_fingerprint": "d" * 64,
+        "source_fingerprint": "c" * 64,
+        "source_recorded_at": "2026-07-02T08:02:00+00:00",
+        "resolution_status": "resolved_clear",
     }
     assert gate_summary["gates"]["paper_shadow"] == {
         "status": "pass",
         "evidence_ref": "paper_shadow:run-001",
-        "source": "oms_gateway_evidence",
+        "source": "current_per_order_confirmation",
+        "confirmation_id": "c" * 64,
+        "dossier_fingerprint": "d" * 64,
+        "source_fingerprint": "d" * 64,
+        "source_recorded_at": "2026-07-02T08:03:00+00:00",
+        "resolution_status": "resolved_clear",
     }
     assert gate_summary["gates"]["manual_confirmation"] == {
         "status": "pass",
@@ -861,7 +1014,7 @@ def test_manual_execution_preview_fingerprint_is_stable_and_input_sensitive(
             },
         },
     )
-    service = BrokerGatewayService(
+    service = _gateway_service(
         db=db,
         controlled_bridge_policy=_controlled_bridge_policy(),
     )
@@ -901,7 +1054,8 @@ def test_manual_execution_preview_fingerprint_is_stable_and_input_sensitive(
     assert changed_fee["preview_fingerprint"] != first["preview_fingerprint"]
     assert first["fingerprint_scope"] == (
         "order_id, execution_preview, ledger_entry_draft, "
-        "position_cost_preview, controlled_bridge_policy"
+        "position_cost_preview, controlled_bridge_policy, "
+        "current_per_order_confirmation"
     )
     assert db.get_oms_order_sync(order["order_id"])["status"] == "manual_ticket_created"
     assert len(db.list_broker_gateway_events_sync(order_id=order["order_id"])) == 1
@@ -922,7 +1076,7 @@ def test_manual_execution_evidence_record_requires_matching_preview_fingerprint(
             },
         },
     )
-    service = BrokerGatewayService(
+    service = _gateway_service(
         db=db,
         controlled_bridge_policy=_controlled_bridge_policy(),
     )
@@ -976,7 +1130,12 @@ def test_manual_execution_evidence_record_requires_matching_preview_fingerprint(
     assert payload["validation"]["required_gate_summary"]["gates"]["risk"] == {
         "status": "pass",
         "evidence_ref": "risk:risk-001",
-        "source": "oms_gateway_evidence",
+        "source": "current_per_order_confirmation",
+        "confirmation_id": "c" * 64,
+        "dossier_fingerprint": "d" * 64,
+        "source_fingerprint": "c" * 64,
+        "source_recorded_at": "2026-07-02T08:02:00+00:00",
+        "resolution_status": "resolved_clear",
     }
 
 
@@ -984,7 +1143,7 @@ def test_manual_execution_evidence_rejects_mismatched_preview_fingerprint(
     tmp_path,
 ) -> None:
     db, order = _confirmed_order(tmp_path)
-    service = BrokerGatewayService(
+    service = _gateway_service(
         db=db,
         controlled_bridge_policy=_controlled_bridge_policy(),
     )
@@ -1018,7 +1177,7 @@ def test_manual_execution_evidence_rejects_mismatched_preview_fingerprint(
 
 def test_manual_execution_preview_requires_created_manual_ticket(tmp_path) -> None:
     db, order = _confirmed_order(tmp_path)
-    service = BrokerGatewayService(db=db)
+    service = _gateway_service(db=db)
 
     try:
         service.preview_manual_execution_record(
@@ -1035,12 +1194,88 @@ def test_manual_execution_preview_requires_created_manual_ticket(tmp_path) -> No
     assert db.list_broker_gateway_events_sync(order_id=order["order_id"]) == []
 
 
+def test_manual_execution_preview_fingerprint_tracks_current_gate_drift(
+    tmp_path,
+) -> None:
+    db, order = _confirmed_order(tmp_path)
+    current_confirmation = clear_current_per_order_confirmation(order["order_id"])
+    service = BrokerGatewayService(
+        db=db,
+        controlled_bridge_policy=_controlled_bridge_policy(),
+        current_per_order_confirmation_provider=lambda _order_id: (
+            current_confirmation
+        ),
+    )
+    service.create_manual_ticket(order["order_id"], actor="test")
+
+    first = service.preview_manual_execution_record(
+        order["order_id"],
+        fill_price="1688.00",
+        quantity="100",
+        fee="5.00",
+        tax="0.00",
+        transfer_fee="0.10",
+        actor="test",
+    )
+    current_confirmation["confirmation_id"] = "4" * 64
+    current_confirmation["dossier_fingerprint"] = "5" * 64
+    current_confirmation["current_dossier"]["dossier_fingerprint"] = "5" * 64
+    current_confirmation["current_dossier"]["gateway_gates"]["gates"]["risk"][
+        "source_fingerprint"
+    ] = ("6" * 64)
+    changed = service.preview_manual_execution_record(
+        order["order_id"],
+        fill_price="1688.00",
+        quantity="100",
+        fee="5.00",
+        tax="0.00",
+        transfer_fee="0.10",
+        actor="test",
+    )
+
+    assert changed["preview_fingerprint"] != first["preview_fingerprint"]
+    assert (
+        changed["validation"]["gateway_evidence"]["current_per_order_confirmation"][
+            "gateway_source_fingerprints"
+        ]["risk"]
+        == "6" * 64
+    )
+    event_count_before = len(
+        db.list_broker_gateway_events_sync(order_id=order["order_id"])
+    )
+    try:
+        service.record_manual_execution_evidence(
+            order["order_id"],
+            preview_fingerprint=first["preview_fingerprint"],
+            fill_price="1688.00",
+            quantity="100",
+            fee="5.00",
+            tax="0.00",
+            transfer_fee="0.10",
+            actor="test",
+        )
+    except ValueError as exc:
+        assert "preview_fingerprint" in str(exc)
+    else:
+        raise AssertionError("expected Account Truth drift to invalidate preview")
+
+    assert db.get_oms_order_sync(order["order_id"])["status"] == "manual_ticket_created"
+    assert (
+        len(db.list_broker_gateway_events_sync(order_id=order["order_id"]))
+        == event_count_before
+    )
+    assert (
+        db.list_broker_gateway_events_sync(order_id=order["order_id"])[-1]["event_type"]
+        == "manual_ticket_created"
+    )
+
+
 def test_staged_account_facts_query_reads_cash_positions_and_fills_without_mutation(
     tmp_path,
 ) -> None:
     db = AppDatabase(tmp_path / "broker-gateway.db")
     db.init_sync()
-    service = BrokerGatewayService(db=db)
+    service = _gateway_service(db=db)
     _import_broker_trade(Path(db._path), event_id="broker-buy-600519", quantity=100)
     events_before = db.list_broker_gateway_events_sync()
 
@@ -1065,7 +1300,7 @@ def test_staged_account_facts_query_reads_cash_positions_and_fills_without_mutat
 def test_staged_fill_query_filters_trade_evidence_without_mutation(tmp_path) -> None:
     db = AppDatabase(tmp_path / "broker-gateway.db")
     db.init_sync()
-    service = BrokerGatewayService(db=db)
+    service = _gateway_service(db=db)
     _import_broker_trade(
         Path(db._path),
         event_id="broker-buy-600519",
@@ -1101,7 +1336,7 @@ def test_staged_fill_query_filters_trade_evidence_without_mutation(tmp_path) -> 
 
 def test_manual_ticket_preview_requires_gateway_evidence(tmp_path) -> None:
     db, order = _confirmed_order(tmp_path, gateway_evidence=False)
-    service = BrokerGatewayService(db=db)
+    service = _gateway_service(db=db)
 
     try:
         service.preview_manual_ticket(order["order_id"], actor="test")
@@ -1118,7 +1353,7 @@ def test_manual_ticket_preview_requires_gateway_evidence(tmp_path) -> None:
 
 def test_manual_ticket_creation_requires_gateway_evidence(tmp_path) -> None:
     db, order = _confirmed_order(tmp_path, gateway_evidence=False)
-    service = BrokerGatewayService(db=db)
+    service = _gateway_service(db=db)
 
     try:
         service.create_manual_ticket(order["order_id"], actor="test")
@@ -1137,7 +1372,7 @@ def test_manual_ticket_creation_requires_gateway_evidence(tmp_path) -> None:
 
 def test_live_gateway_rejects_submission_by_default(tmp_path) -> None:
     db, order = _confirmed_order(tmp_path)
-    service = BrokerGatewayService(db=db)
+    service = _gateway_service(db=db)
 
     try:
         service.submit_live_disabled(order["order_id"], actor="test")

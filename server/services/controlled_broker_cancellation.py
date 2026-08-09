@@ -17,7 +17,10 @@ from account_truth.broker_order_lifecycle import (
 from server.services.manual_broker_cancellation_evidence import (
     ManualBrokerCancellationEvidenceService,
 )
-from server.services.operator_approval import resolve_operator_approval_with_proof
+from server.services.operator_approval import (
+    resolve_operator_approval,
+    resolve_operator_approval_with_proof,
+)
 from server.services.per_order_confirmation import build_order_fingerprint
 
 CONTROLLED_BROKER_CANCELLATION_SCHEMA_VERSION = (
@@ -75,6 +78,7 @@ _QUERY_RESULT_STATUSES = frozenset(
         "not_found",
         "gateway_query_exception",
         "gateway_unavailable_after_claim",
+        "rejected_before_gateway_query",
     }
 )
 
@@ -1015,6 +1019,29 @@ class ControlledBrokerCancellationService:
         pre_call_blockers = list(fresh["blockers"])
         if fresh["cancel_fingerprint"] != preview["cancel_fingerprint"]:
             pre_call_blockers.append("controlled_broker_cancel_evidence_changed")
+        approval, approval_blockers = resolve_operator_approval(
+            db=self._db,
+            trusted_identities=self._trusted_operator_identities,
+            approval_id=operator_approval_id,
+            expected_action="cancel_exact_controlled_broker_order",
+            expected_artifact_type="controlled_broker_cancellation",
+            expected_artifact_fingerprint=preview["cancel_fingerprint"],
+            clock=self._clock,
+        )
+        if approval_blockers:
+            pre_call_blockers.append(
+                "controlled_broker_cancel_operator_approval_changed"
+            )
+            pre_call_blockers.extend(
+                f"operator_approval:{item}" for item in approval_blockers
+            )
+        elif str(approval.get("operator_id") or "") != preview["operator_id"]:
+            pre_call_blockers.extend(
+                (
+                    "controlled_broker_cancel_operator_approval_changed",
+                    "operator_approval:operator_mismatch",
+                )
+            )
         if pre_call_blockers:
             result = {
                 "status": "rejected_before_gateway_call",
@@ -1212,6 +1239,9 @@ class ControlledBrokerCancellationService:
                     "recovery_fingerprint": str(recovery_fingerprint or ""),
                     "recovery_operator_approval_id": str(operator_approval_id or ""),
                     "recovery_query_performed": False,
+                    "recovery_status": str(
+                        existing["result"].get("status") or existing["status"]
+                    ),
                     "query_result": existing["result"],
                     "query_result_authoritative": False,
                     "query_only": True,
@@ -1304,6 +1334,78 @@ class ControlledBrokerCancellationService:
             }
 
         command = transaction["command"]
+        approval, approval_blockers = resolve_operator_approval(
+            db=self._db,
+            trusted_identities=self._trusted_operator_identities,
+            approval_id=operator_approval_id,
+            expected_action="query_exact_broker_cancellation_outcome",
+            expected_artifact_type="controlled_broker_cancellation_recovery",
+            expected_artifact_fingerprint=preview["recovery_fingerprint"],
+            clock=self._clock,
+        )
+        pre_query_blockers: list[str] = []
+        if approval_blockers:
+            pre_query_blockers.append(
+                "controlled_broker_cancel_recovery_operator_approval_changed"
+            )
+            pre_query_blockers.extend(
+                f"operator_approval:{item}" for item in approval_blockers
+            )
+        elif str(approval.get("operator_id") or "") != preview["operator_id"]:
+            pre_query_blockers.extend(
+                (
+                    "controlled_broker_cancel_recovery_operator_approval_changed",
+                    "operator_approval:operator_mismatch",
+                )
+            )
+        if pre_query_blockers:
+            evidence = self._record_rejection(
+                preview=preview,
+                submitted_fingerprint=str(recovery_fingerprint or ""),
+                operator_approval_id=operator_approval_id,
+                rejection_reasons=[
+                    "controlled_broker_cancel_recovery_operator_approval_changed"
+                ],
+                transaction_blockers=pre_query_blockers,
+                recovery=True,
+            )
+            sanitized = _sanitize_query_result(
+                {
+                    "status": "rejected_before_gateway_query",
+                    "definitive": False,
+                    "reason": "operator_approval_changed_before_gateway_query",
+                }
+            )
+            completed_at = _aware_utc(self._clock())
+            finalized = self._store.finalize_recovery(
+                recovery_claim_id=transaction["recovery_claim_id"],
+                result=sanitized,
+                completed_at_epoch_ms=int(completed_at.timestamp() * 1000),
+                completed_at=completed_at.isoformat(),
+            )
+            if finalized["status"] == "rejected":
+                raise ControlledBrokerCancellationRejected(
+                    "controlled broker cancellation recovery rejection persistence failed",
+                    evidence=finalized,
+                )
+            return {
+                **_command_response(
+                    finalized["command"],
+                    reused=False,
+                    external_call_performed=False,
+                ),
+                "recovery_status": "rejected_before_gateway_query",
+                "recovery_claim_id": transaction["recovery_claim_id"],
+                "recovery_fingerprint": preview["recovery_fingerprint"],
+                "recovery_operator_approval_id": operator_approval_id,
+                "recovery_rejection_event_id": int(evidence["event_id"]),
+                "recovery_blockers": list(dict.fromkeys(pre_query_blockers)),
+                "recovery_query_performed": False,
+                "query_result": sanitized,
+                "query_result_authoritative": False,
+                "query_only": True,
+                "recancel_enabled": False,
+            }
         gateway, gateway_blockers = self._gateway(command["gateway_id"])
         query = getattr(gateway, "query_order", None) if not gateway_blockers else None
         external_call_performed = callable(query)

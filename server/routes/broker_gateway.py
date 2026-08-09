@@ -9,6 +9,9 @@ from pydantic import BaseModel
 
 from server.services.broker_connector_runtime import build_broker_connectors
 from server.services.broker_gateway import BrokerGatewayService
+from server.services.current_per_order_dossier_factory import (
+    build_current_per_order_dossier_service,
+)
 
 
 class ManualTicketRequest(BaseModel):
@@ -200,6 +203,7 @@ def _service() -> BrokerGatewayService:
 
     state = get_app_state()
     config = getattr(state, "config", None)
+    current_dossiers = build_current_per_order_dossier_service(state)
     return BrokerGatewayService(
         db=state.db,
         broker_connectors=build_broker_connectors(
@@ -207,4 +211,7 @@ def _service() -> BrokerGatewayService:
         ),
         controlled_bridge_policy=getattr(config, "controlled_bridge_policy", None),
         trading_controls=getattr(state, "trading_controls", None),
+        current_per_order_confirmation_provider=(
+            current_dossiers.resolve_current_confirmation
+        ),
     )

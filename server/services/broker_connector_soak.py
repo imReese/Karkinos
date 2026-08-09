@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
+
+from account_truth.broker_connector import LOCAL_JSON_SNAPSHOT_SCHEMA_VERSION
+from server.db import _insert_event_sync
 
 BROKER_CONNECTOR_SOAK_OBSERVATION_SCHEMA_VERSION = (
     "karkinos.broker_connector_soak_observation.v1"
@@ -18,6 +23,9 @@ BROKER_CONNECTOR_SOAK_EVENT_TYPE = "broker_connector.snapshot_observed"
 BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE = "broker_connector_soak_observation"
 BROKER_CONNECTOR_SOAK_EVENT_SOURCE = "broker_connector_soak"
 BROKER_CONNECTOR_SOAK_TARGET_TRADING_DAYS = 20
+BROKER_CONNECTOR_SOAK_SOURCE_SEQUENCE_SCHEMA_VERSION = (
+    "karkinos.broker_connector_soak_source_sequence.v1"
+)
 
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 _CLEAR_EXECUTION_RECONCILIATION_STATUSES = frozenset({"clear"})
@@ -114,6 +122,7 @@ class BrokerConnectorSoakService:
         return {
             "schema_version": BROKER_CONNECTOR_SOAK_STATUS_SCHEMA_VERSION,
             "target_trading_days": BROKER_CONNECTOR_SOAK_TARGET_TRADING_DAYS,
+            "healthy_day_evidence_requirement": "accepted_v2_source_sequence",
             "configured_connector_count": len(self._connectors),
             "observed_connector_count": len(connector_ids),
             "observation_count": len(observations),
@@ -140,6 +149,9 @@ class BrokerConnectorSoakService:
         max_snapshot_age_seconds: int,
     ) -> dict[str, Any]:
         connector_id = _connector_id(connector)
+        source_contract_required = bool(
+            getattr(connector, "requires_source_contract", False)
+        )
         try:
             capabilities = getattr(connector, "capabilities")
             snapshot = connector.read_account_snapshot()
@@ -148,6 +160,7 @@ class BrokerConnectorSoakService:
                 connector_id=connector_id,
                 capabilities=capabilities,
                 snapshot=snapshot,
+                source_contract_required=source_contract_required,
                 observed_at=observed_at,
                 max_snapshot_age_seconds=max_snapshot_age_seconds,
                 market_calendar=_market_calendar_evidence(
@@ -166,38 +179,13 @@ class BrokerConnectorSoakService:
                 reason_code=type(exc).__name__,
             )
 
-        observation_id = str(payload["observation_id"])
-        existing = self._db.list_events_sync(
-            event_type=BROKER_CONNECTOR_SOAK_EVENT_TYPE,
-            entity_type=BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
-            entity_id=observation_id,
-            source=BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
-            limit=1,
-        )
-        if existing:
-            response = self._event_response(existing[0], reused=True)
-            self._record_soak_alert(response)
-            return response
-
-        self._db.append_event_sync(
-            event_type=BROKER_CONNECTOR_SOAK_EVENT_TYPE,
-            timestamp=observed_at.isoformat(),
-            entity_type=BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
-            entity_id=observation_id,
-            source=BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
-            source_ref=connector_id or observation_id,
+        row, reused = _persist_soak_observation(
+            db=self._db,
             payload=payload,
+            observed_at=observed_at,
+            source_contract_required=source_contract_required,
         )
-        saved = self._db.list_events_sync(
-            event_type=BROKER_CONNECTOR_SOAK_EVENT_TYPE,
-            entity_type=BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
-            entity_id=observation_id,
-            source=BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
-            limit=1,
-        )
-        if not saved:
-            raise RuntimeError("broker connector soak observation was not recorded")
-        response = self._event_response(saved[0], reused=False)
+        response = self._event_response(row, reused=reused)
         self._record_soak_alert(response)
         return response
 
@@ -262,6 +250,7 @@ def _observation_payload(
     connector_id: str,
     capabilities: Any,
     snapshot: Any,
+    source_contract_required: bool,
     observed_at: datetime,
     max_snapshot_age_seconds: int,
     market_calendar: dict[str, Any],
@@ -303,25 +292,31 @@ def _observation_payload(
     elif not market_calendar.get("is_trading_day"):
         blockers.append("not_market_trading_day")
 
+    source_contract = _json_safe(getattr(snapshot, "source_contract", None))
+    if not isinstance(source_contract, dict):
+        source_contract = {}
+    blockers.extend(
+        _source_contract_blockers(
+            source_contract,
+            required=source_contract_required,
+            connector_id=effective_connector_id,
+            captured_at=captured_at,
+            observed_at=observed_at,
+            max_snapshot_age_seconds=max_snapshot_age_seconds,
+        )
+    )
+
     snapshot_evidence = _snapshot_evidence(
         snapshot=snapshot,
         capabilities=capability_payload,
+        source_contract=source_contract,
     )
     snapshot_fingerprint = _fingerprint(snapshot_evidence)
     trading_day = _trading_day(captured_at)
     soak_status = _soak_status(blockers)
-    observation_id = _fingerprint(
-        {
-            "connector_id": effective_connector_id,
-            "snapshot_fingerprint": snapshot_fingerprint,
-            "trading_day": trading_day,
-            "soak_status": soak_status,
-            "max_snapshot_age_seconds": max_snapshot_age_seconds,
-        }
-    )
-    return {
+    payload = {
         "schema_version": BROKER_CONNECTOR_SOAK_OBSERVATION_SCHEMA_VERSION,
-        "observation_id": observation_id,
+        "observation_id": "",
         "connector_id": effective_connector_id,
         "account_alias": str(snapshot.account_alias or ""),
         "account_ref_hash": _account_ref_hash(str(snapshot.account_id or "")),
@@ -332,6 +327,8 @@ def _observation_payload(
         "max_snapshot_age_seconds": max_snapshot_age_seconds,
         "snapshot_age_seconds": age_seconds,
         "source_health_status": source_health_status,
+        "source_contract_required": source_contract_required,
+        "source_contract": source_contract,
         "soak_status": soak_status,
         "blockers": list(dict.fromkeys(blockers)),
         "snapshot_fingerprint": snapshot_fingerprint,
@@ -349,7 +346,10 @@ def _observation_payload(
             "status": "not_linked",
             "evidence_ref": "",
         },
-        "qualifies_for_healthy_soak_day": soak_status == "healthy",
+        # Qualification is assigned only after the persisted source sequence is
+        # atomically accepted. A healthy standalone snapshot is observational
+        # evidence, not an operational soak day.
+        "qualifies_for_healthy_soak_day": False,
         "qualifies_for_promotion_day": False,
         "broker_submission_enabled": False,
         "does_not_submit_broker_order": True,
@@ -366,6 +366,8 @@ def _observation_payload(
             )
         ),
     }
+    payload["observation_id"] = _observation_id(payload)
+    return payload
 
 
 def _failed_observation_payload(
@@ -396,6 +398,7 @@ def _failed_observation_payload(
         "max_snapshot_age_seconds": None,
         "snapshot_age_seconds": None,
         "source_health_status": "incomplete",
+        "source_contract": {},
         "soak_status": "blocked",
         "blockers": [f"connector_read_failed:{reason_code}"],
         "snapshot_fingerprint": "",
@@ -429,8 +432,418 @@ def _failed_observation_payload(
     }
 
 
+def _persist_soak_observation(
+    *,
+    db: Any,
+    payload: dict[str, Any],
+    observed_at: datetime,
+    source_contract_required: bool,
+) -> tuple[dict[str, Any], bool]:
+    contract = payload.get("source_contract")
+    if source_contract_required and isinstance(contract, dict) and contract:
+        db_path = getattr(db, "_path", None)
+        if db_path is None:
+            payload = _with_source_sequence(
+                payload,
+                evidence=_source_sequence_evidence(
+                    contract,
+                    status="blocked",
+                    expected_previous_cursor=None,
+                    accepted=False,
+                    state_advanced=False,
+                ),
+                blockers=["source_sequence_persistence_unavailable"],
+            )
+        else:
+            return _record_sequenced_soak_observation(
+                db_path=Path(db_path),
+                payload=payload,
+                observed_at=observed_at,
+            )
+    observation_id = str(payload["observation_id"])
+    existing = db.list_events_sync(
+        event_type=BROKER_CONNECTOR_SOAK_EVENT_TYPE,
+        entity_type=BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
+        entity_id=observation_id,
+        source=BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
+        limit=1,
+    )
+    if existing:
+        return existing[0], True
+    db.append_event_sync(
+        event_type=BROKER_CONNECTOR_SOAK_EVENT_TYPE,
+        timestamp=observed_at.isoformat(),
+        entity_type=BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
+        entity_id=observation_id,
+        source=BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
+        source_ref=str(payload.get("connector_id") or observation_id),
+        payload=payload,
+    )
+    saved = db.list_events_sync(
+        event_type=BROKER_CONNECTOR_SOAK_EVENT_TYPE,
+        entity_type=BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
+        entity_id=observation_id,
+        source=BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
+        limit=1,
+    )
+    if not saved:
+        raise RuntimeError("broker connector soak observation was not recorded")
+    return saved[0], False
+
+
+def _record_sequenced_soak_observation(
+    *,
+    db_path: Path,
+    payload: dict[str, Any],
+    observed_at: datetime,
+) -> tuple[dict[str, Any], bool]:
+    with sqlite3.connect(db_path, timeout=2) as conn:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA busy_timeout = 2000")
+        conn.execute("BEGIN IMMEDIATE")
+        _ensure_source_sequence_schema(conn)
+        evidence, sequence_blockers = _evaluate_source_sequence(conn, payload)
+        finalized = _with_source_sequence(
+            payload,
+            evidence=evidence,
+            blockers=sequence_blockers,
+        )
+        observation_id = str(finalized["observation_id"])
+        existing = _event_row(conn, observation_id=observation_id)
+        if existing is not None:
+            conn.commit()
+            return dict(existing), True
+
+        cursor = _insert_event_sync(
+            conn,
+            event_type=BROKER_CONNECTOR_SOAK_EVENT_TYPE,
+            timestamp=observed_at.isoformat(),
+            entity_type=BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
+            entity_id=observation_id,
+            source=BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
+            source_ref=str(finalized.get("connector_id") or observation_id),
+            payload=finalized,
+        )
+        if evidence["state_advanced"]:
+            _advance_source_sequence_state(
+                conn,
+                payload=finalized,
+                evidence=evidence,
+                observed_at=observed_at,
+            )
+        saved = conn.execute(
+            "SELECT * FROM event_log WHERE id = ?",
+            (int(cursor.lastrowid or 0),),
+        ).fetchone()
+        if saved is None:
+            raise RuntimeError("broker connector soak observation was not recorded")
+        conn.commit()
+        return dict(saved), False
+
+
+def _evaluate_source_sequence(
+    conn: sqlite3.Connection,
+    payload: dict[str, Any],
+) -> tuple[dict[str, Any], list[str]]:
+    contract = payload.get("source_contract")
+    contract = contract if isinstance(contract, dict) else {}
+    connector_id = str(payload.get("connector_id") or "")
+    deployment_identity = str(contract.get("deployment_identity") or "")
+    batch_id = str(contract.get("batch_id") or "")
+    cursor_previous = _strict_nonnegative_int(contract.get("cursor_previous"))
+    cursor_current = _strict_nonnegative_int(contract.get("cursor_current"))
+    state = conn.execute(
+        """
+        SELECT *
+        FROM broker_connector_soak_sequence_state
+        WHERE connector_id = ?
+        """,
+        (connector_id,),
+    ).fetchone()
+    expected_previous = int(state["last_cursor"]) if state is not None else 0
+    blockers: list[str] = []
+    status = "blocked"
+    accepted = False
+    state_advanced = False
+
+    if cursor_previous is None or cursor_current is None:
+        blockers.append("source_sequence_cursor_invalid")
+    elif cursor_current <= 0 or cursor_current != cursor_previous + 1:
+        blockers.append("source_sequence_cursor_not_consecutive")
+    elif state is not None and str(state["deployment_identity"]) != (
+        deployment_identity
+    ):
+        blockers.append("source_sequence_deployment_drift")
+    else:
+        prior = conn.execute(
+            """
+            SELECT *
+            FROM broker_connector_soak_sequence_batches
+            WHERE connector_id = ?
+              AND deployment_identity = ?
+              AND cursor_current = ?
+            """,
+            (connector_id, deployment_identity, cursor_current),
+        ).fetchone()
+        if prior is not None:
+            if str(prior["batch_id"]) == batch_id and str(
+                prior["snapshot_fingerprint"]
+            ) == str(payload.get("snapshot_fingerprint") or ""):
+                status = "replayed"
+                accepted = True
+            elif cursor_current < expected_previous:
+                blockers.append("source_sequence_cursor_out_of_order")
+            else:
+                blockers.append("source_sequence_cursor_evidence_conflict")
+        elif cursor_previous < expected_previous:
+            blockers.append("source_sequence_cursor_out_of_order")
+        elif cursor_previous > expected_previous:
+            blockers.append("source_sequence_cursor_gap")
+        else:
+            reused_batch = conn.execute(
+                """
+                SELECT cursor_current
+                FROM broker_connector_soak_sequence_batches
+                WHERE connector_id = ?
+                  AND deployment_identity = ?
+                  AND batch_id = ?
+                LIMIT 1
+                """,
+                (connector_id, deployment_identity, batch_id),
+            ).fetchone()
+            if reused_batch is not None:
+                blockers.append("source_sequence_batch_reused")
+            elif _source_sequence_has_invalid_source(payload):
+                if _source_contract_is_partial(contract):
+                    blockers.append("source_sequence_partial_batch")
+                else:
+                    blockers.append("source_sequence_source_invalid")
+            elif state is not None and not _captured_after_state(payload, state):
+                blockers.append("source_sequence_time_out_of_order")
+            else:
+                status = "initial" if state is None else "advanced"
+                accepted = True
+                state_advanced = True
+
+    return (
+        _source_sequence_evidence(
+            contract,
+            status=status,
+            expected_previous_cursor=expected_previous,
+            accepted=accepted,
+            state_advanced=state_advanced,
+        ),
+        blockers,
+    )
+
+
+def _with_source_sequence(
+    payload: dict[str, Any],
+    *,
+    evidence: dict[str, Any],
+    blockers: list[str],
+) -> dict[str, Any]:
+    finalized = dict(payload)
+    finalized["source_sequence"] = evidence
+    finalized["blockers"] = list(
+        dict.fromkeys(
+            [
+                *[str(item) for item in payload.get("blockers") or []],
+                *blockers,
+            ]
+        )
+    )
+    finalized["soak_status"] = _soak_status(finalized["blockers"])
+    finalized["qualifies_for_healthy_soak_day"] = (
+        finalized["soak_status"] == "healthy" and evidence.get("accepted") is True
+    )
+    finalized["observation_id"] = _observation_id(finalized)
+    return finalized
+
+
+def _source_sequence_evidence(
+    contract: dict[str, Any],
+    *,
+    status: str,
+    expected_previous_cursor: int | None,
+    accepted: bool,
+    state_advanced: bool,
+) -> dict[str, Any]:
+    return {
+        "schema_version": BROKER_CONNECTOR_SOAK_SOURCE_SEQUENCE_SCHEMA_VERSION,
+        "status": status,
+        "deployment_identity": str(contract.get("deployment_identity") or ""),
+        "batch_id": str(contract.get("batch_id") or ""),
+        "cursor_previous": _strict_nonnegative_int(contract.get("cursor_previous")),
+        "cursor_current": _strict_nonnegative_int(contract.get("cursor_current")),
+        "expected_previous_cursor": expected_previous_cursor,
+        "accepted": accepted,
+        "state_advanced": state_advanced,
+    }
+
+
+def _source_sequence_has_invalid_source(payload: dict[str, Any]) -> bool:
+    prefixes = (
+        "missing_read_capability:",
+        "connector_exposes_submit_capability",
+        "invalid_snapshot_captured_at",
+        "snapshot_time_in_future",
+        "snapshot_stale",
+        "source_health:",
+        "cash_fact_missing",
+        "source_contract_",
+        "source_heartbeat_",
+        "source_scope_incomplete:",
+    )
+    return any(
+        str(blocker).startswith(prefixes) for blocker in payload.get("blockers") or []
+    )
+
+
+def _source_contract_is_partial(contract: dict[str, Any]) -> bool:
+    return any(
+        contract.get(f"{scope}_complete") is not True
+        for scope in ("cash", "positions", "orders", "fills")
+    )
+
+
+def _captured_after_state(payload: dict[str, Any], state: sqlite3.Row) -> bool:
+    current = _parse_timestamp(str(payload.get("source_captured_at") or ""))
+    previous = _parse_timestamp(str(state["last_source_captured_at"] or ""))
+    return bool(current is not None and previous is not None and current > previous)
+
+
+def _strict_nonnegative_int(value: Any) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
+def _advance_source_sequence_state(
+    conn: sqlite3.Connection,
+    *,
+    payload: dict[str, Any],
+    evidence: dict[str, Any],
+    observed_at: datetime,
+) -> None:
+    connector_id = str(payload.get("connector_id") or "")
+    deployment_identity = str(evidence["deployment_identity"])
+    batch_id = str(evidence["batch_id"])
+    cursor_previous = int(evidence["cursor_previous"])
+    cursor_current = int(evidence["cursor_current"])
+    snapshot_fingerprint = str(payload.get("snapshot_fingerprint") or "")
+    captured_at = str(payload.get("source_captured_at") or "")
+    observation_id = str(payload.get("observation_id") or "")
+    conn.execute(
+        """
+        INSERT INTO broker_connector_soak_sequence_batches (
+            connector_id, deployment_identity, cursor_previous,
+            cursor_current, batch_id, snapshot_fingerprint,
+            source_captured_at, observation_id, accepted_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            connector_id,
+            deployment_identity,
+            cursor_previous,
+            cursor_current,
+            batch_id,
+            snapshot_fingerprint,
+            captured_at,
+            observation_id,
+            observed_at.isoformat(),
+        ),
+    )
+    conn.execute(
+        """
+        INSERT INTO broker_connector_soak_sequence_state (
+            connector_id, deployment_identity, last_cursor, last_batch_id,
+            last_snapshot_fingerprint, last_source_captured_at,
+            last_observation_id, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(connector_id) DO UPDATE SET
+            deployment_identity = excluded.deployment_identity,
+            last_cursor = excluded.last_cursor,
+            last_batch_id = excluded.last_batch_id,
+            last_snapshot_fingerprint = excluded.last_snapshot_fingerprint,
+            last_source_captured_at = excluded.last_source_captured_at,
+            last_observation_id = excluded.last_observation_id,
+            updated_at = excluded.updated_at
+        """,
+        (
+            connector_id,
+            deployment_identity,
+            cursor_current,
+            batch_id,
+            snapshot_fingerprint,
+            captured_at,
+            observation_id,
+            observed_at.isoformat(),
+        ),
+    )
+
+
+def _ensure_source_sequence_schema(conn: sqlite3.Connection) -> None:
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS broker_connector_soak_sequence_state (
+            connector_id TEXT PRIMARY KEY,
+            deployment_identity TEXT NOT NULL,
+            last_cursor INTEGER NOT NULL CHECK(last_cursor > 0),
+            last_batch_id TEXT NOT NULL,
+            last_snapshot_fingerprint TEXT NOT NULL,
+            last_source_captured_at TEXT NOT NULL,
+            last_observation_id TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS broker_connector_soak_sequence_batches (
+            connector_id TEXT NOT NULL,
+            deployment_identity TEXT NOT NULL,
+            cursor_previous INTEGER NOT NULL CHECK(cursor_previous >= 0),
+            cursor_current INTEGER NOT NULL CHECK(cursor_current > 0),
+            batch_id TEXT NOT NULL,
+            snapshot_fingerprint TEXT NOT NULL,
+            source_captured_at TEXT NOT NULL,
+            observation_id TEXT NOT NULL,
+            accepted_at TEXT NOT NULL,
+            PRIMARY KEY(connector_id, deployment_identity, cursor_current),
+            UNIQUE(connector_id, deployment_identity, batch_id)
+        )
+        """)
+
+
+def _event_row(
+    conn: sqlite3.Connection,
+    *,
+    observation_id: str,
+) -> sqlite3.Row | None:
+    return conn.execute(
+        """
+        SELECT *
+        FROM event_log
+        WHERE event_type = ?
+          AND entity_type = ?
+          AND entity_id = ?
+          AND source = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (
+            BROKER_CONNECTOR_SOAK_EVENT_TYPE,
+            BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
+            observation_id,
+            BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
+        ),
+    ).fetchone()
+
+
 def _snapshot_evidence(
-    *, snapshot: Any, capabilities: dict[str, bool]
+    *,
+    snapshot: Any,
+    capabilities: dict[str, bool],
+    source_contract: dict[str, Any],
 ) -> dict[str, Any]:
     cash = _json_safe(snapshot.cash) if snapshot.cash is not None else None
     positions = sorted(
@@ -455,6 +868,7 @@ def _snapshot_evidence(
         "account_ref_hash": _account_ref_hash(str(snapshot.account_id or "")),
         "captured_at": str(snapshot.captured_at or ""),
         "health": _json_safe(snapshot.health),
+        "source_contract": source_contract,
         "capabilities": capabilities,
         "cash": cash,
         "positions": positions,
@@ -464,16 +878,84 @@ def _snapshot_evidence(
     }
 
 
+def _source_contract_blockers(
+    contract: dict[str, Any],
+    *,
+    required: bool,
+    connector_id: str,
+    captured_at: str,
+    observed_at: datetime,
+    max_snapshot_age_seconds: int,
+) -> list[str]:
+    if not contract:
+        return ["source_contract_missing"] if required else []
+
+    blockers: list[str] = []
+    if str(contract.get("schema_version") or "") != (
+        LOCAL_JSON_SNAPSHOT_SCHEMA_VERSION
+    ):
+        blockers.append("source_contract_schema_invalid")
+    if str(contract.get("connector_id") or "") != connector_id:
+        blockers.append("source_contract_connector_mismatch")
+    for key in ("deployment_identity", "batch_id"):
+        if not str(contract.get(key) or "").strip():
+            blockers.append(f"source_contract_{key}_missing")
+    cursor_previous = _strict_nonnegative_int(contract.get("cursor_previous"))
+    cursor_current = _strict_nonnegative_int(contract.get("cursor_current"))
+    if cursor_previous is None or cursor_current is None:
+        blockers.append("source_contract_cursor_invalid")
+    elif cursor_current <= 0 or cursor_current != cursor_previous + 1:
+        blockers.append("source_contract_cursor_not_consecutive")
+
+    expected_trading_day = _trading_day(captured_at)
+    contract_trading_day = str(contract.get("trading_day") or "")
+    if not contract_trading_day:
+        blockers.append("source_contract_trading_day_missing")
+    elif contract_trading_day != expected_trading_day:
+        blockers.append("source_contract_trading_day_mismatch")
+    if str(contract.get("session_phase") or "") not in {
+        "startup",
+        "intraday",
+        "end_of_day",
+    }:
+        blockers.append("source_contract_session_phase_invalid")
+
+    heartbeat = _parse_timestamp(str(contract.get("heartbeat_at") or ""))
+    if heartbeat is None:
+        blockers.append("source_heartbeat_invalid")
+    else:
+        heartbeat_age = (
+            observed_at - heartbeat.astimezone(timezone.utc)
+        ).total_seconds()
+        if heartbeat_age < -300:
+            blockers.append("source_heartbeat_time_in_future")
+        elif heartbeat_age > max_snapshot_age_seconds:
+            blockers.append("source_heartbeat_stale")
+
+    for key in ("cash", "positions", "orders", "fills"):
+        if contract.get(f"{key}_complete") is not True:
+            blockers.append(f"source_scope_incomplete:{key}")
+    return blockers
+
+
 def _connector_summary(
     connector_id: str,
     *,
     observations: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    observed_healthy_days = sorted(
+        {
+            str(item.get("trading_day") or "")
+            for item in observations
+            if str(item.get("soak_status") or "") == "healthy"
+            and str(item.get("trading_day") or "")
+        }
+    )
     healthy_days = sorted(
         {
             str(item.get("trading_day") or "")
             for item in observations
-            if item.get("qualifies_for_healthy_soak_day")
+            if reviewed_broker_soak_sequence_is_accepted(item)
             and str(item.get("trading_day") or "")
         }
     )
@@ -491,8 +973,12 @@ def _connector_summary(
     return {
         "connector_id": connector_id,
         "observation_count": len(observations),
+        "observed_healthy_trading_days": observed_healthy_days,
+        "observed_healthy_trading_day_count": len(observed_healthy_days),
         "healthy_trading_days": healthy_days,
         "healthy_trading_day_count": healthy_count,
+        "sequence_accepted_trading_days": healthy_days,
+        "sequence_accepted_trading_day_count": healthy_count,
         "execution_reconciled_trading_days": execution_reconciled_days,
         "execution_reconciled_trading_day_count": len(execution_reconciled_days),
         "remaining_trading_days": max(
@@ -503,6 +989,9 @@ def _connector_summary(
             str(latest.get("soak_status") or "not_observed")
             if latest
             else "not_observed"
+        ),
+        "latest_source_sequence_accepted": bool(
+            latest and reviewed_broker_soak_sequence_is_accepted(latest)
         ),
         "operational_soak_complete": healthy_count
         >= BROKER_CONNECTOR_SOAK_TARGET_TRADING_DAYS,
@@ -525,6 +1014,8 @@ def _promotion_blockers(summaries: list[dict[str, Any]]) -> list[str]:
             blockers.append(f"soak_days_incomplete:{connector_id}")
         if summary["latest_soak_status"] != "healthy":
             blockers.append(f"latest_snapshot_not_healthy:{connector_id}")
+        elif not summary["latest_source_sequence_accepted"]:
+            blockers.append(f"latest_source_sequence_not_accepted:{connector_id}")
     blockers.extend(
         [
             "account_truth_reconciliation_not_linked",
@@ -622,10 +1113,86 @@ def _soak_status(blockers: list[str]) -> str:
         "connector_exposes_submit_capability",
         "invalid_snapshot_captured_at",
         "snapshot_time_in_future",
+        "source_contract_",
+        "source_heartbeat_",
+        "source_scope_incomplete:",
+        "source_sequence_",
     )
     if any(reason.startswith(critical_prefixes) for reason in blockers):
         return "blocked"
     return "degraded" if blockers else "healthy"
+
+
+def _observation_id(payload: dict[str, Any]) -> str:
+    return _fingerprint(
+        {
+            "connector_id": str(payload.get("connector_id") or ""),
+            "snapshot_fingerprint": str(payload.get("snapshot_fingerprint") or ""),
+            "trading_day": str(payload.get("trading_day") or ""),
+            "soak_status": str(payload.get("soak_status") or "blocked"),
+            "max_snapshot_age_seconds": payload.get("max_snapshot_age_seconds"),
+            "blockers": sorted({str(item) for item in payload.get("blockers") or []}),
+        }
+    )
+
+
+def reviewed_broker_soak_sequence_is_accepted(
+    observation: dict[str, Any],
+) -> bool:
+    contract = observation.get("source_contract")
+    sequence = observation.get("source_sequence")
+    if not isinstance(contract, dict) or not isinstance(sequence, dict):
+        return False
+    if str(contract.get("schema_version") or "") != (
+        LOCAL_JSON_SNAPSHOT_SCHEMA_VERSION
+    ):
+        return False
+    if str(sequence.get("schema_version") or "") != (
+        BROKER_CONNECTOR_SOAK_SOURCE_SEQUENCE_SCHEMA_VERSION
+    ):
+        return False
+    if observation.get("source_contract_required") is not True:
+        return False
+    if observation.get("qualifies_for_healthy_soak_day") is not True:
+        return False
+    if str(observation.get("soak_status") or "") != "healthy":
+        return False
+    if observation.get("blockers"):
+        return False
+    if sequence.get("accepted") is not True or sequence.get("status") not in {
+        "initial",
+        "advanced",
+        "replayed",
+    }:
+        return False
+    if any(
+        contract.get(f"{scope}_complete") is not True
+        for scope in ("cash", "positions", "orders", "fills")
+    ):
+        return False
+    connector_id = str(observation.get("connector_id") or "")
+    deployment_identity = str(contract.get("deployment_identity") or "")
+    batch_id = str(contract.get("batch_id") or "")
+    if (
+        not connector_id
+        or str(contract.get("connector_id") or "") != connector_id
+        or not deployment_identity
+        or str(sequence.get("deployment_identity") or "") != deployment_identity
+        or not batch_id
+        or str(sequence.get("batch_id") or "") != batch_id
+    ):
+        return False
+    contract_cursor = tuple(
+        _strict_nonnegative_int(contract.get(field))
+        for field in ("cursor_previous", "cursor_current")
+    )
+    sequence_cursor = tuple(
+        _strict_nonnegative_int(sequence.get(field))
+        for field in ("cursor_previous", "cursor_current")
+    )
+    if any(value is None for value in (*contract_cursor, *sequence_cursor)):
+        return False
+    return contract_cursor == sequence_cursor
 
 
 def _connector_id(connector: Any) -> str:

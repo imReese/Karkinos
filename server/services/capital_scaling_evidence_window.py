@@ -14,6 +14,7 @@ from server.services.broker_connector_soak import (
     BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
     BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
     BROKER_CONNECTOR_SOAK_EVENT_TYPE,
+    reviewed_broker_soak_sequence_is_accepted,
 )
 from server.services.controlled_session_runtime_rate_limiter import (
     CONTROLLED_SESSION_RATE_ADMISSION_SCHEMA_VERSION,
@@ -756,6 +757,7 @@ class CapitalScalingEvidenceWindowService:
         if len(soak_rows) >= MAX_SOURCE_ROWS:
             blockers.append("broker_soak_scan_truncated")
         healthy_days: set[str] = set()
+        unaccepted_sequence_count = 0
         for row in soak_rows:
             payload = _json_object(row.get("payload_json"))
             observed_at = _parse_datetime(
@@ -765,8 +767,13 @@ class CapitalScalingEvidenceWindowService:
                 continue
             trading_day = str(payload.get("trading_day") or "")
             if payload.get("qualifies_for_healthy_soak_day") is True and trading_day:
-                healthy_days.add(trading_day)
-                source_refs.append(f"broker_soak_event:{row.get('id')}")
+                if reviewed_broker_soak_sequence_is_accepted(payload):
+                    healthy_days.add(trading_day)
+                    source_refs.append(f"broker_soak_event:{row.get('id')}")
+                else:
+                    unaccepted_sequence_count += 1
+        if unaccepted_sequence_count:
+            blockers.append("broker_soak_source_sequence_not_accepted")
         if not healthy_days:
             blockers.append("healthy_broker_soak_trading_days_missing")
 

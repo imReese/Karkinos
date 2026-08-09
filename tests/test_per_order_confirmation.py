@@ -24,6 +24,7 @@ from account_truth.broker_adapter_release import (
     preview_broker_adapter_release_manifest,
 )
 from account_truth.broker_connector import (
+    LOCAL_JSON_SNAPSHOT_SCHEMA_VERSION,
     BrokerCashFact,
     BrokerConnectorHealth,
     BrokerConnectorSnapshot,
@@ -41,6 +42,7 @@ from server.services.broker_connector_soak import (
     BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
     BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
     BROKER_CONNECTOR_SOAK_EVENT_TYPE,
+    BROKER_CONNECTOR_SOAK_SOURCE_SEQUENCE_SCHEMA_VERSION,
     BrokerConnectorSoakService,
 )
 from server.services.capital_authorization import (
@@ -207,6 +209,46 @@ def _connector(now: datetime = NOW) -> FakeReadOnlyBrokerConnector:
             ),
         )
     )
+
+
+def _accepted_soak_sequence_fields(
+    observed_at: datetime,
+    *,
+    cursor_current: int,
+) -> dict:
+    cursor_previous = cursor_current - 1
+    batch_id = f"resolver-soak-batch-{cursor_current}"
+    deployment_identity = "resolver-soak-reviewed-deployment"
+    trading_day = observed_at.date().isoformat()
+    return {
+        "source_contract_required": True,
+        "source_contract": {
+            "schema_version": LOCAL_JSON_SNAPSHOT_SCHEMA_VERSION,
+            "connector_id": "fixture-readonly-confirmation",
+            "deployment_identity": deployment_identity,
+            "batch_id": batch_id,
+            "cursor_previous": cursor_previous,
+            "cursor_current": cursor_current,
+            "trading_day": trading_day,
+            "session_phase": "end_of_day",
+            "heartbeat_at": observed_at.isoformat(),
+            "cash_complete": True,
+            "positions_complete": True,
+            "orders_complete": True,
+            "fills_complete": True,
+        },
+        "source_sequence": {
+            "schema_version": BROKER_CONNECTOR_SOAK_SOURCE_SEQUENCE_SCHEMA_VERSION,
+            "status": "initial" if cursor_current == 1 else "advanced",
+            "deployment_identity": deployment_identity,
+            "batch_id": batch_id,
+            "cursor_previous": cursor_previous,
+            "cursor_current": cursor_current,
+            "expected_previous_cursor": cursor_previous,
+            "accepted": True,
+            "state_advanced": True,
+        },
+    }
 
 
 class _RuntimeExecutionGateway:
@@ -1634,6 +1676,7 @@ def test_recorded_confirmation_resolves_current_sources_for_submit_boundary(
     env = _ready_environment(tmp_path)
     for offset in range(1, 20):
         observed_at = NOW - timedelta(days=offset)
+        cursor_current = 20 - offset
         env["db"].append_event_sync(
             event_type=BROKER_CONNECTOR_SOAK_EVENT_TYPE,
             timestamp=observed_at.isoformat(),
@@ -1647,6 +1690,11 @@ def test_recorded_confirmation_resolves_current_sources_for_submit_boundary(
                 "observed_at": observed_at.isoformat(),
                 "soak_status": "healthy",
                 "qualifies_for_healthy_soak_day": True,
+                "blockers": [],
+                **_accepted_soak_sequence_fields(
+                    observed_at,
+                    cursor_current=cursor_current,
+                ),
                 "execution_reconciliation": {"status": "clear"},
                 "broker_submission_enabled": False,
             },
@@ -1665,6 +1713,8 @@ def test_recorded_confirmation_resolves_current_sources_for_submit_boundary(
             "source_captured_at": NOW.isoformat(),
             "soak_status": "healthy",
             "qualifies_for_healthy_soak_day": True,
+            "blockers": [],
+            **_accepted_soak_sequence_fields(NOW, cursor_current=20),
             "execution_reconciliation": {"status": "clear"},
             "broker_submission_enabled": False,
         },
