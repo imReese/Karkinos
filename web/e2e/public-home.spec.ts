@@ -44,13 +44,25 @@ test('public home presents the brand contract before entering the workbench', as
     );
     return {
       evidenceTop,
+      sectionTops: ['product', 'principles', 'workflow'].map((id) =>
+        Math.round(
+          document.getElementById(id)?.getBoundingClientRect().top ?? 0,
+        ),
+      ),
       verticalOverflow:
         document.documentElement.scrollHeight -
         document.documentElement.clientHeight,
     };
   });
   expect(composition.evidenceTop).toBeLessThan(500);
-  expect(composition.verticalOverflow).toBeLessThanOrEqual(0);
+  expect(composition.verticalOverflow).toBeGreaterThan(0);
+  expect(composition.sectionTops[0]).toBeGreaterThan(800);
+  expect(composition.sectionTops[1]).toBeGreaterThan(
+    composition.sectionTops[0] ?? 0,
+  );
+  expect(composition.sectionTops[2]).toBeGreaterThan(
+    composition.sectionTops[1] ?? 0,
+  );
 
   await expect(
     page.getByLabel('Public-to-private route').getByText('/overview'),
@@ -66,13 +78,21 @@ test('public home presents the brand contract before entering the workbench', as
     name: 'Public navigation',
   });
   await publicNavigation.getByRole('link', { name: 'Product' }).click();
+  await expect(page).toHaveURL(/#product$/);
   await expect(page.locator('#product')).toBeVisible();
+  expect(
+    await page
+      .locator('#product')
+      .evaluate((element) => Math.round(element.getBoundingClientRect().top)),
+  ).toBeGreaterThanOrEqual(56);
   await expect(
     page.getByRole('link', { name: 'Open surface: Account Truth' }),
   ).toHaveAttribute('href', '/account-truth');
   await publicNavigation.getByRole('link', { name: 'Trust' }).click();
+  await expect(page).toHaveURL(/#principles$/);
   await expect(page.locator('#principles')).toBeVisible();
   await publicNavigation.getByRole('link', { name: 'Workflow' }).click();
+  await expect(page).toHaveURL(/#workflow$/);
   await expect(page.locator('#workflow')).toBeVisible();
   expect(
     await page.evaluate(
@@ -80,7 +100,7 @@ test('public home presents the brand contract before entering the workbench', as
         document.documentElement.scrollHeight -
         document.documentElement.clientHeight,
     ),
-  ).toBeLessThanOrEqual(0);
+  ).toBeGreaterThan(0);
 
   const documentOverflow = await page.evaluate(
     () =>
@@ -187,6 +207,10 @@ test('public home preserves its composition across the seven visual acceptance v
       verticalOverflow:
         document.documentElement.scrollHeight -
         document.documentElement.clientHeight,
+      visibleSections: ['product', 'principles', 'workflow'].filter((id) => {
+        const section = document.getElementById(id);
+        return Boolean(section && section.getBoundingClientRect().height > 0);
+      }),
     }));
     expect(latteGeometry.documentOverflow, JSON.stringify(viewport)).toBe(0);
     expect(latteGeometry.unexpectedOverflow, JSON.stringify(viewport)).toEqual(
@@ -207,12 +231,15 @@ test('public home preserves its composition across the seven visual acceptance v
     expect(latteGeometry.evidenceTop, JSON.stringify(viewport)).toBeLessThan(
       700,
     );
-    if (viewport.width >= 1024 && viewport.width > viewport.height) {
-      expect(
-        latteGeometry.verticalOverflow,
-        JSON.stringify(viewport),
-      ).toBeLessThanOrEqual(0);
-    }
+    expect(latteGeometry.visibleSections, JSON.stringify(viewport)).toEqual([
+      'product',
+      'principles',
+      'workflow',
+    ]);
+    expect(
+      latteGeometry.verticalOverflow,
+      JSON.stringify(viewport),
+    ).toBeGreaterThan(0);
     await expect(
       page
         .getByRole('banner')

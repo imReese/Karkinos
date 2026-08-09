@@ -399,7 +399,7 @@ export function PublicHomePage() {
       setActivePanel(panel);
       if (panel !== 'home') {
         window.requestAnimationFrame(() => {
-          document.getElementById(panel)?.focus({ preventScroll: true });
+          document.getElementById(panel)?.focus();
         });
       }
     };

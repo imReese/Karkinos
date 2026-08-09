@@ -150,7 +150,7 @@ test('renders an evidence-first public home without loading financial data', asy
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
-test('keeps desktop home detail content available through panel navigation', async () => {
+test('keeps public sections addressable through anchor navigation', async () => {
   renderPublicHome();
   const user = userEvent.setup();
   const navigation = await screen.findByRole('navigation', {
@@ -251,6 +251,20 @@ test('keeps desktop home detail content available through panel navigation', asy
     left: -(340 * 0.78),
     behavior: 'auto',
   });
+});
+
+test('focuses a directly linked public section after mounting', async () => {
+  window.history.replaceState(null, '', '/#principles');
+  renderPublicHome();
+
+  await waitFor(() => {
+    expect(document.activeElement).toBe(document.getElementById('principles'));
+  });
+  expect(
+    screen.getByRole('heading', {
+      name: 'Trust begins where convenience stops.',
+    }),
+  ).toBeTruthy();
 });
 
 test('supports localized copy and direct Latte or Mocha switching', async () => {
