@@ -1225,15 +1225,41 @@ test('renders a structured workspace while primary decision evidence loads', () 
     </PreferencesProvider>,
   );
 
+  const loadingWorkspace = screen.getByTestId('decision-loading-workspace');
+  expect(loadingWorkspace.getAttribute('aria-busy')).toBe('true');
+  expect(
+    screen.getByRole('heading', { level: 1, name: 'Decision platform' }),
+  ).toBeTruthy();
+  expect(screen.getByTestId('decision-loading-metrics').textContent).toContain(
+    'Candidate pool',
+  );
+  expect(screen.getByTestId('decision-loading-metrics').textContent).toContain(
+    'Manual confirmations',
+  );
+  expect(
+    screen.getByLabelText('Today operating posture · Loading'),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole('heading', {
+      level: 2,
+      name: 'Evidence-first review order',
+    }),
+  ).toBeTruthy();
+  expect(
+    screen.getByTestId('decision-loading-gate-rows').children,
+  ).toHaveLength(5);
+  expect(
+    screen.getByRole('heading', {
+      level: 2,
+      name: 'Manual-confirmation plan',
+    }),
+  ).toBeTruthy();
   expect(
     document.querySelector(
       '[data-workbench-primitive="evidence-loading-layout"]',
     ),
-  ).toBeTruthy();
-  expect(screen.getByTestId('evidence-loading-metrics').children).toHaveLength(
-    4,
-  );
-  expect(screen.getByTestId('evidence-loading-rows').children).toHaveLength(4);
+  ).toBeNull();
+  expect(loadingWorkspace.textContent).not.toMatch(/[¥$€£]|\d+[,.]\d{2}/);
 });
 
 test('shows saved daily decisions before intraday evidence and then starts dependent reads', async () => {
