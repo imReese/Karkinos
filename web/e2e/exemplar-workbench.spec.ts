@@ -911,6 +911,16 @@ test('risk initial load preserves priorities, metrics, and controlled-action hie
   const controlledAction = page.getByTestId('risk-loading-controlled-action');
 
   await expect(loadingWorkspace).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Risk control center' }),
+  ).toHaveCount(1);
+  await expect(
+    loadingWorkspace.getByRole('heading', {
+      level: 2,
+      name: 'Loading',
+      exact: true,
+    }),
+  ).toBeVisible();
   await expect(priorities.getByRole('heading', { level: 2 })).toBeVisible();
   await expect(metrics.getByRole('heading', { level: 2 })).toBeVisible();
   await expect(
