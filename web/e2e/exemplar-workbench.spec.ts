@@ -823,6 +823,70 @@ test('portfolio initial load preserves the holdings hierarchy without fabricated
   await expect(page.getByTestId('portfolio-current-holdings')).toBeVisible();
 });
 
+test('overview initial load preserves account, queue, and holdings hierarchy', async ({
+  page,
+}) => {
+  let releasePrimaryResponses = () => {};
+  const primaryResponsesHeld = new Promise<void>((resolve) => {
+    releasePrimaryResponses = resolve;
+  });
+  const holdPrimaryResponse = async (route: Route) => {
+    const response = await route.fetch();
+    await primaryResponsesHeld;
+    await route.fulfill({ response });
+  };
+
+  await page.route('**/api/portfolio/overview', holdPrimaryResponse);
+  await page.route('**/api/portfolio', holdPrimaryResponse);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/overview');
+
+  const loadingWorkspace = page.getByTestId('overview-loading-workspace');
+  const summary = page.getByTestId('overview-loading-summary');
+  const queue = page.getByTestId('overview-loading-queue');
+  const holdings = page.getByTestId('overview-loading-holdings');
+
+  await expect(loadingWorkspace).toBeVisible();
+  await expect(summary).toBeVisible();
+  await expect(
+    page
+      .getByTestId('overview-loading-supporting-metrics')
+      .locator(':scope > *'),
+  ).toHaveCount(5);
+  await expect(queue.getByRole('heading', { level: 2 })).toBeVisible();
+  await expect(holdings.getByRole('heading', { level: 2 })).toBeVisible();
+  await expect(loadingWorkspace).not.toContainText(/[¥$€£]|\d+[,.]\d{2}/);
+
+  const loadingGeometry = await page.evaluate(() => {
+    const summary = document.querySelector(
+      '[data-testid="overview-loading-summary"]',
+    )!;
+    const queue = document.querySelector(
+      '[data-testid="overview-loading-queue"]',
+    )!;
+    const holdings = document.querySelector(
+      '[data-testid="overview-loading-holdings"]',
+    )!;
+    return {
+      documentOverflow:
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+      holdingsTop: holdings.getBoundingClientRect().top,
+      queueTop: queue.getBoundingClientRect().top,
+      summaryBottom: summary.getBoundingClientRect().bottom,
+    };
+  });
+  expect(loadingGeometry.documentOverflow).toBeLessThanOrEqual(0);
+  expect(loadingGeometry.queueTop).toBeGreaterThanOrEqual(
+    loadingGeometry.summaryBottom,
+  );
+  expect(loadingGeometry.holdingsTop).toBeGreaterThan(loadingGeometry.queueTop);
+
+  releasePrimaryResponses();
+  await expect(page.getByTestId('account-metrics-rail')).toBeVisible();
+  await expect(page.getByTestId('overview-daily-workbench')).toBeVisible();
+});
+
 test('risk initial load preserves priorities, metrics, and controlled-action hierarchy', async ({
   page,
 }) => {
