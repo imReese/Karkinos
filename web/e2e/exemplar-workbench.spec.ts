@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Route } from '@playwright/test';
 
 const overviewAcceptanceViewports = [
   { width: 1440, height: 900 },
@@ -761,6 +761,66 @@ test('portfolio keeps filtering ordered above a compact holdings projection', as
       'Quote State',
     ]);
   }
+});
+
+test('portfolio initial load preserves the holdings hierarchy without fabricated values', async ({
+  page,
+}) => {
+  let releasePrimaryResponses = () => {};
+  const primaryResponsesHeld = new Promise<void>((resolve) => {
+    releasePrimaryResponses = resolve;
+  });
+  const holdPrimaryResponse = async (route: Route) => {
+    const response = await route.fetch();
+    await primaryResponsesHeld;
+    await route.fulfill({ response });
+  };
+
+  await page.route('**/api/portfolio/positions', holdPrimaryResponse);
+  await page.route('**/api/portfolio', holdPrimaryResponse);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/portfolio');
+
+  const loadingSummary = page.getByTestId('portfolio-loading-summary');
+  const loadingHoldings = page.getByTestId(
+    'portfolio-loading-current-holdings',
+  );
+  const loadingFilters = page.getByTestId('portfolio-loading-filters');
+  const loadingRows = page.getByTestId('portfolio-loading-rows');
+
+  await expect(loadingSummary).toBeVisible();
+  await expect(loadingSummary.locator(':scope > *')).toHaveCount(4);
+  await expect(
+    loadingHoldings.getByRole('heading', { level: 2 }),
+  ).toBeVisible();
+  await expect(loadingFilters).toBeVisible();
+  await expect(loadingRows.locator(':scope > *')).toHaveCount(4);
+  await expect(loadingSummary).not.toContainText(/[¥$€£]|\d+[,.]\d{2}/);
+  await expect(loadingRows).toHaveText('');
+
+  const loadingGeometry = await page.evaluate(() => {
+    const summary = document.querySelector(
+      '[data-testid="portfolio-loading-summary"]',
+    )!;
+    const holdings = document.querySelector(
+      '[data-testid="portfolio-loading-current-holdings"]',
+    )!;
+    return {
+      documentOverflow:
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+      summaryBottom: summary.getBoundingClientRect().bottom,
+      holdingsTop: holdings.getBoundingClientRect().top,
+    };
+  });
+  expect(loadingGeometry.documentOverflow).toBeLessThanOrEqual(0);
+  expect(loadingGeometry.holdingsTop).toBeGreaterThanOrEqual(
+    loadingGeometry.summaryBottom,
+  );
+
+  releasePrimaryResponses();
+  await expect(page.getByTestId('portfolio-summary-strip')).toBeVisible();
+  await expect(page.getByTestId('portfolio-current-holdings')).toBeVisible();
 });
 
 test('portfolio mobile keeps holdings or an explicit empty state below disclosed filters', async ({
