@@ -1268,6 +1268,23 @@ function renderBacktestPage(
   return { fetchMock };
 }
 
+function openBacktestDisclosure(testId: string) {
+  const disclosure = screen.getByTestId(testId);
+  if (disclosure.getAttribute('aria-expanded') !== 'true') {
+    fireEvent.click(disclosure);
+  }
+}
+
+async function clickEnabledButton(name: string) {
+  const button = (await screen.findByRole('button', {
+    name,
+  })) as HTMLButtonElement;
+  await waitFor(() => {
+    expect(button.disabled).toBe(false);
+  });
+  fireEvent.click(button);
+}
+
 async function selectCatalogStrategy(value: string, label: string) {
   await screen.findByRole('option', { name: label });
   const strategySelect = await screen.findByRole('combobox', {
@@ -1289,13 +1306,16 @@ test('renders the backtest workspace and saved report history', async () => {
   renderBacktestPage();
 
   expect(await screen.findByText('Strategy replay')).toBeTruthy();
+  openBacktestDisclosure('backtest-promotion-evidence-disclosure');
   const evidenceGateTitle = await screen.findByText(
     'Strategy validation and review status',
   );
   expect(evidenceGateTitle).toBeTruthy();
   const evidenceGate = evidenceGateTitle.closest('section');
   expect(evidenceGate).toBeTruthy();
-  expect(within(evidenceGate!).getByText('Dual Moving Average')).toBeTruthy();
+  expect(
+    await within(evidenceGate!).findByText('Dual Moving Average'),
+  ).toBeTruthy();
   expect(within(evidenceGate!).getByText('dual_ma')).toBeTruthy();
   expect(
     within(evidenceGate!).getByText('Bollinger Mean Reversion'),
@@ -1364,7 +1384,7 @@ test('renders the backtest workspace and saved report history', async () => {
 });
 
 test('keeps setup and current results in one primary workspace with mobile tabs', async () => {
-  renderBacktestPage({ results: [] });
+  const { fetchMock } = renderBacktestPage({ results: [] });
 
   const primary = await screen.findByTestId('backtest-primary-workbench');
   const setup = screen.getByTestId('backtest-parameter-panel').parentElement;
@@ -1403,6 +1423,56 @@ test('keeps setup and current results in one primary workspace with mobile tabs'
       'false',
     );
   }
+
+  await waitFor(() => {
+    expect(
+      fetchMock.mock.calls.some(([url]) =>
+        String(url).includes('/api/backtest/strategy-promotion-readiness'),
+      ),
+    ).toBe(true);
+  });
+  for (const deferredPath of [
+    '/api/account-strategy',
+    '/api/portfolio',
+    '/api/strategy-learning/review-queue',
+    '/api/backtest/strategy-validation',
+    '/api/acceptance-audits/single_instrument_strategy_loop',
+  ]) {
+    expect(
+      fetchMock.mock.calls.some(([url]) => String(url).includes(deferredPath)),
+      deferredPath,
+    ).toBe(false);
+  }
+
+  fireEvent.click(
+    screen.getByTestId('backtest-research-governance-disclosure'),
+  );
+  await waitFor(() => {
+    expect(
+      fetchMock.mock.calls.some(([url]) =>
+        String(url).includes('/api/strategy-learning/review-queue'),
+      ),
+    ).toBe(true);
+  });
+  expect(
+    fetchMock.mock.calls.some(([url]) =>
+      String(url).includes('/api/account-strategy'),
+    ),
+  ).toBe(true);
+  expect(
+    fetchMock.mock.calls.some(([url]) =>
+      String(url).includes('/api/portfolio'),
+    ),
+  ).toBe(true);
+
+  fireEvent.click(screen.getByTestId('backtest-promotion-evidence-disclosure'));
+  await waitFor(() => {
+    expect(
+      fetchMock.mock.calls.some(([url]) =>
+        String(url).includes('/api/backtest/strategy-validation'),
+      ),
+    ).toBe(true);
+  });
 
   fireEvent.click(screen.getByTestId('backtest-advanced-tools-disclosure'));
   expect(
@@ -1484,6 +1554,7 @@ test('shows current account strategy without claiming live attribution', async (
     },
   });
 
+  openBacktestDisclosure('backtest-research-governance-disclosure');
   expect(await screen.findByText('Current account strategy')).toBeTruthy();
   expect(
     (await screen.findAllByText('Dual Moving Average')).length,
@@ -1506,6 +1577,7 @@ test('shows current account strategy without claiming live attribution', async (
 test('localizes account strategy assignment limitations in Chinese', async () => {
   renderBacktestPage({ results: [], locale: 'zh' });
 
+  openBacktestDisclosure('backtest-research-governance-disclosure');
   expect(await screen.findByText('当前账户策略')).toBeTruthy();
   expect(
     await screen.findByText(
@@ -1521,6 +1593,7 @@ test('localizes account strategy assignment limitations in Chinese', async () =>
 test('shows account strategy attribution evidence without claiming pnl', async () => {
   renderBacktestPage({ results: [] });
 
+  openBacktestDisclosure('backtest-research-governance-disclosure');
   expect(await screen.findByText('Attribution evidence')).toBeTruthy();
   expect(await screen.findByText('Signal / action / risk')).toBeTruthy();
   expect(await screen.findByText('1 / 1 / 1')).toBeTruthy();
@@ -1542,6 +1615,7 @@ test('shows account strategy attribution evidence without claiming pnl', async (
 test('shows ledger and valuation bound account strategy contribution', async () => {
   renderBacktestPage({ results: [] });
 
+  openBacktestDisclosure('backtest-research-governance-disclosure');
   expect(await screen.findByText('Contribution report')).toBeTruthy();
   expect(await screen.findByText('Gross realized P/L')).toBeTruthy();
   expect(await screen.findByText(/8\.00/)).toBeTruthy();
@@ -1574,6 +1648,8 @@ test('keeps known strategy ids secondary when registry metadata is missing', asy
     strategies: [strategyCatalog[1]],
   });
 
+  openBacktestDisclosure('backtest-research-governance-disclosure');
+  openBacktestDisclosure('backtest-promotion-evidence-disclosure');
   expect(await screen.findByText('Research only')).toBeTruthy();
   const currentStrategy = (
     await screen.findByText('Current account strategy')
@@ -1648,6 +1724,7 @@ test('explains account strategy pnl attribution tier and source statuses', async
     },
   });
 
+  openBacktestDisclosure('backtest-research-governance-disclosure');
   expect(await screen.findByText('P/L attribution status')).toBeTruthy();
   expect(await screen.findByText('Blocked attribution')).toBeTruthy();
   expect(
@@ -1742,11 +1819,8 @@ test('assigns the selected strategy as research-only account context', async () 
   const { fetchMock } = renderBacktestPage({ results: [] });
 
   await selectCatalogStrategy('bollinger', 'Bollinger Mean Reversion');
-  fireEvent.click(
-    await screen.findByRole('button', {
-      name: 'Set as account research strategy',
-    }),
-  );
+  openBacktestDisclosure('backtest-research-governance-disclosure');
+  await clickEnabledButton('Set as account research strategy');
 
   await waitFor(() => {
     expect(
@@ -1782,11 +1856,8 @@ test('assigns the selected strategy as current-symbol research context', async (
   const { fetchMock } = renderBacktestPage({ results: [] });
 
   await selectCatalogStrategy('bollinger', 'Bollinger Mean Reversion');
-  fireEvent.click(
-    await screen.findByRole('button', {
-      name: 'Set for current symbol',
-    }),
-  );
+  openBacktestDisclosure('backtest-research-governance-disclosure');
+  await clickEnabledButton('Set for current symbol');
 
   await waitFor(() => {
     expect(
@@ -1816,6 +1887,7 @@ test('assigns the selected strategy as current-symbol research context', async (
 test('shows account-truth gate status in strategy review status', async () => {
   renderBacktestPage({ results: [] });
 
+  openBacktestDisclosure('backtest-promotion-evidence-disclosure');
   expect(
     await screen.findByText('Strategy validation and review status'),
   ).toBeTruthy();
@@ -1829,6 +1901,7 @@ test('shows account-truth gate status in strategy review status', async () => {
 test('shows strategy attribution gate status in strategy review status', async () => {
   renderBacktestPage({ results: [] });
 
+  openBacktestDisclosure('backtest-promotion-evidence-disclosure');
   expect(await screen.findByText('Strategy attribution gate')).toBeTruthy();
   expect(
     (await screen.findAllByText('Evidence linked, P/L pending')).length,
@@ -1870,6 +1943,7 @@ test('keeps readiness-only strategies visible with display names before ids', as
     },
   });
 
+  openBacktestDisclosure('backtest-promotion-evidence-disclosure');
   const evidenceGate = (
     await screen.findByText('Strategy validation and review status')
   ).closest('section');
@@ -1929,6 +2003,7 @@ test('renders extension strategy metadata and submits its typed params', async (
   ).toBeGreaterThanOrEqual(1);
   await selectCatalogStrategy('custom_momentum', 'Custom Momentum Extension');
 
+  openBacktestDisclosure('backtest-advanced-tools-disclosure');
   expect(await screen.findByLabelText('Lookback Window')).toBeTruthy();
   expect(await screen.findByText('Strategy metadata')).toBeTruthy();
   expect(await screen.findByText('stock, etf')).toBeTruthy();
@@ -1990,6 +2065,7 @@ test('localizes built-in strategy names without changing strategy ids', async ()
   const { fetchMock } = renderBacktestPage({ results: [], locale: 'zh' });
 
   expect(await screen.findByText('策略回放')).toBeTruthy();
+  openBacktestDisclosure('backtest-promotion-evidence-disclosure');
   expect(await screen.findByText('策略验证与复核状态')).toBeTruthy();
   expect(screen.getAllByText('复核状态').length).toBeGreaterThan(0);
   expect(await screen.findByDisplayValue('双均线策略')).toBeTruthy();
@@ -2857,6 +2933,7 @@ test('runs a parameter sweep and renders ranked research warnings', async () => 
   const { fetchMock } = renderBacktestPage({ results: [] });
 
   await screen.findByText('Strategy replay');
+  openBacktestDisclosure('backtest-advanced-tools-disclosure');
   fireEvent.change(await screen.findByLabelText('Symbol'), {
     target: { value: '600002' },
   });
@@ -2913,6 +2990,7 @@ test('runs a same-dataset parameter comparison and renders saved result ids', as
   const { fetchMock } = renderBacktestPage({ results: [] });
 
   await screen.findByText('Strategy replay');
+  openBacktestDisclosure('backtest-advanced-tools-disclosure');
   fireEvent.change(await screen.findByLabelText('Symbol'), {
     target: { value: '600002' },
   });
@@ -2967,6 +3045,7 @@ test('runs a same-dataset parameter comparison and renders saved result ids', as
 test('accepts localized comparison parameter names while submitting API keys', async () => {
   const { fetchMock } = renderBacktestPage({ results: [], locale: 'zh' });
 
+  openBacktestDisclosure('backtest-advanced-tools-disclosure');
   const parameterSets = (await screen.findByLabelText(
     '对比参数集',
   )) as HTMLTextAreaElement;

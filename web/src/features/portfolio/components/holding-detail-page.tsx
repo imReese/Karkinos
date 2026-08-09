@@ -1621,6 +1621,7 @@ function LedgerTrace({
         <tbody>
           {entries.map((entry) => {
             const activitySummary = formatLedgerActivitySummary(entry, locale);
+            const publicNote = formatLedgerPublicNote(entry, locale) ?? '--';
             const detailLines = formatLedgerExecutionDetailLines(
               entry,
               detailLabels,
@@ -1656,8 +1657,13 @@ function LedgerTrace({
                   ) : null}
                 </td>
                 <td className="max-w-[280px] px-4 py-3.5 text-[var(--app-muted)]">
-                  <span className="line-clamp-2 break-words">
-                    {formatLedgerPublicNote(entry, locale) ?? '--'}
+                  <span
+                    className="line-clamp-2 break-words focus:line-clamp-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
+                    data-testid="holding-ledger-note"
+                    tabIndex={0}
+                    title={publicNote}
+                  >
+                    {publicNote}
                   </span>
                 </td>
               </tr>

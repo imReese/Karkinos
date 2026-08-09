@@ -356,6 +356,8 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
             ) : null}
             {visibleEntries.map((entry) => {
               const summary = formatLedgerActivitySummary(entry, locale);
+              const publicNote =
+                formatLedgerPublicNote(entry, locale) ?? labels.noDetail;
               return (
                 <tr key={entry.id}>
                   <td className="px-4 py-3 align-top">
@@ -411,8 +413,13 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                     />
                   </td>
                   <td className="max-w-[280px] px-4 py-3 align-top text-[var(--app-muted)]">
-                    <span className="line-clamp-2 break-words">
-                      {formatLedgerPublicNote(entry, locale) ?? labels.noDetail}
+                    <span
+                      className="line-clamp-2 break-words focus:line-clamp-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
+                      data-testid="activity-note"
+                      tabIndex={0}
+                      title={publicNote}
+                    >
+                      {publicNote}
                     </span>
                   </td>
                 </tr>

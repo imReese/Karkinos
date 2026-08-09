@@ -611,7 +611,10 @@ test('shows tushare capability matrix and manual daily tasks', async () => {
 
   expect(await screen.findByText('Provider capability matrix')).toBeTruthy();
   expect(await screen.findByText('TuShare permissions')).toBeTruthy();
-  expect((await screen.findAllByText('fund_nav')).length).toBeGreaterThan(0);
+  expect(
+    (await screen.findAllByText('Fund NAV capability')).length,
+  ).toBeGreaterThan(0);
+  expect(screen.queryByText('fund_nav')).toBeNull();
   expect(
     (await screen.findAllByText('Permission blocked')).length,
   ).toBeGreaterThan(0);

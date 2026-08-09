@@ -137,12 +137,13 @@ type BacktestAttributionEvidenceChainItem = {
   present: boolean;
 };
 
-function useBacktestPortfolioInstrumentsQuery() {
+function useBacktestPortfolioInstrumentsQuery(enabled = true) {
   return useQuery({
     queryKey: ['backtest-portfolio-instruments'],
     queryFn: () =>
       apiClient<BacktestPortfolioInstrumentSnapshot>('/api/portfolio'),
     staleTime: 10_000,
+    enabled,
   });
 }
 
@@ -564,6 +565,12 @@ export function BacktestPage() {
   const labels = copy.backtest.page;
   const common = copy.common;
   const { locale } = usePreferences();
+  const [researchGovernanceOpen, setResearchGovernanceOpen] = useState(false);
+  const [promotionEvidenceOpen, setPromotionEvidenceOpen] = useState(false);
+  const [researchArchiveOpen, setResearchArchiveOpen] = useState(false);
+  const [latestReport, setLatestReport] = useState<BacktestReport | null>(null);
+  const accountStrategyEnabled =
+    researchGovernanceOpen || researchArchiveOpen;
   const runBacktest = useRunBacktestMutation();
   const signalPreview = useStrategySignalPreviewMutation();
   const riskPreview = useBacktestRiskPreviewMutation();
@@ -571,18 +578,30 @@ export function BacktestPage() {
   const attributionPreview = useBacktestAttributionPreviewMutation();
   const strategies = useBacktestStrategiesQuery();
   const savedResults = useBacktestResultsQuery();
-  const accountStrategy = useAccountStrategyAssignmentQuery();
-  const accountStrategyAssignments = useAccountStrategyAssignmentsQuery();
-  const accountStrategyAttribution = useAccountStrategyAttributionQuery();
-  const accountStrategyContribution = useAccountStrategyContributionQuery();
-  const portfolioInstruments = useBacktestPortfolioInstrumentsQuery();
+  const accountStrategy = useAccountStrategyAssignmentQuery(
+    accountStrategyEnabled,
+  );
+  const accountStrategyAssignments = useAccountStrategyAssignmentsQuery(
+    researchGovernanceOpen,
+  );
+  const accountStrategyAttribution = useAccountStrategyAttributionQuery(
+    researchGovernanceOpen,
+  );
+  const accountStrategyContribution = useAccountStrategyContributionQuery(
+    researchGovernanceOpen,
+  );
+  const portfolioInstruments = useBacktestPortfolioInstrumentsQuery(
+    researchGovernanceOpen,
+  );
   const updateAccountStrategy = useUpdateAccountStrategyAssignmentMutation();
   const updateScopedAccountStrategy =
     useUpdateScopedAccountStrategyAssignmentMutation();
-  const validation = useStrategyValidationQuery();
+  const validation = useStrategyValidationQuery(promotionEvidenceOpen);
   const readiness = useStrategyPromotionReadinessQuery();
   const singleInstrumentAudit =
-    useSingleInstrumentStrategyLoopAcceptanceAuditQuery();
+    useSingleInstrumentStrategyLoopAcceptanceAuditQuery(
+      latestReport !== null,
+    );
   const searchDefaults = useMemo(() => currentBacktestSearchDefaults(), []);
   const [startDate, setStartDate] = useState('2025-01-02');
   const [endDate, setEndDate] = useState(() => todayDate());
@@ -593,15 +612,11 @@ export function BacktestPage() {
   >(() => buildParamValues(fallbackStrategies[0].parameter_schema));
   const [symbol, setSymbol] = useState(searchDefaults.symbol);
   const [assetClass, setAssetClass] = useState(searchDefaults.assetClass);
-  const [latestReport, setLatestReport] = useState<BacktestReport | null>(null);
   const [mobileWorkspaceView, setMobileWorkspaceView] = useState<
     'setup' | 'results'
   >('setup');
   const [mobileWorkspaceTouched, setMobileWorkspaceTouched] = useState(false);
   const [advancedToolsOpen, setAdvancedToolsOpen] = useState(false);
-  const [researchGovernanceOpen, setResearchGovernanceOpen] = useState(false);
-  const [promotionEvidenceOpen, setPromotionEvidenceOpen] = useState(false);
-  const [researchArchiveOpen, setResearchArchiveOpen] = useState(false);
   const [formError, setFormError] = useState('');
   const assetClassOptions = [
     { value: 'stock', label: common.assetClassStock },
@@ -1419,8 +1434,8 @@ function BacktestResponsiveDisclosure({
           {open ? '−' : '+'}
         </span>
       </button>
-      <div className={`${open ? '' : 'hidden'} min-w-0 space-y-5`} id={id}>
-        {children}
+      <div className="min-w-0 space-y-5" hidden={!open} id={id}>
+        {open ? children : null}
       </div>
     </section>
   );
