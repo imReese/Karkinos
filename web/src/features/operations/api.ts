@@ -1985,10 +1985,11 @@ export type ExecutionReconciliationRun = {
   items?: ExecutionReconciliationItem[];
 };
 
-export function useOperationsTodayQuery() {
+export function useOperationsTodayQuery(enabled = true) {
   return useQuery({
     queryKey: ['operations', 'today'],
     queryFn: () => apiClient<OperationsTodayResponse>('/api/operations/today'),
+    enabled,
     staleTime: 5_000,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
@@ -2222,61 +2223,66 @@ export function useControlledBrokerWriteReleaseRevocationMutation() {
   });
 }
 
-export function useAutomationCockpitQuery() {
+export function useAutomationCockpitQuery(enabled = true) {
   return useQuery({
     queryKey: ['automation', 'cockpit'],
     queryFn: () =>
       apiClient<AutomationCockpitResponse>('/api/automation/cockpit'),
+    enabled,
     staleTime: 5_000,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
   });
 }
 
-export function useBrokerGatewayStatusQuery() {
+export function useBrokerGatewayStatusQuery(enabled = true) {
   return useQuery({
     queryKey: ['broker-gateway', 'status'],
     queryFn: () =>
       apiClient<BrokerGatewayStatusResponse>('/api/broker-gateway/status'),
+    enabled,
     staleTime: 5_000,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
   });
 }
 
-export function useBrokerConnectorHealthQuery() {
+export function useBrokerConnectorHealthQuery(enabled = true) {
   return useQuery({
     queryKey: ['broker-gateway', 'connectors', 'health'],
     queryFn: () =>
       apiClient<BrokerConnectorHealthResponse>(
         '/api/broker-gateway/connectors/health',
       ),
+    enabled,
     staleTime: 5_000,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
   });
 }
 
-export function useBrokerGatewayAccountFactsQuery() {
+export function useBrokerGatewayAccountFactsQuery(enabled = true) {
   return useQuery({
     queryKey: ['broker-gateway', 'account-facts'],
     queryFn: () =>
       apiClient<BrokerGatewayAccountFactsResponse>(
         '/api/broker-gateway/account-facts',
       ),
+    enabled,
     staleTime: 5_000,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
   });
 }
 
-export function useBrokerGatewayFillsQuery() {
+export function useBrokerGatewayFillsQuery(enabled = true) {
   return useQuery({
     queryKey: ['broker-gateway', 'fills'],
     queryFn: () =>
       apiClient<BrokerGatewayFillsQueryResponse>(
         '/api/broker-gateway/fills/query',
       ),
+    enabled,
     staleTime: 5_000,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
@@ -2297,13 +2303,14 @@ export function useBrokerGatewayOrderQuery(orderId: string | null | undefined) {
   });
 }
 
-export function useExecutionReconciliationRunsQuery() {
+export function useExecutionReconciliationRunsQuery(enabled = true) {
   return useQuery({
     queryKey: ['execution-reconciliation', 'runs'],
     queryFn: () =>
       apiClient<ExecutionReconciliationRun[]>(
         '/api/execution-reconciliation/runs?limit=5',
       ),
+    enabled,
     staleTime: 5_000,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
