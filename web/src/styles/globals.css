@@ -782,8 +782,8 @@ select:is(.app-field, .app-input):not([multiple]) {
     linear-gradient(45deg, transparent 50%, var(--app-text-secondary) 50%),
     linear-gradient(135deg, var(--app-text-secondary) 50%, transparent 50%);
   background-position:
-    calc(100% - 1.3125rem) calc(50% - 0.125rem),
-    calc(100% - 1rem) calc(50% - 0.125rem);
+    calc(100% - 1.25rem) calc(50% - 0.125rem),
+    calc(100% - 0.9375rem) calc(50% - 0.125rem);
   background-repeat: no-repeat;
   background-size: 0.3125rem 0.3125rem;
 }
