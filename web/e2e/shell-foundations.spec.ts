@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 const desktopViewports = [
-  { width: 1440, height: 900 },
+  { width: 1536, height: 900 },
   { width: 1280, height: 800 },
 ];
 
@@ -16,7 +16,12 @@ test('desktop shell defaults to labeled business groups and remains collapsible'
     const header = page.locator('.app-toolbar-shell');
     const statusRail = page.locator('.app-toolbar-status-rail');
     await expect(sidebar).toBeVisible();
-    await expect(statusRail).toBeVisible();
+    const wideStatusRail = viewport.width >= 1536;
+    if (wideStatusRail) {
+      await expect(statusRail).toBeVisible();
+    } else {
+      await expect(statusRail).toBeHidden();
+    }
     await expect(
       page.getByText('Decision & Risk', { exact: true }),
     ).toBeVisible();
@@ -28,13 +33,17 @@ test('desktop shell defaults to labeled business groups and remains collapsible'
     );
     await expect(page.getByText('Workspace toolbar')).toHaveCount(0);
     await expect(page.getByTestId('workspace-command-trigger')).toBeVisible();
-    if (viewport.width >= 1280) {
+    if (wideStatusRail) {
       await expect(page.locator('.app-toolbar-state')).toBeVisible();
     } else {
       await expect(page.locator('.app-toolbar-state')).toBeHidden();
     }
-    await expect(statusRail.getByTestId('status-pill-valuation')).toBeVisible();
-    await expect(statusRail.getByTestId('status-pill-market')).toBeVisible();
+    if (wideStatusRail) {
+      await expect(
+        statusRail.getByTestId('status-pill-valuation'),
+      ).toBeVisible();
+      await expect(statusRail.getByTestId('status-pill-market')).toBeVisible();
+    }
     await expect(
       page.getByRole('button', { name: /Refresh quotes: Market/ }),
     ).toHaveCount(0);
@@ -70,6 +79,34 @@ test('desktop shell defaults to labeled business groups and remains collapsible'
       .poll(async () => (await sidebar.boundingBox())?.width)
       .toBe(56);
   }
+});
+
+test('laptop routes defer hidden toolbar projections until the rail is visible', async ({
+  page,
+}) => {
+  const requestedApiPaths: string[] = [];
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (url.pathname.startsWith('/api/')) {
+      requestedApiPaths.push(url.pathname);
+    }
+  });
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/risk');
+  await expect(page.getByTestId('risk-loading-workspace')).toHaveCount(0, {
+    timeout: 15_000,
+  });
+  await expect(page.locator('.app-toolbar-status-rail')).toBeHidden();
+  expect(requestedApiPaths).not.toContain('/api/portfolio/overview');
+  expect(requestedApiPaths).not.toContain('/api/market/data-health');
+
+  await page.setViewportSize({ width: 1536, height: 900 });
+  await expect(page.locator('.app-toolbar-status-rail')).toBeVisible();
+  await expect
+    .poll(() => requestedApiPaths.includes('/api/portfolio/overview'))
+    .toBe(true);
+  expect(requestedApiPaths).toContain('/api/market/data-health');
 });
 
 test('workspace routes start at the top and restore prior scroll on browser history', async ({
@@ -183,24 +220,10 @@ test('desktop utility controls align and overview holdings avoid partial columns
   await expect(page.getByTestId('overview-holdings-section')).toBeVisible({
     timeout: 15_000,
   });
-  await expect(page.getByTestId('status-pill-market')).not.toHaveAttribute(
-    'aria-label',
-    /检查中/,
-  );
+  await expect(page.locator('.app-toolbar-status-rail')).toBeHidden();
+  await expect(page.locator('.app-toolbar-state')).toBeHidden();
 
-  const geometry = await page.evaluate(() => {
-    const valuation = document.querySelector(
-      '[data-testid="status-pill-valuation"]',
-    ) as HTMLElement;
-    const market = document.querySelector(
-      '[data-testid="status-pill-market"]',
-    ) as HTMLElement;
-    const value = valuation.querySelector(
-      '[data-status-chip-part="value"]',
-    ) as HTMLElement;
-    const meta = valuation.querySelector(
-      '[data-status-chip-part="meta"]',
-    ) as HTMLElement;
+  const laptopGeometry = await page.evaluate(() => {
     const holdingsSection = document.querySelector(
       '[data-testid="overview-holdings-section"]',
     ) as HTMLElement;
@@ -213,36 +236,67 @@ test('desktop utility controls align and overview holdings avoid partial columns
       document.querySelector('.app-theme-switcher') as HTMLElement,
       document.querySelector('.app-language-control') as HTMLElement,
     ].map((element) => element.getBoundingClientRect());
-    const valueBox = value.getBoundingClientRect();
-    const marketBox = market.getBoundingClientRect();
     const commandBox = toolbarControls[0];
 
     return {
       dashboardOverflow:
         dashboardOverflowTarget.scrollWidth -
         dashboardOverflowTarget.clientWidth,
-      statusValueWidth: valueBox.width,
-      statusValueClipped: value.scrollWidth > value.clientWidth,
-      statusMetaDisplay: getComputedStyle(meta).display,
-      marketAccessibleName: market.getAttribute('aria-label'),
-      marketCommandGap: commandBox.left - marketBox.right,
       commandWidth: commandBox.width,
       toolbarHeights: toolbarControls.map((box) => box.height),
       toolbarCenters: toolbarControls.map((box) => box.top + box.height / 2),
     };
   });
 
-  expect(geometry.dashboardOverflow).toBeLessThanOrEqual(0);
-  expect(geometry.statusValueWidth).toBeGreaterThan(0);
-  expect(geometry.statusValueClipped).toBe(false);
-  expect(geometry.statusMetaDisplay).toBe('none');
-  expect(geometry.marketAccessibleName).not.toContain('检查中');
-  expect(geometry.marketCommandGap).toBeGreaterThanOrEqual(12);
-  expect(geometry.commandWidth).toBe(196);
-  expect(geometry.toolbarHeights).toEqual([32, 32, 32]);
+  expect(laptopGeometry.dashboardOverflow).toBeLessThanOrEqual(0);
+  expect(laptopGeometry.commandWidth).toBe(196);
+  expect(laptopGeometry.toolbarHeights).toEqual([32, 32, 32]);
   expect(
-    Math.max(...geometry.toolbarCenters) - Math.min(...geometry.toolbarCenters),
+    Math.max(...laptopGeometry.toolbarCenters) -
+      Math.min(...laptopGeometry.toolbarCenters),
   ).toBeLessThanOrEqual(1);
+
+  await page.setViewportSize({ width: 1536, height: 900 });
+  await expect(page.locator('.app-toolbar-status-rail')).toBeVisible();
+  await expect(page.getByTestId('status-pill-market')).not.toHaveAttribute(
+    'aria-label',
+    /检查中/,
+  );
+
+  const wideGeometry = await page.evaluate(() => {
+    const valuation = document.querySelector(
+      '[data-testid="status-pill-valuation"]',
+    ) as HTMLElement;
+    const market = document.querySelector(
+      '[data-testid="status-pill-market"]',
+    ) as HTMLElement;
+    const value = valuation.querySelector(
+      '[data-status-chip-part="value"]',
+    ) as HTMLElement;
+    const meta = valuation.querySelector(
+      '[data-status-chip-part="meta"]',
+    ) as HTMLElement;
+    const command = document.querySelector(
+      '.app-command-trigger',
+    ) as HTMLElement;
+    return {
+      statusValueWidth: value.getBoundingClientRect().width,
+      statusValueClipped: value.scrollWidth > value.clientWidth,
+      statusMetaDisplay: getComputedStyle(meta).display,
+      marketAccessibleName: market.getAttribute('aria-label'),
+      marketCommandGap:
+        command.getBoundingClientRect().left -
+        market.getBoundingClientRect().right,
+      commandWidth: command.getBoundingClientRect().width,
+    };
+  });
+
+  expect(wideGeometry.statusValueWidth).toBeGreaterThan(0);
+  expect(wideGeometry.statusValueClipped).toBe(false);
+  expect(wideGeometry.statusMetaDisplay).not.toBe('none');
+  expect(wideGeometry.marketAccessibleName).not.toContain('检查中');
+  expect(wideGeometry.marketCommandGap).toBeGreaterThanOrEqual(12);
+  expect(wideGeometry.commandWidth).toBe(240);
 
   const valuationStatus = page.getByTestId('status-pill-valuation');
   await valuationStatus.hover();
@@ -351,7 +405,6 @@ test('desktop utility controls align and overview holdings avoid partial columns
   ).toBeLessThanOrEqual(1);
 
   await page.keyboard.press('Escape');
-  await page.setViewportSize({ width: 1440, height: 900 });
   await expect(
     valuationStatus.locator('[data-status-chip-part="meta"]'),
   ).toBeVisible();

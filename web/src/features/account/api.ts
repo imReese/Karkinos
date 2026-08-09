@@ -288,10 +288,11 @@ export type RiskWorkspaceResponse = {
   }>;
 };
 
-export function useAccountOverviewQuery() {
+export function useAccountOverviewQuery(enabled = true) {
   return useQuery({
     queryKey: ['account-overview'],
     queryFn: () => apiClient<AccountOverview>('/api/portfolio/overview'),
+    enabled,
     staleTime: 10_000,
     refetchInterval: visiblePersistedProjectionRefetchInterval,
     refetchOnWindowFocus: true,
