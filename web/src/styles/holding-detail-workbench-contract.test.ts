@@ -8,6 +8,10 @@ const HOLDING_DETAIL = readFileSync(
   resolve(SRC_ROOT, 'features/portfolio/components/holding-detail-page.tsx'),
   'utf8',
 );
+const PRICE_STRUCTURE = readFileSync(
+  resolve(SRC_ROOT, 'features/market/components/price-structure-chart.tsx'),
+  'utf8',
+);
 
 describe('holding detail workbench contract', () => {
   it('keeps evidence views explicit, flat, and based on shared primitives', () => {
@@ -37,7 +41,8 @@ describe('holding detail workbench contract', () => {
     expect(HOLDING_DETAIL).toContain(
       'data-testid="holding-price-structure-fallback"',
     );
-    expect(HOLDING_DETAIL).toContain('kind="loading"');
+    expect(HOLDING_DETAIL).toContain('<PriceStructureLoadingState');
+    expect(PRICE_STRUCTURE).toContain('kind="loading"');
     expect(HOLDING_DETAIL).toContain('kind="error"');
     expect(HOLDING_DETAIL).toContain('kind="missing"');
     expect(HOLDING_DETAIL).toContain(
