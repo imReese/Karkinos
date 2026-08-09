@@ -1085,26 +1085,28 @@ test('risk initial load preserves priorities, metrics, and controlled-action hie
     loadingGeometry.metricsBottom,
   );
 
-  releaseStateResponse();
-  const liveExceptions = page.getByTestId('risk-loading-live-exceptions');
-  await expect(liveExceptions).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId('risk-loading-exceptions')).toHaveCount(0);
-  await expect(liveExceptions.locator(':scope li')).not.toHaveCount(0);
-  await expect(page.getByTestId('risk-loading-live-metrics')).toHaveCount(0);
-  await expect(page.getByTestId('risk-loading-metrics')).toBeVisible();
+  releaseWorkspaceResponse();
+  const loadingExceptions = page.getByTestId('risk-loading-exceptions');
+  const liveMetrics = page.getByTestId('risk-loading-live-metrics');
+  await expect(liveMetrics).toBeVisible({ timeout: 15_000 });
+  await expect(liveMetrics.locator('.app-metric-strip-item')).not.toHaveCount(
+    0,
+  );
+  await expect(page.getByTestId('risk-loading-live-exceptions')).toHaveCount(0);
+  await expect(loadingExceptions).toBeVisible();
 
   const partialGeometry = await page.evaluate(() => {
-    const liveExceptions = document.querySelector(
-      '[data-testid="risk-loading-live-exceptions"]',
+    const loadingExceptions = document.querySelector(
+      '[data-testid="risk-loading-exceptions"]',
     )!;
     const metrics = document.querySelector(
-      '[data-testid="risk-loading-metrics"]',
+      '[data-testid="risk-loading-live-metrics"]',
     )!;
     return {
       documentOverflow:
         document.documentElement.scrollWidth -
         document.documentElement.clientWidth,
-      exceptionTop: liveExceptions.getBoundingClientRect().top,
+      exceptionTop: loadingExceptions.getBoundingClientRect().top,
       metricsTop: metrics.getBoundingClientRect().top,
     };
   });
@@ -1115,17 +1117,17 @@ test('risk initial load preserves priorities, metrics, and controlled-action hie
 
   await page.setViewportSize({ width: 834, height: 1112 });
   const tabletPartialGeometry = await page.evaluate(() => {
-    const liveExceptions = document.querySelector(
-      '[data-testid="risk-loading-live-exceptions"]',
+    const loadingExceptions = document.querySelector(
+      '[data-testid="risk-loading-exceptions"]',
     )!;
     const metrics = document.querySelector(
-      '[data-testid="risk-loading-metrics"]',
+      '[data-testid="risk-loading-live-metrics"]',
     )!;
     return {
       documentOverflow:
         document.documentElement.scrollWidth -
         document.documentElement.clientWidth,
-      exceptionTop: liveExceptions.getBoundingClientRect().top,
+      exceptionTop: loadingExceptions.getBoundingClientRect().top,
       metricsTop: metrics.getBoundingClientRect().top,
     };
   });
@@ -1136,18 +1138,18 @@ test('risk initial load preserves priorities, metrics, and controlled-action hie
 
   await page.setViewportSize({ width: 1280, height: 720 });
   const desktopPartialGeometry = await page.evaluate(() => {
-    const liveExceptions = document.querySelector(
-      '[data-testid="risk-loading-live-exceptions"]',
-    )!.getBoundingClientRect();
+    const loadingExceptions = document
+      .querySelector('[data-testid="risk-loading-exceptions"]')!
+      .getBoundingClientRect();
     const metrics = document
-      .querySelector('[data-testid="risk-loading-metrics"]')!
+      .querySelector('[data-testid="risk-loading-live-metrics"]')!
       .getBoundingClientRect();
     return {
       documentOverflow:
         document.documentElement.scrollWidth -
         document.documentElement.clientWidth,
-      exceptionRight: liveExceptions.right,
-      exceptionTop: liveExceptions.top,
+      exceptionRight: loadingExceptions.right,
+      exceptionTop: loadingExceptions.top,
       metricsLeft: metrics.left,
       metricsTop: metrics.top,
     };
@@ -1162,7 +1164,7 @@ test('risk initial load preserves priorities, metrics, and controlled-action hie
     ),
   ).toBeLessThanOrEqual(80);
 
-  releaseWorkspaceResponse();
+  releaseStateResponse();
   await expect(page.getByTestId('risk-blocking-register')).toBeVisible();
   await expect(page.getByTestId('risk-metric-rail')).toBeVisible();
   await expect(page.getByTestId('risk-summary-loading-state')).toHaveCount(0);
