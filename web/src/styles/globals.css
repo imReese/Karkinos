@@ -777,16 +777,16 @@ select:is(.app-field, .app-input):not([multiple]) {
   -webkit-appearance: none;
   appearance: none;
   /* Optically center the 0.625rem chevron inside the trailing control slot.
-     The quarter-pixel inset balances the adjacent whole- and half-pixel
-     positions without favoring either edge at common display scale factors. */
+     Whole CSS-pixel positions keep both diagonals crisp and remove the slight
+     left bias at common display scale factors. */
   padding-inline-end: 2.25rem;
   background-color: var(--app-surface-raised);
   background-image:
     linear-gradient(45deg, transparent 50%, var(--app-text-secondary) 50%),
     linear-gradient(135deg, var(--app-text-secondary) 50%, transparent 50%);
   background-position:
-    calc(100% - 0.953125rem) calc(50% - 0.125rem),
-    calc(100% - 0.640625rem) calc(50% - 0.125rem);
+    calc(100% - 0.9375rem) calc(50% - 0.125rem),
+    calc(100% - 0.625rem) calc(50% - 0.125rem);
   background-repeat: no-repeat;
   background-size: 0.3125rem 0.3125rem;
 }
