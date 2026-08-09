@@ -1,18 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { apiClient } from '../../lib/api/client';
-
-const LIVE_REFETCH_MS = 5_000;
-
-function liveRefetchInterval() {
-  if (
-    typeof document !== 'undefined' &&
-    document.visibilityState !== 'visible'
-  ) {
-    return false;
-  }
-  return LIVE_REFETCH_MS;
-}
+import { visiblePersistedProjectionRefetchInterval } from '../../lib/api/query-policy';
 
 export type AccountOverview = {
   total_equity: number;
@@ -304,7 +293,7 @@ export function useAccountOverviewQuery() {
     queryKey: ['account-overview'],
     queryFn: () => apiClient<AccountOverview>('/api/portfolio/overview'),
     staleTime: 10_000,
-    refetchInterval: liveRefetchInterval,
+    refetchInterval: visiblePersistedProjectionRefetchInterval,
     refetchOnWindowFocus: true,
   });
 }
@@ -314,7 +303,7 @@ export function useEquityCurveQuery() {
     queryKey: ['account-equity-curve'],
     queryFn: () => apiClient<EquityPoint[]>('/api/portfolio/equity-curve'),
     staleTime: 15_000,
-    refetchInterval: liveRefetchInterval,
+    refetchInterval: visiblePersistedProjectionRefetchInterval,
     refetchOnWindowFocus: true,
   });
 }
@@ -331,7 +320,7 @@ export function useEquityCurveSeriesQuery(
       ),
     staleTime: 15_000,
     enabled,
-    refetchInterval: liveRefetchInterval,
+    refetchInterval: visiblePersistedProjectionRefetchInterval,
     refetchOnWindowFocus: true,
   });
 }
@@ -349,7 +338,7 @@ export function useRiskSummaryQuery(enabled = true) {
     queryFn: () => apiClient<RiskSummaryItem[]>('/api/portfolio/risk-summary'),
     staleTime: 15_000,
     enabled,
-    refetchInterval: liveRefetchInterval,
+    refetchInterval: visiblePersistedProjectionRefetchInterval,
     refetchOnWindowFocus: true,
   });
 }
@@ -376,7 +365,7 @@ export function useExplainabilityQuery(
     },
     staleTime: 15_000,
     enabled,
-    refetchInterval: liveRefetchInterval,
+    refetchInterval: visiblePersistedProjectionRefetchInterval,
     refetchOnWindowFocus: true,
   });
 }
@@ -387,7 +376,7 @@ export function useRiskWorkspaceQuery() {
     queryFn: () =>
       apiClient<RiskWorkspaceResponse>('/api/portfolio/risk-workspace'),
     staleTime: 15_000,
-    refetchInterval: liveRefetchInterval,
+    refetchInterval: visiblePersistedProjectionRefetchInterval,
     refetchOnWindowFocus: true,
   });
 }

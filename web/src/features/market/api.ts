@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiClient } from '../../lib/api/client';
+import { visiblePersistedProjectionRefetchInterval } from '../../lib/api/query-policy';
 
 export type MarketHealthQuote = {
   symbol: string;
@@ -294,15 +295,7 @@ export function useMarketDataHealthQuery() {
     queryFn: () =>
       apiClient<MarketDataHealthResponse>('/api/market/data-health'),
     staleTime: 10_000,
-    refetchInterval: () => {
-      if (
-        typeof document !== 'undefined' &&
-        document.visibilityState !== 'visible'
-      ) {
-        return false;
-      }
-      return 10_000;
-    },
+    refetchInterval: visiblePersistedProjectionRefetchInterval,
     refetchOnWindowFocus: true,
   });
 }
