@@ -327,6 +327,12 @@ def test_today_operations_route_returns_read_only_runbook(monkeypatch):
     assert pilot_readiness["database_writes_performed"] is False
     assert pilot_readiness["authorizes_execution"] is False
     assert response["limitations"][0].startswith("Operations summary is read-only")
+    assert response["citic_source_follow_up"]["status"] == "not_configured"
+    assert response["citic_source_follow_up"]["database_writes_performed"] is False
+    assert all(
+        item["subsystem_id"] != "citic_source_follow_up"
+        for item in response["attention_items"]
+    )
     assert fake_db.saved_manual_orders == []
     assert fake_db.recorded_orders == []
     assert fake_db.ledger_writes == []

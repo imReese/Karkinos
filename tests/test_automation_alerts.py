@@ -8,6 +8,7 @@ from server.services.broker_gateway import BrokerGatewayService
 from server.services.execution_reconciliation import ExecutionReconciliationService
 from server.services.oms import OmsService
 from server.services.trading_controls import TradingControlState
+from tests.broker_gateway_fixtures import clear_current_per_order_confirmation
 
 
 class _ConnectorWouldFailIfQueried:
@@ -113,7 +114,12 @@ def test_alert_scan_preserves_manual_execution_reconciliation_evidence(
     db = AppDatabase(tmp_path / "alerts.db")
     db.init_sync()
     order = _confirmed_order(db, gateway_evidence=True)
-    gateway = BrokerGatewayService(db=db)
+    gateway = BrokerGatewayService(
+        db=db,
+        current_per_order_confirmation_provider=(
+            lambda order_id: clear_current_per_order_confirmation(order_id)
+        ),
+    )
     gateway.create_manual_ticket(order["order_id"], actor="test")
     preview = gateway.preview_manual_execution_record(
         order["order_id"],
@@ -179,12 +185,22 @@ def test_alert_scan_preserves_manual_execution_reconciliation_evidence(
     assert gate_summary["gates"]["risk"] == {
         "status": "pass",
         "evidence_ref": "risk:risk-001",
-        "source": "oms_gateway_evidence",
+        "source": "current_per_order_confirmation",
+        "confirmation_id": "c" * 64,
+        "dossier_fingerprint": "d" * 64,
+        "source_fingerprint": "c" * 64,
+        "source_recorded_at": "2026-07-02T08:02:00+00:00",
+        "resolution_status": "resolved_clear",
     }
     assert gate_summary["gates"]["paper_shadow"] == {
         "status": "pass",
         "evidence_ref": "paper_shadow:run-001",
-        "source": "oms_gateway_evidence",
+        "source": "current_per_order_confirmation",
+        "confirmation_id": "c" * 64,
+        "dossier_fingerprint": "d" * 64,
+        "source_fingerprint": "d" * 64,
+        "source_recorded_at": "2026-07-02T08:03:00+00:00",
+        "resolution_status": "resolved_clear",
     }
     assert gate_summary["gates"]["execution_reconciliation"] == {
         "status": "pending_after_manual_execution",

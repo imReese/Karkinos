@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import secrets
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-from server.services.broker_connector_soak import BrokerConnectorSoakService
+from server.services.broker_connector_soak import (
+    BrokerConnectorSoakService,
+    reviewed_broker_soak_sequence_is_accepted,
+)
 
 BROKER_CONNECTOR_SOAK_RUN_SCHEMA_VERSION = (
     "karkinos.broker_connector_soak_operational_run.v1"
@@ -15,22 +20,43 @@ BROKER_CONNECTOR_SOAK_RUN_SCHEMA_VERSION = (
 BROKER_CONNECTOR_SOAK_DRILL_SCHEMA_VERSION = (
     "karkinos.broker_connector_soak_recovery_drill.v1"
 )
+BROKER_CONNECTOR_SOAK_RESTART_CHECKPOINT_SCHEMA_VERSION = (
+    "karkinos.broker_connector_soak_restart_checkpoint.v1"
+)
 BROKER_CONNECTOR_SOAK_RUN_EVENT_TYPE = "broker_connector.soak_run_recorded"
 BROKER_CONNECTOR_SOAK_RUN_ENTITY_TYPE = "broker_connector_soak_operational_run"
 BROKER_CONNECTOR_SOAK_DRILL_EVENT_TYPE = "broker_connector.soak_drill_recorded"
 BROKER_CONNECTOR_SOAK_DRILL_ENTITY_TYPE = "broker_connector_soak_recovery_drill"
+BROKER_CONNECTOR_SOAK_RESTART_CHECKPOINT_EVENT_TYPE = (
+    "broker_connector.soak_restart_checkpoint_prepared"
+)
+BROKER_CONNECTOR_SOAK_RESTART_CHECKPOINT_ENTITY_TYPE = (
+    "broker_connector_soak_restart_checkpoint"
+)
 BROKER_CONNECTOR_SOAK_RUNBOOK_EVENT_SOURCE = "broker_connector_soak_runbook"
 
 BROKER_CONNECTOR_SOAK_PHASES = frozenset({"startup", "intraday", "end_of_day"})
-BROKER_CONNECTOR_SOAK_DRILL_TYPES = frozenset(
+BROKER_CONNECTOR_SOAK_ONE_SHOT_DRILL_TYPES = frozenset(
     {
         "disconnect",
         "schema_drift",
         "stale_data",
+        "cursor_gap",
+        "cursor_out_of_order",
+        "partial_batch",
         "duplicate_evidence",
         "restart_recovery",
     }
 )
+BROKER_CONNECTOR_SOAK_DRILL_TYPES = frozenset(
+    {*BROKER_CONNECTOR_SOAK_ONE_SHOT_DRILL_TYPES, "karkinos_restart"}
+)
+
+_PROCESS_INSTANCE_ID = f"{os.getpid()}:{secrets.token_hex(32)}"
+
+
+class BrokerConnectorSoakRestartCheckpointNotFound(ValueError):
+    """Raised when a requested Karkinos restart checkpoint is unavailable."""
 
 
 class BrokerConnectorSoakRunbookService:
@@ -42,10 +68,14 @@ class BrokerConnectorSoakRunbookService:
         db: Any,
         connectors: list[Any] | tuple[Any, ...],
         clock: Callable[[], datetime] | None = None,
+        process_instance_id: str | None = None,
     ) -> None:
         self._db = db
         self._connectors = list(connectors or [])
         self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self._process_instance_fingerprint = _fingerprint(
+            str(process_instance_id or _PROCESS_INSTANCE_ID)
+        )
 
     def run_phase(
         self,
@@ -113,7 +143,7 @@ class BrokerConnectorSoakRunbookService:
     ) -> dict[str, Any]:
         effective_drill = _choice(
             drill_type,
-            BROKER_CONNECTOR_SOAK_DRILL_TYPES,
+            BROKER_CONNECTOR_SOAK_ONE_SHOT_DRILL_TYPES,
             "drill_type",
         )
         observed_at = _aware_utc(self._clock())
@@ -141,55 +171,139 @@ class BrokerConnectorSoakRunbookService:
             first_observations=first_observations,
             second_observations=second_observations,
         )
-        first_evidence = [_observation_reference(item) for item in first_observations]
-        second_evidence = [_observation_reference(item) for item in second_observations]
+        return self._record_drill(
+            drill_type=effective_drill,
+            observed_at=observed_at,
+            max_snapshot_age_seconds=max_snapshot_age_seconds,
+            first_observations=first_observations,
+            second_observations=second_observations,
+            blockers=blockers,
+        )
+
+    def prepare_karkinos_restart(
+        self,
+        *,
+        max_snapshot_age_seconds: int = 900,
+    ) -> dict[str, Any]:
+        """Bind a strict observation to this process instance before restart."""
+        observed_at = _aware_utc(self._clock())
+        capture = self._soak_service().capture(
+            max_snapshot_age_seconds=max_snapshot_age_seconds
+        )
+        observations = list(capture.get("observations") or [])
+        blockers = _phase_blockers("startup", observations)
+        evidence = [_observation_reference(item) for item in observations]
         input_fingerprint = _fingerprint(
             {
-                "drill_type": effective_drill,
+                "checkpoint_type": "karkinos_restart",
                 "max_snapshot_age_seconds": int(max_snapshot_age_seconds),
-                "first_observations": [
-                    _observation_identity(item) for item in first_evidence
-                ],
-                "second_observations": [
-                    _observation_identity(item) for item in second_evidence
-                ],
+                "prepared_process_instance_fingerprint": (
+                    self._process_instance_fingerprint
+                ),
+                "observations": [_observation_identity(item) for item in evidence],
             }
         )
-        drill_id = _fingerprint(
+        checkpoint_status = "prepared" if not blockers else "blocked"
+        checkpoint_id = _fingerprint(
             {
-                "schema_version": BROKER_CONNECTOR_SOAK_DRILL_SCHEMA_VERSION,
+                "schema_version": (
+                    BROKER_CONNECTOR_SOAK_RESTART_CHECKPOINT_SCHEMA_VERSION
+                ),
                 "input_fingerprint": input_fingerprint,
-                "drill_status": "passed" if not blockers else "failed",
+                "checkpoint_status": checkpoint_status,
             }
         )
         payload = {
-            "schema_version": BROKER_CONNECTOR_SOAK_DRILL_SCHEMA_VERSION,
-            "drill_id": drill_id,
+            "schema_version": BROKER_CONNECTOR_SOAK_RESTART_CHECKPOINT_SCHEMA_VERSION,
+            "checkpoint_id": checkpoint_id,
             "input_fingerprint": input_fingerprint,
-            "drill_type": effective_drill,
-            "observed_at": observed_at.isoformat(),
-            "drill_status": "passed" if not blockers else "failed",
+            "checkpoint_type": "karkinos_restart",
+            "prepared_at": observed_at.isoformat(),
+            "checkpoint_status": checkpoint_status,
             "blockers": blockers,
-            "expected_safe_state": _expected_safe_state(effective_drill),
-            "first_observations": first_evidence,
-            "second_observations": second_evidence,
+            "prepared_process_instance_fingerprint": (
+                self._process_instance_fingerprint
+            ),
+            "observation_count": len(evidence),
+            "observations": evidence,
             "requires_manual_review": True,
             **_safety_flags(),
         }
         result = self._persist_evidence(
-            event_type=BROKER_CONNECTOR_SOAK_DRILL_EVENT_TYPE,
-            entity_type=BROKER_CONNECTOR_SOAK_DRILL_ENTITY_TYPE,
-            entity_id=drill_id,
+            event_type=BROKER_CONNECTOR_SOAK_RESTART_CHECKPOINT_EVENT_TYPE,
+            entity_type=BROKER_CONNECTOR_SOAK_RESTART_CHECKPOINT_ENTITY_TYPE,
+            entity_id=checkpoint_id,
             timestamp=observed_at.isoformat(),
-            source_ref=effective_drill,
+            source_ref="karkinos_restart",
             payload=payload,
         )
-        self._record_alert(
-            evidence_kind="drill",
-            evidence_name=effective_drill,
-            result=result,
-        )
+        if blockers:
+            self._record_alert(
+                evidence_kind="checkpoint",
+                evidence_name="karkinos_restart",
+                result=result,
+            )
         return result
+
+    def complete_karkinos_restart(
+        self,
+        *,
+        checkpoint_id: str,
+        max_snapshot_age_seconds: int = 900,
+    ) -> dict[str, Any]:
+        """Verify exact replay from a checkpoint prepared by another instance."""
+        checkpoint = self._get_restart_checkpoint(checkpoint_id)
+        if checkpoint is None:
+            raise BrokerConnectorSoakRestartCheckpointNotFound(
+                "broker connector soak restart checkpoint not found"
+            )
+        observed_at = _aware_utc(self._clock())
+        capture = self._soak_service().capture(
+            max_snapshot_age_seconds=max_snapshot_age_seconds
+        )
+        first_observations = [
+            item
+            for item in checkpoint.get("observations") or []
+            if isinstance(item, dict)
+        ]
+        second_observations = list(capture.get("observations") or [])
+        prepared_process_fingerprint = str(
+            checkpoint.get("prepared_process_instance_fingerprint") or ""
+        )
+        blockers: list[str] = []
+        if checkpoint.get("checkpoint_status") != "prepared":
+            blockers.append("restart_checkpoint_not_prepared")
+        if not prepared_process_fingerprint:
+            blockers.append("prepared_process_instance_missing")
+        elif prepared_process_fingerprint == self._process_instance_fingerprint:
+            blockers.append("process_instance_unchanged")
+        blockers.extend(
+            _drill_blockers(
+                "karkinos_restart",
+                first_observations=first_observations,
+                second_observations=second_observations,
+            )
+        )
+        return self._record_drill(
+            drill_type="karkinos_restart",
+            observed_at=observed_at,
+            max_snapshot_age_seconds=max_snapshot_age_seconds,
+            first_observations=first_observations,
+            second_observations=second_observations,
+            blockers=list(dict.fromkeys(blockers)),
+            context={
+                "restart_checkpoint_id": str(checkpoint.get("checkpoint_id") or ""),
+                "prepared_process_instance_fingerprint": (prepared_process_fingerprint),
+                "completed_process_instance_fingerprint": (
+                    self._process_instance_fingerprint
+                ),
+                "process_instance_changed": bool(
+                    prepared_process_fingerprint
+                    and prepared_process_fingerprint
+                    != self._process_instance_fingerprint
+                ),
+            },
+        )
 
     def list_runs(self, *, limit: int = 100) -> list[dict[str, Any]]:
         return self._list_evidence(
@@ -204,6 +318,91 @@ class BrokerConnectorSoakRunbookService:
             entity_type=BROKER_CONNECTOR_SOAK_DRILL_ENTITY_TYPE,
             limit=limit,
         )
+
+    def list_restart_checkpoints(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        return self._list_evidence(
+            event_type=BROKER_CONNECTOR_SOAK_RESTART_CHECKPOINT_EVENT_TYPE,
+            entity_type=BROKER_CONNECTOR_SOAK_RESTART_CHECKPOINT_ENTITY_TYPE,
+            limit=limit,
+        )
+
+    def _record_drill(
+        self,
+        *,
+        drill_type: str,
+        observed_at: datetime,
+        max_snapshot_age_seconds: int,
+        first_observations: list[dict[str, Any]],
+        second_observations: list[dict[str, Any]],
+        blockers: list[str],
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        first_evidence = [_observation_reference(item) for item in first_observations]
+        second_evidence = [_observation_reference(item) for item in second_observations]
+        drill_context = dict(context or {})
+        input_fingerprint = _fingerprint(
+            {
+                "drill_type": drill_type,
+                "max_snapshot_age_seconds": int(max_snapshot_age_seconds),
+                "first_observations": [
+                    _observation_identity(item) for item in first_evidence
+                ],
+                "second_observations": [
+                    _observation_identity(item) for item in second_evidence
+                ],
+                "context": drill_context,
+            }
+        )
+        drill_status = "passed" if not blockers else "failed"
+        drill_id = _fingerprint(
+            {
+                "schema_version": BROKER_CONNECTOR_SOAK_DRILL_SCHEMA_VERSION,
+                "input_fingerprint": input_fingerprint,
+                "drill_status": drill_status,
+            }
+        )
+        payload = {
+            "schema_version": BROKER_CONNECTOR_SOAK_DRILL_SCHEMA_VERSION,
+            "drill_id": drill_id,
+            "input_fingerprint": input_fingerprint,
+            "drill_type": drill_type,
+            "observed_at": observed_at.isoformat(),
+            "drill_status": drill_status,
+            "blockers": blockers,
+            "expected_safe_state": _expected_safe_state(drill_type),
+            "first_observations": first_evidence,
+            "second_observations": second_evidence,
+            "requires_manual_review": True,
+            **drill_context,
+            **_safety_flags(),
+        }
+        result = self._persist_evidence(
+            event_type=BROKER_CONNECTOR_SOAK_DRILL_EVENT_TYPE,
+            entity_type=BROKER_CONNECTOR_SOAK_DRILL_ENTITY_TYPE,
+            entity_id=drill_id,
+            timestamp=observed_at.isoformat(),
+            source_ref=drill_type,
+            payload=payload,
+        )
+        self._record_alert(
+            evidence_kind="drill",
+            evidence_name=drill_type,
+            result=result,
+        )
+        return result
+
+    def _get_restart_checkpoint(
+        self,
+        checkpoint_id: str,
+    ) -> dict[str, Any] | None:
+        rows = self._db.list_events_sync(
+            event_type=BROKER_CONNECTOR_SOAK_RESTART_CHECKPOINT_EVENT_TYPE,
+            entity_type=BROKER_CONNECTOR_SOAK_RESTART_CHECKPOINT_ENTITY_TYPE,
+            entity_id=str(checkpoint_id or "").strip(),
+            source=BROKER_CONNECTOR_SOAK_RUNBOOK_EVENT_SOURCE,
+            limit=1,
+        )
+        return _event_response(rows[0], reused=False) if rows else None
 
     def _soak_service(self) -> BrokerConnectorSoakService:
         return BrokerConnectorSoakService(
@@ -320,6 +519,8 @@ def _phase_blockers(
         connector_id = str(observation.get("connector_id") or "unknown")
         if str(observation.get("soak_status") or "blocked") != "healthy":
             blockers.append(f"snapshot_not_healthy:{connector_id}")
+        elif not reviewed_broker_soak_sequence_is_accepted(observation):
+            blockers.append(f"source_sequence_not_accepted:{connector_id}")
         if phase != "end_of_day":
             continue
         reconciliation = observation.get("execution_reconciliation") or {}
@@ -340,13 +541,23 @@ def _drill_blockers(
     if not first_observations:
         return ["no_configured_readonly_connector"]
     blockers: list[str] = []
-    if drill_type in {"disconnect", "schema_drift", "stale_data"}:
+    if drill_type in {
+        "disconnect",
+        "schema_drift",
+        "stale_data",
+        "cursor_gap",
+        "cursor_out_of_order",
+        "partial_batch",
+    }:
         expected = {
             "disconnect": "connector_read_failed:",
             "schema_drift": (
                 "connector_read_failed:UnsupportedLocalJsonSnapshotSchema"
             ),
             "stale_data": "snapshot_stale",
+            "cursor_gap": "source_sequence_cursor_gap",
+            "cursor_out_of_order": "source_sequence_cursor_out_of_order",
+            "partial_batch": "source_sequence_partial_batch",
         }[drill_type]
         for observation in first_observations:
             connector_id = str(observation.get("connector_id") or "unknown")
@@ -379,6 +590,10 @@ def _drill_blockers(
             blockers.append(f"replay_created_duplicate_evidence:{connector_id}")
         if not bool(second.get("reused")):
             blockers.append(f"replay_was_not_reused:{connector_id}")
+        if not reviewed_broker_soak_sequence_is_accepted(first):
+            blockers.append(f"source_sequence_not_accepted:{connector_id}")
+        if not reviewed_broker_soak_sequence_is_accepted(second):
+            blockers.append(f"replay_source_sequence_not_accepted:{connector_id}")
     return list(dict.fromkeys(blockers))
 
 
@@ -387,13 +602,21 @@ def _expected_safe_state(drill_type: str) -> str:
         "disconnect": "blocked_connector_read_failure_without_broker_write",
         "schema_drift": "blocked_unsupported_snapshot_schema_without_broker_write",
         "stale_data": "degraded_snapshot_stale_without_broker_write",
+        "cursor_gap": "blocked_cursor_gap_without_sequence_advance",
+        "cursor_out_of_order": "blocked_out_of_order_cursor_without_sequence_advance",
+        "partial_batch": "blocked_partial_batch_without_sequence_advance",
         "duplicate_evidence": "same_observation_event_reused",
         "restart_recovery": "persisted_observation_reused_by_new_service_instance",
+        "karkinos_restart": (
+            "same_persisted_observation_reused_by_changed_process_instance"
+        ),
     }[drill_type]
 
 
 def _observation_reference(observation: dict[str, Any]) -> dict[str, Any]:
     reconciliation = observation.get("execution_reconciliation") or {}
+    source_contract = observation.get("source_contract") or {}
+    source_sequence = observation.get("source_sequence") or {}
     return {
         "connector_id": str(observation.get("connector_id") or ""),
         "event_id": observation.get("event_id"),
@@ -403,6 +626,45 @@ def _observation_reference(observation: dict[str, Any]) -> dict[str, Any]:
         "soak_status": str(observation.get("soak_status") or "blocked"),
         "blockers": [str(item) for item in observation.get("blockers") or []],
         "reused": bool(observation.get("reused")),
+        "source_contract_required": observation.get("source_contract_required") is True,
+        "qualifies_for_healthy_soak_day": observation.get(
+            "qualifies_for_healthy_soak_day"
+        )
+        is True,
+        "source_contract": {
+            key: source_contract.get(key)
+            for key in (
+                "schema_version",
+                "connector_id",
+                "deployment_identity",
+                "batch_id",
+                "cursor_previous",
+                "cursor_current",
+                "trading_day",
+                "session_phase",
+                "heartbeat_at",
+                "cash_complete",
+                "positions_complete",
+                "orders_complete",
+                "fills_complete",
+            )
+            if key in source_contract
+        },
+        "source_sequence": {
+            key: source_sequence.get(key)
+            for key in (
+                "schema_version",
+                "status",
+                "deployment_identity",
+                "batch_id",
+                "cursor_previous",
+                "cursor_current",
+                "expected_previous_cursor",
+                "accepted",
+                "state_advanced",
+            )
+            if key in source_sequence
+        },
         "execution_reconciliation_status": str(
             reconciliation.get("status") or "not_available"
         ),

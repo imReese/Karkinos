@@ -12,6 +12,7 @@ from server.services.broker_gateway import BrokerGatewayService
 from server.services.execution_reconciliation import ExecutionReconciliationService
 from server.services.oms import OmsService
 from server.services.per_order_confirmation import build_order_fingerprint
+from tests.broker_gateway_fixtures import clear_current_per_order_confirmation
 
 
 def _db_and_oms(tmp_path) -> tuple[AppDatabase, OmsService]:
@@ -30,6 +31,15 @@ def _required_gateway_evidence() -> dict:
             "evidence_ref": "paper_shadow:run-001",
         },
     }
+
+
+def _gateway(db: AppDatabase) -> BrokerGatewayService:
+    return BrokerGatewayService(
+        db=db,
+        current_per_order_confirmation_provider=(
+            lambda order_id: clear_current_per_order_confirmation(order_id)
+        ),
+    )
 
 
 def _confirmed_order(
@@ -391,7 +401,7 @@ def test_reconciliation_flags_manual_ticket_waiting_for_broker_evidence(
 ) -> None:
     db, oms = _db_and_oms(tmp_path)
     order = _confirmed_order(db, oms, gateway_evidence=True)
-    BrokerGatewayService(db=db).create_manual_ticket(order["order_id"], actor="test")
+    _gateway(db).create_manual_ticket(order["order_id"], actor="test")
     service = ExecutionReconciliationService(db=db)
 
     run = service.run_reconciliation(run_date="2026-07-02")
@@ -408,7 +418,7 @@ def test_reconciliation_surfaces_manual_execution_record_without_ledger_mutation
 ) -> None:
     db, oms = _db_and_oms(tmp_path)
     order = _confirmed_order(db, oms, gateway_evidence=True)
-    gateway = BrokerGatewayService(db=db)
+    gateway = _gateway(db)
     gateway.create_manual_ticket(order["order_id"], actor="test")
     preview = gateway.preview_manual_execution_record(
         order["order_id"],
@@ -474,12 +484,22 @@ def test_reconciliation_surfaces_manual_execution_record_without_ledger_mutation
     assert gate_summary["gates"]["risk"] == {
         "status": "pass",
         "evidence_ref": "risk:risk-001",
-        "source": "oms_gateway_evidence",
+        "source": "current_per_order_confirmation",
+        "confirmation_id": "c" * 64,
+        "dossier_fingerprint": "d" * 64,
+        "source_fingerprint": "c" * 64,
+        "source_recorded_at": "2026-07-02T08:02:00+00:00",
+        "resolution_status": "resolved_clear",
     }
     assert gate_summary["gates"]["paper_shadow"] == {
         "status": "pass",
         "evidence_ref": "paper_shadow:run-001",
-        "source": "oms_gateway_evidence",
+        "source": "current_per_order_confirmation",
+        "confirmation_id": "c" * 64,
+        "dossier_fingerprint": "d" * 64,
+        "source_fingerprint": "d" * 64,
+        "source_recorded_at": "2026-07-02T08:03:00+00:00",
+        "resolution_status": "resolved_clear",
     }
     assert gate_summary["gates"]["execution_reconciliation"] == {
         "status": "pending_after_manual_execution",
@@ -493,7 +513,7 @@ def test_reconciliation_marks_manual_ticket_with_matching_broker_evidence_availa
 ) -> None:
     db, oms = _db_and_oms(tmp_path)
     order = _confirmed_order(db, oms, gateway_evidence=True)
-    BrokerGatewayService(db=db).create_manual_ticket(order["order_id"], actor="test")
+    _gateway(db).create_manual_ticket(order["order_id"], actor="test")
     _import_matching_broker_trade(Path(db._path))
     service = ExecutionReconciliationService(db=db)
 
@@ -530,7 +550,7 @@ def test_manual_ticket_execution_and_broker_import_form_a_non_mutating_audit_cha
 ) -> None:
     db, oms = _db_and_oms(tmp_path)
     order = _confirmed_order(db, oms, gateway_evidence=True)
-    gateway = BrokerGatewayService(db=db)
+    gateway = _gateway(db)
     ledger_count_before = _ledger_entry_count(Path(db._path))
 
     ticket = gateway.create_manual_ticket(order["order_id"], actor="test")
@@ -604,7 +624,7 @@ def test_reconciliation_queues_manual_execution_cost_mismatch_without_mutation(
 ) -> None:
     db, oms = _db_and_oms(tmp_path)
     order = _confirmed_order(db, oms, gateway_evidence=True)
-    gateway = BrokerGatewayService(db=db)
+    gateway = _gateway(db)
     gateway.create_manual_ticket(order["order_id"], actor="test")
     preview = gateway.preview_manual_execution_record(
         order["order_id"],
@@ -665,7 +685,7 @@ def test_reconciliation_queues_manual_execution_cost_mismatch_without_mutation(
 def test_reconciliation_flags_broker_evidence_quantity_mismatch(tmp_path) -> None:
     db, oms = _db_and_oms(tmp_path)
     order = _confirmed_order(db, oms, gateway_evidence=True)
-    BrokerGatewayService(db=db).create_manual_ticket(order["order_id"], actor="test")
+    _gateway(db).create_manual_ticket(order["order_id"], actor="test")
     _import_broker_trade(
         Path(db._path),
         event_id="broker-buy-600519-mismatch",

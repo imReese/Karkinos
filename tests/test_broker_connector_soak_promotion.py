@@ -8,12 +8,14 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from account_truth.broker_connector import LOCAL_JSON_SNAPSHOT_SCHEMA_VERSION
 from server.config import TrustedOperatorIdentityConfig
 from server.db import AppDatabase
 from server.services.broker_connector_soak import (
     BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
     BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
     BROKER_CONNECTOR_SOAK_EVENT_TYPE,
+    BROKER_CONNECTOR_SOAK_SOURCE_SEQUENCE_SCHEMA_VERSION,
 )
 from server.services.broker_connector_soak_promotion import (
     BROKER_SOAK_PROMOTION_ACCEPTANCE_EVENT_TYPE,
@@ -75,6 +77,35 @@ def _seed_operational_evidence(
                 "soak_status": "healthy",
                 "blockers": [],
                 "snapshot_fingerprint": snapshot_fingerprint,
+                "source_contract": {
+                    "schema_version": LOCAL_JSON_SNAPSHOT_SCHEMA_VERSION,
+                    "connector_id": CONNECTOR_ID,
+                    "deployment_identity": "promotion-reviewed-deployment",
+                    "batch_id": f"promotion-batch-{index}",
+                    "cursor_previous": index - 1,
+                    "cursor_current": index,
+                    "trading_day": trading_day,
+                    "session_phase": "end_of_day",
+                    "heartbeat_at": observed_at,
+                    "cash_complete": True,
+                    "positions_complete": True,
+                    "orders_complete": True,
+                    "fills_complete": True,
+                },
+                "source_contract_required": True,
+                "source_sequence": {
+                    "schema_version": (
+                        BROKER_CONNECTOR_SOAK_SOURCE_SEQUENCE_SCHEMA_VERSION
+                    ),
+                    "status": "initial" if index == 1 else "advanced",
+                    "deployment_identity": "promotion-reviewed-deployment",
+                    "batch_id": f"promotion-batch-{index}",
+                    "cursor_previous": index - 1,
+                    "cursor_current": index,
+                    "expected_previous_cursor": index - 1,
+                    "accepted": True,
+                    "state_advanced": True,
+                },
                 "qualifies_for_healthy_soak_day": True,
                 "execution_reconciliation": {
                     "status": "clear",
@@ -137,7 +168,12 @@ def _seed_operational_evidence(
                 }
                 for connector_id in drill_connector_ids
             ]
-            if drill_type in {"duplicate_evidence", "restart_recovery"}
+            if drill_type
+            in {
+                "duplicate_evidence",
+                "restart_recovery",
+                "karkinos_restart",
+            }
             else []
         )
         db.append_event_sync(
@@ -154,6 +190,16 @@ def _seed_operational_evidence(
                 "drill_status": "passed",
                 "first_observations": first_observations,
                 "second_observations": second_observations,
+                **(
+                    {
+                        "restart_checkpoint_id": "e" * 64,
+                        "prepared_process_instance_fingerprint": "1" * 64,
+                        "completed_process_instance_fingerprint": "2" * 64,
+                        "process_instance_changed": True,
+                    }
+                    if drill_type == "karkinos_restart"
+                    else {}
+                ),
                 "broker_submission_enabled": False,
             },
         )
@@ -269,6 +315,73 @@ def test_promotion_dossier_binds_full_readonly_operating_and_account_truth_evide
     assert dossier["runtime_execution_authority"] == "disabled"
     assert dossier["broker_submission_enabled"] is False
     assert dossier["authorizes_execution"] is False
+
+
+def test_latest_legacy_boolean_healthy_observation_cannot_promote(tmp_path) -> None:
+    env = _environment(tmp_path)
+    env["db"].append_event_sync(
+        event_type=BROKER_CONNECTOR_SOAK_EVENT_TYPE,
+        timestamp=(NOW + timedelta(minutes=1)).isoformat(),
+        entity_type=BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
+        entity_id="legacy-boolean-healthy-observation",
+        source=BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
+        source_ref=CONNECTOR_ID,
+        payload={
+            "observation_id": "legacy-boolean-healthy-observation",
+            "connector_id": CONNECTOR_ID,
+            "account_alias": ACCOUNT_ALIAS,
+            "account_ref_hash": ACCOUNT_REF_HASH,
+            "trading_day": NOW.date().isoformat(),
+            "soak_status": "healthy",
+            "qualifies_for_healthy_soak_day": True,
+            "blockers": [],
+            "broker_submission_enabled": False,
+        },
+    )
+
+    dossier = env["service"].preview_dossier(CONNECTOR_ID)
+
+    assert dossier["review_status"] == "blocked_review"
+    assert "latest_source_sequence_not_accepted" in dossier["review_blockers"]
+    assert dossier["operational_evidence"]["selected_trading_day_count"] == 20
+    assert dossier["promotion_ready"] is False
+    assert dossier["authorizes_execution"] is False
+
+
+def test_phase_run_must_reference_exact_selected_observations(tmp_path) -> None:
+    env = _environment(tmp_path, omit_phase="intraday")
+    env["db"].append_event_sync(
+        event_type=BROKER_CONNECTOR_SOAK_RUN_EVENT_TYPE,
+        timestamp=(NOW + timedelta(minutes=1)).isoformat(),
+        entity_type=BROKER_CONNECTOR_SOAK_RUN_ENTITY_TYPE,
+        entity_id="forged-same-day-intraday-run",
+        source=BROKER_CONNECTOR_SOAK_RUNBOOK_EVENT_SOURCE,
+        source_ref="intraday",
+        payload={
+            "run_id": "forged-same-day-intraday-run",
+            "phase": "intraday",
+            "run_status": "passed",
+            "observations": [
+                {
+                    "connector_id": CONNECTOR_ID,
+                    "observation_id": f"unselected-{day}",
+                    "snapshot_fingerprint": "f" * 64,
+                    "trading_day": day,
+                    "soak_status": "healthy",
+                }
+                for day in _trading_days()
+            ],
+            "broker_submission_enabled": False,
+        },
+    )
+
+    dossier = env["service"].preview_dossier(CONNECTOR_ID)
+
+    assert dossier["operational_evidence"]["phase_coverage"]["intraday"] == []
+    assert "runbook_phase_coverage_incomplete:intraday:0/20" in (
+        dossier["review_blockers"]
+    )
+    assert dossier["promotion_ready"] is False
 
 
 @pytest.mark.parametrize(
@@ -462,6 +575,36 @@ def test_newer_malformed_replay_does_not_fall_back_to_older_pass(tmp_path) -> No
         dossier["operational_evidence"]["drill_coverage"]["restart_recovery"] is False
     )
     assert "recovery_drill_missing:restart_recovery" in dossier["review_blockers"]
+    assert dossier["promotion_ready"] is False
+
+
+def test_karkinos_restart_without_post_restart_scope_cannot_promote(tmp_path) -> None:
+    env = _environment(tmp_path)
+    env["db"].append_event_sync(
+        event_type=BROKER_CONNECTOR_SOAK_DRILL_EVENT_TYPE,
+        timestamp=(NOW + timedelta(minutes=1)).isoformat(),
+        entity_type=BROKER_CONNECTOR_SOAK_DRILL_ENTITY_TYPE,
+        entity_id="promotion-drill-karkinos-restart-malformed",
+        source=BROKER_CONNECTOR_SOAK_RUNBOOK_EVENT_SOURCE,
+        source_ref="karkinos_restart",
+        payload={
+            "schema_version": "karkinos.broker_connector_soak_recovery_drill.v1",
+            "drill_id": "promotion-drill-karkinos-restart-malformed",
+            "drill_type": "karkinos_restart",
+            "drill_status": "passed",
+            "first_observations": [{"connector_id": CONNECTOR_ID}],
+            "second_observations": [],
+            "process_instance_changed": True,
+            "broker_submission_enabled": False,
+        },
+    )
+
+    dossier = env["service"].preview_dossier(CONNECTOR_ID)
+
+    assert (
+        dossier["operational_evidence"]["drill_coverage"]["karkinos_restart"] is False
+    )
+    assert "recovery_drill_missing:karkinos_restart" in dossier["review_blockers"]
     assert dossier["promotion_ready"] is False
 
 

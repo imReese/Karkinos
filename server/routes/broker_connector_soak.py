@@ -16,6 +16,7 @@ from server.services.broker_connector_soak_promotion import (
     BrokerConnectorSoakPromotionService,
 )
 from server.services.broker_connector_soak_runbook import (
+    BrokerConnectorSoakRestartCheckpointNotFound,
     BrokerConnectorSoakRunbookService,
 )
 
@@ -40,9 +41,23 @@ class BrokerConnectorSoakDrillRequest(BaseModel):
         "disconnect",
         "schema_drift",
         "stale_data",
+        "cursor_gap",
+        "cursor_out_of_order",
+        "partial_batch",
         "duplicate_evidence",
         "restart_recovery",
     ]
+    max_snapshot_age_seconds: int = Field(default=900, ge=60, le=86400)
+
+
+class BrokerConnectorSoakRestartCheckpointCompleteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    checkpoint_id: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[a-f0-9]{64}$",
+    )
     max_snapshot_age_seconds: int = Field(default=900, ge=60, le=86400)
 
 
@@ -127,6 +142,33 @@ def create_router() -> APIRouter:
         limit: int = Query(default=100, ge=1, le=500),
     ) -> list[dict[str, Any]]:
         return _runbook_service().list_drills(limit=limit)
+
+    @router.post("/restart-checkpoints")
+    async def prepare_broker_connector_soak_karkinos_restart(
+        request: BrokerConnectorSoakCaptureRequest | None = None,
+    ) -> dict[str, Any]:
+        max_age = request.max_snapshot_age_seconds if request is not None else 900
+        return _runbook_service().prepare_karkinos_restart(
+            max_snapshot_age_seconds=max_age
+        )
+
+    @router.post("/restart-checkpoints/complete")
+    async def complete_broker_connector_soak_karkinos_restart(
+        request: BrokerConnectorSoakRestartCheckpointCompleteRequest,
+    ) -> dict[str, Any]:
+        try:
+            return _runbook_service().complete_karkinos_restart(
+                checkpoint_id=request.checkpoint_id,
+                max_snapshot_age_seconds=request.max_snapshot_age_seconds,
+            )
+        except BrokerConnectorSoakRestartCheckpointNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @router.get("/restart-checkpoints")
+    async def list_broker_connector_soak_restart_checkpoints(
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> list[dict[str, Any]]:
+        return _runbook_service().list_restart_checkpoints(limit=limit)
 
     @router.get("/promotion/status")
     async def get_broker_connector_soak_promotion_status() -> dict[str, Any]:

@@ -14,6 +14,7 @@ from server.db import AppDatabase
 from server.routes.broker_gateway import create_router
 from server.services.oms import OmsService
 from server.services.trading_controls import TradingControlState
+from tests.broker_gateway_fixtures import clear_current_per_order_confirmation
 
 
 class _ConnectorWouldFailIfQueried:
@@ -32,6 +33,7 @@ def _client_for_db(
     broker_connectors: list[BrokerConnectorConfig] | None = None,
     controlled_bridge_policy=None,
     trading_controls=None,
+    current_per_order_confirmation: dict | None = None,
 ) -> TestClient:
     fake_state = SimpleNamespace(
         db=db,
@@ -42,6 +44,15 @@ def _client_for_db(
         trading_controls=trading_controls,
     )
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        "server.routes.broker_gateway.build_current_per_order_dossier_service",
+        lambda _state: SimpleNamespace(
+            resolve_current_confirmation=lambda order_id: (
+                current_per_order_confirmation
+                or clear_current_per_order_confirmation(order_id)
+            )
+        ),
+    )
     app = FastAPI()
     app.include_router(create_router())
     return TestClient(app)
@@ -525,6 +536,33 @@ def test_manual_ticket_preview_route_is_read_only(tmp_path, monkeypatch) -> None
     )
     assert gate_summary["gates"]["manual_confirmation"]["status"] == "pass"
     assert payload["ticket"]["copy_text"].startswith("BUY 600519 100")
+
+
+def test_manual_ticket_preview_route_rechecks_current_account_truth(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    db = AppDatabase(tmp_path / "broker-gateway.db")
+    db.init_sync()
+    order = _confirmed_order(db)
+    blocked_confirmation = {
+        **clear_current_per_order_confirmation(order["order_id"]),
+        "status": "blocked",
+        "blockers": ["gateway_evidence_source_not_clear:account_truth"],
+    }
+    client = _client_for_db(
+        monkeypatch,
+        db,
+        current_per_order_confirmation=blocked_confirmation,
+    )
+
+    response = client.post(
+        f"/api/broker-gateway/orders/{order['order_id']}/manual-ticket/preview",
+        json={"actor": "test"},
+    )
+
+    assert response.status_code == 409
+    assert "current per-order confirmation not passing" in response.json()["detail"]
     assert db.get_oms_order_sync(order["order_id"])["status"] == "manually_confirmed"
     assert db.list_broker_gateway_events_sync(order_id=order["order_id"]) == []
 
@@ -673,7 +711,14 @@ def test_manual_execution_preview_route_is_read_only(tmp_path, monkeypatch) -> N
     assert len(payload["preview_fingerprint"]) == len("sha256:") + 64
     assert payload["fingerprint_scope"] == (
         "order_id, execution_preview, ledger_entry_draft, "
-        "position_cost_preview, controlled_bridge_policy"
+        "position_cost_preview, controlled_bridge_policy, "
+        "current_per_order_confirmation"
+    )
+    assert (
+        payload["validation"]["gateway_evidence"]["account_truth_resolution"][
+            "source_fingerprint"
+        ]
+        == "a" * 64
     )
     assert payload["ledger_entry_draft"]["amount"] == "-168805.10"
     assert payload["ledger_entry_draft"]["requires_operator_save"] is True

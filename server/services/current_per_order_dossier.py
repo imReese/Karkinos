@@ -29,6 +29,9 @@ CURRENT_PER_ORDER_CANDIDATES_SCHEMA_VERSION = (
 CURRENT_PER_ORDER_EVIDENCE_RESOLUTION_SCHEMA_VERSION = (
     "karkinos.current_per_order_evidence_resolution.v1"
 )
+CURRENT_PER_ORDER_CONFIRMATION_RESOLUTION_SCHEMA_VERSION = (
+    "karkinos.current_per_order_confirmation_resolution.v1"
+)
 CURRENT_PER_ORDER_MAX_CAPITAL_EVALUATION_SCAN = 500
 _FINGERPRINT_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 _BATCH_REFERENCE_PREFIX = "execution_batch_reconciliation:"
@@ -175,6 +178,72 @@ class CurrentPerOrderDossierService:
             operator_approval_id=operator_approval_id,
             acknowledgement=acknowledgement,
         )
+
+    def resolve_current_confirmation(self, order_id: str) -> dict[str, Any]:
+        """Re-resolve the latest signed dossier against current persisted facts."""
+
+        current = self.preview_current(order_id)
+        confirmation = _mapping(current.get("confirmation"))
+        confirmation_id = str(confirmation.get("confirmation_id") or "")
+        if confirmation.get(
+            "status"
+        ) != "recorded_verified_identity" or not _FINGERPRINT_PATTERN.fullmatch(
+            confirmation_id
+        ):
+            return {
+                "schema_version": (
+                    CURRENT_PER_ORDER_CONFIRMATION_RESOLUTION_SCHEMA_VERSION
+                ),
+                "status": "blocked",
+                "confirmation_id": confirmation_id,
+                "order_id": str(order_id),
+                "dossier_fingerprint": str(current.get("dossier_fingerprint") or ""),
+                "current_dossier": {},
+                "current_evidence_resolution": _mapping(
+                    current.get("evidence_resolution")
+                ),
+                "blockers": list(
+                    dict.fromkeys(
+                        [
+                            *[
+                                str(item)
+                                for item in current.get("review_blockers") or []
+                            ],
+                            "current_per_order_confirmation_missing",
+                        ]
+                    )
+                ),
+                "unexpected_hard_blockers": [],
+                **_read_boundary(),
+            }
+
+        resolver = getattr(self._dossier_service, "resolve_confirmation", None)
+        if not callable(resolver):
+            return {
+                "schema_version": (
+                    CURRENT_PER_ORDER_CONFIRMATION_RESOLUTION_SCHEMA_VERSION
+                ),
+                "status": "blocked",
+                "confirmation_id": confirmation_id,
+                "order_id": str(order_id),
+                "dossier_fingerprint": str(current.get("dossier_fingerprint") or ""),
+                "current_dossier": {},
+                "current_evidence_resolution": _mapping(
+                    current.get("evidence_resolution")
+                ),
+                "blockers": ["current_per_order_confirmation_resolver_unavailable"],
+                "unexpected_hard_blockers": [],
+                **_read_boundary(),
+            }
+
+        resolved = resolver(confirmation_id)
+        resolved = resolved if isinstance(resolved, dict) else {}
+        return {
+            **resolved,
+            "schema_version": CURRENT_PER_ORDER_CONFIRMATION_RESOLUTION_SCHEMA_VERSION,
+            "current_evidence_resolution": _mapping(current.get("evidence_resolution")),
+            **_read_boundary(),
+        }
 
     def _require_order(self, order_id: str) -> dict[str, Any]:
         order = self._db.get_oms_order_sync(order_id)

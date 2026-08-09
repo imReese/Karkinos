@@ -5,6 +5,7 @@ import hashlib
 import json
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Event
@@ -446,6 +447,37 @@ def test_signed_exact_cancel_calls_gateway_once_without_mutating_financial_facts
     assert persisted["external_call_performed"] is False
 
 
+def test_cancel_approval_revocation_after_prepare_blocks_external_call(
+    tmp_path,
+) -> None:
+    env = _environment(tmp_path)
+    preview = env["service"].preview(submit_intent_id=env["submit_intent_id"])
+    approval = _approval(env, preview)
+    original_prepare = env["service"]._store.prepare
+
+    def prepare_then_revoke(**kwargs) -> dict:
+        prepared = original_prepare(**kwargs)
+        env["service"]._trusted_operator_identities = (
+            replace(env["identity"], enabled=False),
+        )
+        return prepared
+
+    env["service"]._store.prepare = prepare_then_revoke
+
+    rejected = _cancel(env, preview, approval)
+
+    assert rejected["status"] == "cancel_rejected"
+    assert rejected["external_call_performed"] is False
+    assert rejected["broker_cancel_request_sent"] is False
+    assert (
+        "controlled_broker_cancel_operator_approval_changed"
+        in rejected["result"]["blockers"]
+    )
+    assert env["gateway"].cancel_calls == 0
+    command = env["service"].get_command(rejected["cancel_command_id"])
+    assert command["status"] == "cancel_rejected"
+
+
 def test_duplicate_restart_and_concurrent_cancel_never_repeat_external_effect(
     tmp_path,
 ) -> None:
@@ -511,6 +543,48 @@ def test_timeout_is_unknown_and_only_signed_query_recovery_is_allowed(tmp_path) 
     assert env["gateway"].cancel_calls == 1
     assert env["gateway"].query_calls == 1
     assert _protected_state(env) == before
+
+
+def test_cancel_recovery_approval_revocation_after_claim_blocks_gateway_query(
+    tmp_path,
+) -> None:
+    env = _environment(tmp_path)
+    env["gateway"].cancel_result = TimeoutError("private gateway detail")
+    preview = env["service"].preview(submit_intent_id=env["submit_intent_id"])
+    cancelled = _cancel(env, preview, _approval(env, preview))
+    env["clock"][0] = NOW + timedelta(seconds=31)
+    recovery_preview = env["service"].preview_recovery(
+        cancel_command_id=cancelled["cancel_command_id"]
+    )
+    recovery_approval = _approval(env, recovery_preview, recovery=True)
+    original_claim = env["service"]._store.claim_recovery
+
+    def claim_then_revoke(**kwargs) -> dict:
+        claimed = original_claim(**kwargs)
+        env["service"]._trusted_operator_identities = (
+            replace(env["identity"], enabled=False),
+        )
+        return claimed
+
+    env["service"]._store.claim_recovery = claim_then_revoke
+
+    rejected = _recover(env, recovery_preview, recovery_approval)
+
+    assert rejected["recovery_status"] == "rejected_before_gateway_query"
+    assert (
+        "controlled_broker_cancel_recovery_operator_approval_changed"
+        in rejected["recovery_blockers"]
+    )
+    assert rejected["recovery_query_performed"] is False
+    assert rejected["query_result"]["status"] == "rejected_before_gateway_query"
+    assert env["gateway"].cancel_calls == 1
+    assert env["gateway"].query_calls == 0
+    persisted = env["service"]._store.find_recovery(
+        recovery_fingerprint=recovery_preview["recovery_fingerprint"],
+        operator_approval_id=recovery_approval["approval_id"],
+    )
+    assert persisted["status"] == "completed"
+    assert persisted["result"]["status"] == "rejected_before_gateway_query"
 
 
 def test_restart_from_prepared_claim_queries_without_recancel(tmp_path) -> None:

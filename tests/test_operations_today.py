@@ -226,6 +226,147 @@ def test_operations_today_attention_items_are_deterministic_read_only_tasks() ->
     )
 
 
+def test_operations_today_projects_citic_follow_up_outside_canonical_health() -> None:
+    source_follow_up = {
+        "schema_version": "karkinos.account_truth.citic_source_follow_up.v1",
+        "status": "follow_up_required",
+        "subsystem_status": "manual_action_required",
+        "pending_source_count": 4,
+        "count_complete": True,
+        "required_evidence": [
+            "current_cash_and_position_snapshot",
+            "itemized_settlement_or_cash_flow",
+        ],
+        "error_codes": ["citic_history_xls_settlement_components_missing"],
+        "latest_reviewed_at": "2026-08-03T20:00:00+08:00",
+        "evidence_fingerprint": "sha256:citic-source-fixture",
+        "next_manual_action": ("provide_citic_account_truth_evidence_or_reject_source"),
+        "limitations": ["Incomplete source material only."],
+        "persisted_facts_only": True,
+        "provider_contacted": False,
+        "database_writes_performed": False,
+        "authorizes_execution": False,
+    }
+    baseline = build_operations_today_summary(
+        decision_payload=_decision(),
+        trading_plan=_plan(order_intent_count=0),
+        daily_operations=_operations(manual_ready_count=0),
+        order_facts=[],
+        fill_facts=[],
+        generated_at="2026-08-03T20:01:00+08:00",
+    )
+    summary = build_operations_today_summary(
+        decision_payload=_decision(),
+        trading_plan=_plan(order_intent_count=0),
+        daily_operations=_operations(manual_ready_count=0),
+        order_facts=[],
+        fill_facts=[],
+        citic_source_follow_up=source_follow_up,
+        generated_at="2026-08-03T20:01:00+08:00",
+    )
+
+    assert summary["citic_source_follow_up"] == source_follow_up
+    assert summary["health"] == baseline["health"]
+    assert summary["conclusion_status"] == baseline["conclusion_status"]
+    assert summary["primary_target"] == baseline["primary_target"]
+    assert all(
+        subsystem["id"] != "citic_source_follow_up"
+        for subsystem in summary["subsystems"]
+    )
+    attention = next(
+        item
+        for item in summary["attention_items"]
+        if item["subsystem_id"] == "citic_source_follow_up"
+    )
+    assert attention["status"] == "manual_action_required"
+    assert attention["target"] == "account-truth"
+    assert attention["evidence"] == {
+        "status": "follow_up_required",
+        "observed_at": "2026-08-03T20:00:00+08:00",
+    }
+    assert attention["next_action"] == (
+        "provide_citic_account_truth_evidence_or_reject_source"
+    )
+    assert attention["resolution_condition"] == (
+        "complete_account_truth_evidence_or_explicit_source_rejection_required"
+    )
+    assert attention["read_only_projection"] is True
+    assert attention["provider_contacted"] is False
+    assert attention["database_writes_performed"] is False
+    assert attention["authorizes_execution"] is False
+
+    changed = build_operations_today_summary(
+        decision_payload=_decision(),
+        trading_plan=_plan(order_intent_count=0),
+        daily_operations=_operations(manual_ready_count=0),
+        order_facts=[],
+        fill_facts=[],
+        citic_source_follow_up={
+            **source_follow_up,
+            "evidence_fingerprint": "sha256:changed-citic-source-fixture",
+        },
+        generated_at="2026-08-03T20:02:00+08:00",
+    )
+    changed_attention = next(
+        item
+        for item in changed["attention_items"]
+        if item["subsystem_id"] == "citic_source_follow_up"
+    )
+    assert changed_attention["task_fingerprint"] != attention["task_fingerprint"]
+
+    query_window_attention_summary = build_operations_today_summary(
+        decision_payload=_decision(),
+        trading_plan=_plan(order_intent_count=0),
+        daily_operations=_operations(manual_ready_count=0),
+        order_facts=[],
+        fill_facts=[],
+        citic_source_follow_up={
+            **source_follow_up,
+            "next_manual_action": "review_citic_source_query_windows",
+        },
+        generated_at="2026-08-03T20:03:00+08:00",
+    )
+    query_window_attention = next(
+        item
+        for item in query_window_attention_summary["attention_items"]
+        if item["subsystem_id"] == "citic_source_follow_up"
+    )
+    assert query_window_attention["resolution_condition"] == (
+        "reviewed_query_window_for_each_pending_citic_source_required"
+    )
+
+
+def test_operations_today_requires_a_complete_citic_source_scan_after_truncation():
+    summary = build_operations_today_summary(
+        decision_payload=_decision(),
+        trading_plan=_plan(order_intent_count=0),
+        daily_operations=_operations(manual_ready_count=0),
+        order_facts=[],
+        fill_facts=[],
+        citic_source_follow_up={
+            "status": "citic_source_intake_scan_truncated",
+            "subsystem_status": "blocked",
+            "latest_reviewed_at": None,
+            "evidence_fingerprint": "sha256:citic-scan-truncated-fixture",
+            "next_manual_action": "review_citic_source_intake_scan_limit",
+        },
+        generated_at="2026-08-03T20:04:00+08:00",
+    )
+
+    attention = next(
+        item
+        for item in summary["attention_items"]
+        if item["subsystem_id"] == "citic_source_follow_up"
+    )
+    assert attention["status"] == "blocked"
+    assert attention["next_action"] == "review_citic_source_intake_scan_limit"
+    assert attention["resolution_condition"] == (
+        "complete_citic_source_intake_scan_required"
+    )
+    assert attention["read_only_projection"] is True
+    assert attention["authorizes_execution"] is False
+
+
 def test_operations_today_projects_the_canonical_daily_operations_summary() -> None:
     daily_operations = _operations(manual_ready_count=0).model_copy(
         update={

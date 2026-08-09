@@ -20,6 +20,7 @@ from server.services.broker_connector_runtime import build_broker_connectors
 from server.services.broker_connector_soak_promotion import (
     BrokerConnectorSoakPromotionService,
 )
+from server.services.citic_source_follow_up import build_citic_source_follow_up
 from server.services.controlled_execution_operator_view import (
     ControlledExecutionOperatorViewService,
 )
@@ -99,6 +100,9 @@ async def build_today_operations_payload(state: Any) -> dict[str, Any]:
         ),
     )
     broker_adapter_readiness = build_broker_adapter_readiness(state.db)
+    citic_source_follow_up = build_citic_source_follow_up(
+        getattr(state.db, "_path", None)
+    )
     summary = build_operations_today_summary(
         decision_payload=decision_payload,
         trading_plan=trading_plan,
@@ -112,6 +116,7 @@ async def build_today_operations_payload(state: Any) -> dict[str, Any]:
             selected_audit="operations_runbook",
         ),
         broker_adapter_readiness=broker_adapter_readiness,
+        citic_source_follow_up=citic_source_follow_up,
     )
     return {
         **summary,

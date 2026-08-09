@@ -162,12 +162,29 @@ def test_broker_soak_capture_supports_sanitized_local_broker_export(
         json.dumps(
             {
                 "schema_version": LOCAL_JSON_SNAPSHOT_SCHEMA_VERSION,
+                "connector_id": f"{connector_type}-soak",
                 "captured_at": now.isoformat(),
                 "source_name": f"{connector_type} local export",
                 "account_id": "private-local-export-account",
                 "health": {
                     "status": "healthy",
                     "checked_at": now.isoformat(),
+                },
+                "source_contract": {
+                    "deployment_identity": "route-local-deployment-v2",
+                    "batch_id": "route-local-batch-v2",
+                    "cursor": {"previous": 0, "current": 1},
+                    "trading_day": now.astimezone(timezone(timedelta(hours=8)))
+                    .date()
+                    .isoformat(),
+                    "session_phase": "intraday",
+                    "heartbeat_at": now.isoformat(),
+                    "completeness": {
+                        "cash": True,
+                        "positions": True,
+                        "orders": True,
+                        "fills": True,
+                    },
                 },
                 "cash": {
                     "currency": "CNY",
@@ -200,6 +217,17 @@ def test_broker_soak_capture_supports_sanitized_local_broker_export(
     assert observation["soak_status"] == "healthy"
     assert observation["connector_id"] == f"{connector_type}-soak"
     assert observation["account_alias"] == "sanitized-local-account"
+    assert observation["source_contract"]["deployment_identity"] == (
+        "route-local-deployment-v2"
+    )
+    assert observation["source_contract"]["orders_complete"] is True
+    assert observation["source_sequence"]["status"] == "initial"
+    assert observation["source_sequence"]["accepted"] is True
+    assert observation["source_sequence"]["state_advanced"] is True
+    summary = response.json()["status"]["connectors"][0]
+    assert summary["observed_healthy_trading_day_count"] == 1
+    assert summary["sequence_accepted_trading_day_count"] == 1
+    assert summary["latest_source_sequence_accepted"] is True
     assert "private-local-export-account" not in json.dumps(observation)
     assert observation["broker_submission_enabled"] is False
 

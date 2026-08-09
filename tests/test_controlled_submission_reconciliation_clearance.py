@@ -1532,7 +1532,17 @@ def test_account_truth_review_race_rejects_whole_posting_transaction(
         clearance_preview,
         _approval(env, clearance_preview["clearance_fingerprint"]),
     )
-    ManualReviewRepository(Path(env["db"]._path))
+    review_repository = ManualReviewRepository(Path(env["db"]._path))
+    review_repository.record_decision(
+        import_run_id="fixture_schema_initialization",
+        item_key="fixture",
+        category="fixture",
+        review_status="needs_investigation",
+    )
+    with sqlite3.connect(env["db"]._path) as conn:
+        conn.execute("DELETE FROM reconciliation_review_history")
+        conn.execute("DELETE FROM reconciliation_review_decisions")
+        conn.commit()
     service = _ledger_posting_service(env)
     preview = service.preview(clearance_id=clearance["clearance_id"])
     approval = _ledger_posting_approval(env, preview["posting_fingerprint"])

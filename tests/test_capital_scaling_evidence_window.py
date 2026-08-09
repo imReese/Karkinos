@@ -6,11 +6,13 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from account_truth.broker_connector import LOCAL_JSON_SNAPSHOT_SCHEMA_VERSION
 from server.db import AppDatabase
 from server.services.broker_connector_soak import (
     BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
     BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
     BROKER_CONNECTOR_SOAK_EVENT_TYPE,
+    BROKER_CONNECTOR_SOAK_SOURCE_SEQUENCE_SCHEMA_VERSION,
 )
 from server.services.capital_scaling_evidence_window import (
     CAPITAL_SCALING_ACCOUNT_TRUTH_SNAPSHOT_EVENT_TYPE,
@@ -160,11 +162,39 @@ def _seed_operating_sample(
         source=BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
         source_ref="reviewed-local-broker",
         payload={
+            "connector_id": "reviewed-local-broker",
             "observed_at": observed_at.isoformat(),
             "trading_day": "2026-07-10",
             "soak_status": "healthy",
             "qualifies_for_healthy_soak_day": True,
             "blockers": [],
+            "source_contract_required": True,
+            "source_contract": {
+                "schema_version": LOCAL_JSON_SNAPSHOT_SCHEMA_VERSION,
+                "connector_id": "reviewed-local-broker",
+                "deployment_identity": "capital-reviewed-deployment",
+                "batch_id": "capital-batch-1",
+                "cursor_previous": 0,
+                "cursor_current": 1,
+                "trading_day": "2026-07-10",
+                "session_phase": "end_of_day",
+                "heartbeat_at": observed_at.isoformat(),
+                "cash_complete": True,
+                "positions_complete": True,
+                "orders_complete": True,
+                "fills_complete": True,
+            },
+            "source_sequence": {
+                "schema_version": BROKER_CONNECTOR_SOAK_SOURCE_SEQUENCE_SCHEMA_VERSION,
+                "status": "initial",
+                "deployment_identity": "capital-reviewed-deployment",
+                "batch_id": "capital-batch-1",
+                "cursor_previous": 0,
+                "cursor_current": 1,
+                "expected_previous_cursor": 0,
+                "accepted": True,
+                "state_advanced": True,
+            },
         },
     )
     db.upsert_oms_order_sync(
@@ -343,6 +373,43 @@ def test_clear_evidence_window_computes_after_cost_incident_and_capacity_facts(
     )
     assert recorded["authority_change_applied"] is False
     assert recorded["does_not_submit_or_cancel_broker_order"] is True
+
+
+def test_legacy_boolean_healthy_soak_cannot_enter_capital_window(tmp_path) -> None:
+    db, service, state = _service_with_mutable_source(tmp_path)
+    _record_boundary_account_truth(service, state)
+    _seed_portfolio_boundaries(db)
+    _seed_reconciled_real_fill(db)
+    _seed_operating_sample(db)
+    observed_at = START + timedelta(days=10, hours=9)
+    db.append_event_sync(
+        event_type=BROKER_CONNECTOR_SOAK_EVENT_TYPE,
+        timestamp=observed_at.isoformat(),
+        entity_type=BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
+        entity_id="legacy-boolean-healthy-capital-soak",
+        source=BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
+        source_ref="reviewed-local-broker",
+        payload={
+            "connector_id": "reviewed-local-broker",
+            "observed_at": observed_at.isoformat(),
+            "trading_day": "2026-07-11",
+            "soak_status": "healthy",
+            "qualifies_for_healthy_soak_day": True,
+            "blockers": [],
+            "broker_submission_enabled": False,
+        },
+    )
+
+    result = service.preview_window(
+        review_window_start=START,
+        review_window_end=END,
+    )
+
+    operating_sample = result["facts"]["operating_sample"]
+    assert operating_sample["status"] == "blocked"
+    assert "broker_soak_source_sequence_not_accepted" in (operating_sample["blockers"])
+    assert result["status"] == "blocked"
+    assert result["authority_change_applied"] is False
 
 
 def test_execution_scope_blocks_unbound_operating_sample_order(tmp_path) -> None:
