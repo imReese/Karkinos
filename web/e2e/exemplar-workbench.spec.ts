@@ -1001,13 +1001,20 @@ test('risk initial load preserves priorities, metrics, and controlled-action hie
   page,
 }) => {
   let duplicateRiskSummaryRequestCount = 0;
-  let releasePrimaryResponses = () => {};
-  const primaryResponsesHeld = new Promise<void>((resolve) => {
-    releasePrimaryResponses = resolve;
+  let releaseStateResponse = () => {};
+  let releaseWorkspaceResponse = () => {};
+  const stateResponseHeld = new Promise<void>((resolve) => {
+    releaseStateResponse = resolve;
   });
-  const holdPrimaryResponse = async (route: Route) => {
+  const workspaceResponseHeld = new Promise<void>((resolve) => {
+    releaseWorkspaceResponse = resolve;
+  });
+  const holdPrimaryResponse = async (
+    route: Route,
+    responseHeld: Promise<void>,
+  ) => {
     const response = await route.fetch();
-    await primaryResponsesHeld;
+    await responseHeld;
     await route.fulfill({ response });
   };
 
@@ -1015,8 +1022,12 @@ test('risk initial load preserves priorities, metrics, and controlled-action hie
     duplicateRiskSummaryRequestCount += 1;
     await route.abort();
   });
-  await page.route('**/api/portfolio/state', holdPrimaryResponse);
-  await page.route('**/api/portfolio/risk-workspace', holdPrimaryResponse);
+  await page.route('**/api/portfolio/state', (route) =>
+    holdPrimaryResponse(route, stateResponseHeld),
+  );
+  await page.route('**/api/portfolio/risk-workspace', (route) =>
+    holdPrimaryResponse(route, workspaceResponseHeld),
+  );
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/risk');
 
@@ -1074,7 +1085,84 @@ test('risk initial load preserves priorities, metrics, and controlled-action hie
     loadingGeometry.metricsBottom,
   );
 
-  releasePrimaryResponses();
+  releaseStateResponse();
+  const liveExceptions = page.getByTestId('risk-loading-live-exceptions');
+  await expect(liveExceptions).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('risk-loading-exceptions')).toHaveCount(0);
+  await expect(liveExceptions.locator(':scope li')).not.toHaveCount(0);
+  await expect(page.getByTestId('risk-loading-live-metrics')).toHaveCount(0);
+  await expect(page.getByTestId('risk-loading-metrics')).toBeVisible();
+
+  const partialGeometry = await page.evaluate(() => {
+    const liveExceptions = document.querySelector(
+      '[data-testid="risk-loading-live-exceptions"]',
+    )!;
+    const metrics = document.querySelector(
+      '[data-testid="risk-loading-metrics"]',
+    )!;
+    return {
+      documentOverflow:
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+      exceptionTop: liveExceptions.getBoundingClientRect().top,
+      metricsTop: metrics.getBoundingClientRect().top,
+    };
+  });
+  expect(partialGeometry.documentOverflow).toBeLessThanOrEqual(0);
+  expect(partialGeometry.metricsTop).toBeGreaterThan(
+    partialGeometry.exceptionTop,
+  );
+
+  await page.setViewportSize({ width: 834, height: 1112 });
+  const tabletPartialGeometry = await page.evaluate(() => {
+    const liveExceptions = document.querySelector(
+      '[data-testid="risk-loading-live-exceptions"]',
+    )!;
+    const metrics = document.querySelector(
+      '[data-testid="risk-loading-metrics"]',
+    )!;
+    return {
+      documentOverflow:
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+      exceptionTop: liveExceptions.getBoundingClientRect().top,
+      metricsTop: metrics.getBoundingClientRect().top,
+    };
+  });
+  expect(tabletPartialGeometry.documentOverflow).toBeLessThanOrEqual(0);
+  expect(tabletPartialGeometry.metricsTop).toBeGreaterThan(
+    tabletPartialGeometry.exceptionTop,
+  );
+
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const desktopPartialGeometry = await page.evaluate(() => {
+    const liveExceptions = document.querySelector(
+      '[data-testid="risk-loading-live-exceptions"]',
+    )!.getBoundingClientRect();
+    const metrics = document
+      .querySelector('[data-testid="risk-loading-metrics"]')!
+      .getBoundingClientRect();
+    return {
+      documentOverflow:
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+      exceptionRight: liveExceptions.right,
+      exceptionTop: liveExceptions.top,
+      metricsLeft: metrics.left,
+      metricsTop: metrics.top,
+    };
+  });
+  expect(desktopPartialGeometry.documentOverflow).toBeLessThanOrEqual(0);
+  expect(desktopPartialGeometry.metricsLeft).toBeGreaterThanOrEqual(
+    desktopPartialGeometry.exceptionRight,
+  );
+  expect(
+    Math.abs(
+      desktopPartialGeometry.metricsTop - desktopPartialGeometry.exceptionTop,
+    ),
+  ).toBeLessThanOrEqual(80);
+
+  releaseWorkspaceResponse();
   await expect(page.getByTestId('risk-blocking-register')).toBeVisible();
   await expect(page.getByTestId('risk-metric-rail')).toBeVisible();
   await expect(page.getByTestId('risk-summary-loading-state')).toHaveCount(0);
