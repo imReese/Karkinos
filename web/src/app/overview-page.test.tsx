@@ -608,10 +608,30 @@ test('uses a compact evidence-first layout while persisted overview projections 
   expect(
     screen.getByText('Loading account facts and current holdings.'),
   ).toBeTruthy();
-  expect(screen.getByTestId('evidence-loading-metrics').children).toHaveLength(
-    6,
-  );
-  expect(screen.getByTestId('evidence-loading-rows').children).toHaveLength(3);
+  const loadingWorkspace = screen.getByTestId('overview-loading-workspace');
+  expect(
+    screen.getByTestId('overview-loading-supporting-metrics').children,
+  ).toHaveLength(5);
+  expect(
+    screen.getByTestId('overview-loading-queue-rows').children,
+  ).toHaveLength(2);
+  expect(
+    screen.getByTestId('overview-loading-holding-rows').children,
+  ).toHaveLength(3);
+  expect(
+    within(loadingWorkspace).getByRole('heading', {
+      level: 2,
+      name: 'Today to review',
+    }),
+  ).toBeTruthy();
+  expect(
+    within(loadingWorkspace).getByRole('heading', {
+      level: 2,
+      name: 'Current positions',
+    }),
+  ).toBeTruthy();
+  expect(loadingWorkspace.textContent).not.toMatch(/[¥$€£]|\d+[,.]\d{2}/);
+  expect(screen.queryByTestId('evidence-loading-workspace')).toBeNull();
   expect(screen.queryByTestId('account-metrics-skeleton')).toBeNull();
   expect(screen.queryByTestId('equity-curve-skeleton')).toBeNull();
 });
