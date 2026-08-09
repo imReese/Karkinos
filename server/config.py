@@ -127,7 +127,9 @@ _AI_CONFIG_GROUP_FIELDS = frozenset(
         "api_key_env",
     }
 )
-_ACCOUNT_TRUTH_CONFIG_GROUP_FIELDS = frozenset({"broker_statement_collector"})
+_ACCOUNT_TRUTH_CONFIG_GROUP_FIELDS = frozenset(
+    {"broker_statement_collector", "citic_history_xls_directory"}
+)
 _BROKER_STATEMENT_COLLECTOR_ALLOWED_FIELDS = frozenset(
     {
         "enabled",
@@ -135,6 +137,15 @@ _BROKER_STATEMENT_COLLECTOR_ALLOWED_FIELDS = frozenset(
         "poll_interval_seconds",
         "stability_delay_seconds",
         "max_file_bytes",
+    }
+)
+_CITIC_HISTORY_XLS_DIRECTORY_ALLOWED_FIELDS = frozenset(
+    {
+        "enabled",
+        "path",
+        "max_files",
+        "max_file_bytes",
+        "max_total_bytes",
     }
 )
 _ENV_NAME_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
@@ -239,6 +250,14 @@ def _normalize_grouped_config_payload(raw: object) -> dict:
                     "and flat"
                 )
             data["broker_statement_collector"] = collector
+        citic_directory = account_truth.get("citic_history_xls_directory")
+        if citic_directory is not None:
+            if "citic_history_xls_directory" in data:
+                raise ValueError(
+                    "CITIC history XLS directory config cannot appear both "
+                    "grouped and flat"
+                )
+            data["citic_history_xls_directory"] = citic_directory
 
     return data
 
@@ -418,6 +437,49 @@ class BrokerStatementCollectorConfig:
 
 
 @dataclass(frozen=True)
+class CiticHistoryXlsDirectoryConfig:
+    """Explicit local directory used only by human-triggered read-only scans."""
+
+    enabled: bool = False
+    path: str = ""
+    max_files: int = 120
+    max_file_bytes: int = 10 * 1024 * 1024
+    max_total_bytes: int = 64 * 1024 * 1024
+
+    def __post_init__(self) -> None:
+        prefix = "account_truth.citic_history_xls_directory"
+        if not isinstance(self.enabled, bool):
+            raise ValueError(f"{prefix}.enabled must be boolean")
+        if not isinstance(self.path, str):
+            raise ValueError(f"{prefix}.path must be a string")
+        normalized_path = self.path.strip()
+        if self.enabled and not normalized_path:
+            raise ValueError(f"enabled {prefix} requires a non-empty path")
+        if normalized_path and not Path(normalized_path).is_absolute():
+            raise ValueError(f"{prefix}.path must be absolute when provided")
+        for field_name, value, minimum, maximum in (
+            ("max_files", self.max_files, 1, 600),
+            ("max_file_bytes", self.max_file_bytes, 1024, 10 * 1024 * 1024),
+            ("max_total_bytes", self.max_total_bytes, 1024, 100 * 1024 * 1024),
+        ):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or value < minimum
+                or value > maximum
+            ):
+                raise ValueError(
+                    f"{prefix}.{field_name} must be an integer within "
+                    f"[{minimum}, {maximum}]"
+                )
+        if self.max_total_bytes < self.max_file_bytes:
+            raise ValueError(
+                f"{prefix}.max_total_bytes must be greater than or equal to "
+                "max_file_bytes"
+            )
+
+
+@dataclass(frozen=True)
 class DataSourceProviderConfig:
     """Credential-free provider edge settings for market-data startup."""
 
@@ -508,6 +570,12 @@ class BacktestConfig:
                     data["broker_statement_collector"]
                 )
             )
+        if "citic_history_xls_directory" in data:
+            data["citic_history_xls_directory"] = (
+                _parse_citic_history_xls_directory_config(
+                    data["citic_history_xls_directory"]
+                )
+            )
         _validate_core_runtime_values(data)
         if "controlled_bridge_policy" in data:
             data["controlled_bridge_policy"] = _parse_controlled_bridge_policy_config(
@@ -551,7 +619,7 @@ class ServerConfig(BacktestConfig):
 
     host: str = "0.0.0.0"
     port: int = 8000
-    live_auto_start: bool = True
+    live_auto_start: bool = False
     market_calendar_auto_sync: bool = True
     cors_allowed_origins: list[str] = field(
         default_factory=lambda: [
@@ -561,6 +629,9 @@ class ServerConfig(BacktestConfig):
     )
     broker_statement_collector: BrokerStatementCollectorConfig = field(
         default_factory=BrokerStatementCollectorConfig
+    )
+    citic_history_xls_directory: CiticHistoryXlsDirectoryConfig = field(
+        default_factory=CiticHistoryXlsDirectoryConfig
     )
     controlled_bridge_policy: ControlledBridgePolicyConfig = field(
         default_factory=ControlledBridgePolicyConfig
@@ -628,6 +699,28 @@ def _parse_broker_statement_collector_config(
         poll_interval_seconds=value.get("poll_interval_seconds", 5.0),
         stability_delay_seconds=value.get("stability_delay_seconds", 2.0),
         max_file_bytes=value.get("max_file_bytes", 10 * 1024 * 1024),
+    )
+
+
+def _parse_citic_history_xls_directory_config(
+    value: object,
+) -> CiticHistoryXlsDirectoryConfig:
+    if value is None:
+        return CiticHistoryXlsDirectoryConfig()
+    if not isinstance(value, dict):
+        raise ValueError("account_truth.citic_history_xls_directory must be an object")
+    unknown = sorted(set(value) - _CITIC_HISTORY_XLS_DIRECTORY_ALLOWED_FIELDS)
+    if unknown:
+        raise ValueError(
+            "account_truth.citic_history_xls_directory contains unsupported "
+            "fields: " + ", ".join(unknown)
+        )
+    return CiticHistoryXlsDirectoryConfig(
+        enabled=value.get("enabled", False),
+        path=value.get("path", ""),
+        max_files=value.get("max_files", 120),
+        max_file_bytes=value.get("max_file_bytes", 10 * 1024 * 1024),
+        max_total_bytes=value.get("max_total_bytes", 64 * 1024 * 1024),
     )
 
 

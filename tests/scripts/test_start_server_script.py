@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
 
 
@@ -24,8 +26,103 @@ def test_start_server_guides_local_data_source_configuration():
     )
 
 
-def test_start_server_no_live_path_avoids_empty_env_prefix_expansion():
+def test_start_server_does_not_force_live_mode():
     script = Path("scripts/start_server.sh").read_text()
 
-    assert 'if [[ ${#ENV_PREFIX[@]} -gt 0 ]]; then\n\tif command -v setsid' in script
-    assert 'env "${NO_PROXY_ENV[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}"' in script
+    assert "it does not enable live monitoring" in script
+    assert "ENV_PREFIX" not in script
+    assert "KARKINOS_LIVE_AUTO_START=true uv" not in script
+    assert (
+        'env "${NO_PROXY_ENV[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}"' in script
+    )
+
+
+def _write_executable(path: Path, content: str) -> None:
+    path.write_text(content, encoding="utf-8")
+    path.chmod(0o755)
+
+
+def _preflight_repo(tmp_path: Path, *, health_response: str, curl_exit: int) -> Path:
+    repo = tmp_path / "repo"
+    scripts = repo / "scripts"
+    bin_dir = tmp_path / "bin"
+    scripts.mkdir(parents=True)
+    bin_dir.mkdir()
+    (repo / "web").mkdir()
+    (repo / "pyproject.toml").write_text("[project]\nname='test'\n")
+    (repo / "web" / "package.json").write_text('{"scripts":{"build":"true"}}')
+    (scripts / "start_server.sh").write_text(
+        Path("scripts/start_server.sh").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (scripts / "start_server.sh").chmod(0o755)
+    _write_executable(
+        bin_dir / "uv",
+        "#!/usr/bin/env bash\n"
+        'if [[ "$*" == *"python -c"* ]]; then exit 0; fi\n'
+        f"touch '{tmp_path / 'uv-launch-called'}'\n",
+    )
+    _write_executable(
+        bin_dir / "npm",
+        f"#!/usr/bin/env bash\ntouch '{tmp_path / 'npm-called'}'\n",
+    )
+    _write_executable(bin_dir / "lsof", "#!/usr/bin/env bash\necho 4242\n")
+    _write_executable(
+        bin_dir / "curl",
+        "#!/usr/bin/env bash\n"
+        f"printf '%s' '{health_response}'\n"
+        f"exit {curl_exit}\n",
+    )
+    return repo
+
+
+def test_start_server_reports_healthy_existing_service_before_build(tmp_path: Path):
+    repo = _preflight_repo(
+        tmp_path,
+        health_response=(
+            '{"schema_version":"karkinos.service_health.v1","status":"alive"}'
+        ),
+        curl_exit=0,
+    )
+    result = subprocess.run(
+        ["bash", "scripts/start_server.sh", "dev"],
+        cwd=repo,
+        env={
+            **os.environ,
+            "HOME": str(tmp_path / "home"),
+            "PATH": f"{tmp_path / 'bin'}:{os.environ['PATH']}",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "already responding at http://127.0.0.1:8000" in result.stderr
+    assert "Listener PID(s): 4242" in result.stderr
+    assert "No process was terminated." in result.stderr
+    assert not (tmp_path / "npm-called").exists()
+    assert not (tmp_path / "uv-launch-called").exists()
+
+
+def test_start_server_reports_unresponsive_listener_without_killing(tmp_path: Path):
+    repo = _preflight_repo(tmp_path, health_response="", curl_exit=28)
+    result = subprocess.run(
+        ["bash", "scripts/start_server.sh", "prod"],
+        cwd=repo,
+        env={
+            **os.environ,
+            "HOME": str(tmp_path / "home"),
+            "PATH": f"{tmp_path / 'bin'}:{os.environ['PATH']}",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "port 8000 is occupied" in result.stderr
+    assert "liveness did not respond" in result.stderr
+    assert "Listener PID(s): 4242" in result.stderr
+    assert "No process was terminated." in result.stderr
+    assert not (tmp_path / "uv-launch-called").exists()

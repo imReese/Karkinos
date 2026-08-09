@@ -26,16 +26,20 @@ from server.config import (
     BrokerConnectorConfig,
     BrokerFeeScheduleConfig,
     BrokerStatementCollectorConfig,
+    CiticHistoryXlsDirectoryConfig,
     ControlledBridgePolicyConfig,
     DataSourceProviderConfig,
     ServerConfig,
     TrustedOperatorIdentityConfig,
 )
+from server.models import SettingsResponse
 
 
 def test_runtime_config_defaults_do_not_seed_real_cash():
     assert BacktestConfig().initial_cash == Decimal("0")
     assert ServerConfig().initial_cash == Decimal("0")
+    assert ServerConfig().live_auto_start is False
+    assert SettingsResponse().live_auto_start is False
 
 
 def test_load_runtime_config_prefers_json_file(tmp_path, monkeypatch):
@@ -163,6 +167,64 @@ def test_server_config_rejects_unsafe_broker_statement_collector(
     config_path = tmp_path / "config.json"
     config_path.write_text(
         json.dumps({"account_truth": {"broker_statement_collector": collector}}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=message):
+        ServerConfig.from_json(config_path)
+
+
+def test_server_config_loads_explicit_citic_history_xls_directory(tmp_path):
+    export_path = tmp_path / "private-exports"
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "account_truth": {
+                    "citic_history_xls_directory": {
+                        "enabled": True,
+                        "path": str(export_path),
+                        "max_files": 24,
+                        "max_file_bytes": 4096,
+                        "max_total_bytes": 8192,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = ServerConfig.from_json(config_path)
+
+    assert config.citic_history_xls_directory == CiticHistoryXlsDirectoryConfig(
+        enabled=True,
+        path=str(export_path),
+        max_files=24,
+        max_file_bytes=4096,
+        max_total_bytes=8192,
+    )
+
+
+@pytest.mark.parametrize(
+    ("directory", "message"),
+    [
+        ({"enabled": "true"}, "enabled must be boolean"),
+        ({"enabled": True, "path": ""}, "requires a non-empty path"),
+        ({"path": "relative/private"}, "path must be absolute"),
+        ({"max_files": 0}, "max_files"),
+        ({"max_file_bytes": 10 * 1024 * 1024 + 1}, "max_file_bytes"),
+        ({"max_total_bytes": 512}, "max_total_bytes"),
+        ({"watch": True}, "unsupported fields: watch"),
+    ],
+)
+def test_server_config_rejects_unsafe_citic_history_xls_directory(
+    tmp_path,
+    directory,
+    message,
+):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps({"account_truth": {"citic_history_xls_directory": directory}}),
         encoding="utf-8",
     )
 
@@ -1165,7 +1227,7 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
     assert example["server"] == {
         "host": "127.0.0.1",
         "port": 8000,
-        "live_auto_start": True,
+        "live_auto_start": False,
         "market_calendar_auto_sync": True,
         "cors_allowed_origins": [
             "http://localhost:5173",
@@ -1187,7 +1249,14 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
             "poll_interval_seconds": 5,
             "stability_delay_seconds": 2,
             "max_file_bytes": 10485760,
-        }
+        },
+        "citic_history_xls_directory": {
+            "enabled": False,
+            "path": "",
+            "max_files": 120,
+            "max_file_bytes": 10485760,
+            "max_total_bytes": 67108864,
+        },
     }
     assert example["ai"] == {
         "enabled": False,
@@ -1364,6 +1433,7 @@ def test_lifespan_reuses_cached_runtime_config(monkeypatch):
     from server import app as app_module
 
     runtime_config = ServerConfig(live_auto_start=False)
+    schedulers = []
     fake_app = SimpleNamespace(
         state=SimpleNamespace(config_overrides={}, runtime_config=runtime_config)
     )
@@ -1385,6 +1455,7 @@ def test_lifespan_reuses_cached_runtime_config(monkeypatch):
     class FakeScheduler:
         def __init__(self, *args, **kwargs):
             self.started = False
+            schedulers.append(self)
 
         def start(self):
             self.started = True
@@ -1414,6 +1485,8 @@ def test_lifespan_reuses_cached_runtime_config(monkeypatch):
         async with app_module.lifespan(fake_app):
             assert app_module.get_app_state().config is runtime_config
             assert fake_app.state.config is runtime_config
+            assert len(schedulers) == 1
+            assert schedulers[0].started is False
 
     try:
         asyncio.run(run_lifespan())

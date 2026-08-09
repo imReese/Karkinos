@@ -9,13 +9,18 @@ in the application packages such as `data`, `account_truth`, `analytics`, and
 
 | Command | Purpose | Local writes or external contact |
 | --- | --- | --- |
-| `./scripts/start_server.sh dev` | Build the product bundle, start the reloadable backend, and start Vite on port 5173. Live monitoring is enabled unless `--no-live` is passed. | Writes PID and log files; may install missing frontend dependencies. |
+| `./scripts/start_server.sh dev` | Build the product bundle, start the reloadable backend, and start Vite on port 5173. Live monitoring remains off unless explicitly enabled in configuration or the environment. | Writes PID and log files; may install missing frontend dependencies. |
 | `./scripts/start_server.sh prod` | Start the backend against the existing `web/dist` bundle without code hot reload. | Writes a PID and server log. |
 | `./scripts/stop_server.sh` | Stop tracked backend and Vite processes and clean matching orphan listeners. | Terminates tracked or matching processes and, as a fallback, listeners on the configured ports. |
 | `uv run python scripts/configure_data_source.py` | Select AKShare or Tushare without placing credentials in `config.json` or command history. | Updates ignored local `config.json` and `.env`; Tushare tokens are entered interactively. |
 
 Use `http://127.0.0.1:5173` while editing the frontend in `dev` mode. Port 8000
 continues to serve the product-style `web/dist` bundle and backend API.
+Before building or launching, the start script checks the selected backend port.
+If a listener already exists, it distinguishes a responding Karkinos process-
+liveness endpoint from an unresponsive or foreign listener, reports the PID,
+and exits without terminating anything. Stop the intended instance explicitly
+or choose another port.
 
 ## Market-data maintenance
 
@@ -31,11 +36,15 @@ quote scheduler.
 
 | Command | Purpose |
 | --- | --- |
+| `uv run python scripts/preview_citic_history_xls.py --path FILE_OR_DIRECTORY` | Privacy-minimized, read-only schema and evidence-gap preview for local CITIC `历史成交` legacy XLS exports. It never prints event/account values or persists evidence. |
 | `uv run python scripts/import_broker_order_lifecycle.py --file FILE` | Validate one broker-neutral exact-order lifecycle export. |
 | `uv run python scripts/ingest_broker_order_lifecycle_collector_batch.py --file FILE` | Validate one broker-neutral collector batch and its cursor transition. |
 | `uv run python scripts/migrate_legacy_qmt_order_lifecycle.py --file FILE` | Explicitly convert the retired QMT v1 export schema into the canonical broker-neutral schema. It does not import the QMT SDK or contact a broker. |
 
-Preview is the default for all three commands. Persistence requires `--record`
+The CITIC history command is preview-only and deliberately remains blocked
+until itemized settlement components plus cash and position snapshots are
+supplied through separately reviewed evidence. Preview is the default for the
+other three commands. Persistence requires `--record`
 and the exact acknowledgement printed by the command contract. Recording only
 stores validated evidence; it does not submit or cancel orders, mutate the
 production ledger, or grant execution authority.

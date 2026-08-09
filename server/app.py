@@ -435,6 +435,7 @@ def create_app(
         create_router as per_order_confirmation_router,
     )
     from server.routes.portfolio import create_router as portfolio_router
+    from server.routes.service_health import create_router as service_health_router
     from server.routes.session_start_account_truth import (
         create_router as session_start_account_truth_router,
     )
@@ -452,6 +453,7 @@ def create_app(
     from server.routes.trading import create_router as trading_router
     from server.ws.handlers import router as ws_router
 
+    app.include_router(service_health_router())
     app.include_router(market_router())
     app.include_router(acceptance_audit_router())
     app.include_router(account_strategy_router())
