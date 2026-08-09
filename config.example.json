@@ -2,7 +2,7 @@
     "server": {
         "host": "127.0.0.1",
         "port": 8000,
-        "live_auto_start": true,
+        "live_auto_start": false,
         "market_calendar_auto_sync": true,
         "cors_allowed_origins": [
             "http://localhost:5173",
@@ -26,6 +26,13 @@
             "poll_interval_seconds": 5,
             "stability_delay_seconds": 2,
             "max_file_bytes": 10485760
+        },
+        "citic_history_xls_directory": {
+            "enabled": false,
+            "path": "",
+            "max_files": 120,
+            "max_file_bytes": 10485760,
+            "max_total_bytes": 67108864
         }
     },
     "broker_fee": {

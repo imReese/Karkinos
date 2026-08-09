@@ -58,7 +58,7 @@ python -m server
 | --- | --- | --- | --- |
 | `host` | string | `0.0.0.0` | API 监听地址；本机开发可使用 `127.0.0.1`。 |
 | `port` | integer | `8000` | API 监听端口。 |
-| `live_auto_start` | boolean | `true` | 是否随 Web 服务启动内建行情调度器；不会自动授予下单权限。 |
+| `live_auto_start` | boolean | `false` | 只有显式启用时才随 Web 服务启动内建行情调度器。调度器可能联系已配置行情 provider 并持久化采集批次，但不会授予下单权限。 |
 | `market_calendar_auto_sync` | boolean | `true` | 实时启动开启时，自动采集当年上交所日历并与年度官方休市公告交叉核验；每年 12 月起同时采集下一年。 |
 | `cors_allowed_origins` | string[] | 本机前端地址 | 允许访问 API 的浏览器 origin。 |
 | `notification` | object | `{"type":"console"}` | 只保存通知通道类型：`console`、`telegram` 或 `wechat`；凭证和目标字段会被拒绝。 |
@@ -99,6 +99,23 @@ kill switch 或资本权限。
 不完整事件。相同 fingerprint 在重复轮询或重启后复用既有 import run，不产生重复 Account Truth
 事件。状态可从 `GET /api/account-truth/broker-statement/collector` 查看。手工上传仍作为显式
 fallback，但不再是已启用本地 collector 的日常必需步骤。
+
+`account_truth.citic_history_xls_directory` 是另一条显式启用、按需触发的中信旧版 XLS
+检查来源，不会在后台自动轮询。`GET /api/account-truth/citic-history-xls/directory`
+只返回脱敏配置状态；只有操作员调用 `POST .../directory/scan` 后才会读取文件。API
+不返回配置路径或任何来源文件名。
+
+| 字段 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `enabled` | boolean | `false` | 允许显式扫描命令，但不会启动后台任务。 |
+| `path` | string | 空 | 私有目录的绝对路径；仅启用时必填。 |
+| `max_files` | integer | `120` | 直属 `.xls` 候选上限，范围 1–600。 |
+| `max_file_bytes` | integer | `10485760` | 单文件上限，范围 1 KiB–10 MiB。 |
+| `max_total_bytes` | integer | `67108864` | 总读取上限，不小于单文件上限且不超过 100 MiB。 |
+
+扫描拒绝符号链接、子目录遍历、读取中变化的文件和超限输入；只返回按内容去重的
+隐私最小化预览，不做持久化。第二次显式复核会重新扫描目录，并且必须找到同一完整
+SHA-256，之后也只能保存待补证/拒绝元数据；解析事件仍不能进入 Account Truth 或对账。
 
 ### broker_fee
 
@@ -194,7 +211,7 @@ AI 凭证解析顺序为：
 
 运行时仍接受以下高级顶层字段，但最小示例不会默认打开它们：
 
-- `broker_connectors`：只读券商事实 connector；不得包含 password、secret、token 或 credential 字段。
+- `broker_connectors`：只读券商事实 connector；不得包含 password、secret、token 或 credential 字段。`local_export_readonly` 只接受已审查的 `karkinos.readonly_broker_snapshot_export.v2` 来源契约；默认不启用任何 connector。
 - `controlled_bridge_policy`：受控桥接复核白名单；`per_order_confirmation_required` 必须为 `true`，`automation_allowed` 必须为 `false`。
 - `trusted_operator_identities`：Ed25519 公钥白名单；只存公钥。
 - 回测兼容字段：`initial_cash`、`start_date`、`end_date`、`assets`、`instruments`、`strategy`、`short_period`、`long_period` 和 `commission_rate`。

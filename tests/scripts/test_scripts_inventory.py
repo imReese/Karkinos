@@ -13,6 +13,7 @@ PYTHON_HELP_ENTRYPOINTS = (
     "ingest_broker_order_lifecycle_collector_batch.py",
     "migrate_legacy_qmt_order_lifecycle.py",
     "operator_signer.py",
+    "preview_citic_history_xls.py",
     "review_broker_adapter_release.py",
     "run_broker_adapter_conformance.py",
     "run_broker_execution_edge_conformance.py",

@@ -58,7 +58,7 @@ Unknown top-level fields, unknown group fields, wrong field types, and fields su
 | --- | --- | --- | --- |
 | `host` | string | `0.0.0.0` | API bind address; local development may use `127.0.0.1`. |
 | `port` | integer | `8000` | API bind port. |
-| `live_auto_start` | boolean | `true` | Starts the built-in market scheduler with the Web service; grants no order authority. |
+| `live_auto_start` | boolean | `false` | Starts the built-in market scheduler only when explicitly enabled. The scheduler may contact configured market-data providers and persist ingestion runs, but grants no order authority. |
 | `market_calendar_auto_sync` | boolean | `true` | With live startup enabled, automatically ingests the current SSE calendar, verifies it against the official annual closure notice, and starts ingesting next year in December. |
 | `cors_allowed_origins` | string[] | local frontend origins | Browser origins allowed to call the API. |
 | `notification` | object | `{"type":"console"}` | Notification channel type only: `console`, `telegram`, or `wechat`. Credential and destination fields are rejected. |
@@ -102,6 +102,26 @@ file fails closed without staging partial events. Repeated polling and restarts
 reuse the existing import run for the same fingerprint. Inspect status through
 `GET /api/account-truth/broker-statement/collector`. Manual upload remains an
 explicit fallback but is no longer required for the normal enabled local path.
+
+`account_truth.citic_history_xls_directory` is a separate, explicitly enabled
+source for on-demand CITIC legacy-XLS inspection. It never polls automatically.
+`GET /api/account-truth/citic-history-xls/directory` returns only sanitized
+configuration status; an operator must invoke `POST .../directory/scan` before
+any file is read. The API omits the configured path and every source name.
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `enabled` | boolean | `false` | Enables the explicit scan command; it does not start a background task. |
+| `path` | string | empty | Absolute private directory path; required only when enabled. |
+| `max_files` | integer | `120` | Maximum direct-child `.xls` candidates, in the range 1–600. |
+| `max_file_bytes` | integer | `10485760` | Per-file limit, in the range 1 KiB–10 MiB. |
+| `max_total_bytes` | integer | `67108864` | Aggregate scan limit, at least the per-file limit and at most 100 MiB. |
+
+The scan rejects symlinks, nested traversal, changing files, and exceeded
+limits. It returns only deduplicated privacy-minimized previews and persists
+nothing. A second explicit review command re-scans the directory and must find
+the same full SHA-256 before it may save sanitized follow-up/rejection metadata;
+parsed events still cannot enter Account Truth or reconciliation.
 
 ### broker_fee
 
@@ -197,7 +217,7 @@ Runtime and AI overrides are handled by the same startup loader. Existing non-em
 
 The runtime still accepts these advanced top-level fields, but the minimal example does not enable them:
 
-- `broker_connectors`: read-only broker-fact connectors; password, secret, token, and credential fields are forbidden.
+- `broker_connectors`: read-only broker-fact connectors; password, secret, token, and credential fields are forbidden. `local_export_readonly` accepts only the reviewed `karkinos.readonly_broker_snapshot_export.v2` source contract; no connector is enabled by default.
 - `controlled_bridge_policy`: controlled-bridge review allowlist; `per_order_confirmation_required` must be `true` and `automation_allowed` must be `false`.
 - `trusted_operator_identities`: Ed25519 public-key allowlist; public keys only.
 - Backtest compatibility fields: `initial_cash`, `start_date`, `end_date`, `assets`, `instruments`, `strategy`, `short_period`, `long_period`, and `commission_rate`.

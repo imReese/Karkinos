@@ -1266,7 +1266,7 @@ class SettingsResponse(BaseModel):
 
     host: str = "0.0.0.0"
     port: int = 8000
-    live_auto_start: bool = True
+    live_auto_start: bool = False
     initial_cash: float = 0
     start_date: str = "2025-01-02"
     end_date: str = Field(default_factory=lambda: _DEFAULT_END_DATE)

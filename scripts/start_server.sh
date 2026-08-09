@@ -32,15 +32,14 @@ Examples:
   ./scripts/start_server.sh dev
   ./scripts/start_server.sh prod
   ./scripts/start_server.sh dev --host 127.0.0.1 --port 8000
-  ./scripts/start_server.sh prod --no-live
   ./scripts/start_server.sh prod --host 0.0.0.0 --port 9000
 
 Notes:
   - This script starts the Web service via \`python -m server\` in the background.
-  - \`dev\` defaults to \`--reload\` with live monitoring enabled.
+  - \`dev\` defaults to \`--reload\`; it does not enable live monitoring.
   - \`dev\` also starts the Vite frontend on ${FRONTEND_HOST}:${FRONTEND_PORT}.
-  - \`prod\` starts without hot reload and also enables live monitoring by default.
-  - Pass \`--no-live\` explicitly if you want to disable live monitoring in either mode.
+  - \`prod\` starts without hot reload and does not enable live monitoring.
+  - Enable live monitoring explicitly with server.live_auto_start=true or KARKINOS_LIVE_AUTO_START=true.
   - Output is redirected to \`logs/server.log\` and \`logs/web.log\`.
   - PIDs are written to \`.run/server.pid\` and \`.run/web.pid\` in \`dev\` mode.
   - It installs missing frontend dependencies before building.
@@ -117,7 +116,6 @@ EOF
 fi
 
 MODE="${1:-dev}"
-ENV_PREFIX=()
 NO_PROXY_ENV=(
 	-u http_proxy
 	-u https_proxy
@@ -129,6 +127,60 @@ NO_PROXY_ENV=(
 	NO_PROXY=127.0.0.1,localhost
 	no_proxy=127.0.0.1,localhost
 )
+
+backend_probe_host() {
+	case "${BACKEND_HOST}" in
+	0.0.0.0 | :: | \[::\])
+		printf '%s' "127.0.0.1"
+		;;
+	*)
+		printf '%s' "${BACKEND_HOST}"
+		;;
+	esac
+}
+
+backend_listener_pids() {
+	if ! command -v lsof >/dev/null 2>&1; then
+		return
+	fi
+	lsof -tiTCP:"${BACKEND_PORT}" -sTCP:LISTEN 2>/dev/null | sort -u || true
+}
+
+karkinos_backend_is_alive() {
+	if ! command -v curl >/dev/null 2>&1; then
+		return 1
+	fi
+	local health_response
+	health_response="$(
+		env "${NO_PROXY_ENV[@]}" curl --noproxy '*' --fail --silent --show-error \
+			--max-time 2 "http://$(backend_probe_host):${BACKEND_PORT}/api/health" \
+			2>/dev/null
+	)" || return 1
+	[[ "${health_response}" == *'"schema_version":"karkinos.service_health.v1"'* && \
+		"${health_response}" == *'"status":"alive"'* ]]
+}
+
+preflight_backend_port() {
+	local listener_pids
+	listener_pids="$(backend_listener_pids)"
+	if [[ -z "${listener_pids}" ]]; then
+		return
+	fi
+
+	if karkinos_backend_is_alive; then
+		echo "Error: a Karkinos service is already responding at ${PRODUCT_ENTRY_URL}." >&2
+	else
+		echo "Error: backend port ${BACKEND_PORT} is occupied, but Karkinos liveness did not respond." >&2
+	fi
+	echo "Listener PID(s): ${listener_pids//$'\n'/ }" >&2
+	echo "No process was terminated." >&2
+	echo "Inspect the listener, then stop the tracked Karkinos instance with:" >&2
+	echo "  ./scripts/stop_server.sh" >&2
+	echo "Or choose another explicit port:" >&2
+	echo "  ./scripts/start_server.sh ${MODE} --host ${BACKEND_HOST} --port <port>" >&2
+	exit 1
+}
+
 case "${MODE}" in
 	dev)
 		shift || true
@@ -169,11 +221,34 @@ done
 PRODUCT_ENTRY_URL="http://${BACKEND_HOST}:${BACKEND_PORT}"
 HOT_RELOAD_URL="http://${FRONTEND_HOST}:${FRONTEND_PORT}"
 
-if [[ ! " ${SERVER_ARGS[*]} " =~ [[:space:]]--no-live[[:space:]] ]]; then
-	ENV_PREFIX=(KARKINOS_LIVE_AUTO_START=true)
+mkdir -p "${RUN_DIR}" "${LOG_DIR}"
+
+if [[ -f "${PID_FILE}" ]]; then
+	EXISTING_PID="$(cat "${PID_FILE}")"
+	if [[ -n "${EXISTING_PID}" ]] && kill -0 "${EXISTING_PID}" >/dev/null 2>&1; then
+		echo "Error: Karkinos Web service is already running with PID ${EXISTING_PID}." >&2
+		if karkinos_backend_is_alive; then
+			echo "The process-liveness endpoint is responding at ${PRODUCT_ENTRY_URL}." >&2
+		else
+			echo "The tracked process exists, but its process-liveness endpoint is unavailable." >&2
+		fi
+		echo "No process was terminated. Stop it explicitly with ./scripts/stop_server.sh" >&2
+		exit 1
+	fi
+	rm -f "${PID_FILE}"
 fi
 
-mkdir -p "${RUN_DIR}" "${LOG_DIR}"
+if [[ "${MODE}" == "dev" && -f "${WEB_PID_FILE}" ]]; then
+	EXISTING_WEB_PID="$(cat "${WEB_PID_FILE}")"
+	if [[ -n "${EXISTING_WEB_PID}" ]] && kill -0 "${EXISTING_WEB_PID}" >/dev/null 2>&1; then
+		echo "Error: Karkinos Web frontend is already running with PID ${EXISTING_WEB_PID}." >&2
+		echo "No process was terminated. Stop it explicitly with ./scripts/stop_server.sh" >&2
+		exit 1
+	fi
+	rm -f "${WEB_PID_FILE}"
+fi
+
+preflight_backend_port
 
 if [[ "${MODE}" == "dev" ]]; then
 	echo "Building product frontend bundle for ${PRODUCT_ENTRY_URL}"
@@ -193,51 +268,17 @@ fi
 
 guide_data_source_configuration
 
-if [[ -f "${PID_FILE}" ]]; then
-	EXISTING_PID="$(cat "${PID_FILE}")"
-	if [[ -n "${EXISTING_PID}" ]] && kill -0 "${EXISTING_PID}" >/dev/null 2>&1; then
-		echo "Error: Karkinos Web service is already running with PID ${EXISTING_PID}." >&2
-		echo "Stop it first with ./scripts/stop_server.sh" >&2
-		exit 1
-	fi
-	rm -f "${PID_FILE}"
-fi
-
-if [[ "${MODE}" == "dev" && -f "${WEB_PID_FILE}" ]]; then
-	EXISTING_WEB_PID="$(cat "${WEB_PID_FILE}")"
-	if [[ -n "${EXISTING_WEB_PID}" ]] && kill -0 "${EXISTING_WEB_PID}" >/dev/null 2>&1; then
-		echo "Error: Karkinos Web frontend is already running with PID ${EXISTING_WEB_PID}." >&2
-		echo "Stop it first with ./scripts/stop_server.sh" >&2
-		exit 1
-	fi
-	rm -f "${WEB_PID_FILE}"
-fi
-
 echo "Mode: ${MODE}"
 echo "Starting Karkinos Web service from ${REPO_ROOT}"
 echo "Log file: ${LOG_FILE}"
-if [[ ${#ENV_PREFIX[@]} -gt 0 ]]; then
-	echo "Command: ${ENV_PREFIX[*]} UV_CACHE_DIR=${UV_CACHE_DIR:-.uv-cache} uv run python -m server ${SERVER_ARGS[*]}"
-else
-	echo "Command: UV_CACHE_DIR=${UV_CACHE_DIR:-.uv-cache} uv run python -m server ${SERVER_ARGS[*]}"
-fi
+echo "Command: UV_CACHE_DIR=${UV_CACHE_DIR:-.uv-cache} uv run python -m server ${SERVER_ARGS[*]}"
 
-if [[ ${#ENV_PREFIX[@]} -gt 0 ]]; then
-	if command -v setsid >/dev/null 2>&1; then
-		setsid nohup env "${NO_PROXY_ENV[@]}" "${ENV_PREFIX[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
-			uv run python -m server "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
-	else
-		nohup env "${NO_PROXY_ENV[@]}" "${ENV_PREFIX[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
-			uv run python -m server "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
-	fi
+if command -v setsid >/dev/null 2>&1; then
+	setsid nohup env "${NO_PROXY_ENV[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
+		uv run python -m server "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
 else
-	if command -v setsid >/dev/null 2>&1; then
-		setsid nohup env "${NO_PROXY_ENV[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
-			uv run python -m server "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
-	else
-		nohup env "${NO_PROXY_ENV[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
-			uv run python -m server "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
-	fi
+	nohup env "${NO_PROXY_ENV[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
+		uv run python -m server "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
 fi
 
 LAUNCH_PID=$!
