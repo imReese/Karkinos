@@ -49,9 +49,17 @@ The latest completed cross-cutting work includes:
 - fail-fast grouped runtime configuration, environment-only TuShare/AI and
   notification credentials, validated Settings write contracts, and one
   dotenv-selection path shared by server and legacy CLI entrypoints;
+- a deterministic process-liveness-only endpoint and health-aware startup preflight distinguish a responding Karkinos instance from an unresponsive or foreign listener before build/launch, report without terminating it, and make no financial-readiness, provider, database-write, broker-action, ledger, execution, or capital-authority claim;
 - an opt-in local broker-statement collector stages stable CSV evidence
   idempotently across polling/restarts, preserving prior evidence and exposing
   provider-free, non-authorizing Account Truth status;
+- privacy-minimized CITIC legacy-XLS preview and source-review intake, including a default-disabled explicit local-directory scan that rejects symlinks, changing or over-limit files, returns no path/name/event details, persists nothing before a second fingerprint-bound review, keeps every GET/list path schema-initialization-free, and projects pending evidence work into a deterministic Operations attention item without entering canonical health, Account Truth, or authority; its deterministic batch assessment detects cross-file duplicate events and identity conflicts while distinguishing observed event months from unproven query-window coverage, and remains blocked, event-free, non-persisting, and ineligible for Account Truth or reconciliation; a separate runtime-only canonical-lineage assessment compares exact financial semantics, broker-order identity, and event identity against the selected canonical import, returns only sanitized counts/fingerprints, treats semantic similarity without identity as partial evidence, and cannot prove account coverage or promote the XLS batch; an append-only, revocable per-source query-window review now binds explicit owner-entered dates to the current file and sanitized-preview fingerprints, rejects future, over-31-day, or event-inconsistent windows, stores no source/transaction details, and clears only that Operations sub-requirement without proving canonical coverage or gaining authority; canonical broker-evidence, reconciliation-review, and evidence-scope-review reads likewise open existing SQLite strictly read-only, treat absent schema as no evidence, reject partial/incompatible schema and malformed records without repair, and reserve schema creation for explicit commands; Account Truth readiness v2 separates observed event span from complete account/date/asset coverage, permits only an exact-import append-only owner review with a browser-hashed account reference to clear that scope, and fails closed after revocation or drift without provider contact, financial recomputation, reconciliation eligibility, execution, or capital authority; a deterministic broker-soak candidate assessment keeps the XLS evidence blocked until a versioned read-only connector snapshot, reviewed account binding, provider capture/deployment/health evidence, current cash/position/order snapshots, and itemized fill fees and taxes are available, without registering a connector, recording soak, contacting a provider, or granting execution or capital authority;
+- one deterministic static broker-authority guard now covers strategy,
+  deterministic risk, Decision, and AI code. It rejects direct imports of
+  execution, broker connector/gateway, controlled submit/cancel/release, and
+  session-authority edges as well as direct submit/cancel/account-snapshot
+  calls, while preserving explicit extension scans; the current four domains
+  have zero violations.
 - signed bounded execution policy, atomic budgets, runtime sessions, live
   gates, pause/replacement, submission interlock, lifecycle evidence, operator
   projection, and capital-scaling review.
@@ -70,9 +78,8 @@ The latest completed cross-cutting work includes:
 - provider-neutral deterministic conformance fixtures with append-only reports,
   exact manifest/review binding, latest-result precedence, and prepare/commit
   revalidation; this does not claim a real adapter is supported.
-- connector-scoped soak recovery evidence where unscoped, unrelated, or mixed
-  drills cannot satisfy promotion, and the newest scoped failure invalidates an
-  older pass and its signed dossier acceptance.
+- connector-scoped, sequence-qualified soak evidence where only atomically accepted v2 cursor evidence counts toward 20 days or passes daily/replay drills; a two-stage Karkinos restart checkpoint additionally requires a changed runtime-instance fingerprint and exact persisted replay, while readable but unsequenced, legacy-boolean, unscoped, unrelated, mixed, or newer failed evidence cannot satisfy promotion.
+  This does not prove broker-terminal or real-adapter restart.
 - a read-only Trading projection of exact 20-day soak evidence and signed owner acceptance, plus a default-collapsed, no-database-edit operator review for the separately signed, expiring, one-way-revocable persisted write-edge release that production submit/cancel can resolve only while current; the Web review blocks credential-key manifests locally and exposes no submit/cancel, adapter-registration, or capital-authority action. Operations separately composes persisted adapter, signed soak, expiring release, exact scope, and unresolved-journey evidence into an eight-criterion-audited pilot-admission matrix: unsafe contracts open immediately, safe unmet conditions remain compact, and no state completes v1.8, contacts a provider, mutates financial facts/authority, submits, cancels, or scales capital.
 
 Exact historical test totals are intentionally not maintained here because

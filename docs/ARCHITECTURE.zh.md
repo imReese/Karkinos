@@ -151,7 +151,7 @@ Paper/shadow 事实绝不会变成真实成交或账本修改。Operations 负�
 -> 可选且单独确认的账本操作
 ```
 
-原始 provider 事实保留来源身份。重复、序列、账户、数量与 schema 冲突必须 fail closed。
+原始 provider 事实保留来源身份。重复、序列、账户、数量与 schema 冲突必须 fail closed。`karkinos.account_truth.evidence_scope.v1` 把观察到的事件跨度与已复核账户、日期窗口、资产范围完整性分开；首末记录本身绝不能证明完整覆盖。显式 owner 动作可以追加一份绑定精确导入和隐私哈希账户引用的复核，后续撤销或来源漂移会再次阻断。`karkinos.account_truth.evidence_readiness.v2` 再把该范围、canonical score 与脱敏待补证来源合成带 fingerprint 的操作员清单，不重算财务事实、不联系 provider、不在读取时写库，也不产生对账资格或执行/资本权限；持久证据缺失或不可读时 fail closed。
 
 collector 自报的 release-status 字段不是权限。release acceptance 会先把最新通过的
 deterministic conformance report 绑定到精确 manifest fingerprint；live callback/poll ingestion
@@ -209,11 +209,11 @@ fail closed，并使旧签名失效。v5 进一步把四类 OMS gateway gate 引
 标签：精确 Account Truth import、Decision action、risk decision 与 paper/shadow run 必须从持久化
 事实解析、同时出现在同一 capital evaluation，并在适用处匹配订单标的、方向、策略、数量与限价；
 paper/shadow run 还必须恰好包含同一 Decision action 的 clear 模拟订单。缺少 provider-free Account
-Truth 投影、非空伪造引用或任一来源 drift 都同时成为 review 与 hard-submission blocker。随后
-fingerprint 绑定三分钟离线 Ed25519 approval。最终
-confirmation 只是 append-only、非授权证据。列表与 preview
-只读持久化事实；它们和 confirmation 都不能联系 provider、修改 OMS/ledger/risk/kill switch/
-capital authority，也不能提交或撤销券商订单。Trading UI 刻意不为该边界提供 submit/cancel 控件。
+Truth 投影、伪造引用或来源 drift 都成为 review 与 hard-submission blocker。旧人工工单 preview/
+export/create 及人工成交 preview/record 每次都要求最新已签名逐单 confirmation，并重新解析当前
+资本、Account Truth、Decision、risk、paper/shadow、adapter、soak、gateway 与前序批次对账；其
+confirmation、dossier 与四个来源 fingerprint 绑定每次结果。缺失、阻断或漂移一律 fail closed；
+全部 preview 只读、无 provider、无授权，且 Trading 不提供 submit/cancel 控件。
 
 Automation Cockpit 通过 fail-closed application reader 消费同一候选契约，在向 Decision 投影
 ready/blocked 数量前核验来源 schema、计数、截断状态与非授权边界。任何来源漂移都会阻断下钻；
@@ -243,6 +243,30 @@ Account Truth 后续复核及已经闭环的拒单。紧凑关注队列会让较
 它把源状态、下一步与证据解除条件绑定为确定性 fingerprint，并排除请求生成时间；证据不变时刷新
 会得到相同 fingerprint，证据状态漂移时 fingerprint 随之变化。查看或确认本身不能清除任务。同一只读 payload
 可以进入人工显式创建的 AI context capture，但不会联系 provider、写数据库或授予执行权限。
+canonical broker-evidence 与 reconciliation-review repository 的查询只会以只读方式打开已有
+SQLite：构造以及 GET/list 不初始化或迁移 schema；表完全不存在表示尚无证据，部分或不兼容
+schema、损坏记录会在不修复的前提下 fail closed，只有显式 import/review 命令拥有 schema 创建或
+迁移权。已复核但不完整的中信历史成交仍属于独立、隐私最小化、非 canonical 的来源存储并遵守同一
+读取边界；`karkinos.account_truth.citic_source_follow_up.v1` 只把脱敏持久化元数据投影为 canonical
+health 之外的 Operations 关注项，拒绝来源不能满足 Account Truth，也不改变对账、风控、执行或资本权限。
+受控执行所消费的 promotion evidence 还会绑定该脱敏 follow-up fingerprint 与已复核查询区间完整性；
+来源仍待处理、扫描截断、读取失败、日期缺口或重叠时，只能把原本 clear 的提升证据降为 blocked。
+完成或拒绝来源复核不会生成 canonical 账户事实，也不能独立开放执行。
+`karkinos.account_truth.citic_history_xls_batch_assessment.v1` 只在内存检查来源集合的重复与事件
+身份完整性；观察到事件的月份不能替代经复核的查询区间覆盖，评估始终阻断、不返回或持久化事件，
+也不能进入 Account Truth 或对账。
+`karkinos.account_truth.citic_history_canonical_lineage_assessment.v1` 会另外以精确金融语义、券商
+委托身份和事件身份，只读比对运行时 XLS 批次与当前选中的 canonical import，并且只返回脱敏计数
+和 fingerprint。语义相似但身份未保留只是部分线索，不构成 canonical 来源证明；即使事件来源链
+精确一致，也不能证明查询区间、逐项结算、当前快照或整账户覆盖。该比对不持久化结果、不返回事件
+或来源明细，也不能提升证据或改变 Account Truth、对账、执行与资本权限。
+`karkinos.account_truth.citic_source_query_window_review.v1` 是另一份来源级、append-only 且可撤销
+的声明：它绑定当前文件与脱敏预览 fingerprint，以最多 31 个自然日的显式券商查询区间校验已识别
+事件日期，不保存来源或交易明细，并且只清除查询区间这一项来源级要求。它不证明 canonical 覆盖、
+不绑定账户、不提升事件、不满足结算/快照/对账门禁、不联系 provider，也不授予执行或资本权限。
+`karkinos.account_truth.citic_broker_soak_candidate.v1` 会单独证明历史成交预览不是版本化连接器
+快照，列出缺失的只读来源契约与运营前置条件；在不注册连接器、不持久化 soak 证据、不联系券商、
+不改变执行/资本权限的前提下，它始终不能被计入 soak。
 
 `/operations` 是该契约及可选真实试点准入投影 `karkinos.controlled_per_order_pilot_readiness.v1` 的只读操作员界面；后者只组合已持久化的 adapter、签名 soak、短时效 write release 与 controlled-order 证据。
 六个 fail-closed 门禁要求安全来源合同、恰好一个只读观测 release、匹配的签名 soak、一个有效的 `manual_each_order` write release、一致的 provider/gateway/account/connector scope，且无未闭合订单旅程或 active session authority；来源失败、歧义、漂移、截断或读侧授权标志都会阻断，通过也只允许进入独立逐单复核，不完成 v1.8、不联系 provider、不写库、不 submit/cancel、不修改财务事实或资本权限。

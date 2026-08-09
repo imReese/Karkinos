@@ -39,7 +39,7 @@ kill switch 与运营健康
 4. 只读 evidence connector 与可写 execution gateway 使用不同身份和权限。
 5. 唯一写路径是：已复核决策 → 账户/风控门禁 → 有界权限 → OMS → gateway → 券商证据 → 对账。
 6. Kill switch、过期事实、connector 降级、未解决对账、policy 过期、预算耗尽或来源漂移都会
-   阻断新提交。
+   阻断新提交；人工工单与人工成交入口必须重新解析当前 Account Truth。
 7. Unknown submission outcome 只能查询，绝不自动重试。
 8. 券商 callback 与导入是证据；不会静默改写账本。
 9. Session 可以暂停、过期、收窄或撤销；不能自行续期、恢复、放宽或扩容。

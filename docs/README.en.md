@@ -110,19 +110,28 @@ database writes, or execution authority. Viewing alone cannot change status.
 
 ### Account Truth and reconciliation
 
-Broker imports are previewed and stored as separate evidence. Reconciliation
-compares cash, positions, orders, fills, fees, taxes, and cost basis. Broker
-facts do not silently rewrite the ledger.
+Broker imports are previewed and stored as separate evidence. Incomplete CITIC History Trades files may be explicitly reviewed into a privacy-minimized
+follow-up-source queue or rejected; an explicitly configured private directory can be scanned on demand without returning paths or names. Each pending source
+may also receive an append-only, revocable, fingerprint-bound review of the exact broker query dates; those dates are never inferred from observed events,
+and a directory scan checks the current declared dates for gaps and overlaps without treating continuity as complete coverage. Completing them clears only
+that source-level follow-up requirement. Pending, truncated, unreadable, gapped, or overlapping source review also blocks the Account Truth promotion evidence used by controlled execution, but can never create canonical account facts or independently open execution. No parsed event enters Account Truth.
+Reconciliation compares cash, positions, orders, fills, fees, taxes, and cost
+basis. Broker facts do not silently rewrite the ledger.
+
+The Account Truth page also projects one canonical evidence-readiness checklist for reviewed account/date/asset scope, cash/position snapshots, settlement,
+cost basis, freshness/ledger coverage, reconciliation, and incomplete sources. Observed first/last rows do not prove full coverage: only an explicit exact-import
+owner review can bind a locally hashed account reference and declared period, and that review remains revocable. Missing, drifted, or unreadable evidence stays
+blocked; viewing cannot write, contact a broker, reconcile, or grant authority.
 
 ### Controlled execution
 
-Real-money capability is disabled by default. The active milestone validates
-one provider through read-only soak, per-order human approval, bounded capital,
-complete lifecycle recovery, execution reconciliation, and explicit posting.
-Posting and append-only correction require separate signatures; correction is
-derived only from canonical ledger replay, preserves the original facts, and
-requires newer Account Truth evidence afterward. Neither boundary can contact
-a provider, submit or cancel an order, or change capital authority.
+Real-money capability is disabled by default. The active milestone validates one
+provider through read-only soak, per-order human approval, bounded capital,
+complete lifecycle recovery, reconciliation, and explicit posting. Legacy manual
+ticket and manual-execution operations require the latest signed current per-order
+confirmation, re-resolve capital, four sources, adapter/soak, gateway, and reconciliation,
+and bind every fingerprint. Posting and correction need separate signatures; none can
+contact a provider, submit/cancel, or change capital authority.
 The reconciliation-to-terminal-clearance and terminal-clearance-to-posting
 steps are available as separately opened operator reviews with deterministic
 previews, short-lived offline signatures, and final acknowledgements. Clearance
