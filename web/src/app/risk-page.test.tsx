@@ -437,6 +437,32 @@ test('defers secondary risk reads until primary persisted evidence settles', asy
       String(input).includes('/api/portfolio/risk-summary'),
     ),
   ).toBe(false);
+  const loadingWorkspace = screen.getByTestId('risk-loading-workspace');
+  expect(
+    within(loadingWorkspace).getByRole('heading', {
+      level: 2,
+      name: 'Active risk priorities',
+    }),
+  ).toBeTruthy();
+  expect(
+    within(loadingWorkspace).getByRole('heading', {
+      level: 2,
+      name: 'Risk metrics',
+    }),
+  ).toBeTruthy();
+  expect(
+    within(loadingWorkspace).getByRole('heading', {
+      level: 2,
+      name: 'Controlled action',
+    }),
+  ).toBeTruthy();
+  expect(screen.getByTestId('risk-loading-exceptions').children).toHaveLength(
+    3,
+  );
+  expect(screen.getByTestId('risk-loading-metrics').textContent).toContain(
+    'Current drawdown',
+  );
+  expect(loadingWorkspace.textContent).not.toMatch(/[¥$€£]|\d+[,.]\d{2}/);
 
   await act(async () => {
     resolveState(jsonResponse(accountState));

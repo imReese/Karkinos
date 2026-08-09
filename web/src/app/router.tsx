@@ -3860,12 +3860,98 @@ export function RiskPage() {
       />
 
       {isInitialRiskLoad ? (
-        <EvidenceLoadingLayout
-          title={copy.states.loading}
-          description={copy.riskPage.loading}
-          metricCount={4}
-          rowCount={4}
-        />
+        <div className="min-w-0 space-y-4" data-testid="risk-loading-workspace">
+          <EvidenceState
+            kind="loading"
+            statusLabel={copy.states.loading}
+            title={copy.riskPage.loading}
+            description={copy.riskPage.blockingRegisterDetail}
+          />
+          <div className="app-risk-command-grid grid min-w-0 gap-5 sm:gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)] xl:items-start">
+            <section
+              className="min-w-0 space-y-2"
+              data-testid="risk-loading-blocking-register"
+            >
+              <div>
+                <h2 className="app-type-section-title text-[var(--app-text)]">
+                  {copy.riskPage.blockingRegister}
+                </h2>
+                <p className="mt-0.5 max-w-3xl text-xs text-[var(--app-text-secondary)]">
+                  {copy.riskPage.blockingRegisterDetail}
+                </p>
+              </div>
+              <div
+                aria-hidden="true"
+                className="min-w-0 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]"
+                data-testid="risk-loading-exceptions"
+              >
+                {Array.from({ length: 3 }, (_, index) => (
+                  <div
+                    key={index}
+                    className="grid min-h-20 min-w-0 gap-3 px-3 py-3 sm:grid-cols-[minmax(8rem,0.4fr)_minmax(0,1fr)] sm:items-center"
+                  >
+                    <span className="block h-3 w-28 max-w-full rounded-[var(--app-radius-control)] bg-[var(--app-divider)]" />
+                    <span className="block h-3 w-full max-w-xl rounded-[var(--app-radius-control)] bg-[var(--app-divider)]" />
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <aside className="grid min-w-0 content-start gap-3">
+              <section
+                className="min-w-0 space-y-2"
+                data-testid="risk-loading-metrics"
+              >
+                <h2 className="app-type-section-title text-[var(--app-text)]">
+                  {copy.riskPage.metrics}
+                </h2>
+                <div
+                  aria-hidden="true"
+                  className="app-metric-strip grid min-w-0 grid-cols-2 border-y border-[var(--app-divider)] bg-transparent xl:grid-cols-1"
+                >
+                  {[
+                    'current_drawdown',
+                    'gross_exposure',
+                    'cash_ratio',
+                    'largest_weight',
+                  ].map((metric) => (
+                    <div
+                      key={metric}
+                      className="app-metric-strip-item min-w-0 px-3 py-2.5"
+                    >
+                      <span className="app-type-label block font-medium text-[var(--app-text-secondary)]">
+                        {getRiskMetricLabel(copy, metric)}
+                      </span>
+                      <span className="mt-2 block h-4 w-24 max-w-full rounded-[var(--app-radius-control)] bg-[var(--app-divider)]" />
+                    </div>
+                  ))}
+                </div>
+              </section>
+              <section
+                className="grid min-w-0 gap-2"
+                data-testid="risk-loading-controlled-action"
+              >
+                <div>
+                  <h2 className="app-type-section-title text-[var(--app-text)]">
+                    {locale === 'zh' ? '受控操作' : 'Controlled action'}
+                  </h2>
+                  <p className="mt-0.5 text-xs leading-5 text-[var(--app-text-secondary)]">
+                    {locale === 'zh'
+                      ? '熔断状态独立于风险事实；仅在需要人工干预时展开。'
+                      : 'Kill-switch state stays separate from risk facts and expands only for deliberate operator intervention.'}
+                  </p>
+                </div>
+                <div
+                  aria-hidden="true"
+                  className="border-y border-[var(--app-divider)] px-3 py-3"
+                >
+                  <span className="block h-3 w-32 max-w-full rounded-[var(--app-radius-control)] bg-[var(--app-divider)]" />
+                  <span className="mt-2 block h-3 w-full rounded-[var(--app-radius-control)] bg-[var(--app-divider)]" />
+                </div>
+              </section>
+            </aside>
+          </div>
+        </div>
       ) : isRiskWorkspaceUnavailable ? (
         <EvidenceState
           kind="error"
