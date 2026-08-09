@@ -894,7 +894,7 @@ function installFetchMock({
             ? input.url
             : input.toString();
       if (url.includes('/api/account-truth/evidence-readiness')) {
-        return jsonResponse(evidenceReadinessResponse);
+        return jsonResponse(await evidenceReadinessResponse);
       }
       if (url.includes('/api/account-truth/evidence-scope/reviews')) {
         return evidenceScopeReviewPostResponse instanceof Response
@@ -902,7 +902,7 @@ function installFetchMock({
           : jsonResponse(evidenceScopeReviewPostResponse);
       }
       if (url.includes('/api/account-truth/score')) {
-        return jsonResponse(scoreResponse);
+        return jsonResponse(await scoreResponse);
       }
       if (url.includes('/api/account-truth/broker-statement/collector')) {
         return jsonResponse(collectorStatusResponse);
@@ -1003,7 +1003,7 @@ function installFetchMock({
         });
       }
       if (url.includes('/api/account-truth/import-runs')) {
-        return jsonResponse(importRunResponse);
+        return jsonResponse(await importRunResponse);
       }
       if (
         url.includes(
@@ -1130,7 +1130,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-test('keeps score and empty reports hidden until required evidence resolves', async () => {
+test('renders resolved persisted summaries while reports load without inventing empty evidence', async () => {
   let resolveReportSummaries: (value: unknown) => void = () => undefined;
   const pendingReportSummaries = new Promise<unknown>((resolve) => {
     resolveReportSummaries = resolve;
@@ -1140,19 +1140,13 @@ test('keeps score and empty reports hidden until required evidence resolves', as
     reportSummaryResponse: pendingReportSummaries,
   });
 
-  expect(
-    await screen.findByText('Loading Account Truth evidence.'),
-  ).toBeTruthy();
+  expect(await screen.findByText('42')).toBeTruthy();
+  expect(screen.getByTestId('account-truth-reports-loading')).toBeTruthy();
   expect(
     document.querySelector(
       '[data-workbench-primitive="evidence-loading-layout"]',
     ),
-  ).toBeTruthy();
-  expect(screen.getByTestId('evidence-loading-metrics').children).toHaveLength(
-    4,
-  );
-  expect(screen.getByTestId('evidence-loading-rows').children).toHaveLength(4);
-  expect(screen.queryByText('42')).toBeNull();
+  ).toBeNull();
   expect(screen.queryByText('0 items')).toBeNull();
   expect(
     screen.queryByText('No reconciliation reports for this filter.'),
@@ -1160,13 +1154,50 @@ test('keeps score and empty reports hidden until required evidence resolves', as
 
   resolveReportSummaries(reportSummaries);
 
-  expect(await screen.findByText('42')).toBeTruthy();
   expect(
     await screen.findByText(
       'Cash difference ¥120.00 · Fee difference ¥0.00 · Tax difference ¥2.50',
     ),
   ).toBeTruthy();
-  expect(screen.queryByText('Loading Account Truth evidence.')).toBeNull();
+  expect(screen.queryByTestId('account-truth-reports-loading')).toBeNull();
+});
+
+test('defers the slower report read until persisted summary projections resolve', async () => {
+  let resolveReadiness: (value: unknown) => void = () => undefined;
+  const pendingReadiness = new Promise<unknown>((resolve) => {
+    resolveReadiness = resolve;
+  });
+
+  const { fetchMock } = renderAccountTruthReviewPage({
+    evidenceReadinessResponse: pendingReadiness,
+  });
+  const requestedPaths = () =>
+    fetchMock.mock.calls.map(
+      ([input]) =>
+        new URL(
+          typeof input === 'string'
+            ? input
+            : input instanceof Request
+              ? input.url
+              : input.toString(),
+          'http://localhost',
+        ).pathname,
+    );
+
+  await waitFor(() =>
+    expect(requestedPaths()).toContain('/api/account-truth/evidence-readiness'),
+  );
+  expect(requestedPaths()).not.toContain(
+    '/api/account-truth/reconciliation-reports',
+  );
+
+  resolveReadiness(evidenceReadiness);
+
+  await waitFor(() =>
+    expect(requestedPaths()).toContain(
+      '/api/account-truth/reconciliation-reports',
+    ),
+  );
 });
 
 test('renders Account Truth score, import runs, reconciliation detail, and review actions', async () => {

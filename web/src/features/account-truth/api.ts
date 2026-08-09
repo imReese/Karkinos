@@ -415,10 +415,7 @@ export type CiticSourceScopeReview = {
   source_scope_attested: true;
   decision: 'accepted' | 'revoked';
   effective_status:
-    | 'active'
-    | 'revoked'
-    | 'source_closed'
-    | 'query_window_superseded';
+    'active' | 'revoked' | 'source_closed' | 'query_window_superseded';
   supersedes_review_id: string | null;
   reviewer: string;
   review_fingerprint: string;
@@ -931,6 +928,7 @@ export function useAccountTruthImportRunsQuery() {
 
 export function useReconciliationReportsQuery(
   status: ReconciliationStatus | 'all',
+  enabled = true,
 ) {
   const search = status === 'all' ? '' : `?status=${status}`;
   return useQuery({
@@ -939,6 +937,7 @@ export function useReconciliationReportsQuery(
       apiClient<ReconciliationReportSummary[]>(
         `/api/account-truth/reconciliation-reports${search}`,
       ),
+    enabled,
     staleTime: 10_000,
   });
 }
