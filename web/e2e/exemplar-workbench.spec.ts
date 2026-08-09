@@ -895,6 +895,7 @@ test('overview initial load preserves account, queue, and holdings hierarchy', a
 test('risk initial load preserves priorities, metrics, and controlled-action hierarchy', async ({
   page,
 }) => {
+  let duplicateRiskSummaryRequestCount = 0;
   let releasePrimaryResponses = () => {};
   const primaryResponsesHeld = new Promise<void>((resolve) => {
     releasePrimaryResponses = resolve;
@@ -905,6 +906,10 @@ test('risk initial load preserves priorities, metrics, and controlled-action hie
     await route.fulfill({ response });
   };
 
+  await page.route('**/api/portfolio/risk-summary', async (route) => {
+    duplicateRiskSummaryRequestCount += 1;
+    await route.abort();
+  });
   await page.route('**/api/portfolio/state', holdPrimaryResponse);
   await page.route('**/api/portfolio/risk-workspace', holdPrimaryResponse);
   await page.setViewportSize({ width: 390, height: 844 });
@@ -922,7 +927,7 @@ test('risk initial load preserves priorities, metrics, and controlled-action hie
   await expect(
     loadingWorkspace.getByRole('heading', {
       level: 2,
-      name: 'Loading',
+      name: 'Checking risk evidence',
       exact: true,
     }),
   ).toBeVisible();
@@ -967,6 +972,8 @@ test('risk initial load preserves priorities, metrics, and controlled-action hie
   releasePrimaryResponses();
   await expect(page.getByTestId('risk-blocking-register')).toBeVisible();
   await expect(page.getByTestId('risk-metric-rail')).toBeVisible();
+  await expect(page.getByTestId('risk-summary-loading-state')).toHaveCount(0);
+  expect(duplicateRiskSummaryRequestCount).toBe(0);
 });
 
 test('portfolio mobile keeps holdings or an explicit empty state below disclosed filters', async ({
