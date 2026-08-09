@@ -55,6 +55,42 @@ export type OperationsAttentionItem = {
   authorizes_execution: false;
 };
 
+export type CiticSourceFollowUp = {
+  schema_version: 'karkinos.account_truth.citic_source_follow_up.v1';
+  status: string;
+  subsystem_status: OperationsStatus;
+  pending_source_count: number;
+  scanned_source_count: number;
+  intake_scan_truncated: boolean;
+  count_complete: boolean;
+  blockers: string[];
+  required_evidence: string[];
+  reviewed_query_window_source_count: number;
+  unreviewed_query_window_source_count: number;
+  query_window_reviews_complete: boolean;
+  query_window_batch_integrity_status:
+    'not_available' | 'partial' | 'clear' | 'blocked';
+  query_window_batch_assessment_fingerprint: string;
+  query_window_gap_calendar_day_count: number;
+  query_window_overlap_calendar_day_count: number;
+  query_window_integrity_clear: boolean;
+  error_codes: string[];
+  latest_reviewed_at: string | null;
+  evidence_fingerprint: string;
+  next_manual_action: string;
+  limitations: string[];
+  persisted_facts_only: true;
+  source_paths_included: false;
+  source_names_included: false;
+  transaction_details_included: false;
+  provider_contacted: false;
+  database_writes_performed: false;
+  eligible_for_account_truth: false;
+  eligible_for_reconciliation: false;
+  authorizes_execution: false;
+  changes_capital_authority: false;
+};
+
 export type PaperShadowCostSummary = {
   estimated_total_fee?: number | string | null;
   simulated_fee_tax_cost?: number | string | null;
@@ -678,6 +714,7 @@ export type OperationsTodayResponse = {
   attention_items?: OperationsAttentionItem[];
   daily_operations: DailyOperationsSummary;
   broker_adapter_readiness?: BrokerAdapterReadiness;
+  citic_source_follow_up?: CiticSourceFollowUp;
   controlled_per_order_pilot_readiness?: ControlledPerOrderPilotReadiness;
   daily_plan: {
     candidate_pool_count: number;

@@ -404,6 +404,187 @@ test('blocks drill-down when an attention item violates the read-only contract',
   expect(screen.queryByRole('link', { name: 'Open evidence' })).toBeNull();
 });
 
+test('renders persisted CITIC source follow-up outside canonical health', async () => {
+  renderOperationsPage({
+    ...safeProjection,
+    citic_source_follow_up: {
+      schema_version: 'karkinos.account_truth.citic_source_follow_up.v1',
+      status: 'follow_up_required',
+      subsystem_status: 'manual_action_required',
+      pending_source_count: 4,
+      scanned_source_count: 4,
+      intake_scan_truncated: false,
+      count_complete: true,
+      blockers: [],
+      required_evidence: [
+        'current_cash_and_position_snapshot',
+        'itemized_settlement_or_cash_flow',
+      ],
+      reviewed_query_window_source_count: 4,
+      unreviewed_query_window_source_count: 0,
+      query_window_reviews_complete: true,
+      query_window_batch_integrity_status: 'clear',
+      query_window_batch_assessment_fingerprint:
+        'sha256:citic-query-window-batch-fixture',
+      query_window_gap_calendar_day_count: 0,
+      query_window_overlap_calendar_day_count: 0,
+      query_window_integrity_clear: true,
+      error_codes: ['citic_history_xls_settlement_components_missing'],
+      latest_reviewed_at: '2026-08-03T20:00:00+08:00',
+      evidence_fingerprint: 'sha256:citic-source-projection-fixture',
+      next_manual_action:
+        'provide_citic_account_truth_evidence_or_reject_source',
+      limitations: ['Incomplete source material only.'],
+      persisted_facts_only: true,
+      source_paths_included: false,
+      source_names_included: false,
+      transaction_details_included: false,
+      provider_contacted: false,
+      database_writes_performed: false,
+      eligible_for_account_truth: false,
+      eligible_for_reconciliation: false,
+      authorizes_execution: false,
+      changes_capital_authority: false,
+    },
+    attention_items: [
+      ...(safeProjection.attention_items ?? []),
+      {
+        schema_version: 'karkinos.operations_attention_item.v1',
+        subsystem_id: 'citic_source_follow_up',
+        status: 'manual_action_required',
+        target: 'account-truth',
+        evidence: {
+          status: 'follow_up_required',
+          observed_at: '2026-08-03T20:00:00+08:00',
+        },
+        next_action: 'provide_citic_account_truth_evidence_or_reject_source',
+        resolution_condition:
+          'complete_account_truth_evidence_or_explicit_source_rejection_required',
+        task_fingerprint: 'sha256:citic-attention-fixture',
+        manual_acknowledgement_clears_status: false,
+        read_only_projection: true,
+        provider_contacted: false,
+        database_writes_performed: false,
+        authorizes_execution: false,
+      },
+    ],
+  });
+
+  const queue = await screen.findByRole('list', {
+    name: 'Evidence review queue',
+  });
+  expect(
+    within(queue).getByRole('heading', {
+      name: 'CITIC source evidence follow-up',
+    }),
+  ).toBeTruthy();
+  expect(
+    within(queue).getByText(
+      'Provide complete Account Truth evidence or explicitly reject the source',
+    ),
+  ).toBeTruthy();
+  expect(within(queue).getByText('Follow-up required')).toBeTruthy();
+  expect(
+    within(queue)
+      .getAllByRole('link', { name: 'Open evidence' })
+      .some((link) => link.getAttribute('href') === '/account-truth'),
+  ).toBe(true);
+  expect(
+    screen.getByTestId('operations-health-overview').textContent,
+  ).toContain('3');
+  expect(screen.queryByRole('button', { name: /submit/i })).toBeNull();
+  expect(screen.queryByRole('button', { name: /cancel/i })).toBeNull();
+});
+
+test('blocks CITIC follow-up when its non-authority contract is violated', async () => {
+  renderOperationsPage({
+    ...safeProjection,
+    citic_source_follow_up: {
+      schema_version: 'karkinos.account_truth.citic_source_follow_up.v1',
+      status: 'follow_up_required',
+      subsystem_status: 'manual_action_required',
+      pending_source_count: 1,
+      scanned_source_count: 1,
+      intake_scan_truncated: false,
+      count_complete: true,
+      blockers: ['citic_query_window_batch_sources_unreviewed'],
+      required_evidence: [],
+      reviewed_query_window_source_count: 0,
+      unreviewed_query_window_source_count: 1,
+      query_window_reviews_complete: false,
+      query_window_batch_integrity_status: 'partial',
+      query_window_batch_assessment_fingerprint:
+        'sha256:citic-query-window-batch-fixture',
+      query_window_gap_calendar_day_count: 0,
+      query_window_overlap_calendar_day_count: 0,
+      query_window_integrity_clear: false,
+      error_codes: [],
+      latest_reviewed_at: null,
+      evidence_fingerprint: 'sha256:citic-source-projection-fixture',
+      next_manual_action:
+        'provide_citic_account_truth_evidence_or_reject_source',
+      limitations: [],
+      persisted_facts_only: true,
+      source_paths_included: false,
+      source_names_included: false,
+      transaction_details_included: false,
+      provider_contacted: false,
+      database_writes_performed: false,
+      eligible_for_account_truth: false,
+      eligible_for_reconciliation: false,
+      authorizes_execution: true,
+      changes_capital_authority: false,
+    },
+  });
+
+  expect(await screen.findByTestId('operations-contract-blocked')).toBeTruthy();
+  expect(screen.queryByRole('link', { name: 'Open evidence' })).toBeNull();
+});
+
+test('fails closed when CITIC query-window integrity evidence is missing', async () => {
+  renderOperationsPage({
+    ...safeProjection,
+    citic_source_follow_up: {
+      schema_version: 'karkinos.account_truth.citic_source_follow_up.v1',
+      status: 'follow_up_required',
+      subsystem_status: 'manual_action_required',
+      pending_source_count: 1,
+      scanned_source_count: 1,
+      intake_scan_truncated: false,
+      count_complete: true,
+      blockers: [],
+      required_evidence: [],
+      reviewed_query_window_source_count: 1,
+      unreviewed_query_window_source_count: 0,
+      query_window_reviews_complete: true,
+      query_window_batch_integrity_status: 'clear',
+      query_window_batch_assessment_fingerprint: undefined,
+      query_window_gap_calendar_day_count: 0,
+      query_window_overlap_calendar_day_count: 0,
+      query_window_integrity_clear: true,
+      error_codes: [],
+      latest_reviewed_at: null,
+      evidence_fingerprint: 'sha256:citic-source-projection-fixture',
+      next_manual_action:
+        'provide_citic_account_truth_evidence_or_reject_source',
+      limitations: [],
+      persisted_facts_only: true,
+      source_paths_included: false,
+      source_names_included: false,
+      transaction_details_included: false,
+      provider_contacted: false,
+      database_writes_performed: false,
+      eligible_for_account_truth: false,
+      eligible_for_reconciliation: false,
+      authorizes_execution: false,
+      changes_capital_authority: false,
+    },
+  });
+
+  expect(await screen.findByTestId('operations-contract-blocked')).toBeTruthy();
+  expect(screen.queryByRole('link', { name: 'Open evidence' })).toBeNull();
+});
+
 test('shows the fail-closed pilot admission gate without execution controls', async () => {
   renderOperationsPage({
     ...safeProjection,

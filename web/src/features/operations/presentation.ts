@@ -39,6 +39,10 @@ export function operationsSubsystemLabel(value: string, locale: Locale) {
       en: 'Broker adapter evidence',
       zh: '券商接入证据',
     },
+    citic_source_follow_up: {
+      en: 'CITIC source evidence follow-up',
+      zh: '中信来源补证',
+    },
   };
   return labels[value]?.[locale] ?? formatPublicStatus(value, locale);
 }
@@ -130,8 +134,35 @@ export function operationsNextActionLabel(
       en: 'Review manual execution and import broker statement',
       zh: '复核手工成交并导入券商流水',
     },
+    provide_citic_account_truth_evidence_or_reject_source: {
+      en: 'Provide complete Account Truth evidence or explicitly reject the source',
+      zh: '补充完整账户事实证据，或明确拒绝该来源',
+    },
+    review_citic_source_query_windows: {
+      en: 'Review each exact CITIC source query window',
+      zh: '逐份复核中信来源的精确查询区间',
+    },
+    review_citic_source_intake_scan_limit: {
+      en: 'Review the CITIC source scan limit and restore a complete count',
+      zh: '复核中信来源扫描上限并恢复完整计数',
+    },
+    repair_citic_source_intake_metadata_store: {
+      en: 'Repair the local CITIC source review metadata store',
+      zh: '修复本地中信来源复核元数据存储',
+    },
+    repair_citic_source_query_window_review_store: {
+      en: 'Repair the local CITIC query-window review store',
+      zh: '修复本地中信查询区间复核存储',
+    },
   };
   return labels[key]?.[locale] ?? formatPublicStatus(key, locale);
+}
+
+export function operationsEvidenceStatusLabel(value: string, locale: Locale) {
+  if (value === 'follow_up_required') {
+    return locale === 'zh' ? '待补证' : 'Follow-up required';
+  }
+  return formatPublicStatus(value, locale);
 }
 
 export function operationsAttentionResolutionLabel(
@@ -198,6 +229,18 @@ export function operationsAttentionResolutionLabel(
     explicit_provider_authorization_and_new_release_evidence_required: {
       en: 'explicit provider authorization and new release evidence exist',
       zh: '具备明确接入方授权与新的放行证据',
+    },
+    complete_account_truth_evidence_or_explicit_source_rejection_required: {
+      en: 'complete Account Truth evidence is recorded or the incomplete source is explicitly rejected',
+      zh: '完整账户事实证据已记录，或不完整来源已被明确拒绝',
+    },
+    readable_citic_source_intake_metadata_required: {
+      en: 'the persisted CITIC source review metadata is readable again',
+      zh: '持久化的中信来源复核元数据恢复为可读取状态',
+    },
+    complete_citic_source_intake_scan_required: {
+      en: 'a complete, non-truncated CITIC source-review scan is available',
+      zh: '中信来源复核扫描完整且未达到截断上限',
     },
     new_canonical_evidence_required: {
       en: 'new canonical evidence resolves the source status',
