@@ -138,6 +138,46 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+test('preserves the ledger workspace hierarchy without inventing facts while projections load', () => {
+  window.localStorage.clear();
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: query.includes('prefers-color-scheme: dark'),
+    media: query,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() => new Promise<Response>(() => undefined)),
+  );
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+
+  render(
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>
+        <ActivityPage />
+      </QueryClientProvider>
+    </PreferencesProvider>,
+  );
+
+  const history = screen.getByTestId('activity-history-loading');
+  const pending = screen.getByTestId('pending-fund-orders-loading');
+  expect(history.getAttribute('aria-busy')).toBe('true');
+  expect(pending.getAttribute('aria-busy')).toBe('true');
+  expect(within(history).getByText('Recent entries')).toBeTruthy();
+  expect(within(pending).getByText('Pending fund subscriptions')).toBeTruthy();
+  expect(
+    screen.getByTestId('activity-history-loading-rows').children,
+  ).toHaveLength(4);
+  expect(
+    screen.getByTestId('pending-fund-orders-loading-rows').children,
+  ).toHaveLength(2);
+  expect(screen.queryByText(/\b0 entries\b/u)).toBeNull();
+  expect(screen.queryByText(/¥|\$|€|£/u)).toBeNull();
+});
+
 test('does not derive authoritative net cash impact from the visible ledger rows', async () => {
   renderActivityPage();
 

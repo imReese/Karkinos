@@ -105,7 +105,10 @@ import {
   formatLedgerExplainabilityTitle,
   formatLedgerOrderSideLabel,
 } from '../shared/ledger-format';
-import { ActivityFeed } from '../features/activity/components/activity-feed';
+import {
+  ActivityFeed,
+  ActivityFeedLoading,
+} from '../features/activity/components/activity-feed';
 import {
   CashFlowForm,
   type CashFlowFormValues,
@@ -5917,11 +5920,7 @@ export function ActivityPage() {
           data-activity-surface="audit-history"
         >
           {entries.isLoading ? (
-            <EvidenceState
-              kind="loading"
-              title={copy.states.loading}
-              description={copy.activity.loading}
-            />
+            <ActivityFeedLoading />
           ) : entries.isError ? (
             <EvidenceState
               kind="error"
@@ -6143,11 +6142,49 @@ function PendingFundOrdersCard({
 
   if (loading) {
     return (
-      <EvidenceState
-        kind="loading"
-        title={copy.states.loading}
-        description={copy.activity.pending.loading}
-      />
+      <section
+        aria-busy="true"
+        aria-live="polite"
+        className="app-workbench-section min-w-0 overflow-hidden"
+        data-testid="pending-fund-orders-loading"
+      >
+        <span className="sr-only">{copy.activity.pending.loading}</span>
+        <div className="flex items-start justify-between gap-3 border-b border-[var(--app-divider)] px-4 py-3">
+          <div>
+            <div className="app-product-mark">
+              {copy.activity.pending.kicker}
+            </div>
+            <h2 className="app-type-section-title mt-2">
+              {copy.activity.pending.title}
+            </h2>
+          </div>
+          <span
+            aria-hidden="true"
+            className="block h-6 w-8 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] motion-safe:animate-pulse"
+          />
+        </div>
+        <div
+          aria-hidden="true"
+          className="divide-y divide-[var(--app-divider)]"
+          data-testid="pending-fund-orders-loading-rows"
+        >
+          {Array.from({ length: 2 }, (_, index) => (
+            <div
+              key={index}
+              className="grid min-h-16 grid-cols-[minmax(0,1fr)_7rem] items-center gap-4 px-4 py-3"
+            >
+              <span className="min-w-0">
+                <span className="block h-3 w-40 max-w-full rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] motion-safe:animate-pulse" />
+                <span className="mt-2 block h-2 w-56 max-w-full rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] motion-safe:animate-pulse" />
+              </span>
+              <span className="min-w-0">
+                <span className="ml-auto block h-3 w-20 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] motion-safe:animate-pulse" />
+                <span className="ml-auto mt-2 block h-2 w-14 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] motion-safe:animate-pulse" />
+              </span>
+            </div>
+          ))}
+        </div>
+      </section>
     );
   }
   if (error) {
