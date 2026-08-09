@@ -152,6 +152,7 @@ export function BacktestReportView() {
       {selectedSummary && !report.data ? (
         <MetricStrip
           ariaLabel={labels.selection.kicker}
+          className="app-backtest-evidence-strip"
           items={[
             {
               id: 'summary-return',
