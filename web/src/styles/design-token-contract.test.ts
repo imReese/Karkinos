@@ -292,10 +292,10 @@ describe('application design token contract', () => {
     );
     expect(selectControl).toContain('-webkit-appearance: none');
     expect(selectControl).toContain('appearance: none');
-    expect(selectControl).toContain('padding-inline-end: 3rem');
+    expect(selectControl).toContain('padding-inline-end: 2.25rem');
     expect(selectControl).toContain('var(--app-text-secondary)');
-    expect(selectControl).toContain('calc(100% - 1.25rem)');
-    expect(selectControl).toContain('calc(100% - 0.9375rem)');
+    expect(selectControl).toContain('calc(100% - 1.125rem)');
+    expect(selectControl).toContain('calc(100% - 0.8125rem)');
   });
 
   it('defines the product typography and motion contract', () => {
