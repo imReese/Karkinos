@@ -166,6 +166,18 @@ class DataSource(ABC):
         asset_class 决定调用哪个底层 API（股票/ETF/黄金/债券）。
         """
 
+    def supports_bars(
+        self,
+        asset_class: AssetClass = AssetClass.STOCK,
+        frequency: BarFrequency = BarFrequency.DAILY,
+    ) -> bool:
+        """是否明确支持指定资产类别和频率的 K 线。
+
+        默认为支持以保持现有 DataSource 实现的向后兼容性；真实数据源
+        应覆盖本方法，使编排层可在远端调用前确定性地跳过不支持的请求。
+        """
+        return True
+
     @abstractmethod
     def fetch_ticks(
         self,

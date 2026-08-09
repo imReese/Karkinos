@@ -7,8 +7,16 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from core.types import AssetClass, Symbol
+from core.types import AssetClass, BarFrequency, Symbol
 from data.providers.tushare_source import TushareSource
+
+
+def test_tushare_bars_capability_is_stock_daily_only():
+    source = TushareSource(token="token-1234")
+
+    assert source.supports_bars(AssetClass.STOCK, BarFrequency.DAILY) is True
+    assert source.supports_bars(AssetClass.FUND, BarFrequency.DAILY) is False
+    assert source.supports_bars(AssetClass.STOCK, BarFrequency.MIN_1) is False
 
 
 def test_tushare_fetch_latest_stock_uses_realtime_quote(monkeypatch):

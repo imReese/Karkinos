@@ -172,6 +172,17 @@ class AKShareSource(DataSource):
     _MAX_RETRIES = 3
     _RETRY_DELAY = 2  # seconds
 
+    def supports_bars(
+        self,
+        asset_class: AssetClass = AssetClass.STOCK,
+        frequency: BarFrequency = BarFrequency.DAILY,
+    ) -> bool:
+        if frequency == BarFrequency.DAILY:
+            return asset_class in _HIST_CONFIG
+        if frequency in (BarFrequency.MIN_1, BarFrequency.MIN_5):
+            return asset_class in (AssetClass.STOCK, AssetClass.FUND)
+        return False
+
     @staticmethod
     @lru_cache(maxsize=1)
     def _open_end_fund_name_map() -> dict[str, str]:

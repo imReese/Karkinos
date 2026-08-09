@@ -38,6 +38,13 @@ class TushareSource(DataSource):
             return ts.pro_api(self._token)
         return ts.pro_api()
 
+    def supports_bars(
+        self,
+        asset_class: AssetClass = AssetClass.STOCK,
+        frequency: BarFrequency = BarFrequency.DAILY,
+    ) -> bool:
+        return asset_class == AssetClass.STOCK and frequency == BarFrequency.DAILY
+
     def fetch_bars(
         self,
         symbol: Symbol,

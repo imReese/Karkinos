@@ -81,6 +81,14 @@ def _make_bond_df(n=10):
 class TestAKShareMultiAsset:
     """AKShareSource 多资产 fetch_bars 测试。"""
 
+    def test_bars_capability_matches_implemented_asset_frequency_pairs(self, source):
+        assert source.supports_bars(AssetClass.STOCK, BarFrequency.DAILY) is True
+        assert source.supports_bars(AssetClass.FUND, BarFrequency.DAILY) is True
+        assert source.supports_bars(AssetClass.GOLD, BarFrequency.DAILY) is True
+        assert source.supports_bars(AssetClass.FUND, BarFrequency.MIN_1) is True
+        assert source.supports_bars(AssetClass.GOLD, BarFrequency.MIN_1) is False
+        assert source.supports_bars(AssetClass.STOCK, BarFrequency.WEEKLY) is False
+
     @patch("data.providers.akshare_source.AKShareSource.fetch_bars")
     def test_stock_uses_stock_zh_a_hist(self, mock_fetch, source):
         """A 股应调用 stock_zh_a_hist。"""
