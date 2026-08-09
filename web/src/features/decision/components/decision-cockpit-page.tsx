@@ -5076,16 +5076,19 @@ export function DecisionCockpitPage() {
   const labels = copy.decision;
   const { locale } = usePreferences();
   const today = useTodayDecisionQuery();
-  const intraday = useIntradayDecisionQuery();
   const primaryDecisionReady = Boolean(today.data);
+  const intraday = useIntradayDecisionQuery(primaryDecisionReady);
   const tradingPlan = useDailyTradingPlanQuery(primaryDecisionReady);
-  const operationsToday = useOperationsTodayQuery();
-  const automationCockpit = useAutomationCockpitQuery();
-  const brokerGatewayStatus = useBrokerGatewayStatusQuery();
-  const brokerConnectorHealth = useBrokerConnectorHealthQuery();
-  const brokerAccountFacts = useBrokerGatewayAccountFactsQuery();
-  const brokerFills = useBrokerGatewayFillsQuery();
-  const executionReconciliationRuns = useExecutionReconciliationRunsQuery();
+  const operationsToday = useOperationsTodayQuery(primaryDecisionReady);
+  const automationCockpit = useAutomationCockpitQuery(primaryDecisionReady);
+  const brokerGatewayStatus = useBrokerGatewayStatusQuery(primaryDecisionReady);
+  const brokerConnectorHealth =
+    useBrokerConnectorHealthQuery(primaryDecisionReady);
+  const brokerAccountFacts =
+    useBrokerGatewayAccountFactsQuery(primaryDecisionReady);
+  const brokerFills = useBrokerGatewayFillsQuery(primaryDecisionReady);
+  const executionReconciliationRuns =
+    useExecutionReconciliationRunsQuery(primaryDecisionReady);
   const latestExecutionReconciliationRunId =
     executionReconciliationRuns.data?.[0]?.run_id;
   const executionReconciliationRunDetail =

@@ -1262,7 +1262,7 @@ test('renders a structured workspace while primary decision evidence loads', () 
   expect(loadingWorkspace.textContent).not.toMatch(/[¥$€£]|\d+[,.]\d{2}/);
 });
 
-test('shows saved daily decisions before intraday evidence and then starts dependent reads', async () => {
+test('loads the saved daily decision before starting dependent reads', async () => {
   window.localStorage.clear();
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({
     matches: query.includes('prefers-color-scheme: dark'),
@@ -1298,18 +1298,27 @@ test('shows saved daily decisions before intraday evidence and then starts depen
     </PreferencesProvider>,
   );
 
-  await waitFor(() => {
+  await waitFor(() =>
     expect(
       fetchMock.mock.calls.some(([input]) =>
-        String(input).includes('/api/decision/intraday'),
+        String(input).includes('/api/decision/today'),
       ),
-    ).toBe(true);
-  });
-  for (const path of [
+    ).toBe(true),
+  );
+  const dependentPaths = [
+    '/api/decision/intraday',
     '/api/decision/trading-plan',
     '/api/signals/actions',
     '/api/signals/journal',
-  ]) {
+    '/api/operations/today',
+    '/api/automation/cockpit',
+    '/api/broker-gateway/status',
+    '/api/broker-gateway/connectors/health',
+    '/api/broker-gateway/account-facts',
+    '/api/broker-gateway/fills/query',
+    '/api/execution-reconciliation/runs',
+  ];
+  for (const path of dependentPaths) {
     expect(
       fetchMock.mock.calls.some(([input]) => String(input).includes(path)),
     ).toBe(false);
@@ -1324,11 +1333,7 @@ test('shows saved daily decisions before intraday evidence and then starts depen
     'Intraday evidence is still loading.',
   );
   await waitFor(() => {
-    for (const path of [
-      '/api/decision/trading-plan',
-      '/api/signals/actions',
-      '/api/signals/journal',
-    ]) {
+    for (const path of dependentPaths) {
       expect(
         fetchMock.mock.calls.some(([input]) => String(input).includes(path)),
       ).toBe(true);

@@ -623,8 +623,12 @@ export function useTodayDecisionQuery(enabled = true) {
   return decisionQuery('/api/decision/today', ['decision', 'today'], enabled);
 }
 
-export function useIntradayDecisionQuery() {
-  return decisionQuery('/api/decision/intraday', ['decision', 'intraday']);
+export function useIntradayDecisionQuery(enabled = true) {
+  return decisionQuery(
+    '/api/decision/intraday',
+    ['decision', 'intraday'],
+    enabled,
+  );
 }
 
 export function useDecisionQualityQuery() {
