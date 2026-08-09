@@ -1332,7 +1332,7 @@ test('portfolio mobile keeps holdings or an explicit empty state below disclosed
 test('holding detail keeps route identity during missing-state resolution', async ({
   page,
 }) => {
-  await page.route('**/api/portfolio/positions', async (route) => {
+  await page.route('**/api/portfolio', async (route) => {
     const response = await route.fetch();
     await new Promise((resolve) => setTimeout(resolve, 1_200));
     await route.fulfill({ response });

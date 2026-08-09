@@ -276,8 +276,8 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
   const labels = copy.portfolio.detail;
   const decodedSymbol = safeDecodeSymbol(symbol);
   const normalizedSymbol = normalizeSymbol(decodedSymbol);
-  const positions = usePositionsQuery();
   const snapshot = usePortfolioSnapshotQuery();
+  const positions = usePositionsQuery();
   const liveHoldings = useLiveHoldingsQuery();
   const overview = useAccountOverviewQuery();
   const marketHealth = useMarketDataHealthQuery();
@@ -309,7 +309,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     </div>
   );
 
-  const currentPositions = positions.data ?? snapshot.data?.positions ?? [];
+  const currentPositions = snapshot.data?.positions ?? positions.data ?? [];
   const currentPosition = currentPositions.find(
     (item) => normalizeSymbol(item.symbol) === normalizedSymbol,
   );
@@ -338,12 +338,11 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
   );
   const ledgerEntries = symbolLedgerEntries.slice(0, 12);
 
+  const hasSnapshotProjection = snapshot.data !== undefined;
   const coreLoading =
     !position &&
-    (positions.isLoading ||
-      snapshot.isLoading ||
-      liveHoldings.isLoading ||
-      overview.isLoading);
+    !hasSnapshotProjection &&
+    (snapshot.isLoading || positions.isLoading);
   const coreError = positions.isError && snapshot.isError;
 
   if (coreLoading) {
