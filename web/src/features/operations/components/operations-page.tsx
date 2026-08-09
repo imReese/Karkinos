@@ -27,6 +27,7 @@ import {
 import { ControlledPerOrderPilotReadinessPanel } from '../controlled-per-order-pilot-readiness-panel';
 import {
   operationsAttentionResolutionLabel,
+  operationsEvidenceStatusLabel,
   operationsNextActionLabel,
   operationsSubsystemLabel,
   operationsTargetHref,
@@ -113,6 +114,72 @@ function subsystemContractIsSafe(value: unknown) {
   );
 }
 
+function citicSourceFollowUpContractIsSafe(value: unknown) {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    value.schema_version ===
+      'karkinos.account_truth.citic_source_follow_up.v1' &&
+    typeof value.status === 'string' &&
+    typeof value.subsystem_status === 'string' &&
+    typeof value.pending_source_count === 'number' &&
+    Number.isFinite(value.pending_source_count) &&
+    typeof value.scanned_source_count === 'number' &&
+    Number.isFinite(value.scanned_source_count) &&
+    value.scanned_source_count >= value.pending_source_count &&
+    typeof value.intake_scan_truncated === 'boolean' &&
+    typeof value.count_complete === 'boolean' &&
+    !(value.intake_scan_truncated && value.count_complete) &&
+    Array.isArray(value.blockers) &&
+    value.blockers.every((item) => typeof item === 'string') &&
+    Array.isArray(value.required_evidence) &&
+    value.required_evidence.every((item) => typeof item === 'string') &&
+    typeof value.reviewed_query_window_source_count === 'number' &&
+    Number.isFinite(value.reviewed_query_window_source_count) &&
+    typeof value.unreviewed_query_window_source_count === 'number' &&
+    Number.isFinite(value.unreviewed_query_window_source_count) &&
+    typeof value.query_window_reviews_complete === 'boolean' &&
+    ['not_available', 'partial', 'clear', 'blocked'].includes(
+      String(value.query_window_batch_integrity_status),
+    ) &&
+    typeof value.query_window_batch_assessment_fingerprint === 'string' &&
+    value.query_window_batch_assessment_fingerprint.startsWith('sha256:') &&
+    typeof value.query_window_gap_calendar_day_count === 'number' &&
+    Number.isFinite(value.query_window_gap_calendar_day_count) &&
+    value.query_window_gap_calendar_day_count >= 0 &&
+    typeof value.query_window_overlap_calendar_day_count === 'number' &&
+    Number.isFinite(value.query_window_overlap_calendar_day_count) &&
+    value.query_window_overlap_calendar_day_count >= 0 &&
+    typeof value.query_window_integrity_clear === 'boolean' &&
+    value.query_window_integrity_clear ===
+      (value.query_window_batch_integrity_status === 'clear') &&
+    (!value.query_window_integrity_clear ||
+      (value.query_window_reviews_complete &&
+        value.query_window_gap_calendar_day_count === 0 &&
+        value.query_window_overlap_calendar_day_count === 0)) &&
+    Array.isArray(value.error_codes) &&
+    value.error_codes.every((item) => typeof item === 'string') &&
+    (value.latest_reviewed_at === null ||
+      typeof value.latest_reviewed_at === 'string') &&
+    typeof value.evidence_fingerprint === 'string' &&
+    value.evidence_fingerprint.startsWith('sha256:') &&
+    typeof value.next_manual_action === 'string' &&
+    Array.isArray(value.limitations) &&
+    value.limitations.every((item) => typeof item === 'string') &&
+    value.persisted_facts_only === true &&
+    value.source_paths_included === false &&
+    value.source_names_included === false &&
+    value.transaction_details_included === false &&
+    value.provider_contacted === false &&
+    value.database_writes_performed === false &&
+    value.eligible_for_account_truth === false &&
+    value.eligible_for_reconciliation === false &&
+    value.authorizes_execution === false &&
+    value.changes_capital_authority === false
+  );
+}
+
 function operationsProjectionIsSafe(
   value: unknown,
 ): value is OperationsTodayResponse {
@@ -121,6 +188,7 @@ function operationsProjectionIsSafe(
   }
   const health = value.health;
   const attentionItems = value.attention_items ?? [];
+  const citicSourceFollowUp = value.citic_source_follow_up;
   return (
     value.schema_version === 'karkinos.operations_today.v1' &&
     typeof value.generated_at === 'string' &&
@@ -138,7 +206,9 @@ function operationsProjectionIsSafe(
     Array.isArray(value.subsystems) &&
     value.subsystems.every(subsystemContractIsSafe) &&
     Array.isArray(attentionItems) &&
-    attentionItems.every(attentionContractIsSafe)
+    attentionItems.every(attentionContractIsSafe) &&
+    (citicSourceFollowUp === undefined ||
+      citicSourceFollowUpContractIsSafe(citicSourceFollowUp))
   );
 }
 
@@ -308,7 +378,10 @@ export function OperationsPage() {
                     severity: exceptionTone(item.status),
                     statusLabel: formatPublicStatus(item.status, locale),
                     title: operationsSubsystemLabel(item.subsystem_id, locale),
-                    reason: formatPublicStatus(item.evidence.status, locale),
+                    reason: operationsEvidenceStatusLabel(
+                      item.evidence.status,
+                      locale,
+                    ),
                     unblockCondition: (
                       <span>
                         {operationsAttentionResolutionLabel(
@@ -486,7 +559,10 @@ export function OperationsPage() {
                 ],
                 [
                   labels.evidenceStatus,
-                  formatPublicStatus(selectedAttention.evidence.status, locale),
+                  operationsEvidenceStatusLabel(
+                    selectedAttention.evidence.status,
+                    locale,
+                  ),
                 ],
                 [
                   labels.observedAt,

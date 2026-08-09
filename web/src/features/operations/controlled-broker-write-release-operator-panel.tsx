@@ -232,7 +232,11 @@ export function ControlledBrokerWriteReleaseOperatorPanel({
                     : status.data?.active_release_count
                       ? locale === 'zh'
                         ? `${status.data.active_release_count} 个当前放行`
-                        : `${status.data.active_release_count} current release`
+                        : `${status.data.active_release_count} current ${
+                            status.data.active_release_count === 1
+                              ? 'release'
+                              : 'releases'
+                          }`
                       : locale === 'zh'
                         ? '无当前放行'
                         : 'No current release'}
@@ -254,9 +258,21 @@ export function ControlledBrokerWriteReleaseOperatorPanel({
         </div>
 
         <div className="mt-3 flex min-w-0 flex-wrap gap-2 text-xs">
-          <span className="app-chip">manual_each_order only</span>
-          <span className="app-chip">gateway registration: disabled</span>
-          <span className="app-chip">capital authority: unchanged</span>
+          <span className="app-chip">
+            {locale === 'zh'
+              ? '仅限逐单人工复核'
+              : 'Per-order manual review only'}
+          </span>
+          <span className="app-chip">
+            {locale === 'zh'
+              ? '券商网关注册：已禁用'
+              : 'Gateway registration: disabled'}
+          </span>
+          <span className="app-chip">
+            {locale === 'zh'
+              ? '资本权限：未改变'
+              : 'Capital authority: unchanged'}
+          </span>
         </div>
 
         {open && status.isError ? (

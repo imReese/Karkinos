@@ -127,6 +127,9 @@ test('Account Truth preserves its evidence hierarchy across themes and acceptanc
         const content = document.querySelector(
           '.app-shell-content',
         ) as HTMLElement;
+        const route = document.querySelector(
+          '[data-workbench-route="account-truth"]',
+        ) as HTMLElement;
         const header = document.querySelector(
           '[data-workbench-primitive="workspace-header"]',
         ) as HTMLElement;
@@ -141,6 +144,7 @@ test('Account Truth preserves its evidence hierarchy across themes and acceptanc
         ) as HTMLElement;
         return {
           contentOverflow: content.scrollWidth - content.clientWidth,
+          routeOverflow: route.scrollWidth - route.clientWidth,
           documentOverflow:
             document.documentElement.scrollWidth -
             document.documentElement.clientWidth,
@@ -154,6 +158,7 @@ test('Account Truth preserves its evidence hierarchy across themes and acceptanc
 
       expect(geometry.documentOverflow, `${theme} ${viewport.width}`).toBe(0);
       expect(geometry.contentOverflow, `${theme} ${viewport.width}`).toBe(0);
+      expect(geometry.routeOverflow, `${theme} ${viewport.width}`).toBe(0);
       expect(geometry.metricsTop, `${theme} ${viewport.width}`).toBeGreaterThan(
         geometry.headerTop,
       );

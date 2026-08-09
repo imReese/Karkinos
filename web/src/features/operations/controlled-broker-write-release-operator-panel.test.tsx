@@ -256,8 +256,10 @@ type RecordedRequest = {
 
 function renderPanel({
   listedReleases = [],
+  locale = 'en',
 }: {
   listedReleases?: ControlledBrokerWriteReleaseEvidence[];
+  locale?: 'en' | 'zh';
 } = {}) {
   const requests: RecordedRequest[] = [];
   vi.stubGlobal(
@@ -360,7 +362,7 @@ function renderPanel({
   render(
     <QueryClientProvider client={queryClient}>
       <ControlledBrokerWriteReleaseOperatorPanel
-        locale="en"
+        locale={locale}
         readiness={readiness}
         soak={soak}
       />
@@ -382,6 +384,21 @@ test('stays collapsed without reading or creating any mutation', async () => {
   expect(requests).toHaveLength(0);
   expect(screen.queryByText('Submit broker order')).toBeNull();
   expect(screen.queryByText('Cancel broker order')).toBeNull();
+  expect(screen.getByText('Per-order manual review only')).toBeTruthy();
+  expect(screen.getByText('Gateway registration: disabled')).toBeTruthy();
+  expect(screen.getByText('Capital authority: unchanged')).toBeTruthy();
+  expect(screen.queryByText('manual_each_order only')).toBeNull();
+});
+
+test('localizes the closed capability boundary without changing its contract', async () => {
+  const requests = renderPanel({ locale: 'zh' });
+
+  expect(await screen.findByText('复核已关闭')).toBeTruthy();
+  expect(screen.getByText('仅限逐单人工复核')).toBeTruthy();
+  expect(screen.getByText('券商网关注册：已禁用')).toBeTruthy();
+  expect(screen.getByText('资本权限：未改变')).toBeTruthy();
+  expect(screen.queryByText('manual_each_order only')).toBeNull();
+  expect(requests).toHaveLength(0);
 });
 
 test('blocks nested credential keys locally without sending the manifest', async () => {
