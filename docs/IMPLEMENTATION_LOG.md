@@ -8,44 +8,35 @@ in Git commits and pull requests.
 
 ## Current Baseline
 
-As of 2026-07-18, v0.2 through v1.7 are complete. The v1.8 control-plane
-foundation and AI-native research foundation through Phase 1.18 are
-implemented. The active product milestone is the broker-connected controlled
-per-order pilot described in [ROADMAP.md](ROADMAP.md).
+As of 2026-07-18, v0.2 through v1.7 are complete. The v1.8 control-plane foundation and
+AI-native research foundation through Phase 1.18 are implemented. The active product
+milestone is the broker-connected controlled per-order pilot in [ROADMAP.md](ROADMAP.md).
 
 The latest completed cross-cutting work includes:
 
 - persisted observations as the authoritative read source;
 - immutable valuation snapshots and ledger identity;
-- evidence-bound strategy contribution v2, assuming the controlled posting
-  contract's immutable `ledger_entries.source_ref = fill_id` identity; linked
-  fills expose P/L only after exact production-ledger and valuation-snapshot
-  replay, while the read path remains provider-free, write-free, and without
-  trading or capital authority;
+- evidence-bound strategy contribution v2, assuming the controlled posting contract's immutable
+  `ledger_entries.source_ref = fill_id` identity; linked fills expose P/L only after exact production-ledger
+  and valuation-snapshot replay, while the read path remains provider-free, write-free, and without trading or capital authority;
 - canonical daily performance across Holdings, Equity Curve, Overview, and
   explainability surfaces;
-- provider-neutral evidence-bound AI research, review, and memory lineage,
-  including explicit exact-strategy capture of the canonical posted-fill and
-  valuation-bound contribution report without P/L recomputation or authority;
-- an evidence-bound human post-decision review that freezes one persisted
-  signal/action/risk/order/fill chain together with the canonical strategy
-  contribution snapshot, rejects drift, records idempotently with a replayable
-  append-only audit chain, and cannot mutate financial facts or authority;
-- a persisted-only Strategy Lab learning queue that replay-checks the stored
-  review, rebinds current evidence, emits deterministic human next actions, and
-  offers only copyable human-started research handoffs with no AI or authority;
-- a canonical five-dimension Decision Quality Score over persisted Decision,
-  with idempotent daily capture, tamper-evident replay, longitudinal coverage,
-  and no AI, financial, risk, execution, or authority side effects;
+- provider-neutral evidence-bound AI research, review, and memory lineage, including explicit exact-strategy capture
+  of the canonical posted-fill and valuation-bound contribution report without P/L recomputation or authority;
+- an evidence-bound human post-decision review that freezes one persisted signal/action/risk/order/fill chain together
+  with the canonical strategy contribution snapshot, rejects drift, records idempotently with a replayable append-only
+  audit chain, and cannot mutate financial facts or authority;
+- a persisted-only Strategy Lab learning queue that replay-checks the stored review, rebinds current evidence, emits
+  deterministic human next actions, and offers only copyable human-started research handoffs with no AI or authority;
+- a canonical five-dimension Decision Quality Score over persisted Decision, with idempotent daily capture,
+  tamper-evident replay, longitudinal coverage, and no AI, financial, risk, execution, or authority side effects;
 - a valuation/ledger-bound canonical current-holding market-evidence review consumed unchanged by Overview, with exact blockers and targeted ingestion in Market;
 - persisted valuation v4, which keeps fund estimates visible but non-authoritative
   until a same-day confirmed NAV exists, so Decision and risk fail closed;
-- a zero-write fail-closed batch-risk boundary for incomplete valuation or
-  candidate evidence; accepted decisions bind the exact snapshot and ledger
-  cutoff without creating orders or touching the ledger;
-- human-gated allowlisted Formula DSL research over exact saved datasets,
-  executed by the canonical backtest engine with next-bar semantics and no
-  production-strategy or trading-authority side effects;
+- a zero-write fail-closed batch-risk boundary for incomplete valuation or candidate evidence; accepted decisions bind
+  the exact snapshot and ledger cutoff without creating orders or touching the ledger;
+- human-gated allowlisted Formula DSL research over exact saved datasets, executed by the canonical backtest engine
+  with next-bar semantics and no production-strategy or trading-authority side effects;
 - fail-fast grouped runtime configuration, environment-only TuShare/AI and
   notification credentials, validated Settings write contracts, and one
   dotenv-selection path shared by server and legacy CLI entrypoints;

@@ -1,15 +1,30 @@
 repos:
-  - repo: https://github.com/pycqa/isort
-    rev: 6.0.1
+  - repo: local
     hooks:
-      - id: isort
-        name: isort (python)
-
-  - repo: https://github.com/psf/black
-    rev: 25.1.0
-    hooks:
-      - id: black
-        language_version: python3.12
+      - id: isort-locked
+        name: isort (uv locked)
+        entry: uv run --frozen --extra dev isort
+        language: system
+        types: [python]
+        require_serial: true
+      - id: black-locked
+        name: black (uv locked)
+        entry: uv run --frozen --extra dev black
+        language: system
+        types: [python]
+        require_serial: true
+      - id: prettier-locked
+        name: prettier (web lockfile)
+        entry: web/node_modules/.bin/prettier --write
+        language: system
+        files: ^web/.*\.(ts|tsx|js|jsx|css|md|json)$
+        require_serial: true
+      - id: documentation-health
+        name: documentation health
+        entry: python scripts/check_docs_health.py
+        language: system
+        pass_filenames: false
+        files: ^(README\.md|docs/.*\.md|AGENTS\.md|CLAUDE\.md)$
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -21,9 +36,3 @@ repos:
       - id: check-added-large-files
         args: ["--maxkb=512"]
       - id: check-merge-conflict
-
-  - repo: https://github.com/pre-commit/mirrors-prettier
-    rev: v3.1.0
-    hooks:
-      - id: prettier
-        types_or: [javascript, jsx, ts, tsx, css, json]

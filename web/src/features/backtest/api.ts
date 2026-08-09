@@ -767,7 +767,7 @@ export function useAccountStrategyAssignmentsQuery(enabled = true) {
     queryFn: () =>
       apiClient<AccountStrategyAssignment[]>(
         '/api/account-strategy/assignments',
-    ),
+      ),
     staleTime: 10_000,
     enabled,
   });

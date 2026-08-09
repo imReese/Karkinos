@@ -1,11 +1,5 @@
 """Account-truth import and reconciliation helpers."""
 
-from account_truth.broker_evidence import (
-    ACCOUNT_TRUTH_SCHEMA_VERSION,
-    BrokerEvidenceRepository,
-    BrokerImportRun,
-    StoredBrokerEvidenceEvent,
-)
 from account_truth.broker_connector import (
     BrokerCashFact,
     BrokerConnectorCapabilities,
@@ -23,6 +17,12 @@ from account_truth.broker_connector import (
 from account_truth.broker_connector_evidence import (
     BROKER_CONNECTOR_SOURCE_TYPE,
     build_broker_connector_evidence_preview,
+)
+from account_truth.broker_evidence import (
+    ACCOUNT_TRUTH_SCHEMA_VERSION,
+    BrokerEvidenceRepository,
+    BrokerImportRun,
+    StoredBrokerEvidenceEvent,
 )
 from account_truth.broker_statement import (
     BROKER_STATEMENT_EVENT_TYPES,
