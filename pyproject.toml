@@ -13,6 +13,7 @@ dependencies = [
     "pytest-asyncio>=1.4.0",
     "httpx>=0.28.1",
     "cryptography>=49.0.0",
+    "xlrd>=2.0.2",
 ]
 
 [project.optional-dependencies]

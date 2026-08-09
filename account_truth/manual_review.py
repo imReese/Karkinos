@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Iterator, Literal
 
 MANUAL_REVIEW_SCHEMA_VERSION = "karkinos.account_truth.manual_review.v3"
 MANUAL_REVIEW_STATUSES = (
@@ -24,6 +25,14 @@ ManualReviewStatus = Literal[
     "ledger_candidate",
     "needs_investigation",
 ]
+
+
+class ManualReviewReadRejected(RuntimeError):
+    """Raised when persisted reconciliation review evidence is unsafe to read."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
 
 
 @dataclass(frozen=True)
@@ -47,8 +56,6 @@ class ManualReviewRepository:
 
     def __init__(self, db_path: str | Path) -> None:
         self._path = Path(db_path)
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._ensure_schema()
 
     def record_decision(
         self,
@@ -65,6 +72,7 @@ class ManualReviewRepository:
         if review_status not in MANUAL_REVIEW_STATUSES:
             raise ValueError(f"unsupported manual review status: {review_status}")
 
+        self._ensure_schema()
         now = datetime.now(UTC).isoformat()
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
@@ -149,8 +157,9 @@ class ManualReviewRepository:
         return _decision_from_row(row)
 
     def list_decisions(self, import_run_id: str) -> list[ManualReviewDecision]:
-        with sqlite3.connect(self._path) as conn:
-            conn.row_factory = sqlite3.Row
+        with self._read_connection() as conn:
+            if conn is None:
+                return []
             rows = conn.execute(
                 """
                 SELECT *
@@ -180,12 +189,36 @@ class ManualReviewRepository:
             query += " AND item_key = ?"
             params.append(item_key)
         query += " ORDER BY history_id ASC"
-        with sqlite3.connect(self._path) as conn:
-            conn.row_factory = sqlite3.Row
+        with self._read_connection() as conn:
+            if conn is None:
+                return []
             rows = conn.execute(query, tuple(params)).fetchall()
         return [_decision_from_row(row) for row in rows]
 
+    @contextmanager
+    def _read_connection(self) -> Iterator[sqlite3.Connection | None]:
+        if not self._path.is_file():
+            yield None
+            return
+        try:
+            read_uri = f"{self._path.resolve().as_uri()}?mode=ro"
+            with sqlite3.connect(read_uri, uri=True) as conn:
+                conn.row_factory = sqlite3.Row
+                conn.execute("PRAGMA query_only = ON")
+                schema_state = self._schema_state(conn)
+                if schema_state == "absent":
+                    yield None
+                    return
+                if schema_state != "complete":
+                    raise ManualReviewReadRejected("manual_review_schema_incomplete")
+                yield conn
+        except ManualReviewReadRejected:
+            raise
+        except (OSError, sqlite3.DatabaseError) as exc:
+            raise ManualReviewReadRejected("manual_review_store_unreadable") from exc
+
     def _ensure_schema(self) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(self._path) as conn:
             conn.executescript("""
                 CREATE TABLE IF NOT EXISTS reconciliation_review_decisions (
@@ -263,19 +296,88 @@ class ManualReviewRepository:
             """)
             conn.commit()
 
+    @staticmethod
+    def _schema_state(conn: sqlite3.Connection) -> str:
+        required_tables = {
+            "reconciliation_review_decisions": {
+                "id",
+                "import_run_id",
+                "item_key",
+                "category",
+                "symbol",
+                "review_status",
+                "note",
+                "reviewer",
+                "evidence_fingerprint",
+                "schema_version",
+                "created_at",
+                "updated_at",
+            },
+            "reconciliation_review_history": {
+                "history_id",
+                "import_run_id",
+                "item_key",
+                "category",
+                "symbol",
+                "review_status",
+                "note",
+                "reviewer",
+                "evidence_fingerprint",
+                "schema_version",
+                "created_at",
+                "updated_at",
+                "recorded_at",
+            },
+        }
+        table_names = {
+            str(row["name"])
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+        present = table_names.intersection(required_tables)
+        if not present:
+            return "absent"
+        if present != set(required_tables):
+            return "incomplete"
+        for table_name, required_columns in required_tables.items():
+            columns = {
+                str(row["name"])
+                for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+            }
+            if not required_columns.issubset(columns):
+                return "incomplete"
+        return "complete"
+
 
 def _decision_from_row(row: sqlite3.Row) -> ManualReviewDecision:
-    return ManualReviewDecision(
-        id=int(row["id"]),
-        import_run_id=str(row["import_run_id"]),
-        item_key=str(row["item_key"]),
-        category=str(row["category"]),
-        symbol=str(row["symbol"] or ""),
-        review_status=str(row["review_status"]),  # type: ignore[arg-type]
-        note=str(row["note"] or ""),
-        reviewer=str(row["reviewer"] or "local"),
-        evidence_fingerprint=str(row["evidence_fingerprint"] or ""),
-        schema_version=str(row["schema_version"]),
-        created_at=str(row["created_at"]),
-        updated_at=str(row["updated_at"]),
-    )
+    try:
+        decision = ManualReviewDecision(
+            id=int(row["id"]),
+            import_run_id=str(row["import_run_id"]),
+            item_key=str(row["item_key"]),
+            category=str(row["category"]),
+            symbol=str(row["symbol"] or ""),
+            review_status=str(row["review_status"]),  # type: ignore[arg-type]
+            note=str(row["note"] or ""),
+            reviewer=str(row["reviewer"] or "local"),
+            evidence_fingerprint=str(row["evidence_fingerprint"] or ""),
+            schema_version=str(row["schema_version"]),
+            created_at=str(row["created_at"]),
+            updated_at=str(row["updated_at"]),
+        )
+    except (IndexError, KeyError, TypeError, ValueError) as exc:
+        raise ManualReviewReadRejected("manual_review_record_invalid") from exc
+    if (
+        decision.id <= 0
+        or not decision.import_run_id.strip()
+        or not decision.item_key.strip()
+        or not decision.category.strip()
+        or decision.review_status not in MANUAL_REVIEW_STATUSES
+        or not decision.reviewer.strip()
+        or not decision.schema_version.strip()
+        or not decision.created_at.strip()
+        or not decision.updated_at.strip()
+    ):
+        raise ManualReviewReadRejected("manual_review_record_invalid")
+    return decision

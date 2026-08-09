@@ -25,6 +25,7 @@ from account_truth.reconciliation import (
 from account_truth.score import AccountTruthScore, build_account_truth_score
 from server.ledger.models import LedgerEntry
 from server.projections.service import build_portfolio_projection_from_db
+from server.services.citic_source_follow_up import build_citic_source_follow_up
 
 ACCOUNT_TRUTH_PROMOTION_EVIDENCE_SCHEMA_VERSION = (
     "karkinos.account_truth.promotion_evidence.v1"
@@ -122,6 +123,12 @@ def build_latest_account_truth_promotion_evidence(
     captured_at = _parse_aware_timestamp(import_run.created_at)
     effective_max_age = max(60, min(int(max_age_seconds), 604800))
     blockers: list[str] = []
+    citic_source_follow_up = _citic_source_follow_up_for_promotion(db_path)
+    if citic_source_follow_up["count_complete"] is not True:
+        blockers.append(str(citic_source_follow_up["status"]))
+    elif int(citic_source_follow_up["pending_source_count"]) > 0:
+        blockers.append("citic_source_follow_up_required")
+    blockers.extend(str(item) for item in citic_source_follow_up["blockers"])
     age_seconds: int | None = None
     freshness_status = "missing"
     if captured_at is None:
@@ -220,6 +227,7 @@ def build_latest_account_truth_promotion_evidence(
             "max_age_seconds": effective_max_age,
             "ledger_coverage": ledger_coverage,
         },
+        "citic_source_follow_up": citic_source_follow_up,
     }
     unique_blockers = list(dict.fromkeys(blockers))
     return {
@@ -246,10 +254,91 @@ def build_latest_account_truth_promotion_evidence(
         "unresolved_mismatch_count": score.unresolved_mismatch_count,
         "resolved_review_count": score.resolved_review_count,
         "reconciliation_items": report_items,
+        "citic_source_follow_up": citic_source_follow_up,
         "blockers": unique_blockers,
         "does_not_mutate_production_ledger": True,
         "does_not_issue_execution_authority": True,
         "broker_submission_enabled": False,
+    }
+
+
+def _citic_source_follow_up_for_promotion(db_path: Path) -> dict[str, object]:
+    """Return only sanitized, fail-closed source-review gate fields."""
+
+    try:
+        projection = build_citic_source_follow_up(db_path)
+    except Exception:
+        return {
+            "schema_version": "karkinos.account_truth.citic_source_follow_up.v1",
+            "status": "citic_source_follow_up_projection_failed",
+            "pending_source_count": 0,
+            "scanned_source_count": 0,
+            "count_complete": False,
+            "intake_scan_truncated": False,
+            "evidence_fingerprint": "",
+            "blockers": ["citic_source_follow_up_projection_failed"],
+            "query_window_batch_integrity_status": "not_available",
+            "query_window_batch_assessment_fingerprint": "",
+            "query_window_gap_calendar_day_count": 0,
+            "query_window_overlap_calendar_day_count": 0,
+            "query_window_integrity_clear": False,
+            "source_scope_batch_integrity_status": "not_available",
+            "source_scope_batch_assessment_fingerprint": "",
+            "source_scope_integrity_clear": False,
+            "source_scope_account_binding_consistent": False,
+            "source_scope_declared_scope_consistent": False,
+            "source_scope_complete_returned_results_attested": False,
+        }
+    return {
+        "schema_version": str(projection.get("schema_version") or ""),
+        "status": str(projection.get("status") or "unavailable"),
+        "pending_source_count": max(
+            0,
+            int(projection.get("pending_source_count") or 0),
+        ),
+        "scanned_source_count": max(
+            0,
+            int(projection.get("scanned_source_count") or 0),
+        ),
+        "count_complete": projection.get("count_complete") is True,
+        "intake_scan_truncated": projection.get("intake_scan_truncated") is True,
+        "evidence_fingerprint": str(projection.get("evidence_fingerprint") or ""),
+        "blockers": [str(item) for item in projection.get("blockers") or []],
+        "query_window_batch_integrity_status": str(
+            projection.get("query_window_batch_integrity_status") or "not_available"
+        ),
+        "query_window_batch_assessment_fingerprint": str(
+            projection.get("query_window_batch_assessment_fingerprint") or ""
+        ),
+        "query_window_gap_calendar_day_count": max(
+            0,
+            int(projection.get("query_window_gap_calendar_day_count") or 0),
+        ),
+        "query_window_overlap_calendar_day_count": max(
+            0,
+            int(projection.get("query_window_overlap_calendar_day_count") or 0),
+        ),
+        "query_window_integrity_clear": (
+            projection.get("query_window_integrity_clear") is True
+        ),
+        "source_scope_batch_integrity_status": str(
+            projection.get("source_scope_batch_integrity_status") or "not_available"
+        ),
+        "source_scope_batch_assessment_fingerprint": str(
+            projection.get("source_scope_batch_assessment_fingerprint") or ""
+        ),
+        "source_scope_integrity_clear": (
+            projection.get("source_scope_integrity_clear") is True
+        ),
+        "source_scope_account_binding_consistent": (
+            projection.get("source_scope_account_binding_consistent") is True
+        ),
+        "source_scope_declared_scope_consistent": (
+            projection.get("source_scope_declared_scope_consistent") is True
+        ),
+        "source_scope_complete_returned_results_attested": (
+            projection.get("source_scope_complete_returned_results_attested") is True
+        ),
     }
 
 
