@@ -3997,21 +3997,44 @@ export function RiskPage() {
                   {copy.riskPage.blockingRegisterDetail}
                 </p>
               </div>
-              <div
-                aria-hidden="true"
-                className="min-w-0 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]"
-                data-testid="risk-loading-exceptions"
-              >
-                {Array.from({ length: 3 }, (_, index) => (
-                  <div
-                    key={index}
-                    className="grid min-h-20 min-w-0 gap-3 px-3 py-3 sm:grid-cols-[minmax(8rem,0.4fr)_minmax(0,1fr)] sm:items-center"
-                  >
-                    <span className="block h-3 w-28 max-w-full rounded-[var(--app-radius-control)] bg-[var(--app-divider)]" />
-                    <span className="block h-3 w-full max-w-xl rounded-[var(--app-radius-control)] bg-[var(--app-divider)]" />
-                  </div>
-                ))}
-              </div>
+              {state.data && activeRiskItems.length > 0 ? (
+                <div
+                  className="min-w-0"
+                  data-testid="risk-loading-live-exceptions"
+                >
+                  <ExceptionList
+                    ariaLabel={copy.riskPage.blockingRegister}
+                    emptyState={copy.riskPage.noBlockingItems}
+                    density="compact"
+                    labels={{
+                      reason: locale === 'zh' ? '阻断原因' : 'Reason',
+                      unblockCondition:
+                        locale === 'zh' ? '解除条件' : 'Unblock condition',
+                      nextAction:
+                        locale === 'zh' ? '安全下一步' : 'Safe next step',
+                      evidence: locale === 'zh' ? '证据' : 'Evidence',
+                    }}
+                    items={activeRiskItems}
+                    className="[&>li>dl]:grid-cols-2 2xl:[&>li>dl]:grid-cols-4"
+                  />
+                </div>
+              ) : (
+                <div
+                  aria-hidden="true"
+                  className="min-w-0 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]"
+                  data-testid="risk-loading-exceptions"
+                >
+                  {Array.from({ length: 3 }, (_, index) => (
+                    <div
+                      key={index}
+                      className="grid min-h-20 min-w-0 gap-3 px-3 py-3 sm:grid-cols-[minmax(8rem,0.4fr)_minmax(0,1fr)] sm:items-center"
+                    >
+                      <span className="block h-3 w-28 max-w-full rounded-[var(--app-radius-control)] bg-[var(--app-divider)]" />
+                      <span className="block h-3 w-full max-w-xl rounded-[var(--app-radius-control)] bg-[var(--app-divider)]" />
+                    </div>
+                  ))}
+                </div>
+              )}
             </section>
 
             <aside className="grid min-w-0 content-start gap-3">
@@ -4022,27 +4045,51 @@ export function RiskPage() {
                 <h2 className="app-type-section-title text-[var(--app-text)]">
                   {copy.riskPage.metrics}
                 </h2>
-                <div
-                  aria-hidden="true"
-                  className="app-metric-strip grid min-w-0 grid-cols-2 border-y border-[var(--app-divider)] bg-transparent xl:grid-cols-1"
-                >
-                  {[
-                    'current_drawdown',
-                    'gross_exposure',
-                    'cash_ratio',
-                    'largest_weight',
-                  ].map((metric) => (
-                    <div
-                      key={metric}
-                      className="app-metric-strip-item min-w-0 px-3 py-2.5"
-                    >
-                      <span className="app-type-label block font-medium text-[var(--app-text-secondary)]">
-                        {getRiskMetricLabel(copy, metric)}
-                      </span>
-                      <span className="mt-2 block h-4 w-24 max-w-full rounded-[var(--app-radius-control)] bg-[var(--app-divider)]" />
-                    </div>
-                  ))}
-                </div>
+                {workspace.data ? (
+                  <div
+                    className="min-w-0"
+                    data-testid="risk-loading-live-metrics"
+                  >
+                    <MetricStrip
+                      ariaLabel={copy.riskPage.metrics}
+                      className="app-risk-metric-strip"
+                      items={workspace.data.metrics.map((metric) => ({
+                        id: metric.key,
+                        label: getRiskMetricLabel(copy, metric.key),
+                        value: metric.display_value,
+                        detail: formatRiskAlertLevel(metric.level, locale),
+                        tone:
+                          metric.level === 'high'
+                            ? ('danger' as const)
+                            : metric.level === 'medium'
+                              ? ('warning' as const)
+                              : ('neutral' as const),
+                      }))}
+                    />
+                  </div>
+                ) : (
+                  <div
+                    aria-hidden="true"
+                    className="app-metric-strip grid min-w-0 grid-cols-2 border-y border-[var(--app-divider)] bg-transparent xl:grid-cols-1"
+                  >
+                    {[
+                      'current_drawdown',
+                      'gross_exposure',
+                      'cash_ratio',
+                      'largest_weight',
+                    ].map((metric) => (
+                      <div
+                        key={metric}
+                        className="app-metric-strip-item min-w-0 px-3 py-2.5"
+                      >
+                        <span className="app-type-label block font-medium text-[var(--app-text-secondary)]">
+                          {getRiskMetricLabel(copy, metric)}
+                        </span>
+                        <span className="mt-2 block h-4 w-24 max-w-full rounded-[var(--app-radius-control)] bg-[var(--app-divider)]" />
+                      </div>
+                    ))}
+                  </div>
+                )}
               </section>
               <section
                 className="grid min-w-0 gap-2"

@@ -473,6 +473,33 @@ test('defers secondary risk reads until primary persisted evidence settles', asy
 
   await act(async () => {
     resolveState(jsonResponse({ ...accountState, risks: riskAlerts }));
+  });
+
+  const liveExceptions = await screen.findByTestId(
+    'risk-loading-live-exceptions',
+  );
+  expect(
+    within(liveExceptions).getByRole('heading', {
+      name: 'Cash buffer is close to the floor',
+    }),
+  ).toBeTruthy();
+  expect(screen.queryByTestId('risk-loading-exceptions')).toBeNull();
+  expect(screen.queryByTestId('risk-loading-live-metrics')).toBeNull();
+  expect(screen.getByTestId('risk-loading-metrics').textContent).toContain(
+    'Current drawdown',
+  );
+  expect(
+    fetchMock.mock.calls.some(([input]) =>
+      String(input).includes('/api/decision/today'),
+    ),
+  ).toBe(false);
+  expect(
+    fetchMock.mock.calls.some(([input]) =>
+      String(input).includes('/api/portfolio/explainability'),
+    ),
+  ).toBe(false);
+
+  await act(async () => {
     resolveRiskWorkspace(jsonResponse(riskWorkspace));
   });
 
