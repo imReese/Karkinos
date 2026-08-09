@@ -1,7 +1,27 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { expect, test } from 'vitest';
 
-import { PriceStructureChart } from './price-structure-chart';
+import {
+  PriceStructureChart,
+  PriceStructureLoadingState,
+} from './price-structure-chart';
+
+test('preserves price-structure geometry without inventing chart data', () => {
+  render(
+    <PriceStructureLoadingState
+      title="Loading persisted price structure"
+      description="Waiting for saved bars."
+    />,
+  );
+
+  const loadingState = screen.getByTestId('price-structure-loading-state');
+  expect(loadingState.getAttribute('aria-busy')).toBe('true');
+  expect(screen.getByText('Loading persisted price structure')).toBeTruthy();
+  expect(screen.getByTestId('price-structure-loading-chart')).toBeTruthy();
+  expect(screen.queryByTestId('kline-candle')).toBeNull();
+  expect(screen.queryByText(/¥|%/)).toBeNull();
+  expect(loadingState.className).not.toContain('animate-pulse');
+});
 
 test('renders OHLC price range as a K-line chart', () => {
   const { container } = render(
