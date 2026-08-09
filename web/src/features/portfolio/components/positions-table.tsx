@@ -64,11 +64,13 @@ export function PositionsTable({
   assetClassBySymbol = {},
   weightBySymbol = {},
   variant = 'full',
+  onOpenPosition,
 }: {
   positions: Position[];
   assetClassBySymbol?: Record<string, string>;
   weightBySymbol?: Record<string, number | null | undefined>;
   variant?: 'full' | 'dashboard' | 'history';
+  onOpenPosition?: (symbol: string) => void;
 }) {
   const copy = useCopy();
   const { locale } = usePreferences();
@@ -91,6 +93,21 @@ export function PositionsTable({
       return (
         <a
           href={holdingDetailHref(position.symbol)}
+          onClick={(event) => {
+            if (
+              !onOpenPosition ||
+              event.defaultPrevented ||
+              event.button !== 0 ||
+              event.metaKey ||
+              event.ctrlKey ||
+              event.shiftKey ||
+              event.altKey
+            ) {
+              return;
+            }
+            event.preventDefault();
+            onOpenPosition(position.symbol);
+          }}
           aria-label={`${labels.detailsTitle}: ${displayName} ${position.symbol}`}
           className="block min-w-40 font-semibold text-[var(--app-text)] hover:text-[var(--app-accent)]"
           title={`${displayName} · ${position.symbol}`}
@@ -275,6 +292,21 @@ export function PositionsTable({
               <li className="min-w-0 max-w-full" key={position.symbol}>
                 <a
                   href={holdingDetailHref(position.symbol)}
+                  onClick={(event) => {
+                    if (
+                      !onOpenPosition ||
+                      event.defaultPrevented ||
+                      event.button !== 0 ||
+                      event.metaKey ||
+                      event.ctrlKey ||
+                      event.shiftKey ||
+                      event.altKey
+                    ) {
+                      return;
+                    }
+                    event.preventDefault();
+                    onOpenPosition(position.symbol);
+                  }}
                   data-testid={`position-mobile-row-${position.symbol}`}
                   aria-label={`${labels.detailsTitle}: ${displayName} ${position.symbol}`}
                   className={`app-position-mobile-row block w-full min-w-0 max-w-full px-1 text-[var(--app-text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] ${
