@@ -95,7 +95,11 @@ test('portfolio lifecycle states stay flat instead of rebuilding a card wall', (
 
 test('portfolio defers secondary read models until primary holdings facts settle', () => {
   expect(portfolioPageSource).toContain(
-    'const primaryPortfolioQueriesSettled =',
+    'const primaryPortfolioQueriesSettled = snapshot.data !== undefined',
+  );
+  expect(portfolioPageSource).not.toContain('usePositionsQuery()');
+  expect(portfolioPageSource).toContain(
+    'const portfolioPositions = snapshot.data?.positions ?? []',
   );
   expect(portfolioPageSource).toContain('const isInitialPortfolioLoad =');
   expect(portfolioInitialLoadingSource).toContain(

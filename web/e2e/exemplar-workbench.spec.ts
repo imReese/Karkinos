@@ -766,6 +766,7 @@ test('portfolio keeps filtering ordered above a compact holdings projection', as
 test('portfolio initial load preserves the holdings hierarchy without fabricated values', async ({
   page,
 }) => {
+  let duplicatePositionsRequestCount = 0;
   let releasePrimaryResponses = () => {};
   const primaryResponsesHeld = new Promise<void>((resolve) => {
     releasePrimaryResponses = resolve;
@@ -776,7 +777,10 @@ test('portfolio initial load preserves the holdings hierarchy without fabricated
     await route.fulfill({ response });
   };
 
-  await page.route('**/api/portfolio/positions', holdPrimaryResponse);
+  await page.route('**/api/portfolio/positions', async (route) => {
+    duplicatePositionsRequestCount += 1;
+    await route.abort();
+  });
   await page.route('**/api/portfolio', holdPrimaryResponse);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/portfolio');
@@ -821,6 +825,7 @@ test('portfolio initial load preserves the holdings hierarchy without fabricated
   releasePrimaryResponses();
   await expect(page.getByTestId('portfolio-summary-strip')).toBeVisible();
   await expect(page.getByTestId('portfolio-current-holdings')).toBeVisible();
+  expect(duplicatePositionsRequestCount).toBe(0);
 });
 
 test('overview initial load preserves account, queue, and holdings hierarchy', async ({
@@ -1124,33 +1129,47 @@ test('portfolio mobile bounds long persisted holding rows in Latte and Mocha', a
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.route('**/api/portfolio/positions', async (route) => {
+  await page.route('**/api/portfolio', async (route) => {
+    const response = await route.fetch();
+    const snapshot = await response.json();
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify([
-        {
-          symbol: '012710',
-          display_name: '华夏核心成长混合型证券投资基金超长持久化名称C',
-          asset_class: 'fund',
-          quantity: 898.3131,
-          available_qty: 898.3131,
-          frozen_qty: 0,
-          avg_cost: 1.0018,
-          latest_price: 0.6399,
-          market_value: 574.83,
-          today_change: 13.74,
-          unrealized_pnl: -325.17,
-          realized_pnl: 0,
-          commission_paid: 0,
-          quote_timestamp: '2026-07-27T15:00:00+08:00',
-          quote_status: 'stale',
-          quote_source: 'market_bar_close',
-          quote_age_seconds: 162000,
-          stale_reason: 'quote_older_than_expected_session',
-          using_persistent_cache: true,
-        },
-      ]),
+      body: JSON.stringify({
+        ...snapshot,
+        positions: [
+          {
+            symbol: '012710',
+            display_name: '华夏核心成长混合型证券投资基金超长持久化名称C',
+            asset_class: 'fund',
+            quantity: 898.3131,
+            available_qty: 898.3131,
+            frozen_qty: 0,
+            avg_cost: 1.0018,
+            latest_price: 0.6399,
+            market_value: 574.83,
+            today_change: 13.74,
+            unrealized_pnl: -325.17,
+            realized_pnl: 0,
+            commission_paid: 0,
+            quote_timestamp: '2026-07-27T15:00:00+08:00',
+            quote_status: 'stale',
+            quote_source: 'market_bar_close',
+            quote_age_seconds: 162000,
+            stale_reason: 'quote_older_than_expected_session',
+            using_persistent_cache: true,
+          },
+        ],
+        allocation: [
+          {
+            symbol: '012710',
+            name: '华夏核心成长混合型证券投资基金超长持久化名称C',
+            weight: 1,
+            value: 574.83,
+            asset_class: 'fund',
+          },
+        ],
+      }),
     });
   });
 
