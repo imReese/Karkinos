@@ -823,6 +823,73 @@ test('portfolio initial load preserves the holdings hierarchy without fabricated
   await expect(page.getByTestId('portfolio-current-holdings')).toBeVisible();
 });
 
+test('risk initial load preserves priorities, metrics, and controlled-action hierarchy', async ({
+  page,
+}) => {
+  let releasePrimaryResponses = () => {};
+  const primaryResponsesHeld = new Promise<void>((resolve) => {
+    releasePrimaryResponses = resolve;
+  });
+  const holdPrimaryResponse = async (route: Route) => {
+    const response = await route.fetch();
+    await primaryResponsesHeld;
+    await route.fulfill({ response });
+  };
+
+  await page.route('**/api/portfolio/state', holdPrimaryResponse);
+  await page.route('**/api/portfolio/risk-workspace', holdPrimaryResponse);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/risk');
+
+  const loadingWorkspace = page.getByTestId('risk-loading-workspace');
+  const priorities = page.getByTestId('risk-loading-blocking-register');
+  const metrics = page.getByTestId('risk-loading-metrics');
+  const controlledAction = page.getByTestId('risk-loading-controlled-action');
+
+  await expect(loadingWorkspace).toBeVisible();
+  await expect(priorities.getByRole('heading', { level: 2 })).toBeVisible();
+  await expect(metrics.getByRole('heading', { level: 2 })).toBeVisible();
+  await expect(
+    controlledAction.getByRole('heading', { level: 2 }),
+  ).toBeVisible();
+  await expect(
+    page.getByTestId('risk-loading-exceptions').locator(':scope > *'),
+  ).toHaveCount(3);
+  await expect(metrics).not.toContainText(/[¥$€£]|\d+[,.]\d{2}/);
+
+  const loadingGeometry = await page.evaluate(() => {
+    const priorities = document.querySelector(
+      '[data-testid="risk-loading-blocking-register"]',
+    )!;
+    const metrics = document.querySelector(
+      '[data-testid="risk-loading-metrics"]',
+    )!;
+    const controlledAction = document.querySelector(
+      '[data-testid="risk-loading-controlled-action"]',
+    )!;
+    return {
+      controlledActionTop: controlledAction.getBoundingClientRect().top,
+      documentOverflow:
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+      metricsBottom: metrics.getBoundingClientRect().bottom,
+      metricsTop: metrics.getBoundingClientRect().top,
+      prioritiesTop: priorities.getBoundingClientRect().top,
+    };
+  });
+  expect(loadingGeometry.documentOverflow).toBeLessThanOrEqual(0);
+  expect(loadingGeometry.metricsTop).toBeGreaterThan(
+    loadingGeometry.prioritiesTop,
+  );
+  expect(loadingGeometry.controlledActionTop).toBeGreaterThanOrEqual(
+    loadingGeometry.metricsBottom,
+  );
+
+  releasePrimaryResponses();
+  await expect(page.getByTestId('risk-blocking-register')).toBeVisible();
+  await expect(page.getByTestId('risk-metric-rail')).toBeVisible();
+});
+
 test('portfolio mobile keeps holdings or an explicit empty state below disclosed filters', async ({
   page,
 }) => {
