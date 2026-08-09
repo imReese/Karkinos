@@ -158,6 +158,101 @@ test('decision loading keeps the final evidence hierarchy across laptop and mobi
   }
 });
 
+test('activity loading preserves the ledger hierarchy across desktop, tablet, and mobile', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(60_000);
+  let releaseActivityRequests = () => undefined;
+  let activityRequestGate = Promise.resolve();
+
+  for (const endpoint of [
+    '**/api/ledger/entries**',
+    '**/api/portfolio/pending-fund-orders',
+  ]) {
+    await page.route(endpoint, async (route) => {
+      await activityRequestGate;
+      await route.continue();
+    });
+  }
+
+  for (const target of [
+    { height: 720, locale: 'zh', theme: 'light', width: 1280 },
+    { height: 1112, locale: 'en', theme: 'dark', width: 834 },
+    { height: 844, locale: 'zh', theme: 'dark', width: 390 },
+  ] as const) {
+    activityRequestGate = new Promise<void>((resolve) => {
+      releaseActivityRequests = resolve;
+    });
+    await page.setViewportSize({ width: target.width, height: target.height });
+    await page.goto('/activity');
+    await page.evaluate(({ locale, theme }) => {
+      window.localStorage.setItem('karkinos.locale', locale);
+      window.localStorage.setItem('karkinos.theme', theme);
+    }, target);
+    await page.reload();
+
+    const history = page.getByTestId('activity-history-loading');
+    const pending = page.getByTestId('pending-fund-orders-loading');
+    await expect(history).toBeVisible();
+    await expect(history).toHaveAttribute('aria-busy', 'true');
+    await expect(pending).toHaveAttribute('aria-busy', 'true');
+    await expect(
+      page.getByTestId('activity-history-loading-rows').locator(':scope > *'),
+    ).toHaveCount(4);
+    await expect(
+      page
+        .getByTestId('pending-fund-orders-loading-rows')
+        .locator(':scope > *'),
+    ).toHaveCount(2);
+    await expect(history).not.toContainText(/[¥$€£]|\b0 entries\b|0 条/u);
+    await expect(pending).not.toContainText(/[¥$€£]|\b0 entries\b|0 条/u);
+
+    const geometry = await page.evaluate(() => {
+      const content = document.querySelector(
+        '.app-shell-content',
+      ) as HTMLElement;
+      const history = document.querySelector(
+        '[data-testid="activity-history-loading"]',
+      ) as HTMLElement;
+      const loadingRows = document.querySelector(
+        '[data-testid="activity-history-loading-rows"]',
+      ) as HTMLElement;
+      return {
+        contentOverflow: content.scrollWidth - content.clientWidth,
+        documentOverflow:
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+        historyTop: Math.round(history.getBoundingClientRect().top),
+        rowsTop: Math.round(loadingRows.getBoundingClientRect().top),
+        viewportHeight: window.innerHeight,
+      };
+    });
+    expect(
+      geometry.documentOverflow,
+      `${target.width} document`,
+    ).toBeLessThanOrEqual(0);
+    expect(
+      geometry.contentOverflow,
+      `${target.width} content`,
+    ).toBeLessThanOrEqual(0);
+    expect(geometry.historyTop, `${target.width} history`).toBeLessThan(520);
+    expect(geometry.rowsTop, `${target.width} rows`).toBeLessThan(
+      geometry.viewportHeight,
+    );
+
+    const screenshotName = `activity-loading-${target.width}x${target.height}-${target.theme}-${target.locale}.png`;
+    const screenshotPath = testInfo.outputPath(screenshotName);
+    await page.screenshot({ path: screenshotPath });
+    await testInfo.attach(screenshotName, {
+      path: screenshotPath,
+      contentType: 'image/png',
+    });
+
+    releaseActivityRequests();
+    await expect(history).toBeHidden({ timeout: 15_000 });
+  }
+});
+
 test('all workbench routes keep mobile interaction targets at least 44px', async ({
   page,
 }) => {

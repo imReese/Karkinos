@@ -48,6 +48,86 @@ const LEDGER_SUBCATEGORIES_BY_CATEGORY: Partial<
   adjustment: ['stock', 'fund', 'cashAccount', 'otherAsset'],
 };
 
+export function ActivityFeedLoading() {
+  const copy = useCopy();
+  const labels = copy.activity.feed;
+
+  return (
+    <section
+      aria-busy="true"
+      aria-live="polite"
+      className="app-workbench-section min-w-0 overflow-hidden"
+      data-testid="activity-history-loading"
+    >
+      <span className="sr-only">{copy.activity.loading}</span>
+      <div className="flex flex-wrap items-start justify-between gap-3 px-3 py-4 sm:px-5">
+        <div>
+          <div className="app-product-mark">{labels.kicker}</div>
+          <h2 className="app-type-section-title mt-2">{labels.title}</h2>
+        </div>
+        <span
+          aria-hidden="true"
+          className="block h-6 w-14 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] motion-safe:animate-pulse"
+        />
+      </div>
+      <div
+        aria-hidden="true"
+        className="border-t border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-3 py-3 sm:px-5"
+      >
+        <div className="flex min-w-0 items-center gap-2 overflow-hidden">
+          {[4.5, 3.5, 4, 3.5, 4.5].map((width, index) => (
+            <span
+              key={index}
+              className="block h-8 shrink-0 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] motion-safe:animate-pulse"
+              style={{ width: `${width}rem` }}
+            />
+          ))}
+          <span className="ml-auto hidden h-8 w-52 shrink-0 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] motion-safe:animate-pulse lg:block" />
+        </div>
+      </div>
+      <div
+        aria-hidden="true"
+        className="min-w-0 max-w-full overflow-auto overscroll-contain"
+      >
+        <table className="app-data-table w-full min-w-[760px] text-left text-sm">
+          <thead>
+            <tr>
+              <th className="px-4 py-2.5">{labels.columns.time}</th>
+              <th className="px-4 py-2.5">{labels.columns.activity}</th>
+              <th className="px-4 py-2.5">{labels.columns.instrument}</th>
+              <th className="px-4 py-2.5 text-right">
+                {labels.columns.amount}
+              </th>
+              <th className="px-4 py-2.5">{labels.columns.detail}</th>
+            </tr>
+          </thead>
+          <tbody data-testid="activity-history-loading-rows">
+            {Array.from({ length: 4 }, (_, index) => (
+              <tr key={index}>
+                <td className="w-[9.5rem] px-4 py-3">
+                  <span className="block h-3 w-24 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] motion-safe:animate-pulse" />
+                </td>
+                <td className="w-[10rem] px-4 py-3">
+                  <span className="block h-3 w-20 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] motion-safe:animate-pulse" />
+                </td>
+                <td className="px-4 py-3">
+                  <span className="block h-3 w-32 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] motion-safe:animate-pulse" />
+                </td>
+                <td className="w-36 px-4 py-3">
+                  <span className="ml-auto block h-3 w-16 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] motion-safe:animate-pulse" />
+                </td>
+                <td className="px-4 py-3">
+                  <span className="block h-3 w-40 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] motion-safe:animate-pulse" />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
   const copy = useCopy();
   const { locale } = usePreferences();
