@@ -103,6 +103,50 @@ function ReportDisclosure({
   );
 }
 
+function BacktestReportSkeleton({ title }: { title: string }) {
+  return (
+    <div
+      aria-busy="true"
+      className="min-w-0 space-y-4"
+      data-testid="backtest-report-skeleton"
+    >
+      <EvidenceState kind="loading" title={title} />
+      <section
+        aria-hidden="true"
+        className="min-w-0 border-y border-[var(--app-divider)] py-4"
+        data-testid="backtest-report-skeleton-chart"
+      >
+        <div className="flex items-end justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <span className="block h-2 w-20 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)]" />
+            <span className="mt-2 block h-4 w-40 max-w-[70%] rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)]" />
+          </div>
+          <span className="block h-2 w-14 shrink-0 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)]" />
+        </div>
+        <div className="mt-5 h-52 border-y border-[var(--app-divider)] bg-[linear-gradient(to_right,var(--app-divider)_1px,transparent_1px),linear-gradient(to_bottom,var(--app-divider)_1px,transparent_1px)] bg-[size:25%_100%,100%_25%] opacity-70 sm:h-[320px]" />
+      </section>
+      <div
+        aria-hidden="true"
+        className="divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]"
+        data-testid="backtest-report-skeleton-disclosures"
+      >
+        {Array.from({ length: 4 }, (_, index) => (
+          <div
+            className="flex min-h-16 items-center justify-between gap-4 py-3"
+            key={index}
+          >
+            <div className="min-w-0 flex-1">
+              <span className="block h-2 w-20 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)]" />
+              <span className="mt-2 block h-3 w-48 max-w-[72%] rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)]" />
+            </div>
+            <span className="block size-5 shrink-0 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)]" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function BacktestReportView() {
   const copy = useCopy();
   const labels = copy.backtest;
@@ -123,7 +167,7 @@ export function BacktestReportView() {
   );
 
   if (results.isLoading) {
-    return <EvidenceState kind="loading" title={labels.selection.loading} />;
+    return <BacktestReportSkeleton title={labels.selection.loading} />;
   }
 
   if (results.isError) {
@@ -175,10 +219,7 @@ export function BacktestReportView() {
       ) : null}
 
       {report.isLoading ? (
-        <EvidenceState
-          kind="loading"
-          title={labels.selection.selectedLoading}
-        />
+        <BacktestReportSkeleton title={labels.selection.selectedLoading} />
       ) : report.isError ? (
         <EvidenceState kind="error" title={labels.selection.selectedFailed} />
       ) : report.data ? (
