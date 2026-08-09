@@ -289,11 +289,12 @@ export function useResearchBoardQuery() {
   });
 }
 
-export function useMarketDataHealthQuery() {
+export function useMarketDataHealthQuery(enabled = true) {
   return useQuery({
     queryKey: ['market-data-health'],
     queryFn: () =>
       apiClient<MarketDataHealthResponse>('/api/market/data-health'),
+    enabled,
     staleTime: 10_000,
     refetchInterval: visiblePersistedProjectionRefetchInterval,
     refetchOnWindowFocus: true,

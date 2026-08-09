@@ -17,6 +17,7 @@ import type { MarketDataHealthResponse } from '../../features/market/api';
 
 type MatchMediaMock = {
   setDarkMode: (matches: boolean) => void;
+  setWideStatusRail: (matches: boolean) => void;
 };
 
 const defaultOverview = {
@@ -67,6 +68,7 @@ type ShellStatusMockOptions = {
   marketHealth?: Partial<MarketDataHealthResponse>;
   fetchImpl?: typeof fetch;
   locale?: 'en' | 'zh';
+  wideStatusRail?: boolean;
 };
 
 function jsonResponse(body: unknown) {
@@ -132,27 +134,40 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function installMatchMediaMock(initialDark = false): MatchMediaMock {
+function installMatchMediaMock(
+  initialDark = false,
+  initialWideStatusRail = true,
+): MatchMediaMock {
   let darkMode = initialDark;
-  const listeners = new Set<(event: MediaQueryListEvent) => void>();
+  let wideStatusRail = initialWideStatusRail;
+  const listeners = new Map<
+    string,
+    Set<(event: MediaQueryListEvent) => void>
+  >();
 
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     value: vi.fn().mockImplementation((query: string) => ({
-      matches: query.includes('prefers-color-scheme: dark') ? darkMode : false,
+      matches: query.includes('prefers-color-scheme: dark')
+        ? darkMode
+        : query === '(min-width: 1536px)'
+          ? wideStatusRail
+          : false,
       media: query,
       onchange: null,
       addEventListener: vi.fn(
         (event: string, listener: (event: MediaQueryListEvent) => void) => {
           if (event === 'change') {
-            listeners.add(listener);
+            const queryListeners = listeners.get(query) ?? new Set();
+            queryListeners.add(listener);
+            listeners.set(query, queryListeners);
           }
         },
       ),
       removeEventListener: vi.fn(
         (event: string, listener: (event: MediaQueryListEvent) => void) => {
           if (event === 'change') {
-            listeners.delete(listener);
+            listeners.get(query)?.delete(listener);
           }
         },
       ),
@@ -169,7 +184,19 @@ function installMatchMediaMock(initialDark = false): MatchMediaMock {
         matches,
         media: '(prefers-color-scheme: dark)',
       } as MediaQueryListEvent;
-      listeners.forEach((listener) => listener(event));
+      listeners
+        .get('(prefers-color-scheme: dark)')
+        ?.forEach((listener) => listener(event));
+    },
+    setWideStatusRail(matches: boolean) {
+      wideStatusRail = matches;
+      const event = {
+        matches,
+        media: '(min-width: 1536px)',
+      } as MediaQueryListEvent;
+      listeners
+        .get('(min-width: 1536px)')
+        ?.forEach((listener) => listener(event));
     },
   };
 }
@@ -181,7 +208,10 @@ function renderShell(options: ShellStatusMockOptions = {}) {
     window.localStorage.setItem('karkinos.locale', options.locale);
   }
   installShellStatusFetchMock(options);
-  const matchMedia = installMatchMediaMock();
+  const matchMedia = installMatchMediaMock(
+    false,
+    options.wideStatusRail ?? true,
+  );
 
   const rootRoute = createRootRoute({
     component: () => (
@@ -466,7 +496,7 @@ test('keeps the desktop toolbar controls in a single centered row', async () => 
 
   const accountStatus = await screen.findByLabelText('Account Status');
   expect(accountStatus.className).toContain('app-toolbar-status-rail');
-  expect(accountStatus.className).toContain('xl:flex');
+  expect(accountStatus.className).toContain('2xl:flex');
   expect(document.querySelector('.app-status-footer')).toBeNull();
 
   const themeSwitcher = await screen.findByRole('group', { name: 'Theme' });
@@ -524,7 +554,7 @@ test('surfaces compact persisted status in the desktop toolbar', async () => {
   renderShell();
 
   const statusRail = await screen.findByLabelText('Account Status');
-  expect(statusRail.className).toContain('xl:flex');
+  expect(statusRail.className).toContain('2xl:flex');
   expect(statusRail.className).toContain('app-toolbar-status-rail');
   expect(within(statusRail).queryByText('Recorded evidence')).toBeNull();
   const valuationStatus = within(statusRail).getByTestId(
@@ -556,6 +586,50 @@ test('surfaces compact persisted status in the desktop toolbar', async () => {
   expect(
     within(statusRail).queryByRole('link', { name: 'Execution' }),
   ).toBeNull();
+});
+
+test('defers hidden status projections until the wide status rail is visible', async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = input.toString();
+    if (url.includes('/api/portfolio/overview')) {
+      return jsonResponse(defaultOverview);
+    }
+    if (url.includes('/api/market/data-health')) {
+      return jsonResponse(defaultMarketHealth);
+    }
+    return new Response('Not found', { status: 404 });
+  });
+  const { matchMedia } = renderShell({
+    fetchImpl: fetchMock,
+    wideStatusRail: false,
+  });
+
+  expect(await screen.findByText('Overview page')).toBeTruthy();
+  expect(
+    fetchMock.mock.calls.some(([input]) =>
+      input.toString().includes('/api/portfolio/overview'),
+    ),
+  ).toBe(false);
+  expect(
+    fetchMock.mock.calls.some(([input]) =>
+      input.toString().includes('/api/market/data-health'),
+    ),
+  ).toBe(false);
+
+  act(() => matchMedia.setWideStatusRail(true));
+
+  await waitFor(() =>
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        input.toString().includes('/api/portfolio/overview'),
+      ),
+    ).toBe(true),
+  );
+  expect(
+    fetchMock.mock.calls.some(([input]) =>
+      input.toString().includes('/api/market/data-health'),
+    ),
+  ).toBe(true);
 });
 
 test('offers primary mobile tasks without shrinking the complete drawer', async () => {

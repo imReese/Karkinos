@@ -83,6 +83,7 @@ const STATUS_COLORS: Record<ToolbarStatusTone, string> = {
   warning: 'var(--app-warning-indicator)',
   danger: 'var(--app-danger-indicator)',
 };
+const STATUS_RAIL_MEDIA_QUERY = '(min-width: 1536px)';
 
 function isNavigationItemActive(pathname: string, target: string) {
   return pathname === target || pathname.startsWith(`${target}/`);
@@ -117,8 +118,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   });
   const { locale, setLocale, theme, setTheme } = usePreferences();
   const copy = useCopy();
-  const accountOverview = useAccountOverviewQuery();
-  const marketHealth = useMarketDataHealthQuery();
+  const [statusRailVisible, setStatusRailVisible] = useState(() =>
+    typeof window === 'undefined' || typeof window.matchMedia !== 'function'
+      ? false
+      : window.matchMedia(STATUS_RAIL_MEDIA_QUERY).matches,
+  );
+  const accountOverview = useAccountOverviewQuery(statusRailVisible);
+  const marketHealth = useMarketDataHealthQuery(statusRailVisible);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [desktopNavExpanded, setDesktopNavExpanded] = useState(true);
   const [commandOpen, setCommandOpen] = useState(false);
@@ -132,6 +138,19 @@ export function AppShell({ children }: { children: ReactNode }) {
   const routeScrollPositionsRef = useRef(
     new Map<string, { left: number; top: number }>(),
   );
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') {
+      return;
+    }
+    const mediaQuery = window.matchMedia(STATUS_RAIL_MEDIA_QUERY);
+    const handleChange = (event: MediaQueryListEvent) => {
+      setStatusRailVisible(event.matches);
+    };
+    setStatusRailVisible(mediaQuery.matches);
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
 
   useLayoutEffect(() => {
     const content = contentRef.current;
@@ -508,7 +527,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <span className="app-product-mark truncate">Karkinos</span>
               </div>
 
-              <div className="app-toolbar-state hidden shrink-0 items-center xl:flex">
+              <div className="app-toolbar-state hidden shrink-0 items-center 2xl:flex">
                 <div
                   className="app-toolbar-mode"
                   aria-label={`${copy.shell.accountMode}: ${executionMode}`}
@@ -520,7 +539,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
               <div
                 ref={statusRailRef}
-                className="app-toolbar-status-rail relative hidden min-w-0 shrink items-center gap-1 overflow-visible xl:flex"
+                className="app-toolbar-status-rail relative hidden min-w-0 shrink items-center gap-1 overflow-visible 2xl:flex"
                 aria-label={copy.shell.accountStatus}
               >
                 <StatusChip
