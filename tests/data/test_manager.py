@@ -87,6 +87,15 @@ class EmptySource(MockSource):
         )
 
 
+class StockOnlySource(MockSource):
+    def supports_bars(
+        self,
+        asset_class=AssetClass.STOCK,
+        frequency=BarFrequency.DAILY,
+    ):
+        return asset_class == AssetClass.STOCK and frequency == BarFrequency.DAILY
+
+
 class TestDataManager:
     """DataManager 测试。"""
 
@@ -246,6 +255,41 @@ class TestDataManager:
         assert handler.total_bars > 0
         assert primary.fetch_count == 1
         assert fallback.fetch_count == 1
+
+    def test_remote_fetch_skips_unsupported_primary_before_akshare_fallback(self):
+        """主数据源明确不支持基金 K 线时，不应发起调用或记录异常。"""
+        primary = StockOnlySource("tushare")
+        fallback = MockSource("akshare")
+        manager = DataManager(
+            {"tushare": primary, "akshare": fallback},
+            default_source="tushare",
+        )
+
+        handler = manager.get_bars(
+            Symbol("019999"),
+            start=_TEST_START,
+            end=_TEST_END,
+            asset_class=AssetClass.FUND,
+        )
+
+        assert handler.total_bars > 0
+        assert primary.fetch_count == 0
+        assert fallback.fetch_count == 1
+
+    def test_remote_fetch_fails_closed_when_no_source_supports_request(self):
+        """没有数据源支持该资产与频率时，应明确失败且不伪造 K 线。"""
+        source = StockOnlySource("tushare")
+        manager = DataManager({"tushare": source}, default_source="tushare")
+
+        with pytest.raises(ValueError, match="unsupported_sources=.*tushare"):
+            manager.get_bars(
+                Symbol("019999"),
+                start=_TEST_START,
+                end=_TEST_END,
+                asset_class=AssetClass.FUND,
+            )
+
+        assert source.fetch_count == 0
 
     def test_unknown_source_raises(self):
         """未知数据源应抛出 ValueError。"""

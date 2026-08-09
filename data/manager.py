@@ -233,7 +233,21 @@ class DataManager:
     ) -> pd.DataFrame:
         errors: list[Exception] = []
         empty_sources: list[str] = []
+        unsupported_sources: list[str] = []
         for candidate_name, source in self._source_candidates(source_name):
+            supports_bars = getattr(source, "supports_bars", None)
+            if callable(supports_bars) and not supports_bars(
+                asset_class=asset_class, frequency=frequency
+            ):
+                unsupported_sources.append(candidate_name)
+                logger.info(
+                    "跳过不支持的远端数据源: %s %s (%s, %s)",
+                    candidate_name,
+                    symbol,
+                    asset_class.value,
+                    frequency.value,
+                )
+                continue
             try:
                 df = source.fetch_bars(symbol, start, end, frequency, asset_class)
             except Exception as exc:
@@ -267,7 +281,7 @@ class DataManager:
             raise errors[-1]
         raise ValueError(
             f"未获取到数据: {symbol} ({asset_class.value}) {start}~{end}; "
-            f"empty_sources={empty_sources}"
+            f"unsupported_sources={unsupported_sources}; empty_sources={empty_sources}"
         )
 
     @staticmethod
