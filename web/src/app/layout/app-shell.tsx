@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ComponentType,
@@ -126,6 +127,28 @@ export function AppShell({ children }: { children: ReactNode }) {
   const mobileNavRef = useRef<HTMLElement | null>(null);
   const mobileNavCloseRef = useRef<HTMLButtonElement | null>(null);
   const statusRailRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const previousPathnameRef = useRef(pathname);
+  const routeScrollPositionsRef = useRef(
+    new Map<string, { left: number; top: number }>(),
+  );
+
+  useLayoutEffect(() => {
+    const content = contentRef.current;
+    const previousPathname = previousPathnameRef.current;
+    if (!content || previousPathname === pathname) {
+      return;
+    }
+
+    routeScrollPositionsRef.current.set(previousPathname, {
+      left: content.scrollLeft,
+      top: content.scrollTop,
+    });
+    const nextPosition = routeScrollPositionsRef.current.get(pathname);
+    content.scrollLeft = nextPosition?.left ?? 0;
+    content.scrollTop = nextPosition?.top ?? 0;
+    previousPathnameRef.current = pathname;
+  }, [pathname]);
 
   useEffect(() => {
     if (!mobileNavOpen) {
@@ -657,7 +680,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             onClose={() => setCommandOpen(false)}
           />
 
-          <div className="app-shell-content min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto [contain:layout_paint]">
+          <div
+            ref={contentRef}
+            className="app-shell-content min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto [contain:layout_paint]"
+          >
             <div className="w-full min-w-0 px-3 py-3 sm:px-4 sm:py-4 lg:px-5 lg:py-5 xl:px-6">
               <div className="app-route-stage" key={pathname}>
                 {children}

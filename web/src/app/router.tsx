@@ -833,6 +833,7 @@ function OverviewHoldingsSection({
   className?: string;
 }) {
   const copy = useCopy();
+  const navigate = useNavigate();
 
   return (
     <section
@@ -862,6 +863,12 @@ function OverviewHoldingsSection({
           positions={positions}
           assetClassBySymbol={assetClassBySymbol}
           variant="dashboard"
+          onOpenPosition={(symbol) => {
+            void navigate({
+              to: '/portfolio/$symbol',
+              params: { symbol },
+            });
+          }}
         />
       )}
     </section>
@@ -3258,6 +3265,15 @@ export function PortfolioPage() {
   const hasQuotesNeedingReview = portfolioPositions.some((position) =>
     quoteNeedsReview(position.quote_status),
   );
+  const openPosition = useCallback(
+    (symbol: string) => {
+      void navigate({
+        to: '/portfolio/$symbol',
+        params: { symbol },
+      });
+    },
+    [navigate],
+  );
 
   const closedPositions = snapshot.data?.closed_positions ?? [];
   const portfolioIdentity = snapshot.data
@@ -3600,6 +3616,7 @@ export function PortfolioPage() {
                 item.weight,
               ]),
             )}
+            onOpenPosition={openPosition}
           />
         )}
       </section>
@@ -3721,7 +3738,10 @@ export function PortfolioPage() {
               }
             />
           ) : snapshot.data ? (
-            <AllocationCard items={snapshot.data.allocation} />
+            <AllocationCard
+              items={snapshot.data.allocation}
+              onOpenPosition={openPosition}
+            />
           ) : (
             <EvidenceState
               kind="empty"
@@ -3751,7 +3771,11 @@ export function PortfolioPage() {
           </a>
         </div>
         {closedPositions.length > 0 ? (
-          <PositionsTable positions={closedPositions} variant="history" />
+          <PositionsTable
+            positions={closedPositions}
+            variant="history"
+            onOpenPosition={openPosition}
+          />
         ) : (
           <div className="border-y border-[var(--app-divider)] px-3 py-3 text-sm text-[var(--app-text-secondary)]">
             {copy.portfolio.detail.noLedger}

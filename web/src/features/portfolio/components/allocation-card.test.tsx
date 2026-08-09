@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
 
 import { PreferencesProvider } from '../../../app/preferences';
@@ -23,9 +23,11 @@ beforeEach(() => {
 });
 
 test('presents canonical cash and securities as account composition', () => {
+  const onOpenPosition = vi.fn();
   render(
     <PreferencesProvider>
       <AllocationCard
+        onOpenPosition={onOpenPosition}
         items={[
           {
             symbol: 'CASH',
@@ -65,13 +67,17 @@ test('presents canonical cash and securities as account composition', () => {
   expect(within(table).getByText('¥5,621.60')).toBeTruthy();
   expect(within(table).getByText('29.6%')).toBeTruthy();
 
-  expect(
-    within(table)
-      .getByRole('link', {
-        name: '永赢先进制造智选混合发起C · 018125',
-      })
-      .getAttribute('href'),
-  ).toBe('/portfolio/018125');
+  const holdingLink = within(table).getByRole('link', {
+    name: '永赢先进制造智选混合发起C · 018125',
+  });
+  expect(holdingLink.getAttribute('href')).toBe('/portfolio/018125');
+  holdingLink.addEventListener('click', (event) => event.preventDefault(), {
+    once: true,
+  });
+  fireEvent.click(holdingLink, { metaKey: true });
+  expect(onOpenPosition).not.toHaveBeenCalled();
+  fireEvent.click(holdingLink);
+  expect(onOpenPosition).toHaveBeenCalledWith('018125');
   expect(within(table).getByText('¥823.45')).toBeTruthy();
   expect(within(table).getByText('4.3%')).toBeTruthy();
   expect(screen.queryByText('配置明细')).toBeNull();

@@ -72,6 +72,39 @@ test('desktop shell defaults to labeled business groups and remains collapsible'
   }
 });
 
+test('workspace routes start at the top and restore prior scroll on browser history', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto('/overview');
+  await page.addStyleTag({
+    content: '.app-route-stage { min-height: 1400px; }',
+  });
+
+  const content = page.locator('.app-shell-content');
+  await expect(content).toBeVisible();
+  const savedScrollTop = await content.evaluate((element) => {
+    element.scrollTop = Math.min(
+      320,
+      element.scrollHeight - element.clientHeight,
+    );
+    return element.scrollTop;
+  });
+  expect(savedScrollTop).toBeGreaterThan(0);
+
+  await page.getByRole('link', { name: 'Risk', exact: true }).click();
+  await expect(page).toHaveURL(/\/risk$/);
+  await expect
+    .poll(() => content.evaluate((element) => element.scrollTop))
+    .toBe(0);
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\/overview$/);
+  await expect
+    .poll(() => content.evaluate((element) => element.scrollTop))
+    .toBe(savedScrollTop);
+});
+
 test('workspace command menu navigates without adding execution authority', async ({
   page,
 }) => {

@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { beforeEach, expect, test, vi } from 'vitest';
 
@@ -45,10 +45,12 @@ function renderTable(ui: ReactElement) {
 }
 
 test('renders the compact canonical holdings table with direct detail drill-down', () => {
+  const onOpenPosition = vi.fn();
   renderTable(
     <PositionsTable
       positions={[basePosition]}
       weightBySymbol={{ '600519': 0.42 }}
+      onOpenPosition={onOpenPosition}
     />,
   );
 
@@ -71,11 +73,17 @@ test('renders the compact canonical holdings table with direct detail drill-down
   expect(screen.getByTestId('position-realized-600519').textContent).toBe(
     '¥120.00',
   );
-  expect(
-    within(table)
-      .getByRole('link', { name: 'Holding Details: 贵州茅台 600519' })
-      .getAttribute('href'),
-  ).toBe('/portfolio/600519');
+  const detailLink = within(table).getByRole('link', {
+    name: 'Holding Details: 贵州茅台 600519',
+  });
+  expect(detailLink.getAttribute('href')).toBe('/portfolio/600519');
+  detailLink.addEventListener('click', (event) => event.preventDefault(), {
+    once: true,
+  });
+  fireEvent.click(detailLink, { ctrlKey: true });
+  expect(onOpenPosition).not.toHaveBeenCalled();
+  fireEvent.click(detailLink);
+  expect(onOpenPosition).toHaveBeenCalledWith('600519');
   expect(within(table).queryByRole('button')).toBeNull();
 });
 

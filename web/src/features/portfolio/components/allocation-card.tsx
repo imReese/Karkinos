@@ -3,7 +3,13 @@ import { DataTable } from '../../../app/components/workbench';
 import { formatCurrency, formatPercent } from '../../../shared/format';
 import type { AllocationItem } from '../api';
 
-export function AllocationCard({ items }: { items: AllocationItem[] }) {
+export function AllocationCard({
+  items,
+  onOpenPosition,
+}: {
+  items: AllocationItem[];
+  onOpenPosition?: (symbol: string) => void;
+}) {
   const copy = useCopy();
 
   if (items.length === 0) {
@@ -43,6 +49,21 @@ export function AllocationCard({ items }: { items: AllocationItem[] }) {
               return (
                 <a
                   href={`/portfolio/${encodeURIComponent(row.original.symbol)}`}
+                  onClick={(event) => {
+                    if (
+                      !onOpenPosition ||
+                      event.defaultPrevented ||
+                      event.button !== 0 ||
+                      event.metaKey ||
+                      event.ctrlKey ||
+                      event.shiftKey ||
+                      event.altKey
+                    ) {
+                      return;
+                    }
+                    event.preventDefault();
+                    onOpenPosition(row.original.symbol);
+                  }}
                   className="font-semibold text-[var(--app-text)] hover:text-[var(--app-accent)]"
                 >
                   {row.original.name} ·{' '}
