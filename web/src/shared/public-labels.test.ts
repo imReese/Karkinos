@@ -59,6 +59,84 @@ test('formats account-truth reconciliation categories without raw field labels',
   expect(formatPublicCode('cost_basis', 'en')).toBe('Cost basis');
 });
 
+test('formats the allowlisted Account Truth evidence-readiness contract', () => {
+  expect(formatPublicCode('canonical_broker_evidence', 'en')).toBe(
+    'Canonical broker evidence',
+  );
+  expect(formatPublicCode('current_position_snapshot', 'zh')).toBe(
+    '当前持仓快照',
+  );
+  expect(
+    formatPublicCode(
+      'provide_citic_account_truth_evidence_or_reject_source',
+      'zh',
+    ),
+  ).toBe('补充中信账户事实证据或拒绝该来源');
+  expect(formatPublicCode('citic_source_follow_up_required', 'en')).toBe(
+    'Known CITIC sources still require evidence review',
+  );
+  expect(formatPublicCode('review_citic_source_query_windows', 'zh')).toBe(
+    '逐份复核中信来源的精确查询区间',
+  );
+  expect(formatPublicCode('reviewed_query_window_for_source', 'en')).toBe(
+    'Reviewed query window for this exact source',
+  );
+  expect(
+    formatPublicCode(
+      'citic_source_query_window_review_schema_incomplete',
+      'zh',
+    ),
+  ).toBe('中信查询区间复核 schema 不完整');
+  expect(
+    formatPublicCode('citic_history_xls_non_financial_activity_ignored', 'zh'),
+  ).toBe('已识别指定交易类非资金活动，未生成券商事件');
+  expect(formatPublicCode('review_non_financial_activity', 'en')).toBe(
+    'Review recognized non-financial designated-trading activity',
+  );
+  expect(formatPublicCode('versioned_readonly_connector_snapshot', 'en')).toBe(
+    'Versioned read-only connector snapshot',
+  );
+  expect(formatPublicCode('itemized_fill_fees_and_taxes', 'zh')).toBe(
+    '逐项成交费用与税',
+  );
+  expect(formatPublicCode('reviewed_account_and_period_scope', 'zh')).toBe(
+    '已复核账户与时段范围',
+  );
+  expect(
+    formatPublicCode('account_truth_coverage_window_undeclared', 'en'),
+  ).toBe('No reviewed coverage period is recorded for this broker evidence');
+  expect(
+    formatPublicCode(
+      'bind_account_truth_evidence_to_reviewed_account_scope',
+      'zh',
+    ),
+  ).toBe('将证据绑定到已复核账户范围');
+  expect(
+    formatPublicCode('review_account_truth_asset_scope_completeness', 'en'),
+  ).toBe('Review whether every account asset class is covered');
+  expect(
+    formatPublicCode('account_truth_evidence_scope_review_revoked', 'zh'),
+  ).toBe('已复核证据范围已经撤销');
+});
+
+test('formats persisted CITIC scan and query-window integrity blockers', () => {
+  expect(formatPublicCode('citic_source_intake_scan_truncated', 'en')).toBe(
+    'CITIC source-review scan reached its safety limit',
+  );
+  expect(formatPublicCode('review_citic_source_intake_scan_limit', 'zh')).toBe(
+    '复核中信来源扫描上限并恢复完整计数',
+  );
+  expect(formatPublicCode('complete_citic_source_intake_scan', 'en')).toBe(
+    'Complete CITIC source-review scan',
+  );
+  expect(
+    formatPublicCode('contiguous_non_overlapping_reviewed_query_windows', 'zh'),
+  ).toBe('连续且不重叠的已复核查询区间');
+  expect(formatPublicCode('citic_query_window_batch_calendar_gap', 'zh')).toBe(
+    '已复核查询区间之间存在日期缺口',
+  );
+});
+
 test('formats unknown Chinese snake-case values as generic review labels', () => {
   expect(formatPublicStatus('new_backend_gate_state', 'zh')).toBe('待确认状态');
   expect(formatPublicCode('new_backend_required_action', 'zh')).toBe(

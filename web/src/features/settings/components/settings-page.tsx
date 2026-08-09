@@ -84,6 +84,8 @@ export function SettingsPage() {
   const stopLive = useStopLiveMutation();
   const testNotification = useTestNotificationMutation();
   const { locale, setLocale, theme, setTheme } = usePreferences();
+  const fundNavCapabilityLabel =
+    locale === 'zh' ? '基金净值接口' : 'Fund NAV capability';
   const [dataSource, setDataSource] = useState('');
   const [pollInterval, setPollInterval] = useState('60');
   const [accountCommissionRate, setAccountCommissionRate] = useState('0.0001');
@@ -274,7 +276,7 @@ export function SettingsPage() {
       tone: isTushareProvider ? 'success' : 'neutral',
     },
     {
-      label: 'fund_nav',
+      label: fundNavCapabilityLabel,
       source: 'tushare_fund_nav',
       status: isFundNavBlocked
         ? copy.settings.permissionBlocked
@@ -1030,7 +1032,7 @@ export function SettingsPage() {
                     </div>
                     <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
                       <StatusMetric
-                        label="fund_nav"
+                        label={fundNavCapabilityLabel}
                         value={
                           isFundNavBlocked
                             ? copy.settings.permissionBlocked

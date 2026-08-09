@@ -438,6 +438,13 @@ test('renders ledger entries as a user-facing audit table', () => {
   expect(screen.getByText('Amount ¥200.00')).toBeTruthy();
   expect(screen.getByText('Quantity 204.102')).toBeTruthy();
   expect(screen.getByText('Price ¥0.98')).toBeTruthy();
+  const notes = screen.getAllByTestId('activity-note');
+  expect(notes).toHaveLength(3);
+  for (const note of notes) {
+    expect(note.getAttribute('tabindex')).toBe('0');
+    expect(note.getAttribute('title')).toBe(note.textContent?.trim());
+    expect(note.className).toContain('focus:line-clamp-none');
+  }
   expect(screen.queryByText('Fee ¥0.00')).toBeNull();
   expect(screen.getByText('示例材料 600002')).toBeTruthy();
   expect(screen.getByText('示例制造 600003')).toBeTruthy();

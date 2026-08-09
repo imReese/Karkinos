@@ -323,6 +323,20 @@ test('preserves the market master-detail composition while persisted evidence lo
   });
 });
 
+test('presents known quote-source identifiers as localized source labels', async () => {
+  renderMarketPage({
+    quotes: [
+      {
+        ...health.quotes[0],
+        quote_source: 'tushare_realtime_quote',
+      },
+    ],
+  });
+
+  expect(await screen.findByText('TuShare real-time quote')).toBeTruthy();
+  expect(screen.queryByText('tushare_realtime_quote')).toBeNull();
+});
+
 test('renders market data operations and triggers manual backfills', async () => {
   const user = userEvent.setup();
   const { fetchMock } = renderMarketPage();

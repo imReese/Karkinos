@@ -509,6 +509,12 @@ test('renders holding detail with cached quote status and ledger trace', async (
   expect(ledgerScroll.className).toContain('pb-2');
   expect(ledgerTable?.className).toContain('w-full');
   expect(ledgerTable?.className).toContain('min-w-[760px]');
+  const ledgerNote = within(transactionsPanel).getByTestId(
+    'holding-ledger-note',
+  );
+  expect(ledgerNote.getAttribute('tabindex')).toBe('0');
+  expect(ledgerNote.getAttribute('title')).toBe('initial allocation');
+  expect(ledgerNote.className).toContain('focus:line-clamp-none');
 });
 
 test('keeps a closed asset available as historical evidence without current exposure', async () => {

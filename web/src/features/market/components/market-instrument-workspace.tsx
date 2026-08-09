@@ -172,6 +172,18 @@ export function MarketInstrumentWorkspace({
   const labels = copy.market;
   const selectedQuoteStatus = selectedHealthQuote?.quote_status ?? null;
   const selectedDailyMove = selectedHealthQuote?.daily_change ?? null;
+  const quoteSourceLabels: Record<string, string> = {
+    tushare_realtime_quote:
+      locale === 'zh' ? 'TuShare 实时行情' : 'TuShare real-time quote',
+    tushare_daily: locale === 'zh' ? 'TuShare 日行情' : 'TuShare daily quote',
+    tushare_fund_nav: locale === 'zh' ? 'TuShare 基金净值' : 'TuShare fund NAV',
+    eastmoney_fund_estimate:
+      locale === 'zh' ? '东方财富基金估值' : 'Eastmoney fund estimate',
+  };
+  const selectedQuoteSource = selectedHealthQuote?.quote_source
+    ? (quoteSourceLabels[selectedHealthQuote.quote_source] ??
+      selectedHealthQuote.quote_source)
+    : '--';
 
   return (
     <div
@@ -433,7 +445,7 @@ export function MarketInstrumentWorkspace({
 
             <dl className="mt-3 grid min-w-0 border-t border-[var(--app-divider)] text-xs sm:grid-cols-2">
               {[
-                [labels.quoteSource, selectedHealthQuote?.quote_source ?? '--'],
+                [labels.quoteSource, selectedQuoteSource],
                 [
                   labels.snapshotLabel,
                   formatTimestamp(selectedItem.last_snapshot_at),

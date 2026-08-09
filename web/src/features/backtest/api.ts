@@ -751,27 +751,29 @@ export function useBacktestStrategiesQuery() {
   });
 }
 
-export function useAccountStrategyAssignmentQuery() {
+export function useAccountStrategyAssignmentQuery(enabled = true) {
   return useQuery({
     queryKey: ['account-strategy-assignment'],
     queryFn: () =>
       apiClient<AccountStrategyAssignment>('/api/account-strategy'),
     staleTime: 10_000,
+    enabled,
   });
 }
 
-export function useAccountStrategyAssignmentsQuery() {
+export function useAccountStrategyAssignmentsQuery(enabled = true) {
   return useQuery({
     queryKey: ['account-strategy-assignments'],
     queryFn: () =>
       apiClient<AccountStrategyAssignment[]>(
         '/api/account-strategy/assignments',
-      ),
+    ),
     staleTime: 10_000,
+    enabled,
   });
 }
 
-export function useAccountStrategyAttributionQuery() {
+export function useAccountStrategyAttributionQuery(enabled = true) {
   return useQuery({
     queryKey: ['account-strategy-attribution'],
     queryFn: () =>
@@ -779,10 +781,11 @@ export function useAccountStrategyAttributionQuery() {
         '/api/account-strategy/attribution',
       ),
     staleTime: 10_000,
+    enabled,
   });
 }
 
-export function useAccountStrategyContributionQuery() {
+export function useAccountStrategyContributionQuery(enabled = true) {
   return useQuery({
     queryKey: ['account-strategy-contribution'],
     queryFn: () =>
@@ -790,6 +793,7 @@ export function useAccountStrategyContributionQuery() {
         '/api/account-strategy/contribution',
       ),
     staleTime: 10_000,
+    enabled,
   });
 }
 
@@ -804,7 +808,9 @@ export function useStrategyLearningReviewQuery() {
   });
 }
 
-export function useSingleInstrumentStrategyLoopAcceptanceAuditQuery() {
+export function useSingleInstrumentStrategyLoopAcceptanceAuditQuery(
+  enabled = true,
+) {
   return useQuery({
     queryKey: ['acceptance-audit', 'single_instrument_strategy_loop'],
     queryFn: () =>
@@ -812,6 +818,7 @@ export function useSingleInstrumentStrategyLoopAcceptanceAuditQuery() {
         '/api/acceptance-audits/single_instrument_strategy_loop',
       ),
     staleTime: 60_000,
+    enabled,
   });
 }
 
@@ -942,12 +949,13 @@ export function useBacktestResultQuery(resultId: number | null) {
   });
 }
 
-export function useStrategyValidationQuery() {
+export function useStrategyValidationQuery(enabled = true) {
   return useQuery({
     queryKey: ['backtest-strategy-validation'],
     queryFn: () =>
       apiClient<StrategyValidationMatrix>('/api/backtest/strategy-validation'),
     staleTime: 10_000,
+    enabled,
   });
 }
 

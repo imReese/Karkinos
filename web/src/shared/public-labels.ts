@@ -169,6 +169,55 @@ const REVIEW_ACTION_LABELS: Record<Locale, LabelMap> = {
 
 const CODE_LABELS: Record<Locale, LabelMap> = {
   en: {
+    canonical_broker_evidence: 'Canonical broker evidence',
+    current_cash_snapshot: 'Current cash snapshot',
+    current_position_snapshot: 'Current position snapshot',
+    itemized_settlement_fees_and_taxes: 'Itemized settlement fees and taxes',
+    position_cost_basis: 'Position cost basis',
+    freshness_and_ledger_coverage: 'Freshness and ledger coverage',
+    reconciliation_gate: 'Reconciliation gate',
+    known_incomplete_source_reviews: 'Known incomplete source reviews',
+    reviewed_account_and_period_scope: 'Reviewed account and period scope',
+    account_truth_account_scope_unbound:
+      'Broker evidence is not bound to a reviewed account scope',
+    account_truth_coverage_window_undeclared:
+      'No reviewed coverage period is recorded for this broker evidence',
+    account_truth_asset_scope_completeness_unverified:
+      'Observed assets do not prove complete account coverage',
+    account_truth_evidence_scope_missing:
+      'No persisted evidence-scope projection is available',
+    account_truth_evidence_scope_import_mismatch:
+      'Evidence scope does not match the selected Account Truth import',
+    account_truth_evidence_scope_event_count_mismatch:
+      'Persisted event count does not match the selected import',
+    account_truth_observed_event_time_invalid:
+      'A persisted broker event has an invalid time',
+    account_truth_observed_scope_code_invalid:
+      'A persisted broker event has an invalid scope code',
+    account_truth_observed_events_missing:
+      'No persisted broker events are available for scope review',
+    account_truth_evidence_scope_review_import_mismatch:
+      'The scope review targets a different Account Truth import',
+    account_truth_evidence_scope_review_source_drift:
+      'The broker source changed after scope review',
+    account_truth_evidence_scope_review_observed_drift:
+      'Observed broker evidence changed after scope review',
+    account_truth_evidence_scope_review_revoked:
+      'The reviewed evidence scope was revoked',
+    account_truth_evidence_scope_review_window_incomplete:
+      'The reviewed period does not contain every observed broker event',
+    account_truth_evidence_scope_review_assets_incomplete:
+      'The reviewed asset scope omits an observed asset class',
+    account_truth_evidence_scope_review_attestation_missing:
+      'Full-account scope attestation is missing',
+    bind_account_truth_evidence_to_reviewed_account_scope:
+      'Bind the evidence to a reviewed account scope',
+    record_reviewed_account_truth_coverage_window:
+      'Record the reviewed coverage period for this evidence',
+    review_account_truth_asset_scope_completeness:
+      'Review whether every account asset class is covered',
+    record_reviewed_account_truth_evidence_scope:
+      'Record a reviewed account and period scope',
     account_truth_gate_pass: 'Account truth gate must pass',
     account_truth_score_unavailable:
       'Account truth score is unavailable because no broker evidence has been staged',
@@ -204,6 +253,64 @@ const CODE_LABELS: Record<Locale, LabelMap> = {
     holding_signal_chain_pending: 'Holding signals pending order/fill evidence',
     import_and_reconcile_broker_evidence:
       'Import broker evidence and run reconciliation',
+    provide_cash_snapshot: 'Provide a current cash snapshot',
+    provide_position_snapshot: 'Provide a current position snapshot',
+    provide_itemized_settlement_or_cash_flow:
+      'Provide an itemized settlement or cash-flow statement',
+    provide_position_cost_basis_evidence:
+      'Provide position cost-basis evidence',
+    refresh_broker_evidence_covering_latest_ledger:
+      'Refresh broker evidence covering the latest ledger fact',
+    resolve_account_truth_blockers: 'Resolve Account Truth blockers',
+    provide_citic_account_truth_evidence_or_reject_source:
+      'Provide the missing CITIC evidence or reject the source',
+    review_citic_source_query_windows:
+      'Review each exact CITIC source query window',
+    review_citic_source_intake_scan_limit:
+      'Review the CITIC source scan limit and restore a complete count',
+    repair_citic_source_intake_metadata_store:
+      'Repair the CITIC source-review metadata store',
+    repair_citic_source_query_window_review_store:
+      'Repair the CITIC query-window review store',
+    reviewed_query_window_for_source:
+      'Reviewed query window for this exact source',
+    reviewed_query_window_for_each_source:
+      'Reviewed query window for every exact source',
+    complete_citic_source_intake_scan: 'Complete CITIC source-review scan',
+    contiguous_non_overlapping_reviewed_query_windows:
+      'Contiguous, non-overlapping reviewed query windows',
+    citic_source_follow_up_required:
+      'Known CITIC sources still require evidence review',
+    citic_source_intake_scan_truncated:
+      'CITIC source-review scan reached its safety limit',
+    citic_query_window_batch_calendar_gap:
+      'Reviewed query windows contain a calendar gap',
+    citic_query_window_batch_calendar_overlap:
+      'Reviewed query windows contain overlapping days',
+    citic_query_window_batch_sources_unreviewed:
+      'Some CITIC sources still lack reviewed query windows',
+    citic_source_intake_schema_incomplete:
+      'CITIC source-review metadata schema is incomplete',
+    citic_source_intake_store_unreadable:
+      'CITIC source-review metadata store is unreadable',
+    citic_source_query_window_review_schema_incomplete:
+      'CITIC query-window review schema is incomplete',
+    citic_source_query_window_review_store_unreadable:
+      'CITIC query-window review store is unreadable',
+    citic_history_xls_non_financial_activity_ignored:
+      'Reviewed non-financial designated-trading activity — no broker event created',
+    citic_history_xls_invalid_non_financial_activity:
+      'Designated-trading activity does not match the reviewed non-financial shape',
+    review_non_financial_activity:
+      'Review recognized non-financial designated-trading activity',
+    versioned_readonly_connector_snapshot:
+      'Versioned read-only connector snapshot',
+    reviewed_account_alias_binding: 'Reviewed account-alias binding',
+    provider_source_captured_at: 'Provider source capture time',
+    connector_deployment_identity: 'Connector deployment identity',
+    connector_health_evidence: 'Connector health evidence',
+    current_order_snapshot: 'Current order snapshot',
+    itemized_fill_fees_and_taxes: 'Itemized fill fees and taxes',
     link_strategy_signals_orders_fills_and_contribution:
       'Link strategy signals, reviews, orders, fills, and contribution evidence',
     manual_confirm_candidate_actions: 'Manually confirm candidate actions',
@@ -286,6 +393,48 @@ const CODE_LABELS: Record<Locale, LabelMap> = {
     valuation_missing: 'Valuation missing',
   },
   zh: {
+    canonical_broker_evidence: 'Canonical 券商证据',
+    current_cash_snapshot: '当前资金快照',
+    current_position_snapshot: '当前持仓快照',
+    itemized_settlement_fees_and_taxes: '逐项结算费用与税',
+    position_cost_basis: '持仓成本价',
+    freshness_and_ledger_coverage: '新鲜度与账本覆盖',
+    reconciliation_gate: '对账门禁',
+    known_incomplete_source_reviews: '已知待补证来源复核',
+    reviewed_account_and_period_scope: '已复核账户与时段范围',
+    account_truth_account_scope_unbound: '券商证据尚未绑定到已复核账户范围',
+    account_truth_coverage_window_undeclared:
+      '这份券商证据尚未记录已复核覆盖时段',
+    account_truth_asset_scope_completeness_unverified:
+      '已观察资产不能证明账户资产范围完整',
+    account_truth_evidence_scope_missing: '缺少持久化证据范围投影',
+    account_truth_evidence_scope_import_mismatch:
+      '证据范围与当前账户事实导入不一致',
+    account_truth_evidence_scope_event_count_mismatch:
+      '持久化事件数量与当前导入不一致',
+    account_truth_observed_event_time_invalid: '持久化券商事件包含无效时间',
+    account_truth_observed_scope_code_invalid: '持久化券商事件包含无效范围代码',
+    account_truth_observed_events_missing: '缺少可用于范围复核的持久化券商事件',
+    account_truth_evidence_scope_review_import_mismatch:
+      '范围复核指向了不同的账户事实导入',
+    account_truth_evidence_scope_review_source_drift:
+      '范围复核后券商来源已变化',
+    account_truth_evidence_scope_review_observed_drift:
+      '范围复核后观察到的券商证据已变化',
+    account_truth_evidence_scope_review_revoked: '已复核证据范围已经撤销',
+    account_truth_evidence_scope_review_window_incomplete:
+      '已复核时段没有包含全部观察到的券商事件',
+    account_truth_evidence_scope_review_assets_incomplete:
+      '已复核资产范围遗漏了观察到的资产类别',
+    account_truth_evidence_scope_review_attestation_missing:
+      '缺少完整账户范围确认',
+    bind_account_truth_evidence_to_reviewed_account_scope:
+      '将证据绑定到已复核账户范围',
+    record_reviewed_account_truth_coverage_window:
+      '记录这份证据的已复核覆盖时段',
+    review_account_truth_asset_scope_completeness:
+      '复核账户资产类别是否完整覆盖',
+    record_reviewed_account_truth_evidence_scope: '记录已复核账户与时段范围',
     account_truth_gate_pass: '账户事实闸门需要通过',
     account_truth_score_unavailable:
       '缺少已暂存的券商证据，暂时无法计算账户事实分',
@@ -318,6 +467,48 @@ const CODE_LABELS: Record<Locale, LabelMap> = {
     holding_orders_linked_no_fills: '持仓订单已关联，成交待补齐',
     holding_signal_chain_pending: '持仓信号待补齐订单/成交证据',
     import_and_reconcile_broker_evidence: '导入并对账券商证据',
+    provide_cash_snapshot: '提供当前资金快照',
+    provide_position_snapshot: '提供当前持仓快照',
+    provide_itemized_settlement_or_cash_flow: '提供逐项交割单或资金流水',
+    provide_position_cost_basis_evidence: '提供持仓成本价证据',
+    refresh_broker_evidence_covering_latest_ledger:
+      '更新覆盖最新账本事实的券商证据',
+    resolve_account_truth_blockers: '解决账户事实阻断',
+    provide_citic_account_truth_evidence_or_reject_source:
+      '补充中信账户事实证据或拒绝该来源',
+    review_citic_source_query_windows: '逐份复核中信来源的精确查询区间',
+    review_citic_source_intake_scan_limit: '复核中信来源扫描上限并恢复完整计数',
+    repair_citic_source_intake_metadata_store: '修复中信来源复核元数据存储',
+    repair_citic_source_query_window_review_store: '修复中信查询区间复核存储',
+    reviewed_query_window_for_source: '已复核这一精确来源的查询区间',
+    reviewed_query_window_for_each_source: '已逐份复核全部精确来源的查询区间',
+    complete_citic_source_intake_scan: '完整扫描中信来源复核记录',
+    contiguous_non_overlapping_reviewed_query_windows:
+      '连续且不重叠的已复核查询区间',
+    citic_source_follow_up_required: '已知中信来源仍需补证复核',
+    citic_source_intake_scan_truncated: '中信来源复核扫描已达到安全上限',
+    citic_query_window_batch_calendar_gap: '已复核查询区间之间存在日期缺口',
+    citic_query_window_batch_calendar_overlap: '已复核查询区间存在重叠日期',
+    citic_query_window_batch_sources_unreviewed:
+      '仍有中信来源缺少已复核查询区间',
+    citic_source_intake_schema_incomplete: '中信来源复核元数据 schema 不完整',
+    citic_source_intake_store_unreadable: '中信来源复核元数据存储不可读',
+    citic_source_query_window_review_schema_incomplete:
+      '中信查询区间复核 schema 不完整',
+    citic_source_query_window_review_store_unreadable:
+      '中信查询区间复核存储不可读',
+    citic_history_xls_non_financial_activity_ignored:
+      '已识别指定交易类非资金活动，未生成券商事件',
+    citic_history_xls_invalid_non_financial_activity:
+      '指定交易活动不符合已审查的非资金形状',
+    review_non_financial_activity: '复核已识别的指定交易类非资金活动',
+    versioned_readonly_connector_snapshot: '版本化只读连接器快照',
+    reviewed_account_alias_binding: '已复核账户别名绑定',
+    provider_source_captured_at: '券商来源采集时间',
+    connector_deployment_identity: '连接器部署身份',
+    connector_health_evidence: '连接器健康证据',
+    current_order_snapshot: '当前订单快照',
+    itemized_fill_fees_and_taxes: '逐项成交费用与税',
     link_strategy_signals_orders_fills_and_contribution:
       '串联策略信号、复核、订单、成交与收益归因证据',
     manual_confirm_candidate_actions: '人工确认候选动作',

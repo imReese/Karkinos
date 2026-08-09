@@ -1778,6 +1778,22 @@ h3 {
   scroll-padding-top: var(--app-section-gap);
 }
 
+.app-workbench-route summary.list-none {
+  min-width: 0;
+}
+
+.app-workbench-route summary.list-none::marker {
+  content: none;
+}
+
+.app-workbench-route summary.list-none::-webkit-details-marker {
+  display: none;
+}
+
+.app-workbench-route summary.list-none > [class~='group-open:rotate-45'] {
+  margin-inline-end: 6px;
+}
+
 .app-workbench-section {
   min-width: 0;
   max-width: 100%;
