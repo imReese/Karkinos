@@ -294,8 +294,8 @@ describe('application design token contract', () => {
     expect(selectControl).toContain('appearance: none');
     expect(selectControl).toContain('padding-inline-end: 2.25rem');
     expect(selectControl).toContain('var(--app-text-secondary)');
-    expect(selectControl).toContain('calc(100% - 0.9375rem)');
-    expect(selectControl).toContain('calc(100% - 0.625rem)');
+    expect(selectControl).toContain('calc(100% - 0.8125rem)');
+    expect(selectControl).toContain('calc(100% - 0.5rem)');
   });
 
   it('defines the product typography and motion contract', () => {
