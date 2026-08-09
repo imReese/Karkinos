@@ -1432,6 +1432,20 @@ test('core review routes keep audit drill-downs closed and mobile reading paths 
   await expect(
     page.locator('[data-testid^="decision-candidate-card-"]'),
   ).toHaveCount(0);
+  const idlePlanDisclosure = page.getByTestId(
+    'decision-daily-trading-plan-disclosure',
+  );
+  if ((await idlePlanDisclosure.count()) > 0) {
+    await expect(idlePlanDisclosure).not.toHaveAttribute('open', '');
+    const idlePlanSummary = idlePlanDisclosure.locator('summary');
+    await idlePlanSummary.press('Enter');
+    await expect(idlePlanDisclosure).toHaveAttribute('open', '');
+    await expect(
+      idlePlanDisclosure.getByTestId('decision-daily-trading-plan'),
+    ).toBeVisible();
+    await idlePlanSummary.press('Enter');
+    await expect(idlePlanDisclosure).not.toHaveAttribute('open', '');
+  }
 
   await page.goto('/trading');
   await expect(

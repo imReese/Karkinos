@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 
 import {
   ControlledActionZone,
@@ -5130,6 +5131,23 @@ export function DecisionCockpitPage() {
   const decisionGateAttentionCount = gateItems.filter(
     (item) => item.state !== 'pass',
   ).length;
+  const idleTradingPlan =
+    !tradingPlan.isLoading &&
+    !tradingPlan.isError &&
+    tradingPlan.data?.order_intent_count === 0
+      ? tradingPlan.data
+      : null;
+  const tradingPlanPanel = (
+    <DailyTradingPlanPanel
+      plan={tradingPlan.data}
+      operationsToday={operationsToday.data}
+      loading={tradingPlan.isLoading}
+      error={tradingPlan.isError}
+      onRunPaperShadow={() => runPaperShadow.mutate()}
+      paperShadowRunPending={runPaperShadow.isPending}
+      paperShadowRunError={runPaperShadow.isError}
+    />
+  );
 
   if (loading) {
     return (
@@ -5329,15 +5347,49 @@ export function DecisionCockpitPage() {
         </div>
       </details>
 
-      <DailyTradingPlanPanel
-        plan={tradingPlan.data}
-        operationsToday={operationsToday.data}
-        loading={tradingPlan.isLoading}
-        error={tradingPlan.isError}
-        onRunPaperShadow={() => runPaperShadow.mutate()}
-        paperShadowRunPending={runPaperShadow.isPending}
-        paperShadowRunError={runPaperShadow.isError}
-      />
+      {idleTradingPlan ? (
+        <details
+          className="group min-w-0 border-y border-[var(--app-divider)]"
+          data-testid="decision-daily-trading-plan-disclosure"
+        >
+          <summary className="flex min-h-16 cursor-pointer list-none items-start justify-between gap-4 py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
+            <span className="min-w-0">
+              <span className="app-product-mark block">
+                {labels.tradingPlanKicker}
+              </span>
+              <span className="mt-1 block text-sm font-semibold text-[var(--app-text)]">
+                {labels.tradingPlanTitle}
+              </span>
+              <span className="mt-0.5 block text-xs leading-5 text-[var(--app-text-secondary)]">
+                {labels.tradingPlanCounts(
+                  idleTradingPlan.candidate_pool_count,
+                  idleTradingPlan.order_intent_count,
+                  idleTradingPlan.blocked_count,
+                )}
+              </span>
+            </span>
+            <span className="flex shrink-0 items-center gap-2">
+              <StatusBadge
+                tone={idleTradingPlan.blocked_count > 0 ? 'warning' : 'neutral'}
+              >
+                {tradingPlanConclusionLabel(
+                  idleTradingPlan.conclusion_status,
+                  labels,
+                )}
+              </StatusBadge>
+              <ChevronDown
+                aria-hidden="true"
+                className="h-4 w-4 text-[var(--app-text-secondary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] group-open:rotate-180 motion-reduce:transition-none"
+              />
+            </span>
+          </summary>
+          <div className="border-t border-[var(--app-divider)] py-4 [&>[data-testid]]:border-y-0 [&>[data-testid]]:py-0 [&>[data-testid]>:first-child]:hidden">
+            {tradingPlanPanel}
+          </div>
+        </details>
+      ) : (
+        tradingPlanPanel
+      )}
 
       <details
         className="min-w-0 border-y border-[var(--app-divider)]"
