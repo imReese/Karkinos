@@ -23,7 +23,10 @@ import {
   useKlineQuery,
   useRefreshMarketQuotesMutation,
 } from '../../market/api';
-import { PriceStructureChart } from '../../market/components/price-structure-chart';
+import {
+  PriceStructureChart,
+  PriceStructureLoadingState,
+} from '../../market/components/price-structure-chart';
 import { useCopy } from '../../../app/copy';
 import {
   ControlledActionZone,
@@ -1068,11 +1071,11 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
                     {copy.market.priceRangeKline}
                   </div>
                   {kline.isLoading ? (
-                    <WorkbenchEvidenceState
-                      kind="loading"
+                    <PriceStructureLoadingState
                       title={copy.market.klineLoading}
                       description={copy.market.klineLoadingDetail}
                       className="mt-3"
+                      compact
                     />
                   ) : kline.isError ? (
                     <WorkbenchEvidenceState

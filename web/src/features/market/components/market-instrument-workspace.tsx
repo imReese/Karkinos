@@ -21,7 +21,10 @@ import {
 import { formatPublicStatus } from '../../../shared/public-labels';
 import { formatStaleReason } from '../../../shared/stale-reason';
 import type { KlineBar, MarketHealthQuote, ResearchBoardItem } from '../api';
-import { PriceStructureChart } from './price-structure-chart';
+import {
+  PriceStructureChart,
+  PriceStructureLoadingState,
+} from './price-structure-chart';
 
 function formatAge(seconds: number | null | undefined, locale: Locale) {
   if (typeof seconds !== 'number' || !Number.isFinite(seconds)) {
@@ -358,8 +361,7 @@ export function MarketInstrumentWorkspace({
 
             <div className="mt-3">
               {barsLoading ? (
-                <EvidenceState
-                  kind="loading"
+                <PriceStructureLoadingState
                   title={labels.klineLoading}
                   description={labels.klineLoadingDetail}
                 />
