@@ -279,13 +279,13 @@ function installRiskFetchMock({
       );
     }
     if (url.includes('/api/portfolio/state')) {
-      return jsonResponse(accountState);
+      return jsonResponse({
+        ...accountState,
+        risks: riskAlertsResponse,
+      });
     }
     if (url.includes('/api/portfolio/positions')) {
       return jsonResponse(accountState.snapshot.positions);
-    }
-    if (url.includes('/api/portfolio/risk-summary')) {
-      return jsonResponse(riskAlertsResponse);
     }
     if (url.includes('/api/portfolio/risk-workspace')) {
       return jsonResponse(riskWorkspace);
@@ -380,13 +380,9 @@ afterEach(() => {
 test('defers secondary risk reads until primary persisted evidence settles', async () => {
   const baseFetch = installRiskFetchMock();
   let resolveState!: (response: Response) => void;
-  let resolveRiskSummary!: (response: Response) => void;
   let resolveRiskWorkspace!: (response: Response) => void;
   const stateRequest = new Promise<Response>((resolve) => {
     resolveState = resolve;
-  });
-  const riskSummaryRequest = new Promise<Response>((resolve) => {
-    resolveRiskSummary = resolve;
   });
   const riskWorkspaceRequest = new Promise<Response>((resolve) => {
     resolveRiskWorkspace = resolve;
@@ -394,9 +390,6 @@ test('defers secondary risk reads until primary persisted evidence settles', asy
   const fetchMock = vi.fn((input: RequestInfo | URL) => {
     const url = String(input);
     if (url.includes('/api/portfolio/state')) return stateRequest;
-    if (url.includes('/api/portfolio/risk-summary')) {
-      return riskSummaryRequest;
-    }
     if (url.includes('/api/portfolio/risk-workspace')) {
       return riskWorkspaceRequest;
     }
@@ -441,7 +434,7 @@ test('defers secondary risk reads until primary persisted evidence settles', asy
   expect(
     within(loadingWorkspace).getByRole('heading', {
       level: 2,
-      name: /^Loading$/,
+      name: 'Checking risk evidence',
     }),
   ).toBeTruthy();
   expect(
@@ -474,18 +467,16 @@ test('defers secondary risk reads until primary persisted evidence settles', asy
     'Current drawdown',
   );
   expect(loadingWorkspace.textContent).not.toMatch(/[¥$€£]|\d+[,.]\d{2}/);
+  expect(loadingWorkspace.textContent).toContain(
+    'No external refresh or account fact is changed.',
+  );
 
   await act(async () => {
-    resolveState(jsonResponse(accountState));
+    resolveState(jsonResponse({ ...accountState, risks: riskAlerts }));
     resolveRiskWorkspace(jsonResponse(riskWorkspace));
   });
 
   await waitFor(() => {
-    expect(
-      fetchMock.mock.calls.some(([input]) =>
-        String(input).includes('/api/portfolio/risk-summary'),
-      ),
-    ).toBe(true);
     expect(
       fetchMock.mock.calls.some(([input]) =>
         String(input).includes('/api/decision/today'),
@@ -498,15 +489,17 @@ test('defers secondary risk reads until primary persisted evidence settles', asy
     ).toBe(true);
   });
   expect(screen.getByTestId('risk-blocking-register')).toBeTruthy();
-  expect(screen.getByTestId('risk-summary-loading-state')).toBeTruthy();
-
-  await act(async () => {
-    resolveRiskSummary(jsonResponse(riskAlerts));
-  });
-
-  await waitFor(() =>
-    expect(screen.queryByTestId('risk-summary-loading-state')).toBeNull(),
-  );
+  expect(screen.queryByTestId('risk-summary-loading-state')).toBeNull();
+  expect(
+    fetchMock.mock.calls.some(([input]) =>
+      String(input).includes('/api/portfolio/risk-summary'),
+    ),
+  ).toBe(false);
+  expect(
+    screen.getByRole('heading', {
+      name: 'Cash buffer is close to the floor',
+    }),
+  ).toBeTruthy();
 });
 
 test('renders risk boundaries and blocking register without order approval controls', async () => {

@@ -40,7 +40,6 @@ import {
   useAccountStateQuery,
   useExplainabilityQuery,
   useEquityCurveSeriesQuery,
-  useRiskSummaryQuery,
   useRiskWorkspaceQuery,
 } from '../features/account/api';
 import {
@@ -3769,7 +3768,6 @@ export function RiskPage() {
   const state = useAccountStateQuery();
   const workspace = useRiskWorkspaceQuery();
   const primaryRiskQueriesReady = Boolean(state.data && workspace.data);
-  const risks = useRiskSummaryQuery(primaryRiskQueriesReady);
   const todayDecision = useTodayDecisionQuery(primaryRiskQueriesReady);
   const batchPreTradeRisk = useBatchPreTradeRiskMutation();
   const [timelineFromDate, setTimelineFromDate] = useState('');
@@ -3835,11 +3833,10 @@ export function RiskPage() {
     (!workspace.data && workspace.isLoading);
   const isRiskWorkspaceUnavailable = !state.data || !workspace.data;
   const hasRiskRefreshError =
-    !isRiskWorkspaceUnavailable &&
-    (state.isError || risks.isError || workspace.isError);
+    !isRiskWorkspaceUnavailable && (state.isError || workspace.isError);
   const representedRiskMetricKeys = new Set<string>();
   const activeRiskItems: ExceptionItem[] = [];
-  for (const item of risks.data ?? []) {
+  for (const item of state.data?.risks ?? []) {
     if (item.level !== 'high' && item.level !== 'medium') {
       continue;
     }
@@ -3960,7 +3957,7 @@ export function RiskPage() {
         <div className="min-w-0 space-y-4" data-testid="risk-loading-workspace">
           <EvidenceState
             kind="loading"
-            title={copy.states.loading}
+            title={copy.riskPage.loadingTitle}
             description={copy.riskPage.loading}
           />
           <div className="app-risk-command-grid grid min-w-0 gap-5 sm:gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)] xl:items-start">
@@ -4077,18 +4074,6 @@ export function RiskPage() {
                   {copy.riskPage.blockingRegisterDetail}
                 </p>
               </div>
-              {risks.isLoading ? (
-                <div
-                  role="status"
-                  data-testid="risk-summary-loading-state"
-                  className="flex min-w-0 items-center gap-2 border-y border-[var(--app-divider)] px-3 py-2 text-xs text-[var(--app-text-secondary)]"
-                >
-                  <StatusBadge tone="neutral">
-                    {copy.states.loading}
-                  </StatusBadge>
-                  <span>{copy.riskPage.alerts}</span>
-                </div>
-              ) : null}
               <ExceptionList
                 ariaLabel={copy.riskPage.blockingRegister}
                 emptyState={copy.riskPage.noBlockingItems}

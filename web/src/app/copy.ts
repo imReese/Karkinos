@@ -926,7 +926,9 @@ export const copy = {
       title: 'Risk control center',
       subtitle:
         'Review current alerts, capital pressure, and equity attribution in one place.',
-      loading: 'Loading risk control center.',
+      loadingTitle: 'Checking risk evidence',
+      loading:
+        'Reading saved account and risk evidence. No external refresh or account fact is changed.',
       error: 'Failed to load risk control center.',
       refreshError:
         'Some risk data could not be refreshed. Showing the latest successful risk record; review data status before acting.',
@@ -3778,7 +3780,9 @@ export const copy = {
       kicker: '风险',
       title: '风控中心',
       subtitle: '统一查看风险提示、资金压力与净值归因。',
-      loading: '正在加载风控中心。',
+      loadingTitle: '正在核对风险证据',
+      loading:
+        '正在读取已保存的账户与风控证据；不会刷新外部数据或改写账户事实。',
       error: '风控中心加载失败。',
       refreshError:
         '部分风控数据暂时无法刷新。当前显示最近一次成功记录；继续操作前请复核数据状态。',
