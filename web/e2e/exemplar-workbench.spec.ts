@@ -53,6 +53,111 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+test('decision loading keeps the final evidence hierarchy across laptop and mobile themes', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(60_000);
+  let releaseTodayRequest = () => undefined;
+  let todayRequestGate = Promise.resolve();
+
+  await page.route('**/api/decision/today', async (route) => {
+    await todayRequestGate;
+    await route.continue();
+  });
+
+  for (const target of [
+    { height: 720, locale: 'en', theme: 'light', width: 1280 },
+    { height: 844, locale: 'zh', theme: 'dark', width: 390 },
+  ] as const) {
+    todayRequestGate = new Promise<void>((resolve) => {
+      releaseTodayRequest = resolve;
+    });
+    await page.setViewportSize({ width: target.width, height: target.height });
+    await page.goto('/decision');
+
+    if (target.width < 720) {
+      await selectMobileTheme(page, target.theme);
+      if (target.locale === 'zh') {
+        await page.getByTestId('mobile-preferences-toggle').click();
+        const preferences = page.getByRole('dialog', {
+          name: /Theme · Language|主题 · 语言/,
+        });
+        await preferences.getByRole('button', { name: '中文' }).click();
+        await expect(preferences).toBeHidden();
+      }
+    } else {
+      await page
+        .getByRole('button', {
+          name:
+            target.theme === 'light'
+              ? /Light theme|浅色主题/
+              : /Dark theme|深色主题/,
+        })
+        .click();
+    }
+    await page.waitForTimeout(250);
+
+    const loadingWorkspace = page.getByTestId('decision-loading-workspace');
+    await expect(loadingWorkspace).toBeVisible();
+    await expect(loadingWorkspace).toHaveAttribute('aria-busy', 'true');
+    await expect(
+      page.getByRole('heading', {
+        name: /^(Decision platform|决策平台)$/,
+      }),
+    ).toBeVisible();
+    await expect(page.getByTestId('decision-loading-metrics')).toBeVisible();
+    await expect(page.getByTestId('decision-loading-gates')).toBeVisible();
+    await expect(
+      page.getByTestId('decision-loading-gate-rows').locator(':scope > *'),
+    ).toHaveCount(5);
+    await expect(page.getByTestId('decision-loading-plan')).toBeVisible();
+    await expect(
+      page.locator('[data-workbench-primitive="evidence-loading-layout"]'),
+    ).toHaveCount(0);
+
+    const geometry = await page.evaluate(() => {
+      const content = document.querySelector(
+        '.app-shell-content',
+      ) as HTMLElement;
+      const metrics = document.querySelector(
+        '[data-testid="decision-loading-metrics"]',
+      ) as HTMLElement;
+      const gates = document.querySelector(
+        '[data-testid="decision-loading-gates"]',
+      ) as HTMLElement;
+      return {
+        contentOverflow: content.scrollWidth - content.clientWidth,
+        documentOverflow:
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+        gatesTop: Math.round(gates.getBoundingClientRect().top),
+        metricsTop: Math.round(metrics.getBoundingClientRect().top),
+      };
+    });
+    expect(
+      geometry.documentOverflow,
+      `${target.width} document`,
+    ).toBeLessThanOrEqual(0);
+    expect(
+      geometry.contentOverflow,
+      `${target.width} content`,
+    ).toBeLessThanOrEqual(0);
+    expect(geometry.metricsTop, `${target.width} metrics`).toBeLessThan(420);
+    expect(geometry.gatesTop, `${target.width} gates`).toBeLessThan(620);
+
+    const screenshotName = `decision-loading-${target.width}x${target.height}-${target.theme}-${target.locale}.png`;
+    const screenshotPath = testInfo.outputPath(screenshotName);
+    await page.screenshot({ path: screenshotPath });
+    await testInfo.attach(screenshotName, {
+      path: screenshotPath,
+      contentType: 'image/png',
+    });
+
+    releaseTodayRequest();
+    await expect(loadingWorkspace).toBeHidden({ timeout: 15_000 });
+  }
+});
+
 test('all workbench routes keep mobile interaction targets at least 44px', async ({
   page,
 }) => {
