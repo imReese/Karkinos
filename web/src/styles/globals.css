@@ -776,7 +776,7 @@ textarea {
 select:is(.app-field, .app-input):not([multiple]) {
   -webkit-appearance: none;
   appearance: none;
-  /* Keep the 0.625rem chevron crisp and optically aligned 0.8125rem from the
+  /* Keep the 0.625rem chevron crisp and optically aligned 0.75rem from the
      trailing edge. The two whole-pixel anchors meet at that visual center. */
   padding-inline-end: 2.25rem;
   background-color: var(--app-surface-raised);
@@ -784,8 +784,8 @@ select:is(.app-field, .app-input):not([multiple]) {
     linear-gradient(45deg, transparent 50%, var(--app-text-secondary) 50%),
     linear-gradient(135deg, var(--app-text-secondary) 50%, transparent 50%);
   background-position:
-    calc(100% - 0.8125rem) calc(50% - 0.125rem),
-    calc(100% - 0.5rem) calc(50% - 0.125rem);
+    calc(100% - 0.75rem) calc(50% - 0.125rem),
+    calc(100% - 0.4375rem) calc(50% - 0.125rem);
   background-repeat: no-repeat;
   background-size: 0.3125rem 0.3125rem;
 }
