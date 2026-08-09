@@ -670,6 +670,10 @@ test('loads canonical overview facts before secondary workbench evidence', async
         : input.toString(),
   );
   try {
+    expect(initialUrls.slice(0, 2)).toEqual([
+      '/api/portfolio',
+      '/api/portfolio/overview',
+    ]);
     expect(initialUrls).toEqual(
       expect.arrayContaining([
         '/api/portfolio/overview',

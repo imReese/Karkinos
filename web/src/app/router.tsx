@@ -382,8 +382,8 @@ export function OverviewPage() {
   const [analysisView, setAnalysisView] = useState<
     'performance' | 'allocation' | 'attribution' | 'calendar'
   >('performance');
-  const overview = useAccountOverviewQuery();
   const snapshot = usePortfolioSnapshotQuery();
+  const overview = useAccountOverviewQuery();
   const secondaryQueriesEnabled = Boolean(overview.data && snapshot.data);
   const equityCurve = useEquityCurveSeriesQuery(
     equityCurveRange,
