@@ -6,6 +6,7 @@ from decimal import Decimal
 import pytest
 
 from account_truth.broker_connector import (
+    LOCAL_JSON_SNAPSHOT_SCHEMA_VERSION,
     BrokerCashFact,
     BrokerConnectorCapabilities,
     BrokerConnectorHealth,
@@ -15,7 +16,6 @@ from account_truth.broker_connector import (
     BrokerPositionFact,
     FakeReadOnlyBrokerConnector,
     LocalJsonReadOnlyBrokerConnector,
-    LOCAL_JSON_SNAPSHOT_SCHEMA_VERSION,
 )
 
 

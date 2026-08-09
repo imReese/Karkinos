@@ -10,6 +10,7 @@ from decimal import Decimal
 import pytest
 
 from account_truth.broker_connector import (
+    LOCAL_JSON_SNAPSHOT_SCHEMA_VERSION,
     BrokerCashFact,
     BrokerConnectorCapabilities,
     BrokerConnectorHealth,
@@ -19,7 +20,6 @@ from account_truth.broker_connector import (
     BrokerOrderFact,
     BrokerPositionFact,
     FakeReadOnlyBrokerConnector,
-    LOCAL_JSON_SNAPSHOT_SCHEMA_VERSION,
 )
 from data.market_calendar import build_static_market_calendar_snapshot
 from server.db import AppDatabase

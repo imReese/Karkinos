@@ -569,8 +569,7 @@ export function BacktestPage() {
   const [promotionEvidenceOpen, setPromotionEvidenceOpen] = useState(false);
   const [researchArchiveOpen, setResearchArchiveOpen] = useState(false);
   const [latestReport, setLatestReport] = useState<BacktestReport | null>(null);
-  const accountStrategyEnabled =
-    researchGovernanceOpen || researchArchiveOpen;
+  const accountStrategyEnabled = researchGovernanceOpen || researchArchiveOpen;
   const runBacktest = useRunBacktestMutation();
   const signalPreview = useStrategySignalPreviewMutation();
   const riskPreview = useBacktestRiskPreviewMutation();
@@ -599,9 +598,7 @@ export function BacktestPage() {
   const validation = useStrategyValidationQuery(promotionEvidenceOpen);
   const readiness = useStrategyPromotionReadinessQuery();
   const singleInstrumentAudit =
-    useSingleInstrumentStrategyLoopAcceptanceAuditQuery(
-      latestReport !== null,
-    );
+    useSingleInstrumentStrategyLoopAcceptanceAuditQuery(latestReport !== null);
   const searchDefaults = useMemo(() => currentBacktestSearchDefaults(), []);
   const [startDate, setStartDate] = useState('2025-01-02');
   const [endDate, setEndDate] = useState(() => todayDate());

@@ -39,9 +39,17 @@ def test_service_health_is_process_liveness_only_and_non_authorizing() -> None:
     ] == [{"GET"}]
 
 
-def test_create_app_registers_service_health_before_static_fallback() -> None:
-    app = create_app({"live_auto_start": False})
-    paths = [route.path for route in registered_app_routes(app)]
+def test_create_app_registers_service_health_before_static_fallback(
+    tmp_path, monkeypatch
+) -> None:
+    static_dir = tmp_path / "web" / "dist"
+    static_dir.mkdir(parents=True)
+    (static_dir / "index.html").write_text("karkinos", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
 
-    assert "/api/health" in paths
-    assert paths.index("/api/health") < paths.index("")
+    app = create_app({"live_auto_start": False})
+    routes = registered_app_routes(app)
+    health_route = next(route for route in routes if route.path == "/api/health")
+    static_route = next(route for route in routes if route.name == "static")
+
+    assert routes.index(health_route) < routes.index(static_route)
