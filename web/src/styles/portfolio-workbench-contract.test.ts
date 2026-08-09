@@ -41,6 +41,13 @@ const portfolioPageSource = routerSource.slice(
   routerSource.indexOf('export function PortfolioPage()'),
   routerSource.indexOf('export function RiskPage()'),
 );
+const portfolioInitialLoadingSource = portfolioPageSource.slice(
+  portfolioPageSource.indexOf('if (isInitialPortfolioLoad)'),
+  portfolioPageSource.indexOf(
+    '\n  return (',
+    portfolioPageSource.indexOf('if (isInitialPortfolioLoad)'),
+  ),
+);
 
 test('portfolio strategy evidence uses flat standard workbench primitives', () => {
   expect(strategyContributionSource).toContain('<MetricStrip');
@@ -91,7 +98,28 @@ test('portfolio defers secondary read models until primary holdings facts settle
     'const primaryPortfolioQueriesSettled =',
   );
   expect(portfolioPageSource).toContain('const isInitialPortfolioLoad =');
-  expect(portfolioPageSource).toContain('<EvidenceLoadingLayout');
+  expect(portfolioInitialLoadingSource).toContain(
+    'data-testid="portfolio-loading-summary"',
+  );
+  expect(portfolioInitialLoadingSource).toContain(
+    'data-testid="portfolio-loading-current-holdings"',
+  );
+  expect(portfolioInitialLoadingSource).toContain(
+    'data-testid="portfolio-loading-filters"',
+  );
+  expect(portfolioInitialLoadingSource).toContain(
+    'data-testid="portfolio-loading-rows"',
+  );
+  expect(portfolioInitialLoadingSource).toContain(
+    'copy.portfolio.summary.totalEquity',
+  );
+  expect(portfolioInitialLoadingSource).toContain(
+    'copy.portfolio.currentHoldings.title',
+  );
+  expect(portfolioInitialLoadingSource).not.toContain('<EvidenceLoadingLayout');
+  expect(portfolioInitialLoadingSource).not.toContain('formatCurrencyValue');
+  expect(portfolioInitialLoadingSource).not.toContain('snapshot.data');
+  expect(portfolioInitialLoadingSource).not.toContain('positions.data');
   expect(portfolioPageSource).toContain(
     'usePortfolioCockpitQuery(primaryPortfolioQueriesSettled)',
   );
