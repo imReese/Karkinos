@@ -47,7 +47,7 @@ test('critical human-review surfaces load from the product runtime', async ({
   await expect(page.getByText(/Global kill switch|全局紧急停止/)).toBeVisible();
 });
 
-test('Account Truth stays fail closed until required persisted evidence resolves', async ({
+test('Account Truth keeps unresolved report reads local and fail closed', async ({
   page,
 }) => {
   await page.route(
@@ -69,19 +69,20 @@ test('Account Truth stays fail closed until required persisted evidence resolves
   await expect(
     page.getByRole('heading', { name: 'Loading Account Truth evidence.' }),
   ).toBeVisible();
-  await expect(page.getByTestId('evidence-loading-workspace')).toBeVisible();
-  await expect(page.getByTestId('evidence-loading-sidebar')).toBeVisible();
-  expect(
-    await page.locator('[data-workbench-primitive="metric-strip"]').count(),
-  ).toBe(0);
+  await expect(
+    page.getByTestId('account-truth-review-workspace'),
+  ).toBeVisible();
+  await expect(page.getByTestId('account-truth-reports-loading')).toBeVisible();
+  await expect(
+    page.locator('[data-workbench-primitive="metric-strip"]'),
+  ).toBeVisible();
   expect(await page.getByText('0 items', { exact: true }).count()).toBe(0);
   expect(
     await page.getByText('No reconciliation reports for this filter.').count(),
   ).toBe(0);
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByTestId('evidence-loading-workspace')).toBeVisible();
-  await expect(page.getByTestId('evidence-loading-sidebar')).toBeHidden();
+  await expect(page.getByTestId('account-truth-reports-loading')).toBeVisible();
   expect(
     await page.evaluate(
       () =>
@@ -99,6 +100,9 @@ test('Account Truth stays fail closed until required persisted evidence resolves
   await expect(
     page.getByRole('heading', { name: 'Loading Account Truth evidence.' }),
   ).toHaveCount(0);
+  await expect(page.getByTestId('account-truth-reports-loading')).toHaveCount(
+    0,
+  );
 });
 
 test('Account Truth preserves its evidence hierarchy across themes and acceptance viewports', async ({

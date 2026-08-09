@@ -991,7 +991,11 @@ export function AccountTruthReviewPage() {
   const readiness = useAccountTruthEvidenceReadinessQuery();
   const score = useAccountTruthScoreQuery();
   const importRuns = useAccountTruthImportRunsQuery();
-  const reports = useReconciliationReportsQuery(filter);
+  const hasSummaryEvidence =
+    readiness.data !== undefined &&
+    score.data !== undefined &&
+    importRuns.data !== undefined;
+  const reports = useReconciliationReportsQuery(filter, hasSummaryEvidence);
   const selectedReport = useMemo(
     () =>
       reports.data?.find(
@@ -1106,14 +1110,7 @@ export function AccountTruthReviewPage() {
     setSavedReviewStatus(null);
   };
 
-  const hasRequiredEvidence =
-    readiness.data !== undefined &&
-    score.data !== undefined &&
-    importRuns.data !== undefined &&
-    reports.data !== undefined &&
-    (selectedReport === null || detail.data !== undefined);
-
-  if (!hasRequiredEvidence) {
+  if (!hasSummaryEvidence) {
     return (
       <section
         className="app-account-truth-route app-workbench-route mx-auto grid w-full max-w-[1440px] gap-5 sm:gap-6"
@@ -1219,7 +1216,9 @@ export function AccountTruthReviewPage() {
               </p>
             </div>
             <span className="shrink-0 text-xs text-[var(--app-text-tertiary)]">
-              {text.itemCount(detail.data?.items.length ?? 0)}
+              {reports.isLoading || detail.isLoading
+                ? text.loading
+                : text.itemCount(detail.data?.items.length ?? 0)}
             </span>
           </div>
 
@@ -1372,7 +1371,20 @@ export function AccountTruthReviewPage() {
                   />
                 ) : null}
 
-                {visibleItems.length > 0 && detail.data ? (
+                {detail.isLoading ? (
+                  <div
+                    className="mt-3"
+                    data-testid="account-truth-report-detail-loading"
+                  >
+                    <EvidenceState kind="loading" title={text.loading} />
+                  </div>
+                ) : detail.isError ? (
+                  <EvidenceState
+                    className="mt-3"
+                    kind="error"
+                    title={text.error}
+                  />
+                ) : visibleItems.length > 0 && detail.data ? (
                   <div className="mt-3 grid min-w-0 gap-4 lg:grid-cols-[minmax(220px,0.62fr)_minmax(0,1.38fr)]">
                     <ReconciliationItemList
                       ariaLabel={text.itemListLabel}
@@ -1433,6 +1445,12 @@ export function AccountTruthReviewPage() {
                 ) : null}
               </div>
             </div>
+          ) : reports.isLoading ? (
+            <div className="mt-4" data-testid="account-truth-reports-loading">
+              <EvidenceState kind="loading" title={text.loading} />
+            </div>
+          ) : reports.isError ? (
+            <EvidenceState className="mt-4" kind="error" title={text.error} />
           ) : (
             <EvidenceState
               className="mt-4"
