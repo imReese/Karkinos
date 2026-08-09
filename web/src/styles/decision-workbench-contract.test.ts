@@ -68,5 +68,10 @@ describe('decision workbench contract', () => {
     expect(DAILY_TRADING_PLAN).not.toMatch(
       /text-\[var\(--app-(?:success|warning|danger)\)\]/,
     );
+    expect(DECISION).toContain(
+      'data-testid="decision-daily-trading-plan-disclosure"',
+    );
+    expect(DECISION).toContain('tradingPlan.data?.order_intent_count === 0');
+    expect(DECISION).toContain('[&>[data-testid]>:first-child]:hidden');
   });
 });

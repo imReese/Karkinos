@@ -1353,6 +1353,9 @@ test('renders read-only daily trading plan order intent preview', async () => {
 
   const plan = await findDailyTradingPlanWith('Manual confirmation ready');
 
+  expect(
+    screen.queryByTestId('decision-daily-trading-plan-disclosure'),
+  ).toBeNull();
   expect(plan.textContent).toContain('Daily trading plan');
   expect(plan.textContent).toContain('Manual confirmation ready');
   expect(plan.textContent).toContain('Order intent previews');
@@ -1402,6 +1405,50 @@ test('renders read-only daily trading plan order intent preview', async () => {
     'Simulation evidence only; no broker submission',
   );
   expect(plan.textContent).toContain('Does not mutate production ledger');
+});
+
+test('collapses an idle persisted trading plan without hiding its evidence', async () => {
+  renderDecisionCockpit({
+    locale: 'en',
+    tradingPlanResponse: {
+      schema_version: 'karkinos.daily_trading_plan.v1',
+      plan_date: '2026-06-12',
+      generated_at: '2026-06-12T09:31:00+08:00',
+      source_decision: 'hold',
+      conclusion_status: 'no_manual_action',
+      primary_target: 'decision',
+      candidate_pool_count: 2,
+      manual_ready_count: 0,
+      order_intent_count: 0,
+      blocked_count: 2,
+      available_cash: 100000,
+      total_equity: 40000,
+      default_execution_mode: 'manual_confirmation',
+      broker_bridge_status: 'disabled',
+      order_intents: [],
+      blockers: [],
+      limitations: [
+        'Order intents are manual-confirmation previews, not broker submissions.',
+      ],
+    },
+  });
+
+  const disclosure = await screen.findByTestId(
+    'decision-daily-trading-plan-disclosure',
+  );
+  expect(disclosure.tagName).toBe('DETAILS');
+  expect(disclosure.hasAttribute('open')).toBe(false);
+  expect(disclosure.textContent).toContain('Manual-confirmation plan');
+  expect(disclosure.textContent).toContain('No manual action required');
+  expect(disclosure.textContent).toContain(
+    '2 candidates · 0 order intent previews · 2 blockers',
+  );
+
+  fireEvent.click(disclosure.querySelector('summary')!);
+  expect(disclosure.hasAttribute('open')).toBe(true);
+  const plan = within(disclosure).getByTestId('decision-daily-trading-plan');
+  expect(plan.textContent).toContain('No manual action required');
+  expect(plan.textContent).toContain('No manual-confirmation order intents.');
 });
 
 test('renders cash shortfall in daily trading plan without manual readiness', async () => {
