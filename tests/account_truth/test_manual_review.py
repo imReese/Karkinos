@@ -7,8 +7,55 @@ import pytest
 
 from account_truth.manual_review import (
     MANUAL_REVIEW_STATUSES,
+    ManualReviewReadRejected,
     ManualReviewRepository,
 )
+
+
+def test_manual_review_repository_construction_and_missing_reads_are_zero_write(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "missing" / "account-truth.db"
+    repository = ManualReviewRepository(db_path)
+
+    assert not db_path.parent.exists()
+    assert repository.list_decisions("missing") == []
+    assert repository.list_decision_history("missing") == []
+    assert not db_path.parent.exists()
+
+
+def test_manual_review_repository_partial_schema_fails_closed_without_repair(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "account-truth.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "CREATE TABLE reconciliation_review_decisions (id INTEGER PRIMARY KEY)"
+        )
+        conn.commit()
+
+    repository = ManualReviewRepository(db_path)
+    with pytest.raises(
+        ManualReviewReadRejected,
+        match="manual_review_schema_incomplete",
+    ):
+        repository.list_decisions("missing")
+
+    with sqlite3.connect(db_path) as conn:
+        tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+        columns = {
+            row[1]
+            for row in conn.execute(
+                "PRAGMA table_info(reconciliation_review_decisions)"
+            )
+        }
+    assert "reconciliation_review_history" not in tables
+    assert columns == {"id"}
 
 
 def test_manual_review_repository_records_all_review_statuses(tmp_path: Path) -> None:
@@ -87,7 +134,8 @@ def test_manual_review_repository_updates_existing_item_decision(
 
 
 def test_manual_review_repository_rejects_unknown_status(tmp_path: Path) -> None:
-    repository = ManualReviewRepository(tmp_path / "account-truth.db")
+    db_path = tmp_path / "account-truth.db"
+    repository = ManualReviewRepository(db_path)
 
     with pytest.raises(ValueError, match="unsupported manual review status"):
         repository.record_decision(
@@ -96,6 +144,7 @@ def test_manual_review_repository_rejects_unknown_status(tmp_path: Path) -> None
             category="cash",
             review_status="auto_fix",
         )
+    assert not db_path.exists()
 
 
 def test_ledger_candidate_review_does_not_mutate_production_ledger(
@@ -177,8 +226,56 @@ def test_manual_review_repository_migrates_v1_rows_as_stale_evidence(
         )
         conn.commit()
 
-    decisions = ManualReviewRepository(db_path).list_decisions("import_v1")
+    repository = ManualReviewRepository(db_path)
+    with pytest.raises(
+        ManualReviewReadRejected,
+        match="manual_review_schema_incomplete",
+    ):
+        repository.list_decisions("import_v1")
+
+    with sqlite3.connect(db_path) as conn:
+        columns_before_write = {
+            row[1]
+            for row in conn.execute(
+                "PRAGMA table_info(reconciliation_review_decisions)"
+            )
+        }
+    assert "evidence_fingerprint" not in columns_before_write
+
+    repository.record_decision(
+        import_run_id="import_migration_trigger",
+        item_key="cash",
+        category="cash",
+        review_status="needs_investigation",
+    )
+    decisions = repository.list_decisions("import_v1")
 
     assert len(decisions) == 1
     assert decisions[0].review_status == "known_difference"
     assert decisions[0].evidence_fingerprint == ""
+
+
+def test_manual_review_repository_rejects_malformed_persisted_record(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "account-truth.db"
+    repository = ManualReviewRepository(db_path)
+    repository.record_decision(
+        import_run_id="import_synthetic",
+        item_key="cash",
+        category="cash",
+        review_status="needs_investigation",
+    )
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE reconciliation_review_decisions "
+            "SET review_status = 'auto_fix' WHERE import_run_id = ?",
+            ("import_synthetic",),
+        )
+        conn.commit()
+
+    with pytest.raises(
+        ManualReviewReadRejected,
+        match="manual_review_record_invalid",
+    ):
+        repository.list_decisions("import_synthetic")

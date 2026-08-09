@@ -3,7 +3,12 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from account_truth.broker_evidence import BrokerEvidenceRepository
+import pytest
+
+from account_truth.broker_evidence import (
+    BrokerEvidenceReadRejected,
+    BrokerEvidenceRepository,
+)
 from account_truth.broker_statement import parse_broker_statement_csv
 
 ALL_EVENT_TYPES_STATEMENT = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note
@@ -23,6 +28,71 @@ synthetic-sell-001,trade_sell,2026-01-06T10:10:00+08:00,2026-01-07,SYN001,合成
 synthetic-position-001,position_snapshot,2026-01-06T15:10:00+08:00,2026-01-06,SYN001,合成样例股票A,stock,CNY,0,12.00,0.00,0.00,0.00,0.00,10196.40,0,8.80,synthetic position snapshot,,broker_remaining_cost,,
 synthetic-cash-001,cash_snapshot,2026-01-06T15:10:00+08:00,2026-01-06,,,,CNY,0,0,0.00,0.00,0.00,0.00,10196.40,,,,,,,
 """
+
+
+def test_broker_evidence_repository_construction_and_missing_reads_are_zero_write(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "missing" / "account-truth.db"
+    repository = BrokerEvidenceRepository(db_path)
+
+    assert not db_path.parent.exists()
+    assert repository.list_import_runs() == []
+    assert repository.get_import_run("missing") is None
+    assert repository.list_events("missing") == []
+    assert not db_path.parent.exists()
+
+
+def test_broker_evidence_repository_ignores_unrelated_schema_without_writing(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "account-truth.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE TABLE unrelated_fact (id INTEGER PRIMARY KEY)")
+        conn.commit()
+
+    repository = BrokerEvidenceRepository(db_path)
+    with sqlite3.connect(db_path) as conn:
+        before = conn.execute(
+            "SELECT type, name, sql FROM sqlite_master ORDER BY type, name"
+        ).fetchall()
+    assert repository.list_import_runs() == []
+    assert repository.list_events("missing") == []
+    with sqlite3.connect(db_path) as conn:
+        after = conn.execute(
+            "SELECT type, name, sql FROM sqlite_master ORDER BY type, name"
+        ).fetchall()
+
+    assert after == before
+
+
+def test_broker_evidence_repository_partial_schema_fails_closed_without_repair(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "account-truth.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE TABLE broker_import_runs (id INTEGER PRIMARY KEY)")
+        conn.commit()
+
+    repository = BrokerEvidenceRepository(db_path)
+    with pytest.raises(
+        BrokerEvidenceReadRejected,
+        match="broker_evidence_schema_incomplete",
+    ):
+        repository.list_import_runs()
+
+    with sqlite3.connect(db_path) as conn:
+        tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+        columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(broker_import_runs)")
+        }
+    assert "broker_evidence_events" not in tables
+    assert columns == {"id"}
 
 
 def test_broker_evidence_repository_stages_import_run_and_events(
@@ -177,7 +247,19 @@ def test_broker_evidence_repository_migrates_legacy_order_identity_columns(
         )
         conn.commit()
 
-    BrokerEvidenceRepository(db_path)
+    repository = BrokerEvidenceRepository(db_path)
+
+    with sqlite3.connect(db_path) as conn:
+        columns_before_write = {
+            row[1] for row in conn.execute("PRAGMA table_info(broker_evidence_events)")
+        }
+    assert "broker_order_id" not in columns_before_write
+    assert "client_order_id" not in columns_before_write
+
+    repository.save_preview(
+        parse_broker_statement_csv(OPTIONAL_COMPONENT_STATEMENT),
+        source_name="explicit-migration-write.csv",
+    )
 
     with sqlite3.connect(db_path) as conn:
         row = conn.execute("""
@@ -187,6 +269,74 @@ def test_broker_evidence_repository_migrates_legacy_order_identity_columns(
             """).fetchone()
 
     assert row == ("", "")
+
+
+def test_broker_evidence_repository_rejects_malformed_persisted_records(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "account-truth.db"
+    repository = BrokerEvidenceRepository(db_path)
+    import_run = repository.save_preview(
+        parse_broker_statement_csv(ALL_EVENT_TYPES_STATEMENT),
+        source_name="synthetic-safe-example.csv",
+    )
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE broker_import_runs SET limitations_json = ? "
+            "WHERE import_run_id = ?",
+            ("{not-json", import_run.import_run_id),
+        )
+        conn.commit()
+
+    with pytest.raises(
+        BrokerEvidenceReadRejected,
+        match="broker_evidence_record_invalid",
+    ):
+        repository.list_import_runs()
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE broker_import_runs SET limitations_json = '[]' "
+            "WHERE import_run_id = ?",
+            (import_run.import_run_id,),
+        )
+        conn.execute(
+            "UPDATE broker_evidence_events SET quantity = 'NaN' "
+            "WHERE import_run_id = ? AND row_number = 2",
+            (import_run.import_run_id,),
+        )
+        conn.commit()
+
+    with pytest.raises(
+        BrokerEvidenceReadRejected,
+        match="broker_evidence_record_invalid",
+    ):
+        repository.list_events(import_run.import_run_id)
+
+
+def test_broker_evidence_repository_reads_known_v1_import_identity(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "account-truth.db"
+    repository = BrokerEvidenceRepository(db_path)
+    import_run = repository.save_preview(
+        parse_broker_statement_csv(ALL_EVENT_TYPES_STATEMENT),
+        source_name="synthetic-v1-identity.csv",
+    )
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE broker_import_runs SET schema_version = ? "
+            "WHERE import_run_id = ?",
+            (
+                "karkinos.account_truth.broker_evidence.v1",
+                import_run.import_run_id,
+            ),
+        )
+        conn.commit()
+
+    [stored] = repository.list_import_runs()
+
+    assert stored.schema_version == "karkinos.account_truth.broker_evidence.v1"
 
 
 def test_broker_evidence_repository_reimports_same_file_idempotently(

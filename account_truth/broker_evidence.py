@@ -3,20 +3,38 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import Iterator
 
 from account_truth.broker_statement import (
+    BROKER_STATEMENT_EVENT_TYPES,
     BrokerEvidenceEvent,
     BrokerStatementPreview,
     ValidationStatus,
 )
 
 ACCOUNT_TRUTH_SCHEMA_VERSION = "karkinos.account_truth.broker_evidence.v2"
+_SUPPORTED_ACCOUNT_TRUTH_SCHEMA_VERSIONS = {
+    "karkinos.account_truth.broker_evidence.v1",
+    ACCOUNT_TRUTH_SCHEMA_VERSION,
+}
+_FINGERPRINT_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+_VALIDATION_STATUSES = {"pass", "warning", "blocked"}
+
+
+class BrokerEvidenceReadRejected(RuntimeError):
+    """Raised when persisted canonical broker evidence is unsafe to read."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
 
 
 @dataclass(frozen=True)
@@ -73,8 +91,6 @@ class BrokerEvidenceRepository:
 
     def __init__(self, db_path: str | Path) -> None:
         self._path = Path(db_path)
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._ensure_schema()
 
     def save_preview(
         self,
@@ -82,6 +98,7 @@ class BrokerEvidenceRepository:
         *,
         source_name: str = "",
     ) -> BrokerImportRun:
+        self._ensure_schema()
         created_at = datetime.now(UTC).isoformat()
         existing_import_run_id = self._find_existing_import_run(
             preview.file_fingerprint
@@ -213,8 +230,9 @@ class BrokerEvidenceRepository:
         return existing
 
     def list_events(self, import_run_id: str) -> list[StoredBrokerEvidenceEvent]:
-        with sqlite3.connect(self._path) as conn:
-            conn.row_factory = sqlite3.Row
+        with self._read_connection() as conn:
+            if conn is None:
+                return []
             rows = conn.execute(
                 """
                 SELECT *
@@ -227,8 +245,9 @@ class BrokerEvidenceRepository:
         return [self._event_from_row(row) for row in rows]
 
     def list_import_runs(self, *, limit: int = 50) -> list[BrokerImportRun]:
-        with sqlite3.connect(self._path) as conn:
-            conn.row_factory = sqlite3.Row
+        with self._read_connection() as conn:
+            if conn is None:
+                return []
             rows = conn.execute(
                 """
                 SELECT *
@@ -241,8 +260,9 @@ class BrokerEvidenceRepository:
         return [self._import_run_from_row(row) for row in rows]
 
     def get_import_run(self, import_run_id: str) -> BrokerImportRun | None:
-        with sqlite3.connect(self._path) as conn:
-            conn.row_factory = sqlite3.Row
+        with self._read_connection() as conn:
+            if conn is None:
+                return None
             row = conn.execute(
                 """
                 SELECT *
@@ -254,7 +274,34 @@ class BrokerEvidenceRepository:
             ).fetchone()
         return self._import_run_from_row(row) if row else None
 
+    @contextmanager
+    def _read_connection(self) -> Iterator[sqlite3.Connection | None]:
+        if not self._path.is_file():
+            yield None
+            return
+        try:
+            read_uri = f"{self._path.resolve().as_uri()}?mode=ro"
+            with sqlite3.connect(read_uri, uri=True) as conn:
+                conn.row_factory = sqlite3.Row
+                conn.execute("PRAGMA query_only = ON")
+                schema_state = self._schema_state(conn)
+                if schema_state == "absent":
+                    yield None
+                    return
+                if schema_state != "complete":
+                    raise BrokerEvidenceReadRejected(
+                        "broker_evidence_schema_incomplete"
+                    )
+                yield conn
+        except BrokerEvidenceReadRejected:
+            raise
+        except (OSError, sqlite3.DatabaseError) as exc:
+            raise BrokerEvidenceReadRejected(
+                "broker_evidence_store_unreadable"
+            ) from exc
+
     def _ensure_schema(self) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(self._path) as conn:
             conn.executescript("""
                 CREATE TABLE IF NOT EXISTS broker_import_runs (
@@ -320,6 +367,78 @@ class BrokerEvidenceRepository:
                 """)
             self._ensure_event_component_columns(conn)
             conn.commit()
+
+    @staticmethod
+    def _schema_state(conn: sqlite3.Connection) -> str:
+        required_tables = {
+            "broker_import_runs": {
+                "id",
+                "import_run_id",
+                "schema_version",
+                "source_type",
+                "source_name",
+                "file_fingerprint",
+                "row_count",
+                "valid_row_count",
+                "invalid_row_count",
+                "row_duplicate_count",
+                "file_duplicate_count",
+                "validation_status",
+                "limitations_json",
+                "duplicate_of_import_run_id",
+                "created_at",
+            },
+            "broker_evidence_events": {
+                "id",
+                "import_run_id",
+                "row_number",
+                "row_fingerprint",
+                "event_id",
+                "event_type",
+                "occurred_at",
+                "settled_at",
+                "symbol",
+                "instrument_name",
+                "asset_class",
+                "currency",
+                "quantity",
+                "price",
+                "gross_amount",
+                "fee",
+                "tax",
+                "net_amount",
+                "cash_balance",
+                "position_quantity",
+                "cost_basis",
+                "note",
+                "is_row_duplicate",
+                "duplicate_of_row_number",
+                "transfer_fee",
+                "cost_basis_method",
+                "broker_order_id",
+                "client_order_id",
+                "created_at",
+            },
+        }
+        table_names = {
+            str(row["name"])
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+        present = table_names.intersection(required_tables)
+        if not present:
+            return "absent"
+        if present != set(required_tables):
+            return "incomplete"
+        for table_name, required_columns in required_tables.items():
+            columns = {
+                str(row["name"])
+                for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+            }
+            if not required_columns.issubset(columns):
+                return "incomplete"
+        return "complete"
 
     @staticmethod
     def _ensure_event_component_columns(conn: sqlite3.Connection) -> None:
@@ -401,54 +520,167 @@ class BrokerEvidenceRepository:
 
     @staticmethod
     def _event_from_row(row: sqlite3.Row) -> StoredBrokerEvidenceEvent:
-        return StoredBrokerEvidenceEvent(
-            import_run_id=str(row["import_run_id"]),
-            row_number=int(row["row_number"]),
-            row_fingerprint=str(row["row_fingerprint"]),
-            event_id=str(row["event_id"]),
-            event_type=str(row["event_type"]),
-            occurred_at=str(row["occurred_at"]),
-            settled_at=str(row["settled_at"]),
-            symbol=str(row["symbol"]),
-            instrument_name=str(row["instrument_name"]),
-            asset_class=str(row["asset_class"]),
-            currency=str(row["currency"]),
-            quantity=str(row["quantity"]),
-            price=str(row["price"]),
-            gross_amount=str(row["gross_amount"]),
-            fee=str(row["fee"]),
-            tax=str(row["tax"]),
-            net_amount=str(row["net_amount"]),
-            cash_balance=row["cash_balance"],
-            position_quantity=row["position_quantity"],
-            cost_basis=row["cost_basis"],
-            note=str(row["note"]),
-            is_row_duplicate=bool(row["is_row_duplicate"]),
-            duplicate_of_row_number=row["duplicate_of_row_number"],
-            transfer_fee=str(row["transfer_fee"]),
-            cost_basis_method=str(row["cost_basis_method"] or ""),
-            broker_order_id=str(row["broker_order_id"] or ""),
-            client_order_id=str(row["client_order_id"] or ""),
-        )
+        try:
+            event = StoredBrokerEvidenceEvent(
+                import_run_id=str(row["import_run_id"]),
+                row_number=int(row["row_number"]),
+                row_fingerprint=str(row["row_fingerprint"]),
+                event_id=str(row["event_id"]),
+                event_type=str(row["event_type"]),
+                occurred_at=str(row["occurred_at"]),
+                settled_at=str(row["settled_at"]),
+                symbol=str(row["symbol"]),
+                instrument_name=str(row["instrument_name"]),
+                asset_class=str(row["asset_class"]),
+                currency=str(row["currency"]),
+                quantity=str(row["quantity"]),
+                price=str(row["price"]),
+                gross_amount=str(row["gross_amount"]),
+                fee=str(row["fee"]),
+                tax=str(row["tax"]),
+                net_amount=str(row["net_amount"]),
+                cash_balance=(
+                    str(row["cash_balance"])
+                    if row["cash_balance"] is not None
+                    else None
+                ),
+                position_quantity=(
+                    str(row["position_quantity"])
+                    if row["position_quantity"] is not None
+                    else None
+                ),
+                cost_basis=(
+                    str(row["cost_basis"]) if row["cost_basis"] is not None else None
+                ),
+                note=str(row["note"]),
+                is_row_duplicate=_stored_bool(row["is_row_duplicate"]),
+                duplicate_of_row_number=(
+                    int(row["duplicate_of_row_number"])
+                    if row["duplicate_of_row_number"] is not None
+                    else None
+                ),
+                transfer_fee=str(row["transfer_fee"]),
+                cost_basis_method=str(row["cost_basis_method"] or ""),
+                broker_order_id=str(row["broker_order_id"] or ""),
+                client_order_id=str(row["client_order_id"] or ""),
+            )
+            _validate_stored_event(event)
+            return event
+        except BrokerEvidenceReadRejected:
+            raise
+        except (IndexError, KeyError, TypeError, ValueError) as exc:
+            raise BrokerEvidenceReadRejected("broker_evidence_record_invalid") from exc
 
     @staticmethod
     def _import_run_from_row(row: sqlite3.Row) -> BrokerImportRun:
-        return BrokerImportRun(
-            import_run_id=str(row["import_run_id"]),
-            schema_version=str(row["schema_version"]),
-            source_type=str(row["source_type"]),
-            source_name=str(row["source_name"] or ""),
-            file_fingerprint=str(row["file_fingerprint"]),
-            row_count=int(row["row_count"]),
-            valid_row_count=int(row["valid_row_count"]),
-            invalid_row_count=int(row["invalid_row_count"]),
-            row_duplicate_count=int(row["row_duplicate_count"]),
-            file_duplicate_count=int(row["file_duplicate_count"]),
-            validation_status=str(row["validation_status"]),  # type: ignore[arg-type]
-            limitations=json.loads(str(row["limitations_json"] or "[]")),
-            duplicate_of_import_run_id=row["duplicate_of_import_run_id"],
-            created_at=str(row["created_at"]),
+        try:
+            import_run = BrokerImportRun(
+                import_run_id=str(row["import_run_id"]),
+                schema_version=str(row["schema_version"]),
+                source_type=str(row["source_type"]),
+                source_name=str(row["source_name"] or ""),
+                file_fingerprint=str(row["file_fingerprint"]),
+                row_count=int(row["row_count"]),
+                valid_row_count=int(row["valid_row_count"]),
+                invalid_row_count=int(row["invalid_row_count"]),
+                row_duplicate_count=int(row["row_duplicate_count"]),
+                file_duplicate_count=int(row["file_duplicate_count"]),
+                validation_status=str(row["validation_status"]),  # type: ignore[arg-type]
+                limitations=_json_string_list(row["limitations_json"]),
+                duplicate_of_import_run_id=(
+                    str(row["duplicate_of_import_run_id"])
+                    if row["duplicate_of_import_run_id"] is not None
+                    else None
+                ),
+                created_at=str(row["created_at"]),
+            )
+            _validate_import_run(import_run)
+            return import_run
+        except BrokerEvidenceReadRejected:
+            raise
+        except (IndexError, KeyError, TypeError, ValueError) as exc:
+            raise BrokerEvidenceReadRejected("broker_evidence_record_invalid") from exc
+
+
+def _json_string_list(raw_value: object) -> list[str]:
+    parsed = json.loads(str(raw_value or "[]"))
+    if not isinstance(parsed, list) or any(
+        not isinstance(item, str) for item in parsed
+    ):
+        raise BrokerEvidenceReadRejected("broker_evidence_record_invalid")
+    return parsed
+
+
+def _validate_import_run(import_run: BrokerImportRun) -> None:
+    counts = (
+        import_run.row_count,
+        import_run.valid_row_count,
+        import_run.invalid_row_count,
+        import_run.row_duplicate_count,
+        import_run.file_duplicate_count,
+    )
+    if (
+        not import_run.import_run_id.strip()
+        or import_run.schema_version not in _SUPPORTED_ACCOUNT_TRUTH_SCHEMA_VERSIONS
+        or not import_run.source_type.strip()
+        or not _FINGERPRINT_PATTERN.fullmatch(import_run.file_fingerprint)
+        or any(value < 0 for value in counts)
+        or import_run.row_duplicate_count > import_run.valid_row_count
+        or import_run.validation_status not in _VALIDATION_STATUSES
+        or not import_run.created_at.strip()
+    ):
+        raise BrokerEvidenceReadRejected("broker_evidence_record_invalid")
+
+
+def _validate_stored_event(event: StoredBrokerEvidenceEvent) -> None:
+    required_decimals = (
+        event.quantity,
+        event.price,
+        event.gross_amount,
+        event.fee,
+        event.tax,
+        event.net_amount,
+        event.transfer_fee,
+    )
+    optional_decimals = (
+        event.cash_balance,
+        event.position_quantity,
+        event.cost_basis,
+    )
+    if (
+        not event.import_run_id.strip()
+        or event.row_number <= 0
+        or not _FINGERPRINT_PATTERN.fullmatch(event.row_fingerprint)
+        or not event.event_id.strip()
+        or event.event_type not in BROKER_STATEMENT_EVENT_TYPES
+        or not event.occurred_at.strip()
+        or not event.settled_at.strip()
+        or not event.currency.strip()
+        or any(not _is_finite_decimal(value) for value in required_decimals)
+        or any(
+            value is not None and not _is_finite_decimal(value)
+            for value in optional_decimals
         )
+        or (
+            event.duplicate_of_row_number is not None
+            and event.duplicate_of_row_number <= 0
+        )
+        or (event.is_row_duplicate != (event.duplicate_of_row_number is not None))
+    ):
+        raise BrokerEvidenceReadRejected("broker_evidence_record_invalid")
+
+
+def _stored_bool(raw_value: object) -> bool:
+    if raw_value not in {0, 1}:
+        raise BrokerEvidenceReadRejected("broker_evidence_record_invalid")
+    return bool(raw_value)
+
+
+def _is_finite_decimal(raw_value: str) -> bool:
+    try:
+        return Decimal(raw_value).is_finite()
+    except (ArithmeticError, ValueError):
+        return False
 
 
 def _decimal_to_text(value: Decimal) -> str:

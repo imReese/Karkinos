@@ -1,17 +1,47 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from account_truth.broker_evidence import BrokerEvidenceRepository
-from account_truth.broker_statement import parse_broker_statement_csv
+from account_truth.broker_statement import (
+    BrokerStatementValidationError,
+    parse_broker_statement_csv,
+)
+from account_truth.citic_history_xls import (
+    CITIC_HISTORY_XLS_COLUMNS,
+    CITIC_HISTORY_XLS_SOURCE_TYPE,
+)
+from account_truth.citic_source_intake import CiticSourceIntakeRepository
 from server.account_truth_gate import (
     build_latest_account_truth_promotion_evidence,
     build_reconciliation_report_for_import_run,
 )
 from server.db import AppDatabase
 from server.ledger.repository import LedgerRepository
+
+_INCOMPLETE_CITIC_SOURCE = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note,transfer_fee,cost_basis_method,broker_order_id,client_order_id
+private-buy,trade_buy,2026-01-05T09:35:00+08:00,2026-01-06,PRIVATE-SYMBOL,PRIVATE-NAME,stock,CNY,100,10,1000,0,0,-1005,,,,PRIVATE-NOTE,0,,PRIVATE-ORDER,
+"""
+
+
+def _incomplete_citic_preview():
+    return replace(
+        parse_broker_statement_csv(_INCOMPLETE_CITIC_SOURCE),
+        source_type=CITIC_HISTORY_XLS_SOURCE_TYPE,
+        normalized_columns=CITIC_HISTORY_XLS_COLUMNS,
+        validation_status="blocked",
+        limitations=["Itemized settlement components are absent."],
+        errors=[
+            BrokerStatementValidationError(
+                row_number=None,
+                code="citic_history_xls_settlement_components_missing",
+                message="Itemized settlement components are missing.",
+            )
+        ],
+    )
 
 
 def test_account_truth_promotion_evidence_is_fresh_sanitized_and_source_sensitive(
@@ -88,6 +118,26 @@ position-current,position_snapshot,2026-01-06T15:00:00+08:00,2026-01-06,SYN001,å
         state,
         clock=lambda: now,
     )
+    incomplete_preview = _incomplete_citic_preview()
+    source_repository = CiticSourceIntakeRepository(db._path)
+    source_repository.record_review(
+        incomplete_preview,
+        expected_file_fingerprint=incomplete_preview.file_fingerprint,
+        review_status="follow_up_required",
+    )
+    blocked_by_source = build_latest_account_truth_promotion_evidence(
+        state,
+        clock=lambda: now,
+    )
+    source_repository.record_review(
+        incomplete_preview,
+        expected_file_fingerprint=incomplete_preview.file_fingerprint,
+        review_status="rejected",
+    )
+    cleared_after_rejection = build_latest_account_truth_promotion_evidence(
+        state,
+        clock=lambda: now,
+    )
     db.insert_ledger_entry_sync(
         entry_type="fee",
         timestamp="2026-01-06T16:00:00+08:00",
@@ -106,6 +156,20 @@ position-current,position_snapshot,2026-01-06T15:00:00+08:00,2026-01-06,SYN001,å
     assert first["unresolved_mismatch_count"] == 0
     assert len(str(first["source_fingerprint"])) == 64
     assert "private-name-must-not-leak.csv" not in json.dumps(first)
+    assert blocked_by_source["status"] == "blocked"
+    assert "citic_source_follow_up_required" in blocked_by_source["blockers"]
+    assert blocked_by_source["citic_source_follow_up"]["pending_source_count"] == 1
+    assert blocked_by_source["citic_source_follow_up"]["count_complete"] is True
+    assert blocked_by_source["source_fingerprint"] != first["source_fingerprint"]
+    assert "PRIVATE-SYMBOL" not in json.dumps(blocked_by_source)
+    assert cleared_after_rejection["status"] == "clear"
+    assert (
+        cleared_after_rejection["citic_source_follow_up"]["pending_source_count"] == 0
+    )
+    assert (
+        cleared_after_rejection["source_fingerprint"]
+        != blocked_by_source["source_fingerprint"]
+    )
     assert changed["status"] == "blocked"
     assert changed["source_fingerprint"] != first["source_fingerprint"]
 
