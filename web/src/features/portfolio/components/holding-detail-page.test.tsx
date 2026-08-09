@@ -86,6 +86,7 @@ function installHoldingFetchMock({
   failKline = false,
   deferKline = false,
   deferCore = false,
+  deferFallbackCore = false,
   accountStrategy = {
     strategy_id: 'dual_ma',
     strategy_name: 'dual_ma',
@@ -175,6 +176,7 @@ function installHoldingFetchMock({
   failKline?: boolean;
   deferKline?: boolean;
   deferCore?: boolean;
+  deferFallbackCore?: boolean;
   accountStrategy?: Record<string, unknown>;
   accountStrategyAttribution?: Record<string, unknown>;
   accountStrategyContribution?: Record<string, unknown>;
@@ -195,6 +197,15 @@ function installHoldingFetchMock({
       (url.includes('/api/portfolio/positions') ||
         url.includes('/api/portfolio/live-holdings') ||
         url.endsWith('/api/portfolio') ||
+        url.includes('/api/portfolio/overview'))
+    ) {
+      return await new Promise<Response>(() => undefined);
+    }
+
+    if (
+      deferFallbackCore &&
+      (url.includes('/api/portfolio/positions') ||
+        url.includes('/api/portfolio/live-holdings') ||
         url.includes('/api/portfolio/overview'))
     ) {
       return await new Promise<Response>(() => undefined);
@@ -1459,11 +1470,27 @@ test('shows a next action when holding-level attribution readiness is unavailabl
 });
 
 test('shows not found state when the symbol is absent', async () => {
-  renderHoldingDetail({ includePosition: false });
+  const { fetchMock } = renderHoldingDetail({ includePosition: false });
 
   expect(
     screen.getByRole('heading', { level: 1, name: '600519 Position' }),
   ).toBeTruthy();
+  expect(await screen.findByText('Holding not found')).toBeTruthy();
+  expect(
+    await screen.findByText(
+      'This symbol is not present in the current portfolio snapshot.',
+    ),
+  ).toBeTruthy();
+  expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/api/portfolio');
+  expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain('/positions');
+});
+
+test('resolves an absent holding without waiting for fallback detail projections', async () => {
+  renderHoldingDetail({
+    includePosition: false,
+    deferFallbackCore: true,
+  });
+
   expect(await screen.findByText('Holding not found')).toBeTruthy();
   expect(
     await screen.findByText(
