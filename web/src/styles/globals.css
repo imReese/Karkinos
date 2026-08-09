@@ -2081,7 +2081,7 @@ h3 {
 @media (max-width: 639px) {
   [data-workbench-route='backtest'] > .app-backtest-context-strip {
     grid-auto-flow: column;
-    grid-auto-columns: minmax(148px, 46vw);
+    grid-auto-columns: minmax(176px, 52vw);
     grid-template-columns: none;
     overflow-x: auto;
     scroll-padding-inline: 0.75rem;
@@ -2093,15 +2093,6 @@ h3 {
     > .app-backtest-context-strip
     > .app-metric-strip-item {
     scroll-snap-align: start;
-  }
-
-  [data-workbench-route='backtest']
-    > .app-backtest-context-strip
-    > .app-metric-strip-item
-    > .truncate {
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
   }
 
   [data-workbench-route='backtest']

@@ -458,6 +458,9 @@ describe('remaining route workbench contract', () => {
     );
     expect(BACKTEST_REPORT).toContain('<FilterBar');
     expect(BACKTEST_REPORT).toContain('<MetricStrip');
+    expect(BACKTEST_REPORT).toContain(
+      'className="app-backtest-evidence-strip"',
+    );
     expect(BACKTEST_REPORT).toContain('<EvidenceState');
     expect(BACKTEST_REPORT).toContain('selectedSummary && !report.data');
     expect(BACKTEST_METRICS.match(/<MetricStrip\s/g)).toHaveLength(2);
@@ -466,6 +469,12 @@ describe('remaining route workbench contract', () => {
     );
     expect(CSS).toContain("[data-workbench-route='backtest']");
     expect(CSS).toContain('overflow-wrap: anywhere');
+    const backtestStyles = CSS.slice(
+      CSS.indexOf("[data-workbench-route='backtest']"),
+      CSS.indexOf('.app-activity-filter-rail'),
+    );
+    expect(backtestStyles).not.toContain('text-overflow: ellipsis');
+    expect(backtestStyles).not.toContain('white-space: nowrap');
 
     for (const reportSurface of [
       BACKTEST_REPORT,

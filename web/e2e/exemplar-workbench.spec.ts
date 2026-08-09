@@ -397,9 +397,9 @@ test('backtest preserves result-first evidence and complete metrics across all a
           contextText.length > 0 &&
           contextText.every((element) => {
             const style = getComputedStyle(element);
-            return window.innerWidth < 640
-              ? style.whiteSpace === 'nowrap' && style.overflow === 'hidden'
-              : style.whiteSpace === 'normal' && style.overflow === 'visible';
+            return (
+              style.whiteSpace === 'normal' && style.overflow === 'visible'
+            );
           }),
         documentOverflow:
           document.documentElement.scrollWidth -
@@ -1413,13 +1413,18 @@ test('exemplar routes remain task-reordered and overflow safe on mobile themes',
         const contextGeometry = await contextStrip.evaluate((element) => ({
           height: element.getBoundingClientRect().height,
           horizontalOverflow: element.scrollWidth - element.clientWidth,
-          singleLine: Array.from(element.querySelectorAll('.truncate')).every(
-            (item) => getComputedStyle(item).whiteSpace === 'nowrap',
-          ),
+          textUnclipped: Array.from(
+            element.querySelectorAll('.truncate'),
+          ).every((item) => {
+            const style = getComputedStyle(item);
+            return (
+              style.whiteSpace === 'normal' && style.overflow === 'visible'
+            );
+          }),
         }));
-        expect(contextGeometry.height, theme).toBeLessThanOrEqual(96);
+        expect(contextGeometry.height, theme).toBeLessThanOrEqual(144);
         expect(contextGeometry.horizontalOverflow, theme).toBeGreaterThan(0);
-        expect(contextGeometry.singleLine, theme).toBe(true);
+        expect(contextGeometry.textUnclipped, theme).toBe(true);
 
         const tabs = page.getByTestId('backtest-mobile-workspace-tabs');
         const resultTab = tabs.getByRole('tab', {
