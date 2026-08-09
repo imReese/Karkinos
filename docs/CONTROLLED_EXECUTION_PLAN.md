@@ -45,7 +45,8 @@ kill switch and operational health
 5. The only write path is reviewed decision → account/risk gates → bounded
    authority → OMS → gateway → broker evidence → reconciliation.
 6. Kill switch, stale facts, connector degradation, unresolved reconciliation,
-   expired policy, exhausted budget, or source drift blocks new submissions.
+   expired policy, exhausted budget, or source drift blocks new submissions;
+   manual-ticket and manual-execution entry require the latest signed current per-order confirmation and re-resolve every bound persisted source.
 7. Unknown submission outcome is query-only and never automatically retried.
 8. Broker callbacks and imports are evidence; they do not silently rewrite the
    ledger.

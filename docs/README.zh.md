@@ -1,7 +1,6 @@
 # Karkinos 中文文档
 
-Karkinos 是面向中国市场的个人量化投研与交易平台。本页是中文文档入口，不重复维护完整的
-产品说明、API 清单或实现日志。
+Karkinos 是面向中国市场的个人量化投研与交易平台。本页是中文文档入口，不重复维护完整的产品说明、API 清单或实现日志。
 
 [返回项目首页](../README.md) | [English documentation](README.en.md)
 
@@ -109,9 +108,10 @@ kill switch 或任何权限。
 
 ### Account Truth 与对账
 
-券商导入默认先 preview，再记录为独立 broker evidence。对账比较现金、持仓、订单、成交、
-费用、税和成本基础；券商事实不能静默改写账本。请只使用本地真实文件，不要把账号或导出
-提交到仓库。
+券商导入默认先 preview，再记录为独立 broker evidence。证据不完整的中信历史成交还可经
+二次人工确认记录为隐私最小化的待补证来源或明确拒绝；显式配置的私有目录可按需扫描且不返回路径或文件名，但它不会保存成交事件，也不属于 Account Truth。对账比较现金、持仓、订单、成交、费用、税和成本基础；券商事实不能静默改写
+账本。每份待补证来源还可追加一份可撤销、绑定精确 fingerprint 的券商查询日期复核；日期不能根据观察到的事件反推。目录扫描会只读检查当前声明日期是否连续或重叠，但即使全部连续也只清除来源级待办，不会提升为 Account Truth。来源待处理、扫描截断、读取失败、日期缺口或重叠还会阻断受控执行消费的 Account Truth promotion evidence，但不能生成 canonical 账户事实或独立开放执行。
+请只使用本地真实文件，不要把账号或导出提交到仓库。账户事实页面还会把持久化 score、待补证复核与账户/日期/资产范围投影为 canonical 证据就绪清单；观察到的首末记录不等于完整覆盖，只有显式 owner 复核才能把精确导入绑定到浏览器本地哈希的账户引用与声明时段，而且该复核可撤销。任何缺失、漂移或不可读证据都会保持阻断；查看清单不会写库、联系券商、执行对账或授予执行/资本权限。
 
 ### 受控执行
 
@@ -128,8 +128,8 @@ journey 显式打开：选择 allowlisted 原因、复核确定性 delta、验�
 Trading 还会只读展示精确 connector 的 20 日 soak、三阶段、恢复演练、Account Truth 和签名 owner acceptance 门禁；默认折叠的 adapter release 复核可在不改数据库的前提下签名接受/拒绝/撤销，并把精确 manifest、最新 conformance、当前 review 与 operator approval 绑定；独立 write-edge 复核则完成最长 12 小时的签名放行与单向撤销。两者都在本地拦截凭据键，不提供 submit/cancel、adapter 注册、provider 连接或资本授权；未配置时保持中性且不执行 promotion。
 默认折叠、非提交的逐单证据复核只列出 canonical `manually_confirmed` OMS 候选，并从持久化事实解析最新精确资本评估、前序批次对账与网关验证，避免人工抄写三组 fingerprint；随后还会绑定与 connector/gateway/account 精确匹配、仍为 accepted、conformance clear 且处于只读观测的最新 adapter release。
 v5 dossier 还会把 Account Truth、Decision action、risk decision 与 paper/shadow 引用解析到匹配的持久化来源，要求同一 capital evaluation 精确包含这些引用，并阻断订单、标的、策略或数量漂移。
-三分钟离线签名只能追加一条精确复核事实，不能 submit/cancel、联系 provider，或修改 OMS、ledger、risk、kill switch 与 capital authority；缺失、歧义、较新阻断或有界扫描不完整时
-继续 blocked，release 撤销或 scope drift 也会使旧签名失效。
+三分钟离线签名只能追加精确复核事实；旧人工工单与人工成交操作必须取得最新已签名逐单 confirmation，再重新解析当前资本、四类来源、adapter/soak、gateway 与前序批次对账，并绑定 confirmation、dossier 及四个来源 fingerprint；缺失、阻断、漂移或有界扫描不完整时
+继续 blocked。两者都不能 submit/cancel、联系 provider 或修改 OMS、ledger、risk、kill switch、capital authority；release 撤销或 scope drift 也会使旧签名失效。
 Automation Cockpit 与 Decision 投影同一批 persisted-only 候选；只有显式 alert scan 才为来源或
 候选阻断写入幂等告警，ready 候选不伪装异常，且仅提供回到 Trading 的非提交下钻。
 

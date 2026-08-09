@@ -167,7 +167,7 @@ reconciliation-to-terminal-clearance 与 terminal-clearance-to-ledger-posting：
 旅程收敛为不得重试且不改变任何交易权限。Trading 现在还能列出 canonical
 `manually_confirmed` OMS 候选，并从持久化证据自动解析每个候选的最新精确资本评估、前序批次
 对账与网关验证引用；v5 fingerprint 还绑定精确 scope 内最新 accepted、conformance clear、只读观测的 adapter release，以及由同一 capital evaluation 引用的 Account Truth、Decision action、risk 与
-paper/shadow 持久化来源。伪造引用、来源/订单 drift、撤销或 scope drift 都会使旧签名失效。操作员无需抄写三组 fingerprint，即可记录一条经独立签名验证的 append-only
+paper/shadow 持久化来源。伪造引用、来源/订单 drift、撤销或 scope drift 都会使旧签名失效；旧人工工单和人工成交路径还必须取得该最新签名、重查完整当前证据链，并把 confirmation、dossier 与四个来源 fingerprint 绑定进每次 preview。操作员无需抄写三组 fingerprint，即可记录一条经独立签名验证的 append-only
 逐单复核事实。缺失、歧义、较新阻断或扫描截断的证据一律 fail closed；Web 不暴露提交或撤单
 动作，也不能修改 OMS、账本、风控、kill switch 或资本授权。Automation Cockpit 与 Decision 会先
 fail-closed 核验并汇总同一 persisted-only 候选契约，再仅下钻到 Trading；来源漂移会阻断下钻。显式 scan 复用该投影写入幂等阻断告警，ready 候选仍是普通任务。Operations Today 还会把每个非正常子系统、安全下一步与精确证据解除条件绑定为确定性 fingerprint；专用 `/operations` 只读证据中心会核验无权限契约并展示来源证据与安全下钻，查看本身不能清除状态，AI capture 也只收到同一无权限 payload。其独立 persisted-only 试点准入矩阵要求一个只读观测 release、匹配签名 soak、一个当前 `manual_each_order` release、一致的 provider/account/gateway/connector scope 且无未完成 journey/session authority；安全但未满足时保持紧凑，合同违规立即展开，通过也只允许进入精确逐单复核，不完成 M5、不授权 submit/cancel、provider selection、capital 或 scale-up。Overview 与 Market 还会消费同一 valuation/ledger 绑定的当前持仓行情证据复核；只有显式定向 ingestion 得到更新且已确认的持久化证据后才能清除。Broker-neutral 的签名式 one-shot submission 与签名撤单基础已经实现；真实 adapter integration/recovery 证据和完整、经 provider 批准的 operator journey 仍未完成。v4 operator view 会检查有界范围内的全部持久化 intent，并让较早的关键未完成旅程优先于较新的低风险或已闭环旅程。

@@ -40,9 +40,29 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
   以 next-bar 语义执行，不产生生产策略或交易权限副作用；
 - fail-fast 分组运行配置、仅限环境变量的 TuShare/AI/通知凭证、已校验的
   Settings 写入契约，以及 Server 与旧 CLI 共用的 dotenv 选择路径；
+- 确定性的“仅进程存活”健康端点与健康感知启动预检：在前端构建或启动新进程前区分已响应的
+  Karkinos 实例和无响应/非 Karkinos 端口监听者，只报告 listener 而不终止它，也不声明财务
+  就绪度、不联系 provider、不写数据库、不执行券商动作、不修改账本、执行或资本权限；
 - 显式启用的本地 broker-statement collector：等待 CSV 完整稳定后再读取，按文件 fingerprint
   在重复轮询和重启间幂等暂存 Account Truth 证据，文件消失时保留既有证据，并只读展示状态；
   它不联系 provider，也不修改 ledger、portfolio、OMS、risk、kill switch 或资本权限；
+- 隐私最小化的中信旧版 XLS 预览与来源复核接入，包括默认关闭的显式本地目录扫描：拒绝
+  符号链接、读取中变化和超限文件，不返回路径、文件名或事件明细，只有第二次指纹绑定复核后
+  才保存来源元数据；所有 GET/list 路径都不会初始化 schema，待补证工作以确定性 Operations
+  关注项呈现但不进入 canonical health、Account Truth 或权限链路；确定性批次评估还会检测
+  跨文件重复事件与事件身份冲突，并把观察到事件的月份和未经复核的查询覆盖明确分开，始终
+  保持阻断、不返回或持久化事件，也不能进入 Account Truth 或对账；独立的运行时 canonical
+  来源链评估会按金融语义、券商委托身份和事件身份比对当前 canonical import，只返回脱敏计数与
+  fingerprint，把身份未保留的语义相似明确视为部分线索，且不能证明整账户覆盖或提升 XLS；每份待补证来源现在还可
+  追加一份可撤销、绑定当前文件与脱敏预览 fingerprint 的 owner 查询区间复核，拒绝未来、超过
+  31 日或与事件日期冲突的区间，不保存来源/交易明细，并且只清除该项 Operations 子要求，不
+  证明 canonical 覆盖或获得任何权限；
+- canonical broker evidence、reconciliation review 与 evidence-scope review 的读取只会以只读方式打开已有 SQLite；缺表表示无证据，部分或不兼容 schema、损坏记录会在不修复的前提下 fail closed，只有显式命令可以建表；Account Truth readiness v2 把观察到的事件跨度与完整账户/日期/资产覆盖分开，只有绑定精确导入和浏览器本地哈希账户引用的追加式 owner 复核才能清除该范围阻断，撤销或漂移会再次 fail closed，且不联系 provider、不重算财务事实、不获得对账资格、执行或资本权限；确定性的 broker-soak 候选评估会继续阻断旧版历史成交 XLS，直到具备版本化只读连接器快照、已复核账户绑定、provider 采集时间/部署身份/健康证据、当前资金/持仓/订单快照以及逐项成交费用与税，且不能注册连接器、记录 soak、联系 provider 或授予执行与资本权限；
+- 同一确定性静态 broker-authority 闸门现在覆盖 strategy、确定性 risk、
+  Decision 与 AI 四个代码域；直接导入 execution、broker connector/gateway、
+  受控 submit/cancel/release 或 session-authority 边缘，以及直接调用
+  submit/cancel/account-snapshot 都会被拒绝，同时保留显式 extension 扫描；
+  当前四个代码域越界数为零。
 - 已签名有界执行 policy、原子预算、runtime session、live gate、pause/replacement、submission
   interlock、lifecycle evidence、operator projection 与 capital-scaling review。
 - canonical、persisted-only 的 controlled-order journey，将 submission、reconciliation、
@@ -71,8 +91,12 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
   live collector prepare/commit 的精确绑定；没有选择或注册真实 provider。
 - provider-neutral deterministic conformance fixture、append-only report、精确 manifest/review
   绑定、最新结果优先与 prepare/commit 复核；不宣称支持真实 adapter。
-- connector-scoped soak recovery evidence：无 scope、无关或混合 connector 的 drill 不能满足
-  promotion，同 scope 的最新失败会使旧 pass 与其签名 dossier acceptance 失效。
+- connector-scoped、sequence-qualified 的 soak recovery evidence：只有具备完整 v2 source
+  contract 且游标证据被原子接受的快照才能计入 20 日汇总或通过每日/replay drill；可读取但未建立
+  序列的快照只展示为 observed health，旧式布尔记录不能取得资格；无 scope、无关或混合
+  connector 的 drill 不能满足 promotion；两阶段 Karkinos restart checkpoint 还要求 runtime
+  instance fingerprint 发生变化并精确复用持久化观察，同 scope 的最新失败会使旧 pass 与签名
+  dossier acceptance 失效；这不证明券商终端或真实 adapter restart。
 - Trading 只读投影精确 20 日 soak 与签名 owner acceptance，并提供默认折叠、无需编辑数据库的 write-edge release 签发/撤销复核；含凭据键的 manifest 会在本地拦截，生产 submit/cancel 只在 release 当前有效时解析，Web 不提供 submit/cancel、adapter 注册或资本授权动作。Operations 另把 persisted adapter、签名 soak、短时效 release、精确 scope 与未闭合 journey 组合为经八项 audit 覆盖的试点准入矩阵：合同违规立即展开，安全但未满足的条件保持紧凑，任何状态都不完成 v1.8、不联系 provider、不修改财务事实/权限、不 submit/cancel 或扩大资本。
 
 本文故意不维护历史测试总数，因为每次变更都会使其过期。CI artifact 与 acceptance-audit export

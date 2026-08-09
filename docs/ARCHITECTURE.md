@@ -176,7 +176,7 @@ candidate adapter release manifest
 ```
 
 Raw provider facts retain source identity. Duplicate, sequence, account,
-quantity, and schema conflicts fail closed.
+quantity, and schema conflicts fail closed. `karkinos.account_truth.evidence_scope.v1` separates the observed event span from reviewed account, date-window, and asset-scope completeness; observed first/last rows alone never prove full coverage. An explicit owner action may append an exact-import, privacy-hashed account-reference review, and a later revocation or source drift blocks it again. `karkinos.account_truth.evidence_readiness.v2` combines that scope with the canonical score and sanitized incomplete-source follow-up without financial recomputation, provider contact, read-side writes, reconciliation eligibility, or execution/capital authority; missing or unreadable persisted evidence fails closed.
 
 A collector's own release-status field is not authority. Release acceptance
 first binds the latest passing deterministic conformance report to the exact
@@ -258,14 +258,14 @@ Account Truth import, Decision action, risk decision, and paper/shadow run must
 resolve from persisted facts, appear in the same capital evaluation, and match
 the order symbol, side, strategy, quantity, and limit price where applicable.
 The paper/shadow run must contain exactly one clear simulated order for the same
-Decision action. A missing provider-free Account Truth projection, a non-empty
-forged ref, or any source drift is a review and hard-submission blocker. The
-fingerprint is then used for a three-minute offline Ed25519 approval.
-The resulting confirmation is append-only, non-authorizing evidence. Listing
-and preview read persisted facts only; neither they nor the confirmation can
-contact a provider, mutate OMS/ledger/risk/kill switch/capital authority, or
-submit/cancel a broker order. The Trading UI deliberately has no submit or
-cancel control for this boundary.
+Decision action. A missing provider-free Account Truth projection, forged ref,
+or source drift is a review and hard-submission blocker. Before legacy manual-
+ticket preview/export/create or manual-execution preview/record, the latest signed
+per-order confirmation is re-resolved against current capital, Account Truth,
+Decision action, risk, paper/shadow, adapter, soak, gateway, and prior-batch
+reconciliation; confirmation, dossier, and four source fingerprints bind every result.
+Missing, blocked, or drifted sources fail closed; all previews stay provider-free,
+state-free, non-authorizing evidence, and Trading exposes no submit/cancel control.
 
 Automation Cockpit consumes that same candidate contract through a fail-closed
 application reader. It validates the source schema, count, truncation, and
@@ -322,8 +322,8 @@ next action, and evidence-based resolution condition while excluding
 request-generated timestamps. A refresh with unchanged evidence reproduces the
 fingerprint; evidence-status drift changes it. Viewing or acknowledging an item never clears it. The same
 read-only payload may enter an explicit AI context capture, but it performs no
-provider contact or database write and grants no execution authority.
-
+provider contact or database write and grants no execution authority. Canonical broker-evidence and reconciliation-review repositories open existing SQLite read-only for queries: construction and GET/list never initialize or migrate schema, absent tables mean no evidence, partial/incompatible schema or invalid records fail closed without repair, and only explicit import/review commands own schema creation or migration. Reviewed incomplete CITIC history exports remain a separate privacy-minimized, non-canonical source store with the same read boundary, and `karkinos.account_truth.citic_source_follow_up.v1` projects only sanitized persisted metadata as an additional Operations attention item outside canonical health. `karkinos.account_truth.citic_history_xls_batch_assessment.v1` checks source-set duplicate and event-identity integrity in memory, but observed event months never establish reviewed query-window coverage; the assessment stays blocked, event-free, non-persisting, and ineligible for Account Truth or reconciliation. `karkinos.account_truth.citic_history_canonical_lineage_assessment.v1` separately compares the runtime XLS batch with the currently selected canonical import using exact financial semantics, broker-order identity, and event identity, then returns only sanitized counts and fingerprints. Semantic similarity without preserved identity is partial evidence rather than canonical provenance; even exact event lineage cannot prove query-window, settlement, snapshot, or full-account completeness. The comparison persists nothing, returns no event/source details, and cannot promote evidence or alter Account Truth, reconciliation, execution, or capital authority. `karkinos.account_truth.citic_source_query_window_review.v1` is a separate append-only, revocable source-level attestation bound to the current file and sanitized-preview fingerprints: it validates a maximum 31-day broker query window against recognized event dates, stores no source or transaction detail, and clears only the source query-window sub-requirement. It never proves canonical coverage, binds an account, promotes events, satisfies settlement/snapshot/reconciliation gates, contacts a provider, or grants execution/capital authority. Rejection closes only the source task; it does not satisfy Account Truth or change reconciliation, risk, execution, or capital authority. Configured-directory scans may expose only one sanitized `YYYY-MM` token derived from an unambiguous local `YYYYMM` filename token to help the owner identify an exact source. The hint is runtime-only, excluded from evidence fingerprints and persistence, never prefills or proves a query window, and an absent or ambiguous hint disables directory-mode source decisions so the owner must select the exact file in the browser. `karkinos.account_truth.citic_broker_soak_candidate.v1` separately proves that a history-trade preview is not a versioned connector snapshot, enumerates the missing read-only source contract and operational prerequisites, and remains permanently ineligible for soak without registering a connector, persisting soak evidence, contacting a broker, or changing execution/capital authority.
+The promotion evidence consumed by controlled execution also binds the sanitized CITIC follow-up fingerprint and reviewed query-window integrity: pending, truncated, unreadable, gapped, or overlapping source review can only downgrade clear to blocked, while completing or rejecting review never creates canonical account facts or independently opens execution.
 The `/operations` workbench is the read-side operator surface for this contract and for `karkinos.controlled_per_order_pilot_readiness.v1`, the optional real-pilot admission projection over persisted adapter, signed-soak, expiring-write-release, and controlled-order evidence.
 Its six fail-closed gates require safe source contracts, exactly one observing read-only release, matching signed soak, exactly one active `manual_each_order` write release, one coherent provider/gateway/account/connector scope, and no unresolved order journey or active session authority.
 Source failure, ambiguity, drift, truncation, or authorizing read-side flags block admission; a pass permits only the separate exact-order review and does not complete v1.8, replace per-order evidence, contact a provider, write the database, submit/cancel, mutate financial facts, or change capital authority.
