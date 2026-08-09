@@ -3965,9 +3965,8 @@ export function RiskPage() {
         <div className="min-w-0 space-y-4" data-testid="risk-loading-workspace">
           <EvidenceState
             kind="loading"
-            statusLabel={copy.states.loading}
-            title={copy.riskPage.loading}
-            description={copy.riskPage.blockingRegisterDetail}
+            title={copy.states.loading}
+            description={copy.riskPage.loading}
           />
           <div className="app-risk-command-grid grid min-w-0 gap-5 sm:gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)] xl:items-start">
             <section

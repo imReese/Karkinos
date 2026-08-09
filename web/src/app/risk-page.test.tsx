@@ -441,6 +441,17 @@ test('defers secondary risk reads until primary persisted evidence settles', asy
   expect(
     within(loadingWorkspace).getByRole('heading', {
       level: 2,
+      name: /^Loading$/,
+    }),
+  ).toBeTruthy();
+  expect(
+    screen.getAllByRole('heading', {
+      name: 'Risk control center',
+    }),
+  ).toHaveLength(1);
+  expect(
+    within(loadingWorkspace).getByRole('heading', {
+      level: 2,
       name: 'Active risk priorities',
     }),
   ).toBeTruthy();
