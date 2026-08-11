@@ -1526,11 +1526,12 @@ test('keeps the holding route identity visible while core evidence loads', () =>
   expect(initialUrls).toEqual(
     expect.arrayContaining([
       '/api/portfolio',
-      '/api/portfolio/positions',
+      '/api/market/kline/600519',
       '/api/account-strategy',
       '/api/account-strategy/attribution',
     ]),
   );
+  expect(initialUrls).not.toContain('/api/portfolio/positions');
   expect(initialUrls).not.toEqual(
     expect.arrayContaining([
       '/api/portfolio/live-holdings',
@@ -1539,7 +1540,6 @@ test('keeps the holding route identity visible while core evidence loads', () =>
       '/api/ledger/entries?limit=200',
       '/api/account-strategy/contribution',
       '/api/account-strategy/holdings/600519/attribution',
-      '/api/market/kline/600519',
     ]),
   );
 });

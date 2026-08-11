@@ -61,7 +61,6 @@ import {
 import {
   useLiveHoldingsQuery,
   usePortfolioSnapshotQuery,
-  usePositionsQuery,
   type Position,
 } from '../api';
 
@@ -277,8 +276,7 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
   const decodedSymbol = safeDecodeSymbol(symbol);
   const normalizedSymbol = normalizeSymbol(decodedSymbol);
   const snapshot = usePortfolioSnapshotQuery();
-  const positions = usePositionsQuery();
-  const currentPositions = snapshot.data?.positions ?? positions.data ?? [];
+  const currentPositions = snapshot.data?.positions ?? [];
   const currentPosition = currentPositions.find(
     (item) => normalizeSymbol(item.symbol) === normalizedSymbol,
   );
@@ -291,13 +289,13 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
   const allocation = (snapshot.data?.allocation ?? []).find(
     (item) => normalizeSymbol(item.symbol) === normalizedSymbol,
   );
+  const kline = useKlineQuery(decodedSymbol);
   const secondaryQueriesEnabled = Boolean(
     position && (snapshot.data !== undefined || snapshot.isError),
   );
   const liveHoldings = useLiveHoldingsQuery(secondaryQueriesEnabled);
   const overview = useAccountOverviewQuery(secondaryQueriesEnabled);
   const marketHealth = useMarketDataHealthQuery(secondaryQueriesEnabled);
-  const kline = useKlineQuery(secondaryQueriesEnabled ? decodedSymbol : '');
   const ledger = useLedgerEntriesQuery(200, secondaryQueriesEnabled);
   const accountStrategy = useAccountStrategyAssignmentQuery();
   const accountStrategyAttribution = useAccountStrategyAttributionQuery();
@@ -345,11 +343,8 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
   const ledgerEntries = symbolLedgerEntries.slice(0, 12);
 
   const hasSnapshotProjection = snapshot.data !== undefined;
-  const coreLoading =
-    !position &&
-    !hasSnapshotProjection &&
-    (snapshot.isLoading || positions.isLoading);
-  const coreError = positions.isError && snapshot.isError;
+  const coreLoading = !position && !hasSnapshotProjection && snapshot.isLoading;
+  const coreError = snapshot.isError;
 
   if (coreLoading) {
     return (

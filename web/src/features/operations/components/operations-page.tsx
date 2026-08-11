@@ -5,7 +5,6 @@ import type { ColumnDef } from '@tanstack/react-table';
 import {
   DataTable,
   EvidenceDrawer,
-  EvidenceLoadingLayout,
   EvidenceState,
   ExceptionList,
   MetricStrip,
@@ -304,13 +303,68 @@ export function OperationsPage() {
       />
 
       {operations.isLoading && !projection ? (
-        <div data-testid="operations-loading">
-          <EvidenceLoadingLayout
+        <div
+          aria-busy="true"
+          className="min-w-0 space-y-4"
+          data-testid="operations-loading"
+        >
+          <EvidenceState
+            kind="loading"
+            statusLabel={copy.states.loading}
             title={labels.loading}
             description={labels.sourceBoundary}
-            metricCount={4}
-            rowCount={4}
           />
+          <div className="app-operations-command-grid min-w-0">
+            <section className="min-w-0 space-y-2">
+              <h2 className="app-type-section-title text-[var(--app-text)]">
+                {labels.attentionQueue}
+              </h2>
+              <EvidenceState
+                kind="loading"
+                title={copy.states.loading}
+                description={labels.viewingDoesNotClear}
+              />
+            </section>
+            <aside className="min-w-0 space-y-2">
+              <h2 className="app-type-section-title text-[var(--app-text)]">
+                {labels.healthOverview}
+              </h2>
+              <MetricStrip
+                ariaLabel={`${labels.healthOverview} · ${copy.states.loading}`}
+                className="app-operations-health-strip"
+                items={[
+                  {
+                    id: 'total',
+                    label: labels.total,
+                    value: copy.states.loading,
+                  },
+                  {
+                    id: 'degraded',
+                    label: labels.degraded,
+                    value: copy.states.loading,
+                  },
+                  {
+                    id: 'blocked',
+                    label: labels.blocked,
+                    value: copy.states.loading,
+                  },
+                  {
+                    id: 'manual-review',
+                    label: labels.manualReview,
+                    value: copy.states.loading,
+                  },
+                ]}
+              />
+            </aside>
+          </div>
+          <section className="min-w-0 border-y border-[var(--app-divider)] py-3">
+            <h2 className="app-type-section-title text-[var(--app-text)]">
+              {labels.subsystemRegister}
+            </h2>
+            <p className="mt-1 text-xs leading-5 text-[var(--app-text-secondary)]">
+              {labels.sourceBoundary}
+            </p>
+          </section>
         </div>
       ) : operations.isError || !projection ? (
         <div data-testid="operations-error">

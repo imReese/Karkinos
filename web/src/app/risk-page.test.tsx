@@ -377,7 +377,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-test('defers secondary risk reads until primary persisted evidence settles', async () => {
+test('starts primary risk reads in parallel while deferring secondary evidence', async () => {
   const baseFetch = installRiskFetchMock();
   let resolveState!: (response: Response) => void;
   let resolveRiskWorkspace!: (response: Response) => void;
@@ -419,7 +419,7 @@ test('defers secondary risk reads until primary persisted evidence settles', asy
     fetchMock.mock.calls.some(([input]) =>
       String(input).includes('/api/portfolio/risk-workspace'),
     ),
-  ).toBe(false);
+  ).toBe(true);
   expect(
     fetchMock.mock.calls.some(([input]) =>
       String(input).includes('/api/decision/today'),
@@ -465,9 +465,18 @@ test('defers secondary risk reads until primary persisted evidence settles', asy
       name: 'Controlled action',
     }),
   ).toBeTruthy();
-  expect(screen.getByTestId('risk-loading-exceptions').children).toHaveLength(
-    3,
+  expect(screen.queryByTestId('risk-loading-exceptions')).toBeNull();
+  expect(
+    within(screen.getByTestId('risk-loading-blocking-register')).getAllByText(
+      'Loading',
+    ).length,
+  ).toBeGreaterThan(0);
+  expect(screen.getByLabelText('Risk metrics · Loading').textContent).toContain(
+    'Current drawdown',
   );
+  expect(
+    screen.getByLabelText('Risk metrics · Loading').textContent,
+  ).not.toContain('--');
   expect(screen.getByTestId('risk-loading-metrics').textContent).toContain(
     'Current drawdown',
   );
