@@ -38,6 +38,7 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
   精确 persisted valuation snapshot 与 ledger cutoff，且不会创建订单、写账本或接触券商；
 - 基于精确保存数据集、人工门禁和 allowlisted Formula DSL 的研究，由 canonical backtest engine
   以 next-bar 语义执行，不产生生产策略或交易权限副作用；
+- owner 授权的收盘后 AI shadow 研究绑定最新持久化日线与完整 valuation/ledger identity：每个市场日期一次、原子 capped provider-call/token reservation、DeepSeek 仅基于严格脱敏账户风险/配置 allowlist 提出 Formula DSL 假设、本地校验与 canonical 成本后 rolling OOS、证据 critique、Web 对比/通知及精确人工-only canonical `paper_shadow` 晋级；policy/Kill Switch/证据/OOS/成本/预算异常均 fail closed，绝对账户金额和 valuation/ledger 标识在外发前删除，且不存在生产策略、OMS、ledger 或 broker 权限；
 - fail-fast 分组运行配置、仅限环境变量的 TuShare/AI/通知凭证、已校验的
   Settings 写入契约，以及 Server 与旧 CLI 共用的 dotenv 选择路径；
 - 确定性的“仅进程存活”健康端点与健康感知启动预检：在前端构建或启动新进程前区分已响应的

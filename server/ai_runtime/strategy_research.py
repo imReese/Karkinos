@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import sqlite3
 import time
 from collections.abc import Callable, Iterator, Mapping
@@ -24,6 +25,7 @@ from typing import Any, Literal
 import pandas as pd
 
 from analytics.dataset_snapshot import build_backtest_dataset_snapshot
+from analytics.oos_validation import build_rolling_out_of_sample_validation
 from backtest.engine import BacktestEngine
 from core.events import MarketEvent
 from core.types import AssetClass, BarFrequency, Symbol
@@ -114,14 +116,22 @@ CRITIQUE_EXPORT_CONFIRMATION = (
 REVIEW_CONFIRMATION = "record_human_strategy_research_review_without_trade_authority"
 
 _RESEARCH_TOOL = "research_evidence.read"
+_ACCOUNT_STATE_TOOL = "account_state_projection.read"
 _CATALOG_TOOL = "formula_operator_catalog.read"
 _SELECTION_TOOL = "strategy_research_selection.read"
-_HYPOTHESIS_ROLE = "external.strategy_hypothesis_researcher.v6"
-_CRITIQUE_ROLE = "external.strategy_backtest_critic.v6"
+_HYPOTHESIS_ROLE = "external.strategy_hypothesis_researcher.v7"
+_CRITIQUE_ROLE = "external.strategy_backtest_critic.v7"
 _HYPOTHESIS_STAGE = "strategy_hypothesis_generation"
 _CRITIQUE_STAGE = "strategy_backtest_critique"
-_PROMPT_VERSION = "karkinos.ai.strategy_research_prompt.v7"
-_STRATEGY_RESEARCH_MAX_OUTPUT_TOKENS = 12_288
+_PROMPT_VERSION = "karkinos.ai.strategy_research_prompt.v8"
+_SANITIZED_ACCOUNT_EVIDENCE_CONTRACT = "karkinos.ai.sanitized_account_risk_evidence.v1"
+STRATEGY_RESEARCH_MAX_INPUT_BYTES = 196_608
+STRATEGY_RESEARCH_MAX_OUTPUT_TOKENS = 12_288
+# One token cannot contain less than one input byte. The additional allowance
+# covers the system prompt and request envelope outside the capped user payload.
+STRATEGY_RESEARCH_PROVIDER_TOKEN_RESERVATION = (
+    STRATEGY_RESEARCH_MAX_INPUT_BYTES + STRATEGY_RESEARCH_MAX_OUTPUT_TOKENS + 16_384
+)
 _CRITIQUE_CITATION_PATHS = (
     "critique_input.canonical_backtest.initial_cash",
     "critique_input.canonical_backtest.final_equity",
@@ -141,6 +151,11 @@ _CRITIQUE_CITATION_PATHS = (
     "critique_input.canonical_backtest.gross_turnover",
     "critique_input.canonical_backtest.after_cost_evidence",
     "critique_input.canonical_backtest.cost_summary",
+    "critique_input.canonical_backtest.oos_validation.validation_mode",
+    "critique_input.canonical_backtest.oos_validation.validation_status",
+    "critique_input.canonical_backtest.oos_validation.fold_count",
+    "critique_input.canonical_backtest.oos_validation.aggregate.mean_out_of_sample_return",
+    "critique_input.canonical_backtest.oos_validation.aggregate.worst_out_of_sample_return",
     "critique_input.canonical_backtest.research_evidence_bundle.gate_status",
     "critique_input.canonical_backtest.research_evidence_bundle.analyzers",
     "critique_input.canonical_backtest.research_evidence_bundle.evidence_references",
@@ -199,6 +214,19 @@ class StrategyResearchSelection:
             raise StrategyResearchRejected("selected_window_invalid")
         if self.initial_cash <= 0:
             raise StrategyResearchRejected("initial_cash_invalid")
+        if (self.valuation_snapshot_id is None) != (self.ledger_cutoff_id is None):
+            raise StrategyResearchRejected("account_fact_binding_incomplete")
+        if self.has_account_binding:
+            if not str(self.valuation_snapshot_id or "").strip():
+                raise StrategyResearchRejected("valuation_snapshot_identity_invalid")
+            if int(self.ledger_cutoff_id or 0) < 0:
+                raise StrategyResearchRejected("ledger_cutoff_identity_invalid")
+
+    @property
+    def has_account_binding(self) -> bool:
+        return (
+            self.valuation_snapshot_id is not None and self.ledger_cutoff_id is not None
+        )
 
     def to_dict(self) -> JsonObject:
         return {
@@ -216,8 +244,7 @@ class StrategyResearchSelection:
             "ledger_cutoff_id": self.ledger_cutoff_id,
             "account_fact_binding": (
                 "bound"
-                if self.valuation_snapshot_id is not None
-                or self.ledger_cutoff_id is not None
+                if self.has_account_binding
                 else "not_applicable_strategy_only_research"
             ),
         }
@@ -229,8 +256,7 @@ class StrategyResearchSelection:
         payload.pop("ledger_cutoff_id", None)
         payload["account_fact_binding"] = (
             "present_but_identifiers_redacted"
-            if self.valuation_snapshot_id is not None
-            or self.ledger_cutoff_id is not None
+            if self.has_account_binding
             else "not_applicable_strategy_only_research"
         )
         return payload
@@ -1196,10 +1222,22 @@ class RestrictedFormulaBacktestAdapter:
             else {}
         )
         metrics_json = metrics.to_json_dict()
+        min_train_points, test_window_points, step_points = _rolling_oos_parameters(
+            len(result.equity_curve)
+        )
+        oos_validation = build_rolling_out_of_sample_validation(
+            strategy_id="ai_formula_research",
+            benchmark_role="formula_candidate",
+            result=result,
+            min_train_points=min_train_points,
+            test_window_points=test_window_points,
+            step_points=step_points,
+        ).to_json_dict()
         metrics_json.update(
             {
                 "evidence_bundle": evidence_json,
                 "dataset_snapshot": snapshot,
+                "oos_validation": oos_validation,
                 "formula_binding": binding.to_dict(),
                 "formula_fingerprint": binding.fingerprint,
                 "research_only": True,
@@ -1241,6 +1279,10 @@ class RestrictedFormulaBacktestAdapter:
                     selection.universe, selection.asset_classes, strict=True
                 )
             ],
+            oos_mode="rolling",
+            oos_min_train_points=min_train_points,
+            oos_test_window_points=test_window_points,
+            oos_step_points=step_points,
         )
         bt_result["metrics_json"] = _backtest_report_metrics_json(request, bt_result)
         return bt_result, request
@@ -1260,6 +1302,169 @@ class RestrictedFormulaBacktestAdapter:
         return snapshot
 
 
+def _rolling_oos_parameters(equity_point_count: int) -> tuple[int, int, int]:
+    """Choose deterministic rolling windows while requiring real holdout data."""
+    if equity_point_count < 6:
+        raise StrategyResearchRejected("oos_history_too_short")
+    test_window = max(2, equity_point_count // 5)
+    min_train = max(4, equity_point_count - (test_window * 2))
+    if min_train + test_window > equity_point_count:
+        min_train = equity_point_count - test_window
+    return min_train, test_window, test_window
+
+
+def _sanitize_account_evidence(evidence: Mapping[str, Any]) -> JsonObject:
+    """Allowlist persisted portfolio-risk facts and drop private account values."""
+    payload = evidence.get("payload")
+    if not isinstance(payload, Mapping):
+        raise ExternalResearchInvalidResponseError("account_evidence_payload_invalid")
+    summary = payload.get("summary")
+    snapshot = payload.get("snapshot")
+    risks = payload.get("risks")
+    next_step = payload.get("next_step")
+    if not isinstance(summary, Mapping) or not isinstance(snapshot, Mapping):
+        raise ExternalResearchInvalidResponseError("account_evidence_shape_invalid")
+    if summary.get("valuation_status") != "complete":
+        raise ExternalResearchInvalidResponseError(
+            "account_evidence_valuation_not_complete"
+        )
+    if snapshot.get("valuation_status") != "complete":
+        raise ExternalResearchInvalidResponseError(
+            "account_snapshot_valuation_not_complete"
+        )
+    summary_trade_date = _account_evidence_text(
+        summary.get("valuation_trade_date"), "valuation_trade_date"
+    )
+    snapshot_trade_date = _account_evidence_text(
+        snapshot.get("valuation_trade_date"), "snapshot_valuation_trade_date"
+    )
+    if summary_trade_date != snapshot_trade_date:
+        raise ExternalResearchInvalidResponseError(
+            "account_evidence_trade_date_mismatch"
+        )
+    allocation = snapshot.get("allocation")
+    grouped = snapshot.get("allocation_grouped")
+    if not isinstance(allocation, list) or not isinstance(grouped, list):
+        raise ExternalResearchInvalidResponseError(
+            "account_evidence_allocation_invalid"
+        )
+    sanitized_allocation = []
+    for item in allocation:
+        if not isinstance(item, Mapping):
+            raise ExternalResearchInvalidResponseError(
+                "account_evidence_allocation_item_invalid"
+            )
+        sanitized_allocation.append(
+            {
+                "symbol": _account_evidence_text(item.get("symbol"), "symbol"),
+                "asset_class": _account_evidence_text(
+                    item.get("asset_class"), "asset_class"
+                ),
+                "weight": _account_evidence_number(item.get("weight"), "weight"),
+            }
+        )
+    sanitized_groups = []
+    for item in grouped:
+        if not isinstance(item, Mapping):
+            raise ExternalResearchInvalidResponseError(
+                "account_evidence_group_item_invalid"
+            )
+        sanitized_groups.append(
+            {
+                "asset_class": _account_evidence_text(
+                    item.get("asset_class"), "group_asset_class"
+                ),
+                "weight": _account_evidence_number(item.get("weight"), "group_weight"),
+            }
+        )
+    if not isinstance(risks, list) or not risks:
+        raise ExternalResearchInvalidResponseError("account_evidence_risks_invalid")
+    sanitized_risks = []
+    for item in risks:
+        if not isinstance(item, Mapping):
+            raise ExternalResearchInvalidResponseError(
+                "account_evidence_risk_item_invalid"
+            )
+        sanitized_risks.append(
+            {
+                key: _account_evidence_text(item.get(key), f"risk_{key}")
+                for key in ("kind", "level", "title", "detail")
+            }
+        )
+    positions_count = summary.get("positions_count")
+    if (
+        isinstance(positions_count, bool)
+        or not isinstance(positions_count, int)
+        or positions_count < 0
+    ):
+        raise ExternalResearchInvalidResponseError(
+            "account_evidence_positions_count_invalid"
+        )
+    using_persistent_cache = summary.get("using_persistent_cache")
+    if not isinstance(using_persistent_cache, bool):
+        raise ExternalResearchInvalidResponseError(
+            "account_evidence_cache_flag_invalid"
+        )
+    sanitized: JsonObject = {
+        "schema_version": _SANITIZED_ACCOUNT_EVIDENCE_CONTRACT,
+        "as_of": _account_evidence_text(evidence.get("as_of"), "as_of"),
+        "status": "complete",
+        "summary": {
+            "positions_count": positions_count,
+            "cash_ratio": _account_evidence_number(
+                summary.get("cash_ratio"), "cash_ratio"
+            ),
+            "current_drawdown": _account_evidence_number(
+                summary.get("current_drawdown"),
+                "current_drawdown",
+                allow_none=True,
+            ),
+            "quote_status": _account_evidence_text(
+                summary.get("quote_status"), "quote_status"
+            ),
+            "valuation_trade_date": summary_trade_date,
+            "valuation_status": "complete",
+            "using_persistent_cache": using_persistent_cache,
+        },
+        "allocation": sanitized_allocation,
+        "allocation_grouped": sanitized_groups,
+        "risks": sanitized_risks,
+        "next_step": _account_evidence_text(next_step, "next_step"),
+        "persisted_facts_only": True,
+        "authoritative": True,
+        "absolute_account_values_redacted": True,
+        "valuation_and_ledger_identifiers_redacted": True,
+    }
+    return json.loads(canonical_json(sanitized))
+
+
+def _account_evidence_text(value: Any, field_name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ExternalResearchInvalidResponseError(
+            f"account_evidence_{field_name}_invalid"
+        )
+    return value.strip()
+
+
+def _account_evidence_number(
+    value: Any,
+    field_name: str,
+    *,
+    allow_none: bool = False,
+) -> int | float | None:
+    if value is None and allow_none:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ExternalResearchInvalidResponseError(
+            f"account_evidence_{field_name}_invalid"
+        )
+    if not math.isfinite(value):
+        raise ExternalResearchInvalidResponseError(
+            f"account_evidence_{field_name}_invalid"
+        )
+    return value
+
+
 class StrategyResearchModelProvider(ProviderAdapter):
     """One external model call after permission-checked local tool reads."""
 
@@ -1276,11 +1481,13 @@ class StrategyResearchModelProvider(ProviderAdapter):
         transport: JsonHttpTransport,
         monotonic: Callable[[], float],
         timeout_seconds: float,
+        account_evidence_reference_id: str | None = None,
     ) -> None:
         self._provider_id = provider_id
         self._settings = settings
         self._mode = mode
         self._evidence_reference_id = evidence_reference_id
+        self._account_evidence_reference_id = account_evidence_reference_id
         self._selection = dict(selection)
         self._research_question = research_question
         self._critique_input = dict(critique_input or {})
@@ -1294,22 +1501,46 @@ class StrategyResearchModelProvider(ProviderAdapter):
 
     def invoke(self, request: ProviderRequest) -> ProviderResponse:
         if request.turn_index == 0:
-            return ProviderResponse(
-                tool_requests=(
+            tool_requests = [
+                ToolRequest(
+                    "read-bound-research-evidence",
+                    _RESEARCH_TOOL,
+                    {"evidence_reference_id": self._evidence_reference_id},
+                )
+            ]
+            if self._account_evidence_reference_id is not None:
+                tool_requests.append(
                     ToolRequest(
-                        "read-bound-research-evidence",
-                        _RESEARCH_TOOL,
-                        {"evidence_reference_id": self._evidence_reference_id},
-                    ),
+                        "read-bound-account-state",
+                        _ACCOUNT_STATE_TOOL,
+                        {
+                            "evidence_reference_id": (
+                                self._account_evidence_reference_id
+                            )
+                        },
+                    )
+                )
+            tool_requests.extend(
+                (
                     ToolRequest("read-formula-catalog", _CATALOG_TOOL, {}),
                     ToolRequest("read-frozen-selection", _SELECTION_TOOL, {}),
-                ),
+                )
+            )
+            return ProviderResponse(
+                tool_requests=tuple(tool_requests),
                 message="Read the exact local evidence and reviewed formula boundary.",
             )
-        if request.turn_index != 1 or len(request.tool_results) != 3:
+        expected_result_count = (
+            4 if self._account_evidence_reference_id is not None else 3
+        )
+        if (
+            request.turn_index != 1
+            or len(request.tool_results) != expected_result_count
+        ):
             raise ExternalResearchInvalidResponseError("unexpected_provider_turn")
         results = {item.tool_name: dict(item.output) for item in request.tool_results}
         evidence = results.get(_RESEARCH_TOOL)
+        account_evidence = results.get(_ACCOUNT_STATE_TOOL)
         catalog = results.get(_CATALOG_TOOL)
         selection = results.get(_SELECTION_TOOL)
         if (
@@ -1317,13 +1548,37 @@ class StrategyResearchModelProvider(ProviderAdapter):
             or evidence.get("evidence_reference_id") != self._evidence_reference_id
         ):
             raise ExternalResearchInvalidResponseError("evidence_reference_mismatch")
-        if evidence.get("persisted_facts_only") is not True:
-            raise ExternalResearchInvalidResponseError("evidence_not_persisted")
+        if (
+            evidence.get("persisted_facts_only") is not True
+            or evidence.get("authoritative") is not True
+            or evidence.get("status") != "complete"
+        ):
+            raise ExternalResearchInvalidResponseError("evidence_not_authoritative")
+        sanitized_account_evidence = None
+        if self._account_evidence_reference_id is not None:
+            if (
+                not account_evidence
+                or account_evidence.get("evidence_reference_id")
+                != self._account_evidence_reference_id
+            ):
+                raise ExternalResearchInvalidResponseError(
+                    "account_evidence_reference_mismatch"
+                )
+            if (
+                account_evidence.get("persisted_facts_only") is not True
+                or account_evidence.get("authoritative") is not True
+                or account_evidence.get("status") != "complete"
+            ):
+                raise ExternalResearchInvalidResponseError(
+                    "account_evidence_not_authoritative"
+                )
+            sanitized_account_evidence = _sanitize_account_evidence(account_evidence)
         if not catalog or not selection:
             raise ExternalResearchInvalidResponseError("local_tool_result_missing")
         try:
             return self._invoke_external(
                 evidence=dict(evidence),
+                account_evidence=sanitized_account_evidence,
                 catalog=dict(catalog),
                 selection=dict(selection),
             )
@@ -1335,6 +1590,7 @@ class StrategyResearchModelProvider(ProviderAdapter):
         self,
         *,
         evidence: JsonObject,
+        account_evidence: JsonObject | None,
         catalog: JsonObject,
         selection: JsonObject,
     ) -> ProviderResponse:
@@ -1362,8 +1618,10 @@ class StrategyResearchModelProvider(ProviderAdapter):
                 else _critique_output_contract()
             ),
         }
+        if account_evidence is not None:
+            input_payload["saved_account_evidence"] = account_evidence
         serialized = canonical_json(input_payload)
-        if len(serialized.encode("utf-8")) > 196_608:
+        if len(serialized.encode("utf-8")) > STRATEGY_RESEARCH_MAX_INPUT_BYTES:
             raise StrategyResearchRejected("strategy_research_input_too_large")
         payload: JsonObject = {
             "model": self._settings.model_name,
@@ -1372,7 +1630,7 @@ class StrategyResearchModelProvider(ProviderAdapter):
                 {"role": "user", "content": serialized},
             ],
             "response_format": {"type": "json_object"},
-            "max_tokens": _STRATEGY_RESEARCH_MAX_OUTPUT_TOKENS,
+            "max_tokens": STRATEGY_RESEARCH_MAX_OUTPUT_TOKENS,
             "stream": False,
         }
         payload.update(_edge_request_options(self._settings))
@@ -1436,6 +1694,8 @@ class StrategyResearchModelProvider(ProviderAdapter):
             "operator_frozen_selection": selection,
             "critique_input": self._critique_input,
         }
+        if account_evidence is not None:
+            citation_sources["saved_account_evidence"] = account_evidence
         citation_groups = (
             [draft.get("citations") for draft in normalized["drafts"]]
             if self._mode == "hypothesis"
@@ -1468,6 +1728,8 @@ class StrategyResearchModelProvider(ProviderAdapter):
             "reasoning_content_char_count": reasoning_chars,
             "reasoning_content_persisted": False,
             "raw_response_persisted": False,
+            "account_evidence_exported": account_evidence is not None,
+            "absolute_account_values_redacted": account_evidence is not None,
         }
         normalized.update(
             {
@@ -1484,7 +1746,14 @@ class StrategyResearchModelProvider(ProviderAdapter):
                 ArtifactDraft(
                     kind=ArtifactKind.REPORT,
                     content=normalized,
-                    evidence_reference_ids=(self._evidence_reference_id,),
+                    evidence_reference_ids=tuple(
+                        reference_id
+                        for reference_id in (
+                            self._evidence_reference_id,
+                            self._account_evidence_reference_id,
+                        )
+                        if reference_id is not None
+                    ),
                 ),
             ),
             message="Strategy research artifact completed without authority.",
@@ -1540,20 +1809,45 @@ class StrategyResearchService:
         }:
             return self.get_session(session["session_id"], reused=True)
 
+        evidence_types = (CaptureEvidenceType.RESEARCH_EVIDENCE,)
+        if request.selection.has_account_binding:
+            evidence_types = (
+                CaptureEvidenceType.RESEARCH_EVIDENCE,
+                CaptureEvidenceType.ACCOUNT_STATE,
+            )
         capture = await self._capture_service.capture(
             HumanContextCaptureRequest(
                 idempotency_key=f"strategy-hypothesis:{request.idempotency_key}",
                 requested_by=request.requested_by,
                 research_question=request.research_question,
                 account_alias=request.account_alias,
-                evidence_types=(CaptureEvidenceType.RESEARCH_EVIDENCE,),
+                evidence_types=evidence_types,
                 confirmation=CAPTURE_CONFIRMATION,
                 backtest_result_id=request.selection.saved_backtest_result_id,
             )
         )
-        if len(capture.records) != 1 or not capture.records[0].authoritative:
+        records_by_tool = {record.tool_name: record for record in capture.records}
+        if len(records_by_tool) != len(capture.records):
+            raise StrategyResearchRejected("duplicate_captured_strategy_evidence")
+        evidence = records_by_tool.get(_RESEARCH_TOOL)
+        if (
+            len(capture.records) != len(evidence_types)
+            or evidence is None
+            or not evidence.authoritative
+        ):
             raise StrategyResearchRejected("saved_backtest_evidence_not_authoritative")
-        evidence = capture.records[0]
+        account_evidence = None
+        if request.selection.has_account_binding:
+            if (
+                capture.context.valuation_snapshot_id
+                != request.selection.valuation_snapshot_id
+                or capture.context.ledger_cutoff_id
+                != request.selection.ledger_cutoff_id
+            ):
+                raise StrategyResearchRejected("account_evidence_binding_mismatch")
+            account_evidence = records_by_tool.get(_ACCOUNT_STATE_TOOL)
+            if account_evidence is None or not account_evidence.authoritative:
+                raise StrategyResearchRejected("account_evidence_not_authoritative")
         provider_id, model_id = _runtime_ids(settings, "hypothesis")
         registry = AiRuntimeRegistry(self._ai_store)
         _register_runtime(registry, settings, provider_id, model_id, "hypothesis")
@@ -1562,6 +1856,9 @@ class StrategyResearchService:
             settings=settings,
             mode="hypothesis",
             evidence_reference_id=evidence.reference_id,
+            account_evidence_reference_id=(
+                account_evidence.reference_id if account_evidence is not None else None
+            ),
             selection=request.selection.to_external_dict(),
             research_question=request.research_question,
             critique_input=None,
@@ -1731,6 +2028,9 @@ class StrategyResearchService:
         after_cost_evidence = metrics.get("evidence_bundle")
         if not isinstance(after_cost_evidence, dict):
             raise StrategyResearchRejected("canonical_after_cost_evidence_missing")
+        oos_validation = metrics.get("oos_validation")
+        if not isinstance(oos_validation, dict):
+            raise StrategyResearchRejected("canonical_oos_validation_missing")
         cost_summary = _json_object(saved.get("cost_summary_json"))
         if content_fingerprint(evidence) != backtest["evidence_fingerprint"]:
             raise StrategyResearchRejected("canonical_backtest_artifact_drift")
@@ -1784,6 +2084,7 @@ class StrategyResearchService:
             "total_slippage": cost_summary.get("total_slippage"),
             "total_trades": cost_summary.get("total_trades"),
             "gross_turnover": cost_summary.get("gross_turnover"),
+            "oos_validation_fingerprint": content_fingerprint(oos_validation),
         }
         registry = AiRuntimeRegistry(self._ai_store)
         _register_runtime(registry, settings, provider_id, model_id, "critique")
@@ -1804,6 +2105,7 @@ class StrategyResearchService:
                     "result_id": int(backtest["canonical_backtest_result_id"]),
                     "after_cost_evidence": after_cost_evidence,
                     "cost_summary": cost_summary,
+                    "oos_validation": oos_validation,
                     "research_evidence_bundle": evidence,
                 },
                 "required_binding_echo": required_binding_echo,
@@ -1991,6 +2293,29 @@ class StrategyResearchService:
             or evidence.status != "complete"
         ):
             raise StrategyResearchRejected("research_evidence_drift")
+        selection = _selection_from_session(session)
+        if selection.has_account_binding:
+            if (
+                context.valuation_snapshot_id != selection.valuation_snapshot_id
+                or context.ledger_cutoff_id != selection.ledger_cutoff_id
+            ):
+                raise StrategyResearchRejected("account_evidence_binding_drift")
+            account_references = []
+            for reference in context.evidence_references:
+                try:
+                    record = self._evidence_repository.get(reference.reference_id)
+                except (ValueError, sqlite3.DatabaseError) as exc:
+                    raise StrategyResearchRejected("account_evidence_drift") from exc
+                if record is not None and record.tool_name == _ACCOUNT_STATE_TOOL:
+                    account_references.append((reference, record))
+            if len(account_references) != 1:
+                raise StrategyResearchRejected("account_evidence_binding_drift")
+            account_reference, account_record = account_references[0]
+            if (
+                account_record.record_fingerprint != account_reference.fingerprint
+                or account_record.status != "complete"
+            ):
+                raise StrategyResearchRejected("account_evidence_drift")
         replay = self._ai_store.verify_replay(str(workflow_id))
         if not replay.valid:
             raise StrategyResearchRejected("research_audit_drift")
@@ -2018,6 +2343,7 @@ class StrategyResearchService:
                     "max_drawdown": row.get("max_drawdown"),
                     "duration_days": row.get("duration_days"),
                     "cost_summary": _json_object(row.get("cost_summary_json")),
+                    "oos_validation": metrics.get("oos_validation"),
                     "research_evidence_bundle": metrics.get("research_evidence_bundle"),
                     "dataset_snapshot": metrics.get("dataset_snapshot"),
                     "formula_binding": metrics.get("formula_binding"),
@@ -2133,7 +2459,16 @@ def _register_runtime(
                 "Propose or critique non-executable research hypotheses using only "
                 "bound evidence and the local Formula DSL; never create authority."
             ),
-            allowed_tools=(_RESEARCH_TOOL, _CATALOG_TOOL, _SELECTION_TOOL),
+            allowed_tools=(
+                (
+                    _RESEARCH_TOOL,
+                    _ACCOUNT_STATE_TOOL,
+                    _CATALOG_TOOL,
+                    _SELECTION_TOOL,
+                )
+                if mode == "hypothesis"
+                else (_RESEARCH_TOOL, _CATALOG_TOOL, _SELECTION_TOOL)
+            ),
             allowed_artifact_kinds=(ArtifactKind.REPORT,),
             instructions_version=_PROMPT_VERSION,
         )
@@ -2216,6 +2551,7 @@ def _bind_and_validate_drafts(
             not item.startswith(
                 (
                     "saved_backtest_evidence.",
+                    "saved_account_evidence.",
                     "operator_frozen_selection.",
                     "approved_formula_catalog.",
                 )
@@ -2509,6 +2845,7 @@ def _hypothesis_output_contract() -> JsonObject:
         },
         "allowed_citation_prefixes": [
             "saved_backtest_evidence.",
+            "saved_account_evidence.",
             "operator_frozen_selection.",
             "approved_formula_catalog.",
         ],
@@ -2599,6 +2936,9 @@ def _system_prompt(mode: Literal["hypothesis", "critique"]) -> str:
         return common + (
             " Propose one to three falsifiable hypotheses. Echo immutable selection "
             "fields exactly. Use only enabled Formula DSL operators and include "
+            "saved_account_evidence only when present as a sanitized persisted "
+            "risk/allocation projection for portfolio constraints; never infer "
+            "redacted absolute account values or valuation/ledger identifiers. "
             "anti-lookahead assumptions, deterministic tests, failure conditions, "
             "limitations, risk impact, and evidence citations. Every required array "
             "must be non-empty. Every formula_ast must contain exactly four top-level "

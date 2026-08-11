@@ -26,6 +26,7 @@ from server.ai_runtime.strategy_research import (
     CRITIQUE_EXPORT_CONFIRMATION,
     HYPOTHESIS_EXPORT_CONFIRMATION,
     REVIEW_CONFIRMATION,
+    STRATEGY_RESEARCH_PROVIDER_TOKEN_RESERVATION,
     CritiqueRequest,
     FormulaBacktestRequest,
     HypothesisGenerationRequest,
@@ -130,6 +131,36 @@ class HumanReviewPayload(BaseModel):
     ]
 
 
+class ShadowResearchPolicyPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+    after_close_time: str = Field(default="15:30", min_length=5, max_length=5)
+    max_provider_calls_per_market_date: int = Field(default=3, ge=1, le=4)
+    daily_token_budget: int = Field(
+        default=700_000,
+        ge=STRATEGY_RESEARCH_PROVIDER_TOKEN_RESERVATION,
+        le=1_000_000,
+    )
+    max_candidates_per_run: int = Field(default=2, ge=1, le=3)
+    baseline_backtest_result_id: int | None = Field(default=None, gt=0)
+    require_complete_account_evidence: bool = True
+    research_question: str = Field(min_length=1, max_length=4_000)
+    updated_by: str = Field(min_length=1, max_length=128)
+    confirmation: str = Field(min_length=1, max_length=200)
+
+
+class ShadowResearchPromotionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    approved_by: str = Field(min_length=1, max_length=128)
+    notes: str = Field(min_length=1, max_length=8_000)
+    confirmation: Literal[
+        "approve_evidence_bound_candidate_for_paper_shadow_only_without_"
+        "production_or_trade_authority"
+    ]
+
+
 def create_router() -> APIRouter:
     router = APIRouter(prefix="/api/ai/strategy-research", tags=["ai-research"])
 
@@ -150,6 +181,58 @@ def create_router() -> APIRouter:
             return service.get_session(session_id)
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @router.get("/shadow-automation")
+    async def get_shadow_research_automation() -> dict[str, Any]:
+        """Provider-free, write-free projection of policy, runs, and candidates."""
+        from server.app import get_app_state
+
+        state = get_app_state()
+        if state.db is None:
+            raise HTTPException(status_code=503, detail="Database is not initialized")
+        return _build_shadow_read_service(state).status()
+
+    @router.put("/shadow-automation/policy")
+    async def update_shadow_research_policy(
+        payload: ShadowResearchPolicyPayload,
+    ) -> dict[str, Any]:
+        from server.app import get_app_state
+
+        try:
+            return _build_shadow_write_service(get_app_state()).update_policy(
+                payload.model_dump(mode="json")
+            )
+        except Exception as exc:
+            _raise_http(exc)
+
+    @router.post("/shadow-automation/run")
+    async def run_shadow_research_now() -> dict[str, Any]:
+        """Run the same after-close and standing-policy gates as the background loop."""
+        from server.app import get_app_state
+
+        try:
+            return await _build_shadow_write_service(get_app_state()).run_once()
+        except Exception as exc:
+            _raise_http(exc)
+
+    @router.post("/shadow-candidates/{candidate_id}/paper-shadow-approvals")
+    async def approve_shadow_research_candidate(
+        candidate_id: str,
+        payload: ShadowResearchPromotionPayload,
+    ) -> JSONResponse:
+        from server.app import get_app_state
+
+        try:
+            service = _build_shadow_write_service(get_app_state())
+            result = service.approve_candidate(
+                candidate_id,
+                approved_by=payload.approved_by,
+                notes=payload.notes,
+                confirmation=payload.confirmation,
+            )
+            return JSONResponse(status_code=201, content=result)
+        except Exception as exc:
+            _raise_http(exc)
 
     @router.post("/hypotheses")
     async def generate_strategy_hypotheses(
@@ -322,6 +405,30 @@ def _build_read_service(state: Any) -> StrategyResearchService:
         evidence_repository=CanonicalEvidenceRepository(db_path),
         ai_store=AiAuditStore(db_path),
         research_store=StrategyResearchAuditStore(db_path),
+        data_store=None,  # type: ignore[arg-type]
+    )
+
+
+def _build_shadow_write_service(state: Any) -> Any:
+    if state.db is None:
+        raise ConnectivityConfigurationError("database is not initialized")
+    from server.services.ai_shadow_research_automation import (
+        build_ai_shadow_research_automation_service,
+    )
+
+    return build_ai_shadow_research_automation_service(state)
+
+
+def _build_shadow_read_service(state: Any) -> Any:
+    """Build a read projection without initializing tables or market storage."""
+    from server.services.ai_shadow_research_automation import (
+        AiShadowResearchAutomationService,
+        ShadowResearchStore,
+    )
+
+    return AiShadowResearchAutomationService(
+        state=state,
+        store=ShadowResearchStore(_database_path(state.db)),
         data_store=None,  # type: ignore[arg-type]
     )
 

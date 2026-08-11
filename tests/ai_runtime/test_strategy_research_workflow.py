@@ -90,27 +90,57 @@ class BlockingFixtureTransport(FixtureTransport):
 
 
 class FixtureCaptureSource:
-    def __init__(self, payload: dict) -> None:
-        self.payload = payload
+    def __init__(
+        self,
+        research_payload: dict,
+        account_payload: dict,
+        *,
+        valuation_snapshot_id: str,
+        ledger_cutoff_id: int,
+        ledger_fingerprint: str,
+    ) -> None:
+        self.research_payload = research_payload
+        self.account_payload = account_payload
+        self.valuation_snapshot_id = valuation_snapshot_id
+        self.ledger_cutoff_id = ledger_cutoff_id
+        self.ledger_fingerprint = ledger_fingerprint
         self.calls = 0
+        self.requests = []
 
     async def load(self, request) -> CaptureSourceBatch:
         self.calls += 1
+        self.requests.append(request)
+        projections = []
+        for evidence_type in request.evidence_types:
+            if evidence_type == CaptureEvidenceType.RESEARCH_EVIDENCE:
+                projections.append(
+                    CapturedProjection(
+                        tool_name=CAPTURE_TOOL_BY_TYPE[evidence_type],
+                        status="complete",
+                        as_of=NOW,
+                        source_schema_version=(
+                            "karkinos.ai.research_evidence_capture.v2"
+                        ),
+                        payload=self.research_payload,
+                    )
+                )
+            elif evidence_type == CaptureEvidenceType.ACCOUNT_STATE:
+                projections.append(
+                    CapturedProjection(
+                        tool_name=CAPTURE_TOOL_BY_TYPE[evidence_type],
+                        status="complete",
+                        as_of=NOW,
+                        source_schema_version="karkinos.account_state.v1",
+                        payload=self.account_payload,
+                    )
+                )
+            else:
+                raise AssertionError(f"unexpected fixture evidence: {evidence_type}")
         return CaptureSourceBatch(
-            valuation_snapshot_id="not-applicable-strategy-research",
-            ledger_cutoff_id=0,
-            ledger_fingerprint="not-applicable-strategy-research",
-            projections=(
-                CapturedProjection(
-                    tool_name=CAPTURE_TOOL_BY_TYPE[
-                        CaptureEvidenceType.RESEARCH_EVIDENCE
-                    ],
-                    status="complete",
-                    as_of=NOW,
-                    source_schema_version="karkinos.ai.research_evidence_capture.v2",
-                    payload=self.payload,
-                ),
-            ),
+            valuation_snapshot_id=self.valuation_snapshot_id,
+            ledger_cutoff_id=self.ledger_cutoff_id,
+            ledger_fingerprint=self.ledger_fingerprint,
+            projections=tuple(projections),
         )
 
 
@@ -183,7 +213,11 @@ def _formula() -> dict:
     }
 
 
-def _hypothesis_response(selection: StrategyResearchSelection) -> HttpJsonResponse:
+def _hypothesis_response(
+    selection: StrategyResearchSelection,
+    *,
+    include_account_evidence: bool = True,
+) -> HttpJsonResponse:
     draft = {
         "economic_hypothesis": "价格上穿短期均线后可能出现有限的趋势延续。",
         "selected_universe": list(selection.universe),
@@ -208,7 +242,14 @@ def _hypothesis_response(selection: StrategyResearchSelection) -> HttpJsonRespon
         "failure_conditions": ["成本后收益为负。"],
         "limitations": ["单一短样本不能支持策略晋级。"],
         "risk_impact": "可能产生高换手和集中度风险，仅供研究。",
-        "citations": ["saved_backtest_evidence.performance_summary"],
+        "citations": [
+            "saved_backtest_evidence.performance_summary",
+            *(
+                ["saved_account_evidence.summary.cash_ratio"]
+                if include_account_evidence
+                else []
+            ),
+        ],
     }
     return _model_response({"drafts": [draft]}, model="fixture-hypothesis")
 
@@ -258,7 +299,15 @@ def _model_response(content: dict, *, model: str) -> HttpJsonResponse:
     )
 
 
-def _service(tmp_path):
+def _nested_keys(value) -> set[str]:
+    if isinstance(value, dict):
+        return set(value).union(*(_nested_keys(item) for item in value.values()))
+    if isinstance(value, list):
+        return set().union(*(_nested_keys(item) for item in value)) if value else set()
+    return set()
+
+
+def _service(tmp_path, *, bind_account: bool = True):
     market = DataStore(tmp_path / "market")
     symbol = Symbol("600000")
     bars = _bars()
@@ -289,6 +338,8 @@ def _service(tmp_path):
         end_date="2025-01-09",
         frequency="1d",
         initial_cash=100_000,
+        valuation_snapshot_id=("private-valuation-id" if bind_account else None),
+        ledger_cutoff_id=(88 if bind_account else None),
     )
     original_evidence = {
         "schema_version": "karkinos.research_evidence.v1",
@@ -355,6 +406,80 @@ def _service(tmp_path):
         "analysis_blocking_reasons": [],
         "persisted_backtest_facts_only": True,
     }
+    account_payload = {
+        "summary": {
+            "total_equity": 100_000,
+            "available_cash": 25_000,
+            "positions_count": 1,
+            "cash_ratio": 0.25,
+            "current_drawdown": 0.04,
+            "quote_status": "live",
+            "using_persistent_cache": True,
+            "valuation_trade_date": "2025-01-09",
+            "valuation_status": "complete",
+            "valuation_snapshot_id": "private-valuation-id",
+            "ledger_cutoff_id": 88,
+            "ledger_fingerprint": "private-ledger-fingerprint",
+        },
+        "snapshot": {
+            "cash": 25_000,
+            "total_equity": 100_000,
+            "positions": [
+                {
+                    "symbol": "600000",
+                    "quantity": 5_000,
+                    "avg_cost": 12.5,
+                    "market_value": 75_000,
+                }
+            ],
+            "allocation": [
+                {
+                    "symbol": "CASH",
+                    "name": "现金",
+                    "asset_class": "cash",
+                    "weight": 0.25,
+                    "value": 25_000,
+                },
+                {
+                    "symbol": "600000",
+                    "name": "浦发银行",
+                    "asset_class": "stock",
+                    "weight": 0.75,
+                    "value": 75_000,
+                },
+            ],
+            "allocation_grouped": [
+                {
+                    "asset_class": "cash",
+                    "name": "现金",
+                    "weight": 0.25,
+                    "value": 25_000,
+                    "items": [],
+                },
+                {
+                    "asset_class": "stock",
+                    "name": "股票",
+                    "weight": 0.75,
+                    "value": 75_000,
+                    "items": [],
+                },
+            ],
+            "valuation_trade_date": "2025-01-09",
+            "valuation_status": "complete",
+            "valuation_snapshot_id": "private-valuation-id",
+            "ledger_cutoff_id": 88,
+            "ledger_fingerprint": "private-ledger-fingerprint",
+        },
+        "risks": [
+            {
+                "kind": "risk",
+                "level": "high",
+                "title": "仓位集中度偏高",
+                "detail": "浦发银行占总资产 75.0%",
+            }
+        ],
+        "next_step": "确认待执行建议",
+    }
     db_path = tmp_path / "app.db"
     evidence = CanonicalEvidenceRepository(db_path)
     ai_store = AiAuditStore(db_path)
@@ -364,7 +489,21 @@ def _service(tmp_path):
     ai_store.init()
     capture_store.init()
     research_store.init()
-    source = FixtureCaptureSource(captured_payload)
+    source = FixtureCaptureSource(
+        captured_payload,
+        account_payload,
+        valuation_snapshot_id=(
+            "private-valuation-id"
+            if bind_account
+            else "not-applicable-strategy-research"
+        ),
+        ledger_cutoff_id=(88 if bind_account else 0),
+        ledger_fingerprint=(
+            "private-ledger-fingerprint"
+            if bind_account
+            else "not-applicable-strategy-research"
+        ),
+    )
     capture = HumanResearchContextCaptureService(
         source=source,
         evidence_repository=evidence,
@@ -373,7 +512,13 @@ def _service(tmp_path):
         now=lambda: NOW,
     )
     transport = FixtureTransport(
-        [_hypothesis_response(selection), _critique_response()]
+        [
+            _hypothesis_response(
+                selection,
+                include_account_evidence=bind_account,
+            ),
+            _critique_response(),
+        ]
     )
     service = StrategyResearchService(
         db=db,
@@ -418,6 +563,30 @@ def test_external_selection_redacts_account_snapshot_and_ledger_identifiers() ->
     assert "valuation_snapshot_id" not in external
     assert "ledger_cutoff_id" not in external
     assert external["account_fact_binding"] == "present_but_identifiers_redacted"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("valuation_snapshot_id", "ledger_cutoff_id"),
+    (("valuation-only", None), (None, 88)),
+)
+def test_selection_rejects_partial_account_fact_binding(
+    valuation_snapshot_id,
+    ledger_cutoff_id,
+) -> None:
+    with pytest.raises(Exception, match="account_fact_binding_incomplete"):
+        StrategyResearchSelection(
+            saved_backtest_result_id=17,
+            universe=("600000",),
+            asset_classes=("stock",),
+            dataset_snapshot_id="sha256:dataset",
+            start_date="2025-01-02",
+            end_date="2025-01-09",
+            frequency="1d",
+            initial_cash=100_000,
+            valuation_snapshot_id=valuation_snapshot_id,
+            ledger_cutoff_id=ledger_cutoff_id,
+        )
 
 
 @pytest.mark.unit
@@ -466,6 +635,10 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
             "external.strategy_hypothesis_researcher.v5",
             "karkinos.ai.strategy_research_prompt.v6",
         ),
+        (
+            "external.strategy_hypothesis_researcher.v6",
+            "karkinos.ai.strategy_research_prompt.v7",
+        ),
     ):
         registry.register_role(
             AgentRole(
@@ -512,6 +685,16 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
     assert "external.strategy_hypothesis_researcher.v4" in role_ids
     assert "external.strategy_hypothesis_researcher.v5" in role_ids
     assert "external.strategy_hypothesis_researcher.v6" in role_ids
+    assert "external.strategy_hypothesis_researcher.v7" in role_ids
+    current_role = next(
+        item
+        for item in service._ai_store.list_roles()
+        if item.role_id == "external.strategy_hypothesis_researcher.v7"
+    )
+    assert "account_state_projection.read" in current_role.allowed_tools
+    assert (
+        current_role.instructions_version == "karkinos.ai.strategy_research_prompt.v8"
+    )
 
     backtest = await service.run_formula_backtest(
         FormulaBacktestRequest(
@@ -560,6 +743,56 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
     assert "must never be omitted" in hypothesis_system_prompt
     assert "ATR is a special operator" in hypothesis_system_prompt
     assert "Prefer one compact draft" in hypothesis_system_prompt
+    assert "sanitized persisted risk/allocation projection" in hypothesis_system_prompt
+    account_evidence = hypothesis_input["saved_account_evidence"]
+    assert account_evidence["schema_version"] == (
+        "karkinos.ai.sanitized_account_risk_evidence.v1"
+    )
+    assert account_evidence["summary"] == {
+        "positions_count": 1,
+        "cash_ratio": 0.25,
+        "current_drawdown": 0.04,
+        "quote_status": "live",
+        "valuation_trade_date": "2025-01-09",
+        "valuation_status": "complete",
+        "using_persistent_cache": True,
+    }
+    assert account_evidence["allocation"] == [
+        {"symbol": "CASH", "asset_class": "cash", "weight": 0.25},
+        {"symbol": "600000", "asset_class": "stock", "weight": 0.75},
+    ]
+    assert account_evidence["allocation_grouped"] == [
+        {"asset_class": "cash", "weight": 0.25},
+        {"asset_class": "stock", "weight": 0.75},
+    ]
+    assert account_evidence["absolute_account_values_redacted"] is True
+    assert account_evidence["valuation_and_ledger_identifiers_redacted"] is True
+    sensitive_account_keys = {
+        "total_equity",
+        "available_cash",
+        "cash",
+        "value",
+        "quantity",
+        "avg_cost",
+        "market_value",
+        "valuation_snapshot_id",
+        "ledger_cutoff_id",
+        "ledger_fingerprint",
+        "evidence_reference_id",
+        "record_fingerprint",
+    }
+    assert sensitive_account_keys.isdisjoint(_nested_keys(account_evidence))
+    serialized_account = json.dumps(account_evidence, ensure_ascii=False)
+    assert "private-valuation-id" not in serialized_account
+    assert "private-ledger-fingerprint" not in serialized_account
+    assert "saved_account_evidence.summary.cash_ratio" in draft["citations"]
+    assert draft["provider_provenance"]["account_evidence_exported"] is True
+    assert draft["provider_provenance"]["absolute_account_values_redacted"] is True
+    source = service._capture_service._source
+    assert source.requests[0].evidence_types == (
+        CaptureEvidenceType.RESEARCH_EVIDENCE,
+        CaptureEvidenceType.ACCOUNT_STATE,
+    )
     assert hypothesis_input["output_contract"]["formula_ast_exact_top_level_keys"] == [
         "schema_version",
         "entry",
@@ -591,11 +824,23 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
     assert "prior baseline, not the formula result" in critique_system_prompt
     assert critique_input["critique_input"]["canonical_backtest"]["result_id"] == 18
     assert (
+        critique_input["critique_input"]["canonical_backtest"]["oos_validation"]
+        == backtest["canonical_backtest"]["oos_validation"]
+    )
+    assert critique_input["critique_input"]["required_binding_echo"][
+        "oos_validation_fingerprint"
+    ]
+    assert (
         critique_input["critique_input"]["required_binding_echo"]
         == critique["artifact"]["canonical_binding_echo"]
     )
     assert (
         "critique_input.canonical_backtest.total_return"
+        in critique_input["output_contract"]["allowed_citation_paths"]
+    )
+    assert (
+        "critique_input.canonical_backtest.oos_validation.aggregate."
+        "worst_out_of_sample_return"
         in critique_input["output_contract"]["allowed_citation_paths"]
     )
     assert all(
@@ -667,6 +912,92 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
     assert "fixture-api-key-must-not-persist" not in persisted
     assert "private reasoning must not persist" not in persisted
     assert "raw-provider-envelope-must-not-persist" not in persisted
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_strategy_only_research_remains_compatible_without_account_export(
+    tmp_path,
+) -> None:
+    service, selection, transport, _ = _service(tmp_path, bind_account=False)
+
+    result = await service.generate_hypotheses(
+        HypothesisGenerationRequest(
+            idempotency_key="strategy-only-hypothesis",
+            requested_by="human:reese",
+            account_alias="strategy-only",
+            research_question="Strategy-only research must remain compatible.",
+            selection=selection,
+            confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
+        )
+    )
+
+    assert result["status"] == "completed"
+    exported = json.loads(transport.calls[0]["payload"]["messages"][1]["content"])
+    assert "saved_account_evidence" not in exported
+    assert (
+        result["drafts"][0]["provider_provenance"]["account_evidence_exported"] is False
+    )
+    source = service._capture_service._source
+    assert source.requests[0].evidence_types == (CaptureEvidenceType.RESEARCH_EVIDENCE,)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_malformed_bound_account_evidence_fails_before_provider_export(
+    tmp_path,
+) -> None:
+    service, selection, transport, _ = _service(tmp_path)
+    source = service._capture_service._source
+    source.account_payload["snapshot"].pop("allocation")
+
+    result = await service.generate_hypotheses(
+        HypothesisGenerationRequest(
+            idempotency_key="malformed-account-evidence",
+            requested_by="human:reese",
+            account_alias="bound-account",
+            research_question="Malformed account evidence must fail closed.",
+            selection=selection,
+            confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
+        )
+    )
+
+    assert result["status"] == "failed"
+    assert result["drafts"] == []
+    assert transport.calls == []
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_bound_account_evidence_drift_invalidates_research_session(
+    tmp_path,
+) -> None:
+    service, selection, _, db_path = _service(tmp_path)
+    hypotheses = await service.generate_hypotheses(
+        HypothesisGenerationRequest(
+            idempotency_key="account-evidence-drift",
+            requested_by="human:reese",
+            account_alias="bound-account",
+            research_question="Account evidence drift must invalidate the session.",
+            selection=selection,
+            confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
+        )
+    )
+    with sqlite3.connect(db_path) as conn:
+        account_reference_id = conn.execute(
+            "SELECT reference_id FROM ai_canonical_evidence "
+            "WHERE tool_name='account_state_projection.read'"
+        ).fetchone()[0]
+        conn.execute(
+            "UPDATE ai_canonical_evidence SET payload_json='{}' "
+            "WHERE reference_id=?",
+            (account_reference_id,),
+        )
+
+    replay = service.get_session(hypotheses["session_id"])
+
+    assert replay["binding_validity"] == "invalidated_by_drift"
+    assert replay["binding_errors"] == ["account_evidence_drift"]
 
 
 @pytest.mark.unit

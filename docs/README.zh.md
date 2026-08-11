@@ -77,9 +77,9 @@ paper/shadow 证据，输出 buy、sell、hold、rebalance、no-action 或 revie
 cutoff 后才可展示收益。证据缺失或漂移会给出明确人工复核步骤；策略尚无成交时不会制造虚假
 阻断。该投影不能联系 provider、写账本或授予执行与资本权限。
 
-在 Strategy Lab 中，人工可以选择把精确的当前 strategy id 与这份 canonical contribution report
-冻结进 AI 研究上下文。策略选择或 valuation/ledger identity 漂移会被拒绝；不完整的贡献证据继续
-保持 blocked，不能启动权威分析。捕获不会重算收益，也不会自行调用模型。
+在 Strategy Lab 中，人工可把精确 strategy id 与 canonical contribution report 冻结进 AI 上下文；策略或 valuation/ledger identity 漂移会被拒绝，不完整证据保持 blocked，捕获不重算收益也不调用模型。
+
+Owner 授权的收盘后 shadow 研究每个持久化市场日期只运行一次：本地刷新基线并绑定完整账户证据，原子预留 capped DeepSeek 调用/token，外发保存的回测和严格 allowlist 的风险/配置投影（删除绝对金额、持仓数量/成本及 valuation/ledger 标识），在本地校验 Formula DSL、运行 canonical 成本后 rolling OOS，再发送规范化结果做 critique。稳定 identity 保证幂等；Kill Switch、policy/证据漂移、事实不完整或预算耗尽均 fail closed。Web 展示新旧指标、成本、OOS、风险与 critique；只有精确人工确认可晋级 canonical `paper_shadow`，不能替换生产策略或创建/提交订单。
 
 Decision 的信号审计日志现在支持显式“决策后复盘”。系统先只读预览持久化的 signal/action/risk/order/fill 链和同一 canonical contribution report，再把人工结论绑定到该精确
 fingerprint。只有具备成交、估值快照与 ledger cutoff 的完整绑定证据，已执行信号才能记录

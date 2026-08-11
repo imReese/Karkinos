@@ -37,6 +37,7 @@ The latest completed cross-cutting work includes:
   the exact snapshot and ledger cutoff without creating orders or touching the ledger;
 - human-gated allowlisted Formula DSL research over exact saved datasets, executed by the canonical backtest engine
   with next-bar semantics and no production-strategy or trading-authority side effects;
+- owner-authorized after-close AI shadow research over newest persisted bars and complete valuation/ledger identity: one run per market date, atomic capped provider-call/token reservations, DeepSeek Formula DSL hypotheses over a strict sanitized account risk/allocation allowlist, local validation and canonical after-cost rolling OOS, evidence critique, Web comparison/notification, and exact human-only canonical `paper_shadow` promotion; policy/Kill Switch/evidence/OOS/cost/budget failures close safely, absolute account values and valuation/ledger identifiers are removed before export, and no production-strategy, OMS, ledger, or broker authority exists;
 - fail-fast grouped runtime configuration, environment-only TuShare/AI and
   notification credentials, validated Settings write contracts, and one
   dotenv-selection path shared by server and legacy CLI entrypoints;

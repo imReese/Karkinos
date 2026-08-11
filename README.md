@@ -76,11 +76,9 @@ produces an explicit manual review step, while a strategy with no fills creates
 no artificial blocker. This projection cannot contact a provider, write the
 ledger, or grant execution or capital authority.
 
-From Strategy Lab, a human can optionally bind the exact current strategy id
-and this canonical contribution report into a frozen AI research context. The
-capture rejects strategy or valuation/ledger drift; incomplete contribution
-evidence stays blocked and cannot start authoritative analysis. It neither
-recalculates P/L nor invokes a model by itself.
+From Strategy Lab, a human can bind the exact current strategy id and canonical contribution report into a frozen AI research context. Capture rejects strategy or valuation/ledger drift; incomplete evidence stays blocked, and capture neither recalculates P/L nor invokes a model.
+
+Owner-authorized after-close shadow research runs once per persisted market date: it refreshes the local baseline, binds complete account evidence, atomically reserves capped DeepSeek calls/tokens, exports the saved backtest plus a strict risk/allocation allowlist with absolute values and valuation/ledger identifiers removed, validates Formula DSL locally, runs canonical after-cost rolling OOS, and sends only normalized results for critique. Stable identities make retries idempotent; Kill Switch, policy/evidence drift, incomplete facts, or budget exhaustion fails closed. Web shows baseline/candidate metrics, costs, OOS, risks, and critique; only exact human confirmation can promote to canonical `paper_shadow`, never replace production strategy or create/submit an order.
 
 Decision's signal journal now supports an explicit post-decision review. It
 first previews the persisted signal/action/risk/order/fill chain and the same

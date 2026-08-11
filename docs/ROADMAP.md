@@ -40,7 +40,7 @@ authority, bypass risk, or call a broker directly.
 | v1.4-v1.7 | Completed | Ledger/snapshot-bound contribution and cost fidelity, Daily Trading Plan, Operations runbook, non-submitting controlled bridge |
 | v1.8 control plane | Foundation implemented | Signed bounded authority, atomic budgets, sessions, live gates, pause/replacement, one-shot submit boundary, interlock, broker-neutral lifecycle evidence, exact-terminal full/partial-cancel/no-fill-cancel clearance, capital-scaling review |
 | v1.8 adapter acceptance | Provider-neutral foundation implemented | Versioned manifest, deterministic local conformance evidence, capability/boundary matrix, append-only accept/reject/revoke review, exact live collector binding, and persisted-only operator readiness visibility; no real provider selected or registered |
-| AI-native Phase 1-1.18 + outcome/quality bridge | Implemented | Provider-neutral, evidence-bound research, memory, Formula DSL/backtest/critique, canonical contribution and post-decision review, a persisted-only human strategy-learning queue, and captured Decision Quality without trading authority |
+| AI-native Phase 1-1.18 + shadow research/outcome/quality bridge | Implemented | Provider-neutral, evidence-bound research, memory, Formula DSL/backtest/rolling-OOS/critique, owner-authorized after-close candidate automation with atomic call/token budgets and human-only paper/shadow promotion, canonical contribution and post-decision review, a persisted-only human strategy-learning queue, and captured Decision Quality without production-strategy or trading authority |
 
 Account Truth and reconciliation remain mandatory safety gates, while v1.8 is
 the active product milestone after the explicitly authorized Phase 1.18 formula

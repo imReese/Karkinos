@@ -8,6 +8,7 @@ import {
   useBacktestResultsQuery,
 } from '../../backtest/api';
 import { ResearchTaskPanel } from './research-task-panel';
+import { ShadowResearchPanel } from './shadow-research-panel';
 
 export function AiResearchPage() {
   const copy = useCopy();
@@ -108,9 +109,10 @@ export function AiResearchPage() {
         </section>
 
         <div
-          className="min-w-0 xl:order-1"
+          className="grid min-w-0 gap-5 xl:order-1"
           data-testid="ai-research-primary-canvas"
         >
+          <ShadowResearchPanel />
           <ResearchTaskPanel
             backtestResultId={latestBacktest?.id ?? null}
             defaultOpen

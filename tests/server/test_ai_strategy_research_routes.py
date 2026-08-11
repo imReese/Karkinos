@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from types import SimpleNamespace
 
 import pytest
@@ -8,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from server.ai_runtime.strategy_research import HYPOTHESIS_EXPORT_CONFIRMATION
 from server.app import create_app
+from server.db import AppDatabase
 from server.routes.ai_strategy_research import (
     _strategy_research_model_timeout_seconds,
     create_router,
@@ -183,6 +185,41 @@ def test_session_get_does_not_create_missing_database(monkeypatch, tmp_path):
 
 
 @pytest.mark.unit
+@pytest.mark.trading_safety
+def test_shadow_status_get_is_provider_free_and_does_not_initialize_shadow_tables(
+    monkeypatch, tmp_path
+):
+    db_path = tmp_path / "app.db"
+    db = AppDatabase(db_path)
+    db.init_sync()
+    with sqlite3.connect(db_path) as conn:
+        before = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+    client = _client(monkeypatch, FixtureService(), db=db)
+
+    response = client.get("/api/ai/strategy-research/shadow-automation")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["policy"]["enabled"] is False
+    assert body["candidates"] == []
+    assert body["broker_submission_enabled"] is False
+    with sqlite3.connect(db_path) as conn:
+        after = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+    assert after == before
+    assert not any(name.startswith("ai_shadow_research_") for name in after)
+
+
+@pytest.mark.unit
 def test_main_app_registers_explicit_strategy_research_routes_only():
     app = create_app({"live_auto_start": False})
     routes = {
@@ -195,6 +232,16 @@ def test_main_app_registers_explicit_strategy_research_routes_only():
     assert ("/api/ai/strategy-research/hypotheses", "POST") in routes
     assert ("/api/ai/strategy-research/backtests", "POST") in routes
     assert ("/api/ai/strategy-research/critiques", "POST") in routes
+    assert ("/api/ai/strategy-research/shadow-automation", "GET") in routes
+    assert (
+        "/api/ai/strategy-research/shadow-automation/policy",
+        "PUT",
+    ) in routes
+    assert ("/api/ai/strategy-research/shadow-automation/run", "POST") in routes
+    assert (
+        "/api/ai/strategy-research/shadow-candidates/{candidate_id}/paper-shadow-approvals",
+        "POST",
+    ) in routes
     assert ("/api/ai/strategy-research/hypotheses", "GET") not in routes
     assert not any(
         "submit" in path or "cancel" in path
