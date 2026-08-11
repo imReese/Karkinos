@@ -113,11 +113,45 @@ REVIEW_CONFIRMATION = "record_human_strategy_research_review_without_trade_autho
 _RESEARCH_TOOL = "research_evidence.read"
 _CATALOG_TOOL = "formula_operator_catalog.read"
 _SELECTION_TOOL = "strategy_research_selection.read"
-_HYPOTHESIS_ROLE = "external.strategy_hypothesis_researcher.v1"
-_CRITIQUE_ROLE = "external.strategy_backtest_critic.v1"
+_HYPOTHESIS_ROLE = "external.strategy_hypothesis_researcher.v6"
+_CRITIQUE_ROLE = "external.strategy_backtest_critic.v6"
 _HYPOTHESIS_STAGE = "strategy_hypothesis_generation"
 _CRITIQUE_STAGE = "strategy_backtest_critique"
-_PROMPT_VERSION = "karkinos.ai.strategy_research_prompt.v2"
+_PROMPT_VERSION = "karkinos.ai.strategy_research_prompt.v7"
+_STRATEGY_RESEARCH_MAX_OUTPUT_TOKENS = 12_288
+_CRITIQUE_CITATION_PATHS = (
+    "critique_input.canonical_backtest.initial_cash",
+    "critique_input.canonical_backtest.final_equity",
+    "critique_input.canonical_backtest.total_return",
+    "critique_input.canonical_backtest.annual_return",
+    "critique_input.canonical_backtest.sharpe",
+    "critique_input.canonical_backtest.sortino",
+    "critique_input.canonical_backtest.max_drawdown",
+    "critique_input.canonical_backtest.win_rate",
+    "critique_input.canonical_backtest.duration_days",
+    "critique_input.canonical_backtest.net_pnl",
+    "critique_input.canonical_backtest.gross_pnl_before_costs",
+    "critique_input.canonical_backtest.total_cost",
+    "critique_input.canonical_backtest.total_commission",
+    "critique_input.canonical_backtest.total_slippage",
+    "critique_input.canonical_backtest.total_trades",
+    "critique_input.canonical_backtest.gross_turnover",
+    "critique_input.canonical_backtest.after_cost_evidence",
+    "critique_input.canonical_backtest.cost_summary",
+    "critique_input.canonical_backtest.research_evidence_bundle.gate_status",
+    "critique_input.canonical_backtest.research_evidence_bundle.analyzers",
+    "critique_input.canonical_backtest.research_evidence_bundle.evidence_references",
+    "critique_input.canonical_backtest.research_evidence_bundle.promotion_gate",
+    "critique_input.hypothesis_draft.economic_hypothesis",
+    "critique_input.hypothesis_draft.failure_conditions",
+    "critique_input.hypothesis_draft.limitations",
+    "critique_input.hypothesis_draft.sample_split_plan",
+    "critique_input.hypothesis_draft.parameter_values",
+    "critique_input.hypothesis_draft.portfolio_constraints",
+    "critique_input.formula_fingerprint",
+    "critique_input.dataset_snapshot_id",
+    "critique_input.cost_model_reference",
+)
 _TERMINAL = {
     WorkflowStatus.COMPLETED,
     WorkflowStatus.PARTIAL,
@@ -1100,6 +1134,7 @@ class RestrictedFormulaBacktestAdapter:
         *,
         selection: StrategyResearchSelection,
         draft: JsonObject,
+        expected_dataset_snapshot: Mapping[str, Any] | None = None,
     ) -> tuple[dict[str, Any], BacktestRequest]:
         formula_ast = draft.get("formula_ast")
         if not isinstance(formula_ast, dict):
@@ -1138,7 +1173,9 @@ class RestrictedFormulaBacktestAdapter:
             raise StrategyResearchRejected("formula_binding_drift")
 
         handlers, instruments, snapshot = _load_bound_inputs(
-            self._data_store, selection
+            self._data_store,
+            selection,
+            expected_dataset_snapshot=expected_dataset_snapshot,
         )
 
         engine = BacktestEngine(
@@ -1205,9 +1242,18 @@ class RestrictedFormulaBacktestAdapter:
         bt_result["metrics_json"] = _backtest_report_metrics_json(request, bt_result)
         return bt_result, request
 
-    def validate_selection(self, selection: StrategyResearchSelection) -> JsonObject:
+    def validate_selection(
+        self,
+        selection: StrategyResearchSelection,
+        *,
+        expected_dataset_snapshot: Mapping[str, Any] | None = None,
+    ) -> JsonObject:
         """Recompute persisted dataset identity without running a strategy."""
-        _, _, snapshot = _load_bound_inputs(self._data_store, selection)
+        _, _, snapshot = _load_bound_inputs(
+            self._data_store,
+            selection,
+            expected_dataset_snapshot=expected_dataset_snapshot,
+        )
         return snapshot
 
 
@@ -1319,7 +1365,7 @@ class StrategyResearchModelProvider(ProviderAdapter):
                 {"role": "user", "content": serialized},
             ],
             "response_format": {"type": "json_object"},
-            "max_tokens": 6_144,
+            "max_tokens": _STRATEGY_RESEARCH_MAX_OUTPUT_TOKENS,
             "stream": False,
         }
         payload.update(_edge_request_options(self._settings))
@@ -1371,7 +1417,11 @@ class StrategyResearchModelProvider(ProviderAdapter):
         normalized = (
             _normalize_hypothesis_payload(decoded)
             if self._mode == "hypothesis"
-            else _normalize_critique_payload(decoded, self._evidence_reference_id)
+            else _normalize_critique_payload(
+                decoded,
+                self._evidence_reference_id,
+                self._critique_input,
+            )
         )
         citation_sources = {
             "saved_backtest_evidence": evidence.get("payload"),
@@ -1581,6 +1631,7 @@ class StrategyResearchService:
             raise StrategyResearchRejected("hypothesis_draft_not_validated")
         draft = draft_row["contract"]
         selection = _selection_from_session(session)
+        expected_dataset_snapshot = await self._validate_saved_selection(selection)
         backtest, reused = self._research_store.create_or_get_backtest(
             request,
             formula_fingerprint=str(draft["formula_fingerprint"]),
@@ -1595,6 +1646,7 @@ class StrategyResearchService:
                 RestrictedFormulaBacktestAdapter(data_store=self._data_store).run,
                 selection=selection,
                 draft=draft,
+                expected_dataset_snapshot=expected_dataset_snapshot,
             )
             result_id = await self._db.save_backtest_result(
                 config_json=bt_request.model_dump_json(),
@@ -1666,6 +1718,13 @@ class StrategyResearchService:
         evidence = metrics.get("research_evidence_bundle")
         if not isinstance(evidence, dict):
             raise StrategyResearchRejected("canonical_research_evidence_missing")
+        dataset_snapshot = metrics.get("dataset_snapshot")
+        if not isinstance(dataset_snapshot, dict):
+            raise StrategyResearchRejected("canonical_dataset_snapshot_missing")
+        after_cost_evidence = metrics.get("evidence_bundle")
+        if not isinstance(after_cost_evidence, dict):
+            raise StrategyResearchRejected("canonical_after_cost_evidence_missing")
+        cost_summary = _json_object(saved.get("cost_summary_json"))
         if content_fingerprint(evidence) != backtest["evidence_fingerprint"]:
             raise StrategyResearchRejected("canonical_backtest_artifact_drift")
 
@@ -1693,7 +1752,32 @@ class StrategyResearchService:
                 data_store=self._data_store
             ).validate_selection,
             selection,
+            expected_dataset_snapshot=dataset_snapshot,
         )
+        required_binding_echo = {
+            "canonical_backtest_result_id": int(
+                backtest["canonical_backtest_result_id"]
+            ),
+            "formula_fingerprint": backtest["formula_fingerprint"],
+            "dataset_snapshot_id": backtest["dataset_snapshot_id"],
+            "cost_model_reference": backtest["cost_model_reference"],
+            "initial_cash": saved.get("initial_cash"),
+            "final_equity": saved.get("final_equity"),
+            "total_return": saved.get("total_return"),
+            "annual_return": saved.get("annual_return"),
+            "sharpe": saved.get("sharpe"),
+            "sortino": saved.get("sortino"),
+            "max_drawdown": saved.get("max_drawdown"),
+            "win_rate": saved.get("win_rate"),
+            "duration_days": saved.get("duration_days"),
+            "net_pnl": after_cost_evidence.get("net_pnl"),
+            "gross_pnl_before_costs": after_cost_evidence.get("gross_pnl_before_costs"),
+            "total_cost": after_cost_evidence.get("total_cost"),
+            "total_commission": cost_summary.get("total_commission"),
+            "total_slippage": cost_summary.get("total_slippage"),
+            "total_trades": cost_summary.get("total_trades"),
+            "gross_turnover": cost_summary.get("gross_turnover"),
+        }
         registry = AiRuntimeRegistry(self._ai_store)
         _register_runtime(registry, settings, provider_id, model_id, "critique")
         provider = StrategyResearchModelProvider(
@@ -1708,6 +1792,14 @@ class StrategyResearchService:
                 "canonical_backtest_result_id": backtest[
                     "canonical_backtest_result_id"
                 ],
+                "canonical_backtest": {
+                    **required_binding_echo,
+                    "result_id": int(backtest["canonical_backtest_result_id"]),
+                    "after_cost_evidence": after_cost_evidence,
+                    "cost_summary": cost_summary,
+                    "research_evidence_bundle": evidence,
+                },
+                "required_binding_echo": required_binding_echo,
                 "canonical_research_evidence": evidence,
                 "formula_fingerprint": backtest["formula_fingerprint"],
                 "dataset_snapshot_id": backtest["dataset_snapshot_id"],
@@ -1818,7 +1910,7 @@ class StrategyResearchService:
 
     async def _validate_saved_selection(
         self, selection: StrategyResearchSelection
-    ) -> None:
+    ) -> JsonObject:
         row = await self._db.get_backtest_result(selection.saved_backtest_result_id)
         if not isinstance(row, dict):
             raise LookupError(
@@ -1856,6 +1948,7 @@ class StrategyResearchService:
             raise StrategyResearchRejected("selected_universe_mismatch")
         if float(config.get("initial_cash") or 0) != selection.initial_cash:
             raise StrategyResearchRejected("selected_initial_cash_mismatch")
+        return dict(snapshot)
 
     def _require_settings(self) -> ProviderConnectivitySettings:
         if self._settings is None:
@@ -2259,7 +2352,11 @@ def _normalize_hypothesis_payload(value: Any) -> JsonObject:
     return {"drafts": json.loads(canonical_json(drafts))}
 
 
-def _normalize_critique_payload(value: Any, evidence_reference_id: str) -> JsonObject:
+def _normalize_critique_payload(
+    value: Any,
+    evidence_reference_id: str,
+    critique_input: Mapping[str, Any],
+) -> JsonObject:
     required = {
         "supported_claims",
         "contradicted_claims",
@@ -2273,16 +2370,19 @@ def _normalize_critique_payload(value: Any, evidence_reference_id: str) -> JsonO
         "explicit_failure_conditions",
         "uncertainty",
         "citations",
+        "canonical_binding_echo",
     }
     if not isinstance(value, dict) or set(value) != required:
         raise ExternalResearchInvalidResponseError("critique_schema_invalid")
-    list_fields = required - {
+    non_list_fields = {
         "cost_turnover_sensitivity",
         "concentration_risk",
         "sample_dependence",
         "possible_overfitting",
         "uncertainty",
+        "canonical_binding_echo",
     }
+    list_fields = required - non_list_fields
     for key in list_fields:
         items = value.get(key)
         if (
@@ -2291,14 +2391,23 @@ def _normalize_critique_payload(value: Any, evidence_reference_id: str) -> JsonO
             or any(not isinstance(item, str) or not item.strip() for item in items)
         ):
             raise ExternalResearchInvalidResponseError(f"critique_{key}_invalid")
-    for key in required - list_fields:
+    for key in non_list_fields - {"canonical_binding_echo"}:
         if not isinstance(value.get(key), str) or not value[key].strip():
             raise ExternalResearchInvalidResponseError(f"critique_{key}_invalid")
-    if any(
-        not item.startswith(("critique_input.", "saved_backtest_evidence."))
+    expected_binding_echo = critique_input.get("required_binding_echo")
+    if not isinstance(expected_binding_echo, Mapping) or canonical_json(
+        value.get("canonical_binding_echo")
+    ) != canonical_json(expected_binding_echo):
+        raise ExternalResearchInvalidResponseError("critique_binding_echo_mismatch")
+    if any(item not in _CRITIQUE_CITATION_PATHS for item in value["citations"]):
+        raise ExternalResearchInvalidResponseError("critique_citation_outside_binding")
+    if not any(
+        item.startswith("critique_input.canonical_backtest.")
         for item in value["citations"]
     ):
-        raise ExternalResearchInvalidResponseError("critique_citation_outside_binding")
+        raise ExternalResearchInvalidResponseError(
+            "critique_canonical_backtest_citation_required"
+        )
     return {
         "schema_version": STRATEGY_BACKTEST_CRITIQUE_CONTRACT,
         **json.loads(canonical_json(value)),
@@ -2311,6 +2420,25 @@ def _hypothesis_output_contract() -> JsonObject:
         "format": "one JSON object with exact top-level key drafts",
         "draft_count": "1..3",
         "formula_schema": FORMULA_AST_CONTRACT,
+        "formula_ast_exact_top_level_keys": [
+            "schema_version",
+            "entry",
+            "exit",
+            "position_size",
+        ],
+        "formula_ast_schema_version_literal": FORMULA_AST_CONTRACT,
+        "formula_ast_missing_schema_version_is_invalid": True,
+        "formula_ast_node_exact_keys": {
+            "field": ["op", "name"],
+            "constant": ["op", "value"],
+            "period_operator": ["op", "input", "period"],
+            "window_operator_except_atr": ["op", "input", "window"],
+            "atr": ["op", "window"],
+            "binary_operator": ["op", "left", "right"],
+            "not": ["op", "input"],
+            "equal_weight": ["op"],
+            "max_weight": ["op", "input", "value"],
+        },
         "all_draft_fields_required": [
             "economic_hypothesis",
             "selected_universe",
@@ -2422,6 +2550,7 @@ def _critique_output_contract() -> JsonObject:
             "explicit_failure_conditions",
             "uncertainty",
             "citations",
+            "canonical_binding_echo",
         ],
         "field_types": {
             "supported_claims": "non-empty array[string]",
@@ -2436,11 +2565,13 @@ def _critique_output_contract() -> JsonObject:
             "explicit_failure_conditions": "non-empty array[string]",
             "uncertainty": "non-empty string",
             "citations": "non-empty array[string] using allowed prefixes",
+            "canonical_binding_echo": (
+                "object exactly equal to critique_input.required_binding_echo"
+            ),
         },
-        "allowed_citation_prefixes": [
-            "critique_input.",
-            "saved_backtest_evidence.",
-        ],
+        "allowed_citation_paths": list(_CRITIQUE_CITATION_PATHS),
+        "required_citation_prefix": "critique_input.canonical_backtest.",
+        "required_exact_echo_path": "critique_input.required_binding_echo",
         "claims_are_non_authoritative": True,
         "trade_plan_created": False,
         "authority_effect": "none",
@@ -2463,11 +2594,27 @@ def _system_prompt(mode: Literal["hypothesis", "critique"]) -> str:
             "fields exactly. Use only enabled Formula DSL operators and include "
             "anti-lookahead assumptions, deterministic tests, failure conditions, "
             "limitations, risk impact, and evidence citations. Every required array "
-            "must be non-empty. A signal observes only completed bars and is applied "
-            "on the next available persisted bar."
+            "must be non-empty. Every formula_ast must contain exactly four top-level "
+            "keys: schema_version, entry, exit, and position_size. schema_version must "
+            f'be the exact string "{FORMULA_AST_CONTRACT}" and must never be omitted. '
+            "Recursively check that every AST node has exactly the keys declared in "
+            "output_contract.formula_ast_node_exact_keys. ATR is a special operator: "
+            'it must be exactly {"op":"atr","window":N} and must not contain an '
+            '"input" key. Other window operators must contain op, input, and window. '
+            "Prefer one compact draft unless the evidence clearly supports additional "
+            "materially distinct hypotheses; never pad the response. "
+            "A signal observes only completed bars and is applied on the next "
+            "available persisted bar."
         )
     return common + (
         " Critique the bound hypothesis against the canonical after-cost backtest. "
+        "The saved_backtest_evidence is the prior baseline, not the formula result. "
+        "Use critique_input.canonical_backtest for every performance, cost, turnover, "
+        "drawdown, and trade-count claim about the formula result. Copy "
+        "critique_input.required_binding_echo exactly into canonical_binding_echo; "
+        "any changed or omitted value invalidates the response. Cite only exact paths "
+        "listed in output_contract.allowed_citation_paths, copy each path exactly, "
+        "and include at least one canonical_backtest citation. "
         "Separate supported and contradicted claims, evidence gaps, cost/turnover "
         "sensitivity, concentration, sample dependence, possible overfitting, "
         "ablations, walk-forward/stress tests, failure conditions, uncertainty, "
@@ -2541,6 +2688,8 @@ def _slice_frame(frame: pd.DataFrame, start_date: str, end_date: str) -> pd.Data
 def _load_bound_inputs(
     data_store: DataStore,
     selection: StrategyResearchSelection,
+    *,
+    expected_dataset_snapshot: Mapping[str, Any] | None = None,
 ) -> tuple[dict[Symbol, DataHandler], dict[Symbol, Any], JsonObject]:
     handlers: dict[Symbol, DataHandler] = {}
     instruments: dict[Symbol, Any] = {}
@@ -2569,13 +2718,36 @@ def _load_bound_inputs(
             asset_class,
         )
         instruments[symbol] = DataManager.get_instrument(symbol, asset_class)
+    configured_source: str | None = None
+    source_names: list[str] = []
+    if expected_dataset_snapshot is not None:
+        if (
+            expected_dataset_snapshot.get("snapshot_id")
+            != selection.dataset_snapshot_id
+        ):
+            raise StrategyResearchRejected("saved_dataset_snapshot_drift")
+        provider = expected_dataset_snapshot.get("provider")
+        if not isinstance(provider, Mapping):
+            raise StrategyResearchRejected("saved_dataset_provider_missing")
+        configured_source_value = provider.get("configured_source")
+        if configured_source_value is not None and not isinstance(
+            configured_source_value, str
+        ):
+            raise StrategyResearchRejected("saved_dataset_provider_invalid")
+        available_sources = provider.get("available_sources")
+        if not isinstance(available_sources, list) or not all(
+            isinstance(item, str) for item in available_sources
+        ):
+            raise StrategyResearchRejected("saved_dataset_provider_invalid")
+        configured_source = configured_source_value
+        source_names = list(available_sources)
     snapshot = build_backtest_dataset_snapshot(
         start_date=selection.start_date,
         end_date=selection.end_date,
-        configured_source=None,
+        configured_source=configured_source,
         data_handlers=handlers,
         store=data_store,
-        source_names=[],
+        source_names=source_names,
     )
     if snapshot.get("snapshot_id") != selection.dataset_snapshot_id:
         raise StrategyResearchRejected("dataset_snapshot_drift")

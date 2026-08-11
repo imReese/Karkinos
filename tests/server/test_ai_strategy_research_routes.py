@@ -8,7 +8,10 @@ from fastapi.testclient import TestClient
 
 from server.ai_runtime.strategy_research import HYPOTHESIS_EXPORT_CONFIRMATION
 from server.app import create_app
-from server.routes.ai_strategy_research import create_router
+from server.routes.ai_strategy_research import (
+    _strategy_research_model_timeout_seconds,
+    create_router,
+)
 from tests.route_assertions import registered_app_routes
 
 
@@ -198,3 +201,13 @@ def test_main_app_registers_explicit_strategy_research_routes_only():
         for path, _ in routes
         if "strategy-research" in path
     )
+
+
+@pytest.mark.unit
+def test_deepseek_strategy_research_timeout_is_five_minutes():
+    deepseek = SimpleNamespace(provider_id="DeepSeek")
+    other_provider = SimpleNamespace(provider_id="compatible-provider")
+
+    assert _strategy_research_model_timeout_seconds(deepseek) == 300.0
+    assert _strategy_research_model_timeout_seconds(other_provider) == 180.0
+    assert _strategy_research_model_timeout_seconds(None) == 180.0

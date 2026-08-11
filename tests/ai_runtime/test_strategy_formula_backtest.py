@@ -78,10 +78,10 @@ def test_restricted_formula_adapter_uses_canonical_after_cost_engine_without_db_
     snapshot = build_backtest_dataset_snapshot(
         start_date="2025-01-02",
         end_date="2025-01-09",
-        configured_source=None,
+        configured_source="deterministic_fixture",
         data_handlers={symbol: handler},
         store=store,
-        source_names=[],
+        source_names=["akshare", "deterministic_fixture"],
     )
     selection = StrategyResearchSelection(
         saved_backtest_result_id=1,
@@ -129,6 +129,7 @@ def test_restricted_formula_adapter_uses_canonical_after_cost_engine_without_db_
     result, request = RestrictedFormulaBacktestAdapter(data_store=store).run(
         selection=selection,
         draft=draft,
+        expected_dataset_snapshot=snapshot,
     )
 
     assert request.strategy == "ai_formula_research"
