@@ -1130,18 +1130,21 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-test('renders resolved persisted summaries while reports load without inventing empty evidence', async () => {
+test('renders the current persisted report detail while report history loads', async () => {
   let resolveReportSummaries: (value: unknown) => void = () => undefined;
   const pendingReportSummaries = new Promise<unknown>((resolve) => {
     resolveReportSummaries = resolve;
   });
 
-  renderAccountTruthReviewPage({
+  const { fetchMock } = renderAccountTruthReviewPage({
     reportSummaryResponse: pendingReportSummaries,
   });
 
   expect(await screen.findByText('42')).toBeTruthy();
-  expect(screen.getByTestId('account-truth-reports-loading')).toBeTruthy();
+  expect(
+    await screen.findByTestId('account-truth-current-report'),
+  ).toBeTruthy();
+  expect(screen.queryByTestId('account-truth-reports-loading')).toBeNull();
   expect(
     document.querySelector(
       '[data-workbench-primitive="evidence-loading-layout"]',
@@ -1151,6 +1154,19 @@ test('renders resolved persisted summaries while reports load without inventing 
   expect(
     screen.queryByText('No reconciliation reports for this filter.'),
   ).toBeNull();
+  const requestedReportPaths = fetchMock.mock.calls.map(([input]) =>
+    String(input),
+  );
+  const detailRequestIndex = requestedReportPaths.findIndex((path) =>
+    path.includes('/api/account-truth/reconciliation-reports/import-run-1'),
+  );
+  const historyRequestIndex = requestedReportPaths.findIndex(
+    (path) =>
+      path.endsWith('/api/account-truth/reconciliation-reports') ||
+      path === '/api/account-truth/reconciliation-reports',
+  );
+  expect(detailRequestIndex).toBeGreaterThanOrEqual(0);
+  expect(historyRequestIndex).toBeGreaterThan(detailRequestIndex);
 
   resolveReportSummaries(reportSummaries);
 
