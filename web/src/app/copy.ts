@@ -2513,6 +2513,10 @@ export const copy = {
         kicker: 'Audit trail',
         title: 'Recent entries',
         count: (count: number) => `${count} entries`,
+        showing: (visible: number, total: number) =>
+          `Showing ${visible} of ${total} entries`,
+        showMore: (count: number) => `Show ${count} more entries`,
+        tableScrollLabel: 'Ledger entries table',
         empty:
           'No entries yet. Submit a trade, cash flow, dividend, or adjustment to build the timeline.',
         filteredEmpty: 'No matching entries.',
@@ -5275,6 +5279,10 @@ export const copy = {
         kicker: '审计流水',
         title: '最近流水',
         count: (count: number) => `${count} 条`,
+        showing: (visible: number, total: number) =>
+          `已显示 ${visible} / ${total} 条`,
+        showMore: (count: number) => `再显示 ${count} 条`,
+        tableScrollLabel: '账本流水表格',
         empty:
           '还没有流水。先录入交易、资金流水、分红或手工调整，时间线就会开始累计。',
         filteredEmpty: '没有匹配的流水。',
