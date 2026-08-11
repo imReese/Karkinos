@@ -1,4 +1,10 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 import {
   createRoute,
   createRootRoute,
@@ -3803,11 +3809,25 @@ export function PortfolioPage() {
   );
 }
 
+const RISK_WORKSPACE_PROGRESSIVE_DELAY_MS = 500;
+
 export function RiskPage() {
   const copy = useCopy();
   const { locale } = usePreferences();
   const state = useAccountStateQuery();
-  const workspace = useRiskWorkspaceQuery();
+  const [riskWorkspaceEnabled, setRiskWorkspaceEnabled] = useState(false);
+  useEffect(() => {
+    if (!state.data) {
+      setRiskWorkspaceEnabled(false);
+      return;
+    }
+    const timeout = window.setTimeout(
+      () => setRiskWorkspaceEnabled(true),
+      RISK_WORKSPACE_PROGRESSIVE_DELAY_MS,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [state.data]);
+  const workspace = useRiskWorkspaceQuery(riskWorkspaceEnabled);
   const primaryRiskQueriesReady = Boolean(state.data && workspace.data);
   const todayDecision = useTodayDecisionQuery(primaryRiskQueriesReady);
   const batchPreTradeRisk = useBatchPreTradeRiskMutation();
@@ -3869,9 +3889,12 @@ export function RiskPage() {
     todayDecision.data?.summary.candidate_count ??
     0;
   const riskCheckedCount = riskReviewEvidence?.risk_checked_count ?? 0;
+  const hasAnyRiskProjection = Boolean(state.data || workspace.data);
+  const isRiskWorkspacePending =
+    !workspace.data &&
+    (workspace.isLoading || Boolean(state.data && !riskWorkspaceEnabled));
   const isInitialRiskLoad =
-    (!state.data && state.isLoading) ||
-    (!workspace.data && workspace.isLoading);
+    (!state.data && state.isLoading) || isRiskWorkspacePending;
   const isRiskWorkspaceUnavailable = !state.data || !workspace.data;
   const hasRiskRefreshError =
     !isRiskWorkspaceUnavailable && (state.isError || workspace.isError);
@@ -3995,14 +4018,28 @@ export function RiskPage() {
       />
 
       {isInitialRiskLoad ? (
-        <div className="min-w-0 space-y-4" data-testid="risk-loading-workspace">
-          <EvidenceState
-            kind="loading"
-            title={copy.riskPage.loadingTitle}
-            description={copy.riskPage.loading}
-          />
+        <div
+          className="min-w-0 space-y-4"
+          data-testid={
+            hasAnyRiskProjection
+              ? 'risk-partial-workspace'
+              : 'risk-loading-workspace'
+          }
+        >
+          {hasAnyRiskProjection ? (
+            <p className="sr-only" role="status">
+              {copy.riskPage.loading}
+            </p>
+          ) : (
+            <EvidenceState
+              kind="loading"
+              title={copy.riskPage.loadingTitle}
+              description={copy.riskPage.loading}
+            />
+          )}
           <div className="app-risk-command-grid grid min-w-0 gap-5 sm:gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)] xl:items-start">
             <section
+              aria-busy={!state.data}
               className="min-w-0 space-y-2"
               data-testid="risk-loading-blocking-register"
             >
@@ -4014,7 +4051,7 @@ export function RiskPage() {
                   {copy.riskPage.blockingRegisterDetail}
                 </p>
               </div>
-              {state.data && activeRiskItems.length > 0 ? (
+              {state.data ? (
                 <div
                   className="min-w-0"
                   data-testid="risk-loading-live-exceptions"
@@ -4056,6 +4093,7 @@ export function RiskPage() {
 
             <aside className="grid min-w-0 content-start gap-3">
               <section
+                aria-busy={!workspace.data}
                 className="min-w-0 space-y-2"
                 data-testid="risk-loading-metrics"
               >
@@ -4109,6 +4147,7 @@ export function RiskPage() {
                 )}
               </section>
               <section
+                aria-busy={isRiskWorkspaceUnavailable}
                 className="grid min-w-0 gap-2"
                 data-testid="risk-loading-controlled-action"
               >

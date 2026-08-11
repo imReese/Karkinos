@@ -371,11 +371,12 @@ export function useExplainabilityQuery(
   });
 }
 
-export function useRiskWorkspaceQuery() {
+export function useRiskWorkspaceQuery(enabled = true) {
   return useQuery({
     queryKey: ['portfolio-risk-workspace'],
     queryFn: () =>
       apiClient<RiskWorkspaceResponse>('/api/portfolio/risk-workspace'),
+    enabled,
     staleTime: 15_000,
     refetchInterval: visiblePersistedProjectionRefetchInterval,
     refetchOnWindowFocus: true,
