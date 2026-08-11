@@ -728,6 +728,17 @@ test('backtest preserves result-first evidence and complete metrics across all a
           '[data-testid="backtest-run-readiness-summary"] [title]',
         ),
       ) as HTMLElement[];
+      const datasetSnapshot = document.querySelector(
+        '[data-backtest-report-section="dataset-snapshot"]',
+      ) as HTMLElement | null;
+      const datasetSnapshotGrid = datasetSnapshot?.querySelector(
+        ':scope > .grid',
+      ) as HTMLElement | null;
+      const datasetSnapshotValues = datasetSnapshotGrid
+        ? (Array.from(
+            datasetSnapshotGrid.querySelectorAll(':scope > div > div + div'),
+          ) as HTMLElement[])
+        : [];
       return {
         contentOverflow: content.scrollWidth - content.clientWidth,
         catalogColumnCount:
@@ -745,6 +756,22 @@ test('backtest preserves result-first evidence and complete metrics across all a
         documentOverflow:
           document.documentElement.scrollWidth -
           document.documentElement.clientWidth,
+        datasetSnapshotColumnCount:
+          datasetSnapshotGrid === null
+            ? null
+            : getComputedStyle(datasetSnapshotGrid).gridTemplateColumns.split(
+                ' ',
+              ).length,
+        datasetSnapshotTruncationCount: datasetSnapshotValues.filter(
+          (element) => {
+            const style = getComputedStyle(element);
+            return (
+              element.scrollWidth > element.clientWidth + 1 &&
+              (style.textOverflow === 'ellipsis' ||
+                Number.parseInt(style.webkitLineClamp, 10) > 0)
+            );
+          },
+        ).length,
         resultWidth: results.getBoundingClientRect().width,
         resultX: results.getBoundingClientRect().x,
         resultY: results.getBoundingClientRect().y,
@@ -771,6 +798,16 @@ test('backtest preserves result-first evidence and complete metrics across all a
 
     expect(geometry.documentOverflow, JSON.stringify(viewport)).toBe(0);
     expect(geometry.contentOverflow, JSON.stringify(viewport)).toBe(0);
+    if (geometry.datasetSnapshotColumnCount !== null) {
+      expect(
+        geometry.datasetSnapshotColumnCount,
+        JSON.stringify(viewport),
+      ).toBe(2);
+      expect(
+        geometry.datasetSnapshotTruncationCount,
+        JSON.stringify(viewport),
+      ).toBe(0);
+    }
     expect(geometry.contextTextResponsive, JSON.stringify(viewport)).toBe(true);
     expect(geometry.resultEvidenceUnclipped, JSON.stringify(viewport)).toBe(
       true,

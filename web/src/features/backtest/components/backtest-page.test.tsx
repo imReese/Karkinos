@@ -2105,6 +2105,9 @@ test('localizes built-in strategy names without changing strategy ids', async ()
 test('localizes backtest asset class options without changing payload enum values', async () => {
   const { fetchMock } = renderBacktestPage({ results: [], locale: 'zh' });
 
+  const symbolInput = (await screen.findByLabelText(
+    '标的代码',
+  )) as HTMLInputElement;
   const assetClassSelect = (await screen.findByLabelText(
     '资产类别',
   )) as HTMLSelectElement;
@@ -2115,10 +2118,13 @@ test('localizes backtest asset class options without changing payload enum value
   expect(optionLabels).toEqual(['股票', 'ETF', '基金', '黄金', '债券']);
   expect(optionLabels).not.toContain('stock');
   expect(optionLabels).not.toContain('fund');
+  expect(symbolInput.className).toContain('w-full');
+  expect(symbolInput.className).toContain('min-w-0');
+  expect(symbolInput.closest('label')?.className).toContain('min-w-0');
+  expect(assetClassSelect.className).toContain('w-full');
+  expect(assetClassSelect.className).toContain('min-w-0');
 
-  fireEvent.change(await screen.findByLabelText('标的代码'), {
-    target: { value: '019999' },
-  });
+  fireEvent.change(symbolInput, { target: { value: '019999' } });
   fireEvent.change(assetClassSelect, { target: { value: 'fund' } });
   const runButton = screen.getByRole('button', { name: '运行回测' });
   fireEvent.submit(runButton.closest('form') as HTMLFormElement);
@@ -2699,11 +2705,15 @@ test('renders dataset snapshot metadata for saved reports', async () => {
       name: 'Dataset snapshot',
     }),
   ).toBeTruthy();
-  expect(
-    await screen.findByText('sha256:fixture-dataset-snapshot'),
-  ).toBeTruthy();
-  expect(await screen.findByText('fixture')).toBeTruthy();
-  expect(await screen.findByText('2025-01-02 -> 2026-05-15')).toBeTruthy();
+  const snapshotId = await screen.findByText('sha256:fixture-dataset-snapshot');
+  expect(snapshotId.className).toContain('break-all');
+  expect(snapshotId.className).not.toContain('truncate');
+  const source = await screen.findByText('fixture');
+  expect(source.className).toContain('[overflow-wrap:anywhere]');
+  expect(source.className).not.toContain('truncate');
+  const dateRange = await screen.findByText('2025-01-02 -> 2026-05-15');
+  expect(dateRange.className).toContain('[overflow-wrap:anywhere]');
+  expect(dateRange.className).not.toContain('truncate');
   expect(await screen.findByText('600519')).toBeTruthy();
   expect(await screen.findByText('260 rows')).toBeTruthy();
   expect(await screen.findByText('qfq')).toBeTruthy();

@@ -75,8 +75,9 @@ export function DatasetSnapshotPanel({ report }: { report: BacktestReport }) {
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-2 xl:grid-cols-5">
+      <div className="mt-4 grid grid-cols-2 gap-2">
         <SnapshotStat
+          className="col-span-2"
           label={labels.snapshotId}
           value={snapshot.snapshot_id}
           mono
@@ -177,22 +178,25 @@ export function DatasetSnapshotPanel({ report }: { report: BacktestReport }) {
 }
 
 function SnapshotStat({
+  className = '',
   label,
   value,
   mono = false,
   valueClassName = '',
 }: {
+  className?: string;
   label: string;
   value: string;
   mono?: boolean;
   valueClassName?: string;
 }) {
   return (
-    <div className="min-w-0 border-l border-[var(--app-divider)] py-1 pl-3">
+    <div
+      className={`min-w-0 border-l border-[var(--app-divider)] py-1 pl-3 ${className}`}
+    >
       <div className="app-kicker app-type-overline">{label}</div>
       <div
-        className={`mt-1.5 truncate text-sm font-semibold ${mono ? 'font-mono' : ''} ${valueClassName}`}
-        title={value}
+        className={`mt-1.5 text-sm font-semibold [overflow-wrap:anywhere] ${mono ? 'break-all font-mono' : 'break-words'} ${valueClassName}`}
       >
         {value}
       </div>
@@ -202,14 +206,11 @@ function SnapshotStat({
 
 function BoundaryChip({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-1 border-t border-[var(--app-divider)] py-2">
-      <span
-        className="min-w-0 truncate text-xs text-[var(--app-text-secondary)]"
-        title={label}
-      >
+    <div className="flex min-w-0 items-start justify-between gap-2 border-t border-[var(--app-divider)] py-2">
+      <span className="min-w-0 break-words text-xs text-[var(--app-text-secondary)] [overflow-wrap:anywhere]">
         {label}
       </span>
-      <span className="inline-flex items-center gap-1 text-sm font-semibold">
+      <span className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold">
         <ShieldCheck
           className="h-3.5 w-3.5 text-[var(--app-success-indicator)]"
           aria-hidden="true"

@@ -1043,21 +1043,21 @@ export function BacktestPage() {
                   })}
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px]">
-                  <label className="grid gap-2 text-sm font-medium">
+                <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_160px]">
+                  <label className="grid min-w-0 gap-2 text-sm font-medium">
                     {labels.symbol}
                     <input
-                      className="app-field min-h-11 rounded-[var(--app-radius-control)] px-3 py-2.5 text-sm tabular-nums"
+                      className="app-field min-h-11 w-full min-w-0 rounded-[var(--app-radius-control)] px-3 py-2.5 text-sm tabular-nums"
                       value={symbol}
                       onChange={(event) => setSymbol(event.target.value)}
                       placeholder={labels.symbolPlaceholder}
                       aria-label={labels.symbol}
                     />
                   </label>
-                  <label className="grid gap-2 text-sm font-medium">
+                  <label className="grid min-w-0 gap-2 text-sm font-medium">
                     {labels.assetClass}
                     <select
-                      className="app-field min-h-11 rounded-[var(--app-radius-control)] px-3 py-2.5 text-sm"
+                      className="app-field min-h-11 w-full min-w-0 rounded-[var(--app-radius-control)] px-3 py-2.5 text-sm"
                       value={assetClass}
                       onChange={(event) => setAssetClass(event.target.value)}
                       aria-label={labels.assetClass}

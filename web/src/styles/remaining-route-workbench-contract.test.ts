@@ -449,10 +449,15 @@ describe('remaining route workbench contract', () => {
     const reportSectionSource = BACKTEST_REPORT_SECTIONS.join('\n');
     expect(
       reportSectionSource.match(
-        /justify-between gap-1 border-t border-\[var\(--app-divider\)\]/g,
+        /items-start justify-between gap-2 border-t border-\[var\(--app-divider\)\]/g,
       ),
     ).toHaveLength(2);
-    expect(reportSectionSource.match(/title=\{label\}/g)?.length ?? 0).toBe(2);
+    expect(
+      reportSectionSource.match(
+        /break-words text-xs text-\[var\(--app-text-secondary\)\] \[overflow-wrap:anywhere\]/g,
+      ),
+    ).toHaveLength(2);
+    expect(reportSectionSource).not.toContain('title={label}');
 
     expect(SETTINGS).toContain('className="app-settings-metadata-strip"');
     const settingsMetadataStyles = CSS.slice(

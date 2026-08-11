@@ -98,7 +98,9 @@ test('labels strategy ids as audit metadata without internal wording', () => {
   );
 
   expect(screen.getByText('Strategy audit id')).toBeTruthy();
-  expect(screen.getByText('dual_ma')).toBeTruthy();
+  const strategyId = screen.getByText('dual_ma');
+  expect(strategyId.className).toContain('[overflow-wrap:anywhere]');
+  expect(strategyId.className).not.toContain('truncate');
   expect(screen.queryByText('Internal strategy id')).toBeNull();
 });
 
