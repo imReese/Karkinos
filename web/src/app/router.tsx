@@ -3243,10 +3243,14 @@ export function PortfolioPage() {
   const snapshot = usePortfolioSnapshotQuery();
   const portfolioPositions = snapshot.data?.positions ?? [];
   const primaryPortfolioQueriesSettled = snapshot.data !== undefined;
-  const cockpit = usePortfolioCockpitQuery(primaryPortfolioQueriesSettled);
-  const liveHoldings = useLiveHoldingsQuery(primaryPortfolioQueriesSettled);
+  const accountAnalysisEnabled =
+    primaryPortfolioQueriesSettled && mode === 'account';
+  const strategyAnalysisEnabled =
+    primaryPortfolioQueriesSettled && mode === 'strategy';
+  const cockpit = usePortfolioCockpitQuery(strategyAnalysisEnabled);
+  const liveHoldings = useLiveHoldingsQuery(accountAnalysisEnabled);
   const strategyContribution = useAccountStrategyContributionQuery(
-    primaryPortfolioQueriesSettled,
+    strategyAnalysisEnabled,
   );
   const search = searchState.q;
   const assetClassFilter = searchState.assetClass;
