@@ -636,10 +636,10 @@ test('uses a compact evidence-first layout while persisted overview projections 
   expect(screen.queryByTestId('equity-curve-skeleton')).toBeNull();
 });
 
-test('loads canonical overview facts before secondary workbench evidence', async () => {
-  let releasePrimary!: () => void;
-  const primaryGate = new Promise<void>((resolve) => {
-    releasePrimary = resolve;
+test('loads the canonical snapshot before richer overview and secondary evidence', async () => {
+  let releaseSnapshot!: () => void;
+  const snapshotGate = new Promise<void>((resolve) => {
+    releaseSnapshot = resolve;
   });
   const baseFetch = installOverviewFetchMock();
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -649,11 +649,8 @@ test('loads canonical overview facts before secondary workbench evidence', async
         : input instanceof Request
           ? input.url
           : input.toString();
-    if (
-      url.includes('/api/portfolio/overview') ||
-      url.endsWith('/api/portfolio')
-    ) {
-      await primaryGate;
+    if (url.endsWith('/api/portfolio')) {
+      await snapshotGate;
     }
     return baseFetch(input);
   });
@@ -661,7 +658,7 @@ test('loads canonical overview facts before secondary workbench evidence', async
 
   renderOverviewPage({ installFetch: false });
 
-  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
   const initialUrls = fetchMock.mock.calls.map(([input]) =>
     typeof input === 'string'
       ? input
@@ -670,13 +667,8 @@ test('loads canonical overview facts before secondary workbench evidence', async
         : input.toString(),
   );
   try {
-    expect(initialUrls.slice(0, 2)).toEqual([
-      '/api/portfolio',
-      '/api/portfolio/overview',
-    ]);
     expect(initialUrls).toEqual(
       expect.arrayContaining([
-        '/api/portfolio/overview',
         '/api/portfolio',
         '/api/market/data-health',
         '/api/operations/today',
@@ -684,14 +676,22 @@ test('loads canonical overview facts before secondary workbench evidence', async
     );
     expect(initialUrls).not.toEqual(
       expect.arrayContaining([
+        '/api/portfolio/overview',
         expect.stringContaining('/api/ledger/entries'),
         expect.stringContaining('/api/decision/today'),
       ]),
     );
   } finally {
-    releasePrimary();
+    releaseSnapshot();
   }
 
+  await waitFor(() =>
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).includes('/api/portfolio/overview'),
+      ),
+    ).toBe(true),
+  );
   await screen.findByTestId('overview-daily-workbench');
   await waitFor(() =>
     expect(
@@ -702,15 +702,13 @@ test('loads canonical overview facts before secondary workbench evidence', async
   );
 });
 
-test('reveals saved account metrics while the holdings projection is still loading', async () => {
+test('falls back to the richer overview when the snapshot request fails', async () => {
   const baseFetch = installOverviewFetchMock();
-  let resolveSnapshot!: (response: Response) => void;
-  const snapshotRequest = new Promise<Response>((resolve) => {
-    resolveSnapshot = resolve;
-  });
-  const fetchMock = vi.fn((input: RequestInfo | URL) => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
-    if (url.endsWith('/api/portfolio')) return snapshotRequest;
+    if (url.endsWith('/api/portfolio')) {
+      return new Response('snapshot failed', { status: 500 });
+    }
     return baseFetch(input);
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -719,15 +717,12 @@ test('reveals saved account metrics while the holdings projection is still loadi
 
   expect(await screen.findByTestId('account-metrics-rail')).toBeTruthy();
   const holdings = screen.getByTestId('overview-holdings-section');
-  expect(within(holdings).getByText('Loading positions.')).toBeTruthy();
+  expect(within(holdings).getByText('Failed to load positions.')).toBeTruthy();
   expect(screen.queryByTestId('overview-daily-workbench')).toBeNull();
-
-  await act(async () => {
-    resolveSnapshot(jsonResponse(portfolioSnapshot));
-  });
-
-  expect(await screen.findByTestId('overview-daily-workbench')).toBeTruthy();
-  expect(screen.queryByText('Loading positions.')).toBeNull();
+  const requestUrls = fetchMock.mock.calls.map(([input]) => String(input));
+  expect(requestUrls.indexOf('/api/portfolio/overview')).toBeGreaterThan(
+    requestUrls.indexOf('/api/portfolio'),
+  );
 });
 
 test('reveals persisted snapshot facts while the richer overview projection loads', async () => {

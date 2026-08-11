@@ -392,7 +392,9 @@ export function OverviewPage() {
     'performance' | 'allocation' | 'attribution' | 'calendar'
   >('performance');
   const snapshot = usePortfolioSnapshotQuery();
-  const overview = useAccountOverviewQuery();
+  const overview = useAccountOverviewQuery(
+    snapshot.data !== undefined || snapshot.isError,
+  );
   const secondaryQueriesEnabled = Boolean(overview.data && snapshot.data);
   const calendarAnalysisEnabled =
     secondaryQueriesEnabled && analysisView === 'calendar';
