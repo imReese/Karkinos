@@ -1494,6 +1494,89 @@ def test_lifespan_reuses_cached_runtime_config(monkeypatch):
         app_module._app_state = None
 
 
+def test_lifespan_starts_daily_decision_evidence_automation_with_live_scheduler(
+    monkeypatch,
+):
+    from server import app as app_module
+
+    runtime_config = ServerConfig(
+        live_auto_start=True,
+        market_calendar_auto_sync=False,
+        live_poll_interval=73,
+    )
+    fake_app = SimpleNamespace(
+        state=SimpleNamespace(config_overrides={}, runtime_config=runtime_config)
+    )
+    scheduler_started = False
+    automation_started = asyncio.Event()
+    automation_arguments = {}
+
+    class FakeDB:
+        async def init(self):
+            pass
+
+    class FakeBridge:
+        def __init__(self, event_bus, loop):
+            pass
+
+        async def get_event(self):
+            await asyncio.Event().wait()
+
+        def stop(self):
+            pass
+
+    class FakeScheduler:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            nonlocal scheduler_started
+            scheduler_started = True
+
+        def stop(self):
+            pass
+
+    async def fake_decision_evidence_loop(*, state, interval_seconds):
+        automation_arguments.update(
+            {"state": state, "interval_seconds": interval_seconds}
+        )
+        automation_started.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(app_module, "AppDatabase", FakeDB)
+    monkeypatch.setattr(app_module, "EventBusBridge", FakeBridge)
+    monkeypatch.setattr(app_module, "TradingScheduler", FakeScheduler)
+    monkeypatch.setattr(
+        app_module, "TradingControlState", lambda *args, **kwargs: object()
+    )
+    monkeypatch.setattr(
+        "notification.notifier.build_notifier", lambda notification: object()
+    )
+    monkeypatch.setattr(
+        "server.services.daily_decision_evidence_automation."
+        "run_daily_decision_evidence_automation_loop",
+        fake_decision_evidence_loop,
+    )
+    monkeypatch.setattr(
+        app_module, "_confirm_pending_fund_orders_on_startup", lambda state: None
+    )
+    app_module._app_state = None
+
+    async def run_lifespan():
+        async with app_module.lifespan(fake_app):
+            await asyncio.wait_for(automation_started.wait(), timeout=1)
+            assert scheduler_started is True
+            assert automation_arguments == {
+                "state": app_module.get_app_state(),
+                "interval_seconds": 73,
+            }
+
+    try:
+        asyncio.run(run_lifespan())
+    finally:
+        app_module._app_state = None
+
+
 def _cors_middleware_options(app):
     middleware = next(
         item for item in app.user_middleware if item.cls.__name__ == "CORSMiddleware"
