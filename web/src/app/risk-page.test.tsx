@@ -411,10 +411,15 @@ test('defers secondary risk reads until primary persisted evidence settles', asy
   await waitFor(() => {
     expect(
       fetchMock.mock.calls.some(([input]) =>
-        String(input).includes('/api/portfolio/risk-workspace'),
+        String(input).includes('/api/portfolio/state'),
       ),
     ).toBe(true);
   });
+  expect(
+    fetchMock.mock.calls.some(([input]) =>
+      String(input).includes('/api/portfolio/risk-workspace'),
+    ),
+  ).toBe(false);
   expect(
     fetchMock.mock.calls.some(([input]) =>
       String(input).includes('/api/decision/today'),
@@ -472,16 +477,36 @@ test('defers secondary risk reads until primary persisted evidence settles', asy
   );
 
   await act(async () => {
-    resolveState(jsonResponse({ ...accountState, risks: riskAlerts }));
+    resolveState(jsonResponse({ ...accountState, risks: [] }));
   });
 
   const liveExceptions = await screen.findByTestId(
     'risk-loading-live-exceptions',
   );
+  const partialWorkspace = screen.getByTestId('risk-partial-workspace');
+  expect(screen.queryByTestId('risk-loading-workspace')).toBeNull();
   expect(
-    within(liveExceptions).getByRole('heading', {
-      name: 'Cash buffer is close to the floor',
+    within(partialWorkspace).queryByRole('heading', {
+      name: 'Checking risk evidence',
     }),
+  ).toBeNull();
+  expect(
+    screen
+      .getByTestId('risk-loading-blocking-register')
+      .getAttribute('aria-busy'),
+  ).toBe('false');
+  expect(
+    screen.getByTestId('risk-loading-metrics').getAttribute('aria-busy'),
+  ).toBe('true');
+  expect(
+    screen
+      .getByTestId('risk-loading-controlled-action')
+      .getAttribute('aria-busy'),
+  ).toBe('true');
+  expect(
+    within(liveExceptions).getByText(
+      'No warning or blocked risk states are recorded.',
+    ),
   ).toBeTruthy();
   expect(screen.queryByTestId('risk-loading-exceptions')).toBeNull();
   expect(screen.queryByTestId('risk-loading-live-metrics')).toBeNull();
@@ -498,6 +523,13 @@ test('defers secondary risk reads until primary persisted evidence settles', asy
       String(input).includes('/api/portfolio/explainability'),
     ),
   ).toBe(false);
+  await waitFor(() => {
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).includes('/api/portfolio/risk-workspace'),
+      ),
+    ).toBe(true);
+  });
 
   await act(async () => {
     resolveRiskWorkspace(jsonResponse(riskWorkspace));
@@ -522,11 +554,6 @@ test('defers secondary risk reads until primary persisted evidence settles', asy
       String(input).includes('/api/portfolio/risk-summary'),
     ),
   ).toBe(false);
-  expect(
-    screen.getByRole('heading', {
-      name: 'Cash buffer is close to the floor',
-    }),
-  ).toBeTruthy();
 });
 
 test('renders risk boundaries and blocking register without order approval controls', async () => {
