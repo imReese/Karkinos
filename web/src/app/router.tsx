@@ -74,7 +74,10 @@ import {
   operationsNextActionLabel,
   operationsTargetHref,
 } from '../features/operations/presentation';
-import { OverviewCards } from '../features/account/components/overview-cards';
+import {
+  OverviewCards,
+  OverviewSnapshotFallbackCards,
+} from '../features/account/components/overview-cards';
 import { PortfolioExposureSummary } from '../features/account/components/portfolio-exposure-summary';
 import { KillSwitchPanel } from '../features/trading/components/kill-switch-panel';
 import { TradingPage } from '../features/trading/components/trading-page';
@@ -606,6 +609,11 @@ export function OverviewPage() {
               variant="workbench"
               todayPnlLabel={todayPnlLabel}
               todayPnlContext={todayPnlContext}
+            />
+          ) : snapshot.data ? (
+            <OverviewSnapshotFallbackCards
+              snapshot={snapshot.data}
+              todayPnlLabel={todayPnlLabel}
             />
           ) : (
             <EvidenceState
