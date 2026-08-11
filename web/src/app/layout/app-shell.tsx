@@ -123,13 +123,14 @@ export function AppShell({ children }: { children: ReactNode }) {
       ? false
       : window.matchMedia(STATUS_RAIL_MEDIA_QUERY).matches,
   );
-  const accountOverview = useAccountOverviewQuery(statusRailVisible);
-  const marketHealth = useMarketDataHealthQuery(statusRailVisible);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [desktopNavExpanded, setDesktopNavExpanded] = useState(true);
   const [commandOpen, setCommandOpen] = useState(false);
   const [openStatusPanel, setOpenStatusPanel] =
     useState<ToolbarPopoverKey>(null);
+  const statusQueriesEnabled = statusRailVisible || openStatusPanel !== null;
+  const accountOverview = useAccountOverviewQuery(statusQueriesEnabled);
+  const marketHealth = useMarketDataHealthQuery(statusQueriesEnabled);
   const mobileNavRef = useRef<HTMLElement | null>(null);
   const mobileNavCloseRef = useRef<HTMLButtonElement | null>(null);
   const statusRailRef = useRef<HTMLDivElement | null>(null);
@@ -537,85 +538,156 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </div>
               </div>
 
-              <div
-                ref={statusRailRef}
-                className="app-toolbar-status-rail relative hidden min-w-0 shrink items-center gap-1 overflow-visible 2xl:flex"
-                aria-label={copy.shell.accountStatus}
-              >
-                <StatusChip
-                  testId="status-pill-valuation"
-                  label={copy.shell.navStatus}
-                  value={valuationStatus.value}
-                  meta={valuationTimestamp ?? undefined}
-                  tone={valuationStatus.tone}
-                  indicator={valuationStatus.indicator}
-                  hoverHint={copy.shell.viewValuationDetails}
-                  expanded={openStatusPanel === 'valuation'}
-                  title={`${copy.shell.navStatus}: ${valuationStatus.value}${
-                    valuationMeta ? ` · ${valuationMeta}` : ''
-                  }`}
-                  popup={
-                    <StatusPopover
-                      title={copy.shell.navStatus}
-                      rows={[
-                        {
-                          label: copy.shell.valuationUpdated,
-                          value: valuationMeta ?? copy.shell.statusUnknown,
-                        },
-                        {
-                          label: copy.shell.quoteStatus,
-                          value: quoteStatus,
-                        },
-                      ]}
-                    />
-                  }
-                  onClick={() =>
-                    setOpenStatusPanel((current) =>
-                      current === 'valuation' ? null : 'valuation',
-                    )
-                  }
-                />
-                <StatusChip
-                  testId="status-pill-market"
-                  label={copy.shell.marketStatus}
-                  value={marketStatus.value}
-                  meta={marketTimestamp ?? undefined}
-                  tone={marketStatus.tone}
-                  indicator={marketStatus.indicator}
-                  hoverHint={copy.shell.viewStatusDetails}
-                  expanded={openStatusPanel === 'market'}
-                  title={`${copy.shell.marketStatus}: ${marketStatus.value}${
-                    marketTimestamp ? ` · ${marketTimestamp}` : ''
-                  }`}
-                  popup={
-                    <StatusPopover
-                      title={copy.shell.marketStatus}
-                      rows={[
-                        {
-                          label: copy.shell.lastSync,
-                          value: marketTimestamp ?? copy.shell.statusUnknown,
-                        },
-                        {
-                          label: copy.shell.marketSession,
-                          value: marketOpenText,
-                        },
-                        {
-                          label: copy.shell.refreshPolicy,
-                          value: refreshPolicy,
-                        },
-                        {
-                          label: copy.shell.quoteStatus,
-                          value: quoteStatus,
-                        },
-                      ]}
-                    />
-                  }
-                  onClick={() =>
-                    setOpenStatusPanel((current) =>
-                      current === 'market' ? null : 'market',
-                    )
-                  }
-                />
+              <div ref={statusRailRef} className="relative min-w-0 shrink-0">
+                {!statusRailVisible ? (
+                  <div className="relative hidden shrink-0 xl:block 2xl:hidden">
+                    <button
+                      type="button"
+                      className="app-button-secondary app-type-compact inline-flex h-8 items-center gap-1.5 rounded-[var(--app-radius-control)] px-2.5 font-semibold"
+                      data-testid="compact-status-trigger"
+                      aria-label={`${copy.shell.accountStatus}: ${copy.shell.navStatus}, ${copy.shell.marketStatus}`}
+                      aria-haspopup="dialog"
+                      aria-expanded={openStatusPanel === 'valuation'}
+                      onClick={() =>
+                        setOpenStatusPanel((current) =>
+                          current === 'valuation' ? null : 'valuation',
+                        )
+                      }
+                    >
+                      <span>{copy.shell.navStatus}</span>
+                      <span
+                        className="h-2 w-2 rounded-full"
+                        style={{
+                          backgroundColor: STATUS_COLORS[valuationStatus.tone],
+                        }}
+                        aria-hidden="true"
+                      />
+                      <span
+                        className="text-[var(--app-text-tertiary)]"
+                        aria-hidden="true"
+                      >
+                        /
+                      </span>
+                      <span>{copy.shell.marketStatus}</span>
+                      <span
+                        className="h-2 w-2 rounded-full"
+                        style={{
+                          backgroundColor: STATUS_COLORS[marketStatus.tone],
+                        }}
+                        aria-hidden="true"
+                      />
+                      <ChevronDownIcon
+                        className={`h-3 w-3 shrink-0 text-[var(--app-text-tertiary)] transition-transform ${openStatusPanel === 'valuation' ? 'rotate-180' : ''}`}
+                        aria-hidden="true"
+                      />
+                    </button>
+                    {openStatusPanel === 'valuation' ? (
+                      <div className="app-status-popover-root absolute left-0 top-[calc(100%+8px)] z-[90]">
+                        <StatusPopover
+                          title={copy.shell.accountStatus}
+                          rows={[
+                            {
+                              label: copy.shell.navStatus,
+                              value: valuationStatus.value,
+                            },
+                            {
+                              label: copy.shell.valuationUpdated,
+                              value: valuationMeta ?? copy.shell.statusUnknown,
+                            },
+                            {
+                              label: copy.shell.marketStatus,
+                              value: marketStatus.value,
+                            },
+                            {
+                              label: copy.shell.lastSync,
+                              value:
+                                marketTimestamp ?? copy.shell.statusUnknown,
+                            },
+                          ]}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                <div
+                  className="app-toolbar-status-rail relative hidden min-w-0 shrink items-center gap-1 overflow-visible 2xl:flex"
+                  aria-label={copy.shell.accountStatus}
+                >
+                  <StatusChip
+                    testId="status-pill-valuation"
+                    label={copy.shell.navStatus}
+                    value={valuationStatus.value}
+                    meta={valuationTimestamp ?? undefined}
+                    tone={valuationStatus.tone}
+                    indicator={valuationStatus.indicator}
+                    hoverHint={copy.shell.viewValuationDetails}
+                    expanded={openStatusPanel === 'valuation'}
+                    title={`${copy.shell.navStatus}: ${valuationStatus.value}${
+                      valuationMeta ? ` · ${valuationMeta}` : ''
+                    }`}
+                    popup={
+                      <StatusPopover
+                        title={copy.shell.navStatus}
+                        rows={[
+                          {
+                            label: copy.shell.valuationUpdated,
+                            value: valuationMeta ?? copy.shell.statusUnknown,
+                          },
+                          {
+                            label: copy.shell.quoteStatus,
+                            value: quoteStatus,
+                          },
+                        ]}
+                      />
+                    }
+                    onClick={() =>
+                      setOpenStatusPanel((current) =>
+                        current === 'valuation' ? null : 'valuation',
+                      )
+                    }
+                  />
+                  <StatusChip
+                    testId="status-pill-market"
+                    label={copy.shell.marketStatus}
+                    value={marketStatus.value}
+                    meta={marketTimestamp ?? undefined}
+                    tone={marketStatus.tone}
+                    indicator={marketStatus.indicator}
+                    hoverHint={copy.shell.viewStatusDetails}
+                    expanded={openStatusPanel === 'market'}
+                    title={`${copy.shell.marketStatus}: ${marketStatus.value}${
+                      marketTimestamp ? ` · ${marketTimestamp}` : ''
+                    }`}
+                    popup={
+                      <StatusPopover
+                        title={copy.shell.marketStatus}
+                        rows={[
+                          {
+                            label: copy.shell.lastSync,
+                            value: marketTimestamp ?? copy.shell.statusUnknown,
+                          },
+                          {
+                            label: copy.shell.marketSession,
+                            value: marketOpenText,
+                          },
+                          {
+                            label: copy.shell.refreshPolicy,
+                            value: refreshPolicy,
+                          },
+                          {
+                            label: copy.shell.quoteStatus,
+                            value: quoteStatus,
+                          },
+                        ]}
+                      />
+                    }
+                    onClick={() =>
+                      setOpenStatusPanel((current) =>
+                        current === 'market' ? null : 'market',
+                      )
+                    }
+                  />
+                </div>
               </div>
 
               <button

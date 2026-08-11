@@ -19,8 +19,10 @@ test('desktop shell defaults to labeled business groups and remains collapsible'
     const wideStatusRail = viewport.width >= 1536;
     if (wideStatusRail) {
       await expect(statusRail).toBeVisible();
+      await expect(page.getByTestId('compact-status-trigger')).toHaveCount(0);
     } else {
       await expect(statusRail).toBeHidden();
+      await expect(page.getByTestId('compact-status-trigger')).toBeVisible();
     }
     await expect(
       page.getByText('Decision & Risk', { exact: true }),
@@ -81,7 +83,7 @@ test('desktop shell defaults to labeled business groups and remains collapsible'
   }
 });
 
-test('laptop routes defer hidden toolbar projections until the rail is visible', async ({
+test('laptop routes defer toolbar projections until the compact status entry opens', async ({
   page,
 }) => {
   const requestedApiPaths: string[] = [];
@@ -98,15 +100,30 @@ test('laptop routes defer hidden toolbar projections until the rail is visible',
     timeout: 15_000,
   });
   await expect(page.locator('.app-toolbar-status-rail')).toBeHidden();
+  const compactStatus = page.getByTestId('compact-status-trigger');
+  await expect(compactStatus).toBeVisible();
+  await expect(compactStatus).toHaveAttribute('aria-expanded', 'false');
   expect(requestedApiPaths).not.toContain('/api/portfolio/overview');
   expect(requestedApiPaths).not.toContain('/api/market/data-health');
 
-  await page.setViewportSize({ width: 1536, height: 900 });
-  await expect(page.locator('.app-toolbar-status-rail')).toBeVisible();
+  await compactStatus.click();
+  await expect(compactStatus).toHaveAttribute('aria-expanded', 'true');
+  await expect(
+    page.getByRole('dialog', { name: 'Account Status' }),
+  ).toBeVisible();
   await expect
     .poll(() => requestedApiPaths.includes('/api/portfolio/overview'))
     .toBe(true);
   expect(requestedApiPaths).toContain('/api/market/data-health');
+
+  await page.keyboard.press('Escape');
+  await expect(
+    page.getByRole('dialog', { name: 'Account Status' }),
+  ).toHaveCount(0);
+
+  await page.setViewportSize({ width: 1536, height: 900 });
+  await expect(page.locator('.app-toolbar-status-rail')).toBeVisible();
+  await expect(compactStatus).toHaveCount(0);
 });
 
 test('workspace routes start at the top and restore prior scroll on browser history', async ({

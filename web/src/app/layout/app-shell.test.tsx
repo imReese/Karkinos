@@ -588,7 +588,8 @@ test('surfaces compact persisted status in the desktop toolbar', async () => {
   ).toBeNull();
 });
 
-test('defers hidden status projections until the wide status rail is visible', async () => {
+test('defers laptop status projections until the compact status entry opens', async () => {
+  const user = userEvent.setup();
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = input.toString();
     if (url.includes('/api/portfolio/overview')) {
@@ -616,7 +617,14 @@ test('defers hidden status projections until the wide status rail is visible', a
     ),
   ).toBe(false);
 
-  act(() => matchMedia.setWideStatusRail(true));
+  const compactStatus = await screen.findByTestId('compact-status-trigger');
+  expect(compactStatus.getAttribute('aria-expanded')).toBe('false');
+  await user.click(compactStatus);
+
+  expect(compactStatus.getAttribute('aria-expanded')).toBe('true');
+  expect(
+    await screen.findByRole('dialog', { name: 'Account Status' }),
+  ).toBeTruthy();
 
   await waitFor(() =>
     expect(
@@ -630,6 +638,13 @@ test('defers hidden status projections until the wide status rail is visible', a
       input.toString().includes('/api/market/data-health'),
     ),
   ).toBe(true);
+
+  await user.keyboard('{Escape}');
+  expect(screen.queryByRole('dialog', { name: 'Account Status' })).toBeNull();
+
+  act(() => matchMedia.setWideStatusRail(true));
+  expect(screen.queryByTestId('compact-status-trigger')).toBeNull();
+  expect(await screen.findByLabelText('Account Status')).toBeTruthy();
 });
 
 test('offers primary mobile tasks without shrinking the complete drawer', async () => {
