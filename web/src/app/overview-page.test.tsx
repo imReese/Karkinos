@@ -636,7 +636,7 @@ test('uses a compact evidence-first layout while persisted overview projections 
   expect(screen.queryByTestId('equity-curve-skeleton')).toBeNull();
 });
 
-test('loads the canonical snapshot before richer overview and secondary evidence', async () => {
+test('loads both canonical primary projections before secondary evidence', async () => {
   let releaseSnapshot!: () => void;
   const snapshotGate = new Promise<void>((resolve) => {
     releaseSnapshot = resolve;
@@ -658,7 +658,7 @@ test('loads the canonical snapshot before richer overview and secondary evidence
 
   renderOverviewPage({ installFetch: false });
 
-  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
   const initialUrls = fetchMock.mock.calls.map(([input]) =>
     typeof input === 'string'
       ? input
@@ -670,13 +670,13 @@ test('loads the canonical snapshot before richer overview and secondary evidence
     expect(initialUrls).toEqual(
       expect.arrayContaining([
         '/api/portfolio',
+        '/api/portfolio/overview',
         '/api/market/data-health',
         '/api/operations/today',
       ]),
     );
     expect(initialUrls).not.toEqual(
       expect.arrayContaining([
-        '/api/portfolio/overview',
         expect.stringContaining('/api/ledger/entries'),
         expect.stringContaining('/api/decision/today'),
       ]),
@@ -684,14 +684,6 @@ test('loads the canonical snapshot before richer overview and secondary evidence
   } finally {
     releaseSnapshot();
   }
-
-  await waitFor(() =>
-    expect(
-      fetchMock.mock.calls.some(([input]) =>
-        String(input).includes('/api/portfolio/overview'),
-      ),
-    ).toBe(true),
-  );
   await screen.findByTestId('overview-daily-workbench');
   await waitFor(() =>
     expect(
