@@ -157,6 +157,9 @@ broker_statement.csv
 .agents/
 skills-lock.json
 
+# Local editor settings
+.vscode/
+
 # Docs
 docs/*
 !docs/README.en.md
