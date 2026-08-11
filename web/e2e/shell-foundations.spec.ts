@@ -258,6 +258,10 @@ test('desktop utility controls align and overview holdings avoid partial columns
 
   await page.setViewportSize({ width: 1536, height: 900 });
   await expect(page.locator('.app-toolbar-status-rail')).toBeVisible();
+  await expect(page.getByTestId('status-pill-valuation')).not.toHaveAttribute(
+    'aria-label',
+    /检查中/,
+  );
   await expect(page.getByTestId('status-pill-market')).not.toHaveAttribute(
     'aria-label',
     /检查中/,
