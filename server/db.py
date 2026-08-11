@@ -7847,24 +7847,39 @@ class AppDatabase:
         """同步获取各标的最新行情快照，供启动恢复使用。"""
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
+            conn.create_function(
+                "karkinos_quote_instant",
+                1,
+                lambda value: _quote_observation_rank({"timestamp": value})[
+                    0
+                ].isoformat(timespec="microseconds"),
+                deterministic=True,
+            )
             rows = conn.execute("""
+                WITH ranked_quotes AS (
+                    SELECT
+                        id, symbol, asset_class, price, volume, timestamp,
+                        quote_source, provider_name, quote_status, stale_reason,
+                        provider_status, captured_reason, nav_date, fetch_run_id,
+                        created_at,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY symbol
+                            ORDER BY
+                                karkinos_quote_instant(timestamp) DESC,
+                                id DESC
+                        ) AS quote_rank
+                    FROM quote_snapshots
+                )
                 SELECT
                     id, symbol, asset_class, price, volume, timestamp,
                     quote_source, provider_name, quote_status, stale_reason,
                     provider_status, captured_reason, nav_date, fetch_run_id,
                     created_at
-                FROM quote_snapshots
-                ORDER BY id
+                FROM ranked_quotes
+                WHERE quote_rank = 1
+                ORDER BY symbol
                 """).fetchall()
-            selected: dict[str, dict[str, Any]] = {}
-            for raw_row in rows:
-                row = dict(raw_row)
-                existing = selected.get(str(row["symbol"]))
-                if existing is None or _quote_observation_rank(
-                    row
-                ) > _quote_observation_rank(existing):
-                    selected[str(row["symbol"])] = row
-            return [selected[symbol] for symbol in sorted(selected)]
+            return [dict(row) for row in rows]
 
     def list_quote_snapshots_sync(self) -> list[dict[str, Any]]:
         """List append-only quote observations for canonical snapshot selection."""

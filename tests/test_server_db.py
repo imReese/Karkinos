@@ -707,6 +707,38 @@ def test_app_database_persists_latest_quote_snapshot(tmp_path):
     }
 
 
+def test_app_database_selects_latest_quote_by_normalized_instant(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    observations = [
+        (100.0, "2026-04-18T01:40:00Z"),
+        (101.0, "2026-04-18T09:39:00+08:00"),
+        (102.0, "2026-04-18T09:40:00+08:00"),
+        (103.0, "not-a-timestamp"),
+    ]
+    for price, timestamp in observations:
+        db.save_quote_snapshot_sync(
+            symbol="600519",
+            asset_class="stock",
+            price=price,
+            volume=None,
+            timestamp=timestamp,
+        )
+    db.save_quote_snapshot_sync(
+        symbol="000001",
+        asset_class="index",
+        price=3500.0,
+        volume=None,
+        timestamp="2026-04-18T09:41:00+08:00",
+    )
+
+    latest = db.get_latest_quotes_sync()
+
+    assert [row["symbol"] for row in latest] == ["000001", "600519"]
+    assert latest[1]["price"] == 102.0
+    assert "quote_rank" not in latest[1]
+
+
 def test_app_database_quote_snapshots_remain_append_only_with_latest_quote(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
