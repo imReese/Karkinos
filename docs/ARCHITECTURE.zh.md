@@ -108,8 +108,9 @@ switch、资本授权与执行权限。
 -> 人工复核与 promotion readiness
 ```
 
-策略扩展使用有类型的 metadata 与参数。由 Web 触发的任意代码执行不在契约内。研究输出不能
-绕过风控、journal、paper/shadow 或人工确认门禁。
+策略扩展使用有类型的 metadata 与参数；Web 任意代码执行不在契约内，研究不能绕过风控、journal、paper/shadow 或人工确认门禁。
+
+可选的收盘后 service 每个市场日期只接纳一次：持久化日线与完整 valuation/ledger identity -> 本地基线/dataset fingerprint -> 原子 capped 调用/token reservation -> DeepSeek 基于保存回测与脱敏持久化账户 allowlist（持仓数、现金比例、回撤、行情/估值状态、symbol/asset-class 权重、风险与 next-step）提出 Formula DSL 假设 -> 本地校验及 canonical 成本后 rolling OOS -> 证据 critique -> 持久化候选 -> 精确人工 canonical `paper_shadow` 晋级。稳定 identity 保证幂等，每阶段前重查 policy 与 Kill Switch；绝对账户金额、数量、价格、成本、valuation/ledger 标识、凭证、交易计划和 broker 能力不外发，批准也不修改 StrategyRegistry、生产 assignment、OMS、ledger、risk 或 broker 状态。
 
 ### 每日决策
 

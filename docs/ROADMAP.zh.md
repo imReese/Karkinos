@@ -38,7 +38,7 @@ Karkinos 是面向中国市场的个人量化投研与交易平台，目标是�
 | v1.4-v1.7 | 已完成 | 账本/快照绑定的贡献归因与费用精度、Daily Trading Plan、Operations runbook、非提交式受控桥接 |
 | v1.8 控制面 | 基础已实现 | 签名限时授权、原子预算、session、实时门禁、暂停/replacement、单笔提交边界、互锁、broker-neutral 生命周期证据、完整成交/partial-cancel/零成交撤单精确终态 clearance、扩缩容评审 |
 | v1.8 adapter acceptance | Provider-neutral 基础已实现 | 版本化 manifest、deterministic local conformance 证据、capability/boundary matrix、append-only accept/reject/revoke review、live collector 精确绑定与 persisted-only operator readiness 可见性；尚未选择或注册真实 provider |
-| AI 原生 Phase 1-1.18 + 结果/复盘/质量桥接 | 已实现 | provider-neutral、证据绑定的研究、记忆、Formula DSL/回测/批判、canonical 策略贡献与人工决策后复盘、persisted-only 人工策略学习队列，以及 Decision Quality 捕获；不具备交易权限 |
+| AI 原生 Phase 1-1.18 + shadow 研究/结果/复盘/质量桥接 | 已实现 | provider-neutral、证据绑定的研究、记忆、Formula DSL/回测/rolling-OOS/批判，具备原子调用/token 预算的 owner 授权收盘后候选自动化与仅人工 paper/shadow 晋级，以及 canonical 策略贡献、人工决策后复盘、persisted-only 策略学习队列和 Decision Quality 捕获；不具备生产策略替换或交易权限 |
 
 Account Truth 和对账继续作为强制安全门，但不再是下一阶段产品主线。Phase 1.18 已按一次明确
 授权完成公式研究纵向闭环；v1.8 仍是当前产品目标。新增的只读结果捕获、人工复盘和决策质量

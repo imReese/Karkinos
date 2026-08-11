@@ -199,6 +199,29 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return (await response.json()) as T;
 }
 
+async function putJson<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(path, {
+    method: 'PUT',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const raw = await response.text();
+    let detail = raw;
+    try {
+      const payload = JSON.parse(raw) as { detail?: string };
+      detail = payload.detail ?? raw;
+    } catch {
+      // Preserve the plain-text response.
+    }
+    throw new Error(detail || `Request failed: ${response.status}`);
+  }
+  return (await response.json()) as T;
+}
+
 export function useResearchTasksQuery(enabled: boolean) {
   return useQuery({
     queryKey: ['ai-research-tasks'],
@@ -577,6 +600,7 @@ export type StrategyFormulaBacktest = {
       total_trades?: number;
       gross_turnover?: number;
     };
+    oos_validation: Record<string, unknown>;
     research_evidence_bundle: Record<string, unknown>;
     dataset_snapshot: Record<string, unknown>;
     formula_binding: Record<string, unknown>;
@@ -716,5 +740,188 @@ export function useReviewStrategyResearchMutation() {
             'record_human_strategy_research_review_without_trade_authority',
         },
       ),
+  });
+}
+
+export type ShadowResearchMetricView = {
+  result_id: number;
+  total_return: number;
+  sharpe: number;
+  max_drawdown: number;
+  total_cost: number;
+  total_commission: number;
+  total_slippage: number;
+  total_trades: number;
+  gross_turnover: number;
+  oos_fold_count: number;
+  mean_oos_return: number;
+  worst_oos_return: number;
+  oos_validation_status: string;
+  evidence_gate_status: string;
+  dataset_snapshot_id: string | null;
+};
+
+export type ShadowResearchCandidate = {
+  candidate_id: string;
+  run_id: string;
+  session_id: string;
+  draft_id: string;
+  backtest_run_id: string | null;
+  critique_id: string | null;
+  baseline_result_id: number;
+  candidate_result_id: number | null;
+  status: 'awaiting_human_approval' | 'failed_closed';
+  recommendation: 'paper_shadow_review' | 'keep_researching' | 'reject';
+  promotion_status:
+    | 'awaiting_human_approval'
+    | 'paper_shadow_approval_recorded'
+    | 'paper_shadow_approved';
+  created_at: string;
+  updated_at: string;
+  comparison: {
+    economic_hypothesis?: string;
+    risk_impact?: string;
+    failure_conditions?: string[];
+    limitations?: string[];
+    baseline?: ShadowResearchMetricView;
+    candidate?: ShadowResearchMetricView;
+    deltas?: Record<string, number>;
+    deepseek_critique?: {
+      supported_claims?: string[];
+      contradicted_claims?: string[];
+      evidence_gaps?: string[];
+      uncertainty?: string;
+    };
+    recommendation?: string;
+    promotion_gate: { status: string; blockers: string[] };
+  };
+  automatic_strategy_replacement_enabled: false;
+  production_strategy_mutation_enabled: false;
+  broker_submission_enabled: false;
+  human_paper_shadow_approval_required: true;
+};
+
+export type ShadowResearchAutomationStatus = {
+  schema_version: string;
+  policy: {
+    enabled: boolean;
+    after_close_time: string;
+    timezone: 'Asia/Shanghai';
+    max_provider_calls_per_market_date: number;
+    daily_token_budget: number;
+    max_candidates_per_run: number;
+    baseline_backtest_result_id: number | null;
+    require_complete_account_evidence: boolean;
+    research_question: string;
+    updated_by: string;
+    authorization_recorded: boolean;
+    automatic_strategy_replacement_enabled: false;
+    broker_submission_enabled: false;
+    production_strategy_mutation_enabled: false;
+    human_paper_shadow_approval_required: true;
+  };
+  kill_switch: { enabled: boolean; reason: string };
+  usage: {
+    market_date: string | null;
+    provider_calls: number;
+    reserved_tokens: number;
+    actual_tokens: number;
+  };
+  runs: Array<{
+    run_id: string;
+    market_date: string;
+    status: string;
+    candidate_count: number;
+    failure_code: string | null;
+  }>;
+  candidates: ShadowResearchCandidate[];
+  automatic_strategy_replacement_enabled: false;
+  production_strategy_mutation_enabled: false;
+  broker_submission_enabled: false;
+  human_paper_shadow_approval_required: true;
+  authority_effect: 'research_only';
+};
+
+export type ShadowResearchPolicyInput = {
+  enabled: boolean;
+  after_close_time: string;
+  max_provider_calls_per_market_date: number;
+  daily_token_budget: number;
+  max_candidates_per_run: number;
+  baseline_backtest_result_id: number | null;
+  require_complete_account_evidence: boolean;
+  research_question: string;
+  updated_by: string;
+};
+
+export function useShadowResearchAutomationQuery() {
+  return useQuery({
+    queryKey: ['ai-shadow-research-automation'],
+    queryFn: () =>
+      apiClient<ShadowResearchAutomationStatus>(
+        '/api/ai/strategy-research/shadow-automation',
+      ),
+    refetchOnWindowFocus: false,
+    refetchInterval: 60_000,
+    staleTime: 10_000,
+  });
+}
+
+export function useUpdateShadowResearchPolicyMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ShadowResearchPolicyInput) =>
+      putJson<ShadowResearchAutomationStatus['policy']>(
+        '/api/ai/strategy-research/shadow-automation/policy',
+        {
+          ...input,
+          confirmation: input.enabled
+            ? 'authorize_after_close_deepseek_strategy_research_without_strategy_or_trade_authority'
+            : 'pause_after_close_ai_strategy_research_without_changing_trading_authority',
+        },
+      ),
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: ['ai-shadow-research-automation'],
+      }),
+  });
+}
+
+export function useRunShadowResearchMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      postJson<ShadowResearchAutomationStatus>(
+        '/api/ai/strategy-research/shadow-automation/run',
+        {},
+      ),
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: ['ai-shadow-research-automation'],
+      }),
+  });
+}
+
+export function useApproveShadowResearchCandidateMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      candidate_id: string;
+      approved_by: string;
+      notes: string;
+    }) =>
+      postJson<Record<string, unknown>>(
+        `/api/ai/strategy-research/shadow-candidates/${encodeURIComponent(input.candidate_id)}/paper-shadow-approvals`,
+        {
+          approved_by: input.approved_by,
+          notes: input.notes,
+          confirmation:
+            'approve_evidence_bound_candidate_for_paper_shadow_only_without_production_or_trade_authority',
+        },
+      ),
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: ['ai-shadow-research-automation'],
+      }),
   });
 }

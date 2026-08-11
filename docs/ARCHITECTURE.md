@@ -130,9 +130,9 @@ strategy definition
 -> human review and promotion readiness
 ```
 
-Strategy extensions use typed metadata and parameters. Unsafe Web-triggered
-arbitrary code execution is outside the contract. Research output cannot bypass
-risk, journal, paper/shadow, or manual-confirmation gates.
+Strategy extensions use typed metadata and parameters; Web-triggered arbitrary code is outside the contract, and research cannot bypass risk, journal, paper/shadow, or manual-confirmation gates.
+
+The optional after-close service admits one run per market date: persisted bars plus complete valuation/ledger identity -> refreshed baseline/dataset fingerprint -> atomic capped call/token reservations -> DeepSeek Formula DSL hypotheses over the saved backtest and a sanitized persisted account allowlist (position count, cash ratio, drawdown, quote/valuation status, symbol/asset-class weights, risks, next-step) -> local validation and canonical after-cost rolling OOS -> evidence critique -> persisted candidate -> exact human-only canonical `paper_shadow` promotion. Stable identities make replay idempotent; policy and Kill Switch are rechecked before stages. Absolute account values, quantities, prices, costs, valuation/ledger identifiers, credentials, trade plans, and broker capabilities are never exported; approval cannot mutate StrategyRegistry, production assignment, OMS, ledger, risk, or broker state.
 
 ### Daily decision
 

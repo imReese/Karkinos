@@ -140,6 +140,9 @@ def test_restricted_formula_adapter_uses_canonical_after_cost_engine_without_db_
     )
     assert result["metrics_json"]["research_only"] is True
     assert result["metrics_json"]["authority_effect"] == "none"
+    assert result["metrics_json"]["oos_validation"]["validation_mode"] == "rolling"
+    assert result["metrics_json"]["oos_validation"]["fold_count"] >= 1
+    assert request.oos_mode == "rolling"
     assert result["cost_summary_json"]["total_trades"] == len(result["fills"])
     assert result["metrics_json"]["research_evidence_bundle"]["schema_version"]
     assert result["fills"]

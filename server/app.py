@@ -165,6 +165,9 @@ async def lifespan(app: FastAPI):
     from notification.notifier import build_notifier
     from server.bootstrap import load_runtime_config
     from server.config import BrokerStatementCollectorConfig, ServerConfig
+    from server.services.ai_shadow_research_automation import (
+        run_ai_shadow_research_automation_loop,
+    )
     from server.services.daily_decision_evidence_automation import (
         run_daily_decision_evidence_automation_loop,
     )
@@ -271,6 +274,7 @@ async def lifespan(app: FastAPI):
     broker_statement_collector_task: asyncio.Task[None] | None = None
     market_calendar_task: asyncio.Task[None] | None = None
     decision_evidence_task: asyncio.Task[None] | None = None
+    shadow_research_task: asyncio.Task[None] | None = None
     if collector_config.enabled:
         broker_statement_collector_task = asyncio.create_task(
             run_local_broker_statement_collector(broker_statement_collector),
@@ -283,6 +287,14 @@ async def lifespan(app: FastAPI):
         name="pending-fund-confirm",
     )
     pending_confirm_thread.start()
+
+    # This loop is inert until an owner-authorized research-only policy exists.
+    # It remains independent of live monitoring because it reads persisted
+    # after-close evidence and has no execution authority.
+    shadow_research_task = asyncio.create_task(
+        run_ai_shadow_research_automation_loop(state=state),
+        name="ai-shadow-research-automation",
+    )
 
     # 自动启动实时监控
     if config.live_auto_start:
@@ -305,6 +317,12 @@ async def lifespan(app: FastAPI):
     yield
 
     # ---- Shutdown ----
+    if shadow_research_task is not None:
+        shadow_research_task.cancel()
+        try:
+            await shadow_research_task
+        except asyncio.CancelledError:
+            pass
     if decision_evidence_task is not None:
         decision_evidence_task.cancel()
         try:

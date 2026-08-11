@@ -1,0 +1,701 @@
+from __future__ import annotations
+
+import json
+import sqlite3
+from datetime import datetime
+from types import SimpleNamespace
+from zoneinfo import ZoneInfo
+
+import pytest
+
+from data.store import DataStore
+from server.db import AppDatabase
+from server.models import BacktestRequest
+from server.services.ai_shadow_research_automation import (
+    SHADOW_RESEARCH_PAUSE_CONFIRMATION,
+    SHADOW_RESEARCH_POLICY_CONFIRMATION,
+    SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
+    SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION,
+    AiShadowResearchAutomationService,
+    PreparedBaseline,
+    ShadowResearchRejected,
+    ShadowResearchStore,
+    _after_close,
+)
+from server.services.trading_controls import TradingControlState
+
+SHANGHAI = ZoneInfo("Asia/Shanghai")
+
+
+def _state(db: AppDatabase) -> SimpleNamespace:
+    return SimpleNamespace(
+        db=db,
+        trading_controls=TradingControlState(db=db),
+        notifier=None,
+    )
+
+
+def _policy_payload(*, enabled: bool) -> dict:
+    return {
+        "enabled": enabled,
+        "after_close_time": "15:30",
+        "max_provider_calls_per_market_date": 3,
+        "daily_token_budget": 700_000,
+        "max_candidates_per_run": 2,
+        "baseline_backtest_result_id": None,
+        "require_complete_account_evidence": True,
+        "research_question": "Generate one falsifiable formula improvement.",
+        "updated_by": "human:owner",
+        "confirmation": (
+            SHADOW_RESEARCH_POLICY_CONFIRMATION
+            if enabled
+            else SHADOW_RESEARCH_PAUSE_CONFIRMATION
+        ),
+    }
+
+
+def _service(tmp_path) -> AiShadowResearchAutomationService:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = ShadowResearchStore(tmp_path / "app.db")
+    store.init()
+    return AiShadowResearchAutomationService(
+        state=_state(db),
+        store=store,
+        data_store=DataStore(tmp_path / "market"),
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_shadow_policy_defaults_disabled_and_requires_exact_standing_authorization(
+    tmp_path,
+) -> None:
+    service = _service(tmp_path)
+
+    status = service.status()
+
+    assert status["policy"]["enabled"] is False
+    assert status["automatic_strategy_replacement_enabled"] is False
+    assert status["broker_submission_enabled"] is False
+    with pytest.raises(PermissionError, match="exact owner authorization"):
+        service.update_policy({**_policy_payload(enabled=True), "confirmation": "yes"})
+    with pytest.raises(
+        ShadowResearchRejected, match="token_budget_cannot_cover_reserved_calls"
+    ):
+        service.update_policy(
+            {
+                **_policy_payload(enabled=True),
+                "daily_token_budget": SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION,
+            }
+        )
+
+    enabled = service.update_policy(_policy_payload(enabled=True))
+    assert enabled["enabled"] is True
+    assert enabled["authorization_recorded"] is True
+
+    paused = service.update_policy(_policy_payload(enabled=False))
+    assert paused["enabled"] is False
+    assert paused["authorization_recorded"] is False
+
+
+@pytest.mark.unit
+def test_provider_budget_claim_is_atomic_and_market_date_scoped(tmp_path) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = ShadowResearchStore(tmp_path / "app.db")
+    store.init()
+
+    for ordinal in range(3):
+        call, reused = store.claim_provider_call(
+            call_id=f"call-{ordinal}",
+            run_id="run-1",
+            market_date="2026-08-11",
+            call_kind="critique" if ordinal else "hypothesis",
+            call_limit=3,
+            token_budget=700_000,
+            now="2026-08-11T08:00:00+00:00",
+        )
+        assert reused is False
+        assert call["status"] == "reserved"
+
+    replay, reused = store.claim_provider_call(
+        call_id="call-2",
+        run_id="run-1",
+        market_date="2026-08-11",
+        call_kind="critique",
+        call_limit=3,
+        token_budget=700_000,
+        now="2026-08-11T08:00:00+00:00",
+    )
+    assert reused is True
+    assert replay["call_id"] == "call-2"
+    with pytest.raises(ShadowResearchRejected, match="call_limit"):
+        store.claim_provider_call(
+            call_id="call-3",
+            run_id="run-1",
+            market_date="2026-08-11",
+            call_kind="critique",
+            call_limit=3,
+            token_budget=700_000,
+            now="2026-08-11T08:00:00+00:00",
+        )
+
+    store.claim_provider_call(
+        call_id="budget-call-1",
+        run_id="run-2",
+        market_date="2026-08-12",
+        call_kind="hypothesis",
+        call_limit=3,
+        token_budget=SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION,
+        now="2026-08-12T08:00:00+00:00",
+    )
+    with pytest.raises(ShadowResearchRejected, match="token_budget"):
+        store.claim_provider_call(
+            call_id="budget-call-2",
+            run_id="run-2",
+            market_date="2026-08-12",
+            call_kind="critique",
+            call_limit=3,
+            token_budget=SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION,
+            now="2026-08-12T08:00:00+00:00",
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_export_requires_deepseek_identity_and_deepseek_endpoint(
+    tmp_path, monkeypatch
+) -> None:
+    service = _service(tmp_path)
+    service._state.config = object()
+
+    monkeypatch.setattr(
+        "server.ai_runtime.provider_connectivity.load_provider_connectivity_settings",
+        lambda config: SimpleNamespace(
+            provider_id="openai", endpoint_origin="https://api.deepseek.com/v1"
+        ),
+    )
+    with pytest.raises(
+        ShadowResearchRejected, match="deepseek_provider_not_configured"
+    ):
+        service._require_deepseek_provider()
+
+    monkeypatch.setattr(
+        "server.ai_runtime.provider_connectivity.load_provider_connectivity_settings",
+        lambda config: SimpleNamespace(
+            provider_id="deepseek", endpoint_origin="https://proxy.example.com/v1"
+        ),
+    )
+    with pytest.raises(
+        ShadowResearchRejected, match="deepseek_provider_not_configured"
+    ):
+        service._require_deepseek_provider()
+
+    monkeypatch.setattr(
+        "server.ai_runtime.provider_connectivity.load_provider_connectivity_settings",
+        lambda config: SimpleNamespace(
+            provider_id="deepseek", endpoint_origin="https://api.deepseek.com/v1"
+        ),
+    )
+    service._require_deepseek_provider()
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_human_candidate_approval_records_paper_shadow_only(tmp_path) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = ShadowResearchStore(tmp_path / "app.db")
+    store.init()
+    candidate = store.save_candidate(
+        run_id="run-1",
+        session_id="session-1",
+        draft_id="draft-1",
+        backtest_run_id="backtest-1",
+        critique_id="critique-1",
+        baseline_result_id=1,
+        candidate_result_id=2,
+        status="awaiting_human_approval",
+        recommendation="paper_shadow_review",
+        comparison={
+            "promotion_gate": {"status": "pass", "blockers": []},
+            "automatic_strategy_replacement_enabled": False,
+        },
+        now="2026-08-11T08:00:00+00:00",
+    )
+
+    with pytest.raises(PermissionError, match="exact human confirmation"):
+        store.approve_candidate(
+            candidate["candidate_id"],
+            approved_by="human:owner",
+            notes="Reviewed evidence.",
+            confirmation="approve",
+            now="2026-08-11T08:05:00+00:00",
+        )
+
+    promotion = store.approve_candidate(
+        candidate["candidate_id"],
+        approved_by="human:owner",
+        notes="Reviewed OOS, costs, drawdown, and DeepSeek critique.",
+        confirmation=SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
+        now="2026-08-11T08:05:00+00:00",
+    )
+
+    assert promotion["target_stage"] == "paper_shadow"
+    assert promotion["production_strategy_replaced"] is False
+    assert promotion["strategy_registry_mutated"] is False
+    assert promotion["broker_order_created"] is False
+    assert store.get_candidate(candidate["candidate_id"])["promotion_status"] == (
+        "paper_shadow_approval_recorded"
+    )
+
+    service = AiShadowResearchAutomationService(
+        state=_state(db),
+        store=store,
+        data_store=DataStore(tmp_path / "market"),
+    )
+    canonical = service.approve_candidate(
+        candidate["candidate_id"],
+        approved_by="human:owner",
+        notes="Reviewed OOS, costs, drawdown, and DeepSeek critique.",
+        confirmation=SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
+    )
+    replay = service.approve_candidate(
+        candidate["candidate_id"],
+        approved_by="human:owner",
+        notes="Reviewed OOS, costs, drawdown, and DeepSeek critique.",
+        confirmation=SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
+    )
+
+    assert canonical["paper_shadow_stage_recorded"] is True
+    assert canonical["strategy_promotion"]["stage"] == "paper_shadow"
+    assert canonical["strategy_promotion"]["live_like_enabled"] is False
+    assert canonical["strategy_registry_mutated"] is False
+    assert replay["promotion_id"] == canonical["promotion_id"]
+    assert store.get_candidate(candidate["candidate_id"])["promotion_status"] == (
+        "paper_shadow_approved"
+    )
+    events = db.list_strategy_promotion_events_sync(canonical["strategy_id"])
+    assert [item["event_type"] for item in events].count(
+        "promoted_to_paper_shadow"
+    ) == 1
+
+
+@pytest.mark.unit
+def test_after_close_gate_supports_same_day_and_catch_up_runs() -> None:
+    assert not _after_close(
+        "2026-08-11", datetime(2026, 8, 11, 15, 29, tzinfo=SHANGHAI), "15:30"
+    )
+    assert _after_close(
+        "2026-08-11", datetime(2026, 8, 11, 15, 30, tzinfo=SHANGHAI), "15:30"
+    )
+    assert _after_close(
+        "2026-08-08", datetime(2026, 8, 11, 9, 0, tzinfo=SHANGHAI), "15:30"
+    )
+
+
+def _metrics(*, total_return: float, sharpe: float, drawdown: float) -> dict:
+    return {
+        "total_return": total_return,
+        "sharpe": sharpe,
+        "max_drawdown": drawdown,
+        "evidence_bundle": {"total_cost": 10.0, "fill_count": 2},
+        "dataset_snapshot": {"snapshot_id": "sha256:latest-market"},
+        "oos_validation": {
+            "validation_status": "benchmark_not_supplied",
+            "fold_count": 2,
+            "aggregate": {
+                "mean_out_of_sample_return": total_return / 2,
+                "worst_out_of_sample_return": total_return / 4,
+            },
+        },
+        "research_evidence_bundle": {"gate_status": "pass"},
+    }
+
+
+def _result(*, total_return: float, sharpe: float, drawdown: float) -> dict:
+    return {
+        "initial_cash": 100_000.0,
+        "final_equity": 100_000.0 * (1 + total_return),
+        "total_return": total_return,
+        "annual_return": total_return,
+        "sharpe": sharpe,
+        "sortino": sharpe,
+        "max_drawdown": drawdown,
+        "win_rate": 0.5,
+        "duration_days": 100,
+        "equity_curve": [
+            {"timestamp": "2026-01-01T00:00:00", "equity": 100_000.0},
+            {
+                "timestamp": "2026-08-11T00:00:00",
+                "equity": 100_000.0 * (1 + total_return),
+            },
+        ],
+        "metrics_json": _metrics(
+            total_return=total_return, sharpe=sharpe, drawdown=drawdown
+        ),
+        "cost_summary_json": {
+            "total_commission": 8.0,
+            "total_slippage": 2.0,
+            "total_trades": 2,
+            "gross_turnover": 20_000.0,
+        },
+    }
+
+
+def _prepared_baseline() -> PreparedBaseline:
+    return PreparedBaseline(
+        seed_result_id=7,
+        market_date="2026-08-11",
+        snapshot={"snapshot_id": "sha256:latest-market"},
+        request=BacktestRequest(
+            start_date="2026-01-01",
+            end_date="2026-08-11",
+            initial_cash=100_000,
+            strategy="dual_ma",
+            assets=[{"symbol": "510300", "asset_class": "etf"}],
+            oos_mode="rolling",
+        ),
+        result=_result(total_return=0.05, sharpe=0.6, drawdown=0.12),
+    )
+
+
+def _complete_valuation(db, persist):
+    return {
+        "snapshot_id": "valuation-latest",
+        "ledger_cutoff_id": 11,
+        "status": "complete",
+        "trade_date": "2026-08-11",
+    }
+
+
+class _FixtureResearch:
+    def __init__(self, candidate_result_id: int) -> None:
+        self.candidate_result_id = candidate_result_id
+        self.hypothesis_calls = 0
+        self.hypothesis_requests = []
+        self.backtest_calls = 0
+        self.critique_calls = 0
+
+    async def generate_hypotheses(self, request):
+        self.hypothesis_calls += 1
+        self.hypothesis_requests.append(request)
+        return {
+            "session_id": "session-auto-1",
+            "status": "completed",
+            "failure_code": None,
+            "drafts": [
+                {
+                    "draft_id": "draft-auto-1",
+                    "economic_hypothesis": "A slower trend filter reduces drawdown.",
+                    "risk_impact": "Lower churn, but delayed exits remain possible.",
+                    "failure_conditions": ["OOS drawdown exceeds baseline"],
+                    "limitations": ["Historical evidence only"],
+                    "validation": {"status": "valid", "errors": []},
+                    "provider_provenance": {"usage": {"total_tokens": 1000}},
+                }
+            ],
+        }
+
+    async def run_formula_backtest(self, request):
+        self.backtest_calls += 1
+        return {
+            "status": "completed",
+            "backtest_run_id": "formula-auto-1",
+            "canonical_backtest": {"result_id": self.candidate_result_id},
+        }
+
+    async def critique(self, request):
+        self.critique_calls += 1
+        return {
+            "status": "completed",
+            "failure_code": None,
+            "critique_id": "critique-auto-1",
+            "artifact": {
+                "supported_claims": ["Drawdown improved in the frozen run."],
+                "evidence_gaps": ["More regimes are needed."],
+                "provider_provenance": {"usage": {"total_tokens": 900}},
+            },
+        }
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_full_cycle_is_idempotent_and_stops_at_human_research_pool(
+    tmp_path, monkeypatch
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = ShadowResearchStore(tmp_path / "app.db")
+    store.init()
+    candidate_payload = _result(total_return=0.12, sharpe=1.2, drawdown=0.08)
+    candidate_result_id = await db.save_backtest_result(
+        config_json=json.dumps({"strategy": "ai_formula_research"}),
+        initial_cash=candidate_payload["initial_cash"],
+        final_equity=candidate_payload["final_equity"],
+        total_return=candidate_payload["total_return"],
+        sharpe=candidate_payload["sharpe"],
+        max_dd=candidate_payload["max_drawdown"],
+        equity_curve_json=json.dumps(candidate_payload["equity_curve"]),
+        annual_return=candidate_payload["annual_return"],
+        sortino=candidate_payload["sortino"],
+        win_rate=candidate_payload["win_rate"],
+        duration_days=candidate_payload["duration_days"],
+        metrics_json=json.dumps(candidate_payload["metrics_json"]),
+        cost_summary_json=json.dumps(candidate_payload["cost_summary_json"]),
+    )
+    fixture = _FixtureResearch(candidate_result_id)
+    service = AiShadowResearchAutomationService(
+        state=_state(db),
+        store=store,
+        data_store=DataStore(tmp_path / "market"),
+        research_service_builder=lambda external: fixture,
+        now=lambda: datetime(2026, 8, 11, 8, 0, tzinfo=ZoneInfo("UTC")),
+    )
+    service.update_policy(_policy_payload(enabled=True))
+    prepared = _prepared_baseline()
+    monkeypatch.setattr(service, "_prepare_baseline", lambda policy: prepared)
+    monkeypatch.setattr(
+        "server.services.ai_shadow_research_automation.build_current_valuation_snapshot",
+        _complete_valuation,
+    )
+
+    first = await service.run_once()
+    replay = await service.run_once()
+
+    assert first["run_status"] == "completed"
+    assert replay["reused"] is True
+    assert fixture.hypothesis_calls == 1
+    assert fixture.hypothesis_requests[0].selection.valuation_snapshot_id == (
+        "valuation-latest"
+    )
+    assert fixture.hypothesis_requests[0].selection.ledger_cutoff_id == 11
+    assert fixture.hypothesis_requests[0].selection.has_account_binding is True
+    assert fixture.backtest_calls == 1
+    assert fixture.critique_calls == 1
+    candidate = first["candidates"][0]
+    assert candidate["recommendation"] == "paper_shadow_review"
+    assert candidate["status"] == "awaiting_human_approval"
+    assert candidate["promotion_status"] == "awaiting_human_approval"
+    assert candidate["automatic_strategy_replacement_enabled"] is False
+    assert candidate["broker_submission_enabled"] is False
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_running_market_date_claim_prevents_concurrent_provider_reentry(
+    tmp_path, monkeypatch
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = ShadowResearchStore(tmp_path / "app.db")
+    store.init()
+    fixture = _FixtureResearch(candidate_result_id=99)
+    service = AiShadowResearchAutomationService(
+        state=_state(db),
+        store=store,
+        data_store=DataStore(tmp_path / "market"),
+        research_service_builder=lambda external: fixture,
+        now=lambda: datetime(2026, 8, 11, 8, 0, tzinfo=ZoneInfo("UTC")),
+    )
+    service.update_policy(_policy_payload(enabled=True))
+    monkeypatch.setattr(
+        service, "_prepare_baseline", lambda policy: _prepared_baseline()
+    )
+    monkeypatch.setattr(
+        "server.services.ai_shadow_research_automation.build_current_valuation_snapshot",
+        _complete_valuation,
+    )
+    claimed, reused = store.claim_run(
+        market_date="2026-08-11",
+        input_fingerprint="another-scheduler-fingerprint",
+        baseline_seed_result_id=7,
+        valuation_snapshot_id="valuation-latest",
+        ledger_cutoff_id=11,
+        now="2026-08-11T08:00:00+00:00",
+    )
+    assert reused is False
+
+    result = await service.run_once()
+
+    assert result["reused"] is True
+    assert result["run_id"] == claimed["run_id"]
+    assert result["run_status"] == "running"
+    assert fixture.hypothesis_calls == 0
+    assert fixture.backtest_calls == 0
+    assert fixture.critique_calls == 0
+    assert store.usage_for_market_date("2026-08-11")["provider_calls"] == 0
+
+
+class _FailingHypothesisResearch(_FixtureResearch):
+    async def generate_hypotheses(self, request):
+        self.hypothesis_calls += 1
+        raise RuntimeError("deepseek_timeout")
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_provider_exception_is_audited_failed_and_replay_does_not_retry(
+    tmp_path, monkeypatch
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = ShadowResearchStore(tmp_path / "app.db")
+    store.init()
+    fixture = _FailingHypothesisResearch(candidate_result_id=99)
+    service = AiShadowResearchAutomationService(
+        state=_state(db),
+        store=store,
+        data_store=DataStore(tmp_path / "market"),
+        research_service_builder=lambda external: fixture,
+        now=lambda: datetime(2026, 8, 11, 8, 0, tzinfo=ZoneInfo("UTC")),
+    )
+    service.update_policy(_policy_payload(enabled=True))
+    monkeypatch.setattr(
+        service, "_prepare_baseline", lambda policy: _prepared_baseline()
+    )
+    monkeypatch.setattr(
+        "server.services.ai_shadow_research_automation.build_current_valuation_snapshot",
+        _complete_valuation,
+    )
+
+    first = await service.run_once()
+    replay = await service.run_once()
+
+    assert first["run_status"] == "failed"
+    assert first["failure_code"] == "deepseek_timeout"
+    assert replay["reused"] is True
+    assert fixture.hypothesis_calls == 1
+    call = store.get_provider_call(f"{first['run_id']}:hypothesis")
+    assert call["status"] == "failed"
+    assert call["failure_code"] == "deepseek_timeout"
+    assert store.usage_for_market_date("2026-08-11")["provider_calls"] == 1
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_missing_market_evidence_creates_provider_free_preflight_audit(
+    tmp_path, monkeypatch
+) -> None:
+    service = _service(tmp_path)
+    service.update_policy(_policy_payload(enabled=True))
+
+    def reject_baseline(policy):
+        raise ShadowResearchRejected("persisted_bars_missing:510300")
+
+    monkeypatch.setattr(service, "_prepare_baseline", reject_baseline)
+
+    result = await service.run_once()
+
+    assert result["run_status"] == "blocked_by_market_evidence"
+    assert result["failure_code"] == "persisted_bars_missing:510300"
+    with sqlite3.connect(tmp_path / "app.db") as conn:
+        audit = conn.execute(
+            "SELECT status, payload_json FROM automation_runs WHERE run_id=?",
+            (result["preflight_run_id"],),
+        ).fetchone()
+        provider_calls = conn.execute(
+            "SELECT COUNT(*) FROM ai_shadow_research_provider_calls"
+        ).fetchone()[0]
+    assert audit is not None
+    assert audit[0] == "blocked_by_market_evidence"
+    assert json.loads(audit[1])["provider_call_performed"] is False
+    assert provider_calls == 0
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_kill_switch_blocks_before_evidence_or_provider_and_is_audited(
+    tmp_path, monkeypatch
+) -> None:
+    service = _service(tmp_path)
+    service.update_policy(_policy_payload(enabled=True))
+    service._state.trading_controls.set_kill_switch(True, "operator emergency stop")
+
+    def unexpected_baseline(policy):
+        raise AssertionError("baseline preparation must not run under Kill Switch")
+
+    monkeypatch.setattr(service, "_prepare_baseline", unexpected_baseline)
+
+    result = await service.run_once()
+
+    assert result["run_status"] == "blocked_by_kill_switch"
+    assert result["failure_code"] == "kill_switch_enabled"
+    assert result["kill_switch"] == {
+        "enabled": True,
+        "reason": "operator emergency stop",
+    }
+    with sqlite3.connect(tmp_path / "app.db") as conn:
+        audit = conn.execute(
+            "SELECT status, payload_json FROM automation_runs WHERE run_id=?",
+            (result["preflight_run_id"],),
+        ).fetchone()
+        provider_calls = conn.execute(
+            "SELECT COUNT(*) FROM ai_shadow_research_provider_calls"
+        ).fetchone()[0]
+        shadow_runs = conn.execute(
+            "SELECT COUNT(*) FROM ai_shadow_research_runs"
+        ).fetchone()[0]
+    assert audit is not None
+    assert audit[0] == "blocked_by_kill_switch"
+    assert json.loads(audit[1])["provider_call_performed"] is False
+    assert provider_calls == 0
+    assert shadow_runs == 0
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_kill_switch_change_after_local_backtest_blocks_deepseek_critique(
+    tmp_path, monkeypatch
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = ShadowResearchStore(tmp_path / "app.db")
+    store.init()
+    state = _state(db)
+
+    class KillSwitchAfterBacktestResearch(_FixtureResearch):
+        async def run_formula_backtest(self, request):
+            result = await super().run_formula_backtest(request)
+            state.trading_controls.set_kill_switch(True, "operator mid-run stop")
+            return result
+
+    fixture = KillSwitchAfterBacktestResearch(candidate_result_id=99)
+    service = AiShadowResearchAutomationService(
+        state=state,
+        store=store,
+        data_store=DataStore(tmp_path / "market"),
+        research_service_builder=lambda external: fixture,
+        now=lambda: datetime(2026, 8, 11, 8, 0, tzinfo=ZoneInfo("UTC")),
+    )
+    service.update_policy(_policy_payload(enabled=True))
+    monkeypatch.setattr(
+        service, "_prepare_baseline", lambda policy: _prepared_baseline()
+    )
+    monkeypatch.setattr(
+        "server.services.ai_shadow_research_automation.build_current_valuation_snapshot",
+        _complete_valuation,
+    )
+
+    result = await service.run_once()
+
+    assert result["run_status"] == "partial"
+    assert fixture.hypothesis_calls == 1
+    assert fixture.backtest_calls == 1
+    assert fixture.critique_calls == 0
+    assert result["usage"]["provider_calls"] == 1
+    candidate = result["candidates"][0]
+    assert candidate["status"] == "failed_closed"
+    assert candidate["recommendation"] == "reject"
+    assert candidate["comparison"]["failure_code"] == "blocked_by_kill_switch"
+    assert candidate["comparison"]["promotion_gate"] == {
+        "status": "blocked",
+        "blockers": ["blocked_by_kill_switch"],
+    }
