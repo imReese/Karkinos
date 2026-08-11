@@ -1955,25 +1955,23 @@ h3 {
   align-items: start;
 }
 
-@media (max-width: 1439px) {
-  .app-ai-research-header {
-    flex-direction: column;
-    align-items: stretch;
-    justify-content: flex-start;
-  }
+.app-ai-research-header {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+}
 
-  .app-ai-research-route-toolbar {
-    justify-content: flex-start;
-  }
+.app-ai-research-route-toolbar {
+  justify-content: flex-start;
+}
 
-  .app-ai-research-route-toolbar .app-ai-research-boundary-badges {
-    flex: 0 1 auto;
-  }
+.app-ai-research-route-toolbar .app-ai-research-boundary-badges {
+  flex: 0 1 auto;
+}
 
-  .app-ai-research-route-queue-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
+.app-ai-research-route-queue-header {
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 @media (min-width: 1280px) {
