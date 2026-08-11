@@ -999,6 +999,11 @@ test('portfolio initial load preserves the holdings hierarchy without fabricated
   page,
 }) => {
   let duplicatePositionsRequestCount = 0;
+  const analysisRequestCount = {
+    cockpit: 0,
+    liveHoldings: 0,
+    strategyContribution: 0,
+  };
   let releasePrimaryResponses = () => {};
   const primaryResponsesHeld = new Promise<void>((resolve) => {
     releasePrimaryResponses = resolve;
@@ -1012,6 +1017,16 @@ test('portfolio initial load preserves the holdings hierarchy without fabricated
   await page.route('**/api/portfolio/positions', async (route) => {
     duplicatePositionsRequestCount += 1;
     await route.abort();
+  });
+  page.on('request', (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (pathname === '/api/portfolio/cockpit') {
+      analysisRequestCount.cockpit += 1;
+    } else if (pathname === '/api/portfolio/live-holdings') {
+      analysisRequestCount.liveHoldings += 1;
+    } else if (pathname === '/api/account-strategy/contribution') {
+      analysisRequestCount.strategyContribution += 1;
+    }
   });
   await page.route('**/api/portfolio', holdPrimaryResponse);
   await page.setViewportSize({ width: 390, height: 844 });
@@ -1033,6 +1048,11 @@ test('portfolio initial load preserves the holdings hierarchy without fabricated
   await expect(loadingRows.locator(':scope > *')).toHaveCount(4);
   await expect(loadingSummary).not.toContainText(/[¥$€£]|\d+[,.]\d{2}/);
   await expect(loadingRows).toHaveText('');
+  expect(analysisRequestCount).toEqual({
+    cockpit: 0,
+    liveHoldings: 0,
+    strategyContribution: 0,
+  });
 
   const loadingGeometry = await page.evaluate(() => {
     const summary = document.querySelector(
@@ -1058,6 +1078,14 @@ test('portfolio initial load preserves the holdings hierarchy without fabricated
   await expect(page.getByTestId('portfolio-summary-strip')).toBeVisible();
   await expect(page.getByTestId('portfolio-current-holdings')).toBeVisible();
   expect(duplicatePositionsRequestCount).toBe(0);
+  await expect.poll(() => analysisRequestCount.liveHoldings).toBe(1);
+  expect(analysisRequestCount.cockpit).toBe(0);
+  expect(analysisRequestCount.strategyContribution).toBe(0);
+
+  await page.getByRole('button', { name: /Strategy|策略/ }).click();
+  await expect.poll(() => analysisRequestCount.cockpit).toBe(1);
+  await expect.poll(() => analysisRequestCount.strategyContribution).toBe(1);
+  expect(analysisRequestCount.liveHoldings).toBe(1);
 });
 
 test('overview initial load preserves account, queue, and holdings hierarchy', async ({
