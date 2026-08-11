@@ -251,11 +251,12 @@ export type LiveHoldingsResponse = {
   quote_set_fingerprint?: string | null;
 };
 
-export function usePositionsQuery() {
+export function usePositionsQuery(enabled = true) {
   return useQuery({
     queryKey: ['portfolio-positions'],
     queryFn: () => apiClient<Position[]>('/api/portfolio/positions'),
     staleTime: 10_000,
+    enabled,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
   });
