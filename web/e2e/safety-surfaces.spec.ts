@@ -50,6 +50,15 @@ test('critical human-review surfaces load from the product runtime', async ({
 test('Account Truth keeps unresolved report reads local and fail closed', async ({
   page,
 }) => {
+  let releaseReportHistory: () => void = () => undefined;
+  let markReportHistoryRequested: () => void = () => undefined;
+  const reportHistoryGate = new Promise<void>((resolve) => {
+    releaseReportHistory = resolve;
+  });
+  const reportHistoryRequested = new Promise<void>((resolve) => {
+    markReportHistoryRequested = resolve;
+  });
+
   await page.route(
     '**/api/account-truth/reconciliation-reports**',
     async (route) => {
@@ -58,23 +67,24 @@ test('Account Truth keeps unresolved report reads local and fail closed', async 
         await route.continue();
         return;
       }
-      const response = await route.fetch();
-      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      markReportHistoryRequested();
+      const responsePromise = route.fetch();
+      await reportHistoryGate;
+      const response = await responsePromise;
       await route.fulfill({ response });
     },
   );
 
   await page.goto('/account-truth');
 
-  await expect(
-    page
-      .getByTestId('account-truth-reports-loading')
-      .getByRole('heading', { name: 'Loading Account Truth evidence.' }),
-  ).toBeVisible();
+  await reportHistoryRequested;
   await expect(
     page.getByTestId('account-truth-review-workspace'),
   ).toBeVisible();
-  await expect(page.getByTestId('account-truth-reports-loading')).toBeVisible();
+  await expect(page.getByTestId('account-truth-current-report')).toBeVisible();
+  await expect(page.getByTestId('account-truth-reports-loading')).toHaveCount(
+    0,
+  );
   await expect(
     page.locator('[data-workbench-primitive="metric-strip"]'),
   ).toBeVisible();
@@ -84,7 +94,7 @@ test('Account Truth keeps unresolved report reads local and fail closed', async 
   ).toBe(0);
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByTestId('account-truth-reports-loading')).toBeVisible();
+  await expect(page.getByTestId('account-truth-current-report')).toBeVisible();
   expect(
     await page.evaluate(
       () =>
@@ -93,18 +103,10 @@ test('Account Truth keeps unresolved report reads local and fail closed', async 
     ),
   ).toBe(0);
 
-  await expect(page.getByTestId('account-truth-review-workspace')).toBeVisible({
-    timeout: 15_000,
-  });
+  releaseReportHistory();
   await expect(
-    page.locator('[data-workbench-primitive="metric-strip"]'),
-  ).toBeVisible();
-  await expect(
-    page.getByRole('heading', { name: 'Loading Account Truth evidence.' }),
-  ).toHaveCount(0);
-  await expect(page.getByTestId('account-truth-reports-loading')).toHaveCount(
-    0,
-  );
+    page.getByText(/earlier reports|份较早报告/).first(),
+  ).toBeVisible({ timeout: 15_000 });
 });
 
 test('Account Truth preserves its evidence hierarchy across themes and acceptance viewports', async ({

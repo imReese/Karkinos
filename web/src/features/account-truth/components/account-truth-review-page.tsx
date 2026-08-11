@@ -995,25 +995,42 @@ export function AccountTruthReviewPage() {
     readiness.data !== undefined &&
     score.data !== undefined &&
     importRuns.data !== undefined;
-  const reports = useReconciliationReportsQuery(filter, hasSummaryEvidence);
+  const scoreImportRunId = filter === 'all' ? score.data?.import_run_id : null;
+  const reportDetailImportRunId =
+    selectedImportRunId || scoreImportRunId || null;
+  const detail = useReconciliationReportDetailQuery(reportDetailImportRunId);
+  const shouldLoadReportHistory =
+    hasSummaryEvidence &&
+    (filter !== 'all' ||
+      !reportDetailImportRunId ||
+      detail.data !== undefined ||
+      detail.isError);
+  const reports = useReconciliationReportsQuery(
+    filter,
+    shouldLoadReportHistory,
+  );
   const selectedReport = useMemo(
     () =>
       reports.data?.find(
-        (report) => report.import_run_id === selectedImportRunId,
+        (report) => report.import_run_id === reportDetailImportRunId,
       ) ??
+      (detail.data?.import_run_id === reportDetailImportRunId
+        ? detail.data
+        : null) ??
       reports.data?.[0] ??
       null,
-    [reports.data, selectedImportRunId],
-  );
-  const detail = useReconciliationReportDetailQuery(
-    selectedReport?.import_run_id ?? null,
+    [detail.data, reportDetailImportRunId, reports.data],
   );
   const reviewMutation = useRecordReviewDecisionMutation();
   const collector = useBrokerStatementCollectorStatusQuery();
-  const observedCollectorRunId = useRef<string | null>(null);
+  const observedCollectorRunId = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
     const importRunId = collector.data?.import_run_id ?? null;
+    if (observedCollectorRunId.current === undefined) {
+      observedCollectorRunId.current = importRunId;
+      return;
+    }
     if (!importRunId || observedCollectorRunId.current === importRunId) {
       return;
     }
@@ -1024,9 +1041,16 @@ export function AccountTruthReviewPage() {
       readiness.refetch(),
       score.refetch(),
       importRuns.refetch(),
-      reports.refetch(),
+      ...(shouldLoadReportHistory ? [reports.refetch()] : []),
     ]);
-  }, [collector.data?.import_run_id, importRuns, readiness, reports, score]);
+  }, [
+    collector.data?.import_run_id,
+    importRuns,
+    readiness,
+    reports,
+    score,
+    shouldLoadReportHistory,
+  ]);
 
   useEffect(() => {
     if (!reports.data?.length) {
@@ -1216,7 +1240,7 @@ export function AccountTruthReviewPage() {
               </p>
             </div>
             <span className="shrink-0 text-xs text-[var(--app-text-tertiary)]">
-              {reports.isLoading || detail.isLoading
+              {detail.isLoading || (!selectedReport && reports.isLoading)
                 ? text.loading
                 : text.itemCount(detail.data?.items.length ?? 0)}
             </span>
@@ -1238,6 +1262,7 @@ export function AccountTruthReviewPage() {
                 }`}
                 onClick={() => {
                   setFilter(option.value);
+                  setSelectedImportRunId(null);
                   setShowMatchedItems(false);
                 }}
               >
