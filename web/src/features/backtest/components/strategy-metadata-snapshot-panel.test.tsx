@@ -101,3 +101,23 @@ test('labels strategy ids as audit metadata without internal wording', () => {
   expect(screen.getByText('dual_ma')).toBeTruthy();
   expect(screen.queryByText('Internal strategy id')).toBeNull();
 });
+
+test('wraps long persisted run parameters inside the strategy evidence region', () => {
+  const report = reportWithStrategySnapshot();
+  const fingerprint = `sha256:${'9'.repeat(64)}`;
+  const strategyMetadata = report.metrics_json?.strategy_metadata;
+  if (!strategyMetadata) {
+    throw new Error('strategy metadata fixture is required');
+  }
+  strategyMetadata.params = { formula_fingerprint: fingerprint };
+
+  render(
+    <PreferencesProvider>
+      <StrategyMetadataSnapshotPanel report={report} />
+    </PreferencesProvider>,
+  );
+
+  const parameter = screen.getByText(`formula_fingerprint=${fingerprint}`);
+  expect(parameter.className).toContain('break-all');
+  expect(parameter.parentElement?.className).toContain('max-w-full');
+});
