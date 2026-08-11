@@ -103,6 +103,7 @@
 
   /* Interaction. */
   --app-accent: var(--ctp-mauve);
+  --app-accent-text: var(--app-accent);
   --app-accent-hover: #b98be8;
   --app-accent-bg: rgba(203, 166, 247, 0.14);
   --app-accent-border: rgba(203, 166, 247, 0.48);
@@ -205,6 +206,7 @@
   --app-text-inverse: #eff1f5;
 
   --app-accent: #8839ef;
+  --app-accent-text: #7220df;
   --app-accent-hover: #7220df;
   --app-accent-bg: rgba(136, 57, 239, 0.12);
   --app-accent-border: rgba(136, 57, 239, 0.44);
@@ -1494,11 +1496,9 @@ select:is(.app-field, .app-input):not([multiple]) {
 @keyframes app-section-reveal {
   from {
     clip-path: inset(0 0 var(--app-motion-distance-md) 0);
-    opacity: 0.72;
   }
   to {
     clip-path: inset(0);
-    opacity: 1;
   }
 }
 
@@ -2365,7 +2365,7 @@ h3 {
 
 .app-public-eyebrow {
   margin: 0;
-  color: var(--app-accent);
+  color: var(--app-accent-text);
   font-size: var(--app-font-size-micro);
   line-height: 1.5;
 }
@@ -2669,7 +2669,7 @@ h3 {
 }
 
 .app-public-evidence-state {
-  color: var(--app-accent);
+  color: var(--app-accent-text);
   font-family: var(--app-font-mono);
   font-size: var(--app-font-size-micro);
   font-weight: var(--app-font-weight-medium);
@@ -2779,7 +2779,7 @@ h3 {
 
 .app-public-proof-route span,
 .app-public-workflow li > span {
-  color: var(--app-accent);
+  color: var(--app-accent-text);
   font-family: var(--app-font-mono);
   font-size: var(--app-font-size-micro);
   font-weight: var(--app-font-weight-medium);
@@ -2824,7 +2824,7 @@ h3 {
   align-items: center;
   gap: 8px;
   margin-top: 22px;
-  color: var(--app-accent);
+  color: var(--app-accent-text);
   font-size: var(--app-font-size-micro);
   font-weight: var(--app-font-weight-semibold);
 }
@@ -2870,7 +2870,7 @@ h3 {
 }
 
 .app-public-principle-list dt span {
-  color: var(--app-accent);
+  color: var(--app-accent-text);
   font-family: var(--app-font-mono);
   font-size: var(--app-font-size-micro);
   font-weight: var(--app-font-weight-medium);

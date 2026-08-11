@@ -281,7 +281,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                   <span>{labels.categoryLabels[category]}</span>
                   <span
                     aria-hidden="true"
-                    className="app-type-micro font-mono tabular-nums opacity-75"
+                    className="app-type-micro font-mono tabular-nums"
                   >
                     {count}
                   </span>
@@ -331,7 +331,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                   <span>{option.label}</span>
                   <span
                     aria-hidden="true"
-                    className="app-type-micro font-mono tabular-nums opacity-75"
+                    className="app-type-micro font-mono tabular-nums"
                   >
                     {option.count}
                   </span>

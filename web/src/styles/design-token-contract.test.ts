@@ -52,6 +52,7 @@ const THEME_COLOR_TOKENS = [
   '--app-text-tertiary',
   '--app-text-inverse',
   '--app-accent',
+  '--app-accent-text',
   '--app-accent-hover',
   '--app-accent-bg',
   '--app-accent-border',
@@ -349,6 +350,7 @@ describe('application design token contract', () => {
     expect(CSS).toContain('animation-duration: 0.01ms !important');
     expect(CSS).toContain('transition-duration: 0.01ms !important');
     expect(CSS).toContain('scroll-behavior: auto !important');
+    expect(blockFor('@keyframes app-section-reveal')).not.toContain('opacity');
   });
 
   it.each([
@@ -365,6 +367,7 @@ describe('application design token contract', () => {
       '--app-text',
       '--app-text-secondary',
       '--app-text-tertiary',
+      '--app-accent-text',
       '--app-pnl-positive',
       '--app-pnl-negative',
       '--app-pnl-neutral',
@@ -394,6 +397,15 @@ describe('application design token contract', () => {
         `${state} text on state background`,
       ).toBeGreaterThanOrEqual(4.5);
     }
+
+    const accentSurface = rgb(
+      resolveColor('--app-accent-bg', theme),
+      stateSurface,
+    );
+    expect(
+      contrast(rgb(resolveColor('--app-accent-text', theme)), accentSurface),
+      'accent text on accent background',
+    ).toBeGreaterThanOrEqual(4.5);
   });
 
   it('does not increase deprecated token consumers', () => {

@@ -51,13 +51,13 @@ type ManualTaskId =
 
 function getStatusToneClasses(tone: StatusTone) {
   if (tone === 'success') {
-    return 'border-[var(--app-success-border)] bg-[var(--app-success-bg)] text-[var(--app-success)]';
+    return 'border-[var(--app-success-border)] bg-[var(--app-success-bg)] text-[var(--app-success-text)]';
   }
   if (tone === 'warning') {
-    return 'border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] text-[var(--app-warning)]';
+    return 'border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] text-[var(--app-warning-text)]';
   }
   if (tone === 'danger') {
-    return 'border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] text-[var(--app-danger)]';
+    return 'border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] text-[var(--app-danger-text)]';
   }
   return 'border-[color-mix(in_srgb,var(--app-border)_34%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_14%,transparent)] text-[var(--app-soft)]';
 }
@@ -824,7 +824,7 @@ export function SettingsPage() {
                             type="button"
                             className={`app-interactive-surface rounded-[var(--app-radius-control)] border px-3 py-2 text-sm font-semibold ${
                               selected
-                                ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-ghost)] text-[var(--app-accent)]'
+                                ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-ghost)] text-[var(--app-accent-text)]'
                                 : 'border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] text-[var(--app-soft)] hover:border-[color-mix(in_srgb,var(--app-border)_48%,transparent)]'
                             }`}
                             aria-pressed={selected}
@@ -1354,7 +1354,7 @@ function StatusMetric({
       title={`${label}: ${value}`}
       aria-label={`${label}: ${value}`}
     >
-      <div className="app-type-overline opacity-75">{label}</div>
+      <div className="app-type-overline">{label}</div>
       <div className="mt-2 break-words font-mono text-sm font-semibold tabular-nums">
         {value}
       </div>
@@ -1494,7 +1494,7 @@ function PreferenceGroup({
             type="button"
             className={`rounded-[var(--app-radius-control)] border px-3 py-2 text-sm font-semibold transition-colors ${
               value === optionValue
-                ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-ghost)] text-[var(--app-accent)]'
+                ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-ghost)] text-[var(--app-accent-text)]'
                 : 'border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_10%,transparent)] text-[var(--app-soft)] hover:border-[color-mix(in_srgb,var(--app-border)_48%,transparent)]'
             }`}
             aria-pressed={value === optionValue}
@@ -1522,7 +1522,7 @@ function InlineNotice({
       className={`rounded-[var(--app-radius-control)] border px-4 py-3 ${getStatusToneClasses(tone)}`}
     >
       <div className="text-sm font-semibold">{title}</div>
-      <div className="mt-1 text-xs leading-5 opacity-85">{detail}</div>
+      <div className="mt-1 text-xs leading-5">{detail}</div>
     </div>
   );
 }
