@@ -11588,6 +11588,124 @@ def test_portfolio_live_holdings_splits_overnight_and_same_day_buy_pnl(monkeypat
     assert source == "mixed_previous_close_intraday_trade_cost"
 
 
+def test_portfolio_projections_reuse_one_daily_ledger_snapshot(monkeypatch):
+    from server.routes import portfolio as portfolio_routes
+
+    positions = {
+        symbol: SimpleNamespace(
+            quantity=100.0,
+            available_qty=100.0,
+            frozen_qty=0.0,
+            avg_cost=10.0,
+            market_value=1100.0,
+            unrealized_pnl=100.0,
+            realized_pnl=0.0,
+            commission_paid=0.0,
+        )
+        for symbol in ("600001", "600002")
+    }
+    instruments = {
+        Symbol(symbol): SimpleNamespace(
+            name=symbol,
+            asset_class=SimpleNamespace(value="stock"),
+        )
+        for symbol in positions
+    }
+    portfolio = SimpleNamespace(
+        cash=1000.0,
+        positions=positions,
+        total_deposits=3000.0,
+    )
+    valuation_snapshot = {
+        "snapshot_id": "valuation-shared-ledger",
+        "as_of": "2026-07-10T15:00:00+08:00",
+        "trade_date": "2026-07-10",
+        "valuation_policy": "persisted_quotes_ledger_v1",
+        "ledger_cutoff_id": 2,
+        "ledger_fingerprint": "ledger-shared",
+        "quote_set_fingerprint": "quotes-shared",
+        "status": "complete",
+        "quotes": [
+            {
+                "symbol": symbol,
+                "asset_class": "stock",
+                "price": 11.0,
+                "timestamp": "2026-07-10T15:00:00+08:00",
+                "previous_close": 10.0,
+                "previous_close_date": "2026-07-09",
+            }
+            for symbol in positions
+        ],
+    }
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=0, assets=[]),
+        scheduler=SimpleNamespace(
+            portfolio=portfolio,
+            instruments=instruments,
+            watchlist=[
+                (Symbol(symbol), SimpleNamespace(value="stock")) for symbol in positions
+            ],
+        ),
+        db=SimpleNamespace(),
+    )
+    loaded_snapshots: list[list[dict]] = []
+    consumed_snapshots: list[list[dict] | None] = []
+
+    def read_daily_ledger_entries(_state):
+        snapshot: list[dict] = []
+        loaded_snapshots.append(snapshot)
+        return snapshot
+
+    def resolve_position_today_change(
+        _state,
+        *,
+        ledger_entries=None,
+        **_kwargs,
+    ):
+        consumed_snapshots.append(ledger_entries)
+        return 0.0, 0.0, 10.0, "2026-07-09", "previous_close"
+
+    monkeypatch.setattr(
+        portfolio_routes,
+        "_current_valuation_snapshot",
+        lambda _state: valuation_snapshot,
+    )
+    monkeypatch.setattr(
+        portfolio_routes,
+        "_resolve_projection_sources",
+        lambda _state, latest_quotes=None: (portfolio, instruments),
+    )
+    monkeypatch.setattr(
+        portfolio_routes,
+        "_read_daily_ledger_entries",
+        read_daily_ledger_entries,
+    )
+    monkeypatch.setattr(
+        portfolio_routes,
+        "_resolve_position_today_change",
+        resolve_position_today_change,
+    )
+    monkeypatch.setattr(
+        portfolio_routes,
+        "_position_quote_presentation",
+        lambda *args, **kwargs: ("live", None),
+    )
+
+    snapshot_response = asyncio.run(
+        portfolio_routes.build_portfolio_snapshot(fake_state)
+    )
+    live_response = portfolio_routes._build_live_holdings_response(
+        fake_state,
+        valuation_snapshot,
+    )
+
+    assert len(snapshot_response.positions) == 2
+    assert sum(len(group.items) for group in live_response.groups) == 2
+    assert len(loaded_snapshots) == 2
+    assert consumed_snapshots[:2] == [loaded_snapshots[0], loaded_snapshots[0]]
+    assert consumed_snapshots[2:] == [loaded_snapshots[1], loaded_snapshots[1]]
+
+
 def test_daily_performance_is_identical_across_holdings_curve_and_overview(
     monkeypatch,
     tmp_path,

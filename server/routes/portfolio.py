@@ -1916,54 +1916,63 @@ def _ledger_entry_shanghai_date(entry: dict) -> date | None:
     return parsed.astimezone(_SH_TZ).date()
 
 
+def _read_daily_ledger_entries(state, *, batch_size: int = 500) -> list[dict]:
+    db = state.db
+    if db is None or not hasattr(db, "get_ledger_entries_sync"):
+        return []
+
+    entries: list[dict] = []
+    offset = 0
+    while True:
+        batch = db.get_ledger_entries_sync(limit=batch_size, offset=offset)
+        if not batch:
+            break
+        entries.extend(batch)
+        if len(batch) < batch_size:
+            break
+        offset += batch_size
+    return entries
+
+
 def _same_day_buy_lots(
     state,
     *,
     symbol: str,
     trade_day: date,
+    ledger_entries: list[dict] | None = None,
 ) -> list[dict[str, float | datetime]]:
-    db = state.db
-    if db is None or not hasattr(db, "get_ledger_entries_sync"):
-        return []
-
     lots: list[dict[str, float | datetime]] = []
-    batch_size = 500
-    offset = 0
-    while True:
-        entries = db.get_ledger_entries_sync(limit=batch_size, offset=offset)
-        if not entries:
-            break
-        for entry in entries:
-            if (
-                str(entry.get("symbol") or "") != symbol
-                or str(entry.get("entry_type") or "").lower() != "trade_buy"
-                or _ledger_entry_shanghai_date(entry) != trade_day
-            ):
-                continue
-            quantity = entry.get("quantity")
-            price = entry.get("price")
-            if quantity in {None, ""} or price in {None, ""}:
-                continue
-            quantity_value = float(quantity)
-            if quantity_value <= 0:
-                continue
-            timestamp = _parse_quote_timestamp(entry.get("timestamp"))
-            if timestamp is None:
-                continue
-            trade_cost = quantity_value * float(price)
-            trade_cost += _ledger_entry_trade_total_fee(entry)
-            lots.append(
-                {
-                    "timestamp": timestamp.astimezone(_SH_TZ),
-                    "quantity": quantity_value,
-                    "price": float(price),
-                    "total_cost": trade_cost,
-                    "avg_cost": trade_cost / quantity_value,
-                }
-            )
-        if len(entries) < batch_size:
-            break
-        offset += batch_size
+    resolved_entries = (
+        _read_daily_ledger_entries(state) if ledger_entries is None else ledger_entries
+    )
+    for entry in resolved_entries:
+        if (
+            str(entry.get("symbol") or "") != symbol
+            or str(entry.get("entry_type") or "").lower() != "trade_buy"
+            or _ledger_entry_shanghai_date(entry) != trade_day
+        ):
+            continue
+        quantity = entry.get("quantity")
+        price = entry.get("price")
+        if quantity in {None, ""} or price in {None, ""}:
+            continue
+        quantity_value = float(quantity)
+        if quantity_value <= 0:
+            continue
+        timestamp = _parse_quote_timestamp(entry.get("timestamp"))
+        if timestamp is None:
+            continue
+        trade_cost = quantity_value * float(price)
+        trade_cost += _ledger_entry_trade_total_fee(entry)
+        lots.append(
+            {
+                "timestamp": timestamp.astimezone(_SH_TZ),
+                "quantity": quantity_value,
+                "price": float(price),
+                "total_cost": trade_cost,
+                "avg_cost": trade_cost / quantity_value,
+            }
+        )
 
     return sorted(lots, key=lambda lot: lot["timestamp"])
 
@@ -2002,27 +2011,22 @@ def _ledger_entry_trade_total_fee(entry: dict) -> float:
     return total
 
 
-def _has_same_day_sell(state, *, symbol: str, trade_day: date) -> bool:
-    db = state.db
-    if db is None or not hasattr(db, "get_ledger_entries_sync"):
-        return False
-
-    batch_size = 500
-    offset = 0
-    while True:
-        entries = db.get_ledger_entries_sync(limit=batch_size, offset=offset)
-        if not entries:
-            return False
-        if any(
-            str(entry.get("symbol") or "") == symbol
-            and str(entry.get("entry_type") or "").lower() == "trade_sell"
-            and _ledger_entry_shanghai_date(entry) == trade_day
-            for entry in entries
-        ):
-            return True
-        if len(entries) < batch_size:
-            return False
-        offset += batch_size
+def _has_same_day_sell(
+    state,
+    *,
+    symbol: str,
+    trade_day: date,
+    ledger_entries: list[dict] | None = None,
+) -> bool:
+    resolved_entries = (
+        _read_daily_ledger_entries(state) if ledger_entries is None else ledger_entries
+    )
+    return any(
+        str(entry.get("symbol") or "") == symbol
+        and str(entry.get("entry_type") or "").lower() == "trade_sell"
+        and _ledger_entry_shanghai_date(entry) == trade_day
+        for entry in resolved_entries
+    )
 
 
 def _resolve_position_today_change(
@@ -2033,6 +2037,7 @@ def _resolve_position_today_change(
     avg_cost: float,
     latest_quote: dict | None,
     latest_price_value: float | None,
+    ledger_entries: list[dict] | None = None,
 ) -> tuple[float | None, float | None, float | None, str | None, str]:
     baseline_price, baseline_timestamp, baseline_source = (
         _resolve_live_holding_baseline(state, symbol, latest_quote)
@@ -2049,6 +2054,7 @@ def _resolve_position_today_change(
         state,
         symbol=symbol,
         trade_day=trade_day,
+        ledger_entries=ledger_entries,
     )
     reference_price = latest_price_value if latest_price_value is not None else avg_cost
     context = build_position_daily_context(
@@ -2059,6 +2065,7 @@ def _resolve_position_today_change(
             state,
             symbol=symbol,
             trade_day=trade_day,
+            ledger_entries=ledger_entries,
         ),
     )
     mark = mark_position_daily(context, price=reference_price)
@@ -2098,6 +2105,7 @@ def _build_live_holdings_response(
         )
 
     groups: dict[str, list[LiveHoldingItemResponse]] = defaultdict(list)
+    daily_ledger_entries = _read_daily_ledger_entries(state)
 
     for sym, pos in portfolio.positions.items():
         quantity = float(pos.quantity)
@@ -2141,6 +2149,7 @@ def _build_live_holdings_response(
             avg_cost=float(pos.avg_cost),
             latest_quote=latest_quote if latest_quote else None,
             latest_price_value=latest_price_value,
+            ledger_entries=daily_ledger_entries,
         )
         avg_cost = float(pos.avg_cost)
         market_value = (
@@ -3911,6 +3920,7 @@ async def build_portfolio_snapshot(state) -> PortfolioSnapshot:
     closed_positions: list[ClosedPositionResponse] = []
     position_review_items: list[PositionEvidenceReviewResponse] = []
     realized_pnl_total = 0.0
+    daily_ledger_entries = _read_daily_ledger_entries(state)
     for sym, pos in portfolio.positions.items():
         symbol = str(sym)
         quote = latest_quotes.get(symbol)
@@ -3942,6 +3952,7 @@ async def build_portfolio_snapshot(state) -> PortfolioSnapshot:
             avg_cost=avg_cost,
             latest_quote=quote,
             latest_price_value=latest_price_value,
+            ledger_entries=daily_ledger_entries,
         )
         quote_status, stale_reason = _position_quote_presentation(
             state,
