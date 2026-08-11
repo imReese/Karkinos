@@ -163,6 +163,28 @@ test('shows stale quote reason as compact visible evidence', () => {
   ).toContain('truncate');
 });
 
+test('uses the available dashboard evidence width before truncating a stale reason', () => {
+  renderTable(
+    <PositionsTable
+      positions={[
+        {
+          ...basePosition,
+          quote_status: 'stale',
+          stale_reason: 'market_closed_cache_only',
+        },
+      ]}
+      variant="dashboard"
+    />,
+  );
+
+  const staleReason = within(
+    screen.getByTestId('positions-table-desktop'),
+  ).getByText('Market closed; using cached quote');
+  expect(staleReason.className).toContain('max-w-full');
+  expect(staleReason.className).toContain('whitespace-normal');
+  expect(staleReason.className).not.toContain('truncate');
+});
+
 test('provides a task-focused mobile holdings list without table-width dependence', () => {
   renderTable(
     <PositionsTable
