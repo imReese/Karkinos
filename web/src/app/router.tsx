@@ -5675,7 +5675,7 @@ export function ActivityPage() {
     useState<ActivityEntryTool>('trade');
   const entries = useLedgerEntriesQuery();
   const pendingFundOrders = usePendingFundOrdersQuery();
-  const positions = usePositionsQuery();
+  const positions = usePositionsQuery(entryDrawerOpen);
   const settings = useSettingsQuery();
   const createTrade = useCreateTradeMutation();
   const tradePreview = useTradePreviewMutation();

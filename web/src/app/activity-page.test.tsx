@@ -412,6 +412,27 @@ test('keeps immutable history as the primary surface and opens entry tools on de
   expect(screen.queryByLabelText('证券代码')).toBeNull();
 });
 
+test('defers the portfolio positions projection until entry tools open', async () => {
+  renderActivityPage('zh');
+
+  expect(await screen.findByText('最近流水')).toBeTruthy();
+  const fetchMock = vi.mocked(globalThis.fetch);
+  expect(
+    fetchMock.mock.calls.some(([input]) =>
+      String(input).includes('/api/portfolio/positions'),
+    ),
+  ).toBe(false);
+
+  fireEvent.click(screen.getByRole('button', { name: '新增流水' }));
+
+  await screen.findByRole('dialog', { name: '新增流水' });
+  expect(
+    fetchMock.mock.calls.some(([input]) =>
+      String(input).includes('/api/portfolio/positions'),
+    ),
+  ).toBe(true);
+});
+
 test('keeps financial direction colors separate from system state colors', async () => {
   renderActivityPage('zh');
 

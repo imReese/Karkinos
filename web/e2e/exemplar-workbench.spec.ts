@@ -253,6 +253,38 @@ test('activity loading preserves the ledger hierarchy across desktop, tablet, an
   }
 });
 
+test('activity defers its drawer-only position projection until entry tools open', async ({
+  page,
+}) => {
+  let positionRequestCount = 0;
+  let releasePositionRequest = () => {};
+  const positionRequestHeld = new Promise<void>((resolve) => {
+    releasePositionRequest = resolve;
+  });
+
+  await page.route('**/api/portfolio/positions', async (route) => {
+    positionRequestCount += 1;
+    await positionRequestHeld;
+    await route.continue();
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/activity');
+
+  await expect(page.getByTestId('activity-history-loading')).toBeHidden({
+    timeout: 15_000,
+  });
+  await page.waitForTimeout(250);
+  expect(positionRequestCount).toBe(0);
+
+  await page.getByRole('button', { name: /New entry|新增流水/ }).click();
+  await expect(
+    page.getByRole('dialog', { name: /New entry|新增流水/ }),
+  ).toBeVisible();
+  await expect.poll(() => positionRequestCount).toBe(1);
+
+  releasePositionRequest();
+});
+
 test('all workbench routes keep mobile interaction targets at least 44px', async ({
   page,
 }) => {
