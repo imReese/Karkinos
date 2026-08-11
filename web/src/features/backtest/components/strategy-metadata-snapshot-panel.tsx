@@ -247,9 +247,9 @@ export function StrategyMetadataSnapshotPanel({
             {params.map(([name, value]) => (
               <span
                 key={name}
-                className="inline-flex min-w-0 flex-col border-l border-[var(--app-divider)] py-1 pl-3"
+                className="inline-flex max-w-full min-w-0 flex-col border-l border-[var(--app-divider)] py-1 pl-3"
               >
-                <span className="text-sm font-semibold">
+                <span className="break-all text-sm font-semibold">
                   {translatedParameterLabel(name, pageLabels)}=
                   {formatValue(value)}
                 </span>
