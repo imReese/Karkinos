@@ -730,6 +730,64 @@ test('reveals saved account metrics while the holdings projection is still loadi
   expect(screen.queryByText('Loading positions.')).toBeNull();
 });
 
+test('reveals persisted snapshot facts while the richer overview projection loads', async () => {
+  const baseFetch = installOverviewFetchMock(
+    {},
+    {
+      snapshot: {
+        ...portfolioSnapshot,
+        realized_pnl_total: 296,
+        valuation_status: 'complete',
+      },
+    },
+  );
+  let resolveOverview!: (response: Response) => void;
+  const overviewRequest = new Promise<Response>((resolve) => {
+    resolveOverview = resolve;
+  });
+  const fetchMock = vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/api/portfolio/overview')) return overviewRequest;
+    return baseFetch(input);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+
+  renderOverviewPage({ installFetch: false });
+
+  const snapshotSummary = await screen.findByTestId(
+    'overview-persisted-snapshot-summary',
+  );
+  expect(within(snapshotSummary).getByText(/101,000\.00/)).toBeTruthy();
+  expect(within(snapshotSummary).getByText(/76,000\.00/)).toBeTruthy();
+  expect(within(snapshotSummary).getByText(/296\.00/)).toBeTruthy();
+  expect(screen.queryByTestId('overview-loading-workspace')).toBeNull();
+  expect(screen.queryByTestId('account-metrics-rail')).toBeNull();
+
+  await act(async () => {
+    resolveOverview(
+      jsonResponse({
+        total_equity: 102000,
+        available_cash: 75000,
+        total_deposits: 100000,
+        positions_count: 0,
+        unrealized_pnl: 1700,
+        realized_pnl: 300,
+        cash_ratio: 0.735,
+        valuation_snapshot_id: 'valuation-overview-rich',
+        valuation_as_of: '2026-02-10T15:05:00+08:00',
+        valuation_status: 'complete',
+      }),
+    );
+  });
+
+  expect(await screen.findByTestId('account-metrics-rail')).toBeTruthy();
+  await waitFor(() =>
+    expect(
+      screen.queryByTestId('overview-persisted-snapshot-summary'),
+    ).toBeNull(),
+  );
+});
+
 test('keeps a fully closed asset out of current holdings while retaining sell activity', async () => {
   window.localStorage.setItem('karkinos.locale', 'zh');
   installOverviewFetchMock(
