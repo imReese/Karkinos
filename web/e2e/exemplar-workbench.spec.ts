@@ -731,9 +731,9 @@ test('backtest preserves result-first evidence and complete metrics across all a
       const datasetSnapshot = document.querySelector(
         '[data-backtest-report-section="dataset-snapshot"]',
       ) as HTMLElement | null;
-      const datasetSnapshotGrid = datasetSnapshot?.querySelector(
+      const datasetSnapshotGrid = (datasetSnapshot?.querySelector(
         ':scope > .grid',
-      ) as HTMLElement | null;
+      ) ?? null) as HTMLElement | null;
       const datasetSnapshotValues = datasetSnapshotGrid
         ? (Array.from(
             datasetSnapshotGrid.querySelectorAll(':scope > div > div + div'),
