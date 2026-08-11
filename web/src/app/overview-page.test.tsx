@@ -890,7 +890,19 @@ test('renders the compact return calendar on the overview page', async () => {
       return url.includes('/api/portfolio/equity-curve/series?range=all');
     }),
   ).toBe(true);
+  expect(
+    fetchMock.mock.calls.some(([input]) =>
+      String(input).includes('/api/portfolio/explainability'),
+    ),
+  ).toBe(false);
   await userEvent.click(screen.getByRole('tab', { name: 'Return calendar' }));
+  await waitFor(() =>
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).includes('/api/portfolio/explainability'),
+      ),
+    ).toBe(true),
+  );
   const calendar = await screen.findByTestId('return-calendar-card');
   expect(calendar.className).toContain('p-4');
   expect(screen.getByTestId('return-calendar-month-grid')).toBeTruthy();
