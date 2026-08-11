@@ -7,6 +7,7 @@ import { CashFlowForm } from './components/cash-flow-form';
 import { DividendForm } from './components/dividend-form';
 import { ManualAdjustmentForm } from './components/manual-adjustment-form';
 import { ActivityFeed } from './components/activity-feed';
+import type { LedgerEntry } from './api';
 
 test('submits a manual trade payload', async () => {
   const onSubmit = vi.fn().mockResolvedValue(undefined);
@@ -441,9 +442,10 @@ test('renders ledger entries as a user-facing audit table', () => {
   const notes = screen.getAllByTestId('activity-note');
   expect(notes).toHaveLength(3);
   for (const note of notes) {
-    expect(note.getAttribute('tabindex')).toBe('0');
-    expect(note.getAttribute('title')).toBe(note.textContent?.trim());
-    expect(note.className).toContain('focus:line-clamp-none');
+    expect(note.getAttribute('tabindex')).toBeNull();
+    expect(note.getAttribute('title')).toBeNull();
+    expect(note.className).toContain('[overflow-wrap:anywhere]');
+    expect(note.className).not.toContain('line-clamp');
   }
   expect(screen.queryByText('Fee ¥0.00')).toBeNull();
   expect(screen.getByText('示例材料 600002')).toBeTruthy();
@@ -472,4 +474,39 @@ test('renders ledger entries as a user-facing audit table', () => {
   expect(screen.queryByText(/手工录入持仓/)).toBeNull();
   expect(screen.queryByText(/gross_amount/)).toBeNull();
   expect(screen.queryByText(/Auto-confirmed/)).toBeNull();
+});
+
+test('progressively discloses long activity history without a nested vertical scroller', () => {
+  const entries: LedgerEntry[] = Array.from({ length: 10 }, (_, index) => ({
+    id: index + 1,
+    entry_type: 'trade_buy',
+    timestamp: `2026-04-${String(index + 1).padStart(2, '0')}T14:46:00+00:00`,
+    amount: 200 + index,
+    symbol: `6000${String(index).padStart(2, '0')}`,
+    direction: 'buy',
+    quantity: 10,
+    price: 20,
+    commission: 0,
+    asset_class: 'stock',
+    note: `Recorded activity ${index + 1}`,
+    source: 'manual',
+    source_ref: `trade-${index + 1}`,
+    created_at: null,
+    display_name: `Example holding ${index + 1}`,
+  }));
+
+  render(<ActivityFeed entries={entries} />);
+
+  expect(screen.getByTestId('activity-history-rows').children).toHaveLength(8);
+  expect(screen.getByTestId('activity-history-progress').textContent).toBe(
+    'Showing 8 of 10 entries',
+  );
+
+  fireEvent.click(screen.getByTestId('activity-history-show-more'));
+
+  expect(screen.getByTestId('activity-history-rows').children).toHaveLength(10);
+  expect(screen.getByTestId('activity-history-progress').textContent).toBe(
+    'Showing 10 of 10 entries',
+  );
+  expect(screen.queryByTestId('activity-history-show-more')).toBeNull();
 });

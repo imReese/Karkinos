@@ -998,9 +998,14 @@ test('activity keeps immutable history in the first reading path across all acce
   const historySurface = page.locator(
     '[data-activity-surface="audit-history"]',
   );
-  const historyRegion = page.locator(
-    '[data-activity-surface="audit-history"] [role="region"]',
-  );
+  const historyRegion = page.getByRole('region', {
+    name: /Recent entries|最近流水/,
+    exact: true,
+  });
+  const historyTableScroll = page.getByTestId('activity-history-table-scroll');
+  const historyTable = page.getByTestId('activity-history-table');
+  const historyRows = page.getByTestId('activity-history-rows').locator('tr');
+  const showMore = page.getByTestId('activity-history-show-more');
   const emptyState = page.getByTestId('activity-history-empty');
   await expect(historySurface).toBeVisible({ timeout: 15_000 });
   if (hasEntries) {
@@ -1024,9 +1029,15 @@ test('activity keeps immutable history in the first reading path across all acce
         '[data-activity-surface="audit-history"]',
       ) as HTMLElement;
       const region = document.querySelector(
-        '[data-activity-surface="audit-history"] [role="region"]',
+        '[data-activity-surface="audit-history"] [role="region"][aria-label="Recent entries"], [data-activity-surface="audit-history"] [role="region"][aria-label="最近流水"]',
       ) as HTMLElement | null;
-      const table = region?.querySelector('table') ?? null;
+      const tableScroll = document.querySelector(
+        '[data-testid="activity-history-table-scroll"]',
+      ) as HTMLElement | null;
+      const table = tableScroll?.querySelector('table') ?? null;
+      const notes = Array.from(
+        document.querySelectorAll('[data-testid="activity-note"]'),
+      ) as HTMLElement[];
       const emptyState = document.querySelector(
         '[data-testid="activity-history-empty"]',
       ) as HTMLElement | null;
@@ -1047,7 +1058,21 @@ test('activity keeps immutable history in the first reading path across all acce
         historyVerticalOverflow:
           region === null ? null : region.scrollHeight - region.clientHeight,
         historySurfaceTop: historySurface.getBoundingClientRect().top,
+        tableScrollDisplay:
+          tableScroll === null ? null : getComputedStyle(tableScroll).display,
+        tableScrollHorizontalOverflow:
+          tableScroll === null
+            ? null
+            : tableScroll.scrollWidth - tableScroll.clientWidth,
+        tableScrollVerticalOverflow:
+          tableScroll === null
+            ? null
+            : tableScroll.scrollHeight - tableScroll.clientHeight,
         tableTop: table?.getBoundingClientRect().top ?? null,
+        truncatedNoteCount: notes.filter(
+          (note) =>
+            Number.parseInt(getComputedStyle(note).webkitLineClamp, 10) > 0,
+        ).length,
       };
     });
 
@@ -1065,21 +1090,43 @@ test('activity keeps immutable history in the first reading path across all acce
         geometry.tableTop ?? Number.POSITIVE_INFINITY,
         JSON.stringify(viewport),
       ).toBeLessThan(viewport.width < 640 ? viewport.height * 0.9 : 700);
+      expect(geometry.historyLocalOverflow ?? 0, JSON.stringify(viewport)).toBe(
+        0,
+      );
+      expect(
+        geometry.historyVerticalOverflow ?? 0,
+        JSON.stringify(viewport),
+      ).toBe(0);
+      expect(
+        geometry.tableScrollVerticalOverflow ?? 0,
+        JSON.stringify(viewport),
+      ).toBe(0);
+      expect(geometry.truncatedNoteCount, JSON.stringify(viewport)).toBe(0);
       if (viewport.width < 640) {
         expect(
           geometry.categoryFilterOverflow ?? 0,
           JSON.stringify(viewport),
         ).toBeGreaterThan(0);
         expect(
-          geometry.historyLocalOverflow ?? 0,
+          geometry.tableScrollHorizontalOverflow ?? 0,
           JSON.stringify(viewport),
-        ).toBeGreaterThan(0);
+        ).toBe(0);
       }
+      expect(geometry.tableScrollDisplay, JSON.stringify(viewport)).not.toBe(
+        'none',
+      );
+      await expect(historyTable).toBeVisible();
+      const initialVisibleCount = Math.min(
+        Array.isArray(entries) ? entries.length : 0,
+        8,
+      );
+      await expect(historyRows).toHaveCount(initialVisibleCount);
       if (Array.isArray(entries) && entries.length > 8) {
+        await expect(showMore).toBeVisible();
         expect(
-          geometry.historyVerticalOverflow ?? 0,
+          Math.round((await showMore.boundingBox())!.height),
           JSON.stringify(viewport),
-        ).toBeGreaterThan(0);
+        ).toBeGreaterThanOrEqual(44);
       }
     } else {
       expect(geometry.emptyStateTop, JSON.stringify(viewport)).not.toBeNull();
@@ -1088,6 +1135,12 @@ test('activity keeps immutable history in the first reading path across all acce
         JSON.stringify(viewport),
       ).toBeLessThan(viewport.height);
     }
+  }
+
+  if (Array.isArray(entries) && entries.length > 8) {
+    await showMore.click();
+    const expandedVisibleCount = Math.min(entries.length, 16);
+    await expect(historyRows).toHaveCount(expandedVisibleCount);
   }
 });
 
@@ -2537,6 +2590,7 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
       await page.goto(path);
       let hasSavedResults = false;
       let hasActivityEntries = false;
+      let activityEntryCount = 0;
       if (backtestResultsResponse) {
         const response = await backtestResultsResponse;
         expect(response.ok()).toBe(true);
@@ -2549,6 +2603,7 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
         expect(response.ok()).toBe(true);
         const entries = (await response.json()) as unknown;
         hasActivityEntries = Array.isArray(entries) && entries.length > 0;
+        activityEntryCount = Array.isArray(entries) ? entries.length : 0;
       }
       await selectMobileTheme(page, theme as 'light' | 'dark');
 
@@ -2647,6 +2702,10 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
             '[aria-label="Ledger category filter"], [aria-label="流水分类筛选"]',
           ) as HTMLElement | null;
           const historyTable = historyRegion?.querySelector('table');
+          const historyRows = historyTable?.querySelectorAll('tbody > tr');
+          const showMore = document.querySelector(
+            '[data-testid="activity-history-show-more"]',
+          ) as HTMLElement | null;
           const entryButton = Array.from(
             document.querySelectorAll('button'),
           ).find((button) =>
@@ -2655,6 +2714,16 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
           return {
             historyRegionHeight:
               historyRegion?.getBoundingClientRect().height ?? null,
+            historyRegionHorizontalOverflow:
+              historyRegion === null
+                ? null
+                : historyRegion.scrollWidth - historyRegion.clientWidth,
+            historyRegionVerticalOverflow:
+              historyRegion === null
+                ? null
+                : historyRegion.scrollHeight - historyRegion.clientHeight,
+            historyRowCount: historyRows?.length ?? null,
+            showMoreHeight: showMore?.getBoundingClientRect().height ?? null,
             categoryFilterHeight:
               categoryFilter?.getBoundingClientRect().height ?? null,
             categoryFilterLocalOverflow:
@@ -2668,9 +2737,25 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
         });
         if (hasActivityEntries) {
           expect(
-            activityGeometry.historyRegionHeight ?? Number.POSITIVE_INFINITY,
+            activityGeometry.historyRegionHorizontalOverflow ?? -1,
             theme,
-          ).toBeLessThanOrEqual(activityGeometry.viewportHeight * 0.8);
+          ).toBe(0);
+          expect(
+            activityGeometry.historyRegionVerticalOverflow ?? -1,
+            theme,
+          ).toBe(0);
+          expect(activityGeometry.historyRowCount, theme).toBe(
+            Math.min(activityEntryCount, 8),
+          );
+          if (activityEntryCount > 8) {
+            expect(activityGeometry.showMoreHeight, theme).not.toBeNull();
+            expect(
+              activityGeometry.showMoreHeight ?? 0,
+              theme,
+            ).toBeGreaterThanOrEqual(44);
+          } else {
+            expect(activityGeometry.showMoreHeight, theme).toBeNull();
+          }
           expect(activityGeometry.categoryFilterHeight, theme).not.toBeNull();
           expect(
             activityGeometry.categoryFilterHeight ?? Number.POSITIVE_INFINITY,

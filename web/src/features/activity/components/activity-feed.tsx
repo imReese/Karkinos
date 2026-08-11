@@ -39,6 +39,8 @@ const LEDGER_ENTRY_CATEGORIES: LedgerEntryCategory[] = [
   'other',
 ];
 
+const ACTIVITY_PAGE_SIZE = 8;
+
 const LEDGER_SUBCATEGORIES_BY_CATEGORY: Partial<
   Record<LedgerEntryCategory, SpecificLedgerSubcategory[]>
 > = {
@@ -137,6 +139,8 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
   const [selectedSubcategory, setSelectedSubcategory] =
     useState<LedgerSubcategory>('all');
   const [query, setQuery] = useState('');
+  const [visibleEntryCount, setVisibleEntryCount] =
+    useState(ACTIVITY_PAGE_SIZE);
   const normalizedQuery = query.trim().toLowerCase();
   const categorizedEntries = useMemo(
     () =>
@@ -200,7 +204,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
   )
     ? selectedSubcategory
     : 'all';
-  const visibleEntries =
+  const filteredEntries =
     selectedCategory === 'all' && normalizedQuery === ''
       ? entries
       : categorizedEntries
@@ -219,6 +223,11 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
             );
           })
           .map((item) => item.entry);
+  const visibleEntries = filteredEntries.slice(0, visibleEntryCount);
+  const remainingEntryCount = Math.max(
+    filteredEntries.length - visibleEntries.length,
+    0,
+  );
 
   if (entries.length === 0) {
     return (
@@ -239,7 +248,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
           <h2 className="app-type-section-title mt-2">{labels.title}</h2>
         </div>
         <span className="app-chip px-2.5 py-1 text-xs font-semibold">
-          {labels.count(visibleEntries.length)}
+          {labels.count(filteredEntries.length)}
         </span>
       </div>
       <div className="border-t border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-3 py-3 sm:px-5">
@@ -265,6 +274,7 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                   onClick={() => {
                     setSelectedCategory(category);
                     setSelectedSubcategory('all');
+                    setVisibleEntryCount(ACTIVITY_PAGE_SIZE);
                   }}
                   type="button"
                 >
@@ -284,7 +294,10 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
             <input
               aria-label={labels.searchLabel}
               className="app-field h-9 w-full rounded-[var(--app-radius-control)] px-3 text-xs font-semibold"
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setVisibleEntryCount(ACTIVITY_PAGE_SIZE);
+              }}
               placeholder={labels.searchPlaceholder}
               type="search"
               value={query}
@@ -309,7 +322,10 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
                       ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-bg)] text-[var(--app-accent-strong)]'
                       : 'border-transparent bg-transparent text-[var(--app-muted)] hover:border-[var(--app-border)] hover:bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] hover:text-[var(--app-soft)]'
                   }`}
-                  onClick={() => setSelectedSubcategory(option.key)}
+                  onClick={() => {
+                    setSelectedSubcategory(option.key);
+                    setVisibleEntryCount(ACTIVITY_PAGE_SIZE);
+                  }}
                   type="button"
                 >
                   <span>{option.label}</span>
@@ -327,106 +343,166 @@ export function ActivityFeed({ entries }: { entries: LedgerEntry[] }) {
       </div>
       <div
         aria-label={labels.title}
-        className="min-w-0 max-h-[min(68vh,42rem)] max-w-full overflow-auto overscroll-contain [scrollbar-gutter:stable]"
+        className="min-w-0 max-w-full"
         role="region"
-        tabIndex={0}
       >
-        <table className="app-data-table w-full min-w-[760px] text-left text-sm">
-          <thead className="sticky top-0 z-10">
-            <tr>
-              <th className="px-4 py-2.5">{labels.columns.time}</th>
-              <th className="px-4 py-2.5">{labels.columns.activity}</th>
-              <th className="px-4 py-2.5">{labels.columns.instrument}</th>
-              <th className="px-4 py-2.5 text-right">
-                {labels.columns.amount}
-              </th>
-              <th className="px-4 py-2.5">{labels.columns.detail}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {visibleEntries.length === 0 ? (
-              <tr>
-                <td
-                  className="px-4 py-8 text-center text-sm text-[var(--app-muted)]"
-                  colSpan={5}
-                >
-                  {labels.filteredEmpty}
-                </td>
-              </tr>
-            ) : null}
-            {visibleEntries.map((entry) => {
-              const summary = formatLedgerActivitySummary(entry, locale);
-              const publicNote =
-                formatLedgerPublicNote(entry, locale) ?? labels.noDetail;
-              return (
-                <tr key={entry.id}>
-                  <td className="px-4 py-3 align-top">
-                    <div className="font-mono text-xs font-semibold text-[var(--app-soft)]">
-                      {formatTimestamp(entry.timestamp)}
-                    </div>
-                    <div className="app-muted app-type-micro mt-1">
-                      {formatLedgerSourceLabel(entry.source, locale)}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 align-top">
-                    <div className="flex items-center gap-2.5">
-                      <span
-                        className={`app-type-micro inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--app-radius-control)] font-bold ${activityBadgeClass(summary.tone)}`}
-                      >
-                        {summary.shortLabel}
-                      </span>
-                      <div>
-                        <div className="font-semibold">{summary.label}</div>
-                        <div className="app-muted mt-1 text-xs">
-                          {summary.cashImpactLabel}
-                        </div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 align-top">
-                    {entry.symbol ? (
-                      <a
-                        href={`/portfolio/${encodeURIComponent(entry.symbol)}`}
-                        className="font-semibold text-[var(--app-text)] underline-offset-4 transition-colors hover:text-[var(--app-accent)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
-                        aria-label={labels.openHoldingDetail(entry.symbol)}
-                      >
-                        {formatLedgerInstrumentLabel(entry, locale) ||
-                          entry.symbol}
-                      </a>
-                    ) : (
-                      <div className="font-semibold">--</div>
-                    )}
-                    <div className="app-muted mt-1 flex items-center gap-2 text-xs">
-                      <span className="app-type-overline rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-2 py-0.5">
-                        {formatAssetClass(entry.asset_class, copy)}
-                      </span>
-                    </div>
-                  </td>
-                  <td
-                    className={`px-4 py-3 text-right align-top font-mono text-sm font-semibold tabular-nums ${activityAmountClass(summary.tone)}`}
-                  >
-                    {summary.amount}
-                    <LedgerExecutionDetails
-                      entry={entry}
-                      labels={labels}
-                      locale={locale}
-                    />
-                  </td>
-                  <td className="max-w-[280px] px-4 py-3 align-top text-[var(--app-muted)]">
-                    <span
-                      className="line-clamp-2 break-words focus:line-clamp-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
-                      data-testid="activity-note"
-                      tabIndex={0}
-                      title={publicNote}
-                    >
-                      {publicNote}
-                    </span>
-                  </td>
+        {visibleEntries.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-[var(--app-muted)]">
+            {labels.filteredEmpty}
+          </div>
+        ) : (
+          <div
+            className="min-w-0 max-w-full md:overflow-x-auto md:overscroll-x-contain"
+            data-testid="activity-history-table-scroll"
+          >
+            <table
+              aria-label={labels.tableScrollLabel}
+              className="app-data-table block w-full min-w-0 text-left text-sm md:table md:min-w-[760px]"
+              data-testid="activity-history-table"
+            >
+              <thead className="hidden md:table-header-group">
+                <tr>
+                  <th className="px-4 py-2.5">{labels.columns.time}</th>
+                  <th className="px-4 py-2.5">{labels.columns.activity}</th>
+                  <th className="px-4 py-2.5">{labels.columns.instrument}</th>
+                  <th className="px-4 py-2.5 text-right">
+                    {labels.columns.amount}
+                  </th>
+                  <th className="px-4 py-2.5">{labels.columns.detail}</th>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              </thead>
+              <tbody
+                className="block divide-y divide-[color-mix(in_srgb,var(--app-border)_24%,transparent)] md:table-row-group"
+                data-testid="activity-history-rows"
+              >
+                {visibleEntries.map((entry) => {
+                  const summary = formatLedgerActivitySummary(entry, locale);
+                  const publicNote =
+                    formatLedgerPublicNote(entry, locale) ?? labels.noDetail;
+                  return (
+                    <tr
+                      key={entry.id}
+                      className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-3 px-3 py-4 md:table-row md:p-0"
+                    >
+                      <td className="col-start-2 row-start-2 block p-0 text-right align-top md:table-cell md:px-4 md:py-3 md:text-left">
+                        <div className="font-mono text-xs font-semibold text-[var(--app-soft)]">
+                          {formatTimestamp(entry.timestamp)}
+                        </div>
+                        <div className="app-muted app-type-micro mt-1">
+                          {formatLedgerSourceLabel(entry.source, locale)}
+                        </div>
+                      </td>
+                      <td className="col-start-1 row-start-1 block p-0 align-top md:table-cell md:px-4 md:py-3">
+                        <div className="flex items-center gap-2.5">
+                          <span
+                            className={`app-type-micro inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--app-radius-control)] font-bold ${activityBadgeClass(summary.tone)}`}
+                          >
+                            {summary.shortLabel}
+                          </span>
+                          <div>
+                            <div className="font-semibold">{summary.label}</div>
+                            <div className="app-muted mt-1 text-xs">
+                              {summary.cashImpactLabel}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="col-start-1 row-start-2 block min-w-0 p-0 align-top md:table-cell md:px-4 md:py-3">
+                        <ActivityInstrument
+                          copy={copy}
+                          entry={entry}
+                          labels={labels}
+                          locale={locale}
+                        />
+                      </td>
+                      <td
+                        className={`col-start-2 row-start-1 block p-0 text-right align-top font-mono text-sm font-semibold tabular-nums md:table-cell md:px-4 md:py-3 ${activityAmountClass(summary.tone)}`}
+                      >
+                        {summary.amount}
+                        <LedgerExecutionDetails
+                          entry={entry}
+                          labels={labels}
+                          locale={locale}
+                        />
+                      </td>
+                      <td className="col-span-2 row-start-3 block min-w-0 max-w-none p-0 align-top text-[var(--app-muted)] md:table-cell md:max-w-[280px] md:px-4 md:py-3">
+                        <span
+                          className="block break-words [overflow-wrap:anywhere]"
+                          data-testid="activity-note"
+                        >
+                          {publicNote}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {visibleEntries.length > 0 ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[color-mix(in_srgb,var(--app-border)_24%,transparent)] px-3 py-3 sm:px-5">
+            <span
+              aria-live="polite"
+              className="app-muted text-xs font-semibold"
+              data-testid="activity-history-progress"
+            >
+              {labels.showing(visibleEntries.length, filteredEntries.length)}
+            </span>
+            {remainingEntryCount > 0 ? (
+              <button
+                className="app-button-secondary min-h-11 px-4 text-sm"
+                data-testid="activity-history-show-more"
+                onClick={() =>
+                  setVisibleEntryCount((count) =>
+                    Math.min(
+                      count + ACTIVITY_PAGE_SIZE,
+                      filteredEntries.length,
+                    ),
+                  )
+                }
+                type="button"
+              >
+                {labels.showMore(
+                  Math.min(ACTIVITY_PAGE_SIZE, remainingEntryCount),
+                )}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function ActivityInstrument({
+  copy,
+  entry,
+  labels,
+  locale,
+}: {
+  copy: ReturnType<typeof useCopy>;
+  entry: LedgerEntry;
+  labels: ReturnType<typeof useCopy>['activity']['feed'];
+  locale: ReturnType<typeof usePreferences>['locale'];
+}) {
+  return (
+    <div className="min-w-0">
+      {entry.symbol ? (
+        <a
+          href={`/portfolio/${encodeURIComponent(entry.symbol)}`}
+          className="break-words font-semibold text-[var(--app-text)] underline-offset-4 transition-colors hover:text-[var(--app-accent)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
+          aria-label={labels.openHoldingDetail(entry.symbol)}
+        >
+          {formatLedgerInstrumentLabel(entry, locale) || entry.symbol}
+        </a>
+      ) : (
+        <div className="font-semibold">--</div>
+      )}
+      <div className="app-muted mt-1 flex items-center gap-2 text-xs">
+        <span className="app-type-overline rounded-full border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-2 py-0.5">
+          {formatAssetClass(entry.asset_class, copy)}
+        </span>
       </div>
     </div>
   );
