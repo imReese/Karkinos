@@ -1374,33 +1374,37 @@ test('holding detail keeps realized and unrealized PnL context readable on lapto
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
-  await page.route('**/api/portfolio/positions', async (route) => {
+  const snapshotResponse = await page.request.get('/api/portfolio');
+  expect(snapshotResponse.ok()).toBeTruthy();
+  const snapshot = (await snapshotResponse.json()) as Record<string, unknown>;
+  await page.route('**/api/portfolio', async (route) => {
     await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify([
-        {
-          symbol: '603659',
-          display_name: '璞泰来',
-          asset_class: 'stock',
-          quantity: 400,
-          available_qty: 400,
-          frozen_qty: 0,
-          avg_cost: 25.97,
-          latest_price: 23.93,
-          market_value: 9556,
-          today_change: 36,
-          unrealized_pnl: -815.6,
-          realized_pnl: 192.9,
-          commission_paid: 5,
-          quote_timestamp: '2026-08-03T15:00:00+08:00',
-          quote_status: 'stale',
-          quote_source: 'market_bar_close',
-          quote_age_seconds: 18000,
-          stale_reason: 'market_closed',
-          using_persistent_cache: true,
-        },
-      ]),
+      json: {
+        ...snapshot,
+        positions: [
+          {
+            symbol: '603659',
+            display_name: '璞泰来',
+            asset_class: 'stock',
+            quantity: 400,
+            available_qty: 400,
+            frozen_qty: 0,
+            avg_cost: 25.97,
+            latest_price: 23.93,
+            market_value: 9556,
+            today_change: 36,
+            unrealized_pnl: -815.6,
+            realized_pnl: 192.9,
+            commission_paid: 5,
+            quote_timestamp: '2026-08-03T15:00:00+08:00',
+            quote_status: 'stale',
+            quote_source: 'market_bar_close',
+            quote_age_seconds: 18000,
+            stale_reason: 'market_closed',
+            using_persistent_cache: true,
+          },
+        ],
+      },
     });
   });
 
