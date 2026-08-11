@@ -523,13 +523,11 @@ test('defers secondary risk reads until primary persisted evidence settles', asy
       String(input).includes('/api/portfolio/explainability'),
     ),
   ).toBe(false);
-  await waitFor(() => {
-    expect(
-      fetchMock.mock.calls.some(([input]) =>
-        String(input).includes('/api/portfolio/risk-workspace'),
-      ),
-    ).toBe(true);
-  });
+  expect(
+    fetchMock.mock.calls.some(([input]) =>
+      String(input).includes('/api/portfolio/risk-workspace'),
+    ),
+  ).toBe(true);
 
   await act(async () => {
     resolveRiskWorkspace(jsonResponse(riskWorkspace));

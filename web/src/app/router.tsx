@@ -1,10 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import {
   createRoute,
   createRootRoute,
@@ -3811,24 +3805,11 @@ export function PortfolioPage() {
   );
 }
 
-const RISK_WORKSPACE_PROGRESSIVE_DELAY_MS = 500;
-
 export function RiskPage() {
   const copy = useCopy();
   const { locale } = usePreferences();
   const state = useAccountStateQuery();
-  const [riskWorkspaceEnabled, setRiskWorkspaceEnabled] = useState(false);
-  useEffect(() => {
-    if (!state.data) {
-      setRiskWorkspaceEnabled(false);
-      return;
-    }
-    const timeout = window.setTimeout(
-      () => setRiskWorkspaceEnabled(true),
-      RISK_WORKSPACE_PROGRESSIVE_DELAY_MS,
-    );
-    return () => window.clearTimeout(timeout);
-  }, [state.data]);
+  const riskWorkspaceEnabled = Boolean(state.data);
   const workspace = useRiskWorkspaceQuery(riskWorkspaceEnabled);
   const primaryRiskQueriesReady = Boolean(state.data && workspace.data);
   const todayDecision = useTodayDecisionQuery(primaryRiskQueriesReady);
@@ -3892,9 +3873,7 @@ export function RiskPage() {
     0;
   const riskCheckedCount = riskReviewEvidence?.risk_checked_count ?? 0;
   const hasAnyRiskProjection = Boolean(state.data || workspace.data);
-  const isRiskWorkspacePending =
-    !workspace.data &&
-    (workspace.isLoading || Boolean(state.data && !riskWorkspaceEnabled));
+  const isRiskWorkspacePending = !workspace.data && workspace.isLoading;
   const isInitialRiskLoad =
     (!state.data && state.isLoading) || isRiskWorkspacePending;
   const isRiskWorkspaceUnavailable = !state.data || !workspace.data;

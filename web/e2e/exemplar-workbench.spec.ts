@@ -906,41 +906,37 @@ test('AI research keeps frozen evidence ahead of human capture across all accept
       exact: true,
     });
     await expect(openComposer).toHaveAttribute('aria-expanded', 'false');
-    if (viewport.width < 1440) {
-      const boundaryBadgesBox = (await boundaryBadges.boundingBox())!;
-      const collapseWorkspaceBox = (await collapseWorkspace.boundingBox())!;
-      const openComposerBox = (await openComposer.boundingBox())!;
-      const openStrategyLabBox = (await openStrategyLab.boundingBox())!;
-      const queueTitleBox = (await queueTitle.boundingBox())!;
-      const workspaceHeaderBox = (await workspaceHeader.boundingBox())!;
+    const boundaryBadgesBox = (await boundaryBadges.boundingBox())!;
+    const collapseWorkspaceBox = (await collapseWorkspace.boundingBox())!;
+    const openComposerBox = (await openComposer.boundingBox())!;
+    const openStrategyLabBox = (await openStrategyLab.boundingBox())!;
+    const queueTitleBox = (await queueTitle.boundingBox())!;
+    const workspaceHeaderBox = (await workspaceHeader.boundingBox())!;
 
-      expect(
-        Math.abs(openStrategyLabBox.x - workspaceHeaderBox.x),
-        `header action ${JSON.stringify(viewport)}`,
-      ).toBeLessThanOrEqual(1);
-      expect(
-        Math.abs(boundaryBadgesBox.x - primaryCanvasBox.x),
-        `workspace control ${JSON.stringify(viewport)}`,
-      ).toBeLessThanOrEqual(1);
-      expect(
-        collapseWorkspaceBox.x -
-          (boundaryBadgesBox.x + boundaryBadgesBox.width),
-        `workspace control gap ${JSON.stringify(viewport)}`,
-      ).toBeGreaterThanOrEqual(0);
-      expect(
-        collapseWorkspaceBox.x -
-          (boundaryBadgesBox.x + boundaryBadgesBox.width),
-        `workspace control gap ${JSON.stringify(viewport)}`,
-      ).toBeLessThanOrEqual(16);
-      expect(
-        openComposerBox.x,
-        `queue action ${JSON.stringify(viewport)}`,
-      ).toBeLessThan(queueTitleBox.x + queueTitleBox.width / 2);
-      expect(
-        openComposerBox.y,
-        `queue action ${JSON.stringify(viewport)}`,
-      ).toBeGreaterThan(queueTitleBox.y + queueTitleBox.height);
-    }
+    expect(
+      Math.abs(openStrategyLabBox.x - workspaceHeaderBox.x),
+      `header action ${JSON.stringify(viewport)}`,
+    ).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(boundaryBadgesBox.x - primaryCanvasBox.x),
+      `workspace control ${JSON.stringify(viewport)}`,
+    ).toBeLessThanOrEqual(1);
+    expect(
+      collapseWorkspaceBox.x - (boundaryBadgesBox.x + boundaryBadgesBox.width),
+      `workspace control gap ${JSON.stringify(viewport)}`,
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      collapseWorkspaceBox.x - (boundaryBadgesBox.x + boundaryBadgesBox.width),
+      `workspace control gap ${JSON.stringify(viewport)}`,
+    ).toBeLessThanOrEqual(16);
+    expect(
+      openComposerBox.x,
+      `queue action ${JSON.stringify(viewport)}`,
+    ).toBeLessThan(queueTitleBox.x + queueTitleBox.width / 2);
+    expect(
+      openComposerBox.y,
+      `queue action ${JSON.stringify(viewport)}`,
+    ).toBeGreaterThan(queueTitleBox.y + queueTitleBox.height);
     for (const [name, target] of Object.entries({
       openComposer,
       collapseWorkspace,
