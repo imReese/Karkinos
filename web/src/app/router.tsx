@@ -2890,7 +2890,14 @@ function DashboardMarketPulse({
                 {
                   id: 'signal',
                   label: labels.marketPulseDisclosure,
-                  value: signalLabel,
+                  value: (
+                    <span
+                      className="block whitespace-normal break-words"
+                      title={signalLabel}
+                    >
+                      {signalLabel}
+                    </span>
+                  ),
                 },
                 {
                   id: 'source',

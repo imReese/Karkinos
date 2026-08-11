@@ -984,6 +984,9 @@ test('puts the action queue before holdings in the reading order while preservin
   expect(within(workbench).queryByText('Daily workbench')).toBeNull();
   expect(within(workbench).queryByText('Daily operations tower')).toBeNull();
   expect(within(marketPulse).getByText('Market pulse')).toBeTruthy();
+  const signal = within(marketPulse).getByTitle('Mixed market');
+  expect(signal.className).toContain('whitespace-normal');
+  expect(signal.textContent).toBe('Mixed market');
   expect(within(marketPulse).getByText('Shanghai Composite')).toBeTruthy();
   expect(within(marketPulse).getByText('Shenzhen Component')).toBeTruthy();
   expect(
