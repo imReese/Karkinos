@@ -58,20 +58,88 @@ test('Account Truth keeps unresolved report reads local and fail closed', async 
   const reportHistoryRequested = new Promise<void>((resolve) => {
     markReportHistoryRequested = resolve;
   });
+  const persistedReport = {
+    import_run_id: 'browser-safety-import-run',
+    schema_version: 'karkinos.account_truth.reconciliation.v1',
+    status: 'mismatch',
+    row_count: 1,
+    validation_status: 'pass',
+    source_type: 'canonical_broker_statement_csv',
+    source_name: 'synthetic-browser-safety.csv',
+    created_at: '2026-06-18T10:10:00+08:00',
+    unresolved_count: 1,
+    cash_difference: '0.00',
+    fee_difference: '0.00',
+    tax_difference: '0.00',
+    suggested_review_actions: ['review_position_difference'],
+    limitations: ['Synthetic provider-free browser fixture.'],
+  };
+
+  await page.route('**/api/account-truth/score', async (route) => {
+    await route.fulfill({
+      json: {
+        schema_version: 'karkinos.account_truth.score.v1',
+        status: 'available',
+        import_run_id: persistedReport.import_run_id,
+        score: 42,
+        gate_status: 'blocked',
+        cash_status: 'pass',
+        position_status: 'mismatch',
+        fee_status: 'pass',
+        cost_basis_status: 'pass',
+        data_freshness_status: 'fresh',
+        unresolved_mismatch_count: 1,
+        resolved_review_count: 0,
+        required_actions: ['review_position_difference'],
+        blocking_reasons: ['unresolved_position_difference'],
+        limitations: ['Synthetic provider-free browser fixture.'],
+      },
+    });
+  });
 
   await page.route(
     '**/api/account-truth/reconciliation-reports**',
     async (route) => {
       const requestUrl = new URL(route.request().url());
       if (requestUrl.pathname !== '/api/account-truth/reconciliation-reports') {
-        await route.continue();
+        await route.fulfill({
+          json: {
+            ...persistedReport,
+            items: [
+              {
+                item_key: 'position:SYN001',
+                category: 'position',
+                status: 'mismatch',
+                severity: 'mismatch',
+                symbol: 'SYN001',
+                display_name: 'Synthetic holding',
+                broker_value: '1',
+                karkinos_value: '0',
+                difference: '1',
+                suggested_review_action: 'review_position_difference',
+                detail: 'Synthetic persisted mismatch for browser safety.',
+                evidence_references: [
+                  'broker_event:browser-safety-import-run:SYN001',
+                ],
+                latest_review: null,
+              },
+            ],
+          },
+        });
         return;
       }
       markReportHistoryRequested();
-      const responsePromise = route.fetch();
       await reportHistoryGate;
-      const response = await responsePromise;
-      await route.fulfill({ response });
+      await route.fulfill({
+        json: [
+          persistedReport,
+          {
+            ...persistedReport,
+            import_run_id: 'browser-safety-earlier-import-run',
+            created_at: '2026-06-17T10:10:00+08:00',
+          },
+        ],
+      });
     },
   );
 
@@ -104,9 +172,9 @@ test('Account Truth keeps unresolved report reads local and fail closed', async 
   ).toBe(0);
 
   releaseReportHistory();
-  await expect(
-    page.getByText(/earlier reports|份较早报告/).first(),
-  ).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/earlier report|份较早报告/).first()).toBeVisible(
+    { timeout: 15_000 },
+  );
 });
 
 test('Account Truth preserves its evidence hierarchy across themes and acceptance viewports', async ({
