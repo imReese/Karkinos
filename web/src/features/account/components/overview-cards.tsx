@@ -161,7 +161,7 @@ export function OverviewSnapshotFallbackCards({
         <MetricStrip
           items={supportingMetrics}
           ariaLabel={copy.overview.cards.supportingMetrics}
-          className="account-metric-strip account-support-metric-strip tabular-nums sm:grid-flow-row sm:grid-cols-2 lg:grid-flow-row lg:grid-cols-5"
+          className="account-metric-strip account-support-metric-strip tabular-nums [contain:layout] sm:grid-flow-row sm:grid-cols-2 lg:grid-flow-row lg:grid-cols-5"
         />
       </div>
       <EvidenceState
