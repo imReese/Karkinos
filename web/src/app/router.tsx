@@ -400,7 +400,7 @@ export function OverviewPage() {
   );
   const ledgerEntries = useLedgerEntriesQuery(8, secondaryQueriesEnabled);
   const pendingOrders = usePendingManualOrdersQuery(secondaryQueriesEnabled);
-  const marketHealth = useMarketDataHealthQuery();
+  const marketHealth = useMarketDataHealthQuery(secondaryQueriesEnabled);
   const holdingMarketEvidenceReview =
     useCurrentHoldingMarketEvidenceReviewQuery(secondaryQueriesEnabled);
   const strategyContribution = useAccountStrategyContributionQuery(
@@ -408,7 +408,7 @@ export function OverviewPage() {
   );
   const todayDecision = useTodayDecisionQuery(secondaryQueriesEnabled);
   const tradingPlan = useDailyTradingPlanQuery(secondaryQueriesEnabled);
-  const operationsToday = useOperationsTodayQuery();
+  const operationsToday = useOperationsTodayQuery(secondaryQueriesEnabled);
   const assetClassBySymbol = useMemo(
     () =>
       Object.fromEntries(
