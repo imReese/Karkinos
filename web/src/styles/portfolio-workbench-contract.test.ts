@@ -93,7 +93,7 @@ test('portfolio lifecycle states stay flat instead of rebuilding a card wall', (
   expect(portfolioPageSource).not.toMatch(/rounded-(?:xl|2xl|3xl)/);
 });
 
-test('portfolio defers secondary read models until primary holdings facts settle', () => {
+test('portfolio defers secondary read models until their visible perspective is ready', () => {
   expect(portfolioPageSource).toContain(
     'const primaryPortfolioQueriesSettled = snapshot.data !== undefined',
   );
@@ -125,13 +125,19 @@ test('portfolio defers secondary read models until primary holdings facts settle
   expect(portfolioInitialLoadingSource).not.toContain('snapshot.data');
   expect(portfolioInitialLoadingSource).not.toContain('positions.data');
   expect(portfolioPageSource).toContain(
-    'usePortfolioCockpitQuery(primaryPortfolioQueriesSettled)',
+    "primaryPortfolioQueriesSettled && mode === 'account'",
   );
   expect(portfolioPageSource).toContain(
-    'useLiveHoldingsQuery(primaryPortfolioQueriesSettled)',
+    "primaryPortfolioQueriesSettled && mode === 'strategy'",
   );
   expect(portfolioPageSource).toContain(
-    'useAccountStrategyContributionQuery(\n    primaryPortfolioQueriesSettled,',
+    'usePortfolioCockpitQuery(strategyAnalysisEnabled)',
+  );
+  expect(portfolioPageSource).toContain(
+    'useLiveHoldingsQuery(accountAnalysisEnabled)',
+  );
+  expect(portfolioPageSource).toContain(
+    'useAccountStrategyContributionQuery(\n    strategyAnalysisEnabled,',
   );
   expect(portfolioPageSource).toContain(
     'description={portfolioPrimaryFailureDetail}',
