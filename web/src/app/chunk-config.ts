@@ -16,10 +16,12 @@ export function appFeatureChunk(id: string): ChunkName {
 
   if (
     normalizedId.includes('/src/features/account/') ||
-    normalizedId.includes('/src/features/account-strategy/') ||
-    normalizedId.includes('/src/features/account-truth/')
+    normalizedId.includes('/src/features/account-strategy/')
   ) {
     return 'feature-account';
+  }
+  if (normalizedId.includes('/src/features/account-truth/')) {
+    return 'feature-account-truth';
   }
   if (normalizedId.includes('/src/features/activity/')) {
     return 'feature-activity';
