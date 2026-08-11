@@ -67,7 +67,9 @@ test('Account Truth keeps unresolved report reads local and fail closed', async 
   await page.goto('/account-truth');
 
   await expect(
-    page.getByRole('heading', { name: 'Loading Account Truth evidence.' }),
+    page
+      .getByTestId('account-truth-reports-loading')
+      .getByRole('heading', { name: 'Loading Account Truth evidence.' }),
   ).toBeVisible();
   await expect(
     page.getByTestId('account-truth-review-workspace'),
