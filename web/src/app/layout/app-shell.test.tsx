@@ -150,7 +150,7 @@ function installMatchMediaMock(
     value: vi.fn().mockImplementation((query: string) => ({
       matches: query.includes('prefers-color-scheme: dark')
         ? darkMode
-        : query === '(min-width: 1536px)'
+        : query === '(min-width: 1360px)'
           ? wideStatusRail
           : false,
       media: query,
@@ -192,10 +192,10 @@ function installMatchMediaMock(
       wideStatusRail = matches;
       const event = {
         matches,
-        media: '(min-width: 1536px)',
+        media: '(min-width: 1360px)',
       } as MediaQueryListEvent;
       listeners
-        .get('(min-width: 1536px)')
+        .get('(min-width: 1360px)')
         ?.forEach((listener) => listener(event));
     },
   };
@@ -496,7 +496,7 @@ test('keeps the desktop toolbar controls in a single centered row', async () => 
 
   const accountStatus = await screen.findByLabelText('Account Status');
   expect(accountStatus.className).toContain('app-toolbar-status-rail');
-  expect(accountStatus.className).toContain('2xl:flex');
+  expect(accountStatus.className).toContain('min-[1360px]:flex');
   expect(document.querySelector('.app-status-footer')).toBeNull();
 
   const themeSwitcher = await screen.findByRole('group', { name: 'Theme' });
@@ -554,7 +554,7 @@ test('surfaces compact persisted status in the desktop toolbar', async () => {
   renderShell();
 
   const statusRail = await screen.findByLabelText('Account Status');
-  expect(statusRail.className).toContain('2xl:flex');
+  expect(statusRail.className).toContain('min-[1360px]:flex');
   expect(statusRail.className).toContain('app-toolbar-status-rail');
   expect(within(statusRail).queryByText('Recorded evidence')).toBeNull();
   const valuationStatus = within(statusRail).getByTestId(

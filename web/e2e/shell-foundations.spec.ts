@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 const desktopViewports = [
-  { width: 1536, height: 900 },
+  { width: 1360, height: 900 },
   { width: 1280, height: 800 },
 ];
 
@@ -16,7 +16,7 @@ test('desktop shell defaults to labeled business groups and remains collapsible'
     const header = page.locator('.app-toolbar-shell');
     const statusRail = page.locator('.app-toolbar-status-rail');
     await expect(sidebar).toBeVisible();
-    const wideStatusRail = viewport.width >= 1536;
+    const wideStatusRail = viewport.width >= 1360;
     if (wideStatusRail) {
       await expect(statusRail).toBeVisible();
       await expect(page.getByTestId('compact-status-trigger')).toHaveCount(0);
@@ -121,7 +121,7 @@ test('laptop routes defer toolbar projections until the compact status entry ope
     page.getByRole('dialog', { name: 'Account Status' }),
   ).toHaveCount(0);
 
-  await page.setViewportSize({ width: 1536, height: 900 });
+  await page.setViewportSize({ width: 1360, height: 900 });
   await expect(page.locator('.app-toolbar-status-rail')).toBeVisible();
   await expect(compactStatus).toHaveCount(0);
 });
@@ -273,7 +273,7 @@ test('desktop utility controls align and overview holdings avoid partial columns
       Math.min(...laptopGeometry.toolbarCenters),
   ).toBeLessThanOrEqual(1);
 
-  await page.setViewportSize({ width: 1536, height: 900 });
+  await page.setViewportSize({ width: 1440, height: 900 });
   await expect(page.locator('.app-toolbar-status-rail')).toBeVisible();
   await expect(page.getByTestId('status-pill-valuation')).not.toHaveAttribute(
     'aria-label',
