@@ -52,6 +52,66 @@ class DecisionQualityCaptureBody(BaseModel):
     ]
 
 
+async def run_batch_pre_trade_risk_for_state(state: Any) -> dict[str, Any]:
+    """Run the canonical persisted-evidence batch risk gate for one app state."""
+    from server.services.live_context import LiveContextProvider
+    from server.services.pre_trade_batch import run_pre_trade_risk_batch
+
+    if state.db is None:
+        raise HTTPException(status_code=503, detail="database is unavailable")
+    if state.trading_controls is None:
+        raise HTTPException(
+            status_code=503,
+            detail="trading controls are unavailable",
+        )
+    portfolio_context = _decision_portfolio_context(state)
+    tasks = _read_action_tasks(
+        state.db,
+        decision_date=_action_filter_date(portfolio_context),
+    )
+    evidence_gate = _batch_pre_trade_risk_evidence_gate(
+        state.db,
+        portfolio_context=portfolio_context,
+        tasks=tasks,
+    )
+    if not evidence_gate["ready"]:
+        return _blocked_batch_pre_trade_risk_response(
+            tasks=tasks,
+            evidence_gate=evidence_gate,
+        )
+    portfolio = portfolio_context.get("portfolio")
+    positions = getattr(portfolio, "positions", {}) if portfolio is not None else {}
+    risk_portfolio = SimpleNamespace(
+        cash=getattr(portfolio, "cash", 0),
+        positions={
+            Symbol(str(symbol)): position
+            for symbol, position in dict(positions or {}).items()
+        },
+        instruments={},
+    )
+    context_provider = LiveContextProvider(
+        portfolio_getter=lambda: risk_portfolio,
+        controls=state.trading_controls,
+    )
+    result = run_pre_trade_risk_batch(
+        db=state.db,
+        context_provider=context_provider,
+        config=getattr(state, "config", None),
+        tasks=_allocate_decision_actions(
+            state,
+            portfolio_context,
+            tasks,
+        ),
+        evidence_binding=evidence_gate["evidence_binding"],
+    )
+    return {
+        **result,
+        **evidence_gate["evidence_binding"],
+        "blockers": [],
+        "persisted_facts_only": True,
+    }
+
+
 def create_router() -> APIRouter:
     r = APIRouter(prefix="/api/decision", tags=["decision"])
 
@@ -147,63 +207,8 @@ def create_router() -> APIRouter:
     @r.post("/pre-trade-risk/batch")
     async def run_batch_pre_trade_risk() -> dict[str, Any]:
         from server.app import get_app_state
-        from server.services.live_context import LiveContextProvider
-        from server.services.pre_trade_batch import run_pre_trade_risk_batch
 
-        state = get_app_state()
-        if state.db is None:
-            raise HTTPException(status_code=503, detail="database is unavailable")
-        if state.trading_controls is None:
-            raise HTTPException(
-                status_code=503,
-                detail="trading controls are unavailable",
-            )
-        portfolio_context = _decision_portfolio_context(state)
-        tasks = _read_action_tasks(
-            state.db,
-            decision_date=_action_filter_date(portfolio_context),
-        )
-        evidence_gate = _batch_pre_trade_risk_evidence_gate(
-            state.db,
-            portfolio_context=portfolio_context,
-            tasks=tasks,
-        )
-        if not evidence_gate["ready"]:
-            return _blocked_batch_pre_trade_risk_response(
-                tasks=tasks,
-                evidence_gate=evidence_gate,
-            )
-        portfolio = portfolio_context.get("portfolio")
-        positions = getattr(portfolio, "positions", {}) if portfolio is not None else {}
-        risk_portfolio = SimpleNamespace(
-            cash=getattr(portfolio, "cash", 0),
-            positions={
-                Symbol(str(symbol)): position
-                for symbol, position in dict(positions or {}).items()
-            },
-            instruments={},
-        )
-        context_provider = LiveContextProvider(
-            portfolio_getter=lambda: risk_portfolio,
-            controls=state.trading_controls,
-        )
-        result = run_pre_trade_risk_batch(
-            db=state.db,
-            context_provider=context_provider,
-            config=getattr(state, "config", None),
-            tasks=_allocate_decision_actions(
-                state,
-                portfolio_context,
-                tasks,
-            ),
-            evidence_binding=evidence_gate["evidence_binding"],
-        )
-        return {
-            **result,
-            **evidence_gate["evidence_binding"],
-            "blockers": [],
-            "persisted_facts_only": True,
-        }
+        return await run_batch_pre_trade_risk_for_state(get_app_state())
 
     @r.get("/intraday")
     async def get_intraday_decision() -> dict[str, Any]:

@@ -165,6 +165,9 @@ async def lifespan(app: FastAPI):
     from notification.notifier import build_notifier
     from server.bootstrap import load_runtime_config
     from server.config import BrokerStatementCollectorConfig, ServerConfig
+    from server.services.daily_decision_evidence_automation import (
+        run_daily_decision_evidence_automation_loop,
+    )
     from server.services.market_calendar_automation import (
         run_market_calendar_automation_loop,
     )
@@ -267,6 +270,7 @@ async def lifespan(app: FastAPI):
     forward_task = asyncio.create_task(_forward_events(bridge, hub))
     broker_statement_collector_task: asyncio.Task[None] | None = None
     market_calendar_task: asyncio.Task[None] | None = None
+    decision_evidence_task: asyncio.Task[None] | None = None
     if collector_config.enabled:
         broker_statement_collector_task = asyncio.create_task(
             run_local_broker_statement_collector(broker_statement_collector),
@@ -283,6 +287,13 @@ async def lifespan(app: FastAPI):
     # 自动启动实时监控
     if config.live_auto_start:
         scheduler.start()
+        decision_evidence_task = asyncio.create_task(
+            run_daily_decision_evidence_automation_loop(
+                state=state,
+                interval_seconds=config.live_poll_interval,
+            ),
+            name="daily-decision-evidence-automation",
+        )
         if config.market_calendar_auto_sync:
             market_calendar_task = asyncio.create_task(
                 run_market_calendar_automation_loop(db=db, config=config),
@@ -294,6 +305,12 @@ async def lifespan(app: FastAPI):
     yield
 
     # ---- Shutdown ----
+    if decision_evidence_task is not None:
+        decision_evidence_task.cancel()
+        try:
+            await decision_evidence_task
+        except asyncio.CancelledError:
+            pass
     if market_calendar_task is not None:
         market_calendar_task.cancel()
         try:
