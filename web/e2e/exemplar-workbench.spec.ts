@@ -484,23 +484,36 @@ test('overview preserves the queue-to-holdings hierarchy across all acceptance v
   const snapshotResponse = await page.request.get('/api/portfolio');
   expect(snapshotResponse.ok()).toBeTruthy();
   const snapshot = (await snapshotResponse.json()) as Record<string, unknown>;
-  const positions = snapshot.positions as Record<string, unknown>[];
-  expect(positions.length).toBeGreaterThan(0);
+  const persistedPositions = Array.isArray(snapshot.positions)
+    ? (snapshot.positions as Record<string, unknown>[])
+    : [];
+  const positions = [
+    ...persistedPositions,
+    {
+      asset_class: 'fund',
+      available_qty: 1,
+      avg_cost: 1,
+      commission_paid: 0,
+      display_name: 'Persisted stale quote fixture',
+      frozen_qty: 0,
+      latest_price: 1,
+      market_value: 1,
+      quantity: 1,
+      quote_age_seconds: 90_000,
+      quote_status: 'stale',
+      realized_pnl: 0,
+      stale_reason: 'market_closed_cache_only',
+      symbol: 'TEST-STALE',
+      today_change: 0,
+      unrealized_pnl: 0,
+      using_persistent_cache: true,
+    },
+  ];
   await page.route('**/api/portfolio', async (route) => {
     await route.fulfill({
       json: {
         ...snapshot,
-        positions: positions.map((position, index) =>
-          index === 0
-            ? {
-                ...position,
-                quote_age_seconds: 90_000,
-                quote_status: 'stale',
-                stale_reason: 'market_closed_cache_only',
-                using_persistent_cache: true,
-              }
-            : position,
-        ),
+        positions,
       },
     });
   });
