@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import sqlite3
 import time
 from collections.abc import Callable, Iterator, Mapping
@@ -91,6 +92,8 @@ from .provider_connectivity import (
 )
 from .registry import AiRuntimeRegistry
 from .store import AiAuditStore, IdempotencyConflict
+
+logger = logging.getLogger(__name__)
 
 STRATEGY_HYPOTHESIS_DRAFT_CONTRACT = "karkinos.ai.strategy_hypothesis_draft.v1"
 STRATEGY_BACKTEST_CRITIQUE_CONTRACT = "karkinos.ai.strategy_backtest_critique.v1"
@@ -1318,11 +1321,15 @@ class StrategyResearchModelProvider(ProviderAdapter):
             raise ExternalResearchInvalidResponseError("evidence_not_persisted")
         if not catalog or not selection:
             raise ExternalResearchInvalidResponseError("local_tool_result_missing")
-        return self._invoke_external(
-            evidence=dict(evidence),
-            catalog=dict(catalog),
-            selection=dict(selection),
-        )
+        try:
+            return self._invoke_external(
+                evidence=dict(evidence),
+                catalog=dict(catalog),
+                selection=dict(selection),
+            )
+        except ExternalResearchInvalidResponseError as exc:
+            logger.warning("Strategy research provider response rejected: %s", exc)
+            raise
 
     def _invoke_external(
         self,
