@@ -278,16 +278,35 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
   const normalizedSymbol = normalizeSymbol(decodedSymbol);
   const snapshot = usePortfolioSnapshotQuery();
   const positions = usePositionsQuery();
-  const liveHoldings = useLiveHoldingsQuery();
-  const overview = useAccountOverviewQuery();
-  const marketHealth = useMarketDataHealthQuery();
-  const kline = useKlineQuery(decodedSymbol);
-  const ledger = useLedgerEntriesQuery(200);
+  const currentPositions = snapshot.data?.positions ?? positions.data ?? [];
+  const currentPosition = currentPositions.find(
+    (item) => normalizeSymbol(item.symbol) === normalizedSymbol,
+  );
+  const historicalPosition = (snapshot.data?.closed_positions ?? []).find(
+    (item) => normalizeSymbol(item.symbol) === normalizedSymbol,
+  );
+  const position = currentPosition ?? historicalPosition;
+  const isHistoricalClosedPosition =
+    !currentPosition && Boolean(historicalPosition);
+  const allocation = (snapshot.data?.allocation ?? []).find(
+    (item) => normalizeSymbol(item.symbol) === normalizedSymbol,
+  );
+  const secondaryQueriesEnabled = Boolean(
+    position && (snapshot.data !== undefined || snapshot.isError),
+  );
+  const liveHoldings = useLiveHoldingsQuery(secondaryQueriesEnabled);
+  const overview = useAccountOverviewQuery(secondaryQueriesEnabled);
+  const marketHealth = useMarketDataHealthQuery(secondaryQueriesEnabled);
+  const kline = useKlineQuery(secondaryQueriesEnabled ? decodedSymbol : '');
+  const ledger = useLedgerEntriesQuery(200, secondaryQueriesEnabled);
   const accountStrategy = useAccountStrategyAssignmentQuery();
   const accountStrategyAttribution = useAccountStrategyAttributionQuery();
-  const accountStrategyContribution = useAccountStrategyContributionQuery();
-  const holdingStrategyAttribution =
-    useHoldingStrategyAttributionQuery(decodedSymbol);
+  const accountStrategyContribution = useAccountStrategyContributionQuery(
+    secondaryQueriesEnabled,
+  );
+  const holdingStrategyAttribution = useHoldingStrategyAttributionQuery(
+    secondaryQueriesEnabled ? decodedSymbol : '',
+  );
   const refreshQuote = useRefreshMarketQuotesMutation();
   const [activeTab, setActiveTab] = useState<HoldingDetailTab>('position');
   const stateHeader = (
@@ -309,19 +328,6 @@ export function HoldingDetailPage({ symbol }: { symbol: string }) {
     </div>
   );
 
-  const currentPositions = snapshot.data?.positions ?? positions.data ?? [];
-  const currentPosition = currentPositions.find(
-    (item) => normalizeSymbol(item.symbol) === normalizedSymbol,
-  );
-  const historicalPosition = (snapshot.data?.closed_positions ?? []).find(
-    (item) => normalizeSymbol(item.symbol) === normalizedSymbol,
-  );
-  const position = currentPosition ?? historicalPosition;
-  const isHistoricalClosedPosition =
-    !currentPosition && Boolean(historicalPosition);
-  const allocation = (snapshot.data?.allocation ?? []).find(
-    (item) => normalizeSymbol(item.symbol) === normalizedSymbol,
-  );
   const liveItem = (liveHoldings.data?.groups ?? [])
     .flatMap((group) => group.items)
     .find((item) => normalizeSymbol(item.symbol) === normalizedSymbol);

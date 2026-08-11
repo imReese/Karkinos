@@ -747,7 +747,7 @@ test('keeps holding summary and kline regions responsive on narrow screens', asy
   const chartPanel = screen.getByTestId('holding-kline-panel');
   const positionSizeGrid = screen.getByTestId('holding-position-size-metrics');
   const positionSizeCells = positionSizeGrid.querySelectorAll('dl > div') ?? [];
-  const chartScroll = screen.getByTestId('price-structure-chart-scroll');
+  const chartScroll = await screen.findByTestId('price-structure-chart-scroll');
   const chartCanvas = screen.getByTestId('price-structure-chart-canvas');
 
   expect(summaryTitle.className).toContain('app-type-section-title');
@@ -786,7 +786,9 @@ test('keeps canonical position facts primary when persisted price structure is m
     within(positionFacts).getByText('Recorded position facts'),
   ).toBeTruthy();
   expect(within(positionFacts).getByText('60')).toBeTruthy();
-  expect(within(priceState).getByText('Price evidence missing')).toBeTruthy();
+  expect(
+    await within(priceState).findByText('Price evidence missing'),
+  ).toBeTruthy();
   expect(
     priceState.querySelector('[data-evidence-kind="missing"]'),
   ).toBeTruthy();
@@ -818,7 +820,7 @@ test('distinguishes persisted price loading and read failure without implicit re
   expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
   const priceState = screen.getByTestId('holding-price-structure-state');
   expect(
-    within(priceState).getByText('Price structure could not be loaded'),
+    await within(priceState).findByText('Price structure could not be loaded'),
   ).toBeTruthy();
   expect(priceState.querySelector('[data-evidence-kind="error"]')).toBeTruthy();
   expect(
@@ -1017,7 +1019,9 @@ test('shows missing attribution prerequisites before linked fills exist', async 
   expect(await screen.findByText('Kweichow Moutai')).toBeTruthy();
 
   const card = screen.getByTestId('holding-strategy-attribution-boundary');
-  expect(card.textContent).toContain('Attribution review readiness');
+  expect(
+    await within(card).findByText('Attribution review readiness'),
+  ).toBeTruthy();
   expect(card.textContent).toContain('Evidence still incomplete');
   expect(card.textContent).toContain('Strategy signal missing');
   expect(card.textContent).toContain('Manual review missing');
@@ -1500,7 +1504,7 @@ test('resolves an absent holding without waiting for fallback detail projections
 });
 
 test('keeps the holding route identity visible while core evidence loads', () => {
-  renderHoldingDetail({ deferCore: true });
+  const { fetchMock } = renderHoldingDetail({ deferCore: true });
 
   const header = screen.getByTestId('holding-detail-header');
   expect(
@@ -1518,6 +1522,26 @@ test('keeps the holding route identity visible while core evidence loads', () =>
       .getByRole('link', { name: 'Return to holdings list' })
       .getAttribute('href'),
   ).toBe('/portfolio');
+  const initialUrls = fetchMock.mock.calls.map(([input]) => String(input));
+  expect(initialUrls).toEqual(
+    expect.arrayContaining([
+      '/api/portfolio',
+      '/api/portfolio/positions',
+      '/api/account-strategy',
+      '/api/account-strategy/attribution',
+    ]),
+  );
+  expect(initialUrls).not.toEqual(
+    expect.arrayContaining([
+      '/api/portfolio/live-holdings',
+      '/api/portfolio/overview',
+      '/api/market/data-health',
+      '/api/ledger/entries?limit=200',
+      '/api/account-strategy/contribution',
+      '/api/account-strategy/holdings/600519/attribution',
+      '/api/market/kline/600519',
+    ]),
+  );
 });
 
 test('shows ledger empty state without breaking the page', async () => {
