@@ -2951,6 +2951,69 @@ def test_market_research_board_merges_watchlist_and_health(monkeypatch):
     assert response.health.market_open is True
 
 
+def test_market_research_board_reuses_resolved_watchlist_for_health(monkeypatch):
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    board_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/market/research-board"
+    )
+    endpoint = board_route.endpoint
+
+    fake_position = SimpleNamespace(
+        quantity=100,
+        avg_cost=10.5,
+        market_value=1234.5,
+        unrealized_pnl=184.5,
+        realized_pnl=20.0,
+    )
+    fake_db = SimpleNamespace(
+        get_latest_quotes_sync=lambda: [],
+        list_latest_quotes_sync=lambda: [],
+        get_research_notes_sync=lambda **_kwargs: [],
+    )
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[{"symbol": "600519", "asset_class": "stock"}],
+            data_source="yfinance",
+            tushare_token="",
+        ),
+        scheduler=SimpleNamespace(
+            latest_quotes={},
+            portfolio=SimpleNamespace(positions={"600519": fake_position}),
+            instruments={},
+        ),
+        db=fake_db,
+    )
+    merged_watchlist_calls = 0
+
+    def merged_watchlist_assets(_state):
+        nonlocal merged_watchlist_calls
+        merged_watchlist_calls += 1
+        return [
+            {
+                "symbol": "600519",
+                "asset_class": "stock",
+                "display_name": "测试标的",
+            }
+        ]
+
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        market_routes, "_merged_watchlist_assets", merged_watchlist_assets
+    )
+    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+
+    response = asyncio.run(endpoint())
+
+    assert merged_watchlist_calls == 1
+    assert response.items[0].symbol == "600519"
+    assert response.items[0].name == "测试标的"
+    assert response.health.quotes[0].symbol == "600519"
+
+
 def test_market_research_notes_create_and_list(monkeypatch):
     from server.routes import market as market_routes
 
