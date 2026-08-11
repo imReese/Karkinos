@@ -19,13 +19,16 @@ describe('appFeatureChunk', () => {
     );
   });
 
-  it('keeps account truth and strategy evidence beside the account workspace', () => {
-    expect(appFeatureChunk('/repo/web/src/features/account-truth/api.ts')).toBe(
-      'feature-account',
-    );
+  it('keeps strategy evidence beside the account workspace', () => {
     expect(
       appFeatureChunk('/repo/web/src/features/account-strategy/api.ts'),
     ).toBe('feature-account');
+  });
+
+  it('splits the large account truth workspace into its own route chunk', () => {
+    expect(appFeatureChunk('/repo/web/src/features/account-truth/api.ts')).toBe(
+      'feature-account-truth',
+    );
   });
 
   it('keeps one-way feature pages split from the workspace core', () => {
