@@ -83,7 +83,7 @@ const STATUS_COLORS: Record<ToolbarStatusTone, string> = {
   warning: 'var(--app-warning-indicator)',
   danger: 'var(--app-danger-indicator)',
 };
-const STATUS_RAIL_MEDIA_QUERY = '(min-width: 1536px)';
+const STATUS_RAIL_MEDIA_QUERY = '(min-width: 1360px)';
 
 function isNavigationItemActive(pathname: string, target: string) {
   return pathname === target || pathname.startsWith(`${target}/`);
@@ -528,7 +528,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <span className="app-product-mark truncate">Karkinos</span>
               </div>
 
-              <div className="app-toolbar-state hidden shrink-0 items-center 2xl:flex">
+              <div className="app-toolbar-state hidden shrink-0 items-center min-[1360px]:flex">
                 <div
                   className="app-toolbar-mode"
                   aria-label={`${copy.shell.accountMode}: ${executionMode}`}
@@ -540,7 +540,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
               <div ref={statusRailRef} className="relative min-w-0 shrink-0">
                 {!statusRailVisible ? (
-                  <div className="relative hidden shrink-0 xl:block 2xl:hidden">
+                  <div className="relative hidden shrink-0 xl:block min-[1360px]:hidden">
                     <button
                       type="button"
                       className="app-button-secondary app-type-compact inline-flex h-8 items-center gap-1.5 rounded-[var(--app-radius-control)] px-2.5 font-semibold"
@@ -610,7 +610,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   </div>
                 ) : null}
                 <div
-                  className="app-toolbar-status-rail relative hidden min-w-0 shrink items-center gap-1 overflow-visible 2xl:flex"
+                  className="app-toolbar-status-rail relative hidden min-w-0 shrink items-center gap-1 overflow-visible min-[1360px]:flex"
                   aria-label={copy.shell.accountStatus}
                 >
                   <StatusChip
