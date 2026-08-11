@@ -50,7 +50,10 @@ export function KillSwitchPanel() {
     </span>
   );
   const controls = (
-    <div className="grid w-full min-w-[280px] gap-2 sm:w-[360px]">
+    <div
+      className="grid w-full min-w-0 max-w-full gap-2"
+      data-testid="kill-switch-controls"
+    >
       <label className="grid min-w-0 gap-1.5">
         <span className="text-sm font-medium">{labels.reason}</span>
         <input
@@ -108,6 +111,7 @@ export function KillSwitchPanel() {
       title={enabled || killSwitch.isError ? labels.title : labels.enable}
       description={labels.subtitle}
       evidence={evidence}
+      layout="stack"
     >
       {controls}
     </ControlledActionZone>

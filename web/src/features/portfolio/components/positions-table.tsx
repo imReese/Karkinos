@@ -208,7 +208,12 @@ export function PositionsTable({
           </div>
           {position.stale_reason ? (
             <div
-              className="mt-0.5 max-w-44 truncate text-[length:var(--app-font-size-micro)] text-[var(--app-warning-text)]"
+              className={`mt-0.5 text-[length:var(--app-font-size-micro)] text-[var(--app-warning-text)] ${
+                variant === 'dashboard'
+                  ? 'max-w-full whitespace-normal [overflow-wrap:anywhere]'
+                  : 'max-w-44 truncate'
+              }`}
+              data-testid="position-quote-stale-reason"
               title={staleReason}
             >
               {staleReason}

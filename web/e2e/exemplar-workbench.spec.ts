@@ -481,6 +481,29 @@ test('overview preserves the queue-to-holdings hierarchy across all acceptance v
   page,
 }) => {
   test.setTimeout(60_000);
+  const snapshotResponse = await page.request.get('/api/portfolio');
+  expect(snapshotResponse.ok()).toBeTruthy();
+  const snapshot = (await snapshotResponse.json()) as Record<string, unknown>;
+  const positions = snapshot.positions as Record<string, unknown>[];
+  expect(positions.length).toBeGreaterThan(0);
+  await page.route('**/api/portfolio', async (route) => {
+    await route.fulfill({
+      json: {
+        ...snapshot,
+        positions: positions.map((position, index) =>
+          index === 0
+            ? {
+                ...position,
+                quote_age_seconds: 90_000,
+                quote_status: 'stale',
+                stale_reason: 'market_closed_cache_only',
+                using_persistent_cache: true,
+              }
+            : position,
+        ),
+      },
+    });
+  });
   await page.route('**/api/portfolio/market-evidence-review', async (route) => {
     await route.fulfill({
       status: 503,
@@ -552,11 +575,84 @@ test('overview preserves the queue-to-holdings hierarchy across all acceptance v
       );
     }
 
+    if (viewport.width === 834) {
+      const staleReasons = page.getByTestId('position-quote-stale-reason');
+      await expect(staleReasons.first()).toBeVisible();
+      expect(await staleReasons.count()).toBeGreaterThan(0);
+      expect(
+        await staleReasons.evaluateAll((elements) =>
+          elements.every((element) => {
+            const style = getComputedStyle(element);
+            return (
+              element.scrollWidth <= element.clientWidth + 1 &&
+              style.whiteSpace === 'normal' &&
+              style.textOverflow !== 'ellipsis'
+            );
+          }),
+        ),
+      ).toBe(true);
+    }
+
     const additionalReviewItems = page.getByTestId('overview-today-queue-more');
     if ((await additionalReviewItems.count()) > 0) {
       await expect(additionalReviewItems).not.toHaveAttribute('open', '');
     }
   }
+});
+
+test('tablet evidence copy and kill-switch controls use the available width', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 834, height: 1112 });
+  await page.goto('/trading');
+
+  const killSwitch = page.getByTestId('kill-switch-panel');
+  await expect(killSwitch).toHaveAttribute(
+    'data-kill-switch-state',
+    'inactive',
+  );
+  const summary = killSwitch.locator('summary');
+  await summary.press('Enter');
+  await expect(killSwitch).toHaveAttribute('open', '');
+
+  const controlledZone = killSwitch.locator(
+    '[data-workbench-primitive="controlled-action-zone"]',
+  );
+  const controls = killSwitch.getByTestId('kill-switch-controls');
+  await expect(controlledZone).toBeVisible();
+  await expect(controls).toBeVisible();
+
+  const geometry = await page.evaluate(() => {
+    const content = document.querySelector('.app-shell-content') as HTMLElement;
+    const zone = document.querySelector(
+      '[data-testid="kill-switch-panel"] [data-workbench-primitive="controlled-action-zone"]',
+    ) as HTMLElement;
+    const controls = document.querySelector(
+      '[data-testid="kill-switch-controls"]',
+    ) as HTMLElement;
+    const zoneBounds = zone.getBoundingClientRect();
+    const controlBounds = controls.getBoundingClientRect();
+    return {
+      contentOverflow: content.scrollWidth - content.clientWidth,
+      controlsContained:
+        controlBounds.left >= zoneBounds.left - 1 &&
+        controlBounds.right <= zoneBounds.right + 1,
+      controlsOverflow: controls.scrollWidth - controls.clientWidth,
+      documentOverflow:
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+      zoneOverflow: zone.scrollWidth - zone.clientWidth,
+    };
+  });
+
+  expect(geometry.documentOverflow).toBeLessThanOrEqual(0);
+  expect(geometry.contentOverflow).toBeLessThanOrEqual(0);
+  expect(geometry.zoneOverflow).toBeLessThanOrEqual(0);
+  expect(geometry.controlsOverflow).toBeLessThanOrEqual(0);
+  expect(geometry.controlsContained).toBe(true);
+
+  await summary.press('Enter');
+  await expect(killSwitch).not.toHaveAttribute('open', '');
 });
 
 test('backtest preserves result-first evidence and complete metrics across all acceptance viewports', async ({

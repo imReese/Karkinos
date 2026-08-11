@@ -852,6 +852,21 @@ test('keeps an inactive kill switch quiet and an active boundary prominent', asy
       '[data-workbench-primitive="controlled-action-zone"]',
     ),
   ).toBeTruthy();
+  const inactiveZone = inactivePanel.querySelector(
+    '[data-workbench-primitive="controlled-action-zone"]',
+  );
+  expect(inactiveZone?.firstElementChild?.className).not.toContain(
+    'sm:flex-row',
+  );
+  expect(screen.getByTestId('kill-switch-controls').className).toContain(
+    'min-w-0',
+  );
+  expect(screen.getByTestId('kill-switch-controls').className).toContain(
+    'max-w-full',
+  );
+  expect(screen.getByTestId('kill-switch-controls').className).not.toContain(
+    'sm:w-[360px]',
+  );
 
   cleanup();
   vi.unstubAllGlobals();
