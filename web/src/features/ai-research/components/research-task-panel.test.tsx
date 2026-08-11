@@ -272,7 +272,16 @@ test('stays idle until explicitly opened', async () => {
   expect(screen.getByText('Advisory only')).toBeTruthy();
   expect(fetchMock).not.toHaveBeenCalled();
 
-  fireEvent.click(screen.getByRole('button', { name: 'Open research tasks' }));
+  const openTasks = screen.getByRole('button', {
+    name: 'Open research tasks',
+  });
+  expect(openTasks.getAttribute('aria-expanded')).toBe('false');
+  fireEvent.click(openTasks);
+  expect(
+    screen
+      .getByRole('button', { name: 'Collapse research workspace' })
+      .getAttribute('aria-expanded'),
+  ).toBe('true');
   expect(
     await screen.findByText('No human research task has been recorded yet.'),
   ).toBeTruthy();

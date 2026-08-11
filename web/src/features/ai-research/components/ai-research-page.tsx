@@ -22,6 +22,7 @@ export function AiResearchPage() {
       data-workbench-route="ai-research"
     >
       <WorkspaceHeader
+        className="app-ai-research-header"
         eyebrow={labels.kicker}
         title={labels.title}
         description={labels.subtitle}

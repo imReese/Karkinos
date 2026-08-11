@@ -402,7 +402,7 @@ export function ResearchTaskPanel({
       <div
         className={`flex items-center justify-between gap-3 ${
           routePrimary
-            ? 'min-h-11 flex-wrap border-b border-[var(--app-divider)] pb-3'
+            ? 'app-ai-research-route-toolbar min-h-11 flex-wrap border-b border-[var(--app-divider)] pb-3'
             : 'sm:items-start'
         }`}
       >
@@ -411,7 +411,7 @@ export function ResearchTaskPanel({
             <h2 className="sr-only" id="ai-research-task-title">
               {copy.title}
             </h2>
-            <div className="flex min-w-0 flex-1 flex-wrap gap-2">
+            <div className="app-ai-research-boundary-badges flex min-w-0 flex-1 flex-wrap gap-2">
               <BoundaryBadge label={copy.noModel} />
               <BoundaryBadge label={copy.noAuthority} />
             </div>
@@ -440,6 +440,7 @@ export function ResearchTaskPanel({
             </div>
           ) : null}
           <button
+            aria-expanded={open}
             aria-label={open ? copy.close : copy.open}
             className="app-button-secondary min-h-11 px-3 py-2 text-xs font-semibold"
             onClick={() => setOpen((current) => !current)}
@@ -477,7 +478,11 @@ export function ResearchTaskPanel({
               routePrimary ? '' : 'border-t border-[var(--app-divider)] pt-4'
             }`}
           >
-            <div className="flex flex-wrap items-start justify-between gap-3">
+            <div
+              className={`flex flex-wrap items-start justify-between gap-3 ${
+                routePrimary ? 'app-ai-research-route-queue-header' : ''
+              }`}
+            >
               <div className="min-w-0">
                 <div className="app-product-mark">{copy.queueKicker}</div>
                 <h3
