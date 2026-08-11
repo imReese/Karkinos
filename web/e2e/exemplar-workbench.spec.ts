@@ -1092,6 +1092,48 @@ test('overview initial load preserves account, queue, and holdings hierarchy', a
   await expect(page.getByTestId('overview-daily-workbench')).toBeVisible();
 });
 
+test('overview persisted snapshot fallback contains its mobile metric scroller', async ({
+  page,
+}) => {
+  let releaseOverviewResponse = () => {};
+  const overviewResponseHeld = new Promise<void>((resolve) => {
+    releaseOverviewResponse = resolve;
+  });
+
+  await page.route('**/api/portfolio/overview', async (route) => {
+    const response = await route.fetch();
+    await overviewResponseHeld;
+    await route.fulfill({ response });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/overview');
+
+  const fallback = page.getByTestId('overview-persisted-snapshot-summary');
+  await expect(fallback).toBeVisible({ timeout: 15_000 });
+
+  const geometry = await page.evaluate(() => {
+    const content = document.querySelector('.app-shell-content') as HTMLElement;
+    const metricStrip = document.querySelector(
+      '[data-testid="overview-persisted-snapshot-summary"] .account-support-metric-strip',
+    ) as HTMLElement;
+    return {
+      contentOverflow: content.scrollWidth - content.clientWidth,
+      documentOverflow:
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+      metricStripOverflow: metricStrip.scrollWidth - metricStrip.clientWidth,
+      metricStripOverflowX: getComputedStyle(metricStrip).overflowX,
+    };
+  });
+  releaseOverviewResponse();
+  expect(geometry.documentOverflow).toBeLessThanOrEqual(0);
+  expect(geometry.contentOverflow).toBeLessThanOrEqual(0);
+  expect(geometry.metricStripOverflow).toBeGreaterThan(0);
+  expect(geometry.metricStripOverflowX).toBe('auto');
+
+  await expect(fallback).toBeHidden({ timeout: 15_000 });
+});
+
 test('risk initial load preserves priorities, metrics, and controlled-action hierarchy', async ({
   page,
 }) => {
