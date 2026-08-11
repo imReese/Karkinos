@@ -21,6 +21,7 @@ from server.ai_runtime.capture import (
     ContextCaptureAuditStore,
     HumanResearchContextCaptureService,
 )
+from server.ai_runtime.contracts import AgentRole, ArtifactKind
 from server.ai_runtime.evidence import CanonicalEvidenceRepository
 from server.ai_runtime.formula_dsl import (
     CANONICAL_COST_MODEL_REFERENCE,
@@ -30,6 +31,7 @@ from server.ai_runtime.provider_connectivity import (
     HttpJsonResponse,
     ProviderConnectivitySettings,
 )
+from server.ai_runtime.registry import AiRuntimeRegistry
 from server.ai_runtime.store import AiAuditStore
 from server.ai_runtime.strategy_research import (
     BACKTEST_CONFIRMATION,
@@ -58,7 +60,20 @@ class FixtureTransport:
             self.calls.append(kwargs)
             if not self._responses:
                 raise AssertionError("unexpected extra external model call")
-            return self._responses.pop(0)
+            response = self._responses.pop(0)
+            input_payload = json.loads(kwargs["payload"]["messages"][1]["content"])
+            if input_payload.get("mode") == "critique":
+                content = json.loads(
+                    response.payload["choices"][0]["message"]["content"]
+                )
+                if content.get("canonical_binding_echo") == {}:
+                    content["canonical_binding_echo"] = input_payload["critique_input"][
+                        "required_binding_echo"
+                    ]
+                response.payload["choices"][0]["message"]["content"] = json.dumps(
+                    content
+                )
+            return response
 
 
 class BlockingFixtureTransport(FixtureTransport):
@@ -212,7 +227,8 @@ def _critique_response() -> HttpJsonResponse:
             "recommended_walk_forward_stress_tests": ["新增滚动样本外窗口。"],
             "explicit_failure_conditions": ["样本外成本后收益持续为负。"],
             "uncertainty": "当前证据不足，结论置信度低。",
-            "citations": ["critique_input.canonical_research_evidence"],
+            "citations": ["critique_input.canonical_backtest.total_return"],
+            "canonical_binding_echo": {},
         },
         model="fixture-critique",
     )
@@ -257,12 +273,12 @@ def _service(tmp_path):
     snapshot = build_backtest_dataset_snapshot(
         start_date="2025-01-02",
         end_date="2025-01-09",
-        configured_source=None,
+        configured_source="deterministic_fixture",
         data_handlers={
             symbol: DataHandler(bars, symbol, BarFrequency.DAILY, AssetClass.STOCK)
         },
         store=market,
-        source_names=[],
+        source_names=["akshare", "deterministic_fixture"],
     )
     selection = StrategyResearchSelection(
         saved_backtest_result_id=17,
@@ -428,6 +444,47 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
             """)
     service, selection, transport, actual_db_path = _service(tmp_path)
     assert actual_db_path == db_path
+    registry = AiRuntimeRegistry(service._ai_store)
+    for role_id, instructions_version in (
+        (
+            "external.strategy_hypothesis_researcher.v1",
+            "karkinos.ai.strategy_research_prompt.v2",
+        ),
+        (
+            "external.strategy_hypothesis_researcher.v2",
+            "karkinos.ai.strategy_research_prompt.v3",
+        ),
+        (
+            "external.strategy_hypothesis_researcher.v3",
+            "karkinos.ai.strategy_research_prompt.v4",
+        ),
+        (
+            "external.strategy_hypothesis_researcher.v4",
+            "karkinos.ai.strategy_research_prompt.v5",
+        ),
+        (
+            "external.strategy_hypothesis_researcher.v5",
+            "karkinos.ai.strategy_research_prompt.v6",
+        ),
+    ):
+        registry.register_role(
+            AgentRole(
+                role_id=role_id,
+                display_name="Strategy hypothesis researcher",
+                purpose=(
+                    "Propose or critique non-executable research hypotheses using "
+                    "only bound evidence and the local Formula DSL; never create "
+                    "authority."
+                ),
+                allowed_tools=(
+                    "research_evidence.read",
+                    "formula_operator_catalog.read",
+                    "strategy_research_selection.read",
+                ),
+                allowed_artifact_kinds=(ArtifactKind.REPORT,),
+                instructions_version=instructions_version,
+            )
+        )
 
     hypotheses = await service.generate_hypotheses(
         HypothesisGenerationRequest(
@@ -448,6 +505,13 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
     assert draft["provider_provenance"]["usage"]["total_tokens"] == 300
     assert draft["provider_provenance"]["reasoning_content_present"] is True
     assert draft["provider_provenance"]["reasoning_content_persisted"] is False
+    role_ids = {item.role_id for item in service._ai_store.list_roles()}
+    assert "external.strategy_hypothesis_researcher.v1" in role_ids
+    assert "external.strategy_hypothesis_researcher.v2" in role_ids
+    assert "external.strategy_hypothesis_researcher.v3" in role_ids
+    assert "external.strategy_hypothesis_researcher.v4" in role_ids
+    assert "external.strategy_hypothesis_researcher.v5" in role_ids
+    assert "external.strategy_hypothesis_researcher.v6" in role_ids
 
     backtest = await service.run_formula_backtest(
         FormulaBacktestRequest(
@@ -480,10 +544,63 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
     assert critique["status"] == "completed"
     assert critique["artifact"]["trade_plan_created"] is False
     assert critique["artifact"]["authority_effect"] == "none"
+    assert critique["artifact"]["canonical_binding_echo"]["total_return"] == (
+        backtest["canonical_backtest"]["total_return"]
+    )
     assert len(transport.calls) == 2
     assert all(call["payload"].get("tools") is None for call in transport.calls)
     assert all(
         call["payload"]["thinking"] == {"type": "enabled"} for call in transport.calls
+    )
+    hypothesis_payload = transport.calls[0]["payload"]
+    hypothesis_system_prompt = hypothesis_payload["messages"][0]["content"]
+    hypothesis_input = json.loads(hypothesis_payload["messages"][1]["content"])
+    assert hypothesis_payload["max_tokens"] == 12_288
+    assert "schema_version must" in hypothesis_system_prompt
+    assert "must never be omitted" in hypothesis_system_prompt
+    assert "ATR is a special operator" in hypothesis_system_prompt
+    assert "Prefer one compact draft" in hypothesis_system_prompt
+    assert hypothesis_input["output_contract"]["formula_ast_exact_top_level_keys"] == [
+        "schema_version",
+        "entry",
+        "exit",
+        "position_size",
+    ]
+    assert (
+        hypothesis_input["output_contract"]["formula_ast_schema_version_literal"]
+        == FORMULA_AST_CONTRACT
+    )
+    assert (
+        hypothesis_input["output_contract"][
+            "formula_ast_missing_schema_version_is_invalid"
+        ]
+        is True
+    )
+    node_key_contract = hypothesis_input["output_contract"][
+        "formula_ast_node_exact_keys"
+    ]
+    assert node_key_contract["atr"] == ["op", "window"]
+    assert node_key_contract["window_operator_except_atr"] == [
+        "op",
+        "input",
+        "window",
+    ]
+    critique_payload = transport.calls[1]["payload"]
+    critique_system_prompt = critique_payload["messages"][0]["content"]
+    critique_input = json.loads(critique_payload["messages"][1]["content"])
+    assert "prior baseline, not the formula result" in critique_system_prompt
+    assert critique_input["critique_input"]["canonical_backtest"]["result_id"] == 18
+    assert (
+        critique_input["critique_input"]["required_binding_echo"]
+        == critique["artifact"]["canonical_binding_echo"]
+    )
+    assert (
+        "critique_input.canonical_backtest.total_return"
+        in critique_input["output_contract"]["allowed_citation_paths"]
+    )
+    assert all(
+        citation.startswith("critique_input.")
+        for citation in critique["artifact"]["citations"]
     )
     critique_row = service._research_store.get_critique(critique["critique_id"])
     review = service._research_store.save_review(
@@ -864,4 +981,51 @@ async def test_critique_with_unbound_citation_fails_closed_and_is_not_retried(
     assert result["status"] == "failed"
     assert result["artifact"] is None
     assert replay["reused"] is True
+    assert len(transport.calls) == 2
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_critique_with_changed_canonical_binding_echo_fails_closed(
+    tmp_path,
+) -> None:
+    service, selection, transport, _ = _service(tmp_path)
+    hypotheses = await service.generate_hypotheses(
+        HypothesisGenerationRequest(
+            idempotency_key="hypothesis-critique-binding",
+            requested_by="human:reese",
+            account_alias="synthetic-research-only",
+            research_question="Critique binding echoes must remain exact.",
+            selection=selection,
+            confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
+        )
+    )
+    draft = hypotheses["drafts"][0]
+    backtest = await service.run_formula_backtest(
+        FormulaBacktestRequest(
+            idempotency_key="backtest-critique-binding",
+            requested_by="human:reese",
+            session_id=hypotheses["session_id"],
+            draft_id=draft["draft_id"],
+            confirmation=BACKTEST_CONFIRMATION,
+        )
+    )
+    response = transport._responses[0].payload
+    content = json.loads(response["choices"][0]["message"]["content"])
+    content["canonical_binding_echo"] = {"total_return": 999}
+    response["choices"][0]["message"]["content"] = json.dumps(content)
+
+    result = await service.critique(
+        CritiqueRequest(
+            idempotency_key="critique-changed-binding",
+            requested_by="human:reese",
+            session_id=hypotheses["session_id"],
+            draft_id=draft["draft_id"],
+            backtest_run_id=backtest["backtest_run_id"],
+            confirmation=CRITIQUE_EXPORT_CONFIRMATION,
+        )
+    )
+
+    assert result["status"] == "failed"
+    assert result["artifact"] is None
     assert len(transport.calls) == 2

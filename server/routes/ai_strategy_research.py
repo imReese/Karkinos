@@ -37,6 +37,9 @@ from server.ai_runtime.strategy_research import (
 from server.bootstrap import resolve_data_dir
 from server.routes.ai_research import build_human_context_capture_service
 
+_DEFAULT_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS = 180.0
+_DEEPSEEK_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS = 300.0
+
 
 class StrategyResearchSelectionPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -297,7 +300,15 @@ def _build_write_service(state: Any, *, external: bool) -> StrategyResearchServi
         ai_store=ai_store,
         research_store=research_store,
         data_store=DataStore(resolve_data_dir()),
+        model_timeout_seconds=_strategy_research_model_timeout_seconds(settings),
     )
+
+
+def _strategy_research_model_timeout_seconds(settings: Any | None) -> float:
+    """Allow the configured DeepSeek research call up to five minutes."""
+    if settings is not None and settings.provider_id.strip().casefold() == "deepseek":
+        return _DEEPSEEK_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS
+    return _DEFAULT_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS
 
 
 def _build_read_service(state: Any) -> StrategyResearchService:
