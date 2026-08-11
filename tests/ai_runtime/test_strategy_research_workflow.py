@@ -733,6 +733,33 @@ async def test_malformed_or_truncated_provider_output_is_terminal_and_not_retrie
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_invalid_provider_output_logs_only_safe_rejection_code(
+    tmp_path,
+    caplog,
+) -> None:
+    service, selection, transport, _ = _service(tmp_path)
+    response = transport._responses[0].payload
+    response["choices"][0]["message"]["content"] = "private malformed content"
+
+    with caplog.at_level("WARNING", logger="server.ai_runtime.strategy_research"):
+        result = await service.generate_hypotheses(
+            HypothesisGenerationRequest(
+                idempotency_key="hypothesis-safe-rejection-log",
+                requested_by="human:reese",
+                account_alias="synthetic-research-only",
+                research_question="Invalid output must expose only its safe code.",
+                selection=selection,
+                confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
+            )
+        )
+
+    assert result["status"] == "failed"
+    assert "provider_content_not_json" in caplog.text
+    assert "private malformed content" not in caplog.text
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_concurrent_duplicate_obtains_one_external_cost_claim(tmp_path) -> None:
     service, selection, original_transport, _ = _service(tmp_path)
     transport = BlockingFixtureTransport(list(original_transport._responses))
