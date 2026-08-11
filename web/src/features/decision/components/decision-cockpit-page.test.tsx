@@ -1259,6 +1259,12 @@ test('renders a structured workspace while primary decision evidence loads', () 
       '[data-workbench-primitive="evidence-loading-layout"]',
     ),
   ).toBeNull();
+  expect(loadingWorkspace.textContent).not.toContain('--');
+  expect(
+    within(screen.getByTestId('decision-loading-gate-rows')).getAllByText(
+      'Loading',
+    ),
+  ).toHaveLength(5);
   expect(loadingWorkspace.textContent).not.toMatch(/[¥$€£]|\d+[,.]\d{2}/);
 });
 

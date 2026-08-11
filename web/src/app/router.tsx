@@ -3814,8 +3814,7 @@ export function RiskPage() {
   const copy = useCopy();
   const { locale } = usePreferences();
   const state = useAccountStateQuery();
-  const riskWorkspaceEnabled = Boolean(state.data);
-  const workspace = useRiskWorkspaceQuery(riskWorkspaceEnabled);
+  const workspace = useRiskWorkspaceQuery();
   const primaryRiskQueriesReady = Boolean(state.data && workspace.data);
   const todayDecision = useTodayDecisionQuery(primaryRiskQueriesReady);
   const batchPreTradeRisk = useBatchPreTradeRiskMutation();
@@ -4059,21 +4058,12 @@ export function RiskPage() {
                   />
                 </div>
               ) : (
-                <div
-                  aria-hidden="true"
-                  className="min-w-0 divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]"
-                  data-testid="risk-loading-exceptions"
-                >
-                  {Array.from({ length: 3 }, (_, index) => (
-                    <div
-                      key={index}
-                      className="grid min-h-20 min-w-0 gap-3 px-3 py-3 sm:grid-cols-[minmax(8rem,0.4fr)_minmax(0,1fr)] sm:items-center"
-                    >
-                      <span className="block h-3 w-28 max-w-full rounded-[var(--app-radius-control)] bg-[var(--app-divider)]" />
-                      <span className="block h-3 w-full max-w-xl rounded-[var(--app-radius-control)] bg-[var(--app-divider)]" />
-                    </div>
-                  ))}
-                </div>
+                <EvidenceState
+                  kind="loading"
+                  statusLabel={copy.states.loading}
+                  title={copy.states.loading}
+                  description={copy.riskPage.blockingRegisterDetail}
+                />
               )}
             </section>
 
@@ -4109,27 +4099,20 @@ export function RiskPage() {
                     />
                   </div>
                 ) : (
-                  <div
-                    aria-hidden="true"
-                    className="app-metric-strip grid min-w-0 grid-cols-2 border-y border-[var(--app-divider)] bg-transparent xl:grid-cols-1"
-                  >
-                    {[
+                  <MetricStrip
+                    ariaLabel={`${copy.riskPage.metrics} · ${copy.states.loading}`}
+                    className="app-risk-metric-strip"
+                    items={[
                       'current_drawdown',
                       'gross_exposure',
                       'cash_ratio',
                       'largest_weight',
-                    ].map((metric) => (
-                      <div
-                        key={metric}
-                        className="app-metric-strip-item min-w-0 px-3 py-2.5"
-                      >
-                        <span className="app-type-label block font-medium text-[var(--app-text-secondary)]">
-                          {getRiskMetricLabel(copy, metric)}
-                        </span>
-                        <span className="mt-2 block h-4 w-24 max-w-full rounded-[var(--app-radius-control)] bg-[var(--app-divider)]" />
-                      </div>
-                    ))}
-                  </div>
+                    ].map((metric) => ({
+                      id: metric,
+                      label: getRiskMetricLabel(copy, metric),
+                      value: copy.states.loading,
+                    }))}
+                  />
                 )}
               </section>
               <section
@@ -4147,13 +4130,12 @@ export function RiskPage() {
                       : 'Kill-switch state stays separate from risk facts and expands only for deliberate operator intervention.'}
                   </p>
                 </div>
-                <div
-                  aria-hidden="true"
-                  className="border-y border-[var(--app-divider)] px-3 py-3"
-                >
-                  <span className="block h-3 w-32 max-w-full rounded-[var(--app-radius-control)] bg-[var(--app-divider)]" />
-                  <span className="mt-2 block h-3 w-full rounded-[var(--app-radius-control)] bg-[var(--app-divider)]" />
-                </div>
+                <EvidenceState
+                  kind="loading"
+                  statusLabel={copy.states.loading}
+                  title={copy.states.loading}
+                  description={copy.riskPage.loading}
+                />
               </section>
             </aside>
           </div>

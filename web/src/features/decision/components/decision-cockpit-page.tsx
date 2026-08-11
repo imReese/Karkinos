@@ -5178,22 +5178,22 @@ export function DecisionCockpitPage() {
                 {
                   id: 'candidate-count',
                   label: labels.candidateActions,
-                  value: '--',
+                  value: copy.states.loading,
                 },
                 {
                   id: 'manual-ready',
                   label: labels.manualConfirmations,
-                  value: '--',
+                  value: copy.states.loading,
                 },
                 {
                   id: 'risk-blocked',
                   label: labels.riskBlocks,
-                  value: '--',
+                  value: copy.states.loading,
                 },
                 {
                   id: 'market-evidence',
                   label: labels.marketData,
-                  value: '--',
+                  value: copy.states.loading,
                 },
               ]}
             />
@@ -5236,7 +5236,9 @@ export function DecisionCockpitPage() {
                   <span className="app-type-label font-semibold text-[var(--app-text)]">
                     {labels.workflowTaskLabel(gateId)}
                   </span>
-                  <span className="block h-2.5 w-full max-w-md rounded-[var(--app-radius-control)] bg-[var(--app-divider)] motion-safe:animate-pulse" />
+                  <span className="justify-self-start">
+                    <StatusBadge tone="info">{copy.states.loading}</StatusBadge>
+                  </span>
                 </div>
               ))}
             </div>

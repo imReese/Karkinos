@@ -285,11 +285,19 @@ test('renders a structured workspace while Operations evidence loads', () => {
     document.querySelector(
       '[data-workbench-primitive="evidence-loading-layout"]',
     ),
+  ).toBeNull();
+  expect(
+    screen.getByRole('heading', { name: 'Evidence review queue' }),
   ).toBeTruthy();
-  expect(screen.getByTestId('evidence-loading-metrics').children).toHaveLength(
-    4,
+  expect(
+    screen.getByLabelText('Health overview · Loading').textContent,
+  ).toContain('Manual review');
+  expect(
+    screen.getByRole('heading', { name: 'Subsystem evidence register' }),
+  ).toBeTruthy();
+  expect(screen.getByTestId('operations-loading').textContent).not.toContain(
+    '--',
   );
-  expect(screen.getByTestId('evidence-loading-rows').children).toHaveLength(4);
 });
 
 test('renders persisted attention evidence without write or execution affordances', async () => {
