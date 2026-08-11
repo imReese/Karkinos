@@ -270,7 +270,10 @@ export function MarketInstrumentWorkspace({
                     }}
                   >
                     <span className="min-w-0">
-                      <span className="block truncate text-sm font-semibold text-[var(--app-text)]">
+                      <span
+                        className="block whitespace-normal text-sm leading-5 font-semibold text-[var(--app-text)] [overflow-wrap:anywhere]"
+                        data-testid={`market-instrument-name-${item.symbol}`}
+                      >
                         {item.name || item.symbol}
                       </span>
                       <span className="app-type-micro mt-0.5 block truncate font-mono tabular-nums text-[var(--app-text-tertiary)]">
