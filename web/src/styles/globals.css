@@ -1974,6 +1974,13 @@ h3 {
   align-items: flex-start;
 }
 
+.app-risk-metric-strip .app-type-label.truncate {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 @media (min-width: 1280px) {
   .app-operations-command-grid {
     grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);

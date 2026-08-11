@@ -1545,6 +1545,22 @@ test('risk initial load preserves priorities, metrics, and controlled-action hie
   await expect(page.getByTestId('risk-blocking-register')).toBeVisible();
   await expect(page.getByTestId('risk-metric-rail')).toBeVisible();
   await expect(page.getByTestId('risk-summary-loading-state')).toHaveCount(0);
+  await page.setViewportSize({ width: 834, height: 1112 });
+  expect(
+    await page
+      .getByTestId('risk-metric-rail')
+      .locator('dt')
+      .evaluateAll((elements) =>
+        elements.every((element) => {
+          const style = getComputedStyle(element);
+          return (
+            element.scrollWidth <= element.clientWidth + 1 &&
+            style.whiteSpace === 'normal' &&
+            style.textOverflow !== 'ellipsis'
+          );
+        }),
+      ),
+  ).toBe(true);
   expect(duplicateRiskSummaryRequestCount).toBe(0);
 });
 
@@ -1933,6 +1949,9 @@ test('market keeps context, evidence review, and provider telemetry task-ordered
             '[data-testid^="market-instrument-status-"]',
           ),
         ) as HTMLElement[];
+        const instrumentNames = Array.from(
+          document.querySelectorAll('[data-testid^="market-instrument-name-"]'),
+        ) as HTMLElement[];
         return {
           routeOverflow: route.scrollWidth - route.clientWidth,
           documentOverflow:
@@ -1972,6 +1991,17 @@ test('market keeps context, evidence review, and provider telemetry task-ordered
               Math.max(largest, element.scrollHeight - element.clientHeight),
             0,
           ),
+          instrumentNameOverflow: instrumentNames.reduce(
+            (largest, element) =>
+              Math.max(largest, element.scrollWidth - element.clientWidth),
+            0,
+          ),
+          instrumentNamesWrap: instrumentNames.every((element) => {
+            const style = getComputedStyle(element);
+            return (
+              style.whiteSpace === 'normal' && style.textOverflow !== 'ellipsis'
+            );
+          }),
           instrumentStatusesDescribed: instrumentStatuses.every(
             (element) =>
               element.id.length > 0 &&
@@ -2015,6 +2045,14 @@ test('market keeps context, evidence review, and provider telemetry task-ordered
             geometry.instrumentStatusVerticalOverflow,
             `${theme} ${viewport.width}`,
           ).toBeLessThanOrEqual(0);
+          expect(
+            geometry.instrumentNameOverflow,
+            `${theme} ${viewport.width}`,
+          ).toBeLessThanOrEqual(0);
+          expect(
+            geometry.instrumentNamesWrap,
+            `${theme} ${viewport.width}`,
+          ).toBe(true);
           expect(
             geometry.instrumentStatusesDescribed,
             `${theme} ${viewport.width}`,

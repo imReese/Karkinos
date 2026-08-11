@@ -160,7 +160,15 @@ test('shows stale quote reason as compact visible evidence', () => {
   expect(
     within(table).getByText('Quote older than expected trading session')
       .className,
-  ).toContain('truncate');
+  ).toContain('whitespace-normal');
+  expect(
+    within(table).getByText('Quote older than expected trading session')
+      .className,
+  ).toContain('[overflow-wrap:anywhere]');
+  expect(
+    within(table).getByText('Quote older than expected trading session')
+      .className,
+  ).not.toContain('truncate');
 });
 
 test('uses the available dashboard evidence width before truncating a stale reason', () => {

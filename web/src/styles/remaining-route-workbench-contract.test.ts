@@ -167,6 +167,9 @@ describe('remaining route workbench contract', () => {
     expect(CSS).toMatch(
       /\.app-ai-research-context-strip\s*{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/,
     );
+    expect(CSS).toMatch(
+      /\.app-risk-metric-strip \.app-type-label\.truncate\s*{[\s\S]*overflow-wrap:\s*anywhere;[\s\S]*text-overflow:\s*clip;[\s\S]*white-space:\s*normal;/,
+    );
     expect(RESEARCH_TASK.indexOf('{copy.reviewNote}')).toBeLessThan(
       RESEARCH_TASK.indexOf('<form'),
     );

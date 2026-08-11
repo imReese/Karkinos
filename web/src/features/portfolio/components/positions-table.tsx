@@ -211,7 +211,7 @@ export function PositionsTable({
               className={`mt-0.5 text-[length:var(--app-font-size-micro)] text-[var(--app-warning-text)] ${
                 variant === 'dashboard'
                   ? 'max-w-full whitespace-normal [overflow-wrap:anywhere]'
-                  : 'max-w-44 truncate'
+                  : 'max-w-44 whitespace-normal [overflow-wrap:anywhere]'
               }`}
               data-testid="position-quote-stale-reason"
               title={staleReason}
