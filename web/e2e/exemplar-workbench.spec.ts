@@ -714,6 +714,14 @@ test('AI research keeps frozen evidence ahead of human capture across all accept
   );
   const primaryCanvas = page.getByTestId('ai-research-primary-canvas');
   const contextMetrics = page.getByTestId('ai-research-context-metrics');
+  const workspaceHeader = page.locator(
+    '[data-workbench-primitive="workspace-header"]',
+  );
+  const queueTitle = page.getByRole('heading', {
+    name: 'Research task queue',
+    exact: true,
+  });
+  const boundaryBadges = page.locator('.app-ai-research-boundary-badges');
   const emptyState = page.getByRole('heading', {
     name: 'No frozen research task',
   });
@@ -727,6 +735,19 @@ test('AI research keeps frozen evidence ahead of human capture across all accept
   });
   await expect(queue).toBeVisible({ timeout: 15_000 });
   await expect(composer).toHaveCount(0);
+  await collapseWorkspace.focus();
+  await expect(collapseWorkspace).toBeFocused();
+  await expect(collapseWorkspace).toHaveAttribute('aria-expanded', 'true');
+  await page.keyboard.press('Enter');
+  const openWorkspace = page.getByRole('button', {
+    name: 'Open research tasks',
+    exact: true,
+  });
+  await expect(openWorkspace).toBeFocused();
+  await expect(openWorkspace).toHaveAttribute('aria-expanded', 'false');
+  await page.keyboard.press('Enter');
+  await expect(collapseWorkspace).toBeVisible();
+  await expect(collapseWorkspace).toHaveAttribute('aria-expanded', 'true');
 
   for (const viewport of overviewAcceptanceViewports) {
     await page.setViewportSize(viewport);
@@ -776,6 +797,41 @@ test('AI research keeps frozen evidence ahead of human capture across all accept
       exact: true,
     });
     await expect(openComposer).toHaveAttribute('aria-expanded', 'false');
+    if (viewport.width < 1440) {
+      const boundaryBadgesBox = (await boundaryBadges.boundingBox())!;
+      const collapseWorkspaceBox = (await collapseWorkspace.boundingBox())!;
+      const openComposerBox = (await openComposer.boundingBox())!;
+      const openStrategyLabBox = (await openStrategyLab.boundingBox())!;
+      const queueTitleBox = (await queueTitle.boundingBox())!;
+      const workspaceHeaderBox = (await workspaceHeader.boundingBox())!;
+
+      expect(
+        Math.abs(openStrategyLabBox.x - workspaceHeaderBox.x),
+        `header action ${JSON.stringify(viewport)}`,
+      ).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs(boundaryBadgesBox.x - primaryCanvasBox.x),
+        `workspace control ${JSON.stringify(viewport)}`,
+      ).toBeLessThanOrEqual(1);
+      expect(
+        collapseWorkspaceBox.x -
+          (boundaryBadgesBox.x + boundaryBadgesBox.width),
+        `workspace control gap ${JSON.stringify(viewport)}`,
+      ).toBeGreaterThanOrEqual(0);
+      expect(
+        collapseWorkspaceBox.x -
+          (boundaryBadgesBox.x + boundaryBadgesBox.width),
+        `workspace control gap ${JSON.stringify(viewport)}`,
+      ).toBeLessThanOrEqual(16);
+      expect(
+        openComposerBox.x,
+        `queue action ${JSON.stringify(viewport)}`,
+      ).toBeLessThan(queueTitleBox.x + queueTitleBox.width / 2);
+      expect(
+        openComposerBox.y,
+        `queue action ${JSON.stringify(viewport)}`,
+      ).toBeGreaterThan(queueTitleBox.y + queueTitleBox.height);
+    }
     for (const [name, target] of Object.entries({
       openComposer,
       collapseWorkspace,

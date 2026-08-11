@@ -154,6 +154,7 @@ test('opens the cited research canvas from canonical persisted context', async (
   const collapseWorkspace = screen.getByRole('button', {
     name: 'Collapse research workspace',
   });
+  expect(collapseWorkspace.getAttribute('aria-expanded')).toBe('true');
   expect(collapseWorkspace.querySelector('.sm\\:hidden')?.textContent).toBe(
     'Collapse',
   );
