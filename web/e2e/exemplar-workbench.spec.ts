@@ -1091,6 +1091,7 @@ test('portfolio initial load preserves the holdings hierarchy without fabricated
 test('overview initial load preserves account, queue, and holdings hierarchy', async ({
   page,
 }) => {
+  let explainabilityRequestCount = 0;
   let releasePrimaryResponses = () => {};
   const primaryResponsesHeld = new Promise<void>((resolve) => {
     releasePrimaryResponses = resolve;
@@ -1103,6 +1104,12 @@ test('overview initial load preserves account, queue, and holdings hierarchy', a
 
   await page.route('**/api/portfolio/overview', holdPrimaryResponse);
   await page.route('**/api/portfolio', holdPrimaryResponse);
+  page.on('request', (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (pathname === '/api/portfolio/explainability') {
+      explainabilityRequestCount += 1;
+    }
+  });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/overview');
 
@@ -1121,6 +1128,7 @@ test('overview initial load preserves account, queue, and holdings hierarchy', a
   await expect(queue.getByRole('heading', { level: 2 })).toBeVisible();
   await expect(holdings.getByRole('heading', { level: 2 })).toBeVisible();
   await expect(loadingWorkspace).not.toContainText(/[¥$€£]|\d+[,.]\d{2}/);
+  expect(explainabilityRequestCount).toBe(0);
 
   const loadingGeometry = await page.evaluate(() => {
     const summary = document.querySelector(
@@ -1150,6 +1158,10 @@ test('overview initial load preserves account, queue, and holdings hierarchy', a
   releasePrimaryResponses();
   await expect(page.getByTestId('account-metrics-rail')).toBeVisible();
   await expect(page.getByTestId('overview-daily-workbench')).toBeVisible();
+  expect(explainabilityRequestCount).toBe(0);
+
+  await page.getByRole('tab', { name: /Return calendar|收益日历/ }).click();
+  await expect.poll(() => explainabilityRequestCount).toBe(1);
 });
 
 test('overview persisted snapshot fallback contains its mobile metric scroller', async ({

@@ -388,13 +388,15 @@ export function OverviewPage() {
   const snapshot = usePortfolioSnapshotQuery();
   const overview = useAccountOverviewQuery();
   const secondaryQueriesEnabled = Boolean(overview.data && snapshot.data);
+  const calendarAnalysisEnabled =
+    secondaryQueriesEnabled && analysisView === 'calendar';
   const equityCurve = useEquityCurveSeriesQuery(
     equityCurveRange,
     secondaryQueriesEnabled,
   );
   const explainability = useExplainabilityQuery(
     undefined,
-    secondaryQueriesEnabled,
+    calendarAnalysisEnabled,
   );
   const ledgerEntries = useLedgerEntriesQuery(8, secondaryQueriesEnabled);
   const pendingOrders = usePendingManualOrdersQuery(secondaryQueriesEnabled);
