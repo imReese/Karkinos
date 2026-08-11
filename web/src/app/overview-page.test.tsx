@@ -636,7 +636,7 @@ test('uses a compact evidence-first layout while persisted overview projections 
   expect(screen.queryByTestId('equity-curve-skeleton')).toBeNull();
 });
 
-test('loads both canonical primary projections before secondary evidence', async () => {
+test('starts only canonical primary projections before secondary evidence', async () => {
   let releaseSnapshot!: () => void;
   const snapshotGate = new Promise<void>((resolve) => {
     releaseSnapshot = resolve;
@@ -658,7 +658,7 @@ test('loads both canonical primary projections before secondary evidence', async
 
   renderOverviewPage({ installFetch: false });
 
-  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   const initialUrls = fetchMock.mock.calls.map(([input]) =>
     typeof input === 'string'
       ? input
@@ -668,17 +668,14 @@ test('loads both canonical primary projections before secondary evidence', async
   );
   try {
     expect(initialUrls).toEqual(
-      expect.arrayContaining([
-        '/api/portfolio',
-        '/api/portfolio/overview',
-        '/api/market/data-health',
-        '/api/operations/today',
-      ]),
+      expect.arrayContaining(['/api/portfolio', '/api/portfolio/overview']),
     );
     expect(initialUrls).not.toEqual(
       expect.arrayContaining([
         expect.stringContaining('/api/ledger/entries'),
         expect.stringContaining('/api/decision/today'),
+        expect.stringContaining('/api/market/data-health'),
+        expect.stringContaining('/api/operations/today'),
       ]),
     );
   } finally {
@@ -692,6 +689,16 @@ test('loads both canonical primary projections before secondary evidence', async
       ),
     ).toBe(true),
   );
+  expect(
+    fetchMock.mock.calls.some(([input]) =>
+      String(input).includes('/api/market/data-health'),
+    ),
+  ).toBe(true);
+  expect(
+    fetchMock.mock.calls.some(([input]) =>
+      String(input).includes('/api/operations/today'),
+    ),
+  ).toBe(true);
 });
 
 test('falls back to the richer overview when the snapshot request fails', async () => {
@@ -1141,7 +1148,7 @@ test('surfaces paper shadow next action in today todos', async () => {
 
   const todayQueue = await screen.findByTestId('overview-today-queue');
   expect(
-    within(todayQueue).getByText('Today runbook needs manual review'),
+    await within(todayQueue).findByText('Today runbook needs manual review'),
   ).toBeTruthy();
   expect(
     within(todayQueue).getByText(
@@ -1508,7 +1515,7 @@ test('surfaces paper shadow divergence evidence summary in today todos', async (
   const todayQueue = await screen.findByTestId('overview-today-queue');
 
   expect(
-    within(todayQueue).getByText('Today runbook needs manual review'),
+    await within(todayQueue).findByText('Today runbook needs manual review'),
   ).toBeTruthy();
   expect(todayQueue.textContent).toContain(
     'Review paper/shadow divergence evidence',
@@ -1662,8 +1669,10 @@ test('surfaces terminal paper shadow review reasons in today todos', async () =>
 
   const todayQueue = await screen.findByTestId('overview-today-queue');
 
-  expect(todayQueue.textContent).toContain(
-    'Terminal outcome: Expired · Paper session closed before fill · OMS transition · SHADOW-EXPIRED #4 Expired',
+  await waitFor(() =>
+    expect(todayQueue.textContent).toContain(
+      'Terminal outcome: Expired · Paper session closed before fill · OMS transition · SHADOW-EXPIRED #4 Expired',
+    ),
   );
   expect(todayQueue.textContent).not.toContain('paper_session_closed');
   expect(todayQueue.textContent).not.toContain('terminal_reason');
@@ -1762,7 +1771,7 @@ test('surfaces accepted paper shadow review as manual confirmation handoff', asy
   const todayQueue = await screen.findByTestId('overview-today-queue');
 
   expect(
-    within(todayQueue).getByText('Today runbook needs manual review'),
+    await within(todayQueue).findByText('Today runbook needs manual review'),
   ).toBeTruthy();
   expect(todayQueue.textContent).toContain('Review manual order confirmation');
   expect(
@@ -1869,7 +1878,7 @@ test('surfaces within-expectations paper shadow run as manual confirmation hando
   const todayQueue = await screen.findByTestId('overview-today-queue');
 
   expect(
-    within(todayQueue).getByText('Today runbook needs manual review'),
+    await within(todayQueue).findByText('Today runbook needs manual review'),
   ).toBeTruthy();
   expect(todayQueue.textContent).toContain('Review manual order confirmation');
   expect(
@@ -1948,7 +1957,7 @@ test('surfaces failed paper shadow run recovery in today todos', async () => {
   const todayQueue = await screen.findByTestId('overview-today-queue');
 
   expect(
-    within(todayQueue).getByText('Today runbook has blockers'),
+    await within(todayQueue).findByText('Today runbook has blockers'),
   ).toBeTruthy();
   expect(
     within(todayQueue).getByText(
@@ -2025,7 +2034,7 @@ test('surfaces running paper shadow run as a wait state in today todos', async (
   const todayQueue = await screen.findByTestId('overview-today-queue');
 
   expect(
-    within(todayQueue).getByText('Today runbook has degraded checks'),
+    await within(todayQueue).findByText('Today runbook has degraded checks'),
   ).toBeTruthy();
   expect(
     within(todayQueue).getByText(
@@ -2144,7 +2153,7 @@ test('surfaces failed scheduler run recovery in today todos', async () => {
   const todayQueue = await screen.findByTestId('overview-today-queue');
 
   expect(
-    within(todayQueue).getByText('Today runbook has blockers'),
+    await within(todayQueue).findByText('Today runbook has blockers'),
   ).toBeTruthy();
   expect(todayQueue.textContent).toContain(
     'Inspect scheduler failure evidence before manual review',
@@ -2258,7 +2267,7 @@ test('surfaces manual execution reconciliation review in today todos', async () 
   const todayQueue = await screen.findByTestId('overview-today-queue');
 
   expect(
-    within(todayQueue).getByText('Today runbook needs manual review'),
+    await within(todayQueue).findByText('Today runbook needs manual review'),
   ).toBeTruthy();
   expect(todayQueue.textContent).toContain(
     'Review manual execution and import broker statement',
@@ -2923,7 +2932,7 @@ test('explains operations blockers when candidates are waiting for risk gate', a
 
   const queue = await screen.findByTestId('overview-today-queue');
 
-  expect(within(queue).getByText('风险闸门待检查')).toBeTruthy();
+  expect(await within(queue).findByText('风险闸门待检查')).toBeTruthy();
   expect(
     within(queue).getByText('50 个候选等待风险闸门检查；当前 0 个可人工确认。'),
   ).toBeTruthy();
@@ -3008,7 +3017,7 @@ test('explains operations blockers when candidates are already blocked by risk',
 
   const queue = await screen.findByTestId('overview-today-queue');
 
-  expect(within(queue).getByText('风控阻断待复核')).toBeTruthy();
+  expect(await within(queue).findByText('风控阻断待复核')).toBeTruthy();
   expect(
     within(queue).getByText(
       '2 个候选被风控阻断：现金缓冲不足、单标的仓位过高；涉及 510300、600519。先复核原因，不进入人工确认。',
@@ -3065,7 +3074,9 @@ test('shows missing market pulse move fields as explicit data gaps', async () =>
   renderOverviewPage({ installFetch: false });
 
   const marketPulse = await screen.findByTestId('overview-market-pulse');
-  expect(within(marketPulse).getByText('Trend unavailable')).toBeTruthy();
+  expect(
+    await within(marketPulse).findByText('Trend unavailable'),
+  ).toBeTruthy();
   expect(within(marketPulse).getByText('2 index moves missing')).toBeTruthy();
   expect(within(marketPulse).getAllByText('Move missing')).toHaveLength(2);
   expect(within(marketPulse).queryByText('--')).toBeNull();
