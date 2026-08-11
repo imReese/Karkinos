@@ -112,13 +112,13 @@ export function AiResearchPage() {
           className="grid min-w-0 gap-5 xl:order-1"
           data-testid="ai-research-primary-canvas"
         >
-          <ShadowResearchPanel />
           <ResearchTaskPanel
             backtestResultId={latestBacktest?.id ?? null}
             defaultOpen
             routePrimary
             strategyId={accountStrategy.data?.strategy_id ?? null}
           />
+          <ShadowResearchPanel />
         </div>
       </div>
     </section>
