@@ -8322,6 +8322,16 @@ def test_decision_today_returns_candidate_with_evidence_bundle(monkeypatch):
                 "quote_source": "fixture",
             }
 
+        def get_instrument_metadata_sync(self, symbol, asset_type=None):
+            assert symbol == "600519"
+            assert asset_type in {None, "stock"}
+            return {
+                "symbol": symbol,
+                "asset_type": "stock",
+                "display_name": "贵州茅台",
+                "source": "persisted_fixture",
+            }
+
         def get_account_truth_score_sync(self):
             return {
                 "score": 100,
@@ -8342,9 +8352,11 @@ def test_decision_today_returns_candidate_with_evidence_bundle(monkeypatch):
     assert response["summary"]["candidate_count"] == 1
     candidate = response["candidates"][0]
     assert candidate["action"] == "buy"
+    assert candidate["display_name"] == "贵州茅台"
     assert candidate["manual_confirmation_status"] == "ready_for_manual_confirmation"
     assert candidate["evidence"]["strategy"]["strategy_id"] == "dual_ma"
     assert candidate["evidence"]["signal"]["id"] == 1
+    assert candidate["evidence"]["signal"]["display_name"] == "贵州茅台"
     assert candidate["evidence"]["risk_gate"]["status"] == "passed"
     assert candidate["evidence"]["account_truth"]["gate_status"] == "pass"
     assert candidate["evidence"]["data_freshness"]["status"] == "live"
@@ -9069,6 +9081,20 @@ def test_decision_intraday_returns_stock_and_etf_candidates_only(monkeypatch):
                 "quote_source": "fixture",
             }
 
+        def get_instrument_metadata_sync(self, symbol, asset_type=None):
+            names = {
+                "600519": ("stock", "贵州茅台"),
+                "510300": ("fund", "沪深300ETF"),
+            }
+            expected_asset_type, display_name = names[symbol]
+            assert asset_type in {None, expected_asset_type}
+            return {
+                "symbol": symbol,
+                "asset_type": expected_asset_type,
+                "display_name": display_name,
+                "source": "persisted_fixture",
+            }
+
         def get_account_truth_score_sync(self):
             return {
                 "score": 100,
@@ -9089,6 +9115,10 @@ def test_decision_intraday_returns_stock_and_etf_candidates_only(monkeypatch):
     assert [candidate["symbol"] for candidate in response["candidates"]] == [
         "510300",
         "600519",
+    ]
+    assert [candidate["display_name"] for candidate in response["candidates"]] == [
+        "沪深300ETF",
+        "贵州茅台",
     ]
     assert response["candidates"][0]["asset_class"] == "fund"
     assert response["candidates"][0]["evidence"]["data_freshness"]["status"] == "live"
