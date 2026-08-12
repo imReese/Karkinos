@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from core.types import Symbol
 from server.ai_runtime.store import IdempotencyConflict
+from server.services.asset_metadata import resolve_asset_metadata
 from server.services.decision_quality import (
     DecisionQualityCaptureRejected,
     DecisionQualityCaptureRequest,
@@ -246,6 +247,7 @@ def create_router() -> APIRouter:
                 db,
                 account_truth,
                 strategy_attribution,
+                state=state,
                 quotes=dict(portfolio_context.get("quotes") or {}),
                 allow_direct_quote_fallback=(
                     portfolio_context.get("authority") != "persisted_valuation_snapshot"
@@ -343,6 +345,7 @@ async def _today_decision_payload(
             db,
             account_truth,
             strategy_attribution,
+            state=state,
             quotes=dict(resolved_portfolio_context.get("quotes") or {}),
             allow_direct_quote_fallback=(
                 resolved_portfolio_context.get("authority")
@@ -1304,11 +1307,26 @@ def _decision_candidate(
     account_truth: dict[str, Any],
     strategy_attribution: dict[str, Any],
     *,
+    state: Any,
     quotes: dict[str, dict[str, Any]],
     allow_direct_quote_fallback: bool,
 ) -> dict[str, Any]:
     signal_id = action.get("source_signal_id")
     journal = journal_by_signal.get(int(signal_id)) if signal_id is not None else None
+    journal_signal = (journal or {}).get("signal") or {}
+    symbol = str(action.get("symbol") or journal_signal.get("symbol") or "")
+    metadata = resolve_asset_metadata(
+        state,
+        symbol,
+        asset_class=str(action.get("asset_class") or "") or None,
+        quote=quotes.get(symbol),
+        fallback_name=(
+            action.get("display_name")
+            or action.get("name")
+            or journal_signal.get("display_name")
+            or journal_signal.get("name")
+        ),
+    )
     account_truth_gate_status = str(account_truth.get("gate_status") or "blocked")
     data_freshness = _data_freshness_evidence(
         action,
@@ -1353,7 +1371,8 @@ def _decision_candidate(
     return {
         "action_id": action.get("id"),
         "action": _normalize_decision_action(action),
-        "symbol": action.get("symbol"),
+        "symbol": symbol,
+        "display_name": metadata.display_name,
         "asset_class": action.get("asset_class"),
         "title": action.get("title"),
         "detail": action.get("detail"),
@@ -1375,7 +1394,11 @@ def _decision_candidate(
         "evidence": {
             "strategy": {"strategy_id": action.get("strategy_id")},
             "portfolio_allocation": dict(action.get("allocation_evidence") or {}),
-            "signal": _signal_evidence(action, journal),
+            "signal": _signal_evidence(
+                action,
+                journal,
+                display_name=metadata.display_name,
+            ),
             "risk_gate": risk_gate,
             "after_cost_oos_validation": validation,
             "data_freshness": data_freshness,
@@ -1690,6 +1713,8 @@ def _account_truth_manual_confirmation_status(gate_status: str) -> str:
 def _signal_evidence(
     action: dict[str, Any],
     journal: dict[str, Any] | None,
+    *,
+    display_name: str,
 ) -> dict[str, Any]:
     signal = (journal or {}).get("signal") or {}
     return {
@@ -1697,6 +1722,9 @@ def _signal_evidence(
         "timestamp": signal.get("timestamp", action.get("timestamp")),
         "strategy_id": signal.get("strategy_id", action.get("strategy_id")),
         "symbol": signal.get("symbol", action.get("symbol")),
+        "display_name": (
+            signal.get("display_name") or signal.get("name") or display_name
+        ),
         "target_weight": signal.get("target_weight", action.get("target_weight")),
     }
 
