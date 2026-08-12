@@ -1454,10 +1454,10 @@ test('collapses an idle persisted trading plan without hiding its evidence', asy
       source_decision: 'hold',
       conclusion_status: 'no_manual_action',
       primary_target: 'decision',
-      candidate_pool_count: 2,
+      candidate_pool_count: 0,
       manual_ready_count: 0,
       order_intent_count: 0,
-      blocked_count: 2,
+      blocked_count: 0,
       available_cash: 100000,
       total_equity: 40000,
       default_execution_mode: 'manual_confirmation',
@@ -1478,7 +1478,7 @@ test('collapses an idle persisted trading plan without hiding its evidence', asy
   expect(disclosure.textContent).toContain('Manual-confirmation plan');
   expect(disclosure.textContent).toContain('No manual action required');
   expect(disclosure.textContent).toContain(
-    '2 candidates · 0 order intent previews · 2 blockers',
+    '0 candidates · 0 order intent previews · 0 blockers',
   );
 
   fireEvent.click(disclosure.querySelector('summary')!);
@@ -1486,6 +1486,99 @@ test('collapses an idle persisted trading plan without hiding its evidence', asy
   const plan = within(disclosure).getByTestId('decision-daily-trading-plan');
   expect(plan.textContent).toContain('No manual action required');
   expect(plan.textContent).toContain('No manual-confirmation order intents.');
+});
+
+test('shows a gated candidate signal when no executable order intent exists', async () => {
+  const candidate = {
+    ...dailyDecision.candidates[0],
+    action: 'sell' as const,
+    symbol: '600066',
+    display_name: '宇通客车',
+    title: 'Exit 600066',
+    detail: '趋势策略产生卖出候选，但尚未完成今日风控。',
+    target_weight: 0,
+    risk_gate_status: 'not_checked',
+    manual_confirmation_status: 'awaiting_risk_gate',
+    evidence: {
+      ...dailyDecision.candidates[0].evidence,
+      signal: {
+        ...dailyDecision.candidates[0].evidence.signal,
+        symbol: '600066',
+        display_name: '宇通客车',
+        target_weight: 0,
+      },
+      risk_gate: {
+        status: 'not_checked',
+        decision_id: null,
+        passed: null,
+        severity: null,
+        reasons: [],
+      },
+      manual_confirmation: {
+        required: true,
+        status: 'awaiting_risk_gate',
+        reason: 'Risk gate has not run.',
+      },
+    },
+  };
+  renderDecisionCockpit({
+    locale: 'zh',
+    todayResponse: {
+      ...dailyDecision,
+      decision: 'review_required',
+      summary: {
+        ...dailyDecision.summary,
+        candidate_count: 1,
+        risk_blocked_count: 0,
+        ready_for_manual_confirmation_count: 0,
+      },
+      candidates: [candidate],
+    },
+    tradingPlanResponse: {
+      schema_version: 'karkinos.daily_trading_plan.v1',
+      plan_date: '2026-08-12',
+      generated_at: '2026-08-12T11:26:08+08:00',
+      source_decision: 'review_required',
+      conclusion_status: 'no_manual_action',
+      primary_target: 'trading',
+      candidate_pool_count: 1,
+      manual_ready_count: 0,
+      order_intent_count: 0,
+      blocked_count: 1,
+      available_cash: 100000,
+      total_equity: 100000,
+      default_execution_mode: 'manual_confirmation',
+      broker_bridge_status: 'disabled',
+      order_intents: [],
+      blockers: [
+        {
+          action_id: 9,
+          symbol: '600066',
+          reason: 'awaiting_risk_gate',
+          target: 'risk',
+          risk_gate_status: 'not_checked',
+          manual_confirmation_status: 'awaiting_risk_gate',
+        },
+      ],
+      limitations: [
+        'Candidate signals are research evidence, not executable orders.',
+      ],
+    },
+  });
+
+  expect(
+    screen.queryByTestId('decision-daily-trading-plan-disclosure'),
+  ).toBeNull();
+  const plan = await findDailyTradingPlanWith('有候选信号，暂无可执行订单');
+  const signal = within(plan).getByTestId(
+    'decision-daily-candidate-signal-600066',
+  );
+  expect(plan.textContent).toContain('今日候选信号（仅研究，不是订单）');
+  expect(signal.textContent).toContain('宇通客车 600066');
+  expect(signal.textContent).toContain('卖出');
+  expect(signal.textContent).toContain('当前阻断');
+  expect(signal.textContent).toContain('等待风控门禁');
+  expect(plan.textContent).toContain('暂无可人工确认的订单意图。');
 });
 
 test('renders cash shortfall in daily trading plan without manual readiness', async () => {
