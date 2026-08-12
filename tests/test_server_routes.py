@@ -3327,8 +3327,32 @@ def test_market_watchlist_auto_includes_ledger_holdings(monkeypatch):
     assert response[0].last_snapshot_at == "2026-04-18T15:00:00"
 
 
-def test_market_kline_uses_cache_only_when_closed(monkeypatch):
+def test_market_kline_reads_only_the_persisted_store(monkeypatch, tmp_path):
+    import pandas as pd
+
+    from core.types import BarFrequency
+    from data.store import DataStore
     from server.routes import market as market_routes
+
+    store_root = tmp_path / "market-store"
+    store = DataStore(root=store_root)
+    store.save_bars(
+        Symbol("600519"),
+        BarFrequency.DAILY,
+        pd.DataFrame(
+            [
+                {
+                    "timestamp": datetime(2026, 5, 2, 15),
+                    "open": 1.0,
+                    "high": 2.0,
+                    "low": 0.5,
+                    "close": 1.5,
+                    "volume": 100.0,
+                }
+            ]
+        ),
+    )
+    monkeypatch.setenv("KARKINOS_DATA_DIR", str(store_root))
 
     router = market_routes.create_router()
     kline_route = next(
@@ -3338,44 +3362,31 @@ def test_market_kline_uses_cache_only_when_closed(monkeypatch):
     )
     endpoint = kline_route.endpoint
 
-    observed: dict[str, object] = {}
-
-    class FakeManager:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def get_bars(self, symbol, start, end, frequency, asset_class, **kwargs):
-            observed.update(kwargs)
-            return []
-
-    class FakeStore:
-        def __init__(self, *args, **kwargs):
-            pass
-
     fake_state = SimpleNamespace(
-        config=SimpleNamespace(
-            data_source="akshare",
-            tushare_token="",
-            assets=[{"symbol": "600519", "asset_class": "stock"}],
-            live_poll_interval=60,
-        ),
+        config=SimpleNamespace(assets=[{"symbol": "600519", "asset_class": "stock"}]),
+        db=None,
     )
 
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
-    monkeypatch.setattr("data.manager.DataManager", FakeManager)
-    monkeypatch.setattr("data.store.DataStore", FakeStore)
+    monkeypatch.setattr(
+        "data.manager.build_sources",
+        lambda *args, **kwargs: pytest.fail("GET must not construct providers"),
+    )
 
-    response = asyncio.run(endpoint("600519"))
+    response = asyncio.run(endpoint("600519", start="2026-05-01", end="2026-05-03"))
 
-    assert response == []
-    assert observed["allow_remote_refresh"] is False
-    assert observed["degrade_to_cache"] is True
-    assert observed["refresh_ttl_seconds"] == 60
+    assert len(response) == 1
+    assert response[0].timestamp == "2026-05-02T15:00:00"
+    assert response[0].close == 1.5
 
 
-def test_market_kline_timeout_does_not_block_route(monkeypatch):
+def test_market_kline_missing_store_is_write_free_and_non_blocking(
+    monkeypatch, tmp_path
+):
     from server.routes import market as market_routes
+
+    missing_root = tmp_path / "missing-market-store"
+    monkeypatch.setenv("KARKINOS_DATA_DIR", str(missing_root))
 
     router = market_routes.create_router()
     kline_route = next(
@@ -3385,43 +3396,19 @@ def test_market_kline_timeout_does_not_block_route(monkeypatch):
     )
     endpoint = kline_route.endpoint
 
-    class FakeManager:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def get_bars(self, *args, **kwargs):
-            return []
-
-    class FakeStore:
-        def __init__(self, *args, **kwargs):
-            pass
-
     fake_state = SimpleNamespace(
-        config=SimpleNamespace(
-            data_source="akshare",
-            tushare_token="",
-            assets=[{"symbol": "600519", "asset_class": "stock"}],
-            live_poll_interval=60,
-        ),
+        config=SimpleNamespace(assets=[{"symbol": "600519", "asset_class": "stock"}]),
+        db=None,
     )
 
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
-    monkeypatch.setattr(market_routes, "_KLINE_FETCH_TIMEOUT_SECONDS", 0.01)
-    monkeypatch.setattr("data.manager.DataManager", FakeManager)
-    monkeypatch.setattr("data.store.DataStore", FakeStore)
-
-    async def slow_blocking_fetch(func, *args, **kwargs):
-        await asyncio.sleep(0.1)
-        return func(*args, **kwargs)
-
-    monkeypatch.setattr(market_routes, "_run_blocking_fetch", slow_blocking_fetch)
 
     started = time.monotonic()
     response = asyncio.run(endpoint("600519"))
 
     assert response == []
     assert time.monotonic() - started < 0.08
+    assert not missing_root.exists()
 
 
 def test_market_bars_backfill_writes_authoritative_store(monkeypatch, tmp_path):
