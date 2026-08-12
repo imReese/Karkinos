@@ -1035,6 +1035,13 @@ function tradingPlanConclusionLabel(
   return labels.tradingPlanNoManualAction;
 }
 
+function tradingPlanBlockerLabel(reason: string, locale: Locale) {
+  if (reason === 'awaiting_risk_gate') {
+    return locale === 'zh' ? '等待风控门禁' : 'Awaiting risk gate';
+  }
+  return formatPublicNote(reason, locale);
+}
+
 const TRADING_PLAN_CONSTRAINT_LABELS: Record<
   string,
   { en: string; zh: string }
@@ -4589,6 +4596,7 @@ function AutomationCockpitPanel({
 
 function DailyTradingPlanPanel({
   plan,
+  candidates,
   operationsToday,
   loading,
   error,
@@ -4597,6 +4605,7 @@ function DailyTradingPlanPanel({
   paperShadowRunError,
 }: {
   plan: DailyTradingPlanResponse | undefined;
+  candidates: DecisionCandidate[];
   operationsToday: OperationsTodayResponse | undefined;
   loading: boolean;
   error: boolean;
@@ -4608,6 +4617,7 @@ function DailyTradingPlanPanel({
   const labels = copy.decision;
   const { locale } = usePreferences();
   const firstIntent = plan?.order_intents?.[0];
+  const visibleCandidateSignals = candidates.slice(0, 3);
   const constraintChecks = firstIntent?.constraint_checks ?? [];
   const fallbackShadowStatus =
     (plan?.order_intent_count ?? 0) > 0 ? 'not_run' : 'not_required';
@@ -4675,7 +4685,11 @@ function DailyTradingPlanPanel({
         <div className="mt-4 grid min-w-0 gap-x-6 gap-y-4 xl:grid-cols-[0.9fr_1.1fr]">
           <div className="min-w-0 border-l-2 border-[var(--app-accent)] py-1 pl-3">
             <div className="text-sm font-semibold text-[var(--app-text)]">
-              {tradingPlanConclusionLabel(plan.conclusion_status, labels)}
+              {plan.order_intent_count === 0 && plan.candidate_pool_count > 0
+                ? locale === 'zh'
+                  ? '有候选信号，暂无可执行订单'
+                  : 'Candidate signals exist; no executable orders'
+                : tradingPlanConclusionLabel(plan.conclusion_status, labels)}
             </div>
             <div className="app-muted mt-2 text-sm">
               {labels.tradingPlanCounts(
@@ -4781,6 +4795,76 @@ function DailyTradingPlanPanel({
               </div>
             )}
           </div>
+
+          {plan.order_intent_count === 0 &&
+          visibleCandidateSignals.length > 0 ? (
+            <div
+              className="min-w-0 border-t border-[var(--app-divider)] pt-4 xl:col-span-2"
+              data-testid="decision-daily-candidate-signals"
+            >
+              <div className="text-sm font-semibold text-[var(--app-text)]">
+                {locale === 'zh'
+                  ? '今日候选信号（仅研究，不是订单）'
+                  : "Today's candidate signals (research only, not orders)"}
+              </div>
+              <p className="app-muted mt-1 text-sm leading-6">
+                {locale === 'zh'
+                  ? '仅当持仓与行情证据完整、风控通过并生成订单意图后，候选才会进入人工确认。'
+                  : 'A candidate reaches manual confirmation only after position and market evidence are complete, risk passes, and an order intent is generated.'}
+              </p>
+              <div className="mt-3 grid min-w-0 gap-2">
+                {visibleCandidateSignals.map((candidate) => {
+                  const blocker = plan.blockers.find(
+                    (item) => item.symbol === candidate.symbol,
+                  );
+                  const blockerSummary = plan.blocker_summary?.find((item) =>
+                    item.sample_symbols.includes(candidate.symbol),
+                  );
+                  const blockerReason =
+                    blocker?.reason ?? blockerSummary?.reasons[0];
+                  return (
+                    <div
+                      className="min-w-0 border-l-2 border-[var(--app-warning)] py-2 pl-3"
+                      data-testid={`decision-daily-candidate-signal-${candidate.symbol}`}
+                      key={`${candidate.action_id ?? 'candidate'}-${candidate.symbol}`}
+                    >
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <span className="break-words font-semibold text-[var(--app-text)]">
+                          {formatInstrumentDisplayLabel(candidate)}
+                        </span>
+                        <StatusPill value={candidate.action} />
+                        <StatusPill
+                          value={candidate.risk_gate_status}
+                          prefix={labels.riskGate}
+                        />
+                      </div>
+                      <p className="app-muted mt-1 break-words text-sm">
+                        {formatPublicNote(
+                          candidate.detail ||
+                            candidate.title ||
+                            labels.noDetail,
+                          locale,
+                        )}
+                      </p>
+                      <div className="mt-1 break-words text-xs font-semibold text-[var(--app-warning-text)]">
+                        {locale === 'zh' ? '当前阻断' : 'Current blocker'}:{' '}
+                        {blockerReason
+                          ? tradingPlanBlockerLabel(blockerReason, locale)
+                          : manualStatus(candidate, locale)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {candidates.length > visibleCandidateSignals.length ? (
+                <div className="app-muted mt-2 text-xs">
+                  {locale === 'zh'
+                    ? `另有 ${candidates.length - visibleCandidateSignals.length} 个候选，请在下方决策通道展开证据明细。`
+                    : `${candidates.length - visibleCandidateSignals.length} more candidate(s); expand the decision-lane evidence below.`}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="min-w-0 border-t border-[var(--app-divider)] pt-4 xl:col-span-2">
             <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -5136,12 +5220,14 @@ export function DecisionCockpitPage() {
   const idleTradingPlan =
     !tradingPlan.isLoading &&
     !tradingPlan.isError &&
-    tradingPlan.data?.order_intent_count === 0
+    tradingPlan.data?.order_intent_count === 0 &&
+    tradingPlan.data.candidate_pool_count === 0
       ? tradingPlan.data
       : null;
   const tradingPlanPanel = (
     <DailyTradingPlanPanel
       plan={tradingPlan.data}
+      candidates={today.data?.candidates ?? []}
       operationsToday={operationsToday.data}
       loading={tradingPlan.isLoading}
       error={tradingPlan.isError}
