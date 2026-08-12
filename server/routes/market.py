@@ -5,11 +5,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import sqlite3
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from datetime import date, datetime, timedelta
 from functools import partial
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
@@ -56,7 +58,6 @@ _QUOTE_REFRESH_ERRORS: dict[tuple[str, str], str | None] = {}
 _MANUAL_REFRESH_TIMEOUT_SECONDS = 8.0
 _PROVIDER_REFRESH_TIMEOUT_SECONDS = 3.0
 _INDEX_PROVIDER_REFRESH_TIMEOUT_SECONDS = 7.0
-_KLINE_FETCH_TIMEOUT_SECONDS = 3.0
 _BAR_BACKFILL_TIMEOUT_SECONDS = 60.0
 _BLOCKING_FETCH_EXECUTOR = ThreadPoolExecutor(
     max_workers=4,
@@ -2414,72 +2415,52 @@ def create_router() -> APIRouter:
         interval: str = "1d",
     ) -> list[KlineBar]:
         """只读取已持久化历史 K 线；远端同步必须走 bars/backfill。"""
-        from server.app import get_app_state
-
-        state = get_app_state()
-        config = state.config
-
-        ac = AssetClass.STOCK
-        for asset_cfg in _merged_watchlist_assets(state):
-            if asset_cfg["symbol"] == symbol:
-                ac = _ASSET_CLASS_MAP.get(asset_cfg["asset_class"], AssetClass.STOCK)
-                break
+        from server.bootstrap import resolve_data_dir
 
         def _load_bars() -> list[KlineBar]:
-            from data.manager import DataManager, build_sources
-            from data.store import DataStore
-
-            store = None
-            try:
-                store = DataStore()
-            except Exception:
-                pass
-
-            dm = DataManager(
-                sources=build_sources(
-                    data_source=config.data_source,
-                    tushare_token=config.tushare_token,
-                ),
-                store=store,
-                default_source=config.data_source,
-            )
             frequency = {
                 "1m": BarFrequency.MIN_1,
                 "5m": BarFrequency.MIN_5,
                 "1d": BarFrequency.DAILY,
             }.get(interval, BarFrequency.DAILY)
-            handler = dm.get_bars(
-                Symbol(symbol),
-                datetime.strptime(start, "%Y-%m-%d"),
-                datetime.strptime(end, "%Y-%m-%d"),
-                frequency,
-                ac,
-                allow_remote_refresh=False,
-                refresh_ttl_seconds=max(int(config.live_poll_interval or 60), 15),
-                degrade_to_cache=True,
-            )
-            bars: list[KlineBar] = []
-            for event in handler:
-                bars.append(
-                    KlineBar(
-                        timestamp=event.timestamp.isoformat(),
-                        open=float(event.open),
-                        high=float(event.high),
-                        low=float(event.low),
-                        close=float(event.close),
-                        volume=float(event.volume),
-                    )
+            start_at = datetime.strptime(start, "%Y-%m-%d")
+            end_exclusive = datetime.strptime(end, "%Y-%m-%d") + timedelta(days=1)
+            store_path = Path(resolve_data_dir()) / "meta.db"
+            if not store_path.is_file():
+                return []
+
+            uri = f"{store_path.resolve().as_uri()}?mode=ro"
+            with sqlite3.connect(uri, uri=True, timeout=1.0) as connection:
+                rows = connection.execute(
+                    """
+                    SELECT timestamp, open, high, low, close, volume
+                    FROM market_bars
+                    WHERE symbol = ? AND frequency = ?
+                      AND timestamp >= ? AND timestamp < ?
+                    ORDER BY timestamp ASC
+                    """,
+                    (
+                        str(Symbol(symbol)),
+                        frequency.value,
+                        start_at.isoformat(),
+                        end_exclusive.isoformat(),
+                    ),
+                ).fetchall()
+
+            return [
+                KlineBar(
+                    timestamp=str(row[0]),
+                    open=float(row[1]),
+                    high=float(row[2]),
+                    low=float(row[3]),
+                    close=float(row[4]),
+                    volume=float(row[5]),
                 )
-            return bars
+                for row in rows
+            ]
 
         try:
-            return await asyncio.wait_for(
-                _run_blocking_fetch(_load_bars),
-                timeout=_KLINE_FETCH_TIMEOUT_SECONDS,
-            )
-        except asyncio.TimeoutError:
-            logger.warning("Timed out fetching kline for %s", symbol)
-            return []
+            return _load_bars()
         except Exception:
             logger.warning("Failed to fetch kline for %s", symbol, exc_info=True)
             return []
