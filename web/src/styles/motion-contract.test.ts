@@ -94,7 +94,6 @@ describe('Karkinos brand motion contract', () => {
       'app/layout/app-shell.tsx',
       'app/router.tsx',
       'features/activity/components/activity-feed.tsx',
-      'features/decision/components/decision-cockpit-page.tsx',
       'features/market/components/market-instrument-workspace.tsx',
     ]);
     for (const use of uses.filter(({ token }) => token.endsWith('pulse'))) {
