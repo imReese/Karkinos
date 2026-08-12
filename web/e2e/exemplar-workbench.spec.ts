@@ -1507,14 +1507,34 @@ test('risk initial load preserves priorities, metrics, and controlled-action hie
       exact: true,
     }),
   ).toBeVisible();
-  await expect(priorities.getByRole('heading', { level: 2 })).toBeVisible();
-  await expect(metrics.getByRole('heading', { level: 2 })).toBeVisible();
   await expect(
-    controlledAction.getByRole('heading', { level: 2 }),
+    priorities.getByRole('heading', {
+      level: 2,
+      name: 'Active risk priorities',
+      exact: true,
+    }),
   ).toBeVisible();
   await expect(
-    page.getByTestId('risk-loading-exceptions').locator(':scope > *'),
-  ).toHaveCount(3);
+    metrics.getByRole('heading', {
+      level: 2,
+      name: 'Risk metrics',
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    controlledAction.getByRole('heading', {
+      level: 2,
+      name: 'Controlled action',
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.getByTestId('risk-loading-exceptions')).toHaveCount(0);
+  await expect(
+    priorities.getByText('Loading', { exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    metrics.getByLabel('Risk metrics · Loading', { exact: true }),
+  ).toBeVisible();
   await expect(metrics).not.toContainText(/[¥$€£]|\d+[,.]\d{2}/);
 
   const loadingGeometry = await page.evaluate(() => {
