@@ -3169,11 +3169,39 @@ def _citation_path_exists(citation: str, sources: Mapping[str, Any]) -> bool:
     parts = citation.split(".")
     if len(parts) < 2 or any(not part for part in parts):
         return False
-    value: Any = sources.get(parts[0])
+    if parts[0] not in sources:
+        return False
+    value: Any = sources[parts[0]]
     for part in parts[1:]:
-        if not isinstance(value, Mapping) or part not in value:
+        suffix = ""
+        if isinstance(value, Mapping):
+            bracket = part.find("[")
+            key = part if bracket < 0 else part[:bracket]
+            if not key or key not in value:
+                return False
+            value = value[key]
+            suffix = "" if bracket < 0 else part[bracket:]
+        elif isinstance(value, list):
+            suffix = f"[{part}]"
+        else:
             return False
-        value = value[part]
+
+        while suffix:
+            if not suffix.startswith("["):
+                return False
+            close = suffix.find("]")
+            if close <= 1:
+                return False
+            index_text = suffix[1:close]
+            if not index_text.isdigit() or (
+                len(index_text) > 1 and index_text.startswith("0")
+            ):
+                return False
+            index = int(index_text)
+            if not isinstance(value, list) or index >= len(value):
+                return False
+            value = value[index]
+            suffix = suffix[close + 1 :]
     return True
 
 

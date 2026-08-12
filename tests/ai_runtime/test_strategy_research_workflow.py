@@ -1155,12 +1155,59 @@ async def test_persisted_dataset_drift_blocks_formula_backtest_before_engine_run
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    "citation",
+    (
+        "saved_account_evidence.risks.0.level",
+        "saved_account_evidence.risks[0].level",
+    ),
+)
 @pytest.mark.asyncio
-async def test_unknown_hypothesis_citation_fails_closed(tmp_path) -> None:
+async def test_hypothesis_citation_accepts_bounded_array_index(
+    tmp_path,
+    citation: str,
+) -> None:
     service, selection, transport, _ = _service(tmp_path)
     response = transport._responses[0].payload
     content = json.loads(response["choices"][0]["message"]["content"])
-    content["drafts"][0]["citations"] = ["saved_backtest_evidence.nonexistent"]
+    content["drafts"][0]["citations"] = [citation]
+    response["choices"][0]["message"]["content"] = json.dumps(content)
+
+    result = await service.generate_hypotheses(
+        HypothesisGenerationRequest(
+            idempotency_key=f"hypothesis-array-citation-{citation}",
+            requested_by="human:reese",
+            account_alias="synthetic-research-only",
+            research_question="Bound array citations must remain auditable.",
+            selection=selection,
+            confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
+        )
+    )
+
+    assert result["status"] == "completed"
+    assert result["drafts"][0]["citations"] == [citation]
+    assert len(transport.calls) == 1
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "citation",
+    (
+        "saved_backtest_evidence.nonexistent",
+        "saved_account_evidence.risks[1].level",
+        "saved_account_evidence.risks[-1].level",
+        "saved_account_evidence.risks[*].level",
+    ),
+)
+@pytest.mark.asyncio
+async def test_unknown_hypothesis_citation_fails_closed(
+    tmp_path,
+    citation: str,
+) -> None:
+    service, selection, transport, _ = _service(tmp_path)
+    response = transport._responses[0].payload
+    content = json.loads(response["choices"][0]["message"]["content"])
+    content["drafts"][0]["citations"] = [citation]
     response["choices"][0]["message"]["content"] = json.dumps(content)
 
     result = await service.generate_hypotheses(
