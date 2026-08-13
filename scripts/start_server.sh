@@ -19,6 +19,7 @@ PID_FILE="${RUN_DIR}/server.pid"
 LOG_FILE="${LOG_DIR}/server.log"
 WEB_PID_FILE="${RUN_DIR}/web.pid"
 WEB_LOG_FILE="${LOG_DIR}/web.log"
+LOG_MAX_BYTES="${KARKINOS_LOG_MAX_BYTES:-20971520}"
 FRONTEND_HOST="${KARKINOS_FRONTEND_HOST:-127.0.0.1}"
 FRONTEND_PORT="${KARKINOS_FRONTEND_PORT:-5173}"
 
@@ -41,6 +42,7 @@ Notes:
   - \`prod\` starts without hot reload and does not enable live monitoring.
   - Enable live monitoring explicitly with server.live_auto_start=true or KARKINOS_LIVE_AUTO_START=true.
   - Output is redirected to \`logs/server.log\` and \`logs/web.log\`.
+  - Logs larger than KARKINOS_LOG_MAX_BYTES (default 20 MiB) are archived before startup.
   - PIDs are written to \`.run/server.pid\` and \`.run/web.pid\` in \`dev\` mode.
   - It installs missing frontend dependencies before building.
   - Run \`uv run python scripts/configure_data_source.py\` to configure local market data.
@@ -77,6 +79,28 @@ Data source: defaulting to AKShare.
 Configure local market data with:
   uv run python scripts/configure_data_source.py
 EOF
+}
+
+rotate_log_if_needed() {
+	local log_file="$1"
+	if [[ ! -f "${log_file}" ]]; then
+		return
+	fi
+	if [[ -z "${LOG_MAX_BYTES}" || "${LOG_MAX_BYTES}" == *[!0-9]* || "${LOG_MAX_BYTES}" == "0" ]]; then
+		echo "Error: KARKINOS_LOG_MAX_BYTES must be a positive integer." >&2
+		exit 1
+	fi
+
+	local current_size
+	current_size="$(wc -c <"${log_file}")"
+	if ((current_size < LOG_MAX_BYTES)); then
+		return
+	fi
+
+	local archived_log
+	archived_log="${log_file}.$(date '+%Y%m%d-%H%M%S').$$"
+	mv -- "${log_file}" "${archived_log}"
+	echo "Archived oversized log: ${archived_log}"
 }
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
@@ -184,7 +208,7 @@ preflight_backend_port() {
 case "${MODE}" in
 	dev)
 		shift || true
-		SERVER_ARGS=(--reload "$@")
+		SERVER_ARGS=(--reload --reload-exclude 'tests/**' --reload-exclude 'web/**' "$@")
 		;;
 	prod)
 		shift || true
@@ -192,7 +216,7 @@ case "${MODE}" in
 		;;
 	-*)
 		MODE="dev"
-		SERVER_ARGS=(--reload "$@")
+		SERVER_ARGS=(--reload --reload-exclude 'tests/**' --reload-exclude 'web/**' "$@")
 		;;
 	*)
 		echo "Error: unknown mode '${MODE}'." >&2
@@ -249,6 +273,10 @@ if [[ "${MODE}" == "dev" && -f "${WEB_PID_FILE}" ]]; then
 fi
 
 preflight_backend_port
+rotate_log_if_needed "${LOG_FILE}"
+if [[ "${MODE}" == "dev" ]]; then
+	rotate_log_if_needed "${WEB_LOG_FILE}"
+fi
 
 if [[ "${MODE}" == "dev" ]]; then
 	echo "Building product frontend bundle for ${PRODUCT_ENTRY_URL}"

@@ -190,6 +190,60 @@ class TestLiveDataFeed:
         assert primary.calls == [("019999", AssetClass.FUND)]
         assert fallback.calls == [("019999", AssetClass.FUND)]
 
+    def test_poll_latest_prefers_fund_capable_fallback_before_primary(self):
+        """基金可优先走专用源，避免重复触发主源的可选权限接口。"""
+        primary = RaisingSource(RuntimeError("fund_nav permission denied"))
+        fallback = SequenceSource(
+            {
+                ("019999", AssetClass.FUND): {
+                    "price": 1.126,
+                    "volume": None,
+                    "timestamp": "2026-04-21T10:30:00+08:00",
+                    "quote_source": "eastmoney_fund_estimate",
+                }
+            }
+        )
+        feed = LiveDataFeed(
+            primary,
+            EventBus(),
+            fallback_source=fallback,
+            prefer_fallback_asset_classes={AssetClass.FUND},
+        )
+
+        event = feed.poll_latest(Symbol("019999"), AssetClass.FUND)
+
+        assert event is not None
+        assert float(event.close) == pytest.approx(1.126)
+        assert primary.calls == []
+        assert fallback.calls == [("019999", AssetClass.FUND)]
+
+    def test_preferred_fund_fallback_still_uses_primary_when_needed(self):
+        """备用基金源无结果时仍保留具备 fund_nav 权限的主源能力。"""
+        primary = SequenceSource(
+            {
+                ("019999", AssetClass.FUND): {
+                    "price": 1.12,
+                    "volume": None,
+                    "timestamp": "2026-04-20",
+                    "quote_source": "tushare_fund_nav",
+                }
+            }
+        )
+        fallback = SequenceSource({})
+        feed = LiveDataFeed(
+            primary,
+            EventBus(),
+            fallback_source=fallback,
+            prefer_fallback_asset_classes={AssetClass.FUND},
+        )
+
+        event = feed.poll_latest(Symbol("019999"), AssetClass.FUND)
+
+        assert event is not None
+        assert float(event.close) == pytest.approx(1.12)
+        assert fallback.calls == [("019999", AssetClass.FUND)]
+        assert primary.calls == [("019999", AssetClass.FUND)]
+
     def test_poll_latest_falls_back_to_akshare_for_stock_quotes(self):
         """股票主源失败时也应回退到备用行情源。"""
         primary = SequenceSource({("600001", AssetClass.STOCK): None})

@@ -7,9 +7,13 @@ from datetime import datetime
 from decimal import Decimal
 from types import SimpleNamespace
 
+import pandas as pd
+
 from core.events import MarketEvent, OrderEvent, SignalEvent
 from core.types import AssetClass, BarFrequency, OrderSide, OrderType, Symbol
+from data.store import DataStore
 from server.db import AppDatabase
+from server.services.valuation_snapshot import build_current_valuation_snapshot
 
 
 class FakeBridge:
@@ -171,10 +175,17 @@ def _run_scheduler_once(
     holder = {}
 
     class FakeLiveDataFeed:
-        def __init__(self, source, event_bus, fallback_source=None) -> None:
+        def __init__(
+            self,
+            source,
+            event_bus,
+            fallback_source=None,
+            prefer_fallback_asset_classes=None,
+        ) -> None:
             self.source = source
             self.event_bus = event_bus
             self.fallback_source = fallback_source
+            self.prefer_fallback_asset_classes = prefer_fallback_asset_classes
 
         def poll_all(self, current_watchlist):
             holder["scheduler"]._running.clear()
@@ -538,6 +549,104 @@ def test_scheduler_backfills_historical_bars_once_per_effective_close_date():
     assert calls[1][1]["end"].date().isoformat() == "2026-05-30"
 
 
+def test_scheduler_backfill_publishes_the_changed_valuation_identity(tmp_path):
+    from server.scheduler import TradingScheduler
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.upsert_latest_quote_sync(
+        symbol="019999",
+        asset_type="fund",
+        price=1.126,
+        quote_timestamp="2026-05-29T10:30:00+08:00",
+        quote_source="eastmoney_fund_estimate",
+        provider_name="akshare",
+        quote_status="live",
+    )
+    published_before = db.publish_current_valuation_snapshot_sync()
+    store = DataStore(tmp_path)
+
+    class PersistingManager:
+        def get_bars(self, symbol, *args, **kwargs):
+            frame = pd.DataFrame(
+                [
+                    {
+                        "timestamp": "2026-05-29T00:00:00",
+                        "open": 1.12,
+                        "high": 1.13,
+                        "low": 1.11,
+                        "close": 1.126,
+                        "volume": 1000,
+                    }
+                ]
+            )
+            store.save_bars(
+                symbol,
+                BarFrequency.DAILY,
+                frame,
+                provider_name="akshare",
+                data_source="akshare",
+            )
+            return SimpleNamespace(total_bars=1)
+
+    scheduler = TradingScheduler(_scheduler_config(), FakeBridge(), db=db)
+    scheduler._watchlist = [(Symbol("019999"), AssetClass.FUND)]
+
+    scheduler._maybe_backfill_historical_bars(
+        PersistingManager(),
+        now=datetime(2026, 5, 29, 16, 0),
+    )
+
+    publication = db.get_runtime_control_sync("valuation_snapshot_publication")
+    current = build_current_valuation_snapshot(db, persist=False)
+    assert publication is not None
+    assert publication["snapshot_id"] == current["snapshot_id"]
+    assert publication["snapshot_id"] != published_before["snapshot_id"]
+    assert current["quotes"][0]["quote_source"] == "market_bar_close"
+
+
+def test_scheduler_retries_snapshot_publication_without_refetching_bars():
+    from server.scheduler import TradingScheduler
+
+    class FlakyPublicationDb:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def publish_current_valuation_snapshot_sync(self):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("database temporarily busy")
+            return {"snapshot_id": "valuation-recovered"}
+
+    class CountingManager:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def get_bars(self, *args, **kwargs):
+            self.calls += 1
+            return SimpleNamespace(total_bars=1)
+
+    db = FlakyPublicationDb()
+    manager = CountingManager()
+    scheduler = TradingScheduler(_scheduler_config(), FakeBridge(), db=db)
+    scheduler._watchlist = [(Symbol("600001"), AssetClass.STOCK)]
+
+    scheduler._maybe_backfill_historical_bars(
+        manager,
+        now=datetime(2026, 5, 29, 16, 0),
+    )
+    assert scheduler._pending_valuation_publication_reason is not None
+
+    scheduler._maybe_backfill_historical_bars(
+        manager,
+        now=datetime(2026, 5, 29, 16, 5),
+    )
+
+    assert manager.calls == 1
+    assert db.calls == 2
+    assert scheduler._pending_valuation_publication_reason is None
+
+
 def test_scheduler_post_close_valuation_refresh_runs_once_per_trade_date(
     monkeypatch, tmp_path
 ):
@@ -652,7 +761,13 @@ def test_scheduler_waits_until_fixed_post_close_refresh_time(monkeypatch, tmp_pa
     )
 
     class FakeLiveDataFeed:
-        def __init__(self, source, event_bus, fallback_source=None) -> None:
+        def __init__(
+            self,
+            source,
+            event_bus,
+            fallback_source=None,
+            prefer_fallback_asset_classes=None,
+        ) -> None:
             pass
 
     class FakeStopEvent:
@@ -779,7 +894,13 @@ def test_scheduler_waits_between_poll_iterations(monkeypatch, tmp_path):
     calls = []
 
     class FakeLiveDataFeed:
-        def __init__(self, source, event_bus, fallback_source=None) -> None:
+        def __init__(
+            self,
+            source,
+            event_bus,
+            fallback_source=None,
+            prefer_fallback_asset_classes=None,
+        ) -> None:
             pass
 
         def poll_all(self, current_watchlist):
@@ -831,7 +952,13 @@ def test_scheduler_prefers_persistent_watchlist_over_config_assets(
     holder = {}
 
     class FakeLiveDataFeed:
-        def __init__(self, source, event_bus, fallback_source=None) -> None:
+        def __init__(
+            self,
+            source,
+            event_bus,
+            fallback_source=None,
+            prefer_fallback_asset_classes=None,
+        ) -> None:
             pass
 
         def poll_all(self, current_watchlist):
@@ -880,7 +1007,13 @@ def test_scheduler_adds_ledger_holdings_to_watchlist(monkeypatch, tmp_path):
     holder = {}
 
     class FakeLiveDataFeed:
-        def __init__(self, source, event_bus, fallback_source=None) -> None:
+        def __init__(
+            self,
+            source,
+            event_bus,
+            fallback_source=None,
+            prefer_fallback_asset_classes=None,
+        ) -> None:
             pass
 
         def poll_all(self, current_watchlist):

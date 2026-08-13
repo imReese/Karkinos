@@ -229,6 +229,10 @@ export const copy = {
       error: 'Failed to load account overview or holdings.',
       curveLoading: 'Loading equity curve.',
       curveError: 'Failed to load equity curve.',
+      curveSnapshotPending:
+        'Valuation inputs changed, but their immutable snapshot is still publishing. Unbound financial reads remain blocked; retry shortly.',
+      curveRefreshError:
+        'Refresh failed. The last published, identity-bound equity curve remains visible while retry is available.',
       empty: 'No account data available yet.',
       cards: {
         totalAssets: 'Total Assets',
@@ -3132,6 +3136,10 @@ export const copy = {
       error: '账户总览或当前持仓读取失败。',
       curveLoading: '正在加载净值曲线。',
       curveError: '净值曲线读取失败。',
+      curveSnapshotPending:
+        '估值输入已变化，但新的不可变快照尚未发布完成；未绑定的财务读取仍被阻断，请稍后重试。',
+      curveRefreshError:
+        '刷新失败；当前继续展示上一次已发布且已绑定身份的净值曲线，可手动重试。',
       empty: '还没有可展示的账户数据。',
       cards: {
         totalAssets: '总资产',

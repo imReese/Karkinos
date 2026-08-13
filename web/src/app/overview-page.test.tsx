@@ -3578,3 +3578,76 @@ test('keeps the return calendar inside the performance analysis card', async () 
     within(performanceCard).getByTestId('return-calendar-month-grid'),
   ).toBeTruthy();
 });
+
+test('explains a fail-closed unpublished valuation snapshot', async () => {
+  const baseFetch = installOverviewFetchMock();
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/api/portfolio/equity-curve/series')) {
+      return new Response(
+        JSON.stringify({
+          detail:
+            'Current valuation facts have not been published as an immutable snapshot. Financial reads are blocked.',
+        }),
+        {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+    }
+    return baseFetch(input);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+
+  renderOverviewPage({ installFetch: false });
+
+  expect(
+    await screen.findByText(
+      'Valuation inputs changed, but their immutable snapshot is still publishing. Unbound financial reads remain blocked; retry shortly.',
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByText(/\{"detail":/)).toBeNull();
+});
+
+test('keeps the last identity-bound curve visible after a transient refetch error', async () => {
+  const baseFetch = installOverviewFetchMock();
+  let curveReads = 0;
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes('/api/portfolio/equity-curve/series')) {
+      curveReads += 1;
+      if (curveReads > 1) {
+        return new Response('backend reload in progress', { status: 503 });
+      }
+    }
+    return baseFetch(input);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>
+        <OverviewPage />
+      </QueryClientProvider>
+    </PreferencesProvider>,
+  );
+
+  expect(await screen.findByTestId('equity-chart-frame')).toBeTruthy();
+  await act(async () => {
+    await queryClient.refetchQueries({
+      queryKey: ['account-equity-curve-series', 'all'],
+    });
+  });
+
+  expect(
+    await screen.findByTestId('equity-curve-refresh-warning'),
+  ).toBeTruthy();
+  expect(screen.getByTestId('equity-chart-frame')).toBeTruthy();
+  expect(
+    screen.getByText(
+      'Refresh failed. The last published, identity-bound equity curve remains visible while retry is available.',
+    ),
+  ).toBeTruthy();
+});
