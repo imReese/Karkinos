@@ -75,6 +75,7 @@ import {
   type ReconciliationStatus,
   type ReviewStatus,
 } from '../api';
+import { FeeScheduleReviewPanel } from './fee-schedule-review-panel';
 
 type ReportFilter = ReconciliationStatus | 'all';
 
@@ -336,9 +337,10 @@ const labels = {
       accountType: string | null,
       markets: string,
       assets: string,
+      accountValueBand: string | null,
       businesses: string,
     ) =>
-      `Account type ${accountType || 'unverified'} · markets ${markets || 'unverified'} · assets ${assets || 'unverified'} · business types ${businesses || 'unverified'}`,
+      `Account type ${accountType || 'unverified'} · markets ${markets || 'unverified'} · assets ${assets || 'unverified'} · account-value band ${accountValueBand || 'unverified'} · business types ${businesses || 'unverified'}`,
     citicSourceScopeBatchBoundary:
       'This is an owner declaration bound to exact file and query-window fingerprints. It does not prove complete account coverage, settlement detail, current cash, current positions, or trading authority.',
     citicBatchCoverageBoundary:
@@ -423,13 +425,17 @@ const labels = {
     citicSourceScopeAccountType: 'Account type code',
     citicSourceScopeMarkets: 'Market scopes (comma-separated codes)',
     citicSourceScopeAssets: 'Asset classes (comma-separated codes)',
+    citicSourceScopeAccountValueBand:
+      'Account-value band code (for example cny_0_20000)',
+    citicSourceScopeAccountValueBandBoundary:
+      'Query-scope metadata only; it is not a current balance, order limit, or capital authorization.',
     citicSourceScopeBusinessTypes: 'Business types (comma-separated codes)',
     citicSourceScopeNoOtherFiltersAttestation:
       'I confirm no other broker query filters applied to this exact export.',
     citicSourceScopeCompleteResultsAttestation:
       'I confirm this file contains every row returned by the declared broker query.',
     citicSourceScopeAttestation:
-      'I confirm the account, account type, market, asset, and business scope above applies to this exact export.',
+      'I confirm the account, account type, market, asset, account-value band, and business scope above applies to this exact export.',
     citicSourceScopeBoundary:
       'This source-scope review remains incomplete legacy evidence. It does not create Account Truth, reconciliation clearance, execution authority, or capital authority.',
     citicQueryWindowRequired:
@@ -741,9 +747,10 @@ const labels = {
       accountType: string | null,
       markets: string,
       assets: string,
+      accountValueBand: string | null,
       businesses: string,
     ) =>
-      `账户类型 ${accountType || '未证明'} · 市场 ${markets || '未证明'} · 资产 ${assets || '未证明'} · 业务类型 ${businesses || '未证明'}`,
+      `账户类型 ${accountType || '未证明'} · 市场 ${markets || '未证明'} · 资产 ${assets || '未证明'} · 账户规模区间 ${accountValueBand || '未证明'} · 业务类型 ${businesses || '未证明'}`,
     citicSourceScopeBatchBoundary:
       '这是与精确文件和查询区间指纹绑定的 owner 声明；不能证明账户覆盖完整，也不能补足逐项结算、当前资金、当前持仓或交易授权。',
     citicBatchCoverageBoundary:
@@ -825,13 +832,16 @@ const labels = {
     citicSourceScopeAccountType: '账户类型代码',
     citicSourceScopeMarkets: '市场范围（逗号分隔代码）',
     citicSourceScopeAssets: '资产类别（逗号分隔代码）',
+    citicSourceScopeAccountValueBand: '账户规模区间代码（例如 cny_0_20000）',
+    citicSourceScopeAccountValueBandBoundary:
+      '仅为查询范围元数据；不是当前余额、订单额度或资本授权。',
     citicSourceScopeBusinessTypes: '业务类型（逗号分隔代码）',
     citicSourceScopeNoOtherFiltersAttestation:
       '我确认这一精确导出没有使用其他券商查询筛选条件。',
     citicSourceScopeCompleteResultsAttestation:
       '我确认该文件包含上述券商查询返回的全部记录。',
     citicSourceScopeAttestation:
-      '我确认上述账户、账户类型、市场、资产和业务范围适用于这一精确导出。',
+      '我确认上述账户、账户类型、市场、资产、账户规模区间和业务范围适用于这一精确导出。',
     citicSourceScopeBoundary:
       '该来源范围复核仍是证据不完整的旧版来源；不会创建账户事实、对账放行、执行权限或资本授权。',
     citicQueryWindowRequired:
@@ -1526,6 +1536,10 @@ export function AccountTruthReviewPage() {
       </div>
 
       <div className="grid min-w-0 gap-3">
+        {readiness.data ? (
+          <FeeScheduleReviewPanel locale={locale} readiness={readiness.data} />
+        ) : null}
+
         <AccountTruthDisclosure
           key={`readiness-${readiness.data?.evidence_fingerprint ?? 'missing'}`}
           defaultOpen={readiness.data?.status !== 'ready'}
@@ -2413,6 +2427,7 @@ type CiticSourceReviewIntent = {
   accountType: string;
   marketScopes: string;
   assetClasses: string;
+  accountValueBand: string;
   businessTypes: string;
   noOtherFiltersAttested: boolean;
   completeReturnedResultsAttested: boolean;
@@ -2863,6 +2878,7 @@ function CiticHistoryXlsPreviewTool({ locale }: { locale: 'en' | 'zh' }) {
       accountType: '',
       marketScopes: '',
       assetClasses: '',
+      accountValueBand: '',
       businessTypes: 'history_trades',
       noOtherFiltersAttested: false,
       completeReturnedResultsAttested: false,
@@ -2900,6 +2916,7 @@ function CiticHistoryXlsPreviewTool({ locale }: { locale: 'en' | 'zh' }) {
         !reviewIntent.accountType.trim() ||
         parseCiticSourceScopeCodes(reviewIntent.marketScopes).length === 0 ||
         parseCiticSourceScopeCodes(reviewIntent.assetClasses).length === 0 ||
+        !reviewIntent.accountValueBand.trim() ||
         parseCiticSourceScopeCodes(reviewIntent.businessTypes).length === 0 ||
         !reviewIntent.noOtherFiltersAttested ||
         !reviewIntent.completeReturnedResultsAttested ||
@@ -3003,6 +3020,9 @@ function CiticHistoryXlsPreviewTool({ locale }: { locale: 'en' | 'zh' }) {
           account_type: reviewIntent.accountType.trim().toLowerCase(),
           market_scopes: parseCiticSourceScopeCodes(reviewIntent.marketScopes),
           asset_classes: parseCiticSourceScopeCodes(reviewIntent.assetClasses),
+          account_value_band: reviewIntent.accountValueBand
+            .trim()
+            .toLowerCase(),
           business_types: parseCiticSourceScopeCodes(
             reviewIntent.businessTypes,
           ),
@@ -3371,6 +3391,8 @@ function CiticHistoryXlsPreviewTool({ locale }: { locale: 'en' | 'zh' }) {
                       directoryScanMutation.data.source_scope_batch_assessment.declared_asset_classes.join(
                         ', ',
                       ),
+                      directoryScanMutation.data.source_scope_batch_assessment
+                        .declared_account_value_band,
                       directoryScanMutation.data.source_scope_batch_assessment.declared_business_types.join(
                         ', ',
                       ),
@@ -4132,6 +4154,22 @@ function CiticHistoryXlsPreviewPanel({
                               }
                             />
                           </label>
+                          <label className="grid gap-1 text-xs font-semibold text-[var(--app-text-secondary)]">
+                            {text.citicSourceScopeAccountValueBand}
+                            <input
+                              className="app-input min-h-10"
+                              autoComplete="off"
+                              value={reviewIntent.accountValueBand}
+                              onChange={(event) =>
+                                onUpdateReviewIntent({
+                                  accountValueBand: event.currentTarget.value,
+                                })
+                              }
+                            />
+                            <span className="app-type-micro font-normal text-[var(--app-text-tertiary)]">
+                              {text.citicSourceScopeAccountValueBandBoundary}
+                            </span>
+                          </label>
                           <label className="flex items-start gap-2 text-xs text-[var(--app-text-secondary)] sm:col-span-2">
                             <input
                               checked={reviewIntent.noOtherFiltersAttested}
@@ -4204,6 +4242,7 @@ function CiticHistoryXlsPreviewPanel({
                                 parseCiticSourceScopeCodes(
                                   reviewIntent.assetClasses,
                                 ).length === 0 ||
+                                !reviewIntent.accountValueBand.trim() ||
                                 parseCiticSourceScopeCodes(
                                   reviewIntent.businessTypes,
                                 ).length === 0 ||
@@ -4247,7 +4286,7 @@ function CiticHistoryXlsPreviewPanel({
                       description={
                         result.sourceScopeState === 'saved' &&
                         result.sourceScopeReview
-                          ? `${result.sourceScopeReview.account_alias} · ${result.sourceScopeReview.account_type} · ${result.sourceScopeReview.market_scopes.join(', ')} · ${result.sourceScopeReview.asset_classes.join(', ')} · ${text.citicQueryWindowStillBlocked}`
+                          ? `${result.sourceScopeReview.account_alias} · ${result.sourceScopeReview.account_type} · ${result.sourceScopeReview.market_scopes.join(', ')} · ${result.sourceScopeReview.asset_classes.join(', ')} · ${result.sourceScopeReview.account_value_band || 'unverified'} · ${text.citicQueryWindowStillBlocked}`
                           : result.queryWindowState === 'saved' &&
                               result.queryWindowReview
                             ? `${result.queryWindowReview.query_start_date} — ${result.queryWindowReview.query_end_date} · ${text.citicQueryWindowStillBlocked}`
@@ -4496,7 +4535,9 @@ function CiticSourceIntakeHistory({
                         {intake.source_scope_review.account_alias} ·{' '}
                         {intake.source_scope_review.account_type} ·{' '}
                         {intake.source_scope_review.market_scopes.join(', ')} ·{' '}
-                        {intake.source_scope_review.asset_classes.join(', ')}
+                        {intake.source_scope_review.asset_classes.join(', ')} ·{' '}
+                        {intake.source_scope_review.account_value_band ||
+                          'unverified'}
                       </div>
                       <StatusBadge
                         tone={
