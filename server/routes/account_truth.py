@@ -103,6 +103,14 @@ from server.services.citic_source_scope_review import (
     record_citic_source_scope_review,
     revoke_citic_source_scope_review,
 )
+from server.services.reviewed_fee_schedule import (
+    REVIEWED_FEE_SCHEDULE_APPROVAL_CONFIRMATION,
+    REVIEWED_FEE_SCHEDULE_REVOCATION_CONFIRMATION,
+    ReviewedFeeScheduleReadRejected,
+    ReviewedFeeScheduleRejected,
+    ReviewedFeeScheduleReviewRepository,
+    build_reviewed_fee_schedule_preview,
+)
 
 CITIC_HISTORY_XLS_MAX_BASE64_CHARS = ((CITIC_HISTORY_XLS_MAX_BYTES + 2) // 3) * 4
 
@@ -174,6 +182,7 @@ class CiticHistoryXlsSourceScopeReviewCreate(BaseModel):
     account_type: str = Field(pattern=r"^[a-z][a-z0-9_:-]{0,63}$")
     market_scopes: list[str] = Field(min_length=1, max_length=32)
     asset_classes: list[str] = Field(min_length=1, max_length=32)
+    account_value_band: str = Field(pattern=r"^[a-z][a-z0-9_:-]{0,63}$")
     business_types: list[str] = Field(min_length=1, max_length=32)
     no_other_filters_attested: Literal[True]
     complete_returned_results_attested: Literal[True]
@@ -205,6 +214,24 @@ class EvidenceScopeReviewRevoke(BaseModel):
     import_run_id: str = Field(min_length=1, max_length=128)
     expected_observed_scope_fingerprint: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     reviewer: str = Field(default="local_owner", min_length=1, max_length=128)
+
+
+class ReviewedFeeSchedulePreviewCreate(BaseModel):
+    effective_start_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    effective_end_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+
+
+class ReviewedFeeScheduleReviewCreate(ReviewedFeeSchedulePreviewCreate):
+    expected_preview_fingerprint: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    reviewer: str = Field(default="local_owner", min_length=1, max_length=128)
+    confirmation: str
+
+
+class ReviewedFeeScheduleReviewRevoke(BaseModel):
+    expected_review_id: str = Field(min_length=1, max_length=128)
+    expected_review_fingerprint: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    reviewer: str = Field(default="local_owner", min_length=1, max_length=128)
+    confirmation: str
 
 
 def create_router() -> APIRouter:
@@ -560,6 +587,147 @@ def create_router() -> APIRouter:
         ) as exc:
             raise _account_truth_read_http_exception(exc) from exc
 
+    @r.post("/fee-schedule/preview")
+    async def preview_reviewed_fee_schedule(
+        body: ReviewedFeeSchedulePreviewCreate,
+    ) -> dict[str, object]:
+        from server.app import get_app_state
+
+        try:
+            return build_reviewed_fee_schedule_preview(
+                get_app_state(), **body.model_dump()
+            )
+        except ReviewedFeeScheduleRejected as exc:
+            raise _reviewed_fee_schedule_http_exception(exc) from exc
+        except (
+            BrokerEvidenceReadRejected,
+            ManualReviewReadRejected,
+            EvidenceScopeReviewReadRejected,
+        ) as exc:
+            raise _account_truth_read_http_exception(exc) from exc
+
+    @r.get("/fee-schedule/review")
+    async def get_reviewed_fee_schedule_review() -> dict[str, object]:
+        from server.app import get_app_state
+
+        state = get_app_state()
+        try:
+            review = _reviewed_fee_schedule_repository_for_state(
+                state
+            ).get_latest_review()
+        except ReviewedFeeScheduleReadRejected as exc:
+            raise _reviewed_fee_schedule_read_http_exception(exc) from exc
+        if review is None:
+            return {
+                "status": "missing",
+                "review": None,
+                "blockers": ["reviewed_fee_schedule_review_missing"],
+                "current_preview_fingerprint": None,
+                "authorizes_execution": False,
+                "changes_capital_authority": False,
+            }
+        if review.decision != "accepted":
+            return {
+                "status": "revoked",
+                "review": review.to_json_dict(),
+                "blockers": ["reviewed_fee_schedule_review_revoked"],
+                "current_preview_fingerprint": None,
+                "authorizes_execution": False,
+                "changes_capital_authority": False,
+            }
+        try:
+            current_preview = build_reviewed_fee_schedule_preview(
+                state,
+                effective_start_date=review.effective_start_date,
+                effective_end_date=review.effective_end_date,
+                schedule_override=review.schedule,
+            )
+        except ReviewedFeeScheduleRejected as exc:
+            return {
+                "status": "blocked",
+                "review": review.to_json_dict(),
+                "blockers": [exc.code],
+                "current_preview_fingerprint": None,
+                "authorizes_execution": False,
+                "changes_capital_authority": False,
+            }
+        except (
+            BrokerEvidenceReadRejected,
+            ManualReviewReadRejected,
+            EvidenceScopeReviewReadRejected,
+        ) as exc:
+            raise _account_truth_read_http_exception(exc) from exc
+        blockers = list(current_preview.get("issues") or [])
+        if current_preview.get("preview_fingerprint") != review.preview_fingerprint:
+            blockers.append("reviewed_fee_schedule_source_drift")
+        return {
+            "status": "blocked" if blockers else "active",
+            "review": review.to_json_dict(),
+            "blockers": list(dict.fromkeys(blockers)),
+            "current_preview_fingerprint": current_preview.get("preview_fingerprint"),
+            "authorizes_execution": False,
+            "changes_capital_authority": False,
+        }
+
+    @r.post("/fee-schedule/reviews")
+    async def record_reviewed_fee_schedule_review(
+        body: ReviewedFeeScheduleReviewCreate,
+    ) -> dict[str, object]:
+        from server.app import get_app_state
+
+        state = get_app_state()
+        try:
+            preview = build_reviewed_fee_schedule_preview(
+                state,
+                effective_start_date=body.effective_start_date,
+                effective_end_date=body.effective_end_date,
+            )
+            review = _reviewed_fee_schedule_repository_for_state(state).record_review(
+                preview=preview,
+                expected_preview_fingerprint=body.expected_preview_fingerprint,
+                reviewer=body.reviewer,
+                confirmation=body.confirmation,
+            )
+        except ReviewedFeeScheduleRejected as exc:
+            raise _reviewed_fee_schedule_http_exception(exc) from exc
+        except ReviewedFeeScheduleReadRejected as exc:
+            raise _reviewed_fee_schedule_read_http_exception(exc) from exc
+        except (
+            BrokerEvidenceReadRejected,
+            ManualReviewReadRejected,
+            EvidenceScopeReviewReadRejected,
+        ) as exc:
+            raise _account_truth_read_http_exception(exc) from exc
+        return {
+            "status": "accepted",
+            "review": review.to_json_dict(),
+            "approval_confirmation": REVIEWED_FEE_SCHEDULE_APPROVAL_CONFIRMATION,
+            "authorizes_execution": False,
+            "changes_capital_authority": False,
+        }
+
+    @r.post("/fee-schedule/reviews/revoke")
+    async def revoke_reviewed_fee_schedule_review(
+        body: ReviewedFeeScheduleReviewRevoke,
+    ) -> dict[str, object]:
+        from server.app import get_app_state
+
+        try:
+            review = _reviewed_fee_schedule_repository_for_state(
+                get_app_state()
+            ).revoke_latest(**body.model_dump())
+        except ReviewedFeeScheduleRejected as exc:
+            raise _reviewed_fee_schedule_http_exception(exc) from exc
+        except ReviewedFeeScheduleReadRejected as exc:
+            raise _reviewed_fee_schedule_read_http_exception(exc) from exc
+        return {
+            "status": "revoked",
+            "review": review.to_json_dict(),
+            "revocation_confirmation": REVIEWED_FEE_SCHEDULE_REVOCATION_CONFIRMATION,
+            "authorizes_execution": False,
+            "changes_capital_authority": False,
+        }
+
     @r.post("/evidence-scope/reviews")
     async def record_evidence_scope_review(
         body: EvidenceScopeReviewCreate,
@@ -669,6 +837,41 @@ def _repository_for_state(state) -> BrokerEvidenceRepository:
             status_code=503, detail="Account Truth database unavailable"
         )
     return BrokerEvidenceRepository(Path(db_path))
+
+
+def _reviewed_fee_schedule_repository_for_state(
+    state,
+) -> ReviewedFeeScheduleReviewRepository:
+    db_path = getattr(getattr(state, "db", None), "_path", None)
+    if db_path is None:
+        raise HTTPException(
+            status_code=503, detail="Account Truth database unavailable"
+        )
+    return ReviewedFeeScheduleReviewRepository(Path(db_path))
+
+
+def _reviewed_fee_schedule_http_exception(
+    exc: ReviewedFeeScheduleRejected,
+) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": exc.code,
+            "message": "Reviewed fee schedule remains in no-action state.",
+        },
+    )
+
+
+def _reviewed_fee_schedule_read_http_exception(
+    exc: ReviewedFeeScheduleReadRejected,
+) -> HTTPException:
+    return HTTPException(
+        status_code=503,
+        detail={
+            "code": exc.code,
+            "message": "Persisted reviewed fee schedule is unavailable.",
+        },
+    )
 
 
 def _account_truth_read_http_exception(
