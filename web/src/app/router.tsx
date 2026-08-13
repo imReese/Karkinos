@@ -772,7 +772,7 @@ export function OverviewPage() {
                           <div
                             role="status"
                             data-testid="equity-curve-refresh-warning"
-                            className="app-panel-danger rounded-[var(--app-radius-panel)] px-3 py-2 text-xs leading-5"
+                            className="app-panel-danger rounded-[var(--app-radius-surface)] px-3 py-2 text-xs leading-5"
                           >
                             {copy.overview.curveRefreshError}
                           </div>
