@@ -74,8 +74,10 @@ def test_paper_shadow_run_creates_simulated_order_and_fill_without_ledger_mutati
                 "manual_confirmation_status": "ready_for_manual_confirmation",
                 "submission_status": "manual_confirmation_required",
                 "strategy_refs": ["strategy:dual_ma"],
+                "strategy_advancement_refs": [],
                 "risk_refs": ["risk:risk-001"],
                 "signal_refs": ["signal:signal-001"],
+                "account_truth_refs": [],
             }
         ],
         "current_account_facts": {
@@ -125,8 +127,10 @@ def test_paper_shadow_run_creates_simulated_order_and_fill_without_ledger_mutati
         "manual_confirmation_status": "ready_for_manual_confirmation",
         "submission_status": "manual_confirmation_required",
         "strategy_refs": ["strategy:dual_ma"],
+        "strategy_advancement_refs": [],
         "risk_refs": ["risk:risk-001"],
         "signal_refs": ["signal:signal-001"],
+        "account_truth_refs": [],
     }
     assert run["orders"][0]["order_intent"] == expected_order_intent_summary
     assert json.loads(latest["payload_json"])["orders"][0]["order_intent"] == (
@@ -376,6 +380,42 @@ def test_paper_shadow_run_is_idempotent_for_same_plan_fingerprint(tmp_path) -> N
     assert _paper_shadow_run_count(db) == 1
     orders = db.list_orders_sync()
     assert len(db.list_oms_transitions_sync(orders[0]["order_id"])) == 4
+
+
+def test_paper_shadow_run_reuses_clear_financial_input_after_workflow_stage_changes(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    simulation_plan = _trading_plan()
+    simulation_plan["source_decision"] = "review_required"
+    simulation_plan["order_intents"][0][
+        "manual_confirmation_status"
+    ] = "paper_shadow_review_required"
+    simulation_plan["order_intents"][0]["submission_status"] = "paper_shadow_required"
+
+    first = run_paper_shadow_from_trading_plan(
+        db=db,
+        trading_plan=simulation_plan,
+        generated_at="2026-07-02T09:35:00",
+    )
+    manual_plan = _trading_plan()
+    second = run_paper_shadow_from_trading_plan(
+        db=db,
+        trading_plan=manual_plan,
+        generated_at="2026-07-02T09:40:00",
+    )
+
+    assert second["run_id"] == first["run_id"]
+    assert second["input_fingerprint"] == first["input_fingerprint"]
+    assert second["reused_existing_run"] is True
+    assert second["input_snapshot"]["source_decision"] == "review_required"
+    assert second["input_snapshot"]["order_intents"][0]["submission_status"] == (
+        "paper_shadow_required"
+    )
+    assert _paper_shadow_run_count(db) == 1
+    assert len(db.list_orders_sync()) == 1
+    assert len(db.list_fills_sync()) == 1
 
 
 def test_paper_shadow_run_creates_new_run_when_simulation_inputs_change(

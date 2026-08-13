@@ -760,7 +760,15 @@ def test_run_single_backtest_attaches_dataset_snapshot_metadata(monkeypatch):
     assert snapshot["row_count"] == 2
     assert snapshot["adjustment_mode"] == "qfq"
     assert snapshot["data_quality"] == {"status": "ok", "issues": []}
-    assert snapshot["symbol_universe"] == [
+    assert snapshot["content_identity"] == {
+        "algorithm": "sha256",
+        "row_contract": "timestamp_ohlcv.v1",
+        "complete": True,
+    }
+    assert len(snapshot["symbol_universe"][0]["content_digest"]) == 71
+    symbol_snapshot = dict(snapshot["symbol_universe"][0])
+    symbol_snapshot.pop("content_digest")
+    assert [symbol_snapshot] == [
         {
             "symbol": "600519",
             "asset_class": "stock",
@@ -8346,15 +8354,21 @@ def test_decision_today_returns_candidate_with_evidence_bundle(monkeypatch):
     response = asyncio.run(endpoint())
 
     assert response["lane"] == "daily"
-    assert response["decision"] == "buy"
-    assert response["requires_manual_confirmation"] is True
+    assert response["decision"] == "review_required"
+    assert response["requires_manual_confirmation"] is False
     assert response["no_action_reasons"] == []
     assert response["summary"]["candidate_count"] == 1
+    assert response["summary"]["ready_for_manual_confirmation_count"] == 0
     candidate = response["candidates"][0]
     assert candidate["action"] == "buy"
     assert candidate["display_name"] == "贵州茅台"
-    assert candidate["manual_confirmation_status"] == "ready_for_manual_confirmation"
+    assert candidate["manual_confirmation_status"] == (
+        "strategy_advancement_review_required"
+    )
     assert candidate["evidence"]["strategy"]["strategy_id"] == "dual_ma"
+    strategy_gate = candidate["evidence"]["strategy"]["order_generation_gate"]
+    assert strategy_gate["status"] == "blocked"
+    assert "strategy_promotion_evidence_missing" in strategy_gate["blockers"]
     assert candidate["evidence"]["signal"]["id"] == 1
     assert candidate["evidence"]["signal"]["display_name"] == "贵州茅台"
     assert candidate["evidence"]["risk_gate"]["status"] == "passed"
@@ -8678,9 +8692,10 @@ def test_decision_today_requires_review_when_candidate_quote_is_stale(monkeypatc
     assert response["summary"]["ready_for_manual_confirmation_count"] == 0
     assert candidate["manual_confirmation_status"] == "data_review_required"
     assert candidate["evidence"]["data_freshness"]["status"] == "stale"
-    assert candidate["evidence"]["certainty"]["status"] == "degraded"
+    assert candidate["evidence"]["certainty"]["status"] == "blocked"
     assert candidate["evidence"]["certainty"]["required_actions"] == [
-        "refresh_or_confirm_market_data"
+        "refresh_or_confirm_market_data",
+        "review_strategy_advancement_evidence",
     ]
     assert "quote_older_than_expected_session" in (
         candidate["evidence"]["certainty"]["uncertain_reasons"]
@@ -9109,7 +9124,7 @@ def test_decision_intraday_returns_stock_and_etf_candidates_only(monkeypatch):
     response = asyncio.run(endpoint())
 
     assert response["lane"] == "intraday"
-    assert response["decision"] == "rebalance"
+    assert response["decision"] == "review_required"
     assert response["summary"]["candidate_count"] == 2
     assert response["summary"]["excluded_daily_count"] == 1
     assert [candidate["symbol"] for candidate in response["candidates"]] == [
@@ -9122,6 +9137,9 @@ def test_decision_intraday_returns_stock_and_etf_candidates_only(monkeypatch):
     ]
     assert response["candidates"][0]["asset_class"] == "fund"
     assert response["candidates"][0]["evidence"]["data_freshness"]["status"] == "live"
+    assert {
+        candidate["manual_confirmation_status"] for candidate in response["candidates"]
+    } == {"strategy_advancement_review_required"}
     assert response["excluded_daily_symbols"] == ["019999"]
     assert response["no_action_reasons"] == []
 
@@ -9699,6 +9717,7 @@ def test_backtest_sweep_returns_parameter_robustness_evidence(monkeypatch):
         "mean_neighbor_score": 0.025,
         "stability_ratio": 0.5,
     }
+    assert len(evidence["evidence_fingerprint"]) == 64
     assert evidence["parameter_sensitivity"] == [
         {
             "parameter": "short_period",

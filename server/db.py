@@ -4288,6 +4288,72 @@ class AppDatabase:
             ).fetchone()
             return dict(row) if row else None
 
+    def get_ai_shadow_strategy_promotion_binding_sync(
+        self,
+        candidate_id: str,
+    ) -> dict[str, Any] | None:
+        """Read the candidate and human approval that back one reserved strategy."""
+
+        try:
+            with sqlite3.connect(self._path) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    """
+                    SELECT
+                        candidate.candidate_id,
+                        candidate.critique_id,
+                        candidate.backtest_run_id,
+                        candidate.baseline_result_id,
+                        candidate.candidate_result_id,
+                        candidate.status AS candidate_status,
+                        candidate.recommendation,
+                        candidate.comparison_json,
+                        candidate.promotion_status,
+                        promotion.promotion_id,
+                        promotion.target_stage,
+                        promotion.approved_by,
+                        promotion.candidate_fingerprint,
+                        promotion.created_at AS approved_at,
+                        formula_backtest.status AS formula_backtest_status,
+                        formula_backtest.canonical_backtest_result_id,
+                        formula_backtest.evidence_fingerprint AS backtest_evidence_fingerprint,
+                        critique.status AS critique_status,
+                        critique.normalized_artifact_json AS critique_artifact_json,
+                        critique.artifact_fingerprint AS critique_artifact_fingerprint,
+                        baseline.initial_cash AS baseline_initial_cash,
+                        baseline.final_equity AS baseline_final_equity,
+                        baseline.total_return AS baseline_total_return,
+                        baseline.sharpe AS baseline_sharpe,
+                        baseline.max_drawdown AS baseline_max_drawdown,
+                        baseline.metrics_json AS baseline_metrics_json,
+                        baseline.cost_summary_json AS baseline_cost_summary_json,
+                        candidate_result.initial_cash AS candidate_initial_cash,
+                        candidate_result.final_equity AS candidate_final_equity,
+                        candidate_result.total_return AS candidate_total_return,
+                        candidate_result.sharpe AS candidate_sharpe,
+                        candidate_result.max_drawdown AS candidate_max_drawdown,
+                        candidate_result.metrics_json AS candidate_metrics_json,
+                        candidate_result.cost_summary_json AS candidate_cost_summary_json
+                    FROM ai_shadow_research_candidates AS candidate
+                    LEFT JOIN ai_shadow_research_promotions AS promotion
+                      ON promotion.candidate_id = candidate.candidate_id
+                    LEFT JOIN ai_strategy_formula_backtests AS formula_backtest
+                      ON formula_backtest.backtest_run_id = candidate.backtest_run_id
+                    LEFT JOIN ai_strategy_backtest_critiques AS critique
+                      ON critique.critique_id = candidate.critique_id
+                    LEFT JOIN backtest_results AS baseline
+                      ON baseline.id = candidate.baseline_result_id
+                    LEFT JOIN backtest_results AS candidate_result
+                      ON candidate_result.id = candidate.candidate_result_id
+                    WHERE candidate.candidate_id = ?
+                    LIMIT 1
+                    """,
+                    (str(candidate_id),),
+                ).fetchone()
+        except sqlite3.OperationalError:
+            return None
+        return dict(row) if row else None
+
     def list_strategy_promotion_states_sync(
         self,
         *,

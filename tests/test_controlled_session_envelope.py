@@ -224,6 +224,20 @@ def _ready_environment(tmp_path) -> dict:
         connectors=[connector],
         clock=lambda: NOW,
     ).capture()
+    db.upsert_action_task_sync(
+        source_signal_id=201,
+        symbol="510300.SH",
+        title="prior session strategy lineage",
+        detail="deterministic prior-batch strategy fixture",
+        direction="buy",
+        urgency="normal",
+        target_weight=0.01,
+        price=4.0,
+        strategy_id="etf_rotation",
+        timestamp=NOW.isoformat(),
+        asset_class="fund",
+    )
+    prior_action = db.get_action_tasks_sync(limit=1)[0]
     prior_order_id = "prior-session-order-1"
     db.upsert_oms_order_sync(
         {
@@ -238,7 +252,14 @@ def _ready_environment(tmp_path) -> dict:
             "status": "cancelled",
             "broker_submission_enabled": False,
             "source": "prior_session_batch_test",
-            "payload": {"execution_mode": "manual"},
+            "payload": {
+                "execution_mode": "manual",
+                "gateway_evidence": {
+                    "research_evidence": {
+                        "evidence_ref": f"decision_action:{prior_action['id']}"
+                    }
+                },
+            },
         }
     )
     reconciliation_run_id = "execution-reconciliation:2026-07-10"

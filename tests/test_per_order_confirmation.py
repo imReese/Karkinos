@@ -71,6 +71,7 @@ from server.services.per_order_confirmation import (
     build_order_fingerprint,
 )
 from server.services.trading_controls import TradingControlState
+from tests.ai_shadow_strategy_fixtures import seed_approved_ai_shadow_strategy
 
 NOW = datetime(2026, 7, 10, 8, 5, tzinfo=timezone.utc)
 GATEWAY_VERIFICATION_FINGERPRINT = "e" * 64
@@ -115,7 +116,34 @@ def _clear_account_truth_evidence() -> dict:
     }
 
 
-def _record_gateway_source_evidence(db: AppDatabase, now: datetime) -> None:
+def _plan_paper_actual_pass() -> dict:
+    core = {
+        "schema_version": "karkinos.plan_paper_actual_comparison.v1",
+        "status": "pass",
+        "blockers": [],
+        "differences": [],
+        "persisted_evidence_only": True,
+        "human_review_required": False,
+        "authorizes_execution": False,
+        "does_not_mutate_oms": True,
+        "does_not_mutate_production_ledger": True,
+        "does_not_change_capital_authority": True,
+    }
+    encoded = json.dumps(
+        core,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return {**core, "evidence_fingerprint": hashlib.sha256(encoded).hexdigest()}
+
+
+def _record_gateway_source_evidence(
+    db: AppDatabase,
+    now: datetime,
+    *,
+    strategy_id: str,
+) -> None:
     db.upsert_action_task_sync(
         source_signal_id=101,
         symbol="510300.SH",
@@ -125,7 +153,7 @@ def _record_gateway_source_evidence(db: AppDatabase, now: datetime) -> None:
         urgency="normal",
         target_weight=0.01,
         price=4.0,
-        strategy_id="etf_rotation",
+        strategy_id=strategy_id,
         timestamp=now.isoformat(),
         asset_class="fund",
     )
@@ -139,7 +167,7 @@ def _record_gateway_source_evidence(db: AppDatabase, now: datetime) -> None:
         payload={
             "intent": {
                 "intent_id": "fixture-intent-1",
-                "strategy_id": "etf_rotation",
+                "strategy_id": strategy_id,
                 "source_signal_id": 101,
                 "symbol": "510300.SH",
                 "side": "buy",
@@ -179,7 +207,7 @@ def _record_gateway_source_evidence(db: AppDatabase, now: datetime) -> None:
                         "side": "buy",
                         "estimated_quantity": 100.0,
                         "estimated_price": 4.0,
-                        "strategy_refs": ["strategy:etf_rotation"],
+                        "strategy_refs": [f"strategy:{strategy_id}"],
                         "risk_refs": ["risk:decision-1"],
                     },
                 }
@@ -462,7 +490,14 @@ def _ready_environment(
 ) -> dict:
     db = AppDatabase(tmp_path / "per-order-confirmation.db")
     db.init_sync()
-    _record_gateway_source_evidence(db, now)
+    strategy = seed_approved_ai_shadow_strategy(
+        db,
+        fixture_id="per-order-confirmation",
+        baseline_result_id=1001,
+        candidate_result_id=1002,
+    )
+    strategy_id = strategy["strategy_id"]
+    _record_gateway_source_evidence(db, now, strategy_id=strategy_id)
     adapter_release = (
         _record_observing_adapter_release(db, now) if with_adapter_release else {}
     )
@@ -483,6 +518,7 @@ def _ready_environment(
         clock=lambda: now,
     ).capture()
     prior_order_id = "prior-manual-order-1"
+    prior_action = db.get_action_tasks_sync(limit=1)[0]
     db.upsert_oms_order_sync(
         {
             "order_id": prior_order_id,
@@ -496,7 +532,14 @@ def _ready_environment(
             "status": "cancelled",
             "broker_submission_enabled": False,
             "source": "prior_manual_batch_test",
-            "payload": {"execution_mode": "manual"},
+            "payload": {
+                "execution_mode": "manual",
+                "gateway_evidence": {
+                    "research_evidence": {
+                        "evidence_ref": f"decision_action:{prior_action['id']}"
+                    }
+                },
+            },
         }
     )
     reconciliation_run_id = f"execution-reconciliation:{shanghai_day}"
@@ -516,6 +559,7 @@ def _ready_environment(
                 "payload": {
                     "oms_status": "cancelled",
                     "execution_mode": "manual",
+                    "plan_paper_actual_comparison": _plan_paper_actual_pass(),
                 },
             }
         ],
@@ -579,7 +623,7 @@ def _ready_environment(
         evidence_connector_ids=("fixture-readonly-confirmation",),
         execution_gateway_ids=("fixture-execution-disabled",),
         account_aliases=("fixture-review",),
-        strategy_ids=("etf_rotation",),
+        strategy_ids=(strategy_id,),
         symbols=("510300.SH",),
         effective_at=now - timedelta(minutes=5),
         expires_at=now + timedelta(hours=1),
@@ -599,7 +643,7 @@ def _ready_environment(
         now=now,
         connector_id="fixture-readonly-confirmation",
         account_alias="fixture-review",
-        strategy_id="etf_rotation",
+        strategy_id=strategy_id,
         symbol="510300.SH",
         order_value=Decimal("400"),
         position_change_value=Decimal("400"),
@@ -678,6 +722,8 @@ def _ready_environment(
         "capital_context": context,
         "batch": batch,
         "gateway_verification_fingerprint": GATEWAY_VERIFICATION_FINGERPRINT,
+        "strategy": strategy,
+        "strategy_id": strategy_id,
         "adapter_release": adapter_release,
         "private_key": private_key,
         "trusted_identity": trusted_identity,

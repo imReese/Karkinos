@@ -128,13 +128,31 @@ def test_decision_trading_plan_route_returns_read_only_order_intent(monkeypatch)
         ),
     )
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        decision_routes,
+        "resolve_strategy_order_generation_gate",
+        lambda db, strategy_id, *, as_of_date=None: (
+            {
+                "status": "pass",
+                "strategy_id": strategy_id,
+                "paper_shadow_evaluation_only": True,
+                "does_not_authorize_execution": True,
+                "promotion": {
+                    "strategy_advancement_gate_fingerprint": "fixture-gate",
+                },
+            },
+            [],
+        ),
+    )
 
     endpoint = _endpoint("/api/decision/trading-plan")
     response = asyncio.run(endpoint())
 
     assert response["schema_version"] == "karkinos.daily_trading_plan.v1"
-    assert response["conclusion_status"] == "manual_confirmation_ready"
+    assert response["conclusion_status"] == "paper_shadow_required"
     assert response["candidate_pool_count"] == 1
+    assert response["manual_ready_count"] == 0
+    assert response["paper_shadow_ready_count"] == 1
     assert response["order_intent_count"] == 1
     assert response["default_execution_mode"] == "manual_confirmation"
     assert response["broker_bridge_status"] == "disabled"
@@ -148,6 +166,7 @@ def test_decision_trading_plan_route_returns_read_only_order_intent(monkeypatch)
     assert intent["position_effect"]["current_quantity"] == 200.0
     assert intent["position_effect"]["estimated_quantity_after"] == 1000.0
     assert intent["position_effect"]["cost_basis_method"] == "weighted_average_preview"
+    assert intent["submission_status"] == "paper_shadow_required"
     assert intent["does_not_submit_broker_order"] is True
     assert fake_db.manual_orders == []
     assert fake_db.order_facts == []

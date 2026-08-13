@@ -23,15 +23,23 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from analytics.backtest_capacity_evidence import build_backtest_capacity_evidence
+from analytics.backtest_fee_tax_evidence import build_backtest_fee_tax_evidence
+from analytics.backtest_market_regime_evidence import (
+    build_backtest_market_regime_evidence,
+)
 from analytics.dataset_snapshot import build_backtest_dataset_snapshot
 from analytics.oos_validation import build_rolling_out_of_sample_validation
+from analytics.strategy_advancement_gate import (
+    build_strategy_advancement_gate,
+    is_valid_passed_strategy_advancement_gate,
+)
 from backtest.engine import BacktestEngine
 from core.types import AssetClass, BarFrequency, Symbol
 from data.handler import DataHandler
 from data.manager import DataManager
 from data.store import DataStore
 from server.ai_runtime.contracts import canonical_json, content_fingerprint
-from server.ai_runtime.formula_dsl import CANONICAL_COST_MODEL_REFERENCE
 from server.ai_runtime.strategy_research import (
     BACKTEST_CONFIRMATION,
     CRITIQUE_EXPORT_CONFIRMATION,
@@ -49,6 +57,10 @@ from server.models import BacktestRequest
 from server.routes.backtest import (
     _backtest_report_metrics_json,
     _fill_to_response,
+)
+from server.services.reviewed_fee_schedule import (
+    ReviewedFeeScheduleReadRejected,
+    ReviewedFeeScheduleRejected,
 )
 from server.services.valuation_snapshot import build_current_valuation_snapshot
 
@@ -480,14 +492,20 @@ class ShadowResearchStore:
             "ai-shadow-candidate-"
             + content_fingerprint({"run_id": run_id, "draft_id": draft_id})[:24]
         )
+        promotion_status = (
+            "awaiting_human_approval"
+            if status == "awaiting_human_approval"
+            else "blocked_by_evidence"
+        )
         with self._connect(immediate=True) as conn:
             conn.execute(
                 """
                 INSERT INTO ai_shadow_research_candidates
                 (candidate_id, run_id, session_id, draft_id, backtest_run_id,
                  critique_id, baseline_result_id, candidate_result_id, status,
-                 recommendation, comparison_json, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 recommendation, comparison_json, promotion_status, created_at,
+                 updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(run_id, draft_id) DO UPDATE SET
                     backtest_run_id=excluded.backtest_run_id,
                     critique_id=excluded.critique_id,
@@ -495,6 +513,12 @@ class ShadowResearchStore:
                     status=excluded.status,
                     recommendation=excluded.recommendation,
                     comparison_json=excluded.comparison_json,
+                    promotion_status=CASE
+                        WHEN ai_shadow_research_candidates.promotion_status IN
+                             ('paper_shadow_approval_recorded', 'paper_shadow_approved')
+                        THEN ai_shadow_research_candidates.promotion_status
+                        ELSE excluded.promotion_status
+                    END,
                     updated_at=excluded.updated_at
                 """,
                 (
@@ -509,6 +533,7 @@ class ShadowResearchStore:
                     status,
                     recommendation,
                     canonical_json(dict(comparison)),
+                    promotion_status,
                     now,
                     now,
                 ),
@@ -542,10 +567,11 @@ class ShadowResearchStore:
             raise ShadowResearchRejected("approver_and_notes_required")
         candidate = self.get_candidate(candidate_id)
         comparison = candidate["comparison"]
+        promotion_gate = comparison.get("promotion_gate")
         if (
             candidate["status"] != "awaiting_human_approval"
             or candidate["recommendation"] != "paper_shadow_review"
-            or comparison.get("promotion_gate", {}).get("status") != "pass"
+            or not is_valid_passed_strategy_advancement_gate(promotion_gate)
         ):
             raise ShadowResearchRejected("candidate_not_eligible_for_paper_shadow")
         candidate_fingerprint = content_fingerprint(
@@ -743,6 +769,8 @@ class PreparedBaseline:
     snapshot: dict[str, Any]
     request: BacktestRequest
     result: dict[str, Any]
+    cost_model_reference: str
+    fee_schedule_evidence: dict[str, Any]
 
     @property
     def fingerprint(self) -> str:
@@ -753,6 +781,8 @@ class PreparedBaseline:
                 "dataset_snapshot_id": self.snapshot["snapshot_id"],
                 "metrics": self.result["metrics_json"],
                 "cost_summary": self.result["cost_summary_json"],
+                "cost_model_reference": self.cost_model_reference,
+                "fee_schedule_evidence": self.fee_schedule_evidence,
             }
         )
 
@@ -767,6 +797,7 @@ class AiShadowResearchAutomationService:
         store: ShadowResearchStore,
         data_store: DataStore,
         research_service_builder: Callable[[bool], Any] | None = None,
+        reviewed_fee_schedule_resolver: Callable[..., Any] | None = None,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self._state = state
@@ -774,6 +805,7 @@ class AiShadowResearchAutomationService:
         self._store = store
         self._data_store = data_store
         self._research_service_builder = research_service_builder
+        self._reviewed_fee_schedule_resolver = reviewed_fee_schedule_resolver
         self._now = now or (lambda: datetime.now(timezone.utc))
 
     def get_policy(self) -> ShadowResearchPolicy:
@@ -860,10 +892,12 @@ class AiShadowResearchAutomationService:
             "critique_id": candidate.get("critique_id"),
             "comparison_fingerprint": content_fingerprint(candidate["comparison"]),
             "human_approval_id": approval["promotion_id"],
+            "strategy_advancement_gate": candidate["comparison"]["promotion_gate"],
             "live_like_enabled": False,
             "broker_submission_enabled": False,
         }
         from server.services.strategy_promotion_pipeline import (
+            STRATEGY_PAPER_SHADOW_PROMOTION_CONFIRMATION,
             StrategyPromotionPipeline,
         )
 
@@ -887,6 +921,8 @@ class AiShadowResearchAutomationService:
                 target_stage="paper_shadow",
                 readiness=readiness,
                 actor=approved_by.strip(),
+                confirmation=STRATEGY_PAPER_SHADOW_PROMOTION_CONFIRMATION,
+                review_note=notes.strip(),
             )
         self._store.finalize_candidate_paper_shadow_stage(
             candidate_id,
@@ -918,6 +954,11 @@ class AiShadowResearchAutomationService:
             prepared = await asyncio.to_thread(self._prepare_baseline, policy)
         except asyncio.CancelledError:
             raise
+        except (ReviewedFeeScheduleRejected, ReviewedFeeScheduleReadRejected) as exc:
+            return self._record_preflight(
+                status="blocked_by_account_evidence",
+                failure_code=exc.code,
+            )
         except Exception as exc:
             return self._record_preflight(
                 status="blocked_by_market_evidence",
@@ -1010,7 +1051,7 @@ class AiShadowResearchAutomationService:
                 end_date=prepared.request.end_date,
                 frequency=BarFrequency.DAILY.value,
                 initial_cash=prepared.request.initial_cash,
-                cost_model_reference=CANONICAL_COST_MODEL_REFERENCE,
+                cost_model_reference=prepared.cost_model_reference,
                 valuation_snapshot_id=str(valuation["snapshot_id"]),
                 ledger_cutoff_id=int(valuation["ledger_cutoff_id"]),
             )
@@ -1086,7 +1127,8 @@ class AiShadowResearchAutomationService:
                 "completed"
                 if candidates
                 and all(
-                    item["status"] == "awaiting_human_approval" for item in candidates
+                    item["status"] in {"awaiting_human_approval", "research_blocked"}
+                    for item in candidates
                 )
                 else "partial"
             )
@@ -1205,6 +1247,7 @@ class AiShadowResearchAutomationService:
                 draft=draft,
                 critique=critique,
             )
+            recommendation = str(comparison["recommendation"])
             return self._store.save_candidate(
                 run_id=str(run["run_id"]),
                 session_id=str(hypotheses["session_id"]),
@@ -1213,8 +1256,12 @@ class AiShadowResearchAutomationService:
                 critique_id=critique_id,
                 baseline_result_id=baseline_result_id,
                 candidate_result_id=candidate_result_id,
-                status="awaiting_human_approval",
-                recommendation=str(comparison["recommendation"]),
+                status=(
+                    "awaiting_human_approval"
+                    if recommendation == "paper_shadow_review"
+                    else "research_blocked"
+                ),
+                recommendation=recommendation,
                 comparison=comparison,
                 now=self._utc_now(),
             )
@@ -1256,17 +1303,24 @@ class AiShadowResearchAutomationService:
             raise ShadowResearchRejected("comparison_backtest_missing")
         baseline_view = _backtest_view(baseline)
         candidate_view = _backtest_view(candidate)
-        blockers: list[str] = []
-        if candidate_view["evidence_gate_status"] != "pass":
-            blockers.append("candidate_research_evidence_gate_not_passed")
-        if candidate_view["oos_fold_count"] < 1:
-            blockers.append("candidate_oos_evidence_missing")
-        if candidate_view["total_trades"] < 1:
-            blockers.append("candidate_has_no_after_cost_trades")
-        if critique.get("status") != "completed" or not isinstance(
-            critique.get("artifact"), dict
-        ):
-            blockers.append("completed_deepseek_critique_missing")
+        critique_artifact = (
+            critique.get("artifact")
+            if isinstance(critique.get("artifact"), Mapping)
+            else {}
+        )
+        advancement_gate = build_strategy_advancement_gate(
+            baseline=baseline_view,
+            candidate=candidate_view,
+            critique_evidence={
+                "status": critique.get("status"),
+                "critique_id": critique.get("critique_id"),
+                "artifact_fingerprint": (
+                    content_fingerprint(critique_artifact)
+                    if critique_artifact
+                    else None
+                ),
+            },
+        )
         improvements = {
             "total_return": candidate_view["total_return"]
             >= baseline_view["total_return"],
@@ -1274,14 +1328,13 @@ class AiShadowResearchAutomationService:
             "max_drawdown": abs(candidate_view["max_drawdown"])
             <= abs(baseline_view["max_drawdown"]),
         }
-        improvement_count = sum(1 for value in improvements.values() if value)
         recommendation = (
-            "paper_shadow_review"
-            if not blockers and improvement_count >= 2
-            else "keep_researching" if not blockers else "reject"
+            "paper_shadow_review" if advancement_gate.passed else "keep_researching"
         )
         return {
             "schema_version": "karkinos.ai.shadow_research_comparison.v1",
+            "baseline_source_fingerprint": _backtest_source_fingerprint(baseline),
+            "candidate_source_fingerprint": _backtest_source_fingerprint(candidate),
             "economic_hypothesis": draft.get("economic_hypothesis"),
             "risk_impact": draft.get("risk_impact"),
             "failure_conditions": list(draft.get("failure_conditions") or []),
@@ -1298,20 +1351,9 @@ class AiShadowResearchAutomationService:
                 - baseline_view["total_cost"],
             },
             "improvements": improvements,
-            "deepseek_critique": critique.get("artifact"),
+            "deepseek_critique": critique_artifact,
             "recommendation": recommendation,
-            "promotion_gate": {
-                "status": (
-                    "pass" if recommendation == "paper_shadow_review" else "blocked"
-                ),
-                "blockers": blockers
-                or (
-                    []
-                    if improvement_count >= 2
-                    else ["insufficient_deterministic_improvement"]
-                ),
-                "human_confirmation_required": True,
-            },
+            "promotion_gate": advancement_gate.to_json_dict(),
             "automatic_strategy_replacement_enabled": False,
             "production_strategy_mutation_enabled": False,
             "broker_submission_enabled": False,
@@ -1413,6 +1455,26 @@ class AiShadowResearchAutomationService:
             assets=normalized_assets,
             oos_mode="rolling",
         )
+        fee_resolution = self._resolve_reviewed_fee_schedule(
+            start_date=start_date,
+            end_date=market_date,
+            universe=tuple(asset["symbol"] for asset in normalized_assets),
+            asset_classes=tuple(asset["asset_class"] for asset in normalized_assets),
+        )
+        commission_calc = getattr(fee_resolution, "commission_calc", None)
+        fee_schedule_evidence = getattr(fee_resolution, "fee_evidence", None)
+        cost_model_reference = str(
+            getattr(fee_resolution, "cost_model_reference", "") or ""
+        )
+        if (
+            commission_calc is None
+            or not isinstance(fee_schedule_evidence, Mapping)
+            or not cost_model_reference
+        ):
+            raise ReviewedFeeScheduleRejected(
+                "reviewed_fee_schedule_resolution_invalid"
+            )
+        fee_schedule_evidence = dict(fee_schedule_evidence)
         strategy = build_strategy(
             SimpleNamespace(
                 strategy=request.strategy,
@@ -1427,6 +1489,7 @@ class AiShadowResearchAutomationService:
             instruments=instruments,
             data_handlers=handlers,
             initial_cash=Decimal(str(request.initial_cash)),
+            commission_calc=commission_calc,
             db=None,
         ).run()
         min_train, test_window, step = _rolling_oos_parameters(len(result.equity_curve))
@@ -1450,6 +1513,30 @@ class AiShadowResearchAutomationService:
                     test_window_points=test_window,
                     step_points=step,
                 ).to_json_dict(),
+                "fee_component_evidence": build_backtest_fee_tax_evidence(
+                    fills=result.fills,
+                    cost_model_reference=cost_model_reference,
+                    account_specific=True,
+                    fee_schedule_source=str(
+                        fee_schedule_evidence.get("fee_schedule_source") or ""
+                    ),
+                    fee_schedule_fingerprint=str(
+                        fee_schedule_evidence.get("fee_schedule_fingerprint") or ""
+                    ),
+                    broker_statement_reconciled=bool(
+                        fee_schedule_evidence.get("broker_statement_reconciled", False)
+                    ),
+                    fee_schedule_binding=fee_schedule_evidence,
+                ),
+                "capacity_review": build_backtest_capacity_evidence(
+                    fills=result.fills,
+                    data_handlers=handlers,
+                    initial_cash=result.initial_cash,
+                ),
+                "market_regime_robustness": build_backtest_market_regime_evidence(
+                    result=result,
+                    data_handlers=handlers,
+                ),
                 "automatic_baseline_refresh": True,
                 "persisted_market_data_only": True,
             }
@@ -1480,7 +1567,14 @@ class AiShadowResearchAutomationService:
             snapshot=snapshot,
             request=request,
             result=payload,
+            cost_model_reference=cost_model_reference,
+            fee_schedule_evidence=fee_schedule_evidence,
         )
+
+    def _resolve_reviewed_fee_schedule(self, **kwargs: Any) -> Any:
+        if self._reviewed_fee_schedule_resolver is None:
+            raise ReviewedFeeScheduleRejected("reviewed_fee_schedule_resolver_missing")
+        return self._reviewed_fee_schedule_resolver(**kwargs)
 
     def _build_research_service(self, *, external: bool) -> Any:
         if self._research_service_builder is not None:
@@ -1621,11 +1715,15 @@ def build_ai_shadow_research_automation_service(
     store = ShadowResearchStore(path)
     store.init()
     from server.bootstrap import resolve_data_dir
+    from server.services.reviewed_fee_schedule import resolve_reviewed_fee_schedule
 
     return AiShadowResearchAutomationService(
         state=state,
         store=store,
         data_store=DataStore(resolve_data_dir()),
+        reviewed_fee_schedule_resolver=lambda **kwargs: resolve_reviewed_fee_schedule(
+            state, **kwargs
+        ),
     )
 
 
@@ -1671,9 +1769,22 @@ def _backtest_view(row: Mapping[str, Any]) -> dict[str, Any]:
     research = _json_object(metrics.get("research_evidence_bundle"))
     oos = _json_object(metrics.get("oos_validation"))
     aggregate = _json_object(oos.get("aggregate"))
+    oos_folds = [
+        {
+            "fold_index": fold.get("fold_index"),
+            "split_timestamp": fold.get("split_timestamp"),
+            "net_return": _json_object(fold.get("out_of_sample")).get("net_return"),
+            "total_cost": _json_object(fold.get("out_of_sample")).get("total_cost"),
+        }
+        for fold in oos.get("folds") or []
+        if isinstance(fold, Mapping)
+    ]
+    dataset = _json_object(metrics.get("dataset_snapshot"))
+    dataset_quality = _json_object(dataset.get("data_quality"))
     total_cost = float(evidence.get("total_cost") or 0)
     return {
         "result_id": int(row["id"]),
+        "initial_cash": float(row.get("initial_cash") or 0),
         "total_return": float(row.get("total_return") or 0),
         "sharpe": float(row.get("sharpe") or 0),
         "max_drawdown": float(row.get("max_drawdown") or 0),
@@ -1682,15 +1793,47 @@ def _backtest_view(row: Mapping[str, Any]) -> dict[str, Any]:
         "total_slippage": float(costs.get("total_slippage") or 0),
         "total_trades": int(costs.get("total_trades") or 0),
         "gross_turnover": float(costs.get("gross_turnover") or 0),
+        "oos_validation_mode": str(oos.get("validation_mode") or "missing"),
         "oos_fold_count": int(oos.get("fold_count") or 0),
+        "oos_pass_rate": aggregate.get("pass_rate"),
+        "oos_folds": oos_folds,
         "mean_oos_return": float(aggregate.get("mean_out_of_sample_return") or 0),
         "worst_oos_return": float(aggregate.get("worst_out_of_sample_return") or 0),
         "oos_validation_status": str(oos.get("validation_status") or "missing"),
         "evidence_gate_status": str(research.get("gate_status") or "missing"),
-        "dataset_snapshot_id": _json_object(metrics.get("dataset_snapshot")).get(
-            "snapshot_id"
+        "dataset_snapshot_id": dataset.get("snapshot_id"),
+        "dataset_quality_status": dataset_quality.get("status"),
+        "dataset_issue_count": len(dataset_quality.get("issues") or []),
+        "parameter_robustness": _json_object(
+            metrics.get("parameter_robustness") or metrics.get("sweep_robustness")
         ),
+        "formula_parameter_values": _json_object(
+            _json_object(metrics.get("formula_binding")).get("parameter_values")
+        ),
+        "market_regime_robustness": _json_object(
+            metrics.get("market_regime_robustness")
+        ),
+        "account_capital_constraint": _json_object(
+            metrics.get("account_capital_constraint")
+        ),
+        "capacity_review": _json_object(metrics.get("capacity_review")),
+        "fee_component_evidence": _json_object(metrics.get("fee_component_evidence")),
     }
+
+
+def _backtest_source_fingerprint(row: Mapping[str, Any]) -> str:
+    return content_fingerprint(
+        {
+            "id": int(row.get("id") or 0),
+            "initial_cash": row.get("initial_cash"),
+            "final_equity": row.get("final_equity"),
+            "total_return": row.get("total_return"),
+            "sharpe": row.get("sharpe"),
+            "max_drawdown": row.get("max_drawdown"),
+            "metrics": _json_object(row.get("metrics_json")),
+            "cost_summary": _json_object(row.get("cost_summary_json")),
+        }
+    )
 
 
 def _hypothesis_usage(session: Mapping[str, Any]) -> int | None:

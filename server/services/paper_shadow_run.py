@@ -46,10 +46,20 @@ def run_paper_shadow_from_trading_plan(
             "schema_version": PAPER_SHADOW_RUN_SCHEMA_VERSION,
             "plan_date": plan_date,
             "trading_plan_schema_version": trading_plan.get("schema_version"),
-            "order_intents": order_intents,
+            "order_intents": [
+                _stable_order_intent_input(intent) for intent in order_intents
+            ],
+            "account_truth": _dict(trading_plan.get("account_truth")),
             "outcome_overrides": normalized_outcome_overrides,
         }
     )
+    reusable = _matching_latest_run(
+        db,
+        plan_date=plan_date,
+        input_fingerprint=fingerprint,
+    )
+    if reusable is not None:
+        return reusable
     run_id = f"shadow:{plan_date}:{fingerprint[:12]}"
     input_refs = _input_refs(
         trading_plan=trading_plan,
@@ -716,6 +726,54 @@ def _json_dict(value: Any) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def _matching_latest_run(
+    db: Any,
+    *,
+    plan_date: str,
+    input_fingerprint: str,
+) -> dict[str, Any] | None:
+    """Reuse an exact persisted simulation across workflow-only status changes."""
+
+    reader = getattr(db, "latest_paper_shadow_run_sync", None)
+    row = reader(plan_date=plan_date) if callable(reader) else None
+    if not isinstance(row, dict) or row.get("input_fingerprint") != input_fingerprint:
+        return None
+    payload = _json_dict(row.get("payload_json"))
+    if not payload:
+        return None
+    limitations = _json_list(row.get("limitations_json")) or list(
+        payload.get("limitations") or []
+    )
+    return {
+        **row,
+        **payload,
+        "run_id": row.get("run_id"),
+        "input_fingerprint": row.get("input_fingerprint"),
+        "status": row.get("status"),
+        "order_intent_count": row.get("order_intent_count"),
+        "simulated_order_count": row.get("simulated_order_count"),
+        "simulated_fill_count": row.get("simulated_fill_count"),
+        "divergence_status": row.get("divergence_status"),
+        "next_manual_review_step": row.get("next_manual_review_step"),
+        "limitations": limitations,
+        "reused_existing_run": True,
+        "does_not_submit_broker_order": True,
+        "does_not_mutate_production_ledger": True,
+    }
+
+
+def _json_list(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    if not isinstance(value, str) or not value.strip():
+        return []
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
 def _replay_shadow_oms_transitions(
     service: OmsService,
     *,
@@ -1163,8 +1221,13 @@ def _order_intent_snapshot(intent: dict[str, Any], intent_ref: str) -> dict[str,
         "estimated_quantity": intent.get("estimated_quantity"),
         "estimated_price": intent.get("estimated_price"),
         "strategy_refs": _refs_with_prefix(refs, "strategy:"),
+        "strategy_advancement_refs": _refs_with_prefix(
+            refs,
+            "strategy_advancement:",
+        ),
         "risk_refs": _refs_with_prefix(refs, "risk:"),
         "signal_refs": _refs_with_prefix(refs, "signal:"),
+        "account_truth_refs": _refs_with_prefix(refs, "account_truth:"),
         "price_basis": str(intent.get("price_basis") or "estimated_price"),
         "estimated_gross_amount": intent.get("estimated_gross_amount"),
         "estimated_total_fee": intent.get("estimated_total_fee"),
@@ -1520,6 +1583,15 @@ def _input_fingerprint(payload: dict[str, Any]) -> str:
         default=str,
     )
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _stable_order_intent_input(intent: dict[str, Any]) -> dict[str, Any]:
+    """Remove workflow labels that change only after this simulation passes."""
+
+    stable = dict(intent)
+    stable.pop("manual_confirmation_status", None)
+    stable.pop("submission_status", None)
+    return stable
 
 
 def _order_intents(trading_plan: dict[str, Any]) -> list[dict[str, Any]]:

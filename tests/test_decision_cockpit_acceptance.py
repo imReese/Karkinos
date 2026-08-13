@@ -294,8 +294,8 @@ def test_fixture_cache_to_decision_api_dashboard_contract(
     intraday = asyncio.run(_decision_endpoint("/api/decision/intraday")())
 
     assert today["lane"] == "daily"
-    assert today["decision"] == "buy"
-    assert today["requires_manual_confirmation"] is True
+    assert today["decision"] == "review_required"
+    assert today["requires_manual_confirmation"] is False
     assert today["summary"]["portfolio"]["total_equity"] == 100000.0
     assert today["summary"]["market_data"]["source_health"] == "live"
     assert today["summary"]["audit"]["signal_count"] == 1
@@ -306,7 +306,9 @@ def test_fixture_cache_to_decision_api_dashboard_contract(
     assert candidate["symbol"] == "510300"
     assert candidate["action"] == "buy"
     assert candidate["risk_gate_status"] == "passed"
-    assert candidate["manual_confirmation_status"] == "ready_for_manual_confirmation"
+    assert candidate["manual_confirmation_status"] == (
+        "strategy_advancement_review_required"
+    )
     assert candidate["evidence"]["strategy"]["strategy_id"] == (
         "fixture_decision_momentum"
     )
@@ -316,6 +318,13 @@ def test_fixture_cache_to_decision_api_dashboard_contract(
     assert candidate["evidence"]["account_truth"]["gate_status"] == "pass"
     assert candidate["evidence"]["data_freshness"]["status"] == "live"
     assert candidate["evidence"]["manual_confirmation"]["required"] is True
+    assert candidate["evidence"]["strategy"]["order_generation_gate"]["status"] == (
+        "blocked"
+    )
+    assert (
+        "strategy_promotion_evidence_missing"
+        in candidate["evidence"]["strategy"]["order_generation_gate"]["blockers"]
+    )
     assert candidate["evidence"]["journal"]["has_journal_entry"] is True
     assert candidate["evidence"]["journal"]["latest_event_type"] == (
         "risk.signal.recorded"
@@ -334,7 +343,7 @@ def test_fixture_cache_to_decision_api_dashboard_contract(
 
     assert intraday["lane"] == "intraday"
     assert intraday["cadence"] == "polling_or_minute_level"
-    assert intraday["decision"] == "buy"
+    assert intraday["decision"] == "review_required"
     assert [candidate["symbol"] for candidate in intraday["candidates"]] == ["510300"]
     assert intraday["no_action_reasons"] == []
 

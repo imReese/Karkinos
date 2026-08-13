@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from server.services.strategy_promotion_pipeline import StrategyPromotionPipeline
 
@@ -13,13 +13,21 @@ from server.services.strategy_promotion_pipeline import StrategyPromotionPipelin
 class StrategyPromotionRequest(BaseModel):
     target_stage: str
     readiness: dict[str, Any]
-    actor: str | None = None
+    actor: str = Field(min_length=1, max_length=128)
+    review_note: str = Field(min_length=1, max_length=8_000)
+    confirmation: Literal[
+        "approve_evidence_bound_strategy_for_paper_shadow_only_without_"
+        "execution_or_capital_authority"
+    ]
 
 
 class StrategyPromotionLifecycleRequest(BaseModel):
     target_stage: str
-    reason: str
-    actor: str | None = None
+    reason: str = Field(min_length=1, max_length=8_000)
+    actor: str = Field(min_length=1, max_length=128)
+    confirmation: Literal[
+        "pause_or_retire_strategy_without_execution_or_capital_authority"
+    ]
 
 
 def create_router() -> APIRouter:
@@ -43,6 +51,8 @@ def create_router() -> APIRouter:
                     target_stage=request.target_stage,
                     readiness=request.readiness,
                     actor=request.actor,
+                    confirmation=request.confirmation,
+                    review_note=request.review_note,
                 )
             except ValueError as exc:
                 raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -52,6 +62,8 @@ def create_router() -> APIRouter:
                 target_stage=request.target_stage,
                 readiness=request.readiness,
                 actor=request.actor,
+                confirmation=request.confirmation,
+                review_note=request.review_note,
             )
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -67,6 +79,7 @@ def create_router() -> APIRouter:
                 target_stage=request.target_stage,
                 reason=request.reason,
                 actor=request.actor,
+                confirmation=request.confirmation,
             )
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc

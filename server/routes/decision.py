@@ -24,6 +24,9 @@ from server.services.decision_quality import (
     DecisionQualityStore,
     DecisionQualityTargetDrift,
 )
+from server.services.strategy_promotion_pipeline import (
+    resolve_strategy_order_generation_gate,
+)
 
 _ACCOUNT_STRATEGY_CONTROL_KEY = "account_strategy_assignment"
 _STRATEGY_ATTRIBUTION_READY_STATUSES = {"evidence_bound_from_posted_fills"}
@@ -1357,17 +1360,38 @@ def _decision_candidate(
         and manual_confirmation_status == _READY_MANUAL_CONFIRMATION_STATUS
     ):
         manual_confirmation_status = "strategy_attribution_review_required"
+    strategy_order_generation, _ = resolve_strategy_order_generation_gate(
+        db,
+        str(action.get("strategy_id") or ""),
+        as_of_date=_action_trade_date(action),
+    )
+    if (
+        strategy_order_generation.get("status") != "pass"
+        and manual_confirmation_status == _READY_MANUAL_CONFIRMATION_STATUS
+    ):
+        manual_confirmation_status = "strategy_advancement_review_required"
     risk_gate = _risk_gate_evidence(action)
     validation = _after_cost_oos_validation_evidence(action, validation_by_strategy)
-    manual_confirmation = _manual_confirmation_evidence(
-        action,
-        manual_confirmation_status=manual_confirmation_status,
-    )
     paper_shadow = _paper_shadow_evidence(
         action,
         manual_confirmation_status,
         db=db,
     )
+    if (
+        strategy_order_generation.get("status") == "pass"
+        and manual_confirmation_status == _READY_MANUAL_CONFIRMATION_STATUS
+        and not _paper_shadow_allows_manual_ticket(paper_shadow)
+    ):
+        manual_confirmation_status = "paper_shadow_review_required"
+        paper_shadow["manual_confirmation_status"] = manual_confirmation_status
+    manual_confirmation = _manual_confirmation_evidence(
+        action,
+        manual_confirmation_status=manual_confirmation_status,
+    )
+    strategy_evidence = {
+        "strategy_id": action.get("strategy_id"),
+        "order_generation_gate": strategy_order_generation,
+    }
     return {
         "action_id": action.get("id"),
         "action": _normalize_decision_action(action),
@@ -1392,7 +1416,7 @@ def _decision_candidate(
         ),
         "manual_confirmation_status": manual_confirmation_status,
         "evidence": {
-            "strategy": {"strategy_id": action.get("strategy_id")},
+            "strategy": strategy_evidence,
             "portfolio_allocation": dict(action.get("allocation_evidence") or {}),
             "signal": _signal_evidence(
                 action,
@@ -1408,6 +1432,8 @@ def _decision_candidate(
                 data_freshness=data_freshness,
                 account_truth=account_truth,
                 risk_gate=risk_gate,
+                strategy_order_generation=strategy_order_generation,
+                paper_shadow=paper_shadow,
             ),
             "paper_shadow": paper_shadow,
             "cost_impact": _cost_impact_evidence(validation),
@@ -1417,6 +1443,7 @@ def _decision_candidate(
                 data_freshness=data_freshness,
                 account_truth=account_truth,
                 strategy_attribution=strategy_attribution,
+                strategy_order_generation=strategy_order_generation,
                 paper_shadow=paper_shadow,
             ),
             "manual_confirmation": manual_confirmation,
@@ -1821,6 +1848,8 @@ def _certainty_evidence(
     data_freshness: dict[str, Any],
     account_truth: dict[str, Any],
     risk_gate: dict[str, Any],
+    strategy_order_generation: dict[str, Any],
+    paper_shadow: dict[str, Any],
 ) -> dict[str, Any]:
     status = "pass"
     required_actions: list[str] = []
@@ -1853,6 +1882,18 @@ def _certainty_evidence(
         _append_unique_text(uncertain_reasons, data_freshness.get("reason"))
         _append_unique_text(uncertain_reasons, data_freshness.get("stale_reason"))
         _append_unique_text(uncertain_reasons, data_status)
+
+    strategy_order_generation_passed = strategy_order_generation.get("status") == "pass"
+    if not strategy_order_generation_passed:
+        status = "blocked"
+        _append_unique_text(required_actions, "review_strategy_advancement_evidence")
+        for reason in strategy_order_generation.get("blockers") or []:
+            _append_unique_text(uncertain_reasons, reason)
+    elif not _paper_shadow_allows_manual_ticket(paper_shadow):
+        status = "blocked"
+        _append_unique_text(required_actions, "run_or_review_current_paper_shadow")
+        for reason in paper_shadow.get("blocking_reasons") or []:
+            _append_unique_text(uncertain_reasons, reason)
 
     posture = (
         "manual_confirmation_allowed"
@@ -1890,8 +1931,11 @@ def _paper_shadow_evidence(
     run_id = None
     input_fingerprint = None
     divergence_status = None
+    order_divergence_status = None
     review_status = None
     order_id = action.get("paper_shadow_order_id")
+    order_intent: dict[str, Any] = {}
+    simulated_order: dict[str, Any] = {}
     if not has_evidence:
         reader = getattr(db, "latest_paper_shadow_run_sync", None)
         plan_date = _action_trade_date(action)
@@ -1920,8 +1964,26 @@ def _paper_shadow_evidence(
             divergence_status = latest_run.get("divergence_status")
             review_status = latest_run.get("review_status")
             order_id = matching_order.get("order_id")
+            order_divergence_status = matching_order.get("divergence_status")
+            order_intent = _json_object(matching_order.get("order_intent"))
+            simulated_order = {
+                key: matching_order.get(key)
+                for key in (
+                    "order_id",
+                    "symbol",
+                    "status",
+                    "divergence_status",
+                    "quantity",
+                    "price",
+                    "filled_quantity",
+                    "remaining_quantity",
+                )
+            }
             has_evidence = True
-            if str(divergence_status or "") == "within_expectations":
+            if (
+                str(divergence_status or "") == "within_expectations"
+                and str(order_divergence_status or "") == "within_expectations"
+            ):
                 status = "pass"
             else:
                 status = "review_required"
@@ -1944,11 +2006,28 @@ def _paper_shadow_evidence(
         "input_fingerprint": input_fingerprint,
         "order_id": order_id,
         "divergence_status": divergence_status,
+        "order_divergence_status": order_divergence_status,
         "review_status": review_status,
+        "order_intent": order_intent,
+        "simulated_order": simulated_order,
         "required_actions": required_actions,
         "blocking_reasons": blocking_reasons,
         "manual_confirmation_status": manual_confirmation_status,
     }
+
+
+def _paper_shadow_allows_manual_ticket(evidence: dict[str, Any]) -> bool:
+    """Require one exact persisted, drift-clear simulation before ticketing."""
+
+    return (
+        evidence.get("status") == "pass"
+        and evidence.get("has_evidence") is True
+        and bool(evidence.get("run_id"))
+        and bool(evidence.get("input_fingerprint"))
+        and bool(evidence.get("order_id"))
+        and evidence.get("divergence_status") == "within_expectations"
+        and evidence.get("order_divergence_status") == "within_expectations"
+    )
 
 
 def _cost_impact_evidence(validation: dict[str, Any]) -> dict[str, Any]:
@@ -1978,6 +2057,7 @@ def _uncertainty_evidence(
     data_freshness: dict[str, Any],
     account_truth: dict[str, Any],
     strategy_attribution: dict[str, Any],
+    strategy_order_generation: dict[str, Any],
     paper_shadow: dict[str, Any],
 ) -> dict[str, Any]:
     factors: list[str] = []
@@ -1989,7 +2069,12 @@ def _uncertainty_evidence(
         _append_unique_text(factors, reason)
     for key in ("reason", "stale_reason"):
         _append_unique_text(factors, data_freshness.get(key))
-    for payload in (account_truth, strategy_attribution, paper_shadow):
+    for reason in strategy_order_generation.get("blockers") or []:
+        _append_unique_text(factors, reason)
+    uncertainty_payloads = [account_truth, strategy_attribution]
+    if strategy_order_generation.get("status") == "pass":
+        uncertainty_payloads.append(paper_shadow)
+    for payload in uncertainty_payloads:
         for reason in payload.get("blocking_reasons") or []:
             _append_unique_text(factors, reason)
         for action in payload.get("required_actions") or []:

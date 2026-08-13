@@ -1,14 +1,23 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import sqlite3
 from datetime import datetime
+from decimal import Decimal
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
+import pandas as pd
 import pytest
 
+from analytics.strategy_advancement_gate import (
+    STRATEGY_ADVANCEMENT_REQUIRED_CHECK_NAMES,
+    StrategyAdvancementGate,
+)
+from core.types import BarFrequency, CommissionType, Symbol
 from data.store import DataStore
+from execution.commission import MultiAssetCommission, StockACommission
 from server.db import AppDatabase
 from server.models import BacktestRequest
 from server.services.ai_shadow_research_automation import (
@@ -18,11 +27,14 @@ from server.services.ai_shadow_research_automation import (
     SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION,
     AiShadowResearchAutomationService,
     PreparedBaseline,
+    ShadowResearchPolicy,
     ShadowResearchRejected,
     ShadowResearchStore,
     _after_close,
 )
+from server.services.reviewed_fee_schedule import ReviewedFeeScheduleRejected
 from server.services.trading_controls import TradingControlState
+from tests.ai_shadow_strategy_fixtures import seed_ai_shadow_canonical_sources
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
@@ -208,6 +220,13 @@ def test_human_candidate_approval_records_paper_shadow_only(tmp_path) -> None:
     db.init_sync()
     store = ShadowResearchStore(tmp_path / "app.db")
     store.init()
+    canonical_sources = seed_ai_shadow_canonical_sources(
+        db,
+        baseline_result_id=1,
+        candidate_result_id=2,
+        backtest_run_id="backtest-1",
+        critique_id="critique-1",
+    )
     candidate = store.save_candidate(
         run_id="run-1",
         session_id="session-1",
@@ -219,7 +238,20 @@ def test_human_candidate_approval_records_paper_shadow_only(tmp_path) -> None:
         status="awaiting_human_approval",
         recommendation="paper_shadow_review",
         comparison={
-            "promotion_gate": {"status": "pass", "blockers": []},
+            **canonical_sources,
+            "promotion_gate": StrategyAdvancementGate(
+                status="pass",
+                blockers=(),
+                checks=tuple(
+                    {
+                        "name": name,
+                        "status": "pass",
+                        "blocker": None,
+                        "evidence": {},
+                    }
+                    for name in STRATEGY_ADVANCEMENT_REQUIRED_CHECK_NAMES
+                ),
+            ).to_json_dict(),
             "automatic_strategy_replacement_enabled": False,
         },
         now="2026-08-11T08:00:00+00:00",
@@ -280,6 +312,46 @@ def test_human_candidate_approval_records_paper_shadow_only(tmp_path) -> None:
     assert [item["event_type"] for item in events].count(
         "promoted_to_paper_shadow"
     ) == 1
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_human_candidate_approval_rejects_incomplete_or_drifted_gate(tmp_path) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = ShadowResearchStore(tmp_path / "app.db")
+    store.init()
+    candidate = store.save_candidate(
+        run_id="run-incomplete-gate",
+        session_id="session-1",
+        draft_id="draft-1",
+        backtest_run_id="backtest-1",
+        critique_id="critique-1",
+        baseline_result_id=1,
+        candidate_result_id=2,
+        status="awaiting_human_approval",
+        recommendation="paper_shadow_review",
+        comparison={
+            "promotion_gate": {
+                "schema_version": "karkinos.strategy_advancement_gate.v2",
+                "status": "pass",
+                "blockers": [],
+            }
+        },
+        now="2026-08-11T08:00:00+00:00",
+    )
+
+    with pytest.raises(
+        ShadowResearchRejected,
+        match="candidate_not_eligible_for_paper_shadow",
+    ):
+        store.approve_candidate(
+            candidate["candidate_id"],
+            approved_by="human:owner",
+            notes="Incomplete gate must remain blocked.",
+            confirmation=SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
+            now="2026-08-11T08:05:00+00:00",
+        )
 
 
 @pytest.mark.unit
@@ -345,6 +417,10 @@ def _result(*, total_return: float, sharpe: float, drawdown: float) -> dict:
 
 
 def _prepared_baseline() -> PreparedBaseline:
+    cost_model_reference = (
+        "karkinos.backtest.reviewed_account_fee_schedule.v1:"
+        f"fee_review_{'a' * 32}:{'b' * 64}"
+    )
     return PreparedBaseline(
         seed_result_id=7,
         market_date="2026-08-11",
@@ -358,6 +434,11 @@ def _prepared_baseline() -> PreparedBaseline:
             oos_mode="rolling",
         ),
         result=_result(total_return=0.05, sharpe=0.6, drawdown=0.12),
+        cost_model_reference=cost_model_reference,
+        fee_schedule_evidence={
+            "fee_schedule_review_id": "fee_review_" + "a" * 32,
+            "fee_schedule_review_fingerprint": "sha256:" + "b" * 64,
+        },
     )
 
 
@@ -476,9 +557,18 @@ async def test_full_cycle_is_idempotent_and_stops_at_human_research_pool(
     assert fixture.backtest_calls == 1
     assert fixture.critique_calls == 1
     candidate = first["candidates"][0]
-    assert candidate["recommendation"] == "paper_shadow_review"
-    assert candidate["status"] == "awaiting_human_approval"
-    assert candidate["promotion_status"] == "awaiting_human_approval"
+    assert candidate["recommendation"] == "keep_researching"
+    assert candidate["status"] == "research_blocked"
+    assert candidate["promotion_status"] == "blocked_by_evidence"
+    assert candidate["comparison"]["promotion_gate"]["status"] == "blocked"
+    assert {
+        "candidate_dataset_quality_not_clear",
+        "baseline_rolling_oos_not_passing",
+        "candidate_parameter_robustness_not_passing",
+        "candidate_market_regime_robustness_not_passing",
+        "candidate_capacity_or_liquidity_not_passing",
+        "candidate_fee_or_tax_evidence_incomplete",
+    }.issubset(candidate["comparison"]["promotion_gate"]["blockers"])
     assert candidate["automatic_strategy_replacement_enabled"] is False
     assert candidate["broker_submission_enabled"] is False
 
@@ -606,6 +696,141 @@ async def test_missing_market_evidence_creates_provider_free_preflight_audit(
     assert audit[0] == "blocked_by_market_evidence"
     assert json.loads(audit[1])["provider_call_performed"] is False
     assert provider_calls == 0
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_missing_reviewed_fee_schedule_is_account_evidence_no_action(
+    tmp_path, monkeypatch
+) -> None:
+    service = _service(tmp_path)
+    service.update_policy(_policy_payload(enabled=True))
+
+    def reject_fee_schedule(policy):
+        raise ReviewedFeeScheduleRejected("reviewed_fee_schedule_review_missing")
+
+    monkeypatch.setattr(service, "_prepare_baseline", reject_fee_schedule)
+
+    result = await service.run_once()
+
+    assert result["run_status"] == "blocked_by_account_evidence"
+    assert result["failure_code"] == "reviewed_fee_schedule_review_missing"
+    assert result["policy"]["enabled"] is True
+    with sqlite3.connect(tmp_path / "app.db") as conn:
+        provider_calls = conn.execute(
+            "SELECT COUNT(*) FROM ai_shadow_research_provider_calls"
+        ).fetchone()[0]
+    assert provider_calls == 0
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    market = DataStore(tmp_path / "market")
+    symbol = Symbol("600000")
+    closes = [10.0] * 20 + [20.0] * 20
+    bars = pd.DataFrame(
+        {
+            "timestamp": pd.bdate_range("2026-01-02", periods=len(closes)),
+            "open": closes,
+            "high": [value + 1 for value in closes],
+            "low": [value - 1 for value in closes],
+            "close": closes,
+            "volume": [1_000_000.0] * len(closes),
+        }
+    )
+    market.save_bars(
+        symbol,
+        BarFrequency.DAILY,
+        bars,
+        provider_name="deterministic_fixture",
+        data_source="deterministic_fixture",
+        adjustment_mode="none",
+    )
+    seed_result_id = asyncio.run(
+        db.save_backtest_result(
+            config_json=json.dumps(
+                {
+                    "start_date": "2026-01-02",
+                    "end_date": bars["timestamp"].iloc[-1].date().isoformat(),
+                    "initial_cash": 100_000,
+                    "strategy": "dual_ma",
+                    "short_period": 5,
+                    "long_period": 20,
+                    "assets": [{"symbol": str(symbol), "asset_class": "stock"}],
+                }
+            ),
+            initial_cash=100_000,
+            final_equity=100_000,
+            total_return=0,
+            sharpe=0,
+            max_dd=0,
+            equity_curve_json="[]",
+            metrics_json="{}",
+            cost_summary_json="{}",
+        )
+    )
+    review_id = "fee_review_" + "a" * 32
+    review_fingerprint = "sha256:" + "b" * 64
+    cost_model_reference = (
+        "karkinos.backtest.reviewed_account_fee_schedule.v1:"
+        f"{review_id}:{review_fingerprint.removeprefix('sha256:')}"
+    )
+    calculator = MultiAssetCommission(fee_rule_version=cost_model_reference)
+    calculator.set_commission(
+        CommissionType.STOCK_A,
+        StockACommission(
+            commission_rate=Decimal("0.01"),
+            min_commission=Decimal("0"),
+            fee_rule_id="reviewed-account-fee-rule",
+        ),
+    )
+    resolution = SimpleNamespace(
+        cost_model_reference=cost_model_reference,
+        commission_calc=calculator,
+        fee_evidence={
+            "account_specific": True,
+            "fee_schedule_source": (
+                "reviewed_account_truth_or_reconciled_fee_schedule"
+            ),
+            "fee_schedule_fingerprint": "sha256:" + "f" * 64,
+            "broker_statement_reconciled": True,
+            "fee_schedule_review_id": review_id,
+            "fee_schedule_review_fingerprint": review_fingerprint,
+            "fee_schedule_preview_fingerprint": "sha256:" + "c" * 64,
+            "account_truth_import_run_id": "import_fixture",
+            "account_truth_source_fingerprint": "sha256:" + "d" * 64,
+            "account_truth_scope_fingerprint": "sha256:" + "e" * 64,
+            "effective_start_date": "2026-01-01",
+            "effective_end_date": "2026-12-31",
+            "fee_notional_envelope_enforced": True,
+            "fee_notional_envelope_fingerprint": "sha256:" + "9" * 64,
+            "fee_notional_covered_asset_classes": ["stock"],
+        },
+    )
+    service = AiShadowResearchAutomationService(
+        state=_state(db),
+        store=ShadowResearchStore(db._path),
+        data_store=market,
+        reviewed_fee_schedule_resolver=lambda **kwargs: resolution,
+    )
+
+    prepared = service._prepare_baseline(
+        ShadowResearchPolicy(baseline_backtest_result_id=seed_result_id)
+    )
+
+    assert prepared.cost_model_reference == cost_model_reference
+    fee_evidence = prepared.result["metrics_json"]["fee_component_evidence"]
+    assert fee_evidence["account_specific"] is True
+    assert fee_evidence["fee_rule_version"] == cost_model_reference
+    assert prepared.result["fills"]
+    assert all(
+        fill["fee_rule_version"] == cost_model_reference
+        for fill in prepared.result["fills"]
+    )
 
 
 @pytest.mark.unit
