@@ -85,6 +85,7 @@ _BROKER_FEE_SCHEDULE_ALLOWED_FIELDS = frozenset(
         "fund_etf_min_commission",
         "stamp_tax_rate",
         "transfer_fee_rate",
+        "fund_etf_transfer_fee_rate",
         "exchange_transfer_fee_rates",
         "other_fee_rate",
         "limitations",
@@ -311,6 +312,7 @@ class BrokerFeeScheduleConfig:
     fund_etf_min_commission: Decimal = Decimal("5")
     stamp_tax_rate: Decimal = Decimal("0.0005")
     transfer_fee_rate: Decimal = Decimal("0.00001")
+    fund_etf_transfer_fee_rate: Decimal = Decimal("0.00001")
     exchange_transfer_fee_rates: dict[str, Decimal] = field(default_factory=dict)
     other_fee_rate: Decimal = Decimal("0")
     money_precision: Decimal | None = None
@@ -1040,6 +1042,43 @@ def _parse_broker_fee_schedule_config(value: object) -> BrokerFeeScheduleConfig:
     if _has_nested_broker_fee_schedule(value):
         limitation_values.append("nested_fee_schedule_flattened_for_current_contract")
 
+    transfer_fee_rate = _decimal_fee_config(
+        value,
+        "transfer_fee_rate",
+        _rule_fee_value(
+            value,
+            component="transfer_fee",
+            asset_classes=("stock",),
+            field_name="rate",
+            default=_nested_fee_value(
+                value,
+                section="taxes_and_fees",
+                names=("transfer_fee", "stock_transfer_fee"),
+                default="0.00001",
+            ),
+        ),
+    )
+    fund_etf_transfer_fee_rate = _decimal_fee_config(
+        value,
+        "fund_etf_transfer_fee_rate",
+        _rule_fee_value(
+            value,
+            component="transfer_fee",
+            asset_classes=("fund", "etf"),
+            field_name="rate",
+            default=_nested_fee_value(
+                value,
+                section="taxes_and_fees",
+                names=(
+                    "fund_etf_transfer_fee",
+                    "etf_transfer_fee",
+                    "fund_transfer_fee",
+                ),
+                default=transfer_fee_rate,
+            ),
+        ),
+    )
+
     return BrokerFeeScheduleConfig(
         schedule_id=str(_fee_schedule_id(value)).strip()
         or BrokerFeeScheduleConfig().schedule_id,
@@ -1116,22 +1155,8 @@ def _parse_broker_fee_schedule_config(value: object) -> BrokerFeeScheduleConfig:
                 ),
             ),
         ),
-        transfer_fee_rate=_decimal_fee_config(
-            value,
-            "transfer_fee_rate",
-            _rule_fee_value(
-                value,
-                component="transfer_fee",
-                asset_classes=("stock",),
-                field_name="rate",
-                default=_nested_fee_value(
-                    value,
-                    section="taxes_and_fees",
-                    names=("transfer_fee", "stock_transfer_fee"),
-                    default="0.00001",
-                ),
-            ),
-        ),
+        transfer_fee_rate=transfer_fee_rate,
+        fund_etf_transfer_fee_rate=fund_etf_transfer_fee_rate,
         exchange_transfer_fee_rates=exchange_transfer_fee_rates,
         other_fee_rate=_decimal_fee_config(
             value,
@@ -1173,7 +1198,7 @@ def _broker_fee_rounding(value: object) -> tuple[Decimal | None, str]:
 
 
 def _decimal_fee_config(
-    value: dict[str, object], field_name: str, default: str
+    value: dict[str, object], field_name: str, default: object
 ) -> Decimal:
     raw_value = value.get(field_name, default)
     return Decimal(str(raw_value))
@@ -1201,7 +1226,7 @@ def _nested_fee_value(
     *,
     section: str,
     names: tuple[str, ...],
-    default: str,
+    default: object,
 ) -> object:
     section_value = value.get(section)
     if not isinstance(section_value, dict):
@@ -1299,7 +1324,7 @@ def _normalize_exchange_key(value: object) -> str | None:
     return _EXCHANGE_ALIASES.get(key)
 
 
-def _first_decimal_like(value: object, *, default: str) -> object:
+def _first_decimal_like(value: object, *, default: object) -> object:
     if isinstance(value, int | float | str | Decimal):
         return value
     if isinstance(value, dict):

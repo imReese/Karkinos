@@ -210,6 +210,43 @@ def test_manual_trade_fee_service_formats_etf_without_stamp_tax():
     }
 
 
+def test_manual_trade_fee_service_uses_etf_specific_transfer_fee_rate():
+    from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
+
+    config = SimpleNamespace(
+        account_commission_rate=0.00012,
+        account_min_commission=5,
+        broker_fee_schedule=SimpleNamespace(
+            transfer_fee_rate=0.00001,
+            fund_etf_transfer_fee_rate=0,
+            other_fee_rate=0,
+        ),
+    )
+
+    stock = resolve_manual_trade_fee_breakdown(
+        config,
+        asset_class="stock",
+        direction="buy",
+        quantity=1000,
+        price=4.0,
+        symbol="600000",
+    )
+    etf = resolve_manual_trade_fee_breakdown(
+        config,
+        asset_class="etf",
+        direction="buy",
+        quantity=1000,
+        price=4.0,
+        symbol="510300",
+    )
+
+    assert stock is not None
+    assert etf is not None
+    assert stock.fee_breakdown_json["transfer_fee"] == "0.040000"
+    assert etf.fee_breakdown_json["transfer_fee"] == "0.000000"
+    assert etf.fee_breakdown_json["total_fee"] == "5.000000"
+
+
 def test_manual_trade_fee_service_formats_bond_without_stock_taxes():
     from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
 

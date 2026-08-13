@@ -101,8 +101,10 @@ class BacktestEngine:
         )
 
         # 多资产佣金调度
-        if configured_commission is None:
-            self._multi_commission = MultiAssetCommission()
+        if configured_commission is None or isinstance(
+            configured_commission, MultiAssetCommission
+        ):
+            self._multi_commission = configured_commission or MultiAssetCommission()
             self.execution = SimulatedExecution(
                 slippage_model=configured_slippage,
                 commission_calc=self._multi_commission,
@@ -227,6 +229,7 @@ class BacktestEngine:
                         event.side,
                         fill.fill_price,
                         fill.fill_quantity,
+                        symbol=str(event.symbol),
                     )
                     fill = FillEvent(
                         timestamp=fill.timestamp,
@@ -240,7 +243,7 @@ class BacktestEngine:
                         slippage=fill.slippage,
                         fee_breakdown=fee_breakdown.to_json_dict(),
                         fee_rule_id=fee_breakdown.fee_rule_id,
-                        fee_rule_version="backtest_commission_model",
+                        fee_rule_version=self._multi_commission.fee_rule_version,
                     )
                     self._record_fill_event(fill, event)
                     return

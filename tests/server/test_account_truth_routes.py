@@ -407,6 +407,7 @@ def test_citic_query_window_review_is_explicit_revocable_and_non_authorizing(
                 account_type="cash",
                 market_scopes=["shanghai_a", "shenzhen_a"],
                 asset_classes=["stock"],
+                account_value_band="cny_0_20000",
                 business_types=["history_trades"],
                 no_other_filters_attested=True,
                 complete_returned_results_attested=True,
@@ -423,6 +424,8 @@ def test_citic_query_window_review_is_explicit_revocable_and_non_authorizing(
     assert scope_recorded["does_not_mutate_production_ledger"] is True
     assert scope_recorded["does_not_enable_broker_submission"] is True
     assert scope_recorded["does_not_change_capital_authority"] is True
+    assert scope_recorded["account_value_band_is_capital_authority"] is False
+    assert scope_recorded["review"]["account_value_band"] == "cny_0_20000"
     assert scope_recorded["review"]["effective_status"] == "active"
     assert scope_recorded["review"]["complete_returned_results_attested"] is True
     assert scope_recorded["review"]["eligible_for_account_truth"] is False

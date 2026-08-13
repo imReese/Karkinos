@@ -56,6 +56,7 @@
         "fund_etf_min_commission": 5.0,
         "stamp_tax_rate": 0.0005,
         "transfer_fee_rate": 0.00001,
+        "fund_etf_transfer_fee_rate": 0.0,
         "exchange_transfer_fee_rates": {
             "shanghai": 0.00001,
             "shenzhen": 0.0

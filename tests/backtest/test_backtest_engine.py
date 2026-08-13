@@ -12,11 +12,11 @@ from backtest.engine import BacktestEngine
 from backtest.result import BacktestResult
 from core.event_bus import EventBus
 from core.events import MarketEvent, OrderEvent, SignalEvent
-from core.types import ZERO, BarFrequency, OrderSide, OrderType, Symbol
+from core.types import ZERO, BarFrequency, CommissionType, OrderSide, OrderType, Symbol
 from data.handler import DataHandler
 from domain.instrument import make_etf, make_stock
 from domain.portfolio import Portfolio
-from execution.commission import ETFCommission
+from execution.commission import ETFCommission, MultiAssetCommission, StockACommission
 from execution.slippage import PercentSlippage
 from risk.limits import PositionLimitRule
 from risk.manager import RiskManager
@@ -191,6 +191,51 @@ class TestBacktestEngine:
         assert engine.fills[0].commission == ETFCommission().calculate(
             OrderSide.SELL, Decimal("99.00"), Decimal("100")
         )
+
+    def test_multi_asset_commission_uses_symbol_override_and_review_version(self):
+        symbol = Symbol("600519")
+        calculator = MultiAssetCommission(
+            fee_rule_version="reviewed-fee-schedule-reference"
+        )
+        calculator.set_commission(
+            CommissionType.STOCK_A,
+            StockACommission(
+                commission_rate=Decimal("0.001"),
+                min_commission=Decimal("0"),
+            ),
+        )
+        calculator.set_symbol_commission(
+            str(symbol),
+            StockACommission(
+                commission_rate=Decimal("0.01"),
+                min_commission=Decimal("0"),
+                fee_rule_id="reviewed-symbol-rule",
+            ),
+        )
+        engine = BacktestEngine(
+            strategy=SimpleBuyStrategy(EventBus()),
+            instruments={symbol: make_stock(str(symbol), "reviewed stock")},
+            data_handlers={symbol: DataHandler(make_price_df(), symbol)},
+            commission_calc=calculator,
+        )
+
+        engine._on_order_event(
+            OrderEvent(
+                timestamp=datetime(2024, 1, 1),
+                order_id="ORD-REVIEWED-FEE",
+                symbol=symbol,
+                side=OrderSide.BUY,
+                order_type=OrderType.MARKET,
+                quantity=Decimal("100"),
+                price=Decimal("100"),
+            )
+        )
+
+        fill = engine.fills[0]
+        assert fill.commission == Decimal("100.10000")
+        assert fill.fee_breakdown["commission"] == "100.00"
+        assert fill.fee_rule_id == "reviewed-symbol-rule"
+        assert fill.fee_rule_version == "reviewed-fee-schedule-reference"
 
     def test_backtest_engine_persists_order_and_fill_when_db_is_supplied(
         self,

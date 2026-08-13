@@ -249,7 +249,7 @@ class MultiAssetCommission(CommissionCalculator):
     根据 CommissionType 路由到对应的佣金模型。
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, fee_rule_version: str = "backtest_commission_model") -> None:
         self._calculators: dict[CommissionType, CommissionCalculator] = {
             CommissionType.STOCK_A: StockACommission(),
             CommissionType.FUND_ETF: ETFCommission(),
@@ -257,11 +257,26 @@ class MultiAssetCommission(CommissionCalculator):
             CommissionType.BOND_EXCHANGE: BondExchangeCommission(),
         }
         self._default = StockACommission()
+        self._symbol_calculators: dict[str, CommissionCalculator] = {}
+        self.fee_rule_version = str(fee_rule_version).strip() or (
+            "backtest_commission_model"
+        )
 
     def set_commission(
         self, commission_type: CommissionType, calc: CommissionCalculator
     ) -> None:
         self._calculators[commission_type] = calc
+
+    def set_symbol_commission(
+        self,
+        symbol: str,
+        calc: CommissionCalculator,
+    ) -> None:
+        """Override one symbol when an account schedule differs by exchange."""
+        normalized = str(symbol).strip().upper()
+        if not normalized:
+            raise ValueError("symbol commission override requires a symbol")
+        self._symbol_calculators[normalized] = calc
 
     def calculate(self, side: OrderSide, price: Decimal, quantity: Decimal) -> Decimal:
         # 默认使用 A 股佣金
@@ -283,6 +298,11 @@ class MultiAssetCommission(CommissionCalculator):
         side: OrderSide,
         price: Decimal,
         quantity: Decimal,
+        *,
+        symbol: str | None = None,
     ) -> FeeBreakdown:
-        calc = self._calculators.get(commission_type, self._default)
+        normalized_symbol = str(symbol or "").strip().upper()
+        calc = self._symbol_calculators.get(normalized_symbol)
+        if calc is None:
+            calc = self._calculators.get(commission_type, self._default)
         return calc.breakdown(side, price, quantity)

@@ -64,6 +64,9 @@ def resolve_manual_trade_fee_breakdown(
         normalized_asset_class,
     )
     transfer_fee_rate = Decimal(str(getattr(schedule, "transfer_fee_rate", "0.00001")))
+    fund_etf_transfer_fee_rate = Decimal(
+        str(getattr(schedule, "fund_etf_transfer_fee_rate", transfer_fee_rate))
+    )
     exchange_transfer_fee_rates = _exchange_transfer_fee_rates(schedule)
     other_fee_rate = Decimal(str(getattr(schedule, "other_fee_rate", "0")))
     limitations = tuple(
@@ -82,7 +85,7 @@ def resolve_manual_trade_fee_breakdown(
         calculator = ETFCommission(
             commission_rate=rate,
             min_commission=min_commission,
-            transfer_fee_rate=transfer_fee_rate,
+            transfer_fee_rate=fund_etf_transfer_fee_rate,
             other_fee_rate=other_fee_rate,
             fee_rule_id=MANUAL_CONFIGURED_FEE_RULE_ID,
             limitations=limitations,
