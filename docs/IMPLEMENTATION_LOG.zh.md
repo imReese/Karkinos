@@ -38,7 +38,10 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
   精确 persisted valuation snapshot 与 ledger cutoff，且不会创建订单、写账本或接触券商；
 - 基于精确保存数据集、人工门禁和 allowlisted Formula DSL 的研究，由 canonical backtest engine
   以 next-bar 语义执行，不产生生产策略或交易权限副作用；
-- owner 授权的收盘后 AI shadow 研究绑定最新持久化日线与完整 valuation/ledger identity：每个市场日期一次、原子 capped provider-call/token reservation、DeepSeek 仅基于严格脱敏账户风险/配置 allowlist 提出 Formula DSL 假设、本地校验与 canonical 成本后 rolling OOS、证据 critique、Web 对比/通知及精确人工-only canonical `paper_shadow` 晋级；policy/Kill Switch/证据/OOS/成本/预算异常均 fail closed，绝对账户金额和 valuation/ledger 标识在外发前删除，且不存在生产策略、OMS、ledger 或 broker 权限；
+- owner 授权的收盘后 AI shadow 研究绑定最新持久化日线与完整 valuation/ledger identity：每个市场日期一次、原子 capped provider-call/token reservation、DeepSeek 仅基于严格脱敏账户风险/配置 allowlist 提出 Formula DSL 假设、本地校验与 canonical 成本后 rolling OOS、证据 critique、Web 对比/通知及精确人工-only canonical `paper_shadow` 晋级；确定性晋级门把实际有序 timestamp/OHLCV、对齐 OOS、有界 AST 参数网格、冻结行情状态、回撤/换手、日线容量/流动性、经券商账单对账的账户专属税费及 critique 绑定为可重算证据，内置费用估算明确不能晋级；保留策略在晋级/票据时重查所有源，精确 plan/paper/actual 对比不通过则下一批 no-action；policy/Kill Switch/证据/OOS/成本/预算异常均 fail closed，绝对账户金额和 valuation/ledger 标识在外发前删除，且不存在生产策略、OMS、ledger、broker 或资本权限；
+- 下一批对账会把每张前序订单解析到当前精确策略；策略 lineage 缺失、混合或无关时，即使批次 clear 也会阻断，且记录不授权下一批；
+- 可撤销的 Account Truth 费用表复核及 Web 人工流程把运行配置的安全条款与精确持久化买卖成交的佣金、税、过户费逐分项比对，只保存汇总结果与 fingerprint，并生成基准/候选共用的版本化计算器 reference；接受操作必须绑定重算后的精确预览、复核人和完整确认短语，读取面在当前证据漂移时会把已接受记录降级为 blocked；交易所覆盖和分项金额舍入真正进入计算，critique、晋级和票据重查当前复核及日期覆盖，缺失/撤销/漂移/篡改证据在不联系 provider 的前提下 no-action，且无订单或资本权限；
+- 策略到票据改为两阶段交接：当前晋级与有效费用复核最多生成 `paper_shadow_required`；票据还必须取得同日、action 绑定、fingerprint 完整且 `within_expectations` 的模拟。Decision、Plan、旧 Trading 与 daily-shadow 共用 canonical 链，写边重查 Account Truth、行情、风控、Kill Switch、晋级、费用与 shadow，拒绝调用方权益或缺失旧晋级，且无券商/资本权限；
 - fail-fast 分组运行配置、仅限环境变量的 TuShare/AI/通知凭证、已校验的
   Settings 写入契约，以及 Server 与旧 CLI 共用的 dotenv 选择路径；
 - 确定性的“仅进程存活”健康端点与健康感知启动预检：在前端构建或启动新进程前区分已响应的

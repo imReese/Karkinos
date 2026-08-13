@@ -135,7 +135,8 @@ SHA-256，之后也只能保存待补证/拒绝元数据；解析事件仍不能
 | `fund_etf_commission_rate` | number/string | ETF/场内基金佣金率。 |
 | `fund_etf_min_commission` | number/string | ETF/场内基金最低佣金。 |
 | `stamp_tax_rate` | number/string | 股票卖出印花税率。 |
-| `transfer_fee_rate` | number/string | 默认过户费率。 |
+| `transfer_fee_rate` | number/string | 默认股票过户费率。 |
+| `fund_etf_transfer_fee_rate` | number/string | ETF/场内基金过户费率；未填时继承 `transfer_fee_rate`。 |
 | `exchange_transfer_fee_rates` | object | 按交易所覆盖过户费率。 |
 | `other_fee_rate` | number/string | 其他费用率。 |
 | `rounding.money_precision` | number/string | 费用分项的货币精度，例如 `0.01` 表示按分。 |

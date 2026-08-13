@@ -69,9 +69,7 @@ npm --prefix web run test
 
 ### 每日决策
 
-Decision 与 Daily Trading Plan 汇总组合、行情、策略、信号、风险、Account Truth 和
-paper/shadow 证据，输出 buy、sell、hold、rebalance、no-action 或 review-required。任何阻断
-都应展示原因和下一步，而不是生成看似确定的建议。
+Decision 与 Daily Trading Plan 汇总组合、行情、策略、信号、风险、Account Truth 和 paper/shadow 证据，输出 buy、sell、hold、rebalance、no-action 或 review-required。晋级后先生成 `paper_shadow_required` 计划意图；只有同日持久化 run 精确绑定 action、输入 fingerprint、模拟订单且无偏差才进入人工确认。出票写边重查 Account Truth、行情、风控、Kill Switch、晋级、费用及 shadow；任一异常均 no-action。
 
 账户策略贡献现在只投影持久化事实：成交必须已写入生产账本，并绑定同一精确估值快照与 ledger
 cutoff 后才可展示收益。证据缺失或漂移会给出明确人工复核步骤；策略尚无成交时不会制造虚假
@@ -79,7 +77,7 @@ cutoff 后才可展示收益。证据缺失或漂移会给出明确人工复核�
 
 在 Strategy Lab 中，人工可把精确 strategy id 与 canonical contribution report 冻结进 AI 上下文；策略或 valuation/ledger identity 漂移会被拒绝，不完整证据保持 blocked，捕获不重算收益也不调用模型。
 
-Owner 授权的收盘后 shadow 研究每个持久化市场日期只运行一次：本地刷新基线并绑定完整账户证据，原子预留 capped DeepSeek 调用/token，外发保存的回测和严格 allowlist 的风险/配置投影（删除绝对金额、持仓数量/成本及 valuation/ledger 标识），在本地校验 Formula DSL、运行 canonical 成本后 rolling OOS，再发送规范化结果做 critique。稳定 identity 保证幂等；Kill Switch、policy/证据漂移、事实不完整或预算耗尽均 fail closed。Web 展示新旧指标、成本、OOS、风险与 critique；只有精确人工确认可晋级 canonical `paper_shadow`，不能替换生产策略或创建/提交订单。
+Owner 授权的收盘后 shadow 研究每个持久化市场日期只运行一次：本地刷新基线并绑定完整账户证据，数据集 identity 哈希实际送入引擎的有序 timestamp/OHLCV，原子预留 capped DeepSeek 调用/token，外发保存回测和严格 allowlist 风险/配置投影（删除绝对金额、持仓数量/成本及 valuation/ledger 标识），在本地校验 Formula DSL、运行 canonical 成本后 rolling OOS，再发送规范化结果做 critique。确定性晋级门还要求有界参数扰动、冻结行情状态、回撤、换手、容量、已与券商账单对账的账户专属税费证据，以及“研究本金不超过同一估值/账本身份下当前已对账账户权益”的脱敏指纹证据；未绑定或超额选择会在模型外发前阻断。内置费率只是估算，当前明确不能满足晋级。`ai_formula_shadow:*` 票据会重新解析候选、基准/候选回测、critique、人工批准和 paper 状态，下一批还必须绑定指纹有效的 plan/paper/actual 对比。任一事实缺失、过期、冲突、漂移或不可复现均 `research_blocked`/no-action；这些记录不能替换生产策略、创建/提交订单或扩大资本权限。账户专属模型只能由可撤销、绑定 fingerprint 的 Account Truth 费用复核生成；持久化的安全费用条款会真正进入基准与候选计算。来源漂移、撤销或回测/票据日期超出有效区间时，会在不联系 provider/券商的前提下立即阻断。下一批对账还必须把前序订单全部解析为当前同一策略；策略 lineage 缺失、混合或无关均 no-action。
 
 Decision 的信号审计日志现在支持显式“决策后复盘”。系统先只读预览持久化的 signal/action/risk/order/fill 链和同一 canonical contribution report，再把人工结论绑定到该精确
 fingerprint。只有具备成交、估值快照与 ledger cutoff 的完整绑定证据，已执行信号才能记录
@@ -98,8 +96,8 @@ Market 会列出精确标的、原因和安全人工下一步；GET 不联系 pr
 
 ### Paper/Shadow 与 Operations
 
-Operations 展示数据、计划、paper/shadow、OMS、对账、告警和恢复任务。Paper/shadow 可以
-模拟订单、成交、费用和偏差，但不会提交真实券商订单或修改生产账本。`/operations` 只读证据中心直接展示 canonical persisted-facts payload、子系统健康度、来源证据与安全下钻；它不联系 provider、不写库且无执行权限。每个非正常子系统还会展示确定性 attention fingerprint、安全下一步和精确证据解除条件；仅查看不能改变状态。
+Operations 展示数据、计划、paper/shadow、OMS、对账、告警和恢复任务。Paper/shadow 可以模拟订单、成交、费用和偏差，但不会提交真实券商订单或修改生产账本。`/operations` 只读证据中心直接展示 canonical persisted-facts payload、子系统健康度、来源证据与安全下钻；它不联系 provider、不写库且无执行权限。每个非正常子系统还会展示确定性 attention fingerprint、安全下一步和精确证据解除条件；仅查看不能改变状态。
+旧 Trading daily-shadow 端点只委托该 canonical 服务，并拒绝调用方传入账户权益。
 
 受控订单会把按时间排列的审计历史与操作员优先级分开。系统检查有界范围内全部持久化 journey；
 较早的 unknown、prepared 或 open-order 结果不会被较新的低风险或已闭环旅程遮蔽。紧凑关注队列

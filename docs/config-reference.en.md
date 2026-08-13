@@ -141,7 +141,8 @@ parsed events still cannot enter Account Truth or reconciliation.
 | `fund_etf_commission_rate` | number/string | ETF/exchange-fund commission rate. |
 | `fund_etf_min_commission` | number/string | ETF/exchange-fund minimum commission. |
 | `stamp_tax_rate` | number/string | Stock sell-side stamp-tax rate. |
-| `transfer_fee_rate` | number/string | Default transfer-fee rate. |
+| `transfer_fee_rate` | number/string | Default stock transfer-fee rate. |
+| `fund_etf_transfer_fee_rate` | number/string | ETF/exchange-fund transfer-fee rate; inherits `transfer_fee_rate` when omitted. |
 | `exchange_transfer_fee_rates` | object | Per-exchange transfer-fee overrides. |
 | `other_fee_rate` | number/string | Other fee rate. |
 | `rounding.money_precision` | number/string | Currency precision for each fee component, such as `0.01` for cents. |

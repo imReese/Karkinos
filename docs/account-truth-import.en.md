@@ -200,12 +200,15 @@ query-window blocker.
 ### Explicit source-scope review for one source
 
 For each active query-window review, the owner must separately declare a local
-account alias, account type, market scopes, asset classes, and business types.
-The owner must also attest that no other broker-query filters applied, the file
-contains every row returned by that exact query, and the declared account and
-scope apply to that exact export. All code lists must be non-empty. The raw
-broker account identifier is hashed in the browser and is never sent to the API
-or stored; the server receives only a domain-separated SHA-256 binding.
+account alias, account type, market scopes, asset classes, an account-value-band
+code, and business types. The owner must also attest that no other broker-query
+filters applied, the file contains every row returned by that exact query, and
+the declared account and scope apply to that exact export. All code lists and
+the value-band code must be non-empty. The raw broker account identifier is
+hashed in the browser and is never sent to the API or stored; the server
+receives only a domain-separated SHA-256 binding. The value band is sanitized
+query-scope metadata. It is not a current balance, an order limit, or capital
+authority and must never be used to widen any authorization.
 
 The append-only review binds the current intake id, file fingerprint,
 source-preview fingerprint, and the exact active query-window review id and
@@ -217,13 +220,16 @@ without repair. Revoking a query window in the UI first revokes its active
 source-scope review, preserving dependency order.
 
 Directory scans project only exact active declarations into
-`karkinos.account_truth.citic_source_scope_batch_assessment.v1`. The batch can
+`karkinos.account_truth.citic_source_scope_batch_assessment.v2`. The batch can
 report `integrity_status: clear` only when every current source is reviewed,
-all account-reference hashes agree, all declared scope lists agree, and the
-no-extra-filter and complete-returned-results attestations are present. The
-response exposes the safe declared codes and a deterministic assessment
-fingerprint, but not account-reference hashes, intake/review identities, source
-names, paths, events, or transactions. Even a clear declaration remains
+all account-reference hashes agree, all declared scopes including the
+account-value band agree, and the no-extra-filter and complete-returned-results
+attestations are present. The response exposes the safe declared codes and a
+deterministic assessment fingerprint, but not account-reference hashes,
+intake/review identities, source names, paths, events, or transactions. Legacy
+v1 records remain read-only compatible but are incomplete until explicitly
+revoked and replaced by an append-only v2 review with a value band. Even a
+clear declaration remains
 `status: blocked`: legacy history-trade XLS files still do not prove complete
 account coverage, itemized settlement, current cash/positions, reconciliation,
 execution authority, or capital authority.
@@ -526,6 +532,57 @@ every decision is appended to history. Each decision binds the reconciliation
 item fingerprint. A changed broker/local value, difference, status, or context
 invalidates the old decision for current use while retaining it for audit.
 `ledger_candidate` never creates or changes a ledger entry.
+
+## Reviewed fee schedule for strategy research
+
+The configured `broker_fee_schedule` is only a proposal until it is compared
+with the exact current Account Truth import and explicitly reviewed. The human
+workflow is:
+
+```text
+POST /api/account-truth/fee-schedule/preview
+GET  /api/account-truth/fee-schedule/review
+POST /api/account-truth/fee-schedule/reviews
+POST /api/account-truth/fee-schedule/reviews/revoke
+```
+
+Preview requires a ready Account Truth checklist, a clear promotion projection,
+the same reviewed account alias, valid source/scope fingerprints, persisted buy
+and sell trades, and stock/ETF component agreement for commission plus other
+fees, stamp tax, and transfer fee within the reconciliation tolerance. Canonical
+`fund`/`fund_etf` values normalize to ETF only inside this fee review; mismatches
+are grouped by asset class, side, and component. Stock and ETF transfer-fee
+rates are reviewed separately; when the ETF term is omitted it inherits the
+legacy stock term. A legacy accepted review remains readable for audit but must
+be recomputed and accepted again before downstream use. It returns only aggregate
+counts, maximum differences, safe schedule terms, and fingerprints; broker rows,
+symbols, account identifiers, file names, and source details are not copied into
+the review store.
+
+Approval recomputes the preview and requires its exact fingerprint, reviewer,
+and confirmation
+`approve_reconciled_account_fee_schedule_for_research_only_without_execution_or_capital_authority`.
+The append-only review is revocable with its exact id/fingerprint and
+`revoke_reconciled_account_fee_schedule_without_execution_or_capital_authority`.
+GET is query-only and never initializes or repairs schema.
+
+The Account Truth Review Center exposes the same sequence as an explicit human
+workflow: choose the reviewed evidence window, recompute the preview, inspect
+buy/sell coverage and aggregate component matches, then enter a reviewer and
+the complete confirmation phrase. Approval is unavailable for a blocked or
+stale preview. An accepted record is displayed as `active` only while a
+query-only recomputation still matches its exact preview fingerprint; current
+Account Truth or fee-evidence drift displays `blocked`, even though the older
+accepted record remains visible for audit and can still be explicitly revoked.
+
+An active review becomes a versioned cost-model reference. The same resolved
+calculator, including exchange overrides and per-component money rounding, is
+used for both the refreshed baseline and every Formula candidate/parameter
+variant. Critique, promotion, and each reserved ticket re-resolve the active
+review; Account Truth drift, tampering, revocation, a mismatched reference, or
+an uncovered backtest/action date returns no-action. The built-in estimate and
+an absent review are ineligible. This review cannot submit an order, register a
+production strategy, or change capital authority.
 
 ## Broker settlement confirmation
 
