@@ -9,13 +9,16 @@ in the application packages such as `data`, `account_truth`, `analytics`, and
 
 | Command | Purpose | Local writes or external contact |
 | --- | --- | --- |
-| `./scripts/start_server.sh dev` | Build the product bundle, start the reloadable backend, and start Vite on port 5173. Live monitoring remains off unless explicitly enabled in configuration or the environment. | Writes PID and log files; may install missing frontend dependencies. |
+| `./scripts/start_server.sh dev` | Build the product bundle, start the reloadable backend, and start Vite on port 5173. Live monitoring remains off unless explicitly enabled in configuration or the environment. Test and frontend edits do not restart the backend; Vite owns frontend reloads. | Writes PID and log files; archives logs above 20 MiB by default; may install missing frontend dependencies. |
 | `./scripts/start_server.sh prod` | Start the backend against the existing `web/dist` bundle without code hot reload. | Writes a PID and server log. |
 | `./scripts/stop_server.sh` | Stop tracked backend and Vite processes and clean matching orphan listeners. | Terminates tracked or matching processes and, as a fallback, listeners on the configured ports. |
 | `uv run python scripts/configure_data_source.py` | Select AKShare or Tushare without placing credentials in `config.json` or command history. | Updates ignored local `config.json` and `.env`; Tushare tokens are entered interactively. |
 
 Use `http://127.0.0.1:5173` while editing the frontend in `dev` mode. Port 8000
 continues to serve the product-style `web/dist` bundle and backend API.
+Set `KARKINOS_LOG_MAX_BYTES` to a positive byte count to change the default
+20 MiB startup log-archive threshold. Archives remain under `logs/`; the script
+does not delete them.
 Before building or launching, the start script checks the selected backend port.
 If a listener already exists, it distinguishes a responding Karkinos process-
 liveness endpoint from an unresponsive or foreign listener, reports the PID,

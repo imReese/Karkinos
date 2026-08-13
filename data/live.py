@@ -27,11 +27,15 @@ class LiveDataFeed:
         source: DataSource,
         event_bus: EventBus,
         fallback_source: DataSource | None = None,
+        prefer_fallback_asset_classes: set[AssetClass] | None = None,
         poll_timeout_seconds: float = 8.0,
         max_workers: int = 8,
     ) -> None:
         self.source = source
         self.fallback_source = fallback_source
+        self.prefer_fallback_asset_classes = frozenset(
+            prefer_fallback_asset_classes or set()
+        )
         self.event_bus = event_bus
         self.poll_timeout_seconds = max(float(poll_timeout_seconds), 0.01)
         self._executor = ThreadPoolExecutor(
@@ -101,14 +105,13 @@ class LiveDataFeed:
             )
             return None
 
-    def poll_latest(
+    def _fetch_primary_latest(
         self,
         symbol: Symbol,
-        asset_class: AssetClass = AssetClass.STOCK,
-    ) -> MarketEvent | None:
-        """拉取最新行情快照，发布 MarketEvent。"""
+        asset_class: AssetClass,
+    ) -> dict | None:
         try:
-            snapshot = self.source.fetch_latest(symbol, asset_class)
+            return self.source.fetch_latest(symbol, asset_class)
         except Exception:
             logger.warning(
                 "主行情源获取实时行情失败: %s (%s)",
@@ -116,15 +119,34 @@ class LiveDataFeed:
                 asset_class.value,
                 exc_info=True,
             )
-            snapshot = None
+            return None
+
+    def poll_latest(
+        self,
+        symbol: Symbol,
+        asset_class: AssetClass = AssetClass.STOCK,
+    ) -> MarketEvent | None:
+        """拉取最新行情快照，发布 MarketEvent。"""
+        prefer_fallback = (
+            asset_class in self.prefer_fallback_asset_classes
+            and self.fallback_source is not None
+            and self.fallback_source is not self.source
+        )
+        if prefer_fallback:
+            snapshot = self._fetch_fallback_latest(symbol, asset_class)
+            if snapshot is None:
+                snapshot = self._fetch_primary_latest(symbol, asset_class)
+        else:
+            snapshot = self._fetch_primary_latest(symbol, asset_class)
         if (
-            snapshot is not None
+            not prefer_fallback
+            and snapshot is not None
             and self._should_try_fallback_snapshot(snapshot, asset_class)
         ):
             fallback_snapshot = self._fetch_fallback_latest(symbol, asset_class)
             if fallback_snapshot is not None:
                 snapshot = fallback_snapshot
-        if snapshot is None:
+        if snapshot is None and not prefer_fallback:
             snapshot = self._fetch_fallback_latest(symbol, asset_class)
         if snapshot is None:
             logger.warning("获取实时行情失败: %s (%s)", symbol, asset_class.value)

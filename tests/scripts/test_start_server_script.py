@@ -37,6 +37,17 @@ def test_start_server_does_not_force_live_mode():
     )
 
 
+def test_start_server_limits_reload_scope_and_archives_large_logs():
+    script = Path("scripts/start_server.sh").read_text()
+
+    assert "--reload-exclude 'tests/**'" in script
+    assert "--reload-exclude 'web/**'" in script
+    assert "KARKINOS_LOG_MAX_BYTES:-20971520" in script
+    assert "rotate_log_if_needed" in script
+    assert 'mv -- "${log_file}" "${archived_log}"' in script
+    assert 'rm -f "${log_file}"' not in script
+
+
 def _write_executable(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
     path.chmod(0o755)

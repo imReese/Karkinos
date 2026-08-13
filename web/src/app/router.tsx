@@ -753,22 +753,36 @@ export function OverviewPage() {
                 </div>
                 <div className="min-w-0 py-3 sm:py-4">
                   {analysisView === 'performance' ? (
-                    equityCurve.isLoading ? (
+                    equityCurve.isLoading && !equityCurve.data ? (
                       <EquityCurveSkeleton />
-                    ) : equityCurve.isError ? (
+                    ) : equityCurve.isError && !equityCurve.data ? (
                       <StatusCard
                         tone="danger"
                         title={copy.states.error}
-                        detail={copy.overview.curveError}
+                        detail={getEquityCurveErrorDetail(
+                          equityCurve.error,
+                          copy,
+                        )}
                         actionLabel={copy.states.retry}
                         onAction={() => void equityCurve.refetch()}
                       />
                     ) : (
-                      <EquityCurveCard
-                        points={equityCurve.data ?? []}
-                        range={equityCurveRange}
-                        onRangeChange={setEquityCurveRange}
-                      />
+                      <div className="space-y-3">
+                        {equityCurve.isError ? (
+                          <div
+                            role="status"
+                            data-testid="equity-curve-refresh-warning"
+                            className="app-panel-danger rounded-[var(--app-radius-panel)] px-3 py-2 text-xs leading-5"
+                          >
+                            {copy.overview.curveRefreshError}
+                          </div>
+                        ) : null}
+                        <EquityCurveCard
+                          points={equityCurve.data ?? []}
+                          range={equityCurveRange}
+                          onRangeChange={setEquityCurveRange}
+                        />
+                      </div>
                     )
                   ) : analysisView === 'allocation' ? (
                     <PortfolioExposureSummary snapshot={snapshot.data} />
@@ -8918,7 +8932,28 @@ function StatusCard({
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message;
+    const message = error.message.trim();
+    try {
+      const parsed = JSON.parse(message) as { detail?: unknown };
+      if (typeof parsed.detail === 'string' && parsed.detail.trim()) {
+        return parsed.detail.trim();
+      }
+    } catch {
+      // Non-JSON errors are already user-readable.
+    }
+    return message;
   }
   return 'Request failed. Check the form values and service status.';
+}
+
+function getEquityCurveErrorDetail(error: unknown, copy: AppCopy) {
+  const detail = getErrorMessage(error);
+  if (
+    detail.includes(
+      'Current valuation facts have not been published as an immutable snapshot',
+    )
+  ) {
+    return copy.overview.curveSnapshotPending;
+  }
+  return `${copy.overview.curveError} ${detail}`;
 }

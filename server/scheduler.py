@@ -28,7 +28,6 @@ from server.services.market_indices import default_market_index_assets
 from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
 from server.services.recommendation_flow import build_recommendation_cycle
 from server.services.trading_controls import TradingControlState
-from server.services.valuation_snapshot import build_current_valuation_snapshot
 
 if TYPE_CHECKING:
     from server.config import ServerConfig
@@ -78,6 +77,7 @@ class TradingScheduler:
         self._last_historical_bar_backfill_key: str | None = None
         self._last_post_close_market_refresh_date: str | None = None
         self._last_post_close_fund_nav_refresh_date: str | None = None
+        self._pending_valuation_publication_reason: str | None = None
         self._stop_requested = threading.Event()
 
         # Bug 3: 线程安全锁
@@ -208,6 +208,7 @@ class TradingScheduler:
         start_date, end_date = self._historical_bar_backfill_range(current)
         run_key = f"{BarFrequency.DAILY.value}:{end_date.date().isoformat()}"
         if self._last_historical_bar_backfill_key == run_key:
+            self._retry_pending_valuation_publication()
             return
 
         with self._lock:
@@ -250,12 +251,39 @@ class TradingScheduler:
                 )
 
         self._last_historical_bar_backfill_key = run_key
+        self._publish_current_valuation_snapshot(
+            reason=f"historical_bar_backfill:{run_key}"
+        )
         logger.info(
             "历史行情补齐批次完成: date=%s, updated=%d, failed=%d",
             end_date.date(),
             updated,
             failed,
         )
+
+    def _publish_current_valuation_snapshot(self, *, reason: str) -> bool:
+        """Publish one identity after a persisted valuation-input batch."""
+        if self._db is None or not hasattr(
+            self._db, "publish_current_valuation_snapshot_sync"
+        ):
+            return False
+        try:
+            self._db.publish_current_valuation_snapshot_sync()
+        except Exception:
+            self._pending_valuation_publication_reason = reason
+            logger.exception(
+                "估值快照发布失败，将保持财务读取阻断并重试: reason=%s",
+                reason,
+            )
+            return False
+        self._pending_valuation_publication_reason = None
+        return True
+
+    def _retry_pending_valuation_publication(self) -> bool:
+        reason = self._pending_valuation_publication_reason
+        if reason is None:
+            return True
+        return self._publish_current_valuation_snapshot(reason=reason)
 
     @staticmethod
     def _is_post_close_valuation_refresh_window(now: datetime) -> bool:
@@ -408,7 +436,7 @@ class TradingScheduler:
         if self._db is None or not hasattr(self._db, "finish_quote_fetch_run"):
             return
         try:
-            self._db.finish_quote_fetch_run(
+            finished = self._db.finish_quote_fetch_run(
                 run_id=run_id,
                 finished_at=finished_at,
                 status=status,
@@ -418,6 +446,10 @@ class TradingScheduler:
                 error_message=error_message,
                 metadata=metadata,
             )
+            if isinstance(finished, dict) and str(
+                finished.get("error_message") or ""
+            ).startswith("valuation snapshot publication failed:"):
+                self._pending_valuation_publication_reason = f"quote_fetch_run:{run_id}"
         except Exception:
             logger.warning("Failed to finish scheduler quote fetch run", exc_info=True)
 
@@ -511,6 +543,8 @@ class TradingScheduler:
         if result.quotes:
             with self._lock:
                 self._latest_quotes.update(result.quotes)
+        if "__valuation_snapshot__" in result.failed:
+            self._pending_valuation_publication_reason = "fund_nav_sync"
 
     def _fetch_market_index_snapshot(
         self,
@@ -672,7 +706,14 @@ class TradingScheduler:
         fallback_source = None
         if self._config.data_source != "akshare":
             fallback_source = runtime.sources.get("akshare")
-        feed = LiveDataFeed(source, self._event_bus, fallback_source=fallback_source)
+        feed = LiveDataFeed(
+            source,
+            self._event_bus,
+            fallback_source=fallback_source,
+            prefer_fallback_asset_classes=(
+                {AssetClass.FUND} if fallback_source is not None else None
+            ),
+        )
         data_manager = runtime.data_manager
 
         persisted_watchlist = []
@@ -834,6 +875,7 @@ class TradingScheduler:
         while self._running.is_set():
             current = datetime.now()
             self._evaluate_controlled_session_pauses()
+            self._retry_pending_valuation_publication()
 
             # Bug 7: 非交易时段跳过轮询
             if not self._is_market_open():
@@ -1008,8 +1050,6 @@ class TradingScheduler:
                             for sym, _ in self._watchlist
                         }
                     self._portfolio.mark_to_market(prices)
-                if self._db is not None:
-                    build_current_valuation_snapshot(self._db)
                 self._finish_persisted_quote_fetch_run(quote_fetch_run_id, events)
             except Exception as exc:
                 if quote_fetch_run_id is not None:
