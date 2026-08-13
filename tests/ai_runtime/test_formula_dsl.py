@@ -143,6 +143,21 @@ def test_formula_binding_rejects_ai_changes_to_cost_or_missing_anti_lookahead() 
         _binding(anti_lookahead_assumptions=())
 
 
+def test_formula_binding_accepts_only_exact_reviewed_fee_reference_shape() -> None:
+    reviewed_reference = (
+        "karkinos.backtest.reviewed_account_fee_schedule.v1:"
+        f"fee_review_{'a' * 32}:{'b' * 64}"
+    )
+
+    assert _binding(cost_model_reference=reviewed_reference).cost_model_reference == (
+        reviewed_reference
+    )
+    with pytest.raises(
+        FormulaValidationError, match="cost_model_not_operator_approved"
+    ):
+        _binding(cost_model_reference=reviewed_reference + ":drift")
+
+
 @pytest.mark.parametrize(
     "override",
     [

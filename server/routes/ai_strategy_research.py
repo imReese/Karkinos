@@ -13,7 +13,6 @@ from data.store import DataStore
 from server.ai_runtime.contracts import content_fingerprint
 from server.ai_runtime.evidence import CanonicalEvidenceRepository
 from server.ai_runtime.formula_dsl import (
-    CANONICAL_COST_MODEL_REFERENCE,
     formula_operator_catalog,
 )
 from server.ai_runtime.provider_connectivity import (
@@ -56,11 +55,16 @@ class StrategyResearchSelectionPayload(BaseModel):
     end_date: str = Field(min_length=10, max_length=10)
     frequency: Literal["1d"] = "1d"
     initial_cash: float = Field(gt=0, le=1_000_000_000)
-    cost_model_reference: Literal[
-        "karkinos.backtest.multi_asset_commission.default.v1"
-    ] = CANONICAL_COST_MODEL_REFERENCE
-    valuation_snapshot_id: str | None = Field(default=None, max_length=200)
-    ledger_cutoff_id: int | None = Field(default=None, ge=0)
+    cost_model_reference: str = Field(
+        min_length=1,
+        max_length=300,
+        pattern=(
+            r"^karkinos\.backtest\.reviewed_account_fee_schedule\.v1:"
+            r"fee_review_[0-9a-f]{32}:[0-9a-f]{64}$"
+        ),
+    )
+    valuation_snapshot_id: str = Field(min_length=1, max_length=200)
+    ledger_cutoff_id: int = Field(ge=0)
 
     def to_domain(self) -> StrategyResearchSelection:
         return StrategyResearchSelection(
@@ -374,6 +378,8 @@ def _build_write_service(state: Any, *, external: bool) -> StrategyResearchServi
     ai_store.init()
     research_store.init()
     settings = load_provider_connectivity_settings(state.config) if external else None
+    from server.services.reviewed_fee_schedule import resolve_reviewed_fee_schedule
+
     return StrategyResearchService(
         db=state.db,
         db_path=db_path,
@@ -384,6 +390,9 @@ def _build_write_service(state: Any, *, external: bool) -> StrategyResearchServi
         research_store=research_store,
         data_store=DataStore(resolve_data_dir()),
         model_timeout_seconds=_strategy_research_model_timeout_seconds(settings),
+        reviewed_fee_schedule_resolver=lambda **kwargs: resolve_reviewed_fee_schedule(
+            state, **kwargs
+        ),
     )
 
 

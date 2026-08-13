@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Any
 
 
@@ -10,30 +12,34 @@ def build_sweep_robustness_evidence(
     results: list[dict[str, Any]],
     rank_by: str,
     rank_direction: str,
+    selected_params: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Summarize whether a sweep winner is stable across nearby grid results."""
     if not results:
-        return {
-            "schema_version": "karkinos.sweep_robustness.v1",
-            "rank_by": rank_by,
-            "rank_direction": rank_direction,
-            "tested_count": 0,
-            "best_params": {},
-            "local_stability": {
-                "best_score": 0.0,
-                "neighbor_count": 0,
-                "mean_neighbor_score": 0.0,
-                "stability_ratio": 0.0,
-            },
-            "parameter_sensitivity": [],
-            "overfitting_warnings": [
-                {
-                    "code": "no_sweep_results",
-                    "message": "No parameter sweep results were available for robustness analysis.",
-                }
-            ],
-            "limitations": _limitations(),
-        }
+        return _with_fingerprint(
+            {
+                "schema_version": "karkinos.sweep_robustness.v1",
+                "rank_by": rank_by,
+                "rank_direction": rank_direction,
+                "selected_params": dict(selected_params or {}),
+                "tested_count": 0,
+                "best_params": {},
+                "local_stability": {
+                    "best_score": 0.0,
+                    "neighbor_count": 0,
+                    "mean_neighbor_score": 0.0,
+                    "stability_ratio": 0.0,
+                },
+                "parameter_sensitivity": [],
+                "overfitting_warnings": [
+                    {
+                        "code": "no_sweep_results",
+                        "message": "No parameter sweep results were available for robustness analysis.",
+                    }
+                ],
+                "limitations": _limitations(),
+            }
+        )
 
     sorted_results = sorted(
         results,
@@ -61,22 +67,25 @@ def build_sweep_robustness_evidence(
         neighbor_count=len(neighbors),
         stability_ratio=stability_ratio,
     )
-    return {
-        "schema_version": "karkinos.sweep_robustness.v1",
-        "rank_by": rank_by,
-        "rank_direction": rank_direction,
-        "tested_count": len(results),
-        "best_params": best_params,
-        "local_stability": {
-            "best_score": best_score,
-            "neighbor_count": len(neighbors),
-            "mean_neighbor_score": mean_neighbor_score,
-            "stability_ratio": stability_ratio,
-        },
-        "parameter_sensitivity": _parameter_sensitivity(results, best_params),
-        "overfitting_warnings": warnings,
-        "limitations": _limitations(),
-    }
+    return _with_fingerprint(
+        {
+            "schema_version": "karkinos.sweep_robustness.v1",
+            "rank_by": rank_by,
+            "rank_direction": rank_direction,
+            "selected_params": dict(selected_params or {}),
+            "tested_count": len(results),
+            "best_params": best_params,
+            "local_stability": {
+                "best_score": best_score,
+                "neighbor_count": len(neighbors),
+                "mean_neighbor_score": mean_neighbor_score,
+                "stability_ratio": stability_ratio,
+            },
+            "parameter_sensitivity": _parameter_sensitivity(results, best_params),
+            "overfitting_warnings": warnings,
+            "limitations": _limitations(),
+        }
+    )
 
 
 def _score(result: dict[str, Any]) -> float:
@@ -159,3 +168,17 @@ def _limitations() -> list[str]:
         "Parameter sweep robustness evidence is not investment advice or an execution approval.",
         "Sensitivity evidence only reflects the tested grid and must be paired with after-cost, OOS, risk, and data-quality gates before promotion.",
     ]
+
+
+def _with_fingerprint(payload: dict[str, Any]) -> dict[str, Any]:
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return {
+        **payload,
+        "evidence_fingerprint": hashlib.sha256(encoded).hexdigest(),
+    }

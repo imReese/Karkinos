@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,52 @@ def _handler_attrs(handler: Any) -> dict[str, Any]:
     frame = _handler_dataframe(handler)
     attrs = getattr(frame, "attrs", {}) if frame is not None else {}
     return dict(attrs) if isinstance(attrs, dict) else {}
+
+
+def _handler_content_digest(handler: Any) -> str | None:
+    """Hash the exact ordered timestamp/OHLCV rows consumed by DataHandler."""
+    frame = _handler_dataframe(handler)
+    if frame is None:
+        return None
+    required_columns = ("open", "high", "low", "close", "volume")
+    if any(column not in getattr(frame, "columns", []) for column in required_columns):
+        return None
+
+    digest = hashlib.sha256()
+    digest.update(b"karkinos.dataset_rows.timestamp_ohlcv.v1\n")
+    for index, row in frame.iterrows():
+        timestamp = row.get("timestamp", row.get("日期", index))
+        values = {
+            "timestamp": _iso_timestamp(timestamp),
+            **{
+                column: _canonical_numeric_value(row[column])
+                for column in required_columns
+            },
+        }
+        digest.update(
+            json.dumps(
+                values,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            ).encode("utf-8")
+        )
+        digest.update(b"\n")
+    return "sha256:" + digest.hexdigest()
+
+
+def _canonical_numeric_value(raw: Any) -> str:
+    """Match Decimal-based engine semantics across CSV dtype round trips."""
+    try:
+        value = Decimal(str(raw))
+    except (InvalidOperation, ValueError):
+        return str(raw)
+    if not value.is_finite():
+        return str(raw).lower()
+    if value == 0:
+        return "0"
+    return format(value.normalize(), "f")
 
 
 def _safe_store_meta(store: Any, symbol: Any, frequency: Any) -> dict[str, Any]:
@@ -150,6 +197,7 @@ def build_backtest_dataset_snapshot(
             diagnostics = {}
         row_count = _handler_row_count(handler)
         first_timestamp, last_timestamp = _handler_timestamp_bounds(handler)
+        content_digest = _handler_content_digest(handler)
         adjustment_mode = (
             meta.get("adjustment_mode") or attrs.get("adjustment_mode") or None
         )
@@ -158,6 +206,17 @@ def build_backtest_dataset_snapshot(
         quality = _dataset_quality_payload(row_count, diagnostics)
         for issue in quality["issues"]:
             top_level_issues.append({"symbol": str(symbol), **issue})
+        if content_digest is None:
+            content_issue = {
+                "code": "dataset_content_digest_unavailable",
+                "message": (
+                    "The exact ordered timestamp/OHLCV rows could not be hashed; "
+                    "this dataset cannot be treated as frozen evidence."
+                ),
+            }
+            quality["status"] = "warning"
+            quality["issues"].append(content_issue)
+            top_level_issues.append({"symbol": str(symbol), **content_issue})
 
         rows.append(
             {
@@ -175,6 +234,7 @@ def build_backtest_dataset_snapshot(
                 or configured_source,
                 "adjustment_mode": adjustment_mode,
                 "source_dataset_id": meta.get("dataset_id") or attrs.get("dataset_id"),
+                "content_digest": content_digest,
                 "data_quality": quality,
             }
         )
@@ -207,6 +267,11 @@ def build_backtest_dataset_snapshot(
         },
         "row_count": total_rows,
         "adjustment_mode": adjustment_mode,
+        "content_identity": {
+            "algorithm": "sha256",
+            "row_contract": "timestamp_ohlcv.v1",
+            "complete": bool(rows) and all(row.get("content_digest") for row in rows),
+        },
         "data_quality": top_level_quality,
         "symbol_universe": rows,
     }

@@ -24,8 +24,18 @@ from typing import Any, Literal
 
 import pandas as pd
 
+from analytics.backtest_capacity_evidence import build_backtest_capacity_evidence
+from analytics.backtest_fee_tax_evidence import build_backtest_fee_tax_evidence
+from analytics.backtest_market_regime_evidence import (
+    build_backtest_market_regime_evidence,
+)
 from analytics.dataset_snapshot import build_backtest_dataset_snapshot
 from analytics.oos_validation import build_rolling_out_of_sample_validation
+from analytics.research_account_capital_evidence import (
+    build_research_account_capital_evidence,
+    is_valid_passed_research_account_capital_evidence,
+)
+from analytics.sweep_robustness import build_sweep_robustness_evidence
 from backtest.engine import BacktestEngine
 from core.events import MarketEvent
 from core.types import AssetClass, BarFrequency, Symbol
@@ -76,8 +86,10 @@ from .formula_dsl import (
     FormulaValidationError,
     evaluate_formula,
     formula_operator_catalog,
+    is_operator_approved_cost_model_reference,
     validate_formula_ast,
 )
+from .formula_parameter_sweep import build_formula_parameter_variants
 from .orchestrator import DeterministicWorkflowOrchestrator
 from .permissions import (
     ToolEffect,
@@ -206,7 +218,7 @@ class StrategyResearchSelection:
             raise StrategyResearchRejected("selected_asset_classes_invalid")
         if self.frequency != BarFrequency.DAILY.value:
             raise StrategyResearchRejected("only_daily_research_is_supported")
-        if self.cost_model_reference != CANONICAL_COST_MODEL_REFERENCE:
+        if not is_operator_approved_cost_model_reference(self.cost_model_reference):
             raise StrategyResearchRejected("cost_model_not_operator_approved")
         if not self.dataset_snapshot_id.startswith("sha256:"):
             raise StrategyResearchRejected("dataset_snapshot_identity_invalid")
@@ -1164,6 +1176,8 @@ class RestrictedFormulaBacktestAdapter:
         selection: StrategyResearchSelection,
         draft: JsonObject,
         expected_dataset_snapshot: Mapping[str, Any] | None = None,
+        reviewed_fee_schedule_resolution: Any | None = None,
+        account_capital_evidence: Mapping[str, Any] | None = None,
     ) -> tuple[dict[str, Any], BacktestRequest]:
         formula_ast = draft.get("formula_ast")
         if not isinstance(formula_ast, dict):
@@ -1206,12 +1220,38 @@ class RestrictedFormulaBacktestAdapter:
             selection,
             expected_dataset_snapshot=expected_dataset_snapshot,
         )
+        commission_calc, fee_schedule_evidence = _validated_fee_schedule_resolution(
+            selection,
+            reviewed_fee_schedule_resolution,
+        )
+        resolved_account_capital_evidence = dict(
+            account_capital_evidence
+            or build_research_account_capital_evidence(
+                initial_cash=selection.initial_cash,
+                account_evidence=None,
+                fee_schedule_evidence=fee_schedule_evidence,
+                expected_valuation_snapshot_id=selection.valuation_snapshot_id,
+                expected_ledger_cutoff_id=selection.ledger_cutoff_id,
+            )
+        )
+        if account_capital_evidence is not None and not (
+            is_valid_passed_research_account_capital_evidence(
+                resolved_account_capital_evidence,
+                expected_initial_cash=selection.initial_cash,
+                expected_valuation_snapshot_id=selection.valuation_snapshot_id,
+                expected_ledger_cutoff_id=selection.ledger_cutoff_id,
+            )
+        ):
+            raise StrategyResearchRejected(
+                "research_account_capital_evidence_not_passing"
+            )
 
         engine = BacktestEngine(
             strategy=_FormulaSignalStrategy(formula_ast, len(selection.universe)),
             instruments=instruments,
             data_handlers=handlers,
             initial_cash=Decimal(str(selection.initial_cash)),
+            commission_calc=commission_calc,
             db=None,
         )
         result = engine.run()
@@ -1233,6 +1273,18 @@ class RestrictedFormulaBacktestAdapter:
             test_window_points=test_window_points,
             step_points=step_points,
         ).to_json_dict()
+        parameter_robustness, parameter_sweep_failure_code = (
+            _formula_parameter_robustness(
+                formula_ast=formula_ast,
+                parameter_values=binding.parameter_values,
+                parameter_ranges=binding.parameter_ranges,
+                selected_result=result,
+                handlers=handlers,
+                instruments=instruments,
+                initial_cash=Decimal(str(selection.initial_cash)),
+                commission_calc=commission_calc,
+            )
+        )
         metrics_json.update(
             {
                 "evidence_bundle": evidence_json,
@@ -1240,6 +1292,36 @@ class RestrictedFormulaBacktestAdapter:
                 "oos_validation": oos_validation,
                 "formula_binding": binding.to_dict(),
                 "formula_fingerprint": binding.fingerprint,
+                "parameter_robustness": parameter_robustness,
+                "parameter_sweep_failure_code": parameter_sweep_failure_code,
+                "fee_component_evidence": build_backtest_fee_tax_evidence(
+                    fills=result.fills,
+                    cost_model_reference=binding.cost_model_reference,
+                    account_specific=bool(
+                        fee_schedule_evidence.get("account_specific", False)
+                    ),
+                    fee_schedule_source=str(
+                        fee_schedule_evidence.get("fee_schedule_source")
+                        or "canonical_default_estimate"
+                    ),
+                    fee_schedule_fingerprint=str(
+                        fee_schedule_evidence.get("fee_schedule_fingerprint") or ""
+                    ),
+                    broker_statement_reconciled=bool(
+                        fee_schedule_evidence.get("broker_statement_reconciled", False)
+                    ),
+                    fee_schedule_binding=fee_schedule_evidence,
+                ),
+                "capacity_review": build_backtest_capacity_evidence(
+                    fills=result.fills,
+                    data_handlers=handlers,
+                    initial_cash=result.initial_cash,
+                ),
+                "account_capital_constraint": resolved_account_capital_evidence,
+                "market_regime_robustness": build_backtest_market_regime_evidence(
+                    result=result,
+                    data_handlers=handlers,
+                ),
                 "research_only": True,
                 "authority_effect": "none",
             }
@@ -1292,14 +1374,142 @@ class RestrictedFormulaBacktestAdapter:
         selection: StrategyResearchSelection,
         *,
         expected_dataset_snapshot: Mapping[str, Any] | None = None,
+        reviewed_fee_schedule_resolution: Any | None = None,
     ) -> JsonObject:
         """Recompute persisted dataset identity without running a strategy."""
+        _validated_fee_schedule_resolution(
+            selection,
+            reviewed_fee_schedule_resolution,
+        )
         _, _, snapshot = _load_bound_inputs(
             self._data_store,
             selection,
             expected_dataset_snapshot=expected_dataset_snapshot,
         )
         return snapshot
+
+
+def _formula_parameter_robustness(
+    *,
+    formula_ast: Mapping[str, Any],
+    parameter_values: Mapping[str, Any],
+    parameter_ranges: Mapping[str, Any],
+    selected_result: Any,
+    handlers: dict[Symbol, DataHandler],
+    instruments: dict[Symbol, Any],
+    initial_cash: Decimal,
+    commission_calc: Any | None,
+) -> tuple[dict[str, Any], str | None]:
+    try:
+        variants = build_formula_parameter_variants(
+            formula_ast=formula_ast,
+            parameter_values=parameter_values,
+            parameter_ranges=parameter_ranges,
+        )
+    except FormulaValidationError as exc:
+        return (
+            build_sweep_robustness_evidence(
+                results=[],
+                rank_by="after_cost_total_return",
+                rank_direction="desc",
+                selected_params=dict(parameter_values),
+            ),
+            f"{exc.code}:{exc.path}",
+        )
+
+    results = []
+    for variant in variants:
+        if dict(variant.params) == dict(parameter_values):
+            variant_result = selected_result
+        else:
+            variant_result = BacktestEngine(
+                strategy=_FormulaSignalStrategy(variant.formula_ast, len(instruments)),
+                instruments=instruments,
+                data_handlers=handlers,
+                initial_cash=initial_cash,
+                commission_calc=commission_calc,
+                db=None,
+            ).run()
+        results.append(
+            {
+                "params": dict(variant.params),
+                "score": float(variant_result.total_return),
+            }
+        )
+    return (
+        build_sweep_robustness_evidence(
+            results=results,
+            rank_by="after_cost_total_return",
+            rank_direction="desc",
+            selected_params=dict(parameter_values),
+        ),
+        None,
+    )
+
+
+def _validated_fee_schedule_resolution(
+    selection: StrategyResearchSelection,
+    resolution: Any | None,
+) -> tuple[Any | None, dict[str, Any]]:
+    """Bind a reviewed reference to the exact calculator and persisted review."""
+    reviewed = selection.cost_model_reference != CANONICAL_COST_MODEL_REFERENCE
+    if not reviewed:
+        if resolution is not None:
+            raise StrategyResearchRejected("unexpected_reviewed_fee_schedule")
+        return None, {}
+    if resolution is None:
+        raise StrategyResearchRejected("reviewed_fee_schedule_resolution_missing")
+    if (
+        str(getattr(resolution, "cost_model_reference", ""))
+        != selection.cost_model_reference
+    ):
+        raise StrategyResearchRejected("reviewed_fee_schedule_resolution_drift")
+    calculator = getattr(resolution, "commission_calc", None)
+    evidence = getattr(resolution, "fee_evidence", None)
+    if calculator is None or not isinstance(evidence, Mapping):
+        raise StrategyResearchRejected("reviewed_fee_schedule_resolution_invalid")
+    return calculator, dict(evidence)
+
+
+def _validate_persisted_fee_schedule_binding(
+    selection: StrategyResearchSelection,
+    metrics: Mapping[str, Any],
+    resolution: Any | None,
+) -> None:
+    """Reject critique when persisted costs no longer bind to the active review."""
+
+    if selection.cost_model_reference == CANONICAL_COST_MODEL_REFERENCE:
+        if resolution is not None:
+            raise StrategyResearchRejected("unexpected_reviewed_fee_schedule")
+        return
+    _, expected = _validated_fee_schedule_resolution(selection, resolution)
+    persisted = _json_object(metrics.get("fee_component_evidence"))
+    persisted_binding = _json_object(persisted.get("fee_schedule_binding"))
+    binding_keys = {
+        "fee_schedule_review_id",
+        "fee_schedule_review_fingerprint",
+        "fee_schedule_preview_fingerprint",
+        "account_truth_import_run_id",
+        "account_truth_source_fingerprint",
+        "account_truth_scope_fingerprint",
+        "effective_start_date",
+        "effective_end_date",
+        "fee_notional_envelope_enforced",
+        "fee_notional_envelope_fingerprint",
+        "fee_notional_covered_asset_classes",
+    }
+    expected_binding = {
+        key: expected.get(key) for key in binding_keys if expected.get(key) is not None
+    }
+    if (
+        persisted.get("cost_model_reference") != selection.cost_model_reference
+        or persisted.get("account_specific") is not True
+        or persisted.get("broker_statement_reconciled") is not True
+        or persisted.get("fee_schedule_fingerprint")
+        != expected.get("fee_schedule_fingerprint")
+        or persisted_binding != expected_binding
+    ):
+        raise StrategyResearchRejected("persisted_fee_schedule_binding_drift")
 
 
 def _rolling_oos_parameters(equity_point_count: int) -> tuple[int, int, int]:
@@ -1778,6 +1988,7 @@ class StrategyResearchService:
         now: Callable[[], str] | None = None,
         monotonic: Callable[[], float] | None = None,
         model_timeout_seconds: float = 180.0,
+        reviewed_fee_schedule_resolver: Callable[..., Any] | None = None,
     ) -> None:
         self._db = db
         self._db_path = db_path
@@ -1791,12 +2002,19 @@ class StrategyResearchService:
         self._now = now or _utc_now
         self._monotonic = monotonic or time.monotonic
         self._model_timeout_seconds = model_timeout_seconds
+        self._reviewed_fee_schedule_resolver = reviewed_fee_schedule_resolver
 
     async def generate_hypotheses(
         self, request: HypothesisGenerationRequest
     ) -> JsonObject:
         settings = self._require_settings()
+        if not request.selection.has_account_binding:
+            raise StrategyResearchRejected("research_account_binding_required")
         await self._validate_saved_selection(request.selection)
+        reviewed_fee_schedule_resolution = await asyncio.to_thread(
+            self._resolve_reviewed_fee_schedule,
+            request.selection,
+        )
         session, reused = self._research_store.create_or_get_session(
             request, created_at=self._now()
         )
@@ -1848,6 +2066,25 @@ class StrategyResearchService:
             account_evidence = records_by_tool.get(_ACCOUNT_STATE_TOOL)
             if account_evidence is None or not account_evidence.authoritative:
                 raise StrategyResearchRejected("account_evidence_not_authoritative")
+        account_capital_evidence = self._build_account_capital_evidence(
+            selection=request.selection,
+            account_evidence=account_evidence,
+            reviewed_fee_schedule_resolution=reviewed_fee_schedule_resolution,
+        )
+        if account_capital_evidence.get("status") != "pass":
+            failure_code = str(
+                next(
+                    iter(account_capital_evidence.get("issues") or []),
+                    "research_account_capital_evidence_not_passing",
+                )
+            )
+            self._research_store.finish_session(
+                session["session_id"],
+                status="blocked",
+                failure_code=failure_code,
+                updated_at=self._now(),
+            )
+            raise StrategyResearchRejected(failure_code)
         provider_id, model_id = _runtime_ids(settings, "hypothesis")
         registry = AiRuntimeRegistry(self._ai_store)
         _register_runtime(registry, settings, provider_id, model_id, "hypothesis")
@@ -1936,6 +2173,15 @@ class StrategyResearchService:
         draft = draft_row["contract"]
         selection = _selection_from_session(session)
         expected_dataset_snapshot = await self._validate_saved_selection(selection)
+        reviewed_fee_schedule_resolution = await asyncio.to_thread(
+            self._resolve_reviewed_fee_schedule,
+            selection,
+        )
+        account_capital_evidence = self._account_capital_evidence_for_session(
+            session=session,
+            selection=selection,
+            reviewed_fee_schedule_resolution=reviewed_fee_schedule_resolution,
+        )
         backtest, reused = self._research_store.create_or_get_backtest(
             request,
             formula_fingerprint=str(draft["formula_fingerprint"]),
@@ -1951,6 +2197,8 @@ class StrategyResearchService:
                 selection=selection,
                 draft=draft,
                 expected_dataset_snapshot=expected_dataset_snapshot,
+                reviewed_fee_schedule_resolution=reviewed_fee_schedule_resolution,
+                account_capital_evidence=account_capital_evidence,
             )
             result_id = await self._db.save_backtest_result(
                 config_json=bt_request.model_dump_json(),
@@ -2054,12 +2302,39 @@ class StrategyResearchService:
         context = self._ai_store.get_context(session["context_snapshot_id"])
         evidence_reference_id = str(session["evidence_reference_id"])
         selection = _selection_from_session(session)
+        reviewed_fee_schedule_resolution = await asyncio.to_thread(
+            self._resolve_reviewed_fee_schedule,
+            selection,
+        )
+        _validate_persisted_fee_schedule_binding(
+            selection,
+            metrics,
+            reviewed_fee_schedule_resolution,
+        )
+        account_capital_evidence = self._account_capital_evidence_for_session(
+            session=session,
+            selection=selection,
+            reviewed_fee_schedule_resolution=reviewed_fee_schedule_resolution,
+        )
+        persisted_account_capital = metrics.get("account_capital_constraint")
+        if not is_valid_passed_research_account_capital_evidence(
+            persisted_account_capital,
+            expected_initial_cash=selection.initial_cash,
+            expected_valuation_snapshot_id=selection.valuation_snapshot_id,
+            expected_ledger_cutoff_id=selection.ledger_cutoff_id,
+        ) or content_fingerprint(persisted_account_capital) != content_fingerprint(
+            account_capital_evidence
+        ):
+            raise StrategyResearchRejected(
+                "persisted_research_account_capital_binding_drift"
+            )
         await asyncio.to_thread(
             RestrictedFormulaBacktestAdapter(
                 data_store=self._data_store
             ).validate_selection,
             selection,
             expected_dataset_snapshot=dataset_snapshot,
+            reviewed_fee_schedule_resolution=reviewed_fee_schedule_resolution,
         )
         required_binding_echo = {
             "canonical_backtest_result_id": int(
@@ -2258,6 +2533,79 @@ class StrategyResearchService:
         if float(config.get("initial_cash") or 0) != selection.initial_cash:
             raise StrategyResearchRejected("selected_initial_cash_mismatch")
         return dict(snapshot)
+
+    def _account_capital_evidence_for_session(
+        self,
+        *,
+        session: Mapping[str, Any],
+        selection: StrategyResearchSelection,
+        reviewed_fee_schedule_resolution: Any | None,
+    ) -> dict[str, Any]:
+        if not selection.has_account_binding:
+            raise StrategyResearchRejected("research_account_binding_required")
+        context = self._ai_store.get_context(str(session["context_snapshot_id"]))
+        account_records = []
+        for reference_id in context.evidence_reference_ids:
+            record = self._evidence_repository.get(str(reference_id))
+            if record is not None and record.tool_name == _ACCOUNT_STATE_TOOL:
+                account_records.append(record)
+        if len(account_records) != 1:
+            raise StrategyResearchRejected("account_evidence_binding_drift")
+        evidence = self._build_account_capital_evidence(
+            selection=selection,
+            account_evidence=account_records[0],
+            reviewed_fee_schedule_resolution=reviewed_fee_schedule_resolution,
+        )
+        if evidence.get("status") != "pass":
+            raise StrategyResearchRejected(
+                str(
+                    next(
+                        iter(evidence.get("issues") or []),
+                        "research_account_capital_evidence_not_passing",
+                    )
+                )
+            )
+        return evidence
+
+    @staticmethod
+    def _build_account_capital_evidence(
+        *,
+        selection: StrategyResearchSelection,
+        account_evidence: Any,
+        reviewed_fee_schedule_resolution: Any | None,
+    ) -> dict[str, Any]:
+        _, fee_schedule_evidence = _validated_fee_schedule_resolution(
+            selection,
+            reviewed_fee_schedule_resolution,
+        )
+        account_payload = (
+            account_evidence.to_dict()
+            if hasattr(account_evidence, "to_dict")
+            else dict(account_evidence or {})
+        )
+        return build_research_account_capital_evidence(
+            initial_cash=selection.initial_cash,
+            account_evidence=account_payload,
+            fee_schedule_evidence=fee_schedule_evidence,
+            expected_valuation_snapshot_id=selection.valuation_snapshot_id,
+            expected_ledger_cutoff_id=selection.ledger_cutoff_id,
+        )
+
+    def _resolve_reviewed_fee_schedule(
+        self,
+        selection: StrategyResearchSelection,
+    ) -> Any | None:
+        if selection.cost_model_reference == CANONICAL_COST_MODEL_REFERENCE:
+            return None
+        if self._reviewed_fee_schedule_resolver is None:
+            raise StrategyResearchRejected("reviewed_fee_schedule_resolver_missing")
+        return self._reviewed_fee_schedule_resolver(
+            start_date=selection.start_date,
+            end_date=selection.end_date,
+            universe=selection.universe,
+            asset_classes=selection.asset_classes,
+            expected_cost_model_reference=selection.cost_model_reference,
+        )
 
     def _require_settings(self) -> ProviderConnectivitySettings:
         if self._settings is None:
