@@ -140,10 +140,11 @@ Account Truth，也不满足结算、当前快照或对账门禁，不联系券�
 ### 单份来源的显式来源范围复核
 
 每个当前有效的查询区间复核还必须由 owner 单独声明：本地账户别名、账户类型、市场范围、资产
-类别和业务类型。owner 还需要明确证明：这一精确导出没有使用其他券商查询筛选条件、文件包含
-该精确查询返回的全部记录，并且所声明的账户与范围确实适用于该文件。所有代码列表都必须非空。
-原始券商账户标识只在浏览器内计算带 domain separation 的 SHA-256；原值不会发送给 API，也不会
-持久化，服务端只接收账户绑定哈希。
+类别、账户规模区间代码和业务类型。owner 还需要明确证明：这一精确导出没有使用其他券商查询
+筛选条件、文件包含该精确查询返回的全部记录，并且所声明的账户与范围确实适用于该文件。所有
+代码列表与规模区间代码都必须非空。原始券商账户标识只在浏览器内计算带 domain separation 的
+SHA-256；原值不会发送给 API，也不会持久化，服务端只接收账户绑定哈希。账户规模区间仅是脱敏
+查询范围元数据，不是当前余额、订单额度或资本授权，绝不能用于扩大任何授权。
 
 该 append-only 复核同时绑定当前 intake id、文件 fingerprint、来源预览 fingerprint，以及当前
 有效查询区间复核的 id 与 fingerprint。来源或查询绑定过期、已拒绝或发生变化都会 fail closed；
@@ -152,10 +153,12 @@ Account Truth，也不满足结算、当前快照或对账门禁，不联系券�
 它的有效来源范围复核，保持依赖顺序。
 
 目录扫描只把与当前来源精确匹配的有效声明投影成
-`karkinos.account_truth.citic_source_scope_batch_assessment.v1`。只有全部当前来源都已复核、账户引用
-哈希完全一致、各类声明范围完全一致，并且“无额外筛选”和“完整返回结果”证明都存在时，批次
-`integrity_status` 才能为 `clear`。响应只显示安全的声明代码与确定性 assessment fingerprint，
-不暴露账户引用哈希、intake/review 身份、来源名称、路径、事件或交易明细。即使声明为 clear，
+`karkinos.account_truth.citic_source_scope_batch_assessment.v2`。只有全部当前来源都已复核、账户引用
+哈希完全一致、包括账户规模区间在内的各类声明范围完全一致，并且“无额外筛选”和“完整返回
+结果”证明都存在时，批次 `integrity_status` 才能为 `clear`。响应只显示安全的声明代码与确定性
+assessment fingerprint，不暴露账户引用哈希、intake/review 身份、来源名称、路径、事件或交易
+明细。旧 v1 记录保持只读兼容，但在显式撤销并追加含规模区间的 v2 复核前仍视为不完整。即使
+声明为 clear，
 legacy 历史成交 XLS 仍固定保持 `status: blocked`：它不能证明完整账户覆盖、逐项结算、当前资金/
 持仓、对账、执行权限或资本权限。
 
@@ -441,6 +444,44 @@ decision = review_repository.record_decision(
 状态或口径上下文发生变化后，旧复核保留用于审计，但会标记为失效。`ledger_candidate`
 只是人工复核标记，不会自动创建或修改 `ledger_entries`；真正写入生产账本仍需要后续
 显式确认流程。
+
+## 策略研究使用的已审查费用表
+
+运行配置中的 `broker_fee_schedule` 在与当前精确 Account Truth 导入完成比对并由人工
+明确复核前，只是候选口径。人工闭环为：
+
+```text
+POST /api/account-truth/fee-schedule/preview
+GET  /api/account-truth/fee-schedule/review
+POST /api/account-truth/fee-schedule/reviews
+POST /api/account-truth/fee-schedule/reviews/revoke
+```
+
+预览要求 Account Truth readiness 为 ready、promotion projection 为 clear、费用配置的
+账户别名与已审查账户一致、来源/范围 fingerprint 有效，并且持久化的 stock/ETF 买卖
+成交同时覆盖。佣金与其他费用、印花税、过户费必须分别落在 reconciliation tolerance
+内。canonical `fund`/`fund_etf` 仅在费用审查中归一为 ETF；差异按资产类别、买卖方向和
+费用分项聚合。股票与 ETF 过户费率分别审查；ETF 条款未填时继承旧版股票条款。
+旧版已接受审查仅保留可读审计能力，必须重新计算并人工接受后才能供下游使用。
+响应和复核表只保留汇总数量、最大差异、安全费用条款与 fingerprint，
+不复制券商事件行、symbol、私有账户标识、文件名或来源明细。
+
+批准会重新计算预览，并要求精确 preview fingerprint、reviewer 和确认语句
+`approve_reconciled_account_fee_schedule_for_research_only_without_execution_or_capital_authority`。
+复核是 append-only 且可撤销；撤销须绑定当前 review id/fingerprint，并使用
+`revoke_reconciled_account_fee_schedule_without_execution_or_capital_authority`。GET 只读打开
+已有表，不会初始化或修复 schema。
+
+Account Truth Review Center 以显式人工流程提供同一顺序：选择已审查证据窗口、重新计算预览、
+检查买卖覆盖和汇总分项匹配，再输入复核人及完整确认短语。预览被阻断或已过期时不能接受。
+一条已接受记录只有在只读重算仍与其精确预览 fingerprint 一致时才显示为 `active`；当前
+Account Truth 或费用证据漂移会显示 `blocked`，旧记录仍保留供审计，并且仍可被人工明确撤销。
+
+生效复核会生成版本化 cost-model reference。同一解析后的计算器（包括交易所覆盖和
+逐费用分项的金额舍入）同时用于刷新基准、每个 Formula 候选和参数变体。Critique、晋级
+和每张保留策略票据都会重新解析当前复核；Account Truth 漂移、篡改、撤销、reference
+不一致，或回测/动作日期不在有效区间时一律 no-action。内置估算与缺失复核均不能晋级；
+该复核不能提交订单、注册生产策略或改变资本权限。
 
 ## 券商结算确认
 

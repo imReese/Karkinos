@@ -78,16 +78,12 @@ settings: [中文](config-reference.zh.md) / [English](config-reference.en.md).
 
 ### Research and backtesting
 
-Strategy Lab runs registered strategies against frozen data inputs. Saved
-experiments bind parameters, cost assumptions, OOS evidence, risk, limitations,
-and data-quality status. Sweeps and comparisons remain research evidence and
-cannot grant execution authority.
+Strategy Lab runs registered strategies against frozen data inputs whose IDs hash the exact ordered timestamp/OHLCV rows. Saved experiments bind parameters, cost assumptions, OOS evidence, risk, limitations, and data-quality status. The deterministic advancement gate additionally requires aligned rolling OOS, bounded parameter and market-state robustness, drawdown, turnover, capacity, account-specific broker-reconciled fee/tax evidence, after-tax excess, critique, and a redacted proof that account-bound research capital does not exceed current reconciled account equity; the built-in fee estimate is explicitly ineligible. Reserved AI-shadow tickets re-resolve the exact persisted sources, and the next batch requires a fingerprint-valid plan/paper/actual comparison. Missing or drifted evidence is no-action; no research record grants execution or capital authority.
+The account-specific model is created only by a revocable, fingerprint-bound Account Truth fee review. Its persisted safe terms drive the actual baseline and candidate calculators; source drift, revocation, or an uncovered backtest/ticket date blocks without provider or broker contact. The next-batch reconciliation must also resolve every prior order to the current strategy; missing, mixed, or unrelated strategy lineage is no-action.
 
 ### Daily decision
 
-Decision and Daily Trading Plan combine portfolio, market, strategy, signal,
-risk, Account Truth, and paper/shadow evidence. Outcomes are explicit: buy,
-sell, hold, rebalance, no action, or review required.
+Decision and Daily Trading Plan combine portfolio, market, strategy, signal, risk, Account Truth, and paper/shadow evidence. Outcomes are explicit: buy, sell, hold, rebalance, no action, or review required. Promotion first yields a `paper_shadow_required` plan intent; manual confirmation additionally requires a persisted same-date run bound to the exact action and input fingerprint with no divergence. The ticket edge rechecks Account Truth, market, risk, Kill Switch, promotion, reviewed fees, and shadow evidence; failure is no-action.
 
 Decision outcome reviews freeze one exact persisted signal-to-execution chain
 and canonical contribution target. Strategy Lab replays the stored row and
@@ -99,9 +95,7 @@ create memory, change a strategy, or grant execution or capital authority.
 
 ### Paper/shadow and Operations
 
-Operations exposes data, plan, paper/shadow, OMS, reconciliation, alert, and
-recovery state. Simulation may create paper orders and fills but never submits
-to a real broker or silently mutates the production ledger.
+Operations exposes data, plan, paper/shadow, OMS, reconciliation, alert, and recovery state. Simulation may create paper orders and fills but never submits to a real broker or silently mutates the production ledger. The legacy Trading daily-shadow endpoint delegates here and refuses caller-supplied account equity.
 Each non-normal Operations subsystem also exposes a deterministic attention
 fingerprint, the safe next action, and the exact evidence condition that clears
 it. The `/operations` workbench renders that canonical persisted-facts payload,

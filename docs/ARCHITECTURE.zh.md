@@ -110,7 +110,11 @@ switch、资本授权与执行权限。
 
 策略扩展使用有类型的 metadata 与参数；Web 任意代码执行不在契约内，研究不能绕过风控、journal、paper/shadow 或人工确认门禁。
 
-可选的收盘后 service 每个市场日期只接纳一次：持久化日线与完整 valuation/ledger identity -> 本地基线/dataset fingerprint -> 原子 capped 调用/token reservation -> DeepSeek 基于保存回测与脱敏持久化账户 allowlist（持仓数、现金比例、回撤、行情/估值状态、symbol/asset-class 权重、风险与 next-step）提出 Formula DSL 假设 -> 本地校验及 canonical 成本后 rolling OOS -> 证据 critique -> 持久化候选 -> 精确人工 canonical `paper_shadow` 晋级。稳定 identity 保证幂等，每阶段前重查 policy 与 Kill Switch；绝对账户金额、数量、价格、成本、valuation/ledger 标识、凭证、交易计划和 broker 能力不外发，批准也不修改 StrategyRegistry、生产 assignment、OMS、ledger、risk 或 broker 状态。
+可选的收盘后 service 每个市场日期只接纳一次：持久化日线与完整 valuation/ledger identity -> 本地基线/内容哈希 dataset -> 原子 capped 调用/token reservation -> DeepSeek 基于保存回测与脱敏持久化账户 allowlist（持仓数、现金比例、回撤、行情/估值状态、symbol/asset-class 权重、风险与 next-step）提出 Formula DSL 假设 -> 本地校验及 canonical 成本后 rolling OOS -> 证据 critique -> 持久化候选 -> 精确人工 canonical `paper_shadow` 晋级。`karkinos.strategy_advancement_gate.v2` 哈希实际有序 timestamp/OHLCV、对齐候选与经审查基准的 OOS folds、执行有界且真实绑定 Formula AST 的参数网格和冻结行情状态划分，并要求回撤/换手不恶化、日线容量/流动性通过、账户专属费用已由券商账单对账、税费后超额为正且 critique 完整。新版门槛还要求指纹化的 `research_account_capital_constraint`：研究选择必须绑定与 canonical Account State 相同的完整估值快照和账本截止点，费用复核仍须绑定已对账 Account Truth，且 `initial_cash` 不得超过当前账户权益。该证据会删除当前现金、持仓和权益绝对值，不授予资本或执行权限；未绑定或超额选择会在模型外发前阻断。内置费用模型仅为估算，不能通过账户专属税费门。调用方自行计算的 gate fingerprint 只能证明完整性，不能认证证据来源，因此直接通用晋级始终阻断；只有持久化、证据自有的 candidate approval 路径可以晋级，并且还必须具备非空人工 reviewer 和精确的仅 paper/shadow 确认短语。Web 读取 canonical promotion state；暂停/撤销必须填写原因并给出精确安全确认，立即阻断票据且保留审计历史；重新进入则必须重新填写复核意见并给出精确的仅 paper/shadow 确认。嵌套证据指纹均重新计算；保留策略晋级与每张票据都会重新解析候选、源回测、critique、人工批准及 paper 状态；非 AI 的旧通用 promotion state 明确不能作为逐单票据证据。对账按精确 identity 持久化 plan/paper/导入实际的数量、价格和成本，下一批必须取得无漂移 pass。稳定 identity 保证幂等，每阶段前重查 policy/Kill Switch；任一缺失、过期、冲突、漂移或不可复现事实均 named `research_blocked`/no-action，且 gate、批准、票据和对比均不能修改 StrategyRegistry、生产 assignment、OMS、ledger、risk、broker 或资本权限。
+
+下一批解析还会把前序批次的每张订单绑定到当前资本上下文的精确策略；即使批次本身 clear，策略 lineage 缺失、混合或无关也会阻断，而且对账事实始终不授权下一批。
+
+账户专属成本通过 append-only Account Truth 子协议解析：运行配置费用表 -> 对当前精确持久化导入进行 provider-free 分项预览 -> 人工绑定 fingerprint 批准 -> 版本化 `reviewed_account_fee_schedule` 计算器。复核表只保存安全条款、汇总对账结果、日期和来源/范围 fingerprint，不保存券商事件行、文件名或私有账户标识。基准与候选引擎必须解析同一当前 reference，包括交易所差异和分项金额舍入；critique、晋级和票据会重查当前复核及动作日期。撤销、来源漂移、篡改或覆盖不足均 fail closed；GET 零写入，批准/撤销也不能修改 StrategyRegistry、OMS、券商或资本权限。
 
 ### 每日决策
 
@@ -122,7 +126,7 @@ switch、资本授权与执行权限。
 -> 买入 / 卖出 / 持有 / 再平衡 / 不行动 / 需要复核
 ```
 
-每个公开操作都包含证据与阻断项。不行动是一等结果，不是错误或空响应。
+每个公开操作都包含证据与阻断项。不行动是一等结果，不是错误或空响应。`karkinos.strategy_order_generation_gate.v1` 把订单生成拆成两步：当前证据自有晋级与有效费用复核只允许 `paper_shadow_required`；人工票据还必须由同日持久化 run 精确绑定 action、fingerprint、模拟订单和 `within_expectations`。写边重查 Account Truth、行情、风控、Kill Switch 及策略/shadow；旧策略缺晋级事实时无隐式豁免。
 
 ### Paper/shadow 运营
 
@@ -134,8 +138,7 @@ switch、资本授权与执行权限。
 -> 操作员复核与告警
 ```
 
-Paper/shadow 事实绝不会变成真实成交或账本修改。Operations 负责 run identity、重试、状态、
-限制与恢复任务。
+Paper/shadow 事实绝不会变成真实成交或账本修改。Operations 负责 run identity、重试、状态、限制与恢复任务。`POST /api/trading/shadow-runs/daily` 只是 canonical Decision -> Plan -> Paper 的兼容别名，并拒绝调用方提供 `base_equity`。
 
 ### Account Truth 与对账
 
@@ -200,7 +203,7 @@ reconciliation 仍是独立的强制工作。
 
 `karkinos.current_per_order_confirmation_dossier.v1` 是 controlled intent 出现前的只读操作员
 入口。它只选择 canonical `manually_confirmed` OMS 订单，按最新优先扫描 append-only capital
-evaluation，绑定精确 OMS order fingerprint，并要求唯一有效的前序批次对账引用和唯一网关验证
+evaluation，绑定精确 OMS order fingerprint，并要求唯一有效且同策略的前序批次对账引用和唯一网关验证
 引用。较新的匹配评估若已阻断，绝不回退使用较旧 pass；缺失、格式错误、歧义或有界扫描不完整的
 证据都继续 blocked。解析出的引用交给既有 canonical per-order dossier，其 fingerprint 再绑定一份
 与 `evidence_connector_id`、`execution_gateway_id`、`account_alias` 精确匹配的最新持久化 adapter
@@ -265,6 +268,11 @@ health 之外的 Operations 关注项，拒绝来源不能满足 Account Truth�
 的声明：它绑定当前文件与脱敏预览 fingerprint，以最多 31 个自然日的显式券商查询区间校验已识别
 事件日期，不保存来源或交易明细，并且只清除查询区间这一项来源级要求。它不证明 canonical 覆盖、
 不绑定账户、不提升事件、不满足结算/快照/对账门禁、不联系 provider，也不授予执行或资本权限。
+`karkinos.account_truth.citic_source_scope_review.v2` 进一步把精确来源/区间与隐私最小化账户引用绑定到
+账户类型、市场、资产类别、账户规模区间、业务、筛选条件和完整返回声明。规模区间进入复核
+fingerprint，但只属于查询范围元数据，绝不是余额事实、订单额度或资本授权；旧 v1 行保持可读，但在
+append-only 替换前仍视为不完整。该复核仍不能证明 canonical 覆盖、提升事件、满足结算/快照/对账
+门禁、联系 provider 或授予执行/资本权限。
 `karkinos.account_truth.citic_broker_soak_candidate.v1` 会单独证明历史成交预览不是版本化连接器
 快照，列出缺失的只读来源契约与运营前置条件；在不注册连接器、不持久化 soak 证据、不联系券商、
 不改变执行/资本权限的前提下，它始终不能被计入 soak。
