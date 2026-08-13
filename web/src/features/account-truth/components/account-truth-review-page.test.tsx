@@ -413,7 +413,7 @@ const citicQueryWindowReviewCommand = {
 
 const citicSourceScopeReview = {
   review_id: 'citic-scope-review-synthetic',
-  schema_version: 'karkinos.account_truth.citic_source_scope_review.v1',
+  schema_version: 'karkinos.account_truth.citic_source_scope_review.v2',
   intake_id: 'citic-intake-synthetic',
   file_fingerprint: 'a'.repeat(64),
   source_preview_fingerprint: 'c'.repeat(64),
@@ -424,6 +424,7 @@ const citicSourceScopeReview = {
   account_type: 'cash',
   market_scopes: ['shanghai_a', 'shenzhen_a'],
   asset_classes: ['stock'],
+  account_value_band: 'cny_0_20000',
   business_types: ['history_trades'],
   no_other_filters_attested: true,
   complete_returned_results_attested: true,
@@ -448,10 +449,11 @@ const citicSourceScopeReview = {
   does_not_contact_provider: true,
   does_not_enable_broker_submission: true,
   does_not_change_capital_authority: true,
+  account_value_band_is_capital_authority: false,
 };
 
 const citicSourceScopeReviewCommand = {
-  schema_version: 'karkinos.account_truth.citic_source_scope_review_command.v1',
+  schema_version: 'karkinos.account_truth.citic_source_scope_review_command.v2',
   status: 'recorded',
   review: citicSourceScopeReview,
   source_scope_review_write_performed: true,
@@ -466,6 +468,7 @@ const citicSourceScopeReviewCommand = {
   does_not_contact_provider: true,
   does_not_enable_broker_submission: true,
   does_not_change_capital_authority: true,
+  account_value_band_is_capital_authority: false,
 };
 
 const citicSourceIntake = {
@@ -735,7 +738,7 @@ const citicDirectoryScan = {
   },
   source_scope_batch_assessment: {
     schema_version:
-      'karkinos.account_truth.citic_source_scope_batch_assessment.v1',
+      'karkinos.account_truth.citic_source_scope_batch_assessment.v2',
     status: 'blocked',
     integrity_status: 'not_available',
     source_count: 1,
@@ -753,6 +756,7 @@ const citicDirectoryScan = {
     declared_account_type: null,
     declared_market_scopes: [],
     declared_asset_classes: [],
+    declared_account_value_band: null,
     declared_business_types: [],
     blockers: [
       'citic_source_scope_batch_sources_unreviewed',
@@ -820,6 +824,15 @@ const collectorStatus = {
   does_not_mutate_production_ledger: true,
   does_not_contact_provider: true,
   does_not_change_execution_authority: true,
+};
+
+const feeScheduleReviewStatus = {
+  status: 'missing',
+  review: null,
+  blockers: ['reviewed_fee_schedule_review_missing'],
+  current_preview_fingerprint: null,
+  authorizes_execution: false,
+  changes_capital_authority: false,
 };
 
 function jsonResponse(body: unknown) {
@@ -895,6 +908,9 @@ function installFetchMock({
             : input.toString();
       if (url.includes('/api/account-truth/evidence-readiness')) {
         return jsonResponse(await evidenceReadinessResponse);
+      }
+      if (url.includes('/api/account-truth/fee-schedule/review')) {
+        return jsonResponse(feeScheduleReviewStatus);
       }
       if (url.includes('/api/account-truth/evidence-scope/reviews')) {
         return evidenceScopeReviewPostResponse instanceof Response
@@ -1107,6 +1123,10 @@ async function completeCiticSourceScopeReview(
     within(previewTool).getByLabelText(/Asset classes/),
     'stock',
   );
+  await userEvent.type(
+    within(previewTool).getByLabelText(/Account-value band code/),
+    'cny_0_20000',
+  );
   await userEvent.click(
     within(previewTool).getByLabelText(
       /I personally checked that this exact file was exported/,
@@ -1120,7 +1140,7 @@ async function completeCiticSourceScopeReview(
   );
   await userEvent.click(
     within(previewTool).getByLabelText(
-      /account, account type, market, asset, and business scope/,
+      /account, account type, market, asset, account-value band, and business scope/,
     ),
   );
 }
@@ -2040,6 +2060,7 @@ test('scans the configured CITIC directory only on command and rechecks by finge
     account_type: 'cash',
     market_scopes: ['shanghai_a', 'shenzhen_a'],
     asset_classes: ['stock'],
+    account_value_band: 'cny_0_20000',
     business_types: ['history_trades'],
     no_other_filters_attested: true,
     complete_returned_results_attested: true,
@@ -2115,6 +2136,7 @@ test('shows contiguous declared query windows without claiming account coverage'
         declared_account_type: 'cash',
         declared_market_scopes: ['shanghai_a', 'shenzhen_a'],
         declared_asset_classes: ['stock'],
+        declared_account_value_band: 'cny_0_20000',
         declared_business_types: ['history_trades'],
         blockers: [
           'citic_source_scope_batch_complete_account_coverage_unproven',
@@ -2160,7 +2182,7 @@ test('shows contiguous declared query windows without claiming account coverage'
     '1 of 1 sources reviewed · account binding consistent · declared scope consistent',
   );
   expect(sourceScopeAssessment.textContent).toContain(
-    'Account type cash · markets shanghai_a, shenzhen_a · assets stock · business types history_trades',
+    'Account type cash · markets shanghai_a, shenzhen_a · assets stock · account-value band cny_0_20000 · business types history_trades',
   );
   expect(sourceScopeAssessment.textContent).toContain(
     'does not prove complete account coverage',
@@ -2447,6 +2469,7 @@ test('requires a second explicit confirmation before recording a CITIC follow-up
     account_type: 'cash',
     market_scopes: ['shanghai_a', 'shenzhen_a'],
     asset_classes: ['stock'],
+    account_value_band: 'cny_0_20000',
     business_types: ['history_trades'],
     no_other_filters_attested: true,
     complete_returned_results_attested: true,
