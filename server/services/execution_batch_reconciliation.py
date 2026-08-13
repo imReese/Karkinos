@@ -123,13 +123,23 @@ class ExecutionBatchReconciliationService:
                 item = {}
             else:
                 item = item_rows[0]
+            order_payload = _json_object(order.get("payload_json"))
             item_payload = _json_object(item.get("payload_json"))
+            plan_paper_actual = _json_object(
+                item_payload.get("plan_paper_actual_comparison")
+            )
+            strategy_id = _order_strategy_id(self._db, order_payload)
+            if strategy_id.startswith("ai_formula_shadow:") and not (
+                _valid_plan_paper_actual_comparison(plan_paper_actual)
+            ):
+                blockers.append(
+                    f"batch_ai_shadow_plan_paper_actual_not_clear:{order_id}"
+                )
             current_status = str(order.get("status") or "").strip().lower()
             effective_terminal_status = _effective_terminal_status(
                 current_status,
                 transitions,
             )
-            order_payload = _json_object(order.get("payload_json"))
             execution_mode = str(order_payload.get("execution_mode") or "").lower()
             if execution_mode == "paper_shadow":
                 blockers.append(f"batch_paper_shadow_order_not_allowed:{order_id}")
@@ -209,6 +219,7 @@ class ExecutionBatchReconciliationService:
                     "current_oms_status": current_status,
                     "effective_terminal_status": effective_terminal_status,
                     "execution_mode": execution_mode,
+                    "strategy_id": strategy_id,
                     "order_quantity": _decimal_string(order_quantity),
                     "real_fill_quantity": _decimal_string(real_fill_quantity),
                     "transitions": transition_facts,
@@ -221,6 +232,13 @@ class ExecutionBatchReconciliationService:
                             _fingerprint(_reconciliation_item_contract(item))
                             if item
                             else ""
+                        ),
+                    },
+                    "plan_paper_actual_comparison": {
+                        "required": strategy_id.startswith("ai_formula_shadow:"),
+                        "status": str(plan_paper_actual.get("status") or "missing"),
+                        "evidence_fingerprint": str(
+                            plan_paper_actual.get("evidence_fingerprint") or ""
                         ),
                     },
                 }
@@ -360,7 +378,12 @@ class ExecutionBatchReconciliationService:
             raise RuntimeError("execution batch reconciliation was not recorded")
         return _event_response(saved[0], reused=False)
 
-    def resolve_recorded(self, fingerprint: str) -> dict[str, Any]:
+    def resolve_recorded(
+        self,
+        fingerprint: str,
+        *,
+        expected_strategy_id: str | None = None,
+    ) -> dict[str, Any]:
         normalized = str(fingerprint or "").strip().lower()
         blockers: list[str] = []
         if not re.fullmatch(r"[a-f0-9]{64}", normalized):
@@ -378,7 +401,12 @@ class ExecutionBatchReconciliationService:
         )
         if not rows:
             blockers.append("prior_batch_reconciliation_not_found")
-            return _resolution_summary(normalized, {}, blockers)
+            return _resolution_summary(
+                normalized,
+                {},
+                blockers,
+                expected_strategy_id=expected_strategy_id,
+            )
         recorded = _event_response(rows[0], reused=False)
         if recorded.get("schema_version") != (
             EXECUTION_BATCH_RECONCILIATION_SCHEMA_VERSION
@@ -397,7 +425,12 @@ class ExecutionBatchReconciliationService:
         )
         if current["batch_reconciliation_fingerprint"] != normalized:
             blockers.append("prior_batch_reconciliation_source_changed")
-        return _resolution_summary(normalized, recorded, blockers)
+        return _resolution_summary(
+            normalized,
+            recorded,
+            blockers,
+            expected_strategy_id=expected_strategy_id,
+        )
 
     def list_records(self, *, limit: int = 100) -> list[dict[str, Any]]:
         rows = self._db.list_events_sync(
@@ -480,9 +513,13 @@ def resolve_prior_batch_reconciliation(
     *,
     db: Any,
     fingerprint: str,
+    expected_strategy_id: str | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """Resolve one exact batch fact for proposal consumers."""
-    result = ExecutionBatchReconciliationService(db=db).resolve_recorded(fingerprint)
+    result = ExecutionBatchReconciliationService(db=db).resolve_recorded(
+        fingerprint,
+        expected_strategy_id=expected_strategy_id,
+    )
     return result, [str(item) for item in result.get("blockers") or []]
 
 
@@ -490,7 +527,33 @@ def _resolution_summary(
     fingerprint: str,
     recorded: dict[str, Any],
     blockers: list[str],
+    *,
+    expected_strategy_id: str | None = None,
 ) -> dict[str, Any]:
+    orders = [item for item in recorded.get("orders") or [] if isinstance(item, dict)]
+    strategy_ids = sorted(
+        {
+            str(item.get("strategy_id") or "").strip()
+            for item in orders
+            if str(item.get("strategy_id") or "").strip()
+        }
+    )
+    strategy_binding_complete = bool(orders) and all(
+        str(item.get("strategy_id") or "").strip() for item in orders
+    )
+    normalized_expected_strategy_id = (
+        str(expected_strategy_id or "").strip()
+        if expected_strategy_id is not None
+        else ""
+    )
+    if expected_strategy_id is not None:
+        if not normalized_expected_strategy_id:
+            blockers.append("prior_batch_reconciliation_expected_strategy_missing")
+        if not strategy_binding_complete:
+            blockers.append("prior_batch_reconciliation_strategy_binding_incomplete")
+        if strategy_ids != [normalized_expected_strategy_id]:
+            blockers.append("prior_batch_reconciliation_strategy_mismatch")
+    blockers = list(dict.fromkeys(blockers))
     return {
         "status": "pass" if not blockers else "blocked",
         "batch_reconciliation_fingerprint": fingerprint,
@@ -501,7 +564,10 @@ def _resolution_summary(
         "record_status": str(recorded.get("record_status") or "missing"),
         "source_recorded_at": str(recorded.get("recorded_at") or ""),
         "source_refs": [str(item) for item in recorded.get("source_refs") or []],
-        "blockers": list(dict.fromkeys(blockers)),
+        "expected_strategy_id": normalized_expected_strategy_id,
+        "strategy_ids": strategy_ids,
+        "strategy_binding_complete": strategy_binding_complete,
+        "blockers": blockers,
         "evidence_ref": (
             f"execution_batch_reconciliation:{fingerprint}" if fingerprint else ""
         ),
@@ -529,6 +595,42 @@ def _is_real_fill(fill: dict[str, Any]) -> bool:
     source = str(fill.get("source") or "").strip().lower()
     return mode in _REAL_EXECUTION_MODES and not any(
         marker in source for marker in ("paper", "shadow", "simulat")
+    )
+
+
+def _order_strategy_id(db: Any, order_payload: dict[str, Any]) -> str:
+    gateway_evidence = _json_object(order_payload.get("gateway_evidence"))
+    research_evidence = _json_object(gateway_evidence.get("research_evidence"))
+    kind, separator, identifier = str(
+        research_evidence.get("evidence_ref") or ""
+    ).partition(":")
+    if separator != ":" or kind != "decision_action":
+        return ""
+    try:
+        action_id = int(identifier)
+    except (TypeError, ValueError):
+        return ""
+    reader = getattr(db, "get_action_task_sync", None)
+    action = reader(action_id) if callable(reader) else None
+    return str(action.get("strategy_id") or "") if isinstance(action, dict) else ""
+
+
+def _valid_plan_paper_actual_comparison(value: dict[str, Any]) -> bool:
+    payload = dict(value)
+    fingerprint = str(payload.pop("evidence_fingerprint", "")).lower()
+    return (
+        value.get("schema_version") == "karkinos.plan_paper_actual_comparison.v1"
+        and value.get("status") == "pass"
+        and value.get("blockers") == []
+        and value.get("differences") == []
+        and value.get("persisted_evidence_only") is True
+        and value.get("human_review_required") is False
+        and value.get("authorizes_execution") is False
+        and value.get("does_not_mutate_oms") is True
+        and value.get("does_not_mutate_production_ledger") is True
+        and value.get("does_not_change_capital_authority") is True
+        and re.fullmatch(r"[a-f0-9]{64}", fingerprint) is not None
+        and fingerprint == _fingerprint(payload)
     )
 
 

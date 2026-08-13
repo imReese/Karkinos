@@ -104,7 +104,6 @@ def test_decision_batch_pre_trade_risk_route_runs_without_creating_orders(
         scheduler=SimpleNamespace(portfolio=None, instruments={}),
     )
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
-
     endpoint = _route(
         decision_routes.create_router(),
         "/api/decision/pre-trade-risk/batch",
@@ -201,6 +200,22 @@ def test_decision_batch_pre_trade_risk_promotes_ready_trading_plan(
         scheduler=scheduler,
     )
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        decision_routes,
+        "resolve_strategy_order_generation_gate",
+        lambda db, strategy_id, *, as_of_date=None: (
+            {
+                "status": "pass",
+                "strategy_id": strategy_id,
+                "paper_shadow_evaluation_only": True,
+                "does_not_authorize_execution": True,
+                "promotion": {
+                    "strategy_advancement_gate_fingerprint": "fixture-gate",
+                },
+            },
+            [],
+        ),
+    )
     router = decision_routes.create_router()
 
     batch_endpoint = _route(
@@ -219,11 +234,15 @@ def test_decision_batch_pre_trade_risk_promotes_ready_trading_plan(
 
     assert batch_result["passed_count"] == 1
     assert batch_result["valuation_snapshot_id"] == published["snapshot_id"]
-    assert trading_plan["conclusion_status"] == "manual_confirmation_ready"
-    assert trading_plan["manual_ready_count"] == 1
+    assert trading_plan["conclusion_status"] == "paper_shadow_required"
+    assert trading_plan["manual_ready_count"] == 0
+    assert trading_plan["paper_shadow_ready_count"] == 1
     assert trading_plan["order_intent_count"] == 1
     assert trading_plan["broker_bridge_status"] == "disabled"
     assert trading_plan["order_intents"][0]["does_not_submit_broker_order"] is True
+    assert trading_plan["order_intents"][0]["submission_status"] == (
+        "paper_shadow_required"
+    )
     assert db.list_manual_orders_sync() == []
 
 

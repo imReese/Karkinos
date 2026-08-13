@@ -110,6 +110,12 @@ class ExecutionReconciliationService:
             mismatched_broker_events=mismatched_broker_events,
             order_lifecycle_evidence=controlled_order_lifecycle,
         )
+        plan_paper_actual_comparison = _plan_paper_actual_comparison(
+            self._db,
+            order,
+            broker_events=broker_events,
+            controlled_intent=controlled_intent,
+        )
         reported_broker_events = matching_broker_events
         mismatch_reasons: list[str] = []
         if execution_mode == "paper_shadow":
@@ -197,6 +203,7 @@ class ExecutionReconciliationService:
                 ),
                 "manual_execution_evidence_summary": manual_execution_summary,
                 "manual_broker_comparison": manual_broker_comparison,
+                "plan_paper_actual_comparison": plan_paper_actual_comparison,
                 "controlled_submission_evidence_summary": (
                     controlled.get("evidence_summary") if controlled else {}
                 ),
@@ -1109,6 +1116,300 @@ def _manual_execution_evidence_summary(events: list[dict[str, Any]]) -> dict[str
     if required_gate_summary:
         summary["required_gate_summary"] = required_gate_summary
     return summary
+
+
+def _plan_paper_actual_comparison(
+    db: Any,
+    order: dict[str, Any],
+    *,
+    broker_events: list[Any],
+    controlled_intent: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Compare one OMS plan with exact paper and imported broker outcomes."""
+
+    order_payload = _payload(order)
+    if str(order_payload.get("execution_mode") or "") == "paper_shadow":
+        return {
+            "schema_version": "karkinos.plan_paper_actual_comparison.v1",
+            "status": "not_applicable_paper_shadow_order",
+            "order_id": str(order.get("order_id") or ""),
+            "blockers": [],
+            "differences": [],
+            "authorizes_execution": False,
+            "does_not_mutate_oms": True,
+            "does_not_mutate_production_ledger": True,
+        }
+
+    planned = {
+        "order_id": str(order.get("order_id") or ""),
+        "source": str(order.get("source") or ""),
+        "source_ref": str(order.get("source_ref") or ""),
+        "symbol": str(order.get("symbol") or ""),
+        "side": str(order.get("side") or "").lower(),
+        "quantity": _decimal_text(_decimal(order.get("quantity"))),
+        "order_type": str(order.get("order_type") or ""),
+        "limit_price": _decimal_text(_decimal(order.get("limit_price"))),
+    }
+    blockers: list[str] = []
+    differences: list[str] = []
+    gateway_evidence = _object(order_payload.get("gateway_evidence"))
+    research_gate = _object(gateway_evidence.get("research_evidence"))
+    paper_gate = _object(gateway_evidence.get("paper_shadow"))
+    action_ref = _decision_action_ref(research_gate.get("evidence_ref"))
+    action_reader = getattr(db, "get_action_task_sync", None)
+    action = (
+        action_reader(int(action_ref.removeprefix("action:")))
+        if callable(action_reader) and action_ref is not None
+        else None
+    )
+    planned["strategy_id"] = (
+        str(action.get("strategy_id") or "") if isinstance(action, dict) else ""
+    )
+    paper_run_id = _evidence_identifier(
+        paper_gate.get("evidence_ref"), expected_kind="paper_shadow"
+    )
+    if action_ref is None:
+        blockers.append("planned_decision_action_reference_missing_or_invalid")
+    if paper_run_id is None:
+        blockers.append("paper_shadow_run_reference_missing_or_invalid")
+
+    paper: dict[str, Any] = {}
+    paper_run_reader = getattr(db, "get_paper_shadow_run_sync", None)
+    paper_run = (
+        paper_run_reader(paper_run_id)
+        if callable(paper_run_reader) and paper_run_id is not None
+        else None
+    )
+    if paper_run_id is not None and not isinstance(paper_run, dict):
+        blockers.append("paper_shadow_run_not_found")
+    if isinstance(paper_run, dict):
+        paper_payload = _json_object(paper_run.get("payload_json"))
+        matching_orders = [
+            item
+            for item in paper_payload.get("orders") or []
+            if isinstance(item, dict)
+            and str(_object(item.get("order_intent")).get("action_ref") or "")
+            == str(action_ref or "")
+        ]
+        if len(matching_orders) != 1:
+            blockers.append("paper_shadow_order_lineage_not_unique")
+        else:
+            paper_order = matching_orders[0]
+            paper_order_id = str(paper_order.get("order_id") or "")
+            paper_fills = [
+                item
+                for item in paper_payload.get("fills") or []
+                if isinstance(item, dict)
+                and str(item.get("order_id") or "") == paper_order_id
+            ]
+            paper_fill_quantity = sum(
+                (
+                    abs(_decimal(item.get("fill_quantity")) or Decimal("0"))
+                    for item in paper_fills
+                ),
+                Decimal("0"),
+            )
+            paper_gross_amount = sum(
+                (
+                    abs(_decimal(item.get("fill_price")) or Decimal("0"))
+                    * abs(_decimal(item.get("fill_quantity")) or Decimal("0"))
+                    for item in paper_fills
+                ),
+                Decimal("0"),
+            )
+            paper_average_price = (
+                paper_gross_amount / paper_fill_quantity
+                if paper_fill_quantity > 0
+                else None
+            )
+            paper_commission = sum(
+                (
+                    _decimal(item.get("commission")) or Decimal("0")
+                    for item in paper_fills
+                ),
+                Decimal("0"),
+            )
+            paper_slippage = sum(
+                (
+                    _decimal(item.get("slippage")) or Decimal("0")
+                    for item in paper_fills
+                ),
+                Decimal("0"),
+            )
+            intent = _object(paper_order.get("order_intent"))
+            paper = {
+                "run_id": str(paper_run.get("run_id") or ""),
+                "input_fingerprint": str(
+                    paper_run.get("input_fingerprint")
+                    or paper_payload.get("input_fingerprint")
+                    or ""
+                ),
+                "run_status": str(paper_run.get("status") or ""),
+                "divergence_status": str(paper_run.get("divergence_status") or ""),
+                "order_id": paper_order_id,
+                "order_status": str(paper_order.get("status") or ""),
+                "action_ref": str(intent.get("action_ref") or ""),
+                "symbol": str(intent.get("symbol") or ""),
+                "side": str(intent.get("side") or "").lower(),
+                "planned_quantity": _decimal_text(
+                    _decimal(intent.get("estimated_quantity"))
+                ),
+                "planned_price": _decimal_text(_decimal(intent.get("estimated_price"))),
+                "fill_count": len(paper_fills),
+                "filled_quantity": _decimal_text(paper_fill_quantity),
+                "average_fill_price": _decimal_text(paper_average_price),
+                "commission_and_tax": _decimal_text(paper_commission),
+                "slippage": _decimal_text(paper_slippage),
+                "total_execution_cost": _decimal_text(
+                    paper_commission + paper_slippage
+                ),
+            }
+            if (
+                paper_run.get("status") != "within_expectations"
+                or paper_run.get("divergence_status") != "within_expectations"
+                or paper_order.get("status") != "filled"
+                or len(paper_fills) < 1
+            ):
+                blockers.append("paper_shadow_outcome_not_clear")
+            if paper["symbol"] != planned["symbol"]:
+                blockers.append("paper_shadow_symbol_mismatch")
+            if paper["side"] != planned["side"]:
+                blockers.append("paper_shadow_side_mismatch")
+            if _decimal(paper["filled_quantity"]) != _decimal(planned["quantity"]):
+                blockers.append("paper_shadow_quantity_mismatch")
+            if _decimal(paper["average_fill_price"]) != _decimal(
+                planned["limit_price"]
+            ):
+                differences.append("planned_paper_fill_price_difference")
+
+    actual_events = _exact_broker_events_for_order(
+        order,
+        broker_events,
+        controlled_intent=controlled_intent,
+    )
+    candidate_actual_events = _candidate_broker_events(order, broker_events)
+    if not actual_events:
+        blockers.append(
+            "actual_broker_evidence_not_exactly_linked"
+            if candidate_actual_events
+            else "actual_broker_evidence_missing"
+        )
+    actual: dict[str, Any] = {}
+    if actual_events:
+        import_run_ids = {
+            str(getattr(event, "import_run_id", "") or "") for event in actual_events
+        }
+        actual_quantity = sum(
+            (
+                abs(_decimal(getattr(event, "quantity", None)) or Decimal("0"))
+                for event in actual_events
+            ),
+            Decimal("0"),
+        )
+        actual_gross_amount = _sum_event_decimal(actual_events, "gross_amount")
+        actual_average_price = (
+            abs(actual_gross_amount) / actual_quantity if actual_quantity > 0 else None
+        )
+        actual_fee = _sum_event_decimal(actual_events, "fee")
+        actual_tax = _sum_event_decimal(actual_events, "tax")
+        actual_transfer_fee = _sum_event_decimal(actual_events, "transfer_fee")
+        actual = {
+            "import_run_ids": sorted(import_run_ids),
+            "event_ids": [
+                str(getattr(event, "event_id", "") or "") for event in actual_events
+            ],
+            "quantity": _decimal_text(actual_quantity),
+            "average_fill_price": _decimal_text(actual_average_price),
+            "gross_amount": _decimal_text(actual_gross_amount),
+            "fee": _decimal_text(actual_fee),
+            "tax": _decimal_text(actual_tax),
+            "transfer_fee": _decimal_text(actual_transfer_fee),
+            "total_execution_cost": _decimal_text(
+                actual_fee + actual_tax + actual_transfer_fee
+            ),
+            "net_amount": _decimal_text(
+                _sum_event_decimal(actual_events, "net_amount")
+            ),
+            "exact_identity_linked": True,
+        }
+        if len(import_run_ids) != 1:
+            blockers.append("actual_broker_import_identity_conflict")
+        if actual_quantity != abs(_decimal(order.get("quantity")) or Decimal("0")):
+            blockers.append("actual_broker_quantity_incomplete_or_conflicting")
+        if paper:
+            if actual_quantity != abs(
+                _decimal(paper.get("filled_quantity")) or Decimal("0")
+            ):
+                differences.append("paper_actual_quantity_difference")
+            if actual_average_price != _decimal(paper.get("average_fill_price")):
+                differences.append("paper_actual_fill_price_difference")
+            if actual_fee + actual_tax + actual_transfer_fee != _decimal(
+                paper.get("total_execution_cost")
+            ):
+                differences.append("paper_actual_execution_cost_difference")
+
+    blockers = list(dict.fromkeys(blockers))
+    differences = list(dict.fromkeys(differences))
+    status = "blocked" if blockers else "review_required" if differences else "pass"
+    core = {
+        "schema_version": "karkinos.plan_paper_actual_comparison.v1",
+        "status": status,
+        "order_id": str(order.get("order_id") or ""),
+        "planned": planned,
+        "paper": paper,
+        "actual": actual,
+        "blockers": blockers,
+        "differences": differences,
+        "persisted_evidence_only": True,
+        "human_review_required": status != "pass",
+        "authorizes_execution": False,
+        "does_not_mutate_oms": True,
+        "does_not_mutate_production_ledger": True,
+        "does_not_change_capital_authority": True,
+    }
+    return {**core, "evidence_fingerprint": _fingerprint(core)}
+
+
+def _decision_action_ref(value: Any) -> str | None:
+    identifier = _evidence_identifier(value, expected_kind="decision_action")
+    return f"action:{identifier}" if identifier is not None else None
+
+
+def _evidence_identifier(value: Any, *, expected_kind: str) -> str | None:
+    kind, separator, identifier = str(value or "").strip().partition(":")
+    if separator != ":" or kind != expected_kind or not identifier.strip():
+        return None
+    return identifier.strip()
+
+
+def _exact_broker_events_for_order(
+    order: dict[str, Any],
+    broker_events: list[Any],
+    *,
+    controlled_intent: dict[str, Any] | None,
+) -> list[Any]:
+    expected_client_ids = {str(order.get("order_id") or "")}
+    expected_broker_ids: set[str] = set()
+    if isinstance(controlled_intent, dict):
+        client_order_id = str(controlled_intent.get("client_order_id") or "")
+        broker_order_id = str(controlled_intent.get("broker_order_id") or "")
+        if client_order_id:
+            expected_client_ids.add(client_order_id)
+        if broker_order_id:
+            expected_broker_ids.add(broker_order_id)
+    result: list[Any] = []
+    for event in _candidate_broker_events(order, broker_events):
+        client_order_id = str(getattr(event, "client_order_id", "") or "")
+        broker_order_id = str(getattr(event, "broker_order_id", "") or "")
+        if client_order_id in expected_client_ids or (
+            broker_order_id and broker_order_id in expected_broker_ids
+        ):
+            result.append(event)
+    return result
+
+
+def _decimal_text(value: Decimal | None) -> str | None:
+    return format(value, "f") if value is not None else None
 
 
 def _event_payload(event: dict[str, Any]) -> dict[str, Any]:

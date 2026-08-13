@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 
-from server.routes.decision import _paper_shadow_evidence
+from server.routes.decision import (
+    _paper_shadow_allows_manual_ticket,
+    _paper_shadow_evidence,
+)
 
 
 def test_decision_attaches_matching_persisted_paper_shadow_evidence() -> None:
@@ -19,6 +22,7 @@ def test_decision_attaches_matching_persisted_paper_shadow_evidence() -> None:
                         "orders": [
                             {
                                 "order_id": "SHADOW-FIXTURE-1",
+                                "divergence_status": "within_expectations",
                                 "order_intent": {"action_ref": "action:7"},
                             }
                         ]
@@ -39,6 +43,7 @@ def test_decision_attaches_matching_persisted_paper_shadow_evidence() -> None:
     assert evidence["order_id"] == "SHADOW-FIXTURE-1"
     assert evidence["blocking_reasons"] == []
     assert evidence["required_actions"] == []
+    assert _paper_shadow_allows_manual_ticket(evidence) is True
 
 
 def test_decision_does_not_attach_unmatched_paper_shadow_run() -> None:
@@ -52,6 +57,7 @@ def test_decision_does_not_attach_unmatched_paper_shadow_run() -> None:
                         "orders": [
                             {
                                 "order_id": "SHADOW-OTHER",
+                                "divergence_status": "within_expectations",
                                 "order_intent": {"action_ref": "action:99"},
                             }
                         ]
@@ -68,3 +74,25 @@ def test_decision_does_not_attach_unmatched_paper_shadow_run() -> None:
     assert evidence["status"] == "review_required"
     assert evidence["has_evidence"] is False
     assert evidence["order_id"] is None
+    assert _paper_shadow_allows_manual_ticket(evidence) is False
+
+
+def test_manual_ticket_rejects_label_only_shadow_pass_without_exact_run_binding() -> (
+    None
+):
+    evidence = _paper_shadow_evidence(
+        {
+            "id": 7,
+            "timestamp": "2026-07-10T14:57:03+08:00",
+            "paper_shadow_status": "pass",
+            "paper_shadow_order_id": "unbound-order",
+        },
+        "ready_for_manual_confirmation",
+        db=object(),
+    )
+
+    assert evidence["status"] == "pass"
+    assert evidence["has_evidence"] is True
+    assert evidence["run_id"] is None
+    assert evidence["input_fingerprint"] is None
+    assert _paper_shadow_allows_manual_ticket(evidence) is False

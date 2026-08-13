@@ -24,6 +24,24 @@ def _endpoint(path: str, method: str = "GET"):
     )
 
 
+def _allow_paper_shadow_evaluation(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "server.routes.decision.resolve_strategy_order_generation_gate",
+        lambda db, strategy_id, *, as_of_date=None: (
+            {
+                "status": "pass",
+                "strategy_id": strategy_id,
+                "paper_shadow_evaluation_only": True,
+                "does_not_authorize_execution": True,
+                "promotion": {
+                    "strategy_advancement_gate_fingerprint": "fixture-gate",
+                },
+            },
+            [],
+        ),
+    )
+
+
 class FakeOperationsDb:
     def __init__(self) -> None:
         self.saved_manual_orders: list[dict] = []
@@ -256,6 +274,7 @@ class FakePaperShadowOperationsDb(FakeOperationsDb):
 
 
 def test_today_operations_route_returns_read_only_runbook(monkeypatch):
+    _allow_paper_shadow_evaluation(monkeypatch)
     fake_db = FakeOperationsDb()
     fake_state = SimpleNamespace(
         db=fake_db,
@@ -550,6 +569,7 @@ def test_today_operations_route_surfaces_scheduler_run_evidence(monkeypatch):
 
 
 def test_paper_shadow_run_route_creates_idempotent_simulation_evidence(monkeypatch):
+    _allow_paper_shadow_evaluation(monkeypatch)
     fake_db = FakePaperShadowOperationsDb()
     fake_state = SimpleNamespace(
         db=fake_db,

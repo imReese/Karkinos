@@ -5,7 +5,24 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from analytics.strategy_advancement_gate import (
+    is_valid_passed_strategy_advancement_gate,
+)
+from server.ai_runtime.contracts import content_fingerprint
+from server.services.reviewed_fee_schedule import active_review_matches_fee_evidence
+
 STRATEGY_PROMOTION_SCHEMA_VERSION = "karkinos.strategy_promotion_pipeline.v1"
+STRATEGY_ORDER_GENERATION_GATE_SCHEMA_VERSION = (
+    "karkinos.strategy_order_generation_gate.v1"
+)
+AI_SHADOW_STRATEGY_PREFIX = "ai_formula_shadow:"
+STRATEGY_PAPER_SHADOW_PROMOTION_CONFIRMATION = (
+    "approve_evidence_bound_strategy_for_paper_shadow_only_without_"
+    "execution_or_capital_authority"
+)
+STRATEGY_LIFECYCLE_SAFETY_CONFIRMATION = (
+    "pause_or_retire_strategy_without_execution_or_capital_authority"
+)
 
 STRATEGY_PROMOTION_LIFECYCLE_STAGES = (
     "research",
@@ -36,6 +53,7 @@ class StrategyPromotionPipeline:
         actor: str | None = None,
     ) -> dict[str, Any]:
         strategy_id = _strategy_id(readiness)
+        _require_ai_shadow_readiness_binding(self._db, readiness)
         missing = _missing_requirements(readiness)
         promotable = _is_promotable(readiness)
         state = self._db.upsert_strategy_promotion_state_sync(
@@ -66,7 +84,9 @@ class StrategyPromotionPipeline:
         *,
         target_stage: str,
         readiness: dict[str, Any],
-        actor: str | None = None,
+        actor: str,
+        confirmation: str,
+        review_note: str,
     ) -> dict[str, Any]:
         target_stage = str(target_stage)
         if target_stage == "live_like":
@@ -74,8 +94,17 @@ class StrategyPromotionPipeline:
             raise ValueError("live-like promotion is disabled by default")
         if target_stage != "paper_shadow":
             raise ValueError(f"unsupported promotion target: {target_stage}")
+        normalized_actor = str(actor or "").strip()
+        if not normalized_actor:
+            raise ValueError("paper/shadow promotion reviewer is required")
+        if confirmation != STRATEGY_PAPER_SHADOW_PROMOTION_CONFIRMATION:
+            raise ValueError("paper/shadow promotion requires exact human confirmation")
+        normalized_review_note = str(review_note or "").strip()
+        if not normalized_review_note:
+            raise ValueError("paper/shadow promotion review note is required")
         if strategy_id != _strategy_id(readiness):
             raise ValueError("readiness strategy_id does not match promotion target")
+        _require_ai_shadow_readiness_binding(self._db, readiness)
         missing = _missing_requirements(readiness)
         if missing or not _is_promotable(readiness):
             raise ValueError(
@@ -93,7 +122,17 @@ class StrategyPromotionPipeline:
             payload={
                 "schema_version": STRATEGY_PROMOTION_SCHEMA_VERSION,
                 "readiness": readiness,
+                "human_review": {
+                    "reviewer": normalized_actor,
+                    "review_note": normalized_review_note,
+                    "confirmation_recorded": True,
+                    "strategy_advancement_gate_fingerprint": (
+                        _strategy_advancement_gate_fingerprint(readiness)
+                    ),
+                },
                 "live_like_enabled": False,
+                "broker_submission_enabled": False,
+                "does_not_change_capital_authority": True,
             },
         )
         self._db.record_strategy_promotion_event_sync(
@@ -101,10 +140,18 @@ class StrategyPromotionPipeline:
             event_type="promoted_to_paper_shadow",
             from_stage=from_stage,
             to_stage="paper_shadow",
-            actor=actor,
+            actor=normalized_actor,
             payload={
                 "manual_confirmation_required": True,
+                "manual_confirmation_recorded": True,
+                "reviewer": normalized_actor,
+                "review_note": normalized_review_note,
+                "strategy_advancement_gate_fingerprint": (
+                    _strategy_advancement_gate_fingerprint(readiness)
+                ),
                 "live_like_enabled": False,
+                "broker_submission_enabled": False,
+                "does_not_change_capital_authority": True,
             },
         )
         return self._normalize_state(state)
@@ -115,7 +162,8 @@ class StrategyPromotionPipeline:
         *,
         target_stage: str,
         reason: str,
-        actor: str | None = None,
+        actor: str,
+        confirmation: str,
     ) -> dict[str, Any]:
         target_stage = str(target_stage)
         strategy_id = str(strategy_id).strip()
@@ -124,11 +172,16 @@ class StrategyPromotionPipeline:
         reason = str(reason or "").strip()
         if not reason:
             raise ValueError("lifecycle transition reason is required")
+        normalized_actor = str(actor or "").strip()
+        if not normalized_actor:
+            raise ValueError("lifecycle transition reviewer is required")
+        if confirmation != STRATEGY_LIFECYCLE_SAFETY_CONFIRMATION:
+            raise ValueError("lifecycle transition requires exact human confirmation")
         if target_stage == "controlled_bridge_pilot":
             self._record_rejected_controlled_bridge_pilot(
                 strategy_id,
                 reason=reason,
-                actor=actor,
+                actor=normalized_actor,
             )
             raise ValueError("controlled bridge pilot is disabled by default")
         if target_stage not in _AUDIT_ONLY_LIFECYCLE_TRANSITIONS:
@@ -148,6 +201,8 @@ class StrategyPromotionPipeline:
             "from_stage": from_stage,
             "to_stage": target_stage,
             "manual_confirmation_required": True,
+            "manual_confirmation_recorded": True,
+            "reviewer": normalized_actor,
             "live_like_enabled": False,
             "broker_submission_enabled": False,
             "does_not_submit_broker_orders": True,
@@ -167,7 +222,7 @@ class StrategyPromotionPipeline:
             event_type=_AUDIT_ONLY_LIFECYCLE_TRANSITIONS[target_stage],
             from_stage=from_stage,
             to_stage=target_stage,
-            actor=actor,
+            actor=normalized_actor,
             payload=payload,
         )
         return self._normalize_state(state)
@@ -242,9 +297,361 @@ def _strategy_id(readiness: dict[str, Any]) -> str:
     return strategy_id
 
 
+def resolve_ai_shadow_strategy_promotion_binding(
+    db: Any,
+    strategy_id: str,
+) -> tuple[dict[str, Any], list[str]]:
+    """Re-resolve one reserved strategy against its canonical approval facts."""
+
+    normalized_strategy_id = str(strategy_id or "").strip()
+    if not normalized_strategy_id.startswith(AI_SHADOW_STRATEGY_PREFIX):
+        return {
+            "status": "not_required",
+            "strategy_id": normalized_strategy_id,
+        }, []
+    candidate_id = normalized_strategy_id.removeprefix(AI_SHADOW_STRATEGY_PREFIX)
+    state_reader = getattr(db, "get_strategy_promotion_state_sync", None)
+    state = state_reader(normalized_strategy_id) if callable(state_reader) else None
+    state = state if isinstance(state, dict) else {}
+    payload = _json_object(state.get("payload_json"))
+    readiness = _json_object(payload.get("readiness"))
+    human_review = _json_object(payload.get("human_review"))
+    readiness_for_validation = {
+        **readiness,
+        "strategy_id": readiness.get("strategy_id") or normalized_strategy_id,
+    }
+    blockers = _ai_shadow_readiness_binding_blockers(db, readiness_for_validation)
+    if not candidate_id:
+        blockers.append("ai_shadow_candidate_id_missing")
+    if readiness.get("strategy_id") != normalized_strategy_id:
+        blockers.append("ai_shadow_strategy_state_readiness_mismatch")
+    if state.get("stage") != "paper_shadow":
+        blockers.append("ai_shadow_strategy_not_in_paper_shadow")
+    if state.get("gate_status") != "paper_shadow_enabled":
+        blockers.append("ai_shadow_strategy_gate_not_enabled")
+    if bool(state.get("live_like_enabled")):
+        blockers.append("ai_shadow_strategy_live_like_must_remain_disabled")
+    if int(state.get("backtest_result_id") or 0) != int(
+        readiness.get("backtest_result_id") or 0
+    ):
+        blockers.append("ai_shadow_strategy_backtest_state_mismatch")
+    gate_fingerprint = _strategy_advancement_gate_fingerprint(readiness)
+    if not str(human_review.get("reviewer") or "").strip():
+        blockers.append("ai_shadow_strategy_human_reviewer_missing")
+    if not str(human_review.get("review_note") or "").strip():
+        blockers.append("ai_shadow_strategy_human_review_note_missing")
+    if human_review.get("confirmation_recorded") is not True:
+        blockers.append("ai_shadow_strategy_human_confirmation_missing")
+    if (
+        not gate_fingerprint
+        or human_review.get("strategy_advancement_gate_fingerprint") != gate_fingerprint
+    ):
+        blockers.append("ai_shadow_strategy_human_review_gate_mismatch")
+    blockers = list(dict.fromkeys(blockers))
+    fee_schedule_binding = _ai_shadow_fee_schedule_binding(db, candidate_id)
+    return {
+        "status": "pass" if not blockers else "blocked",
+        "strategy_id": normalized_strategy_id,
+        "candidate_id": candidate_id,
+        "stage": state.get("stage"),
+        "gate_status": state.get("gate_status"),
+        "backtest_result_id": state.get("backtest_result_id"),
+        "comparison_fingerprint": readiness.get("comparison_fingerprint"),
+        "human_approval_id": readiness.get("human_approval_id"),
+        "human_reviewer": human_review.get("reviewer"),
+        "human_review_note_recorded": bool(
+            str(human_review.get("review_note") or "").strip()
+        ),
+        "strategy_advancement_gate_fingerprint": gate_fingerprint,
+        "fee_schedule_binding": fee_schedule_binding,
+        "live_like_enabled": bool(state.get("live_like_enabled")),
+    }, blockers
+
+
+def resolve_strategy_promotion_binding(
+    db: Any,
+    strategy_id: str,
+) -> tuple[dict[str, Any], list[str]]:
+    """Resolve current evidence-owned promotion facts for one strategy."""
+
+    normalized_strategy_id = str(strategy_id or "").strip()
+    if normalized_strategy_id.startswith(AI_SHADOW_STRATEGY_PREFIX):
+        return resolve_ai_shadow_strategy_promotion_binding(
+            db,
+            normalized_strategy_id,
+        )
+    state_reader = getattr(db, "get_strategy_promotion_state_sync", None)
+    state = state_reader(normalized_strategy_id) if callable(state_reader) else None
+    if not isinstance(state, dict):
+        return {
+            "status": "blocked",
+            "strategy_id": normalized_strategy_id,
+            "stage": None,
+            "gate_status": "missing",
+            "backtest_result_id": None,
+            "live_like_enabled": False,
+            "broker_submission_enabled": False,
+            "does_not_change_capital_authority": True,
+            "evidence_owner": None,
+        }, [
+            (
+                "strategy_id_missing"
+                if not normalized_strategy_id
+                else "strategy_promotion_evidence_missing"
+            )
+        ]
+
+    return {
+        "status": "blocked",
+        "strategy_id": normalized_strategy_id,
+        "stage": state.get("stage"),
+        "gate_status": state.get("gate_status"),
+        "backtest_result_id": state.get("backtest_result_id"),
+        "live_like_enabled": bool(state.get("live_like_enabled")),
+        "broker_submission_enabled": False,
+        "does_not_change_capital_authority": True,
+        "evidence_owner": None,
+    }, ["strategy_promotion_source_not_evidence_owned"]
+
+
+def resolve_strategy_order_generation_gate(
+    db: Any,
+    strategy_id: str,
+    *,
+    as_of_date: str | None = None,
+) -> tuple[dict[str, Any], list[str]]:
+    """Fail closed before a strategy can enter paper/shadow or ticketing.
+
+    This is a read-only evidence resolver.  Passing it permits only downstream
+    paper/shadow evaluation; it is not an order, execution, or capital grant.
+    """
+
+    promotion, promotion_blockers = resolve_strategy_promotion_binding(
+        db,
+        strategy_id,
+    )
+    blockers = list(promotion_blockers)
+    if promotion.get("status") != "pass":
+        blockers.append("strategy_promotion_not_passing")
+    if promotion.get("stage") != "paper_shadow":
+        blockers.append("strategy_not_promoted_to_paper_shadow")
+    if promotion.get("gate_status") != "paper_shadow_enabled":
+        blockers.append("strategy_paper_shadow_gate_not_enabled")
+    if bool(promotion.get("live_like_enabled")):
+        blockers.append("strategy_live_like_must_remain_disabled")
+
+    normalized_strategy_id = str(strategy_id or "").strip()
+    if normalized_strategy_id.startswith(AI_SHADOW_STRATEGY_PREFIX):
+        fee_schedule_binding = promotion.get("fee_schedule_binding")
+        fee_schedule_binding = (
+            fee_schedule_binding if isinstance(fee_schedule_binding, dict) else {}
+        )
+        blockers.extend(
+            f"strategy_{blocker}"
+            for blocker in active_review_matches_fee_evidence(
+                db,
+                fee_schedule_binding,
+                as_of_date=as_of_date,
+            )
+        )
+
+    blockers = list(dict.fromkeys(blockers))
+    return {
+        "schema_version": STRATEGY_ORDER_GENERATION_GATE_SCHEMA_VERSION,
+        "status": "pass" if not blockers else "blocked",
+        "strategy_id": normalized_strategy_id,
+        "as_of_date": str(as_of_date or "") or None,
+        "promotion": promotion,
+        "blockers": blockers,
+        "persisted_facts_only": True,
+        "provider_contact_performed": False,
+        "paper_shadow_evaluation_only": True,
+        "manual_ticket_requires_current_paper_shadow": True,
+        "does_not_create_order": True,
+        "does_not_authorize_execution": True,
+        "does_not_change_capital_authority": True,
+        "broker_submission_enabled": False,
+    }, blockers
+
+
+def _require_ai_shadow_readiness_binding(db: Any, readiness: dict[str, Any]) -> None:
+    blockers = _ai_shadow_readiness_binding_blockers(db, readiness)
+    if blockers:
+        raise ValueError(
+            "reserved AI shadow readiness binding invalid: " + ", ".join(blockers)
+        )
+
+
+def _ai_shadow_readiness_binding_blockers(
+    db: Any,
+    readiness: dict[str, Any],
+) -> list[str]:
+    strategy_id = str(readiness.get("strategy_id") or "").strip()
+    if not strategy_id.startswith(AI_SHADOW_STRATEGY_PREFIX):
+        return []
+    candidate_id = strategy_id.removeprefix(AI_SHADOW_STRATEGY_PREFIX)
+    reader = getattr(db, "get_ai_shadow_strategy_promotion_binding_sync", None)
+    binding = reader(candidate_id) if callable(reader) and candidate_id else None
+    if not isinstance(binding, dict):
+        return ["ai_shadow_candidate_approval_binding_missing"]
+
+    comparison = _json_object(binding.get("comparison_json"))
+    expected_candidate_fingerprint = content_fingerprint(
+        {
+            "candidate_id": candidate_id,
+            "comparison": comparison,
+            "candidate_result_id": binding.get("candidate_result_id"),
+            "critique_id": binding.get("critique_id"),
+        }
+    )
+    blockers: list[str] = []
+    if binding.get("candidate_id") != candidate_id:
+        blockers.append("ai_shadow_candidate_identity_mismatch")
+    if binding.get("candidate_status") != "awaiting_human_approval":
+        blockers.append("ai_shadow_candidate_status_not_approvable")
+    if binding.get("recommendation") != "paper_shadow_review":
+        blockers.append("ai_shadow_candidate_recommendation_not_approvable")
+    if binding.get("promotion_status") not in {
+        "paper_shadow_approval_recorded",
+        "paper_shadow_approved",
+    }:
+        blockers.append("ai_shadow_human_approval_not_recorded")
+    if binding.get("target_stage") != "paper_shadow":
+        blockers.append("ai_shadow_approval_target_invalid")
+    if not is_valid_passed_strategy_advancement_gate(comparison.get("promotion_gate")):
+        blockers.append("ai_shadow_strategy_advancement_gate_invalid")
+    baseline_source = _binding_backtest_source(binding, "baseline")
+    candidate_source = _binding_backtest_source(binding, "candidate")
+    if comparison.get("baseline_source_fingerprint") != content_fingerprint(
+        baseline_source
+    ):
+        blockers.append("ai_shadow_baseline_source_drift")
+    if comparison.get("candidate_source_fingerprint") != content_fingerprint(
+        candidate_source
+    ):
+        blockers.append("ai_shadow_candidate_source_drift")
+    candidate_metrics = _json_object(binding.get("candidate_metrics_json"))
+    candidate_fee_evidence = _json_object(
+        candidate_metrics.get("fee_component_evidence")
+    )
+    blockers.extend(
+        f"ai_shadow_{blocker}"
+        for blocker in active_review_matches_fee_evidence(
+            db,
+            {
+                **candidate_fee_evidence,
+                **_json_object(candidate_fee_evidence.get("fee_schedule_binding")),
+            },
+        )
+    )
+    if (
+        binding.get("formula_backtest_status") != "completed"
+        or int(binding.get("canonical_backtest_result_id") or 0)
+        != int(binding.get("candidate_result_id") or 0)
+        or binding.get("backtest_evidence_fingerprint")
+        != content_fingerprint(candidate_metrics.get("research_evidence_bundle"))
+    ):
+        blockers.append("ai_shadow_canonical_backtest_binding_drift")
+    critique_artifact = _json_object(binding.get("critique_artifact_json"))
+    if (
+        binding.get("critique_status") != "completed"
+        or binding.get("critique_artifact_fingerprint")
+        != content_fingerprint(critique_artifact)
+        or content_fingerprint(comparison.get("deepseek_critique"))
+        != content_fingerprint(critique_artifact)
+    ):
+        blockers.append("ai_shadow_critique_source_drift")
+    if binding.get("candidate_fingerprint") != expected_candidate_fingerprint:
+        blockers.append("ai_shadow_candidate_approval_fingerprint_mismatch")
+    if readiness.get("schema_version") != (
+        "karkinos.ai.shadow_research_promotion_readiness.v1"
+    ):
+        blockers.append("ai_shadow_readiness_schema_invalid")
+    if readiness.get("candidate_id") != candidate_id:
+        blockers.append("ai_shadow_readiness_candidate_mismatch")
+    if readiness.get("critique_id") != binding.get("critique_id"):
+        blockers.append("ai_shadow_readiness_critique_mismatch")
+    if int(readiness.get("backtest_result_id") or 0) != int(
+        binding.get("candidate_result_id") or 0
+    ):
+        blockers.append("ai_shadow_readiness_backtest_mismatch")
+    if readiness.get("comparison_fingerprint") != content_fingerprint(comparison):
+        blockers.append("ai_shadow_readiness_comparison_mismatch")
+    if readiness.get("human_approval_id") != binding.get("promotion_id"):
+        blockers.append("ai_shadow_readiness_human_approval_mismatch")
+    readiness_gate = readiness.get("strategy_advancement_gate")
+    comparison_gate = comparison.get("promotion_gate")
+    if not is_valid_passed_strategy_advancement_gate(
+        readiness_gate
+    ) or content_fingerprint(readiness_gate) != content_fingerprint(comparison_gate):
+        blockers.append("ai_shadow_readiness_strategy_advancement_gate_mismatch")
+    if (
+        readiness.get("promotion_status") != "promotable_for_paper_review"
+        or readiness.get("is_promotable") is not True
+        or readiness.get("missing_requirements") != []
+    ):
+        blockers.append("ai_shadow_readiness_not_promotable")
+    if (
+        readiness.get("live_like_enabled") is not False
+        or readiness.get("broker_submission_enabled") is not False
+    ):
+        blockers.append("ai_shadow_readiness_authority_boundary_invalid")
+    return list(dict.fromkeys(blockers))
+
+
+def _ai_shadow_fee_schedule_binding(db: Any, candidate_id: str) -> dict[str, Any]:
+    reader = getattr(db, "get_ai_shadow_strategy_promotion_binding_sync", None)
+    binding = reader(candidate_id) if callable(reader) and candidate_id else None
+    if not isinstance(binding, dict):
+        return {}
+    metrics = _json_object(binding.get("candidate_metrics_json"))
+    fee_evidence = _json_object(metrics.get("fee_component_evidence"))
+    schedule_binding = _json_object(fee_evidence.get("fee_schedule_binding"))
+    return {
+        "fee_schedule_fingerprint": fee_evidence.get("fee_schedule_fingerprint"),
+        **schedule_binding,
+    }
+
+
+def _binding_backtest_source(binding: dict[str, Any], prefix: str) -> dict[str, Any]:
+    result_id = binding.get(
+        "baseline_result_id" if prefix == "baseline" else "candidate_result_id"
+    )
+    return {
+        "id": int(result_id or 0),
+        "initial_cash": binding.get(f"{prefix}_initial_cash"),
+        "final_equity": binding.get(f"{prefix}_final_equity"),
+        "total_return": binding.get(f"{prefix}_total_return"),
+        "sharpe": binding.get(f"{prefix}_sharpe"),
+        "max_drawdown": binding.get(f"{prefix}_max_drawdown"),
+        "metrics": _json_object(binding.get(f"{prefix}_metrics_json")),
+        "cost_summary": _json_object(binding.get(f"{prefix}_cost_summary_json")),
+    }
+
+
 def _missing_requirements(readiness: dict[str, Any]) -> list[str]:
     value = readiness.get("missing_requirements") or []
-    return [str(item) for item in value]
+    missing = [str(item) for item in value]
+    strategy_id = str(readiness.get("strategy_id") or "").strip()
+    if not strategy_id.startswith(AI_SHADOW_STRATEGY_PREFIX):
+        if not is_valid_passed_strategy_advancement_gate(
+            _strategy_advancement_gate(readiness)
+        ):
+            missing.append("strategy_advancement_gate_not_passed")
+        missing.append("evidence_owned_candidate_approval_missing")
+    return list(dict.fromkeys(missing))
+
+
+def _strategy_advancement_gate(readiness: dict[str, Any]) -> Any:
+    return readiness.get("strategy_advancement_gate") or readiness.get("promotion_gate")
+
+
+def _strategy_advancement_gate_fingerprint(readiness: dict[str, Any]) -> str | None:
+    gate = _strategy_advancement_gate(readiness)
+    if not isinstance(gate, dict):
+        return None
+    fingerprint = str(gate.get("evidence_fingerprint") or "").strip()
+    return fingerprint or None
 
 
 def _is_promotable(readiness: dict[str, Any]) -> bool:

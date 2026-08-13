@@ -8,6 +8,7 @@ from typing import Any
 from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
 
 _READY_MANUAL_CONFIRMATION_STATUS = "ready_for_manual_confirmation"
+_PAPER_SHADOW_REVIEW_STATUS = "paper_shadow_review_required"
 _ORDERABLE_ACTIONS = {"buy", "sell", "rebalance"}
 _BOARD_LOT_ASSET_CLASSES = {"stock", "etf"}
 _BLOCKING_ACCOUNT_TRUTH_STATUSES = {"blocked", "missing"}
@@ -92,10 +93,16 @@ def build_daily_trading_plan(
         for intent in order_intents
         if intent["submission_status"] == "manual_confirmation_required"
     )
+    paper_shadow_ready_count = sum(
+        1
+        for intent in order_intents
+        if intent["submission_status"] == "paper_shadow_required"
+    )
     conclusion_status, primary_target = _conclusion(
         account_truth_status=account_truth_status,
         market_status=market_status,
         manual_ready_count=manual_ready_count,
+        paper_shadow_ready_count=paper_shadow_ready_count,
         blockers=blockers,
     )
 
@@ -111,6 +118,7 @@ def build_daily_trading_plan(
             len(candidates),
         ),
         "manual_ready_count": manual_ready_count,
+        "paper_shadow_ready_count": paper_shadow_ready_count,
         "order_intent_count": len(order_intents),
         "blocked_count": len(blockers),
         "blocker_summary": _blocker_summary(blockers),
@@ -145,15 +153,31 @@ def _candidate_blocker(
         return _blocker(candidate, "risk_gate_blocked", "risk")
     if _status(candidate.get("risk_gate_status"), "not_checked") != "passed":
         return _blocker(candidate, "awaiting_risk_gate", "risk")
-    if (
-        _status(candidate.get("manual_confirmation_status"), "awaiting_risk_gate")
-        != _READY_MANUAL_CONFIRMATION_STATUS
-    ):
+    manual_status = _status(
+        candidate.get("manual_confirmation_status"),
+        "awaiting_risk_gate",
+    )
+    if manual_status not in {
+        _READY_MANUAL_CONFIRMATION_STATUS,
+        _PAPER_SHADOW_REVIEW_STATUS,
+    }:
         return _blocker(
             candidate,
-            _status(candidate.get("manual_confirmation_status"), "manual_not_ready"),
+            manual_status,
             "decision",
         )
+    if manual_status == _PAPER_SHADOW_REVIEW_STATUS:
+        strategy_gate = _dict(
+            _dict(_dict(candidate.get("evidence")).get("strategy")).get(
+                "order_generation_gate"
+            )
+        )
+        if strategy_gate.get("status") != "pass":
+            return _blocker(
+                candidate,
+                "strategy_advancement_review_required",
+                "strategy-lab",
+            )
     if _side(candidate) is None:
         return _blocker(candidate, "action_not_orderable", "decision")
     return None
@@ -223,7 +247,12 @@ def _order_intent_preview(
     elif blocking_check is not None:
         submission_status = f"blocked_by_{blocking_check['id']}"
     else:
-        submission_status = "manual_confirmation_required"
+        submission_status = (
+            "paper_shadow_required"
+            if _status(candidate.get("manual_confirmation_status"))
+            == _PAPER_SHADOW_REVIEW_STATUS
+            else "manual_confirmation_required"
+        )
     if submission_status == "blocked_by_cash_buffer":
         cash_status = "cash_buffer_breached"
         cash_shortfall = next(
@@ -687,6 +716,7 @@ def _conclusion(
     account_truth_status: str,
     market_status: str,
     manual_ready_count: int,
+    paper_shadow_ready_count: int,
     blockers: list[dict[str, Any]],
 ) -> tuple[str, str]:
     if account_truth_status in _BLOCKING_ACCOUNT_TRUTH_STATUSES:
@@ -695,6 +725,8 @@ def _conclusion(
         return "data_unavailable", "market"
     if manual_ready_count > 0:
         return "manual_confirmation_ready", "trading"
+    if paper_shadow_ready_count > 0:
+        return "paper_shadow_required", "operations"
     if any(item.get("reason") == "insufficient_cash" for item in blockers):
         return "cash_shortfall", "portfolio"
     if any(item.get("target") == "portfolio" for item in blockers):
@@ -866,6 +898,11 @@ def _evidence_refs(candidate: dict[str, Any]) -> list[str]:
     strategy_id = strategy.get("strategy_id")
     if strategy_id is not None:
         refs.append(f"strategy:{strategy_id}")
+    order_generation_gate = _dict(strategy.get("order_generation_gate"))
+    promotion = _dict(order_generation_gate.get("promotion"))
+    advancement_fingerprint = promotion.get("strategy_advancement_gate_fingerprint")
+    if advancement_fingerprint:
+        refs.append(f"strategy_advancement:{advancement_fingerprint}")
     risk_gate = _dict(evidence.get("risk_gate"))
     risk_decision_id = risk_gate.get("decision_id")
     if risk_decision_id is not None:

@@ -175,29 +175,43 @@ def build_acceptance_audit() -> AcceptanceAudit:
             ),
             AcceptanceCriterion(
                 key="manual_confirm_execution_path",
-                checkbox_text="* [x] Manual-confirm execution path is complete.",
+                checkbox_text=(
+                    "* [x] Manual-ticket preparation rechecks current Account Truth, "
+                    "market, risk, Kill Switch, strategy advancement, reviewed costs, "
+                    "and exact paper/shadow evidence before any write."
+                ),
                 evidence_paths=(
                     "execution/gateway.py",
+                    "server/routes/decision.py",
                     "server/routes/trading.py",
+                    "server/services/strategy_promotion_pipeline.py",
                     "tests/execution/test_gateway.py",
+                    "tests/server/test_decision_paper_shadow_evidence.py",
                     "tests/server/test_trading_routes.py",
+                    "tests/test_per_order_gateway_strategy_advancement.py",
                 ),
                 validation_commands=(
-                    "uv run python -m pytest tests/execution/test_gateway.py tests/server/test_trading_routes.py",
+                    "uv run python -m pytest tests/execution/test_gateway.py tests/server/test_decision_paper_shadow_evidence.py tests/server/test_trading_routes.py tests/test_per_order_gateway_strategy_advancement.py",
                     "uv run python -m pytest",
                 ),
             ),
             AcceptanceCriterion(
                 key="paper_shadow_daily",
-                checkbox_text="* [x] Paper/shadow mode can run daily without manual data edits.",
+                checkbox_text=(
+                    "* [x] Paper/shadow runs consume the canonical Decision trading "
+                    "plan, reject caller-owned equity, and remain non-submitting."
+                ),
                 evidence_paths=(
+                    "server/routes/decision.py",
                     "server/routes/trading.py",
-                    "analytics/strategy_promotion_readiness.py",
+                    "server/services/daily_trading_plan.py",
+                    "server/services/paper_shadow_run.py",
                     "tests/server/test_trading_routes.py",
-                    "tests/analytics/test_strategy_promotion_readiness.py",
+                    "tests/test_daily_trading_plan.py",
+                    "tests/test_paper_shadow_run_service.py",
                 ),
                 validation_commands=(
-                    "uv run python -m pytest tests/server/test_trading_routes.py tests/analytics/test_strategy_promotion_readiness.py",
+                    "uv run python -m pytest tests/server/test_trading_routes.py tests/test_daily_trading_plan.py tests/test_paper_shadow_run_service.py",
                     "uv run python -m pytest",
                 ),
             ),

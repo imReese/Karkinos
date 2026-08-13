@@ -206,7 +206,8 @@ class PerOrderConfirmationService:
                 if blocker != "execution_gateway_runtime_not_verified"
             ]
         reconciliation, reconciliation_blockers = self._reconciliation_summary(
-            prior_batch_reconciliation_fingerprint
+            prior_batch_reconciliation_fingerprint,
+            expected_strategy_id=str(scope.get("strategy_id") or ""),
         )
         kill_switch, kill_switch_blockers = self._kill_switch_summary()
 
@@ -730,10 +731,13 @@ class PerOrderConfirmationService:
     def _reconciliation_summary(
         self,
         fingerprint: str,
+        *,
+        expected_strategy_id: str,
     ) -> tuple[dict[str, Any], list[str]]:
         return resolve_prior_batch_reconciliation(
             db=self._db,
             fingerprint=fingerprint,
+            expected_strategy_id=expected_strategy_id,
         )
 
     def _kill_switch_summary(self) -> tuple[dict[str, Any], list[str]]:

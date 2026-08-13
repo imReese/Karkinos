@@ -619,6 +619,85 @@ def test_manual_ticket_execution_and_broker_import_form_a_non_mutating_audit_cha
     assert _ledger_entry_count(Path(db._path)) == ledger_count_before
 
 
+def test_reconciliation_persists_exact_plan_paper_actual_comparison(tmp_path) -> None:
+    db, oms = _db_and_oms(tmp_path)
+    order = _confirmed_order(db, oms, gateway_evidence=True)
+    _gateway(db).create_manual_ticket(order["order_id"], actor="test")
+    current = db.get_oms_order_sync(order["order_id"])
+    assert current is not None
+    payload = json.loads(current["payload_json"])
+    payload["gateway_evidence"]["research_evidence"][
+        "evidence_ref"
+    ] = "decision_action:1"
+    db.upsert_oms_order_sync({**current, "payload": payload})
+    db.upsert_paper_shadow_run_sync(
+        run_id="run-001",
+        plan_date="2026-07-02",
+        input_fingerprint="a" * 64,
+        status="within_expectations",
+        order_intent_count=1,
+        simulated_order_count=1,
+        simulated_fill_count=1,
+        divergence_status="within_expectations",
+        next_manual_review_step="review_manual_confirmation",
+        limitations=[],
+        payload={
+            "schema_version": "karkinos.paper_shadow_run.v1",
+            "run_id": "run-001",
+            "input_fingerprint": "a" * 64,
+            "orders": [
+                {
+                    "order_id": "paper-order-001",
+                    "status": "filled",
+                    "order_intent": {
+                        "action_ref": "action:1",
+                        "symbol": "600519",
+                        "side": "buy",
+                        "estimated_quantity": "100",
+                        "estimated_price": "1688.00",
+                    },
+                }
+            ],
+            "fills": [
+                {
+                    "fill_id": "paper-fill-001",
+                    "order_id": "paper-order-001",
+                    "fill_quantity": "100",
+                    "fill_price": "1688.00",
+                    "commission": "5.00",
+                    "slippage": "0.00",
+                }
+            ],
+            "does_not_submit_broker_order": True,
+            "does_not_mutate_production_ledger": True,
+        },
+    )
+    _import_broker_trade(
+        Path(db._path),
+        event_id="broker-buy-exact-plan-paper-actual",
+        quantity=100,
+        client_order_id=order["order_id"],
+    )
+
+    run = ExecutionReconciliationService(db=db).run_reconciliation(
+        run_date="2026-07-02"
+    )
+
+    item = next(row for row in run["items"] if row["order_id"] == order["order_id"])
+    comparison = json.loads(item["payload_json"])["plan_paper_actual_comparison"]
+    assert comparison["status"] == "pass"
+    assert comparison["blockers"] == []
+    assert comparison["differences"] == []
+    assert comparison["planned"]["quantity"] == "100.0"
+    assert comparison["paper"]["filled_quantity"] == "100"
+    assert comparison["actual"]["quantity"] == "100"
+    assert comparison["actual"]["exact_identity_linked"] is True
+    assert comparison["actual"]["total_execution_cost"] == "5.00"
+    assert len(comparison["evidence_fingerprint"]) == 64
+    assert comparison["authorizes_execution"] is False
+    assert comparison["does_not_mutate_production_ledger"] is True
+
+
 def test_reconciliation_queues_manual_execution_cost_mismatch_without_mutation(
     tmp_path,
 ) -> None:

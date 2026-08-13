@@ -8,6 +8,11 @@ import re
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable
 
+from server.services.reviewed_fee_schedule import active_review_matches_fee_evidence
+from server.services.strategy_promotion_pipeline import (
+    resolve_strategy_promotion_binding,
+)
+
 PER_ORDER_GATEWAY_EVIDENCE_SCHEMA_VERSION = "karkinos.per_order_gateway_gate_summary.v2"
 
 _FINGERPRINT_PATTERN = re.compile(r"^[a-f0-9]{64}$")
@@ -263,6 +268,27 @@ def _resolve_decision_action(
         blockers.append("gateway_evidence_scope_mismatch:research_evidence:side")
     if action.get("source_signal_id") is None:
         blockers.append("gateway_evidence_lineage_missing:research_evidence:signal")
+    strategy_promotion, strategy_promotion_blockers = (
+        resolve_strategy_promotion_binding(db, expected_strategy)
+    )
+    blockers.extend(
+        f"gateway_evidence_strategy_advancement:{blocker}"
+        for blocker in strategy_promotion_blockers
+    )
+    fee_schedule_binding = strategy_promotion.get("fee_schedule_binding")
+    if expected_strategy.startswith("ai_formula_shadow:"):
+        fee_schedule_binding = (
+            fee_schedule_binding if isinstance(fee_schedule_binding, dict) else {}
+        )
+        blockers.extend(
+            f"gateway_evidence_strategy_advancement:{blocker}"
+            for blocker in active_review_matches_fee_evidence(
+                db,
+                fee_schedule_binding,
+                as_of_date=str(action.get("timestamp") or ""),
+            )
+        )
+    source_core["strategy_promotion"] = strategy_promotion
     return {
         "resolution_status": "resolved_clear" if not blockers else "resolved_blocked",
         "source_identifier": identifier,
@@ -271,6 +297,7 @@ def _resolve_decision_action(
         "action_id": action_id,
         "source_signal_id": action.get("source_signal_id"),
         "strategy_id": str(action.get("strategy_id") or ""),
+        "strategy_promotion": strategy_promotion,
     }, blockers
 
 

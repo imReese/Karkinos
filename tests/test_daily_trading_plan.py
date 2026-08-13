@@ -233,6 +233,49 @@ def test_trading_plan_turns_manual_ready_candidate_into_order_intent_preview() -
     assert intent["does_not_submit_broker_order"] is True
 
 
+def test_trading_plan_emits_paper_shadow_intent_before_manual_ticket() -> None:
+    candidate = _candidate(manual_status="paper_shadow_review_required")
+    candidate["evidence"]["strategy"]["order_generation_gate"] = {
+        "status": "pass",
+        "paper_shadow_evaluation_only": True,
+        "does_not_authorize_execution": True,
+        "promotion": {
+            "strategy_advancement_gate_fingerprint": "advancement-fingerprint",
+        },
+    }
+
+    plan = _plan(candidate=candidate)
+
+    assert plan["conclusion_status"] == "paper_shadow_required"
+    assert plan["primary_target"] == "operations"
+    assert plan["manual_ready_count"] == 0
+    assert plan["paper_shadow_ready_count"] == 1
+    assert plan["order_intent_count"] == 1
+    assert plan["blocked_count"] == 0
+    intent = plan["order_intents"][0]
+    assert intent["submission_status"] == "paper_shadow_required"
+    assert "strategy_advancement:advancement-fingerprint" in intent["evidence_refs"]
+    assert intent["does_not_submit_broker_order"] is True
+
+
+def test_trading_plan_blocks_paper_shadow_without_current_advancement_gate() -> None:
+    candidate = _candidate(manual_status="paper_shadow_review_required")
+    candidate["evidence"]["strategy"]["order_generation_gate"] = {
+        "status": "blocked",
+        "blockers": ["strategy_promotion_evidence_missing"],
+    }
+
+    plan = _plan(candidate=candidate)
+
+    assert plan["conclusion_status"] == "no_manual_action"
+    assert plan["manual_ready_count"] == 0
+    assert plan["paper_shadow_ready_count"] == 0
+    assert plan["order_intent_count"] == 0
+    assert plan["blocked_count"] == 1
+    assert plan["blockers"][0]["reason"] == ("strategy_advancement_review_required")
+    assert plan["blockers"][0]["target"] == "strategy-lab"
+
+
 def test_trading_plan_blocks_buy_intent_when_cash_is_insufficient() -> None:
     plan = build_daily_trading_plan(
         decision_payload={

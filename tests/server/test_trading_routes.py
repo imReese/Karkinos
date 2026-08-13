@@ -14,8 +14,8 @@ from fastapi.routing import APIRoute
 
 from core.events import OrderIntentEvent, RiskDecisionEvent
 from core.types import OrderSide, Symbol
-from server.routes import trading as trading_routes
 from server.db import AppDatabase
+from server.routes import trading as trading_routes
 from server.services.trading_controls import TradingControlState
 
 
@@ -136,7 +136,10 @@ def test_kill_switch_routes_read_and_update_state(monkeypatch) -> None:
     assert updated.reason == "operator stop"
 
 
-def test_manual_order_routes_confirm_and_reject(monkeypatch, tmp_path) -> None:
+def test_manual_order_confirmation_blocks_unlinked_legacy_order_but_rejects_safely(
+    monkeypatch,
+    tmp_path,
+) -> None:
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     db.record_order_sync(
@@ -215,7 +218,8 @@ def test_manual_order_routes_confirm_and_reject(monkeypatch, tmp_path) -> None:
         method="POST",
     )
 
-    confirmed = asyncio.run(confirm_endpoint("ORD-CONFIRM"))
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(confirm_endpoint("ORD-CONFIRM"))
     rejected = asyncio.run(
         reject_endpoint(
             "ORD-REJECT",
@@ -223,15 +227,16 @@ def test_manual_order_routes_confirm_and_reject(monkeypatch, tmp_path) -> None:
         )
     )
 
-    assert confirmed["status"] == "confirmed"
+    assert exc.value.status_code == 409
+    assert "canonical decision action evidence is missing" in exc.value.detail
     assert rejected["status"] == "rejected"
-    assert db.get_manual_order_sync("ORD-CONFIRM")["status"] == "confirmed"
+    assert db.get_manual_order_sync("ORD-CONFIRM")["status"] == "pending_confirm"
     assert db.get_manual_order_sync("ORD-REJECT")["status"] == "rejected"
-    assert db.get_order_sync("ORD-CONFIRM")["status"] == "confirmed"
+    assert db.get_order_sync("ORD-CONFIRM")["status"] == "pending_confirm"
     assert db.get_order_sync("ORD-REJECT")["status"] == "rejected"
 
 
-def test_create_manual_order_from_risk_passed_action(
+def test_create_manual_order_blocks_risk_passed_action_without_promotion_evidence(
     monkeypatch,
     tmp_path,
 ) -> None:
@@ -251,6 +256,49 @@ def test_create_manual_order_from_risk_passed_action(
         method="POST",
     )
 
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(
+            endpoint(
+                action_id,
+                trading_routes.ActionManualOrderRequest(quantity=1000),
+            )
+        )
+
+    assert exc.value.status_code == 409
+    assert "strategy_promotion_evidence_missing" in exc.value.detail
+    assert db.list_manual_orders_sync() == []
+    assert db.list_orders_sync() == []
+    assert broadcasts == []
+
+
+def test_create_manual_order_writes_only_after_current_gate_passes(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    action_id = _seed_action_task_with_risk(db, passed=True)
+    broadcasts: list[dict] = []
+    fake_state = SimpleNamespace(
+        db=db,
+        trading_controls=TradingControlState(),
+        hub=SimpleNamespace(broadcast=lambda data: broadcasts.append(data)),
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        trading_routes,
+        "_current_action_manual_ticket_gate",
+        lambda state, action, **kwargs: {
+            "status": "pass",
+            "does_not_authorize_execution": True,
+            "broker_submission_enabled": False,
+        },
+    )
+    endpoint = _endpoint(
+        "/api/trading/actions/{action_id}/manual-order",
+        method="POST",
+    )
+
     created = asyncio.run(
         endpoint(
             action_id,
@@ -262,17 +310,237 @@ def test_create_manual_order_from_risk_passed_action(
     manual_order = db.get_manual_order_sync(order_id)
     order_fact = db.get_order_sync(order_id)
     action = db.get_action_tasks_sync(statuses=["pending_manual_confirmation"])[0]
+    order_payload = json.loads(order_fact["payload_json"])
 
     assert created["order_id"] == order_id
     assert created["status"] == "pending_confirm"
     assert manual_order["execution_mode"] == "manual"
     assert manual_order["risk_decision_id"] == "RISK-PASSED"
-    assert order_fact["status"] == "pending_confirm"
     assert order_fact["source"] == "manual_action"
-    assert order_fact["risk_decision_id"] == "RISK-PASSED"
+    assert order_payload["current_action_manual_ticket_gate"]["status"] == "pass"
     assert action["id"] == action_id
-    assert action["manual_confirmation_status"] == "ready_for_manual_confirmation"
     assert broadcasts[-1]["event_type"] == "ManualOrderPrepared"
+
+
+@pytest.mark.parametrize(
+    ("market_status", "kill_switch_enabled", "expected_blocker"),
+    [
+        ("stale", False, "current_market_data_not_trusted"),
+        ("live", True, "current_kill_switch_enabled"),
+    ],
+)
+def test_current_manual_ticket_gate_rechecks_market_data_and_kill_switch(
+    monkeypatch,
+    market_status,
+    kill_switch_enabled,
+    expected_blocker,
+) -> None:
+    controls = TradingControlState()
+    if kill_switch_enabled:
+        controls.set_kill_switch(True, "operator stop")
+    state = SimpleNamespace(db=object(), trading_controls=controls)
+    action = {
+        "id": 7,
+        "strategy_id": "ai_formula_shadow:fixture",
+        "timestamp": "2026-08-13T09:30:00+08:00",
+        "risk_gate_status": "passed",
+        "manual_confirmation_status": "ready_for_manual_confirmation",
+    }
+    monkeypatch.setattr(
+        "server.routes.decision._account_truth_gate_evidence",
+        lambda state: {"gate_status": "pass", "blocking_reasons": []},
+    )
+    monkeypatch.setattr(
+        "server.routes.decision._data_freshness_evidence",
+        lambda action, db, *, quotes, allow_direct_quote_fallback: {
+            "status": market_status,
+            "reason": "fixture_market_status",
+        },
+    )
+    monkeypatch.setattr(
+        "server.routes.decision._paper_shadow_evidence",
+        lambda action, manual_status, *, db: {
+            "status": "pass",
+            "has_evidence": True,
+            "run_id": "shadow:fixture",
+            "input_fingerprint": "fixture-fingerprint",
+            "order_id": "SHADOW-FIXTURE",
+            "divergence_status": "within_expectations",
+            "blocking_reasons": [],
+        },
+    )
+    monkeypatch.setattr(
+        "server.services.strategy_promotion_pipeline."
+        "resolve_strategy_order_generation_gate",
+        lambda db, strategy_id, *, as_of_date=None: (
+            {"status": "pass", "strategy_id": strategy_id},
+            [],
+        ),
+    )
+
+    with pytest.raises(ValueError) as exc:
+        trading_routes._current_action_manual_ticket_gate(state, action)
+
+    assert expected_blocker in str(exc.value)
+
+
+def test_current_manual_ticket_gate_requires_trading_control_state(monkeypatch) -> None:
+    state = SimpleNamespace(db=object(), trading_controls=None)
+    action = {
+        "id": 7,
+        "strategy_id": "ai_formula_shadow:fixture",
+        "timestamp": "2026-08-13T09:30:00+08:00",
+        "risk_gate_status": "passed",
+        "manual_confirmation_status": "ready_for_manual_confirmation",
+    }
+    monkeypatch.setattr(
+        "server.routes.decision._account_truth_gate_evidence",
+        lambda state: {"gate_status": "pass", "blocking_reasons": []},
+    )
+    monkeypatch.setattr(
+        "server.routes.decision._data_freshness_evidence",
+        lambda action, db, *, quotes, allow_direct_quote_fallback: {"status": "live"},
+    )
+    monkeypatch.setattr(
+        "server.routes.decision._paper_shadow_evidence",
+        lambda action, manual_status, *, db: {
+            "status": "pass",
+            "has_evidence": True,
+            "run_id": "shadow:fixture",
+            "input_fingerprint": "fixture-fingerprint",
+            "order_id": "SHADOW-FIXTURE",
+            "divergence_status": "within_expectations",
+            "blocking_reasons": [],
+        },
+    )
+    monkeypatch.setattr(
+        "server.services.strategy_promotion_pipeline."
+        "resolve_strategy_order_generation_gate",
+        lambda db, strategy_id, *, as_of_date=None: (
+            {"status": "pass", "strategy_id": strategy_id},
+            [],
+        ),
+    )
+
+    with pytest.raises(ValueError) as exc:
+        trading_routes._current_action_manual_ticket_gate(state, action)
+
+    assert "current_trading_controls_unavailable" in str(exc.value)
+
+
+def test_current_manual_ticket_gate_binds_exact_simulated_order_terms(
+    monkeypatch,
+) -> None:
+    strategy_id = "ai_formula_shadow:fixture"
+    action = {
+        "id": 7,
+        "strategy_id": strategy_id,
+        "timestamp": "2026-08-13T09:30:00+08:00",
+        "risk_gate_status": "passed",
+        "risk_decision_id": "RISK-7",
+        "manual_confirmation_status": "ready_for_manual_confirmation",
+    }
+    state = SimpleNamespace(db=object(), trading_controls=TradingControlState())
+    monkeypatch.setattr(
+        "server.routes.decision._account_truth_gate_evidence",
+        lambda state: {
+            "gate_status": "pass",
+            "import_run_id": "import-7",
+            "blocking_reasons": [],
+        },
+    )
+    monkeypatch.setattr(
+        "server.routes.decision._data_freshness_evidence",
+        lambda action, db, *, quotes, allow_direct_quote_fallback: {"status": "live"},
+    )
+    monkeypatch.setattr(
+        "server.routes.decision._paper_shadow_evidence",
+        lambda action, manual_status, *, db: {
+            "status": "pass",
+            "has_evidence": True,
+            "run_id": "shadow:fixture",
+            "input_fingerprint": "fixture-fingerprint",
+            "order_id": "SHADOW-FIXTURE",
+            "divergence_status": "within_expectations",
+            "order_divergence_status": "within_expectations",
+            "order_intent": {
+                "action_ref": "action:7",
+                "symbol": "510300",
+                "side": "buy",
+                "estimated_quantity": 1000,
+                "estimated_price": 4.56,
+                "strategy_refs": [f"strategy:{strategy_id}"],
+                "strategy_advancement_refs": ["strategy_advancement:gate-7"],
+                "risk_refs": ["risk:RISK-7"],
+                "account_truth_refs": ["account_truth:import-7"],
+            },
+            "blocking_reasons": [],
+        },
+    )
+    monkeypatch.setattr(
+        "server.services.strategy_promotion_pipeline."
+        "resolve_strategy_order_generation_gate",
+        lambda db, strategy_id, *, as_of_date=None: (
+            {
+                "status": "pass",
+                "strategy_id": strategy_id,
+                "promotion": {
+                    "strategy_advancement_gate_fingerprint": "gate-7",
+                },
+            },
+            [],
+        ),
+    )
+
+    gate = trading_routes._current_action_manual_ticket_gate(
+        state,
+        action,
+        proposed_order={
+            "symbol": "510300",
+            "side": "buy",
+            "quantity": 1000,
+            "price": 4.56,
+        },
+    )
+
+    assert gate["status"] == "pass"
+    assert gate["does_not_authorize_execution"] is True
+
+    with pytest.raises(ValueError) as exc:
+        trading_routes._current_action_manual_ticket_gate(
+            state,
+            action,
+            proposed_order={
+                "symbol": "510300",
+                "side": "buy",
+                "quantity": 900,
+                "price": 4.56,
+            },
+        )
+
+    assert "paper_shadow_ticket_quantity_mismatch" in str(exc.value)
+
+    monkeypatch.setattr(
+        "server.services.strategy_promotion_pipeline."
+        "resolve_strategy_order_generation_gate",
+        lambda db, strategy_id, *, as_of_date=None: (
+            {"status": "blocked", "strategy_id": strategy_id},
+            [],
+        ),
+    )
+    with pytest.raises(ValueError) as exc:
+        trading_routes._current_action_manual_ticket_gate(
+            state,
+            action,
+            proposed_order={
+                "symbol": "510300",
+                "side": "buy",
+                "quantity": 1000,
+                "price": 4.56,
+            },
+        )
+
+    assert "current_strategy_order_generation_not_passing" in str(exc.value)
 
 
 @pytest.mark.parametrize(
@@ -359,6 +627,15 @@ def test_manual_order_decisions_update_action_status_and_signal_journal(
         hub=None,
     )
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        trading_routes,
+        "_current_action_manual_ticket_gate",
+        lambda state, action, **kwargs: {
+            "status": "pass",
+            "does_not_authorize_execution": True,
+            "broker_submission_enabled": False,
+        },
+    )
     create_endpoint = _endpoint(
         "/api/trading/actions/{action_id}/manual-order",
         method="POST",
@@ -390,186 +667,143 @@ def test_manual_order_decisions_update_action_status_and_signal_journal(
     )
 
 
-def test_daily_shadow_run_records_only_risk_passed_actions_without_manual_orders(
+def test_daily_shadow_route_delegates_to_canonical_decision_plan_and_service(
     monkeypatch,
     tmp_path,
 ) -> None:
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
-    passed_action_id = _seed_action_task_with_risk(db, passed=True)
-    _seed_live_quote(db)
-    blocked_action_id = _seed_action_task_with_risk(
+    calls: dict[str, object] = {}
+    decision_payload = {
+        "decision_date": "2026-04-19",
+        "generated_at": "2026-04-19T14:50:00+08:00",
+        "decision": "review_required",
+    }
+    trading_plan = {
+        "schema_version": "karkinos.daily_trading_plan.v1",
+        "plan_date": "2026-04-19",
+        "generated_at": "2026-04-19T14:50:00+08:00",
+        "order_intents": [],
+    }
+    canonical_result = {
+        "run_id": "shadow:2026-04-19:canonical",
+        "status": "no_action",
+        "does_not_submit_broker_order": True,
+        "does_not_mutate_production_ledger": True,
+    }
+
+    async def fake_today_decision(state, *, portfolio_context):
+        calls["decision_context"] = portfolio_context
+        return decision_payload
+
+    def fake_build_plan(*, decision_payload, config, positions):
+        calls["plan_inputs"] = (decision_payload, config, positions)
+        return trading_plan
+
+    def fake_run(*, db, trading_plan, generated_at):
+        calls["paper_inputs"] = (db, trading_plan, generated_at)
+        return canonical_result
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=100000),
+        db=db,
+        trading_controls=TradingControlState(),
+        hub=None,
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        "server.routes.decision._decision_portfolio_context",
+        lambda state: {"source": "persisted_account_truth"},
+    )
+    monkeypatch.setattr(
+        "server.routes.decision._today_decision_payload",
+        fake_today_decision,
+    )
+    monkeypatch.setattr(
+        "server.routes.decision._trading_plan_positions",
+        lambda state, *, portfolio_context: {"600519": {"quantity": 100}},
+    )
+    monkeypatch.setattr(
+        "server.services.daily_trading_plan.build_daily_trading_plan",
+        fake_build_plan,
+    )
+    monkeypatch.setattr(
+        "server.services.paper_shadow_run.run_paper_shadow_from_trading_plan",
+        fake_run,
+    )
+    endpoint = _endpoint("/api/trading/shadow-runs/daily", method="POST")
+
+    response = asyncio.run(
+        endpoint(trading_routes.ShadowRunRequest(run_date="2026-04-19"))
+    )
+
+    assert response == canonical_result
+    assert calls["decision_context"] == {"source": "persisted_account_truth"}
+    assert calls["plan_inputs"][0] is decision_payload
+    assert calls["paper_inputs"] == (
         db,
-        passed=False,
-        signal_id=2,
-        symbol="600519",
-        price=12.5,
+        trading_plan,
+        "2026-04-19T14:50:00+08:00",
     )
-    fake_state = SimpleNamespace(
-        config=SimpleNamespace(initial_cash=100000),
-        db=db,
-        trading_controls=TradingControlState(),
-        hub=None,
-        scheduler=None,
-    )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
-    endpoint = _endpoint("/api/trading/shadow-runs/daily", method="POST")
-
-    response = asyncio.run(
-        endpoint(trading_routes.ShadowRunRequest(run_date="2026-04-19"))
-    )
-    orders = db.list_orders_sync()
-    actions_by_id = {task["id"]: task for task in db.get_action_tasks_sync()}
-
-    assert response["run_id"] == "shadow:2026-04-19"
-    assert response["processed_count"] == 1
-    assert response["skipped_count"] == 1
-    assert response["orders"][0]["source_action_id"] == passed_action_id
-    assert response["orders"][0]["order_id"] == f"SHADOW-2026-04-19-{passed_action_id}"
-    assert orders[0]["order_id"] == f"SHADOW-2026-04-19-{passed_action_id}"
-    assert orders[0]["execution_mode"] == "paper_shadow"
-    assert orders[0]["source"] == "paper_shadow_daily"
-    assert orders[0]["status"] == "shadow_recorded"
-    assert orders[0]["quantity"] == pytest.approx(4385.0)
     assert db.list_manual_orders_sync() == []
-    assert actions_by_id[passed_action_id]["status"] == "pending"
-    assert actions_by_id[blocked_action_id]["risk_gate_status"] == "blocked"
-
-
-def test_daily_shadow_run_is_idempotent_for_same_date_and_actions(
-    monkeypatch,
-    tmp_path,
-) -> None:
-    db = AppDatabase(tmp_path / "app.db")
-    db.init_sync()
-    action_id = _seed_action_task_with_risk(db, passed=True)
-    _seed_live_quote(db)
-    fake_state = SimpleNamespace(
-        config=SimpleNamespace(initial_cash=100000),
-        db=db,
-        trading_controls=TradingControlState(),
-        hub=None,
-        scheduler=None,
-    )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
-    endpoint = _endpoint("/api/trading/shadow-runs/daily", method="POST")
-    request = trading_routes.ShadowRunRequest(run_date="2026-04-19")
-
-    first = asyncio.run(endpoint(request))
-    order_id = f"SHADOW-2026-04-19-{action_id}"
-    first_order = db.get_order_sync(order_id)
-    first_events = db.list_events_sync(entity_type="order", entity_id=order_id)
-
-    second = asyncio.run(endpoint(request))
-    second_order = db.get_order_sync(order_id)
-    second_events = db.list_events_sync(entity_type="order", entity_id=order_id)
-    payload = json.loads(second_order["payload_json"])
-
-    assert first["processed_count"] == 1
-    assert first["reused_count"] == 0
-    assert second["processed_count"] == 0
-    assert second["reused_count"] == 1
-    assert second["reused_orders"][0]["order_id"] == order_id
-    assert payload["shadow_run_schema_version"] == 1
-    assert payload["shadow_run_idempotency_key"] == order_id
-    assert second_order["created_at"] == first_order["created_at"]
-    assert second_order["updated_at"] == first_order["updated_at"]
-    assert len(first_events) == 1
-    assert len(second_events) == 1
-
-
-@pytest.mark.parametrize(
-    ("quote_kwargs", "expected_reason"),
-    [
-        (None, "missing_latest_quote"),
-        (
-            {
-                "price": 4.56,
-                "quote_status": "stale",
-                "stale_reason": "older than trading day",
-            },
-            "quote_status_stale",
-        ),
-        (
-            {
-                "price": 0.0,
-                "quote_status": "live",
-            },
-            "invalid_quote_price",
-        ),
-    ],
-)
-def test_daily_shadow_run_blocks_actions_with_failed_data_quality(
-    monkeypatch,
-    tmp_path,
-    quote_kwargs,
-    expected_reason,
-) -> None:
-    db = AppDatabase(tmp_path / "app.db")
-    db.init_sync()
-    action_id = _seed_action_task_with_risk(db, passed=True)
-    if quote_kwargs is not None:
-        db.upsert_latest_quote_sync(
-            symbol="510300",
-            asset_type="fund",
-            volume=1000.0,
-            quote_timestamp="2026-04-19T14:50:00+08:00",
-            quote_source="fixture",
-            provider_name="fixture",
-            provider_status="ok",
-            captured_at="2026-04-19T14:50:01+08:00",
-            captured_reason="shadow_quality_fixture",
-            **quote_kwargs,
-        )
-    fake_state = SimpleNamespace(
-        config=SimpleNamespace(initial_cash=100000),
-        db=db,
-        trading_controls=TradingControlState(),
-        hub=None,
-        scheduler=None,
-    )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
-    endpoint = _endpoint("/api/trading/shadow-runs/daily", method="POST")
-
-    response = asyncio.run(
-        endpoint(trading_routes.ShadowRunRequest(run_date="2026-04-19"))
-    )
-
-    assert response["processed_count"] == 0
-    assert response["reused_count"] == 0
-    assert response["skipped_count"] == 1
-    assert response["data_quality_status"] == "blocked"
-    assert response["data_quality"]["blocked_count"] == 1
-    assert response["data_quality"]["passed_count"] == 0
-    assert response["data_quality"]["issues"][0]["action_id"] == action_id
-    assert response["data_quality"]["issues"][0]["reason"] == expected_reason
-    assert response["skipped"][0]["reason"] == f"data_quality:{expected_reason}"
     assert db.list_orders_sync() == []
 
 
-def test_shadow_order_divergence_review_updates_order_payload_without_execution(
+def test_daily_shadow_route_rejects_caller_supplied_equity(
+    monkeypatch, tmp_path
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    fake_state = SimpleNamespace(db=db, hub=None)
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    endpoint = _endpoint("/api/trading/shadow-runs/daily", method="POST")
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(
+            endpoint(
+                trading_routes.ShadowRunRequest(
+                    run_date="2026-04-19",
+                    base_equity=100000,
+                )
+            )
+        )
+
+    assert exc.value.status_code == 409
+    assert "persisted Account Truth" in exc.value.detail
+    assert db.list_orders_sync() == []
+
+
+def test_shadow_order_divergence_review_updates_paper_fact_without_execution(
     monkeypatch,
     tmp_path,
 ) -> None:
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
-    passed_action_id = _seed_action_task_with_risk(db, passed=True)
-    _seed_live_quote(db)
+    order_id = "SHADOW-2026-04-19-001-510300-buy-fixture"
+    db.record_order_sync(
+        order_id=order_id,
+        timestamp="2026-04-19T14:50:00+08:00",
+        symbol="510300",
+        side="buy",
+        order_type="limit",
+        quantity=1000.0,
+        price=4.56,
+        execution_mode="paper_shadow",
+        status="filled",
+        source="paper_shadow_daily",
+        source_ref="shadow:2026-04-19:fixture",
+        payload={"strategy_id": "dual_ma", "divergence_status": "review_required"},
+    )
     fake_state = SimpleNamespace(
-        config=SimpleNamespace(initial_cash=100000),
         db=db,
         trading_controls=TradingControlState(),
         hub=None,
-        scheduler=None,
     )
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
-    run_endpoint = _endpoint("/api/trading/shadow-runs/daily", method="POST")
     review_endpoint = _endpoint(
         "/api/trading/order-facts/{order_id}/shadow-divergence-review",
         method="POST",
     )
-    asyncio.run(run_endpoint(trading_routes.ShadowRunRequest(run_date="2026-04-19")))
-    order_id = f"SHADOW-2026-04-19-{passed_action_id}"
 
     reviewed = asyncio.run(
         review_endpoint(
@@ -583,20 +817,17 @@ def test_shadow_order_divergence_review_updates_order_payload_without_execution(
         )
     )
     order = db.get_order_sync(order_id)
-    orders = db.list_orders_sync()
-    fills = db.list_fills_sync(order_id=order_id)
-
     payload = json.loads(order["payload_json"])
+
     assert reviewed["order_id"] == order_id
     assert reviewed["execution_mode"] == "paper_shadow"
-    assert reviewed["status"] == "shadow_recorded"
+    assert reviewed["status"] == "filled"
     assert payload["divergence_status"] == "within_expectations"
     assert payload["divergence_reviewed_at"] == "2026-04-20T16:00:00"
     assert payload["divergence_review_notes"].startswith("Shadow quantity")
     assert payload["divergence_reviewer"] == "operator"
     assert payload["strategy_id"] == "dual_ma"
-    assert orders[0]["status"] == "shadow_recorded"
-    assert fills == []
+    assert db.list_fills_sync(order_id=order_id) == []
 
 
 def test_shadow_order_divergence_review_rejects_non_shadow_order(
