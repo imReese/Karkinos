@@ -138,6 +138,9 @@ test('shows old/new OOS evidence and records only an explicit paper-shadow appro
       if (url.endsWith('/api/ai/strategy-research/shadow-automation')) {
         return jsonResponse(status);
       }
+      if (url.endsWith('/api/strategy-promotion/states')) {
+        return jsonResponse([]);
+      }
       if (url.includes('/paper-shadow-approvals') && init?.method === 'POST') {
         return jsonResponse({ target_stage: 'paper_shadow' }, 201);
       }
@@ -224,6 +227,9 @@ test('manual run and policy pause use the bounded shadow-research endpoints', as
       if (url.endsWith('/api/ai/strategy-research/shadow-automation')) {
         return jsonResponse(status);
       }
+      if (url.endsWith('/api/strategy-promotion/states')) {
+        return jsonResponse([]);
+      }
       throw new Error(`Unexpected request: ${url}`);
     },
   );
@@ -280,4 +286,135 @@ test('manual run and policy pause use the bounded shadow-research endpoints', as
     expect(queryClient.isMutating()).toBe(0);
     expect(queryClient.isFetching()).toBe(0);
   });
+});
+
+test('pauses an approved candidate through the canonical lifecycle state', async () => {
+  window.matchMedia = vi.fn().mockReturnValue({
+    matches: false,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  });
+  const approvedStatus = {
+    ...status,
+    candidates: status.candidates.map((candidate) => ({
+      ...candidate,
+      promotion_status: 'paper_shadow_approved',
+    })),
+  };
+  let promotionStage = 'paper_shadow';
+  const fetchMock = vi.fn(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/ai/strategy-research/shadow-automation')) {
+        return jsonResponse(approvedStatus);
+      }
+      if (url.endsWith('/api/strategy-promotion/states')) {
+        return jsonResponse([
+          {
+            strategy_id: 'ai_formula_shadow:candidate-1',
+            stage: promotionStage,
+            gate_status:
+              promotionStage === 'paper_shadow'
+                ? 'paper_shadow_enabled'
+                : 'paused',
+            live_like_enabled: false,
+          },
+        ]);
+      }
+      if (
+        url.endsWith(
+          '/api/strategy-promotion/ai_formula_shadow%3Acandidate-1/lifecycle',
+        ) &&
+        init?.method === 'POST'
+      ) {
+        promotionStage = 'paused';
+        return jsonResponse({
+          strategy_id: 'ai_formula_shadow:candidate-1',
+          stage: 'paused',
+          gate_status: 'paused',
+          live_like_enabled: false,
+        });
+      }
+      if (url.includes('/paper-shadow-approvals') && init?.method === 'POST') {
+        promotionStage = 'paper_shadow';
+        return jsonResponse({ target_stage: 'paper_shadow' }, 201);
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    },
+  );
+  vi.stubGlobal('fetch', fetchMock);
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+
+  render(
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>
+        <ShadowResearchPanel />
+      </QueryClientProvider>
+    </PreferencesProvider>,
+  );
+
+  expect(await screen.findByText('Paper/shadow approved')).toBeTruthy();
+  const pauseButton = screen.getByRole('button', {
+    name: 'Pause / revoke paper-shadow',
+  }) as HTMLButtonElement;
+  expect(pauseButton.disabled).toBe(true);
+
+  fireEvent.change(screen.getByLabelText('Pause / revocation reason'), {
+    target: { value: 'Observed a paper/shadow divergence.' },
+  });
+  fireEvent.click(
+    screen.getByText(
+      'I confirm pausing this exact candidate. Existing approval remains auditable, but new tickets must fail closed until a new explicit review.',
+    ),
+  );
+  expect(pauseButton.disabled).toBe(false);
+  fireEvent.click(pauseButton);
+
+  await vi.waitFor(() => {
+    const pauseCall = fetchMock.mock.calls.find(([input]) =>
+      String(input).includes('ai_formula_shadow%3Acandidate-1/lifecycle'),
+    );
+    expect(pauseCall).toBeTruthy();
+    expect(JSON.parse(String(pauseCall?.[1]?.body))).toEqual({
+      target_stage: 'paused',
+      reason: 'Observed a paper/shadow divergence.',
+      actor: 'human:owner',
+      confirmation:
+        'pause_or_retire_strategy_without_execution_or_capital_authority',
+    });
+  });
+  expect(await screen.findByText('Paper/shadow paused / revoked')).toBeTruthy();
+  expect(
+    screen.queryByRole('button', { name: 'Pause / revoke paper-shadow' }),
+  ).toBeNull();
+
+  const reapproveButton = screen.getByRole('button', {
+    name: 'Re-review for paper/shadow',
+  }) as HTMLButtonElement;
+  expect(reapproveButton.disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText('Human review note'), {
+    target: { value: 'Re-reviewed after the explicit pause.' },
+  });
+  fireEvent.click(
+    screen.getByText(
+      'I reviewed the baseline comparison, costs, rolling OOS, risks and critique. Approve this candidate for paper/shadow research only.',
+    ),
+  );
+  fireEvent.click(reapproveButton);
+  await vi.waitFor(() => {
+    const approvalCalls = fetchMock.mock.calls.filter(([input]) =>
+      String(input).includes('/paper-shadow-approvals'),
+    );
+    expect(approvalCalls).toHaveLength(1);
+    const body = JSON.parse(String(approvalCalls[0]?.[1]?.body));
+    expect(body.notes).toBe('Re-reviewed after the explicit pause.');
+    expect(body.confirmation).toBe(
+      'approve_evidence_bound_candidate_for_paper_shadow_only_without_production_or_trade_authority',
+    );
+  });
+  await vi.waitFor(() => expect(queryClient.isMutating()).toBe(0));
+  await vi.waitFor(() => expect(queryClient.isFetching()).toBe(0));
+  expect(await screen.findByText('Paper/shadow approved')).toBeTruthy();
 });

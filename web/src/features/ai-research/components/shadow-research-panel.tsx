@@ -4,8 +4,10 @@ import { usePreferences } from '../../../app/preferences';
 import { formatCurrency, formatPercent } from '../../../shared/format';
 import {
   useApproveShadowResearchCandidateMutation,
+  usePauseShadowResearchCandidateMutation,
   useRunShadowResearchMutation,
   useShadowResearchAutomationQuery,
+  useStrategyPromotionStatesQuery,
   useUpdateShadowResearchPolicyMutation,
   type ShadowResearchCandidate,
   type ShadowResearchMetricView,
@@ -49,11 +51,18 @@ const COPY = {
     blockers: 'Promotion blockers',
     critique: 'DeepSeek evidence critique',
     approve: 'Approve for paper/shadow only',
+    reapprove: 'Re-review for paper/shadow',
     approving: 'Recording approval…',
     approvalNote: 'Human review note',
     approvalConfirm:
       'I reviewed the baseline comparison, costs, rolling OOS, risks and critique. Approve this candidate for paper/shadow research only.',
     approved: 'Paper/shadow approved',
+    paused: 'Paper/shadow paused / revoked',
+    pause: 'Pause / revoke paper-shadow',
+    pausing: 'Recording pause…',
+    pauseNote: 'Pause / revocation reason',
+    pauseConfirm:
+      'I confirm pausing this exact candidate. Existing approval remains auditable, but new tickets must fail closed until a new explicit review.',
     noAuthority: 'No production replacement · no broker order',
     failure: 'The operation failed closed. No strategy or order was changed.',
   },
@@ -92,11 +101,18 @@ const COPY = {
     blockers: '晋级阻断项',
     critique: 'DeepSeek 证据批判',
     approve: '仅批准进入 paper/shadow',
+    reapprove: '重新复核进入 paper/shadow',
     approving: '正在记录批准…',
     approvalNote: '人工复核备注',
     approvalConfirm:
       '我已复核基线对比、成本、rolling OOS、风险与 critique；仅批准该候选进入 paper/shadow 研究。',
     approved: '已批准 paper/shadow',
+    paused: 'paper/shadow 已暂停 / 撤销',
+    pause: '暂停 / 撤销 paper-shadow',
+    pausing: '正在记录暂停…',
+    pauseNote: '暂停 / 撤销原因',
+    pauseConfirm:
+      '我确认暂停这一精确候选；原批准保留供审计，但重新明确复核前，新票据必须 fail closed。',
     noAuthority: '不会替换生产策略 · 不会创建 broker 订单',
     failure: '操作已 fail closed；没有修改策略或订单。',
   },
@@ -120,14 +136,20 @@ export function ShadowResearchPanel() {
   const { locale } = usePreferences();
   const copy = COPY[locale];
   const query = useShadowResearchAutomationQuery();
+  const promotionStates = useStrategyPromotionStatesQuery();
   const updatePolicy = useUpdateShadowResearchPolicyMutation();
   const run = useRunShadowResearchMutation();
   const approve = useApproveShadowResearchCandidateMutation();
+  const pause = usePauseShadowResearchCandidateMutation();
   const [policy, setPolicy] = useState<ShadowResearchPolicyInput>(EMPTY_POLICY);
   const [policyConfirmed, setPolicyConfirmed] = useState(false);
   const [initialized, setInitialized] = useState(false);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [approvals, setApprovals] = useState<Record<string, boolean>>({});
+  const [pauseNotes, setPauseNotes] = useState<Record<string, string>>({});
+  const [pauseConfirmations, setPauseConfirmations] = useState<
+    Record<string, boolean>
+  >({});
 
   useEffect(() => {
     if (!initialized && query.data?.policy) {
@@ -172,6 +194,32 @@ export function ShadowResearchPanel() {
       setApprovals((current) => ({
         ...current,
         [candidate.candidate_id]: false,
+      }));
+      setNotes((current) => ({
+        ...current,
+        [candidate.candidate_id]: '',
+      }));
+    } catch {
+      // Mutation state renders the fail-closed error.
+    }
+  };
+
+  const pauseCandidate = async (candidate: ShadowResearchCandidate) => {
+    const reason = pauseNotes[candidate.candidate_id]?.trim();
+    if (!reason || !pauseConfirmations[candidate.candidate_id]) return;
+    try {
+      await pause.mutateAsync({
+        candidate_id: candidate.candidate_id,
+        actor: policy.updated_by,
+        reason,
+      });
+      setPauseConfirmations((current) => ({
+        ...current,
+        [candidate.candidate_id]: false,
+      }));
+      setPauseNotes((current) => ({
+        ...current,
+        [candidate.candidate_id]: '',
       }));
     } catch {
       // Mutation state renders the fail-closed error.
@@ -365,7 +413,9 @@ export function ShadowResearchPanel() {
       {(query.isError ||
         updatePolicy.isError ||
         run.isError ||
-        approve.isError) && (
+        approve.isError ||
+        pause.isError ||
+        promotionStates.isError) && (
         <p className="mt-3 text-sm text-[var(--app-danger-text)]">
           {copy.failure}
         </p>
@@ -380,6 +430,19 @@ export function ShadowResearchPanel() {
               copy={copy}
               key={candidate.candidate_id}
               notes={notes}
+              onPause={() => void pauseCandidate(candidate)}
+              onPauseConfirmationChange={(checked) =>
+                setPauseConfirmations((current) => ({
+                  ...current,
+                  [candidate.candidate_id]: checked,
+                }))
+              }
+              onPauseNoteChange={(value) =>
+                setPauseNotes((current) => ({
+                  ...current,
+                  [candidate.candidate_id]: value,
+                }))
+              }
               onApprovalChange={(checked) =>
                 setApprovals((current) => ({
                   ...current,
@@ -393,7 +456,17 @@ export function ShadowResearchPanel() {
                   [candidate.candidate_id]: value,
                 }))
               }
-              pending={approve.isPending}
+              pauseConfirmations={pauseConfirmations}
+              pauseNotes={pauseNotes}
+              pending={approve.isPending || pause.isPending}
+              promotionStage={
+                promotionStates.data?.find(
+                  (state) =>
+                    state.strategy_id ===
+                    `ai_formula_shadow:${candidate.candidate_id}`,
+                )?.stage
+              }
+              promotionStateLoaded={promotionStates.isSuccess}
             />
           ))
         ) : (
@@ -414,6 +487,13 @@ function CandidateCard({
   onNoteChange,
   onApprovalChange,
   onApprove,
+  pauseNotes,
+  pauseConfirmations,
+  onPauseNoteChange,
+  onPauseConfirmationChange,
+  onPause,
+  promotionStage,
+  promotionStateLoaded,
   pending,
 }: {
   candidate: ShadowResearchCandidate;
@@ -423,6 +503,13 @@ function CandidateCard({
   onNoteChange: (value: string) => void;
   onApprovalChange: (value: boolean) => void;
   onApprove: () => void;
+  pauseNotes: Record<string, string>;
+  pauseConfirmations: Record<string, boolean>;
+  onPauseNoteChange: (value: string) => void;
+  onPauseConfirmationChange: (value: boolean) => void;
+  onPause: () => void;
+  promotionStage: string | undefined;
+  promotionStateLoaded: boolean;
   pending: boolean;
 }) {
   const comparison = candidate.comparison;
@@ -430,7 +517,11 @@ function CandidateCard({
     candidate.status === 'awaiting_human_approval' &&
     candidate.recommendation === 'paper_shadow_review' &&
     comparison.promotion_gate.status === 'pass' &&
-    candidate.promotion_status !== 'paper_shadow_approved';
+    (candidate.promotion_status !== 'paper_shadow_approved' ||
+      promotionStage === 'paused');
+  const revocable =
+    candidate.promotion_status === 'paper_shadow_approved' &&
+    promotionStage === 'paper_shadow';
   const critique = comparison.deepseek_critique;
   return (
     <article
@@ -448,7 +539,11 @@ function CandidateCard({
         </div>
         <span className="rounded-full border border-[var(--app-divider)] px-2.5 py-1 text-xs font-semibold">
           {candidate.promotion_status === 'paper_shadow_approved'
-            ? copy.approved
+            ? promotionStage === 'paper_shadow'
+              ? copy.approved
+              : promotionStateLoaded
+                ? copy.paused
+                : candidate.status.replace(/_/g, ' ')
             : candidate.status.replace(/_/g, ' ')}
         </span>
       </div>
@@ -521,7 +616,46 @@ function CandidateCard({
             onClick={onApprove}
             type="button"
           >
-            {pending ? copy.approving : copy.approve}
+            {pending
+              ? copy.approving
+              : promotionStage === 'paused'
+                ? copy.reapprove
+                : copy.approve}
+          </button>
+        </div>
+      ) : null}
+      {revocable ? (
+        <div className="mt-5 border-t border-[var(--app-divider)] pt-4">
+          <label className="text-xs font-semibold text-[var(--app-text)]">
+            {copy.pauseNote}
+            <textarea
+              className="app-input mt-2 min-h-20 w-full resize-y"
+              onChange={(event) => onPauseNoteChange(event.target.value)}
+              value={pauseNotes[candidate.candidate_id] ?? ''}
+            />
+          </label>
+          <label className="mt-3 flex items-start gap-2 text-xs leading-5 text-[var(--app-muted)]">
+            <input
+              checked={pauseConfirmations[candidate.candidate_id] ?? false}
+              className="mt-1"
+              onChange={(event) =>
+                onPauseConfirmationChange(event.target.checked)
+              }
+              type="checkbox"
+            />
+            <span>{copy.pauseConfirm}</span>
+          </label>
+          <button
+            className="app-button-secondary mt-3 min-h-11 px-4 py-2 text-sm font-semibold"
+            disabled={
+              pending ||
+              !pauseConfirmations[candidate.candidate_id] ||
+              !pauseNotes[candidate.candidate_id]?.trim()
+            }
+            onClick={onPause}
+            type="button"
+          >
+            {pending ? copy.pausing : copy.pause}
           </button>
         </div>
       ) : null}

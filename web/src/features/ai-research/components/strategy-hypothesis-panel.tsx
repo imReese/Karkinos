@@ -8,6 +8,7 @@ import {
 
 import { usePreferences } from '../../../app/preferences';
 import { formatCurrency, formatPercent } from '../../../shared/format';
+import { useAccountStateQuery } from '../../account/api';
 import type { BacktestReport } from '../../backtest/api';
 import {
   useCritiqueStrategyBacktestMutation,
@@ -17,8 +18,8 @@ import {
   type StrategyHypothesisDraft,
 } from '../api';
 
-const COST_MODEL =
-  'karkinos.backtest.multi_asset_commission.default.v1' as const;
+const REVIEWED_COST_MODEL_PREFIX =
+  'karkinos.backtest.reviewed_account_fee_schedule.v1:';
 
 let keySequence = 0;
 
@@ -54,6 +55,10 @@ const COPY = {
     missingReport: 'Run and save a backtest first.',
     missingSnapshot:
       'The saved result has no complete dataset snapshot; hypothesis export is blocked.',
+    missingReviewedCosts:
+      'The saved result is not bound to a currently reviewed real-account fee and tax schedule.',
+    missingAccount:
+      'A complete current account snapshot matching this research capital is required.',
     drafts: 'Candidate hypotheses',
     valid: 'Locally validated',
     blocked: 'Blocked by Formula DSL',
@@ -125,6 +130,8 @@ const COPY = {
     missingReport: '请先运行并保存一条回测。',
     missingSnapshot:
       '已保存结果缺少完整 dataset snapshot，禁止外发和生成草案。',
+    missingReviewedCosts: '已保存结果未绑定当前复核通过的真实账户费税规则。',
+    missingAccount: '必须提供完整的当前账户快照，且研究本金不得超过账户权益。',
     drafts: '候选策略假设',
     valid: '本地验证通过',
     blocked: 'Formula DSL 已阻断',
@@ -205,15 +212,43 @@ export function StrategyHypothesisPanel({
   const runBacktest = useRunStrategyFormulaBacktestMutation();
   const critique = useCritiqueStrategyBacktestMutation();
   const review = useReviewStrategyResearchMutation();
+  const accountState = useAccountStateQuery();
 
   const snapshot = report?.metrics_json?.dataset_snapshot;
+  const feeEvidence = report?.metrics_json?.fee_component_evidence;
+  const costModelReference = feeEvidence?.cost_model_reference ?? '';
+  const accountSummary = accountState.data?.summary;
   const assets = report?.config.assets ?? [];
-  const selectionReady = Boolean(
-    report &&
+  const datasetReady = Boolean(
     snapshot?.snapshot_id &&
     snapshot.data_quality?.status === 'ok' &&
     assets.length > 0,
   );
+  const reviewedCostsReady = Boolean(
+    costModelReference.startsWith(REVIEWED_COST_MODEL_PREFIX) &&
+    feeEvidence?.status === 'complete' &&
+    feeEvidence.account_specific === true &&
+    feeEvidence.broker_statement_reconciled === true,
+  );
+  const accountReady = Boolean(
+    accountSummary?.valuation_status === 'complete' &&
+    accountSummary.valuation_snapshot_id &&
+    accountSummary.ledger_cutoff_id !== undefined &&
+    report &&
+    report.config.initial_cash <= accountSummary.total_equity,
+  );
+  const selectionReady = Boolean(
+    report && datasetReady && reviewedCostsReady && accountReady,
+  );
+  const selectionBlocker = !report
+    ? copy.missingReport
+    : !datasetReady
+      ? copy.missingSnapshot
+      : !reviewedCostsReady
+        ? copy.missingReviewedCosts
+        : !accountReady
+          ? copy.missingAccount
+          : '';
   const selectedDraft = useMemo(
     () =>
       generate.data?.drafts.find(
@@ -239,7 +274,14 @@ export function StrategyHypothesisPanel({
 
   const submitHypothesis = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!report || !snapshot || !selectionReady || !exportConfirmed) return;
+    if (
+      !report ||
+      !snapshot ||
+      !accountSummary ||
+      !selectionReady ||
+      !exportConfirmed
+    )
+      return;
     try {
       const session = await generate.mutateAsync({
         idempotency_key: hypothesisKey,
@@ -255,7 +297,9 @@ export function StrategyHypothesisPanel({
           end_date: report.config.end_date,
           frequency: '1d',
           initial_cash: report.config.initial_cash,
-          cost_model_reference: COST_MODEL,
+          cost_model_reference: costModelReference,
+          valuation_snapshot_id: accountSummary.valuation_snapshot_id ?? '',
+          ledger_cutoff_id: accountSummary.ledger_cutoff_id ?? 0,
         },
       });
       const firstValid = session.drafts.find(
@@ -413,8 +457,20 @@ export function StrategyHypothesisPanel({
           value={assets.map((asset) => asset.symbol).join(', ') || '—'}
           mono
         />
-        <Identity label={copy.cost} value={COST_MODEL} mono />
-        <Identity label={copy.accountBinding} value={copy.notApplicable} />
+        <Identity
+          label={copy.cost}
+          value={costModelReference || copy.missingReviewedCosts}
+          mono
+        />
+        <Identity
+          label={copy.accountBinding}
+          value={
+            accountReady
+              ? `${accountSummary?.valuation_snapshot_id} · ledger ${accountSummary?.ledger_cutoff_id}`
+              : copy.missingAccount
+          }
+          mono={accountReady}
+        />
       </div>
 
       {!selectionReady ? (
@@ -422,7 +478,7 @@ export function StrategyHypothesisPanel({
           className="mt-4 rounded-2xl border border-[var(--app-danger)] bg-[var(--app-danger-bg)] p-4 text-sm text-[var(--app-danger)]"
           role="alert"
         >
-          {report ? copy.missingSnapshot : copy.missingReport}
+          {selectionBlocker}
         </div>
       ) : null}
 
