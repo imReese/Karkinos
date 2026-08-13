@@ -18,10 +18,10 @@ from account_truth.citic_source_scope_review import (
 )
 
 CITIC_SOURCE_SCOPE_REVIEW_COMMAND_SCHEMA_VERSION = (
-    "karkinos.account_truth.citic_source_scope_review_command.v1"
+    "karkinos.account_truth.citic_source_scope_review_command.v2"
 )
 CITIC_SOURCE_SCOPE_BATCH_ASSESSMENT_SCHEMA_VERSION = (
-    "karkinos.account_truth.citic_source_scope_batch_assessment.v1"
+    "karkinos.account_truth.citic_source_scope_batch_assessment.v2"
 )
 
 
@@ -38,6 +38,7 @@ def record_citic_source_scope_review(
     account_type: str,
     market_scopes: list[str],
     asset_classes: list[str],
+    account_value_band: str,
     business_types: list[str],
     no_other_filters_attested: bool,
     complete_returned_results_attested: bool,
@@ -57,6 +58,7 @@ def record_citic_source_scope_review(
         account_type=account_type,
         market_scopes=market_scopes,
         asset_classes=asset_classes,
+        account_value_band=account_value_band,
         business_types=business_types,
         no_other_filters_attested=no_other_filters_attested,
         complete_returned_results_attested=complete_returned_results_attested,
@@ -174,6 +176,7 @@ def project_citic_source_scope_batch_assessment(
             or not _sha256_fingerprint_is_valid(review.review_fingerprint)
             or not review.market_scopes
             or not review.asset_classes
+            or not review.account_value_band
             or not review.business_types
         ):
             invalid_scope_review_count += 1
@@ -192,6 +195,7 @@ def project_citic_source_scope_batch_assessment(
                 "account_type": review.account_type,
                 "market_scopes": list(review.market_scopes),
                 "asset_classes": list(review.asset_classes),
+                "account_value_band": review.account_value_band,
                 "business_types": list(review.business_types),
             }
         )
@@ -222,6 +226,7 @@ def project_citic_source_scope_batch_assessment(
         (
             tuple(review.market_scopes),
             tuple(review.asset_classes),
+            review.account_value_band,
             tuple(review.business_types),
         )
         for review in valid_scope_reviews
@@ -313,15 +318,21 @@ def project_citic_source_scope_batch_assessment(
             else []
         ),
         "declared_business_types": (
-            list(consistent_scope[2])
+            list(consistent_scope[3])
             if declared_scope_consistent and consistent_scope is not None
             else []
+        ),
+        "declared_account_value_band": (
+            consistent_scope[2]
+            if declared_scope_consistent and consistent_scope is not None
+            else None
         ),
         "blockers": list(dict.fromkeys(blockers)),
         "required_evidence": [
             "explicit_source_scope_review_for_each_current_source",
             "same_privacy_minimized_account_binding_for_all_sources",
-            "consistent_declared_market_asset_and_business_scope",
+            "consistent_declared_market_asset_value_band_and_business_scope",
+            "explicit_non_authorizing_account_value_band",
             "explicit_no_other_filters_attestation",
             "explicit_complete_returned_results_attestation",
             "itemized_settlement_components_and_current_account_snapshots",
@@ -343,6 +354,7 @@ def project_citic_source_scope_batch_assessment(
         "changes_capital_authority": False,
         "limitations": [
             "This assessment verifies only owner-declared scope consistency for the exact pending CITIC exports.",
+            "The declared account-value band is query-scope metadata, not a current balance, order limit, or capital authorization.",
             "Complete returned results for a declared query do not prove full account history, itemized settlement, current cash, or current positions.",
         ],
     }
@@ -404,6 +416,7 @@ def citic_source_scope_review_response(
         "account_type": review.account_type,
         "market_scopes": list(review.market_scopes),
         "asset_classes": list(review.asset_classes),
+        "account_value_band": review.account_value_band,
         "business_types": list(review.business_types),
         "no_other_filters_attested": review.no_other_filters_attested,
         "complete_returned_results_attested": (
@@ -430,6 +443,7 @@ def citic_source_scope_review_response(
         "does_not_contact_provider": True,
         "does_not_enable_broker_submission": True,
         "does_not_change_capital_authority": True,
+        "account_value_band_is_capital_authority": False,
     }
 
 
@@ -453,6 +467,7 @@ def _command_response(review: CiticSourceScopeReview) -> dict[str, object]:
         "does_not_contact_provider": True,
         "does_not_enable_broker_submission": True,
         "does_not_change_capital_authority": True,
+        "account_value_band_is_capital_authority": False,
     }
 
 

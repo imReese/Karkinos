@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import sqlite3
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -86,6 +88,7 @@ def _record(repository, preview, intake, query_review, **overrides):
         "account_type": "cash",
         "market_scopes": ["shanghai_a", "shenzhen_a"],
         "asset_classes": ["stock"],
+        "account_value_band": "cny_0_20000",
         "business_types": ["history_trades"],
         "no_other_filters_attested": True,
         "complete_returned_results_attested": True,
@@ -93,6 +96,36 @@ def _record(repository, preview, intake, query_review, **overrides):
     }
     values.update(overrides)
     return repository.record_review(**values)
+
+
+def _legacy_review_fingerprint(review) -> str:
+    payload = {
+        "intake_id": review.intake_id,
+        "file_fingerprint": review.file_fingerprint,
+        "source_preview_fingerprint": review.source_preview_fingerprint,
+        "query_window_review_id": review.query_window_review_id,
+        "query_window_review_fingerprint": review.query_window_review_fingerprint,
+        "account_alias": review.account_alias,
+        "account_reference_hash": review.account_reference_hash,
+        "account_type": review.account_type,
+        "market_scopes": list(review.market_scopes),
+        "asset_classes": list(review.asset_classes),
+        "business_types": list(review.business_types),
+        "no_other_filters_attested": True,
+        "complete_returned_results_attested": True,
+        "source_scope_attested": True,
+        "reviewer": review.reviewer,
+        "schema_version": "karkinos.account_truth.citic_source_scope_review.v1",
+        "decision": review.decision,
+        "supersedes_review_id": review.supersedes_review_id,
+    }
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
 
 def test_source_scope_review_persists_only_sanitized_explicit_scope(
@@ -112,6 +145,7 @@ def test_source_scope_review_persists_only_sanitized_explicit_scope(
     assert review.account_type == "cash"
     assert review.market_scopes == ["shanghai_a", "shenzhen_a"]
     assert review.asset_classes == ["stock"]
+    assert review.account_value_band == "cny_0_20000"
     assert review.business_types == ["history_trades"]
     assert review.no_other_filters_attested is True
     assert review.complete_returned_results_attested is True
@@ -187,6 +221,63 @@ def test_source_scope_review_is_idempotent_conflict_safe_and_revocable(
     assert replacement.supersedes_review_id == revoked.review_id
 
 
+def test_legacy_v1_review_is_read_only_compatible_and_upgrades_append_only(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "app.db"
+    preview, intake, query_review = _evidence(db_path)
+    repository = _repository(db_path)
+    current = _record(repository, preview, intake, query_review)
+    legacy_fingerprint = _legacy_review_fingerprint(current)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE citic_source_scope_reviews "
+            "SET schema_version = ?, review_fingerprint = ? WHERE review_id = ?",
+            (
+                "karkinos.account_truth.citic_source_scope_review.v1",
+                legacy_fingerprint,
+                current.review_id,
+            ),
+        )
+        conn.execute(
+            "ALTER TABLE citic_source_scope_reviews " "DROP COLUMN account_value_band"
+        )
+        conn.commit()
+
+    legacy = repository.get_latest_review(intake.intake_id)
+    assert legacy is not None
+    assert legacy.schema_version.endswith(".v1")
+    assert legacy.account_value_band is None
+
+    revoked = repository.revoke_latest(
+        intake_id=intake.intake_id,
+        expected_active_review_id=legacy.review_id,
+        expected_active_review_fingerprint=legacy.review_fingerprint,
+    )
+    assert revoked.schema_version.endswith(".v1")
+    assert revoked.account_value_band is None
+    with sqlite3.connect(db_path) as conn:
+        columns = {
+            str(row[1])
+            for row in conn.execute(
+                "PRAGMA table_info(citic_source_scope_reviews)"
+            ).fetchall()
+        }
+    assert "account_value_band" in columns
+
+    replacement = _record(repository, preview, intake, query_review)
+    assert replacement.schema_version.endswith(".v2")
+    assert replacement.account_value_band == "cny_0_20000"
+    assert replacement.supersedes_review_id == revoked.review_id
+    with sqlite3.connect(db_path) as conn:
+        assert (
+            conn.execute("SELECT COUNT(*) FROM citic_source_scope_reviews").fetchone()[
+                0
+            ]
+            == 3
+        )
+
+
 @pytest.mark.parametrize(
     ("overrides", "expected_code"),
     [
@@ -208,6 +299,14 @@ def test_source_scope_review_is_idempotent_conflict_safe_and_revocable(
         ),
         ({"market_scopes": []}, "citic_source_scope_market_scopes_invalid"),
         ({"asset_classes": []}, "citic_source_scope_asset_classes_invalid"),
+        (
+            {"account_value_band": ""},
+            "citic_source_scope_account_value_band_invalid",
+        ),
+        (
+            {"account_value_band": "CNY 0-20000"},
+            "citic_source_scope_account_value_band_invalid",
+        ),
         ({"business_types": []}, "citic_source_scope_business_types_invalid"),
     ],
 )

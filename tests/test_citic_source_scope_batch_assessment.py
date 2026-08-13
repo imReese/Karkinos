@@ -26,6 +26,7 @@ def _scope(
     review_marker: str,
     account_marker: str = "c",
     market_scopes: list[str] | None = None,
+    account_value_band: str | None = "cny_0_20000",
 ) -> SimpleNamespace:
     return SimpleNamespace(
         intake_id=query.intake_id,
@@ -39,6 +40,7 @@ def _scope(
         account_type="cash",
         market_scopes=market_scopes or ["shanghai_a", "shenzhen_a"],
         asset_classes=["stock"],
+        account_value_band=account_value_band,
         business_types=["history_trades"],
         no_other_filters_attested=True,
         complete_returned_results_attested=True,
@@ -97,6 +99,7 @@ def test_source_scope_batch_assessment_accepts_only_consistent_exact_reviews() -
         "shenzhen_a",
     ]
     assert assessment["declared_asset_classes"] == ["stock"]
+    assert assessment["declared_account_value_band"] == "cny_0_20000"
     assert assessment["declared_business_types"] == ["history_trades"]
     assert assessment["complete_account_coverage_proven"] is False
     assert "citic_source_scope_batch_complete_account_coverage_unproven" in (
@@ -136,6 +139,41 @@ def test_source_scope_batch_assessment_blocks_account_and_scope_drift() -> None:
     assert scope_drift["integrity_status"] == "blocked"
     assert scope_drift["declared_source_scope_complete"] is False
     assert "citic_source_scope_batch_declared_scope_conflict" in scope_drift["blockers"]
+
+    value_band_drift = project_citic_source_scope_batch_assessment(
+        source_count=2,
+        active_query_window_reviews=[first_query, second_query],
+        active_scope_reviews=[
+            _scope(first_query, review_marker="d"),
+            _scope(
+                second_query,
+                review_marker="e",
+                account_value_band="cny_20000_50000",
+            ),
+        ],
+    )
+    assert value_band_drift["integrity_status"] == "blocked"
+    assert value_band_drift["declared_scope_consistent"] is False
+    assert (
+        "citic_source_scope_batch_declared_scope_conflict"
+        in value_band_drift["blockers"]
+    )
+
+
+def test_source_scope_batch_assessment_rejects_legacy_missing_value_band() -> None:
+    query = _query("citic_intake_1")
+    assessment = project_citic_source_scope_batch_assessment(
+        source_count=1,
+        active_query_window_reviews=[query],
+        active_scope_reviews=[
+            _scope(query, review_marker="d", account_value_band=None)
+        ],
+    )
+
+    assert assessment["integrity_status"] == "blocked"
+    assert assessment["invalid_scope_review_count"] == 1
+    assert assessment["all_current_sources_reviewed"] is False
+    assert assessment["declared_account_value_band"] is None
 
 
 def test_source_scope_batch_assessment_rejects_stale_query_binding() -> None:
