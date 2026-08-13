@@ -2,9 +2,11 @@
 
 The review is deliberately source-level evidence.  It binds an exact pending
 source and its current query-window review to a privacy-minimized account
-reference plus explicit market, asset, business, filter, and export-completeness
-attestations.  It never promotes the legacy XLS to canonical Account Truth and
-cannot authorize reconciliation, execution, or capital.
+reference plus explicit market, asset, account-value-band, business, filter,
+and export-completeness attestations.  The value band is source-query scope,
+not a balance fact or capital authorization.  The review never promotes the
+legacy XLS to canonical Account Truth and cannot authorize reconciliation,
+execution, or capital.
 """
 
 from __future__ import annotations
@@ -30,8 +32,15 @@ from account_truth.citic_source_query_window_review import (
 )
 
 CITIC_SOURCE_SCOPE_REVIEW_SCHEMA_VERSION = (
+    "karkinos.account_truth.citic_source_scope_review.v2"
+)
+_LEGACY_CITIC_SOURCE_SCOPE_REVIEW_SCHEMA_VERSION = (
     "karkinos.account_truth.citic_source_scope_review.v1"
 )
+_SUPPORTED_SCHEMA_VERSIONS = {
+    _LEGACY_CITIC_SOURCE_SCOPE_REVIEW_SCHEMA_VERSION,
+    CITIC_SOURCE_SCOPE_REVIEW_SCHEMA_VERSION,
+}
 CiticSourceScopeReviewDecision = Literal["accepted", "revoked"]
 
 _FILE_FINGERPRINT = re.compile(r"^[0-9a-f]{64}$")
@@ -69,6 +78,7 @@ class CiticSourceScopeReview:
     account_type: str
     market_scopes: list[str]
     asset_classes: list[str]
+    account_value_band: str | None
     business_types: list[str]
     no_other_filters_attested: bool
     complete_returned_results_attested: bool
@@ -106,6 +116,7 @@ class CiticSourceScopeReviewRepository:
         account_type: str,
         market_scopes: list[str],
         asset_classes: list[str],
+        account_value_band: str,
         business_types: list[str],
         no_other_filters_attested: bool,
         complete_returned_results_attested: bool,
@@ -125,6 +136,7 @@ class CiticSourceScopeReviewRepository:
             account_type=account_type,
             market_scopes=market_scopes,
             asset_classes=asset_classes,
+            account_value_band=account_value_band,
             business_types=business_types,
             no_other_filters_attested=no_other_filters_attested,
             complete_returned_results_attested=(complete_returned_results_attested),
@@ -198,6 +210,7 @@ class CiticSourceScopeReviewRepository:
                 "citic_source_scope_review_fingerprint_mismatch"
             )
         normalized = _review_payload(latest, reviewer=normalized_reviewer)
+        self._ensure_schema()
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("BEGIN IMMEDIATE")
@@ -212,6 +225,7 @@ class CiticSourceScopeReviewRepository:
                 decision="revoked",
                 supersedes_review_id=latest.review_id,
                 created_at=_aware_now(self._clock()).isoformat(),
+                schema_version=latest.schema_version,
             )
             conn.commit()
             return saved
@@ -262,7 +276,7 @@ class CiticSourceScopeReviewRepository:
                 if schema_state == "absent":
                     yield None
                     return
-                if schema_state != "complete":
+                if schema_state not in {"complete", "legacy_v1"}:
                     raise CiticSourceScopeReviewReadRejected(
                         "citic_source_scope_review_schema_incomplete"
                     )
@@ -352,7 +366,8 @@ class CiticSourceScopeReviewRepository:
         try:
             with sqlite3.connect(self._path) as conn:
                 conn.row_factory = sqlite3.Row
-                if self._schema_state(conn) == "incomplete":
+                schema_state = self._schema_state(conn)
+                if schema_state == "incomplete":
                     raise CiticSourceScopeReviewRejected(
                         "citic_source_scope_review_schema_incompatible"
                     )
@@ -371,6 +386,7 @@ class CiticSourceScopeReviewRepository:
                         account_type TEXT NOT NULL,
                         market_scopes_json TEXT NOT NULL,
                         asset_classes_json TEXT NOT NULL,
+                        account_value_band TEXT NOT NULL,
                         business_types_json TEXT NOT NULL,
                         no_other_filters_attested INTEGER NOT NULL CHECK(
                             no_other_filters_attested = 1
@@ -395,6 +411,11 @@ class CiticSourceScopeReviewRepository:
                     CREATE INDEX IF NOT EXISTS idx_citic_source_scope_latest
                     ON citic_source_scope_reviews(intake_id, id DESC);
                 """)
+                if schema_state == "legacy_v1":
+                    conn.execute(
+                        "ALTER TABLE citic_source_scope_reviews "
+                        "ADD COLUMN account_value_band TEXT"
+                    )
                 if self._schema_state(conn) != "complete":
                     raise CiticSourceScopeReviewRejected(
                         "citic_source_scope_review_schema_incompatible"
@@ -422,7 +443,7 @@ class CiticSourceScopeReviewRepository:
             str(row["name"])
             for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()
         }
-        required = {
+        required_v1 = {
             "id",
             "review_id",
             "schema_version",
@@ -446,7 +467,9 @@ class CiticSourceScopeReviewRepository:
             "review_fingerprint",
             "created_at",
         }
-        return "complete" if required.issubset(columns) else "incomplete"
+        if not required_v1.issubset(columns):
+            return "incomplete"
+        return "complete" if "account_value_band" in columns else "legacy_v1"
 
     @staticmethod
     def _latest_review_row(
@@ -471,13 +494,14 @@ class CiticSourceScopeReviewRepository:
         decision: CiticSourceScopeReviewDecision,
         supersedes_review_id: str | None,
         created_at: str,
+        schema_version: str = CITIC_SOURCE_SCOPE_REVIEW_SCHEMA_VERSION,
     ) -> CiticSourceScopeReview:
-        payload = {
-            **normalized,
-            "schema_version": CITIC_SOURCE_SCOPE_REVIEW_SCHEMA_VERSION,
-            "decision": decision,
-            "supersedes_review_id": supersedes_review_id,
-        }
+        payload = _fingerprint_payload(
+            normalized,
+            schema_version=schema_version,
+            decision=decision,
+            supersedes_review_id=supersedes_review_id,
+        )
         review_id = f"citic_scope_review_{uuid.uuid4().hex}"
         review_fingerprint = _review_fingerprint(payload)
         conn.execute(
@@ -487,16 +511,16 @@ class CiticSourceScopeReviewRepository:
                 source_preview_fingerprint, query_window_review_id,
                 query_window_review_fingerprint, account_alias,
                 account_reference_hash, account_type, market_scopes_json,
-                asset_classes_json, business_types_json,
+                asset_classes_json, account_value_band, business_types_json,
                 no_other_filters_attested,
                 complete_returned_results_attested, source_scope_attested,
                 decision, supersedes_review_id, reviewer,
                 review_fingerprint, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 review_id,
-                CITIC_SOURCE_SCOPE_REVIEW_SCHEMA_VERSION,
+                schema_version,
                 normalized["intake_id"],
                 normalized["file_fingerprint"],
                 normalized["source_preview_fingerprint"],
@@ -507,6 +531,7 @@ class CiticSourceScopeReviewRepository:
                 normalized["account_type"],
                 json.dumps(normalized["market_scopes"], separators=(",", ":")),
                 json.dumps(normalized["asset_classes"], separators=(",", ":")),
+                normalized["account_value_band"],
                 json.dumps(normalized["business_types"], separators=(",", ":")),
                 1,
                 1,
@@ -539,11 +564,13 @@ def _normalized_review_inputs(
     account_type: str,
     market_scopes: list[str],
     asset_classes: list[str],
+    account_value_band: str | None,
     business_types: list[str],
     no_other_filters_attested: bool,
     complete_returned_results_attested: bool,
     source_scope_attested: bool,
     reviewer: str,
+    allow_missing_account_value_band: bool = False,
 ) -> dict[str, object]:
     normalized = {
         "intake_id": intake_id.strip(),
@@ -558,6 +585,11 @@ def _normalized_review_inputs(
         "account_type": account_type.strip().lower(),
         "market_scopes": _normalized_codes(market_scopes),
         "asset_classes": _normalized_codes(asset_classes),
+        "account_value_band": (
+            str(account_value_band).strip().lower()
+            if account_value_band is not None
+            else None
+        ),
         "business_types": _normalized_codes(business_types),
         "no_other_filters_attested": no_other_filters_attested,
         "complete_returned_results_attested": complete_returned_results_attested,
@@ -598,6 +630,15 @@ def _normalized_review_inputs(
             not _SAFE_SCOPE_CODE.fullmatch(str(value)) for value in values
         ):
             raise CiticSourceScopeReviewRejected(f"citic_source_scope_{key}_invalid")
+    if normalized["account_value_band"] is None:
+        if not allow_missing_account_value_band:
+            raise CiticSourceScopeReviewRejected(
+                "citic_source_scope_account_value_band_missing"
+            )
+    elif not _SAFE_SCOPE_CODE.fullmatch(str(normalized["account_value_band"])):
+        raise CiticSourceScopeReviewRejected(
+            "citic_source_scope_account_value_band_invalid"
+        )
     if no_other_filters_attested is not True:
         raise CiticSourceScopeReviewRejected(
             "citic_source_scope_no_other_filters_attestation_missing"
@@ -615,9 +656,18 @@ def _normalized_review_inputs(
 
 def _review_from_row(row: sqlite3.Row) -> CiticSourceScopeReview:
     try:
+        schema_version = str(row["schema_version"])
+        if schema_version not in _SUPPORTED_SCHEMA_VERSIONS:
+            raise ValueError("unsupported source-scope review schema")
+        account_value_band = (
+            str(row["account_value_band"])
+            if "account_value_band" in row.keys()
+            and row["account_value_band"] is not None
+            else None
+        )
         review = CiticSourceScopeReview(
             review_id=str(row["review_id"]),
-            schema_version=str(row["schema_version"]),
+            schema_version=schema_version,
             intake_id=str(row["intake_id"]),
             file_fingerprint=str(row["file_fingerprint"]),
             source_preview_fingerprint=str(row["source_preview_fingerprint"]),
@@ -628,6 +678,7 @@ def _review_from_row(row: sqlite3.Row) -> CiticSourceScopeReview:
             account_type=str(row["account_type"]),
             market_scopes=_stored_codes(row["market_scopes_json"]),
             asset_classes=_stored_codes(row["asset_classes_json"]),
+            account_value_band=account_value_band,
             business_types=_stored_codes(row["business_types_json"]),
             no_other_filters_attested=_stored_true(row["no_other_filters_attested"]),
             complete_returned_results_attested=_stored_true(
@@ -657,6 +708,7 @@ def _review_from_row(row: sqlite3.Row) -> CiticSourceScopeReview:
             account_type=review.account_type,
             market_scopes=review.market_scopes,
             asset_classes=review.asset_classes,
+            account_value_band=review.account_value_band,
             business_types=review.business_types,
             no_other_filters_attested=review.no_other_filters_attested,
             complete_returned_results_attested=(
@@ -664,18 +716,21 @@ def _review_from_row(row: sqlite3.Row) -> CiticSourceScopeReview:
             ),
             source_scope_attested=review.source_scope_attested,
             reviewer=review.reviewer,
+            allow_missing_account_value_band=(
+                review.schema_version
+                == _LEGACY_CITIC_SOURCE_SCOPE_REVIEW_SCHEMA_VERSION
+            ),
         )
         expected = _review_fingerprint(
-            {
-                **normalized,
-                "schema_version": CITIC_SOURCE_SCOPE_REVIEW_SCHEMA_VERSION,
-                "decision": review.decision,
-                "supersedes_review_id": review.supersedes_review_id,
-            }
+            _fingerprint_payload(
+                normalized,
+                schema_version=review.schema_version,
+                decision=review.decision,
+                supersedes_review_id=review.supersedes_review_id,
+            )
         )
         if (
-            review.schema_version != CITIC_SOURCE_SCOPE_REVIEW_SCHEMA_VERSION
-            or review.decision not in {"accepted", "revoked"}
+            review.decision not in {"accepted", "revoked"}
             or not review.review_id.startswith("citic_scope_review_")
             or not _EVIDENCE_FINGERPRINT.fullmatch(review.review_fingerprint)
             or review.review_fingerprint != expected
@@ -716,11 +771,30 @@ def _review_payload(
         "account_type": review.account_type,
         "market_scopes": list(review.market_scopes),
         "asset_classes": list(review.asset_classes),
+        "account_value_band": review.account_value_band,
         "business_types": list(review.business_types),
         "no_other_filters_attested": True,
         "complete_returned_results_attested": True,
         "source_scope_attested": True,
         "reviewer": reviewer,
+    }
+
+
+def _fingerprint_payload(
+    normalized: dict[str, object],
+    *,
+    schema_version: str,
+    decision: CiticSourceScopeReviewDecision,
+    supersedes_review_id: str | None,
+) -> dict[str, object]:
+    payload = dict(normalized)
+    if schema_version == _LEGACY_CITIC_SOURCE_SCOPE_REVIEW_SCHEMA_VERSION:
+        payload.pop("account_value_band", None)
+    return {
+        **payload,
+        "schema_version": schema_version,
+        "decision": decision,
+        "supersedes_review_id": supersedes_review_id,
     }
 
 

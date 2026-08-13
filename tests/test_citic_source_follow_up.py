@@ -213,6 +213,7 @@ def test_citic_source_follow_up_advances_only_after_exact_source_scope_review(
         account_type="cash",
         market_scopes=["shanghai_a", "shenzhen_a"],
         asset_classes=["stock"],
+        account_value_band="cny_0_20000",
         business_types=["history_trades"],
         no_other_filters_attested=True,
         complete_returned_results_attested=True,
