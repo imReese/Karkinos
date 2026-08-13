@@ -8,6 +8,7 @@ registry, OMS, ledger, risk, capital-authority, or broker boundaries.
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from typing import Any, Mapping
 
@@ -20,6 +21,13 @@ from .contracts import JsonObject, canonical_json, content_fingerprint
 FORMULA_AST_CONTRACT = "karkinos.ai.formula_ast.v1"
 FORMULA_BINDING_CONTRACT = "karkinos.ai.formula_binding.v1"
 CANONICAL_COST_MODEL_REFERENCE = "karkinos.backtest.multi_asset_commission.default.v1"
+REVIEWED_ACCOUNT_COST_MODEL_PREFIX = (
+    "karkinos.backtest.reviewed_account_fee_schedule.v1:"
+)
+_REVIEWED_ACCOUNT_COST_MODEL_REFERENCE = re.compile(
+    re.escape(REVIEWED_ACCOUNT_COST_MODEL_PREFIX)
+    + r"fee_review_[0-9a-f]{32}:[0-9a-f]{64}$"
+)
 
 _FIELDS = frozenset({"open", "high", "low", "close", "volume"})
 _WINDOW_OPERATORS = frozenset(
@@ -92,7 +100,7 @@ class FormulaBinding:
             raise FormulaValidationError("invalid_date_range", "date_range")
         if self.frequency != "1d":
             raise FormulaValidationError("unsupported_frequency", "frequency")
-        if self.cost_model_reference != CANONICAL_COST_MODEL_REFERENCE:
+        if not is_operator_approved_cost_model_reference(self.cost_model_reference):
             raise FormulaValidationError(
                 "cost_model_not_operator_approved", "cost_model_reference"
             )
@@ -128,6 +136,14 @@ class FormulaBinding:
     @property
     def fingerprint(self) -> str:
         return "sha256:" + content_fingerprint(self.to_dict())
+
+
+def is_operator_approved_cost_model_reference(value: object) -> bool:
+    """Accept the default estimate or one exact persisted reviewed schedule."""
+    normalized = str(value or "").strip()
+    return normalized == CANONICAL_COST_MODEL_REFERENCE or bool(
+        _REVIEWED_ACCOUNT_COST_MODEL_REFERENCE.fullmatch(normalized)
+    )
 
 
 def formula_operator_catalog() -> JsonObject:

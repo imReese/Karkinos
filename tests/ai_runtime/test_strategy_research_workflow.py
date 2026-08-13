@@ -4,15 +4,18 @@ import asyncio
 import json
 import sqlite3
 from datetime import datetime, timedelta
+from decimal import Decimal
 from threading import Event, Lock
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
 
 from analytics.dataset_snapshot import build_backtest_dataset_snapshot
-from core.types import AssetClass, BarFrequency, Symbol
+from core.types import AssetClass, BarFrequency, CommissionType, Symbol
 from data.handler import DataHandler
 from data.store import DataStore
+from execution.commission import MultiAssetCommission, StockACommission
 from server.ai_runtime.capture import (
     CAPTURE_TOOL_BY_TYPE,
     CapturedProjection,
@@ -24,7 +27,6 @@ from server.ai_runtime.capture import (
 from server.ai_runtime.contracts import AgentRole, ArtifactKind
 from server.ai_runtime.evidence import CanonicalEvidenceRepository
 from server.ai_runtime.formula_dsl import (
-    CANONICAL_COST_MODEL_REFERENCE,
     FORMULA_AST_CONTRACT,
 )
 from server.ai_runtime.provider_connectivity import (
@@ -47,6 +49,45 @@ from server.ai_runtime.strategy_research import (
 )
 
 NOW = "2026-07-15T01:00:00+00:00"
+REVIEWED_COST_MODEL_REFERENCE = (
+    "karkinos.backtest.reviewed_account_fee_schedule.v1:"
+    f"fee_review_{'a' * 32}:{'b' * 64}"
+)
+
+
+def _reviewed_fee_resolution() -> SimpleNamespace:
+    calculator = MultiAssetCommission(fee_rule_version=REVIEWED_COST_MODEL_REFERENCE)
+    calculator.set_commission(
+        CommissionType.STOCK_A,
+        StockACommission(
+            commission_rate=Decimal("0.001"),
+            min_commission=Decimal("0"),
+            fee_rule_id="reviewed-account-fee-rule",
+        ),
+    )
+    return SimpleNamespace(
+        cost_model_reference=REVIEWED_COST_MODEL_REFERENCE,
+        commission_calc=calculator,
+        fee_evidence={
+            "account_specific": True,
+            "fee_schedule_source": (
+                "reviewed_account_truth_or_reconciled_fee_schedule"
+            ),
+            "fee_schedule_fingerprint": "sha256:" + "f" * 64,
+            "broker_statement_reconciled": True,
+            "fee_schedule_review_id": "fee_review_" + "a" * 32,
+            "fee_schedule_review_fingerprint": "sha256:" + "b" * 64,
+            "fee_schedule_preview_fingerprint": "sha256:" + "c" * 64,
+            "account_truth_import_run_id": "import_fixture",
+            "account_truth_source_fingerprint": "sha256:" + "d" * 64,
+            "account_truth_scope_fingerprint": "sha256:" + "e" * 64,
+            "effective_start_date": "2025-01-01",
+            "effective_end_date": "2025-12-31",
+            "fee_notional_envelope_enforced": True,
+            "fee_notional_envelope_fingerprint": "sha256:" + "9" * 64,
+            "fee_notional_covered_asset_classes": ["stock"],
+        },
+    )
 
 
 class FixtureTransport:
@@ -338,6 +379,7 @@ def _service(tmp_path, *, bind_account: bool = True):
         end_date="2025-01-09",
         frequency="1d",
         initial_cash=100_000,
+        cost_model_reference=REVIEWED_COST_MODEL_REFERENCE,
         valuation_snapshot_id=("private-valuation-id" if bind_account else None),
         ledger_cutoff_id=(88 if bind_account else None),
     )
@@ -539,6 +581,7 @@ def _service(tmp_path, *, bind_account: bool = True):
         transport=transport,
         now=lambda: NOW,
         monotonic=lambda: 10.0,
+        reviewed_fee_schedule_resolver=lambda **_: _reviewed_fee_resolution(),
     )
     return service, selection, transport, db_path
 
@@ -713,6 +756,17 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
         backtest["canonical_backtest"]["dataset_snapshot"]["snapshot_id"]
         == selection.dataset_snapshot_id
     )
+    saved_candidate = await service._db.get_backtest_result(
+        backtest["canonical_backtest"]["result_id"]
+    )
+    account_capital = json.loads(saved_candidate["metrics_json"])[
+        "account_capital_constraint"
+    ]
+    assert account_capital["status"] == "pass"
+    assert account_capital["initial_cash_within_current_account_equity"] is True
+    assert account_capital["current_account_total_equity_redacted"] is True
+    assert "available_cash" not in account_capital
+    assert "positions" not in account_capital
 
     critique = await service.critique(
         CritiqueRequest(
@@ -916,30 +970,61 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_strategy_only_research_remains_compatible_without_account_export(
+async def test_strategy_research_without_account_binding_fails_before_export(
     tmp_path,
 ) -> None:
     service, selection, transport, _ = _service(tmp_path, bind_account=False)
 
-    result = await service.generate_hypotheses(
-        HypothesisGenerationRequest(
-            idempotency_key="strategy-only-hypothesis",
-            requested_by="human:reese",
-            account_alias="strategy-only",
-            research_question="Strategy-only research must remain compatible.",
-            selection=selection,
-            confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
+    with pytest.raises(Exception, match="research_account_binding_required"):
+        await service.generate_hypotheses(
+            HypothesisGenerationRequest(
+                idempotency_key="strategy-only-hypothesis",
+                requested_by="human:reese",
+                account_alias="strategy-only",
+                research_question="Unbound research must fail closed.",
+                selection=selection,
+                confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
+            )
         )
-    )
 
-    assert result["status"] == "completed"
-    exported = json.loads(transport.calls[0]["payload"]["messages"][1]["content"])
-    assert "saved_account_evidence" not in exported
-    assert (
-        result["drafts"][0]["provider_provenance"]["account_evidence_exported"] is False
-    )
+    assert transport.calls == []
+    assert service._capture_service._source.requests == []
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_strategy_research_capital_above_current_equity_fails_before_export(
+    tmp_path,
+) -> None:
+    service, selection, transport, db_path = _service(tmp_path)
     source = service._capture_service._source
-    assert source.requests[0].evidence_types == (CaptureEvidenceType.RESEARCH_EVIDENCE,)
+    source.account_payload["summary"]["total_equity"] = 99_999
+    source.account_payload["snapshot"]["total_equity"] = 99_999
+
+    with pytest.raises(
+        Exception, match="research_initial_cash_exceeds_current_account_equity"
+    ):
+        await service.generate_hypotheses(
+            HypothesisGenerationRequest(
+                idempotency_key="oversized-account-capital",
+                requested_by="human:reese",
+                account_alias="bound-account",
+                research_question="Oversized research capital must fail closed.",
+                selection=selection,
+                confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
+            )
+        )
+
+    assert transport.calls == []
+    with sqlite3.connect(db_path) as conn:
+        stored = conn.execute(
+            "SELECT status, failure_code FROM ai_strategy_research_sessions"
+        ).fetchone()
+    assert stored == (
+        "blocked",
+        "research_initial_cash_exceeds_current_account_equity",
+    )
 
 
 @pytest.mark.unit

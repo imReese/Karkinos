@@ -54,8 +54,11 @@ def _payload() -> dict:
             "frequency": "1d",
             "initial_cash": 100000,
             "cost_model_reference": (
-                "karkinos.backtest.multi_asset_commission.default.v1"
+                "karkinos.backtest.reviewed_account_fee_schedule.v1:"
+                f"fee_review_{'a' * 32}:{'b' * 64}"
             ),
+            "valuation_snapshot_id": "valuation-route-001",
+            "ledger_cutoff_id": 88,
         },
         "confirmation": HYPOTHESIS_EXPORT_CONFIRMATION,
     }
@@ -81,6 +84,34 @@ def test_hypothesis_route_requires_exact_human_export_confirmation(monkeypatch):
     client = _client(monkeypatch, service)
     payload = _payload()
     payload.pop("confirmation")
+
+    response = client.post("/api/ai/strategy-research/hypotheses", json=payload)
+
+    assert response.status_code == 422
+    assert service.requests == []
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "invalid_selection",
+    [
+        {"valuation_snapshot_id": None},
+        {"ledger_cutoff_id": None},
+        {
+            "cost_model_reference": (
+                "karkinos.backtest.multi_asset_commission.default.v1"
+            )
+        },
+    ],
+)
+def test_hypothesis_route_requires_real_account_and_reviewed_cost_binding(
+    monkeypatch,
+    invalid_selection,
+):
+    service = FixtureService()
+    client = _client(monkeypatch, service)
+    payload = _payload()
+    payload["selection"].update(invalid_selection)
 
     response = client.post("/api/ai/strategy-research/hypotheses", json=payload)
 

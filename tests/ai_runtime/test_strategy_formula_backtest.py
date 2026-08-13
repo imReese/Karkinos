@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from decimal import Decimal
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
 
 from analytics.dataset_snapshot import build_backtest_dataset_snapshot
-from core.types import AssetClass, BarFrequency, Symbol
+from core.types import AssetClass, BarFrequency, CommissionType, Symbol
 from data.handler import DataHandler
 from data.store import DataStore
+from execution.commission import MultiAssetCommission, StockACommission
 from server.ai_runtime.formula_dsl import (
     CANONICAL_COST_MODEL_REFERENCE,
     FORMULA_AST_CONTRACT,
@@ -106,7 +109,7 @@ def test_restricted_formula_adapter_uses_canonical_after_cost_engine_without_db_
         cost_model_reference=CANONICAL_COST_MODEL_REFERENCE,
         anti_lookahead_assumptions=assumptions,
         parameter_values={"window": 3},
-        parameter_ranges={"window": [3, 5]},
+        parameter_ranges={"window": [2, 3, 5]},
         initial_cash=selection.initial_cash,
     )
     draft = {
@@ -123,7 +126,7 @@ def test_restricted_formula_adapter_uses_canonical_after_cost_engine_without_db_
         "cost_model_reference": selection.cost_model_reference,
         "anti_lookahead_assumptions": list(assumptions),
         "parameter_values": {"window": 3},
-        "parameter_ranges": {"window": [3, 5]},
+        "parameter_ranges": {"window": [2, 3, 5]},
     }
 
     result, request = RestrictedFormulaBacktestAdapter(data_store=store).run(
@@ -142,6 +145,29 @@ def test_restricted_formula_adapter_uses_canonical_after_cost_engine_without_db_
     assert result["metrics_json"]["authority_effect"] == "none"
     assert result["metrics_json"]["oos_validation"]["validation_mode"] == "rolling"
     assert result["metrics_json"]["oos_validation"]["fold_count"] >= 1
+    fee_evidence = result["metrics_json"]["fee_component_evidence"]
+    assert fee_evidence["status"] == "complete"
+    assert fee_evidence["includes_taxes"] is True
+    assert fee_evidence["fill_count"] == len(result["fills"])
+    assert fee_evidence["components"]["commission"]
+    assert fee_evidence["components"]["stamp_tax"]
+    assert fee_evidence["components"]["transfer_fee"]
+    assert fee_evidence["components"]["slippage"]
+    assert len(fee_evidence["evidence_fingerprint"]) == 64
+    capacity = result["metrics_json"]["capacity_review"]
+    assert capacity["status"] == "pass"
+    assert capacity["observation_count"] == len(result["fills"])
+    assert len(capacity["evidence_fingerprint"]) == 64
+    assert capacity["authorizes_execution"] is False
+    parameter = result["metrics_json"]["parameter_robustness"]
+    assert parameter["tested_count"] == 3
+    assert parameter["selected_params"] == {"window": 3}
+    assert len(parameter["evidence_fingerprint"]) == 64
+    assert result["metrics_json"]["parameter_sweep_failure_code"] is None
+    regimes = result["metrics_json"]["market_regime_robustness"]
+    assert regimes["schema_version"] == "karkinos.market_regime_robustness.v1"
+    assert len(regimes["evidence_fingerprint"]) == 64
+    assert regimes["authorizes_execution"] is False
     assert request.oos_mode == "rolling"
     assert result["cost_summary_json"]["total_trades"] == len(result["fills"])
     assert result["metrics_json"]["research_evidence_bundle"]["schema_version"]
@@ -173,3 +199,129 @@ def test_restricted_formula_adapter_uses_canonical_after_cost_engine_without_db_
             selection=selection,
             draft={**draft, "formula_ast": drifted_formula},
         )
+
+
+def test_restricted_formula_adapter_calculates_with_exact_reviewed_fee_binding(
+    tmp_path,
+) -> None:
+    store = DataStore(tmp_path / "market")
+    symbol = Symbol("600000")
+    bars = _bars()
+    store.save_bars(
+        symbol,
+        BarFrequency.DAILY,
+        bars,
+        provider_name="deterministic_fixture",
+        data_source="deterministic_fixture",
+        adjustment_mode="none",
+    )
+    snapshot = build_backtest_dataset_snapshot(
+        start_date="2025-01-02",
+        end_date="2025-01-09",
+        configured_source="deterministic_fixture",
+        data_handlers={
+            symbol: DataHandler(bars, symbol, BarFrequency.DAILY, AssetClass.STOCK)
+        },
+        store=store,
+        source_names=["deterministic_fixture"],
+    )
+    review_id = "fee_review_" + "a" * 32
+    review_fingerprint = "sha256:" + "b" * 64
+    cost_model_reference = (
+        "karkinos.backtest.reviewed_account_fee_schedule.v1:"
+        f"{review_id}:{review_fingerprint.removeprefix('sha256:')}"
+    )
+    selection = StrategyResearchSelection(
+        saved_backtest_result_id=1,
+        universe=(str(symbol),),
+        asset_classes=("stock",),
+        dataset_snapshot_id=snapshot["snapshot_id"],
+        start_date="2025-01-02",
+        end_date="2025-01-09",
+        frequency="1d",
+        initial_cash=100_000,
+        cost_model_reference=cost_model_reference,
+    )
+    assumptions = (
+        "Signals use completed daily bars and never use a future timestamp.",
+    )
+    binding = FormulaBinding(
+        formula_ast=_formula(),
+        universe=selection.universe,
+        dataset_snapshot_id=selection.dataset_snapshot_id,
+        start_date=selection.start_date,
+        end_date=selection.end_date,
+        frequency=selection.frequency,
+        cost_model_reference=cost_model_reference,
+        anti_lookahead_assumptions=assumptions,
+        parameter_values={"window": 3},
+        parameter_ranges={"window": [2, 3, 5]},
+        initial_cash=selection.initial_cash,
+    )
+    draft = {
+        "draft_id": "reviewed-fee-draft",
+        "formula_ast": _formula(),
+        "formula_fingerprint": binding.fingerprint,
+        "selected_universe": list(selection.universe),
+        "dataset_snapshot_id": selection.dataset_snapshot_id,
+        "test_window": {
+            "start_date": selection.start_date,
+            "end_date": selection.end_date,
+        },
+        "frequency": selection.frequency,
+        "cost_model_reference": cost_model_reference,
+        "anti_lookahead_assumptions": list(assumptions),
+        "parameter_values": {"window": 3},
+        "parameter_ranges": {"window": [2, 3, 5]},
+    }
+    calculator = MultiAssetCommission(fee_rule_version=cost_model_reference)
+    calculator.set_commission(
+        CommissionType.STOCK_A,
+        StockACommission(
+            commission_rate=Decimal("0.01"),
+            min_commission=Decimal("0"),
+            fee_rule_id="reviewed-account-fee-rule",
+        ),
+    )
+    fee_schedule_binding = {
+        "fee_schedule_review_id": review_id,
+        "fee_schedule_review_fingerprint": review_fingerprint,
+        "fee_schedule_preview_fingerprint": "sha256:" + "c" * 64,
+        "account_truth_import_run_id": "import_fixture",
+        "account_truth_source_fingerprint": "sha256:" + "d" * 64,
+        "account_truth_scope_fingerprint": "sha256:" + "e" * 64,
+        "effective_start_date": "2025-01-01",
+        "effective_end_date": "2025-12-31",
+        "fee_notional_envelope_enforced": True,
+        "fee_notional_envelope_fingerprint": "sha256:" + "9" * 64,
+        "fee_notional_covered_asset_classes": ["stock"],
+    }
+    resolution = SimpleNamespace(
+        cost_model_reference=cost_model_reference,
+        commission_calc=calculator,
+        fee_evidence={
+            "account_specific": True,
+            "fee_schedule_source": (
+                "reviewed_account_truth_or_reconciled_fee_schedule"
+            ),
+            "fee_schedule_fingerprint": "sha256:" + "f" * 64,
+            "broker_statement_reconciled": True,
+            **fee_schedule_binding,
+        },
+    )
+
+    result, _ = RestrictedFormulaBacktestAdapter(data_store=store).run(
+        selection=selection,
+        draft=draft,
+        expected_dataset_snapshot=snapshot,
+        reviewed_fee_schedule_resolution=resolution,
+    )
+
+    assert result["fills"]
+    assert all(
+        fill["fee_rule_version"] == cost_model_reference for fill in result["fills"]
+    )
+    fee_evidence = result["metrics_json"]["fee_component_evidence"]
+    assert fee_evidence["account_specific"] is True
+    assert fee_evidence["fee_rule_version"] == cost_model_reference
+    assert fee_evidence["fee_schedule_binding"] == fee_schedule_binding
