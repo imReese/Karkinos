@@ -46,6 +46,13 @@ const report: BacktestReport = {
         },
       ],
     },
+    fee_component_evidence: {
+      status: 'complete',
+      cost_model_reference:
+        'karkinos.backtest.reviewed_account_fee_schedule.v1:fee_review_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      account_specific: true,
+      broker_statement_reconciled: true,
+    },
   },
   cost_summary_json: { total_commission: 10, total_trades: 2 },
   equity_curve: [],
@@ -107,7 +114,8 @@ const draft = {
   exit_conditions: 'Close below the rolling mean.',
   position_sizing_hypothesis: 'Equal weight.',
   portfolio_constraints: { max_weight: 1 },
-  cost_model_reference: 'karkinos.backtest.multi_asset_commission.default.v1',
+  cost_model_reference:
+    'karkinos.backtest.reviewed_account_fee_schedule.v1:fee_review_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
   required_evidence: ['Canonical after-cost result.'],
   anti_lookahead_assumptions: ['Only completed bars are used.'],
   proposed_deterministic_tests: ['Replay the exact snapshot.'],
@@ -152,6 +160,32 @@ function renderPanel(selectedReport: BacktestReport | null = report) {
       const body = init?.body
         ? (JSON.parse(String(init.body)) as Record<string, unknown>)
         : {};
+      if (url.includes('/api/portfolio/state')) {
+        return jsonResponse({
+          summary: {
+            total_equity: 100_000,
+            available_cash: 25_000,
+            total_deposits: 100_000,
+            positions_count: 1,
+            unrealized_pnl: 0,
+            realized_pnl: 0,
+            cash_ratio: 0.25,
+            valuation_status: 'complete',
+            valuation_snapshot_id: 'valuation-current-001',
+            ledger_cutoff_id: 88,
+          },
+          snapshot: {
+            cash: 25_000,
+            total_equity: 100_000,
+            total_deposits: 100_000,
+            positions: [],
+            allocation: [],
+            allocation_grouped: [],
+          },
+          risks: [],
+          next_step: 'Review only',
+        });
+      }
       requests.push({ url, method, body });
       if (url.endsWith('/hypotheses')) {
         return jsonResponse({
@@ -191,7 +225,7 @@ function renderPanel(selectedReport: BacktestReport | null = report) {
           formula_fingerprint: 'sha256:formula-001',
           dataset_snapshot_id: 'sha256:dataset-001',
           cost_model_reference:
-            'karkinos.backtest.multi_asset_commission.default.v1',
+            'karkinos.backtest.reviewed_account_fee_schedule.v1:fee_review_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
           canonical_backtest: {
             result_id: 18,
             initial_cash: 100_000,
@@ -289,6 +323,7 @@ test('requires separate export, backtest, critique, and review confirmations', a
   fireEvent.click(
     screen.getByRole('button', { name: 'Open AI strategy research' }),
   );
+  expect(await screen.findByText(/valuation-current-001/)).toBeTruthy();
 
   const generate = screen.getByRole('button', {
     name: 'Generate hypothesis drafts',
@@ -361,8 +396,11 @@ test('shows a locally blocked formula and never enables its backtest', async () 
     validation: { status: 'blocked', errors: ['unknown_operator:python'] },
     formula_fingerprint: null,
   };
-  const originalFetch = vi.mocked(fetch);
-  originalFetch.mockImplementationOnce(async () =>
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Open AI strategy research' }),
+  );
+  expect(await screen.findByText(/valuation-current-001/)).toBeTruthy();
+  vi.mocked(fetch).mockImplementationOnce(async () =>
     jsonResponse({
       schema_version: 'karkinos.ai.strategy_research_api.v1',
       session_id: 'session-blocked',
@@ -388,9 +426,6 @@ test('shows a locally blocked formula and never enables its backtest', async () 
       authority_effect: 'none',
     }),
   );
-  fireEvent.click(
-    screen.getByRole('button', { name: 'Open AI strategy research' }),
-  );
   fireEvent.change(screen.getByLabelText('Research question'), {
     target: { value: 'Blocked formula?' },
   });
@@ -406,11 +441,19 @@ test('shows a locally blocked formula and never enables its backtest', async () 
   expect(
     screen.queryByRole('button', { name: 'Run canonical research backtest' }),
   ).toBeNull();
-  expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+  expect(
+    vi
+      .mocked(fetch)
+      .mock.calls.filter(([input]) => String(input).endsWith('/hypotheses')),
+  ).toHaveLength(1);
 });
 
 test('shows drift as historical and blocks follow-on actions', async () => {
   renderPanel();
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Open AI strategy research' }),
+  );
+  expect(await screen.findByText(/valuation-current-001/)).toBeTruthy();
   vi.mocked(fetch).mockImplementationOnce(async () =>
     jsonResponse({
       schema_version: 'karkinos.ai.strategy_research_api.v1',
@@ -436,9 +479,6 @@ test('shows drift as historical and blocks follow-on actions', async () => {
       requires_human_review: true,
       authority_effect: 'none',
     }),
-  );
-  fireEvent.click(
-    screen.getByRole('button', { name: 'Open AI strategy research' }),
   );
   fireEvent.change(screen.getByLabelText('Research question'), {
     target: { value: 'Drifted research?' },
@@ -474,5 +514,30 @@ test('blocks export when the saved dataset snapshot is incomplete', () => {
   expect(
     screen.getByRole('button', { name: 'Generate hypothesis drafts' }),
   ).toHaveProperty('disabled', true);
-  expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+  expect(
+    vi
+      .mocked(fetch)
+      .mock.calls.some(([input]) => String(input).endsWith('/hypotheses')),
+  ).toBe(false);
+});
+
+test('blocks export when research capital exceeds the current account', async () => {
+  const oversizedReport = structuredClone(report);
+  oversizedReport.config.initial_cash = 100_001;
+  renderPanel(oversizedReport);
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Open AI strategy research' }),
+  );
+
+  expect((await screen.findByRole('alert')).textContent).toContain(
+    'research capital is required',
+  );
+  expect(
+    screen.getByRole('button', { name: 'Generate hypothesis drafts' }),
+  ).toHaveProperty('disabled', true);
+  expect(
+    vi
+      .mocked(fetch)
+      .mock.calls.some(([input]) => String(input).endsWith('/hypotheses')),
+  ).toBe(false);
 });

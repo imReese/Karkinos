@@ -665,7 +665,9 @@ export type GenerateStrategyHypothesesInput = {
     end_date: string;
     frequency: '1d';
     initial_cash: number;
-    cost_model_reference: 'karkinos.backtest.multi_asset_commission.default.v1';
+    cost_model_reference: string;
+    valuation_snapshot_id: string;
+    ledger_cutoff_id: number;
   };
 };
 
@@ -801,6 +803,13 @@ export type ShadowResearchCandidate = {
   human_paper_shadow_approval_required: true;
 };
 
+export type StrategyPromotionState = {
+  strategy_id: string;
+  stage: string;
+  gate_status: string;
+  live_like_enabled: boolean;
+};
+
 export type ShadowResearchAutomationStatus = {
   schema_version: string;
   policy: {
@@ -867,6 +876,16 @@ export function useShadowResearchAutomationQuery() {
   });
 }
 
+export function useStrategyPromotionStatesQuery() {
+  return useQuery({
+    queryKey: ['strategy-promotion-states'],
+    queryFn: () =>
+      apiClient<StrategyPromotionState[]>('/api/strategy-promotion/states'),
+    refetchOnWindowFocus: false,
+    staleTime: 10_000,
+  });
+}
+
 export function useUpdateShadowResearchPolicyMutation() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -919,9 +938,46 @@ export function useApproveShadowResearchCandidateMutation() {
             'approve_evidence_bound_candidate_for_paper_shadow_only_without_production_or_trade_authority',
         },
       ),
-    onSuccess: () =>
-      queryClient.invalidateQueries({
-        queryKey: ['ai-shadow-research-automation'],
-      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ['ai-shadow-research-automation'],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ['strategy-promotion-states'],
+        }),
+      ]);
+    },
+  });
+}
+
+export function usePauseShadowResearchCandidateMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      candidate_id: string;
+      actor: string;
+      reason: string;
+    }) =>
+      postJson<StrategyPromotionState>(
+        `/api/strategy-promotion/${encodeURIComponent(`ai_formula_shadow:${input.candidate_id}`)}/lifecycle`,
+        {
+          target_stage: 'paused',
+          reason: input.reason,
+          actor: input.actor,
+          confirmation:
+            'pause_or_retire_strategy_without_execution_or_capital_authority',
+        },
+      ),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ['ai-shadow-research-automation'],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ['strategy-promotion-states'],
+        }),
+      ]);
+    },
   });
 }

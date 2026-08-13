@@ -457,6 +457,13 @@ export type BacktestReport = {
     evidence_bundle?: AfterCostEvidence;
     oos_validation?: OutOfSampleValidation;
     strategy_metadata?: StrategyMetadataSnapshot;
+    fee_component_evidence?: {
+      status?: string;
+      cost_model_reference?: string;
+      account_specific?: boolean;
+      broker_statement_reconciled?: boolean;
+    };
+    account_capital_constraint?: Record<string, unknown>;
   };
   cost_summary_json?: CostSummary;
   evidence_json?: AfterCostEvidence;
