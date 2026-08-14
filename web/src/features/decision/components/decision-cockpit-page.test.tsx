@@ -2854,6 +2854,52 @@ test('surfaces broker gateway status without execution controls', async () => {
   expect(automation.textContent).not.toContain('Cancel broker order');
 });
 
+test('fails closed when the broker gateway cannot verify trading controls', async () => {
+  renderDecisionCockpit({
+    locale: 'en',
+    brokerGatewayStatusResponse: {
+      schema_version: 'karkinos.broker_gateway_status.v1',
+      broker_submission_enabled: false,
+      kill_switch_status: 'unavailable',
+      kill_switch_enabled: null,
+      kill_switch_evidence_available: false,
+      kill_switch_blockers: ['kill_switch_status_unavailable'],
+      gateways: [
+        {
+          gateway_id: 'manual_ticket',
+          display_name: 'Manual ticket',
+          status: 'blocked_by_trading_controls_unavailable',
+          can_preview_orders: false,
+          can_export_tickets: false,
+          can_dry_run_orders: false,
+          can_query_orders: true,
+          can_query_fills: true,
+          can_submit_orders: false,
+          can_cancel_orders: false,
+          blockers: ['kill_switch_status_unavailable'],
+          blocked_reason: 'internal fallback copy must not be shown',
+        },
+      ],
+    },
+  });
+
+  const automation = await screen.findByTestId('decision-automation-cockpit');
+  expect(automation.textContent).toContain('Trading controls unavailable');
+  expect(automation.textContent).toContain(
+    'No verifiable Kill Switch snapshot is available.',
+  );
+  expect(automation.textContent).toContain(
+    'Blocked: trading controls unavailable',
+  );
+  expect(automation.textContent).toContain('Preview blocked');
+  expect(automation.textContent).toContain('Query orders available');
+  expect(automation.textContent).toContain(
+    'Restore control state and review again before generating a manual ticket.',
+  );
+  expect(automation.textContent).not.toContain('internal fallback copy');
+  expect(automation.querySelector('button')).toBeNull();
+});
+
 test('surfaces manual ticket export capability as read-only gateway status', async () => {
   renderDecisionCockpit({
     locale: 'en',
@@ -4110,6 +4156,70 @@ test('loads execution reconciliation item detail when the recent run list is sum
   );
   expect(automation.textContent).not.toContain('Sync ledger');
   expect(automation.textContent).not.toContain('Apply fill');
+});
+
+test('projects the persisted plan paper actual comparison into the execution review', async () => {
+  renderDecisionCockpit({
+    locale: 'en',
+    executionReconciliationRunsResponse: [
+      {
+        run_id: 'execution-reconciliation:2026-07-06',
+        run_date: '2026-07-06',
+        status: 'open_items',
+        item_count: 1,
+        open_item_count: 1,
+        payload: { schema_version: 'karkinos.execution_reconciliation.v1' },
+        payload_status: 'valid',
+        items: [
+          {
+            item_id: 1,
+            order_id: 'OMS-AI-COMPARISON-1',
+            item_status: 'broker_evidence_available',
+            suggested_action: 'review_broker_evidence_match',
+            payload_status: 'valid',
+            payload: {
+              plan_paper_actual_comparison: {
+                schema_version: 'karkinos.plan_paper_actual_comparison.v1',
+                status: 'review_required',
+                planned: { quantity: '100', limit_price: '5.0000' },
+                paper: {
+                  filled_quantity: '100',
+                  average_fill_price: '5.0000',
+                  total_execution_cost: '5.00',
+                },
+                actual: {
+                  quantity: '100',
+                  average_fill_price: '5.0100',
+                  total_execution_cost: '5.20',
+                  import_run_ids: ['private-run-id'],
+                },
+                blockers: [],
+                differences: ['paper_actual_fill_price_difference'],
+                evidence_fingerprint: 'c'.repeat(64),
+                persisted_evidence_only: true,
+                human_review_required: true,
+                authorizes_execution: false,
+                does_not_mutate_oms: true,
+                does_not_mutate_production_ledger: true,
+                does_not_change_capital_authority: true,
+              },
+            },
+          },
+        ],
+      },
+    ],
+  });
+
+  const comparison = await screen.findByTestId('plan-paper-actual-comparison');
+  expect(comparison.textContent).toContain('Review required');
+  expect(comparison.textContent).toContain('5.0000');
+  expect(comparison.textContent).toContain('5.0100');
+  expect(comparison.textContent).toContain('¥5.20');
+  expect(comparison.textContent).toContain(
+    'Actual average price differs from the paper result.',
+  );
+  expect(comparison.textContent).not.toContain('private-run-id');
+  expect(comparison.querySelector('button')).toBeNull();
 });
 
 test('links signal action queue cards back to single-instrument evidence surfaces', async () => {

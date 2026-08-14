@@ -9,9 +9,13 @@ from account_truth.broker_evidence import BrokerEvidenceRepository
 from account_truth.broker_statement import parse_broker_statement_csv
 from server.db import AppDatabase
 from server.services.broker_gateway import BrokerGatewayService
-from server.services.execution_reconciliation import ExecutionReconciliationService
+from server.services.execution_reconciliation import (
+    ExecutionReconciliationService,
+    build_current_plan_paper_actual_comparison,
+)
 from server.services.oms import OmsService
 from server.services.per_order_confirmation import build_order_fingerprint
+from server.services.trading_controls import TradingControlState
 from tests.broker_gateway_fixtures import clear_current_per_order_confirmation
 
 
@@ -36,6 +40,7 @@ def _required_gateway_evidence() -> dict:
 def _gateway(db: AppDatabase) -> BrokerGatewayService:
     return BrokerGatewayService(
         db=db,
+        trading_controls=TradingControlState(db=db),
         current_per_order_confirmation_provider=(
             lambda order_id: clear_current_per_order_confirmation(order_id)
         ),
@@ -621,6 +626,21 @@ def test_manual_ticket_execution_and_broker_import_form_a_non_mutating_audit_cha
 
 def test_reconciliation_persists_exact_plan_paper_actual_comparison(tmp_path) -> None:
     db, oms = _db_and_oms(tmp_path)
+    strategy_id = "ai_formula_shadow:exact-comparison-fixture"
+    db.upsert_action_task_sync(
+        source_signal_id=1,
+        symbol="600519",
+        title="exact plan paper actual fixture",
+        detail="bind the persisted decision action to the comparison",
+        direction="buy",
+        urgency="normal",
+        target_weight=0.01,
+        price=1688.0,
+        strategy_id=strategy_id,
+        timestamp="2026-07-02T01:30:00+00:00",
+        asset_class="stock",
+    )
+    action = db.get_action_tasks_sync(limit=1)[0]
     order = _confirmed_order(db, oms, gateway_evidence=True)
     _gateway(db).create_manual_ticket(order["order_id"], actor="test")
     current = db.get_oms_order_sync(order["order_id"])
@@ -628,7 +648,8 @@ def test_reconciliation_persists_exact_plan_paper_actual_comparison(tmp_path) ->
     payload = json.loads(current["payload_json"])
     payload["gateway_evidence"]["research_evidence"][
         "evidence_ref"
-    ] = "decision_action:1"
+    ] = f"decision_action:{action['id']}"
+    payload["gateway_evidence"]["account_truth"]["evidence_ref"] = "account_truth:1"
     db.upsert_oms_order_sync({**current, "payload": payload})
     db.upsert_paper_shadow_run_sync(
         run_id="run-001",
@@ -649,12 +670,19 @@ def test_reconciliation_persists_exact_plan_paper_actual_comparison(tmp_path) ->
                 {
                     "order_id": "paper-order-001",
                     "status": "filled",
+                    "divergence_status": "within_expectations",
                     "order_intent": {
-                        "action_ref": "action:1",
+                        "action_ref": f"action:{action['id']}",
                         "symbol": "600519",
                         "side": "buy",
                         "estimated_quantity": "100",
                         "estimated_price": "1688.00",
+                        "strategy_refs": [f"strategy:{strategy_id}"],
+                        "strategy_advancement_refs": [
+                            f"strategy_advancement:{'d' * 64}"
+                        ],
+                        "risk_refs": ["risk:risk-001"],
+                        "account_truth_refs": ["account_truth:1"],
                     },
                 }
             ],
@@ -689,13 +717,68 @@ def test_reconciliation_persists_exact_plan_paper_actual_comparison(tmp_path) ->
     assert comparison["blockers"] == []
     assert comparison["differences"] == []
     assert comparison["planned"]["quantity"] == "100.0"
+    assert comparison["planned"]["decision_action"] == {
+        "action_id": action["id"],
+        "source_signal_id": 1,
+        "symbol": "600519",
+        "side": "buy",
+        "asset_class": "stock",
+        "price": "1688.0",
+        "target_weight": "0.01",
+        "strategy_id": strategy_id,
+        "timestamp": "2026-07-02T01:30:00+00:00",
+        "status": "pending",
+    }
+    assert comparison["planned"]["risk_ref"] == "risk:risk-001"
+    assert comparison["planned"]["account_truth_ref"] == "account_truth:1"
     assert comparison["paper"]["filled_quantity"] == "100"
+    assert comparison["paper"]["strategy_refs"] == [f"strategy:{strategy_id}"]
+    assert comparison["paper"]["strategy_advancement_refs"] == [
+        f"strategy_advancement:{'d' * 64}"
+    ]
+    assert comparison["paper"]["risk_refs"] == ["risk:risk-001"]
+    assert comparison["paper"]["account_truth_refs"] == ["account_truth:1"]
     assert comparison["actual"]["quantity"] == "100"
     assert comparison["actual"]["exact_identity_linked"] is True
     assert comparison["actual"]["total_execution_cost"] == "5.00"
+    assert len(comparison["actual"]["event_fingerprints"]) == 1
+    assert "event_ids" not in comparison["actual"]
+    assert "broker_order_id" not in comparison["actual"]["event_links"][0]
+    assert "client_order_id" not in comparison["actual"]["event_links"][0]
+    assert "broker-buy-exact-plan-paper-actual" not in json.dumps(comparison)
     assert len(comparison["evidence_fingerprint"]) == 64
     assert comparison["authorizes_execution"] is False
     assert comparison["does_not_mutate_production_ledger"] is True
+
+
+def test_current_plan_paper_actual_source_error_fails_closed(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    db, oms = _db_and_oms(tmp_path)
+    order = _confirmed_order(db, oms, gateway_evidence=True)
+
+    def unavailable_broker_evidence(_service) -> list:
+        raise sqlite3.DatabaseError("synthetic persisted broker evidence failure")
+
+    monkeypatch.setattr(
+        ExecutionReconciliationService,
+        "_broker_trade_events",
+        unavailable_broker_evidence,
+    )
+
+    comparison = build_current_plan_paper_actual_comparison(db, order)
+
+    assert comparison["status"] == "blocked"
+    assert comparison["blockers"] == ["plan_paper_actual_current_source_unavailable"]
+    assert comparison["planned"] == {}
+    assert comparison["paper"] == {}
+    assert comparison["actual"] == {}
+    assert len(comparison["evidence_fingerprint"]) == 64
+    assert comparison["authorizes_execution"] is False
+    assert comparison["does_not_mutate_oms"] is True
+    assert comparison["does_not_mutate_production_ledger"] is True
+    assert comparison["does_not_change_capital_authority"] is True
 
 
 def test_reconciliation_queues_manual_execution_cost_mismatch_without_mutation(

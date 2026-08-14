@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -55,7 +56,9 @@ def create_router() -> APIRouter:
     async def run_execution_reconciliation(
         request: ExecutionReconciliationRunRequest,
     ) -> dict[str, Any]:
-        return _service().run_reconciliation(run_date=request.run_date)
+        return _project_execution_reconciliation_run(
+            _service().run_reconciliation(run_date=request.run_date)
+        )
 
     @r.get("/runs")
     async def list_execution_reconciliation_runs(
@@ -64,10 +67,13 @@ def create_router() -> APIRouter:
     ) -> list[dict[str, Any]]:
         from server.app import get_app_state
 
-        return get_app_state().db.list_execution_reconciliation_runs_sync(
-            limit=limit,
-            offset=offset,
-        )
+        return [
+            _project_execution_reconciliation_run(run)
+            for run in get_app_state().db.list_execution_reconciliation_runs_sync(
+                limit=limit,
+                offset=offset,
+            )
+        ]
 
     @r.get("/runs/{run_id}")
     async def get_execution_reconciliation_run(run_id: str) -> dict[str, Any]:
@@ -80,10 +86,12 @@ def create_router() -> APIRouter:
                 status_code=404,
                 detail=f"execution reconciliation run not found: {run_id}",
             )
-        return {
-            **run,
-            "items": db.list_execution_reconciliation_items_sync(run_id),
-        }
+        return _project_execution_reconciliation_run(
+            {
+                **run,
+                "items": db.list_execution_reconciliation_items_sync(run_id),
+            }
+        )
 
     @r.get("/batch-evidence/status")
     async def get_execution_batch_reconciliation_status() -> dict[str, Any]:
@@ -142,3 +150,41 @@ def _batch_service() -> ExecutionBatchReconciliationService:
     from server.app import get_app_state
 
     return ExecutionBatchReconciliationService(db=get_app_state().db)
+
+
+def _project_execution_reconciliation_run(run: dict[str, Any]) -> dict[str, Any]:
+    projected = dict(run)
+    payload, payload_status = _decode_object_payload(projected)
+    projected["payload"] = payload
+    projected["payload_status"] = payload_status
+    if isinstance(projected.get("items"), list):
+        projected["items"] = [
+            _project_execution_reconciliation_item(item)
+            for item in projected["items"]
+            if isinstance(item, dict)
+        ]
+    return projected
+
+
+def _project_execution_reconciliation_item(item: dict[str, Any]) -> dict[str, Any]:
+    projected = dict(item)
+    payload, payload_status = _decode_object_payload(projected)
+    projected["payload"] = payload
+    projected["payload_status"] = payload_status
+    return projected
+
+
+def _decode_object_payload(row: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    payload = row.get("payload")
+    if isinstance(payload, dict):
+        return dict(payload), "valid"
+    raw = row.get("payload_json")
+    if raw in {None, ""}:
+        return {}, "missing"
+    try:
+        decoded = json.loads(str(raw))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}, "invalid"
+    if not isinstance(decoded, dict):
+        return {}, "invalid"
+    return decoded, "valid"

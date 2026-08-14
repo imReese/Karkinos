@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -20,6 +21,7 @@ EXECUTION_RECONCILIATION_SCHEMA_VERSION = "karkinos.execution_reconciliation.v1"
 CONTROLLED_SUBMISSION_RECONCILIATION_SCHEMA_VERSION = (
     "karkinos.controlled_submission_reconciliation.v3"
 )
+_CONTROLLED_INTENT_UNSET = object()
 
 
 class ExecutionReconciliationService:
@@ -110,7 +112,7 @@ class ExecutionReconciliationService:
             mismatched_broker_events=mismatched_broker_events,
             order_lifecycle_evidence=controlled_order_lifecycle,
         )
-        plan_paper_actual_comparison = _plan_paper_actual_comparison(
+        plan_paper_actual_comparison = build_current_plan_paper_actual_comparison(
             self._db,
             order,
             broker_events=broker_events,
@@ -246,6 +248,58 @@ class ExecutionReconciliationService:
             broker_order_id=str(intent.get("broker_order_id") or ""),
             client_order_id=str(intent.get("client_order_id") or ""),
         )
+
+
+def build_current_plan_paper_actual_comparison(
+    db: Any,
+    order: dict[str, Any],
+    *,
+    broker_events: list[Any] | None = None,
+    controlled_intent: Any = _CONTROLLED_INTENT_UNSET,
+) -> dict[str, Any]:
+    """Rebuild one comparison from current persisted sources, failing closed."""
+
+    try:
+        resolved_broker_events = (
+            broker_events
+            if broker_events is not None
+            else ExecutionReconciliationService(db=db)._broker_trade_events()
+        )
+        if controlled_intent is _CONTROLLED_INTENT_UNSET:
+            reader = getattr(
+                db,
+                "get_controlled_broker_submit_intent_for_order_sync",
+                None,
+            )
+            controlled_intent = (
+                reader(str(order.get("order_id") or "")) if callable(reader) else None
+            )
+        return _plan_paper_actual_comparison(
+            db,
+            order,
+            broker_events=resolved_broker_events,
+            controlled_intent=(
+                controlled_intent if isinstance(controlled_intent, dict) else None
+            ),
+        )
+    except Exception:
+        core = {
+            "schema_version": "karkinos.plan_paper_actual_comparison.v1",
+            "status": "blocked",
+            "order_id": str(order.get("order_id") or ""),
+            "planned": {},
+            "paper": {},
+            "actual": {},
+            "blockers": ["plan_paper_actual_current_source_unavailable"],
+            "differences": [],
+            "persisted_evidence_only": True,
+            "human_review_required": True,
+            "authorizes_execution": False,
+            "does_not_mutate_oms": True,
+            "does_not_mutate_production_ledger": True,
+            "does_not_change_capital_authority": True,
+        }
+        return {**core, "evidence_fingerprint": _fingerprint(core)}
 
 
 def _matching_broker_events(
@@ -1146,6 +1200,7 @@ def _plan_paper_actual_comparison(
         "source_ref": str(order.get("source_ref") or ""),
         "symbol": str(order.get("symbol") or ""),
         "side": str(order.get("side") or "").lower(),
+        "asset_class": str(order.get("asset_class") or "").lower(),
         "quantity": _decimal_text(_decimal(order.get("quantity"))),
         "order_type": str(order.get("order_type") or ""),
         "limit_price": _decimal_text(_decimal(order.get("limit_price"))),
@@ -1153,7 +1208,9 @@ def _plan_paper_actual_comparison(
     blockers: list[str] = []
     differences: list[str] = []
     gateway_evidence = _object(order_payload.get("gateway_evidence"))
+    account_truth_gate = _object(gateway_evidence.get("account_truth"))
     research_gate = _object(gateway_evidence.get("research_evidence"))
+    risk_gate = _object(gateway_evidence.get("risk"))
     paper_gate = _object(gateway_evidence.get("paper_shadow"))
     action_ref = _decision_action_ref(research_gate.get("evidence_ref"))
     action_reader = getattr(db, "get_action_task_sync", None)
@@ -1162,14 +1219,71 @@ def _plan_paper_actual_comparison(
         if callable(action_reader) and action_ref is not None
         else None
     )
-    planned["strategy_id"] = (
-        str(action.get("strategy_id") or "") if isinstance(action, dict) else ""
-    )
+    decision_action: dict[str, Any] = {}
+    if isinstance(action, dict):
+        decision_action = {
+            "action_id": action.get("id"),
+            "source_signal_id": action.get("source_signal_id"),
+            "symbol": str(action.get("symbol") or ""),
+            "side": _decision_action_side(action.get("direction")),
+            "asset_class": str(action.get("asset_class") or "").lower(),
+            "price": _decimal_text(_decimal(action.get("price"))),
+            "target_weight": _decimal_text(_decimal(action.get("target_weight"))),
+            "strategy_id": str(action.get("strategy_id") or ""),
+            "timestamp": str(action.get("timestamp") or ""),
+            "status": str(action.get("status") or ""),
+        }
+    planned["decision_action"] = decision_action
+    planned["strategy_id"] = str(decision_action.get("strategy_id") or "")
+    planned["research_evidence_ref"] = str(research_gate.get("evidence_ref") or "")
+    planned["risk_ref"] = str(risk_gate.get("evidence_ref") or "")
+    planned["account_truth_ref"] = str(account_truth_gate.get("evidence_ref") or "")
+    planned["paper_shadow_ref"] = str(paper_gate.get("evidence_ref") or "")
     paper_run_id = _evidence_identifier(
         paper_gate.get("evidence_ref"), expected_kind="paper_shadow"
     )
     if action_ref is None:
         blockers.append("planned_decision_action_reference_missing_or_invalid")
+    elif not isinstance(action, dict):
+        blockers.append("planned_decision_action_not_found")
+    else:
+        if str(decision_action.get("action_id") or "") != action_ref.removeprefix(
+            "action:"
+        ):
+            blockers.append("planned_decision_action_identity_mismatch")
+        if decision_action.get("symbol") != planned["symbol"]:
+            blockers.append("planned_decision_action_symbol_mismatch")
+        if decision_action.get("side") != planned["side"]:
+            blockers.append("planned_decision_action_side_mismatch")
+        if not _asset_class_equivalent(
+            decision_action.get("asset_class"),
+            order.get("asset_class"),
+        ):
+            blockers.append("planned_decision_action_asset_class_mismatch")
+        if planned["order_type"].lower() == "limit" and _decimal(
+            decision_action.get("price")
+        ) != _decimal(planned["limit_price"]):
+            blockers.append("planned_decision_action_price_mismatch")
+        if _decimal(decision_action.get("target_weight")) is None:
+            blockers.append("planned_decision_action_target_weight_missing")
+        if decision_action.get("source_signal_id") is None:
+            blockers.append("planned_decision_action_signal_missing")
+        if not planned["strategy_id"]:
+            blockers.append("planned_decision_action_strategy_missing")
+        if not decision_action.get("timestamp"):
+            blockers.append("planned_decision_action_timestamp_missing")
+    if (
+        _evidence_identifier(
+            account_truth_gate.get("evidence_ref"), expected_kind="account_truth"
+        )
+        is None
+    ):
+        blockers.append("planned_account_truth_reference_missing_or_invalid")
+    if (
+        _evidence_identifier(risk_gate.get("evidence_ref"), expected_kind="risk")
+        is None
+    ):
+        blockers.append("planned_risk_reference_missing_or_invalid")
     if paper_run_id is None:
         blockers.append("paper_shadow_run_reference_missing_or_invalid")
 
@@ -1248,6 +1362,9 @@ def _plan_paper_actual_comparison(
                 "divergence_status": str(paper_run.get("divergence_status") or ""),
                 "order_id": paper_order_id,
                 "order_status": str(paper_order.get("status") or ""),
+                "order_divergence_status": str(
+                    paper_order.get("divergence_status") or ""
+                ),
                 "action_ref": str(intent.get("action_ref") or ""),
                 "symbol": str(intent.get("symbol") or ""),
                 "side": str(intent.get("side") or "").lower(),
@@ -1263,11 +1380,24 @@ def _plan_paper_actual_comparison(
                 "total_execution_cost": _decimal_text(
                     paper_commission + paper_slippage
                 ),
+                "strategy_refs": _reference_list(intent.get("strategy_refs")),
+                "strategy_advancement_refs": _reference_list(
+                    intent.get("strategy_advancement_refs")
+                ),
+                "risk_refs": _reference_list(intent.get("risk_refs")),
+                "account_truth_refs": _reference_list(intent.get("account_truth_refs")),
+                "does_not_submit_broker_order": (
+                    paper_payload.get("does_not_submit_broker_order") is True
+                ),
+                "does_not_mutate_production_ledger": (
+                    paper_payload.get("does_not_mutate_production_ledger") is True
+                ),
             }
             if (
                 paper_run.get("status") != "within_expectations"
                 or paper_run.get("divergence_status") != "within_expectations"
                 or paper_order.get("status") != "filled"
+                or paper_order.get("divergence_status") != "within_expectations"
                 or len(paper_fills) < 1
             ):
                 blockers.append("paper_shadow_outcome_not_clear")
@@ -1277,10 +1407,29 @@ def _plan_paper_actual_comparison(
                 blockers.append("paper_shadow_side_mismatch")
             if _decimal(paper["filled_quantity"]) != _decimal(planned["quantity"]):
                 blockers.append("paper_shadow_quantity_mismatch")
+            if _decimal(paper["planned_quantity"]) != _decimal(planned["quantity"]):
+                blockers.append("paper_shadow_planned_quantity_mismatch")
+            if planned["order_type"].lower() == "limit" and _decimal(
+                paper["planned_price"]
+            ) != _decimal(planned["limit_price"]):
+                blockers.append("paper_shadow_planned_price_mismatch")
             if _decimal(paper["average_fill_price"]) != _decimal(
                 planned["limit_price"]
             ):
                 differences.append("planned_paper_fill_price_difference")
+            if paper["strategy_refs"] != [f"strategy:{planned['strategy_id']}"]:
+                blockers.append("paper_shadow_strategy_lineage_mismatch")
+            if not _valid_strategy_advancement_refs(paper["strategy_advancement_refs"]):
+                blockers.append("paper_shadow_strategy_advancement_lineage_invalid")
+            if paper["risk_refs"] != [planned["risk_ref"]]:
+                blockers.append("paper_shadow_risk_lineage_mismatch")
+            if paper["account_truth_refs"] != [planned["account_truth_ref"]]:
+                blockers.append("paper_shadow_account_truth_lineage_mismatch")
+            if (
+                paper["does_not_submit_broker_order"] is not True
+                or paper["does_not_mutate_production_ledger"] is not True
+            ):
+                blockers.append("paper_shadow_authority_boundary_invalid")
 
     actual_events = _exact_broker_events_for_order(
         order,
@@ -1313,10 +1462,23 @@ def _plan_paper_actual_comparison(
         actual_fee = _sum_event_decimal(actual_events, "fee")
         actual_tax = _sum_event_decimal(actual_events, "tax")
         actual_transfer_fee = _sum_event_decimal(actual_events, "transfer_fee")
+        actual_symbols = sorted(
+            {str(getattr(event, "symbol", "") or "") for event in actual_events}
+        )
+        actual_event_types = sorted(
+            {str(getattr(event, "event_type", "") or "") for event in actual_events}
+        )
+        actual_asset_classes = sorted(
+            {str(getattr(event, "asset_class", "") or "") for event in actual_events}
+        )
+        actual_currencies = sorted(
+            {str(getattr(event, "currency", "") or "") for event in actual_events}
+        )
         actual = {
             "import_run_ids": sorted(import_run_ids),
-            "event_ids": [
-                str(getattr(event, "event_id", "") or "") for event in actual_events
+            "event_fingerprints": [
+                _fingerprint({"event_id": str(getattr(event, "event_id", "") or "")})
+                for event in actual_events
             ],
             "quantity": _decimal_text(actual_quantity),
             "average_fill_price": _decimal_text(actual_average_price),
@@ -1330,12 +1492,78 @@ def _plan_paper_actual_comparison(
             "net_amount": _decimal_text(
                 _sum_event_decimal(actual_events, "net_amount")
             ),
+            "symbols": actual_symbols,
+            "event_types": actual_event_types,
+            "asset_classes": actual_asset_classes,
+            "currencies": actual_currencies,
+            "event_links": [
+                {
+                    "event_fingerprint": _fingerprint(
+                        {"event_id": str(getattr(event, "event_id", "") or "")}
+                    ),
+                    "import_run_id": str(getattr(event, "import_run_id", "") or ""),
+                    "row_fingerprint": str(getattr(event, "row_fingerprint", "") or ""),
+                    "broker_identity_fingerprint": _fingerprint(
+                        {
+                            "broker_order_id": str(
+                                getattr(event, "broker_order_id", "") or ""
+                            ),
+                            "client_order_id": str(
+                                getattr(event, "client_order_id", "") or ""
+                            ),
+                        }
+                    ),
+                    "has_broker_order_id": bool(
+                        str(getattr(event, "broker_order_id", "") or "")
+                    ),
+                    "has_client_order_id": bool(
+                        str(getattr(event, "client_order_id", "") or "")
+                    ),
+                }
+                for event in actual_events
+            ],
             "exact_identity_linked": True,
         }
         if len(import_run_ids) != 1:
             blockers.append("actual_broker_import_identity_conflict")
         if actual_quantity != abs(_decimal(order.get("quantity")) or Decimal("0")):
             blockers.append("actual_broker_quantity_incomplete_or_conflicting")
+        expected_event_type = "trade_buy" if planned["side"] == "buy" else "trade_sell"
+        if actual_symbols != [planned["symbol"]]:
+            blockers.append("actual_broker_symbol_scope_mismatch")
+        if actual_event_types != [expected_event_type]:
+            blockers.append("actual_broker_side_scope_mismatch")
+        if not actual_asset_classes or any(
+            not _asset_class_equivalent(item, planned["asset_class"])
+            for item in actual_asset_classes
+        ):
+            blockers.append("actual_broker_asset_class_scope_mismatch")
+        if actual_currencies != ["CNY"]:
+            blockers.append("actual_broker_currency_scope_mismatch")
+        if any(
+            re.fullmatch(
+                r"[a-f0-9]{64}",
+                str(link.get("event_fingerprint") or "").lower(),
+            )
+            is None
+            or not str(link.get("import_run_id") or "")
+            or re.fullmatch(
+                r"[a-f0-9]{64}",
+                str(link.get("row_fingerprint") or "").lower(),
+            )
+            is None
+            or re.fullmatch(
+                r"[a-f0-9]{64}",
+                str(link.get("broker_identity_fingerprint") or "").lower(),
+            )
+            is None
+            or not (
+                link.get("has_broker_order_id") is True
+                or link.get("has_client_order_id") is True
+            )
+            for link in actual["event_links"]
+        ):
+            blockers.append("actual_broker_identity_linkage_incomplete")
         if paper:
             if actual_quantity != abs(
                 _decimal(paper.get("filled_quantity")) or Decimal("0")
@@ -1380,6 +1608,41 @@ def _evidence_identifier(value: Any, *, expected_kind: str) -> str | None:
     if separator != ":" or kind != expected_kind or not identifier.strip():
         return None
     return identifier.strip()
+
+
+def _decision_action_side(value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"buy", "increase", "add", "overweight"}:
+        return "buy"
+    if normalized in {"sell", "decrease", "reduce", "underweight"}:
+        return "sell"
+    return ""
+
+
+def _reference_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _valid_strategy_advancement_refs(value: Any) -> bool:
+    refs = _reference_list(value)
+    return (
+        len(refs) == 1
+        and re.fullmatch(r"strategy_advancement:[a-f0-9]{64}", refs[0].lower())
+        is not None
+    )
+
+
+def _asset_class_equivalent(left: Any, right: Any) -> bool:
+    return _normalized_asset_class(left) == _normalized_asset_class(right) != ""
+
+
+def _normalized_asset_class(value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"fund", "etf"}:
+        return "fund"
+    return normalized
 
 
 def _exact_broker_events_for_order(

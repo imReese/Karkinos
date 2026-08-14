@@ -40,7 +40,7 @@ def test_acceptance_audit_cli_research_evidence_filter_outputs_one_audit() -> No
     assert payload["selected_audit"] == "research_evidence"
     assert [audit["key"] for audit in payload["audits"]] == ["research_evidence"]
     audit = payload["audits"][0]
-    assert audit["required_count"] == 12
+    assert audit["required_count"] == 13
     assert audit["completed_count"] == audit["required_count"]
     assert audit["criteria"]
 
@@ -396,7 +396,7 @@ def test_acceptance_audit_cli_execution_batch_reconciliation_filter() -> None:
         "execution_batch_reconciliation"
     ]
     audit = payload["audits"][0]
-    assert audit["required_count"] == 8
+    assert audit["required_count"] == 9
     assert audit["completed_count"] == audit["required_count"]
 
 

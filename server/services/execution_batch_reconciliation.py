@@ -129,12 +129,41 @@ class ExecutionBatchReconciliationService:
                 item_payload.get("plan_paper_actual_comparison")
             )
             strategy_id = _order_strategy_id(self._db, order_payload)
-            if strategy_id.startswith("ai_formula_shadow:") and not (
-                _valid_plan_paper_actual_comparison(plan_paper_actual)
-            ):
-                blockers.append(
-                    f"batch_ai_shadow_plan_paper_actual_not_clear:{order_id}"
+            current_plan_paper_actual: dict[str, Any] = {}
+            plan_paper_actual_current = False
+            if strategy_id.startswith("ai_formula_shadow:"):
+                from server.services.execution_reconciliation import (
+                    build_current_plan_paper_actual_comparison,
                 )
+
+                if not _valid_plan_paper_actual_comparison(
+                    plan_paper_actual,
+                    expected_order_id=order_id,
+                    expected_strategy_id=strategy_id,
+                ):
+                    blockers.append(
+                        f"batch_ai_shadow_plan_paper_actual_not_clear:{order_id}"
+                    )
+                current_plan_paper_actual = build_current_plan_paper_actual_comparison(
+                    self._db, order
+                )
+                if not _valid_plan_paper_actual_comparison(
+                    current_plan_paper_actual,
+                    expected_order_id=order_id,
+                    expected_strategy_id=strategy_id,
+                ):
+                    blockers.append(
+                        f"batch_ai_shadow_plan_paper_actual_current_not_clear:{order_id}"
+                    )
+                plan_paper_actual_current = bool(
+                    plan_paper_actual.get("evidence_fingerprint")
+                    and plan_paper_actual.get("evidence_fingerprint")
+                    == current_plan_paper_actual.get("evidence_fingerprint")
+                )
+                if not plan_paper_actual_current:
+                    blockers.append(
+                        f"batch_ai_shadow_plan_paper_actual_source_changed:{order_id}"
+                    )
             current_status = str(order.get("status") or "").strip().lower()
             effective_terminal_status = _effective_terminal_status(
                 current_status,
@@ -240,6 +269,13 @@ class ExecutionBatchReconciliationService:
                         "evidence_fingerprint": str(
                             plan_paper_actual.get("evidence_fingerprint") or ""
                         ),
+                        "current_status": str(
+                            current_plan_paper_actual.get("status") or "not_required"
+                        ),
+                        "current_evidence_fingerprint": str(
+                            current_plan_paper_actual.get("evidence_fingerprint") or ""
+                        ),
+                        "current_source_match": plan_paper_actual_current,
                     },
                 }
             )
@@ -615,12 +651,162 @@ def _order_strategy_id(db: Any, order_payload: dict[str, Any]) -> str:
     return str(action.get("strategy_id") or "") if isinstance(action, dict) else ""
 
 
-def _valid_plan_paper_actual_comparison(value: dict[str, Any]) -> bool:
+def _valid_plan_paper_actual_comparison(
+    value: dict[str, Any],
+    *,
+    expected_order_id: str,
+    expected_strategy_id: str,
+) -> bool:
     payload = dict(value)
     fingerprint = str(payload.pop("evidence_fingerprint", "")).lower()
+    planned = _json_object(value.get("planned"))
+    decision_action = _json_object(planned.get("decision_action"))
+    paper = _json_object(value.get("paper"))
+    actual = _json_object(value.get("actual"))
+    planned_quantity = _decimal(planned.get("quantity"))
+    planned_limit_price = _decimal(planned.get("limit_price"))
+    action_price = _decimal(decision_action.get("price"))
+    action_target_weight = _decimal(decision_action.get("target_weight"))
+    paper_planned_quantity = _decimal(paper.get("planned_quantity"))
+    paper_planned_price = _decimal(paper.get("planned_price"))
+    paper_quantity = _decimal(paper.get("filled_quantity"))
+    actual_quantity = _decimal(actual.get("quantity"))
+    paper_average_price = _decimal(paper.get("average_fill_price"))
+    actual_average_price = _decimal(actual.get("average_fill_price"))
+    paper_execution_cost = _decimal(paper.get("total_execution_cost"))
+    actual_execution_cost = _decimal(actual.get("total_execution_cost"))
+    import_run_ids = actual.get("import_run_ids")
+    import_run_ids = import_run_ids if isinstance(import_run_ids, list) else []
+    event_fingerprints = _string_list(actual.get("event_fingerprints"))
+    actual_symbols = _string_list(actual.get("symbols"))
+    actual_event_types = _string_list(actual.get("event_types"))
+    actual_asset_classes = _string_list(actual.get("asset_classes"))
+    actual_currencies = _string_list(actual.get("currencies"))
+    raw_event_links = actual.get("event_links")
+    raw_event_links = raw_event_links if isinstance(raw_event_links, list) else []
+    event_links = [item for item in raw_event_links if isinstance(item, dict)]
+    action_id = str(decision_action.get("action_id") or "")
+    strategy_ref = f"strategy:{expected_strategy_id}"
+    strategy_refs = _string_list(paper.get("strategy_refs"))
+    advancement_refs = _string_list(paper.get("strategy_advancement_refs"))
+    risk_refs = _string_list(paper.get("risk_refs"))
+    account_truth_refs = _string_list(paper.get("account_truth_refs"))
     return (
         value.get("schema_version") == "karkinos.plan_paper_actual_comparison.v1"
         and value.get("status") == "pass"
+        and str(value.get("order_id") or "") == expected_order_id
+        and str(planned.get("order_id") or "") == expected_order_id
+        and str(planned.get("strategy_id") or "") == expected_strategy_id
+        and action_id.isdigit()
+        and int(action_id) > 0
+        and str(planned.get("research_evidence_ref") or "")
+        == f"decision_action:{action_id}"
+        and _valid_evidence_ref(planned.get("risk_ref"), expected_kind="risk")
+        and _valid_evidence_ref(
+            planned.get("account_truth_ref"),
+            expected_kind="account_truth",
+        )
+        and bool(str(planned.get("symbol") or "").strip())
+        and str(decision_action.get("symbol") or "") == str(planned.get("symbol") or "")
+        and str(planned.get("symbol") or "") == str(paper.get("symbol") or "")
+        and str(planned.get("side") or "") in {"buy", "sell"}
+        and str(decision_action.get("side") or "") == str(planned.get("side") or "")
+        and str(planned.get("side") or "") == str(paper.get("side") or "")
+        and bool(str(planned.get("asset_class") or ""))
+        and _normalized_asset_class(decision_action.get("asset_class"))
+        == _normalized_asset_class(planned.get("asset_class"))
+        and str(decision_action.get("strategy_id") or "") == expected_strategy_id
+        and action_target_weight is not None
+        and decision_action.get("source_signal_id") is not None
+        and bool(str(decision_action.get("timestamp") or "").strip())
+        and planned_quantity is not None
+        and planned_quantity > 0
+        and paper_planned_quantity == planned_quantity
+        and paper_quantity == planned_quantity
+        and actual_quantity == planned_quantity
+        and bool(str(paper.get("run_id") or "").strip())
+        and re.fullmatch(
+            r"[a-f0-9]{64}",
+            str(paper.get("input_fingerprint") or "").lower(),
+        )
+        is not None
+        and paper.get("run_status") == "within_expectations"
+        and paper.get("divergence_status") == "within_expectations"
+        and paper.get("order_status") == "filled"
+        and paper.get("order_divergence_status") == "within_expectations"
+        and bool(str(paper.get("order_id") or "").strip())
+        and str(paper.get("action_ref") or "") == f"action:{action_id}"
+        and str(planned.get("paper_shadow_ref") or "")
+        == f"paper_shadow:{paper.get('run_id')}"
+        and (
+            str(planned.get("order_type") or "").lower() != "limit"
+            or (
+                planned_limit_price is not None
+                and planned_limit_price > 0
+                and action_price == planned_limit_price
+                and paper_planned_price == planned_limit_price
+            )
+        )
+        and _positive_int(paper.get("fill_count"))
+        and paper_average_price is not None
+        and paper_average_price > 0
+        and paper_execution_cost is not None
+        and paper_execution_cost >= 0
+        and strategy_refs == [strategy_ref]
+        and len(advancement_refs) == 1
+        and re.fullmatch(
+            r"strategy_advancement:[a-f0-9]{64}",
+            advancement_refs[0].lower(),
+        )
+        is not None
+        and risk_refs == [str(planned.get("risk_ref") or "")]
+        and account_truth_refs == [str(planned.get("account_truth_ref") or "")]
+        and paper.get("does_not_submit_broker_order") is True
+        and paper.get("does_not_mutate_production_ledger") is True
+        and actual.get("exact_identity_linked") is True
+        and len(import_run_ids) == 1
+        and bool(str(import_run_ids[0] or "").strip())
+        and bool(event_fingerprints)
+        and len(event_fingerprints) == len(set(event_fingerprints))
+        and all(
+            re.fullmatch(r"[a-f0-9]{64}", item.lower()) is not None
+            for item in event_fingerprints
+        )
+        and actual_average_price is not None
+        and actual_average_price > 0
+        and actual_execution_cost is not None
+        and actual_execution_cost >= 0
+        and actual_symbols == [str(planned.get("symbol") or "")]
+        and actual_event_types
+        == ["trade_buy" if planned.get("side") == "buy" else "trade_sell"]
+        and bool(actual_asset_classes)
+        and all(
+            _normalized_asset_class(item)
+            == _normalized_asset_class(planned.get("asset_class"))
+            for item in actual_asset_classes
+        )
+        and actual_currencies == ["CNY"]
+        and len(event_links) == len(raw_event_links) == len(event_fingerprints)
+        and [str(item.get("event_fingerprint") or "") for item in event_links]
+        == event_fingerprints
+        and all(
+            str(item.get("import_run_id") or "") == str(import_run_ids[0])
+            and re.fullmatch(
+                r"[a-f0-9]{64}",
+                str(item.get("row_fingerprint") or "").lower(),
+            )
+            is not None
+            and re.fullmatch(
+                r"[a-f0-9]{64}",
+                str(item.get("broker_identity_fingerprint") or "").lower(),
+            )
+            is not None
+            and (
+                item.get("has_broker_order_id") is True
+                or item.get("has_client_order_id") is True
+            )
+            for item in event_links
+        )
         and value.get("blockers") == []
         and value.get("differences") == []
         and value.get("persisted_evidence_only") is True
@@ -655,6 +841,31 @@ def _order_contract(order: dict[str, Any]) -> dict[str, Any]:
             "updated_at",
         )
     }
+
+
+def _positive_int(value: Any) -> bool:
+    try:
+        return int(value) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _valid_evidence_ref(value: Any, *, expected_kind: str) -> bool:
+    kind, separator, identifier = str(value or "").strip().partition(":")
+    return separator == ":" and kind == expected_kind and bool(identifier.strip())
+
+
+def _normalized_asset_class(value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"fund", "etf"}:
+        return "fund"
+    return normalized
 
 
 def _transition_contract(transition: dict[str, Any]) -> dict[str, Any]:
