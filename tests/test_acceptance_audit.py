@@ -455,7 +455,7 @@ def test_capital_scaling_operating_sample_acceptance_audit_is_complete() -> None
 def test_execution_batch_reconciliation_acceptance_audit_is_complete() -> None:
     audit = build_execution_batch_reconciliation_acceptance_audit()
 
-    assert audit.required_count == 8
+    assert audit.required_count == 9
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
 
@@ -529,7 +529,7 @@ def test_research_evidence_acceptance_audit_has_evidence_for_every_goal_checkbox
 ):
     audit = build_research_evidence_acceptance_audit()
 
-    assert audit.required_count == 12
+    assert audit.required_count == 13
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
     assert "not investment advice" in audit.limitations[0]

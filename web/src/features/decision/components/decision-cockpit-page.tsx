@@ -82,6 +82,7 @@ import {
 } from '../api';
 import { DecisionOutcomeReviewPanel } from './decision-outcome-review-panel';
 import { DecisionQualityPanel } from './decision-quality-panel';
+import { PlanPaperActualComparison } from './plan-paper-actual-comparison';
 
 function normalizeStatus(value: string | null | undefined, locale: Locale) {
   return formatPublicStatus(value ?? 'unknown', locale);
@@ -1902,7 +1903,24 @@ function brokerGatewayStatusLabel(status: string, locale: Locale) {
   if (status === 'blocked_by_kill_switch') {
     return locale === 'zh' ? '被熔断开关阻断' : 'Blocked by kill switch';
   }
+  if (status === 'blocked_by_trading_controls_unavailable') {
+    return locale === 'zh'
+      ? '交易控制不可用，已阻断'
+      : 'Blocked: trading controls unavailable';
+  }
   return formatPublicStatus(status, locale);
+}
+
+function brokerGatewayBlockedReason(
+  gateway: BrokerGatewayCapability,
+  locale: Locale,
+) {
+  if (gateway.status === 'blocked_by_trading_controls_unavailable') {
+    return locale === 'zh'
+      ? '缺少可验证的交易控制快照；恢复控制状态并重新复核前，人工工单保持阻断。'
+      : 'No verifiable trading-control snapshot is available. Restore control state and review again before generating a manual ticket.';
+  }
+  return gateway.blocked_reason ?? null;
 }
 
 function controlledBridgePolicyStatusLabel(status: string, locale: Locale) {
@@ -2976,6 +2994,9 @@ function AutomationCockpitPanel({
   const brokerOff =
     !cockpit.broker_submission_enabled &&
     !cockpit.automation_status.broker_submission_enabled;
+  const gatewayControlsUnavailable =
+    brokerGatewayStatus?.kill_switch_status === 'unavailable' ||
+    brokerGatewayStatus?.kill_switch_evidence_available === false;
   const gatewayStatusTitle =
     brokerGatewayError && !brokerGatewayStatus
       ? locale === 'zh'
@@ -2985,18 +3006,25 @@ function AutomationCockpitPanel({
         ? locale === 'zh'
           ? '网关状态加载中'
           : 'Gateway status loading'
-        : brokerGatewayStatus?.kill_switch_enabled
+        : gatewayControlsUnavailable
           ? locale === 'zh'
-            ? '熔断开关已开启'
-            : 'Kill switch active'
-          : locale === 'zh'
-            ? '熔断开关关闭'
-            : 'Kill switch clear';
-  const gatewayStatusDetail =
-    brokerGatewayStatus?.kill_switch_reason ??
-    brokerGatewayStatus?.gateways.find((gateway) => gateway.blocked_reason)
-      ?.blocked_reason ??
-    null;
+            ? '交易控制状态不可用'
+            : 'Trading controls unavailable'
+          : brokerGatewayStatus?.kill_switch_enabled
+            ? locale === 'zh'
+              ? '熔断开关已开启'
+              : 'Kill switch active'
+            : locale === 'zh'
+              ? '熔断开关关闭'
+              : 'Kill switch clear';
+  const gatewayStatusDetail = gatewayControlsUnavailable
+    ? locale === 'zh'
+      ? '缺少可验证的 Kill Switch 快照；恢复控制状态并重新复核前，人工工单保持阻断。'
+      : 'No verifiable Kill Switch snapshot is available. Manual tickets stay blocked until control state is restored and reviewed.'
+    : (brokerGatewayStatus?.kill_switch_reason ??
+      brokerGatewayStatus?.gateways.find((gateway) => gateway.blocked_reason)
+        ?.blocked_reason ??
+      null);
   const showConnectorHealth =
     brokerConnectorHealthLoading ||
     brokerConnectorHealthError ||
@@ -3799,7 +3827,9 @@ function AutomationCockpitPanel({
               </div>
               <span
                 className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
-                  brokerGatewayStatus?.kill_switch_enabled || brokerGatewayError
+                  gatewayControlsUnavailable ||
+                  brokerGatewayStatus?.kill_switch_enabled ||
+                  brokerGatewayError
                     ? 'border-[color-mix(in_srgb,var(--app-danger)_40%,transparent)] text-[var(--app-danger)]'
                     : 'border-[color-mix(in_srgb,var(--app-success)_35%,transparent)] text-[var(--app-success)]'
                 }`}
@@ -3892,9 +3922,9 @@ function AutomationCockpitPanel({
                         )}
                       </span>
                     </div>
-                    {gateway.blocked_reason ? (
+                    {brokerGatewayBlockedReason(gateway, locale) ? (
                       <div className="app-muted mt-2 break-words text-xs leading-5">
-                        {gateway.blocked_reason}
+                        {brokerGatewayBlockedReason(gateway, locale)}
                       </div>
                     ) : null}
                   </div>
@@ -4354,6 +4384,12 @@ function AutomationCockpitPanel({
                       </div>
                     ) : null}
                   </div>
+                ) : null}
+                {primaryExecutionReconciliationItem ? (
+                  <PlanPaperActualComparison
+                    item={primaryExecutionReconciliationItem}
+                    locale={locale}
+                  />
                 ) : null}
                 {brokerTradeCostEvidence ? (
                   <div className="mt-3 border-t border-[color-mix(in_srgb,var(--app-border)_26%,transparent)] pt-3">

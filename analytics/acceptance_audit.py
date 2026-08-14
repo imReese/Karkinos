@@ -629,6 +629,39 @@ def build_research_evidence_acceptance_audit() -> AcceptanceAudit:
                 ),
             ),
             AcceptanceCriterion(
+                key="deterministic_strategy_advancement_evidence_replay",
+                checkbox_text=(
+                    "* [x] Strategy advancement replays the frozen market-bar "
+                    "identity, rolling OOS folds, bounded parameter grid, market "
+                    "regimes, drawdown path, turnover/capacity, and account-specific "
+                    "fee/tax evidence before a candidate can pass."
+                ),
+                evidence_paths=(
+                    "analytics/dataset_snapshot.py",
+                    "analytics/oos_validation.py",
+                    "analytics/sweep_robustness.py",
+                    "analytics/backtest_market_regime_evidence.py",
+                    "analytics/backtest_drawdown_evidence.py",
+                    "analytics/backtest_capacity_evidence.py",
+                    "analytics/backtest_fee_tax_evidence.py",
+                    "analytics/strategy_advancement_gate.py",
+                    "server/services/strategy_promotion_pipeline.py",
+                    "tests/analytics/test_dataset_snapshot_content_identity.py",
+                    "tests/analytics/test_oos_validation.py",
+                    "tests/analytics/test_sweep_robustness.py",
+                    "tests/analytics/test_backtest_market_regime_evidence.py",
+                    "tests/analytics/test_backtest_drawdown_evidence.py",
+                    "tests/analytics/test_backtest_capacity_evidence.py",
+                    "tests/analytics/test_backtest_fee_tax_evidence.py",
+                    "tests/analytics/test_strategy_advancement_gate.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/analytics/test_dataset_snapshot_content_identity.py tests/analytics/test_oos_validation.py tests/analytics/test_sweep_robustness.py tests/analytics/test_backtest_market_regime_evidence.py tests/analytics/test_backtest_drawdown_evidence.py tests/analytics/test_backtest_capacity_evidence.py tests/analytics/test_backtest_fee_tax_evidence.py tests/analytics/test_strategy_advancement_gate.py",
+                    "uv run python -m pytest tests/server/test_ai_shadow_research_automation.py tests/test_per_order_gateway_strategy_advancement.py",
+                    "uv run python -m pytest",
+                ),
+            ),
+            AcceptanceCriterion(
                 key="china_market_assumptions_recorded",
                 checkbox_text=(
                     "* [x] China-market assumptions are recorded in each "
@@ -6613,6 +6646,30 @@ def build_execution_batch_reconciliation_acceptance_audit() -> AcceptanceAudit:
                 ),
                 validation_commands=(
                     "uv run pytest tests/test_execution_batch_reconciliation.py -k filled_batch -q",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="exact_plan_paper_actual_comparison",
+                checkbox_text=(
+                    "* [x] Every AI-shadow batch replays an exact self-hashed "
+                    "plan/paper/actual comparison from the current decision, "
+                    "paper run, and imported real-fill sources; missing, changed, "
+                    "incomplete, or conflicting evidence blocks the next batch "
+                    "and remains human-review-only."
+                ),
+                evidence_paths=(
+                    "server/services/execution_reconciliation.py",
+                    "server/services/execution_batch_reconciliation.py",
+                    "server/routes/execution_reconciliation.py",
+                    "web/src/features/decision/components/plan-paper-actual-comparison.tsx",
+                    "tests/test_execution_batch_reconciliation.py",
+                    "tests/server/test_execution_reconciliation_routes.py",
+                    "web/src/features/decision/components/plan-paper-actual-comparison.test.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_execution_batch_reconciliation.py tests/server/test_execution_reconciliation_routes.py -k 'plan_paper_actual or current_source' -q",
+                    "npm --prefix web test -- plan-paper-actual-comparison decision-cockpit-page",
                 ),
             ),
             AcceptanceCriterion(

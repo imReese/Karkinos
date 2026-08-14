@@ -1839,8 +1839,12 @@ export type BrokerGatewayCapability = {
 export type BrokerGatewayStatusResponse = {
   schema_version: 'karkinos.broker_gateway_status.v1';
   broker_submission_enabled: boolean;
-  kill_switch_enabled: boolean;
+  kill_switch_status?: 'pass' | 'blocked' | 'unavailable';
+  kill_switch_enabled: boolean | null;
   kill_switch_reason?: string | null;
+  kill_switch_updated_at?: string | null;
+  kill_switch_evidence_available?: boolean;
+  kill_switch_blockers?: string[];
   controlled_bridge_policy?: {
     schema_version: 'karkinos.controlled_broker_bridge_policy.v1';
     policy_id: string;
@@ -1972,6 +1976,7 @@ export type ExecutionReconciliationItem = {
   broker_event_count?: number;
   detail?: string;
   payload?: Record<string, unknown>;
+  payload_status?: 'valid' | 'missing' | 'invalid';
 };
 
 export type ExecutionReconciliationRun = {
@@ -1982,6 +1987,7 @@ export type ExecutionReconciliationRun = {
   open_item_count: number;
   created_at?: string;
   payload?: Record<string, unknown>;
+  payload_status?: 'valid' | 'missing' | 'invalid';
   items?: ExecutionReconciliationItem[];
 };
 

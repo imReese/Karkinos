@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from types import SimpleNamespace
 
 from fastapi import FastAPI
@@ -63,6 +64,14 @@ def test_execution_reconciliation_routes_run_list_and_detail(
     assert run["open_item_count"] == 1
     assert run["items"][0]["order_id"] == order["order_id"]
     assert run["items"][0]["item_status"] == "gateway_action_missing"
+    assert run["payload_status"] == "valid"
+    assert run["payload"] == {
+        "schema_version": "karkinos.execution_reconciliation.v1",
+        "source": "oms_and_broker_gateway_events",
+    }
+    assert run["items"][0]["payload_status"] == "valid"
+    assert run["items"][0]["payload"]["oms_status"] == "manually_confirmed"
+    assert "plan_paper_actual_comparison" in run["items"][0]["payload"]
 
     listed = client.get("/api/execution-reconciliation/runs")
     assert listed.status_code == 200
@@ -73,6 +82,35 @@ def test_execution_reconciliation_routes_run_list_and_detail(
     payload = detail.json()
     assert payload["run_id"] == run["run_id"]
     assert payload["items"][0]["suggested_action"] == "create_manual_ticket_or_cancel"
+    assert payload["items"][0]["payload_status"] == "valid"
+
+
+def test_execution_reconciliation_detail_projects_invalid_payload_fail_closed(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    db = AppDatabase(tmp_path / "execution-reconciliation.db")
+    db.init_sync()
+    order = _confirmed_order(db)
+    client = _client_for_db(monkeypatch, db)
+    created = client.post(
+        "/api/execution-reconciliation/runs",
+        json={"run_date": "2026-07-02"},
+    ).json()
+    with sqlite3.connect(db._path) as conn:
+        conn.execute(
+            "UPDATE execution_reconciliation_items SET payload_json = ? "
+            "WHERE run_id = ? AND order_id = ?",
+            ("not-json", created["run_id"], order["order_id"]),
+        )
+        conn.commit()
+
+    response = client.get(f"/api/execution-reconciliation/runs/{created['run_id']}")
+
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["payload_status"] == "invalid"
+    assert item["payload"] == {}
 
 
 def test_execution_reconciliation_detail_route_returns_404(
