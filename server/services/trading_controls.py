@@ -7,12 +7,63 @@ from datetime import datetime
 from threading import RLock
 from typing import Any
 
+KILL_SWITCH_EVIDENCE_SCHEMA_VERSION = "karkinos.kill_switch_evidence.v1"
+
 
 @dataclass(frozen=True)
 class TradingControlSnapshot:
     kill_switch_enabled: bool
     reason: str = ""
     updated_at: str = ""
+
+
+def resolve_kill_switch_evidence(trading_controls: Any) -> dict[str, Any]:
+    """Resolve one explicit fail-closed snapshot for downstream authority gates."""
+
+    try:
+        getter = getattr(trading_controls, "snapshot", None)
+        if not callable(getter):
+            return _unavailable_kill_switch_evidence("kill_switch_status_unavailable")
+        snapshot = getter()
+        enabled = getattr(snapshot, "kill_switch_enabled", None)
+        updated_at = str(getattr(snapshot, "updated_at", "") or "").strip()
+        reason = str(getattr(snapshot, "reason", "") or "").strip()
+    except Exception:
+        return _unavailable_kill_switch_evidence("kill_switch_snapshot_failed")
+
+    if not isinstance(enabled, bool) or not updated_at:
+        return _unavailable_kill_switch_evidence("kill_switch_snapshot_invalid")
+    return {
+        "schema_version": KILL_SWITCH_EVIDENCE_SCHEMA_VERSION,
+        "status": "blocked" if enabled else "pass",
+        "enabled": enabled,
+        "reason": reason,
+        "updated_at": updated_at,
+        "evidence_ref": (
+            "trading_controls:kill_switch_enabled"
+            if enabled
+            else "trading_controls:kill_switch_clear"
+        ),
+        "blockers": ["kill_switch_enabled"] if enabled else [],
+        "evidence_available": True,
+        "manual_ticket_allowed": not enabled,
+        "fail_closed": True,
+    }
+
+
+def _unavailable_kill_switch_evidence(blocker: str) -> dict[str, Any]:
+    return {
+        "schema_version": KILL_SWITCH_EVIDENCE_SCHEMA_VERSION,
+        "status": "unavailable",
+        "enabled": None,
+        "reason": "",
+        "updated_at": None,
+        "evidence_ref": "",
+        "blockers": [blocker],
+        "evidence_available": False,
+        "manual_ticket_allowed": False,
+        "fail_closed": True,
+    }
 
 
 class TradingControlState:

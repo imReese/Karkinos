@@ -26,13 +26,16 @@ class _ConnectorWouldFailIfQueried:
         raise AssertionError("GET routes must not call an edge adapter")
 
 
+_DEFAULT_TRADING_CONTROLS = object()
+
+
 def _client_for_db(
     monkeypatch,
     db: AppDatabase,
     *,
     broker_connectors: list[BrokerConnectorConfig] | None = None,
     controlled_bridge_policy=None,
-    trading_controls=None,
+    trading_controls=_DEFAULT_TRADING_CONTROLS,
     current_per_order_confirmation: dict | None = None,
 ) -> TestClient:
     fake_state = SimpleNamespace(
@@ -41,7 +44,11 @@ def _client_for_db(
             broker_connectors=broker_connectors or [],
             controlled_bridge_policy=controlled_bridge_policy,
         ),
-        trading_controls=trading_controls,
+        trading_controls=(
+            TradingControlState(db=db)
+            if trading_controls is _DEFAULT_TRADING_CONTROLS
+            else trading_controls
+        ),
     )
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
@@ -137,6 +144,9 @@ def test_broker_gateway_status_route_lists_safe_gateways(
     assert response.status_code == 200
     payload = response.json()
     assert payload["broker_submission_enabled"] is False
+    assert payload["kill_switch_status"] == "pass"
+    assert payload["kill_switch_enabled"] is False
+    assert payload["kill_switch_evidence_available"] is True
     gateway_ids = {item["gateway_id"] for item in payload["gateways"]}
     assert {"manual_ticket", "staged_broker_evidence", "live_disabled"}.issubset(
         gateway_ids
@@ -216,6 +226,7 @@ def test_broker_gateway_status_route_marks_manual_ticket_blocked_by_kill_switch(
     assert response.status_code == 200
     payload = response.json()
     assert payload["broker_submission_enabled"] is False
+    assert payload["kill_switch_status"] == "blocked"
     assert payload["kill_switch_enabled"] is True
     assert payload["kill_switch_reason"] == "operator pause"
     gateways = {item["gateway_id"]: item for item in payload["gateways"]}
@@ -227,6 +238,37 @@ def test_broker_gateway_status_route_marks_manual_ticket_blocked_by_kill_switch(
     assert manual_ticket["can_submit_orders"] is False
     assert manual_ticket["blockers"] == ["kill_switch"]
     assert gateways["live_disabled"]["status"] == "disabled"
+
+
+def test_broker_gateway_routes_fail_closed_when_trading_controls_are_missing(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    db = AppDatabase(tmp_path / "broker-gateway.db")
+    db.init_sync()
+    order = _confirmed_order(db)
+    client = _client_for_db(monkeypatch, db, trading_controls=None)
+
+    status = client.get("/api/broker-gateway/status")
+    preview = client.post(
+        f"/api/broker-gateway/orders/{order['order_id']}/manual-ticket/preview",
+        json={"actor": "test"},
+    )
+
+    assert status.status_code == 200
+    payload = status.json()
+    assert payload["kill_switch_status"] == "unavailable"
+    assert payload["kill_switch_enabled"] is None
+    assert payload["kill_switch_evidence_available"] is False
+    manual_ticket = next(
+        item for item in payload["gateways"] if item["gateway_id"] == "manual_ticket"
+    )
+    assert manual_ticket["status"] == "blocked_by_trading_controls_unavailable"
+    assert manual_ticket["can_preview_orders"] is False
+    assert manual_ticket["can_query_orders"] is True
+    assert preview.status_code == 409
+    assert "trading controls unavailable" in preview.json()["detail"]
+    assert db.get_oms_order_sync(order["order_id"])["status"] == ("manually_confirmed")
 
 
 def test_broker_gateway_connector_health_route_is_read_only(

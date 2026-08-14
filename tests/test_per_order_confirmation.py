@@ -61,6 +61,9 @@ from server.services.execution_gateway_verification import (
     EXECUTION_GATEWAY_VERIFICATION_ACKNOWLEDGEMENT,
     ExecutionGatewayVerificationService,
 )
+from server.services.execution_reconciliation import (
+    build_current_plan_paper_actual_comparison,
+)
 from server.services.oms import OmsService
 from server.services.operator_approval import OperatorApprovalService
 from server.services.per_order_confirmation import (
@@ -69,6 +72,9 @@ from server.services.per_order_confirmation import (
     PerOrderConfirmationRejected,
     PerOrderConfirmationService,
     build_order_fingerprint,
+)
+from server.services.strategy_promotion_pipeline import (
+    resolve_strategy_promotion_binding,
 )
 from server.services.trading_controls import TradingControlState
 from tests.ai_shadow_strategy_fixtures import seed_approved_ai_shadow_strategy
@@ -116,33 +122,13 @@ def _clear_account_truth_evidence() -> dict:
     }
 
 
-def _plan_paper_actual_pass() -> dict:
-    core = {
-        "schema_version": "karkinos.plan_paper_actual_comparison.v1",
-        "status": "pass",
-        "blockers": [],
-        "differences": [],
-        "persisted_evidence_only": True,
-        "human_review_required": False,
-        "authorizes_execution": False,
-        "does_not_mutate_oms": True,
-        "does_not_mutate_production_ledger": True,
-        "does_not_change_capital_authority": True,
-    }
-    encoded = json.dumps(
-        core,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return {**core, "evidence_fingerprint": hashlib.sha256(encoded).hexdigest()}
-
-
 def _record_gateway_source_evidence(
     db: AppDatabase,
     now: datetime,
     *,
     strategy_id: str,
+    strategy_advancement_fingerprint: str,
+    account_truth_import_run_id: str,
 ) -> None:
     db.upsert_action_task_sync(
         source_signal_id=101,
@@ -208,8 +194,25 @@ def _record_gateway_source_evidence(
                         "estimated_quantity": 100.0,
                         "estimated_price": 4.0,
                         "strategy_refs": [f"strategy:{strategy_id}"],
+                        "strategy_advancement_refs": [
+                            "strategy_advancement:"
+                            f"{strategy_advancement_fingerprint}"
+                        ],
                         "risk_refs": ["risk:decision-1"],
+                        "account_truth_refs": [
+                            f"account_truth:{account_truth_import_run_id}"
+                        ],
                     },
+                }
+            ],
+            "fills": [
+                {
+                    "fill_id": "SHADOW-FILL-FIXTURE-1",
+                    "order_id": "SHADOW-FIXTURE-1",
+                    "fill_quantity": "100",
+                    "fill_price": "4.00",
+                    "commission": "5.00",
+                    "slippage": "0.00",
                 }
             ],
             "does_not_submit_broker_order": True,
@@ -497,7 +500,20 @@ def _ready_environment(
         candidate_result_id=1002,
     )
     strategy_id = strategy["strategy_id"]
-    _record_gateway_source_evidence(db, now, strategy_id=strategy_id)
+    promotion, promotion_blockers = resolve_strategy_promotion_binding(
+        db,
+        strategy_id,
+    )
+    assert promotion_blockers == []
+    _record_gateway_source_evidence(
+        db,
+        now,
+        strategy_id=strategy_id,
+        strategy_advancement_fingerprint=promotion[
+            "strategy_advancement_gate_fingerprint"
+        ],
+        account_truth_import_run_id="import-run-1",
+    )
     adapter_release = (
         _record_observing_adapter_release(db, now) if with_adapter_release else {}
     )
@@ -535,13 +551,26 @@ def _ready_environment(
             "payload": {
                 "execution_mode": "manual",
                 "gateway_evidence": {
+                    "account_truth": {
+                        "gate_status": "pass",
+                        "evidence_ref": "account_truth:import-run-1",
+                    },
                     "research_evidence": {
                         "evidence_ref": f"decision_action:{prior_action['id']}"
-                    }
+                    },
+                    "risk": {
+                        "gate_status": "passed",
+                        "evidence_ref": "risk:decision-1",
+                    },
+                    "paper_shadow": {"evidence_ref": "paper_shadow:run-1"},
                 },
             },
         }
     )
+    prior_order = db.get_oms_order_sync(prior_order_id)
+    assert prior_order is not None
+    prior_comparison = build_current_plan_paper_actual_comparison(db, prior_order)
+    assert prior_comparison["status"] == "pass"
     reconciliation_run_id = f"execution-reconciliation:{shanghai_day}"
     db.upsert_execution_reconciliation_run_sync(
         run_id=reconciliation_run_id,
@@ -559,7 +588,7 @@ def _ready_environment(
                 "payload": {
                     "oms_status": "cancelled",
                     "execution_mode": "manual",
-                    "plan_paper_actual_comparison": _plan_paper_actual_pass(),
+                    "plan_paper_actual_comparison": prior_comparison,
                 },
             }
         ],
@@ -963,6 +992,108 @@ def test_paper_shadow_order_scope_drift_invalidates_exact_dossier(tmp_path) -> N
     drifted = env["service"].preview_dossier(env["order"]["order_id"], **kwargs)
 
     blocker = "gateway_evidence_scope_mismatch:paper_shadow:quantity"
+    assert blocker in drifted["review_blockers"]
+    assert blocker in drifted["hard_submission_blockers"]
+    assert drifted["dossier_fingerprint"] != before["dossier_fingerprint"]
+    assert drifted["review_ready"] is False
+    assert drifted["authorizes_execution"] is False
+
+
+def test_stale_paper_shadow_plan_date_invalidates_exact_dossier(tmp_path) -> None:
+    env = _ready_environment(tmp_path)
+    kwargs = {
+        "capital_evaluation_input_fingerprint": env["evaluation"]["input_fingerprint"],
+        "prior_batch_reconciliation_fingerprint": env["batch"][
+            "batch_reconciliation_fingerprint"
+        ],
+        "execution_gateway_verification_fingerprint": env[
+            "gateway_verification_fingerprint"
+        ],
+    }
+    before = env["service"].preview_dossier(env["order"]["order_id"], **kwargs)
+    run = env["db"].get_paper_shadow_run_sync("run-1")
+    stale_plan_date = (
+        (datetime.fromisoformat(run["plan_date"]) - timedelta(days=1))
+        .date()
+        .isoformat()
+    )
+    env["db"].upsert_paper_shadow_run_sync(
+        run_id="run-1",
+        plan_date=stale_plan_date,
+        input_fingerprint=run["input_fingerprint"],
+        status=run["status"],
+        order_intent_count=run["order_intent_count"],
+        simulated_order_count=run["simulated_order_count"],
+        simulated_fill_count=run["simulated_fill_count"],
+        divergence_status=run["divergence_status"],
+        next_manual_review_step=run["next_manual_review_step"],
+        limitations=json.loads(run["limitations_json"]),
+        payload=json.loads(run["payload_json"]),
+    )
+
+    stale = env["service"].preview_dossier(env["order"]["order_id"], **kwargs)
+
+    blocker = "gateway_evidence_source_stale:paper_shadow"
+    assert blocker in stale["review_blockers"]
+    assert blocker in stale["hard_submission_blockers"]
+    assert stale["gateway_gates"]["gates"]["paper_shadow"]["status"] == "blocked"
+    assert stale["dossier_fingerprint"] != before["dossier_fingerprint"]
+    assert stale["review_ready"] is False
+    assert stale["authorizes_execution"] is False
+
+
+@pytest.mark.parametrize(
+    ("intent_field", "drifted_ref", "blocker_suffix"),
+    [
+        (
+            "strategy_advancement_refs",
+            "strategy_advancement:stale-review",
+            "strategy_advancement",
+        ),
+        (
+            "account_truth_refs",
+            "account_truth:stale-import",
+            "account_truth",
+        ),
+    ],
+)
+def test_paper_shadow_source_lineage_drift_invalidates_exact_dossier(
+    tmp_path,
+    intent_field: str,
+    drifted_ref: str,
+    blocker_suffix: str,
+) -> None:
+    env = _ready_environment(tmp_path)
+    kwargs = {
+        "capital_evaluation_input_fingerprint": env["evaluation"]["input_fingerprint"],
+        "prior_batch_reconciliation_fingerprint": env["batch"][
+            "batch_reconciliation_fingerprint"
+        ],
+        "execution_gateway_verification_fingerprint": env[
+            "gateway_verification_fingerprint"
+        ],
+    }
+    before = env["service"].preview_dossier(env["order"]["order_id"], **kwargs)
+    run = env["db"].get_paper_shadow_run_sync("run-1")
+    payload = json.loads(run["payload_json"])
+    payload["orders"][0]["order_intent"][intent_field] = [drifted_ref]
+    env["db"].upsert_paper_shadow_run_sync(
+        run_id="run-1",
+        plan_date=run["plan_date"],
+        input_fingerprint=run["input_fingerprint"],
+        status=run["status"],
+        order_intent_count=run["order_intent_count"],
+        simulated_order_count=run["simulated_order_count"],
+        simulated_fill_count=run["simulated_fill_count"],
+        divergence_status=run["divergence_status"],
+        next_manual_review_step=run["next_manual_review_step"],
+        limitations=json.loads(run["limitations_json"]),
+        payload=payload,
+    )
+
+    drifted = env["service"].preview_dossier(env["order"]["order_id"], **kwargs)
+
+    blocker = "gateway_evidence_lineage_mismatch:paper_shadow:" f"{blocker_suffix}"
     assert blocker in drifted["review_blockers"]
     assert blocker in drifted["hard_submission_blockers"]
     assert drifted["dossier_fingerprint"] != before["dossier_fingerprint"]

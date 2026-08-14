@@ -5,8 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable
+from zoneinfo import ZoneInfo
 
 from server.services.reviewed_fee_schedule import active_review_matches_fee_evidence
 from server.services.strategy_promotion_pipeline import (
@@ -162,6 +164,7 @@ def _resolve_source(
         db=db,
         order=order,
         capital_scope=capital_scope,
+        account_truth_source=resolved.get("account_truth") or {},
         action_source=resolved.get("research_evidence") or {},
         risk_source=resolved.get("risk") or {},
     )
@@ -364,6 +367,7 @@ def _resolve_paper_shadow(
     db: Any,
     order: dict[str, Any],
     capital_scope: dict[str, Any],
+    account_truth_source: dict[str, Any],
     action_source: dict[str, Any],
     risk_source: dict[str, Any],
 ) -> tuple[dict[str, Any], list[str]]:
@@ -402,6 +406,12 @@ def _resolve_paper_shadow(
         or str(run.get("divergence_status") or "") != "within_expectations"
     ):
         blockers.append("gateway_evidence_source_not_clear:paper_shadow")
+    action_market_date = _market_date(action_source.get("source_recorded_at"))
+    if (
+        action_market_date is None
+        or str(run.get("plan_date") or "") != action_market_date
+    ):
+        blockers.append("gateway_evidence_source_stale:paper_shadow")
     if len(matching_orders) != 1:
         blockers.append(
             "gateway_evidence_lineage_mismatch:paper_shadow:decision_action"
@@ -426,11 +436,28 @@ def _resolve_paper_shadow(
         str(item) for item in intent.get("strategy_refs") or []
     }:
         blockers.append("gateway_evidence_lineage_mismatch:paper_shadow:strategy")
+    strategy_promotion = _mapping(action_source.get("strategy_promotion"))
+    advancement_fingerprint = str(
+        strategy_promotion.get("strategy_advancement_gate_fingerprint") or ""
+    )
+    if not advancement_fingerprint or (
+        f"strategy_advancement:{advancement_fingerprint}"
+        not in {str(item) for item in intent.get("strategy_advancement_refs") or []}
+    ):
+        blockers.append(
+            "gateway_evidence_lineage_mismatch:paper_shadow:strategy_advancement"
+        )
     risk_identifier = str(risk_source.get("decision_id") or "")
     if not risk_identifier or f"risk:{risk_identifier}" not in {
         str(item) for item in intent.get("risk_refs") or []
     }:
         blockers.append("gateway_evidence_lineage_mismatch:paper_shadow:risk")
+    account_truth_import_run_id = str(account_truth_source.get("import_run_id") or "")
+    if not account_truth_import_run_id or (
+        f"account_truth:{account_truth_import_run_id}"
+        not in {str(item) for item in intent.get("account_truth_refs") or []}
+    ):
+        blockers.append("gateway_evidence_lineage_mismatch:paper_shadow:account_truth")
     if (
         payload.get("does_not_submit_broker_order") is not True
         or payload.get("does_not_mutate_production_ledger") is not True
@@ -447,6 +474,8 @@ def _resolve_paper_shadow(
         "source_recorded_at": str(run.get("updated_at") or run.get("plan_date") or "")
         or None,
         "run_id": str(run.get("run_id") or ""),
+        "plan_date": str(run.get("plan_date") or ""),
+        "action_market_date": action_market_date,
         "input_fingerprint": input_fingerprint,
         "paper_order_id": str(matching_order.get("order_id") or ""),
     }, blockers
@@ -523,6 +552,19 @@ def _decimal_equal(left: Any, right: Any) -> bool:
         return Decimal(str(left)) == Decimal(str(right))
     except (InvalidOperation, TypeError, ValueError):
         return False
+
+
+def _market_date(value: Any) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        timestamp = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if timestamp.tzinfo is not None:
+        timestamp = timestamp.astimezone(ZoneInfo("Asia/Shanghai"))
+    return timestamp.date().isoformat()
 
 
 def _integer(value: Any, *, fallback: int) -> int:

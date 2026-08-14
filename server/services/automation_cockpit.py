@@ -44,6 +44,7 @@ class AutomationCockpitService:
         broker_gateway = BrokerGatewayService(
             db=self._db,
             broker_connectors=self._broker_connectors,
+            trading_controls=self._trading_controls,
         )
         gateways = broker_gateway.list_gateways()
         connector_registrations = _registered_connector_contracts(

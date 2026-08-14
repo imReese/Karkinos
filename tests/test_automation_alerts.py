@@ -116,6 +116,7 @@ def test_alert_scan_preserves_manual_execution_reconciliation_evidence(
     order = _confirmed_order(db, gateway_evidence=True)
     gateway = BrokerGatewayService(
         db=db,
+        trading_controls=TradingControlState(db=db),
         current_per_order_confirmation_provider=(
             lambda order_id: clear_current_per_order_confirmation(order_id)
         ),
