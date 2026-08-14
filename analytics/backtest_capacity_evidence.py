@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Iterable, Mapping
 
@@ -101,6 +102,10 @@ def build_backtest_capacity_evidence(
         ),
         default=Decimal("0"),
     )
+    gross_turnover = sum(
+        (_decimal(item["fill_notional"]) or Decimal("0") for item in observations),
+        Decimal("0"),
+    )
     passed = (
         bool(observations) and not issues and max_capacity <= 1 and max_liquidity <= 1
     )
@@ -111,6 +116,7 @@ def build_backtest_capacity_evidence(
         "capacity_utilization_pct": format(max_capacity, "f"),
         "liquidity_utilization_pct": format(max_liquidity, "f"),
         "max_daily_volume_participation": format(max_daily_volume_participation, "f"),
+        "gross_turnover": format(gross_turnover, "f"),
         "fill_count": len(fill_list),
         "observation_count": len(observations),
         "observations": observations,
@@ -131,6 +137,121 @@ def build_backtest_capacity_evidence(
     return {**core, "evidence_fingerprint": _fingerprint(core)}
 
 
+def is_valid_passed_backtest_capacity_evidence(
+    value: Any,
+    *,
+    expected_initial_cash: Any | None = None,
+    expected_gross_turnover: Any | None = None,
+) -> bool:
+    """Validate exact fill/bar capacity arithmetic before strategy advancement."""
+
+    if not isinstance(value, Mapping):
+        return False
+    payload = dict(value)
+    evidence_fingerprint = payload.pop("evidence_fingerprint", None)
+    observations_raw = payload.get("observations")
+    if not isinstance(observations_raw, list):
+        return False
+    observations = [
+        dict(observation)
+        for observation in observations_raw
+        if isinstance(observation, Mapping)
+    ]
+    if len(observations) != len(observations_raw):
+        return False
+    fill_count = _integer(payload.get("fill_count"))
+    observation_count = _integer(payload.get("observation_count"))
+    max_participation = _decimal(payload.get("max_daily_volume_participation"))
+    reported_capacity = _decimal(payload.get("capacity_utilization_pct"))
+    reported_liquidity = _decimal(payload.get("liquidity_utilization_pct"))
+    reported_turnover = _decimal(payload.get("gross_turnover"))
+    expected_cash = _decimal(expected_initial_cash)
+    expected_turnover = _decimal(expected_gross_turnover)
+    if (
+        payload.get("schema_version") != BACKTEST_CAPACITY_EVIDENCE_SCHEMA_VERSION
+        or payload.get("status") != "pass"
+        or payload.get("capacity_model_ref") != CAPACITY_MODEL_REFERENCE
+        or fill_count is None
+        or fill_count <= 0
+        or observation_count != fill_count
+        or len(observations) != fill_count
+        or max_participation is None
+        or not 0 < max_participation <= 1
+        or reported_capacity is None
+        or not 0 <= reported_capacity <= 1
+        or reported_liquidity is None
+        or not 0 <= reported_liquidity <= 1
+        or reported_turnover is None
+        or reported_turnover <= 0
+        or (expected_initial_cash is not None and expected_cash is None)
+        or (expected_cash is not None and expected_cash <= 0)
+        or (expected_gross_turnover is not None and expected_turnover is None)
+        or (expected_turnover is not None and expected_turnover <= 0)
+        or payload.get("issues") != []
+        or payload.get("persisted_market_data_only") is not True
+        or payload.get("human_review_required") is not True
+        or payload.get("authorizes_execution") is not False
+        or payload.get("does_not_change_capital_authority") is not True
+        or not _nonempty_text_list(payload.get("assumptions"))
+        or not _nonempty_text_list(payload.get("limitations"))
+        or not isinstance(evidence_fingerprint, str)
+        or len(evidence_fingerprint) != 64
+        or evidence_fingerprint.lower() != _fingerprint(payload)
+    ):
+        return False
+
+    capacities: list[Decimal] = []
+    liquidities: list[Decimal] = []
+    fill_indexes: list[int] = []
+    for observation in observations:
+        fill_index = _integer(observation.get("fill_index"))
+        fill_notional = _decimal(observation.get("fill_notional"))
+        bar_notional = _decimal(observation.get("bar_notional"))
+        raw_participation = _decimal(observation.get("raw_volume_participation"))
+        capacity = _decimal(observation.get("capacity_utilization_pct"))
+        liquidity = _decimal(observation.get("liquidity_utilization_pct"))
+        timestamp = str(observation.get("timestamp") or "").strip()
+        try:
+            datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        if (
+            fill_index is None
+            or not str(observation.get("symbol") or "").strip()
+            or fill_notional is None
+            or fill_notional <= 0
+            or bar_notional is None
+            or bar_notional <= 0
+            or raw_participation is None
+            or raw_participation <= 0
+            or capacity is None
+            or not 0 < capacity <= 1
+            or (expected_cash is not None and fill_notional / expected_cash != capacity)
+            or liquidity is None
+            or not 0 < liquidity <= 1
+            or raw_participation / max_participation != liquidity
+        ):
+            return False
+        fill_indexes.append(fill_index)
+        capacities.append(capacity)
+        liquidities.append(liquidity)
+
+    return (
+        fill_indexes == list(range(fill_count))
+        and max(capacities) == reported_capacity
+        and max(liquidities) == reported_liquidity
+        and sum(
+            (
+                _decimal(observation["fill_notional"]) or Decimal("0")
+                for observation in observations
+            ),
+            Decimal("0"),
+        )
+        == reported_turnover
+        and (expected_turnover is None or reported_turnover == expected_turnover)
+    )
+
+
 def _decimal(value: Any) -> Decimal | None:
     if value is None or isinstance(value, bool):
         return None
@@ -139,6 +260,23 @@ def _decimal(value: Any) -> Decimal | None:
     except (InvalidOperation, TypeError, ValueError):
         return None
     return normalized if normalized.is_finite() else None
+
+
+def _integer(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _nonempty_text_list(value: Any) -> bool:
+    return (
+        isinstance(value, list)
+        and bool(value)
+        and all(isinstance(item, str) and item.strip() for item in value)
+    )
 
 
 def _fingerprint(payload: Mapping[str, Any]) -> str:

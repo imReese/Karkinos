@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import sqlite3
 
+import pytest
+
 from analytics.strategy_advancement_gate import (
     STRATEGY_ADVANCEMENT_REQUIRED_CHECK_NAMES,
     StrategyAdvancementGate,
@@ -23,7 +25,10 @@ from server.services.strategy_promotion_pipeline import (
     StrategyPromotionPipeline,
     resolve_strategy_order_generation_gate,
 )
-from tests.ai_shadow_strategy_fixtures import seed_ai_shadow_canonical_sources
+from tests.ai_shadow_strategy_fixtures import (
+    seed_ai_shadow_canonical_sources,
+    seed_approved_ai_shadow_strategy,
+)
 
 
 def _passed_gate() -> dict:
@@ -332,3 +337,166 @@ def test_reserved_ai_shadow_order_resolves_exact_canonical_advancement_binding(
         "gateway_evidence_strategy_advancement:ai_shadow_candidate_source_drift"
         in drifted_blockers
     )
+
+
+def test_reserved_ai_shadow_promotion_rebuilds_gate_from_current_sources(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = ShadowResearchStore(tmp_path / "app.db")
+    store.init()
+    canonical_sources = seed_ai_shadow_canonical_sources(
+        db,
+        baseline_result_id=1,
+        candidate_result_id=2,
+        backtest_run_id="backtest-forged-gate",
+        critique_id="critique-forged-gate",
+    )
+    forged_gate = _passed_gate()
+    comparison = {
+        **canonical_sources,
+        "promotion_gate": forged_gate,
+    }
+    candidate = store.save_candidate(
+        run_id="run-forged-gate",
+        session_id="session-forged-gate",
+        draft_id="draft-forged-gate",
+        backtest_run_id="backtest-forged-gate",
+        critique_id="critique-forged-gate",
+        baseline_result_id=1,
+        candidate_result_id=2,
+        status="awaiting_human_approval",
+        recommendation="paper_shadow_review",
+        comparison=comparison,
+        now="2026-08-12T07:00:00+00:00",
+    )
+    approval = store.approve_candidate(
+        candidate["candidate_id"],
+        approved_by="human:owner",
+        notes="Review record cannot replace current source replay.",
+        confirmation=SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
+        now="2026-08-12T07:05:00+00:00",
+    )
+    readiness = {
+        "schema_version": "karkinos.ai.shadow_research_promotion_readiness.v1",
+        "strategy_id": f"ai_formula_shadow:{candidate['candidate_id']}",
+        "promotion_status": "promotable_for_paper_review",
+        "is_promotable": True,
+        "missing_requirements": [],
+        "backtest_result_id": 2,
+        "candidate_id": candidate["candidate_id"],
+        "critique_id": "critique-forged-gate",
+        "comparison_fingerprint": content_fingerprint(comparison),
+        "human_approval_id": approval["promotion_id"],
+        "strategy_advancement_gate": forged_gate,
+        "live_like_enabled": False,
+        "broker_submission_enabled": False,
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="ai_shadow_strategy_advancement_gate_current_source_mismatch",
+    ):
+        StrategyPromotionPipeline(db=db).evaluate_readiness(
+            readiness,
+            actor="human:owner",
+        )
+
+    assert db.get_strategy_promotion_state_sync(readiness["strategy_id"]) is None
+
+
+def test_reserved_ai_shadow_order_rechecks_research_run_account_binding(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    strategy = seed_approved_ai_shadow_strategy(
+        db,
+        fixture_id="account-binding",
+        baseline_result_id=1,
+        candidate_result_id=2,
+    )
+
+    with sqlite3.connect(db._path) as conn:
+        conn.execute(
+            "UPDATE ai_shadow_research_runs SET valuation_snapshot_id = ? "
+            "WHERE run_id = ?",
+            ("valuation-conflicting", strategy["candidate"]["run_id"]),
+        )
+
+    gate, blockers = resolve_strategy_order_generation_gate(
+        db,
+        strategy["strategy_id"],
+        as_of_date="2026-08-12",
+    )
+
+    assert gate["status"] == "blocked"
+    assert "ai_shadow_research_account_capital_binding_drift" in blockers
+    assert gate["does_not_create_order"] is True
+    assert gate["does_not_authorize_execution"] is True
+    assert gate["does_not_change_capital_authority"] is True
+
+
+def test_reserved_ai_shadow_order_rechecks_formula_input_binding(tmp_path) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    strategy = seed_approved_ai_shadow_strategy(
+        db,
+        fixture_id="formula-binding",
+        baseline_result_id=1,
+        candidate_result_id=2,
+    )
+
+    with sqlite3.connect(db._path) as conn:
+        conn.execute(
+            "UPDATE ai_strategy_formula_backtests SET dataset_snapshot_id = ? "
+            "WHERE backtest_run_id = ?",
+            ("sha256:" + "f" * 64, strategy["candidate"]["backtest_run_id"]),
+        )
+
+    gate, blockers = resolve_strategy_order_generation_gate(
+        db,
+        strategy["strategy_id"],
+        as_of_date="2026-08-12",
+    )
+
+    assert gate["status"] == "blocked"
+    assert "ai_shadow_canonical_backtest_binding_drift" in blockers
+    assert gate["paper_shadow_evaluation_only"] is True
+    assert gate["broker_submission_enabled"] is False
+
+
+def test_reserved_ai_shadow_order_blocks_unreproducible_frozen_dataset(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    strategy = seed_approved_ai_shadow_strategy(
+        db,
+        fixture_id="dataset-replay",
+        baseline_result_id=1,
+        candidate_result_id=2,
+    )
+
+    with sqlite3.connect(tmp_path / "meta.db") as conn:
+        conn.execute(
+            "UPDATE market_bars SET close = 99 WHERE symbol = ? AND timestamp = ?",
+            ("510300.SH", "2026-01-05T00:00:00"),
+        )
+
+    gate, blockers = resolve_strategy_order_generation_gate(
+        db,
+        strategy["strategy_id"],
+        as_of_date="2026-08-12",
+    )
+
+    assert gate["status"] == "blocked"
+    assert "ai_shadow_dataset_replay_not_reproducible" in blockers
+    replay = gate["promotion"]["dataset_replay"]
+    assert replay["status"] == "blocked"
+    assert replay["provider_contacted"] is False
+    assert replay["parquet_fallback_used"] is False
+    assert gate["does_not_create_order"] is True
+    assert gate["does_not_authorize_execution"] is True
+    assert gate["does_not_change_capital_authority"] is True

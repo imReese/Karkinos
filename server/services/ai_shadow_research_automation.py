@@ -24,6 +24,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from analytics.backtest_capacity_evidence import build_backtest_capacity_evidence
+from analytics.backtest_drawdown_evidence import build_backtest_drawdown_evidence
 from analytics.backtest_fee_tax_evidence import build_backtest_fee_tax_evidence
 from analytics.backtest_market_regime_evidence import (
     build_backtest_market_regime_evidence,
@@ -33,6 +34,7 @@ from analytics.oos_validation import build_rolling_out_of_sample_validation
 from analytics.strategy_advancement_gate import (
     build_strategy_advancement_gate,
     is_valid_passed_strategy_advancement_gate,
+    strategy_advancement_backtest_view,
 )
 from backtest.engine import BacktestEngine
 from core.types import AssetClass, BarFrequency, Symbol
@@ -1301,8 +1303,8 @@ class AiShadowResearchAutomationService:
         candidate = await self._db.get_backtest_result(candidate_result_id)
         if not isinstance(baseline, dict) or not isinstance(candidate, dict):
             raise ShadowResearchRejected("comparison_backtest_missing")
-        baseline_view = _backtest_view(baseline)
-        candidate_view = _backtest_view(candidate)
+        baseline_view = strategy_advancement_backtest_view(baseline)
+        candidate_view = strategy_advancement_backtest_view(candidate)
         critique_artifact = (
             critique.get("artifact")
             if isinstance(critique.get("artifact"), Mapping)
@@ -1533,6 +1535,9 @@ class AiShadowResearchAutomationService:
                     data_handlers=handlers,
                     initial_cash=result.initial_cash,
                 ),
+                "drawdown_evidence": build_backtest_drawdown_evidence(
+                    equity_curve=result.equity_curve,
+                ),
                 "market_regime_robustness": build_backtest_market_regime_evidence(
                     result=result,
                     data_handlers=handlers,
@@ -1762,65 +1767,6 @@ def _asset_class(value: str) -> AssetClass:
         raise ShadowResearchRejected("baseline_asset_class_invalid") from exc
 
 
-def _backtest_view(row: Mapping[str, Any]) -> dict[str, Any]:
-    metrics = _json_object(row.get("metrics_json"))
-    costs = _json_object(row.get("cost_summary_json"))
-    evidence = _json_object(metrics.get("evidence_bundle"))
-    research = _json_object(metrics.get("research_evidence_bundle"))
-    oos = _json_object(metrics.get("oos_validation"))
-    aggregate = _json_object(oos.get("aggregate"))
-    oos_folds = [
-        {
-            "fold_index": fold.get("fold_index"),
-            "split_timestamp": fold.get("split_timestamp"),
-            "net_return": _json_object(fold.get("out_of_sample")).get("net_return"),
-            "total_cost": _json_object(fold.get("out_of_sample")).get("total_cost"),
-        }
-        for fold in oos.get("folds") or []
-        if isinstance(fold, Mapping)
-    ]
-    dataset = _json_object(metrics.get("dataset_snapshot"))
-    dataset_quality = _json_object(dataset.get("data_quality"))
-    total_cost = float(evidence.get("total_cost") or 0)
-    return {
-        "result_id": int(row["id"]),
-        "initial_cash": float(row.get("initial_cash") or 0),
-        "total_return": float(row.get("total_return") or 0),
-        "sharpe": float(row.get("sharpe") or 0),
-        "max_drawdown": float(row.get("max_drawdown") or 0),
-        "total_cost": total_cost,
-        "total_commission": float(costs.get("total_commission") or 0),
-        "total_slippage": float(costs.get("total_slippage") or 0),
-        "total_trades": int(costs.get("total_trades") or 0),
-        "gross_turnover": float(costs.get("gross_turnover") or 0),
-        "oos_validation_mode": str(oos.get("validation_mode") or "missing"),
-        "oos_fold_count": int(oos.get("fold_count") or 0),
-        "oos_pass_rate": aggregate.get("pass_rate"),
-        "oos_folds": oos_folds,
-        "mean_oos_return": float(aggregate.get("mean_out_of_sample_return") or 0),
-        "worst_oos_return": float(aggregate.get("worst_out_of_sample_return") or 0),
-        "oos_validation_status": str(oos.get("validation_status") or "missing"),
-        "evidence_gate_status": str(research.get("gate_status") or "missing"),
-        "dataset_snapshot_id": dataset.get("snapshot_id"),
-        "dataset_quality_status": dataset_quality.get("status"),
-        "dataset_issue_count": len(dataset_quality.get("issues") or []),
-        "parameter_robustness": _json_object(
-            metrics.get("parameter_robustness") or metrics.get("sweep_robustness")
-        ),
-        "formula_parameter_values": _json_object(
-            _json_object(metrics.get("formula_binding")).get("parameter_values")
-        ),
-        "market_regime_robustness": _json_object(
-            metrics.get("market_regime_robustness")
-        ),
-        "account_capital_constraint": _json_object(
-            metrics.get("account_capital_constraint")
-        ),
-        "capacity_review": _json_object(metrics.get("capacity_review")),
-        "fee_component_evidence": _json_object(metrics.get("fee_component_evidence")),
-    }
-
-
 def _backtest_source_fingerprint(row: Mapping[str, Any]) -> str:
     return content_fingerprint(
         {
@@ -1830,6 +1776,7 @@ def _backtest_source_fingerprint(row: Mapping[str, Any]) -> str:
             "total_return": row.get("total_return"),
             "sharpe": row.get("sharpe"),
             "max_drawdown": row.get("max_drawdown"),
+            "equity_curve": _json_list(row.get("equity_curve_json")),
             "metrics": _json_object(row.get("metrics_json")),
             "cost_summary": _json_object(row.get("cost_summary_json")),
         }
@@ -1892,6 +1839,18 @@ def _json_object(value: Any) -> dict[str, Any]:
     except json.JSONDecodeError:
         return {}
     return dict(decoded) if isinstance(decoded, dict) else {}
+
+
+def _json_list(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return list(value)
+    if not isinstance(value, str) or not value.strip():
+        return []
+    try:
+        decoded = json.loads(value)
+    except json.JSONDecodeError:
+        return []
+    return list(decoded) if isinstance(decoded, list) else []
 
 
 def _failure_code(exc: Exception) -> str:

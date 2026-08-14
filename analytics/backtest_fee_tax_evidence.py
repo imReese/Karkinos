@@ -146,6 +146,76 @@ def build_backtest_fee_tax_evidence(
     return {**core, "evidence_fingerprint": _fingerprint(core)}
 
 
+def is_valid_complete_backtest_fee_tax_evidence(
+    value: Any,
+    *,
+    expected_total_commission: Any,
+    expected_total_slippage: Any,
+    expected_total_cost: Any,
+    expected_fill_count: Any,
+) -> bool:
+    """Reconcile canonical fee/tax components with stored backtest totals."""
+
+    if not isinstance(value, Mapping):
+        return False
+    payload = dict(value)
+    evidence_fingerprint = payload.pop("evidence_fingerprint", None)
+    components = payload.get("components")
+    if not isinstance(components, Mapping):
+        return False
+    component_values = {
+        name: _decimal(components.get(name)) for name in (*_COMPONENT_NAMES, "slippage")
+    }
+    if any(value is None or value < 0 for value in component_values.values()):
+        return False
+    total_commission = _decimal(expected_total_commission)
+    total_slippage = _decimal(expected_total_slippage)
+    total_cost = _decimal(expected_total_cost)
+    fill_count = _integer(payload.get("fill_count"))
+    expected_count = _integer(expected_fill_count)
+    fill_rule_ids = payload.get("fill_rule_ids")
+    fill_rule_versions = payload.get("fill_rule_versions")
+    if (
+        total_commission is None
+        or total_slippage is None
+        or total_cost is None
+        or min(total_commission, total_slippage, total_cost) < 0
+        or fill_count is None
+        or expected_count is None
+        or fill_count <= 0
+        or fill_count != expected_count
+        or not _nonempty_unique_text_list(fill_rule_ids)
+        or not _nonempty_unique_text_list(fill_rule_versions)
+    ):
+        return False
+    recorded_commission = sum(
+        (component_values[name] for name in _COMPONENT_NAMES),
+        Decimal("0"),
+    )
+    recorded_slippage = component_values["slippage"]
+    return (
+        payload.get("schema_version") == BACKTEST_FEE_TAX_EVIDENCE_SCHEMA_VERSION
+        and payload.get("status") == "complete"
+        and payload.get("includes_taxes") is True
+        and payload.get("component_reconciliation_status") == "pass"
+        and payload.get("issues") == []
+        and recorded_commission == total_commission
+        and recorded_slippage == total_slippage
+        and recorded_commission + recorded_slippage == total_cost
+        and payload.get("fee_rule_version") == "|".join(fill_rule_versions)
+        and payload.get("persisted_fill_evidence_only") is True
+        and payload.get("does_not_recalculate_backtest_pnl") is True
+        and payload.get("human_review_required") is True
+        and payload.get("authorizes_execution") is False
+        and payload.get("does_not_change_capital_authority") is True
+        and isinstance(payload.get("model_limitations"), list)
+        and isinstance(payload.get("limitations"), list)
+        and isinstance(evidence_fingerprint, str)
+        and len(evidence_fingerprint) == 64
+        and evidence_fingerprint.lower() == _fingerprint(payload)
+    )
+
+
 def _decimal(value: Any) -> Decimal | None:
     if value is None or isinstance(value, bool):
         return None
@@ -154,6 +224,24 @@ def _decimal(value: Any) -> Decimal | None:
     except (InvalidOperation, TypeError, ValueError):
         return None
     return normalized if normalized.is_finite() else None
+
+
+def _integer(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _nonempty_unique_text_list(value: Any) -> bool:
+    return (
+        isinstance(value, list)
+        and bool(value)
+        and all(isinstance(item, str) and item.strip() for item in value)
+        and value == sorted(set(value))
+    )
 
 
 def _fingerprint(payload: Mapping[str, Any]) -> str:

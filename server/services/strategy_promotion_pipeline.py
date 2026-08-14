@@ -3,10 +3,18 @@
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 from typing import Any
 
+from analytics.dataset_snapshot import verify_backtest_dataset_snapshot_replay
+from analytics.research_account_capital_evidence import (
+    is_valid_passed_research_account_capital_evidence,
+)
 from analytics.strategy_advancement_gate import (
+    build_strategy_advancement_gate,
     is_valid_passed_strategy_advancement_gate,
+    strategy_advancement_backtest_view,
 )
 from server.ai_runtime.contracts import content_fingerprint
 from server.services.reviewed_fee_schedule import active_review_matches_fee_evidence
@@ -349,6 +357,7 @@ def resolve_ai_shadow_strategy_promotion_binding(
         blockers.append("ai_shadow_strategy_human_review_gate_mismatch")
     blockers = list(dict.fromkeys(blockers))
     fee_schedule_binding = _ai_shadow_fee_schedule_binding(db, candidate_id)
+    dataset_replay = _ai_shadow_dataset_replay_evidence(db, candidate_id)
     return {
         "status": "pass" if not blockers else "blocked",
         "strategy_id": normalized_strategy_id,
@@ -364,6 +373,7 @@ def resolve_ai_shadow_strategy_promotion_binding(
         ),
         "strategy_advancement_gate_fingerprint": gate_fingerprint,
         "fee_schedule_binding": fee_schedule_binding,
+        "dataset_replay": dataset_replay,
         "live_like_enabled": bool(state.get("live_like_enabled")),
     }, blockers
 
@@ -518,7 +528,8 @@ def _ai_shadow_readiness_binding_blockers(
         blockers.append("ai_shadow_human_approval_not_recorded")
     if binding.get("target_stage") != "paper_shadow":
         blockers.append("ai_shadow_approval_target_invalid")
-    if not is_valid_passed_strategy_advancement_gate(comparison.get("promotion_gate")):
+    comparison_gate = comparison.get("promotion_gate")
+    if not is_valid_passed_strategy_advancement_gate(comparison_gate):
         blockers.append("ai_shadow_strategy_advancement_gate_invalid")
     baseline_source = _binding_backtest_source(binding, "baseline")
     candidate_source = _binding_backtest_source(binding, "candidate")
@@ -531,6 +542,9 @@ def _ai_shadow_readiness_binding_blockers(
     ):
         blockers.append("ai_shadow_candidate_source_drift")
     candidate_metrics = _json_object(binding.get("candidate_metrics_json"))
+    dataset_replay = _dataset_replay_evidence_from_binding(db, binding)
+    if dataset_replay.get("status") != "pass":
+        blockers.append("ai_shadow_dataset_replay_not_reproducible")
     candidate_fee_evidence = _json_object(
         candidate_metrics.get("fee_component_evidence")
     )
@@ -545,9 +559,37 @@ def _ai_shadow_readiness_binding_blockers(
         )
     )
     if (
+        binding.get("research_run_status") != "completed"
+        or int(binding.get("research_run_baseline_result_id") or 0)
+        != int(binding.get("baseline_result_id") or 0)
+        or binding.get("research_run_session_id") != binding.get("session_id")
+    ):
+        blockers.append("ai_shadow_research_run_binding_drift")
+    candidate_capital_evidence = _json_object(
+        candidate_metrics.get("account_capital_constraint")
+    )
+    if not is_valid_passed_research_account_capital_evidence(
+        candidate_capital_evidence,
+        expected_initial_cash=binding.get("candidate_initial_cash"),
+        expected_valuation_snapshot_id=binding.get(
+            "research_run_valuation_snapshot_id"
+        ),
+        expected_ledger_cutoff_id=binding.get("research_run_ledger_cutoff_id"),
+    ):
+        blockers.append("ai_shadow_research_account_capital_binding_drift")
+    candidate_dataset = _json_object(candidate_metrics.get("dataset_snapshot"))
+    if (
         binding.get("formula_backtest_status") != "completed"
         or int(binding.get("canonical_backtest_result_id") or 0)
         != int(binding.get("candidate_result_id") or 0)
+        or binding.get("formula_backtest_session_id") != binding.get("session_id")
+        or binding.get("formula_backtest_draft_id") != binding.get("draft_id")
+        or binding.get("formula_backtest_formula_fingerprint")
+        != candidate_metrics.get("formula_fingerprint")
+        or binding.get("formula_backtest_dataset_snapshot_id")
+        != candidate_dataset.get("snapshot_id")
+        or binding.get("formula_backtest_cost_model_reference")
+        != candidate_fee_evidence.get("cost_model_reference")
         or binding.get("backtest_evidence_fingerprint")
         != content_fingerprint(candidate_metrics.get("research_evidence_bundle"))
     ):
@@ -555,12 +597,35 @@ def _ai_shadow_readiness_binding_blockers(
     critique_artifact = _json_object(binding.get("critique_artifact_json"))
     if (
         binding.get("critique_status") != "completed"
+        or binding.get("critique_session_id") != binding.get("session_id")
+        or binding.get("critique_draft_id") != binding.get("draft_id")
+        or binding.get("critique_backtest_run_id") != binding.get("backtest_run_id")
         or binding.get("critique_artifact_fingerprint")
         != content_fingerprint(critique_artifact)
         or content_fingerprint(comparison.get("deepseek_critique"))
         != content_fingerprint(critique_artifact)
     ):
         blockers.append("ai_shadow_critique_source_drift")
+    try:
+        current_gate = build_strategy_advancement_gate(
+            baseline=strategy_advancement_backtest_view(baseline_source),
+            candidate=strategy_advancement_backtest_view(candidate_source),
+            critique_evidence={
+                "status": binding.get("critique_status"),
+                "critique_id": binding.get("critique_id"),
+                "artifact_fingerprint": (
+                    content_fingerprint(critique_artifact)
+                    if critique_artifact
+                    else None
+                ),
+            },
+        ).to_json_dict()
+    except (TypeError, ValueError, OverflowError):
+        current_gate = None
+    if not is_valid_passed_strategy_advancement_gate(
+        current_gate
+    ) or content_fingerprint(current_gate) != content_fingerprint(comparison_gate):
+        blockers.append("ai_shadow_strategy_advancement_gate_current_source_mismatch")
     if binding.get("candidate_fingerprint") != expected_candidate_fingerprint:
         blockers.append("ai_shadow_candidate_approval_fingerprint_mismatch")
     if readiness.get("schema_version") != (
@@ -580,7 +645,6 @@ def _ai_shadow_readiness_binding_blockers(
     if readiness.get("human_approval_id") != binding.get("promotion_id"):
         blockers.append("ai_shadow_readiness_human_approval_mismatch")
     readiness_gate = readiness.get("strategy_advancement_gate")
-    comparison_gate = comparison.get("promotion_gate")
     if not is_valid_passed_strategy_advancement_gate(
         readiness_gate
     ) or content_fingerprint(readiness_gate) != content_fingerprint(comparison_gate):
@@ -613,6 +677,83 @@ def _ai_shadow_fee_schedule_binding(db: Any, candidate_id: str) -> dict[str, Any
     }
 
 
+def _ai_shadow_dataset_replay_evidence(
+    db: Any,
+    candidate_id: str,
+) -> dict[str, Any]:
+    reader = getattr(db, "get_ai_shadow_strategy_promotion_binding_sync", None)
+    binding = reader(candidate_id) if callable(reader) and candidate_id else None
+    if not isinstance(binding, dict):
+        return _missing_dataset_replay_evidence("dataset_replay_binding_missing")
+    return _dataset_replay_evidence_from_binding(db, binding)
+
+
+def _dataset_replay_evidence_from_binding(
+    db: Any,
+    binding: dict[str, Any],
+) -> dict[str, Any]:
+    baseline_metrics = _json_object(binding.get("baseline_metrics_json"))
+    candidate_metrics = _json_object(binding.get("candidate_metrics_json"))
+    baseline_snapshot = _json_object(baseline_metrics.get("dataset_snapshot"))
+    candidate_snapshot = _json_object(candidate_metrics.get("dataset_snapshot"))
+    root = _strategy_dataset_store_root(db)
+    if root is None:
+        return _missing_dataset_replay_evidence("dataset_replay_store_root_missing")
+    replay = verify_backtest_dataset_snapshot_replay(
+        candidate_snapshot,
+        store_root=root,
+    )
+    replay_core = dict(replay)
+    replay_core.pop("evidence_fingerprint", None)
+    manifest_matches = bool(baseline_snapshot) and content_fingerprint(
+        baseline_snapshot
+    ) == content_fingerprint(candidate_snapshot)
+    blockers = list(replay_core.get("blockers") or [])
+    if not manifest_matches:
+        blockers.append("baseline_candidate_dataset_manifest_mismatch")
+    replay_core.update(
+        {
+            "status": "pass" if not blockers else "blocked",
+            "blockers": list(dict.fromkeys(blockers)),
+            "baseline_manifest_matches_candidate": manifest_matches,
+            "baseline_snapshot_id": baseline_snapshot.get("snapshot_id"),
+            "candidate_snapshot_id": candidate_snapshot.get("snapshot_id"),
+        }
+    )
+    return {
+        **replay_core,
+        "evidence_fingerprint": content_fingerprint(replay_core),
+    }
+
+
+def _strategy_dataset_store_root(db: Any) -> Path | None:
+    configured = str(os.environ.get("KARKINOS_DATA_DIR") or "").strip()
+    if configured:
+        return Path(configured)
+    database_path = getattr(db, "_path", None)
+    if database_path is None:
+        return None
+    return Path(database_path).parent
+
+
+def _missing_dataset_replay_evidence(blocker: str) -> dict[str, Any]:
+    core = {
+        "schema_version": "karkinos.dataset_snapshot_replay.v1",
+        "status": "blocked",
+        "snapshot_id": None,
+        "manifest_symbol_count": 0,
+        "verified_symbol_count": 0,
+        "blockers": [blocker],
+        "persisted_market_bars_only": True,
+        "parquet_fallback_used": False,
+        "provider_contacted": False,
+        "does_not_create_order": True,
+        "does_not_authorize_execution": True,
+        "does_not_change_capital_authority": True,
+    }
+    return {**core, "evidence_fingerprint": content_fingerprint(core)}
+
+
 def _binding_backtest_source(binding: dict[str, Any], prefix: str) -> dict[str, Any]:
     result_id = binding.get(
         "baseline_result_id" if prefix == "baseline" else "candidate_result_id"
@@ -624,6 +765,7 @@ def _binding_backtest_source(binding: dict[str, Any], prefix: str) -> dict[str, 
         "total_return": binding.get(f"{prefix}_total_return"),
         "sharpe": binding.get(f"{prefix}_sharpe"),
         "max_drawdown": binding.get(f"{prefix}_max_drawdown"),
+        "equity_curve": _json_list(binding.get(f"{prefix}_equity_curve_json")),
         "metrics": _json_object(binding.get(f"{prefix}_metrics_json")),
         "cost_summary": _json_object(binding.get(f"{prefix}_cost_summary_json")),
     }

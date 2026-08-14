@@ -4301,6 +4301,9 @@ class AppDatabase:
                     """
                     SELECT
                         candidate.candidate_id,
+                        candidate.run_id,
+                        candidate.session_id,
+                        candidate.draft_id,
                         candidate.critique_id,
                         candidate.backtest_run_id,
                         candidate.baseline_result_id,
@@ -4314,10 +4317,23 @@ class AppDatabase:
                         promotion.approved_by,
                         promotion.candidate_fingerprint,
                         promotion.created_at AS approved_at,
+                        research_run.status AS research_run_status,
+                        research_run.baseline_result_id AS research_run_baseline_result_id,
+                        research_run.valuation_snapshot_id AS research_run_valuation_snapshot_id,
+                        research_run.ledger_cutoff_id AS research_run_ledger_cutoff_id,
+                        research_run.session_id AS research_run_session_id,
                         formula_backtest.status AS formula_backtest_status,
                         formula_backtest.canonical_backtest_result_id,
                         formula_backtest.evidence_fingerprint AS backtest_evidence_fingerprint,
+                        formula_backtest.session_id AS formula_backtest_session_id,
+                        formula_backtest.draft_id AS formula_backtest_draft_id,
+                        formula_backtest.formula_fingerprint AS formula_backtest_formula_fingerprint,
+                        formula_backtest.dataset_snapshot_id AS formula_backtest_dataset_snapshot_id,
+                        formula_backtest.cost_model_reference AS formula_backtest_cost_model_reference,
                         critique.status AS critique_status,
+                        critique.session_id AS critique_session_id,
+                        critique.draft_id AS critique_draft_id,
+                        critique.backtest_run_id AS critique_backtest_run_id,
                         critique.normalized_artifact_json AS critique_artifact_json,
                         critique.artifact_fingerprint AS critique_artifact_fingerprint,
                         baseline.initial_cash AS baseline_initial_cash,
@@ -4325,6 +4341,7 @@ class AppDatabase:
                         baseline.total_return AS baseline_total_return,
                         baseline.sharpe AS baseline_sharpe,
                         baseline.max_drawdown AS baseline_max_drawdown,
+                        baseline.equity_curve_json AS baseline_equity_curve_json,
                         baseline.metrics_json AS baseline_metrics_json,
                         baseline.cost_summary_json AS baseline_cost_summary_json,
                         candidate_result.initial_cash AS candidate_initial_cash,
@@ -4332,11 +4349,14 @@ class AppDatabase:
                         candidate_result.total_return AS candidate_total_return,
                         candidate_result.sharpe AS candidate_sharpe,
                         candidate_result.max_drawdown AS candidate_max_drawdown,
+                        candidate_result.equity_curve_json AS candidate_equity_curve_json,
                         candidate_result.metrics_json AS candidate_metrics_json,
                         candidate_result.cost_summary_json AS candidate_cost_summary_json
                     FROM ai_shadow_research_candidates AS candidate
                     LEFT JOIN ai_shadow_research_promotions AS promotion
                       ON promotion.candidate_id = candidate.candidate_id
+                    LEFT JOIN ai_shadow_research_runs AS research_run
+                      ON research_run.run_id = candidate.run_id
                     LEFT JOIN ai_strategy_formula_backtests AS formula_backtest
                       ON formula_backtest.backtest_run_id = candidate.backtest_run_id
                     LEFT JOIN ai_strategy_backtest_critiques AS critique

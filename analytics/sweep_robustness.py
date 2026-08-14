@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any
+import math
+from typing import Any, Mapping
 
 
 def build_sweep_robustness_evidence(
@@ -22,6 +23,7 @@ def build_sweep_robustness_evidence(
                 "rank_by": rank_by,
                 "rank_direction": rank_direction,
                 "selected_params": dict(selected_params or {}),
+                "tested_results": [],
                 "tested_count": 0,
                 "best_params": {},
                 "local_stability": {
@@ -41,8 +43,15 @@ def build_sweep_robustness_evidence(
             }
         )
 
+    tested_results = [
+        {
+            "params": dict(item.get("params") or {}),
+            "score": _score(item),
+        }
+        for item in results
+    ]
     sorted_results = sorted(
-        results,
+        tested_results,
         key=lambda item: _score(item),
         reverse=rank_direction == "desc",
     )
@@ -73,6 +82,7 @@ def build_sweep_robustness_evidence(
             "rank_by": rank_by,
             "rank_direction": rank_direction,
             "selected_params": dict(selected_params or {}),
+            "tested_results": tested_results,
             "tested_count": len(results),
             "best_params": best_params,
             "local_stability": {
@@ -88,11 +98,98 @@ def build_sweep_robustness_evidence(
     )
 
 
+def is_valid_passed_sweep_robustness_evidence(
+    value: Any,
+    *,
+    expected_selected_params: Mapping[str, Any],
+) -> bool:
+    """Replay a persisted parameter sweep and validate its promotion summary."""
+
+    if not isinstance(value, Mapping):
+        return False
+    payload = dict(value)
+    evidence_fingerprint = payload.get("evidence_fingerprint")
+    tested_results_raw = payload.get("tested_results")
+    if not isinstance(tested_results_raw, list):
+        return False
+    tested_results = [
+        {
+            "params": dict(item.get("params") or {}),
+            "score": _finite_score(item.get("score")),
+        }
+        for item in tested_results_raw
+        if isinstance(item, Mapping)
+    ]
+    if len(tested_results) != len(tested_results_raw) or any(
+        item["score"] is None or not item["params"] for item in tested_results
+    ):
+        return False
+    parameter_identities = [
+        json.dumps(
+            item["params"],
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        for item in tested_results
+    ]
+    if len(set(parameter_identities)) != len(parameter_identities):
+        return False
+    selected_params = dict(payload.get("selected_params") or {})
+    expected_params = dict(expected_selected_params)
+    if not expected_params or selected_params != expected_params:
+        return False
+    rank_by = str(payload.get("rank_by") or "")
+    rank_direction = str(payload.get("rank_direction") or "")
+    if rank_by != "after_cost_total_return" or rank_direction != "desc":
+        return False
+    replayed = build_sweep_robustness_evidence(
+        results=tested_results,
+        rank_by=rank_by,
+        rank_direction=rank_direction,
+        selected_params=selected_params,
+    )
+    local_stability = payload.get("local_stability")
+    warnings = payload.get("overfitting_warnings")
+    return (
+        payload == replayed
+        and isinstance(evidence_fingerprint, str)
+        and len(evidence_fingerprint) == 64
+        and payload.get("tested_count") == len(tested_results)
+        and len(tested_results) >= 3
+        and payload.get("best_params") == expected_params
+        and isinstance(local_stability, Mapping)
+        and int(local_stability.get("neighbor_count") or 0) >= 1
+        and (_finite_score(local_stability.get("stability_ratio")) or 0) >= 0.8
+        and warnings == []
+        and _nonempty_text_list(payload.get("limitations"))
+    )
+
+
 def _score(result: dict[str, Any]) -> float:
     try:
         return float(result.get("score") or 0.0)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _finite_score(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        normalized = float(value)
+    except (TypeError, ValueError):
+        return None
+    return normalized if math.isfinite(normalized) else None
+
+
+def _nonempty_text_list(value: Any) -> bool:
+    return (
+        isinstance(value, list)
+        and bool(value)
+        and all(isinstance(item, str) and item.strip() for item in value)
+    )
 
 
 def _is_grid_neighbor(best_params: dict[str, Any], params: dict[str, Any]) -> bool:
