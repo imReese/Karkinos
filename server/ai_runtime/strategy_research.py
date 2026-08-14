@@ -25,6 +25,7 @@ from typing import Any, Literal
 import pandas as pd
 
 from analytics.backtest_capacity_evidence import build_backtest_capacity_evidence
+from analytics.backtest_drawdown_evidence import build_backtest_drawdown_evidence
 from analytics.backtest_fee_tax_evidence import build_backtest_fee_tax_evidence
 from analytics.backtest_market_regime_evidence import (
     build_backtest_market_regime_evidence,
@@ -1316,6 +1317,9 @@ class RestrictedFormulaBacktestAdapter:
                     fills=result.fills,
                     data_handlers=handlers,
                     initial_cash=result.initial_cash,
+                ),
+                "drawdown_evidence": build_backtest_drawdown_evidence(
+                    equity_curve=result.equity_curve,
                 ),
                 "account_capital_constraint": resolved_account_capital_evidence,
                 "market_regime_robustness": build_backtest_market_regime_evidence(

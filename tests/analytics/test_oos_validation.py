@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import hashlib
+import json
+from copy import deepcopy
 from datetime import datetime
 from decimal import Decimal
 
 import pytest
 
 from analytics.oos_validation import (
+    ROLLING_OOS_EVIDENCE_SCHEMA_VERSION,
     build_out_of_sample_validation,
     build_rolling_out_of_sample_validation,
+    is_valid_rolling_out_of_sample_validation_evidence,
 )
 from backtest.result import BacktestResult
 from core.events import FillEvent
@@ -26,6 +31,39 @@ def _fill(timestamp: datetime, commission: str, slippage: str) -> FillEvent:
         commission=Decimal(commission),
         slippage=Decimal(slippage),
     )
+
+
+def _rolling_result() -> BacktestResult:
+    return BacktestResult(
+        equity_curve=[
+            (datetime(2026, 1, 2), Decimal("100000")),
+            (datetime(2026, 1, 9), Decimal("102000")),
+            (datetime(2026, 1, 16), Decimal("101000")),
+            (datetime(2026, 1, 23), Decimal("105000")),
+            (datetime(2026, 1, 30), Decimal("108000")),
+        ],
+        positions={},
+        initial_cash=Decimal("100000"),
+        final_equity=Decimal("108000"),
+        fills=[
+            _fill(datetime(2026, 1, 17), "4", "1"),
+            _fill(datetime(2026, 1, 24), "6", "2"),
+        ],
+    )
+
+
+def _rehash(payload: dict) -> dict:
+    core = {
+        key: value for key, value in payload.items() if key != "evidence_fingerprint"
+    }
+    encoded = json.dumps(
+        core,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return {**core, "evidence_fingerprint": hashlib.sha256(encoded).hexdigest()}
 
 
 def test_build_out_of_sample_validation_splits_after_cost_evidence():
@@ -102,22 +140,7 @@ def test_build_out_of_sample_validation_rejects_split_without_oos_points():
 
 
 def test_build_rolling_out_of_sample_validation_generates_fold_evidence():
-    result = BacktestResult(
-        equity_curve=[
-            (datetime(2026, 1, 2), Decimal("100000")),
-            (datetime(2026, 1, 9), Decimal("102000")),
-            (datetime(2026, 1, 16), Decimal("101000")),
-            (datetime(2026, 1, 23), Decimal("105000")),
-            (datetime(2026, 1, 30), Decimal("108000")),
-        ],
-        positions={},
-        initial_cash=Decimal("100000"),
-        final_equity=Decimal("108000"),
-        fills=[
-            _fill(datetime(2026, 1, 17), "4", "1"),
-            _fill(datetime(2026, 1, 24), "6", "2"),
-        ],
-    )
+    result = _rolling_result()
 
     evidence = build_rolling_out_of_sample_validation(
         strategy_id="dual_ma",
@@ -149,8 +172,46 @@ def test_build_rolling_out_of_sample_validation_generates_fold_evidence():
     assert evidence.folds[1].out_of_sample.total_cost == Decimal("8")
 
     payload = evidence.to_json_dict()
+    assert payload["schema_version"] == ROLLING_OOS_EVIDENCE_SCHEMA_VERSION
     assert payload["validation_mode"] == "rolling"
     assert payload["fold_count"] == 2
     assert payload["folds"][0]["out_of_sample"]["fill_count"] == 1
     assert payload["aggregate"]["pass_rate"] == 1.0
+    assert len(payload["evidence_fingerprint"]) == 64
+    assert is_valid_rolling_out_of_sample_validation_evidence(payload) is True
     assert "not refit parameters per fold" in payload["limitations"][1]
+
+
+def test_rolling_oos_validator_rejects_rehashed_fold_or_aggregate_conflict():
+    payload = build_rolling_out_of_sample_validation(
+        strategy_id="dual_ma",
+        benchmark_role="etf_rotation_trend_following",
+        result=_rolling_result(),
+        min_train_points=2,
+        test_window_points=2,
+        step_points=1,
+        benchmark_return=Decimal("0.015"),
+    ).to_json_dict()
+
+    aggregate_conflict = deepcopy(payload)
+    aggregate_conflict["aggregate"]["mean_out_of_sample_return"] = 0.999
+    assert (
+        is_valid_rolling_out_of_sample_validation_evidence(_rehash(aggregate_conflict))
+        is False
+    )
+
+    fold_conflict = deepcopy(payload)
+    fold_conflict["folds"][0]["out_of_sample"]["net_return"] = 0.999
+    assert (
+        is_valid_rolling_out_of_sample_validation_evidence(_rehash(fold_conflict))
+        is False
+    )
+
+    configuration_conflict = deepcopy(payload)
+    configuration_conflict["step_points"] = 2
+    assert (
+        is_valid_rolling_out_of_sample_validation_evidence(
+            _rehash(configuration_conflict)
+        )
+        is False
+    )

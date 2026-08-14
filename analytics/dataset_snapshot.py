@@ -5,8 +5,12 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import sqlite3
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from pathlib import Path
+from typing import Any, Mapping
+
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +77,12 @@ def _handler_content_digest(handler: Any) -> str | None:
     frame = _handler_dataframe(handler)
     if frame is None:
         return None
+    return _frame_content_digest(frame)
+
+
+def _frame_content_digest(frame: Any) -> str | None:
+    """Hash an ordered timestamp/OHLCV frame with backtest engine semantics."""
+
     required_columns = ("open", "high", "low", "close", "volume")
     if any(column not in getattr(frame, "columns", []) for column in required_columns):
         return None
@@ -277,3 +287,195 @@ def build_backtest_dataset_snapshot(
     }
     snapshot["snapshot_id"] = _dataset_snapshot_id(snapshot)
     return snapshot
+
+
+def verify_backtest_dataset_snapshot_replay(
+    snapshot: Mapping[str, Any] | None,
+    *,
+    store_root: str | Path,
+) -> dict[str, Any]:
+    """Replay one frozen snapshot from persisted SQLite bars without writes.
+
+    Future bars outside the frozen date range do not invalidate the snapshot.
+    Missing or corrected rows inside the window do.  The verifier never falls
+    back to a provider or the mutable Parquet cache.
+    """
+
+    value = dict(snapshot) if isinstance(snapshot, Mapping) else {}
+    snapshot_id = str(value.get("snapshot_id") or "")
+    blockers: list[str] = []
+    snapshot_core = dict(value)
+    snapshot_core.pop("snapshot_id", None)
+    if value.get("schema_version") != "karkinos.dataset_snapshot.v1":
+        blockers.append("dataset_snapshot_schema_invalid")
+    if not snapshot_id or snapshot_id != _dataset_snapshot_id(snapshot_core):
+        blockers.append("dataset_snapshot_identity_mismatch")
+    content_identity = value.get("content_identity")
+    if (
+        not isinstance(content_identity, Mapping)
+        or content_identity.get("algorithm") != "sha256"
+        or content_identity.get("row_contract") != "timestamp_ohlcv.v1"
+        or content_identity.get("complete") is not True
+    ):
+        blockers.append("dataset_snapshot_content_identity_incomplete")
+    quality = value.get("data_quality")
+    if not isinstance(quality, Mapping) or quality.get("status") != "ok":
+        blockers.append("dataset_snapshot_quality_not_clear")
+    date_range = value.get("date_range")
+    start_date = (
+        str(date_range.get("start") or "") if isinstance(date_range, Mapping) else ""
+    )
+    end_date = (
+        str(date_range.get("end") or "") if isinstance(date_range, Mapping) else ""
+    )
+    try:
+        start = pd.Timestamp(start_date)
+        end = (
+            pd.Timestamp(end_date) + pd.Timedelta(days=1) - pd.Timedelta(microseconds=1)
+        )
+        if pd.isna(start) or pd.isna(end):
+            raise ValueError("date range is missing")
+    except (TypeError, ValueError, OverflowError):
+        start = None
+        end = None
+        blockers.append("dataset_snapshot_date_range_invalid")
+    universe_raw = value.get("symbol_universe")
+    universe = (
+        [dict(row) for row in universe_raw if isinstance(row, Mapping)]
+        if isinstance(universe_raw, list)
+        else []
+    )
+    if (
+        not isinstance(universe_raw, list)
+        or not universe
+        or len(universe) != len(universe_raw)
+    ):
+        blockers.append("dataset_snapshot_universe_invalid")
+    identities = [
+        (str(row.get("symbol") or ""), str(row.get("frequency") or ""))
+        for row in universe
+    ]
+    if any(not symbol or not frequency for symbol, frequency in identities) or len(
+        set(identities)
+    ) != len(identities):
+        blockers.append("dataset_snapshot_universe_identity_invalid")
+
+    verified_symbols = 0
+    if not blockers:
+        meta_path = Path(store_root).expanduser() / "meta.db"
+        if not meta_path.is_file():
+            blockers.append("dataset_replay_store_missing")
+        else:
+            try:
+                connection = sqlite3.connect(
+                    f"{meta_path.resolve().as_uri()}?mode=ro",
+                    uri=True,
+                )
+            except (OSError, sqlite3.Error):
+                blockers.append("dataset_replay_store_unreadable")
+            else:
+                try:
+                    for manifest in universe:
+                        replay_blocker = _verify_symbol_replay(
+                            connection,
+                            manifest=manifest,
+                            start=start,
+                            end=end,
+                        )
+                        if replay_blocker is not None:
+                            blockers.append(replay_blocker)
+                        else:
+                            verified_symbols += 1
+                except sqlite3.Error:
+                    blockers.append("dataset_replay_store_unreadable")
+                finally:
+                    connection.close()
+
+    blockers = list(dict.fromkeys(blockers))
+    core = {
+        "schema_version": "karkinos.dataset_snapshot_replay.v1",
+        "status": "pass" if not blockers else "blocked",
+        "snapshot_id": snapshot_id or None,
+        "manifest_symbol_count": len(universe),
+        "verified_symbol_count": verified_symbols,
+        "blockers": blockers,
+        "persisted_market_bars_only": True,
+        "parquet_fallback_used": False,
+        "provider_contacted": False,
+        "does_not_create_order": True,
+        "does_not_authorize_execution": True,
+        "does_not_change_capital_authority": True,
+    }
+    return {**core, "evidence_fingerprint": _replay_fingerprint(core)}
+
+
+def _verify_symbol_replay(
+    connection: sqlite3.Connection,
+    *,
+    manifest: Mapping[str, Any],
+    start: pd.Timestamp | None,
+    end: pd.Timestamp | None,
+) -> str | None:
+    symbol = str(manifest.get("symbol") or "")
+    frequency = str(manifest.get("frequency") or "")
+    if start is None or end is None:
+        return "dataset_snapshot_date_range_invalid"
+    rows = connection.execute(
+        """
+        SELECT timestamp, open, high, low, close, volume
+        FROM market_bars
+        WHERE symbol=? AND frequency=?
+        ORDER BY timestamp ASC
+        """,
+        (symbol, frequency),
+    ).fetchall()
+    if not rows:
+        return f"dataset_replay_bars_missing:{symbol}:{frequency}"
+    frame = pd.DataFrame(
+        rows,
+        columns=["timestamp", "open", "high", "low", "close", "volume"],
+    )
+    frame["timestamp"] = pd.to_datetime(frame["timestamp"], errors="coerce")
+    if frame["timestamp"].isna().any():
+        return f"dataset_replay_timestamp_invalid:{symbol}:{frequency}"
+    try:
+        frozen = (
+            frame.loc[(frame["timestamp"] >= start) & (frame["timestamp"] <= end)]
+            .sort_values("timestamp")
+            .reset_index(drop=True)
+        )
+    except TypeError:
+        return f"dataset_replay_timestamp_invalid:{symbol}:{frequency}"
+    if frozen.empty:
+        return f"dataset_replay_window_empty:{symbol}:{frequency}"
+    actual_digest = _frame_content_digest(frozen)
+    first_timestamp = _iso_timestamp(frozen["timestamp"].min())
+    last_timestamp = _iso_timestamp(frozen["timestamp"].max())
+    if (
+        actual_digest != manifest.get("content_digest")
+        or len(frozen) != _safe_int(manifest.get("row_count"))
+        or first_timestamp != manifest.get("first_timestamp")
+        or last_timestamp != manifest.get("last_timestamp")
+    ):
+        return f"dataset_replay_content_drift:{symbol}:{frequency}"
+    return None
+
+
+def _safe_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _replay_fingerprint(payload: Mapping[str, Any]) -> str:
+    encoded = json.dumps(
+        dict(payload),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()

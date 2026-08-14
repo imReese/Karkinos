@@ -157,15 +157,24 @@ def test_restricted_formula_adapter_uses_canonical_after_cost_engine_without_db_
     capacity = result["metrics_json"]["capacity_review"]
     assert capacity["status"] == "pass"
     assert capacity["observation_count"] == len(result["fills"])
+    assert (
+        float(capacity["gross_turnover"])
+        == result["cost_summary_json"]["gross_turnover"]
+    )
     assert len(capacity["evidence_fingerprint"]) == 64
     assert capacity["authorizes_execution"] is False
+    drawdown = result["metrics_json"]["drawdown_evidence"]
+    assert drawdown["status"] == "complete"
+    assert drawdown["point_count"] == len(result["equity_curve"])
+    assert float(drawdown["max_drawdown_pct"]) == result["max_drawdown"]
+    assert len(drawdown["evidence_fingerprint"]) == 64
     parameter = result["metrics_json"]["parameter_robustness"]
     assert parameter["tested_count"] == 3
     assert parameter["selected_params"] == {"window": 3}
     assert len(parameter["evidence_fingerprint"]) == 64
     assert result["metrics_json"]["parameter_sweep_failure_code"] is None
     regimes = result["metrics_json"]["market_regime_robustness"]
-    assert regimes["schema_version"] == "karkinos.market_regime_robustness.v1"
+    assert regimes["schema_version"] == "karkinos.market_regime_robustness.v2"
     assert len(regimes["evidence_fingerprint"]) == 64
     assert regimes["authorizes_execution"] is False
     assert request.oos_mode == "rolling"

@@ -239,19 +239,6 @@ def test_human_candidate_approval_records_paper_shadow_only(tmp_path) -> None:
         recommendation="paper_shadow_review",
         comparison={
             **canonical_sources,
-            "promotion_gate": StrategyAdvancementGate(
-                status="pass",
-                blockers=(),
-                checks=tuple(
-                    {
-                        "name": name,
-                        "status": "pass",
-                        "blocker": None,
-                        "evidence": {},
-                    }
-                    for name in STRATEGY_ADVANCEMENT_REQUIRED_CHECK_NAMES
-                ),
-            ).to_json_dict(),
             "automatic_strategy_replacement_enabled": False,
         },
         now="2026-08-11T08:00:00+00:00",
@@ -563,7 +550,7 @@ async def test_full_cycle_is_idempotent_and_stops_at_human_research_pool(
     assert candidate["comparison"]["promotion_gate"]["status"] == "blocked"
     assert {
         "candidate_dataset_quality_not_clear",
-        "baseline_rolling_oos_not_passing",
+        "baseline_rolling_oos_evidence_not_reproducible",
         "candidate_parameter_robustness_not_passing",
         "candidate_market_regime_robustness_not_passing",
         "candidate_capacity_or_liquidity_not_passing",
