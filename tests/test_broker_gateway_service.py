@@ -10,7 +10,10 @@ from server.config import BrokerConnectorConfig
 from server.db import AppDatabase
 from server.services.broker_gateway import BrokerGatewayService
 from server.services.oms import OmsService
-from server.services.trading_controls import TradingControlState
+from server.services.trading_controls import (
+    TradingControlSnapshot,
+    TradingControlState,
+)
 from tests.broker_gateway_fixtures import clear_current_per_order_confirmation
 
 
@@ -36,6 +39,8 @@ def _required_gateway_evidence() -> dict:
 
 
 def _gateway_service(**kwargs) -> BrokerGatewayService:
+    if "trading_controls" not in kwargs:
+        kwargs["trading_controls"] = TradingControlState(db=kwargs.get("db"))
     kwargs.setdefault(
         "current_per_order_confirmation_provider",
         lambda order_id: clear_current_per_order_confirmation(order_id),
@@ -109,6 +114,10 @@ def test_gateway_status_exposes_manual_ticket_and_disabled_live_gateway(
 
     gateways = {item["gateway_id"]: item for item in service.list_gateways()}
 
+    status = service.get_status()
+    assert status["kill_switch_status"] == "pass"
+    assert status["kill_switch_enabled"] is False
+    assert status["kill_switch_evidence_available"] is True
     assert gateways["manual_ticket"]["status"] == "available"
     assert gateways["manual_ticket"]["can_submit_orders"] is False
     assert gateways["manual_ticket"]["can_preview_orders"] is True
@@ -145,6 +154,7 @@ def test_gateway_status_marks_manual_ticket_blocked_by_kill_switch(
     gateways = {item["gateway_id"]: item for item in status["gateways"]}
 
     assert status["broker_submission_enabled"] is False
+    assert status["kill_switch_status"] == "blocked"
     assert status["kill_switch_enabled"] is True
     assert status["kill_switch_reason"] == "operator pause"
     manual_ticket = gateways["manual_ticket"]
@@ -156,6 +166,75 @@ def test_gateway_status_marks_manual_ticket_blocked_by_kill_switch(
     assert manual_ticket["blockers"] == ["kill_switch"]
     assert manual_ticket["blocked_reason"] == "operator pause"
     assert gateways["staged_broker_evidence"]["status"] == "available"
+
+
+def test_gateway_status_and_ticket_fail_closed_when_trading_controls_are_missing(
+    tmp_path,
+) -> None:
+    db, order = _confirmed_order(tmp_path)
+    service = BrokerGatewayService(
+        db=db,
+        current_per_order_confirmation_provider=(
+            lambda order_id: clear_current_per_order_confirmation(order_id)
+        ),
+    )
+
+    status = service.get_status()
+    gateways = {item["gateway_id"]: item for item in status["gateways"]}
+
+    assert status["kill_switch_status"] == "unavailable"
+    assert status["kill_switch_enabled"] is None
+    assert status["kill_switch_evidence_available"] is False
+    assert status["kill_switch_blockers"] == ["kill_switch_status_unavailable"]
+    manual_ticket = gateways["manual_ticket"]
+    assert manual_ticket["status"] == "blocked_by_trading_controls_unavailable"
+    assert manual_ticket["can_preview_orders"] is False
+    assert manual_ticket["can_export_tickets"] is False
+    assert manual_ticket["can_dry_run_orders"] is False
+    assert manual_ticket["can_query_orders"] is True
+    assert manual_ticket["can_query_fills"] is True
+    assert manual_ticket["blockers"] == ["kill_switch_status_unavailable"]
+
+    try:
+        service.preview_manual_ticket(order["order_id"], actor="test")
+    except ValueError as exc:
+        assert "trading controls unavailable" in str(exc)
+        assert "kill_switch_status_unavailable" in str(exc)
+    else:
+        raise AssertionError(
+            "expected missing trading controls to block ticket preview"
+        )
+
+    assert db.get_oms_order_sync(order["order_id"])["status"] == ("manually_confirmed")
+    assert db.list_broker_gateway_events_sync(order_id=order["order_id"]) == []
+
+
+def test_gateway_status_uses_one_consistent_trading_control_snapshot(tmp_path) -> None:
+    class FlappingControls:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def snapshot(self) -> TradingControlSnapshot:
+            self.calls += 1
+            return TradingControlSnapshot(
+                kill_switch_enabled=self.calls > 1,
+                updated_at="2026-08-13T18:00:00+08:00",
+            )
+
+    db = AppDatabase(tmp_path / "broker-gateway.db")
+    db.init_sync()
+    controls = FlappingControls()
+    service = _gateway_service(db=db, trading_controls=controls)
+
+    status = service.get_status()
+    manual_ticket = next(
+        item for item in status["gateways"] if item["gateway_id"] == "manual_ticket"
+    )
+
+    assert controls.calls == 1
+    assert status["kill_switch_status"] == "pass"
+    assert status["kill_switch_enabled"] is False
+    assert manual_ticket["status"] == "available"
 
 
 def test_gateway_status_exposes_disabled_controlled_bridge_policy(
@@ -1202,6 +1281,7 @@ def test_manual_execution_preview_fingerprint_tracks_current_gate_drift(
     service = BrokerGatewayService(
         db=db,
         controlled_bridge_policy=_controlled_bridge_policy(),
+        trading_controls=TradingControlState(db=db),
         current_per_order_confirmation_provider=lambda _order_id: (
             current_confirmation
         ),

@@ -14,6 +14,7 @@ from server.services.broker_lifecycle_evidence_view import (
     BrokerLifecycleEvidenceViewService,
 )
 from server.services.oms import OmsService
+from server.services.trading_controls import resolve_kill_switch_evidence
 
 BROKER_GATEWAY_SCHEMA_VERSION = "karkinos.broker_gateway.v1"
 CONTROLLED_BRIDGE_POLICY_SCHEMA_VERSION = "karkinos.controlled_broker_bridge_policy.v1"
@@ -70,23 +71,35 @@ class BrokerGatewayService:
         return {
             "schema_version": "karkinos.broker_gateway_status.v1",
             "broker_submission_enabled": False,
-            "kill_switch_enabled": bool(kill_switch["enabled"]),
+            "kill_switch_status": kill_switch["status"],
+            "kill_switch_enabled": kill_switch["enabled"],
             "kill_switch_reason": kill_switch["reason"],
+            "kill_switch_updated_at": kill_switch["updated_at"],
+            "kill_switch_evidence_available": kill_switch["evidence_available"],
+            "kill_switch_blockers": list(kill_switch["blockers"]),
             "controlled_bridge_policy": self._controlled_bridge_policy_snapshot(),
-            "gateways": self.list_gateways(),
+            "gateways": self.list_gateways(kill_switch=kill_switch),
         }
 
-    def list_gateways(self) -> list[dict[str, Any]]:
-        kill_switch = self._kill_switch_snapshot()
-        manual_ticket_blocked = bool(kill_switch["enabled"])
+    def list_gateways(
+        self,
+        *,
+        kill_switch: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        if kill_switch is None:
+            kill_switch = self._kill_switch_snapshot()
+        manual_ticket_blocked = kill_switch["status"] != "pass"
+        manual_ticket_status = "available"
+        if kill_switch["status"] == "blocked":
+            manual_ticket_status = "blocked_by_kill_switch"
+        elif kill_switch["status"] == "unavailable":
+            manual_ticket_status = "blocked_by_trading_controls_unavailable"
         return [
             {
                 "schema_version": BROKER_GATEWAY_SCHEMA_VERSION,
                 "gateway_id": "manual_ticket",
                 "display_name": "Manual broker ticket",
-                "status": (
-                    "blocked_by_kill_switch" if manual_ticket_blocked else "available"
-                ),
+                "status": manual_ticket_status,
                 "is_live": False,
                 "can_read_account_facts": False,
                 "can_preview_orders": not manual_ticket_blocked,
@@ -99,9 +112,19 @@ class BrokerGatewayService:
                 "can_query_positions": False,
                 "can_query_cash": False,
                 "requires_human_broker_entry": True,
-                "blockers": ["kill_switch"] if manual_ticket_blocked else [],
+                "blockers": (
+                    ["kill_switch"]
+                    if kill_switch["status"] == "blocked"
+                    else list(kill_switch["blockers"])
+                ),
                 "blocked_reason": (
-                    kill_switch["reason"] if manual_ticket_blocked else ""
+                    kill_switch["reason"]
+                    if kill_switch["status"] == "blocked"
+                    else (
+                        "Trading control state is unavailable; manual tickets fail closed."
+                        if kill_switch["status"] == "unavailable"
+                        else ""
+                    )
                 ),
                 "limitations": [
                     "Creates copyable manual broker tickets only.",
@@ -877,8 +900,12 @@ class BrokerGatewayService:
 
     def _require_kill_switch_clear(self) -> None:
         kill_switch = self._kill_switch_snapshot()
-        if not bool(kill_switch["enabled"]):
+        if kill_switch["status"] == "pass":
             return
+        if kill_switch["status"] == "unavailable":
+            raise ValueError(
+                "trading controls unavailable: " + ", ".join(kill_switch["blockers"])
+            )
         reason = kill_switch["reason"]
         message = "kill switch is enabled"
         if reason:
@@ -886,14 +913,7 @@ class BrokerGatewayService:
         raise ValueError(message)
 
     def _kill_switch_snapshot(self) -> dict[str, Any]:
-        snapshot_getter = getattr(self._trading_controls, "snapshot", None)
-        if not callable(snapshot_getter):
-            return {"enabled": False, "reason": ""}
-        snapshot = snapshot_getter()
-        return {
-            "enabled": bool(getattr(snapshot, "kill_switch_enabled", False)),
-            "reason": str(getattr(snapshot, "reason", "") or "").strip(),
-        }
+        return resolve_kill_switch_evidence(self._trading_controls)
 
     def _controlled_bridge_policy_snapshot(self) -> dict[str, Any]:
         policy = self._controlled_bridge_policy
@@ -1137,15 +1157,15 @@ class BrokerGatewayService:
             ),
             "source": "oms_status",
         }
-        gates["kill_switch_clear"] = {
-            "status": "blocked" if kill_switch["enabled"] else "pass",
-            "evidence_ref": (
-                "trading_controls:kill_switch_enabled"
-                if kill_switch["enabled"]
-                else "trading_controls:kill_switch_clear"
-            ),
+        kill_switch_gate = {
+            "status": "pass" if kill_switch["status"] == "pass" else "blocked",
+            "evidence_ref": kill_switch["evidence_ref"],
             "source": "trading_controls_snapshot",
         }
+        if kill_switch["status"] == "unavailable":
+            kill_switch_gate["evidence_status"] = "unavailable"
+            kill_switch_gate["blockers"] = list(kill_switch["blockers"])
+        gates["kill_switch_clear"] = kill_switch_gate
         gates["connector_health"] = {
             "status": "not_applicable_manual_ticket",
             "evidence_ref": "manual_ticket:local_operator_entry",

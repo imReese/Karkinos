@@ -44,6 +44,8 @@ def test_automation_cockpit_summary_collects_controls_alerts_runs_and_gateways(
     assert {"manual_ticket", "staged_broker_evidence", "live_disabled"}.issubset(
         gateways
     )
+    assert gateways["manual_ticket"]["status"] == "blocked_by_kill_switch"
+    assert gateways["manual_ticket"]["can_preview_orders"] is False
     assert gateways["staged_broker_evidence"]["can_read_account_facts"] is True
     assert gateways["staged_broker_evidence"]["can_submit_orders"] is False
     assert summary["controlled_execution"]["status"] == "no_session_evidence"
@@ -74,6 +76,12 @@ def test_automation_cockpit_summary_includes_runtime_connector_snapshot_evidence
     assert registration["can_submit_orders"] is False
     assert registration["can_cancel_orders"] is False
     assert summary["controlled_execution"]["provider_contact_performed"] is False
+    gateways = {item["gateway_id"]: item for item in summary["gateways"]}
+    assert gateways["manual_ticket"]["status"] == (
+        "blocked_by_trading_controls_unavailable"
+    )
+    assert gateways["manual_ticket"]["can_preview_orders"] is False
+    assert gateways["manual_ticket"]["can_query_orders"] is True
     assert "qmt" not in json.dumps(summary, ensure_ascii=False).lower()
     assert db.list_broker_gateway_events_sync() == []
 
