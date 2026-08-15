@@ -808,7 +808,7 @@ def test_operations_runbook_acceptance_audit_has_evidence_for_completed_capabili
 ):
     audit = build_operations_runbook_acceptance_audit()
 
-    assert audit.required_count == 19
+    assert audit.required_count == 22
     assert audit.completed_count == audit.required_count
     assert audit.is_complete is True
     assert "not investment advice" in audit.limitations[0]
@@ -831,6 +831,9 @@ def test_operations_runbook_acceptance_audit_has_evidence_for_completed_capabili
         "paper_shadow_order_divergence_alerts",
         "runtime_connector_degradation_alerts",
         "operations_source_control_hygiene",
+        "production_daily_candidate_outcome",
+        "daily_candidate_forward_trial",
+        "daily_candidate_production_operator_runbook",
         "simulation_evidence_safety_docs",
     }
 

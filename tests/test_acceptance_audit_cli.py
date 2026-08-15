@@ -522,7 +522,7 @@ def test_acceptance_audit_cli_operations_runbook_filter_outputs_one_audit() -> N
     assert payload["selected_audit"] == "operations_runbook"
     assert [audit["key"] for audit in payload["audits"]] == ["operations_runbook"]
     audit = payload["audits"][0]
-    assert audit["required_count"] == 19
+    assert audit["required_count"] == 22
     assert audit["completed_count"] == audit["required_count"]
     assert {criterion["key"] for criterion in audit["criteria"]} >= {
         "operations_today_runbook",
@@ -543,6 +543,9 @@ def test_acceptance_audit_cli_operations_runbook_filter_outputs_one_audit() -> N
         "paper_shadow_order_divergence_alerts",
         "runtime_connector_degradation_alerts",
         "operations_source_control_hygiene",
+        "production_daily_candidate_outcome",
+        "daily_candidate_forward_trial",
+        "daily_candidate_production_operator_runbook",
         "simulation_evidence_safety_docs",
     }
 
