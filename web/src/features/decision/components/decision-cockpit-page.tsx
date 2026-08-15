@@ -3174,6 +3174,7 @@ function AutomationCockpitPanel({
         {cockpit.daily_candidate_trial ? (
           <DailyCandidateTrialPanel
             trial={cockpit.daily_candidate_trial}
+            runtime={cockpit.daily_candidate_runtime}
             reviewEnabled={!gatewayControlsUnavailable}
           />
         ) : null}

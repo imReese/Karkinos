@@ -586,7 +586,7 @@ function installDecisionFetchMock({
     limitations: [],
   },
   automationCockpitResponse = {
-    schema_version: 'karkinos.automation_cockpit.v2',
+    schema_version: 'karkinos.automation_cockpit.v3',
     broker_submission_enabled: false,
     automation_status: {
       schema_version: 'karkinos.automation_status.v1',
@@ -692,6 +692,29 @@ function installDecisionFetchMock({
       authorizes_execution: false,
       changes_capital_authority: false,
       limitations: ['Forward operating evidence does not guarantee profit.'],
+    },
+    daily_candidate_runtime: {
+      schema_version: 'karkinos.daily_candidate_runtime_status.v1',
+      status: 'monitor_running_due',
+      background_monitor_configured: true,
+      background_monitor_running: true,
+      monitor_task_state: 'running',
+      monitor_task_failure_type: null,
+      run_date: '2026-06-13',
+      schedule_status: 'due',
+      background_attempt_due: true,
+      background_attempt_writes_permitted: true,
+      manual_run_window_open: true,
+      operational_blockers: [],
+      next_safe_action: 'allow_single_claimed_fail_closed_background_attempt',
+      financial_readiness_claimed: false,
+      provider_contact_performed: false,
+      database_writes_performed: false,
+      does_not_submit_broker_order: true,
+      broker_submission_enabled: false,
+      authorizes_execution: false,
+      changes_capital_authority: false,
+      limitations: ['Monitor liveness does not prove financial readiness.'],
     },
     recent_runs: [
       {
@@ -2712,6 +2735,9 @@ test('summarizes controlled automation cockpit status in the decision page', asy
   expect(automation.textContent).toContain(
     'Background schedule: due · 09:35–09:45 Asia/Shanghai',
   );
+  expect(automation.textContent).toContain(
+    'Background monitor: enabled and running · task liveness only; financial readiness is not claimed',
+  );
   expect(automation.textContent).toContain('2026-06-03 · superseded 0');
   expect(automation.textContent).toContain(
     'Latest production outcome: manual order ticket candidate (2)',
@@ -3006,7 +3032,7 @@ test('hands off exact current per-order evidence to Trading without broker actio
   };
   renderDecisionCockpit({
     automationCockpitResponse: {
-      schema_version: 'karkinos.automation_cockpit.v2',
+      schema_version: 'karkinos.automation_cockpit.v3',
       broker_submission_enabled: false,
       automation_status: {
         schema_version: 'karkinos.automation_status.v1',
@@ -3068,7 +3094,7 @@ test('hands off exact current per-order evidence to Trading without broker actio
 test('blocks the Trading handoff when the current per-order source drifts', async () => {
   renderDecisionCockpit({
     automationCockpitResponse: {
-      schema_version: 'karkinos.automation_cockpit.v2',
+      schema_version: 'karkinos.automation_cockpit.v3',
       broker_submission_enabled: false,
       automation_status: {
         schema_version: 'karkinos.automation_status.v1',
@@ -3508,7 +3534,7 @@ test('surfaces bounded controlled execution evidence without live actions', asyn
   renderDecisionCockpit({
     locale: 'en',
     automationCockpitResponse: {
-      schema_version: 'karkinos.automation_cockpit.v2',
+      schema_version: 'karkinos.automation_cockpit.v3',
       broker_submission_enabled: false,
       automation_status: {
         schema_version: 'karkinos.automation_status.v1',
@@ -3702,7 +3728,7 @@ test('surfaces strategy promotion state as paper shadow only without live promot
   renderDecisionCockpit({
     locale: 'en',
     automationCockpitResponse: {
-      schema_version: 'karkinos.automation_cockpit.v2',
+      schema_version: 'karkinos.automation_cockpit.v3',
       broker_submission_enabled: false,
       automation_status: {
         schema_version: 'karkinos.automation_status.v1',
@@ -3754,7 +3780,7 @@ test('surfaces strategy promotion lifecycle audit boundary without bridge contro
   renderDecisionCockpit({
     locale: 'en',
     automationCockpitResponse: {
-      schema_version: 'karkinos.automation_cockpit.v2',
+      schema_version: 'karkinos.automation_cockpit.v3',
       broker_submission_enabled: false,
       automation_status: {
         schema_version: 'karkinos.automation_status.v1',
@@ -4231,7 +4257,7 @@ test('surfaces manual execution alert evidence in automation cockpit without con
   renderDecisionCockpit({
     locale: 'en',
     automationCockpitResponse: {
-      schema_version: 'karkinos.automation_cockpit.v2',
+      schema_version: 'karkinos.automation_cockpit.v3',
       broker_submission_enabled: false,
       automation_status: {
         schema_version: 'karkinos.automation_status.v1',
@@ -4323,7 +4349,7 @@ test('surfaces failed paper shadow automation recovery action without execution 
   renderDecisionCockpit({
     locale: 'en',
     automationCockpitResponse: {
-      schema_version: 'karkinos.automation_cockpit.v2',
+      schema_version: 'karkinos.automation_cockpit.v3',
       broker_submission_enabled: false,
       automation_status: {
         schema_version: 'karkinos.automation_status.v1',

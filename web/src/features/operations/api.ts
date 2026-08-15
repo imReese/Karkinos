@@ -969,8 +969,37 @@ export type DailyCandidateTrial = {
   limitations: string[];
 };
 
+export type DailyCandidateRuntimeStatus = {
+  schema_version: 'karkinos.daily_candidate_runtime_status.v1';
+  status:
+    | 'monitor_disabled'
+    | 'monitor_failed_closed'
+    | 'monitor_running_schedule_blocked'
+    | 'monitor_running_due'
+    | 'monitor_running_waiting';
+  background_monitor_configured: boolean;
+  background_monitor_running: boolean;
+  monitor_task_state: string;
+  monitor_task_failure_type: string | null;
+  run_date: string | null;
+  schedule_status: string;
+  background_attempt_due: boolean;
+  background_attempt_writes_permitted: boolean;
+  manual_run_window_open: boolean;
+  operational_blockers: string[];
+  next_safe_action: string;
+  financial_readiness_claimed: false;
+  provider_contact_performed: false;
+  database_writes_performed: false;
+  does_not_submit_broker_order: true;
+  broker_submission_enabled: false;
+  authorizes_execution: false;
+  changes_capital_authority: false;
+  limitations: string[];
+};
+
 export type AutomationCockpitResponse = {
-  schema_version: 'karkinos.automation_cockpit.v2';
+  schema_version: 'karkinos.automation_cockpit.v3';
   broker_submission_enabled: boolean;
   automation_status: {
     schema_version: 'karkinos.automation_status.v1';
@@ -1003,6 +1032,7 @@ export type AutomationCockpitResponse = {
     payload?: Record<string, unknown>;
   }>;
   daily_candidate_trial: DailyCandidateTrial;
+  daily_candidate_runtime: DailyCandidateRuntimeStatus;
   recent_runs: Array<{
     run_id: string;
     run_type: string;
