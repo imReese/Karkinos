@@ -299,14 +299,14 @@ guide_data_source_configuration
 echo "Mode: ${MODE}"
 echo "Starting Karkinos Web service from ${REPO_ROOT}"
 echo "Log file: ${LOG_FILE}"
-echo "Command: UV_CACHE_DIR=${UV_CACHE_DIR:-.uv-cache} uv run python -m server ${SERVER_ARGS[*]}"
+echo "Command: UV_CACHE_DIR=${UV_CACHE_DIR:-.uv-cache} uv run python -m server ${SERVER_ARGS[*]-}"
 
 if command -v setsid >/dev/null 2>&1; then
 	setsid nohup env "${NO_PROXY_ENV[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
-		uv run python -m server "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
+		uv run python -m server ${SERVER_ARGS[@]+"${SERVER_ARGS[@]}"} >>"${LOG_FILE}" 2>&1 &
 else
 	nohup env "${NO_PROXY_ENV[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
-		uv run python -m server "${SERVER_ARGS[@]}" >>"${LOG_FILE}" 2>&1 &
+		uv run python -m server ${SERVER_ARGS[@]+"${SERVER_ARGS[@]}"} >>"${LOG_FILE}" 2>&1 &
 fi
 
 LAUNCH_PID=$!
