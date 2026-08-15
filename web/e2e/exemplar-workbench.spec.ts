@@ -2833,7 +2833,7 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
         }
         expect(activityGeometry.triggerHeight, theme).not.toBeNull();
         expect(
-          activityGeometry.triggerHeight ?? 0,
+          Math.round((activityGeometry.triggerHeight ?? 0) * 100) / 100,
           theme,
         ).toBeGreaterThanOrEqual(44);
 

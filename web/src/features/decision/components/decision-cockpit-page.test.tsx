@@ -637,6 +637,62 @@ function installDecisionFetchMock({
         created_at: '2026-06-12T09:33:00+08:00',
       },
     ],
+    daily_candidate_trial: {
+      schema_version: 'karkinos.daily_candidate_trial.v1',
+      status: 'collecting_forward_operating_evidence',
+      trial_epoch_id: 'b'.repeat(64),
+      trial_epoch_start_date: '2026-06-03',
+      target_qualifying_trading_days: 20,
+      target_simulated_orders: 50,
+      qualifying_trading_day_count: 7,
+      simulated_order_count: 18,
+      remaining_trading_days: 13,
+      remaining_simulated_orders: 32,
+      strategy_advancement_refs: ['strategy_advancement:fixture'],
+      reviewed_fee_schedule_refs: ['reviewed_fee_schedule:fixture'],
+      superseded_qualifying_day_count: 0,
+      run_scan_truncated: false,
+      latest_daily_run: {
+        run_date: '2026-06-12',
+        status: 'qualifying',
+        run_id: 'daily-candidate:2026-06-12:fixture',
+        decision_outcome: 'manual_order_ticket_candidate',
+        simulated_order_count: 2,
+        blockers: [],
+      },
+      blockers: [
+        'qualifying_trading_days_insufficient',
+        'simulated_order_count_insufficient',
+      ],
+      eligible_for_human_go_no_go_review: false,
+      trial_fingerprint: 'a'.repeat(64),
+      latest_review: null,
+      background_schedule: {
+        schema_version: 'karkinos.daily_candidate_background_schedule.v1',
+        status: 'due',
+        evaluated_at: '2026-06-13T09:40:00+08:00',
+        timezone: 'Asia/Shanghai',
+        run_date: '2026-06-13',
+        decision_window_start: '09:35',
+        decision_window_end: '09:45',
+        due: true,
+        existing_run_id: null,
+        blockers: [],
+        background_writes_enabled: true,
+        broker_submission_enabled: false,
+        authorizes_execution: false,
+      },
+      next_safe_action: 'continue_daily_paper_shadow_collection',
+      profitability_claim: 'not_established',
+      does_not_establish_future_profitability: true,
+      manual_confirmation_required: true,
+      broker_submission_enabled: false,
+      automatic_order_submission_enabled: false,
+      automatic_capital_scaling_enabled: false,
+      authorizes_execution: false,
+      changes_capital_authority: false,
+      limitations: ['Forward operating evidence does not guarantee profit.'],
+    },
     recent_runs: [
       {
         run_id: 'market-session:2026-06-12:0931',
@@ -828,6 +884,7 @@ function installDecisionFetchMock({
   },
   executionReconciliationRunsResponse = [],
   executionReconciliationRunDetailResponse = undefined,
+  dailyCandidateRunResponse = undefined,
   signalActionDetail = 'Risk gate passed; prepare a manual order only if approved.',
   signalActionsResponse = [
     {
@@ -870,6 +927,7 @@ function installDecisionFetchMock({
   brokerOrderQueryResponse?: unknown;
   executionReconciliationRunsResponse?: unknown;
   executionReconciliationRunDetailResponse?: unknown;
+  dailyCandidateRunResponse?: unknown;
   signalActionDetail?: string;
   signalActionsResponse?: unknown;
   journalSourceRef?: string | null;
@@ -959,6 +1017,71 @@ function installDecisionFetchMock({
       }
       if (url.includes('/api/operations/today')) {
         return jsonResponse(operationsTodayResponse);
+      }
+      if (
+        url.includes('/api/automation/daily-candidate/trial/reviews') &&
+        init?.method === 'POST'
+      ) {
+        const request = JSON.parse(String(init.body ?? '{}')) as {
+          expected_trial_fingerprint: string;
+          decision: string;
+          reviewed_by: string;
+          note: string;
+        };
+        return jsonResponse({
+          schema_version: 'karkinos.daily_candidate_trial_review.v1',
+          review_id: 'daily-candidate-review-fixture',
+          trial_fingerprint: request.expected_trial_fingerprint,
+          decision: request.decision,
+          reviewed_by: request.reviewed_by,
+          note: request.note,
+          status: 'recorded',
+          rejection_reasons: [],
+          broker_submission_enabled: false,
+          authorizes_execution: false,
+          changes_capital_authority: false,
+        });
+      }
+      if (url.includes('/api/automation/run/daily-candidate')) {
+        return jsonResponse(
+          dailyCandidateRunResponse ?? {
+            schema_version: 'karkinos.daily_decision_evidence_automation.v3',
+            status: 'paper_shadow_completed',
+            run_id: 'daily-candidate:2026-06-12:fixture',
+            plan_date: '2026-06-12',
+            input_fingerprint: 'b'.repeat(64),
+            production_record_fingerprint: 'c'.repeat(64),
+            decision_outcome: 'no_action',
+            manual_ticket_candidate_count: 0,
+            manual_order_ticket_candidates: [],
+            no_action_reasons: ['market_data_not_trusted'],
+            production_gate: {
+              schema_version: 'karkinos.daily_candidate_production_gate.v1',
+              status: 'blocked',
+              blockers: ['market_data_not_trusted'],
+              broker_submission_enabled: false,
+              authorizes_execution: false,
+              changes_capital_authority: false,
+            },
+            execution_closure: {
+              schema_version: 'karkinos.daily_candidate_execution_closure.v1',
+              status: 'blocked',
+              production_order_count: 1,
+              clear_order_count: 0,
+              blockers: ['execution_reconciliation_not_clear:fixture'],
+              evidence_fingerprint: 'd'.repeat(64),
+              authorizes_execution: false,
+              does_not_submit_broker_order: true,
+              does_not_mutate_production_ledger: true,
+              does_not_change_capital_authority: true,
+            },
+            profitability_claim: 'not_established_by_daily_run',
+            manual_confirmation_required: true,
+            broker_submission_enabled: false,
+            does_not_submit_broker_order: true,
+            does_not_mutate_production_ledger: true,
+          },
+        );
       }
       if (url.includes('/api/automation/cockpit')) {
         return jsonResponse(automationCockpitResponse);
@@ -2583,7 +2706,240 @@ test('summarizes controlled automation cockpit status in the decision page', asy
   );
   expect(automation.textContent).toContain('Next: import broker evidence');
   expect(automation.textContent).toContain('paper/shadow only');
+  expect(automation.textContent).toContain('Production operating trial');
+  expect(automation.textContent).toContain('7/20');
+  expect(automation.textContent).toContain('18/50');
+  expect(automation.textContent).toContain(
+    'Background schedule: due · 09:35–09:45 Asia/Shanghai',
+  );
+  expect(automation.textContent).toContain('2026-06-03 · superseded 0');
+  expect(automation.textContent).toContain(
+    'Latest production outcome: manual order ticket candidate (2)',
+  );
+  expect(automation.textContent).toContain(
+    'It does not establish future profit',
+  );
   expect(automation.textContent).not.toContain('execution_reconciliation_gap');
+});
+
+test('records a daily candidate trial conclusion without authority', async () => {
+  const { fetchMock } = renderDecisionCockpit();
+  const trial = await screen.findByTestId('daily-candidate-trial');
+  const decision = within(trial).getByLabelText('Review decision');
+  const goOption = within(decision).getByRole('option', {
+    name: 'GO: bounded manual trial',
+  });
+  expect(goOption.hasAttribute('disabled')).toBe(true);
+
+  fireEvent.change(within(trial).getByLabelText('Reviewer'), {
+    target: { value: 'owner' },
+  });
+  fireEvent.change(within(trial).getByLabelText('Review note'), {
+    target: { value: 'Continue collecting evidence.' },
+  });
+  fireEvent.click(
+    within(trial).getByRole('button', { name: 'Record human conclusion' }),
+  );
+
+  await waitFor(() => {
+    expect(
+      fetchMock.mock.calls.some(([input, init]) => {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof Request
+              ? input.url
+              : input.toString();
+        return (
+          url.includes('/api/automation/daily-candidate/trial/reviews') &&
+          init?.method === 'POST'
+        );
+      }),
+    ).toBe(true);
+  });
+  const reviewCall = fetchMock.mock.calls.find(([input, init]) => {
+    const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof Request
+          ? input.url
+          : input.toString();
+    return (
+      url.includes('/api/automation/daily-candidate/trial/reviews') &&
+      init?.method === 'POST'
+    );
+  });
+  const payload = JSON.parse(String(reviewCall?.[1]?.body ?? '{}'));
+  expect(payload).toMatchObject({
+    expected_trial_fingerprint: 'a'.repeat(64),
+    decision: 'continue_paper_shadow',
+    reviewed_by: 'owner',
+    note: 'Continue collecting evidence.',
+    confirmation:
+      'record_daily_candidate_trial_review_without_trade_or_capital_authority',
+  });
+});
+
+test('runs the canonical daily candidate without caller trade facts', async () => {
+  const { fetchMock } = renderDecisionCockpit();
+  const trial = await screen.findByTestId('daily-candidate-trial');
+
+  fireEvent.click(
+    within(trial).getByRole('button', {
+      name: 'Run current daily candidate',
+    }),
+  );
+
+  const result = await screen.findByTestId('daily-candidate-run-result');
+  expect(result.textContent).toContain('NO-ACTION · market_data_not_trusted');
+  expect(result.textContent).toContain('no broker order submitted');
+  expect(result.textContent).toContain('prior execution closure: blocked');
+  const runCall = fetchMock.mock.calls.find(([input]) => {
+    const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof Request
+          ? input.url
+          : input.toString();
+    return url.includes('/api/automation/run/daily-candidate');
+  });
+  expect(JSON.parse(String(runCall?.[1]?.body ?? '{}'))).toEqual({});
+  expect(screen.queryByTestId('manual-order-ticket-candidates')).toBeNull();
+});
+
+test('renders a read-only manual ticket candidate without execution authority', async () => {
+  renderDecisionCockpit({
+    dailyCandidateRunResponse: {
+      schema_version: 'karkinos.daily_decision_evidence_automation.v3',
+      input_identity_schema_version:
+        'karkinos.daily_candidate_input_identity.v2',
+      status: 'paper_shadow_completed',
+      run_id: 'daily-candidate:2026-06-12:ticket',
+      plan_date: '2026-06-12',
+      input_fingerprint: 'b'.repeat(64),
+      production_record_fingerprint: 'c'.repeat(64),
+      decision_outcome: 'manual_order_ticket_candidate',
+      manual_ticket_candidate_count: 1,
+      manual_order_ticket_candidates: [
+        {
+          schema_version: 'karkinos.manual_order_ticket_candidate.v1',
+          plan_date: '2026-06-12',
+          intent_id: 'ACTION-9-BATCH-RISK',
+          action_id: 9,
+          symbol: '600519',
+          side: 'buy',
+          asset_class: 'stock',
+          order_type: 'limit',
+          quantity: 100,
+          limit_price: 123.45,
+          estimated_gross_amount: 12345,
+          estimated_total_fee: 5,
+          estimated_net_cash_impact: -12350,
+          fee_rule_id: 'reviewed-account-fees:v1',
+          market_quote: {
+            price: 123.45,
+            timestamp: '2026-06-12T09:34:00+08:00',
+            source: 'fixture',
+            age_seconds_at_decision: 60,
+            max_age_seconds: 300,
+          },
+          paper_shadow: {
+            run_id: 'shadow:2026-06-12',
+            input_fingerprint: 'e'.repeat(64),
+            status: 'within_expectations',
+            divergence_status: 'within_expectations',
+          },
+          strategy_gate_binding: {
+            schema_version: 'karkinos.daily_candidate_strategy_gate_binding.v1',
+            action_id: 9,
+            strategy_ref: 'strategy:ai_formula_shadow:fixture',
+            strategy_advancement_ref: `strategy_advancement:${'a'.repeat(64)}`,
+            reviewed_fee_schedule_ref: `reviewed_fee_schedule:${'b'.repeat(64)}`,
+            comparison_fingerprint: 'c'.repeat(64),
+            human_approval_id: 'approval-fixture',
+            dataset_replay_fingerprint: 'd'.repeat(64),
+            baseline_snapshot_id: 'dataset-fixture',
+            candidate_snapshot_id: 'dataset-fixture',
+            persisted_facts_only: true,
+            provider_contact_performed: false,
+            paper_shadow_evaluation_only: true,
+            authorizes_execution: false,
+            changes_capital_authority: false,
+          },
+          account_truth_binding: {
+            schema_version: 'karkinos.daily_candidate_account_truth_binding.v1',
+            account_truth_ref: 'account_truth:AT-001',
+            source_fingerprint: 'c'.repeat(64),
+            captured_at: '2026-06-12T09:30:00+08:00',
+            age_seconds_at_decision: 300,
+            max_age_seconds: 86400,
+            valuation_snapshot_id: 'valuation-001',
+            ledger_cutoff_id: 7,
+            reconciliation_status: 'pass',
+            ledger_coverage_status: 'covered',
+            persisted_facts_only: true,
+            provider_contact_performed: false,
+            authorizes_execution: false,
+            changes_capital_authority: false,
+          },
+          prior_execution_closure_fingerprint: 'd'.repeat(64),
+          evidence_refs: [],
+          invalidation_conditions: [],
+          ticket_candidate_fingerprint: 'f'.repeat(64),
+          manual_confirmation_required: true,
+          creates_oms_order: false,
+          authorizes_execution: false,
+          broker_submission_enabled: false,
+          does_not_change_capital_authority: true,
+        },
+      ],
+      no_action_reasons: [],
+      production_gate: {
+        schema_version: 'karkinos.daily_candidate_production_gate.v1',
+        status: 'pass',
+        blockers: [],
+        broker_submission_enabled: false,
+        authorizes_execution: false,
+        changes_capital_authority: false,
+      },
+      execution_closure: {
+        schema_version: 'karkinos.daily_candidate_execution_closure.v1',
+        status: 'not_required',
+        production_order_count: 0,
+        clear_order_count: 0,
+        blockers: [],
+        evidence_fingerprint: 'd'.repeat(64),
+        authorizes_execution: false,
+        does_not_submit_broker_order: true,
+        does_not_mutate_production_ledger: true,
+        does_not_change_capital_authority: true,
+      },
+      profitability_claim: 'not_established_by_daily_run',
+      manual_confirmation_required: true,
+      broker_submission_enabled: false,
+      does_not_submit_broker_order: true,
+      does_not_mutate_production_ledger: true,
+    },
+  });
+  const trial = await screen.findByTestId('daily-candidate-trial');
+
+  fireEvent.click(
+    within(trial).getByRole('button', {
+      name: 'Run current daily candidate',
+    }),
+  );
+
+  const tickets = await screen.findByTestId('manual-order-ticket-candidates');
+  expect(tickets.textContent).toContain(
+    'Read-only manual ticket · 600519 · BUY · 100 @ ¥123.45',
+  );
+  expect(tickets.textContent).toContain('Estimated fees ¥5');
+  expect(tickets.textContent).toContain(
+    'Account Truth · Age at decision 300/86400s · Ledger cutoff 7',
+  );
+  expect(tickets.textContent).toContain(
+    'no OMS order, broker submission, or capital expansion is authorized',
+  );
 });
 
 test('hands off exact current per-order evidence to Trading without broker actions', async () => {

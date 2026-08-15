@@ -63,6 +63,7 @@ import { ControlledLedgerCorrectionOperatorPanel } from '../../operations/contro
 import { ControlledSessionRevocationOperatorPanel } from '../../operations/controlled-session-revocation-operator-panel';
 import { ControlledTerminalClearanceOperatorPanel } from '../../operations/controlled-terminal-clearance-operator-panel';
 import { ManualBrokerCancellationTicketPanel } from '../../operations/manual-broker-cancellation-ticket-panel';
+import { DailyCandidateTrialPanel } from './daily-candidate-trial-panel';
 import {
   useCreateManualOrderFromActionMutation,
   useDailyTradingPlanQuery,
@@ -3169,6 +3170,13 @@ function AutomationCockpitPanel({
             </div>
           </div>
         </div>
+
+        {cockpit.daily_candidate_trial ? (
+          <DailyCandidateTrialPanel
+            trial={cockpit.daily_candidate_trial}
+            reviewEnabled={!gatewayControlsUnavailable}
+          />
+        ) : null}
 
         {currentPerOrderReviews ? (
           <div

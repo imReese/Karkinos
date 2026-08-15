@@ -791,6 +791,184 @@ export type PaperShadowRunReviewResponse = {
   does_not_mutate_production_ledger?: boolean;
 };
 
+export type DailyCandidateTrialReview = {
+  schema_version: 'karkinos.daily_candidate_trial_review.v1';
+  review_id: string;
+  trial_fingerprint: string;
+  decision: 'go_to_bounded_manual_trial' | 'continue_paper_shadow' | 'no_go';
+  reviewed_by: string;
+  note: string;
+  status: 'recorded' | 'rejected';
+  rejection_reasons: string[];
+  recorded_at?: string | null;
+  broker_submission_enabled: false;
+  authorizes_execution: false;
+  changes_capital_authority: false;
+};
+
+export type DailyCandidateRunResult = {
+  schema_version: 'karkinos.daily_decision_evidence_automation.v3';
+  input_identity_schema_version: 'karkinos.daily_candidate_input_identity.v2';
+  status: string;
+  run_id: string;
+  plan_date: string;
+  input_fingerprint: string;
+  production_record_fingerprint: string;
+  decision_outcome: 'manual_order_ticket_candidate' | 'no_action';
+  manual_ticket_candidate_count: number;
+  manual_order_ticket_candidates: Array<{
+    schema_version: 'karkinos.manual_order_ticket_candidate.v1';
+    plan_date: string;
+    intent_id: string | null;
+    action_id: string | number | null;
+    symbol: string;
+    side: 'buy' | 'sell';
+    asset_class: string;
+    order_type: 'limit';
+    quantity: number;
+    limit_price: number;
+    estimated_gross_amount: number;
+    estimated_total_fee: number;
+    estimated_net_cash_impact: number;
+    fee_rule_id: string;
+    market_quote: {
+      price: number;
+      timestamp: string;
+      source: string;
+      age_seconds_at_decision: number;
+      max_age_seconds: number;
+    };
+    paper_shadow: {
+      run_id: string;
+      input_fingerprint: string;
+      status: string;
+      divergence_status: string;
+    };
+    strategy_gate_binding: {
+      schema_version: 'karkinos.daily_candidate_strategy_gate_binding.v1';
+      action_id: string | number;
+      strategy_ref: string;
+      strategy_advancement_ref: string;
+      reviewed_fee_schedule_ref: string;
+      comparison_fingerprint: string;
+      human_approval_id: string;
+      dataset_replay_fingerprint: string;
+      baseline_snapshot_id: string;
+      candidate_snapshot_id: string;
+      persisted_facts_only: true;
+      provider_contact_performed: false;
+      paper_shadow_evaluation_only: true;
+      authorizes_execution: false;
+      changes_capital_authority: false;
+    };
+    account_truth_binding: {
+      schema_version: 'karkinos.daily_candidate_account_truth_binding.v1';
+      account_truth_ref: string;
+      source_fingerprint: string;
+      captured_at: string;
+      age_seconds_at_decision: number;
+      max_age_seconds: number;
+      valuation_snapshot_id: string;
+      ledger_cutoff_id: number;
+      reconciliation_status: string;
+      ledger_coverage_status: 'covered';
+      persisted_facts_only: true;
+      provider_contact_performed: false;
+      authorizes_execution: false;
+      changes_capital_authority: false;
+    };
+    prior_execution_closure_fingerprint: string;
+    evidence_refs: string[];
+    invalidation_conditions: string[];
+    ticket_candidate_fingerprint: string;
+    manual_confirmation_required: true;
+    creates_oms_order: false;
+    authorizes_execution: false;
+    broker_submission_enabled: false;
+    does_not_change_capital_authority: true;
+  }>;
+  no_action_reasons: string[];
+  production_gate: {
+    schema_version: 'karkinos.daily_candidate_production_gate.v1';
+    status: 'pass' | 'blocked';
+    blockers: string[];
+    broker_submission_enabled: false;
+    authorizes_execution: false;
+    changes_capital_authority: false;
+  };
+  execution_closure: {
+    schema_version: 'karkinos.daily_candidate_execution_closure.v1';
+    status: 'pass' | 'not_required' | 'blocked';
+    production_order_count: number;
+    clear_order_count: number;
+    blockers: string[];
+    evidence_fingerprint: string;
+    authorizes_execution: false;
+    does_not_submit_broker_order: true;
+    does_not_mutate_production_ledger: true;
+    does_not_change_capital_authority: true;
+  };
+  profitability_claim: 'not_established_by_daily_run';
+  manual_confirmation_required: true;
+  broker_submission_enabled: false;
+  does_not_submit_broker_order: true;
+  does_not_mutate_production_ledger: true;
+};
+
+export type DailyCandidateTrial = {
+  schema_version: 'karkinos.daily_candidate_trial.v1';
+  status: string;
+  trial_epoch_id: string | null;
+  trial_epoch_start_date: string | null;
+  target_qualifying_trading_days: number;
+  target_simulated_orders: number;
+  qualifying_trading_day_count: number;
+  simulated_order_count: number;
+  remaining_trading_days: number;
+  remaining_simulated_orders: number;
+  strategy_advancement_refs: string[];
+  reviewed_fee_schedule_refs: string[];
+  superseded_qualifying_day_count: number;
+  run_scan_truncated: boolean;
+  latest_daily_run: {
+    run_date: string;
+    status: 'qualifying' | 'excluded';
+    run_id: string | null;
+    decision_outcome: 'manual_order_ticket_candidate' | 'no_action' | null;
+    simulated_order_count: number;
+    blockers: string[];
+  } | null;
+  blockers: string[];
+  eligible_for_human_go_no_go_review: boolean;
+  trial_fingerprint: string;
+  latest_review: DailyCandidateTrialReview | null;
+  background_schedule: {
+    schema_version: 'karkinos.daily_candidate_background_schedule.v1';
+    status: string;
+    evaluated_at: string | null;
+    timezone: 'Asia/Shanghai';
+    run_date: string | null;
+    decision_window_start: '09:35';
+    decision_window_end: '09:45';
+    due: boolean;
+    existing_run_id: string | null;
+    blockers: string[];
+    background_writes_enabled: boolean;
+    broker_submission_enabled: false;
+    authorizes_execution: false;
+  };
+  next_safe_action: string;
+  profitability_claim: 'not_established';
+  does_not_establish_future_profitability: true;
+  manual_confirmation_required: true;
+  broker_submission_enabled: false;
+  automatic_order_submission_enabled: false;
+  automatic_capital_scaling_enabled: false;
+  authorizes_execution: false;
+  changes_capital_authority: false;
+  limitations: string[];
+};
+
 export type AutomationCockpitResponse = {
   schema_version: 'karkinos.automation_cockpit.v2';
   broker_submission_enabled: boolean;
@@ -824,6 +1002,7 @@ export type AutomationCockpitResponse = {
     created_at: string;
     payload?: Record<string, unknown>;
   }>;
+  daily_candidate_trial: DailyCandidateTrial;
   recent_runs: Array<{
     run_id: string;
     run_type: string;
@@ -2238,6 +2417,51 @@ export function useAutomationCockpitQuery(enabled = true) {
     staleTime: 5_000,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
+  });
+}
+
+export function useDailyCandidateTrialReviewMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: {
+      expected_trial_fingerprint: string;
+      decision:
+        'go_to_bounded_manual_trial' | 'continue_paper_shadow' | 'no_go';
+      reviewed_by: string;
+      note: string;
+      confirmation: 'record_daily_candidate_trial_review_without_trade_or_capital_authority';
+    }) =>
+      postJson<DailyCandidateTrialReview>(
+        '/api/automation/daily-candidate/trial/reviews',
+        request,
+      ),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['automation', 'cockpit'] }),
+        queryClient.invalidateQueries({ queryKey: ['operations', 'today'] }),
+      ]);
+    },
+  });
+}
+
+export function useRunDailyCandidateMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      postJson<DailyCandidateRunResult>(
+        '/api/automation/run/daily-candidate',
+        {},
+      ),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['automation', 'cockpit'] }),
+        queryClient.invalidateQueries({ queryKey: ['operations', 'today'] }),
+        queryClient.invalidateQueries({ queryKey: ['decision', 'today'] }),
+        queryClient.invalidateQueries({
+          queryKey: ['decision', 'trading-plan'],
+        }),
+      ]);
+    },
   });
 }
 
