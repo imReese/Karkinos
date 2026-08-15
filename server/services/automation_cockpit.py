@@ -13,6 +13,7 @@ from server.services.controlled_execution_operator_view import (
 from server.services.current_per_order_review_projection import (
     build_current_per_order_review_summary,
 )
+from server.services.daily_candidate_trial import DailyCandidateTrialService
 from server.services.strategy_promotion_pipeline import StrategyPromotionPipeline
 
 AUTOMATION_COCKPIT_SCHEMA_VERSION = "karkinos.automation_cockpit.v2"
@@ -72,6 +73,9 @@ class AutomationCockpitService:
             "current_per_order_reviews": build_current_per_order_review_summary(
                 self._current_per_order_dossier_reader
             ),
+            "daily_candidate_trial": DailyCandidateTrialService(
+                db=self._db
+            ).get_status(),
             "open_alert_count": len(open_alerts),
             "open_alerts": open_alerts,
             "recent_runs": recent_runs,

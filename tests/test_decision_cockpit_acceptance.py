@@ -289,6 +289,15 @@ def test_fixture_cache_to_decision_api_dashboard_contract(
             db=db,
         ),
     )
+    monkeypatch.setattr(
+        "server.routes.decision._account_truth_gate_evidence",
+        lambda state: {
+            "gate_status": "pass",
+            "data_freshness_status": "fresh",
+            "unresolved_mismatch_count": 0,
+            "import_run_id": "fixture-import",
+        },
+    )
 
     today = asyncio.run(_decision_endpoint("/api/decision/today")())
     intraday = asyncio.run(_decision_endpoint("/api/decision/intraday")())

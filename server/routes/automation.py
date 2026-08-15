@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from server.services.automation_control import AutomationControlService
 from server.services.broker_connector_runtime import build_broker_connectors
@@ -40,6 +40,30 @@ class AlertScanRequest(BaseModel):
     market_health: dict[str, Any] | None = None
     account_truth: dict[str, Any] | None = None
     paper_shadow_run: dict[str, Any] | None = None
+
+
+class DailyCandidateTrialReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_trial_fingerprint: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[a-f0-9]{64}$",
+    )
+    decision: Literal[
+        "go_to_bounded_manual_trial",
+        "continue_paper_shadow",
+        "no_go",
+    ]
+    reviewed_by: str = Field(min_length=1, max_length=128)
+    note: str = Field(min_length=1, max_length=2000)
+    confirmation: Literal[
+        "record_daily_candidate_trial_review_without_trade_or_capital_authority"
+    ]
+
+
+class DailyCandidateRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
 
 def create_router() -> APIRouter:
@@ -121,6 +145,52 @@ def create_router() -> APIRouter:
             "broker_submission_enabled": False,
             "does_not_submit_broker_order": True,
         }
+
+    @r.post("/run/daily-candidate")
+    async def run_daily_candidate(
+        request: DailyCandidateRunRequest | None = None,
+    ) -> dict[str, Any]:
+        """Run the canonical current-facts chain; caller supplies no trade facts."""
+
+        from server.app import get_app_state
+        from server.services.daily_decision_evidence_automation import (
+            build_daily_decision_evidence_automation_service,
+        )
+
+        del request
+        state = get_app_state()
+        return await build_daily_decision_evidence_automation_service(state).run_once()
+
+    @r.get("/daily-candidate/trial")
+    async def get_daily_candidate_trial() -> dict[str, Any]:
+        from server.app import get_app_state
+        from server.services.daily_candidate_trial import DailyCandidateTrialService
+
+        return DailyCandidateTrialService(db=get_app_state().db).get_status()
+
+    @r.post("/daily-candidate/trial/reviews")
+    async def record_daily_candidate_trial_review(
+        request: DailyCandidateTrialReviewRequest,
+    ) -> dict[str, Any]:
+        from server.app import get_app_state
+        from server.services.daily_candidate_trial import (
+            DailyCandidateTrialReviewRejected,
+            DailyCandidateTrialService,
+        )
+
+        try:
+            return DailyCandidateTrialService(db=get_app_state().db).record_review(
+                **request.model_dump()
+            )
+        except DailyCandidateTrialReviewRejected as exc:
+            raise HTTPException(status_code=409, detail=exc.evidence) from exc
+
+    @r.get("/daily-candidate/trial/reviews")
+    async def list_daily_candidate_trial_reviews() -> list[dict[str, Any]]:
+        from server.app import get_app_state
+        from server.services.daily_candidate_trial import DailyCandidateTrialService
+
+        return DailyCandidateTrialService(db=get_app_state().db).list_reviews()
 
     @r.post("/run/market-session")
     async def run_market_session(

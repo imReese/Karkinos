@@ -6,17 +6,67 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
 from collections.abc import Awaitable, Callable
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from server.services.automation_control import AutomationControlService
+from server.services.daily_candidate_execution_closure import (
+    build_daily_candidate_execution_closure,
+)
 from server.services.paper_shadow_run import run_paper_shadow_from_trading_plan
 
 DAILY_DECISION_EVIDENCE_AUTOMATION_SCHEMA_VERSION = (
-    "karkinos.daily_decision_evidence_automation.v1"
+    "karkinos.daily_decision_evidence_automation.v3"
 )
 DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE = "daily_decision_evidence"
+DAILY_CANDIDATE_BACKGROUND_ATTEMPT_RUN_TYPE = "daily_candidate_background_attempt"
+DAILY_CANDIDATE_BACKGROUND_SCHEDULE_SCHEMA_VERSION = (
+    "karkinos.daily_candidate_background_schedule.v1"
+)
+DAILY_CANDIDATE_DECISION_WINDOW_SCHEMA_VERSION = (
+    "karkinos.daily_candidate_decision_window.v1"
+)
+DAILY_CANDIDATE_DECISION_WINDOW_START_MINUTE = 9 * 60 + 35
+DAILY_CANDIDATE_DECISION_WINDOW_END_MINUTE = 9 * 60 + 45
+DAILY_CANDIDATE_MAX_QUOTE_AGE_SECONDS = 300
+DAILY_CANDIDATE_NOTIFICATION_TIMEOUT_SECONDS = 10
+DAILY_CANDIDATE_INPUT_IDENTITY_SCHEMA_VERSION = (
+    "karkinos.daily_candidate_input_identity.v2"
+)
+
+_TRUSTED_MARKET_STATUSES = {"complete", "confirmed", "fresh", "live", "pass"}
+_TERMINAL_EVIDENCE_STATUSES = {
+    "no_candidates",
+    "no_risk_passed_order_intents",
+    "paper_shadow_completed",
+}
+_SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
+_VERIFIED_CALENDAR_STATUSES = {"accepted", "confirmed", "verified"}
+_PRODUCTION_RECORD_FIELDS = (
+    "schema_version",
+    "input_identity_schema_version",
+    "input_fingerprint",
+    "input_snapshot",
+    "candidate_count",
+    "risk",
+    "paper_shadow",
+    "execution_closure",
+    "production_gate",
+    "decision_outcome",
+    "manual_ticket_candidate_count",
+    "manual_order_ticket_candidates",
+    "no_action_reasons",
+    "strategy_bindings",
+    "profitability_claim",
+    "manual_confirmation_required",
+    "broker_submission_enabled",
+    "does_not_submit_broker_order",
+    "does_not_mutate_production_ledger",
+    "limitations",
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +98,7 @@ class DailyDecisionEvidenceAutomationService:
 
     async def run_once(self) -> dict[str, Any]:
         """Advance one fail-closed, idempotent evidence cycle."""
-        started_at = datetime.now().isoformat()
+        started_at = datetime.now(timezone.utc).isoformat()
         decision_before, plan_before = await self._plan_reader()
         plan_date = _plan_date(decision_before, plan_before)
         candidate_count = _candidate_count(decision_before, plan_before)
@@ -189,15 +239,39 @@ class DailyDecisionEvidenceAutomationService:
             source_ref=paper_shadow_run.get("run_id"),
             paper_shadow_run=paper_shadow_run,
         )
+        try:
+            decision_final, plan_final = await self._plan_reader()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            return self._record_cycle(
+                status="post_shadow_plan_failed",
+                plan_date=plan_date,
+                decision_payload=decision_after,
+                trading_plan=plan_after,
+                started_at=started_at,
+                risk_result=risk_result,
+                paper_shadow_run=paper_shadow_run,
+                candidate_count=candidate_count,
+                limitations=[
+                    "Paper/shadow evidence was persisted, but the current plan "
+                    "could not be rebuilt; the production outcome is NO-ACTION."
+                ],
+                additional_blockers=[
+                    f"post_shadow_plan_read_failed:{type(exc).__name__}"
+                ],
+            )
+
+        final_plan_date = _plan_date(decision_final, plan_final)
         result = self._record_cycle(
             status="paper_shadow_completed",
-            plan_date=plan_date,
-            decision_payload=decision_after,
-            trading_plan=plan_after,
+            plan_date=final_plan_date,
+            decision_payload=decision_final,
+            trading_plan=plan_final,
             started_at=started_at,
             risk_result=risk_result,
             paper_shadow_run=paper_shadow_run,
-            candidate_count=candidate_count,
+            candidate_count=_candidate_count(decision_final, plan_final),
             limitations=[],
         )
         if _is_new_paper_shadow_evidence(previous_run, paper_shadow_run):
@@ -225,23 +299,66 @@ class DailyDecisionEvidenceAutomationService:
         paper_shadow_run: dict[str, Any] | None,
         candidate_count: int,
         limitations: list[str],
+        additional_blockers: list[str] | None = None,
     ) -> dict[str, Any]:
-        finished_at = datetime.now().isoformat()
-        fingerprint = _evidence_fingerprint(decision_payload, trading_plan)
+        finished_at = datetime.now(timezone.utc).isoformat()
+        decision_plan_fingerprint = _evidence_fingerprint(
+            decision_payload,
+            trading_plan,
+        )
         risk_summary = _risk_summary(risk_result, decision_payload)
         paper_shadow_summary = _paper_shadow_summary(paper_shadow_run)
+        execution_closure = build_daily_candidate_execution_closure(self._db)
+        production = _production_outcome(
+            cycle_status=status,
+            plan_date=plan_date,
+            decision_payload=decision_payload,
+            trading_plan=trading_plan,
+            paper_shadow=paper_shadow_summary,
+            execution_closure=execution_closure,
+            additional_blockers=additional_blockers or [],
+        )
+        production["input_snapshot"][
+            "decision_plan_fingerprint"
+        ] = decision_plan_fingerprint
+        fingerprint = daily_candidate_input_fingerprint(
+            {
+                **production,
+                "risk": risk_summary,
+                "paper_shadow": paper_shadow_summary,
+                "execution_closure": execution_closure,
+            }
+        )
         payload = {
             "schema_version": DAILY_DECISION_EVIDENCE_AUTOMATION_SCHEMA_VERSION,
+            "input_identity_schema_version": (
+                DAILY_CANDIDATE_INPUT_IDENTITY_SCHEMA_VERSION
+            ),
             "input_fingerprint": fingerprint,
+            "input_snapshot": production["input_snapshot"],
             "candidate_count": candidate_count,
             "risk": risk_summary,
             "paper_shadow": paper_shadow_summary,
+            "execution_closure": execution_closure,
+            "production_gate": production["production_gate"],
+            "decision_outcome": production["decision_outcome"],
+            "manual_ticket_candidate_count": production[
+                "manual_ticket_candidate_count"
+            ],
+            "manual_order_ticket_candidates": production[
+                "manual_order_ticket_candidates"
+            ],
+            "no_action_reasons": production["no_action_reasons"],
+            "strategy_bindings": production["strategy_bindings"],
+            "profitability_claim": "not_established_by_daily_run",
             "manual_confirmation_required": True,
             "broker_submission_enabled": False,
             "does_not_submit_broker_order": True,
             "does_not_mutate_production_ledger": True,
             "limitations": list(limitations),
         }
+        production_record_fingerprint = daily_candidate_record_fingerprint(payload)
+        payload["production_record_fingerprint"] = production_record_fingerprint
         row = self._db.upsert_automation_run_sync(
             {
                 "run_id": (
@@ -260,13 +377,30 @@ class DailyDecisionEvidenceAutomationService:
         )
         return {
             "schema_version": DAILY_DECISION_EVIDENCE_AUTOMATION_SCHEMA_VERSION,
+            "input_identity_schema_version": (
+                DAILY_CANDIDATE_INPUT_IDENTITY_SCHEMA_VERSION
+            ),
             "status": status,
             "run_id": row["run_id"],
             "plan_date": plan_date,
             "input_fingerprint": fingerprint,
+            "input_snapshot": production["input_snapshot"],
             "candidate_count": candidate_count,
             "risk": risk_summary,
             "paper_shadow": paper_shadow_summary,
+            "execution_closure": execution_closure,
+            "production_gate": production["production_gate"],
+            "decision_outcome": production["decision_outcome"],
+            "manual_ticket_candidate_count": production[
+                "manual_ticket_candidate_count"
+            ],
+            "manual_order_ticket_candidates": production[
+                "manual_order_ticket_candidates"
+            ],
+            "no_action_reasons": production["no_action_reasons"],
+            "strategy_bindings": production["strategy_bindings"],
+            "profitability_claim": "not_established_by_daily_run",
+            "production_record_fingerprint": production_record_fingerprint,
             "manual_confirmation_required": True,
             "broker_submission_enabled": False,
             "does_not_submit_broker_order": True,
@@ -295,9 +429,56 @@ class DailyDecisionEvidenceAutomationService:
             "仍需在 Web 中人工复核；未创建或提交真实订单。"
         )
         try:
-            await asyncio.to_thread(sender, title=title, message=message)
+            await asyncio.wait_for(
+                asyncio.to_thread(sender, title=title, message=message),
+                timeout=DAILY_CANDIDATE_NOTIFICATION_TIMEOUT_SECONDS,
+            )
         except Exception as exc:
             logger.warning("Automatic evidence notification failed", exc_info=True)
+            return {
+                "status": "failed",
+                "sent": False,
+                "error_type": type(exc).__name__,
+            }
+        return {"status": "sent", "sent": True}
+
+    async def _send_no_action_notification(
+        self,
+        *,
+        result: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Notify a background NO-ACTION without exposing financial values."""
+
+        sender = getattr(self._notifier, "send", None)
+        if not callable(sender):
+            return {"status": "notifier_unavailable", "sent": False}
+        plan_date = str(result.get("plan_date") or "unknown")
+        reasons = [
+            str(item) for item in result.get("no_action_reasons") or [] if str(item)
+        ]
+        reason_lines = "\n".join(f"- {item}" for item in reasons[:8])
+        if len(reasons) > 8:
+            reason_lines += f"\n- 其余 {len(reasons) - 8} 项请在 Web 中复核"
+        message = (
+            "每日候选运行已安全结束为 NO-ACTION。\n"
+            f"市场日期: {plan_date}\n"
+            f"阻断项:\n{reason_lines or '- no_strategy_action'}\n"
+            "请在决策窗口内查看持久化证据；未创建 OMS 订单、未提交券商订单、"
+            "未改变资金额度。"
+        )
+        try:
+            await asyncio.wait_for(
+                asyncio.to_thread(
+                    sender,
+                    title=f"Karkinos 每日候选 NO-ACTION: {plan_date}",
+                    message=message,
+                ),
+                timeout=DAILY_CANDIDATE_NOTIFICATION_TIMEOUT_SECONDS,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Daily candidate NO-ACTION notification failed", exc_info=True
+            )
             return {
                 "status": "failed",
                 "sent": False,
@@ -332,18 +513,418 @@ async def run_daily_decision_evidence_automation_loop(
     *,
     state: Any,
     interval_seconds: float,
+    clock: Callable[[], datetime] | None = None,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> None:
-    """Run the safe evidence chain now and on each live polling interval."""
+    """Run at most once in the verified trading day's decision window."""
     service = build_daily_decision_evidence_automation_service(state)
     interval = max(float(interval_seconds), 1.0)
+    current_time = clock or (lambda: datetime.now(timezone.utc))
     while True:
         try:
-            await service.run_once()
+            schedule = project_daily_candidate_background_schedule(
+                db=state.db,
+                now=current_time(),
+            )
+            if schedule["due"]:
+                await _run_claimed_background_attempt(
+                    db=state.db,
+                    service=service,
+                    schedule=schedule,
+                )
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("Unexpected daily decision evidence automation failure")
-        await asyncio.sleep(interval)
+        await sleep(interval)
+
+
+def project_daily_candidate_background_schedule(
+    *,
+    db: Any,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Project the persisted-calendar, once-per-day background schedule.
+
+    The projection is read-only. Missing calendar evidence, an unverified day,
+    a missed cutoff, or an existing run all keep the background writer closed.
+    Manual endpoint runs remain separately available and auditable.
+    """
+    evaluated_at = now or datetime.now(timezone.utc)
+    if evaluated_at.tzinfo is None or evaluated_at.utcoffset() is None:
+        return _background_schedule_result(
+            status="blocked_clock_not_timezone_aware",
+            evaluated_at=None,
+            run_date=None,
+            due=False,
+            blockers=["background_schedule_clock_not_timezone_aware"],
+        )
+
+    shanghai_now = evaluated_at.astimezone(_SHANGHAI_TZ)
+    run_date = shanghai_now.date().isoformat()
+    evaluated_at_text = evaluated_at.isoformat()
+    calendar_reader = getattr(db, "get_market_calendar_snapshot_sync", None)
+    calendar = (
+        calendar_reader(exchange="SSE", year=shanghai_now.year)
+        if callable(calendar_reader)
+        else None
+    )
+    if not isinstance(calendar, dict):
+        return _background_schedule_result(
+            status="blocked_market_calendar_missing",
+            evaluated_at=evaluated_at_text,
+            run_date=run_date,
+            due=False,
+            blockers=["market_calendar_snapshot_missing"],
+        )
+    if str(calendar.get("official_verification_status") or "").lower() not in (
+        _VERIFIED_CALENDAR_STATUSES
+    ):
+        return _background_schedule_result(
+            status="blocked_market_calendar_not_verified",
+            evaluated_at=evaluated_at_text,
+            run_date=run_date,
+            due=False,
+            blockers=["market_calendar_not_officially_verified"],
+        )
+    days = _json_object_list(calendar.get("days_json"))
+    calendar_day = next(
+        (item for item in days if str(item.get("date") or "") == run_date),
+        None,
+    )
+    if calendar_day is None:
+        return _background_schedule_result(
+            status="blocked_market_calendar_day_missing",
+            evaluated_at=evaluated_at_text,
+            run_date=run_date,
+            due=False,
+            blockers=["market_calendar_day_missing"],
+        )
+    if calendar_day.get("is_trading_day") is not True:
+        return _background_schedule_result(
+            status="not_trading_day",
+            evaluated_at=evaluated_at_text,
+            run_date=run_date,
+            due=False,
+            blockers=[],
+        )
+
+    run_reader = getattr(db, "list_automation_runs_sync", None)
+    attempts = (
+        run_reader(
+            run_type=DAILY_CANDIDATE_BACKGROUND_ATTEMPT_RUN_TYPE,
+            run_date=run_date,
+            limit=1,
+            offset=0,
+        )
+        if callable(run_reader)
+        else []
+    )
+    if attempts:
+        return _background_schedule_result(
+            status="already_attempted",
+            evaluated_at=evaluated_at_text,
+            run_date=run_date,
+            due=False,
+            blockers=[],
+            existing_run_id=str(attempts[0].get("run_id") or "") or None,
+        )
+    existing = (
+        run_reader(
+            run_type=DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE,
+            run_date=run_date,
+            limit=1,
+            offset=0,
+        )
+        if callable(run_reader)
+        else []
+    )
+    if existing:
+        return _background_schedule_result(
+            status="already_recorded",
+            evaluated_at=evaluated_at_text,
+            run_date=run_date,
+            due=False,
+            blockers=[],
+            existing_run_id=str(existing[0].get("run_id") or "") or None,
+        )
+
+    minute_of_day = shanghai_now.hour * 60 + shanghai_now.minute
+    if minute_of_day < DAILY_CANDIDATE_DECISION_WINDOW_START_MINUTE:
+        status = "waiting_for_decision_window"
+        blockers: list[str] = []
+    elif minute_of_day >= DAILY_CANDIDATE_DECISION_WINDOW_END_MINUTE:
+        status = "missed_decision_window"
+        blockers = ["daily_candidate_background_window_missed"]
+    else:
+        status = "due"
+        blockers = []
+    return _background_schedule_result(
+        status=status,
+        evaluated_at=evaluated_at_text,
+        run_date=run_date,
+        due=status == "due",
+        blockers=blockers,
+    )
+
+
+def _background_schedule_result(
+    *,
+    status: str,
+    evaluated_at: str | None,
+    run_date: str | None,
+    due: bool,
+    blockers: list[str],
+    existing_run_id: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "schema_version": DAILY_CANDIDATE_BACKGROUND_SCHEDULE_SCHEMA_VERSION,
+        "status": status,
+        "evaluated_at": evaluated_at,
+        "timezone": "Asia/Shanghai",
+        "run_date": run_date,
+        "decision_window_start": "09:35",
+        "decision_window_end": "09:45",
+        "due": due,
+        "existing_run_id": existing_run_id,
+        "blockers": list(dict.fromkeys(blockers)),
+        "background_writes_enabled": due,
+        "broker_submission_enabled": False,
+        "authorizes_execution": False,
+    }
+
+
+async def _run_claimed_background_attempt(
+    *,
+    db: Any,
+    service: DailyDecisionEvidenceAutomationService,
+    schedule: dict[str, Any],
+) -> None:
+    run_date = str(schedule.get("run_date") or "")
+    claimed_at = str(schedule.get("evaluated_at") or "")
+    claim_writer = getattr(db, "claim_daily_candidate_background_attempt_sync", None)
+    if not run_date or not claimed_at or not callable(claim_writer):
+        raise RuntimeError("daily candidate background attempt claim unavailable")
+    claim_payload = {
+        "schema_version": "karkinos.daily_candidate_background_attempt.v1",
+        "schedule": schedule,
+        "status": "claimed",
+        "result_run_id": None,
+        "result_plan_date": None,
+        "result_status": None,
+        "decision_outcome": None,
+        "input_fingerprint": None,
+        "notification": None,
+        "operator_alert": None,
+        "manual_confirmation_required": True,
+        "broker_submission_enabled": False,
+        "authorizes_execution": False,
+        "changes_capital_authority": False,
+    }
+    claim = claim_writer(
+        run_date=run_date,
+        claimed_at=claimed_at,
+        payload=claim_payload,
+    )
+    if claim.get("claimed") is not True:
+        return
+    attempt_row = dict(claim.get("run") or {})
+    try:
+        result = await service.run_once()
+    except asyncio.CancelledError:
+        operator_alert = _record_daily_candidate_background_alert(
+            db=db,
+            run_date=run_date,
+            outcome="interrupted_fail_closed",
+            result=None,
+            error_type="CancelledError",
+        )
+        _finish_background_attempt(
+            db=db,
+            attempt_row=attempt_row,
+            payload={
+                **claim_payload,
+                "status": "interrupted_fail_closed",
+                "operator_alert": operator_alert,
+            },
+            status="interrupted_fail_closed",
+            source_ref=None,
+        )
+        raise
+    except Exception as exc:
+        operator_alert = _record_daily_candidate_background_alert(
+            db=db,
+            run_date=run_date,
+            outcome="failed_closed",
+            result=None,
+            error_type=type(exc).__name__,
+        )
+        _finish_background_attempt(
+            db=db,
+            attempt_row=attempt_row,
+            payload={
+                **claim_payload,
+                "status": "failed_closed",
+                "error_type": type(exc).__name__,
+                "operator_alert": operator_alert,
+            },
+            status="failed_closed",
+            source_ref=None,
+        )
+        raise
+    decision_outcome = str(result.get("decision_outcome") or "no_action")
+    if decision_outcome == "no_action":
+        notifier = getattr(service, "_send_no_action_notification", None)
+        notification = (
+            await notifier(result=result)
+            if callable(notifier)
+            else {"status": "notifier_unavailable", "sent": False}
+        )
+    else:
+        notification = _object_dict(result.get("notification")) or {
+            "status": "notifier_unavailable",
+            "sent": False,
+        }
+    operator_alert = _record_daily_candidate_background_alert(
+        db=db,
+        run_date=run_date,
+        outcome=decision_outcome,
+        result=result,
+        error_type=None,
+    )
+    _finish_background_attempt(
+        db=db,
+        attempt_row=attempt_row,
+        payload={
+            **claim_payload,
+            "status": "completed",
+            "result_run_id": result.get("run_id"),
+            "result_plan_date": result.get("plan_date"),
+            "result_status": result.get("status"),
+            "decision_outcome": decision_outcome,
+            "input_fingerprint": result.get("input_fingerprint"),
+            "no_action_reasons": list(result.get("no_action_reasons") or [])[:100],
+            "no_action_reason_count": len(result.get("no_action_reasons") or []),
+            "manual_ticket_candidate_count": _count(
+                result.get("manual_ticket_candidate_count")
+            ),
+            "notification": notification,
+            "operator_alert": operator_alert,
+        },
+        status="completed",
+        source_ref=str(result.get("run_id") or "") or None,
+    )
+
+
+def _record_daily_candidate_background_alert(
+    *,
+    db: Any,
+    run_date: str,
+    outcome: str,
+    result: dict[str, Any] | None,
+    error_type: str | None,
+) -> dict[str, Any]:
+    """Persist one privacy-minimized operator alert for the claimed attempt."""
+
+    writer = getattr(db, "upsert_automation_alert_sync", None)
+    if not callable(writer):
+        return {"status": "alert_store_unavailable", "recorded": False}
+    payload = _object_dict(result)
+    no_action_reasons = [
+        str(item) for item in payload.get("no_action_reasons") or [] if str(item)
+    ]
+    normalized_outcome = str(outcome or "failed_closed")
+    manual_ticket_count = _count(payload.get("manual_ticket_candidate_count"))
+    if normalized_outcome == "manual_order_ticket_candidate":
+        title = "Daily candidate tickets require human review"
+        detail = (
+            f"The {run_date} background run produced {manual_ticket_count} read-only "
+            "ticket candidate(s). No OMS or broker order was created."
+        )
+        severity = "warning"
+        suggested_action = "review_read_only_daily_candidate_tickets"
+    elif normalized_outcome == "no_action":
+        title = "Daily candidate run ended NO-ACTION"
+        detail = (
+            f"The {run_date} background run ended NO-ACTION. Review the named "
+            "persisted blockers before the next clean trading window."
+        )
+        severity = "warning"
+        suggested_action = "review_daily_candidate_no_action_blockers"
+    else:
+        title = "Daily candidate background attempt failed closed"
+        detail = (
+            f"The {run_date} background attempt ended {normalized_outcome}. "
+            "No automatic retry, OMS order, or broker action is permitted."
+        )
+        severity = "critical"
+        suggested_action = "inspect_background_attempt_and_wait_for_next_window"
+    alert_payload = {
+        "schema_version": "karkinos.daily_candidate_background_alert.v1",
+        "run_date": run_date,
+        "outcome": normalized_outcome,
+        "result_run_id": payload.get("run_id"),
+        "input_fingerprint": payload.get("input_fingerprint"),
+        "no_action_reasons": no_action_reasons[:100],
+        "no_action_reason_count": len(no_action_reasons),
+        "no_action_reasons_truncated": len(no_action_reasons) > 100,
+        "manual_ticket_candidate_count": manual_ticket_count,
+        "error_type": error_type,
+        "suggested_action": suggested_action,
+        "requires_manual_review": True,
+        "manual_confirmation_required": True,
+        "broker_submission_enabled": False,
+        "authorizes_execution": False,
+        "does_not_create_oms_order": True,
+        "does_not_mutate_production_ledger": True,
+        "changes_capital_authority": False,
+    }
+    try:
+        alert = writer(
+            alert_key=f"daily_candidate_background:{run_date}:{normalized_outcome}",
+            severity=severity,
+            category="daily_candidate_background",
+            title=title,
+            detail=detail,
+            source="daily_candidate_background_attempt",
+            source_ref=str(payload.get("run_id") or "") or run_date,
+            payload=alert_payload,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Daily candidate background alert persistence failed", exc_info=True
+        )
+        return {
+            "status": "alert_store_failed",
+            "recorded": False,
+            "error_type": type(exc).__name__,
+        }
+    return {
+        "status": "recorded",
+        "recorded": True,
+        "alert_id": alert.get("id"),
+        "alert_key": alert.get("alert_key"),
+        "severity": alert.get("severity"),
+    }
+
+
+def _finish_background_attempt(
+    *,
+    db: Any,
+    attempt_row: dict[str, Any],
+    payload: dict[str, Any],
+    status: str,
+    source_ref: str | None,
+) -> None:
+    db.upsert_automation_run_sync(
+        {
+            **attempt_row,
+            "status": status,
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+            "source_ref": source_ref,
+            "payload": payload,
+        }
+    )
 
 
 def _policy_allows_paper_shadow(status: dict[str, Any]) -> bool:
@@ -388,11 +969,30 @@ def _evidence_fingerprint(
 ) -> str:
     summary = _object_dict(decision_payload.get("summary"))
     portfolio = _object_dict(summary.get("portfolio"))
+    account_truth = _object_dict(summary.get("account_truth"))
+    market = _object_dict(summary.get("market_data"))
     payload = {
         "decision_date": decision_payload.get("decision_date"),
         "decision": decision_payload.get("decision"),
         "valuation_snapshot_id": portfolio.get("valuation_snapshot_id"),
         "ledger_cutoff_id": portfolio.get("ledger_cutoff_id"),
+        "account_truth": {
+            "schema_version": account_truth.get("schema_version"),
+            "promotion_status": account_truth.get("promotion_status"),
+            "gate_status": account_truth.get("gate_status"),
+            "data_freshness_status": account_truth.get("data_freshness_status"),
+            "unresolved_mismatch_count": account_truth.get("unresolved_mismatch_count"),
+            "import_run_id": account_truth.get("import_run_id"),
+            "source_fingerprint": account_truth.get("source_fingerprint"),
+            "captured_at": account_truth.get("captured_at"),
+            "max_age_seconds": account_truth.get("max_age_seconds"),
+            "reconciliation_status": account_truth.get("reconciliation_status"),
+            "ledger_coverage": _object_dict(account_truth.get("ledger_coverage")),
+        },
+        "market_data": {
+            "source_health": market.get("source_health"),
+            "latest_quote_timestamp": market.get("latest_quote_timestamp"),
+        },
         "candidates": [
             {
                 "action_id": item.get("action_id"),
@@ -421,6 +1021,785 @@ def _evidence_fingerprint(
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
+def daily_candidate_input_fingerprint(payload: dict[str, Any]) -> str:
+    """Bind every outcome-relevant source while ignoring wall-clock-only age drift."""
+
+    input_snapshot = _object_dict(payload.get("input_snapshot"))
+    production_gate = _object_dict(payload.get("production_gate"))
+    paper_shadow = _object_dict(payload.get("paper_shadow"))
+    execution_closure = _object_dict(payload.get("execution_closure"))
+    risk = _object_dict(payload.get("risk"))
+    identity = {
+        "schema_version": DAILY_CANDIDATE_INPUT_IDENTITY_SCHEMA_VERSION,
+        "decision_plan_fingerprint": input_snapshot.get("decision_plan_fingerprint"),
+        "production_gate": {
+            "status": production_gate.get("status"),
+            "blockers": list(production_gate.get("blockers") or []),
+        },
+        "decision_outcome": payload.get("decision_outcome"),
+        "risk": {
+            "status": risk.get("status"),
+            "error_type": risk.get("error_type"),
+            "error_fingerprint": risk.get("error_fingerprint"),
+            "blockers": _object_list(risk.get("blockers")),
+        },
+        "strategy_gate_bindings": _object_list(
+            input_snapshot.get("strategy_gate_bindings")
+        ),
+        "paper_shadow": {
+            "run_id": paper_shadow.get("run_id"),
+            "input_fingerprint": paper_shadow.get("input_fingerprint"),
+            "status": paper_shadow.get("status"),
+            "divergence_status": paper_shadow.get("divergence_status"),
+            "simulated_order_count": paper_shadow.get("simulated_order_count"),
+            "simulated_fill_count": paper_shadow.get("simulated_fill_count"),
+        },
+        "execution_closure": {
+            "status": execution_closure.get("status"),
+            "evidence_fingerprint": execution_closure.get("evidence_fingerprint"),
+        },
+    }
+    return _fingerprint_json(identity)
+
+
+def _production_outcome(
+    *,
+    cycle_status: str,
+    plan_date: str,
+    decision_payload: dict[str, Any],
+    trading_plan: dict[str, Any],
+    paper_shadow: dict[str, Any],
+    execution_closure: dict[str, Any],
+    additional_blockers: list[str],
+) -> dict[str, Any]:
+    """Resolve one deterministic ticket-candidate or NO-ACTION conclusion."""
+
+    blockers = list(additional_blockers)
+    decision_date = str(decision_payload.get("decision_date") or "")
+    plan_contract_date = str(trading_plan.get("plan_date") or "")
+    if not plan_date or not decision_date or not plan_contract_date:
+        blockers.append("decision_or_plan_date_missing")
+    elif len({plan_date, decision_date, plan_contract_date}) != 1:
+        blockers.append("decision_plan_date_mismatch")
+
+    if trading_plan.get("schema_version") != "karkinos.daily_trading_plan.v1":
+        blockers.append("daily_trading_plan_contract_invalid")
+
+    summary = _object_dict(decision_payload.get("summary"))
+    portfolio = _object_dict(summary.get("portfolio"))
+    valuation_snapshot_id = str(portfolio.get("valuation_snapshot_id") or "")
+    ledger_cutoff_id = _positive_int(portfolio.get("ledger_cutoff_id"))
+    if not valuation_snapshot_id:
+        blockers.append("valuation_snapshot_id_missing")
+    if ledger_cutoff_id is None:
+        blockers.append("ledger_cutoff_id_invalid")
+
+    account_truth = _object_dict(summary.get("account_truth"))
+    if account_truth.get("schema_version") != (
+        "karkinos.account_truth.promotion_evidence.v1"
+    ):
+        blockers.append("account_truth_promotion_contract_invalid")
+    if str(account_truth.get("promotion_status") or "").lower() != "clear":
+        blockers.append("account_truth_promotion_status_not_clear")
+    if str(account_truth.get("gate_status") or "").lower() != "pass":
+        blockers.append("account_truth_gate_not_pass")
+    if str(account_truth.get("data_freshness_status") or "").lower() != "fresh":
+        blockers.append("account_truth_not_fresh")
+    if _nonnegative_int(account_truth.get("unresolved_mismatch_count")) != 0:
+        blockers.append("account_truth_unresolved_mismatch")
+    account_truth_ref = str(account_truth.get("import_run_id") or "")
+    if not account_truth_ref:
+        blockers.append("account_truth_import_run_missing")
+    account_truth_source_fingerprint = str(
+        account_truth.get("source_fingerprint") or ""
+    )
+    if not _is_sha256(account_truth_source_fingerprint):
+        blockers.append("account_truth_source_fingerprint_invalid")
+    account_truth_captured_at = _aware_datetime(account_truth.get("captured_at"))
+    if _shanghai_date(account_truth_captured_at) != plan_date:
+        blockers.append("account_truth_not_bound_to_plan_date")
+    account_truth_age = _nonnegative_int(account_truth.get("current_age_seconds"))
+    account_truth_max_age = _positive_int(account_truth.get("max_age_seconds"))
+    if account_truth_age is None or account_truth_max_age is None:
+        blockers.append("account_truth_age_evidence_invalid")
+    elif account_truth_age > account_truth_max_age:
+        blockers.append("account_truth_age_exceeds_reviewed_limit")
+    ledger_coverage = _object_dict(account_truth.get("ledger_coverage"))
+    if str(account_truth.get("reconciliation_status") or "").lower() != "pass":
+        blockers.append("account_truth_reconciliation_not_pass")
+    if ledger_coverage.get("status") != "covered":
+        blockers.append("account_truth_ledger_coverage_not_complete")
+
+    market = _object_dict(summary.get("market_data"))
+    market_status = str(market.get("source_health") or "").lower()
+    if market_status not in _TRUSTED_MARKET_STATUSES:
+        blockers.append("market_data_not_trusted")
+    quote_timestamp = str(market.get("latest_quote_timestamp") or "")
+    quote_at = _aware_datetime(quote_timestamp)
+    quote_date = _shanghai_date(quote_at)
+    if not quote_date:
+        blockers.append("market_quote_timestamp_missing_or_invalid")
+    elif quote_date != plan_date:
+        blockers.append("market_quote_not_bound_to_plan_date")
+
+    decision_generated_at = _aware_datetime(decision_payload.get("generated_at"))
+    plan_generated_at = _aware_datetime(trading_plan.get("generated_at"))
+    if _shanghai_date(decision_generated_at) != plan_date:
+        blockers.append("decision_generation_time_not_bound_to_plan_date")
+    if _shanghai_date(plan_generated_at) != plan_date:
+        blockers.append("plan_generation_time_not_bound_to_plan_date")
+    if quote_at is not None and decision_generated_at is not None:
+        if quote_at > decision_generated_at:
+            blockers.append("market_quote_after_decision_generation")
+        elif (
+            decision_generated_at - quote_at
+        ).total_seconds() > DAILY_CANDIDATE_MAX_QUOTE_AGE_SECONDS:
+            blockers.append("market_quote_too_old_for_decision")
+    account_truth_age_at_decision: int | None = None
+    if account_truth_captured_at is not None and decision_generated_at is not None:
+        if account_truth_captured_at > decision_generated_at:
+            blockers.append("account_truth_after_decision_generation")
+        else:
+            account_truth_age_at_decision = int(
+                (decision_generated_at - account_truth_captured_at).total_seconds()
+            )
+            if (
+                account_truth_max_age is not None
+                and account_truth_age_at_decision > account_truth_max_age
+            ):
+                blockers.append("account_truth_too_old_for_decision")
+    if decision_generated_at is not None and plan_generated_at is not None:
+        if decision_generated_at > plan_generated_at:
+            blockers.append("plan_generated_before_decision")
+    decision_in_window = _in_daily_candidate_decision_window(
+        decision_generated_at,
+        plan_date=plan_date,
+    )
+    plan_in_window = _in_daily_candidate_decision_window(
+        plan_generated_at,
+        plan_date=plan_date,
+    )
+    if not decision_in_window:
+        blockers.append("decision_generated_outside_reviewed_window")
+    if not plan_in_window:
+        blockers.append("plan_generated_outside_reviewed_window")
+
+    order_intents = _object_list(trading_plan.get("order_intents"))
+    strategy_bindings: list[dict[str, Any]] = []
+    strategy_gate_bindings: list[dict[str, Any]] = []
+    market_quote_bindings: list[dict[str, Any]] = []
+    decision_candidates: dict[str, list[dict[str, Any]]] = {}
+    for candidate in _object_list(decision_payload.get("candidates")):
+        candidate_key = str(candidate.get("action_id") or "")
+        if candidate_key:
+            decision_candidates.setdefault(candidate_key, []).append(candidate)
+    candidate_count = 0
+    for index, intent in enumerate(order_intents):
+        prefix = f"order_intent_{index}"
+        evidence_refs = [
+            str(item) for item in intent.get("evidence_refs") or [] if str(item)
+        ]
+        strategy_ref = _single_ref(evidence_refs, "strategy:")
+        advancement_ref = _single_ref(evidence_refs, "strategy_advancement:")
+        fee_review_ref = _single_ref(evidence_refs, "reviewed_fee_schedule:")
+        risk_ref = _single_ref(evidence_refs, "risk:")
+        intent_account_truth_ref = _single_ref(evidence_refs, "account_truth:")
+        action_key = str(intent.get("action_id") or "")
+        matching_candidates = decision_candidates.get(action_key, [])
+        if len(matching_candidates) != 1:
+            blockers.append(f"{prefix}:decision_candidate_binding_not_unique")
+            candidate = {}
+        else:
+            candidate = matching_candidates[0]
+        strategy_gate_binding, strategy_gate_blockers = _strategy_gate_binding(
+            candidate=candidate,
+            plan_date=plan_date,
+            expected_strategy_ref=strategy_ref,
+            expected_advancement_ref=advancement_ref,
+            expected_fee_review_ref=fee_review_ref,
+            action_id=intent.get("action_id"),
+        )
+        blockers.extend(f"{prefix}:{item}" for item in strategy_gate_blockers)
+        if strategy_gate_binding:
+            strategy_gate_bindings.append(strategy_gate_binding)
+        if not strategy_ref:
+            blockers.append(f"{prefix}:strategy_ref_missing_or_ambiguous")
+        if not advancement_ref:
+            blockers.append(f"{prefix}:strategy_advancement_ref_missing_or_ambiguous")
+        if not fee_review_ref:
+            blockers.append(f"{prefix}:reviewed_fee_schedule_ref_missing_or_ambiguous")
+        if not risk_ref:
+            blockers.append(f"{prefix}:risk_ref_missing_or_ambiguous")
+        if intent_account_truth_ref != (
+            f"account_truth:{account_truth_ref}" if account_truth_ref else None
+        ):
+            blockers.append(f"{prefix}:account_truth_ref_mismatch")
+        if str(intent.get("risk_gate_status") or "").lower() != "passed":
+            blockers.append(f"{prefix}:risk_gate_not_passed")
+        if str(intent.get("submission_status") or "").lower() != (
+            "manual_confirmation_required"
+        ):
+            blockers.append(f"{prefix}:manual_confirmation_not_ready")
+        if not str(intent.get("fee_rule_id") or ""):
+            blockers.append(f"{prefix}:fee_rule_id_missing")
+        if _nonnegative_float(intent.get("estimated_total_fee")) is None:
+            blockers.append(f"{prefix}:estimated_fee_invalid")
+        if _positive_float(intent.get("estimated_quantity")) is None:
+            blockers.append(f"{prefix}:estimated_quantity_invalid")
+        if _positive_float(intent.get("estimated_gross_amount")) is None:
+            blockers.append(f"{prefix}:estimated_gross_amount_invalid")
+        if _finite_float(intent.get("estimated_net_cash_impact")) is None:
+            blockers.append(f"{prefix}:estimated_net_cash_impact_invalid")
+        constraint_checks = _object_list(intent.get("constraint_checks"))
+        if not constraint_checks:
+            blockers.append(f"{prefix}:constraint_checks_missing")
+        elif any(
+            str(check.get("status") or "").lower() != "pass"
+            for check in constraint_checks
+        ):
+            blockers.append(f"{prefix}:constraint_check_not_passed")
+        fee_breakdown = _object_dict(intent.get("fee_breakdown"))
+        if not fee_breakdown:
+            blockers.append(f"{prefix}:fee_breakdown_missing")
+        intent_quote_at = _aware_datetime(intent.get("market_quote_timestamp"))
+        intent_quote_price = _nonnegative_float(intent.get("market_quote_price"))
+        intent_estimated_price = _nonnegative_float(intent.get("estimated_price"))
+        intent_quote_source = str(intent.get("market_quote_source") or "").strip()
+        if _shanghai_date(intent_quote_at) != plan_date:
+            blockers.append(f"{prefix}:market_quote_not_bound_to_plan_date")
+        if (
+            intent_quote_at is not None
+            and decision_generated_at is not None
+            and intent_quote_at > decision_generated_at
+        ):
+            blockers.append(f"{prefix}:market_quote_after_decision_generation")
+        elif (
+            intent_quote_at is not None
+            and decision_generated_at is not None
+            and (decision_generated_at - intent_quote_at).total_seconds()
+            > DAILY_CANDIDATE_MAX_QUOTE_AGE_SECONDS
+        ):
+            blockers.append(f"{prefix}:market_quote_too_old_for_decision")
+        if not intent_quote_source:
+            blockers.append(f"{prefix}:market_quote_source_missing")
+        if intent_quote_price is None or intent_quote_price <= 0:
+            blockers.append(f"{prefix}:market_quote_price_invalid")
+        if (
+            intent_estimated_price is None
+            or intent_estimated_price <= 0
+            or intent_estimated_price != intent_quote_price
+        ):
+            blockers.append(f"{prefix}:estimated_price_not_bound_to_market_quote")
+        if intent.get("does_not_submit_broker_order") is not True:
+            blockers.append(f"{prefix}:broker_boundary_invalid")
+        if strategy_ref and advancement_ref:
+            strategy_bindings.append(
+                {
+                    "strategy_ref": strategy_ref,
+                    "strategy_advancement_ref": advancement_ref,
+                    "reviewed_fee_schedule_ref": fee_review_ref,
+                }
+            )
+        market_quote_bindings.append(
+            {
+                "intent_ref": str(
+                    intent.get("intent_id") or intent.get("action_id") or index
+                ),
+                "timestamp": (
+                    intent_quote_at.isoformat() if intent_quote_at is not None else None
+                ),
+                "source": intent_quote_source or None,
+                "price": intent_quote_price,
+            }
+        )
+        candidate_count += 1
+
+    if order_intents:
+        if paper_shadow.get("status") != "within_expectations":
+            blockers.append("paper_shadow_status_not_within_expectations")
+        if paper_shadow.get("divergence_status") != "within_expectations":
+            blockers.append("paper_shadow_divergence_not_clear")
+        if not paper_shadow.get("run_id") or not paper_shadow.get("input_fingerprint"):
+            blockers.append("paper_shadow_identity_missing")
+        if _count(paper_shadow.get("simulated_order_count")) != len(order_intents):
+            blockers.append("paper_shadow_order_count_mismatch")
+        if _count(paper_shadow.get("simulated_fill_count")) != len(order_intents):
+            blockers.append("paper_shadow_fill_count_mismatch")
+    elif paper_shadow.get("status") not in {"not_run", None}:
+        blockers.append("paper_shadow_present_without_order_intent")
+
+    if cycle_status not in _TERMINAL_EVIDENCE_STATUSES:
+        blockers.append(f"daily_cycle_not_evidence_clear:{cycle_status}")
+
+    if execution_closure.get("schema_version") != (
+        "karkinos.daily_candidate_execution_closure.v1"
+    ):
+        blockers.append("execution_closure_contract_invalid")
+    if execution_closure.get("status") not in {"pass", "not_required"}:
+        closure_blockers = [
+            str(item) for item in execution_closure.get("blockers") or [] if str(item)
+        ]
+        blockers.extend(f"execution_closure:{item}" for item in closure_blockers)
+        blockers.append("prior_execution_not_reconciled")
+    if not _is_sha256(execution_closure.get("evidence_fingerprint")):
+        blockers.append("execution_closure_fingerprint_invalid")
+
+    blockers = list(dict.fromkeys(blockers))
+    gate_status = "pass" if not blockers else "blocked"
+    decision_outcome = (
+        "manual_order_ticket_candidate"
+        if gate_status == "pass" and candidate_count > 0
+        else "no_action"
+    )
+    no_action_reasons = (
+        []
+        if decision_outcome == "manual_order_ticket_candidate"
+        else blockers or ["no_strategy_action"]
+    )
+    account_truth_binding = {
+        "schema_version": "karkinos.daily_candidate_account_truth_binding.v1",
+        "account_truth_ref": (
+            f"account_truth:{account_truth_ref}" if account_truth_ref else None
+        ),
+        "source_fingerprint": account_truth_source_fingerprint or None,
+        "captured_at": (
+            account_truth_captured_at.isoformat()
+            if account_truth_captured_at is not None
+            else None
+        ),
+        "age_seconds_at_decision": account_truth_age_at_decision,
+        "max_age_seconds": account_truth_max_age,
+        "valuation_snapshot_id": valuation_snapshot_id or None,
+        "ledger_cutoff_id": ledger_cutoff_id,
+        "reconciliation_status": account_truth.get("reconciliation_status"),
+        "ledger_coverage_status": ledger_coverage.get("status"),
+        "persisted_facts_only": True,
+        "provider_contact_performed": False,
+        "authorizes_execution": False,
+        "changes_capital_authority": False,
+    }
+    manual_order_ticket_candidates = (
+        [
+            _manual_order_ticket_candidate(
+                plan_date=plan_date,
+                intent=intent,
+                paper_shadow=paper_shadow,
+                execution_closure=execution_closure,
+                decision_generated_at=decision_generated_at,
+                strategy_gate_binding=next(
+                    (
+                        item
+                        for item in strategy_gate_bindings
+                        if str(item.get("action_id") or "")
+                        == str(intent.get("action_id") or "")
+                    ),
+                    {},
+                ),
+                account_truth_binding=account_truth_binding,
+            )
+            for intent in order_intents
+        ]
+        if decision_outcome == "manual_order_ticket_candidate"
+        else []
+    )
+    input_snapshot = {
+        "decision_date": decision_date or None,
+        "plan_date": plan_contract_date or None,
+        "valuation_snapshot_id": valuation_snapshot_id or None,
+        "ledger_cutoff_id": ledger_cutoff_id,
+        "account_truth_ref": (
+            f"account_truth:{account_truth_ref}" if account_truth_ref else None
+        ),
+        "account_truth_source_fingerprint": (account_truth_source_fingerprint or None),
+        "account_truth_captured_at": (
+            account_truth_captured_at.isoformat()
+            if account_truth_captured_at is not None
+            else None
+        ),
+        "account_truth_age_seconds_at_decision": account_truth_age_at_decision,
+        "account_truth_max_age_seconds": account_truth_max_age,
+        "account_truth_reconciliation_status": account_truth.get(
+            "reconciliation_status"
+        ),
+        "account_truth_ledger_coverage_status": ledger_coverage.get("status"),
+        "account_truth_binding": account_truth_binding,
+        "market_quote_timestamp": quote_timestamp or None,
+        "market_quote_age_seconds_at_decision": (
+            int((decision_generated_at - quote_at).total_seconds())
+            if decision_generated_at is not None
+            and quote_at is not None
+            and quote_at <= decision_generated_at
+            else None
+        ),
+        "market_quote_max_age_seconds": DAILY_CANDIDATE_MAX_QUOTE_AGE_SECONDS,
+        "decision_window": {
+            "schema_version": DAILY_CANDIDATE_DECISION_WINDOW_SCHEMA_VERSION,
+            "timezone": "Asia/Shanghai",
+            "start": "09:35",
+            "end_exclusive": "09:45",
+            "decision_generated_at": (
+                decision_generated_at.isoformat()
+                if decision_generated_at is not None
+                else None
+            ),
+            "plan_generated_at": (
+                plan_generated_at.isoformat() if plan_generated_at is not None else None
+            ),
+            "status": ("pass" if decision_in_window and plan_in_window else "blocked"),
+        },
+        "paper_shadow_run_id": paper_shadow.get("run_id"),
+        "paper_shadow_input_fingerprint": paper_shadow.get("input_fingerprint"),
+        "execution_closure_fingerprint": execution_closure.get("evidence_fingerprint"),
+        "prior_production_order_count": execution_closure.get("production_order_count"),
+        "order_intent_count": len(order_intents),
+        "strategy_advancement_refs": sorted(
+            {
+                item["strategy_advancement_ref"]
+                for item in strategy_bindings
+                if item.get("strategy_advancement_ref")
+            }
+        ),
+        "reviewed_fee_schedule_refs": sorted(
+            {
+                item["reviewed_fee_schedule_ref"]
+                for item in strategy_bindings
+                if item.get("reviewed_fee_schedule_ref")
+            }
+        ),
+        "strategy_gate_bindings": strategy_gate_bindings,
+        "market_quote_bindings": market_quote_bindings,
+    }
+    return {
+        "decision_outcome": decision_outcome,
+        "manual_ticket_candidate_count": (len(manual_order_ticket_candidates)),
+        "manual_order_ticket_candidates": manual_order_ticket_candidates,
+        "no_action_reasons": no_action_reasons,
+        "strategy_bindings": strategy_bindings,
+        "input_snapshot": input_snapshot,
+        "production_gate": {
+            "schema_version": "karkinos.daily_candidate_production_gate.v1",
+            "status": gate_status,
+            "blockers": blockers,
+            "manual_confirmation_required": True,
+            "broker_submission_enabled": False,
+            "authorizes_execution": False,
+            "changes_capital_authority": False,
+        },
+    }
+
+
+def _strategy_gate_binding(
+    *,
+    candidate: dict[str, Any],
+    plan_date: str,
+    expected_strategy_ref: str | None,
+    expected_advancement_ref: str | None,
+    expected_fee_review_ref: str | None,
+    action_id: Any,
+) -> tuple[dict[str, Any], list[str]]:
+    blockers: list[str] = []
+    strategy = _object_dict(_object_dict(candidate.get("evidence")).get("strategy"))
+    strategy_id = str(strategy.get("strategy_id") or "")
+    if not strategy_id or expected_strategy_ref != f"strategy:{strategy_id}":
+        blockers.append("strategy_identity_mismatch")
+    gate = _object_dict(strategy.get("order_generation_gate"))
+    if gate.get("schema_version") != "karkinos.strategy_order_generation_gate.v1":
+        blockers.append("strategy_order_generation_contract_invalid")
+    if gate.get("status") != "pass" or gate.get("blockers") not in ([], None):
+        blockers.append("strategy_order_generation_gate_not_pass")
+    if str(gate.get("as_of_date") or "") != plan_date:
+        blockers.append("strategy_order_generation_date_mismatch")
+    expected_gate_boundaries = {
+        "persisted_facts_only": True,
+        "provider_contact_performed": False,
+        "paper_shadow_evaluation_only": True,
+        "does_not_create_order": True,
+        "does_not_authorize_execution": True,
+        "does_not_change_capital_authority": True,
+        "broker_submission_enabled": False,
+    }
+    for field, expected in expected_gate_boundaries.items():
+        if gate.get(field) is not expected:
+            blockers.append(f"strategy_order_generation_{field}_invalid")
+
+    promotion = _object_dict(gate.get("promotion"))
+    if promotion.get("status") != "pass":
+        blockers.append("strategy_promotion_not_pass")
+    if promotion.get("stage") != "paper_shadow":
+        blockers.append("strategy_promotion_stage_invalid")
+    if promotion.get("gate_status") != "paper_shadow_enabled":
+        blockers.append("strategy_paper_shadow_gate_not_enabled")
+    if promotion.get("live_like_enabled") is not False:
+        blockers.append("strategy_live_like_boundary_invalid")
+    if not str(promotion.get("human_reviewer") or "").strip():
+        blockers.append("strategy_human_reviewer_missing")
+    if promotion.get("human_review_note_recorded") is not True:
+        blockers.append("strategy_human_review_note_missing")
+    comparison_fingerprint = str(promotion.get("comparison_fingerprint") or "")
+    if not _is_sha256(comparison_fingerprint):
+        blockers.append("strategy_comparison_fingerprint_invalid")
+    human_approval_id = str(promotion.get("human_approval_id") or "")
+    if not human_approval_id:
+        blockers.append("strategy_human_approval_missing")
+
+    advancement_fingerprint = str(
+        promotion.get("strategy_advancement_gate_fingerprint") or ""
+    )
+    if not _is_sha256(advancement_fingerprint):
+        blockers.append("strategy_advancement_fingerprint_invalid")
+    if expected_advancement_ref != f"strategy_advancement:{advancement_fingerprint}":
+        blockers.append("strategy_advancement_ref_mismatch")
+    fee_binding = _object_dict(promotion.get("fee_schedule_binding"))
+    fee_review_fingerprint = str(
+        fee_binding.get("fee_schedule_review_fingerprint") or ""
+    )
+    if not _is_sha256(fee_review_fingerprint):
+        blockers.append("reviewed_fee_schedule_fingerprint_invalid")
+    if expected_fee_review_ref != (f"reviewed_fee_schedule:{fee_review_fingerprint}"):
+        blockers.append("reviewed_fee_schedule_ref_mismatch")
+
+    dataset_replay = _object_dict(promotion.get("dataset_replay"))
+    dataset_replay_fingerprint = str(dataset_replay.get("evidence_fingerprint") or "")
+    if dataset_replay.get("status") != "pass" or dataset_replay.get("blockers") not in (
+        [],
+        None,
+    ):
+        blockers.append("strategy_frozen_dataset_replay_not_pass")
+    if not _is_sha256(dataset_replay_fingerprint):
+        blockers.append("strategy_frozen_dataset_replay_fingerprint_invalid")
+    if dataset_replay.get("persisted_market_bars_only") is not True:
+        blockers.append("strategy_frozen_dataset_not_persisted_only")
+    if dataset_replay.get("provider_contacted") is not False:
+        blockers.append("strategy_frozen_dataset_provider_boundary_invalid")
+    if dataset_replay.get("baseline_manifest_matches_candidate") is not True:
+        blockers.append("strategy_frozen_dataset_baseline_mismatch")
+    baseline_snapshot_id = str(dataset_replay.get("baseline_snapshot_id") or "")
+    candidate_snapshot_id = str(dataset_replay.get("candidate_snapshot_id") or "")
+    if not baseline_snapshot_id or not candidate_snapshot_id:
+        blockers.append("strategy_frozen_dataset_snapshot_identity_missing")
+
+    blockers = list(dict.fromkeys(blockers))
+    if blockers:
+        return {}, blockers
+    return {
+        "schema_version": "karkinos.daily_candidate_strategy_gate_binding.v1",
+        "action_id": action_id,
+        "strategy_ref": expected_strategy_ref,
+        "strategy_advancement_ref": expected_advancement_ref,
+        "reviewed_fee_schedule_ref": expected_fee_review_ref,
+        "comparison_fingerprint": comparison_fingerprint,
+        "human_approval_id": human_approval_id,
+        "dataset_replay_fingerprint": dataset_replay_fingerprint,
+        "baseline_snapshot_id": baseline_snapshot_id,
+        "candidate_snapshot_id": candidate_snapshot_id,
+        "persisted_facts_only": True,
+        "provider_contact_performed": False,
+        "paper_shadow_evaluation_only": True,
+        "authorizes_execution": False,
+        "changes_capital_authority": False,
+    }, []
+
+
+def _manual_order_ticket_candidate(
+    *,
+    plan_date: str,
+    intent: dict[str, Any],
+    paper_shadow: dict[str, Any],
+    execution_closure: dict[str, Any],
+    decision_generated_at: datetime | None,
+    strategy_gate_binding: dict[str, Any],
+    account_truth_binding: dict[str, Any],
+) -> dict[str, Any]:
+    evidence_refs = sorted(
+        {str(item) for item in intent.get("evidence_refs") or [] if str(item)}
+    )
+    quote_at = _aware_datetime(intent.get("market_quote_timestamp"))
+    quote_age_seconds = (
+        int((decision_generated_at - quote_at).total_seconds())
+        if decision_generated_at is not None
+        and quote_at is not None
+        and quote_at <= decision_generated_at
+        else None
+    )
+    core = {
+        "schema_version": "karkinos.manual_order_ticket_candidate.v1",
+        "plan_date": plan_date,
+        "intent_id": intent.get("intent_id"),
+        "action_id": intent.get("action_id"),
+        "symbol": intent.get("symbol"),
+        "side": intent.get("side"),
+        "asset_class": intent.get("asset_class"),
+        "order_type": "limit",
+        "quantity": intent.get("estimated_quantity"),
+        "limit_price": intent.get("estimated_price"),
+        "estimated_gross_amount": intent.get("estimated_gross_amount"),
+        "estimated_total_fee": intent.get("estimated_total_fee"),
+        "estimated_net_cash_impact": intent.get("estimated_net_cash_impact"),
+        "available_cash_before": intent.get("available_cash_before"),
+        "available_cash_after": intent.get("available_cash_after"),
+        "cash_status": intent.get("cash_status"),
+        "fee_rule_id": intent.get("fee_rule_id"),
+        "fee_rule_version": intent.get("fee_rule_version"),
+        "fee_breakdown": _object_dict(intent.get("fee_breakdown")),
+        "risk_gate_status": intent.get("risk_gate_status"),
+        "constraint_checks": _object_list(intent.get("constraint_checks")),
+        "market_quote": {
+            "price": intent.get("market_quote_price"),
+            "timestamp": intent.get("market_quote_timestamp"),
+            "source": intent.get("market_quote_source"),
+            "age_seconds_at_decision": quote_age_seconds,
+            "max_age_seconds": DAILY_CANDIDATE_MAX_QUOTE_AGE_SECONDS,
+        },
+        "paper_shadow": {
+            "run_id": paper_shadow.get("run_id"),
+            "input_fingerprint": paper_shadow.get("input_fingerprint"),
+            "status": paper_shadow.get("status"),
+            "divergence_status": paper_shadow.get("divergence_status"),
+        },
+        "strategy_gate_binding": strategy_gate_binding,
+        "account_truth_binding": account_truth_binding,
+        "prior_execution_closure_fingerprint": execution_closure.get(
+            "evidence_fingerprint"
+        ),
+        "evidence_refs": evidence_refs,
+        "invalidation_conditions": [
+            "plan_date_is_no_longer_current_market_date",
+            "decision_or_plan_generated_outside_reviewed_window",
+            "account_truth_source_or_ledger_coverage_changes",
+            "market_quote_price_timestamp_or_source_changes",
+            "risk_strategy_fee_or_paper_shadow_binding_changes",
+            "prior_execution_closure_changes",
+            "kill_switch_is_enabled",
+        ],
+        "manual_confirmation_required": True,
+        "creates_oms_order": False,
+        "authorizes_execution": False,
+        "broker_submission_enabled": False,
+        "does_not_change_capital_authority": True,
+    }
+    return {
+        **core,
+        "ticket_candidate_fingerprint": manual_ticket_candidate_fingerprint(core),
+    }
+
+
+def manual_ticket_candidate_fingerprint(payload: dict[str, Any]) -> str:
+    """Hash a read-only ticket candidate without trusting its stored digest."""
+
+    core = {
+        key: value
+        for key, value in payload.items()
+        if key != "ticket_candidate_fingerprint"
+    }
+    return _fingerprint_json(core)
+
+
+def _fingerprint_json(value: Any) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _finite_float(value: Any) -> float | None:
+    try:
+        normalized = float(value)
+    except (TypeError, ValueError):
+        return None
+    return normalized if math.isfinite(normalized) else None
+
+
+def _positive_float(value: Any) -> float | None:
+    normalized = _finite_float(value)
+    return normalized if normalized is not None and normalized > 0 else None
+
+
+def daily_candidate_record_fingerprint(payload: dict[str, Any]) -> str:
+    """Hash the complete safe production decision record for replay checks."""
+
+    stable = {key: payload.get(key) for key in _PRODUCTION_RECORD_FIELDS}
+    encoded = json.dumps(
+        stable,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _single_ref(refs: list[str], prefix: str) -> str | None:
+    matches = [ref for ref in refs if ref.startswith(prefix)]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _is_sha256(value: Any) -> bool:
+    normalized = str(value or "").strip().lower()
+    return len(normalized) == 64 and all(
+        character in "0123456789abcdef" for character in normalized
+    )
+
+
+def _aware_datetime(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return parsed
+
+
+def _shanghai_date(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.astimezone(_SHANGHAI_TZ).date().isoformat()
+
+
+def _in_daily_candidate_decision_window(
+    value: datetime | None,
+    *,
+    plan_date: str,
+) -> bool:
+    if value is None:
+        return False
+    shanghai_value = value.astimezone(_SHANGHAI_TZ)
+    minute_of_day = shanghai_value.hour * 60 + shanghai_value.minute
+    return bool(
+        shanghai_value.date().isoformat() == plan_date
+        and DAILY_CANDIDATE_DECISION_WINDOW_START_MINUTE
+        <= minute_of_day
+        < DAILY_CANDIDATE_DECISION_WINDOW_END_MINUTE
+    )
+
+
+def _positive_int(value: Any) -> int | None:
+    parsed = _nonnegative_int(value)
+    return parsed if parsed is not None and parsed > 0 else None
+
+
+def _nonnegative_int(value: Any) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _nonnegative_float(value: Any) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) and parsed >= 0 else None
+
+
 def _risk_summary(
     result: dict[str, Any] | None,
     decision_payload: dict[str, Any],
@@ -442,6 +1821,7 @@ def _risk_summary(
     current_checked_count = _count(audit.get("risk_checked_count"))
     if not current_checked_count:
         current_checked_count = current_passed_count + current_blocked_count
+    error = str(payload.get("error") or "").strip()
     return {
         "status": payload.get("status") or "not_run",
         "candidate_count": _count(
@@ -459,6 +1839,10 @@ def _risk_summary(
             payload.get("risk_decision_writes_performed", False)
         ),
         "blockers": _object_list(payload.get("blockers")),
+        "error_type": str(payload.get("error_type") or "").strip() or None,
+        "error_fingerprint": (
+            hashlib.sha256(error.encode("utf-8")).hexdigest() if error else None
+        ),
     }
 
 
@@ -502,6 +1886,15 @@ def _object_list(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
     return [dict(item) for item in value if isinstance(item, dict)]
+
+
+def _json_object_list(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (TypeError, ValueError):
+            return []
+    return _object_list(value)
 
 
 def _count(*values: Any) -> int:

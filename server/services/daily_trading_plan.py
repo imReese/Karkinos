@@ -194,7 +194,14 @@ def _order_intent_preview(
     controls: dict[str, float],
 ) -> dict[str, Any] | None:
     side = _side(candidate)
-    price = _float(candidate.get("price"), 0.0)
+    candidate_evidence = _dict(candidate.get("evidence"))
+    market_quote = _dict(candidate_evidence.get("data_freshness"))
+    market_quote_price = _float(market_quote.get("price"), 0.0)
+    price = (
+        market_quote_price
+        if market_quote_price > 0
+        else _float(candidate.get("price"), 0.0)
+    )
     target_weight = _float(candidate.get("target_weight"), 0.0)
     quantity, quantity_basis = _estimated_quantity(
         candidate,
@@ -275,6 +282,9 @@ def _order_intent_preview(
         ),
         "target_weight": target_weight,
         "estimated_price": price,
+        "market_quote_price": (market_quote_price if market_quote_price > 0 else None),
+        "market_quote_timestamp": market_quote.get("quote_timestamp"),
+        "market_quote_source": market_quote.get("quote_source"),
         "estimated_quantity": float(quantity),
         "quantity_basis": quantity_basis,
         "allocation_status": candidate.get("allocation_status"),
@@ -903,6 +913,10 @@ def _evidence_refs(candidate: dict[str, Any]) -> list[str]:
     advancement_fingerprint = promotion.get("strategy_advancement_gate_fingerprint")
     if advancement_fingerprint:
         refs.append(f"strategy_advancement:{advancement_fingerprint}")
+    fee_schedule_binding = _dict(promotion.get("fee_schedule_binding"))
+    fee_review_fingerprint = fee_schedule_binding.get("fee_schedule_review_fingerprint")
+    if fee_review_fingerprint:
+        refs.append(f"reviewed_fee_schedule:{fee_review_fingerprint}")
     risk_gate = _dict(evidence.get("risk_gate"))
     risk_decision_id = risk_gate.get("decision_id")
     if risk_decision_id is not None:

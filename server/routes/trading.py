@@ -8,11 +8,14 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from inspect import isawaitable
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from server.services.trading_controls import TradingControlSnapshot
+
+_SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 
 
 class KillSwitchRequest(BaseModel):
@@ -440,12 +443,33 @@ def _current_action_manual_ticket_gate(
             f"account_truth:{reason}"
             for reason in account_truth.get("blocking_reasons") or []
         )
+    if account_truth.get("data_freshness_status") != "fresh":
+        blockers.append("current_account_truth_not_fresh")
+    if not _is_sha256(account_truth.get("source_fingerprint")):
+        blockers.append("current_account_truth_source_fingerprint_invalid")
+    if _shanghai_date(account_truth.get("captured_at")) != _action_trade_date(action):
+        blockers.append("current_account_truth_not_bound_to_action_date")
+    ledger_coverage = account_truth.get("ledger_coverage")
+    ledger_coverage = ledger_coverage if isinstance(ledger_coverage, dict) else {}
+    if ledger_coverage.get("status") != "covered":
+        blockers.append("current_account_truth_ledger_coverage_not_complete")
     if str(market_data.get("status") or "") not in {"live", "confirmed"}:
         blockers.append("current_market_data_not_trusted")
         for key in ("reason", "stale_reason", "status"):
             value = str(market_data.get(key) or "").strip()
             if value:
                 blockers.append(f"market_data:{value}")
+    current_quote_price = _positive_decimal(market_data.get("price"))
+    if current_quote_price is None:
+        blockers.append("current_market_quote_price_invalid")
+    elif proposed_order is not None and not _decimal_values_match(
+        proposed_order.get("price"), current_quote_price
+    ):
+        blockers.append("proposed_order_price_not_bound_to_current_quote")
+    if _shanghai_date(market_data.get("quote_timestamp")) != _action_trade_date(action):
+        blockers.append("current_market_quote_not_bound_to_action_date")
+    if not str(market_data.get("quote_source") or "").strip():
+        blockers.append("current_market_quote_source_missing")
     if strategy_gate.get("status") != "pass":
         blockers.append("current_strategy_order_generation_not_passing")
     blockers.extend(f"strategy_advancement:{reason}" for reason in strategy_blockers)
@@ -570,10 +594,38 @@ def _decimal_values_match(left: Any, right: Any) -> bool:
         return False
 
 
+def _positive_decimal(value: Any) -> Decimal | None:
+    try:
+        parsed = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return parsed if parsed.is_finite() and parsed > 0 else None
+
+
 def _manual_order_side(direction: str) -> str | None:
     if direction in {"buy", "sell"}:
         return direction
     return None
+
+
+def _shanghai_date(value: Any) -> str | None:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return None
+    try:
+        parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return parsed.astimezone(_SHANGHAI_TZ).date().isoformat()
+
+
+def _is_sha256(value: Any) -> bool:
+    normalized = str(value or "").strip().lower()
+    return len(normalized) == 64 and all(
+        character in "0123456789abcdef" for character in normalized
+    )
 
 
 def _manual_order_action_id(order: dict) -> int | None:

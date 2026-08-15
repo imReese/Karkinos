@@ -30,6 +30,28 @@ def _endpoint(path: str, method: str = "GET"):
     )
 
 
+def _current_account_truth_fixture() -> dict:
+    return {
+        "gate_status": "pass",
+        "data_freshness_status": "fresh",
+        "unresolved_mismatch_count": 0,
+        "import_run_id": "import-7",
+        "source_fingerprint": "c" * 64,
+        "captured_at": "2026-08-13T09:20:00+08:00",
+        "ledger_coverage": {"status": "covered"},
+        "blocking_reasons": [],
+    }
+
+
+def _current_market_fixture(*, status: str = "live", price: float = 4.56) -> dict:
+    return {
+        "status": status,
+        "price": price,
+        "quote_timestamp": "2026-08-13T09:25:00+08:00",
+        "quote_source": "fixture",
+    }
+
+
 def _seed_action_task_with_risk(
     db: AppDatabase,
     *,
@@ -348,12 +370,12 @@ def test_current_manual_ticket_gate_rechecks_market_data_and_kill_switch(
     }
     monkeypatch.setattr(
         "server.routes.decision._account_truth_gate_evidence",
-        lambda state: {"gate_status": "pass", "blocking_reasons": []},
+        lambda state: _current_account_truth_fixture(),
     )
     monkeypatch.setattr(
         "server.routes.decision._data_freshness_evidence",
         lambda action, db, *, quotes, allow_direct_quote_fallback: {
-            "status": market_status,
+            **_current_market_fixture(status=market_status),
             "reason": "fixture_market_status",
         },
     )
@@ -395,11 +417,13 @@ def test_current_manual_ticket_gate_requires_trading_control_state(monkeypatch) 
     }
     monkeypatch.setattr(
         "server.routes.decision._account_truth_gate_evidence",
-        lambda state: {"gate_status": "pass", "blocking_reasons": []},
+        lambda state: _current_account_truth_fixture(),
     )
     monkeypatch.setattr(
         "server.routes.decision._data_freshness_evidence",
-        lambda action, db, *, quotes, allow_direct_quote_fallback: {"status": "live"},
+        lambda action, db, *, quotes, allow_direct_quote_fallback: (
+            _current_market_fixture()
+        ),
     )
     monkeypatch.setattr(
         "server.routes.decision._paper_shadow_evidence",
@@ -443,15 +467,13 @@ def test_current_manual_ticket_gate_binds_exact_simulated_order_terms(
     state = SimpleNamespace(db=object(), trading_controls=TradingControlState())
     monkeypatch.setattr(
         "server.routes.decision._account_truth_gate_evidence",
-        lambda state: {
-            "gate_status": "pass",
-            "import_run_id": "import-7",
-            "blocking_reasons": [],
-        },
+        lambda state: _current_account_truth_fixture(),
     )
     monkeypatch.setattr(
         "server.routes.decision._data_freshness_evidence",
-        lambda action, db, *, quotes, allow_direct_quote_fallback: {"status": "live"},
+        lambda action, db, *, quotes, allow_direct_quote_fallback: (
+            _current_market_fixture()
+        ),
     )
     monkeypatch.setattr(
         "server.routes.decision._paper_shadow_evidence",
@@ -519,6 +541,20 @@ def test_current_manual_ticket_gate_binds_exact_simulated_order_terms(
         )
 
     assert "paper_shadow_ticket_quantity_mismatch" in str(exc.value)
+
+    with pytest.raises(ValueError) as exc:
+        trading_routes._current_action_manual_ticket_gate(
+            state,
+            action,
+            proposed_order={
+                "symbol": "510300",
+                "side": "buy",
+                "quantity": 1000,
+                "price": 4.55,
+            },
+        )
+
+    assert "proposed_order_price_not_bound_to_current_quote" in str(exc.value)
 
     monkeypatch.setattr(
         "server.services.strategy_promotion_pipeline."

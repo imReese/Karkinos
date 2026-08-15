@@ -1578,10 +1578,55 @@ class AppDatabase:
             ).fetchone()
             return dict(row) if row else None
 
+    def claim_daily_candidate_background_attempt_sync(
+        self,
+        *,
+        run_date: str,
+        claimed_at: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Atomically claim one fail-closed background attempt per market date."""
+        run_id = f"automation:daily-candidate-background-attempt:{run_date}"
+        payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        now = datetime.now().isoformat()
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                """
+                INSERT OR IGNORE INTO automation_runs (
+                    run_id, run_type, run_date, status, execution_mode,
+                    started_at, finished_at, source_ref, payload_json,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    "daily_candidate_background_attempt",
+                    str(run_date),
+                    "claimed",
+                    "paper_shadow",
+                    str(claimed_at),
+                    None,
+                    None,
+                    payload_json,
+                    now,
+                    now,
+                ),
+            )
+            row = conn.execute(
+                "SELECT * FROM automation_runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            conn.commit()
+            if row is None:
+                raise RuntimeError("daily candidate background attempt was not claimed")
+            return {"claimed": cursor.rowcount == 1, "run": dict(row)}
+
     def list_automation_runs_sync(
         self,
         *,
         run_type: str | None = None,
+        run_date: str | None = None,
         limit: int = 20,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
@@ -1591,6 +1636,9 @@ class AppDatabase:
         if run_type is not None:
             conditions.append("run_type = ?")
             params.append(run_type)
+        if run_date is not None:
+            conditions.append("run_date = ?")
+            params.append(run_date)
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         params.extend([int(limit), int(offset)])
         with sqlite3.connect(self._path) as conn:
@@ -1604,6 +1652,30 @@ class AppDatabase:
                 LIMIT ? OFFSET ?
                 """,
                 tuple(params),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def list_all_automation_runs_for_type_sync(
+        self,
+        *,
+        run_type: str,
+    ) -> list[dict[str, Any]]:
+        """Read a complete run-type history from one database snapshot.
+
+        This is intentionally separate from the bounded operational listing:
+        evidence-window consumers must not silently turn an old, valid trial
+        into a truncated one when the installation passes a UI page limit.
+        """
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM automation_runs
+                WHERE run_type = ?
+                ORDER BY run_date ASC, updated_at ASC, created_at ASC
+                """,
+                (run_type,),
             ).fetchall()
             return [dict(row) for row in rows]
 
