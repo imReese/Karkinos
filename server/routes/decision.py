@@ -264,7 +264,7 @@ def create_router() -> APIRouter:
         return {
             "lane": "intraday",
             "decision_date": decision_date,
-            "generated_at": datetime.now().isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
             "cadence": "polling_or_minute_level",
             "decision": _overall_decision(candidates),
             "requires_manual_confirmation": _has_ready_manual_confirmation(candidates),
@@ -361,7 +361,7 @@ async def _today_decision_payload(
     return {
         "lane": "daily",
         "decision_date": decision_date,
-        "generated_at": datetime.now().isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "decision": _overall_decision(candidates),
         "requires_manual_confirmation": _has_ready_manual_confirmation(candidates),
         "summary": _decision_summary(
@@ -1528,13 +1528,10 @@ def _has_ready_manual_confirmation(candidates: list[dict[str, Any]]) -> bool:
 
 
 def _account_truth_gate_evidence(state: Any) -> dict[str, Any]:
-    db = getattr(state, "db", None)
-    from server.account_truth_gate import build_latest_account_truth_score_payload
+    from server.account_truth_gate import build_latest_account_truth_promotion_evidence
 
-    score_payload = _json_object(build_latest_account_truth_score_payload(state))
-    if not score_payload:
-        score_payload = _latest_account_truth_score(db)
-    if not score_payload:
+    promotion = _json_object(build_latest_account_truth_promotion_evidence(state))
+    if not promotion:
         return {
             "status": "missing",
             "gate_status": "blocked",
@@ -1549,40 +1546,62 @@ def _account_truth_gate_evidence(state: Any) -> dict[str, Any]:
             ],
         }
 
-    gate_status = str(
-        score_payload.get("gate_status") or score_payload.get("status") or "blocked"
-    ).lower()
+    blockers = [
+        str(item)
+        for item in [
+            *(promotion.get("blockers") or []),
+            *(promotion.get("score_blocking_reasons") or []),
+        ]
+        if str(item)
+    ]
+    blockers = list(dict.fromkeys(blockers))
+    required_actions = [
+        str(item) for item in promotion.get("score_required_actions") or [] if str(item)
+    ]
+    gate_status = str(promotion.get("gate_status") or "blocked").lower()
+    if promotion.get("status") != "clear" or blockers:
+        gate_status = "blocked"
+    import_run_id = str(promotion.get("import_run_id") or "")
     return {
-        "status": "available",
+        "schema_version": promotion.get("schema_version"),
+        "status": "available" if import_run_id else "missing",
+        "promotion_status": promotion.get("status"),
         "gate_status": gate_status,
-        "score": _int_or_none(score_payload.get("score")),
-        "has_evidence": True,
-        "data_freshness_status": score_payload.get("data_freshness_status"),
+        "score": _int_or_none(promotion.get("score")),
+        "has_evidence": bool(import_run_id),
+        "data_freshness_status": promotion.get("data_freshness_status"),
         "unresolved_mismatch_count": _int_or_none(
-            score_payload.get("unresolved_mismatch_count")
+            promotion.get("unresolved_mismatch_count")
         ),
-        "blocking_reasons": list(score_payload.get("blocking_reasons") or []),
-        "required_actions": list(score_payload.get("required_actions") or []),
-        "limitations": list(score_payload.get("limitations") or []),
-        "import_run_id": score_payload.get("import_run_id"),
-        "source_type": score_payload.get("source_type"),
-        "source_name": score_payload.get("source_name"),
-        "created_at": score_payload.get("created_at"),
-        "ledger_coverage": score_payload.get("ledger_coverage"),
+        "reconciliation_status": promotion.get("reconciliation_status"),
+        "blocking_reasons": blockers,
+        "required_actions": required_actions or blockers,
+        "limitations": list(
+            dict.fromkeys(
+                [
+                    *[
+                        str(item)
+                        for item in promotion.get("score_limitations") or []
+                        if str(item)
+                    ],
+                    "Account Truth is resolved from the current sanitized promotion evidence; stale, source-incomplete, drifted, or unreconciled evidence is blocked.",
+                ]
+            )
+        ),
+        "import_run_id": import_run_id or None,
+        "source_type": promotion.get("source_type"),
+        "source_name": None,
+        "source_fingerprint": promotion.get("source_fingerprint"),
+        "captured_at": promotion.get("captured_at"),
+        "created_at": promotion.get("captured_at"),
+        "current_age_seconds": promotion.get("current_age_seconds"),
+        "max_age_seconds": promotion.get("max_age_seconds"),
+        "ledger_coverage": promotion.get("ledger_coverage"),
+        "citic_source_follow_up": promotion.get("citic_source_follow_up"),
+        "does_not_mutate_production_ledger": True,
+        "does_not_issue_execution_authority": True,
+        "broker_submission_enabled": False,
     }
-
-
-def _latest_account_truth_score(db: Any) -> dict[str, Any]:
-    reader = getattr(db, "get_account_truth_score_sync", None)
-    if callable(reader):
-        return _json_object(reader())
-
-    list_reader = getattr(db, "list_account_truth_scores_sync", None)
-    if callable(list_reader):
-        rows = list_reader(limit=1)
-        if rows:
-            return _json_object(rows[0])
-    return {}
 
 
 def _strategy_attribution_gate_evidence(

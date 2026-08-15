@@ -70,6 +70,38 @@ def _backtest_route(router, path: str, method: str = "GET"):
     )
 
 
+def _decision_account_truth_evidence(
+    *,
+    gate_status: str = "pass",
+    freshness_status: str = "fresh",
+    score: int = 100,
+    blockers: list[str] | None = None,
+    required_actions: list[str] | None = None,
+) -> dict[str, object]:
+    normalized_blockers = list(blockers or [])
+    return {
+        "schema_version": "karkinos.account_truth.promotion_evidence.v1",
+        "status": "available",
+        "gate_status": gate_status,
+        "score": score,
+        "has_evidence": True,
+        "data_freshness_status": freshness_status,
+        "unresolved_mismatch_count": 0,
+        "blocking_reasons": normalized_blockers,
+        "required_actions": list(required_actions or normalized_blockers),
+        "limitations": ["Synthetic promotion-evidence fixture."],
+        "import_run_id": "account-truth-fixture",
+        "source_fingerprint": "a" * 64,
+        "captured_at": "2026-04-18T09:30:00+08:00",
+        "current_age_seconds": 300,
+        "max_age_seconds": 86400,
+        "ledger_coverage": {"status": "covered"},
+        "does_not_mutate_production_ledger": True,
+        "does_not_issue_execution_authority": True,
+        "broker_submission_enabled": False,
+    }
+
+
 def test_acceptance_audit_route_returns_single_instrument_loop_manifest():
     from server.routes import acceptance_audit as acceptance_audit_routes
 
@@ -8349,6 +8381,11 @@ def test_decision_today_returns_candidate_with_evidence_bundle(monkeypatch):
             }
 
     fake_state = SimpleNamespace(db=FakeDb())
+    monkeypatch.setattr(
+        decision_routes,
+        "_account_truth_gate_evidence",
+        lambda state: _decision_account_truth_evidence(),
+    )
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
@@ -8545,13 +8582,13 @@ def test_decision_today_blocks_when_account_truth_score_is_missing(monkeypatch):
     assert response["summary"]["account_truth"]["gate_status"] == "blocked"
     assert response["summary"]["account_truth"]["has_evidence"] is False
     assert response["summary"]["account_truth"]["blocking_reasons"] == [
-        "account_truth_score_unavailable"
+        "account_truth_database_unavailable"
     ]
     candidate = response["candidates"][0]
     assert candidate["manual_confirmation_status"] == "blocked_by_account_truth"
     assert candidate["evidence"]["account_truth"]["gate_status"] == "blocked"
     assert candidate["evidence"]["account_truth"]["required_actions"] == [
-        "preview_import_and_reconcile_broker_evidence"
+        "account_truth_database_unavailable"
     ]
 
 
@@ -8613,14 +8650,25 @@ def test_decision_today_degrades_when_account_truth_score_degrades(monkeypatch):
         "server.app.get_app_state",
         lambda: SimpleNamespace(db=FakeDb()),
     )
+    monkeypatch.setattr(
+        decision_routes,
+        "_account_truth_gate_evidence",
+        lambda state: _decision_account_truth_evidence(
+            gate_status="blocked",
+            freshness_status="stale",
+            score=65,
+            blockers=["account_truth_import_stale"],
+            required_actions=["refresh_broker_evidence"],
+        ),
+    )
 
     response = asyncio.run(endpoint())
 
     assert response["decision"] == "review_required"
-    assert response["summary"]["account_truth"]["gate_status"] == "degraded"
+    assert response["summary"]["account_truth"]["gate_status"] == "blocked"
     assert response["summary"]["account_truth"]["score"] == 65
     candidate = response["candidates"][0]
-    assert candidate["manual_confirmation_status"] == "account_truth_review_required"
+    assert candidate["manual_confirmation_status"] == "blocked_by_account_truth"
     assert candidate["evidence"]["account_truth"]["data_freshness_status"] == "stale"
     assert candidate["evidence"]["account_truth"]["required_actions"] == [
         "refresh_broker_evidence"
@@ -8682,6 +8730,11 @@ def test_decision_today_requires_review_when_candidate_quote_is_stale(monkeypatc
     monkeypatch.setattr(
         "server.app.get_app_state",
         lambda: SimpleNamespace(db=FakeDb()),
+    )
+    monkeypatch.setattr(
+        decision_routes,
+        "_account_truth_gate_evidence",
+        lambda state: _decision_account_truth_evidence(),
     )
 
     response = asyncio.run(endpoint())
@@ -8775,6 +8828,11 @@ def test_decision_today_requires_strategy_attribution_for_assigned_strategy(
     fake_state = SimpleNamespace(
         config=SimpleNamespace(strategy="dual_ma"),
         db=FakeDb(),
+    )
+    monkeypatch.setattr(
+        decision_routes,
+        "_account_truth_gate_evidence",
+        lambda state: _decision_account_truth_evidence(),
     )
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
 
@@ -8947,7 +9005,7 @@ def test_decision_today_summary_aggregates_portfolio_market_and_audit_state(
     assert workflow_tasks[0]["required_actions"] == ["refresh_or_confirm_market_data"]
     assert workflow_tasks[1]["status"] == "blocked"
     assert workflow_tasks[1]["required_actions"] == [
-        "preview_import_and_reconcile_broker_evidence"
+        "account_truth_database_unavailable"
     ]
     assert workflow_tasks[2]["status"] == "blocked"
     assert workflow_tasks[3]["status"] == "pass"
@@ -9119,6 +9177,11 @@ def test_decision_intraday_returns_stock_and_etf_candidates_only(monkeypatch):
             }
 
     fake_state = SimpleNamespace(db=FakeDb())
+    monkeypatch.setattr(
+        decision_routes,
+        "_account_truth_gate_evidence",
+        lambda state: _decision_account_truth_evidence(),
+    )
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())

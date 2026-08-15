@@ -26,6 +26,15 @@ def _endpoint(path: str, method: str = "GET"):
 
 def _allow_paper_shadow_evaluation(monkeypatch) -> None:
     monkeypatch.setattr(
+        "server.routes.decision._account_truth_gate_evidence",
+        lambda state: {
+            "gate_status": "pass",
+            "data_freshness_status": "fresh",
+            "unresolved_mismatch_count": 0,
+            "import_run_id": "fixture-import",
+        },
+    )
+    monkeypatch.setattr(
         "server.routes.decision.resolve_strategy_order_generation_gate",
         lambda db, strategy_id, *, as_of_date=None: (
             {

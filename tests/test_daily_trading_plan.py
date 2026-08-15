@@ -93,7 +93,12 @@ def _candidate(
                 "gate_status": "pass",
                 "import_run_id": account_truth_import_run_id,
             },
-            "data_freshness": {"status": "live"},
+            "data_freshness": {
+                "status": "live",
+                "price": price,
+                "quote_timestamp": "2026-07-01T09:30:00+08:00",
+                "quote_source": "fixture",
+            },
         },
     }
 
@@ -207,6 +212,9 @@ def test_trading_plan_turns_manual_ready_candidate_into_order_intent_preview() -
     assert intent["side"] == "buy"
     assert intent["target_weight"] == pytest.approx(0.2)
     assert intent["estimated_price"] == pytest.approx(10.0)
+    assert intent["market_quote_price"] == pytest.approx(10.0)
+    assert intent["market_quote_timestamp"] == "2026-07-01T09:30:00+08:00"
+    assert intent["market_quote_source"] == "fixture"
     assert intent["estimated_quantity"] == pytest.approx(800.0)
     assert intent["estimated_gross_amount"] == pytest.approx(8000.0)
     assert intent["fee_breakdown"]["commission"] == "5.00"
@@ -233,6 +241,19 @@ def test_trading_plan_turns_manual_ready_candidate_into_order_intent_preview() -
     assert intent["does_not_submit_broker_order"] is True
 
 
+def test_trading_plan_sizes_from_current_quote_instead_of_signal_price() -> None:
+    candidate = _candidate(price=10.0)
+    candidate["evidence"]["data_freshness"]["price"] = 12.5
+
+    plan = _plan(candidate=candidate)
+
+    intent = plan["order_intents"][0]
+    assert intent["estimated_price"] == pytest.approx(12.5)
+    assert intent["market_quote_price"] == pytest.approx(12.5)
+    assert intent["estimated_quantity"] == pytest.approx(800.0)
+    assert intent["estimated_gross_amount"] == pytest.approx(10000.0)
+
+
 def test_trading_plan_emits_paper_shadow_intent_before_manual_ticket() -> None:
     candidate = _candidate(manual_status="paper_shadow_review_required")
     candidate["evidence"]["strategy"]["order_generation_gate"] = {
@@ -241,6 +262,9 @@ def test_trading_plan_emits_paper_shadow_intent_before_manual_ticket() -> None:
         "does_not_authorize_execution": True,
         "promotion": {
             "strategy_advancement_gate_fingerprint": "advancement-fingerprint",
+            "fee_schedule_binding": {
+                "fee_schedule_review_fingerprint": "fee-review-fingerprint",
+            },
         },
     }
 
@@ -255,6 +279,7 @@ def test_trading_plan_emits_paper_shadow_intent_before_manual_ticket() -> None:
     intent = plan["order_intents"][0]
     assert intent["submission_status"] == "paper_shadow_required"
     assert "strategy_advancement:advancement-fingerprint" in intent["evidence_refs"]
+    assert "reviewed_fee_schedule:fee-review-fingerprint" in intent["evidence_refs"]
     assert intent["does_not_submit_broker_order"] is True
 
 

@@ -202,6 +202,16 @@ def test_decision_batch_pre_trade_risk_promotes_ready_trading_plan(
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         decision_routes,
+        "_account_truth_gate_evidence",
+        lambda state: {
+            "gate_status": "pass",
+            "data_freshness_status": "fresh",
+            "unresolved_mismatch_count": 0,
+            "import_run_id": "fixture-import",
+        },
+    )
+    monkeypatch.setattr(
+        decision_routes,
         "resolve_strategy_order_generation_gate",
         lambda db, strategy_id, *, as_of_date=None: (
             {

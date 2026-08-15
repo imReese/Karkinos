@@ -77,6 +77,11 @@ def test_automation_cockpit_route_includes_runtime_connector_snapshot(
     assert registration["can_submit_orders"] is False
     assert registration["can_cancel_orders"] is False
     assert payload["controlled_execution"]["provider_contact_performed"] is False
+    assert payload["daily_candidate_trial"]["status"] == (
+        "collecting_forward_operating_evidence"
+    )
+    assert payload["daily_candidate_trial"]["broker_submission_enabled"] is False
+    assert payload["daily_candidate_trial"]["authorizes_execution"] is False
     assert "qmt" not in response.text.lower()
     assert db.list_broker_gateway_events_sync() == []
 
@@ -131,6 +136,95 @@ def test_automation_policy_route_rejects_live_mode(tmp_path, monkeypatch) -> Non
 
     assert response.status_code == 400
     assert "broker submission is disabled by default" in response.json()["detail"]
+
+
+def test_daily_candidate_trial_routes_are_evidence_only(tmp_path, monkeypatch) -> None:
+    db = AppDatabase(tmp_path / "automation.db")
+    db.init_sync()
+    client = _client_for_db(monkeypatch, db)
+
+    status_response = client.get("/api/automation/daily-candidate/trial")
+
+    assert status_response.status_code == 200
+    status = status_response.json()
+    assert status["eligible_for_human_go_no_go_review"] is False
+    assert status["qualifying_trading_day_count"] == 0
+    assert status["simulated_order_count"] == 0
+    assert status["automatic_order_submission_enabled"] is False
+    assert status["automatic_capital_scaling_enabled"] is False
+
+    review_response = client.post(
+        "/api/automation/daily-candidate/trial/reviews",
+        json={
+            "expected_trial_fingerprint": status["trial_fingerprint"],
+            "decision": "continue_paper_shadow",
+            "reviewed_by": "owner",
+            "note": "Continue collecting forward evidence.",
+            "confirmation": (
+                "record_daily_candidate_trial_review_without_trade_or_capital_authority"
+            ),
+        },
+    )
+
+    assert review_response.status_code == 200
+    review = review_response.json()
+    assert review["status"] == "recorded"
+    assert review["authorizes_execution"] is False
+    assert review["changes_capital_authority"] is False
+    listed = client.get("/api/automation/daily-candidate/trial/reviews")
+    assert listed.status_code == 200
+    assert listed.json()[0]["review_id"] == review["review_id"]
+
+
+def test_daily_candidate_run_rejects_caller_supplied_trade_facts(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    db = AppDatabase(tmp_path / "automation.db")
+    db.init_sync()
+    client = _client_for_db(monkeypatch, db)
+
+    response = client.post(
+        "/api/automation/run/daily-candidate",
+        json={
+            "trading_plan": {"symbol": "600519", "quantity": 100},
+            "account_equity": 20000,
+        },
+    )
+
+    assert response.status_code == 422
+    assert "extra_forbidden" in response.text
+
+
+def test_daily_candidate_run_uses_canonical_bound_service(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    db = AppDatabase(tmp_path / "automation.db")
+    db.init_sync()
+    client = _client_for_db(monkeypatch, db)
+
+    class _Service:
+        async def run_once(self):
+            return {
+                "schema_version": "karkinos.daily_decision_evidence_automation.v3",
+                "decision_outcome": "no_action",
+                "no_action_reasons": ["no_strategy_action"],
+                "broker_submission_enabled": False,
+                "does_not_submit_broker_order": True,
+            }
+
+    monkeypatch.setattr(
+        "server.services.daily_decision_evidence_automation."
+        "build_daily_decision_evidence_automation_service",
+        lambda state: _Service(),
+    )
+
+    response = client.post("/api/automation/run/daily-candidate", json={})
+
+    assert response.status_code == 200
+    assert response.json()["decision_outcome"] == "no_action"
+    assert response.json()["does_not_submit_broker_order"] is True
 
 
 def test_market_session_route_runs_explicit_paper_shadow_plan(

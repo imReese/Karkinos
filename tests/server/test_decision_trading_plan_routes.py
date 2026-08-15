@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from types import SimpleNamespace
 
 from fastapi.routing import APIRoute
@@ -92,6 +93,38 @@ class FakeDecisionDb:
         raise AssertionError("trading plan must not write ledger entries")
 
 
+def test_decision_account_truth_gate_uses_current_promotion_evidence(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "server.account_truth_gate.build_latest_account_truth_promotion_evidence",
+        lambda state: {
+            "schema_version": "karkinos.account_truth.promotion_evidence.v1",
+            "status": "blocked",
+            "gate_status": "pass",
+            "score": 100,
+            "import_run_id": "import-stale",
+            "source_fingerprint": "a" * 64,
+            "captured_at": "2026-07-01T15:00:00+08:00",
+            "current_age_seconds": 90000,
+            "max_age_seconds": 86400,
+            "data_freshness_status": "stale",
+            "unresolved_mismatch_count": 0,
+            "reconciliation_status": "pass",
+            "ledger_coverage": {"status": "covered"},
+            "blockers": ["account_truth_import_stale"],
+        },
+    )
+
+    result = decision_routes._account_truth_gate_evidence(SimpleNamespace())
+
+    assert result["gate_status"] == "blocked"
+    assert result["promotion_status"] == "blocked"
+    assert result["data_freshness_status"] == "stale"
+    assert result["blocking_reasons"] == ["account_truth_import_stale"]
+    assert result["source_fingerprint"] == "a" * 64
+
+
 def test_decision_trading_plan_route_returns_read_only_order_intent(monkeypatch):
     fake_db = FakeDecisionDb()
     fake_state = SimpleNamespace(
@@ -130,6 +163,16 @@ def test_decision_trading_plan_route_returns_read_only_order_intent(monkeypatch)
     monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         decision_routes,
+        "_account_truth_gate_evidence",
+        lambda state: {
+            "gate_status": "pass",
+            "data_freshness_status": "fresh",
+            "unresolved_mismatch_count": 0,
+            "import_run_id": "fixture-import",
+        },
+    )
+    monkeypatch.setattr(
+        decision_routes,
         "resolve_strategy_order_generation_gate",
         lambda db, strategy_id, *, as_of_date=None: (
             {
@@ -149,6 +192,9 @@ def test_decision_trading_plan_route_returns_read_only_order_intent(monkeypatch)
     response = asyncio.run(endpoint())
 
     assert response["schema_version"] == "karkinos.daily_trading_plan.v1"
+    generated_at = datetime.fromisoformat(response["generated_at"])
+    assert generated_at.tzinfo is not None
+    assert generated_at.utcoffset() is not None
     assert response["conclusion_status"] == "paper_shadow_required"
     assert response["candidate_pool_count"] == 1
     assert response["manual_ready_count"] == 0
