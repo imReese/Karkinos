@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 from pathlib import Path
 
@@ -53,7 +54,13 @@ def _write_executable(path: Path, content: str) -> None:
     path.chmod(0o755)
 
 
-def _preflight_repo(tmp_path: Path, *, health_response: str, curl_exit: int) -> Path:
+def _preflight_repo(
+    tmp_path: Path,
+    *,
+    health_response: str,
+    curl_exit: int,
+    listener_pids: str = "4242",
+) -> Path:
     repo = tmp_path / "repo"
     scripts = repo / "scripts"
     bin_dir = tmp_path / "bin"
@@ -71,18 +78,20 @@ def _preflight_repo(tmp_path: Path, *, health_response: str, curl_exit: int) -> 
         bin_dir / "uv",
         "#!/usr/bin/env bash\n"
         'if [[ "$*" == *"python -c"* ]]; then exit 0; fi\n'
-        f"touch '{tmp_path / 'uv-launch-called'}'\n",
+        f"touch '{tmp_path / 'uv-launch-called'}'\n"
+        "sleep 5\n",
     )
     _write_executable(
         bin_dir / "npm",
         f"#!/usr/bin/env bash\ntouch '{tmp_path / 'npm-called'}'\n",
     )
-    _write_executable(bin_dir / "lsof", "#!/usr/bin/env bash\necho 4242\n")
+    _write_executable(
+        bin_dir / "lsof",
+        f"#!/usr/bin/env bash\nprintf '%s' '{listener_pids}'\n",
+    )
     _write_executable(
         bin_dir / "curl",
-        "#!/usr/bin/env bash\n"
-        f"printf '%s' '{health_response}'\n"
-        f"exit {curl_exit}\n",
+        f"#!/usr/bin/env bash\nprintf '%s' '{health_response}'\nexit {curl_exit}\n",
     )
     return repo
 
@@ -137,3 +146,38 @@ def test_start_server_reports_unresponsive_listener_without_killing(tmp_path: Pa
     assert "Listener PID(s): 4242" in result.stderr
     assert "No process was terminated." in result.stderr
     assert not (tmp_path / "uv-launch-called").exists()
+
+
+def test_start_server_prod_without_extra_args_handles_empty_server_args(
+    tmp_path: Path,
+):
+    repo = _preflight_repo(
+        tmp_path,
+        health_response="",
+        curl_exit=28,
+        listener_pids="",
+    )
+    result = subprocess.run(
+        ["bash", "scripts/start_server.sh", "prod"],
+        cwd=repo,
+        env={
+            **os.environ,
+            "HOME": str(tmp_path / "home"),
+            "PATH": f"{tmp_path / 'bin'}:{os.environ['PATH']}",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    try:
+        assert result.returncode == 0
+        assert "unbound variable" not in result.stderr
+        assert "uv run python -m server" in result.stdout
+        assert (tmp_path / "uv-launch-called").is_file()
+    finally:
+        pid_file = repo / ".run" / "server.pid"
+        if pid_file.is_file():
+            try:
+                os.kill(int(pid_file.read_text().strip()), signal.SIGTERM)
+            except ProcessLookupError:
+                pass
