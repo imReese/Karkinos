@@ -2790,10 +2790,16 @@ def build_operations_runbook_acceptance_audit() -> AcceptanceAudit:
                 checkbox_text=(
                     "* [x] Decision Automation shows 20-day / 50-order trial "
                     "progress and records GO, continue, or NO-GO without "
-                    "execution/capital authority; bilingual runbooks define "
-                    "daily operation and fail-closed recovery."
+                    "execution/capital authority; Automation Cockpit v3 also "
+                    "separates exact background-task liveness from financial "
+                    "readiness, and bilingual runbooks define daily operation "
+                    "and fail-closed recovery."
                 ),
                 evidence_paths=(
+                    "server/services/daily_candidate_runtime_status.py",
+                    "server/services/automation_cockpit.py",
+                    "tests/test_daily_candidate_runtime_status.py",
+                    "tests/test_automation_cockpit.py",
                     "web/src/features/decision/components/daily-candidate-trial-panel.tsx",
                     "web/src/features/decision/components/decision-cockpit-page.test.tsx",
                     "web/src/features/operations/api.ts",
@@ -2801,6 +2807,7 @@ def build_operations_runbook_acceptance_audit() -> AcceptanceAudit:
                     "docs/DAILY_CANDIDATE_PRODUCTION_RUNBOOK.zh.md",
                 ),
                 validation_commands=(
+                    "uv run python -m pytest tests/test_daily_candidate_runtime_status.py tests/test_automation_cockpit.py tests/server/test_automation_routes.py",
                     'npm --prefix web test -- decision-cockpit-page.test.tsx -t "daily candidate trial"',
                     "uv run python -m pytest tests/test_acceptance_audit.py -k operations_runbook",
                 ),

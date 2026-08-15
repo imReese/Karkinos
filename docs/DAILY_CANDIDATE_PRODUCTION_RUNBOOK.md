@@ -94,6 +94,16 @@ date and at most eight named blockers, and delivery is bounded to ten seconds.
 The attempt records alert/notification status; delivery or alert-store failure cannot trigger a retry, create an OMS
 order, contact a broker, mutate the ledger, or change capital authority.
 
+Decision → Automation also shows `karkinos.daily_candidate_runtime_status.v1`.
+It separately proves whether owner configuration enabled the background monitor
+and whether the exact in-process monitor task is still running. A disabled,
+missing, completed, cancelled, or failed task is an operational blocker for the
+automatic attempt even when the decision window itself is open. The manual
+window remains a separate fact. Runtime-task liveness never claims that Account
+Truth, market, strategy, fees, risk, or reconciliation are financially ready,
+and the status read performs no provider call, database write, broker action,
+or authority change.
+
 ## Forward operating trial
 
 The production panel counts a date only when all of the following are true:
@@ -159,6 +169,7 @@ review.
 | Two input fingerprints on one market date | Trial date excluded | Review the drift and continue on a later clean date |
 | Stored daily input identity cannot be replayed | Trial date excluded | Preserve the record, investigate source drift or tampering, and continue on a later clean date |
 | Background alert or notification fails | Candidate result remains unchanged and no retry occurs | Inspect the attempt's sanitized `operator_alert` / `notification` status before the next window |
+| Background monitor is disabled, missing, completed, cancelled, or failed | No automatic attempt; runtime status fails closed | Keep the process stopped or restart only after explicit owner enablement, then verify `background_monitor_running=true` before the next window |
 | Background window passes without a record | `missed_decision_window`; no backfill | Prepare current evidence before the next verified trading-day window |
 | Strategy or reviewed-fee fingerprint changes | New trial epoch starts | Keep old samples as superseded evidence; do not merge them |
 | Kill Switch unavailable or active | `no_action` | Restore or explicitly review trading controls |

@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 import { usePreferences } from '../../../app/preferences';
 import {
+  type DailyCandidateRuntimeStatus,
   type DailyCandidateTrial,
   useDailyCandidateTrialReviewMutation,
   useRunDailyCandidateMutation,
@@ -12,9 +13,11 @@ type ReviewDecision =
 
 export function DailyCandidateTrialPanel({
   trial,
+  runtime,
   reviewEnabled = true,
 }: {
   trial: DailyCandidateTrial;
+  runtime: DailyCandidateRuntimeStatus;
   reviewEnabled?: boolean;
 }) {
   const { locale } = usePreferences();
@@ -75,6 +78,25 @@ export function DailyCandidateTrialPanel({
               {trial.background_schedule.status} ·{' '}
               {trial.background_schedule.decision_window_start}–
               {trial.background_schedule.decision_window_end} Asia/Shanghai
+            </div>
+            <div
+              data-testid="daily-candidate-runtime-monitor"
+              className={
+                runtime.background_monitor_running
+                  ? 'text-[var(--app-success)]'
+                  : 'text-[var(--app-warning)]'
+              }
+            >
+              {locale === 'zh' ? '后台监控：' : 'Background monitor: '}
+              {runtime.background_monitor_running
+                ? locale === 'zh'
+                  ? '已启用且运行中'
+                  : 'enabled and running'
+                : `${runtime.status} · ${runtime.operational_blockers.join(' · ')}`}
+              {' · '}
+              {locale === 'zh'
+                ? '仅证明任务存活，不代表财务就绪'
+                : 'task liveness only; financial readiness is not claimed'}
             </div>
           </div>
           <button

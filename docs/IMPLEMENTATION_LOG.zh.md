@@ -7,7 +7,7 @@ commit 和 pull request。
 
 ## 当前基线
 
-截至 2026-07-18，v0.2 至 v1.7 已完成。v1.8 control-plane 基础以及截至 Phase 1.18 的
+截至 2026-08-16，v0.2 至 v1.7 已完成。v1.8 control-plane 基础以及截至 Phase 1.18 的
 AI-native research 基础已经实现。当前产品里程碑是[路线图](ROADMAP.zh.md)中的券商连接、逐单
 受控 pilot。
 
@@ -42,6 +42,7 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
 - 下一批对账会把每张前序订单解析到当前精确策略；策略 lineage 缺失、混合或无关时，即使批次 clear 也会阻断，且记录不授权下一批；
 - 可撤销的 Account Truth 费用表复核及 Web 人工流程把运行配置的安全条款与精确持久化买卖成交的佣金、税、过户费逐分项比对，只保存汇总结果与 fingerprint，并生成基准/候选共用的版本化计算器 reference；接受操作必须绑定重算后的精确预览、复核人和完整确认短语，读取面在当前证据漂移时会把已接受记录降级为 blocked；交易所覆盖和分项金额舍入真正进入计算，critique、晋级和票据重查当前复核及日期覆盖，缺失/撤销/漂移/篡改证据在不联系 provider 的前提下 no-action，且无订单或资本权限；
 - 策略到票据改为两阶段交接：当前晋级与有效费用复核最多生成 `paper_shadow_required`；票据还必须取得同日、action 绑定、fingerprint 完整且 `within_expectations` 的模拟。Decision、Plan、旧 Trading 与 daily-shadow 共用 canonical 链，写边重查 Account Truth、行情、风控、Kill Switch、晋级、费用与 shadow，拒绝调用方权益或缺失旧晋级，且无券商/资本权限；
+- Automation Cockpit v3 新增 `karkinos.daily_candidate_runtime_status.v1`，把 owner 启动配置与当前进程内准确的每日候选监控 task 绑定。task 被禁用、缺失、已结束、被取消或失败时，会独立于人工决策窗口阻断自动尝试；该投影只读、不联系 provider、不授予权限，也明确不声明财务就绪；
 - fail-fast 分组运行配置、仅限环境变量的 TuShare/AI/通知凭证、已校验的
   Settings 写入契约，以及 Server 与旧 CLI 共用的 dotenv 选择路径；
 - 确定性的“仅进程存活”健康端点与健康感知启动预检：在前端构建或启动新进程前区分已响应的
