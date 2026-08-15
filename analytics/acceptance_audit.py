@@ -2715,6 +2715,97 @@ def build_operations_runbook_acceptance_audit() -> AcceptanceAudit:
                 ),
             ),
             AcceptanceCriterion(
+                key="production_daily_candidate_outcome",
+                checkbox_text=(
+                    "* [x] The canonical current-facts daily candidate run "
+                    "replays Decision, plan, risk, strategy advancement, "
+                    "same-market-date Account Truth promotion evidence, "
+                    "per-intent current quote identity, reviewed costs, exact "
+                    "paper/shadow, and current prior-"
+                    "execution reconciliation before emitting only a "
+                    "fingerprinted read-only manual-ticket candidate or named "
+                    "no-action result; its owner-enabled background caller "
+                    "uses a verified SSE decision window and one atomic "
+                    "fail-closed attempt per market date; final Decision/plan "
+                    "times and every quote are replayed against that window "
+                    "and a 300-second maximum quote age; Account Truth must "
+                    "precede the Decision and pass a replayed age limit. The "
+                    "input identity binds sanitized risk failure, strategy, "
+                    "paper/shadow, execution closure, and blockers so same-day "
+                    "drift is retained instead of overwritten. Every ticket and "
+                    "snapshot share one replayed strategy, human approval, "
+                    "reviewed fee, comparison, and frozen-dataset binding."
+                    " They also share one privacy-minimized Account Truth "
+                    "capture, valuation, ledger, reconciliation, and coverage "
+                    "binding without account identity or balances."
+                    " Each claimed background attempt persists a bounded "
+                    "non-authorizing operator alert and sanitized NO-ACTION "
+                    "notification status without enabling retry."
+                ),
+                evidence_paths=(
+                    "server/db.py",
+                    "server/routes/decision.py",
+                    "server/services/daily_decision_evidence_automation.py",
+                    "server/services/daily_candidate_execution_closure.py",
+                    "server/services/daily_trading_plan.py",
+                    "server/routes/automation.py",
+                    "server/routes/trading.py",
+                    "tests/test_daily_candidate_execution_closure.py",
+                    "tests/test_daily_candidate_background_schedule.py",
+                    "tests/test_daily_decision_evidence_automation.py",
+                    "tests/server/test_decision_trading_plan_routes.py",
+                    "tests/server/test_automation_routes.py",
+                    "tests/server/test_trading_routes.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/test_daily_candidate_background_schedule.py tests/test_daily_candidate_execution_closure.py tests/test_daily_decision_evidence_automation.py tests/server/test_decision_trading_plan_routes.py tests/server/test_automation_routes.py tests/server/test_trading_routes.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="daily_candidate_forward_trial",
+                checkbox_text=(
+                    "* [x] The forward operating trial counts only verified "
+                    "trading days with one input fingerprint in the latest "
+                    "frozen strategy-and-reviewed-fee epoch, reads complete "
+                    "persisted history without merging old epochs, recomputes "
+                    "the input identity and Account Truth age, binds "
+                    "same-day Account Truth, "
+                    "replay-valid read-only tickets, prior execution closure, "
+                    "and exact drift-clear paper/shadow evidence; 20 days and "
+                    "50 simulated orders permit only an exact human GO/NO-GO "
+                    "review."
+                ),
+                evidence_paths=(
+                    "server/services/daily_candidate_trial.py",
+                    "tests/test_daily_candidate_trial.py",
+                    "server/routes/automation.py",
+                    "tests/server/test_automation_routes.py",
+                ),
+                validation_commands=(
+                    "uv run python -m pytest tests/test_daily_candidate_trial.py tests/server/test_automation_routes.py",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="daily_candidate_production_operator_runbook",
+                checkbox_text=(
+                    "* [x] Decision Automation shows 20-day / 50-order trial "
+                    "progress and records GO, continue, or NO-GO without "
+                    "execution/capital authority; bilingual runbooks define "
+                    "daily operation and fail-closed recovery."
+                ),
+                evidence_paths=(
+                    "web/src/features/decision/components/daily-candidate-trial-panel.tsx",
+                    "web/src/features/decision/components/decision-cockpit-page.test.tsx",
+                    "web/src/features/operations/api.ts",
+                    "docs/DAILY_CANDIDATE_PRODUCTION_RUNBOOK.md",
+                    "docs/DAILY_CANDIDATE_PRODUCTION_RUNBOOK.zh.md",
+                ),
+                validation_commands=(
+                    'npm --prefix web test -- decision-cockpit-page.test.tsx -t "daily candidate trial"',
+                    "uv run python -m pytest tests/test_acceptance_audit.py -k operations_runbook",
+                ),
+            ),
+            AcceptanceCriterion(
                 key="simulation_evidence_safety_docs",
                 checkbox_text=(
                     "* [x] README, architecture, roadmap, and implementation "
