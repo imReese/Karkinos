@@ -69,6 +69,7 @@ class AppState:
         self.hub: ConnectionHub | None = None
         self.bridge: EventBusBridge | None = None
         self.scheduler: TradingScheduler | None = None
+        self.daily_decision_evidence_task: asyncio.Task[None] | None = None
         self.notifier: Any = None
         self.trading_controls: TradingControlState | None = None
 
@@ -169,6 +170,7 @@ async def lifespan(app: FastAPI):
         run_ai_shadow_research_automation_loop,
     )
     from server.services.daily_decision_evidence_automation import (
+        DAILY_DECISION_EVIDENCE_AUTOMATION_TASK_NAME,
         run_daily_decision_evidence_automation_loop,
     )
     from server.services.market_calendar_automation import (
@@ -274,6 +276,7 @@ async def lifespan(app: FastAPI):
     broker_statement_collector_task: asyncio.Task[None] | None = None
     market_calendar_task: asyncio.Task[None] | None = None
     decision_evidence_task: asyncio.Task[None] | None = None
+    state.daily_decision_evidence_task = None
     shadow_research_task: asyncio.Task[None] | None = None
     if collector_config.enabled:
         broker_statement_collector_task = asyncio.create_task(
@@ -304,8 +307,9 @@ async def lifespan(app: FastAPI):
                 state=state,
                 interval_seconds=config.live_poll_interval,
             ),
-            name="daily-decision-evidence-automation",
+            name=DAILY_DECISION_EVIDENCE_AUTOMATION_TASK_NAME,
         )
+        state.daily_decision_evidence_task = decision_evidence_task
         if config.market_calendar_auto_sync:
             market_calendar_task = asyncio.create_task(
                 run_market_calendar_automation_loop(db=db, config=config),
@@ -329,6 +333,8 @@ async def lifespan(app: FastAPI):
             await decision_evidence_task
         except asyncio.CancelledError:
             pass
+        finally:
+            state.daily_decision_evidence_task = None
     if market_calendar_task is not None:
         market_calendar_task.cancel()
         try:

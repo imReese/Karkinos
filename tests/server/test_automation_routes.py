@@ -20,6 +20,17 @@ class _ConnectorWouldFailIfQueried:
         raise AssertionError("cockpit GET must not call an edge adapter")
 
 
+class _RunningTask:
+    def done(self) -> bool:
+        return False
+
+    def cancelled(self) -> bool:
+        return False
+
+    def exception(self):
+        return None
+
+
 def _client_for_db(
     monkeypatch,
     db: AppDatabase,
@@ -67,7 +78,7 @@ def test_automation_cockpit_route_includes_runtime_connector_snapshot(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["schema_version"] == "karkinos.automation_cockpit.v2"
+    assert payload["schema_version"] == "karkinos.automation_cockpit.v3"
     assert "runtime_connector_snapshots" not in payload
     assert "runtime_connector_snapshot_status" not in payload
     registration = payload["connector_registrations"][0]
@@ -82,8 +93,43 @@ def test_automation_cockpit_route_includes_runtime_connector_snapshot(
     )
     assert payload["daily_candidate_trial"]["broker_submission_enabled"] is False
     assert payload["daily_candidate_trial"]["authorizes_execution"] is False
+    runtime = payload["daily_candidate_runtime"]
+    assert runtime["status"] == "monitor_failed_closed"
+    assert runtime["financial_readiness_claimed"] is False
+    assert runtime["broker_submission_enabled"] is False
     assert "qmt" not in response.text.lower()
     assert db.list_broker_gateway_events_sync() == []
+
+
+def test_automation_cockpit_route_reports_exact_running_daily_candidate_task(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    db = AppDatabase(tmp_path / "automation.db")
+    db.init_sync()
+    fake_state = SimpleNamespace(
+        db=db,
+        config=SimpleNamespace(broker_connectors=[], live_auto_start=True),
+        trading_controls=TradingControlState(db=db),
+        daily_decision_evidence_task=_RunningTask(),
+        hub=None,
+    )
+    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    app = FastAPI()
+    app.include_router(create_router())
+
+    response = TestClient(app).get("/api/automation/cockpit")
+
+    assert response.status_code == 200
+    runtime = response.json()["daily_candidate_runtime"]
+    assert runtime["background_monitor_configured"] is True
+    assert runtime["background_monitor_running"] is True
+    assert runtime["monitor_task_state"] == "running"
+    assert runtime["financial_readiness_claimed"] is False
+    assert runtime["provider_contact_performed"] is False
+    assert runtime["database_writes_performed"] is False
+    assert runtime["broker_submission_enabled"] is False
+    assert runtime["authorizes_execution"] is False
 
 
 def test_automation_cockpit_get_projects_blocked_current_review_without_alert_write(
@@ -602,7 +648,7 @@ def test_automation_cockpit_route_returns_read_only_summary(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["schema_version"] == "karkinos.automation_cockpit.v2"
+    assert payload["schema_version"] == "karkinos.automation_cockpit.v3"
     assert payload["broker_submission_enabled"] is False
     assert payload["automation_status"]["kill_switch_enabled"] is True
     gateways = {item["gateway_id"]: item for item in payload["gateways"]}

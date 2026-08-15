@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from server.services.automation_alerts import AutomationAlertService
 from server.services.automation_control import AutomationControlService
@@ -13,10 +14,14 @@ from server.services.controlled_execution_operator_view import (
 from server.services.current_per_order_review_projection import (
     build_current_per_order_review_summary,
 )
+from server.services.daily_candidate_runtime_status import (
+    DAILY_CANDIDATE_RUNTIME_STATUS_SCHEMA_VERSION,
+    unavailable_daily_candidate_runtime_status,
+)
 from server.services.daily_candidate_trial import DailyCandidateTrialService
 from server.services.strategy_promotion_pipeline import StrategyPromotionPipeline
 
-AUTOMATION_COCKPIT_SCHEMA_VERSION = "karkinos.automation_cockpit.v2"
+AUTOMATION_COCKPIT_SCHEMA_VERSION = "karkinos.automation_cockpit.v3"
 
 
 class AutomationCockpitService:
@@ -30,12 +35,16 @@ class AutomationCockpitService:
         broker_connectors: list[Any] | None = None,
         account_truth_evidence_reader: Callable[[], dict[str, Any]] | None = None,
         current_per_order_dossier_reader: Callable[[], dict[str, Any]] | None = None,
+        daily_candidate_runtime_reader: (
+            Callable[[dict[str, Any]], dict[str, Any]] | None
+        ) = None,
     ) -> None:
         self._db = db
         self._trading_controls = trading_controls
         self._broker_connectors = broker_connectors or []
         self._account_truth_evidence_reader = account_truth_evidence_reader
         self._current_per_order_dossier_reader = current_per_order_dossier_reader
+        self._daily_candidate_runtime_reader = daily_candidate_runtime_reader
 
     def summary(self) -> dict[str, Any]:
         automation_status = AutomationControlService(
@@ -60,6 +69,11 @@ class AutomationCockpitService:
         reconciliation_items = self._db.list_execution_reconciliation_open_items_sync(
             limit=50
         )
+        daily_candidate_trial = DailyCandidateTrialService(db=self._db).get_status()
+        daily_candidate_runtime = _daily_candidate_runtime_status(
+            self._daily_candidate_runtime_reader,
+            daily_candidate_trial.get("background_schedule"),
+        )
         return {
             "schema_version": AUTOMATION_COCKPIT_SCHEMA_VERSION,
             "broker_submission_enabled": False,
@@ -73,9 +87,8 @@ class AutomationCockpitService:
             "current_per_order_reviews": build_current_per_order_review_summary(
                 self._current_per_order_dossier_reader
             ),
-            "daily_candidate_trial": DailyCandidateTrialService(
-                db=self._db
-            ).get_status(),
+            "daily_candidate_trial": daily_candidate_trial,
+            "daily_candidate_runtime": daily_candidate_runtime,
             "open_alert_count": len(open_alerts),
             "open_alerts": open_alerts,
             "recent_runs": recent_runs,
@@ -86,8 +99,34 @@ class AutomationCockpitService:
                 "Cockpit GET reads persisted facts only and never queries a provider connector.",
                 "Provider snapshots enter through an explicitly started ingestion boundary.",
                 "Current per-order review is non-submitting and projects only persisted evidence.",
+                "Daily-candidate monitor liveness is operational evidence only and does not claim financial readiness.",
             ],
         }
+
+
+def _daily_candidate_runtime_status(
+    reader: Callable[[dict[str, Any]], dict[str, Any]] | None,
+    background_schedule: Any,
+) -> dict[str, Any]:
+    schedule = background_schedule if isinstance(background_schedule, dict) else None
+    if not callable(reader):
+        return unavailable_daily_candidate_runtime_status(schedule)
+    try:
+        value = reader(dict(schedule or {}))
+    except Exception:  # noqa: BLE001 - source readers are isolated fail-closed
+        return unavailable_daily_candidate_runtime_status(schedule)
+    if (
+        not isinstance(value, dict)
+        or value.get("schema_version") != DAILY_CANDIDATE_RUNTIME_STATUS_SCHEMA_VERSION
+        or value.get("financial_readiness_claimed") is not False
+        or value.get("provider_contact_performed") is not False
+        or value.get("database_writes_performed") is not False
+        or value.get("broker_submission_enabled") is not False
+        or value.get("authorizes_execution") is not False
+        or value.get("changes_capital_authority") is not False
+    ):
+        return unavailable_daily_candidate_runtime_status(schedule)
+    return value
 
 
 def _registered_connector_contracts(
