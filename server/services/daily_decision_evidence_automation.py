@@ -22,6 +22,7 @@ DAILY_DECISION_EVIDENCE_AUTOMATION_SCHEMA_VERSION = (
     "karkinos.daily_decision_evidence_automation.v3"
 )
 DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE = "daily_decision_evidence"
+DAILY_DECISION_EVIDENCE_AUTOMATION_TASK_NAME = "daily-decision-evidence-automation"
 DAILY_CANDIDATE_BACKGROUND_ATTEMPT_RUN_TYPE = "daily_candidate_background_attempt"
 DAILY_CANDIDATE_BACKGROUND_SCHEDULE_SCHEMA_VERSION = (
     "karkinos.daily_candidate_background_schedule.v1"

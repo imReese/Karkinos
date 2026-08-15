@@ -84,6 +84,9 @@ def create_router() -> APIRouter:
         from server.services.current_per_order_dossier_factory import (
             build_current_per_order_dossier_service,
         )
+        from server.services.daily_candidate_runtime_status import (
+            build_daily_candidate_runtime_status,
+        )
 
         state = get_app_state()
         current_per_order_dossiers = build_current_per_order_dossier_service(state)
@@ -96,6 +99,17 @@ def create_router() -> APIRouter:
             ),
             current_per_order_dossier_reader=(
                 lambda: current_per_order_dossiers.list_candidates(limit=20)
+            ),
+            daily_candidate_runtime_reader=(
+                lambda background_schedule: build_daily_candidate_runtime_status(
+                    config=getattr(state, "config", None),
+                    monitor_task=getattr(
+                        state,
+                        "daily_decision_evidence_task",
+                        None,
+                    ),
+                    background_schedule=background_schedule,
+                )
             ),
         ).summary()
 
