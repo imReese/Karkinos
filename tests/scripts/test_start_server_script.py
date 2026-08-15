@@ -49,6 +49,17 @@ def test_start_server_limits_reload_scope_and_archives_large_logs():
     assert 'rm -f "${log_file}"' not in script
 
 
+def test_start_server_requires_bounded_process_liveness_before_success():
+    script = Path("scripts/start_server.sh").read_text()
+
+    assert "KARKINOS_STARTUP_HEALTH_TIMEOUT_SECONDS:-15" in script
+    assert "wait_for_backend_readiness" in script
+    assert script.index("wait_for_backend_readiness") < script.index(
+        'echo "Karkinos Web service started'
+    )
+    assert "financial_readiness" not in script
+
+
 def _write_executable(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
     path.chmod(0o755)
@@ -153,8 +164,10 @@ def test_start_server_prod_without_extra_args_handles_empty_server_args(
 ):
     repo = _preflight_repo(
         tmp_path,
-        health_response="",
-        curl_exit=28,
+        health_response=(
+            '{"schema_version":"karkinos.service_health.v1","status":"alive"}'
+        ),
+        curl_exit=0,
         listener_pids="",
     )
     result = subprocess.run(
@@ -181,3 +194,60 @@ def test_start_server_prod_without_extra_args_handles_empty_server_args(
                 os.kill(int(pid_file.read_text().strip()), signal.SIGTERM)
             except ProcessLookupError:
                 pass
+
+
+def test_start_server_cleans_up_launch_when_process_liveness_times_out(
+    tmp_path: Path,
+):
+    repo = _preflight_repo(
+        tmp_path,
+        health_response="",
+        curl_exit=28,
+        listener_pids="",
+    )
+    result = subprocess.run(
+        ["bash", "scripts/start_server.sh", "prod"],
+        cwd=repo,
+        env={
+            **os.environ,
+            "HOME": str(tmp_path / "home"),
+            "PATH": f"{tmp_path / 'bin'}:{os.environ['PATH']}",
+            "KARKINOS_STARTUP_HEALTH_TIMEOUT_SECONDS": "1",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "process liveness did not become ready within 1s" in result.stderr
+    assert (tmp_path / "uv-launch-called").is_file()
+    assert not (repo / ".run" / "server.pid").exists()
+
+
+def test_start_server_rejects_invalid_process_liveness_timeout_before_launch(
+    tmp_path: Path,
+):
+    repo = _preflight_repo(
+        tmp_path,
+        health_response="",
+        curl_exit=28,
+        listener_pids="",
+    )
+    result = subprocess.run(
+        ["bash", "scripts/start_server.sh", "prod"],
+        cwd=repo,
+        env={
+            **os.environ,
+            "HOME": str(tmp_path / "home"),
+            "PATH": f"{tmp_path / 'bin'}:{os.environ['PATH']}",
+            "KARKINOS_STARTUP_HEALTH_TIMEOUT_SECONDS": "0",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "must be an integer within [1, 300]" in result.stderr
+    assert not (tmp_path / "uv-launch-called").exists()

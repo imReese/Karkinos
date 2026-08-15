@@ -20,6 +20,7 @@ LOG_FILE="${LOG_DIR}/server.log"
 WEB_PID_FILE="${RUN_DIR}/web.pid"
 WEB_LOG_FILE="${LOG_DIR}/web.log"
 LOG_MAX_BYTES="${KARKINOS_LOG_MAX_BYTES:-20971520}"
+STARTUP_HEALTH_TIMEOUT_SECONDS="${KARKINOS_STARTUP_HEALTH_TIMEOUT_SECONDS:-15}"
 FRONTEND_HOST="${KARKINOS_FRONTEND_HOST:-127.0.0.1}"
 FRONTEND_PORT="${KARKINOS_FRONTEND_PORT:-5173}"
 
@@ -43,6 +44,7 @@ Notes:
   - Enable live monitoring explicitly with server.live_auto_start=true or KARKINOS_LIVE_AUTO_START=true.
   - Output is redirected to \`logs/server.log\` and \`logs/web.log\`.
   - Logs larger than KARKINOS_LOG_MAX_BYTES (default 20 MiB) are archived before startup.
+  - Startup succeeds only after /api/health reports process liveness within the bounded timeout.
   - PIDs are written to \`.run/server.pid\` and \`.run/web.pid\` in \`dev\` mode.
   - It installs missing frontend dependencies before building.
   - Run \`uv run python scripts/configure_data_source.py\` to configure local market data.
@@ -184,6 +186,52 @@ karkinos_backend_is_alive() {
 		"${health_response}" == *'"status":"alive"'* ]]
 }
 
+validate_startup_health_timeout() {
+	if [[ -z "${STARTUP_HEALTH_TIMEOUT_SECONDS}" || \
+		"${STARTUP_HEALTH_TIMEOUT_SECONDS}" == *[!0-9]* || \
+		"${STARTUP_HEALTH_TIMEOUT_SECONDS}" == "0" || \
+		"${STARTUP_HEALTH_TIMEOUT_SECONDS}" -gt 300 ]]; then
+		echo "Error: KARKINOS_STARTUP_HEALTH_TIMEOUT_SECONDS must be an integer within [1, 300]." >&2
+		exit 1
+	fi
+	if ! command -v curl >/dev/null 2>&1; then
+		echo "Error: curl is required to verify the Karkinos process-liveness endpoint." >&2
+		exit 1
+	fi
+}
+
+cleanup_failed_backend_launch() {
+	if [[ "${TRACKED_PID}" != "${LAUNCH_PID}" ]] && kill -0 "${TRACKED_PID}" >/dev/null 2>&1; then
+		kill "${TRACKED_PID}" >/dev/null 2>&1 || true
+	fi
+	if kill -0 "${LAUNCH_PID}" >/dev/null 2>&1; then
+		kill "${LAUNCH_PID}" >/dev/null 2>&1 || true
+	fi
+	wait "${LAUNCH_PID}" >/dev/null 2>&1 || true
+	rm -f "${PID_FILE}"
+}
+
+wait_for_backend_readiness() {
+	local deadline=$((SECONDS + STARTUP_HEALTH_TIMEOUT_SECONDS))
+	while ((SECONDS < deadline)); do
+		if ! kill -0 "${TRACKED_PID}" >/dev/null 2>&1; then
+			echo "Error: Karkinos Web service exited before process liveness was ready. Check ${LOG_FILE}" >&2
+			cleanup_failed_backend_launch
+			return 1
+		fi
+		if karkinos_backend_is_alive; then
+			return 0
+		fi
+		if ((SECONDS < deadline)); then
+			sleep 1
+		fi
+	done
+
+	echo "Error: Karkinos process liveness did not become ready within ${STARTUP_HEALTH_TIMEOUT_SECONDS}s. Check ${LOG_FILE}" >&2
+	cleanup_failed_backend_launch
+	return 1
+}
+
 preflight_backend_port() {
 	local listener_pids
 	listener_pids="$(backend_listener_pids)"
@@ -245,6 +293,7 @@ done
 PRODUCT_ENTRY_URL="http://${BACKEND_HOST}:${BACKEND_PORT}"
 HOT_RELOAD_URL="http://${FRONTEND_HOST}:${FRONTEND_PORT}"
 
+validate_startup_health_timeout
 mkdir -p "${RUN_DIR}" "${LOG_DIR}"
 
 if [[ -f "${PID_FILE}" ]]; then
@@ -320,9 +369,7 @@ fi
 
 echo "${TRACKED_PID}" >"${PID_FILE}"
 
-if ! kill -0 "${TRACKED_PID}" >/dev/null 2>&1; then
-	echo "Error: Karkinos Web service failed to start. Check ${LOG_FILE}" >&2
-	rm -f "${PID_FILE}"
+if ! wait_for_backend_readiness; then
 	exit 1
 fi
 
