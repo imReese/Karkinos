@@ -104,6 +104,19 @@ Truth, market, strategy, fees, risk, or reconciliation are financially ready,
 and the status read performs no provider call, database write, broker action,
 or authority change.
 
+On an owner-operated Mac, a terminal background process is not durable service
+evidence. Before relying on the next decision window, first inspect the local
+user-level definition with `./scripts/manage_launch_agent.sh print-plist`, then
+explicitly install it with `./scripts/manage_launch_agent.sh install`. Verify
+`./scripts/manage_launch_agent.sh status` reports both a loaded LaunchAgent and
+process liveness. The service binds only `127.0.0.1`, restarts after an
+unexpected exit, and is fully reversible with `uninstall`. Installation does
+not edit `config.json` or `.env`, enable `live_auto_start`, contact a provider,
+or establish financial readiness. If another listener owns the backend port,
+installation fails without stopping it. The operator must resolve that exact
+process explicitly; never run two daily-candidate services against one local
+runtime database.
+
 ## Forward operating trial
 
 The production panel counts a date only when all of the following are true:
@@ -170,6 +183,7 @@ review.
 | Stored daily input identity cannot be replayed | Trial date excluded | Preserve the record, investigate source drift or tampering, and continue on a later clean date |
 | Background alert or notification fails | Candidate result remains unchanged and no retry occurs | Inspect the attempt's sanitized `operator_alert` / `notification` status before the next window |
 | Background monitor is disabled, missing, completed, cancelled, or failed | No automatic attempt; runtime status fails closed | Keep the process stopped or restart only after explicit owner enablement, then verify `background_monitor_running=true` before the next window |
+| macOS LaunchAgent is unloaded or process liveness is unavailable | No durable automatic-monitor claim | Explicitly inspect or reinstall the exact user-level service; do not infer financial readiness from launchd state |
 | Background window passes without a record | `missed_decision_window`; no backfill | Prepare current evidence before the next verified trading-day window |
 | Strategy or reviewed-fee fingerprint changes | New trial epoch starts | Keep old samples as superseded evidence; do not merge them |
 | Kill Switch unavailable or active | `no_action` | Restore or explicitly review trading controls |

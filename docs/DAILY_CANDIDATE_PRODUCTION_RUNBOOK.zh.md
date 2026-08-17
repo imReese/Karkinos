@@ -38,6 +38,8 @@ Owner 启用实时监控后，后台循环先读取持久化且已官方复核�
 
 “决策 → 自动化”还会展示 `karkinos.daily_candidate_runtime_status.v1`，分别证明 owner 配置是否启用了后台监控，以及当前进程内的准确监控 task 是否仍在运行。即使决策窗口已打开，task 被禁用、缺失、已结束、被取消或失败时，自动尝试也必须按运营阻断处理；人工运行窗口是另一项独立事实。task 存活绝不代表 Account Truth、行情、策略、费用、风控或对账已达到财务就绪，读取该状态也不联系 provider、不写数据库、不执行券商动作或改变权限。
 
+在 owner 自行运行的 Mac 上，终端后台子进程不构成持久服务证据。准备下一个决策窗口前，先运行 `./scripts/manage_launch_agent.sh print-plist` 检查本地用户级定义，再显式执行 `./scripts/manage_launch_agent.sh install`；随后必须由 `./scripts/manage_launch_agent.sh status` 同时确认 LaunchAgent 已加载且进程存活。该服务只监听 `127.0.0.1`，意外退出后会重启，并可通过 `uninstall` 完整撤销。安装不会修改 `config.json` 或 `.env`，不会自行开启 `live_auto_start`，不会联系 provider，也不证明财务就绪。若后端端口已有 listener，安装会保持原进程不动并失败；operator 必须明确处理该准确进程，禁止两个每日候选服务共用一个本地运行数据库。
+
 ## 前瞻运营试运行
 
 只有同时满足以下条件，日期才计入样本：
@@ -82,6 +84,7 @@ Owner 启用实时监控后，后台循环先读取持久化且已官方复核�
 | 持久化 daily input identity 无法重放 | 日期不计入 | 保留原记录，调查来源漂移或篡改，等待后续干净交易日 |
 | 后台告警或通知失败 | 候选结论保持不变且不得重试 | 在下个窗口前检查 attempt 中脱敏的 `operator_alert` / `notification` 状态 |
 | 后台监控被禁用、缺失、已结束、被取消或失败 | 不执行自动尝试，runtime 状态 fail closed | 保持停止，或仅在 owner 明确启用后重启，并在下个窗口前确认 `background_monitor_running=true` |
+| macOS LaunchAgent 未加载或进程存活不可用 | 不形成持久自动 monitor 结论 | 显式检查或重装该准确用户级服务；不得从 launchd 状态推断财务就绪 |
 | 后台窗口结束仍无当日记录 | `missed_decision_window`，不回填 | 在下一个已验证交易日窗口前准备好当前证据 |
 | 策略或已复核费用 fingerprint 变化 | 开始新试运行周期 | 旧样本保留为已归档证据，不并入新周期 |
 | Kill Switch 不可用或已开启 | `no_action` | 恢复并复核交易控制证据 |
