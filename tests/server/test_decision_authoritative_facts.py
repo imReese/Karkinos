@@ -78,7 +78,7 @@ def test_decision_uses_persisted_portfolio_and_current_deduplicated_batch(
         symbol="603659",
         asset_type="stock",
         price=25.0,
-        quote_timestamp="2026-07-10T15:00:00+08:00",
+        quote_timestamp="2026-07-10T15:00:00",
         quote_source="deterministic_fixture",
         quote_status="confirmed",
     )
@@ -140,6 +140,18 @@ def test_decision_uses_persisted_portfolio_and_current_deduplicated_batch(
     assert portfolio["valuation_snapshot_id"].startswith("valuation-")
     assert response["summary"]["market_data"]["latest_quote_timestamp"] == (
         "2026-07-10T15:00:00+08:00"
+    )
+    assert (
+        response["candidates"][0]["evidence"]["data_freshness"]["quote_timestamp"]
+        == "2026-07-10T15:00:00+08:00"
+    )
+
+
+def test_decision_rejects_unparseable_quote_timestamp() -> None:
+    from server.routes.decision import _latest_quote_timestamp
+
+    assert (
+        _latest_quote_timestamp([{"quote_timestamp": "not-a-market-timestamp"}]) is None
     )
 
 
