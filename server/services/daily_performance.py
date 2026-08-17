@@ -16,11 +16,20 @@ class DailyTradeLot:
 
 
 @dataclass(frozen=True, slots=True)
+class DailySellLot:
+    timestamp: datetime
+    quantity: float
+    price: float
+    net_proceeds: float
+
+
+@dataclass(frozen=True, slots=True)
 class PositionDailyContext:
     quantity: float
     overnight_quantity: float
     previous_close: float | None
     lots: tuple[DailyTradeLot, ...]
+    sell_lots: tuple[DailySellLot, ...]
     baseline_value: float | None
     baseline_price: float | None
     status: str
@@ -62,6 +71,20 @@ def _coerce_lot(raw: DailyTradeLot | Mapping[str, Any]) -> DailyTradeLot:
     )
 
 
+def _coerce_sell_lot(raw: DailySellLot | Mapping[str, Any]) -> DailySellLot:
+    if isinstance(raw, DailySellLot):
+        return raw
+    timestamp = raw.get("timestamp")
+    if not isinstance(timestamp, datetime):
+        raise ValueError("daily sell lot timestamp must be a datetime")
+    return DailySellLot(
+        timestamp=timestamp,
+        quantity=float(raw["quantity"]),
+        price=float(raw["price"]),
+        net_proceeds=float(raw["net_proceeds"]),
+    )
+
+
 def _matched_lots(
     quantity: float,
     lots: Iterable[DailyTradeLot | Mapping[str, Any]],
@@ -95,31 +118,54 @@ def build_position_daily_context(
     quantity: float,
     previous_close: float | None,
     same_day_buy_lots: Iterable[DailyTradeLot | Mapping[str, Any]],
+    same_day_sell_lots: Iterable[DailySellLot | Mapping[str, Any]] = (),
     has_same_day_sell: bool = False,
 ) -> PositionDailyContext:
-    """Freeze the only supported baseline for one current position."""
+    """Freeze the canonical after-cost daily attribution for one symbol."""
     position_quantity = max(float(quantity), 0.0)
     lots = _matched_lots(position_quantity, same_day_buy_lots)
+    sell_lots = tuple(
+        sorted(
+            (_coerce_sell_lot(item) for item in same_day_sell_lots),
+            key=lambda item: item.timestamp,
+        )
+    )
     same_day_quantity = sum(lot.quantity for lot in lots)
-    overnight_quantity = max(position_quantity - same_day_quantity, 0.0)
+    sold_quantity = sum(max(lot.quantity, 0.0) for lot in sell_lots)
+    overnight_quantity = position_quantity - same_day_quantity + sold_quantity
 
-    if has_same_day_sell:
+    if has_same_day_sell and not sell_lots:
         return PositionDailyContext(
             quantity=position_quantity,
-            overnight_quantity=overnight_quantity,
+            overnight_quantity=max(overnight_quantity, 0.0),
             previous_close=previous_close,
             lots=lots,
+            sell_lots=sell_lots,
             baseline_value=None,
             baseline_price=None,
             status="unavailable",
             source="same_day_sell_requires_daily_attribution",
         )
+    if overnight_quantity < -1e-9:
+        return PositionDailyContext(
+            quantity=position_quantity,
+            overnight_quantity=0.0,
+            previous_close=previous_close,
+            lots=lots,
+            sell_lots=sell_lots,
+            baseline_value=None,
+            baseline_price=None,
+            status="unavailable",
+            source="daily_trade_inventory_conflict",
+        )
+    overnight_quantity = max(overnight_quantity, 0.0)
     if overnight_quantity > 0 and previous_close in {None, 0}:
         return PositionDailyContext(
             quantity=position_quantity,
             overnight_quantity=overnight_quantity,
             previous_close=previous_close,
             lots=lots,
+            sell_lots=sell_lots,
             baseline_value=None,
             baseline_price=None,
             status="unavailable",
@@ -129,7 +175,11 @@ def build_position_daily_context(
     baseline_value = overnight_quantity * float(previous_close or 0.0) + sum(
         lot.total_cost for lot in lots
     )
-    if lots and overnight_quantity > 0:
+    if lots and sell_lots:
+        source = "mixed_previous_close_intraday_trades"
+    elif sell_lots:
+        source = "previous_close_intraday_sell"
+    elif lots and overnight_quantity > 0:
         source = "mixed_previous_close_intraday_trade_cost"
     elif lots:
         source = "intraday_trade_cost"
@@ -140,9 +190,12 @@ def build_position_daily_context(
         overnight_quantity=overnight_quantity,
         previous_close=previous_close,
         lots=lots,
+        sell_lots=sell_lots,
         baseline_value=baseline_value,
         baseline_price=(
-            baseline_value / position_quantity if position_quantity > 0 else None
+            baseline_value / (overnight_quantity + same_day_quantity)
+            if overnight_quantity + same_day_quantity > 0
+            else None
         ),
         status="complete",
         source=source,
@@ -172,21 +225,41 @@ def mark_position_daily(
         if at is None
         else tuple(lot for lot in context.lots if lot.timestamp <= at)
     )
-    active_quantity = context.overnight_quantity + sum(
-        lot.quantity for lot in active_lots
+    active_sell_lots = (
+        context.sell_lots
+        if at is None
+        else tuple(lot for lot in context.sell_lots if lot.timestamp <= at)
     )
+    active_quantity = (
+        context.overnight_quantity
+        + sum(lot.quantity for lot in active_lots)
+        - sum(lot.quantity for lot in active_sell_lots)
+    )
+    if active_quantity < -1e-9:
+        return PositionDailyMark(
+            active_quantity=active_quantity,
+            baseline_value=None,
+            current_value=None,
+            today_change=None,
+            today_change_pct=None,
+            status="unavailable",
+            source="daily_trade_inventory_conflict",
+        )
+    active_quantity = max(active_quantity, 0.0)
     baseline_value = context.overnight_quantity * float(
         context.previous_close or 0.0
     ) + sum(lot.total_cost for lot in active_lots)
     current_value = active_quantity * float(price)
-    today_change = current_value - baseline_value
+    net_sell_proceeds = sum(lot.net_proceeds for lot in active_sell_lots)
+    attributed_value = current_value + net_sell_proceeds
+    today_change = attributed_value - baseline_value
     return PositionDailyMark(
         active_quantity=active_quantity,
         baseline_value=baseline_value,
         current_value=current_value,
         today_change=today_change,
         today_change_pct=(
-            current_value / baseline_value - 1 if baseline_value else None
+            attributed_value / baseline_value - 1 if baseline_value else None
         ),
         status="complete",
         source=context.source,
@@ -202,6 +275,7 @@ def price_at_tick(
     """Choose the newest persisted quote or executed trade price at a tick."""
     observations = list(quote_points)
     observations.extend((lot.timestamp, lot.price) for lot in context.lots)
+    observations.extend((lot.timestamp, lot.price) for lot in context.sell_lots)
     baseline_price = context.previous_close
     if baseline_price is None and context.lots:
         baseline_price = context.lots[0].price

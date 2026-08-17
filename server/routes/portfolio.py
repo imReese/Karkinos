@@ -2011,6 +2011,52 @@ def _ledger_entry_trade_total_fee(entry: dict) -> float:
     return total
 
 
+def _same_day_sell_lots(
+    state,
+    *,
+    symbol: str,
+    trade_day: date,
+    ledger_entries: list[dict] | None = None,
+) -> list[dict[str, float | datetime]]:
+    lots: list[dict[str, float | datetime]] = []
+    resolved_entries = (
+        _read_daily_ledger_entries(state) if ledger_entries is None else ledger_entries
+    )
+    for entry in resolved_entries:
+        if (
+            str(entry.get("symbol") or "") != symbol
+            or str(entry.get("entry_type") or "").lower() != "trade_sell"
+            or _ledger_entry_shanghai_date(entry) != trade_day
+        ):
+            continue
+        quantity = entry.get("quantity")
+        price = entry.get("price")
+        if quantity in {None, ""} or price in {None, ""}:
+            continue
+        quantity_value = float(quantity)
+        if quantity_value <= 0:
+            continue
+        timestamp = _parse_quote_timestamp(entry.get("timestamp"))
+        if timestamp is None:
+            continue
+        net_cash_impact = entry.get("net_cash_impact")
+        net_proceeds = (
+            float(net_cash_impact)
+            if net_cash_impact not in {None, ""}
+            else quantity_value * float(price) - _ledger_entry_trade_total_fee(entry)
+        )
+        lots.append(
+            {
+                "timestamp": timestamp.astimezone(_SH_TZ),
+                "quantity": quantity_value,
+                "price": float(price),
+                "net_proceeds": net_proceeds,
+            }
+        )
+
+    return sorted(lots, key=lambda lot: lot["timestamp"])
+
+
 def _has_same_day_sell(
     state,
     *,
@@ -2045,31 +2091,46 @@ def _resolve_position_today_change(
     latest_timestamp = _parse_quote_timestamp(
         None if latest_quote is None else latest_quote.get("timestamp")
     )
+    resolved_entries = (
+        _read_daily_ledger_entries(state) if ledger_entries is None else ledger_entries
+    )
+    shanghai_today = get_shanghai_now().date()
+    has_today_trade = any(
+        str(entry.get("symbol") or "") == symbol
+        and str(entry.get("entry_type") or "").lower() in {"trade_buy", "trade_sell"}
+        and _ledger_entry_shanghai_date(entry) == shanghai_today
+        for entry in resolved_entries
+    )
     trade_day = (
-        latest_timestamp.date()
-        if latest_timestamp is not None
-        else get_shanghai_now().date()
+        shanghai_today
+        if has_today_trade or latest_timestamp is None
+        else latest_timestamp.date()
     )
     same_day_buy_lots = _same_day_buy_lots(
         state,
         symbol=symbol,
         trade_day=trade_day,
-        ledger_entries=ledger_entries,
+        ledger_entries=resolved_entries,
     )
-    reference_price = latest_price_value if latest_price_value is not None else avg_cost
+    same_day_sell_lots = _same_day_sell_lots(
+        state,
+        symbol=symbol,
+        trade_day=trade_day,
+        ledger_entries=resolved_entries,
+    )
     context = build_position_daily_context(
         quantity=quantity,
         previous_close=baseline_price,
         same_day_buy_lots=same_day_buy_lots,
-        has_same_day_sell=_has_same_day_sell(
-            state,
-            symbol=symbol,
-            trade_day=trade_day,
-            ledger_entries=ledger_entries,
-        ),
+        same_day_sell_lots=same_day_sell_lots,
+    )
+    reference_price = (
+        latest_price_value
+        if latest_price_value is not None
+        else (float(context.sell_lots[-1].price) if context.sell_lots else avg_cost)
     )
     mark = mark_position_daily(context, price=reference_price)
-    if context.lots and context.status == "complete":
+    if (context.lots or context.sell_lots) and context.status == "complete":
         baseline_price = context.baseline_price
         baseline_timestamp = trade_day.isoformat()
         baseline_source = context.source
@@ -2461,12 +2522,23 @@ def _build_intraday_equity_curve_series(
     instruments: dict,
     latest_quotes: dict[str, dict],
 ) -> list[dict]:
+    daily_ledger_entries = _read_daily_ledger_entries(state)
+    shanghai_today = get_shanghai_now().date()
+    has_today_trade = any(
+        str(entry.get("entry_type") or "").lower() in {"trade_buy", "trade_sell"}
+        and _ledger_entry_shanghai_date(entry) == shanghai_today
+        for entry in daily_ledger_entries
+    )
     quote_timestamps = [
         timestamp
         for quote in latest_quotes.values()
         if (timestamp := _quote_market_timestamp(quote)) is not None
     ]
-    session_now = max(quote_timestamps, default=get_shanghai_now()).astimezone(_SH_TZ)
+    session_now = (
+        get_shanghai_now()
+        if has_today_trade
+        else max(quote_timestamps, default=get_shanghai_now())
+    ).astimezone(_SH_TZ)
     tzinfo = session_now.tzinfo
     trade_day = session_now.date()
     session_start = _combine_session_time(trade_day, _CN_MORNING_OPEN, tzinfo)
@@ -2479,9 +2551,6 @@ def _build_intraday_equity_curve_series(
 
     for sym, position in positions.items():
         quantity = float(getattr(position, "quantity", 0.0) or 0.0)
-        if is_economically_zero_quantity(quantity):
-            continue
-
         symbol = str(sym)
         instrument = instruments.get(Symbol(symbol)) if instruments else None
         latest_quote = latest_quotes.get(symbol, {})
@@ -2494,26 +2563,29 @@ def _build_intraday_equity_curve_series(
             symbol,
             latest_quote if latest_quote else None,
         )
-        latest_timestamp = _parse_quote_timestamp(latest_quote.get("timestamp"))
-        trade_day = (
-            latest_timestamp.date()
-            if latest_timestamp is not None
-            else get_shanghai_now().date()
-        )
         same_day_buy_lots = _same_day_buy_lots(
             state,
             symbol=symbol,
             trade_day=trade_day,
+            ledger_entries=daily_ledger_entries,
         )
+        same_day_sell_lots = _same_day_sell_lots(
+            state,
+            symbol=symbol,
+            trade_day=trade_day,
+            ledger_entries=daily_ledger_entries,
+        )
+        if (
+            is_economically_zero_quantity(quantity)
+            and not same_day_buy_lots
+            and not same_day_sell_lots
+        ):
+            continue
         daily_context = build_position_daily_context(
             quantity=quantity,
             previous_close=baseline_price,
             same_day_buy_lots=same_day_buy_lots,
-            has_same_day_sell=_has_same_day_sell(
-                state,
-                symbol=symbol,
-                trade_day=trade_day,
-            ),
+            same_day_sell_lots=same_day_sell_lots,
         )
 
         price_points, has_source_intraday_prices = _load_intraday_price_points(
@@ -2531,6 +2603,7 @@ def _build_intraday_equity_curve_series(
                 "avg_cost": float(getattr(position, "avg_cost", 0.0) or 0.0),
                 "daily_context": daily_context,
                 "same_day_buy_lots": same_day_buy_lots,
+                "same_day_sell_lots": same_day_sell_lots,
                 "price_points": price_points,
             }
         )
@@ -2540,6 +2613,12 @@ def _build_intraday_equity_curve_series(
     observation_ticks = set()
     for holding in holdings:
         for lot in holding["same_day_buy_lots"]:
+            lot_timestamp = lot["timestamp"]
+            if isinstance(lot_timestamp, datetime):
+                if session_start <= lot_timestamp <= session_close:
+                    trade_ticks.add(lot_timestamp)
+                    sparse_quote_ticks.add(lot_timestamp)
+        for lot in holding["same_day_sell_lots"]:
             lot_timestamp = lot["timestamp"]
             if isinstance(lot_timestamp, datetime):
                 if session_start <= lot_timestamp <= session_close:
@@ -2568,7 +2647,13 @@ def _build_intraday_equity_curve_series(
             for lot in holding["same_day_buy_lots"]
             if isinstance(lot["timestamp"], datetime) and lot["timestamp"] > tick
         )
-        cash = current_cash + pending_trade_cost
+        pending_sell_proceeds = sum(
+            float(lot["net_proceeds"])
+            for holding in holdings
+            for lot in holding["same_day_sell_lots"]
+            if isinstance(lot["timestamp"], datetime) and lot["timestamp"] > tick
+        )
+        cash = current_cash + pending_trade_cost - pending_sell_proceeds
         stocks_value = 0.0
         funds_value = 0.0
         others_value = 0.0
@@ -3362,12 +3447,23 @@ def _synthetic_intraday_equity_series_from_current_quotes(
     if portfolio is None:
         return []
 
+    daily_ledger_entries = _read_daily_ledger_entries(state)
+    shanghai_today = get_shanghai_now().date()
+    has_today_trade = any(
+        str(entry.get("entry_type") or "").lower() in {"trade_buy", "trade_sell"}
+        and _ledger_entry_shanghai_date(entry) == shanghai_today
+        for entry in daily_ledger_entries
+    )
     quote_timestamps = [
         timestamp
         for quote in latest_quotes.values()
         if (timestamp := _quote_market_timestamp(quote)) is not None
     ]
-    now = max(quote_timestamps, default=get_shanghai_now()).astimezone(_SH_TZ)
+    now = (
+        get_shanghai_now()
+        if has_today_trade
+        else max(quote_timestamps, default=get_shanghai_now())
+    ).astimezone(_SH_TZ)
     trade_day = now.date()
     session_ticks = _build_cn_session_ticks(
         trade_day, now.tzinfo or _SH_TZ, full_session=True
@@ -3383,9 +3479,6 @@ def _synthetic_intraday_equity_series_from_current_quotes(
 
     for sym, position in getattr(portfolio, "positions", {}).items():
         quantity = float(getattr(position, "quantity", 0.0) or 0.0)
-        if is_economically_zero_quantity(quantity):
-            continue
-
         symbol = str(sym)
         instrument = instruments.get(Symbol(symbol)) if instruments else None
         latest_quote = latest_quotes.get(symbol, {})
@@ -3403,23 +3496,29 @@ def _synthetic_intraday_equity_series_from_current_quotes(
             latest_quote if latest_quote else None,
         )
         quote_timestamp = _parse_quote_timestamp(latest_quote.get("timestamp"))
-        quote_trade_day = (
-            quote_timestamp.date() if quote_timestamp is not None else trade_day
-        )
         same_day_buy_lots = _same_day_buy_lots(
             state,
             symbol=symbol,
-            trade_day=quote_trade_day,
+            trade_day=trade_day,
+            ledger_entries=daily_ledger_entries,
         )
+        same_day_sell_lots = _same_day_sell_lots(
+            state,
+            symbol=symbol,
+            trade_day=trade_day,
+            ledger_entries=daily_ledger_entries,
+        )
+        if (
+            is_economically_zero_quantity(quantity)
+            and not same_day_buy_lots
+            and not same_day_sell_lots
+        ):
+            continue
         daily_context = build_position_daily_context(
             quantity=quantity,
             previous_close=baseline_price,
             same_day_buy_lots=same_day_buy_lots,
-            has_same_day_sell=_has_same_day_sell(
-                state,
-                symbol=symbol,
-                trade_day=quote_trade_day,
-            ),
+            same_day_sell_lots=same_day_sell_lots,
         )
         if (
             latest_price_value is not None
@@ -3427,6 +3526,13 @@ def _synthetic_intraday_equity_series_from_current_quotes(
             and session_start <= quote_timestamp <= session_close
         ):
             sparse_quote_ticks.add(quote_timestamp)
+        for sell_lot in same_day_sell_lots:
+            sell_timestamp = sell_lot["timestamp"]
+            if (
+                isinstance(sell_timestamp, datetime)
+                and session_start <= sell_timestamp <= session_close
+            ):
+                sparse_quote_ticks.add(sell_timestamp)
 
         holdings.append(
             {
@@ -3435,6 +3541,7 @@ def _synthetic_intraday_equity_series_from_current_quotes(
                 "avg_cost": float(getattr(position, "avg_cost", 0.0) or 0.0),
                 "daily_context": daily_context,
                 "same_day_buy_lots": same_day_buy_lots,
+                "same_day_sell_lots": same_day_sell_lots,
                 "price_points": (
                     [(quote_timestamp, latest_price_value)]
                     if latest_price_value is not None and quote_timestamp is not None
@@ -3453,7 +3560,13 @@ def _synthetic_intraday_equity_series_from_current_quotes(
             for lot in holding["same_day_buy_lots"]
             if isinstance(lot["timestamp"], datetime) and lot["timestamp"] > tick
         )
-        tick_cash = cash + pending_trade_cost
+        pending_sell_proceeds = sum(
+            float(lot["net_proceeds"])
+            for holding in holdings
+            for lot in holding["same_day_sell_lots"]
+            if isinstance(lot["timestamp"], datetime) and lot["timestamp"] > tick
+        )
+        tick_cash = cash + pending_trade_cost - pending_sell_proceeds
         stocks_value = 0.0
         funds_value = 0.0
         others_value = 0.0
@@ -3624,12 +3737,12 @@ def _with_overview_quote_metadata(
 
 def _overview_today_pnl_update(
     live_holdings: LiveHoldingsResponse,
+    snapshot: PortfolioSnapshot | None = None,
 ) -> dict[str, object]:
-    if any(
-        item.today_change is None
-        for group in live_holdings.groups
-        for item in group.items
-    ):
+    daily_positions = [item for group in live_holdings.groups for item in group.items]
+    if snapshot is not None:
+        daily_positions.extend(snapshot.closed_positions)
+    if any(position.today_change is None for position in daily_positions):
         return {
             "today_pnl": None,
             "today_pnl_breakdown": None,
@@ -3643,9 +3756,9 @@ def _overview_today_pnl_update(
     others = 0.0
     contributors: list[TodayPnlContributor] = []
 
-    for group in live_holdings.groups:
-        asset_class = _normalize_asset_class(group.asset_class)
-        value = float(group.total_today_change or 0.0)
+    for position in daily_positions:
+        asset_class = _normalize_asset_class(position.asset_class)
+        value = float(position.today_change or 0.0)
         if asset_class == "stock":
             stocks += value
         elif asset_class in {"fund", "etf"}:
@@ -3653,20 +3766,17 @@ def _overview_today_pnl_update(
         else:
             others += value
 
-        for item in group.items:
-            if item.today_change is None:
-                continue
-            contributors.append(
-                TodayPnlContributor(
-                    symbol=item.symbol,
-                    name=item.name,
-                    display_name=item.display_name,
-                    asset_class=item.asset_class,
-                    today_change=float(item.today_change),
-                    today_change_pct=item.today_change_pct,
-                    quote_status=item.quote_status,
-                )
+        contributors.append(
+            TodayPnlContributor(
+                symbol=position.symbol,
+                name=position.name,
+                display_name=position.display_name,
+                asset_class=position.asset_class or "other",
+                today_change=value,
+                today_change_pct=position.today_change_pct,
+                quote_status=position.quote_status,
             )
+        )
 
     contributors.sort(key=lambda item: abs(item.today_change), reverse=True)
     total = stocks + funds + others
@@ -3921,6 +4031,12 @@ async def build_portfolio_snapshot(state) -> PortfolioSnapshot:
     position_review_items: list[PositionEvidenceReviewResponse] = []
     realized_pnl_total = 0.0
     daily_ledger_entries = _read_daily_ledger_entries(state)
+    ledger_asset_classes: dict[str, str] = {}
+    for entry in daily_ledger_entries:
+        ledger_symbol = str(entry.get("symbol") or "").strip()
+        ledger_asset_class = str(entry.get("asset_class") or "").strip()
+        if ledger_symbol and ledger_asset_class:
+            ledger_asset_classes.setdefault(ledger_symbol, ledger_asset_class)
     for sym, pos in portfolio.positions.items():
         symbol = str(sym)
         quote = latest_quotes.get(symbol)
@@ -3928,6 +4044,7 @@ async def build_portfolio_snapshot(state) -> PortfolioSnapshot:
         asset_class = _normalize_asset_class(
             (quote or {}).get("asset_class")
             or getattr(getattr(instrument, "asset_class", None), "value", None)
+            or ledger_asset_classes.get(symbol)
         )
         metadata = resolve_asset_metadata(
             state,
@@ -4206,7 +4323,7 @@ def create_router() -> APIRouter:
             and equity_valuation_consistent
         )
         today_pnl_update = (
-            _overview_today_pnl_update(live_holdings)
+            _overview_today_pnl_update(live_holdings, snapshot)
             if valuation_consistent
             else {
                 "today_pnl": None,
