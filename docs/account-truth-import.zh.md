@@ -193,7 +193,10 @@ Account Truth 页面会把上述来源复核与 canonical score 投影到
 `karkinos.account_truth.evidence_readiness.v2`。其中
 `karkinos.account_truth.evidence_scope.v1` 只报告精确持久化导入中观察到的日期跨度、资产类别、
 币种和快照日期，绝不把首末记录冒充完整账户或完整时段覆盖。账户绑定、声明覆盖窗口和资产范围
-完整性会保持阻断，直到 owner 对该精确导入执行显式复核。嵌套的
+完整性会保持阻断，直到 owner 对该精确导入执行显式复核。晋级与就绪门禁取最新现金快照和最新
+持仓快照时间中更早者作为 Account Truth 的实际采集时间；仓库导入时间另记为 `imported_at`，今天
+重新导入旧账单不能把账户状态变新。缺少快照、两类快照跨日、快照后仍有财务事件或实际采集已
+过期都会 fail closed。嵌套的
 `karkinos.account_truth.citic_source_resolution_stage.v1` 会把“查询区间待复核”“来源范围待复核”和
 “历史声明均已完成、仍需 canonical 证据或显式拒绝”分开显示；最后一种状态不要求重做 XLS 声明，
 但也绝不把 legacy 来源提升为 Account Truth、对账或执行证据。
