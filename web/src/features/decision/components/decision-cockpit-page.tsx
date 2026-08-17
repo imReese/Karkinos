@@ -43,6 +43,7 @@ import {
   useOperationsTodayQuery,
   useRunPaperShadowMutation,
   type AutomationCockpitResponse,
+  type DailyCandidateFinancialPreflight,
   type BrokerConnectorHealthResponse,
   type ExecutionReconciliationRun,
   type ExecutionReconciliationItem,
@@ -2922,6 +2923,105 @@ function primaryExecutionReconciliationItemForRun(
   );
 }
 
+function DailyCandidateFinancialPreflightPanel({
+  preflight,
+}: {
+  preflight: DailyCandidateFinancialPreflight;
+}) {
+  const { locale } = usePreferences();
+  const ready = preflight.eligible_to_start_manual_attempt;
+  const gateLabels: Record<string, { zh: string; en: string }> = {
+    automation_policy: { zh: '安全策略', en: 'Safe policy' },
+    decision_plan: { zh: '决策与计划', en: 'Decision and plan' },
+    account_truth: { zh: '账户事实', en: 'Account Truth' },
+    market_data: { zh: '冻结行情', en: 'Frozen market' },
+    strategy: { zh: '晋级策略', en: 'Promoted strategy' },
+    reviewed_fees: { zh: '真实费用', en: 'Reviewed fees' },
+    execution_closure: { zh: '前序执行闭环', en: 'Prior closure' },
+  };
+  const reasons = preflight.no_action_reasons.slice(0, 8);
+
+  return (
+    <div
+      data-testid="daily-candidate-financial-preflight"
+      className="mt-4 min-w-0 rounded-[var(--app-radius-surface)] border border-[color-mix(in_srgb,var(--app-accent)_30%,transparent)] bg-[color-mix(in_srgb,var(--app-accent)_7%,transparent)] px-3 py-3"
+    >
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="app-kicker text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
+            {locale === 'zh'
+              ? '每日候选财务预检'
+              : 'Daily candidate financial preflight'}
+          </div>
+          <div className="app-muted mt-1 break-words text-xs leading-5">
+            {locale === 'zh'
+              ? '只读汇总当日 Account Truth、行情、策略、费用与前序执行闭环。通过也只允许进入风控与 paper/shadow，不会生成或提交真实订单。'
+              : 'Read-only Account Truth, market, strategy, fee, and prior-closure check. Passing permits only risk plus paper/shadow; it creates and submits no real order.'}
+          </div>
+        </div>
+        <span className="app-chip">
+          {ready
+            ? locale === 'zh'
+              ? '可进入模拟尝试'
+              : 'Simulation attempt ready'
+            : locale === 'zh'
+              ? 'NO-ACTION'
+              : 'NO-ACTION'}
+        </span>
+      </div>
+
+      <div className="mt-3 grid min-w-0 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        {preflight.gates.map((gate) => {
+          const label = gateLabels[gate.gate];
+          return (
+            <div
+              className="min-w-0 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-3 py-2"
+              key={gate.gate}
+            >
+              <div className="app-muted text-xs">
+                {label?.[locale] ?? formatPublicCode(gate.gate, locale)}
+              </div>
+              <div
+                className={`mt-1 text-sm font-semibold ${
+                  gate.status === 'pass'
+                    ? 'text-[var(--app-success)]'
+                    : 'text-[var(--app-warning)]'
+                }`}
+              >
+                {gate.status === 'pass'
+                  ? locale === 'zh'
+                    ? '通过'
+                    : 'Pass'
+                  : locale === 'zh'
+                    ? '阻断'
+                    : 'Blocked'}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {reasons.length ? (
+        <div className="mt-3 break-words text-xs font-semibold leading-5 text-[var(--app-warning)]">
+          {locale === 'zh' ? 'NO-ACTION 原因：' : 'NO-ACTION reasons: '}
+          {reasons.map((item) => formatPublicCode(item, locale)).join(' · ')}
+          {preflight.no_action_reasons.length > reasons.length
+            ? locale === 'zh'
+              ? ` · 其余 ${preflight.no_action_reasons.length - reasons.length} 项`
+              : ` · ${preflight.no_action_reasons.length - reasons.length} more`
+            : ''}
+        </div>
+      ) : null}
+
+      <div className="app-muted mt-3 break-words text-xs leading-5">
+        {locale === 'zh'
+          ? `候选 ${preflight.eligible_candidate_count} · 当日 ${preflight.run_date ?? '未绑定'} · 人工票据未创建 · 不授予执行或资本权限`
+          : `${preflight.eligible_candidate_count} eligible candidate(s) · ${preflight.run_date ?? 'date unbound'} · no manual ticket created · no execution or capital authority`}
+      </div>
+    </div>
+  );
+}
+
 function AutomationCockpitPanel({
   cockpit,
   brokerGatewayStatus,
@@ -3170,6 +3270,12 @@ function AutomationCockpitPanel({
             </div>
           </div>
         </div>
+
+        {cockpit.daily_candidate_financial_preflight ? (
+          <DailyCandidateFinancialPreflightPanel
+            preflight={cockpit.daily_candidate_financial_preflight}
+          />
+        ) : null}
 
         {cockpit.daily_candidate_trial ? (
           <DailyCandidateTrialPanel

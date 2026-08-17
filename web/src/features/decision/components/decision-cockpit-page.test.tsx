@@ -586,7 +586,7 @@ function installDecisionFetchMock({
     limitations: [],
   },
   automationCockpitResponse = {
-    schema_version: 'karkinos.automation_cockpit.v3',
+    schema_version: 'karkinos.automation_cockpit.v4',
     broker_submission_enabled: false,
     automation_status: {
       schema_version: 'karkinos.automation_status.v1',
@@ -715,6 +715,47 @@ function installDecisionFetchMock({
       authorizes_execution: false,
       changes_capital_authority: false,
       limitations: ['Monitor liveness does not prove financial readiness.'],
+    },
+    daily_candidate_financial_preflight: {
+      schema_version: 'karkinos.daily_candidate_financial_preflight.v1',
+      status: 'ready_for_paper_shadow_attempt',
+      run_date: '2026-06-13',
+      financial_gate_status: 'pass',
+      operational_gate_status: 'pass',
+      eligible_candidate_count: 1,
+      eligible_to_start_manual_attempt: true,
+      eligible_for_background_attempt: true,
+      eligible_to_create_manual_ticket: false,
+      gates: [
+        { gate: 'account_truth', status: 'pass', blockers: [] },
+        { gate: 'market_data', status: 'pass', blockers: [] },
+        { gate: 'strategy', status: 'pass', blockers: [] },
+        { gate: 'reviewed_fees', status: 'pass', blockers: [] },
+        { gate: 'execution_closure', status: 'pass', blockers: [] },
+      ],
+      financial_blockers: [],
+      operational_blockers: [],
+      no_action_reasons: [],
+      next_safe_action: 'allow_single_claimed_fail_closed_background_attempt',
+      preflight_fingerprint: '9'.repeat(64),
+      financial_readiness_scope: 'risk_and_paper_shadow_attempt_only',
+      risk_evaluation_performed: false,
+      paper_shadow_run_performed: false,
+      manual_ticket_created: false,
+      persisted_facts_only: true,
+      provider_contact_performed: false,
+      database_writes_performed: false,
+      manual_confirmation_required: true,
+      does_not_submit_broker_order: true,
+      does_not_mutate_oms: true,
+      does_not_mutate_production_ledger: true,
+      broker_submission_enabled: false,
+      authorizes_execution: false,
+      changes_capital_authority: false,
+      profitability_claim: 'not_established',
+      limitations: [
+        'Passing this preflight permits only the canonical risk and paper/shadow attempt.',
+      ],
     },
     recent_runs: [
       {
@@ -2738,6 +2779,13 @@ test('summarizes controlled automation cockpit status in the decision page', asy
   expect(automation.textContent).toContain(
     'Background monitor: enabled and running · task liveness only; financial readiness is not claimed',
   );
+  expect(automation.textContent).toContain(
+    'Daily candidate financial preflight',
+  );
+  expect(automation.textContent).toContain('Simulation attempt ready');
+  expect(automation.textContent).toContain('Account Truth');
+  expect(automation.textContent).toContain('Reviewed fees');
+  expect(automation.textContent).toContain('no manual ticket created');
   expect(automation.textContent).toContain('2026-06-03 · superseded 0');
   expect(automation.textContent).toContain(
     'Latest production outcome: manual order ticket candidate (2)',
@@ -3032,7 +3080,7 @@ test('hands off exact current per-order evidence to Trading without broker actio
   };
   renderDecisionCockpit({
     automationCockpitResponse: {
-      schema_version: 'karkinos.automation_cockpit.v3',
+      schema_version: 'karkinos.automation_cockpit.v4',
       broker_submission_enabled: false,
       automation_status: {
         schema_version: 'karkinos.automation_status.v1',
@@ -3094,7 +3142,7 @@ test('hands off exact current per-order evidence to Trading without broker actio
 test('blocks the Trading handoff when the current per-order source drifts', async () => {
   renderDecisionCockpit({
     automationCockpitResponse: {
-      schema_version: 'karkinos.automation_cockpit.v3',
+      schema_version: 'karkinos.automation_cockpit.v4',
       broker_submission_enabled: false,
       automation_status: {
         schema_version: 'karkinos.automation_status.v1',
@@ -3534,7 +3582,7 @@ test('surfaces bounded controlled execution evidence without live actions', asyn
   renderDecisionCockpit({
     locale: 'en',
     automationCockpitResponse: {
-      schema_version: 'karkinos.automation_cockpit.v3',
+      schema_version: 'karkinos.automation_cockpit.v4',
       broker_submission_enabled: false,
       automation_status: {
         schema_version: 'karkinos.automation_status.v1',
@@ -3728,7 +3776,7 @@ test('surfaces strategy promotion state as paper shadow only without live promot
   renderDecisionCockpit({
     locale: 'en',
     automationCockpitResponse: {
-      schema_version: 'karkinos.automation_cockpit.v3',
+      schema_version: 'karkinos.automation_cockpit.v4',
       broker_submission_enabled: false,
       automation_status: {
         schema_version: 'karkinos.automation_status.v1',
@@ -3780,7 +3828,7 @@ test('surfaces strategy promotion lifecycle audit boundary without bridge contro
   renderDecisionCockpit({
     locale: 'en',
     automationCockpitResponse: {
-      schema_version: 'karkinos.automation_cockpit.v3',
+      schema_version: 'karkinos.automation_cockpit.v4',
       broker_submission_enabled: false,
       automation_status: {
         schema_version: 'karkinos.automation_status.v1',
@@ -4257,7 +4305,7 @@ test('surfaces manual execution alert evidence in automation cockpit without con
   renderDecisionCockpit({
     locale: 'en',
     automationCockpitResponse: {
-      schema_version: 'karkinos.automation_cockpit.v3',
+      schema_version: 'karkinos.automation_cockpit.v4',
       broker_submission_enabled: false,
       automation_status: {
         schema_version: 'karkinos.automation_status.v1',
@@ -4349,7 +4397,7 @@ test('surfaces failed paper shadow automation recovery action without execution 
   renderDecisionCockpit({
     locale: 'en',
     automationCockpitResponse: {
-      schema_version: 'karkinos.automation_cockpit.v3',
+      schema_version: 'karkinos.automation_cockpit.v4',
       broker_submission_enabled: false,
       automation_status: {
         schema_version: 'karkinos.automation_status.v1',
