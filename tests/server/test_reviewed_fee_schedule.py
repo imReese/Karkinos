@@ -26,6 +26,7 @@ from server.services.reviewed_fee_schedule import (
     ReviewedFeeScheduleReviewRepository,
     active_review_matches_fee_evidence,
     build_reviewed_fee_schedule_preview,
+    build_reviewed_fee_schedule_review_status,
     resolve_reviewed_fee_schedule,
     reviewed_cost_model_reference,
 )
@@ -665,6 +666,16 @@ def test_fee_schedule_http_workflow_rechecks_drift_and_revokes_exact_review(
     assert active["status"] == "active"
     assert active["blockers"] == []
     assert active["current_preview_fingerprint"] == preview["preview_fingerprint"]
+    outside_action_window = build_reviewed_fee_schedule_review_status(
+        state,
+        as_of_date="2027-01-02",
+    )
+    assert outside_action_window["status"] == "blocked"
+    assert outside_action_window["blockers"] == [
+        "reviewed_fee_schedule_action_date_not_covered"
+    ]
+    assert outside_action_window["database_writes_performed"] is False
+    assert outside_action_window["provider_contacted"] is False
 
     monkeypatch.setattr(
         "server.services.reviewed_fee_schedule.build_latest_account_truth_promotion_evidence",

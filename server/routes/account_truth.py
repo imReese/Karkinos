@@ -110,6 +110,7 @@ from server.services.reviewed_fee_schedule import (
     ReviewedFeeScheduleRejected,
     ReviewedFeeScheduleReviewRepository,
     build_reviewed_fee_schedule_preview,
+    build_reviewed_fee_schedule_review_status,
 )
 
 CITIC_HISTORY_XLS_MAX_BASE64_CHARS = ((CITIC_HISTORY_XLS_MAX_BYTES + 2) // 3) * 4
@@ -610,64 +611,16 @@ def create_router() -> APIRouter:
     async def get_reviewed_fee_schedule_review() -> dict[str, object]:
         from server.app import get_app_state
 
-        state = get_app_state()
         try:
-            review = _reviewed_fee_schedule_repository_for_state(
-                state
-            ).get_latest_review()
+            return build_reviewed_fee_schedule_review_status(get_app_state())
         except ReviewedFeeScheduleReadRejected as exc:
             raise _reviewed_fee_schedule_read_http_exception(exc) from exc
-        if review is None:
-            return {
-                "status": "missing",
-                "review": None,
-                "blockers": ["reviewed_fee_schedule_review_missing"],
-                "current_preview_fingerprint": None,
-                "authorizes_execution": False,
-                "changes_capital_authority": False,
-            }
-        if review.decision != "accepted":
-            return {
-                "status": "revoked",
-                "review": review.to_json_dict(),
-                "blockers": ["reviewed_fee_schedule_review_revoked"],
-                "current_preview_fingerprint": None,
-                "authorizes_execution": False,
-                "changes_capital_authority": False,
-            }
-        try:
-            current_preview = build_reviewed_fee_schedule_preview(
-                state,
-                effective_start_date=review.effective_start_date,
-                effective_end_date=review.effective_end_date,
-                schedule_override=review.schedule,
-            )
-        except ReviewedFeeScheduleRejected as exc:
-            return {
-                "status": "blocked",
-                "review": review.to_json_dict(),
-                "blockers": [exc.code],
-                "current_preview_fingerprint": None,
-                "authorizes_execution": False,
-                "changes_capital_authority": False,
-            }
         except (
             BrokerEvidenceReadRejected,
             ManualReviewReadRejected,
             EvidenceScopeReviewReadRejected,
         ) as exc:
             raise _account_truth_read_http_exception(exc) from exc
-        blockers = list(current_preview.get("issues") or [])
-        if current_preview.get("preview_fingerprint") != review.preview_fingerprint:
-            blockers.append("reviewed_fee_schedule_source_drift")
-        return {
-            "status": "blocked" if blockers else "active",
-            "review": review.to_json_dict(),
-            "blockers": list(dict.fromkeys(blockers)),
-            "current_preview_fingerprint": current_preview.get("preview_fingerprint"),
-            "authorizes_execution": False,
-            "changes_capital_authority": False,
-        }
 
     @r.post("/fee-schedule/reviews")
     async def record_reviewed_fee_schedule_review(

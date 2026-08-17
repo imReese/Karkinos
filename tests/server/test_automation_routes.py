@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from types import SimpleNamespace
 
 from fastapi import FastAPI
@@ -73,12 +74,16 @@ def test_automation_cockpit_route_includes_runtime_connector_snapshot(
     db.init_sync()
     connector = _ConnectorWouldFailIfQueried()
     client = _client_for_db(monkeypatch, db, broker_connectors=[connector])
+    with sqlite3.connect(db._path) as conn:
+        before = list(conn.iterdump())
 
     response = client.get("/api/automation/cockpit")
 
+    with sqlite3.connect(db._path) as conn:
+        after = list(conn.iterdump())
     assert response.status_code == 200
     payload = response.json()
-    assert payload["schema_version"] == "karkinos.automation_cockpit.v3"
+    assert payload["schema_version"] == "karkinos.automation_cockpit.v4"
     assert "runtime_connector_snapshots" not in payload
     assert "runtime_connector_snapshot_status" not in payload
     registration = payload["connector_registrations"][0]
@@ -97,8 +102,16 @@ def test_automation_cockpit_route_includes_runtime_connector_snapshot(
     assert runtime["status"] == "monitor_failed_closed"
     assert runtime["financial_readiness_claimed"] is False
     assert runtime["broker_submission_enabled"] is False
+    preflight = payload["daily_candidate_financial_preflight"]
+    assert preflight["status"] == "no_action"
+    assert preflight["eligible_to_create_manual_ticket"] is False
+    assert preflight["provider_contact_performed"] is False
+    assert preflight["database_writes_performed"] is False
+    assert preflight["broker_submission_enabled"] is False
+    assert preflight["authorizes_execution"] is False
     assert "qmt" not in response.text.lower()
     assert db.list_broker_gateway_events_sync() == []
+    assert before == after
 
 
 def test_automation_cockpit_route_reports_exact_running_daily_candidate_task(
@@ -130,6 +143,72 @@ def test_automation_cockpit_route_reports_exact_running_daily_candidate_task(
     assert runtime["database_writes_performed"] is False
     assert runtime["broker_submission_enabled"] is False
     assert runtime["authorizes_execution"] is False
+
+
+def test_automation_cockpit_route_projects_current_financial_preflight(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from server.services.daily_decision_evidence_automation import (
+        unavailable_daily_candidate_financial_preflight,
+    )
+
+    db = AppDatabase(tmp_path / "automation.db")
+    db.init_sync()
+    calls: list[str] = []
+
+    async def read_current_plan(_state):
+        calls.append("plan")
+        return {"decision_date": "2026-07-17"}, {"plan_date": "2026-07-17"}
+
+    def reviewed_fees(_state, *, as_of_date):
+        calls.append(f"fees:{as_of_date}")
+        return {"status": "missing"}
+
+    def execution_closure(_db):
+        calls.append("closure")
+        return {"status": "not_required"}
+
+    projected = unavailable_daily_candidate_financial_preflight(
+        blocker="fixture_financial_preflight_blocker"
+    )
+
+    def financial_preflight(**kwargs):
+        calls.append("project")
+        assert kwargs["reviewed_fee_schedule"] == {"status": "missing"}
+        assert kwargs["execution_closure"] == {"status": "not_required"}
+        return projected
+
+    monkeypatch.setattr(
+        "server.routes.operations._current_decision_and_trading_plan",
+        read_current_plan,
+    )
+    monkeypatch.setattr(
+        "server.services.reviewed_fee_schedule."
+        "build_reviewed_fee_schedule_review_status",
+        reviewed_fees,
+    )
+    monkeypatch.setattr(
+        "server.services.daily_candidate_execution_closure."
+        "build_daily_candidate_execution_closure",
+        execution_closure,
+    )
+    monkeypatch.setattr(
+        "server.services.daily_decision_evidence_automation."
+        "project_daily_candidate_financial_preflight",
+        financial_preflight,
+    )
+
+    response = _client_for_db(monkeypatch, db).get("/api/automation/cockpit")
+
+    assert response.status_code == 200
+    payload = response.json()
+    runtime_date = payload["daily_candidate_runtime"]["run_date"]
+    assert calls == ["plan", f"fees:{runtime_date}", "closure", "project"]
+    preflight = payload["daily_candidate_financial_preflight"]
+    assert preflight["financial_blockers"] == ["fixture_financial_preflight_blocker"]
+    assert preflight["eligible_to_create_manual_ticket"] is False
+    assert preflight["authorizes_execution"] is False
 
 
 def test_automation_cockpit_get_projects_blocked_current_review_without_alert_write(
@@ -648,7 +727,7 @@ def test_automation_cockpit_route_returns_read_only_summary(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["schema_version"] == "karkinos.automation_cockpit.v3"
+    assert payload["schema_version"] == "karkinos.automation_cockpit.v4"
     assert payload["broker_submission_enabled"] is False
     assert payload["automation_status"]["kill_switch_enabled"] is True
     gateways = {item["gateway_id"]: item for item in payload["gateways"]}

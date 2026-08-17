@@ -646,6 +646,93 @@ def build_reviewed_fee_schedule_preview(
     return {**core, "preview_fingerprint": _fingerprint(core)}
 
 
+def build_reviewed_fee_schedule_review_status(
+    state: Any,
+    *,
+    as_of_date: str | None = None,
+) -> dict[str, Any]:
+    """Project the current review and optional action-date coverage read-only."""
+
+    db_path = _db_path(state)
+    if db_path is None:
+        raise ReviewedFeeScheduleReadRejected(
+            "reviewed_fee_schedule_database_unavailable"
+        )
+    review = ReviewedFeeScheduleReviewRepository(db_path).get_latest_review()
+    if review is None:
+        return _review_status_payload(
+            status="missing",
+            review=None,
+            blockers=["reviewed_fee_schedule_review_missing"],
+            current_preview_fingerprint=None,
+        )
+    if review.decision != "accepted":
+        return _review_status_payload(
+            status="revoked",
+            review=review,
+            blockers=["reviewed_fee_schedule_review_revoked"],
+            current_preview_fingerprint=None,
+        )
+
+    try:
+        current_preview = build_reviewed_fee_schedule_preview(
+            state,
+            effective_start_date=review.effective_start_date,
+            effective_end_date=review.effective_end_date,
+            schedule_override=review.schedule,
+        )
+    except ReviewedFeeScheduleRejected as exc:
+        return _review_status_payload(
+            status="blocked",
+            review=review,
+            blockers=[exc.code],
+            current_preview_fingerprint=None,
+        )
+
+    blockers = [str(item) for item in current_preview.get("issues") or []]
+    if current_preview.get("preview_fingerprint") != review.preview_fingerprint:
+        blockers.append("reviewed_fee_schedule_source_drift")
+    if as_of_date is not None:
+        try:
+            normalized_date = date.fromisoformat(str(as_of_date)[:10]).isoformat()
+        except ValueError:
+            blockers.append("reviewed_fee_schedule_action_date_invalid")
+        else:
+            if not (
+                review.effective_start_date
+                <= normalized_date
+                <= review.effective_end_date
+            ):
+                blockers.append("reviewed_fee_schedule_action_date_not_covered")
+    blockers = list(dict.fromkeys(blockers))
+    return _review_status_payload(
+        status="blocked" if blockers else "active",
+        review=review,
+        blockers=blockers,
+        current_preview_fingerprint=current_preview.get("preview_fingerprint"),
+    )
+
+
+def _review_status_payload(
+    *,
+    status: str,
+    review: ReviewedFeeScheduleReview | None,
+    blockers: list[str],
+    current_preview_fingerprint: Any,
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "review": review.to_json_dict() if review is not None else None,
+        "blockers": list(dict.fromkeys(blockers)),
+        "current_preview_fingerprint": current_preview_fingerprint,
+        "persisted_facts_only": True,
+        "provider_contacted": False,
+        "database_writes_performed": False,
+        "authorizes_execution": False,
+        "changes_capital_authority": False,
+    }
+
+
 def resolve_reviewed_fee_schedule(
     state: Any,
     *,
