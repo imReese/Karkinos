@@ -20,6 +20,7 @@ from account_truth.evidence_scope_review import (
 )
 from server.account_truth_gate import (
     broker_events_for_import_run,
+    build_latest_account_truth_promotion_evidence,
     build_latest_account_truth_score_payload,
 )
 from server.services.citic_source_follow_up import build_citic_source_follow_up
@@ -49,10 +50,12 @@ def build_account_truth_evidence_readiness(state: Any) -> dict[str, object]:
         db_path=db_path,
         score=score,
     )
+    promotion_evidence = build_latest_account_truth_promotion_evidence(state)
     return project_account_truth_evidence_readiness(
         score=score,
         citic_source_follow_up=follow_up,
         evidence_scope=evidence_scope,
+        promotion_evidence=promotion_evidence,
     )
 
 
@@ -340,6 +343,7 @@ def project_account_truth_evidence_readiness(
     score: dict[str, object],
     citic_source_follow_up: dict[str, object],
     evidence_scope: dict[str, object] | None = None,
+    promotion_evidence: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Project exact evidence gaps without recalculating financial facts."""
 
@@ -364,6 +368,39 @@ def project_account_truth_evidence_readiness(
     evidence_scope_status = str(effective_scope.get("status") or "blocked")
     evidence_scope_fingerprint = str(effective_scope.get("evidence_fingerprint") or "")
 
+    snapshot_capture = (
+        dict(promotion_evidence.get("snapshot_capture") or {})
+        if isinstance(promotion_evidence, dict)
+        else {}
+    )
+    snapshot_blockers = [
+        blocker
+        for blocker in _unique_strings(
+            promotion_evidence.get("blockers")
+            if isinstance(promotion_evidence, dict)
+            else []
+        )
+        if blocker.startswith("account_truth_snapshot_")
+        or blocker
+        in {
+            "account_truth_cash_snapshot_missing",
+            "account_truth_position_snapshot_missing",
+        }
+    ]
+    snapshot_status = (
+        "pass"
+        if promotion_evidence is None
+        or (
+            snapshot_capture.get("status") == "clear"
+            and promotion_evidence.get("data_freshness_status") == "fresh"
+            and not snapshot_blockers
+        )
+        else (
+            "stale"
+            if "account_truth_snapshot_stale" in snapshot_blockers
+            else "blocked"
+        )
+    )
     items = [
         _item(
             requirement="canonical_broker_evidence",
@@ -430,6 +467,20 @@ def project_account_truth_evidence_readiness(
             ledger_coverage_status=ledger_coverage_status,
         ),
         _item(
+            requirement="cash_and_position_snapshot_effective_freshness",
+            status=snapshot_status,
+            evidence_reference=(
+                str(promotion_evidence.get("source_fingerprint") or "") or None
+                if isinstance(promotion_evidence, dict)
+                else None
+            ),
+            required_action=(
+                None
+                if snapshot_status == "pass"
+                else "import_current_cash_and_position_snapshots"
+            ),
+        ),
+        _item(
             requirement="reconciliation_gate",
             status=gate_status if score_available else "missing",
             evidence_reference=(
@@ -468,6 +519,7 @@ def project_account_truth_evidence_readiness(
         blockers.append("citic_source_follow_up_required")
     blockers.extend(source_follow_up_blockers)
     blockers.extend(_unique_strings(effective_scope.get("blockers")))
+    blockers.extend(snapshot_blockers)
     blockers = list(dict.fromkeys(blockers))
 
     required_evidence = _unique_strings(citic_source_follow_up.get("required_evidence"))
@@ -502,6 +554,7 @@ def project_account_truth_evidence_readiness(
             )
         },
         "ledger_coverage_status": ledger_coverage_status,
+        "snapshot_capture": snapshot_capture or None,
         "evidence_scope": effective_scope,
         "citic_source_follow_up": {
             "status": source_follow_up_status,

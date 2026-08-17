@@ -1681,7 +1681,7 @@ def test_operator_journey_does_not_close_on_partial_canonical_account_truth(
     assert summary["attention_order_journey_count"] == 1
     assert journey["status"] == "ledger_posted_account_truth_review_required"
     assert account_truth_stage["key"] == "post_ledger_account_truth"
-    assert account_truth_stage["account_truth_gate_status"] == "degraded"
+    assert account_truth_stage["account_truth_gate_status"] == "blocked"
     assert account_truth_stage["ledger_coverage_status"] == "covered"
     assert account_truth_stage["post_ledger_cutoff_id"] > 0
     assert account_truth_stage["complete"] is False

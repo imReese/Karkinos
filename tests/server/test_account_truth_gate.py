@@ -99,12 +99,15 @@ def test_account_truth_promotion_evidence_is_fresh_sanitized_and_source_sensitiv
         asset_class="stock",
         source_ref="sell-1",
     )
-    statement = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note,transfer_fee,cost_basis_method
+    now = datetime.now(timezone.utc)
+    current_snapshot_at = now.isoformat()
+    current_snapshot_date = now.date().isoformat()
+    statement = f"""event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note,transfer_fee,cost_basis_method
 deposit-1,transfer_in,2026-01-05T09:00:00+08:00,2026-01-05,,,,CNY,0,0,2000.00,0.00,0.00,2000.00,2000.00,,,deposit,0.00,
 buy-1,trade_buy,2026-01-05T10:00:00+08:00,2026-01-05,SYN001,合成样例股票A,stock,CNY,100,8.80,880.00,0.00,0.00,-880.00,1120.00,100,8.80,buy,0.00,moving_average_buy_cost
 sell-1,trade_sell,2026-01-06T10:00:00+08:00,2026-01-06,SYN001,合成样例股票A,stock,CNY,100,12.00,1200.00,1.80,1.20,1196.40,2316.40,0,0.00,sell,0.60,moving_average_buy_cost
-cash-current,cash_snapshot,2026-01-06T15:00:00+08:00,2026-01-06,,,,CNY,0,0,0.00,0.00,0.00,0.00,2316.40,,,cash snapshot,0.00,
-position-current,position_snapshot,2026-01-06T15:00:00+08:00,2026-01-06,SYN001,合成样例股票A,stock,CNY,0,0,0.00,0.00,0.00,0.00,2316.40,0,0.00,position snapshot,0.00,moving_average_buy_cost
+cash-current,cash_snapshot,{current_snapshot_at},{current_snapshot_date},,,,CNY,0,0,0.00,0.00,0.00,0.00,2316.40,,,cash snapshot,0.00,
+position-current,position_snapshot,{current_snapshot_at},{current_snapshot_date},SYN001,合成样例股票A,stock,CNY,0,0,0.00,0.00,0.00,0.00,2316.40,0,0.00,position snapshot,0.00,moving_average_buy_cost
 """
     repository = BrokerEvidenceRepository(db._path)
     repository.save_preview(
@@ -112,8 +115,6 @@ position-current,position_snapshot,2026-01-06T15:00:00+08:00,2026-01-06,SYN001,�
         source_name="private-name-must-not-leak.csv",
     )
     state = SimpleNamespace(db=db, config=SimpleNamespace(initial_cash="0"))
-    now = datetime.now(timezone.utc)
-
     first = build_latest_account_truth_promotion_evidence(
         state,
         clock=lambda: now,
@@ -153,6 +154,9 @@ position-current,position_snapshot,2026-01-06T15:00:00+08:00,2026-01-06,SYN001,�
     assert first["status"] == "clear"
     assert first["gate_status"] == "pass"
     assert first["data_freshness_status"] == "fresh"
+    assert first["captured_at"] == now.isoformat()
+    assert first["imported_at"] != first["captured_at"]
+    assert first["snapshot_capture"]["status"] == "clear"
     assert first["unresolved_mismatch_count"] == 0
     assert len(str(first["source_fingerprint"])) == 64
     assert "private-name-must-not-leak.csv" not in json.dumps(first)
@@ -172,6 +176,33 @@ position-current,position_snapshot,2026-01-06T15:00:00+08:00,2026-01-06,SYN001,�
     )
     assert changed["status"] == "blocked"
     assert changed["source_fingerprint"] != first["source_fingerprint"]
+
+
+def test_account_truth_promotion_uses_snapshot_time_not_import_time(tmp_path) -> None:
+    db = AppDatabase(tmp_path / "stale-snapshot-account-truth.db")
+    db.init_sync()
+    statement = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note,transfer_fee,cost_basis_method
+cash-old,cash_snapshot,2026-01-06T15:00:00+08:00,2026-01-06,,,,CNY,0,0,0.00,0.00,0.00,0.00,0.00,,,cash snapshot,0.00,
+position-old,position_snapshot,2026-01-06T15:00:00+08:00,2026-01-06,SYN001,合成样例股票A,stock,CNY,0,0,0.00,0.00,0.00,0.00,0.00,0,0.00,position snapshot,0.00,moving_average_buy_cost
+"""
+    imported = BrokerEvidenceRepository(db._path).save_preview(
+        parse_broker_statement_csv(statement),
+        source_name="private-name-must-not-leak.csv",
+    )
+    state = SimpleNamespace(db=db, config=SimpleNamespace(initial_cash="0"))
+    now = datetime.now(timezone.utc)
+
+    result = build_latest_account_truth_promotion_evidence(
+        state,
+        clock=lambda: now,
+    )
+
+    assert result["status"] == "blocked"
+    assert result["imported_at"] == imported.created_at
+    assert result["captured_at"] == "2026-01-06T07:00:00+00:00"
+    assert result["snapshot_capture"]["status"] == "clear"
+    assert "account_truth_snapshot_stale" in result["blockers"]
+    assert "private-name-must-not-leak.csv" not in json.dumps(result)
 
 
 def test_account_truth_gate_uses_structured_ledger_cash_and_fee_facts(tmp_path):
