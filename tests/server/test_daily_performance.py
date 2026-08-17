@@ -70,23 +70,72 @@ def test_intraday_cutoff_uses_same_context_and_trade_timing():
     assert after.today_change == pytest.approx(-56.07485)
 
 
-def test_same_day_sell_and_missing_overnight_close_fail_closed():
+def test_same_day_sell_uses_net_proceeds_against_overnight_close():
+    tz = ZoneInfo("Asia/Shanghai")
     sell = build_position_daily_context(
+        quantity=0,
+        previous_close=10.0,
+        same_day_buy_lots=[],
+        same_day_sell_lots=[
+            {
+                "timestamp": datetime(2026, 8, 17, 10, 0, tzinfo=tz),
+                "quantity": 100,
+                "price": 11.0,
+                "net_proceeds": 1095.0,
+            }
+        ],
+    )
+    mark = mark_position_daily(sell, price=11.0)
+
+    assert sell.overnight_quantity == 100
+    assert sell.baseline_value == pytest.approx(1000)
+    assert sell.source == "previous_close_intraday_sell"
+    assert mark.active_quantity == 0
+    assert mark.today_change == pytest.approx(95)
+    assert mark.today_change_pct == pytest.approx(1095 / 1000 - 1)
+
+
+def test_same_day_sell_without_overnight_close_still_fails_closed():
+    tz = ZoneInfo("Asia/Shanghai")
+    missing = build_position_daily_context(
+        quantity=0,
+        previous_close=None,
+        same_day_buy_lots=[],
+        same_day_sell_lots=[
+            {
+                "timestamp": datetime(2026, 8, 17, 10, 0, tzinfo=tz),
+                "quantity": 100,
+                "price": 11.0,
+                "net_proceeds": 1095.0,
+            }
+        ],
+    )
+
+    assert mark_position_daily(missing, price=11.0).today_change is None
+    assert missing.source == "overnight_baseline_unavailable"
+
+
+def test_partial_same_day_sell_combines_remaining_mark_and_net_proceeds():
+    tz = ZoneInfo("Asia/Shanghai")
+    context = build_position_daily_context(
         quantity=300,
         previous_close=25.46,
         same_day_buy_lots=[],
-        has_same_day_sell=True,
+        same_day_sell_lots=[
+            {
+                "timestamp": datetime(2026, 7, 10, 13, 44, tzinfo=tz),
+                "quantity": 100,
+                "price": 24.95,
+                "net_proceeds": 2490,
+            }
+        ],
     )
-    missing = build_position_daily_context(
-        quantity=400,
-        previous_close=None,
-        same_day_buy_lots=[],
-    )
+    mark = mark_position_daily(context, price=24.60)
 
-    assert mark_position_daily(sell, price=24.6).today_change is None
-    assert sell.source == "same_day_sell_requires_daily_attribution"
-    assert mark_position_daily(missing, price=24.6).today_change is None
-    assert missing.source == "overnight_baseline_unavailable"
+    assert context.overnight_quantity == 400
+    assert mark.active_quantity == 300
+    assert mark.current_value == pytest.approx(7380)
+    assert mark.today_change == pytest.approx(7380 + 2490 - 400 * 25.46)
 
 
 def test_account_daily_equation_is_canonical_and_exposes_market_move():

@@ -11941,7 +11941,7 @@ def test_daily_performance_is_identical_across_holdings_curve_and_overview(
     assert explainability.valuation_snapshot_id == curve[-1].valuation_snapshot_id
 
 
-def test_position_today_change_fails_closed_for_same_day_sell():
+def test_position_today_change_attributes_same_day_sell_net_proceeds():
     from server.routes import portfolio as portfolio_routes
 
     state = SimpleNamespace(
@@ -11957,6 +11957,8 @@ def test_position_today_change_fails_closed_for_same_day_sell():
                     "symbol": "603659",
                     "quantity": 100.0,
                     "price": 24.95,
+                    "commission": 5.0,
+                    "net_cash_impact": 2490.0,
                 }
             ],
         )
@@ -11974,9 +11976,138 @@ def test_position_today_change_fails_closed_for_same_day_sell():
         latest_price_value=24.6,
     )
 
-    assert result[0] is None
-    assert result[1] is None
-    assert result[4] == "same_day_sell_requires_daily_attribution"
+    assert result[0] == pytest.approx(7380 + 2490 - 400 * 25.46)
+    assert result[1] == pytest.approx((7380 + 2490) / (400 * 25.46) - 1)
+    assert result[4] == "previous_close_intraday_sell"
+
+
+def test_closed_same_day_sell_is_included_in_overview_daily_pnl(
+    monkeypatch,
+    tmp_path,
+):
+    from zoneinfo import ZoneInfo
+
+    from server.db import AppDatabase
+    from server.routes import portfolio as portfolio_routes
+
+    db = AppDatabase(tmp_path / "closed-sell-daily-pnl.db")
+    db.init_sync()
+    db.insert_ledger_entry_sync(
+        entry_type="cash_deposit",
+        timestamp="2026-07-01T09:00:00+08:00",
+        amount=10000,
+        asset_class="cash",
+    )
+    db.insert_ledger_entry_sync(
+        entry_type="trade_buy",
+        timestamp="2026-07-01T10:00:00+08:00",
+        symbol="600003",
+        direction="buy",
+        quantity=100,
+        price=9.0,
+        commission=5.0,
+        gross_amount=900,
+        net_cash_impact=-905,
+        fee_breakdown_json=json.dumps(
+            {
+                "commission": 5.0,
+                "total_fee": 5.0,
+            }
+        ),
+        asset_class="stock",
+    )
+    db.insert_ledger_entry_sync(
+        entry_type="trade_sell",
+        timestamp="2026-08-17T10:00:00+08:00",
+        symbol="600003",
+        direction="sell",
+        quantity=100,
+        price=11.0,
+        commission=5.0,
+        gross_amount=1100,
+        net_cash_impact=1095,
+        fee_breakdown_json=json.dumps(
+            {
+                "commission": 4.0,
+                "stamp_tax": 1.0,
+                "total_fee": 5.0,
+            }
+        ),
+        asset_class="stock",
+    )
+    db.save_daily_close_snapshot_sync(
+        symbol="600003",
+        asset_class="stock",
+        trade_date="2026-08-14",
+        close_price=10.50,
+        source="test_close",
+    )
+    state = SimpleNamespace(
+        config=SimpleNamespace(
+            initial_cash=0,
+            data_source="akshare",
+            tushare_token="",
+            assets=[],
+            live_poll_interval=60,
+            intraday_curve_timeout_seconds=4,
+        ),
+        scheduler=SimpleNamespace(
+            portfolio=None,
+            instruments={},
+            latest_quotes={},
+            watchlist=[],
+        ),
+        db=db,
+    )
+    monkeypatch.setattr(
+        portfolio_routes,
+        "get_shanghai_now",
+        lambda now=None: datetime(
+            2026, 8, 17, 14, 30, tzinfo=ZoneInfo("Asia/Shanghai")
+        ),
+    )
+
+    snapshot = asyncio.run(portfolio_routes.build_portfolio_snapshot(state))
+    live_holdings = portfolio_routes._build_live_holdings_response(state)
+    overview_update = portfolio_routes._overview_today_pnl_update(
+        live_holdings,
+        snapshot,
+    )
+    portfolio, instruments = portfolio_routes._resolve_projection_sources(
+        state,
+        latest_quotes={},
+    )
+    current_point = portfolio_routes._current_equity_series_point(
+        state,
+        portfolio,
+        instruments,
+        {},
+    )
+    intraday_series = (
+        portfolio_routes._synthetic_intraday_equity_series_from_current_quotes(
+            state,
+            portfolio,
+            instruments,
+            current_point,
+            {},
+        )
+    )
+
+    assert snapshot.positions == []
+    assert live_holdings.groups == []
+    assert len(snapshot.closed_positions) == 1
+    assert snapshot.closed_positions[0].today_change == pytest.approx(45)
+    assert snapshot.closed_positions[0].baseline_price == pytest.approx(10.50)
+    assert snapshot.realized_pnl_total == pytest.approx(190)
+    assert overview_update["today_pnl"] == pytest.approx(45)
+    assert overview_update["today_pnl_breakdown"].stocks == pytest.approx(45)
+    assert overview_update["today_contributors"][0].symbol == "600003"
+    assert intraday_series[0].total == pytest.approx(10145)
+    assert intraday_series[0].total_daily_change == pytest.approx(0)
+    assert intraday_series[-1].total == pytest.approx(10190)
+    assert intraday_series[-1].cash == pytest.approx(10190)
+    assert intraday_series[-1].stocks == pytest.approx(0)
+    assert intraday_series[-1].total_daily_change == pytest.approx(45)
 
 
 def test_portfolio_positions_exposes_latest_quote_price(monkeypatch):
@@ -12932,7 +13063,8 @@ def test_portfolio_live_holdings_marks_missing_baseline(monkeypatch):
     assert response.groups[0].items[0].today_change is None
     assert response.groups[0].items[0].today_change_pct is None
     assert response.groups[0].total_today_change is None
-    overview_update = portfolio_routes._overview_today_pnl_update(response)
+    snapshot = asyncio.run(portfolio_routes.build_portfolio_snapshot(fake_state))
+    overview_update = portfolio_routes._overview_today_pnl_update(response, snapshot)
     assert overview_update["today_pnl"] is None
     assert overview_update["today_pnl_breakdown"] is None
     assert overview_update["quote_status"] == "missing"
