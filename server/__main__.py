@@ -17,6 +17,12 @@ def main() -> None:
     )
     parser.add_argument("--reload", action="store_true", help="开发模式热重载")
     parser.add_argument(
+        "--reload-exclude",
+        action="append",
+        default=[],
+        help="热重载排除的 glob；可重复传入",
+    )
+    parser.add_argument(
         "--no-live", action="store_true", help="启动时不自动开启实时监控"
     )
     parser.add_argument(
@@ -79,6 +85,7 @@ def main() -> None:
                 host=host,
                 port=port,
                 reload=True,
+                reload_excludes=args.reload_exclude or None,
                 factory=True,
             )
         finally:
