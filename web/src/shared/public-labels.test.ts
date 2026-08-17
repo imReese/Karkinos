@@ -137,6 +137,21 @@ test('formats persisted CITIC scan and query-window integrity blockers', () => {
   );
 });
 
+test('names daily financial preflight blockers without exposing private facts', () => {
+  expect(formatPublicCode('account_truth_not_bound_to_plan_date', 'zh')).toBe(
+    '账户事实未绑定到当日运行日期',
+  );
+  expect(formatPublicCode('reviewed_fee_schedule_review_missing', 'zh')).toBe(
+    '缺少真实费用方案复核记录',
+  );
+  expect(
+    formatPublicCode('daily_candidate_strategy_candidate_missing', 'en'),
+  ).toBe('No promoted strategy candidate is available');
+  expect(
+    formatPublicCode('daily_candidate_background_window_missed', 'en'),
+  ).toBe("Today's background decision window was missed");
+});
+
 test('formats unknown Chinese snake-case values as generic review labels', () => {
   expect(formatPublicStatus('new_backend_gate_state', 'zh')).toBe('待确认状态');
   expect(formatPublicCode('new_backend_required_action', 'zh')).toBe(
