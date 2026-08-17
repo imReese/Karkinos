@@ -158,6 +158,37 @@ def test_evidence_readiness_is_ready_only_for_complete_reviewed_evidence():
     assert str(projection["evidence_fingerprint"]).startswith("sha256:")
 
 
+def test_evidence_readiness_blocks_fresh_import_with_stale_account_snapshots():
+    projection = project_account_truth_evidence_readiness(
+        score=_score(),
+        citic_source_follow_up=_follow_up(),
+        evidence_scope=_complete_scope(),
+        promotion_evidence={
+            "source_fingerprint": "e" * 64,
+            "data_freshness_status": "stale",
+            "snapshot_capture": {
+                "status": "clear",
+                "captured_at": "2026-01-15T07:10:00+00:00",
+            },
+            "blockers": ["account_truth_snapshot_stale"],
+        },
+    )
+
+    items = {item["requirement"]: item for item in projection["items"]}
+    assert projection["status"] == "blocked"
+    assert "account_truth_snapshot_stale" in projection["blockers"]
+    assert items["cash_and_position_snapshot_effective_freshness"]["status"] == (
+        "stale"
+    )
+    assert projection["next_manual_action"] == (
+        "import_current_cash_and_position_snapshots"
+    )
+    assert projection["provider_contacted"] is False
+    assert projection["database_writes_performed"] is False
+    assert projection["authorizes_execution"] is False
+    assert projection["changes_capital_authority"] is False
+
+
 def test_evidence_readiness_fails_closed_when_source_counts_are_unreadable():
     follow_up = _follow_up()
     follow_up.update(

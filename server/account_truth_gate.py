@@ -120,9 +120,12 @@ def build_latest_account_truth_promotion_evidence(
         )
 
     now = _aware_utc((clock or (lambda: datetime.now(timezone.utc)))())
-    captured_at = _parse_aware_timestamp(import_run.created_at)
+    imported_at = _parse_aware_timestamp(import_run.created_at)
+    events = broker_events_for_import_run(repository, import_run)
+    snapshot_capture = _account_truth_snapshot_capture(events)
+    captured_at = _parse_aware_timestamp(snapshot_capture.get("captured_at"))
     effective_max_age = max(60, min(int(max_age_seconds), 604800))
-    blockers: list[str] = []
+    blockers: list[str] = list(snapshot_capture["blockers"])
     citic_source_follow_up = _citic_source_follow_up_for_promotion(db_path)
     if citic_source_follow_up["count_complete"] is not True:
         blockers.append(str(citic_source_follow_up["status"]))
@@ -131,18 +134,26 @@ def build_latest_account_truth_promotion_evidence(
     blockers.extend(str(item) for item in citic_source_follow_up["blockers"])
     age_seconds: int | None = None
     freshness_status = "missing"
-    if captured_at is None:
+    if imported_at is None:
         blockers.append("account_truth_import_timestamp_invalid")
+    if captured_at is None:
+        blockers.append("account_truth_snapshot_timestamp_invalid")
     else:
         age = (now - captured_at).total_seconds()
         age_seconds = int(max(0, age))
         if age < -300:
-            blockers.append("account_truth_import_timestamp_in_future")
+            blockers.append("account_truth_snapshot_timestamp_in_future")
         elif age > effective_max_age:
-            blockers.append("account_truth_import_stale")
+            blockers.append("account_truth_snapshot_stale")
             freshness_status = "stale"
         else:
             freshness_status = "fresh"
+    if (
+        imported_at is not None
+        and captured_at is not None
+        and captured_at > imported_at
+    ):
+        blockers.append("account_truth_snapshot_captured_after_import")
 
     ledger_coverage = _ledger_coverage_for_import(state, import_run)
     freshness_status = _freshness_with_ledger_coverage(
@@ -225,6 +236,7 @@ def build_latest_account_truth_promotion_evidence(
         "freshness": {
             "status": freshness_status,
             "max_age_seconds": effective_max_age,
+            "snapshot_capture": snapshot_capture,
             "ledger_coverage": ledger_coverage,
         },
         "citic_source_follow_up": citic_source_follow_up,
@@ -237,7 +249,9 @@ def build_latest_account_truth_promotion_evidence(
         "import_run_id": import_run.import_run_id,
         "file_fingerprint": import_run.file_fingerprint,
         "source_type": import_run.source_type,
-        "captured_at": import_run.created_at,
+        "captured_at": (captured_at.isoformat() if captured_at is not None else ""),
+        "imported_at": import_run.created_at,
+        "snapshot_capture": snapshot_capture,
         "import_validation_status": import_run.validation_status,
         "import_valid_row_count": import_run.valid_row_count,
         "current_age_seconds": age_seconds,
@@ -737,6 +751,15 @@ def _missing_account_truth_promotion_evidence(
         "file_fingerprint": "",
         "source_type": "",
         "captured_at": "",
+        "imported_at": "",
+        "snapshot_capture": {
+            "status": "missing",
+            "captured_at": "",
+            "latest_cash_snapshot_at": "",
+            "latest_position_snapshot_at": "",
+            "latest_non_snapshot_event_at": "",
+            "blockers": ["account_truth_snapshot_evidence_missing"],
+        },
         "current_age_seconds": None,
         "max_age_seconds": ACCOUNT_TRUTH_PROMOTION_MAX_AGE_SECONDS,
         "data_freshness_status": "missing",
@@ -758,6 +781,74 @@ def _missing_account_truth_promotion_evidence(
 
 def _account_truth_item_key(category: str, symbol: str) -> str:
     return f"{category}:{symbol}" if symbol else category
+
+
+def _account_truth_snapshot_capture(
+    events: list[StoredBrokerEvidenceEvent],
+) -> dict[str, object]:
+    """Resolve the effective Account Truth capture from persisted snapshots."""
+
+    unique_events = [event for event in events if not event.is_row_duplicate]
+    cash_timestamps = [
+        parsed
+        for event in unique_events
+        if event.event_type == "cash_snapshot"
+        and (parsed := _parse_aware_timestamp(event.occurred_at)) is not None
+    ]
+    position_timestamps = [
+        parsed
+        for event in unique_events
+        if event.event_type == "position_snapshot"
+        and (parsed := _parse_aware_timestamp(event.occurred_at)) is not None
+    ]
+    non_snapshot_timestamps = [
+        parsed
+        for event in unique_events
+        if event.event_type not in {"cash_snapshot", "position_snapshot"}
+        and (parsed := _parse_aware_timestamp(event.occurred_at)) is not None
+    ]
+    latest_cash = max(cash_timestamps, default=None)
+    latest_position = max(position_timestamps, default=None)
+    latest_non_snapshot = max(non_snapshot_timestamps, default=None)
+    blockers: list[str] = []
+    if latest_cash is None:
+        blockers.append("account_truth_cash_snapshot_missing")
+    if latest_position is None:
+        blockers.append("account_truth_position_snapshot_missing")
+
+    captured_at = (
+        min(latest_cash, latest_position)
+        if latest_cash is not None and latest_position is not None
+        else None
+    )
+    if (
+        latest_cash is not None
+        and latest_position is not None
+        and latest_cash.astimezone(_SHANGHAI_TZ).date()
+        != latest_position.astimezone(_SHANGHAI_TZ).date()
+    ):
+        blockers.append("account_truth_snapshot_dates_mismatch")
+    if (
+        captured_at is not None
+        and latest_non_snapshot is not None
+        and latest_non_snapshot > captured_at
+    ):
+        blockers.append("account_truth_snapshot_predates_latest_event")
+
+    return {
+        "status": "clear" if not blockers else "blocked",
+        "captured_at": captured_at.isoformat() if captured_at is not None else "",
+        "latest_cash_snapshot_at": (
+            latest_cash.isoformat() if latest_cash is not None else ""
+        ),
+        "latest_position_snapshot_at": (
+            latest_position.isoformat() if latest_position is not None else ""
+        ),
+        "latest_non_snapshot_event_at": (
+            latest_non_snapshot.isoformat() if latest_non_snapshot is not None else ""
+        ),
+        "blockers": blockers,
+    }
 
 
 def _parse_aware_timestamp(value: object) -> datetime | None:
