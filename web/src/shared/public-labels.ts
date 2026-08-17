@@ -390,6 +390,31 @@ const CODE_LABELS: Record<Locale, LabelMap> = {
     trade_gross_amount: 'Trade gross amount',
     transfer_fee: 'Transfer fee',
     unresolved_position_difference: 'Unresolved position difference',
+    decision_generated_outside_reviewed_window:
+      'Decision was generated outside the reviewed window',
+    plan_generated_outside_reviewed_window:
+      'Trading plan was generated outside the reviewed window',
+    account_truth_promotion_status_not_clear:
+      'Account Truth is not cleared for strategy promotion',
+    account_truth_gate_not_pass: 'Account Truth gate has not passed',
+    account_truth_not_fresh: 'Account Truth snapshot is stale',
+    account_truth_not_bound_to_plan_date:
+      'Account Truth is not bound to the run date',
+    account_truth_age_exceeds_reviewed_limit:
+      'Account Truth exceeds the reviewed freshness limit',
+    account_truth_too_old_for_decision:
+      'Account Truth was too old when the Decision was generated',
+    market_quote_timestamp_missing_or_invalid:
+      'Persisted market quote time is missing or invalid',
+    daily_candidate_strategy_candidate_missing:
+      'No promoted strategy candidate is available',
+    reviewed_fee_schedule_review_missing:
+      'Reviewed fee schedule approval is missing',
+    reviewed_fee_schedule_not_active: 'Reviewed fee schedule is not active',
+    reviewed_fee_schedule_review_fingerprint_invalid:
+      'Reviewed fee schedule fingerprint is invalid',
+    daily_candidate_background_window_missed:
+      "Today's background decision window was missed",
     valuation_missing: 'Valuation missing',
   },
   zh: {
@@ -582,6 +607,20 @@ const CODE_LABELS: Record<Locale, LabelMap> = {
     transfer_fee: '过户费',
     upstream_workflow_blockers: '仍有上游阻断未处理',
     unresolved_position_difference: '存在未解决的持仓差异',
+    decision_generated_outside_reviewed_window: '决策生成时间不在已复核窗口内',
+    plan_generated_outside_reviewed_window: '交易计划生成时间不在已复核窗口内',
+    account_truth_promotion_status_not_clear: '账户事实尚未通过策略晋级审查',
+    account_truth_gate_not_pass: '账户事实门禁未通过',
+    account_truth_not_fresh: '账户事实快照已过期',
+    account_truth_not_bound_to_plan_date: '账户事实未绑定到当日运行日期',
+    account_truth_age_exceeds_reviewed_limit: '账户事实超过已复核新鲜度上限',
+    account_truth_too_old_for_decision: '生成决策时账户事实已经过期',
+    market_quote_timestamp_missing_or_invalid: '持久化行情时间缺失或无效',
+    daily_candidate_strategy_candidate_missing: '缺少已晋级策略候选',
+    reviewed_fee_schedule_review_missing: '缺少真实费用方案复核记录',
+    reviewed_fee_schedule_not_active: '真实费用方案尚未生效',
+    reviewed_fee_schedule_review_fingerprint_invalid: '真实费用复核指纹无效',
+    daily_candidate_background_window_missed: '已错过今日后台决策窗口',
     valuation_missing: '缺少估值',
   },
 };
