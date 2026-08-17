@@ -1368,6 +1368,14 @@ def project_daily_candidate_financial_preflight(
         status = "no_action"
         next_safe_action = "resolve_runtime_or_schedule_blockers_before_next_window"
 
+    operator_checklist = _preflight_operator_checklist(
+        gates=financial_gates,
+        runtime_blockers=runtime_blockers,
+        schedule_status=schedule_status,
+        manual_window_open=manual_window_open,
+        next_safe_action=next_safe_action,
+    )
+
     core = {
         "schema_version": DAILY_CANDIDATE_FINANCIAL_PREFLIGHT_SCHEMA_VERSION,
         "status": status,
@@ -1383,6 +1391,7 @@ def project_daily_candidate_financial_preflight(
         "operational_blockers": runtime_blockers,
         "no_action_reasons": [] if manual_ready else no_action_reasons,
         "next_safe_action": next_safe_action,
+        "operator_checklist": operator_checklist,
         "decision_plan_fingerprint": _evidence_fingerprint(
             decision_payload,
             trading_plan,
@@ -1439,6 +1448,15 @@ def unavailable_daily_candidate_financial_preflight(
         "operational_blockers": [],
         "no_action_reasons": [blocker],
         "next_safe_action": "restore_persisted_preflight_sources_before_next_window",
+        "operator_checklist": [
+            _preflight_operator_step(
+                step=1,
+                gate="source_evidence",
+                action="restore_persisted_preflight_sources_before_next_window",
+                blockers=[blocker],
+                completion_mode="persisted_evidence_refresh",
+            )
+        ],
         "decision_plan_fingerprint": None,
         "strategy_binding_fingerprints": [],
         "reviewed_fee_schedule_fingerprint": None,
@@ -1464,6 +1482,151 @@ def unavailable_daily_candidate_financial_preflight(
         ],
     }
     return {**core, "preflight_fingerprint": _fingerprint_json(core)}
+
+
+def _preflight_operator_checklist(
+    *,
+    gates: list[dict[str, Any]],
+    runtime_blockers: list[str],
+    schedule_status: str,
+    manual_window_open: bool,
+    next_safe_action: str,
+) -> list[dict[str, Any]]:
+    """Order blocked evidence work without performing or authorizing it."""
+
+    action_specs = (
+        (
+            "automation_policy",
+            "restore_paper_shadow_only_automation_policy",
+            "human_review",
+        ),
+        (
+            "account_truth",
+            "complete_current_account_truth_evidence_review",
+            "human_review",
+        ),
+        (
+            "reviewed_fees",
+            "review_account_specific_fee_schedule",
+            "human_review",
+        ),
+        (
+            "strategy",
+            "promote_evidence_bound_strategy_for_paper_shadow",
+            "human_review",
+        ),
+        (
+            "execution_closure",
+            "complete_plan_paper_actual_reconciliation",
+            "human_review",
+        ),
+        (
+            "market_data",
+            "persist_current_market_quotes_for_reviewed_window",
+            "persisted_evidence_refresh",
+        ),
+        (
+            "decision_plan",
+            "rebuild_decision_and_plan_in_reviewed_window",
+            "canonical_runtime",
+        ),
+    )
+    blockers_by_gate = {
+        str(gate.get("gate") or ""): [
+            str(blocker) for blocker in gate.get("blockers") or [] if str(blocker)
+        ]
+        for gate in gates
+    }
+    checklist: list[dict[str, Any]] = []
+    for gate, action, completion_mode in action_specs:
+        blockers = blockers_by_gate.get(gate, [])
+        if not blockers:
+            continue
+        checklist.append(
+            _preflight_operator_step(
+                step=len(checklist) + 1,
+                gate=gate,
+                action=action,
+                blockers=blockers,
+                completion_mode=completion_mode,
+            )
+        )
+
+    schedule_reason = None
+    schedule_action = "restore_daily_candidate_runtime_before_reviewed_window"
+    if not manual_window_open:
+        schedule_reason, schedule_action = {
+            "waiting_for_decision_window": (
+                "daily_candidate_decision_window_not_open",
+                "keep_monitor_running_and_wait_for_reviewed_window",
+            ),
+            "missed_decision_window": (
+                "daily_candidate_background_window_missed",
+                "prepare_current_evidence_for_next_reviewed_window",
+            ),
+            "not_trading_day": (
+                "market_calendar_not_trading_day",
+                "wait_for_next_verified_trading_day",
+            ),
+            "already_attempted": (
+                "daily_candidate_attempt_already_recorded",
+                "review_persisted_daily_result",
+            ),
+            "already_recorded": (
+                "daily_candidate_run_already_recorded",
+                "review_persisted_daily_result",
+            ),
+        }.get(
+            schedule_status,
+            (
+                "daily_candidate_decision_window_unavailable",
+                "restore_daily_candidate_runtime_before_reviewed_window",
+            ),
+        )
+    runtime_reasons = list(dict.fromkeys([*runtime_blockers, schedule_reason]))
+    runtime_reasons = [reason for reason in runtime_reasons if reason]
+    if runtime_reasons:
+        checklist.append(
+            _preflight_operator_step(
+                step=len(checklist) + 1,
+                gate="runtime_window",
+                action=schedule_action,
+                blockers=runtime_reasons,
+                completion_mode="canonical_runtime",
+            )
+        )
+
+    if not checklist:
+        checklist.append(
+            _preflight_operator_step(
+                step=1,
+                gate="ready",
+                action=next_safe_action,
+                blockers=[],
+                completion_mode="canonical_runtime",
+            )
+        )
+    return checklist
+
+
+def _preflight_operator_step(
+    *,
+    step: int,
+    gate: str,
+    action: str,
+    blockers: list[str],
+    completion_mode: str,
+) -> dict[str, Any]:
+    return {
+        "step": step,
+        "gate": gate,
+        "action": action,
+        "completion_mode": completion_mode,
+        "blockers": list(dict.fromkeys(blockers)),
+        "automatic_action_performed": False,
+        "authorizes_execution": False,
+        "changes_capital_authority": False,
+    }
 
 
 def _preflight_gate(name: str, blockers: list[str]) -> dict[str, Any]:
