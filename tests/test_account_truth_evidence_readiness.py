@@ -226,10 +226,64 @@ def test_evidence_readiness_projects_persisted_query_window_integrity_blockers()
         "source_scope_declared_scope_consistent": False,
         "source_scope_complete_returned_results_attested": False,
         "intake_scan_truncated": False,
+        "resolution": {
+            "schema_version": (
+                "karkinos.account_truth.citic_source_resolution_stage.v1"
+            ),
+            "status": "legacy_query_window_review_required",
+            "pending_source_count": 2,
+            "source_count_complete": True,
+            "query_window_attestations_complete": False,
+            "source_scope_attestations_complete": False,
+            "legacy_source_attestations_complete": False,
+            "canonical_account_truth_established_by_legacy_sources": False,
+            "next_manual_action": "review_citic_source_query_windows",
+            "satisfies_account_truth": False,
+            "satisfies_reconciliation": False,
+            "provider_contacted": False,
+            "database_writes_performed": False,
+            "authorizes_execution": False,
+            "changes_capital_authority": False,
+            "limitations": [
+                "Reviewed legacy query windows and source scopes do not establish current or complete canonical Account Truth.",
+                "Closing source follow-up still requires separately reviewed canonical evidence or an explicit source rejection.",
+            ],
+        },
     }
     assert projection["eligible_for_reconciliation"] is False
     assert projection["authorizes_execution"] is False
     assert projection["changes_capital_authority"] is False
+
+
+def test_readiness_distinguishes_complete_legacy_attestations_from_canonical_scope():
+    follow_up = _follow_up(pending_source_count=4)
+    follow_up.update(
+        {
+            "query_window_integrity_clear": True,
+            "source_scope_integrity_clear": True,
+            "next_manual_action": (
+                "provide_citic_account_truth_evidence_or_reject_source"
+            ),
+        }
+    )
+
+    projection = project_account_truth_evidence_readiness(
+        score=_score(),
+        citic_source_follow_up=follow_up,
+        evidence_scope=_complete_scope(),
+    )
+    resolution = projection["citic_source_follow_up"]["resolution"]
+
+    assert resolution["status"] == (
+        "legacy_attestations_complete_canonical_resolution_required"
+    )
+    assert resolution["pending_source_count"] == 4
+    assert resolution["legacy_source_attestations_complete"] is True
+    assert resolution["canonical_account_truth_established_by_legacy_sources"] is False
+    assert resolution["database_writes_performed"] is False
+    assert resolution["authorizes_execution"] is False
+    assert projection["status"] == "blocked"
+    assert "citic_source_follow_up_required" in projection["blockers"]
 
 
 def test_evidence_scope_exposes_observed_span_without_claiming_complete_coverage():

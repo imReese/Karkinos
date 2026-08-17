@@ -1771,6 +1771,36 @@ function openAccountTruthReadinessTarget(targetId: string) {
   }
 }
 
+function legacySourceResolutionStatusLabel(
+  status: string | undefined,
+  locale: 'en' | 'zh',
+) {
+  const labels: Record<string, { en: string; zh: string }> = {
+    legacy_source_review_state_unavailable: {
+      en: 'review state unavailable',
+      zh: '复核状态不可用',
+    },
+    no_legacy_source_resolution_pending: {
+      en: 'no pending legacy source',
+      zh: '没有待处理历史来源',
+    },
+    legacy_query_window_review_required: {
+      en: 'query-window review required',
+      zh: '仍需查询区间复核',
+    },
+    legacy_source_scope_review_required: {
+      en: 'source-scope review required',
+      zh: '仍需来源范围复核',
+    },
+    legacy_attestations_complete_canonical_resolution_required: {
+      en: 'legacy attestations complete; canonical resolution required',
+      zh: '历史声明已完成；仍需 canonical 处理',
+    },
+  };
+  const key = status || 'legacy_source_review_state_unavailable';
+  return labels[key]?.[locale] ?? formatCode(key, locale, 'status');
+}
+
 function EvidenceReadinessChecklist({
   locale,
   readiness,
@@ -1808,6 +1838,9 @@ function EvidenceReadinessChecklist({
     0,
     sourceFollowUp?.query_window_overlap_calendar_day_count ?? 0,
   );
+  const sourceResolution = sourceFollowUp?.resolution;
+  const legacyAttestationsComplete =
+    sourceResolution?.legacy_source_attestations_complete === true;
   return (
     <section
       className="min-w-0 px-1 py-4 sm:px-4"
@@ -1831,6 +1864,19 @@ function EvidenceReadinessChecklist({
             {locale === 'zh' ? '缺口天数' : 'gap days'} {queryWindowGapDays} ·{' '}
             {locale === 'zh' ? '重叠天数' : 'overlap days'}{' '}
             {queryWindowOverlapDays}
+          </p>
+          <p
+            className="mt-1 text-xs leading-5 text-[var(--app-text-secondary)]"
+            data-testid="account-truth-citic-source-resolution"
+          >
+            {legacyAttestationsComplete
+              ? locale === 'zh'
+                ? `历史 XLS 声明：${sourceResolution.pending_source_count}/${sourceResolution.pending_source_count} 已复核；无需重做，但仍需单独完成 canonical Account Truth 证据或明确拒绝来源。`
+                : `Historical XLS attestations: ${sourceResolution.pending_source_count}/${sourceResolution.pending_source_count} reviewed; no redo is needed, but separate canonical Account Truth evidence or explicit source rejection is still required.`
+              : `${locale === 'zh' ? '历史 XLS 声明阶段' : 'Historical XLS attestation stage'}: ${legacySourceResolutionStatusLabel(
+                  sourceResolution?.status,
+                  locale,
+                )}`}
           </p>
         </div>
         <StatusBadge tone={statusTone(readiness.status)}>

@@ -109,6 +109,24 @@ const evidenceReadiness = {
     source_scope_declared_scope_consistent: false,
     source_scope_complete_returned_results_attested: false,
     intake_scan_truncated: false,
+    resolution: {
+      schema_version: 'karkinos.account_truth.citic_source_resolution_stage.v1',
+      status: 'legacy_query_window_review_required',
+      pending_source_count: 4,
+      source_count_complete: true,
+      query_window_attestations_complete: false,
+      source_scope_attestations_complete: false,
+      legacy_source_attestations_complete: false,
+      canonical_account_truth_established_by_legacy_sources: false,
+      next_manual_action: 'review_citic_source_query_windows',
+      satisfies_account_truth: false,
+      satisfies_reconciliation: false,
+      provider_contacted: false,
+      database_writes_performed: false,
+      authorizes_execution: false,
+      changes_capital_authority: false,
+      limitations: [],
+    },
   },
   items: [
     {
@@ -1091,6 +1109,42 @@ function renderAccountTruthReviewPage(
   return { fetchMock };
 }
 
+test('separates completed legacy attestations from canonical Account Truth', async () => {
+  const sourceFollowUp = evidenceReadiness.citic_source_follow_up;
+  renderAccountTruthReviewPage({
+    evidenceReadinessResponse: {
+      ...evidenceReadiness,
+      citic_source_follow_up: {
+        ...sourceFollowUp,
+        query_window_batch_integrity_status: 'clear',
+        query_window_gap_calendar_day_count: 0,
+        query_window_integrity_clear: true,
+        source_scope_batch_integrity_status: 'clear',
+        source_scope_integrity_clear: true,
+        source_scope_account_binding_consistent: true,
+        source_scope_declared_scope_consistent: true,
+        source_scope_complete_returned_results_attested: true,
+        resolution: {
+          ...sourceFollowUp.resolution,
+          status: 'legacy_attestations_complete_canonical_resolution_required',
+          query_window_attestations_complete: true,
+          source_scope_attestations_complete: true,
+          legacy_source_attestations_complete: true,
+          next_manual_action:
+            'provide_citic_account_truth_evidence_or_reject_source',
+        },
+      },
+    },
+  });
+
+  expect(
+    (await screen.findByTestId('account-truth-citic-source-resolution'))
+      .textContent,
+  ).toContain(
+    'Historical XLS attestations: 4/4 reviewed; no redo is needed, but separate canonical Account Truth evidence or explicit source rejection is still required.',
+  );
+});
+
 async function completeCiticSourceScopeReview(
   previewTool: HTMLElement,
   { startDate = '2026-05-01', endDate = '2026-05-31' } = {},
@@ -1264,6 +1318,11 @@ test('renders Account Truth score, import runs, reconciliation detail, and revie
       'account-truth-citic-query-window-integrity',
     ).textContent,
   ).toContain('Query-window integrity: Blocked · gap days 1 · overlap days 0');
+  expect(
+    within(readinessDisclosure).getByTestId(
+      'account-truth-citic-source-resolution',
+    ).textContent,
+  ).toContain('Historical XLS attestation stage: query-window review required');
   expect(
     within(readinessDisclosure).getByText('Canonical broker evidence'),
   ).toBeTruthy();

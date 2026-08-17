@@ -122,6 +122,29 @@ export type AccountTruthEvidenceReadiness = {
     source_scope_declared_scope_consistent: boolean;
     source_scope_complete_returned_results_attested: boolean;
     intake_scan_truncated: boolean;
+    resolution: {
+      schema_version: 'karkinos.account_truth.citic_source_resolution_stage.v1';
+      status:
+        | 'legacy_source_review_state_unavailable'
+        | 'no_legacy_source_resolution_pending'
+        | 'legacy_query_window_review_required'
+        | 'legacy_source_scope_review_required'
+        | 'legacy_attestations_complete_canonical_resolution_required';
+      pending_source_count: number;
+      source_count_complete: boolean;
+      query_window_attestations_complete: boolean;
+      source_scope_attestations_complete: boolean;
+      legacy_source_attestations_complete: boolean;
+      canonical_account_truth_established_by_legacy_sources: false;
+      next_manual_action: string;
+      satisfies_account_truth: false;
+      satisfies_reconciliation: false;
+      provider_contacted: false;
+      database_writes_performed: false;
+      authorizes_execution: false;
+      changes_capital_authority: false;
+      limitations: string[];
+    };
   };
   items: Array<{
     requirement: string;

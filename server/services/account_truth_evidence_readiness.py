@@ -357,6 +357,9 @@ def project_account_truth_evidence_readiness(
     source_count_complete = citic_source_follow_up.get("count_complete") is True
     source_follow_up_status = str(citic_source_follow_up.get("status") or "unavailable")
     source_follow_up_blockers = _unique_strings(citic_source_follow_up.get("blockers"))
+    legacy_source_resolution = _legacy_source_resolution_projection(
+        citic_source_follow_up
+    )
     effective_scope = evidence_scope or _missing_evidence_scope()
     evidence_scope_status = str(effective_scope.get("status") or "blocked")
     evidence_scope_fingerprint = str(effective_scope.get("evidence_fingerprint") or "")
@@ -550,6 +553,7 @@ def project_account_truth_evidence_readiness(
             "intake_scan_truncated": (
                 citic_source_follow_up.get("intake_scan_truncated") is True
             ),
+            "resolution": legacy_source_resolution,
         },
         "items": items,
         "blockers": blockers,
@@ -574,6 +578,69 @@ def project_account_truth_evidence_readiness(
         "eligible_for_reconciliation": False,
         "authorizes_execution": False,
         "changes_capital_authority": False,
+    }
+
+
+def _legacy_source_resolution_projection(
+    citic_source_follow_up: dict[str, object],
+) -> dict[str, object]:
+    """Explain the remaining source stage without changing any financial gate."""
+
+    pending_source_count = _safe_nonnegative_int(
+        citic_source_follow_up.get("pending_source_count")
+    )
+    count_complete = citic_source_follow_up.get("count_complete") is True
+    query_windows_clear = (
+        citic_source_follow_up.get("query_window_integrity_clear") is True
+    )
+    source_scopes_clear = (
+        citic_source_follow_up.get("source_scope_integrity_clear") is True
+    )
+    if not count_complete:
+        status = "legacy_source_review_state_unavailable"
+        next_manual_action = str(
+            citic_source_follow_up.get("next_manual_action")
+            or "repair_citic_source_intake_metadata_store"
+        )
+    elif pending_source_count == 0:
+        status = "no_legacy_source_resolution_pending"
+        next_manual_action = "none"
+    elif not query_windows_clear:
+        status = "legacy_query_window_review_required"
+        next_manual_action = "review_citic_source_query_windows"
+    elif not source_scopes_clear:
+        status = "legacy_source_scope_review_required"
+        next_manual_action = "review_citic_source_scopes"
+    else:
+        status = "legacy_attestations_complete_canonical_resolution_required"
+        next_manual_action = "provide_citic_account_truth_evidence_or_reject_source"
+
+    legacy_attestations_complete = (
+        count_complete
+        and pending_source_count > 0
+        and query_windows_clear
+        and source_scopes_clear
+    )
+    return {
+        "schema_version": ("karkinos.account_truth.citic_source_resolution_stage.v1"),
+        "status": status,
+        "pending_source_count": pending_source_count,
+        "source_count_complete": count_complete,
+        "query_window_attestations_complete": query_windows_clear,
+        "source_scope_attestations_complete": source_scopes_clear,
+        "legacy_source_attestations_complete": legacy_attestations_complete,
+        "canonical_account_truth_established_by_legacy_sources": False,
+        "next_manual_action": next_manual_action,
+        "satisfies_account_truth": False,
+        "satisfies_reconciliation": False,
+        "provider_contacted": False,
+        "database_writes_performed": False,
+        "authorizes_execution": False,
+        "changes_capital_authority": False,
+        "limitations": [
+            "Reviewed legacy query windows and source scopes do not establish current or complete canonical Account Truth.",
+            "Closing source follow-up still requires separately reviewed canonical evidence or an explicit source rejection.",
+        ],
     }
 
 
