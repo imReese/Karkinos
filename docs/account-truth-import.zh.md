@@ -193,7 +193,10 @@ Account Truth 页面会把上述来源复核与 canonical score 投影到
 `karkinos.account_truth.evidence_readiness.v2`。其中
 `karkinos.account_truth.evidence_scope.v1` 只报告精确持久化导入中观察到的日期跨度、资产类别、
 币种和快照日期，绝不把首末记录冒充完整账户或完整时段覆盖。账户绑定、声明覆盖窗口和资产范围
-完整性会保持阻断，直到 owner 对该精确导入执行显式复核。
+完整性会保持阻断，直到 owner 对该精确导入执行显式复核。嵌套的
+`karkinos.account_truth.citic_source_resolution_stage.v1` 会把“查询区间待复核”“来源范围待复核”和
+“历史声明均已完成、仍需 canonical 证据或显式拒绝”分开显示；最后一种状态不要求重做 XLS 声明，
+但也绝不把 legacy 来源提升为 Account Truth、对账或执行证据。
 
 显式复核只在浏览器中对券商账户标识计算哈希；原始标识不会发送给 API，也不会持久化。追加式
 记录绑定导入 fingerprint、观察范围 fingerprint、provider、本地别名、账户引用哈希、复核日期和

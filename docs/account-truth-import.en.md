@@ -282,7 +282,12 @@ canonical score through `karkinos.account_truth.evidence_readiness.v2`. Its
 classes, currencies, and snapshot dates observed in the exact persisted import,
 but never treats first/last rows as proof of complete account or period coverage.
 Account binding, a declared coverage window, and asset-scope completeness remain
-blocked until the owner explicitly reviews the exact import.
+blocked until the owner explicitly reviews the exact import. Its nested
+`karkinos.account_truth.citic_source_resolution_stage.v1` distinguishes pending
+query-window review, pending source-scope review, and completed legacy
+attestations that still require canonical evidence or explicit rejection. The
+last state requires no XLS-attestation redo, but never promotes legacy sources
+to Account Truth, reconciliation, or execution evidence.
 
 That explicit review hashes the broker account identifier in the browser; the
 raw identifier is never sent to the API or persisted. The append-only record
