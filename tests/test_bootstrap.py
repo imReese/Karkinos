@@ -1353,7 +1353,18 @@ def test_server_main_preserves_live_auto_start_env_for_reload(monkeypatch):
     monkeypatch.setattr(
         sys,
         "argv",
-        ["python -m server", "--reload", "--host", "127.0.0.1", "--port", "8000"],
+        [
+            "python -m server",
+            "--reload",
+            "--reload-exclude",
+            "tests/**",
+            "--reload-exclude",
+            "web/**",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8000",
+        ],
     )
     monkeypatch.setenv("KARKINOS_LIVE_AUTO_START", "true")
     monkeypatch.setattr("uvicorn.run", fake_run)
@@ -1362,6 +1373,7 @@ def test_server_main_preserves_live_auto_start_env_for_reload(monkeypatch):
 
     assert captured["args"] == ("server.app:create_app",)
     assert captured["kwargs"]["reload"] is True
+    assert captured["kwargs"]["reload_excludes"] == ["tests/**", "web/**"]
     assert captured["live_auto_start"] == "true"
 
 
