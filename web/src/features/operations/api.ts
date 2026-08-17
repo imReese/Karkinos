@@ -1023,6 +1023,17 @@ export type DailyCandidateFinancialPreflight = {
   operational_blockers: string[];
   no_action_reasons: string[];
   next_safe_action: string;
+  operator_checklist: Array<{
+    step: number;
+    gate: string;
+    action: string;
+    completion_mode:
+      'human_review' | 'persisted_evidence_refresh' | 'canonical_runtime';
+    blockers: string[];
+    automatic_action_performed: false;
+    authorizes_execution: false;
+    changes_capital_authority: false;
+  }>;
   preflight_fingerprint: string;
   financial_readiness_scope: 'risk_and_paper_shadow_attempt_only';
   risk_evaluation_performed: false;
