@@ -119,6 +119,14 @@ profitability. The post-shadow production gate still decides whether a
 read-only manual ticket candidate exists. Any missing or drifted source is
 shown as a named `NO-ACTION` reason.
 
+The preflight also returns a read-only `operator_checklist` in dependency order:
+Account Truth, account-specific fees, and strategy review come before prior
+execution closure, current quotes, the Decision/plan, and the runtime window.
+Each step carries its exact blockers and completion mode, but performs no
+repair, evidence write, strategy approval, ticket creation, execution grant, or
+capital change. When every gate passes, the checklist still points only to one
+canonical paper/shadow attempt.
+
 On an owner-operated Mac, a terminal background process is not durable service
 evidence. Before relying on the next decision window, first inspect the local
 user-level definition with `./scripts/manage_launch_agent.sh print-plist`, then

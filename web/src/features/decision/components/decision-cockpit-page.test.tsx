@@ -737,6 +737,18 @@ function installDecisionFetchMock({
       operational_blockers: [],
       no_action_reasons: [],
       next_safe_action: 'allow_single_claimed_fail_closed_background_attempt',
+      operator_checklist: [
+        {
+          step: 1,
+          gate: 'ready',
+          action: 'allow_single_claimed_fail_closed_background_attempt',
+          completion_mode: 'canonical_runtime',
+          blockers: [],
+          automatic_action_performed: false,
+          authorizes_execution: false,
+          changes_capital_authority: false,
+        },
+      ],
       preflight_fingerprint: '9'.repeat(64),
       financial_readiness_scope: 'risk_and_paper_shadow_attempt_only',
       risk_evaluation_performed: false,
@@ -2794,6 +2806,22 @@ test('summarizes controlled automation cockpit status in the decision page', asy
     'It does not establish future profit',
   );
   expect(automation.textContent).not.toContain('execution_reconciliation_gap');
+});
+
+test('shows the deterministic financial preflight preparation step without authority', async () => {
+  renderDecisionCockpit();
+
+  const checklist = await screen.findByTestId(
+    'daily-candidate-operator-checklist',
+  );
+
+  expect(checklist.textContent).toContain('Preparation order');
+  expect(checklist.textContent).toContain(
+    'Await one claimed, fail-closed background attempt',
+  );
+  expect(checklist.textContent).toContain('canonical workflow only');
+  expect(checklist.textContent).not.toContain('Submit broker order');
+  expect(checklist.textContent).not.toContain('capital authority');
 });
 
 test('records a daily candidate trial conclusion without authority', async () => {

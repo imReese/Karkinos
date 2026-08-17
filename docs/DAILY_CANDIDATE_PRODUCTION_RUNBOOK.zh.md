@@ -40,6 +40,8 @@ Owner 启用实时监控后，后台循环先读取持久化且已官方复核�
 
 Automation Cockpit v4 还会展示 `karkinos.daily_candidate_financial_preflight.v1`。该只读投影从持久化事实重建当前 Decision 与计划，并逐项检查同日 Account Truth 采集时间、可信持久化行情、精确晋级策略与冻结数据集重放、当前费用复核及日期覆盖、安全自动化策略和前序执行闭环。绿色预检只表示可以在已复核窗口内启动一次 canonical 风控加 paper/shadow 尝试；它不会执行风控、模拟订单、创建票据、修改 OMS 或生产账本、联系 provider/券商、扩大资本或证明盈利。模拟后的生产门禁仍是只读人工票据候选的唯一判定者；任何来源缺失或漂移都会显示为具名 `NO-ACTION` 原因。
 
+预检同时按依赖顺序返回只读 `operator_checklist`：先处理 Account Truth、账户费用和策略人工复核，再处理前序执行闭环、当前行情、Decision/计划及运行窗口。每一步都携带准确阻断项和完成模式，但不会自动执行修复、写入证据、批准策略、创建票据或改变执行/资本权限；全部门禁已通过时，清单也只指向一次 canonical paper/shadow 尝试。
+
 在 owner 自行运行的 Mac 上，终端后台子进程不构成持久服务证据。准备下一个决策窗口前，先运行 `./scripts/manage_launch_agent.sh print-plist` 检查本地用户级定义，再显式执行 `./scripts/manage_launch_agent.sh install`；随后必须由 `./scripts/manage_launch_agent.sh status` 同时确认 LaunchAgent 已加载且进程存活。该服务只监听 `127.0.0.1`，意外退出后会重启，并可通过 `uninstall` 完整撤销。安装不会修改 `config.json` 或 `.env`，不会自行开启 `live_auto_start`，不会联系 provider，也不证明财务就绪。若后端端口已有 listener，安装会保持原进程不动并失败；operator 必须明确处理该准确进程，禁止两个每日候选服务共用一个本地运行数据库。
 
 ## 前瞻运营试运行

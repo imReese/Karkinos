@@ -2938,8 +2938,74 @@ function DailyCandidateFinancialPreflightPanel({
     strategy: { zh: '晋级策略', en: 'Promoted strategy' },
     reviewed_fees: { zh: '真实费用', en: 'Reviewed fees' },
     execution_closure: { zh: '前序执行闭环', en: 'Prior closure' },
+    runtime_window: { zh: '运行窗口', en: 'Runtime window' },
+    source_evidence: { zh: '预检证据源', en: 'Preflight sources' },
+    ready: { zh: '下一步', en: 'Next step' },
+  };
+  const actionLabels: Record<string, { zh: string; en: string }> = {
+    restore_paper_shadow_only_automation_policy: {
+      zh: '恢复仅 paper/shadow 的安全策略',
+      en: 'Restore the paper/shadow-only safety policy',
+    },
+    complete_current_account_truth_evidence_review: {
+      zh: '完成当前 Account Truth 证据与范围复核',
+      en: 'Complete the current Account Truth evidence and scope review',
+    },
+    review_account_specific_fee_schedule: {
+      zh: '复核账户专属费用版本',
+      en: 'Review the account-specific fee schedule',
+    },
+    promote_evidence_bound_strategy_for_paper_shadow: {
+      zh: '人工晋级一项证据绑定策略到 paper/shadow',
+      en: 'Promote one evidence-bound strategy to paper/shadow',
+    },
+    complete_plan_paper_actual_reconciliation: {
+      zh: '完成 plan / paper / actual 对账闭环',
+      en: 'Complete plan / paper / actual reconciliation',
+    },
+    persist_current_market_quotes_for_reviewed_window: {
+      zh: '在复核窗口持久化当前行情',
+      en: 'Persist current quotes in the reviewed window',
+    },
+    rebuild_decision_and_plan_in_reviewed_window: {
+      zh: '在复核窗口重建 Decision 与计划',
+      en: 'Rebuild the Decision and plan in the reviewed window',
+    },
+    prepare_current_evidence_for_next_reviewed_window: {
+      zh: '为下一个复核窗口准备当前证据',
+      en: 'Prepare current evidence for the next reviewed window',
+    },
+    keep_monitor_running_and_wait_for_reviewed_window: {
+      zh: '保持监控并等待复核窗口',
+      en: 'Keep the monitor running and wait for the reviewed window',
+    },
+    wait_for_next_verified_trading_day: {
+      zh: '等待下一个已验证交易日',
+      en: 'Wait for the next verified trading day',
+    },
+    review_persisted_daily_result: {
+      zh: '复核已持久化的当日结果',
+      en: 'Review the persisted daily result',
+    },
+    restore_daily_candidate_runtime_before_reviewed_window: {
+      zh: '在复核窗口前恢复每日候选运行状态',
+      en: 'Restore daily-candidate runtime before the reviewed window',
+    },
+    restore_persisted_preflight_sources_before_next_window: {
+      zh: '在下个窗口前恢复持久化预检证据源',
+      en: 'Restore persisted preflight sources before the next window',
+    },
+    allow_single_claimed_fail_closed_background_attempt: {
+      zh: '等待单次、已认领且 fail-closed 的后台尝试',
+      en: 'Await one claimed, fail-closed background attempt',
+    },
+    start_one_canonical_daily_candidate_attempt: {
+      zh: '启动一次 canonical 每日候选尝试',
+      en: 'Start one canonical daily-candidate attempt',
+    },
   };
   const reasons = preflight.no_action_reasons.slice(0, 8);
+  const operatorChecklist = (preflight.operator_checklist ?? []).slice(0, 8);
 
   return (
     <div
@@ -3010,6 +3076,57 @@ function DailyCandidateFinancialPreflightPanel({
               ? ` · 其余 ${preflight.no_action_reasons.length - reasons.length} 项`
               : ` · ${preflight.no_action_reasons.length - reasons.length} more`
             : ''}
+        </div>
+      ) : null}
+
+      {operatorChecklist.length ? (
+        <div
+          data-testid="daily-candidate-operator-checklist"
+          className="mt-3 rounded-xl border border-[color-mix(in_srgb,var(--app-border)_28%,transparent)] px-3 py-2"
+        >
+          <div className="app-kicker text-[length:var(--app-font-size-micro)] text-[var(--app-text-tertiary)]">
+            {locale === 'zh' ? '准备顺序' : 'Preparation order'}
+          </div>
+          <ol className="mt-2 space-y-2">
+            {operatorChecklist.map((item) => {
+              const action = actionLabels[item.action];
+              const gate = gateLabels[item.gate];
+              return (
+                <li
+                  className="flex min-w-0 gap-2 text-xs leading-5"
+                  key={item.step}
+                >
+                  <span className="font-semibold text-[var(--app-accent)]">
+                    {item.step}.
+                  </span>
+                  <div className="min-w-0">
+                    <div className="break-words font-semibold text-[var(--app-text)]">
+                      {action?.[locale] ??
+                        formatPublicCode(item.action, locale)}
+                    </div>
+                    <div className="app-muted break-words">
+                      {gate?.[locale] ?? formatPublicCode(item.gate, locale)}
+                      {item.blockers.length
+                        ? locale === 'zh'
+                          ? ` · ${item.blockers.length} 项阻断`
+                          : ` · ${item.blockers.length} blocker(s)`
+                        : locale === 'zh'
+                          ? ' · 门禁已通过'
+                          : ' · gates passed'}
+                      {' · '}
+                      {item.completion_mode === 'human_review'
+                        ? locale === 'zh'
+                          ? '需人工复核'
+                          : 'human review required'
+                        : locale === 'zh'
+                          ? '仅按 canonical 流程完成'
+                          : 'canonical workflow only'}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
         </div>
       ) : null}
 
