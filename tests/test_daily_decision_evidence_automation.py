@@ -8,6 +8,7 @@ from server.services import daily_decision_evidence_automation as automation_mod
 from server.services.daily_decision_evidence_automation import (
     DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE,
     DailyDecisionEvidenceAutomationService,
+    project_daily_candidate_financial_preflight,
 )
 from server.services.oms import OmsService
 from server.services.trading_controls import TradingControlState
@@ -177,6 +178,148 @@ def _plan(*, risk_checked: bool) -> dict:
         "order_intents": order_intents,
         "blockers": blockers,
     }
+
+
+def _financial_preflight_inputs() -> dict:
+    decision = _decision(risk_checked=False)
+    decision["candidates"][0]["evidence"]["data_freshness"] = {
+        "status": "fresh",
+        "price": 10.0,
+        "quote_timestamp": "2026-07-02T09:34:00+08:00",
+        "quote_source": "persisted_fixture",
+    }
+    return {
+        "decision_payload": decision,
+        "trading_plan": _plan(risk_checked=False),
+        "reviewed_fee_schedule": {
+            "status": "active",
+            "review": {
+                "review_fingerprint": "b" * 64,
+                "effective_start_date": "2026-01-01",
+                "effective_end_date": "2026-12-31",
+            },
+            "blockers": [],
+            "persisted_facts_only": True,
+            "provider_contacted": False,
+            "database_writes_performed": False,
+            "authorizes_execution": False,
+            "changes_capital_authority": False,
+        },
+        "execution_closure": {
+            "schema_version": "karkinos.daily_candidate_execution_closure.v1",
+            "status": "not_required",
+            "blockers": [],
+            "evidence_fingerprint": "d" * 64,
+        },
+        "automation_status": {
+            "automation_ready": True,
+            "kill_switch_enabled": False,
+            "manual_confirmation_required": True,
+            "broker_submission_enabled": False,
+            "allowed_execution_modes": [
+                "manual_confirmation",
+                "paper_shadow",
+                "dry_run",
+            ],
+        },
+        "runtime_status": {
+            "schema_version": "karkinos.daily_candidate_runtime_status.v1",
+            "status": "monitor_running_due",
+            "run_date": "2026-07-02",
+            "schedule_status": "due",
+            "background_monitor_running": True,
+            "background_attempt_due": True,
+            "manual_run_window_open": True,
+            "operational_blockers": [],
+            "provider_contact_performed": False,
+            "database_writes_performed": False,
+            "broker_submission_enabled": False,
+            "authorizes_execution": False,
+            "changes_capital_authority": False,
+        },
+    }
+
+
+def test_financial_preflight_opens_only_risk_and_paper_shadow_attempt() -> None:
+    result = project_daily_candidate_financial_preflight(
+        **_financial_preflight_inputs()
+    )
+
+    assert result["status"] == "ready_for_paper_shadow_attempt"
+    assert result["financial_gate_status"] == "pass"
+    assert result["eligible_candidate_count"] == 1
+    assert result["eligible_to_start_manual_attempt"] is True
+    assert result["eligible_for_background_attempt"] is True
+    assert result["eligible_to_create_manual_ticket"] is False
+    assert result["risk_evaluation_performed"] is False
+    assert result["paper_shadow_run_performed"] is False
+    assert result["manual_ticket_created"] is False
+    assert result["database_writes_performed"] is False
+    assert result["provider_contact_performed"] is False
+    assert result["broker_submission_enabled"] is False
+    assert result["authorizes_execution"] is False
+    assert result["changes_capital_authority"] is False
+    assert result["profitability_claim"] == "not_established"
+
+
+def test_financial_preflight_fails_closed_on_account_truth_staleness() -> None:
+    inputs = _financial_preflight_inputs()
+    inputs["decision_payload"]["summary"]["account_truth"].update(
+        {
+            "data_freshness_status": "stale",
+            "current_age_seconds": 90000,
+        }
+    )
+
+    result = project_daily_candidate_financial_preflight(**inputs)
+
+    assert result["status"] == "no_action"
+    assert result["financial_gate_status"] == "blocked"
+    assert result["eligible_for_background_attempt"] is False
+    assert "account_truth_not_fresh" in result["no_action_reasons"]
+    assert "account_truth_age_exceeds_reviewed_limit" in result["no_action_reasons"]
+
+
+def test_financial_preflight_fails_closed_on_fee_or_strategy_binding_drift() -> None:
+    inputs = _financial_preflight_inputs()
+    inputs["reviewed_fee_schedule"] = {
+        **inputs["reviewed_fee_schedule"],
+        "status": "missing",
+        "review": None,
+        "blockers": ["reviewed_fee_schedule_review_missing"],
+    }
+
+    result = project_daily_candidate_financial_preflight(**inputs)
+
+    assert result["status"] == "no_action"
+    assert result["eligible_candidate_count"] == 0
+    assert "reviewed_fee_schedule_review_missing" in result["no_action_reasons"]
+    assert "reviewed_fee_schedule_not_active" in result["no_action_reasons"]
+    assert any(
+        "reviewed_fee_schedule_active_binding_mismatch" in blocker
+        for blocker in result["no_action_reasons"]
+    )
+
+
+def test_financial_preflight_keeps_clear_financial_facts_closed_after_window() -> None:
+    inputs = _financial_preflight_inputs()
+    inputs["runtime_status"].update(
+        {
+            "status": "monitor_running_schedule_blocked",
+            "schedule_status": "missed_decision_window",
+            "background_attempt_due": False,
+            "manual_run_window_open": False,
+            "operational_blockers": ["daily_candidate_background_window_missed"],
+        }
+    )
+
+    result = project_daily_candidate_financial_preflight(**inputs)
+
+    assert result["status"] == "no_action"
+    assert result["financial_gate_status"] == "pass"
+    assert result["eligible_to_start_manual_attempt"] is False
+    assert result["eligible_for_background_attempt"] is False
+    assert result["no_action_reasons"] == ["daily_candidate_background_window_missed"]
 
 
 def test_automatic_evidence_chain_runs_risk_then_idempotent_paper_shadow(

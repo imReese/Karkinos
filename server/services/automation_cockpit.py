@@ -19,9 +19,12 @@ from server.services.daily_candidate_runtime_status import (
     unavailable_daily_candidate_runtime_status,
 )
 from server.services.daily_candidate_trial import DailyCandidateTrialService
+from server.services.daily_decision_evidence_automation import (
+    unavailable_daily_candidate_financial_preflight,
+)
 from server.services.strategy_promotion_pipeline import StrategyPromotionPipeline
 
-AUTOMATION_COCKPIT_SCHEMA_VERSION = "karkinos.automation_cockpit.v3"
+AUTOMATION_COCKPIT_SCHEMA_VERSION = "karkinos.automation_cockpit.v4"
 
 
 class AutomationCockpitService:
@@ -89,6 +92,9 @@ class AutomationCockpitService:
             ),
             "daily_candidate_trial": daily_candidate_trial,
             "daily_candidate_runtime": daily_candidate_runtime,
+            "daily_candidate_financial_preflight": (
+                unavailable_daily_candidate_financial_preflight()
+            ),
             "open_alert_count": len(open_alerts),
             "open_alerts": open_alerts,
             "recent_runs": recent_runs,
@@ -100,6 +106,7 @@ class AutomationCockpitService:
                 "Provider snapshots enter through an explicitly started ingestion boundary.",
                 "Current per-order review is non-submitting and projects only persisted evidence.",
                 "Daily-candidate monitor liveness is operational evidence only and does not claim financial readiness.",
+                "Daily-candidate financial preflight permits only a risk and paper/shadow attempt; it never creates a ticket.",
             ],
         }
 

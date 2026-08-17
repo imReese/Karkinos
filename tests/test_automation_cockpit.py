@@ -35,7 +35,7 @@ def test_automation_cockpit_summary_collects_controls_alerts_runs_and_gateways(
 
     summary = AutomationCockpitService(db=db, trading_controls=controls).summary()
 
-    assert summary["schema_version"] == "karkinos.automation_cockpit.v3"
+    assert summary["schema_version"] == "karkinos.automation_cockpit.v4"
     assert summary["broker_submission_enabled"] is False
     assert summary["automation_status"]["kill_switch_enabled"] is True
     assert summary["open_alert_count"] >= 1
@@ -52,6 +52,11 @@ def test_automation_cockpit_summary_collects_controls_alerts_runs_and_gateways(
     assert summary["controlled_execution"]["broker_submission_enabled"] is False
     assert summary["daily_candidate_runtime"]["status"] == "monitor_failed_closed"
     assert summary["daily_candidate_runtime"]["financial_readiness_claimed"] is False
+    preflight = summary["daily_candidate_financial_preflight"]
+    assert preflight["status"] == "no_action"
+    assert preflight["eligible_to_create_manual_ticket"] is False
+    assert preflight["database_writes_performed"] is False
+    assert preflight["authorizes_execution"] is False
 
 
 def test_automation_cockpit_summary_includes_runtime_connector_snapshot_evidence(
@@ -67,7 +72,7 @@ def test_automation_cockpit_summary_includes_runtime_connector_snapshot_evidence
         broker_connectors=[connector],
     ).summary()
 
-    assert summary["schema_version"] == "karkinos.automation_cockpit.v3"
+    assert summary["schema_version"] == "karkinos.automation_cockpit.v4"
     assert "runtime_connector_snapshots" not in summary
     assert "runtime_connector_snapshot_status" not in summary
     registration = summary["connector_registrations"][0]

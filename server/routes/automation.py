@@ -84,13 +84,23 @@ def create_router() -> APIRouter:
         from server.services.current_per_order_dossier_factory import (
             build_current_per_order_dossier_service,
         )
+        from server.services.daily_candidate_execution_closure import (
+            build_daily_candidate_execution_closure,
+        )
         from server.services.daily_candidate_runtime_status import (
             build_daily_candidate_runtime_status,
+        )
+        from server.services.daily_decision_evidence_automation import (
+            project_daily_candidate_financial_preflight,
+            unavailable_daily_candidate_financial_preflight,
+        )
+        from server.services.reviewed_fee_schedule import (
+            build_reviewed_fee_schedule_review_status,
         )
 
         state = get_app_state()
         current_per_order_dossiers = build_current_per_order_dossier_service(state)
-        return AutomationCockpitService(
+        summary = AutomationCockpitService(
             db=state.db,
             trading_controls=getattr(state, "trading_controls", None),
             broker_connectors=_broker_connectors(state),
@@ -112,6 +122,37 @@ def create_router() -> APIRouter:
                 )
             ),
         ).summary()
+        try:
+            from server.routes.operations import _current_decision_and_trading_plan
+
+            decision_payload, trading_plan = await _current_decision_and_trading_plan(
+                state
+            )
+            run_date = str(
+                summary["daily_candidate_runtime"].get("run_date")
+                or trading_plan.get("plan_date")
+                or decision_payload.get("decision_date")
+                or ""
+            )
+            reviewed_fees = build_reviewed_fee_schedule_review_status(
+                state,
+                as_of_date=run_date or None,
+            )
+            summary["daily_candidate_financial_preflight"] = (
+                project_daily_candidate_financial_preflight(
+                    decision_payload=decision_payload,
+                    trading_plan=trading_plan,
+                    reviewed_fee_schedule=reviewed_fees,
+                    execution_closure=build_daily_candidate_execution_closure(state.db),
+                    automation_status=summary["automation_status"],
+                    runtime_status=summary["daily_candidate_runtime"],
+                )
+            )
+        except Exception:  # noqa: BLE001 - every read-source failure is NO-ACTION
+            summary["daily_candidate_financial_preflight"] = (
+                unavailable_daily_candidate_financial_preflight()
+            )
+        return summary
 
     @r.get("/policies")
     async def list_automation_policies() -> list[dict[str, Any]]:
