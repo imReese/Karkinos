@@ -52,7 +52,7 @@ def test_start_server_limits_reload_scope_and_archives_large_logs():
 def test_start_server_requires_bounded_process_liveness_before_success():
     script = Path("scripts/start_server.sh").read_text()
 
-    assert "KARKINOS_STARTUP_HEALTH_TIMEOUT_SECONDS:-15" in script
+    assert "KARKINOS_STARTUP_HEALTH_TIMEOUT_SECONDS:-60" in script
     assert "wait_for_backend_readiness" in script
     assert script.index("wait_for_backend_readiness") < script.index(
         'echo "Karkinos Web service started'
