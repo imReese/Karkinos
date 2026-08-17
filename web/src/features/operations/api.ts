@@ -998,8 +998,52 @@ export type DailyCandidateRuntimeStatus = {
   limitations: string[];
 };
 
+export type DailyCandidateFinancialPreflight = {
+  schema_version: 'karkinos.daily_candidate_financial_preflight.v1';
+  status:
+    | 'ready_for_paper_shadow_attempt'
+    | 'ready_for_manual_paper_shadow_attempt'
+    | 'waiting_for_decision_window'
+    | 'no_action_not_trading_day'
+    | 'daily_attempt_closed'
+    | 'no_action';
+  run_date: string | null;
+  financial_gate_status: 'pass' | 'blocked';
+  operational_gate_status: 'pass' | 'blocked';
+  eligible_candidate_count: number;
+  eligible_to_start_manual_attempt: boolean;
+  eligible_for_background_attempt: boolean;
+  eligible_to_create_manual_ticket: false;
+  gates: Array<{
+    gate: string;
+    status: 'pass' | 'blocked';
+    blockers: string[];
+  }>;
+  financial_blockers: string[];
+  operational_blockers: string[];
+  no_action_reasons: string[];
+  next_safe_action: string;
+  preflight_fingerprint: string;
+  financial_readiness_scope: 'risk_and_paper_shadow_attempt_only';
+  risk_evaluation_performed: false;
+  paper_shadow_run_performed: false;
+  manual_ticket_created: false;
+  persisted_facts_only: true;
+  provider_contact_performed: false;
+  database_writes_performed: false;
+  manual_confirmation_required: true;
+  does_not_submit_broker_order: true;
+  does_not_mutate_oms: true;
+  does_not_mutate_production_ledger: true;
+  broker_submission_enabled: false;
+  authorizes_execution: false;
+  changes_capital_authority: false;
+  profitability_claim: 'not_established';
+  limitations: string[];
+};
+
 export type AutomationCockpitResponse = {
-  schema_version: 'karkinos.automation_cockpit.v3';
+  schema_version: 'karkinos.automation_cockpit.v4';
   broker_submission_enabled: boolean;
   automation_status: {
     schema_version: 'karkinos.automation_status.v1';
@@ -1033,6 +1077,7 @@ export type AutomationCockpitResponse = {
   }>;
   daily_candidate_trial: DailyCandidateTrial;
   daily_candidate_runtime: DailyCandidateRuntimeStatus;
+  daily_candidate_financial_preflight: DailyCandidateFinancialPreflight;
   recent_runs: Array<{
     run_id: string;
     run_type: string;
