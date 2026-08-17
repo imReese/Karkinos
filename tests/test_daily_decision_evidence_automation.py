@@ -9,6 +9,7 @@ from server.services.daily_decision_evidence_automation import (
     DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE,
     DailyDecisionEvidenceAutomationService,
     project_daily_candidate_financial_preflight,
+    unavailable_daily_candidate_financial_preflight,
 )
 from server.services.oms import OmsService
 from server.services.trading_controls import TradingControlState
@@ -320,6 +321,90 @@ def test_financial_preflight_keeps_clear_financial_facts_closed_after_window() -
     assert result["eligible_to_start_manual_attempt"] is False
     assert result["eligible_for_background_attempt"] is False
     assert result["no_action_reasons"] == ["daily_candidate_background_window_missed"]
+
+
+def test_financial_preflight_orders_operator_work_without_taking_action() -> None:
+    inputs = _financial_preflight_inputs()
+    inputs["decision_payload"]["summary"]["account_truth"].update(
+        {
+            "data_freshness_status": "stale",
+            "current_age_seconds": 90000,
+        }
+    )
+    inputs["reviewed_fee_schedule"] = {
+        **inputs["reviewed_fee_schedule"],
+        "status": "missing",
+        "review": None,
+        "blockers": ["reviewed_fee_schedule_review_missing"],
+    }
+    inputs["runtime_status"].update(
+        {
+            "schedule_status": "missed_decision_window",
+            "background_attempt_due": False,
+            "manual_run_window_open": False,
+            "operational_blockers": ["daily_candidate_background_window_missed"],
+        }
+    )
+
+    result = project_daily_candidate_financial_preflight(**inputs)
+
+    assert [item["gate"] for item in result["operator_checklist"]] == [
+        "account_truth",
+        "reviewed_fees",
+        "strategy",
+        "runtime_window",
+    ]
+    assert result["operator_checklist"][0]["action"] == (
+        "complete_current_account_truth_evidence_review"
+    )
+    assert result["operator_checklist"][-1]["action"] == (
+        "prepare_current_evidence_for_next_reviewed_window"
+    )
+    assert all(
+        item["automatic_action_performed"] is False
+        and item["authorizes_execution"] is False
+        and item["changes_capital_authority"] is False
+        for item in result["operator_checklist"]
+    )
+
+
+def test_financial_preflight_ready_checklist_still_requires_canonical_attempt() -> None:
+    result = project_daily_candidate_financial_preflight(
+        **_financial_preflight_inputs()
+    )
+
+    assert result["operator_checklist"] == [
+        {
+            "step": 1,
+            "gate": "ready",
+            "action": "allow_single_claimed_fail_closed_background_attempt",
+            "completion_mode": "canonical_runtime",
+            "blockers": [],
+            "automatic_action_performed": False,
+            "authorizes_execution": False,
+            "changes_capital_authority": False,
+        }
+    ]
+
+
+def test_unavailable_financial_preflight_checklist_remains_fail_closed() -> None:
+    result = unavailable_daily_candidate_financial_preflight(
+        blocker="fixture_preflight_source_unavailable"
+    )
+
+    assert result["status"] == "no_action"
+    assert result["operator_checklist"] == [
+        {
+            "step": 1,
+            "gate": "source_evidence",
+            "action": "restore_persisted_preflight_sources_before_next_window",
+            "completion_mode": "persisted_evidence_refresh",
+            "blockers": ["fixture_preflight_source_unavailable"],
+            "automatic_action_performed": False,
+            "authorizes_execution": False,
+            "changes_capital_authority": False,
+        }
+    ]
 
 
 def test_automatic_evidence_chain_runs_risk_then_idempotent_paper_shadow(
