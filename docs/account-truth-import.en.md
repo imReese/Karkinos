@@ -281,6 +281,11 @@ canonical score through `karkinos.account_truth.evidence_readiness.v2`. Its
 `karkinos.account_truth.evidence_scope.v1` child reports the date span, asset
 classes, currencies, and snapshot dates observed in the exact persisted import,
 but never treats first/last rows as proof of complete account or period coverage.
+Promotion and readiness use the earlier of the latest cash and position snapshot
+timestamps as the effective Account Truth capture. The repository's ingestion
+time is exposed separately as `imported_at`; importing an old statement today
+does not make its account state fresh. Missing snapshots, cross-date snapshot
+drift, a later financial event, or an expired effective capture fails closed.
 Account binding, a declared coverage window, and asset-scope completeness remain
 blocked until the owner explicitly reviews the exact import. Its nested
 `karkinos.account_truth.citic_source_resolution_stage.v1` distinguishes pending

@@ -23,11 +23,13 @@ capital authority. A candidate is not a promise of profit.
    baseline/candidate manifests match, retain the reviewed comparison and human
    approval fingerprints, and keep provider contact and live-like authority off.
 2. The sanitized Account Truth promotion evidence is `clear`, `pass`, fresh,
-   ledger-covered, has zero unresolved mismatches, and binds an import captured
-   on the plan's Shanghai market date and no later than the final Decision. Its
-   age at Decision must remain inside the reviewed maximum and is replayed from
-   the capture and Decision timestamps. The evidence also binds its source
-   fingerprint, valuation snapshot, and positive ledger cutoff.
+   ledger-covered, has zero unresolved mismatches, and binds current cash and
+   position snapshots captured on the plan's Shanghai market date and no later
+   than the final Decision. Capture is the earlier of those latest snapshot
+   timestamps; the later local file-ingestion time is only `imported_at` and
+   cannot refresh old evidence. Snapshot age at Decision must remain inside the
+   reviewed maximum. The evidence also binds its source fingerprint, valuation
+   snapshot, and positive ledger cutoff.
 3. The final Decision and plan are generated only from 09:35 through 09:44
    Asia/Shanghai. Every order intent uses its current persisted market quote
    rather than the historical signal price, and binds that quote's positive
