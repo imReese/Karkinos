@@ -973,12 +973,13 @@ def _normalize_quote(symbol: Any, quote: dict[str, Any]) -> dict[str, Any]:
 
 def _latest_quote_timestamp(quotes: Any) -> str | None:
     timestamps = [
-        str(timestamp)
+        parsed
         for quote in quotes
         for timestamp in [quote.get("quote_timestamp") or quote.get("timestamp")]
-        if timestamp
+        for parsed in [_parse_action_timestamp(timestamp)]
+        if parsed is not None
     ]
-    return max(timestamps) if timestamps else None
+    return max(timestamps).isoformat() if timestamps else None
 
 
 def _has_persistent_quote_cache(state: Any) -> bool:
@@ -1842,9 +1843,14 @@ def _data_freshness_evidence(
             quote = reader(symbol)
     if quote is None:
         return {"status": "missing", "reason": "missing_latest_quote"}
+    quote_timestamp = _parse_action_timestamp(
+        quote.get("quote_timestamp") or quote.get("timestamp")
+    )
     return {
         "status": quote.get("quote_status") or "live",
-        "quote_timestamp": quote.get("quote_timestamp"),
+        "quote_timestamp": (
+            quote_timestamp.isoformat() if quote_timestamp is not None else None
+        ),
         "quote_source": quote.get("quote_source"),
         "price": quote.get("price"),
         "stale_reason": quote.get("stale_reason"),
