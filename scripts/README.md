@@ -12,6 +12,8 @@ in the application packages such as `data`, `account_truth`, `analytics`, and
 | `./scripts/start_server.sh dev` | Build the product bundle, start the reloadable backend, and start Vite on port 5173. Live monitoring remains off unless explicitly enabled in configuration or the environment. Test and frontend edits do not restart the backend; Vite owns frontend reloads. | Writes PID and log files; archives logs above 20 MiB by default; may install missing frontend dependencies. |
 | `./scripts/start_server.sh prod` | Start the backend against the existing `web/dist` bundle without code hot reload. | Writes a PID and server log. |
 | `./scripts/stop_server.sh` | Stop tracked backend and Vite processes and clean matching orphan listeners. | Terminates tracked or matching processes and, as a fallback, listeners on the configured ports. |
+| `./scripts/manage_launch_agent.sh print-plist` | Render the macOS user-level production service definition without installing it. | Read-only; prints local paths and process arguments to the current terminal. |
+| `./scripts/manage_launch_agent.sh install\|status\|uninstall` | Explicitly install, inspect, or remove the current user's restartable Karkinos production service. | Writes or removes only `~/Library/LaunchAgents/com.karkinos.daily-candidate.plist`; starts or stops that exact service and writes its local log. |
 | `uv run python scripts/configure_data_source.py` | Select AKShare or Tushare without placing credentials in `config.json` or command history. | Updates ignored local `config.json` and `.env`; Tushare tokens are entered interactively. |
 
 Use `http://127.0.0.1:5173` while editing the frontend in `dev` mode. Port 8000
@@ -24,6 +26,16 @@ If a listener already exists, it distinguishes a responding Karkinos process-
 liveness endpoint from an unresponsive or foreign listener, reports the PID,
 and exits without terminating anything. Stop the intended instance explicitly
 or choose another port.
+
+For an owner-operated Mac that must keep the daily-candidate monitor alive
+after the launching terminal exits, use `manage_launch_agent.sh` instead of
+relying on the background child created by `start_server.sh`. Inspect the
+generated definition with `print-plist`, then run `install` explicitly. The
+LaunchAgent uses direct process arguments, binds only `127.0.0.1`, restarts
+after an unexpected exit, and can be removed with `uninstall`. Installation
+does not edit `config.json` or `.env`, does not enable `live_auto_start`, and
+does not claim financial readiness. If another process already owns the backend
+port, installation exits without terminating it.
 
 ## Market-data maintenance
 
