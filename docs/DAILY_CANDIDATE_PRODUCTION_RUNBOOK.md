@@ -106,6 +106,19 @@ Truth, market, strategy, fees, risk, or reconciliation are financially ready,
 and the status read performs no provider call, database write, broker action,
 or authority change.
 
+Automation Cockpit v4 also shows
+`karkinos.daily_candidate_financial_preflight.v1`. This read-only projection
+rebuilds the current Decision and plan from persisted facts, then checks the
+same-date Account Truth capture, trusted persisted quotes, exact promoted
+strategy and frozen-dataset replay, current reviewed-fee/date binding, safe
+automation policy, and prior-execution closure. A green preflight means only
+that one canonical risk plus paper/shadow attempt may start inside the reviewed
+window. It does not run risk, simulate an order, create a ticket, touch OMS or
+the production ledger, contact a provider or broker, expand capital, or prove
+profitability. The post-shadow production gate still decides whether a
+read-only manual ticket candidate exists. Any missing or drifted source is
+shown as a named `NO-ACTION` reason.
+
 On an owner-operated Mac, a terminal background process is not durable service
 evidence. Before relying on the next decision window, first inspect the local
 user-level definition with `./scripts/manage_launch_agent.sh print-plist`, then
