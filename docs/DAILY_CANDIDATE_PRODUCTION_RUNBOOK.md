@@ -79,6 +79,11 @@ When live monitoring is owner-enabled, the background loop reads the persisted,
 officially verified SSE calendar and may call the same service only from 09:35
 through 09:44 Asia/Shanghai. It skips closed or unverified days and atomically
 claims one background attempt for the market date before invoking the service.
+That claimed date is passed into every Decision/plan read. If either persisted
+date differs at any stage, the service records a current-claim-date
+`NO-ACTION`, stops before the next risk or paper/shadow step, and never links or
+notifies a stale-date result. A final caller-side date check converts any
+contract regression into a sanitized `failed_closed` attempt.
 The claim remains fail-closed after a stale plan, failure, interruption, or app
 restart, so none of those paths can create a later automatic retry with newer
 information. The loop reports a missed window after 09:45 instead of

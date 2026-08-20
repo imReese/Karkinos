@@ -700,6 +700,92 @@ def test_automatic_evidence_chain_runs_risk_then_idempotent_paper_shadow(
     assert len(db.list_automation_runs_sync(run_type="daily_paper_shadow")) == 1
 
 
+def test_claimed_trading_date_mismatch_records_current_day_no_action_without_risk(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    risk_called = False
+
+    async def read_plan():
+        return _decision(risk_checked=False), _plan(risk_checked=False)
+
+    async def run_risk():
+        nonlocal risk_called
+        risk_called = True
+        raise AssertionError("stale claimed date must not run risk")
+
+    service = DailyDecisionEvidenceAutomationService(
+        db=db,
+        trading_controls=TradingControlState(db=db),
+        notifier=RecordingNotifier(),
+        plan_reader=read_plan,
+        risk_runner=run_risk,
+    )
+
+    result = asyncio.run(service.run_once(expected_plan_date="2026-07-03"))
+
+    assert result["status"] == "blocked_by_plan_date_mismatch"
+    assert result["plan_date"] == "2026-07-03"
+    assert result["decision_outcome"] == "no_action"
+    assert "daily_candidate_claimed_plan_date_mismatch" in result["no_action_reasons"]
+    assert "decision_plan_date_mismatch" in result["no_action_reasons"]
+    assert risk_called is False
+    assert result["paper_shadow"]["status"] == "not_run"
+    assert db.latest_paper_shadow_run_sync(plan_date="2026-07-03") is None
+    assert db.list_orders_sync() == []
+    assert db.list_fills_sync() == []
+    current_runs = db.list_automation_runs_sync(
+        run_type=DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE,
+        run_date="2026-07-03",
+    )
+    assert len(current_runs) == 1
+    assert not db.list_automation_runs_sync(
+        run_type=DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE,
+        run_date="2026-07-02",
+    )
+
+
+def test_claimed_trading_date_drift_after_risk_blocks_paper_shadow(tmp_path) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    state = {"risk_checked": False, "risk_calls": 0}
+
+    async def read_plan():
+        decision = _decision(risk_checked=bool(state["risk_checked"]))
+        plan = _plan(risk_checked=bool(state["risk_checked"]))
+        if state["risk_checked"]:
+            decision["decision_date"] = "2026-07-01"
+            plan["plan_date"] = "2026-07-01"
+        return decision, plan
+
+    async def run_risk():
+        state["risk_calls"] += 1
+        state["risk_checked"] = True
+        return {"status": "completed", "passed_count": 1, "blockers": []}
+
+    service = DailyDecisionEvidenceAutomationService(
+        db=db,
+        trading_controls=TradingControlState(db=db),
+        notifier=RecordingNotifier(),
+        plan_reader=read_plan,
+        risk_runner=run_risk,
+    )
+
+    result = asyncio.run(service.run_once(expected_plan_date="2026-07-02"))
+
+    assert result["status"] == "blocked_by_plan_date_mismatch"
+    assert result["plan_date"] == "2026-07-02"
+    assert result["decision_outcome"] == "no_action"
+    assert "daily_candidate_claimed_plan_date_mismatch" in result["no_action_reasons"]
+    assert state["risk_calls"] == 1
+    assert result["risk"]["status"] == "completed"
+    assert result["paper_shadow"]["status"] == "not_run"
+    assert db.latest_paper_shadow_run_sync(plan_date="2026-07-02") is None
+    assert db.list_orders_sync() == []
+    assert db.list_fills_sync() == []
+
+
 def test_background_no_action_notification_is_sanitized_and_non_authorizing(
     tmp_path,
 ) -> None:

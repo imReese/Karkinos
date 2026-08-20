@@ -218,7 +218,7 @@ def test_background_schedule_resolves_next_year_only_from_verified_calendar(
     assert blocked["due"] is False
 
 
-def test_background_loop_claims_once_even_when_result_plan_date_is_stale(
+def test_background_loop_fails_closed_when_result_plan_date_is_stale(
     tmp_path,
     monkeypatch,
 ) -> None:
@@ -229,9 +229,10 @@ def test_background_loop_claims_once_even_when_result_plan_date_is_stale(
     notifications = 0
 
     class FakeService:
-        async def run_once(self):
+        async def run_once(self, *, expected_plan_date):
             nonlocal calls
             calls += 1
+            assert expected_plan_date == RUN_DATE
             return {
                 "run_id": "daily-candidate:stale-plan",
                 "plan_date": "2026-06-30",
@@ -272,7 +273,7 @@ def test_background_loop_claims_once_even_when_result_plan_date_is_stale(
         )
 
     assert calls == 1
-    assert notifications == 1
+    assert notifications == 0
     assert not db.list_automation_runs_sync(
         run_type=DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE,
         run_date=RUN_DATE,
@@ -282,22 +283,24 @@ def test_background_loop_claims_once_even_when_result_plan_date_is_stale(
         run_date=RUN_DATE,
     )
     assert len(attempts) == 1
-    assert attempts[0]["status"] == "completed"
-    assert attempts[0]["source_ref"] == "daily-candidate:stale-plan"
+    assert attempts[0]["status"] == "failed_closed"
+    assert attempts[0]["source_ref"] is None
     attempt_payload = json.loads(attempts[0]["payload_json"])
-    assert attempt_payload["decision_outcome"] == "no_action"
-    assert attempt_payload["input_fingerprint"] == "a" * 64
-    assert attempt_payload["no_action_reasons"] == ["decision_plan_date_mismatch"]
-    assert attempt_payload["notification"] == {"status": "sent", "sent": True}
+    assert attempt_payload["decision_outcome"] is None
+    assert attempt_payload["input_fingerprint"] is None
+    assert attempt_payload["notification"] is None
+    assert attempt_payload["result_plan_date"] == "2026-06-30"
+    assert attempt_payload["error_type"] == "ResultPlanDateMismatch"
     assert attempt_payload["operator_alert"]["status"] == "recorded"
     alerts = db.list_automation_alerts_sync(status="open")
     assert len(alerts) == 1
     assert alerts[0]["alert_key"] == (
-        f"daily_candidate_background:{RUN_DATE}:no_action"
+        f"daily_candidate_background:{RUN_DATE}:failed_closed"
     )
     assert alerts[0]["category"] == "daily_candidate_background"
     alert_payload = json.loads(alerts[0]["payload_json"])
-    assert alert_payload["no_action_reasons"] == ["decision_plan_date_mismatch"]
+    assert alert_payload["outcome"] == "failed_closed"
+    assert alert_payload["error_type"] == "ResultPlanDateMismatch"
     assert alert_payload["broker_submission_enabled"] is False
     assert alert_payload["authorizes_execution"] is False
     assert alert_payload["changes_capital_authority"] is False
@@ -397,7 +400,8 @@ def test_background_unhandled_failure_finishes_attempt_and_opens_alert(
     _seed_calendar(db)
 
     class FailingService:
-        async def run_once(self):
+        async def run_once(self, *, expected_plan_date):
+            assert expected_plan_date == RUN_DATE
             raise RuntimeError("private runtime detail")
 
     monkeypatch.setattr(
