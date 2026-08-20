@@ -179,6 +179,8 @@ export function MarketInstrumentWorkspace({
     tushare_fund_nav: locale === 'zh' ? 'TuShare 基金净值' : 'TuShare fund NAV',
     eastmoney_fund_estimate:
       locale === 'zh' ? '东方财富基金估值' : 'Eastmoney fund estimate',
+    sina_fund_estimate:
+      locale === 'zh' ? '新浪基金盘中估值' : 'Sina intraday fund estimate',
   };
   const selectedQuoteSource = selectedHealthQuote?.quote_source
     ? (quoteSourceLabels[selectedHealthQuote.quote_source] ??

@@ -54,3 +54,20 @@ def test_normalize_provider_quote_rejects_payload_without_price():
         )
         is None
     )
+
+
+def test_normalize_provider_quote_preserves_fund_nav_baseline_date():
+    quote = normalize_provider_quote(
+        Symbol("019999"),
+        AssetClass.FUND,
+        {
+            "price": "2.5123",
+            "timestamp": "2026-06-04T14:59:00+08:00",
+            "quote_source": "sina_fund_estimate",
+            "nav_date": "2026-06-03",
+        },
+        provider_name="sina",
+    )
+
+    assert quote is not None
+    assert quote.to_payload()["nav_date"] == "2026-06-03"

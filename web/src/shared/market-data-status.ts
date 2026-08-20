@@ -30,6 +30,11 @@ const CACHE_LIKE_MARKET_DATA_STATUSES = new Set([
   'stale',
 ]);
 
+const FUND_ESTIMATE_QUOTE_SOURCES = new Set([
+  'eastmoney_fund_estimate',
+  'sina_fund_estimate',
+]);
+
 type MarketDataStatusLocale = 'en' | 'zh';
 
 const MARKET_DATA_NEXT_ACTIONS: Record<
@@ -82,6 +87,10 @@ export function isCacheLikeMarketDataStatus(value?: string | null) {
 export function isUnconfirmedMarketDataStatus(value?: string | null) {
   const normalized = normalizeMarketDataStatus(value);
   return Boolean(normalized) && !isConfirmedMarketDataStatus(normalized);
+}
+
+export function isFundEstimateQuoteSource(value?: string | null) {
+  return FUND_ESTIMATE_QUOTE_SOURCES.has(value?.trim().toLowerCase() ?? '');
 }
 
 export function formatMarketDataStatusNextAction(

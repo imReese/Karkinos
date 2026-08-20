@@ -40,6 +40,7 @@ class ProviderQuote:
     volume: float | None = None
     turnover: float | None = None
     quote_source: str | None = None
+    nav_date: str | None = None
     display_name: str | None = None
     previous_close: float | None = None
     previous_close_date: str | None = None
@@ -66,6 +67,7 @@ class ProviderQuote:
         optional: dict[str, Any] = {
             "turnover": self.turnover,
             "quote_source": self.quote_source,
+            "nav_date": self.nav_date,
             "display_name": self.display_name,
             "previous_close": self.previous_close,
             "previous_close_date": self.previous_close_date,
@@ -132,6 +134,7 @@ def normalize_provider_quote(
         volume=_optional_float(payload.get("volume")),
         turnover=_optional_float(payload.get("turnover")),
         quote_source=_optional_str(payload.get("quote_source")),
+        nav_date=_optional_str(payload.get("nav_date")),
         display_name=display_name,
         previous_close=_optional_float(payload.get("previous_close")),
         previous_close_date=_optional_str(payload.get("previous_close_date")),

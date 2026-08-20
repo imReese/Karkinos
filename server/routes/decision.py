@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from core.types import Symbol
+from data.market_data import is_fund_estimate_quote_source
 from server.ai_runtime.store import IdempotencyConflict
 from server.services.asset_metadata import resolve_asset_metadata
 from server.services.decision_quality import (
@@ -511,7 +512,7 @@ def _batch_pre_trade_risk_evidence_gate(
         )
         quote_source = str(freshness.get("quote_source") or "").lower()
         status = str(freshness.get("status") or "unknown").lower()
-        if quote_source == "eastmoney_fund_estimate":
+        if is_fund_estimate_quote_source(quote_source):
             status = "confirmed_nav_missing"
         if status in _TRUSTED_DATA_STATUSES:
             continue

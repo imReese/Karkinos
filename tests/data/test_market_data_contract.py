@@ -11,6 +11,7 @@ from data.market_data import (
     MarketDataRecord,
     MarketDataRecordMetadata,
     MarketDataStatus,
+    is_fund_estimate_quote_source,
     normalize_market_data_status,
 )
 
@@ -42,6 +43,12 @@ def test_normalize_market_data_status_maps_legacy_and_provider_status_values() -
         MarketDataStatus.STALE
     )
     assert normalize_market_data_status(None) == MarketDataStatus.MISSING
+
+
+def test_fund_estimate_source_classification_keeps_legacy_compatibility() -> None:
+    assert is_fund_estimate_quote_source("sina_fund_estimate") is True
+    assert is_fund_estimate_quote_source("eastmoney_fund_estimate") is True
+    assert is_fund_estimate_quote_source("eastmoney_fund_page") is False
 
 
 def test_market_data_record_serializes_shared_status_metadata_for_all_event_kinds() -> (

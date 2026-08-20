@@ -1034,7 +1034,8 @@ class TradingScheduler:
                                         sym_str,
                                         exc_info=True,
                                     )
-                        strategy.on_data(market_event)
+                        if market_event.asset_class is not AssetClass.FUND:
+                            strategy.on_data(market_event)
                     self._event_bus.drain()
 
                     # 盯市更新

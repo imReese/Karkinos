@@ -310,7 +310,7 @@ def _provider_error_reason(error_code: str, *, using_cache: bool) -> str:
         return (
             "TuShare fund_nav 权限不足，继续使用本地基金缓存"
             if using_cache
-            else "TuShare fund_nav 权限不足，请使用 Eastmoney 基金估算源或提升 TuShare 权限"
+            else "TuShare fund_nav 权限不足，请使用免费盘中基金估值或提升 TuShare 权限"
         )
     return (
         "行情源刷新失败，继续使用本地缓存"

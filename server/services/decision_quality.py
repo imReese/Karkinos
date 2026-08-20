@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator
 
+from data.market_data import is_fund_estimate_quote_source
 from server.ai_runtime.contracts import canonical_json, content_fingerprint
 from server.ai_runtime.store import IdempotencyConflict
 from server.db import _insert_event_sync
@@ -41,7 +42,6 @@ _TRUSTED_CANDIDATE_DATA_STATUSES = {
     "live",
     "pass",
 }
-_UNTRUSTED_ESTIMATE_SOURCES = {"eastmoney_fund_estimate"}
 _CHECKED_RISK_STATUSES = {"blocked", "passed"}
 
 
@@ -824,7 +824,7 @@ def _data_complete_dimension(
         source = str(data.get("quote_source") or "").strip().lower()
         if (
             status not in _TRUSTED_CANDIDATE_DATA_STATUSES
-            or source in _UNTRUSTED_ESTIMATE_SOURCES
+            or is_fund_estimate_quote_source(source)
         ):
             incomplete_candidates.append(_candidate_ref(item))
     if incomplete_candidates:
