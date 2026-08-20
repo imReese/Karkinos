@@ -1180,7 +1180,7 @@ def build_account_truth_review_acceptance_audit() -> AcceptanceAudit:
                     "server/services/citic_source_query_window_review.py",
                     "server/services/citic_source_follow_up.py",
                     "server/services/account_truth_evidence_readiness.py",
-                    "server/account_truth_gate.py",
+                    "server/services/account_truth_replay.py",
                     "server/routes/account_truth.py",
                     "tests/test_citic_query_window_batch_assessment.py",
                     "tests/test_citic_source_follow_up.py",
@@ -2734,10 +2734,15 @@ def build_operations_runbook_acceptance_audit() -> AcceptanceAudit:
                     "paper/shadow, execution closure, and blockers so same-day "
                     "drift is retained instead of overwritten. Every ticket and "
                     "snapshot share one replayed strategy, human approval, "
-                    "reviewed fee, comparison, and frozen-dataset binding."
+                    "reviewed fee, comparison, frozen-dataset, and verified "
+                    "daily-selection/backup binding; deletion, fingerprint "
+                    "drift, or a legacy missing binding fails closed."
                     " They also share one privacy-minimized Account Truth "
                     "capture, valuation, ledger, reconciliation, and coverage "
-                    "binding without account identity or balances."
+                    "binding without account identity or balances; its import "
+                    "events, human reviews, immutable valuation, and ledger "
+                    "rows through the stored cutoff are content-bound for "
+                    "historical replay."
                     " Each claimed background attempt persists a bounded "
                     "non-authorizing operator alert and sanitized NO-ACTION "
                     "notification status without enabling retry."
@@ -2746,19 +2751,27 @@ def build_operations_runbook_acceptance_audit() -> AcceptanceAudit:
                     "server/db.py",
                     "server/routes/decision.py",
                     "server/services/daily_decision_evidence_automation.py",
+                    "server/account_truth_gate.py",
                     "server/services/daily_candidate_execution_closure.py",
                     "server/services/daily_trading_plan.py",
+                    "server/services/ai_shadow_research_automation.py",
+                    "server/services/ai_shadow_research_daily_artifacts.py",
+                    "server/services/strategy_promotion_pipeline.py",
                     "server/routes/automation.py",
                     "server/routes/trading.py",
                     "tests/test_daily_candidate_execution_closure.py",
                     "tests/test_daily_candidate_background_schedule.py",
                     "tests/test_daily_decision_evidence_automation.py",
+                    "tests/server/test_account_truth_gate.py",
+                    "tests/server/test_ai_shadow_research_automation.py",
+                    "tests/server/test_ai_shadow_research_daily_artifacts.py",
+                    "tests/test_per_order_gateway_strategy_advancement.py",
                     "tests/server/test_decision_trading_plan_routes.py",
                     "tests/server/test_automation_routes.py",
                     "tests/server/test_trading_routes.py",
                 ),
                 validation_commands=(
-                    "uv run python -m pytest tests/test_daily_candidate_background_schedule.py tests/test_daily_candidate_execution_closure.py tests/test_daily_decision_evidence_automation.py tests/server/test_decision_trading_plan_routes.py tests/server/test_automation_routes.py tests/server/test_trading_routes.py",
+                    "uv run python -m pytest tests/test_daily_candidate_background_schedule.py tests/test_daily_candidate_execution_closure.py tests/test_daily_decision_evidence_automation.py tests/server/test_account_truth_gate.py tests/server/test_ai_shadow_research_automation.py tests/server/test_ai_shadow_research_daily_artifacts.py tests/test_per_order_gateway_strategy_advancement.py tests/server/test_decision_trading_plan_routes.py tests/server/test_automation_routes.py tests/server/test_trading_routes.py",
                 ),
             ),
             AcceptanceCriterion(
@@ -2768,10 +2781,14 @@ def build_operations_runbook_acceptance_audit() -> AcceptanceAudit:
                     "trading days with one input fingerprint in the latest "
                     "frozen strategy-and-reviewed-fee epoch, reads complete "
                     "persisted history without merging old epochs, recomputes "
-                    "the input identity and Account Truth age, binds "
-                    "same-day Account Truth, "
-                    "replay-valid read-only tickets, prior execution closure, "
-                    "and exact drift-clear paper/shadow evidence; 20 days and "
+                    "the input identity and Account Truth age, rejects future "
+                    "run dates or run timestamps against one captured as-of, binds "
+                    "same-day Account Truth and re-resolves its historical "
+                    "import/review/valuation/ledger-cutoff fingerprint, "
+                    "replay-valid read-only tickets, a current execution-closure "
+                    "safe superset with unchanged historical plan/paper/actual facts, "
+                    "current re-resolved strategy promotion plus daily-backup "
+                    "evidence, and exact drift-clear paper/shadow evidence; 20 days and "
                     "50 simulated orders permit only an exact human GO/NO-GO "
                     "review."
                 ),
@@ -2814,6 +2831,34 @@ def build_operations_runbook_acceptance_audit() -> AcceptanceAudit:
                     "uv run python -m pytest tests/test_daily_candidate_runtime_status.py tests/test_daily_decision_evidence_automation.py tests/test_automation_cockpit.py tests/server/test_automation_routes.py",
                     'npm --prefix web test -- decision-cockpit-page.test.tsx -t "summarizes controlled automation cockpit status"',
                     "uv run python -m pytest tests/test_acceptance_audit.py -k operations_runbook",
+                ),
+            ),
+            AcceptanceCriterion(
+                key="live_daily_candidate_production_readiness_audit",
+                checkbox_text=(
+                    "* [x] A loopback-only, read-only production-readiness "
+                    "audit combines the live Automation Cockpit financial "
+                    "preflight, exact monitor task, forward trial, and five-"
+                    "sequential-iteration research policy into one sanitized "
+                    "fingerprinted report. Unreachable service, invalid "
+                    "contracts, stale financial evidence, missing monitor, "
+                    "legacy research limits, scan truncation, or authority "
+                    "drift returns non-ready; repository tests cannot make "
+                    "the live report green."
+                ),
+                evidence_paths=(
+                    "server/services/daily_candidate_production_readiness.py",
+                    "server/daily_candidate_production_readiness_cli.py",
+                    "scripts/audit_daily_candidate_production.py",
+                    "tests/test_daily_candidate_production_readiness.py",
+                    "tests/test_daily_candidate_production_readiness_cli.py",
+                    "scripts/README.md",
+                    "docs/DAILY_CANDIDATE_PRODUCTION_RUNBOOK.md",
+                    "docs/DAILY_CANDIDATE_PRODUCTION_RUNBOOK.zh.md",
+                ),
+                validation_commands=(
+                    "uv run pytest tests/test_daily_candidate_production_readiness.py tests/test_daily_candidate_production_readiness_cli.py",
+                    "uv run pytest tests/test_acceptance_audit.py -k operations_runbook",
                 ),
             ),
             AcceptanceCriterion(

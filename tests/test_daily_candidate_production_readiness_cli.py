@@ -1,0 +1,122 @@
+from __future__ import annotations
+
+import io
+import json
+
+from server.daily_candidate_production_readiness_cli import main
+
+
+def test_live_readiness_cli_reads_only_expected_loopback_endpoints() -> None:
+    urls = []
+
+    def fetch(url: str, timeout: float) -> dict:
+        urls.append((url, timeout))
+        if url.endswith("/api/automation/cockpit"):
+            return {
+                "schema_version": "karkinos.automation_cockpit.v4",
+                "broker_submission_enabled": False,
+                "daily_candidate_financial_preflight": {
+                    "schema_version": (
+                        "karkinos.daily_candidate_financial_preflight.v1"
+                    ),
+                    "run_date": "2026-08-21",
+                    "financial_gate_status": "blocked",
+                    "operational_gate_status": "blocked",
+                    "eligible_to_start_manual_attempt": False,
+                    "eligible_for_background_attempt": False,
+                    "financial_blockers": ["account_truth_snapshot_stale"],
+                    "no_action_reasons": ["account_truth_snapshot_stale"],
+                    "next_safe_action": "resolve_named_financial_blockers",
+                    "preflight_fingerprint": "a" * 64,
+                    "provider_contact_performed": False,
+                    "database_writes_performed": False,
+                    "broker_submission_enabled": False,
+                    "authorizes_execution": False,
+                    "changes_capital_authority": False,
+                },
+                "daily_candidate_runtime": {
+                    "schema_version": "karkinos.daily_candidate_runtime_status.v1",
+                    "background_monitor_running": True,
+                    "schedule_status": "waiting_for_decision_window",
+                    "operational_blockers": [],
+                    "provider_contact_performed": False,
+                    "database_writes_performed": False,
+                    "broker_submission_enabled": False,
+                    "authorizes_execution": False,
+                    "changes_capital_authority": False,
+                },
+                "daily_candidate_trial": {
+                    "schema_version": "karkinos.daily_candidate_trial.v1",
+                    "qualifying_trading_day_count": 0,
+                    "target_qualifying_trading_days": 20,
+                    "simulated_order_count": 0,
+                    "target_simulated_orders": 50,
+                    "remaining_trading_days": 20,
+                    "remaining_simulated_orders": 50,
+                    "eligible_for_human_go_no_go_review": False,
+                    "latest_review": None,
+                    "blockers": ["qualifying_trading_days_insufficient"],
+                    "run_scan_truncated": False,
+                    "trial_fingerprint": "b" * 64,
+                    "broker_submission_enabled": False,
+                    "authorizes_execution": False,
+                    "changes_capital_authority": False,
+                },
+            }
+        return {
+            "schema_version": "karkinos.ai.shadow_research_automation.v1",
+            "policy": {
+                "schema_version": "karkinos.ai.shadow_research_policy.v2",
+                "enabled": False,
+                "max_candidates_per_run": 1,
+                "max_provider_calls_per_market_date": 2,
+                "daily_token_budget": 451000,
+                "token_budget_mode": "legacy_bounded_daily",
+                "authorization": "",
+                "require_complete_account_evidence": True,
+            },
+            "automatic_strategy_replacement_enabled": False,
+            "production_strategy_mutation_enabled": False,
+            "broker_submission_enabled": False,
+        }
+
+    output = io.StringIO()
+    exit_code = main(
+        ["--base-url", "http://localhost:8000", "--timeout", "1"],
+        fetch_json=fetch,
+        stdout=output,
+    )
+    payload = json.loads(output.getvalue())
+
+    assert exit_code == 2
+    assert urls == [
+        ("http://localhost:8000/api/automation/cockpit", 1.0),
+        (
+            "http://localhost:8000/api/ai/strategy-research/shadow-automation",
+            1.0,
+        ),
+    ]
+    assert payload["status"] == "no_action_not_production_ready"
+    assert payload["daily_operation"]["blockers"] == ["account_truth_snapshot_stale"]
+
+
+def test_live_readiness_cli_rejects_external_hosts_without_contact() -> None:
+    called = False
+
+    def fetch(_url: str, _timeout: float) -> dict:
+        nonlocal called
+        called = True
+        return {}
+
+    output = io.StringIO()
+    exit_code = main(
+        ["--base-url", "https://example.com:443"],
+        fetch_json=fetch,
+        stdout=output,
+    )
+    payload = json.loads(output.getvalue())
+
+    assert exit_code == 2
+    assert called is False
+    assert payload["source_contract_blockers"] == ["local_karkinos_service_unreachable"]
+    assert payload["provider_contact_performed"] is False

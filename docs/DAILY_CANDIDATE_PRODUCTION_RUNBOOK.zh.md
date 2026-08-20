@@ -13,7 +13,7 @@
 
 ## 合格运行的前置证据
 
-1. 策略已有人工复核的 `paper_shadow` 晋级，并绑定完整的 `karkinos.strategy_advancement_gate.v2`。当前订单生成门禁还必须重放持久化冻结数据集，确认基准与候选 manifest 一致，保留已复核比较与人工批准 fingerprint，并继续关闭 provider 联系和 live-like 权限。
+1. 策略已有人工复核的 `paper_shadow` 晋级，并绑定完整的 `karkinos.strategy_advancement_gate.v2`。当前订单生成门禁还必须重放持久化冻结数据集，确认基准与候选 manifest 一致，保留已复核比较与人工批准 fingerprint，重新哈希晋级时绑定的准确每日选择和内容寻址策略备份，并继续关闭 provider 联系和 live-like 权限。
 2. 脱敏 Account Truth 晋级证据为 `clear`、`pass`、新鲜且账本覆盖为 `covered`，未解决不一致为零，并绑定计划所属上海市场日期内、且不晚于最终 Decision 的当前现金与持仓快照。采集时间取两类最新快照时间中更早者；更晚的本地文件导入时间只记录为 `imported_at`，不能把旧账单刷新成新证据。系统从快照采集时间和 Decision 时间重算年龄，必须处于已复核上限内，同时绑定源 fingerprint、估值快照和正数 ledger cutoff。
 3. 最终 Decision 与计划只能在上海时间 09:35 至 09:44 生成。每个订单意图使用当前持久化行情而不是历史信号价格，并绑定正数价格、来源、带时区时间和决策时行情年龄；该时间与 Decision、交易计划属于同一市场日期，且行情年龄不得超过 300 秒。
 4. 账户专属费用复核覆盖操作日期，每个意图都由该版本费用规则计算出非负费用。
@@ -40,7 +40,9 @@ Owner 启用实时监控后，后台循环先读取持久化且已官方复核�
 
 Automation Cockpit v4 还会展示 `karkinos.daily_candidate_financial_preflight.v1`。该只读投影从持久化事实重建当前 Decision 与计划，并逐项检查同日 Account Truth 采集时间、可信持久化行情、精确晋级策略与冻结数据集重放、当前费用复核及日期覆盖、安全自动化策略和前序执行闭环。绿色预检只表示可以在已复核窗口内启动一次 canonical 风控加 paper/shadow 尝试；它不会执行风控、模拟订单、创建票据、修改 OMS 或生产账本、联系 provider/券商、扩大资本或证明盈利。模拟后的生产门禁仍是只读人工票据候选的唯一判定者；任何来源缺失或漂移都会显示为具名 `NO-ACTION` 原因。
 
-预检同时按依赖顺序返回只读 `operator_checklist`：先处理 Account Truth、账户费用和策略人工复核，再处理前序执行闭环、当前行情、Decision/计划及运行窗口。每一步都携带准确阻断项和完成模式，但不会自动执行修复、写入证据、批准策略、创建票据或改变执行/资本权限；全部门禁已通过时，清单也只指向一次 canonical paper/shadow 尝试。
+预检同时按依赖顺序返回只读 `operator_checklist`：先处理 Account Truth、账户费用和策略人工复核，再处理前序执行闭环、当前行情、Decision/计划及运行窗口。每一步都携带准确阻断项、`karkinos.daily_candidate_operator_evidence.v1` 所需证据、逐项完成标准和对应复核入口。Account Truth 清单明确要求同一当前上海市场日的现金/持仓快照、逐笔 `quantity/price/gross_amount/fee/tax/transfer_fee/net_amount`、来源哈希/窗口/范围/完整返回复核、最新账本截止点覆盖，以及现金/持仓/费用/成本基础零未解决差异；原始 XLS 行和私有账户标识不需要写入，所有者口述也不被当作财务事实。策略清单明确要求 5 轮前后依赖的顺序迭代和 10 次调用，而非 5 次并发；保存策略必须为 `unbounded_daily`，即 Karkinos 不设每日累计 Token 上限，但仍记录用量并受 provider 单次请求和上下文窗口限制。该清单不会自动执行修复、写入证据、批准策略、创建票据或改变执行/资本权限；全部门禁已通过时也只指向一次 canonical paper/shadow 尝试。
+
+在仓库根目录运行 `uv run python scripts/audit_daily_candidate_production.py --pretty`，可检查“当前机器”而不只是静态代码清单。命令只接受显式 loopback HTTP 地址，只读访问正在运行的 Automation Cockpit 与 shadow research 状态，生成脱敏且带指纹的 `karkinos.daily_candidate_production_readiness.v1`：同时汇总当前财务预检、准确 monitor task 存活、5 轮顺序且每日 Token 不设累计上限的研究策略，以及 20 日 / 50 单前瞻试运行进度。退出码 `0` 只表示当前服务可以继续有界 paper/shadow 证据收集，不表示已达到 20 日 / 50 单，也不表示 GO；退出码 `2` 表示 fail-closed 非就绪，服务未运行同样如此。仓库测试或静态 acceptance manifest 不能替代这份实时报告。输出不包含 XLS 行、账户标识、券商动作、数据库写入、执行/资本权限或盈利声明。
 
 在 owner 自行运行的 Mac 上，终端后台子进程不构成持久服务证据。准备下一个决策窗口前，先运行 `./scripts/manage_launch_agent.sh print-plist` 检查本地用户级定义，再显式执行 `./scripts/manage_launch_agent.sh install`；随后必须由 `./scripts/manage_launch_agent.sh status` 同时确认 LaunchAgent 已加载且进程存活。该服务只监听 `127.0.0.1`，意外退出后会重启，并可通过 `uninstall` 完整撤销。安装不会修改 `config.json` 或 `.env`，不会自行开启 `live_auto_start`，不会联系 provider，也不证明财务就绪。若后端端口已有 listener，安装会保持原进程不动并失败；operator 必须明确处理该准确进程，禁止两个每日候选服务共用一个本地运行数据库。
 
@@ -49,15 +51,19 @@ Automation Cockpit v4 还会展示 `karkinos.daily_candidate_financial_preflight
 只有同时满足以下条件，日期才计入样本：
 
 - 已复核的上交所日历将其标为交易日；
+- 运行日期不得晚于投影采用的上海 as-of 日期，持久化开始与完成时间必须带时区且均不晚于同一个已捕获 as-of 时点；
 - 当天只有一个 daily-candidate input fingerprint；
 - 该 input fingerprint 可从持久化 Decision/计划身份、生产阻断、脱敏风控失败、冻结策略绑定、paper/shadow 结果和前序执行闭环重新计算；
 - 生产门禁通过并产生人工票据候选；
 - 每份只读票据的指纹可重放，日期、处于复核窗口内的最终 Decision/计划时间、年龄不超过 300 秒的当前报价、paper/shadow 身份和前序执行闭环精确一致，并明确保持“不创建 OMS、不提交券商、不改变资金权限”；
-- 每份票据与 daily snapshot 必须携带完全相同的策略门禁绑定：策略晋级、已复核费用、比较、人工批准、冻结基准/候选数据集身份以及数据集重放 fingerprint；
-- 每份票据与 daily snapshot 必须携带完全相同的隐私最小化 Account Truth 绑定：源 fingerprint、采集/决策时年龄、已复核年龄上限、估值快照、ledger cutoff、对账和覆盖状态；其中不含账户标识或余额；
+- 每份票据与 daily snapshot 必须携带完全相同的策略门禁绑定：策略晋级、已复核费用、比较、人工批准、冻结基准/候选数据集身份、数据集重放 fingerprint，以及当前已验证的每日选择/策略备份 fingerprint；
+- 每份票据与 daily snapshot 必须携带完全相同的隐私最小化 Account Truth 绑定：源 fingerprint、采集/决策时年龄、已复核年龄上限、估值快照、ledger cutoff、对账和覆盖状态，以及对引用导入事件、人工复核、不可变估值和历史账本行计算的内容 fingerprint；其中不复制券商记录、账户标识或余额；
 - 同日 Account Truth 来源、采集时间不晚于 Decision、决策时年龄处于已复核上限内且完整账本覆盖仍然有效，全部前序非模拟订单都已完成当前对账；
+- trial 会按历史 ledger cutoff 重新解析所引用的 Account Truth，并重算其隐私最小化 replay fingerprint。cutoff 之后追加的新账本行属于安全延续；导入缺失、人工复核变化、源事件被修改、估值漂移，或 cutoff 及之前的账本行被修改/删除，都会排除该日；
+- trial 会重新计算当前执行闭环：历史闭环中已经存在的每笔订单必须仍为 clear 且 plan/paper/actual fingerprint 不变，后续新增并完整对账的订单可作为安全超集；当前出现未对账订单或历史来源漂移都会排除该日；
 - paper/shadow 日期、fingerprint、候选/订单数量完全一致，状态与偏差均为 `within_expectations`；
 - 当前试运行周期绑定同一组非空策略晋级和已复核费用 fingerprint。
+- trial 会按每个已存策略引用重新解析当前持久化出票门禁，并把完整绑定与 snapshot、票据逐项比较；AI 策略旧记录缺少 selection/backup 绑定、备份删除、指纹漂移、策略暂停或当前晋级阻断都会排除该日并阻断 GO 复核。
 
 策略晋级或费用复核绑定变化时，系统从首次观察到新绑定的 daily record 自动建立新试运行周期。旧周期的合格日期保留为已归档证据，但绝不会并入新周期的 20 日 / 50 单计数；即使后来重新使用旧绑定，也会再次开启新周期。
 
@@ -76,6 +82,7 @@ Automation Cockpit v4 还会展示 `karkinos.daily_candidate_financial_preflight
 | Account Truth 缺失、过期或不一致 | `no_action` | 显式导入并对账更新证据 |
 | Account Truth 非计划所属上海日期采集，或账本覆盖不是 `covered` | `no_action` | 导入并复核当日账户快照 |
 | Account Truth 晚于 Decision 才采集，或决策时年龄超过已复核上限 | `no_action`，日期不计入 | 等待新的已复核快照和下一个干净决策窗口 |
+| 引用的 Account Truth 导入、复核、估值或历史账本无法精确重放 | `no_action`，日期不计入 | 恢复或重新导入 canonical 证据；不得编辑 daily record 或绕过 cutoff |
 | 前序非模拟订单缺少当前对账，或 plan/paper/actual 源发生变化 | `no_action` | 完成精确执行对账，不得绕过或手改证据 |
 | 报价时间缺失或不属于计划日期 | `no_action` | 持久化当前日期可信行情 |
 | Decision/计划生成时间不在 09:35–09:45，或行情年龄超过 300 秒 | `no_action`，日期不计入 | 等待下一个已验证窗口，并在运行前刷新持久化行情 |

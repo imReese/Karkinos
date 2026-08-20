@@ -855,6 +855,20 @@ export type DailyCandidateRunResult = {
       dataset_replay_fingerprint: string;
       baseline_snapshot_id: string;
       candidate_snapshot_id: string;
+      daily_strategy_artifact_binding?: {
+        schema_version: 'karkinos.ai.daily_strategy_promotion_binding.v1';
+        run_id: string;
+        market_date: string;
+        winner_candidate_id: string;
+        selection_id: string;
+        selection_fingerprint: string;
+        backup_id: string;
+        backup_artifact_fingerprint: string;
+        contains_private_account_identifiers: false;
+        contains_broker_export_rows: false;
+        does_not_change_capital_authority: true;
+        authority_effect: 'research_only';
+      };
       persisted_facts_only: true;
       provider_contact_performed: false;
       paper_shadow_evaluation_only: true;
@@ -862,7 +876,7 @@ export type DailyCandidateRunResult = {
       changes_capital_authority: false;
     };
     account_truth_binding: {
-      schema_version: 'karkinos.daily_candidate_account_truth_binding.v1';
+      schema_version: 'karkinos.daily_candidate_account_truth_binding.v2';
       account_truth_ref: string;
       source_fingerprint: string;
       captured_at: string;
@@ -872,6 +886,22 @@ export type DailyCandidateRunResult = {
       ledger_cutoff_id: number;
       reconciliation_status: string;
       ledger_coverage_status: 'covered';
+      replay_evidence: {
+        schema_version: 'karkinos.account_truth.replay_evidence.v1';
+        status: 'pass';
+        account_truth_ref: string;
+        source_fingerprint: string;
+        valuation_snapshot_id: string;
+        ledger_cutoff_id: number;
+        evidence_fingerprint: string;
+        contains_broker_export_rows: false;
+        contains_private_account_identifiers: false;
+        persisted_facts_only: true;
+        provider_contact_performed: false;
+        authorizes_execution: false;
+        changes_capital_authority: false;
+        [key: string]: unknown;
+      };
       persisted_facts_only: true;
       provider_contact_performed: false;
       authorizes_execution: false;
@@ -1030,6 +1060,13 @@ export type DailyCandidateFinancialPreflight = {
     completion_mode:
       'human_review' | 'persisted_evidence_refresh' | 'canonical_runtime';
     blockers: string[];
+    evidence_contract_version: 'karkinos.daily_candidate_operator_evidence.v1';
+    required_evidence: string[];
+    completion_criteria: string[];
+    accepted_evidence_authority: 'canonical_persisted_evidence_only';
+    owner_attestation_is_financial_fact: false;
+    private_xls_rows_required: false;
+    private_account_identifiers_required: false;
     automatic_action_performed: false;
     authorizes_execution: false;
     changes_capital_authority: false;

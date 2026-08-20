@@ -744,6 +744,17 @@ function installDecisionFetchMock({
           action: 'allow_single_claimed_fail_closed_background_attempt',
           completion_mode: 'canonical_runtime',
           blockers: [],
+          evidence_contract_version:
+            'karkinos.daily_candidate_operator_evidence.v1',
+          required_evidence: ['persisted_current_preflight_facts'],
+          completion_criteria: [
+            'start_only_one_canonical_risk_and_paper_shadow_attempt',
+            'separate_post_shadow_gate_and_human_confirmation_remain_required',
+          ],
+          accepted_evidence_authority: 'canonical_persisted_evidence_only',
+          owner_attestation_is_financial_fact: false,
+          private_xls_rows_required: false,
+          private_account_identifiers_required: false,
           automatic_action_performed: false,
           authorizes_execution: false,
           changes_capital_authority: false,
@@ -2820,6 +2831,22 @@ test('shows the deterministic financial preflight preparation step without autho
     'Await one claimed, fail-closed background attempt',
   );
   expect(checklist.textContent).toContain('canonical workflow only');
+  expect(checklist.textContent).toContain('Required evidence');
+  expect(checklist.textContent).toContain(
+    'Persisted current facts for every preflight gate',
+  );
+  expect(checklist.textContent).toContain('Done when');
+  expect(checklist.textContent).toContain(
+    'Start only one canonical risk and paper/shadow attempt',
+  );
+  expect(checklist.textContent).toContain(
+    'raw XLS rows and private account identifiers are not required',
+  );
+  expect(
+    within(checklist)
+      .getByRole('link', { name: 'Open review surface' })
+      .getAttribute('href'),
+  ).toBe('/decision');
   expect(checklist.textContent).not.toContain('Submit broker order');
   expect(checklist.textContent).not.toContain('capital authority');
 });
@@ -2962,6 +2989,20 @@ test('renders a read-only manual ticket candidate without execution authority', 
             dataset_replay_fingerprint: 'd'.repeat(64),
             baseline_snapshot_id: 'dataset-fixture',
             candidate_snapshot_id: 'dataset-fixture',
+            daily_strategy_artifact_binding: {
+              schema_version: 'karkinos.ai.daily_strategy_promotion_binding.v1',
+              run_id: 'research-run-fixture',
+              market_date: '2026-06-11',
+              winner_candidate_id: 'fixture',
+              selection_id: 'selection-fixture',
+              selection_fingerprint: '1'.repeat(64),
+              backup_id: 'backup-fixture',
+              backup_artifact_fingerprint: '2'.repeat(64),
+              contains_private_account_identifiers: false,
+              contains_broker_export_rows: false,
+              does_not_change_capital_authority: true,
+              authority_effect: 'research_only',
+            },
             persisted_facts_only: true,
             provider_contact_performed: false,
             paper_shadow_evaluation_only: true,
@@ -2969,7 +3010,7 @@ test('renders a read-only manual ticket candidate without execution authority', 
             changes_capital_authority: false,
           },
           account_truth_binding: {
-            schema_version: 'karkinos.daily_candidate_account_truth_binding.v1',
+            schema_version: 'karkinos.daily_candidate_account_truth_binding.v2',
             account_truth_ref: 'account_truth:AT-001',
             source_fingerprint: 'c'.repeat(64),
             captured_at: '2026-06-12T09:30:00+08:00',
@@ -2979,6 +3020,32 @@ test('renders a read-only manual ticket candidate without execution authority', 
             ledger_cutoff_id: 7,
             reconciliation_status: 'pass',
             ledger_coverage_status: 'covered',
+            replay_evidence: {
+              schema_version: 'karkinos.account_truth.replay_evidence.v1',
+              status: 'pass',
+              account_truth_ref: 'account_truth:AT-001',
+              source_fingerprint: 'c'.repeat(64),
+              import_file_fingerprint: 'd'.repeat(64),
+              import_events_fingerprint: 'e'.repeat(64),
+              manual_reviews_fingerprint: 'f'.repeat(64),
+              import_event_count: 2,
+              import_validation_status: 'pass',
+              valuation_snapshot_id: 'valuation-001',
+              valuation_policy: 'fixture-policy',
+              valuation_status: 'complete',
+              valuation_quotes_fingerprint: '1'.repeat(64),
+              valuation_metadata_fingerprint: '2'.repeat(64),
+              ledger_cutoff_id: 7,
+              ledger_fingerprint: '3'.repeat(64),
+              blockers: [],
+              evidence_fingerprint: '4'.repeat(64),
+              contains_broker_export_rows: false,
+              contains_private_account_identifiers: false,
+              persisted_facts_only: true,
+              provider_contact_performed: false,
+              authorizes_execution: false,
+              changes_capital_authority: false,
+            },
             persisted_facts_only: true,
             provider_contact_performed: false,
             authorizes_execution: false,
