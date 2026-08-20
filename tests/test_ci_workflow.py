@@ -33,11 +33,25 @@ def test_ci_uses_node24_compatible_github_actions() -> None:
     action_refs = re.findall(r"uses:\s+([^\s#]+)", workflow)
     assert action_refs
     assert all(re.fullmatch(r"[^@\s]+@[0-9a-f]{40}", ref) for ref in action_refs)
-    assert "# v7.0.0" in workflow
-    assert "# v6.3.0" in workflow
-    assert "# v6.4.0" in workflow
-    assert "# v7.0.1" in workflow
-    assert "# v8.0.1" in workflow
+    assert (
+        "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1" in workflow
+    )
+    assert (
+        "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0"
+        in workflow
+    )
+    assert (
+        "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0"
+        in workflow
+    )
+    assert (
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1"
+        in workflow
+    )
+    assert (
+        "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1"
+        in workflow
+    )
     assert set(re.findall(r'node-version:\s*"([^"]+)"', workflow)) == {"24"}
     assert dockerfile.startswith(
         "# ---- Stage 1: Build React frontend ----\nFROM node:24-alpine"
