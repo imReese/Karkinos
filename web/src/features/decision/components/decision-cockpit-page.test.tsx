@@ -10,9 +10,29 @@ import {
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { PreferencesProvider } from '../../../app/preferences';
-import type { ControlledOrderJourney } from '../../operations/api';
+import type {
+  ControlledOrderJourney,
+  DailyStrategyOperatingConstraints,
+} from '../../operations/api';
 import type { DecisionQualityView, DecisionResponse } from '../api';
 import { DecisionCockpitPage } from './decision-cockpit-page';
+
+const strategyOperatingConstraintsFixture: DailyStrategyOperatingConstraints = {
+  schema_version: 'karkinos.ai.strategy_operating_constraints.v1',
+  candidate_id: 'fixture',
+  strategy_artifact_fingerprint: '3'.repeat(64),
+  source_backup_artifact_fingerprint: '2'.repeat(64),
+  economic_hypothesis: 'After-cost momentum persists in the reviewed universe.',
+  risk_impact: 'The bounded strategy can still lose capital.',
+  failure_conditions: ['OOS excess return turns non-positive.'],
+  limitations: ['Historical evidence does not prove future profit.'],
+  anti_lookahead_assumptions: ['Signals use closed persisted bars only.'],
+  automatic_enforcement_enabled: false,
+  human_review_required: true,
+  authorizes_execution: false,
+  changes_capital_authority: false,
+  evidence_fingerprint: '4'.repeat(64),
+};
 
 function jsonResponse(body: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(body), {
@@ -2971,7 +2991,7 @@ test('renders a read-only manual ticket candidate without execution authority', 
       manual_ticket_candidate_count: 1,
       manual_order_ticket_candidates: [
         {
-          schema_version: 'karkinos.manual_order_ticket_candidate.v1',
+          schema_version: 'karkinos.manual_order_ticket_candidate.v2',
           plan_date: '2026-06-12',
           intent_id: 'ACTION-9-BATCH-RISK',
           action_id: 9,
@@ -2999,7 +3019,7 @@ test('renders a read-only manual ticket candidate without execution authority', 
             divergence_status: 'within_expectations',
           },
           strategy_gate_binding: {
-            schema_version: 'karkinos.daily_candidate_strategy_gate_binding.v1',
+            schema_version: 'karkinos.daily_candidate_strategy_gate_binding.v2',
             action_id: 9,
             strategy_ref: 'strategy:ai_formula_shadow:fixture',
             strategy_advancement_ref: `strategy_advancement:${'a'.repeat(64)}`,
@@ -3010,7 +3030,7 @@ test('renders a read-only manual ticket candidate without execution authority', 
             baseline_snapshot_id: 'dataset-fixture',
             candidate_snapshot_id: 'dataset-fixture',
             daily_strategy_artifact_binding: {
-              schema_version: 'karkinos.ai.daily_strategy_promotion_binding.v1',
+              schema_version: 'karkinos.ai.daily_strategy_promotion_binding.v2',
               run_id: 'research-run-fixture',
               market_date: '2026-06-11',
               winner_candidate_id: 'fixture',
@@ -3018,17 +3038,20 @@ test('renders a read-only manual ticket candidate without execution authority', 
               selection_fingerprint: '1'.repeat(64),
               backup_id: 'backup-fixture',
               backup_artifact_fingerprint: '2'.repeat(64),
+              operating_constraints: strategyOperatingConstraintsFixture,
               contains_private_account_identifiers: false,
               contains_broker_export_rows: false,
               does_not_change_capital_authority: true,
               authority_effect: 'research_only',
             },
+            strategy_operating_constraints: strategyOperatingConstraintsFixture,
             persisted_facts_only: true,
             provider_contact_performed: false,
             paper_shadow_evaluation_only: true,
             authorizes_execution: false,
             changes_capital_authority: false,
           },
+          strategy_operating_constraints: strategyOperatingConstraintsFixture,
           account_truth_binding: {
             schema_version: 'karkinos.daily_candidate_account_truth_binding.v2',
             account_truth_ref: 'account_truth:AT-001',
@@ -3073,7 +3096,9 @@ test('renders a read-only manual ticket candidate without execution authority', 
           },
           prior_execution_closure_fingerprint: 'd'.repeat(64),
           evidence_refs: [],
-          invalidation_conditions: [],
+          invalidation_conditions: [
+            'risk_strategy_fee_or_paper_shadow_binding_changes',
+          ],
           ticket_candidate_fingerprint: 'f'.repeat(64),
           manual_confirmation_required: true,
           creates_oms_order: false,
@@ -3127,7 +3152,66 @@ test('renders a read-only manual ticket candidate without execution authority', 
     'Account Truth · Age at decision 300/86400s · Ledger cutoff 7',
   );
   expect(tickets.textContent).toContain(
+    'Frozen strategy thesis and failure conditions',
+  );
+  expect(tickets.textContent).toContain(
+    'Failure conditions: OOS excess return turns non-positive.',
+  );
+  expect(tickets.textContent).toContain(
+    'Anti-lookahead assumptions: Signals use closed persisted bars only.',
+  );
+  expect(tickets.textContent).toContain(
     'no OMS order, broker submission, or capital expansion is authorized',
+  );
+});
+
+test('fails closed when a legacy ticket lacks strategy failure conditions', async () => {
+  renderDecisionCockpit({
+    dailyCandidateRunResponse: {
+      decision_outcome: 'manual_order_ticket_candidate',
+      manual_ticket_candidate_count: 1,
+      manual_order_ticket_candidates: [
+        {
+          ticket_candidate_fingerprint: 'legacy-ticket',
+          symbol: '600519',
+          side: 'buy',
+          quantity: 100,
+          limit_price: 123.45,
+          estimated_total_fee: 5,
+          market_quote: {
+            timestamp: '2026-06-12T09:34:00+08:00',
+            age_seconds_at_decision: 60,
+            max_age_seconds: 300,
+          },
+          strategy_gate_binding: {
+            candidate_snapshot_id: 'legacy-dataset',
+            strategy_advancement_ref: `strategy_advancement:${'a'.repeat(64)}`,
+          },
+          account_truth_binding: {
+            age_seconds_at_decision: 300,
+            max_age_seconds: 86400,
+            ledger_cutoff_id: 7,
+            valuation_snapshot_id: 'valuation-001',
+          },
+        },
+      ],
+      no_action_reasons: [],
+      execution_closure: { status: 'not_required' },
+    },
+  });
+  const trial = await screen.findByTestId('daily-candidate-trial');
+
+  fireEvent.click(
+    within(trial).getByRole('button', {
+      name: 'Run current daily candidate',
+    }),
+  );
+
+  const missing = await screen.findByTestId(
+    'strategy-operating-constraints-missing',
+  );
+  expect(missing.textContent).toContain(
+    'NO-ACTION: this legacy or incomplete ticket lacks reviewed strategy failure conditions and is not eligible for manual execution.',
   );
 });
 

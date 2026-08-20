@@ -23,7 +23,10 @@ capital authority. A candidate is not a promise of profit.
    baseline/candidate manifests match, retain the reviewed comparison and human
    approval fingerprints, rehash the exact verified daily selection and
    content-addressed strategy backup bound at promotion, and keep provider
-   contact and live-like authority off.
+   contact and live-like authority off. That exact backup must also freeze a
+   non-empty economic hypothesis, risk impact, failure conditions, limitations,
+   and anti-lookahead assumptions. Their content fingerprint is reviewed
+   evidence, not an automatic stop or execution rule.
 2. The sanitized Account Truth promotion evidence is `clear`, `pass`, fresh,
    ledger-covered, has zero unresolved mismatches, and binds current cash and
    position snapshots captured on the plan's Shanghai market date and no later
@@ -225,7 +228,12 @@ The production panel counts a date only when all of the following are true:
 - each ticket and daily snapshot contain the exact same strategy-gate binding:
   strategy advancement, reviewed fee schedule, comparison, human approval,
   frozen baseline/candidate dataset identities, dataset replay fingerprint,
-  and the current verified daily-selection/strategy-backup fingerprints;
+  current verified daily-selection/strategy-backup fingerprints, and the exact
+  strategy operating constraints copied from that backup;
+- those strategy operating constraints have a replay-valid content fingerprint,
+  non-empty hypothesis, risk impact, failure conditions, limitations, and
+  anti-lookahead assumptions, while retaining explicit human-review-only,
+  no-execution, and no-capital-change boundaries;
 - each ticket and daily snapshot contain the exact same privacy-minimized
   Account Truth binding: source fingerprint, capture/derived age, reviewed age
   maximum, valuation snapshot, ledger cutoff, reconciliation, coverage, and a
@@ -247,18 +255,19 @@ The production panel counts a date only when all of the following are true:
   excludes the day;
 - the persisted paper/shadow run has matching date and fingerprint, exact
   candidate/order counts, and `within_expectations` status and divergence;
-- the same non-empty strategy-advancement and reviewed-fee fingerprint bundles
-  remain frozen within the current trial epoch.
+- the same non-empty strategy-advancement, reviewed-fee, and strategy-operating-
+  constraint fingerprint bundles remain frozen within the current trial epoch.
 - for every stored strategy reference, the trial re-resolves the current
   persisted order-generation gate and compares its full binding with the
   snapshot and ticket; an AI strategy's missing legacy selection/backup
   binding, deleted backup, fingerprint drift, pause, or current promotion
   blocker excludes the day and blocks GO review.
 
-A strategy-advancement or reviewed-fee binding change deterministically starts
-a new trial epoch at its first observed daily record. Older qualifying days are
-kept as superseded evidence and never merged into the new 20-day / 50-order
-count. If a previously used binding later returns, it still starts a new epoch.
+A strategy-advancement, reviewed-fee, or reviewed strategy-operating-constraint
+binding change deterministically starts a new trial epoch at its first observed
+daily record. Older qualifying days are kept as superseded evidence and never
+merged into the new 20-day / 50-order count. If a previously used binding later
+returns, it still starts a new epoch.
 
 The minimum review threshold is 20 qualifying trading days and 50 simulated
 orders. Meeting it permits only an exact human GO/NO-GO review:
@@ -286,6 +295,7 @@ review.
 | Decision/plan generated outside 09:35-09:45 or quote age exceeds 300 seconds | `no_action`; date excluded | Wait for the next verified window and refresh persisted quotes before running |
 | Intent price differs from its bound current quote, or quote source is absent | `no_action` | Rebuild Decision and plan from current persisted quotes |
 | Strategy advancement or fee binding missing | `no_action` | Return to Strategy Lab or fee-schedule review |
+| Strategy hypothesis, risk impact, failure conditions, limitations, or anti-lookahead assumptions are missing or drifted | `no_action`; latest day blocks GO review | Rebuild the verified backup and obtain a new explicit human paper/shadow promotion; never infer or patch constraints in a ticket |
 | Frozen dataset replay, comparison, human approval, or ticket/snapshot strategy binding drifts | `no_action`; latest day blocks GO review | Rebuild and human-review the canonical strategy advancement evidence; never edit the daily record |
 | Risk gate incomplete or blocked | `no_action` | Inspect the named risk or data-quality blocker |
 | Paper/shadow failed, diverged, missing, or count-mismatched | `no_action` | Inspect the persisted simulation; do not hand-edit it |
@@ -296,7 +306,7 @@ review.
 | Background monitor is disabled, missing, completed, cancelled, or failed | No automatic attempt; runtime status fails closed | Keep the process stopped or restart only after explicit owner enablement, then verify `background_monitor_running=true` before the next window |
 | macOS LaunchAgent is unloaded or process liveness is unavailable | No durable automatic-monitor claim | Explicitly inspect or reinstall the exact user-level service; do not infer financial readiness from launchd state |
 | Background window passes without a record | `missed_decision_window`; no backfill | Prepare current evidence before the next verified trading-day window |
-| Strategy or reviewed-fee fingerprint changes | New trial epoch starts | Keep old samples as superseded evidence; do not merge them |
+| Strategy, reviewed-fee, or strategy-operating-constraint fingerprint changes | New trial epoch starts | Keep old samples as superseded evidence; do not merge them |
 | Kill Switch unavailable or active | `no_action` | Restore or explicitly review trading controls |
 
 ## What this evidence does not prove
