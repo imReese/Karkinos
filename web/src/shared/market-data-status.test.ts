@@ -4,6 +4,7 @@ import {
   formatMarketDataStatusNextAction,
   isCacheLikeMarketDataStatus,
   isConfirmedMarketDataStatus,
+  isFundEstimateQuoteSource,
   isUnconfirmedMarketDataStatus,
   normalizeMarketDataStatus,
 } from './market-data-status';
@@ -57,4 +58,10 @@ test('formats user-readable next actions for unconfirmed market-data statuses', 
   expect(formatMarketDataStatusNextAction('missing', 'en')).toBe(
     'Backfill market data or run the first sync',
   );
+});
+
+test('recognizes current and legacy fund estimate quote sources', () => {
+  expect(isFundEstimateQuoteSource('sina_fund_estimate')).toBe(true);
+  expect(isFundEstimateQuoteSource('eastmoney_fund_estimate')).toBe(true);
+  expect(isFundEstimateQuoteSource('eastmoney_fund_page')).toBe(false);
 });

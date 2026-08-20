@@ -8,10 +8,11 @@ from datetime import datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from data.market_data import is_fund_estimate_quote_source
+
 VALUATION_POLICY_VERSION = "karkinos.persisted_valuation.v4"
 _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 _MIN_TIMESTAMP = datetime.min.replace(tzinfo=timezone.utc)
-_UNCONFIRMED_FUND_ESTIMATE_SOURCE = "eastmoney_fund_estimate"
 _UNCONFIRMED_FUND_ESTIMATE_REASON = "confirmed_fund_nav_missing_estimate_only"
 
 
@@ -203,7 +204,7 @@ def _mark_unconfirmed_fund_estimate(quote: dict[str, Any]) -> None:
     source = str(quote.get("quote_source") or quote.get("source") or "").strip().lower()
     if (
         asset_class != "fund"
-        or source != _UNCONFIRMED_FUND_ESTIMATE_SOURCE
+        or not is_fund_estimate_quote_source(source)
         or quote.get("price") in {None, ""}
     ):
         return
@@ -211,7 +212,7 @@ def _mark_unconfirmed_fund_estimate(quote: dict[str, Any]) -> None:
     quote.setdefault("observed_quote_status", quote.get("quote_status"))
     quote["quote_status"] = "confirmed_nav_missing"
     quote["stale_reason"] = _UNCONFIRMED_FUND_ESTIMATE_REASON
-    quote["valuation_price_source"] = _UNCONFIRMED_FUND_ESTIMATE_SOURCE
+    quote["valuation_price_source"] = source
     quote["valuation_evidence_status"] = "unconfirmed_estimate"
 
 

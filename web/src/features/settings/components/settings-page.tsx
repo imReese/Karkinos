@@ -30,6 +30,7 @@ import {
   formatMarketDataStatusNextAction,
   isCacheLikeMarketDataStatus,
   isConfirmedMarketDataStatus,
+  isFundEstimateQuoteSource,
   isUnconfirmedMarketDataStatus,
   normalizeMarketDataStatus,
 } from '../../../shared/market-data-status';
@@ -235,18 +236,18 @@ export function SettingsPage() {
       quote.quote_status === 'live' &&
       (quote.quote_source?.includes('tushare') ?? false),
   );
-  const hasEastmoneyFundEstimate = healthQuotes.some(
+  const hasFundEstimate = healthQuotes.some(
     (quote) =>
       quote.asset_class === 'fund' &&
       quote.quote_status === 'live' &&
-      quote.quote_source === 'eastmoney_fund_estimate',
+      isFundEstimateQuoteSource(quote.quote_source),
   );
   const hasTushareFundFallback =
     isTushareProvider &&
     configuredProviderSupportsFunds === false &&
-    hasEastmoneyFundEstimate;
-  const latestFallbackQuote = healthQuotes.find(
-    (quote) => quote.quote_source === 'eastmoney_fund_estimate',
+    hasFundEstimate;
+  const latestFallbackQuote = healthQuotes.find((quote) =>
+    isFundEstimateQuoteSource(quote.quote_source),
   );
   const isFundNavBlocked = fundNavBlocked || hasTushareFundFallback;
   const permissionReason = formatStaleReason(
@@ -291,11 +292,11 @@ export function SettingsPage() {
     },
     {
       label: copy.settings.capabilityFundEstimate,
-      source: 'eastmoney_fund_estimate',
-      status: hasEastmoneyFundEstimate
+      source: latestFallbackQuote?.quote_source ?? 'fund_intraday_estimate',
+      status: hasFundEstimate
         ? copy.settings.available
         : copy.shell.statusUnknown,
-      tone: hasEastmoneyFundEstimate ? 'success' : 'neutral',
+      tone: hasFundEstimate ? 'success' : 'neutral',
     },
     {
       label: copy.settings.capabilityPersistentCache,
@@ -1043,11 +1044,11 @@ export function SettingsPage() {
                       <StatusMetric
                         label={copy.settings.fundFallback}
                         value={
-                          hasEastmoneyFundEstimate
+                          hasFundEstimate
                             ? copy.settings.eastmoneyFundEstimate
                             : copy.shell.statusUnknown
                         }
-                        tone={hasEastmoneyFundEstimate ? 'success' : 'neutral'}
+                        tone={hasFundEstimate ? 'success' : 'neutral'}
                       />
                     </div>
                     <div className="app-muted mt-3 text-xs leading-5">

@@ -13,6 +13,10 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, HTTPException
 
 from core.types import ZERO, AssetClass, BarFrequency, Symbol
+from data.market_data import (
+    FUND_ESTIMATE_QUOTE_SOURCES,
+    is_fund_estimate_quote_source,
+)
 from server.ledger.models import LedgerEntry
 from server.models import (
     AccountOverview,
@@ -224,11 +228,7 @@ _CASH_INCOME_LEDGER_TYPES = {"cash_interest", "dividend"}
 
 _CAPITAL_INFLOW_LEDGER_TYPES = {"cash_deposit", "deposit"}
 _CAPITAL_OUTFLOW_LEDGER_TYPES = {"cash_withdrawal", "cash_withdraw", "withdraw"}
-
-_FUND_ESTIMATE_QUOTE_SOURCES = {
-    "eastmoney_fund_estimate",
-    "eastmoney_fund_page",
-}
+_FUND_ESTIMATE_QUOTE_SOURCES = FUND_ESTIMATE_QUOTE_SOURCES | {"eastmoney_fund_page"}
 
 
 def _normalize_asset_class(value: str | None) -> str:
@@ -1428,7 +1428,7 @@ def _is_unconfirmed_fund_estimate(
         return False
 
     source = str(quote.get("quote_source") or quote.get("source") or "").strip().lower()
-    if source != "eastmoney_fund_estimate":
+    if not is_fund_estimate_quote_source(source):
         return False
 
     quote_timestamp = _parse_quote_timestamp(quote.get("timestamp"))

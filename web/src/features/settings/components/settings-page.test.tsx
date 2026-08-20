@@ -619,7 +619,7 @@ test('shows tushare capability matrix and manual daily tasks', async () => {
     (await screen.findAllByText('Permission blocked')).length,
   ).toBeGreaterThan(0);
   expect(
-    (await screen.findAllByText('Eastmoney fund estimate')).length,
+    (await screen.findAllByText('Sina intraday fund estimate')).length,
   ).toBeGreaterThan(0);
   expect(await screen.findByText('Manual daily task checklist')).toBeTruthy();
   const signInTask = await screen.findByLabelText(

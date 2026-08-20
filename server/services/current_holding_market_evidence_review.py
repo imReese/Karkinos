@@ -6,6 +6,7 @@ import hashlib
 import json
 from typing import Any
 
+from data.market_data import is_fund_estimate_quote_source
 from server.models import (
     CurrentHoldingMarketEvidenceReviewItem,
     CurrentHoldingMarketEvidenceReviewResponse,
@@ -26,7 +27,6 @@ _STALE_OR_CACHED_STATUSES = {
     "stale",
 }
 _MISSING_OR_ERROR_STATUSES = {"", "error", "missing", "unknown"}
-_FUND_ESTIMATE_SOURCE = "eastmoney_fund_estimate"
 
 
 def build_current_holding_market_evidence_review(
@@ -100,7 +100,7 @@ def _review_item(position: Any) -> CurrentHoldingMarketEvidenceReviewItem | None
     normalized_source = quote_source.lower()
     asset_class = str(getattr(position, "asset_class", None) or "stock").strip()
 
-    if normalized_source == _FUND_ESTIMATE_SOURCE:
+    if is_fund_estimate_quote_source(normalized_source):
         quote_status = "confirmed_nav_missing"
         review_reason = "confirmed_nav_missing"
         next_action = "wait_for_confirmed_nav_then_run_explicit_refresh"

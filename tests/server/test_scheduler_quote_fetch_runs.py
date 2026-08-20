@@ -483,6 +483,43 @@ def test_scheduler_syncs_fund_nav_quotes_before_live_poll(monkeypatch, tmp_path)
     assert db.list_quote_fetch_runs()[0]["status"] == "failed"
 
 
+def test_scheduler_does_not_send_intraday_fund_estimates_to_strategy(
+    monkeypatch, tmp_path
+):
+    strategy = FakeStrategy()
+    stock_event = _market_event("600519", AssetClass.STOCK)
+    fund_event = _market_event("019999", AssetClass.FUND, Decimal("2.2527"))
+
+    db = _run_scheduler_once(
+        monkeypatch,
+        tmp_path,
+        watchlist=[
+            (Symbol("600519"), AssetClass.STOCK),
+            (Symbol("019999"), AssetClass.FUND),
+        ],
+        events=[stock_event, fund_event],
+        snapshots={
+            ("600519", AssetClass.STOCK): {
+                "timestamp": "2026-06-12T10:00:00+08:00",
+                "quote_source": "fixture_stock",
+            },
+            ("019999", AssetClass.FUND): {
+                "timestamp": "2026-06-12T10:00:00+08:00",
+                "quote_source": "sina_fund_estimate",
+                "provider_name": "sina",
+                "nav_date": "2026-06-11",
+            },
+        },
+        strategy_factory=lambda _bus: strategy,
+    )
+
+    assert strategy.market_events == [stock_event]
+    # The quote is still persisted for portfolio display even though strategy skips it.
+    latest_fund = db.get_latest_quote_sync("019999", asset_type="fund")
+    assert latest_fund is not None
+    assert latest_fund["quote_source"] == "sina_fund_estimate"
+
+
 def test_scheduler_poll_exception_finishes_failed_quote_fetch_run(
     monkeypatch, tmp_path
 ):

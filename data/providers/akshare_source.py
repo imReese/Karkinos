@@ -381,39 +381,95 @@ class AKShareSource(DataSource):
     def _fetch_open_end_fund_latest_from_estimate(self, fund_code: str) -> dict | None:
         import requests
 
-        url = f"http://fundgz.1234567.com.cn/js/{fund_code}.js"
+        url = (
+            "https://stock.finance.sina.com.cn/fundInfo/api/openapi.php/"
+            "FdFundService.getEstimateNetworthPic"
+        )
         with _provider_network_env():
-            response = requests.get(url, timeout=3)
+            response = requests.get(url, params={"symbol": fund_code}, timeout=3)
         response.raise_for_status()
-        match = re.search(r"jsonpgz\((\{.*\})\);?", response.text, flags=re.S)
-        if match is None:
+        payload = response.json()
+        result = payload.get("result") if isinstance(payload, dict) else None
+        if not isinstance(result, dict):
+            return None
+        status = result.get("status")
+        if not isinstance(status, dict) or status.get("code") != 0:
             return None
 
-        payload = json.loads(match.group(1))
-        price = _dict_float(payload, "gsz") or _dict_float(payload, "dwjz")
+        data = result.get("data")
+        if not isinstance(data, dict):
+            return None
+        raw_points = data.get("networth")
+        if not isinstance(raw_points, list):
+            return None
+
+        session_close = None
+        time_ranges = data.get("time_range")
+        if isinstance(time_ranges, list):
+            session_ends = [
+                str(period[-1]).strip()
+                for period in time_ranges
+                if isinstance(period, list) and period and str(period[-1]).strip()
+            ]
+            if session_ends:
+                session_close = max(session_ends)
+
+        estimates: list[tuple[datetime, dict]] = []
+        for point in raw_points:
+            if not isinstance(point, dict):
+                continue
+            estimate_date = str(point.get("pre_date") or "").strip()
+            estimate_time = str(point.get("min_time") or "").strip()
+            if not estimate_date or not estimate_time:
+                continue
+            if session_close and estimate_time[:5] > session_close[:5]:
+                continue
+            try:
+                estimate_timestamp = datetime.fromisoformat(
+                    f"{estimate_date}T{estimate_time}"
+                ).replace(tzinfo=_CHINA_MARKET_TZ)
+            except ValueError:
+                continue
+            if _dict_float(point, "pre_nav") is None:
+                continue
+            estimates.append((estimate_timestamp, point))
+        if not estimates:
+            return None
+
+        estimate_timestamp, latest = max(estimates, key=lambda item: item[0])
+        price = _dict_float(latest, "pre_nav")
         if price is None:
             return None
+        previous_close = _dict_float(data, "worth")
+        previous_close_date = str(data.get("worth_date") or "").strip()
+        if len(previous_close_date) == 8 and previous_close_date.isdigit():
+            previous_close_date = (
+                f"{previous_close_date[:4]}-{previous_close_date[4:6]}-"
+                f"{previous_close_date[6:]}"
+            )
 
-        previous_close = _dict_float(payload, "dwjz")
-        result = {
+        snapshot = {
             "price": price,
             "volume": None,
-            "timestamp": str(payload.get("gztime") or payload.get("jzrq") or ""),
-            "source": "akshare",
-            "quote_source": "eastmoney_fund_estimate",
+            "timestamp": estimate_timestamp.isoformat(),
+            "source": "sina",
+            "provider_name": "sina",
+            "quote_source": "sina_fund_estimate",
+            "metadata": {
+                "estimate_model": "pre_nav",
+                "session_close": session_close,
+            },
         }
-        display_name = str(payload.get("name") or "").strip()
-        if display_name:
-            result["name"] = display_name
-            result["display_name"] = display_name
         if previous_close is not None:
-            result["previous_close"] = previous_close
-            result["previous_close_date"] = str(payload.get("jzrq") or "")
-            result["day_change_value"] = price - previous_close
-        growth_rate = _dict_float(payload, "gszzl")
+            snapshot["previous_close"] = previous_close
+            snapshot["day_change_value"] = price - previous_close
+        if previous_close_date:
+            snapshot["previous_close_date"] = previous_close_date
+            snapshot["nav_date"] = previous_close_date
+        growth_rate = _dict_float(latest, "nav_pct")
         if growth_rate is not None:
-            result["day_change_pct"] = growth_rate / 100
-        return result
+            snapshot["day_change_pct"] = growth_rate / 100
+        return snapshot
 
     def _fetch_open_end_fund_latest_from_page(self, fund_code: str) -> dict | None:
         import requests

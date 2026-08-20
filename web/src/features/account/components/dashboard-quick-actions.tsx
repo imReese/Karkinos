@@ -7,6 +7,7 @@ import {
 } from '../../../shared/public-labels';
 import {
   formatMarketDataStatusNextAction,
+  isFundEstimateQuoteSource,
   isUnconfirmedMarketDataStatus,
 } from '../../../shared/market-data-status';
 import { formatStaleReason } from '../../../shared/stale-reason';
@@ -56,7 +57,7 @@ function isActionableQuoteDiagnostic(item: QuoteDiagnosticItem) {
     Boolean(item.stale_reason) ||
     isUnconfirmedMarketDataStatus(quoteStatus) ||
     quoteStatus === 'error' ||
-    quoteSource === 'eastmoney_fund_estimate'
+    isFundEstimateQuoteSource(quoteSource)
   );
 }
 
@@ -90,7 +91,7 @@ function diagnosticActionLabel(
   return (
     formatMarketDataStatusNextAction(item.stale_reason, locale) ??
     formatMarketDataStatusNextAction(item.quote_status, locale) ??
-    (item.quote_source === 'eastmoney_fund_estimate'
+    (isFundEstimateQuoteSource(item.quote_source)
       ? formatMarketDataStatusNextAction('confirmed_nav_missing', locale)
       : null) ??
     formatStaleReason(item.stale_reason, staleReasons)
@@ -330,10 +331,9 @@ export function DashboardQuickActions({
               {actionableDiagnostics.map((item) => {
                 const displayName =
                   item.display_name ?? item.name ?? item.symbol;
-                const quoteSource =
-                  item.quote_source === 'eastmoney_fund_estimate'
-                    ? labels.usingEstimate
-                    : normalizeStatus(item.quote_source);
+                const quoteSource = isFundEstimateQuoteSource(item.quote_source)
+                  ? labels.usingEstimate
+                  : normalizeStatus(item.quote_source);
                 return (
                   <div
                     key={`${item.symbol}-${item.quote_source ?? 'quote'}`}

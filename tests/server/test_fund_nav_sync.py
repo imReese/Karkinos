@@ -202,13 +202,25 @@ def test_confirmation_only_supersedes_same_day_estimate_with_confirmed_nav(
         price=2.5123,
         volume=None,
         timestamp="2026-06-12 15:00",
-        quote_source="eastmoney_fund_estimate",
-        provider_name="akshare",
+        quote_source="sina_fund_estimate",
+        provider_name="sina",
         quote_status="live",
         captured_reason="live_poll",
         nav_date="2026-06-11",
     )
-    estimate_source = FakeFundSource()
+    estimate_source = FakeFundSource(
+        {
+            "price": 2.5123,
+            "volume": None,
+            "timestamp": "2026-06-12T15:00:00+08:00",
+            "source": "sina",
+            "quote_source": "sina_fund_estimate",
+            "provider_name": "sina",
+            "provider_symbol": "019999",
+            "nav_date": "2026-06-11",
+            "display_name": "示例成长混合C",
+        }
+    )
     confirmed_source = ConfirmedFundSource()
     monkeypatch.setattr(
         fund_nav_sync,
@@ -227,7 +239,7 @@ def test_confirmation_only_supersedes_same_day_estimate_with_confirmed_nav(
             "019999": {
                 "price": 2.5123,
                 "timestamp": "2026-06-12 15:00",
-                "quote_source": "eastmoney_fund_estimate",
+                "quote_source": "sina_fund_estimate",
                 "nav_date": "2026-06-11",
             }
         },

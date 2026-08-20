@@ -103,6 +103,27 @@ def test_review_projects_only_current_nonzero_unconfirmed_holdings() -> None:
     assert report.authorizes_execution is False
 
 
+def test_review_treats_sina_fund_estimate_as_unconfirmed_nav() -> None:
+    report = build_current_holding_market_evidence_review(
+        _snapshot(
+            [
+                _position(
+                    "FUND-SINA",
+                    quantity=8,
+                    quote_status="live",
+                    asset_class="fund",
+                    quote_source="sina_fund_estimate",
+                )
+            ]
+        )
+    )
+
+    assert report.review_required_count == 1
+    assert report.fund_nav_review_count == 1
+    assert report.items[0].quote_status == "confirmed_nav_missing"
+    assert report.items[0].blocks_authoritative_decisions is True
+
+
 def test_review_is_deterministic_and_changes_only_with_bound_evidence() -> None:
     snapshot = _snapshot([_position("600001", quantity=100, quote_status="stale")])
 

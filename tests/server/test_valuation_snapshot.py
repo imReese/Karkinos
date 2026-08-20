@@ -205,6 +205,29 @@ def test_valuation_snapshot_keeps_unconfirmed_fund_estimate_non_authoritative(
     assert snapshot["metadata"]["provider_fetch_used"] is False
 
 
+def test_valuation_snapshot_keeps_sina_fund_estimate_non_authoritative(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.upsert_latest_quote_sync(
+        symbol="019999",
+        asset_type="fund",
+        price=2.2527,
+        quote_timestamp="2026-07-10T14:57:03+08:00",
+        quote_source="sina_fund_estimate",
+        provider_name="sina",
+        quote_status="live",
+    )
+
+    snapshot = build_current_valuation_snapshot(db, persist=False)
+    quote = snapshot["quotes"][0]
+
+    assert snapshot["status"] == "degraded"
+    assert quote["price"] == 2.2527
+    assert quote["quote_status"] == "confirmed_nav_missing"
+    assert quote["valuation_price_source"] == "sina_fund_estimate"
+    assert quote["valuation_evidence_status"] == "unconfirmed_estimate"
+
+
 def test_valuation_snapshot_promotes_same_day_confirmed_fund_nav():
     class FakeDb:
         def list_latest_quotes_sync(self):

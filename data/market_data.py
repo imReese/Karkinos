@@ -10,6 +10,18 @@ from typing import Any, Protocol, Sequence
 
 from core.types import AssetClass, BarFrequency, Symbol
 
+FUND_ESTIMATE_QUOTE_SOURCES = frozenset(
+    {
+        "eastmoney_fund_estimate",
+        "sina_fund_estimate",
+    }
+)
+
+
+def is_fund_estimate_quote_source(value: Any) -> bool:
+    """Return whether a quote source is a non-authoritative fund estimate."""
+    return str(value or "").strip().lower() in FUND_ESTIMATE_QUOTE_SOURCES
+
 
 class MarketDataStatus(Enum):
     """Shared status vocabulary for market data reliability."""

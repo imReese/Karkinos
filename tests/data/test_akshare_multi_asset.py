@@ -516,7 +516,30 @@ class TestAKShareFetchLatest:
         """已知基金代码应走单基金页，不依赖全量名称表或全市场净值表。"""
         mock_name_map.side_effect = AssertionError("fund_name_em should not be called")
         mock_get.return_value = SimpleNamespace(
-            text='jsonpgz({"fundcode":"019999","name":"示例成长混合C","jzrq":"2026-06-04","dwjz":"2.5000","gsz":"2.5123","gszzl":"0.49","gztime":"2026-01-12 15:00"});',
+            json=lambda: {
+                "result": {
+                    "status": {"code": 0},
+                    "data": {
+                        "worth": "2.5000",
+                        "worth_date": "20260603",
+                        "time_range": [["09:30", "11:30"], ["13:00", "15:00"]],
+                        "networth": [
+                            {
+                                "pre_date": "2026-06-04",
+                                "min_time": "14:59:00",
+                                "pre_nav": "2.5123",
+                                "nav_pct": "0.49",
+                            },
+                            {
+                                "pre_date": "2026-06-04",
+                                "min_time": "15:04:00",
+                                "pre_nav": "9.9999",
+                                "nav_pct": "299.99",
+                            },
+                        ],
+                    },
+                }
+            },
             raise_for_status=lambda: None,
         )
 
@@ -524,11 +547,13 @@ class TestAKShareFetchLatest:
 
         assert result is not None
         assert result["price"] == 2.5123
-        assert result["timestamp"] == "2026-01-12 15:00"
-        assert result["display_name"] == "示例成长混合C"
+        assert result["timestamp"] == "2026-06-04T14:59:00+08:00"
         assert result["previous_close"] == 2.5
-        assert result["previous_close_date"] == "2026-06-04"
-        assert result["quote_source"] == "eastmoney_fund_estimate"
+        assert result["previous_close_date"] == "2026-06-03"
+        assert result["nav_date"] == "2026-06-03"
+        assert result["day_change_pct"] == pytest.approx(0.0049)
+        assert result["provider_name"] == "sina"
+        assert result["quote_source"] == "sina_fund_estimate"
         mock_name_map.assert_not_called()
         mock_daily.assert_not_called()
         mock_etf.assert_not_called()
