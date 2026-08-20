@@ -2787,19 +2787,28 @@ def build_operations_runbook_acceptance_audit() -> AcceptanceAudit:
                     "import/review/valuation/ledger-cutoff fingerprint, "
                     "replay-valid read-only tickets, a current execution-closure "
                     "safe superset with unchanged historical plan/paper/actual facts, "
+                    "and a fingerprinted privacy-minimized summary of every current "
+                    "non-paper/shadow OMS order as reconciled actual or terminal "
+                    "no-fill evidence. That summary is bound into the trial and "
+                    "human review, so later real-order closure changes invalidate "
+                    "the old review without counting or attributing real orders to "
+                    "the 50 simulated-order sample; "
                     "current re-resolved strategy promotion plus daily-backup "
                     "evidence, and exact drift-clear paper/shadow evidence; 20 days and "
                     "50 simulated orders permit only an exact human GO/NO-GO "
                     "review."
                 ),
                 evidence_paths=(
+                    "server/services/daily_candidate_execution_closure.py",
                     "server/services/daily_candidate_trial.py",
                     "tests/test_daily_candidate_trial.py",
+                    "server/services/daily_candidate_production_readiness.py",
+                    "tests/test_daily_candidate_production_readiness.py",
                     "server/routes/automation.py",
                     "tests/server/test_automation_routes.py",
                 ),
                 validation_commands=(
-                    "uv run python -m pytest tests/test_daily_candidate_trial.py tests/server/test_automation_routes.py",
+                    "uv run python -m pytest tests/test_daily_candidate_trial.py tests/test_daily_candidate_production_readiness.py tests/server/test_automation_routes.py",
                 ),
             ),
             AcceptanceCriterion(
@@ -2810,7 +2819,8 @@ def build_operations_runbook_acceptance_audit() -> AcceptanceAudit:
                     "execution/capital authority; Automation Cockpit v4 "
                     "separates exact background-task liveness from a zero-write "
                     "financial preflight that can open only risk plus "
-                    "paper/shadow, and bilingual runbooks define daily "
+                    "paper/shadow; it also shows current real-order closure "
+                    "separately from the simulated sample, and bilingual runbooks define daily "
                     "operation and fail-closed recovery."
                 ),
                 evidence_paths=(

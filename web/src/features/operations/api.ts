@@ -792,9 +792,10 @@ export type PaperShadowRunReviewResponse = {
 };
 
 export type DailyCandidateTrialReview = {
-  schema_version: 'karkinos.daily_candidate_trial_review.v1';
+  schema_version: 'karkinos.daily_candidate_trial_review.v2';
   review_id: string;
   trial_fingerprint: string;
+  execution_evidence_fingerprint: string;
   decision: 'go_to_bounded_manual_trial' | 'continue_paper_shadow' | 'no_go';
   reviewed_by: string;
   note: string;
@@ -804,6 +805,30 @@ export type DailyCandidateTrialReview = {
   broker_submission_enabled: false;
   authorizes_execution: false;
   changes_capital_authority: false;
+};
+
+export type DailyCandidateExecutionEvidenceSummary = {
+  schema_version: 'karkinos.daily_candidate_execution_evidence_summary.v1';
+  status: 'blocked' | 'not_required' | 'pass';
+  current_execution_closure_fingerprint: string | null;
+  population_scope: 'all_current_non_paper_shadow_oms_orders';
+  production_order_count: number;
+  clear_order_count: number;
+  reconciled_actual_order_count: number;
+  reconciled_no_fill_order_count: number;
+  comparison_coverage_complete: boolean;
+  blockers: string[];
+  actual_orders_attributed_to_trial: false;
+  actual_orders_count_toward_simulated_trial_threshold: false;
+  persisted_evidence_only: true;
+  provider_contact_performed: false;
+  manual_review_required: boolean;
+  authorizes_execution: false;
+  does_not_submit_broker_order: true;
+  does_not_mutate_oms: true;
+  does_not_mutate_production_ledger: true;
+  does_not_change_capital_authority: true;
+  evidence_fingerprint: string;
 };
 
 export type DailyStrategyOperatingConstraints = {
@@ -966,7 +991,7 @@ export type DailyCandidateRunResult = {
 };
 
 export type DailyCandidateTrial = {
-  schema_version: 'karkinos.daily_candidate_trial.v1';
+  schema_version: 'karkinos.daily_candidate_trial.v2';
   status: string;
   trial_epoch_id: string | null;
   trial_epoch_start_date: string | null;
@@ -989,6 +1014,7 @@ export type DailyCandidateTrial = {
     simulated_order_count: number;
     blockers: string[];
   } | null;
+  current_execution_evidence: DailyCandidateExecutionEvidenceSummary;
   blockers: string[];
   eligible_for_human_go_no_go_review: boolean;
   trial_fingerprint: string;
