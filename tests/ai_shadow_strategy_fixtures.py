@@ -316,6 +316,17 @@ def seed_approved_ai_shadow_strategy(
         drafts=[
             {
                 "draft_id": f"draft-{fixture_id}",
+                "economic_hypothesis": "Reviewed deterministic fixture hypothesis.",
+                "risk_impact": "The bounded strategy can still lose capital.",
+                "failure_conditions": [
+                    "After-cost out-of-sample excess return turns non-positive."
+                ],
+                "limitations": [
+                    "Historical deterministic evidence does not prove future profit."
+                ],
+                "anti_lookahead_assumptions": [
+                    "Signals use only closed persisted market bars."
+                ],
                 "formula_ast": {"schema_version": "fixture"},
                 "formula_fingerprint": "sha256:formula-fixture",
                 "validation": {"status": "valid", "errors": []},

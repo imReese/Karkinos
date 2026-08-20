@@ -5,6 +5,7 @@ import time
 
 import pytest
 
+from server.ai_runtime.contracts import content_fingerprint
 from server.db import AppDatabase
 from server.services import daily_decision_evidence_automation as automation_module
 from server.services.account_truth_replay import (
@@ -19,8 +20,26 @@ from server.services.daily_decision_evidence_automation import (
 from server.services.oms import OmsService
 from server.services.trading_controls import TradingControlState
 
+STRATEGY_OPERATING_CONSTRAINTS = {
+    "schema_version": "karkinos.ai.strategy_operating_constraints.v1",
+    "candidate_id": "fixture",
+    "strategy_artifact_fingerprint": "3" * 64,
+    "source_backup_artifact_fingerprint": "2" * 64,
+    "economic_hypothesis": "Reviewed fixture hypothesis.",
+    "risk_impact": "Loss remains possible under the reviewed limits.",
+    "failure_conditions": ["OOS excess return turns non-positive."],
+    "limitations": ["Historical evidence does not establish future profit."],
+    "anti_lookahead_assumptions": ["Signals use closed persisted bars only."],
+    "automatic_enforcement_enabled": False,
+    "human_review_required": True,
+    "authorizes_execution": False,
+    "changes_capital_authority": False,
+}
+STRATEGY_OPERATING_CONSTRAINTS["evidence_fingerprint"] = content_fingerprint(
+    STRATEGY_OPERATING_CONSTRAINTS
+)
 DAILY_STRATEGY_ARTIFACT_BINDING = {
-    "schema_version": "karkinos.ai.daily_strategy_promotion_binding.v1",
+    "schema_version": "karkinos.ai.daily_strategy_promotion_binding.v2",
     "run_id": "research-run-fixture",
     "market_date": "2026-06-30",
     "winner_candidate_id": "fixture",
@@ -28,6 +47,7 @@ DAILY_STRATEGY_ARTIFACT_BINDING = {
     "selection_fingerprint": "1" * 64,
     "backup_id": "backup-fixture",
     "backup_artifact_fingerprint": "2" * 64,
+    "operating_constraints": dict(STRATEGY_OPERATING_CONSTRAINTS),
     "contains_private_account_identifiers": False,
     "contains_broker_export_rows": False,
     "does_not_change_capital_authority": True,
@@ -389,6 +409,33 @@ def test_financial_preflight_rejects_ai_strategy_without_daily_backup_binding() 
     )
 
 
+def test_financial_preflight_rejects_incomplete_strategy_failure_conditions() -> None:
+    inputs = _financial_preflight_inputs()
+    promotion = inputs["decision_payload"]["candidates"][0]["evidence"]["strategy"][
+        "order_generation_gate"
+    ]["promotion"]
+    daily_binding = promotion["daily_strategy_artifact_binding"]
+    constraints = dict(daily_binding["operating_constraints"])
+    constraints["failure_conditions"] = []
+    constraints["evidence_fingerprint"] = content_fingerprint(
+        {
+            key: value
+            for key, value in constraints.items()
+            if key != "evidence_fingerprint"
+        }
+    )
+    daily_binding["operating_constraints"] = constraints
+
+    result = project_daily_candidate_financial_preflight(**inputs)
+
+    assert result["status"] == "no_action"
+    assert result["eligible_candidate_count"] == 0
+    assert any(
+        "strategy_operating_constraints_failure_conditions_invalid" in blocker
+        for blocker in result["no_action_reasons"]
+    )
+
+
 def test_financial_preflight_keeps_clear_financial_facts_closed_after_window() -> None:
     inputs = _financial_preflight_inputs()
     inputs["runtime_status"].update(
@@ -619,7 +666,7 @@ def test_automatic_evidence_chain_runs_risk_then_idempotent_paper_shadow(
     assert first["decision_outcome"] == "manual_order_ticket_candidate"
     assert first["manual_ticket_candidate_count"] == 1
     ticket = first["manual_order_ticket_candidates"][0]
-    assert ticket["schema_version"] == "karkinos.manual_order_ticket_candidate.v1"
+    assert ticket["schema_version"] == "karkinos.manual_order_ticket_candidate.v2"
     assert ticket["intent_id"] == "ACTION-1-BATCH-RISK"
     assert ticket["symbol"] == "600519"
     assert ticket["side"] == "buy"
@@ -646,6 +693,12 @@ def test_automatic_evidence_chain_runs_risk_then_idempotent_paper_shadow(
         ticket["strategy_gate_binding"]["daily_strategy_artifact_binding"]
         == DAILY_STRATEGY_ARTIFACT_BINDING
     )
+    assert ticket["strategy_operating_constraints"] == (STRATEGY_OPERATING_CONSTRAINTS)
+    assert (
+        ticket["strategy_operating_constraints"]
+        == ticket["strategy_gate_binding"]["strategy_operating_constraints"]
+    )
+    assert ticket["invalidation_conditions"]
     assert (
         ticket["account_truth_binding"]
         == first["input_snapshot"]["account_truth_binding"]

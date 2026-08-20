@@ -27,7 +27,10 @@ DAILY_STRATEGY_SELECTION_SCHEMA = "karkinos.ai.daily_strategy_selection.v1"
 DAILY_STRATEGY_BACKUP_SCHEMA = "karkinos.ai.daily_strategy_backup.v1"
 DAILY_STRATEGY_BACKUP_RECEIPT_SCHEMA = "karkinos.ai.daily_strategy_backup_receipt.v1"
 DAILY_STRATEGY_PROMOTION_BINDING_SCHEMA = (
-    "karkinos.ai.daily_strategy_promotion_binding.v1"
+    "karkinos.ai.daily_strategy_promotion_binding.v2"
+)
+DAILY_STRATEGY_OPERATING_CONSTRAINTS_SCHEMA = (
+    "karkinos.ai.strategy_operating_constraints.v1"
 )
 
 _COMPLETE_CANDIDATE_STATUSES = {"awaiting_human_approval", "research_blocked"}
@@ -252,7 +255,15 @@ class DailyStrategyArtifactStore:
         backup = self._backup_projection(backup_row)
         if backup.get("verification_status") != "verified":
             raise DailyStrategyArtifactRejected("daily_strategy_backup_not_verified")
-        return {"selection": selection, "backup": backup}
+        operating_constraints = self._verified_winner_operating_constraints(
+            backup_row,
+            candidate_id=candidate_id,
+        )
+        return {
+            "selection": selection,
+            "backup": backup,
+            "operating_constraints": operating_constraints,
+        }
 
     def _write_backup(
         self, payload: Mapping[str, Any], *, created_at: str
@@ -350,6 +361,85 @@ class DailyStrategyArtifactStore:
             result["verification_status"] = "read_failed"
             return result
 
+    def _verified_winner_operating_constraints(
+        self,
+        row: sqlite3.Row,
+        *,
+        candidate_id: str,
+    ) -> dict[str, Any]:
+        """Read reviewed operating constraints from the exact verified backup."""
+
+        try:
+            candidate = (self._backup_root / str(row["relative_path"])).resolve()
+            root = self._backup_root.resolve()
+            candidate.relative_to(root)
+            payload = json.loads(candidate.read_text(encoding="utf-8"))
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            raise DailyStrategyArtifactRejected(
+                "daily_strategy_operating_constraints_unreadable"
+            ) from exc
+        if (
+            not isinstance(payload, Mapping)
+            or content_fingerprint(payload) != row["artifact_fingerprint"]
+        ):
+            raise DailyStrategyArtifactRejected(
+                "daily_strategy_operating_constraints_backup_mismatch"
+            )
+        matches = [
+            item
+            for item in payload.get("candidates") or []
+            if isinstance(item, Mapping) and item.get("candidate_id") == candidate_id
+        ]
+        if len(matches) != 1:
+            raise DailyStrategyArtifactRejected(
+                "daily_strategy_operating_constraints_candidate_mismatch"
+            )
+        snapshot = matches[0]
+        strategy = snapshot.get("strategy")
+        if not isinstance(strategy, Mapping) or snapshot.get(
+            "strategy_artifact_fingerprint"
+        ) != content_fingerprint(strategy):
+            raise DailyStrategyArtifactRejected(
+                "daily_strategy_operating_constraints_strategy_mismatch"
+            )
+        economic_hypothesis = str(strategy.get("economic_hypothesis") or "").strip()
+        risk_impact = str(strategy.get("risk_impact") or "").strip()
+        failure_conditions = _nonempty_text_list(strategy.get("failure_conditions"))
+        limitations = _nonempty_text_list(strategy.get("limitations"))
+        anti_lookahead_assumptions = _nonempty_text_list(
+            strategy.get("anti_lookahead_assumptions")
+        )
+        if (
+            not economic_hypothesis
+            or not risk_impact
+            or not failure_conditions
+            or not limitations
+            or not anti_lookahead_assumptions
+        ):
+            raise DailyStrategyArtifactRejected(
+                "daily_strategy_operating_constraints_incomplete"
+            )
+        core = {
+            "schema_version": DAILY_STRATEGY_OPERATING_CONSTRAINTS_SCHEMA,
+            "candidate_id": candidate_id,
+            "strategy_artifact_fingerprint": str(
+                snapshot.get("strategy_artifact_fingerprint") or ""
+            ),
+            "source_backup_artifact_fingerprint": str(
+                row["artifact_fingerprint"] or ""
+            ),
+            "economic_hypothesis": economic_hypothesis,
+            "risk_impact": risk_impact,
+            "failure_conditions": failure_conditions,
+            "limitations": limitations,
+            "anti_lookahead_assumptions": anti_lookahead_assumptions,
+            "automatic_enforcement_enabled": False,
+            "human_review_required": True,
+            "authorizes_execution": False,
+            "changes_capital_authority": False,
+        }
+        return {**core, "evidence_fingerprint": content_fingerprint(core)}
+
     def _connect_readonly(self) -> sqlite3.Connection:
         if not self._db_path.exists():
             raise sqlite3.OperationalError("daily artifact store is not initialized")
@@ -367,7 +457,12 @@ def build_daily_strategy_promotion_binding(
 
     selection = artifacts.get("selection")
     backup = artifacts.get("backup")
-    if not isinstance(selection, Mapping) or not isinstance(backup, Mapping):
+    operating_constraints = artifacts.get("operating_constraints")
+    if (
+        not isinstance(selection, Mapping)
+        or not isinstance(backup, Mapping)
+        or not isinstance(operating_constraints, Mapping)
+    ):
         raise DailyStrategyArtifactRejected("daily_promotion_binding_artifact_missing")
     if (
         selection.get("schema_version") != DAILY_STRATEGY_SELECTION_SCHEMA
@@ -394,9 +489,32 @@ def build_daily_strategy_promotion_binding(
         or backup.get("contains_broker_export_rows") is not False
     ):
         raise DailyStrategyArtifactRejected("daily_promotion_binding_identity_mismatch")
+    constraints_core = {
+        key: value
+        for key, value in operating_constraints.items()
+        if key != "evidence_fingerprint"
+    }
+    if (
+        operating_constraints.get("schema_version")
+        != DAILY_STRATEGY_OPERATING_CONSTRAINTS_SCHEMA
+        or operating_constraints.get("candidate_id")
+        != identities["winner_candidate_id"]
+        or operating_constraints.get("source_backup_artifact_fingerprint")
+        != identities["backup_artifact_fingerprint"]
+        or operating_constraints.get("evidence_fingerprint")
+        != content_fingerprint(constraints_core)
+        or operating_constraints.get("automatic_enforcement_enabled") is not False
+        or operating_constraints.get("human_review_required") is not True
+        or operating_constraints.get("authorizes_execution") is not False
+        or operating_constraints.get("changes_capital_authority") is not False
+    ):
+        raise DailyStrategyArtifactRejected(
+            "daily_promotion_binding_operating_constraints_invalid"
+        )
     return {
         "schema_version": DAILY_STRATEGY_PROMOTION_BINDING_SCHEMA,
         **identities,
+        "operating_constraints": dict(operating_constraints),
         "contains_private_account_identifiers": False,
         "contains_broker_export_rows": False,
         "does_not_change_capital_authority": True,
@@ -708,3 +826,12 @@ def _decimal(value: Any) -> Decimal | None:
 
 def _decimal_text(value: Decimal) -> str:
     return format(value, "f")
+
+
+def _nonempty_text_list(value: Any) -> list[str]:
+    if not isinstance(value, list | tuple):
+        return []
+    normalized = [str(item).strip() for item in value if str(item).strip()]
+    if len(normalized) != len(value):
+        return []
+    return normalized

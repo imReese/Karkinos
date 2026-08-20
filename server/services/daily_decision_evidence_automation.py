@@ -52,6 +52,18 @@ DAILY_CANDIDATE_INPUT_IDENTITY_SCHEMA_VERSION = (
 DAILY_CANDIDATE_FINANCIAL_PREFLIGHT_SCHEMA_VERSION = (
     "karkinos.daily_candidate_financial_preflight.v1"
 )
+DAILY_CANDIDATE_STRATEGY_GATE_BINDING_SCHEMA_VERSION = (
+    "karkinos.daily_candidate_strategy_gate_binding.v2"
+)
+DAILY_CANDIDATE_MANUAL_TICKET_SCHEMA_VERSION = (
+    "karkinos.manual_order_ticket_candidate.v2"
+)
+DAILY_STRATEGY_PROMOTION_BINDING_SCHEMA_VERSION = (
+    "karkinos.ai.daily_strategy_promotion_binding.v2"
+)
+DAILY_STRATEGY_OPERATING_CONSTRAINTS_SCHEMA_VERSION = (
+    "karkinos.ai.strategy_operating_constraints.v1"
+)
 
 _TRUSTED_MARKET_STATUSES = {"complete", "confirmed", "fresh", "live", "pass"}
 _TERMINAL_EVIDENCE_STATUSES = {
@@ -3179,9 +3191,10 @@ def build_daily_candidate_strategy_gate_binding(
     daily_strategy_artifact_binding = _object_dict(
         promotion.get("daily_strategy_artifact_binding")
     )
+    strategy_operating_constraints: dict[str, Any] = {}
     if strategy_id.startswith("ai_formula_shadow:"):
         if daily_strategy_artifact_binding.get("schema_version") != (
-            "karkinos.ai.daily_strategy_promotion_binding.v1"
+            DAILY_STRATEGY_PROMOTION_BINDING_SCHEMA_VERSION
         ):
             blockers.append("strategy_daily_artifact_binding_contract_invalid")
         for field in (
@@ -3214,6 +3227,19 @@ def build_daily_candidate_strategy_gate_binding(
             != "research_only"
         ):
             blockers.append("strategy_daily_artifact_authority_boundary_invalid")
+        strategy_operating_constraints = _object_dict(
+            daily_strategy_artifact_binding.get("operating_constraints")
+        )
+        blockers.extend(
+            daily_candidate_strategy_operating_constraints_blockers(
+                strategy_operating_constraints,
+                expected_candidate_id=strategy_id.removeprefix("ai_formula_shadow:"),
+                expected_backup_fingerprint=str(
+                    daily_strategy_artifact_binding.get("backup_artifact_fingerprint")
+                    or ""
+                ),
+            )
+        )
 
     advancement_fingerprint = str(
         promotion.get("strategy_advancement_gate_fingerprint") or ""
@@ -3255,7 +3281,7 @@ def build_daily_candidate_strategy_gate_binding(
     if blockers:
         return {}, blockers
     binding = {
-        "schema_version": "karkinos.daily_candidate_strategy_gate_binding.v1",
+        "schema_version": DAILY_CANDIDATE_STRATEGY_GATE_BINDING_SCHEMA_VERSION,
         "action_id": action_id,
         "strategy_ref": expected_strategy_ref,
         "strategy_advancement_ref": expected_advancement_ref,
@@ -3273,7 +3299,61 @@ def build_daily_candidate_strategy_gate_binding(
     }
     if daily_strategy_artifact_binding:
         binding["daily_strategy_artifact_binding"] = daily_strategy_artifact_binding
+    if strategy_operating_constraints:
+        binding["strategy_operating_constraints"] = strategy_operating_constraints
     return binding, []
+
+
+def daily_candidate_strategy_operating_constraints_blockers(
+    value: dict[str, Any],
+    *,
+    expected_candidate_id: str,
+    expected_backup_fingerprint: str,
+) -> list[str]:
+    blockers: list[str] = []
+    if value.get("schema_version") != (
+        DAILY_STRATEGY_OPERATING_CONSTRAINTS_SCHEMA_VERSION
+    ):
+        blockers.append("strategy_operating_constraints_contract_invalid")
+    if value.get("candidate_id") != expected_candidate_id:
+        blockers.append("strategy_operating_constraints_candidate_mismatch")
+    if value.get("source_backup_artifact_fingerprint") != (expected_backup_fingerprint):
+        blockers.append("strategy_operating_constraints_backup_mismatch")
+    for field in (
+        "strategy_artifact_fingerprint",
+        "source_backup_artifact_fingerprint",
+        "evidence_fingerprint",
+    ):
+        if not _is_sha256(value.get(field)):
+            blockers.append(f"strategy_operating_constraints_{field}_invalid")
+    for field in ("economic_hypothesis", "risk_impact"):
+        if not str(value.get(field) or "").strip():
+            blockers.append(f"strategy_operating_constraints_{field}_missing")
+    for field in (
+        "failure_conditions",
+        "limitations",
+        "anti_lookahead_assumptions",
+    ):
+        items = value.get(field)
+        if (
+            not isinstance(items, list)
+            or not items
+            or any(not str(item).strip() for item in items)
+        ):
+            blockers.append(f"strategy_operating_constraints_{field}_invalid")
+    expected_boundaries = {
+        "automatic_enforcement_enabled": False,
+        "human_review_required": True,
+        "authorizes_execution": False,
+        "changes_capital_authority": False,
+    }
+    for field, expected in expected_boundaries.items():
+        if value.get(field) is not expected:
+            blockers.append(f"strategy_operating_constraints_{field}_invalid")
+    stable = {key: item for key, item in value.items() if key != "evidence_fingerprint"}
+    if value.get("evidence_fingerprint") != _fingerprint_json(stable):
+        blockers.append("strategy_operating_constraints_fingerprint_mismatch")
+    return list(dict.fromkeys(blockers))
 
 
 def _manual_order_ticket_candidate(
@@ -3298,7 +3378,7 @@ def _manual_order_ticket_candidate(
         else None
     )
     core = {
-        "schema_version": "karkinos.manual_order_ticket_candidate.v1",
+        "schema_version": DAILY_CANDIDATE_MANUAL_TICKET_SCHEMA_VERSION,
         "plan_date": plan_date,
         "intent_id": intent.get("intent_id"),
         "action_id": intent.get("action_id"),
@@ -3333,6 +3413,9 @@ def _manual_order_ticket_candidate(
             "divergence_status": paper_shadow.get("divergence_status"),
         },
         "strategy_gate_binding": strategy_gate_binding,
+        "strategy_operating_constraints": _object_dict(
+            strategy_gate_binding.get("strategy_operating_constraints")
+        ),
         "account_truth_binding": account_truth_binding,
         "prior_execution_closure_fingerprint": execution_closure.get(
             "evidence_fingerprint"
