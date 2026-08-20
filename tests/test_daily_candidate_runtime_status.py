@@ -31,7 +31,7 @@ class _Task:
 
 def _schedule(*, due: bool = False, blockers: list[str] | None = None):
     return {
-        "schema_version": "karkinos.daily_candidate_background_schedule.v1",
+        "schema_version": "karkinos.daily_candidate_background_schedule.v2",
         "status": "due" if due else "waiting_for_decision_window",
         "run_date": "2026-08-17",
         "due": due,

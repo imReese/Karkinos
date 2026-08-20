@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime, timedelta
 from typing import Any
 
 from server.services.ai_shadow_research_automation import (
@@ -117,6 +118,7 @@ def project_daily_candidate_production_readiness(
     )
 
     trial_blockers = _strings(trial.get("blockers"))
+    next_reviewed_window = _project_next_reviewed_window(trial)
     trial_eligible = trial.get("eligible_for_human_go_no_go_review") is True
     latest_review = _mapping(trial.get("latest_review"))
     if latest_review:
@@ -169,6 +171,7 @@ def project_daily_candidate_production_readiness(
             "preflight_fingerprint": _safe_fingerprint(
                 preflight.get("preflight_fingerprint")
             ),
+            "next_reviewed_window": next_reviewed_window,
             "operator_checklist_status": (
                 "available" if operator_checklist else "invalid"
             ),
@@ -277,6 +280,9 @@ def unavailable_daily_candidate_production_readiness(
             "schedule_reasons": [],
             "next_safe_action": "start_and_verify_local_karkinos_service",
             "preflight_fingerprint": None,
+            "next_reviewed_window": _unavailable_next_reviewed_window_projection(
+                "next_reviewed_window_live_source_unavailable"
+            ),
             "operator_checklist_status": "unavailable",
             "blocking_gate_count": 1,
             "first_blocking_step": 1,
@@ -452,6 +458,134 @@ def _summarize_operator_blockers(blockers: list[str]) -> list[dict[str, Any]]:
         }
         for code, count in counts.items()
     ]
+
+
+def _project_next_reviewed_window(trial: dict[str, Any]) -> dict[str, Any]:
+    schedule = _mapping(trial.get("background_schedule"))
+    window = _mapping(schedule.get("next_reviewed_window"))
+    if (
+        schedule.get("schema_version")
+        != "karkinos.daily_candidate_background_schedule.v2"
+        or window.get("schema_version")
+        != "karkinos.daily_candidate_next_reviewed_window.v1"
+    ):
+        return _unavailable_next_reviewed_window_projection(
+            "next_reviewed_window_not_exposed_by_running_service"
+        )
+
+    boundaries_clear = all(
+        window.get(field) is False
+        for field in (
+            "provider_contact_performed",
+            "database_writes_performed",
+            "permits_retry_or_backfill",
+            "changes_attempt_eligibility",
+            "broker_submission_enabled",
+            "authorizes_execution",
+            "changes_capital_authority",
+        )
+    )
+    if not boundaries_clear:
+        return _unavailable_next_reviewed_window_projection(
+            "next_reviewed_window_contract_invalid"
+        )
+
+    status = window.get("status")
+    blockers = _strings(window.get("blockers"))
+    if any(not _is_safe_code(blocker) for blocker in blockers):
+        return _unavailable_next_reviewed_window_projection(
+            "next_reviewed_window_contract_invalid"
+        )
+    if status == "unavailable":
+        if (
+            not blockers
+            or window.get("market_date") is not None
+            or window.get("window_start") is not None
+            or window.get("window_end") is not None
+            or window.get("is_current_market_date") is not False
+            or window.get("official_calendar_verified") is not False
+        ):
+            return _unavailable_next_reviewed_window_projection(
+                "next_reviewed_window_contract_invalid"
+            )
+        return {
+            **_unavailable_next_reviewed_window_projection(blockers[0]),
+            "blockers": blockers,
+        }
+
+    market_date = str(window.get("market_date") or "")
+    run_date = str(schedule.get("run_date") or "")
+    try:
+        parsed_date = datetime.strptime(market_date, "%Y-%m-%d").date()
+        parsed_run_date = datetime.strptime(run_date, "%Y-%m-%d").date()
+        window_start = datetime.fromisoformat(str(window.get("window_start") or ""))
+        window_end = datetime.fromisoformat(str(window.get("window_end") or ""))
+    except ValueError:
+        return _unavailable_next_reviewed_window_projection(
+            "next_reviewed_window_contract_invalid"
+        )
+    if (
+        status != "available"
+        or parsed_date.isoformat() != market_date
+        or parsed_run_date.isoformat() != run_date
+        or parsed_date < parsed_run_date
+        or window_start.tzinfo is None
+        or window_end.tzinfo is None
+        or window_start.utcoffset() != timedelta(hours=8)
+        or window_end.utcoffset() != timedelta(hours=8)
+        or window_start.date() != parsed_date
+        or window_end.date() != parsed_date
+        or (window_start.hour, window_start.minute, window_start.second) != (9, 35, 0)
+        or (window_end.hour, window_end.minute, window_end.second) != (9, 45, 0)
+        or window_start.microsecond != 0
+        or window_end.microsecond != 0
+        or window_start.isoformat() != str(window.get("window_start") or "")
+        or window_end.isoformat() != str(window.get("window_end") or "")
+        or window.get("official_calendar_verified") is not True
+        or blockers
+        or not isinstance(window.get("is_current_market_date"), bool)
+        or window.get("is_current_market_date") is not (market_date == run_date)
+    ):
+        return _unavailable_next_reviewed_window_projection(
+            "next_reviewed_window_contract_invalid"
+        )
+    return {
+        "schema_version": "karkinos.daily_candidate_next_reviewed_window.v1",
+        "status": "available",
+        "market_date": market_date,
+        "window_start": window_start.isoformat(),
+        "window_end": window_end.isoformat(),
+        "is_current_market_date": window["is_current_market_date"],
+        "official_calendar_verified": True,
+        "blockers": [],
+        "provider_contact_performed": False,
+        "database_writes_performed": False,
+        "permits_retry_or_backfill": False,
+        "changes_attempt_eligibility": False,
+        "broker_submission_enabled": False,
+        "authorizes_execution": False,
+        "changes_capital_authority": False,
+    }
+
+
+def _unavailable_next_reviewed_window_projection(blocker: str) -> dict[str, Any]:
+    return {
+        "schema_version": "karkinos.daily_candidate_next_reviewed_window.v1",
+        "status": "unavailable",
+        "market_date": None,
+        "window_start": None,
+        "window_end": None,
+        "is_current_market_date": False,
+        "official_calendar_verified": False,
+        "blockers": [_safe_code(blocker)],
+        "provider_contact_performed": False,
+        "database_writes_performed": False,
+        "permits_retry_or_backfill": False,
+        "changes_attempt_eligibility": False,
+        "broker_submission_enabled": False,
+        "authorizes_execution": False,
+        "changes_capital_authority": False,
+    }
 
 
 def _non_authority_boundary_blockers(

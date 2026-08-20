@@ -84,6 +84,30 @@ def _inputs() -> tuple[dict, dict]:
             "remaining_simulated_orders": 32,
             "eligible_for_human_go_no_go_review": False,
             "latest_review": None,
+            "background_schedule": {
+                "schema_version": "karkinos.daily_candidate_background_schedule.v2",
+                "status": "waiting_for_decision_window",
+                "run_date": "2026-08-21",
+                "next_reviewed_window": {
+                    "schema_version": (
+                        "karkinos.daily_candidate_next_reviewed_window.v1"
+                    ),
+                    "status": "available",
+                    "market_date": "2026-08-21",
+                    "window_start": "2026-08-21T09:35:00+08:00",
+                    "window_end": "2026-08-21T09:45:00+08:00",
+                    "is_current_market_date": True,
+                    "official_calendar_verified": True,
+                    "blockers": [],
+                    "provider_contact_performed": False,
+                    "database_writes_performed": False,
+                    "permits_retry_or_backfill": False,
+                    "changes_attempt_eligibility": False,
+                    "broker_submission_enabled": False,
+                    "authorizes_execution": False,
+                    "changes_capital_authority": False,
+                },
+            },
             "blockers": [
                 "qualifying_trading_days_insufficient",
                 "simulated_order_count_insufficient",
@@ -129,6 +153,13 @@ def test_live_readiness_accepts_waiting_service_and_collects_forward_evidence() 
     assert report["daily_operation"]["operator_checklist_status"] == "available"
     assert report["daily_operation"]["first_blocking_gate"] == "runtime_window"
     assert report["daily_operation"]["blocking_gate_count"] == 1
+    assert report["daily_operation"]["next_reviewed_window"]["market_date"] == (
+        "2026-08-21"
+    )
+    assert (
+        report["daily_operation"]["next_reviewed_window"]["permits_retry_or_backfill"]
+        is False
+    )
     assert report["research_cycle"]["status"] == (
         "ready_for_five_sequential_iterations"
     )
@@ -239,6 +270,32 @@ def test_live_readiness_fails_closed_on_invalid_operator_checklist() -> None:
     ]
     assert report["daily_operation"]["operator_checklist_status"] == "invalid"
     assert report["daily_operation"]["operator_checklist"] == []
+
+
+def test_live_readiness_hides_unsafe_next_window_without_changing_schedule() -> None:
+    cockpit, research = _inputs()
+    trial = cockpit["daily_candidate_trial"]
+    trial["background_schedule"]["next_reviewed_window"][
+        "permits_retry_or_backfill"
+    ] = True
+
+    report = project_daily_candidate_production_readiness(
+        cockpit=cockpit,
+        research_status=research,
+    )
+
+    assert report["ready_for_production_operation"] is True
+    assert report["daily_operation"]["status"] == ("standing_by_for_reviewed_window")
+    assert report["daily_operation"]["next_reviewed_window"]["status"] == (
+        "unavailable"
+    )
+    assert report["daily_operation"]["next_reviewed_window"]["blockers"] == [
+        "next_reviewed_window_contract_invalid"
+    ]
+    assert (
+        report["daily_operation"]["next_reviewed_window"]["permits_retry_or_backfill"]
+        is False
+    )
 
 
 def test_live_readiness_fails_closed_on_financial_or_runtime_blockers() -> None:

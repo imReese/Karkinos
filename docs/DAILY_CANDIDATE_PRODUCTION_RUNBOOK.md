@@ -91,6 +91,17 @@ fingerprint, frozen strategy replay, the exact paper/shadow result, and prior-
 execution closure, so a same-day repair or drift cannot overwrite the earlier
 record.
 
+`karkinos.daily_candidate_background_schedule.v2` also projects the current or
+next `karkinos.daily_candidate_next_reviewed_window.v1` from the same persisted,
+officially verified SSE calendar. The projection includes exact Shanghai start
+and end timestamps and remains read-only: it performs no provider contact or
+database write, cannot reopen an attempted date, cannot permit retry or
+backfill, and cannot change attempt, execution, or capital eligibility. If the
+next year is required, its separately persisted calendar must also be
+officially verified; otherwise the next window remains explicitly unavailable.
+Use this date only to prepare Account Truth, fees, strategy review, and market
+ingestion before the window.
+
 The claimed background attempt persists one privacy-minimized Operations alert
 for `no_action`, read-only ticket review, interruption, or fail-closed failure.
 When notification is configured, a `no_action` message contains only the market
