@@ -25,7 +25,7 @@ _EXPECTED_SCHEMAS = {
     "cockpit": "karkinos.automation_cockpit.v4",
     "preflight": "karkinos.daily_candidate_financial_preflight.v1",
     "runtime": "karkinos.daily_candidate_runtime_status.v1",
-    "trial": "karkinos.daily_candidate_trial.v1",
+    "trial": "karkinos.daily_candidate_trial.v2",
     "research": "karkinos.ai.shadow_research_automation.v1",
     "research_policy": "karkinos.ai.shadow_research_policy.v2",
 }
@@ -47,6 +47,7 @@ def project_daily_candidate_production_readiness(
     preflight = _mapping(cockpit.get("daily_candidate_financial_preflight"))
     runtime = _mapping(cockpit.get("daily_candidate_runtime"))
     trial = _mapping(cockpit.get("daily_candidate_trial"))
+    execution_evidence = _mapping(trial.get("current_execution_evidence"))
     policy = _mapping(research_status.get("policy"))
 
     source_contract_blockers = _schema_blockers(
@@ -58,6 +59,10 @@ def project_daily_candidate_production_readiness(
         research_policy=policy,
     )
     source_contract_blockers.extend(_operator_checklist_contract_blockers(preflight))
+    execution_evidence_contract_blockers = _execution_evidence_contract_blockers(
+        execution_evidence
+    )
+    source_contract_blockers.extend(execution_evidence_contract_blockers)
     source_contract_blockers = _unique(source_contract_blockers)
     boundary_blockers = _non_authority_boundary_blockers(
         cockpit=cockpit,
@@ -79,12 +84,20 @@ def project_daily_candidate_production_readiness(
         for reason in _strings(preflight.get("no_action_reasons"))
         if reason in _NON_FATAL_SCHEDULE_REASONS
     ]
+    execution_evidence_ready = bool(
+        not execution_evidence_contract_blockers
+        and execution_evidence.get("comparison_coverage_complete") is True
+    )
+    execution_evidence_blockers = (
+        [] if execution_evidence_ready else ["current_execution_evidence_incomplete"]
+    )
     daily_operation_blockers = _unique(
         [
             *source_contract_blockers,
             *boundary_blockers,
             *financial_blockers,
             *hard_runtime_blockers,
+            *execution_evidence_blockers,
         ]
     )
     monitor_running = runtime.get("background_monitor_running") is True
@@ -134,6 +147,7 @@ def project_daily_candidate_production_readiness(
         and financial_clear
         and monitor_running
         and not hard_runtime_blockers
+        and execution_evidence_ready
         and not research_blockers
         and trial.get("run_scan_truncated") is False
     )
@@ -225,6 +239,7 @@ def project_daily_candidate_production_readiness(
             "latest_review_decision": (
                 str(latest_review.get("decision") or "") or None
             ),
+            "execution_reconciliation": _project_execution_evidence(execution_evidence),
             "blockers": trial_blockers,
             "trial_fingerprint": _safe_fingerprint(trial.get("trial_fingerprint")),
         },
@@ -243,6 +258,7 @@ def project_daily_candidate_production_readiness(
         "limitations": [
             "This report proves only current local service and persisted-evidence readiness, not future profitability.",
             "Twenty qualifying days and fifty simulated orders permit only a separate human GO/NO-GO review.",
+            "Current real-order closure is reported separately and never counted toward or attributed to the simulated-order trial threshold.",
             "A ready report does not create a ticket, submit an order, or change strategy or capital authority.",
         ],
     }
@@ -342,6 +358,31 @@ def unavailable_daily_candidate_production_readiness(
             "remaining_simulated_orders": 50,
             "eligible_for_human_go_no_go_review": False,
             "latest_review_decision": None,
+            "execution_reconciliation": {
+                "schema_version": (
+                    "karkinos.daily_candidate_execution_evidence_summary.v1"
+                ),
+                "status": "blocked",
+                "current_execution_closure_fingerprint": None,
+                "population_scope": "all_current_non_paper_shadow_oms_orders",
+                "production_order_count": 0,
+                "clear_order_count": 0,
+                "reconciled_actual_order_count": 0,
+                "reconciled_no_fill_order_count": 0,
+                "comparison_coverage_complete": False,
+                "blockers": [safe_blocker],
+                "actual_orders_attributed_to_trial": False,
+                "actual_orders_count_toward_simulated_trial_threshold": False,
+                "persisted_evidence_only": True,
+                "provider_contact_performed": False,
+                "manual_review_required": True,
+                "authorizes_execution": False,
+                "does_not_submit_broker_order": True,
+                "does_not_mutate_oms": True,
+                "does_not_mutate_production_ledger": True,
+                "does_not_change_capital_authority": True,
+                "evidence_fingerprint": None,
+            },
             "blockers": [safe_blocker],
             "trial_fingerprint": None,
         },
@@ -371,6 +412,144 @@ def _schema_blockers(**payloads: dict[str, Any]) -> list[str]:
         if payloads[name].get("schema_version") != expected:
             blockers.append(f"{name}_contract_invalid")
     return blockers
+
+
+def _execution_evidence_contract_blockers(value: dict[str, Any]) -> list[str]:
+    expected_schema = "karkinos.daily_candidate_execution_evidence_summary.v1"
+    core = dict(value)
+    evidence_fingerprint = core.pop("evidence_fingerprint", None)
+    expected_core_fields = {
+        "schema_version",
+        "status",
+        "current_execution_closure_fingerprint",
+        "population_scope",
+        "production_order_count",
+        "clear_order_count",
+        "reconciled_actual_order_count",
+        "reconciled_no_fill_order_count",
+        "comparison_coverage_complete",
+        "blockers",
+        "actual_orders_attributed_to_trial",
+        "actual_orders_count_toward_simulated_trial_threshold",
+        "persisted_evidence_only",
+        "provider_contact_performed",
+        "manual_review_required",
+        "authorizes_execution",
+        "does_not_submit_broker_order",
+        "does_not_mutate_oms",
+        "does_not_mutate_production_ledger",
+        "does_not_change_capital_authority",
+    }
+    integer_fields = (
+        "production_order_count",
+        "clear_order_count",
+        "reconciled_actual_order_count",
+        "reconciled_no_fill_order_count",
+    )
+    if (
+        set(core) != expected_core_fields
+        or core.get("schema_version") != expected_schema
+        or core.get("status") not in {"blocked", "not_required", "pass"}
+        or not _matches_fingerprint(core, evidence_fingerprint)
+        or core.get("population_scope") != "all_current_non_paper_shadow_oms_orders"
+        or any(not _is_nonnegative_int(core.get(field)) for field in integer_fields)
+        or not isinstance(core.get("comparison_coverage_complete"), bool)
+        or not isinstance(core.get("blockers"), list)
+        or not all(isinstance(item, str) and item for item in core.get("blockers", []))
+        or core.get("actual_orders_attributed_to_trial") is not False
+        or core.get("actual_orders_count_toward_simulated_trial_threshold") is not False
+        or core.get("persisted_evidence_only") is not True
+        or core.get("provider_contact_performed") is not False
+        or not isinstance(core.get("manual_review_required"), bool)
+        or core.get("authorizes_execution") is not False
+        or core.get("does_not_submit_broker_order") is not True
+        or core.get("does_not_mutate_oms") is not True
+        or core.get("does_not_mutate_production_ledger") is not True
+        or core.get("does_not_change_capital_authority") is not True
+    ):
+        return ["trial_current_execution_evidence_contract_invalid"]
+    production_count = core["production_order_count"]
+    clear_count = core["clear_order_count"]
+    accounted_count = (
+        core["reconciled_actual_order_count"] + core["reconciled_no_fill_order_count"]
+    )
+    if clear_count > production_count or accounted_count > clear_count:
+        return ["trial_current_execution_evidence_contract_invalid"]
+    if core["comparison_coverage_complete"] is True and (
+        core["status"] not in {"not_required", "pass"}
+        or core["blockers"]
+        or not _is_sha256(core.get("current_execution_closure_fingerprint"))
+        or production_count != clear_count
+        or clear_count != accounted_count
+        or core["manual_review_required"] is not False
+    ):
+        return ["trial_current_execution_evidence_contract_invalid"]
+    if core["comparison_coverage_complete"] is False and (
+        core["status"] != "blocked"
+        or core["manual_review_required"] is not True
+        or not core["blockers"]
+    ):
+        return ["trial_current_execution_evidence_contract_invalid"]
+    if core["status"] == "not_required" and production_count != 0:
+        return ["trial_current_execution_evidence_contract_invalid"]
+    if core["status"] == "pass" and production_count == 0:
+        return ["trial_current_execution_evidence_contract_invalid"]
+    return []
+
+
+def _project_execution_evidence(value: dict[str, Any]) -> dict[str, Any]:
+    if _execution_evidence_contract_blockers(value):
+        return {
+            "schema_version": (
+                "karkinos.daily_candidate_execution_evidence_summary.v1"
+            ),
+            "status": "blocked",
+            "current_execution_closure_fingerprint": None,
+            "population_scope": "all_current_non_paper_shadow_oms_orders",
+            "production_order_count": 0,
+            "clear_order_count": 0,
+            "reconciled_actual_order_count": 0,
+            "reconciled_no_fill_order_count": 0,
+            "comparison_coverage_complete": False,
+            "blockers": ["trial_current_execution_evidence_contract_invalid"],
+            "actual_orders_attributed_to_trial": False,
+            "actual_orders_count_toward_simulated_trial_threshold": False,
+            "persisted_evidence_only": True,
+            "provider_contact_performed": False,
+            "manual_review_required": True,
+            "authorizes_execution": False,
+            "does_not_submit_broker_order": True,
+            "does_not_mutate_oms": True,
+            "does_not_mutate_production_ledger": True,
+            "does_not_change_capital_authority": True,
+            "evidence_fingerprint": None,
+        }
+    return {
+        key: value.get(key)
+        for key in (
+            "schema_version",
+            "status",
+            "current_execution_closure_fingerprint",
+            "population_scope",
+            "production_order_count",
+            "clear_order_count",
+            "reconciled_actual_order_count",
+            "reconciled_no_fill_order_count",
+            "comparison_coverage_complete",
+            "blockers",
+            "actual_orders_attributed_to_trial",
+            "actual_orders_count_toward_simulated_trial_threshold",
+            "persisted_evidence_only",
+            "provider_contact_performed",
+            "manual_review_required",
+            "authorizes_execution",
+            "does_not_submit_broker_order",
+            "does_not_mutate_oms",
+            "does_not_mutate_production_ledger",
+            "does_not_change_capital_authority",
+            "evidence_fingerprint",
+        )
+    }
 
 
 def _operator_checklist_contract_blockers(
@@ -680,6 +859,26 @@ def _nonnegative_int(value: Any) -> int:
     except (TypeError, ValueError):
         return 0
     return max(parsed, 0)
+
+
+def _is_nonnegative_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _is_sha256(value: Any) -> bool:
+    normalized = str(value or "")
+    return len(normalized) == 64 and all(
+        character in "0123456789abcdef" for character in normalized
+    )
+
+
+def _matches_fingerprint(value: dict[str, Any], expected: Any) -> bool:
+    if not _is_sha256(expected):
+        return False
+    try:
+        return expected == _fingerprint(value)
+    except (TypeError, ValueError):
+        return False
 
 
 def _safe_fingerprint(value: Any) -> str | None:

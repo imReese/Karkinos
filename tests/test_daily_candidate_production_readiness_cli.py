@@ -4,12 +4,36 @@ import io
 import json
 
 from server import daily_candidate_production_readiness_cli as readiness_cli
+from server.ai_runtime.contracts import content_fingerprint
 
 main = readiness_cli.main
 
 
 def test_live_readiness_cli_reads_only_expected_loopback_endpoints() -> None:
     urls = []
+    execution_evidence = {
+        "schema_version": ("karkinos.daily_candidate_execution_evidence_summary.v1"),
+        "status": "not_required",
+        "current_execution_closure_fingerprint": "c" * 64,
+        "population_scope": "all_current_non_paper_shadow_oms_orders",
+        "production_order_count": 0,
+        "clear_order_count": 0,
+        "reconciled_actual_order_count": 0,
+        "reconciled_no_fill_order_count": 0,
+        "comparison_coverage_complete": True,
+        "blockers": [],
+        "actual_orders_attributed_to_trial": False,
+        "actual_orders_count_toward_simulated_trial_threshold": False,
+        "persisted_evidence_only": True,
+        "provider_contact_performed": False,
+        "manual_review_required": False,
+        "authorizes_execution": False,
+        "does_not_submit_broker_order": True,
+        "does_not_mutate_oms": True,
+        "does_not_mutate_production_ledger": True,
+        "does_not_change_capital_authority": True,
+    }
+    execution_evidence["evidence_fingerprint"] = content_fingerprint(execution_evidence)
 
     def fetch(url: str, timeout: float) -> dict:
         urls.append((url, timeout))
@@ -75,7 +99,7 @@ def test_live_readiness_cli_reads_only_expected_loopback_endpoints() -> None:
                     "changes_capital_authority": False,
                 },
                 "daily_candidate_trial": {
-                    "schema_version": "karkinos.daily_candidate_trial.v1",
+                    "schema_version": "karkinos.daily_candidate_trial.v2",
                     "qualifying_trading_day_count": 0,
                     "target_qualifying_trading_days": 20,
                     "simulated_order_count": 0,
@@ -84,6 +108,7 @@ def test_live_readiness_cli_reads_only_expected_loopback_endpoints() -> None:
                     "remaining_simulated_orders": 50,
                     "eligible_for_human_go_no_go_review": False,
                     "latest_review": None,
+                    "current_execution_evidence": execution_evidence,
                     "background_schedule": {
                         "schema_version": (
                             "karkinos.daily_candidate_background_schedule.v3"

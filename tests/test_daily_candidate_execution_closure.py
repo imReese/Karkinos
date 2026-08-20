@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from server.ai_runtime.contracts import content_fingerprint
 from server.db import AppDatabase
 from server.services.daily_candidate_execution_closure import (
     build_daily_candidate_execution_closure,
+    project_daily_candidate_execution_evidence_summary,
     verify_daily_candidate_execution_closure,
 )
 from server.services.execution_reconciliation import ExecutionReconciliationService
@@ -116,3 +118,43 @@ def test_execution_closure_replays_actual_comparison_from_current_sources(
         "plan_paper_actual_current_source_not_pass" in result["orders"][0]["blockers"]
     )
     assert "plan_paper_actual_current_source_changed" in result["orders"][0]["blockers"]
+
+
+def test_execution_summary_counts_actual_without_trial_credit() -> None:
+    closure = {
+        "schema_version": "karkinos.daily_candidate_execution_closure.v1",
+        "status": "pass",
+        "production_order_count": 1,
+        "clear_order_count": 1,
+        "scan_truncated": False,
+        "orders": [
+            {
+                "order_ref": "a" * 16,
+                "oms_status": "reconciled",
+                "reconciliation_item_status": "clear",
+                "plan_paper_actual_status": "pass",
+                "plan_paper_actual_fingerprint": "b" * 64,
+                "status": "pass",
+                "blockers": [],
+            }
+        ],
+        "blockers": [],
+        "persisted_evidence_only": True,
+        "provider_contact_performed": False,
+        "manual_review_required": False,
+        "authorizes_execution": False,
+        "does_not_submit_broker_order": True,
+        "does_not_mutate_oms": True,
+        "does_not_mutate_production_ledger": True,
+        "does_not_change_capital_authority": True,
+    }
+    closure["evidence_fingerprint"] = content_fingerprint(closure)
+
+    summary = project_daily_candidate_execution_evidence_summary(closure)
+
+    assert summary["status"] == "pass"
+    assert summary["reconciled_actual_order_count"] == 1
+    assert summary["reconciled_no_fill_order_count"] == 0
+    assert summary["comparison_coverage_complete"] is True
+    assert summary["actual_orders_attributed_to_trial"] is False
+    assert summary["actual_orders_count_toward_simulated_trial_threshold"] is False
