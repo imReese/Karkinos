@@ -3,7 +3,9 @@ from __future__ import annotations
 import io
 import json
 
-from server.daily_candidate_production_readiness_cli import main
+from server import daily_candidate_production_readiness_cli as readiness_cli
+
+main = readiness_cli.main
 
 
 def test_live_readiness_cli_reads_only_expected_loopback_endpoints() -> None:
@@ -82,7 +84,7 @@ def test_live_readiness_cli_reads_only_expected_loopback_endpoints() -> None:
 
     output = io.StringIO()
     exit_code = main(
-        ["--base-url", "http://localhost:8000", "--timeout", "1"],
+        ["--base-url", "http://localhost:8000"],
         fetch_json=fetch,
         stdout=output,
     )
@@ -90,10 +92,10 @@ def test_live_readiness_cli_reads_only_expected_loopback_endpoints() -> None:
 
     assert exit_code == 2
     assert urls == [
-        ("http://localhost:8000/api/automation/cockpit", 1.0),
+        ("http://localhost:8000/api/automation/cockpit", 10.0),
         (
             "http://localhost:8000/api/ai/strategy-research/shadow-automation",
-            1.0,
+            10.0,
         ),
     ]
     assert payload["status"] == "no_action_not_production_ready"
@@ -120,3 +122,36 @@ def test_live_readiness_cli_rejects_external_hosts_without_contact() -> None:
     assert called is False
     assert payload["source_contract_blockers"] == ["local_karkinos_service_unreachable"]
     assert payload["provider_contact_performed"] is False
+
+
+def test_live_readiness_fetch_disables_environment_proxies(monkeypatch) -> None:
+    captured = {}
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args) -> None:
+            return None
+
+        def read(self, _limit: int) -> bytes:
+            return b'{"status":"ok"}'
+
+    class Opener:
+        def open(self, request, *, timeout: float):
+            captured["request"] = request
+            captured["timeout"] = timeout
+            return Response()
+
+    def build_opener(handler):
+        captured["handler"] = handler
+        return Opener()
+
+    monkeypatch.setattr(readiness_cli, "build_opener", build_opener)
+
+    assert readiness_cli._fetch_json("http://127.0.0.1:8000/api/health", 10) == {
+        "status": "ok"
+    }
+    assert captured["handler"].proxies == {}
+    assert captured["request"].full_url == "http://127.0.0.1:8000/api/health"
+    assert captured["timeout"] == 10

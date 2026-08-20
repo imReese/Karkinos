@@ -9,7 +9,7 @@ from collections.abc import Callable, Sequence
 from typing import Any, TextIO
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, urlunsplit
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener
 
 from server.services.daily_candidate_production_readiness import (
     project_daily_candidate_production_readiness,
@@ -75,7 +75,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--timeout",
         type=float,
-        default=3.0,
+        default=10.0,
         help="Per-request timeout in seconds, greater than 0 and at most 10.",
     )
     parser.add_argument("--pretty", action="store_true", help="Pretty-print JSON.")
@@ -105,7 +105,11 @@ def _fetch_json(url: str, timeout: float) -> dict[str, Any]:
     if timeout <= 0 or timeout > 10:
         raise ValueError("timeout must be greater than 0 and at most 10")
     request = Request(url, headers={"Accept": "application/json"}, method="GET")
-    with urlopen(request, timeout=timeout) as response:  # noqa: S310 - loopback only
+    opener = build_opener(ProxyHandler({}))
+    with opener.open(  # noqa: S310 - validated loopback URL with proxies disabled
+        request,
+        timeout=timeout,
+    ) as response:
         body = response.read(_MAX_RESPONSE_BYTES + 1)
     if len(body) > _MAX_RESPONSE_BYTES:
         raise ValueError("local API response exceeds size limit")
