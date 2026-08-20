@@ -668,7 +668,7 @@ function installDecisionFetchMock({
       trial_fingerprint: 'a'.repeat(64),
       latest_review: null,
       background_schedule: {
-        schema_version: 'karkinos.daily_candidate_background_schedule.v2',
+        schema_version: 'karkinos.daily_candidate_background_schedule.v3',
         status: 'due',
         evaluated_at: '2026-06-13T09:40:00+08:00',
         timezone: 'Asia/Shanghai',

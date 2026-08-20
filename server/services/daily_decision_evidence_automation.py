@@ -28,8 +28,12 @@ DAILY_DECISION_EVIDENCE_AUTOMATION_SCHEMA_VERSION = (
 DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE = "daily_decision_evidence"
 DAILY_DECISION_EVIDENCE_AUTOMATION_TASK_NAME = "daily-decision-evidence-automation"
 DAILY_CANDIDATE_BACKGROUND_ATTEMPT_RUN_TYPE = "daily_candidate_background_attempt"
+DAILY_CANDIDATE_PREPARATION_CHECK_RUN_TYPE = "daily_candidate_preparation_check"
 DAILY_CANDIDATE_BACKGROUND_SCHEDULE_SCHEMA_VERSION = (
-    "karkinos.daily_candidate_background_schedule.v2"
+    "karkinos.daily_candidate_background_schedule.v3"
+)
+DAILY_CANDIDATE_PREPARATION_CHECK_SCHEMA_VERSION = (
+    "karkinos.daily_candidate_preparation_check.v1"
 )
 DAILY_CANDIDATE_NEXT_REVIEWED_WINDOW_SCHEMA_VERSION = (
     "karkinos.daily_candidate_next_reviewed_window.v1"
@@ -39,6 +43,7 @@ DAILY_CANDIDATE_DECISION_WINDOW_SCHEMA_VERSION = (
 )
 DAILY_CANDIDATE_DECISION_WINDOW_START_MINUTE = 9 * 60 + 35
 DAILY_CANDIDATE_DECISION_WINDOW_END_MINUTE = 9 * 60 + 45
+DAILY_CANDIDATE_PREPARATION_WINDOW_START_MINUTE = 8 * 60 + 45
 DAILY_CANDIDATE_MAX_QUOTE_AGE_SECONDS = 300
 DAILY_CANDIDATE_NOTIFICATION_TIMEOUT_SECONDS = 10
 DAILY_CANDIDATE_INPUT_IDENTITY_SCHEMA_VERSION = (
@@ -629,6 +634,11 @@ async def run_daily_decision_evidence_automation_loop(
                 db=state.db,
                 now=current_time(),
             )
+            if schedule["preparation_check_due"]:
+                await _run_claimed_daily_candidate_preparation_check(
+                    state=state,
+                    schedule=schedule,
+                )
             if schedule["due"]:
                 await _run_claimed_background_attempt(
                     db=state.db,
@@ -774,6 +784,27 @@ def project_daily_candidate_background_schedule(
         )
 
     minute_of_day = shanghai_now.hour * 60 + shanghai_now.minute
+    preparation_checks = (
+        run_reader(
+            run_type=DAILY_CANDIDATE_PREPARATION_CHECK_RUN_TYPE,
+            run_date=run_date,
+            limit=1,
+            offset=0,
+        )
+        if callable(run_reader)
+        else []
+    )
+    preparation_check_existing_run_id = (
+        str(preparation_checks[0].get("run_id") or "") or None
+        if preparation_checks
+        else None
+    )
+    preparation_check_due = bool(
+        preparation_check_existing_run_id is None
+        and DAILY_CANDIDATE_PREPARATION_WINDOW_START_MINUTE
+        <= minute_of_day
+        < DAILY_CANDIDATE_DECISION_WINDOW_START_MINUTE
+    )
     if minute_of_day < DAILY_CANDIDATE_DECISION_WINDOW_START_MINUTE:
         status = "waiting_for_decision_window"
         blockers: list[str] = []
@@ -796,6 +827,8 @@ def project_daily_candidate_background_schedule(
         due=status == "due",
         blockers=blockers,
         next_reviewed_window=next_reviewed_window,
+        preparation_check_due=preparation_check_due,
+        preparation_check_existing_run_id=preparation_check_existing_run_id,
     )
 
 
@@ -808,6 +841,8 @@ def _background_schedule_result(
     blockers: list[str],
     existing_run_id: str | None = None,
     next_reviewed_window: dict[str, Any] | None = None,
+    preparation_check_due: bool = False,
+    preparation_check_existing_run_id: str | None = None,
 ) -> dict[str, Any]:
     return {
         "schema_version": DAILY_CANDIDATE_BACKGROUND_SCHEDULE_SCHEMA_VERSION,
@@ -817,8 +852,12 @@ def _background_schedule_result(
         "run_date": run_date,
         "decision_window_start": "09:35",
         "decision_window_end": "09:45",
+        "preparation_window_start": "08:45",
+        "preparation_window_end": "09:35",
         "due": due,
         "existing_run_id": existing_run_id,
+        "preparation_check_due": preparation_check_due,
+        "preparation_check_existing_run_id": preparation_check_existing_run_id,
         "blockers": list(dict.fromkeys(blockers)),
         "next_reviewed_window": (
             dict(next_reviewed_window)
@@ -827,9 +866,14 @@ def _background_schedule_result(
                 "next_verified_trading_window_source_unavailable"
             )
         ),
-        "background_writes_enabled": due,
+        "background_attempt_writes_enabled": due,
+        "preparation_check_writes_enabled": preparation_check_due,
+        "background_writes_enabled": due or preparation_check_due,
+        "preparation_check_changes_attempt_eligibility": False,
+        "preparation_check_permits_retry_or_backfill": False,
         "broker_submission_enabled": False,
         "authorizes_execution": False,
+        "changes_capital_authority": False,
     }
 
 
@@ -939,6 +983,539 @@ def _unavailable_next_reviewed_window(blocker: str) -> dict[str, Any]:
         "broker_submission_enabled": False,
         "authorizes_execution": False,
         "changes_capital_authority": False,
+    }
+
+
+def build_daily_candidate_preparation_check(
+    state: Any,
+    *,
+    run_date: str,
+) -> dict[str, Any]:
+    """Project durable pre-window gates from persisted facts only."""
+
+    from server.account_truth_gate import (
+        ACCOUNT_TRUTH_PROMOTION_EVIDENCE_SCHEMA_VERSION,
+        build_latest_account_truth_promotion_evidence,
+    )
+    from server.services.daily_candidate_execution_closure import (
+        verify_daily_candidate_execution_closure,
+    )
+    from server.services.reviewed_fee_schedule import (
+        build_reviewed_fee_schedule_review_status,
+    )
+    from server.services.strategy_promotion_pipeline import (
+        StrategyPromotionPipeline,
+        resolve_strategy_order_generation_gate,
+    )
+
+    automation_status = AutomationControlService(
+        db=state.db,
+        trading_controls=getattr(state, "trading_controls", None),
+    ).get_status()
+    account_truth = build_latest_account_truth_promotion_evidence(state)
+    reviewed_fees = build_reviewed_fee_schedule_review_status(
+        state,
+        as_of_date=run_date,
+    )
+    execution_closure = build_daily_candidate_execution_closure(state.db)
+
+    policy_blockers = []
+    if not _policy_allows_paper_shadow(automation_status):
+        policy_blockers.append(
+            "daily_candidate_kill_switch_enabled"
+            if automation_status.get("kill_switch_enabled") is True
+            else "daily_candidate_safe_automation_policy_blocked"
+        )
+
+    account_truth_blockers = [
+        str(item) for item in account_truth.get("blockers") or [] if str(item)
+    ]
+    if account_truth.get("schema_version") != (
+        ACCOUNT_TRUTH_PROMOTION_EVIDENCE_SCHEMA_VERSION
+    ):
+        account_truth_blockers.append("account_truth_promotion_contract_invalid")
+    if account_truth.get("status") != "clear":
+        account_truth_blockers.append("account_truth_promotion_not_clear")
+    if account_truth.get("gate_status") != "pass":
+        account_truth_blockers.append("account_truth_gate_not_pass")
+    if account_truth.get("data_freshness_status") != "fresh":
+        account_truth_blockers.append("account_truth_not_fresh")
+    if account_truth.get("reconciliation_status") != "pass":
+        account_truth_blockers.append("account_truth_reconciliation_not_pass")
+    captured_at = _aware_datetime(account_truth.get("captured_at"))
+    if _shanghai_date(captured_at) != run_date:
+        account_truth_blockers.append("account_truth_not_captured_on_market_date")
+    if not _is_sha256(account_truth.get("source_fingerprint")):
+        account_truth_blockers.append("account_truth_source_fingerprint_invalid")
+    if account_truth.get("does_not_mutate_production_ledger") is not True:
+        account_truth_blockers.append("account_truth_read_boundary_invalid")
+    if account_truth.get("does_not_issue_execution_authority") is not True:
+        account_truth_blockers.append("account_truth_authority_boundary_invalid")
+    if account_truth.get("broker_submission_enabled") is not False:
+        account_truth_blockers.append("account_truth_broker_boundary_invalid")
+
+    fee_blockers = [
+        str(item) for item in reviewed_fees.get("blockers") or [] if str(item)
+    ]
+    fee_review = _object_dict(reviewed_fees.get("review"))
+    fee_review_fingerprint = str(fee_review.get("review_fingerprint") or "")
+    if reviewed_fees.get("status") != "active":
+        fee_blockers.append("reviewed_fee_schedule_not_active")
+    if not _is_sha256(fee_review_fingerprint):
+        fee_blockers.append("reviewed_fee_schedule_review_fingerprint_invalid")
+    expected_fee_boundaries = {
+        "persisted_facts_only": True,
+        "provider_contacted": False,
+        "database_writes_performed": False,
+        "authorizes_execution": False,
+        "changes_capital_authority": False,
+    }
+    for field, expected in expected_fee_boundaries.items():
+        if reviewed_fees.get(field) is not expected:
+            fee_blockers.append(f"reviewed_fee_schedule_{field}_invalid")
+
+    strategy_states = sorted(
+        StrategyPromotionPipeline(db=state.db).list_states(),
+        key=lambda item: str(item.get("strategy_id") or ""),
+    )
+    strategy_blockers: list[str] = []
+    passing_strategy_count = 0
+    if len(strategy_states) > 100:
+        strategy_blockers.append("strategy_promotion_state_scan_truncated")
+    for promotion_state in strategy_states[:100]:
+        strategy_id = str(promotion_state.get("strategy_id") or "")
+        if not strategy_id:
+            strategy_blockers.append("strategy_promotion_identity_missing")
+            continue
+        try:
+            gate, gate_blockers = resolve_strategy_order_generation_gate(
+                state.db,
+                strategy_id,
+                as_of_date=run_date,
+            )
+        except Exception:  # noqa: BLE001 - projection failure remains fail-closed
+            strategy_blockers.append("strategy_promotion_projection_failed_closed")
+            continue
+        boundaries_valid = bool(
+            gate.get("persisted_facts_only") is True
+            and gate.get("provider_contact_performed") is False
+            and gate.get("does_not_create_order") is True
+            and gate.get("does_not_authorize_execution") is True
+            and gate.get("does_not_change_capital_authority") is True
+            and gate.get("broker_submission_enabled") is False
+        )
+        if gate.get("status") == "pass" and not gate_blockers and boundaries_valid:
+            passing_strategy_count += 1
+            continue
+        strategy_blockers.extend(str(item) for item in gate_blockers if str(item))
+        if not boundaries_valid:
+            strategy_blockers.append("strategy_order_generation_boundary_invalid")
+    if not strategy_states:
+        strategy_blockers.append("strategy_promotion_state_missing")
+    if passing_strategy_count == 0:
+        strategy_blockers.append("strategy_paper_shadow_promotion_not_ready")
+
+    closure_blockers = [
+        str(item) for item in execution_closure.get("blockers") or [] if str(item)
+    ]
+    if not verify_daily_candidate_execution_closure(execution_closure):
+        closure_blockers.append("execution_closure_contract_invalid")
+    if execution_closure.get("status") not in {"pass", "not_required"}:
+        closure_blockers.append("prior_execution_not_reconciled")
+
+    gates = [
+        _preflight_gate("automation_policy", policy_blockers),
+        _preflight_gate("account_truth", account_truth_blockers),
+        _preflight_gate("reviewed_fees", fee_blockers),
+        _preflight_gate("strategy", strategy_blockers),
+        _preflight_gate("execution_closure", closure_blockers),
+    ]
+    blockers = list(
+        dict.fromkeys(
+            str(blocker)
+            for gate in gates
+            for blocker in gate.get("blockers") or []
+            if str(blocker)
+        )
+    )
+    actions = {
+        "automation_policy": "restore_paper_shadow_only_automation_policy",
+        "account_truth": "complete_current_account_truth_evidence_review",
+        "reviewed_fees": "review_account_specific_fee_schedule",
+        "strategy": "promote_evidence_bound_strategy_for_paper_shadow",
+        "execution_closure": "complete_plan_paper_actual_reconciliation",
+    }
+    first_blocked_gate = next(
+        (gate for gate in gates if gate.get("status") != "pass"),
+        None,
+    )
+    first_blocking_gate = (
+        str(first_blocked_gate.get("gate") or "") or None
+        if first_blocked_gate
+        else None
+    )
+    status = "blocked" if blockers else "ready_for_window_time_evidence"
+    core = {
+        "schema_version": DAILY_CANDIDATE_PREPARATION_CHECK_SCHEMA_VERSION,
+        "status": status,
+        "run_date": run_date,
+        "gates": gates,
+        "blockers": blockers[:100],
+        "blocker_count": len(blockers),
+        "blockers_truncated": len(blockers) > 100,
+        "first_blocking_gate": first_blocking_gate,
+        "first_safe_action": (
+            actions.get(first_blocking_gate)
+            if first_blocking_gate
+            else "persist_current_market_quotes_and_build_reviewed_window_plan"
+        ),
+        "strategy_state_count": len(strategy_states),
+        "passing_strategy_count": passing_strategy_count,
+        "reviewed_fee_schedule_fingerprint": (
+            fee_review_fingerprint if _is_sha256(fee_review_fingerprint) else None
+        ),
+        "execution_closure_fingerprint": execution_closure.get("evidence_fingerprint"),
+        "deferred_window_time_gates": [
+            "market_data",
+            "decision_plan",
+            "runtime_window",
+        ],
+        "permits_risk_or_paper_shadow": False,
+        "changes_attempt_eligibility": False,
+        "permits_retry_or_backfill": False,
+        "qualifies_forward_trial": False,
+        "provider_contact_performed": False,
+        "database_writes_performed": False,
+        "manual_confirmation_required": True,
+        "does_not_create_oms_order": True,
+        "does_not_mutate_production_ledger": True,
+        "broker_submission_enabled": False,
+        "authorizes_execution": False,
+        "changes_capital_authority": False,
+        "profitability_claim": "not_established",
+    }
+    return {**core, "preparation_fingerprint": _fingerprint_json(core)}
+
+
+def verify_daily_candidate_preparation_check(
+    value: Any,
+    *,
+    run_date: str,
+) -> bool:
+    """Verify the privacy-minimized preparation contract deterministically."""
+
+    if not isinstance(value, dict):
+        return False
+    core = dict(value)
+    fingerprint = str(core.pop("preparation_fingerprint", "") or "")
+    gates = core.get("gates")
+    blockers = core.get("blockers")
+    expected_boundaries = {
+        "permits_risk_or_paper_shadow": False,
+        "changes_attempt_eligibility": False,
+        "permits_retry_or_backfill": False,
+        "qualifies_forward_trial": False,
+        "provider_contact_performed": False,
+        "database_writes_performed": False,
+        "manual_confirmation_required": True,
+        "does_not_create_oms_order": True,
+        "does_not_mutate_production_ledger": True,
+        "broker_submission_enabled": False,
+        "authorizes_execution": False,
+        "changes_capital_authority": False,
+    }
+    if (
+        core.get("schema_version") != DAILY_CANDIDATE_PREPARATION_CHECK_SCHEMA_VERSION
+        or core.get("status") not in {"blocked", "ready_for_window_time_evidence"}
+        or core.get("run_date") != run_date
+        or not _is_sha256(fingerprint)
+        or fingerprint != _fingerprint_json(core)
+        or not isinstance(gates, list)
+        or not isinstance(blockers, list)
+        or core.get("profitability_claim") != "not_established"
+        or any(
+            core.get(field) is not expected
+            for field, expected in expected_boundaries.items()
+        )
+    ):
+        return False
+    gate_names = [str(_object_dict(gate).get("gate") or "") for gate in gates]
+    if gate_names != [
+        "automation_policy",
+        "account_truth",
+        "reviewed_fees",
+        "strategy",
+        "execution_closure",
+    ]:
+        return False
+    blocked_gates = [
+        gate
+        for gate in gates
+        if _object_dict(gate).get("status") != "pass"
+        or _object_dict(gate).get("blockers")
+    ]
+    first_blocking_gate = (
+        str(_object_dict(blocked_gates[0]).get("gate") or "") or None
+        if blocked_gates
+        else None
+    )
+    blocker_count = _count(core.get("blocker_count"))
+    if (
+        core.get("first_blocking_gate") != first_blocking_gate
+        or (core.get("status") == "blocked") != bool(blocked_gates)
+        or len(blockers) != min(blocker_count, 100)
+        or core.get("blockers_truncated") is not (blocker_count > 100)
+    ):
+        return False
+    return True
+
+
+async def _run_claimed_daily_candidate_preparation_check(
+    *,
+    state: Any,
+    schedule: dict[str, Any],
+) -> None:
+    """Claim and persist one privacy-minimized pre-window reminder."""
+
+    run_date = str(schedule.get("run_date") or "")
+    claimed_at = str(schedule.get("evaluated_at") or "")
+    claim_writer = getattr(state.db, "claim_automation_run_once_sync", None)
+    if not run_date or not claimed_at or not callable(claim_writer):
+        raise RuntimeError("daily candidate preparation claim unavailable")
+    claim_payload = {
+        "schema_version": DAILY_CANDIDATE_PREPARATION_CHECK_SCHEMA_VERSION,
+        "status": "claimed",
+        "run_date": run_date,
+        "preparation": None,
+        "notification": None,
+        "operator_alert": None,
+        "error_type": None,
+        "provider_contact_performed": False,
+        "does_not_create_oms_order": True,
+        "does_not_mutate_production_ledger": True,
+        "broker_submission_enabled": False,
+        "authorizes_execution": False,
+        "changes_capital_authority": False,
+    }
+    claim = claim_writer(
+        run_id=f"automation:daily-candidate-preparation:{run_date}",
+        run_type=DAILY_CANDIDATE_PREPARATION_CHECK_RUN_TYPE,
+        run_date=run_date,
+        claimed_at=claimed_at,
+        execution_mode="read_only_preparation",
+        payload=claim_payload,
+    )
+    if claim.get("claimed") is not True:
+        return
+    run = _object_dict(claim.get("run"))
+    try:
+        preparation = build_daily_candidate_preparation_check(
+            state,
+            run_date=run_date,
+        )
+        if not verify_daily_candidate_preparation_check(
+            preparation,
+            run_date=run_date,
+        ):
+            raise ValueError("daily candidate preparation contract invalid")
+        notification = await _send_daily_candidate_preparation_notification(
+            notifier=getattr(state, "notifier", None),
+            preparation=preparation,
+        )
+        operator_alert = _record_daily_candidate_preparation_alert(
+            db=state.db,
+            run_date=run_date,
+            preparation=preparation,
+            error_type=None,
+        )
+        status = str(preparation.get("status") or "failed_closed")
+        state.db.upsert_automation_run_sync(
+            {
+                **run,
+                "status": status,
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+                "source_ref": str(preparation.get("preparation_fingerprint") or "")
+                or None,
+                "payload": {
+                    **claim_payload,
+                    "status": status,
+                    "preparation": preparation,
+                    "notification": notification,
+                    "operator_alert": operator_alert,
+                },
+            }
+        )
+    except asyncio.CancelledError:
+        operator_alert = _record_daily_candidate_preparation_alert(
+            db=state.db,
+            run_date=run_date,
+            preparation=None,
+            error_type="CancelledError",
+        )
+        state.db.upsert_automation_run_sync(
+            {
+                **run,
+                "status": "failed_closed",
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+                "source_ref": None,
+                "payload": {
+                    **claim_payload,
+                    "status": "failed_closed",
+                    "error_type": "CancelledError",
+                    "operator_alert": operator_alert,
+                },
+            }
+        )
+        raise
+    except Exception as exc:
+        operator_alert = _record_daily_candidate_preparation_alert(
+            db=state.db,
+            run_date=run_date,
+            preparation=None,
+            error_type=type(exc).__name__,
+        )
+        state.db.upsert_automation_run_sync(
+            {
+                **run,
+                "status": "failed_closed",
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+                "source_ref": None,
+                "payload": {
+                    **claim_payload,
+                    "status": "failed_closed",
+                    "error_type": type(exc).__name__,
+                    "operator_alert": operator_alert,
+                },
+            }
+        )
+        raise
+
+
+async def _send_daily_candidate_preparation_notification(
+    *,
+    notifier: Any,
+    preparation: dict[str, Any],
+) -> dict[str, Any]:
+    sender = getattr(notifier, "send", None)
+    if not callable(sender):
+        return {"status": "notifier_unavailable", "sent": False}
+    run_date = str(preparation.get("run_date") or "unknown")
+    blockers = [str(item) for item in preparation.get("blockers") or [] if str(item)]
+    if blockers:
+        lines = "\n".join(f"- {item}" for item in blockers[:8])
+        if len(blockers) > 8:
+            lines += f"\n- 其余 {len(blockers) - 8} 项请在 Web 中复核"
+        title = f"Karkinos 盘前准备阻断: {run_date}"
+        message = (
+            "盘前持久化证据检查仍有阻断项。\n"
+            f"第一阻断门: {preparation.get('first_blocking_gate') or 'unknown'}\n"
+            f"下一安全动作: {preparation.get('first_safe_action') or 'review'}\n"
+            f"阻断项:\n{lines}\n"
+            "本检查不会联系行情或券商、不会创建订单，也不会占用今日正式尝试。"
+        )
+    else:
+        title = f"Karkinos 盘前准备完成: {run_date}"
+        message = (
+            "盘前持久化证据门已通过。仍需在 09:35-09:45 复核窗口内持久化"
+            "当前行情并生成当日决策计划；本检查不代表可交易或可盈利。"
+        )
+    try:
+        await asyncio.wait_for(
+            asyncio.to_thread(sender, title=title, message=message),
+            timeout=DAILY_CANDIDATE_NOTIFICATION_TIMEOUT_SECONDS,
+        )
+    except Exception as exc:
+        logger.warning("Daily candidate preparation notification failed", exc_info=True)
+        return {
+            "status": "failed",
+            "sent": False,
+            "error_type": type(exc).__name__,
+        }
+    return {"status": "sent", "sent": True}
+
+
+def _record_daily_candidate_preparation_alert(
+    *,
+    db: Any,
+    run_date: str,
+    preparation: dict[str, Any] | None,
+    error_type: str | None,
+) -> dict[str, Any]:
+    writer = getattr(db, "upsert_automation_alert_sync", None)
+    if not callable(writer):
+        return {"status": "alert_store_unavailable", "recorded": False}
+    value = _object_dict(preparation)
+    blockers = [str(item) for item in value.get("blockers") or [] if str(item)]
+    failed_closed = error_type is not None
+    ready = value.get("status") == "ready_for_window_time_evidence"
+    if ready and not failed_closed:
+        return {
+            "status": "not_required",
+            "recorded": False,
+            "reason": "preparation_gates_ready",
+        }
+    if failed_closed:
+        severity = "critical"
+        title = "Daily candidate preparation failed closed"
+        detail = (
+            f"The {run_date} preparation check failed closed. No retry, order, "
+            "broker action, or capital change is permitted."
+        )
+    else:
+        severity = "warning"
+        title = "Daily candidate preparation requires review"
+        detail = (
+            f"The {run_date} preparation check found persisted blockers. Review "
+            "the first named gate before the decision window."
+        )
+    payload = {
+        "schema_version": "karkinos.daily_candidate_preparation_alert.v1",
+        "run_date": run_date,
+        "preparation_status": value.get("status") or "failed_closed",
+        "preparation_fingerprint": value.get("preparation_fingerprint"),
+        "first_blocking_gate": value.get("first_blocking_gate"),
+        "first_safe_action": value.get("first_safe_action"),
+        "blockers": blockers[:100],
+        "blocker_count": len(blockers),
+        "blockers_truncated": len(blockers) > 100,
+        "error_type": error_type,
+        "requires_manual_review": not ready,
+        "changes_attempt_eligibility": False,
+        "permits_retry_or_backfill": False,
+        "qualifies_forward_trial": False,
+        "provider_contact_performed": False,
+        "does_not_create_oms_order": True,
+        "does_not_mutate_production_ledger": True,
+        "broker_submission_enabled": False,
+        "authorizes_execution": False,
+        "changes_capital_authority": False,
+    }
+    try:
+        alert = writer(
+            alert_key=f"daily_candidate_preparation:{run_date}",
+            severity=severity,
+            category="daily_candidate_preparation",
+            title=title,
+            detail=detail,
+            source="daily_candidate_preparation_check",
+            source_ref=str(value.get("preparation_fingerprint") or "") or run_date,
+            payload=payload,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Daily candidate preparation alert persistence failed", exc_info=True
+        )
+        return {
+            "status": "alert_store_failed",
+            "recorded": False,
+            "error_type": type(exc).__name__,
+        }
+    return {
+        "status": "recorded",
+        "recorded": True,
+        "alert_id": alert.get("id"),
+        "alert_key": alert.get("alert_key"),
+        "severity": alert.get("severity"),
     }
 
 

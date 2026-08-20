@@ -96,7 +96,7 @@ fingerprint, frozen strategy replay, the exact paper/shadow result, and prior-
 execution closure, so a same-day repair or drift cannot overwrite the earlier
 record.
 
-`karkinos.daily_candidate_background_schedule.v2` also projects the current or
+`karkinos.daily_candidate_background_schedule.v3` also projects the current or
 next `karkinos.daily_candidate_next_reviewed_window.v1` from the same persisted,
 officially verified SSE calendar. The projection includes exact Shanghai start
 and end timestamps and remains read-only: it performs no provider contact or
@@ -106,6 +106,20 @@ next year is required, its separately persisted calendar must also be
 officially verified; otherwise the next window remains explicitly unavailable.
 Use this date only to prepare Account Truth, fees, strategy review, and market
 ingestion before the window.
+
+From 08:45 through 09:34 Asia/Shanghai, the owner-enabled monitor may atomically
+claim one `karkinos.daily_candidate_preparation_check.v1` record for the verified
+market date. The check reads only durable gates that should be ready before the
+decision window: safe paper/shadow policy, same-date Account Truth, the active
+account-specific fee review, a currently replay-valid human-promoted strategy,
+and prior plan → paper → actual closure. It deliberately defers current quotes,
+the final Decision/plan, and the runtime window. A blocked check persists and
+notifies only sanitized blocker codes and the first safe action; a passing check
+means only that window-time evidence can be prepared next. The claim is once per
+date, never retries or backfills, does not consume the formal daily attempt or
+forward-trial eligibility, and never contacts a provider or broker, runs risk or
+paper/shadow, creates an OMS order, mutates the ledger, changes capital authority,
+or establishes profitability.
 
 The claimed background attempt persists one privacy-minimized Operations alert
 for `no_action`, read-only ticket review, interruption, or fail-closed failure.
@@ -278,6 +292,7 @@ review.
 | Two input fingerprints on one market date | Trial date excluded | Review the drift and continue on a later clean date |
 | Stored daily input identity cannot be replayed | Trial date excluded | Preserve the record, investigate source drift or tampering, and continue on a later clean date |
 | Background alert or notification fails | Candidate result remains unchanged and no retry occurs | Inspect the attempt's sanitized `operator_alert` / `notification` status before the next window |
+| Pre-window preparation record is blocked, invalid, interrupted, or missing | Formal attempt remains untouched; no retry or backfill is granted | Review the sanitized first gate before a later clean window; never treat preparation as a trading result |
 | Background monitor is disabled, missing, completed, cancelled, or failed | No automatic attempt; runtime status fails closed | Keep the process stopped or restart only after explicit owner enablement, then verify `background_monitor_running=true` before the next window |
 | macOS LaunchAgent is unloaded or process liveness is unavailable | No durable automatic-monitor claim | Explicitly inspect or reinstall the exact user-level service; do not infer financial readiness from launchd state |
 | Background window passes without a record | `missed_decision_window`; no backfill | Prepare current evidence before the next verified trading-day window |
