@@ -21,7 +21,9 @@ capital authority. A candidate is not a promise of profit.
    to a complete `karkinos.strategy_advancement_gate.v2` artifact. The current
    order-generation gate must replay the persisted frozen dataset, prove the
    baseline/candidate manifests match, retain the reviewed comparison and human
-   approval fingerprints, and keep provider contact and live-like authority off.
+   approval fingerprints, rehash the exact verified daily selection and
+   content-addressed strategy backup bound at promotion, and keep provider
+   contact and live-like authority off.
 2. The sanitized Account Truth promotion evidence is `clear`, `pass`, fresh,
    ledger-covered, has zero unresolved mismatches, and binds current cash and
    position snapshots captured on the plan's Shanghai market date and no later
@@ -122,10 +124,36 @@ shown as a named `NO-ACTION` reason.
 The preflight also returns a read-only `operator_checklist` in dependency order:
 Account Truth, account-specific fees, and strategy review come before prior
 execution closure, current quotes, the Decision/plan, and the runtime window.
-Each step carries its exact blockers and completion mode, but performs no
+Each step carries its exact blockers, the
+`karkinos.daily_candidate_operator_evidence.v1` evidence contract, completion
+criteria, and review surface. Account Truth explicitly requires same-current-
+Shanghai-date cash and position snapshots, itemized
+`quantity/price/gross_amount/fee/tax/transfer_fee/net_amount`, reviewed source
+hash/window/scope/completeness metadata, latest-ledger-cutoff coverage, and zero
+unresolved cash/position/fee/cost-basis mismatches. Raw XLS rows and private
+account identifiers are not required to be stored, and an owner statement is
+not accepted as a financial fact. The strategy step requires five dependent
+sequential iterations and ten calls, not five parallel calls. Its saved policy
+must use `unbounded_daily`: Karkinos applies no daily aggregate token budget,
+while provider per-request/context limits and token-usage accounting remain.
+The checklist performs no
 repair, evidence write, strategy approval, ticket creation, execution grant, or
-capital change. When every gate passes, the checklist still points only to one
-canonical paper/shadow attempt.
+capital change. When every gate passes, it still points only to one canonical
+paper/shadow attempt.
+
+Run `uv run python scripts/audit_daily_candidate_production.py --pretty` from
+the repository root to verify the current machine rather than only the code
+manifest. The command accepts only an explicit loopback HTTP base URL and reads
+the live Automation Cockpit plus shadow-research status. It returns a sanitized,
+fingerprinted `karkinos.daily_candidate_production_readiness.v1` report with the
+current financial preflight, exact monitor liveness, five-sequential-iteration
+and unbounded-daily-token policy, and forward-trial counts. Exit `0` means the running service is ready to
+continue bounded paper/shadow evidence collection; it does not mean the 20-day /
+50-order threshold has been reached. Exit `2` means fail-closed non-readiness,
+including an unreachable service. Repository tests or a static acceptance
+manifest cannot make this live report green. The report contains no XLS rows,
+account identifiers, broker action, database write, execution grant, capital
+change, or profitability claim.
 
 On an owner-operated Mac, a terminal background process is not durable service
 evidence. Before relying on the next decision window, first inspect the local
@@ -146,6 +174,9 @@ The production panel counts a date only when all of the following are true:
 
 - the official SSE calendar snapshot is verified and marks it as a trading
   day;
+- the run date is not later than the projection's Shanghai as-of date, and
+  both persisted run timestamps are timezone-aware and no later than that
+  single captured as-of time;
 - exactly one daily-candidate input fingerprint exists for the date;
 - that input fingerprint replays from the persisted Decision/plan identity,
   production blockers, sanitized risk failure, frozen strategy binding,
@@ -157,17 +188,36 @@ The production panel counts a date only when all of the following are true:
   and explicit no-OMS/no-broker/no-capital-authority boundaries;
 - each ticket and daily snapshot contain the exact same strategy-gate binding:
   strategy advancement, reviewed fee schedule, comparison, human approval,
-  frozen baseline/candidate dataset identities, and dataset replay fingerprint;
+  frozen baseline/candidate dataset identities, dataset replay fingerprint,
+  and the current verified daily-selection/strategy-backup fingerprints;
 - each ticket and daily snapshot contain the exact same privacy-minimized
   Account Truth binding: source fingerprint, capture/derived age, reviewed age
-  maximum, valuation snapshot, ledger cutoff, reconciliation, and coverage;
+  maximum, valuation snapshot, ledger cutoff, reconciliation, coverage, and a
+  content fingerprint over the referenced import events, human reviews,
+  immutable valuation, and historical ledger rows; no broker rows, account
+  identifiers, or balances are copied into the binding;
 - same-day Account Truth source identity, capture-before-Decision ordering,
   derived age inside the reviewed maximum, and complete ledger coverage remain
   bound, and every prior non-simulation order is currently reconciled;
+- the trial re-resolves that historical Account Truth reference and recomputes
+  its privacy-minimized replay fingerprint at the stored ledger cutoff. Later
+  append-only ledger rows are a safe continuation, while a missing import,
+  changed review, modified source event, valuation drift, or changed/deleted
+  ledger row at or below the cutoff excludes the day;
+- the trial recomputes the current execution closure: every order already
+  present in the historical closure must remain clear with the same
+  plan/paper/actual fingerprint, while later fully reconciled orders may form a
+  safe superset; any current unresolved order or historical-source drift
+  excludes the day;
 - the persisted paper/shadow run has matching date and fingerprint, exact
   candidate/order counts, and `within_expectations` status and divergence;
 - the same non-empty strategy-advancement and reviewed-fee fingerprint bundles
   remain frozen within the current trial epoch.
+- for every stored strategy reference, the trial re-resolves the current
+  persisted order-generation gate and compares its full binding with the
+  snapshot and ticket; an AI strategy's missing legacy selection/backup
+  binding, deleted backup, fingerprint drift, pause, or current promotion
+  blocker excludes the day and blocks GO review.
 
 A strategy-advancement or reviewed-fee binding change deterministically starts
 a new trial epoch at its first observed daily record. Older qualifying days are
@@ -194,6 +244,7 @@ review.
 | Account Truth missing, stale, or mismatched | `no_action` | Explicitly ingest and reconcile newer evidence |
 | Account Truth was not captured on the plan's Shanghai date or its ledger coverage is not `covered` | `no_action` | Import and review the current account snapshot |
 | Account Truth was captured after the Decision or exceeds its reviewed age at Decision | `no_action`; date excluded | Wait for a new reviewed snapshot and the next clean Decision |
+| Referenced Account Truth import/review/valuation/historical ledger cannot be replayed exactly | `no_action`; date excluded | Restore or re-import canonical evidence; never edit the daily record or bypass the cutoff |
 | Prior non-simulation order lacks current reconciliation or its plan/paper/actual source changed | `no_action` | Complete exact execution reconciliation; do not bypass or edit evidence |
 | Quote timestamp absent or not on the plan date | `no_action` | Persist current-date trusted market evidence |
 | Decision/plan generated outside 09:35-09:45 or quote age exceeds 300 seconds | `no_action`; date excluded | Wait for the next verified window and refresh persisted quotes before running |

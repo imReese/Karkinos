@@ -522,7 +522,10 @@ def test_acceptance_audit_cli_operations_runbook_filter_outputs_one_audit() -> N
     assert payload["selected_audit"] == "operations_runbook"
     assert [audit["key"] for audit in payload["audits"]] == ["operations_runbook"]
     audit = payload["audits"][0]
-    assert audit["required_count"] == 22
+    assert audit["required_count"] == 23
+    assert "live_daily_candidate_production_readiness_audit" in {
+        criterion["key"] for criterion in audit["criteria"]
+    }
     assert audit["completed_count"] == audit["required_count"]
     assert {criterion["key"] for criterion in audit["criteria"]} >= {
         "operations_today_runbook",
