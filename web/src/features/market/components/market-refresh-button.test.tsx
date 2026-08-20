@@ -182,9 +182,13 @@ test('disables the button while refresh is pending', async () => {
   expect(
     screen.getByRole('button', { name: 'Refreshing quotes' }),
   ).toHaveProperty('disabled', true);
+  expect(
+    screen.getByTestId('market-refresh-spinner').getAttribute('class'),
+  ).toContain('animate-spin');
 
   resolveFetch(jsonResponse(createRefreshResponse()));
   await screen.findByText('Quote refresh completed');
+  expect(screen.queryByTestId('market-refresh-spinner')).toBeNull();
 });
 
 test('shows cached quote result without claiming real-time success', async () => {

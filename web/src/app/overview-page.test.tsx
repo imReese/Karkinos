@@ -3122,10 +3122,93 @@ test('keeps user-readable data work items on stale homepage status', async () =>
     await within(queue).findByText('Market data or NAV needs review.'),
   ).toBeTruthy();
   expect(within(queue).getByText('1 fund NAV')).toBeTruthy();
+  expect(
+    within(queue).getByRole('button', { name: 'Refresh quotes' }),
+  ).toBeTruthy();
+  expect(
+    within(queue).getByRole('link', { name: 'View data status' }),
+  ).toBeTruthy();
   expect(within(queue).queryByText('cache_only')).toBeNull();
   expect(
     within(queue).queryByText('confirmed_fund_nav_missing_estimate_only'),
   ).toBeNull();
+});
+
+test('refreshes only the homepage holdings eligible for explicit refresh', async () => {
+  const baseFetch = installOverviewFetchMock(
+    {
+      quote_status: 'stale',
+      stale_reason: 'confirmed_fund_nav_missing_estimate_only',
+      refresh_policy: 'cache_only',
+    },
+    {
+      marketEvidenceReview: {
+        ...currentHoldingMarketEvidenceReview,
+        status: 'review_required',
+        next_manual_action: 'review_current_holding_market_evidence',
+        current_holding_count: 2,
+        review_required_count: 2,
+        fund_nav_review_count: 2,
+        refreshable_symbols: ['FUND-A', 'FUND-B'],
+        items: [{ symbol: 'FUND-A' }, { symbol: 'FUND-B' }],
+      },
+    },
+  );
+  let resolveRefresh!: (response: Response) => void;
+  const fetchMock = vi.fn(
+    async (input: RequestInfo | URL, _init?: RequestInit) => {
+      if (String(input).includes('/api/market/quotes/refresh')) {
+        return new Promise<Response>((resolve) => {
+          resolveRefresh = resolve;
+        });
+      }
+      return baseFetch(input);
+    },
+  );
+  vi.stubGlobal('fetch', fetchMock);
+  const user = userEvent.setup();
+
+  renderOverviewPage({ installFetch: false });
+
+  const queue = await screen.findByTestId('overview-today-queue');
+  await user.click(
+    await within(queue).findByRole('button', { name: 'Refresh quotes' }),
+  );
+
+  expect(fetchMock).toHaveBeenCalledWith(
+    '/api/market/quotes/refresh',
+    expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({
+        symbols: ['FUND-A', 'FUND-B'],
+        force: true,
+      }),
+    }),
+  );
+  expect(
+    within(queue).getByRole('button', { name: 'Refreshing quotes' }),
+  ).toHaveProperty('disabled', true);
+  expect(within(queue).getByTestId('market-refresh-spinner')).toBeTruthy();
+
+  await act(async () => {
+    resolveRefresh(
+      jsonResponse({
+        requested_symbols: ['FUND-A', 'FUND-B'],
+        refreshed: [],
+        failed: [],
+        skipped: [],
+        refresh_policy: 'cache_only',
+        market_open: false,
+        started_at: '2026-02-10T15:05:00+08:00',
+        completed_at: '2026-02-10T15:05:01+08:00',
+        duration_ms: 1000,
+        quote_status: 'stale',
+        last_refresh_attempt: '2026-02-10T15:05:00+08:00',
+        last_refresh_error: null,
+        message: '行情源返回缓存行情',
+      }),
+    );
+  });
 });
 
 test('shows the market evidence repair once before an awaiting risk gate', async () => {

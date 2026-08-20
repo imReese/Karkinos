@@ -95,6 +95,7 @@ describe('Karkinos brand motion contract', () => {
       'app/router.tsx',
       'features/activity/components/activity-feed.tsx',
       'features/market/components/market-instrument-workspace.tsx',
+      'features/market/components/market-refresh-button.tsx',
     ]);
     for (const use of uses.filter(({ token }) => token.endsWith('pulse'))) {
       expect(use.token, use.file).toBe('motion-safe:animate-pulse');

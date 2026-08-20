@@ -1,3 +1,4 @@
+import { LoaderCircle } from 'lucide-react';
 import { useState } from 'react';
 
 import { useCopy } from '../../../app/copy';
@@ -11,6 +12,7 @@ import {
 
 type MarketRefreshButtonProps = {
   symbols?: string[];
+  compact?: boolean;
   onComplete?: (response: MarketQuoteRefreshResponse) => void;
   onError?: (error: Error) => void;
 };
@@ -36,6 +38,7 @@ function getRefreshSummary(
 
 export function MarketRefreshButton({
   symbols,
+  compact = false,
   onComplete,
   onError,
 }: MarketRefreshButtonProps) {
@@ -52,10 +55,16 @@ export function MarketRefreshButton({
       : copy.market.quoteRefreshFailed;
 
   return (
-    <div className="grid justify-items-end gap-2 text-right">
+    <div
+      className={
+        compact
+          ? 'inline-grid justify-items-start gap-1 text-left'
+          : 'grid justify-items-end gap-2 text-right'
+      }
+    >
       <button
         type="button"
-        className="app-button-secondary app-control-compact app-type-micro h-10 px-2.5 font-semibold disabled:cursor-not-allowed disabled:opacity-60 sm:h-8"
+        className="app-button-secondary app-control-compact app-type-micro inline-flex h-10 items-center justify-center gap-1.5 px-2.5 font-semibold disabled:cursor-not-allowed disabled:opacity-60 sm:h-8"
         disabled={refreshQuotes.isPending}
         aria-busy={refreshQuotes.isPending}
         onClick={async () => {
@@ -75,12 +84,21 @@ export function MarketRefreshButton({
           }
         }}
       >
-        {refreshQuotes.isPending
-          ? copy.market.refreshingQuotes
-          : copy.market.refreshQuotes}
+        {refreshQuotes.isPending ? (
+          <>
+            <LoaderCircle
+              className="h-3.5 w-3.5 shrink-0 animate-spin"
+              aria-hidden="true"
+              data-testid="market-refresh-spinner"
+            />
+            <span>{copy.market.refreshingQuotes}</span>
+          </>
+        ) : (
+          copy.market.refreshQuotes
+        )}
       </button>
       <div
-        className="app-muted max-w-[18rem] text-xs"
+        className={`app-muted max-w-[18rem] text-xs ${compact ? 'text-left' : ''}`}
         aria-live="polite"
         aria-atomic="true"
       >
@@ -90,7 +108,7 @@ export function MarketRefreshButton({
             ? `${copy.market.quoteRefreshFailed}: ${errorMessage}`
             : summary}
       </div>
-      {lastResponse ? (
+      {lastResponse && !compact ? (
         <div className="grid max-w-[22rem] gap-1 text-left text-xs">
           {[
             ...lastResponse.refreshed,
