@@ -6,7 +6,11 @@ from datetime import datetime, timezone
 
 import pytest
 
+import server.services.daily_candidate_trial as daily_candidate_trial_module
 from server.db import AppDatabase
+from server.services.account_truth_replay import (
+    account_truth_replay_evidence_fingerprint,
+)
 from server.services.daily_candidate_execution_closure import (
     build_daily_candidate_execution_closure,
 )
@@ -23,9 +27,143 @@ from server.services.daily_decision_evidence_automation import (
     daily_candidate_record_fingerprint,
     manual_ticket_candidate_fingerprint,
 )
+from server.services.execution_reconciliation import ExecutionReconciliationService
+from server.services.oms import OmsService
 
 STRATEGY_ADVANCEMENT_REF = "strategy_advancement:" + "a" * 64
 REVIEWED_FEE_SCHEDULE_REF = "reviewed_fee_schedule:" + "b" * 64
+DAILY_STRATEGY_ARTIFACT_BINDING = {
+    "schema_version": "karkinos.ai.daily_strategy_promotion_binding.v1",
+    "run_id": "research-run-fixture",
+    "market_date": "2026-06-30",
+    "winner_candidate_id": "fixture",
+    "selection_id": "selection-fixture",
+    "selection_fingerprint": "1" * 64,
+    "backup_id": "backup-fixture",
+    "backup_artifact_fingerprint": "2" * 64,
+    "contains_private_account_identifiers": False,
+    "contains_broker_export_rows": False,
+    "does_not_change_capital_authority": True,
+    "authority_effect": "research_only",
+}
+
+
+def _fixture_account_truth_replay(
+    db: AppDatabase,
+    *,
+    account_truth_ref: str,
+    source_fingerprint: str,
+    valuation_snapshot_id: str,
+    ledger_cutoff_id: int | None,
+) -> dict:
+    del db
+    payload = {
+        "schema_version": "karkinos.account_truth.replay_evidence.v1",
+        "status": "pass",
+        "account_truth_ref": account_truth_ref,
+        "source_fingerprint": source_fingerprint,
+        "import_file_fingerprint": "d" * 64,
+        "import_events_fingerprint": "e" * 64,
+        "manual_reviews_fingerprint": "f" * 64,
+        "import_event_count": 2,
+        "import_validation_status": "pass",
+        "valuation_snapshot_id": valuation_snapshot_id,
+        "valuation_policy": "fixture-policy",
+        "valuation_status": "complete",
+        "valuation_quotes_fingerprint": "1" * 64,
+        "valuation_metadata_fingerprint": "2" * 64,
+        "ledger_cutoff_id": ledger_cutoff_id,
+        "ledger_fingerprint": "3" * 64,
+        "blockers": [],
+        "contains_broker_export_rows": False,
+        "contains_private_account_identifiers": False,
+        "persisted_facts_only": True,
+        "provider_contact_performed": False,
+        "authorizes_execution": False,
+        "changes_capital_authority": False,
+    }
+    payload["evidence_fingerprint"] = account_truth_replay_evidence_fingerprint(payload)
+    return payload
+
+
+def _fixture_strategy_gate_resolver(
+    db: AppDatabase,
+    strategy_id: str,
+    *,
+    as_of_date: str,
+) -> tuple[dict, list[str]]:
+    rows = db.list_automation_runs_sync(
+        run_type=DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE,
+        limit=500,
+        offset=0,
+    )
+    row = next(
+        (item for item in rows if str(item.get("run_date") or "") == as_of_date),
+        None,
+    )
+    if row is None:
+        return {}, ["fixture_strategy_gate_missing"]
+    payload = json.loads(row["payload_json"])
+    bindings = payload.get("input_snapshot", {}).get("strategy_gate_bindings", [])
+    binding = bindings[0] if bindings else {}
+    advancement_fingerprint = str(
+        binding.get("strategy_advancement_ref") or ""
+    ).removeprefix("strategy_advancement:")
+    fee_fingerprint = str(binding.get("reviewed_fee_schedule_ref") or "").removeprefix(
+        "reviewed_fee_schedule:"
+    )
+    return {
+        "schema_version": "karkinos.strategy_order_generation_gate.v1",
+        "status": "pass",
+        "as_of_date": as_of_date,
+        "blockers": [],
+        "persisted_facts_only": True,
+        "provider_contact_performed": False,
+        "paper_shadow_evaluation_only": True,
+        "does_not_create_order": True,
+        "does_not_authorize_execution": True,
+        "does_not_change_capital_authority": True,
+        "broker_submission_enabled": False,
+        "promotion": {
+            "status": "pass",
+            "stage": "paper_shadow",
+            "gate_status": "paper_shadow_enabled",
+            "live_like_enabled": False,
+            "human_reviewer": "fixture-owner",
+            "human_review_note_recorded": True,
+            "comparison_fingerprint": binding.get("comparison_fingerprint"),
+            "human_approval_id": binding.get("human_approval_id"),
+            "strategy_advancement_gate_fingerprint": advancement_fingerprint,
+            "daily_strategy_artifact_binding": dict(DAILY_STRATEGY_ARTIFACT_BINDING),
+            "fee_schedule_binding": {
+                "fee_schedule_review_fingerprint": fee_fingerprint,
+            },
+            "dataset_replay": {
+                "status": "pass",
+                "blockers": [],
+                "evidence_fingerprint": binding.get("dataset_replay_fingerprint"),
+                "persisted_market_bars_only": True,
+                "provider_contacted": False,
+                "baseline_manifest_matches_candidate": True,
+                "baseline_snapshot_id": binding.get("baseline_snapshot_id"),
+                "candidate_snapshot_id": binding.get("candidate_snapshot_id"),
+            },
+        },
+    }, []
+
+
+@pytest.fixture(autouse=True)
+def _replay_fixture_strategy_gate(monkeypatch) -> None:
+    monkeypatch.setattr(
+        daily_candidate_trial_module,
+        "resolve_strategy_order_generation_gate",
+        _fixture_strategy_gate_resolver,
+    )
+    monkeypatch.setattr(
+        daily_candidate_trial_module,
+        "build_account_truth_replay_evidence",
+        _fixture_account_truth_replay,
+    )
 
 
 def _trading_days(count: int = 20) -> list[str]:
@@ -83,8 +221,15 @@ def _seed_qualifying_day(
         payload={"orders": []},
     )
     execution_closure = build_daily_candidate_execution_closure(db)
+    account_truth_replay = _fixture_account_truth_replay(
+        db,
+        account_truth_ref="account_truth:account-truth-fixture",
+        source_fingerprint="c" * 64,
+        valuation_snapshot_id="valuation-fixture",
+        ledger_cutoff_id=7,
+    )
     account_truth_binding = {
-        "schema_version": "karkinos.daily_candidate_account_truth_binding.v1",
+        "schema_version": "karkinos.daily_candidate_account_truth_binding.v2",
         "account_truth_ref": "account_truth:account-truth-fixture",
         "source_fingerprint": "c" * 64,
         "captured_at": f"{day}T09:30:00+08:00",
@@ -94,6 +239,7 @@ def _seed_qualifying_day(
         "ledger_cutoff_id": 7,
         "reconciliation_status": "pass",
         "ledger_coverage_status": "covered",
+        "replay_evidence": account_truth_replay,
         "persisted_facts_only": True,
         "provider_contact_performed": False,
         "authorizes_execution": False,
@@ -103,7 +249,7 @@ def _seed_qualifying_day(
         {
             "schema_version": "karkinos.daily_candidate_strategy_gate_binding.v1",
             "action_id": index + 1,
-            "strategy_ref": "strategy:fixture",
+            "strategy_ref": "strategy:ai_formula_shadow:fixture",
             "strategy_advancement_ref": strategy_advancement_ref,
             "reviewed_fee_schedule_ref": reviewed_fee_schedule_ref,
             "comparison_fingerprint": "e" * 64,
@@ -111,6 +257,7 @@ def _seed_qualifying_day(
             "dataset_replay_fingerprint": "f" * 64,
             "baseline_snapshot_id": "dataset-fixture",
             "candidate_snapshot_id": "dataset-fixture",
+            "daily_strategy_artifact_binding": dict(DAILY_STRATEGY_ARTIFACT_BINDING),
             "persisted_facts_only": True,
             "provider_contact_performed": False,
             "paper_shadow_evaluation_only": True,
@@ -149,7 +296,7 @@ def _seed_qualifying_day(
                 "evidence_fingerprint"
             ],
             "evidence_refs": [
-                "strategy:fixture",
+                "strategy:ai_formula_shadow:fixture",
                 strategy_advancement_ref,
                 reviewed_fee_schedule_ref,
                 f"risk:risk-{index + 1}",
@@ -183,6 +330,7 @@ def _seed_qualifying_day(
             "account_truth_max_age_seconds": 86400,
             "account_truth_reconciliation_status": "pass",
             "account_truth_ledger_coverage_status": "covered",
+            "account_truth_replay_evidence": account_truth_replay,
             "account_truth_binding": account_truth_binding,
             "decision_plan_fingerprint": hashlib.sha256(
                 f"{day}:{suffix}".encode("utf-8")
@@ -227,7 +375,7 @@ def _seed_qualifying_day(
         "no_action_reasons": [],
         "strategy_bindings": [
             {
-                "strategy_ref": "strategy:fixture",
+                "strategy_ref": "strategy:ai_formula_shadow:fixture",
                 "strategy_advancement_ref": strategy_advancement_ref,
                 "reviewed_fee_schedule_ref": reviewed_fee_schedule_ref,
             }
@@ -302,6 +450,36 @@ def test_daily_candidate_trial_requires_20_days_and_50_orders(tmp_path) -> None:
     assert ready["does_not_establish_future_profitability"] is True
     assert ready["automatic_order_submission_enabled"] is False
     assert ready["automatic_capital_scaling_enabled"] is False
+
+
+def test_daily_candidate_trial_excludes_future_dated_forward_evidence(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    days = _trading_days()
+    _seed_verified_calendar(db, days)
+    for day in days:
+        _seed_qualifying_day(db, day=day, order_count=3)
+    service = DailyCandidateTrialService(
+        db=db,
+        clock=lambda: datetime(2026, 7, 19, 12, 0, tzinfo=timezone.utc),
+    )
+
+    status = service.get_status()
+
+    assert status["qualifying_trading_day_count"] == 19
+    assert status["simulated_order_count"] == 57
+    assert status["eligible_for_human_go_no_go_review"] is False
+    assert "latest_daily_candidate_not_qualifying" in status["blockers"]
+    future_day = next(
+        day for day in status["excluded_days"] if day["run_date"] == days[-1]
+    )
+    assert {
+        "daily_candidate_run_date_in_future",
+        "daily_candidate_run_started_at_in_future",
+        "daily_candidate_run_finished_at_in_future",
+    }.issubset(future_day["blockers"])
 
 
 def test_daily_candidate_trial_excludes_pre_closure_v2_records(tmp_path) -> None:
@@ -575,6 +753,35 @@ def test_daily_candidate_trial_rejects_ticket_account_truth_binding_drift(
     )
 
 
+def test_daily_candidate_trial_replays_current_historical_account_truth(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    day = _trading_days()[0]
+    _seed_verified_calendar(db, [day])
+    _seed_qualifying_day(db, day=day, order_count=1)
+    drifted = _fixture_account_truth_replay(
+        db,
+        account_truth_ref="account_truth:account-truth-fixture",
+        source_fingerprint="c" * 64,
+        valuation_snapshot_id="valuation-fixture",
+        ledger_cutoff_id=7,
+    )
+    drifted["import_events_fingerprint"] = "0" * 64
+    drifted["evidence_fingerprint"] = account_truth_replay_evidence_fingerprint(drifted)
+
+    status = DailyCandidateTrialService(
+        db=db,
+        account_truth_replay_resolver=lambda *args, **kwargs: drifted,
+    ).get_status()
+
+    assert status["qualifying_trading_day_count"] == 0
+    assert (
+        "current_account_truth_replay_drifted" in status["excluded_days"][0]["blockers"]
+    )
+
+
 def test_daily_candidate_trial_replays_frozen_strategy_gate_binding(tmp_path) -> None:
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -601,6 +808,127 @@ def test_daily_candidate_trial_replays_frozen_strategy_gate_binding(tmp_path) ->
         "manual_order_ticket_candidate_0:dataset_replay_fingerprint_invalid"
         in status["excluded_days"][0]["blockers"]
     )
+
+
+def test_daily_candidate_trial_rejects_legacy_missing_daily_artifact_binding(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    day = _trading_days()[0]
+    _seed_verified_calendar(db, [day])
+    _seed_qualifying_day(db, day=day, order_count=1)
+    row = db.list_automation_runs_sync(
+        run_type=DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE,
+        limit=1,
+        offset=0,
+    )[0]
+    payload = json.loads(row["payload_json"])
+    payload["input_snapshot"]["strategy_gate_bindings"][0].pop(
+        "daily_strategy_artifact_binding"
+    )
+    ticket = payload["manual_order_ticket_candidates"][0]
+    ticket["strategy_gate_binding"].pop("daily_strategy_artifact_binding")
+    ticket["ticket_candidate_fingerprint"] = manual_ticket_candidate_fingerprint(ticket)
+    payload["input_fingerprint"] = daily_candidate_input_fingerprint(payload)
+    payload["production_record_fingerprint"] = daily_candidate_record_fingerprint(
+        payload
+    )
+    db.upsert_automation_run_sync({**row, "payload": payload})
+
+    status = DailyCandidateTrialService(db=db).get_status()
+
+    assert (
+        "manual_order_ticket_candidate_0:current_strategy_gate_binding_mismatch"
+        in status["excluded_days"][0]["blockers"]
+    )
+
+
+def test_daily_candidate_trial_rechecks_current_daily_strategy_backup(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    day = _trading_days()[0]
+    _seed_verified_calendar(db, [day])
+    _seed_qualifying_day(db, day=day, order_count=1)
+    service = DailyCandidateTrialService(
+        db=db,
+        strategy_gate_resolver=lambda *args, **kwargs: (
+            {},
+            ["ai_shadow_daily_strategy_artifact_not_verified"],
+        ),
+    )
+
+    status = service.get_status()
+
+    assert (
+        "manual_order_ticket_candidate_0:current_"
+        "ai_shadow_daily_strategy_artifact_not_verified"
+        in status["excluded_days"][0]["blockers"]
+    )
+
+
+def test_daily_candidate_trial_rechecks_new_unreconciled_actual_order(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    day = _trading_days()[0]
+    _seed_verified_calendar(db, [day])
+    _seed_qualifying_day(db, day=day, order_count=1)
+    OmsService(db=db).create_order_intent(
+        intent_key="post-trial:unreconciled",
+        symbol="600519",
+        side="buy",
+        asset_class="stock",
+        quantity=100,
+        order_type="limit",
+        limit_price=10.0,
+        source="manual_trial",
+        source_ref="manual-ticket:unreconciled",
+    )
+
+    status = DailyCandidateTrialService(db=db).get_status()
+
+    assert status["qualifying_trading_day_count"] == 0
+    assert (
+        "current_execution_closure_not_clear" in status["excluded_days"][0]["blockers"]
+    )
+
+
+def test_daily_candidate_trial_allows_new_reconciled_no_fill_as_safe_superset(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    day = _trading_days()[0]
+    _seed_verified_calendar(db, [day])
+    _seed_qualifying_day(db, day=day, order_count=1)
+    oms = OmsService(db=db)
+    order = oms.create_order_intent(
+        intent_key="post-trial:cancelled",
+        symbol="600519",
+        side="buy",
+        asset_class="stock",
+        quantity=100,
+        order_type="limit",
+        limit_price=10.0,
+        source="manual_trial",
+        source_ref="manual-ticket:cancelled",
+    )
+    oms.transition_order(
+        order["order_id"],
+        to_status="cancelled",
+        reason="operator cancelled before broker execution",
+        actor="owner",
+    )
+    ExecutionReconciliationService(db=db).run_reconciliation(run_date="2026-08-14")
+
+    status = DailyCandidateTrialService(db=db).get_status()
+
+    assert status["qualifying_trading_day_count"] == 1
+    assert status["qualifying_days"][0]["blockers"] == []
 
 
 def test_daily_candidate_trial_starts_new_epoch_after_frozen_binding_change(

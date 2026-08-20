@@ -3,6 +3,7 @@ from __future__ import annotations
 from server.db import AppDatabase
 from server.services.daily_candidate_execution_closure import (
     build_daily_candidate_execution_closure,
+    verify_daily_candidate_execution_closure,
 )
 from server.services.execution_reconciliation import ExecutionReconciliationService
 from server.services.oms import OmsService
@@ -39,6 +40,10 @@ def test_execution_closure_is_not_required_without_prior_production_orders(
     assert result["production_order_count"] == 0
     assert result["blockers"] == []
     assert len(result["evidence_fingerprint"]) == 64
+    assert verify_daily_candidate_execution_closure(result) is True
+
+    tampered = {**result, "status": "pass"}
+    assert verify_daily_candidate_execution_closure(tampered) is False
 
 
 def test_execution_closure_blocks_order_without_reconciliation(tmp_path) -> None:

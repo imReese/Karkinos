@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import sqlite3
+from pathlib import Path
 
 import pytest
 
@@ -138,64 +140,18 @@ def test_reserved_ai_shadow_order_resolves_exact_canonical_advancement_binding(
 ) -> None:
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
-    store = ShadowResearchStore(tmp_path / "app.db")
-    store.init()
-    comparison = {
-        "promotion_gate": _passed_gate(),
-        **seed_ai_shadow_canonical_sources(
-            db,
-            baseline_result_id=1,
-            candidate_result_id=2,
-            backtest_run_id="backtest-approved",
-            critique_id="critique-approved",
-        ),
-    }
-    candidate = store.save_candidate(
-        run_id="run-approved",
-        session_id="session-approved",
-        draft_id="draft-approved",
-        backtest_run_id="backtest-approved",
-        critique_id="critique-approved",
+    strategy = seed_approved_ai_shadow_strategy(
+        db,
+        fixture_id="approved",
         baseline_result_id=1,
         candidate_result_id=2,
-        status="awaiting_human_approval",
-        recommendation="paper_shadow_review",
-        comparison=comparison,
-        now="2026-08-12T07:00:00+00:00",
     )
-    approval = store.approve_candidate(
-        candidate["candidate_id"],
-        approved_by="human:owner",
-        notes="Reviewed exact deterministic evidence.",
-        confirmation=SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
-        now="2026-08-12T07:05:00+00:00",
-    )
-    strategy_id = f"ai_formula_shadow:{candidate['candidate_id']}"
-    readiness = {
-        "schema_version": "karkinos.ai.shadow_research_promotion_readiness.v1",
-        "strategy_id": strategy_id,
-        "promotion_status": "promotable_for_paper_review",
-        "is_promotable": True,
-        "missing_requirements": [],
-        "backtest_result_id": 2,
-        "candidate_id": candidate["candidate_id"],
-        "critique_id": "critique-approved",
-        "comparison_fingerprint": content_fingerprint(comparison),
-        "human_approval_id": approval["promotion_id"],
-        "strategy_advancement_gate": comparison["promotion_gate"],
-        "live_like_enabled": False,
-        "broker_submission_enabled": False,
-    }
+    candidate = strategy["candidate"]
+    approval = strategy["approval"]
+    readiness = strategy["readiness"]
+    comparison = candidate["comparison"]
+    strategy_id = strategy["strategy_id"]
     pipeline = StrategyPromotionPipeline(db=db)
-    pipeline.evaluate_readiness(readiness, actor="human:owner")
-    pipeline.request_promotion(
-        strategy_id,
-        target_stage="paper_shadow",
-        readiness=readiness,
-        actor="human:owner",
-        confirmation=STRATEGY_PAPER_SHADOW_PROMOTION_CONFIRMATION,
-        review_note="Reviewed exact deterministic evidence.",
-    )
     db.upsert_action_task_sync(
         source_signal_id=202,
         symbol="510300.SH",
@@ -436,6 +392,75 @@ def test_reserved_ai_shadow_order_rechecks_research_run_account_binding(
     assert gate["does_not_create_order"] is True
     assert gate["does_not_authorize_execution"] is True
     assert gate["does_not_change_capital_authority"] is True
+
+
+def test_reserved_ai_shadow_order_rechecks_daily_strategy_backup(tmp_path) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    strategy = seed_approved_ai_shadow_strategy(
+        db,
+        fixture_id="daily-backup",
+        baseline_result_id=1,
+        candidate_result_id=2,
+    )
+    verified_gate, verified_blockers = resolve_strategy_order_generation_gate(
+        db,
+        strategy["strategy_id"],
+        as_of_date="2026-08-12",
+    )
+    assert verified_blockers == []
+    assert verified_gate["promotion"]["daily_strategy_artifact_binding"] == (
+        strategy["readiness"]["daily_strategy_artifact_binding"]
+    )
+
+    backup_path = (
+        Path(db._path).parent
+        / "strategy-research-backups"
+        / strategy["daily_artifacts"]["backup"]["relative_path"]
+    )
+    backup_path.unlink()
+    gate, blockers = resolve_strategy_order_generation_gate(
+        db,
+        strategy["strategy_id"],
+        as_of_date="2026-08-12",
+    )
+
+    assert gate["status"] == "blocked"
+    assert "ai_shadow_daily_strategy_artifact_not_verified" in blockers
+    assert gate["does_not_create_order"] is True
+    assert gate["does_not_authorize_execution"] is True
+    assert gate["does_not_change_capital_authority"] is True
+
+
+def test_reserved_ai_shadow_order_rejects_legacy_daily_binding_gap(tmp_path) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    strategy = seed_approved_ai_shadow_strategy(
+        db,
+        fixture_id="legacy-daily-binding",
+        baseline_result_id=1,
+        candidate_result_id=2,
+    )
+    row = db.get_strategy_promotion_state_sync(strategy["strategy_id"])
+    assert row is not None
+    payload = json.loads(row["payload_json"])
+    payload["readiness"].pop("daily_strategy_artifact_binding")
+    with sqlite3.connect(db._path) as conn:
+        conn.execute(
+            "UPDATE strategy_promotion_states SET payload_json = ? "
+            "WHERE strategy_id = ?",
+            (json.dumps(payload, sort_keys=True), strategy["strategy_id"]),
+        )
+
+    gate, blockers = resolve_strategy_order_generation_gate(
+        db,
+        strategy["strategy_id"],
+        as_of_date="2026-08-12",
+    )
+
+    assert gate["status"] == "blocked"
+    assert "ai_shadow_readiness_daily_strategy_artifact_binding_missing" in blockers
+    assert gate["broker_submission_enabled"] is False
 
 
 def test_reserved_ai_shadow_order_rechecks_formula_input_binding(tmp_path) -> None:

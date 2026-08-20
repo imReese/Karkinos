@@ -126,6 +126,20 @@ def build_daily_candidate_execution_closure(db: Any) -> dict[str, Any]:
     return {**core, "evidence_fingerprint": _fingerprint(core)}
 
 
+def verify_daily_candidate_execution_closure(value: Any) -> bool:
+    """Verify one persisted closure without contacting a provider or writing."""
+
+    if not isinstance(value, dict):
+        return False
+    core = dict(value)
+    evidence_fingerprint = str(core.pop("evidence_fingerprint", "") or "")
+    return bool(
+        core.get("schema_version") == DAILY_CANDIDATE_EXECUTION_CLOSURE_SCHEMA_VERSION
+        and _is_sha256(evidence_fingerprint)
+        and evidence_fingerprint == _fingerprint(core)
+    )
+
+
 def _is_no_fill_terminal(
     order: dict[str, Any],
     item: dict[str, Any],

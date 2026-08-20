@@ -3,8 +3,13 @@ from __future__ import annotations
 import asyncio
 import time
 
+import pytest
+
 from server.db import AppDatabase
 from server.services import daily_decision_evidence_automation as automation_module
+from server.services.account_truth_replay import (
+    account_truth_replay_evidence_fingerprint,
+)
 from server.services.daily_decision_evidence_automation import (
     DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE,
     DailyDecisionEvidenceAutomationService,
@@ -13,6 +18,69 @@ from server.services.daily_decision_evidence_automation import (
 )
 from server.services.oms import OmsService
 from server.services.trading_controls import TradingControlState
+
+DAILY_STRATEGY_ARTIFACT_BINDING = {
+    "schema_version": "karkinos.ai.daily_strategy_promotion_binding.v1",
+    "run_id": "research-run-fixture",
+    "market_date": "2026-06-30",
+    "winner_candidate_id": "fixture",
+    "selection_id": "selection-fixture",
+    "selection_fingerprint": "1" * 64,
+    "backup_id": "backup-fixture",
+    "backup_artifact_fingerprint": "2" * 64,
+    "contains_private_account_identifiers": False,
+    "contains_broker_export_rows": False,
+    "does_not_change_capital_authority": True,
+    "authority_effect": "research_only",
+}
+
+
+def _fixture_account_truth_replay(
+    db: AppDatabase,
+    *,
+    account_truth_ref: str,
+    source_fingerprint: str,
+    valuation_snapshot_id: str,
+    ledger_cutoff_id: int | None,
+) -> dict:
+    del db
+    normalized_ref = account_truth_ref.removeprefix("account_truth:")
+    payload = {
+        "schema_version": "karkinos.account_truth.replay_evidence.v1",
+        "status": "pass",
+        "account_truth_ref": f"account_truth:{normalized_ref}",
+        "source_fingerprint": source_fingerprint,
+        "import_file_fingerprint": "d" * 64,
+        "import_events_fingerprint": "e" * 64,
+        "manual_reviews_fingerprint": "f" * 64,
+        "import_event_count": 2,
+        "import_validation_status": "pass",
+        "valuation_snapshot_id": valuation_snapshot_id,
+        "valuation_policy": "fixture-policy",
+        "valuation_status": "complete",
+        "valuation_quotes_fingerprint": "1" * 64,
+        "valuation_metadata_fingerprint": "2" * 64,
+        "ledger_cutoff_id": ledger_cutoff_id,
+        "ledger_fingerprint": "3" * 64,
+        "blockers": [],
+        "contains_broker_export_rows": False,
+        "contains_private_account_identifiers": False,
+        "persisted_facts_only": True,
+        "provider_contact_performed": False,
+        "authorizes_execution": False,
+        "changes_capital_authority": False,
+    }
+    payload["evidence_fingerprint"] = account_truth_replay_evidence_fingerprint(payload)
+    return payload
+
+
+@pytest.fixture(autouse=True)
+def _replay_fixture_account_truth(monkeypatch) -> None:
+    monkeypatch.setattr(
+        automation_module,
+        "build_account_truth_replay_evidence",
+        _fixture_account_truth_replay,
+    )
 
 
 class RecordingNotifier:
@@ -61,7 +129,7 @@ def _decision(*, risk_checked: bool) -> dict:
                 "action": "buy",
                 "evidence": {
                     "strategy": {
-                        "strategy_id": "dual_ma",
+                        "strategy_id": "ai_formula_shadow:fixture",
                         "order_generation_gate": {
                             "schema_version": (
                                 "karkinos.strategy_order_generation_gate.v1"
@@ -85,6 +153,9 @@ def _decision(*, risk_checked: bool) -> dict:
                                 "human_review_note_recorded": True,
                                 "comparison_fingerprint": "e" * 64,
                                 "human_approval_id": "approval-fixture",
+                                "daily_strategy_artifact_binding": dict(
+                                    DAILY_STRATEGY_ARTIFACT_BINDING
+                                ),
                                 "strategy_advancement_gate_fingerprint": "a" * 64,
                                 "fee_schedule_binding": {
                                     "fee_schedule_review_fingerprint": "b" * 64,
@@ -129,7 +200,7 @@ def _plan(*, risk_checked: bool) -> dict:
             {
                 "intent_id": "ACTION-1-BATCH-RISK",
                 "action_id": 1,
-                "strategy_id": "dual_ma",
+                "strategy_id": "ai_formula_shadow:fixture",
                 "symbol": "600519",
                 "side": "buy",
                 "asset_class": "stock",
@@ -158,7 +229,7 @@ def _plan(*, risk_checked: bool) -> dict:
                 "does_not_submit_broker_order": True,
                 "evidence_refs": [
                     "action:1",
-                    "strategy:dual_ma",
+                    "strategy:ai_formula_shadow:fixture",
                     "strategy_advancement:" + "a" * 64,
                     "reviewed_fee_schedule:" + "b" * 64,
                     "risk:RISK-001",
@@ -302,6 +373,22 @@ def test_financial_preflight_fails_closed_on_fee_or_strategy_binding_drift() -> 
     )
 
 
+def test_financial_preflight_rejects_ai_strategy_without_daily_backup_binding() -> None:
+    inputs = _financial_preflight_inputs()
+    inputs["decision_payload"]["candidates"][0]["evidence"]["strategy"][
+        "order_generation_gate"
+    ]["promotion"].pop("daily_strategy_artifact_binding")
+
+    result = project_daily_candidate_financial_preflight(**inputs)
+
+    assert result["status"] == "no_action"
+    assert result["eligible_candidate_count"] == 0
+    assert any(
+        "strategy_daily_artifact_binding_contract_invalid" in blocker
+        for blocker in result["no_action_reasons"]
+    )
+
+
 def test_financial_preflight_keeps_clear_financial_facts_closed_after_window() -> None:
     inputs = _financial_preflight_inputs()
     inputs["runtime_status"].update(
@@ -357,6 +444,45 @@ def test_financial_preflight_orders_operator_work_without_taking_action() -> Non
     assert result["operator_checklist"][0]["action"] == (
         "complete_current_account_truth_evidence_review"
     )
+    account_truth_step = result["operator_checklist"][0]
+    assert account_truth_step["evidence_contract_version"] == (
+        "karkinos.daily_candidate_operator_evidence.v1"
+    )
+    assert account_truth_step["required_evidence"] == [
+        "current_cash_snapshot_with_aware_timestamp_and_cash_balance",
+        "current_position_snapshots_with_symbol_asset_currency_quantity_and_cost_basis",
+        "itemized_trade_rows_with_quantity_price_gross_fee_tax_transfer_fee_and_net_amount",
+        "reviewed_source_hash_window_scope_and_completeness_attestations",
+        "current_ledger_cutoff_and_reconciliation_evidence",
+    ]
+    assert (
+        "cash_position_fee_and_cost_basis_pass_with_zero_unresolved_mismatches"
+        in account_truth_step["completion_criteria"]
+    )
+    assert (
+        "private_xls_content_and_account_identifiers_remain_unstored"
+        in account_truth_step["completion_criteria"]
+    )
+    assert account_truth_step["accepted_evidence_authority"] == (
+        "canonical_persisted_evidence_only"
+    )
+    assert account_truth_step["owner_attestation_is_financial_fact"] is False
+    assert account_truth_step["private_xls_rows_required"] is False
+    assert account_truth_step["private_account_identifiers_required"] is False
+    strategy_step = next(
+        item for item in result["operator_checklist"] if item["gate"] == "strategy"
+    )
+    assert strategy_step["required_evidence"][0] == (
+        "five_sequential_research_iterations"
+    )
+    assert (
+        "each_iteration_binds_previous_formula_metrics_blockers_and_critique"
+        in strategy_step["completion_criteria"]
+    )
+    assert (
+        "research_policy_authorizes_exactly_five_iterations_and_ten_provider_calls"
+        in strategy_step["completion_criteria"]
+    )
     assert result["operator_checklist"][-1]["action"] == (
         "prepare_current_evidence_for_next_reviewed_window"
     )
@@ -380,6 +506,18 @@ def test_financial_preflight_ready_checklist_still_requires_canonical_attempt() 
             "action": "allow_single_claimed_fail_closed_background_attempt",
             "completion_mode": "canonical_runtime",
             "blockers": [],
+            "evidence_contract_version": (
+                "karkinos.daily_candidate_operator_evidence.v1"
+            ),
+            "required_evidence": ["persisted_current_preflight_facts"],
+            "completion_criteria": [
+                "start_only_one_canonical_risk_and_paper_shadow_attempt",
+                "separate_post_shadow_gate_and_human_confirmation_remain_required",
+            ],
+            "accepted_evidence_authority": "canonical_persisted_evidence_only",
+            "owner_attestation_is_financial_fact": False,
+            "private_xls_rows_required": False,
+            "private_account_identifiers_required": False,
             "automatic_action_performed": False,
             "authorizes_execution": False,
             "changes_capital_authority": False,
@@ -400,6 +538,20 @@ def test_unavailable_financial_preflight_checklist_remains_fail_closed() -> None
             "action": "restore_persisted_preflight_sources_before_next_window",
             "completion_mode": "persisted_evidence_refresh",
             "blockers": ["fixture_preflight_source_unavailable"],
+            "evidence_contract_version": (
+                "karkinos.daily_candidate_operator_evidence.v1"
+            ),
+            "required_evidence": [
+                "readable_persisted_decision_plan_fee_closure_and_runtime_sources"
+            ],
+            "completion_criteria": [
+                "all_preflight_sources_are_readable_and_contract_valid",
+                "source_restoration_does_not_mutate_financial_state",
+            ],
+            "accepted_evidence_authority": "canonical_persisted_evidence_only",
+            "owner_attestation_is_financial_fact": False,
+            "private_xls_rows_required": False,
+            "private_account_identifiers_required": False,
             "automatic_action_performed": False,
             "authorizes_execution": False,
             "changes_capital_authority": False,
@@ -491,8 +643,20 @@ def test_automatic_evidence_chain_runs_risk_then_idempotent_paper_shadow(
     )
     assert ticket["strategy_gate_binding"]["dataset_replay_fingerprint"] == ("f" * 64)
     assert (
+        ticket["strategy_gate_binding"]["daily_strategy_artifact_binding"]
+        == DAILY_STRATEGY_ARTIFACT_BINDING
+    )
+    assert (
         ticket["account_truth_binding"]
         == first["input_snapshot"]["account_truth_binding"]
+    )
+    assert ticket["account_truth_binding"]["schema_version"] == (
+        "karkinos.daily_candidate_account_truth_binding.v2"
+    )
+    assert ticket["account_truth_binding"]["replay_evidence"]["status"] == "pass"
+    assert (
+        ticket["account_truth_binding"]["replay_evidence"]
+        == first["input_snapshot"]["account_truth_replay_evidence"]
     )
     assert ticket["account_truth_binding"]["age_seconds_at_decision"] == 300
     assert ticket["account_truth_binding"]["valuation_snapshot_id"] == ("valuation-001")
