@@ -21,8 +21,12 @@ WEB_PID_FILE="${RUN_DIR}/web.pid"
 WEB_LOG_FILE="${LOG_DIR}/web.log"
 LOG_MAX_BYTES="${KARKINOS_LOG_MAX_BYTES:-20971520}"
 STARTUP_HEALTH_TIMEOUT_SECONDS="${KARKINOS_STARTUP_HEALTH_TIMEOUT_SECONDS:-60}"
+FRONTEND_STARTUP_TIMEOUT_SECONDS="${KARKINOS_FRONTEND_STARTUP_TIMEOUT_SECONDS:-30}"
 FRONTEND_HOST="${KARKINOS_FRONTEND_HOST:-127.0.0.1}"
 FRONTEND_PORT="${KARKINOS_FRONTEND_PORT:-5173}"
+LAUNCH_AGENT_LABEL="com.karkinos.daily-candidate"
+LAUNCH_AGENT_TARGET="gui/$(id -u)/${LAUNCH_AGENT_LABEL}"
+REUSE_RESIDENT_BACKEND=false
 
 usage() {
 	cat <<EOF
@@ -40,11 +44,14 @@ Notes:
   - This script starts the Web service via \`python -m server\` in the background.
   - \`dev\` defaults to \`--reload\`; it does not enable live monitoring.
   - \`dev\` also starts the Vite frontend on ${FRONTEND_HOST}:${FRONTEND_PORT}.
+  - If the supervised LaunchAgent is healthy, \`dev\` reuses that resident backend and starts only Vite.
+  - \`prod\` treats a healthy supervised LaunchAgent as an already-running success.
   - \`prod\` starts without hot reload and does not enable live monitoring.
   - Enable live monitoring explicitly with server.live_auto_start=true or KARKINOS_LIVE_AUTO_START=true.
   - Output is redirected to \`logs/server.log\` and \`logs/web.log\`.
   - Logs larger than KARKINOS_LOG_MAX_BYTES (default 20 MiB) are archived before startup.
   - Startup succeeds only after /api/health reports process liveness within the bounded timeout.
+  - Vite startup succeeds only after its HTTP endpoint responds within the bounded frontend timeout.
   - PIDs are written to \`.run/server.pid\` and \`.run/web.pid\` in \`dev\` mode.
   - It installs missing frontend dependencies before building.
   - Run \`uv run python scripts/configure_data_source.py\` to configure local market data.
@@ -165,11 +172,28 @@ backend_probe_host() {
 	esac
 }
 
+frontend_probe_host() {
+	case "${FRONTEND_HOST}" in
+	0.0.0.0 | :: | \[::\])
+		printf '%s' "127.0.0.1"
+		;;
+	*)
+		printf '%s' "${FRONTEND_HOST}"
+		;;
+	esac
+}
+
 backend_listener_pids() {
 	if ! command -v lsof >/dev/null 2>&1; then
 		return
 	fi
 	lsof -tiTCP:"${BACKEND_PORT}" -sTCP:LISTEN 2>/dev/null | sort -u || true
+}
+
+resident_service_is_loaded() {
+	[[ "$(uname -s)" == "Darwin" ]] || return 1
+	command -v launchctl >/dev/null 2>&1 || return 1
+	launchctl print "${LAUNCH_AGENT_TARGET}" >/dev/null 2>&1
 }
 
 karkinos_backend_is_alive() {
@@ -186,6 +210,13 @@ karkinos_backend_is_alive() {
 		"${health_response}" == *'"status":"alive"'* ]]
 }
 
+vite_frontend_is_ready() {
+	command -v curl >/dev/null 2>&1 || return 1
+	env "${NO_PROXY_ENV[@]}" curl --noproxy '*' --fail --silent --show-error \
+		--max-time 2 --output /dev/null \
+		"http://$(frontend_probe_host):${FRONTEND_PORT}/" 2>/dev/null
+}
+
 validate_startup_health_timeout() {
 	if [[ -z "${STARTUP_HEALTH_TIMEOUT_SECONDS}" || \
 		"${STARTUP_HEALTH_TIMEOUT_SECONDS}" == *[!0-9]* || \
@@ -196,6 +227,13 @@ validate_startup_health_timeout() {
 	fi
 	if ! command -v curl >/dev/null 2>&1; then
 		echo "Error: curl is required to verify the Karkinos process-liveness endpoint." >&2
+		exit 1
+	fi
+	if [[ "${MODE}" == "dev" ]] && [[ -z "${FRONTEND_STARTUP_TIMEOUT_SECONDS}" || \
+		"${FRONTEND_STARTUP_TIMEOUT_SECONDS}" == *[!0-9]* || \
+		"${FRONTEND_STARTUP_TIMEOUT_SECONDS}" == "0" || \
+		"${FRONTEND_STARTUP_TIMEOUT_SECONDS}" -gt 300 ]]; then
+		echo "Error: KARKINOS_FRONTEND_STARTUP_TIMEOUT_SECONDS must be an integer within [1, 300]." >&2
 		exit 1
 	fi
 }
@@ -232,7 +270,50 @@ wait_for_backend_readiness() {
 	return 1
 }
 
+cleanup_failed_frontend_launch() {
+	if [[ "${TRACKED_WEB_PID}" != "${WEB_LAUNCH_PID}" ]] && kill -0 "${TRACKED_WEB_PID}" >/dev/null 2>&1; then
+		kill "${TRACKED_WEB_PID}" >/dev/null 2>&1 || true
+	fi
+	if kill -0 "${WEB_LAUNCH_PID}" >/dev/null 2>&1; then
+		kill "${WEB_LAUNCH_PID}" >/dev/null 2>&1 || true
+	fi
+	wait "${WEB_LAUNCH_PID}" >/dev/null 2>&1 || true
+	rm -f "${WEB_PID_FILE}"
+}
+
+wait_for_frontend_readiness() {
+	local deadline=$((SECONDS + FRONTEND_STARTUP_TIMEOUT_SECONDS))
+	while ((SECONDS < deadline)); do
+		if ! kill -0 "${TRACKED_WEB_PID}" >/dev/null 2>&1; then
+			echo "Error: Karkinos Web frontend exited before readiness. Check ${WEB_LOG_FILE}" >&2
+			cleanup_failed_frontend_launch
+			return 1
+		fi
+		if vite_frontend_is_ready; then
+			return 0
+		fi
+		if ((SECONDS < deadline)); then
+			sleep 1
+		fi
+	done
+
+	echo "Error: Karkinos Web frontend did not become ready within ${FRONTEND_STARTUP_TIMEOUT_SECONDS}s. Check ${WEB_LOG_FILE}" >&2
+	cleanup_failed_frontend_launch
+	return 1
+}
+
 preflight_backend_port() {
+	if resident_service_is_loaded; then
+		if karkinos_backend_is_alive; then
+			REUSE_RESIDENT_BACKEND=true
+			return
+		fi
+		echo "Error: the resident Karkinos LaunchAgent is loaded, but process liveness is unavailable at ${PRODUCT_ENTRY_URL}." >&2
+		echo "No fallback backend was launched. Inspect it with:" >&2
+		echo "  ./scripts/manage_launch_agent.sh status" >&2
+		exit 1
+	fi
+
 	local listener_pids
 	listener_pids="$(backend_listener_pids)"
 	if [[ -z "${listener_pids}" ]]; then
@@ -346,37 +427,46 @@ fi
 guide_data_source_configuration
 
 echo "Mode: ${MODE}"
-echo "Starting Karkinos Web service from ${REPO_ROOT}"
-echo "Log file: ${LOG_FILE}"
-echo "Command: UV_CACHE_DIR=${UV_CACHE_DIR:-.uv-cache} uv run python -m server ${SERVER_ARGS[*]-}"
-
-if command -v setsid >/dev/null 2>&1; then
-	setsid nohup env "${NO_PROXY_ENV[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
-		uv run python -m server ${SERVER_ARGS[@]+"${SERVER_ARGS[@]}"} >>"${LOG_FILE}" 2>&1 &
-else
-	nohup env "${NO_PROXY_ENV[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
-		uv run python -m server ${SERVER_ARGS[@]+"${SERVER_ARGS[@]}"} >>"${LOG_FILE}" 2>&1 &
-fi
-
-LAUNCH_PID=$!
-TRACKED_PID="${LAUNCH_PID}"
-
-sleep 1
-CHILD_PID="$(pgrep -P "${LAUNCH_PID}" | tail -n 1 || true)"
-if [[ -n "${CHILD_PID}" ]]; then
-	TRACKED_PID="${CHILD_PID}"
-fi
-
-echo "${TRACKED_PID}" >"${PID_FILE}"
-
-if ! wait_for_backend_readiness; then
-	exit 1
-fi
-
-echo "Karkinos Web service started with PID ${TRACKED_PID}"
-if [[ -f "${REPO_ROOT}/web/dist/index.html" ]]; then
+if [[ "${REUSE_RESIDENT_BACKEND}" == "true" ]]; then
+	echo "Reusing resident Karkinos Web service managed by ${LAUNCH_AGENT_TARGET}."
 	echo "Product entry: ${PRODUCT_ENTRY_URL}"
-	echo "Page refresh and direct links are served from web/dist via FastAPI."
+	if [[ "${MODE}" == "prod" ]]; then
+		echo "Resident service is already running; no process was replaced."
+		exit 0
+	fi
+else
+	echo "Starting Karkinos Web service from ${REPO_ROOT}"
+	echo "Log file: ${LOG_FILE}"
+	echo "Command: UV_CACHE_DIR=${UV_CACHE_DIR:-.uv-cache} uv run python -m server ${SERVER_ARGS[*]-}"
+
+	if command -v setsid >/dev/null 2>&1; then
+		setsid nohup env "${NO_PROXY_ENV[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
+			uv run python -m server ${SERVER_ARGS[@]+"${SERVER_ARGS[@]}"} >>"${LOG_FILE}" 2>&1 &
+	else
+		nohup env "${NO_PROXY_ENV[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}" \
+			uv run python -m server ${SERVER_ARGS[@]+"${SERVER_ARGS[@]}"} >>"${LOG_FILE}" 2>&1 &
+	fi
+
+	LAUNCH_PID=$!
+	TRACKED_PID="${LAUNCH_PID}"
+
+	sleep 1
+	CHILD_PID="$(pgrep -P "${LAUNCH_PID}" | tail -n 1 || true)"
+	if [[ -n "${CHILD_PID}" ]]; then
+		TRACKED_PID="${CHILD_PID}"
+	fi
+
+	echo "${TRACKED_PID}" >"${PID_FILE}"
+
+	if ! wait_for_backend_readiness; then
+		exit 1
+	fi
+
+	echo "Karkinos Web service started with PID ${TRACKED_PID}"
+	if [[ -f "${REPO_ROOT}/web/dist/index.html" ]]; then
+		echo "Product entry: ${PRODUCT_ENTRY_URL}"
+		echo "Page refresh and direct links are served from web/dist via FastAPI."
+	fi
 fi
 
 if [[ "${MODE}" != "dev" ]]; then
@@ -407,9 +497,7 @@ fi
 
 echo "${TRACKED_WEB_PID}" >"${WEB_PID_FILE}"
 
-if ! kill -0 "${TRACKED_WEB_PID}" >/dev/null 2>&1; then
-	echo "Error: Karkinos Web frontend failed to start. Check ${WEB_LOG_FILE}" >&2
-	rm -f "${WEB_PID_FILE}"
+if ! wait_for_frontend_readiness; then
 	exit 1
 fi
 
@@ -418,5 +506,6 @@ Karkinos dev environment started.
 Backend:  http://${BACKEND_HOST}:${BACKEND_PORT}
 Frontend: http://${FRONTEND_HOST}:${FRONTEND_PORT}
 
-Use ./scripts/stop_server.sh to stop both processes.
+Use ./scripts/stop_server.sh to stop Vite and any manually started backend.
+The resident LaunchAgent remains running until ./scripts/manage_launch_agent.sh uninstall is called explicitly.
 EOF

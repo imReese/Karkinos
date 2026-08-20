@@ -48,7 +48,7 @@ Automation Cockpit v4 还会展示 `karkinos.daily_candidate_financial_preflight
 
 在仓库根目录运行 `uv run python scripts/audit_daily_candidate_production.py --pretty`，可检查“当前机器”而不只是静态代码清单。命令只接受显式 loopback HTTP 地址，只读访问正在运行的 Automation Cockpit 与 shadow research 状态，生成脱敏且带指纹的 `karkinos.daily_candidate_production_readiness.v2`：同时汇总当前财务预检、准确 monitor task 存活、5 轮顺序且每日 Token 不设累计上限的研究策略，以及 20 日 / 50 单前瞻试运行进度。报告还保留 canonical 依赖顺序的 operator checklist：按阻断代码合并重复候选项并给出出现次数、受影响候选数、首个门禁、安全动作、所需持久化证据及完成标准；清单缺失、非法、包含授权动作或不是 canonical evidence 时会直接 fail-closed，不能充当操作指引。退出码 `0` 只表示当前服务可以继续有界 paper/shadow 证据收集，不表示已达到 20 日 / 50 单，也不表示 GO；退出码 `2` 表示 fail-closed 非就绪，服务未运行同样如此。仓库测试或静态 acceptance manifest 不能替代这份实时报告。输出不包含 XLS 行、账户标识、券商动作、数据库写入、执行/资本权限或盈利声明。
 
-在 owner 自行运行的 Mac 上，终端后台子进程不构成持久服务证据。准备下一个决策窗口前，先运行 `./scripts/manage_launch_agent.sh print-plist` 检查本地用户级定义，再显式执行 `./scripts/manage_launch_agent.sh install`；随后必须由 `./scripts/manage_launch_agent.sh status` 同时确认 LaunchAgent 已加载且进程存活。该服务只监听 `127.0.0.1`，意外退出后会重启，并可通过 `uninstall` 完整撤销。安装不会修改 `config.json` 或 `.env`，不会自行开启 `live_auto_start`，不会联系 provider，也不证明财务就绪。若后端端口已有 listener，安装会保持原进程不动并失败；operator 必须明确处理该准确进程，禁止两个每日候选服务共用一个本地运行数据库。
+在 owner 自行运行的 Mac 上，终端后台子进程不构成持久服务证据。准备下一个决策窗口前，先运行 `./scripts/manage_launch_agent.sh print-plist` 检查本地用户级定义，再显式执行 `./scripts/manage_launch_agent.sh install`；随后必须由 `./scripts/manage_launch_agent.sh status` 同时确认 LaunchAgent 已加载且进程存活。该服务只监听 `127.0.0.1`，只要仍处于加载状态，进程任何退出都会由 launchd 重新拉起，并可通过 `uninstall` 完整撤销。安装不会修改 `config.json` 或 `.env`，不会自行开启 `live_auto_start`，不会联系 provider，也不证明财务就绪。若后端端口已有 listener，安装会保持原进程不动并失败；operator 必须明确处理该准确进程，禁止两个每日候选服务共用一个本地运行数据库。
 
 ## 前瞻运营试运行
 

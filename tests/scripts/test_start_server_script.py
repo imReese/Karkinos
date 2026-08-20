@@ -70,7 +70,9 @@ def _preflight_repo(
     *,
     health_response: str,
     curl_exit: int,
+    frontend_curl_exit: int = 0,
     listener_pids: str = "4242",
+    resident_service_loaded: bool = False,
 ) -> Path:
     repo = tmp_path / "repo"
     scripts = repo / "scripts"
@@ -94,7 +96,12 @@ def _preflight_repo(
     )
     _write_executable(
         bin_dir / "npm",
-        f"#!/usr/bin/env bash\ntouch '{tmp_path / 'npm-called'}'\n",
+        "#!/usr/bin/env bash\n"
+        f"touch '{tmp_path / 'npm-called'}'\n"
+        'if [[ "$*" == *"run dev"* ]]; then\n'
+        f"  touch '{tmp_path / 'npm-dev-called'}'\n"
+        "  sleep 5\n"
+        "fi\n",
     )
     _write_executable(
         bin_dir / "lsof",
@@ -102,9 +109,149 @@ def _preflight_repo(
     )
     _write_executable(
         bin_dir / "curl",
-        f"#!/usr/bin/env bash\nprintf '%s' '{health_response}'\nexit {curl_exit}\n",
+        "#!/usr/bin/env bash\n"
+        'if [[ "$*" == *":5173/"* ]]; then\n'
+        f"  exit {frontend_curl_exit}\n"
+        "fi\n"
+        f"printf '%s' '{health_response}'\n"
+        f"exit {curl_exit}\n",
+    )
+    _write_executable(bin_dir / "uname", "#!/usr/bin/env bash\necho Darwin\n")
+    _write_executable(
+        bin_dir / "launchctl",
+        "#!/usr/bin/env bash\n" f"exit {0 if resident_service_loaded else 1}\n",
     )
     return repo
+
+
+def _stop_tracked_frontend(repo: Path) -> None:
+    pid_file = repo / ".run" / "web.pid"
+    if not pid_file.is_file():
+        return
+    try:
+        os.kill(int(pid_file.read_text().strip()), signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+
+
+def test_start_server_dev_reuses_healthy_resident_backend(tmp_path: Path):
+    repo = _preflight_repo(
+        tmp_path,
+        health_response=(
+            '{"schema_version":"karkinos.service_health.v1","status":"alive"}'
+        ),
+        curl_exit=0,
+        resident_service_loaded=True,
+    )
+    result = subprocess.run(
+        ["bash", "scripts/start_server.sh", "dev"],
+        cwd=repo,
+        env={
+            **os.environ,
+            "HOME": str(tmp_path / "home"),
+            "PATH": f"{tmp_path / 'bin'}:{os.environ['PATH']}",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    try:
+        assert result.returncode == 0
+        assert "Reusing resident Karkinos Web service" in result.stdout
+        assert "resident LaunchAgent remains running" in result.stdout
+        assert (tmp_path / "npm-dev-called").is_file()
+        assert not (tmp_path / "uv-launch-called").exists()
+        assert not (repo / ".run" / "server.pid").exists()
+        assert (repo / ".run" / "web.pid").is_file()
+    finally:
+        _stop_tracked_frontend(repo)
+
+
+def test_start_server_prod_accepts_healthy_resident_backend(tmp_path: Path):
+    repo = _preflight_repo(
+        tmp_path,
+        health_response=(
+            '{"schema_version":"karkinos.service_health.v1","status":"alive"}'
+        ),
+        curl_exit=0,
+        resident_service_loaded=True,
+    )
+    result = subprocess.run(
+        ["bash", "scripts/start_server.sh", "prod"],
+        cwd=repo,
+        env={
+            **os.environ,
+            "HOME": str(tmp_path / "home"),
+            "PATH": f"{tmp_path / 'bin'}:{os.environ['PATH']}",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "Resident service is already running" in result.stdout
+    assert not (tmp_path / "npm-called").exists()
+    assert not (tmp_path / "uv-launch-called").exists()
+
+
+def test_start_server_fails_closed_for_unhealthy_resident_backend(tmp_path: Path):
+    repo = _preflight_repo(
+        tmp_path,
+        health_response="",
+        curl_exit=28,
+        listener_pids="",
+        resident_service_loaded=True,
+    )
+    result = subprocess.run(
+        ["bash", "scripts/start_server.sh", "prod"],
+        cwd=repo,
+        env={
+            **os.environ,
+            "HOME": str(tmp_path / "home"),
+            "PATH": f"{tmp_path / 'bin'}:{os.environ['PATH']}",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "resident Karkinos LaunchAgent is loaded" in result.stderr
+    assert "No fallback backend was launched" in result.stderr
+    assert not (tmp_path / "npm-called").exists()
+    assert not (tmp_path / "uv-launch-called").exists()
+
+
+def test_start_server_cleans_up_when_frontend_readiness_times_out(tmp_path: Path):
+    repo = _preflight_repo(
+        tmp_path,
+        health_response=(
+            '{"schema_version":"karkinos.service_health.v1","status":"alive"}'
+        ),
+        curl_exit=0,
+        frontend_curl_exit=28,
+        resident_service_loaded=True,
+    )
+    result = subprocess.run(
+        ["bash", "scripts/start_server.sh", "dev"],
+        cwd=repo,
+        env={
+            **os.environ,
+            "HOME": str(tmp_path / "home"),
+            "PATH": f"{tmp_path / 'bin'}:{os.environ['PATH']}",
+            "KARKINOS_FRONTEND_STARTUP_TIMEOUT_SECONDS": "1",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "frontend did not become ready within 1s" in result.stderr
+    assert (tmp_path / "npm-dev-called").is_file()
+    assert not (tmp_path / "uv-launch-called").exists()
+    assert not (repo / ".run" / "web.pid").exists()
 
 
 def test_start_server_reports_healthy_existing_service_before_build(tmp_path: Path):

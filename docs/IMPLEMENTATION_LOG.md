@@ -43,7 +43,7 @@ The latest completed cross-cutting work includes:
   notification credentials, validated Settings write contracts, and one
   dotenv-selection path shared by server and legacy CLI entrypoints;
 - a deterministic process-liveness-only endpoint and health-aware startup preflight distinguish a responding Karkinos instance from an unresponsive or foreign listener before build/launch, report without terminating it, and make no financial-readiness, provider, database-write, broker-action, ledger, execution, or capital-authority claim;
-- an explicit macOS user-level LaunchAgent operations entry point renders its local definition before installation, runs the production backend with direct arguments on `127.0.0.1`, restarts after unexpected exit, verifies process liveness, refuses to replace an existing listener, and supports exact reversible uninstall. It does not edit runtime configuration, enable live monitoring, contact a provider or broker, or establish financial, execution, or capital readiness;
+- an explicit macOS user-level LaunchAgent operations entry point renders its local definition before installation, runs the production backend with direct arguments on `127.0.0.1`, remains supervised after any process exit while loaded, verifies process liveness, refuses to replace an existing listener, and supports exact reversible uninstall. It does not edit runtime configuration, enable live monitoring, contact a provider or broker, or establish financial, execution, or capital readiness;
 - an opt-in local broker-statement collector stages stable CSV evidence
   idempotently across polling/restarts, preserving prior evidence and exposing
   provider-free, non-authorizing Account Truth status;

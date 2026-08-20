@@ -9,9 +9,9 @@ in the application packages such as `data`, `account_truth`, `analytics`, and
 
 | Command | Purpose | Local writes or external contact |
 | --- | --- | --- |
-| `./scripts/start_server.sh dev` | Build the product bundle, start the reloadable backend, and start Vite on port 5173. Live monitoring remains off unless explicitly enabled in configuration or the environment. Test and frontend edits do not restart the backend; Vite owns frontend reloads. | Writes PID and log files; archives logs above 20 MiB by default; may install missing frontend dependencies. |
-| `./scripts/start_server.sh prod` | Start the backend against the existing `web/dist` bundle without code hot reload. | Writes a PID and server log. |
-| `./scripts/stop_server.sh` | Stop tracked backend and Vite processes and clean matching orphan listeners. | Terminates tracked or matching processes and, as a fallback, listeners on the configured ports. |
+| `./scripts/start_server.sh dev` | Build the product bundle and start Vite on port 5173. It starts a reloadable backend only when the supervised LaunchAgent is not loaded; otherwise it reuses the healthy resident backend. Live monitoring remains off unless explicitly enabled in configuration or the environment. | Writes PID and log files for manually started processes; archives logs above 20 MiB by default; may install missing frontend dependencies. |
+| `./scripts/start_server.sh prod` | Start the backend against the existing `web/dist` bundle without code hot reload, or report success when the healthy supervised LaunchAgent already owns the backend. | Writes a PID and server log only when launching a manual backend. |
+| `./scripts/stop_server.sh` | Stop tracked/manual backend and Vite processes while preserving a loaded supervised LaunchAgent. | Terminates only manual processes and matching listeners; removing the resident service remains an explicit `manage_launch_agent.sh uninstall` action. |
 | `./scripts/manage_launch_agent.sh print-plist` | Render the macOS user-level production service definition without installing it. | Read-only; prints local paths and process arguments to the current terminal. |
 | `./scripts/manage_launch_agent.sh install\|status\|uninstall` | Explicitly install, inspect, or remove the current user's restartable Karkinos production service. | Writes or removes only `~/Library/LaunchAgents/com.karkinos.daily-candidate.plist`; starts or stops that exact service and writes its local log. |
 | `uv run python scripts/audit_daily_candidate_production.py --pretty` | Read the running local service's exact financial preflight, monitor, five-round research policy, 20-day / 50-order trial, and compact dependency-ordered operator checklist into one sanitized readiness report. | Loopback GET only; no provider/broker contact or database write. Repeated candidate blockers are counted instead of copied as operator noise, and invalid checklist authority fails closed. Exit `0` means ready to continue bounded forward paper/shadow collection, not GO, profit, execution, or capital authority; exit `2` is fail-closed non-ready. |
@@ -22,18 +22,19 @@ continues to serve the product-style `web/dist` bundle and backend API.
 Set `KARKINOS_LOG_MAX_BYTES` to a positive byte count to change the default
 20 MiB startup log-archive threshold. Archives remain under `logs/`; the script
 does not delete them.
-Before building or launching, the start script checks the selected backend port.
-If a listener already exists, it distinguishes a responding Karkinos process-
-liveness endpoint from an unresponsive or foreign listener, reports the PID,
-and exits without terminating anything. Stop the intended instance explicitly
-or choose another port.
+Before building or launching, the start script checks the exact user-level
+LaunchAgent and selected backend port. A healthy resident service is reused by
+`dev` and treated as already running by `prod`. A loaded but unhealthy resident
+service fails closed without launching a competing backend. Other listeners are
+reported without being terminated. The stop script preserves the resident
+service; only `manage_launch_agent.sh uninstall` removes it explicitly.
 
 For an owner-operated Mac that must keep the daily-candidate monitor alive
 after the launching terminal exits, use `manage_launch_agent.sh` instead of
 relying on the background child created by `start_server.sh`. Inspect the
 generated definition with `print-plist`, then run `install` explicitly. The
 LaunchAgent uses direct process arguments, binds only `127.0.0.1`, restarts
-after an unexpected exit, and can be removed with `uninstall`. Installation
+after any process exit while loaded, and can be removed with `uninstall`. Installation
 does not edit `config.json` or `.env`, does not enable `live_auto_start`, and
 does not claim financial readiness. If another process already owns the backend
 port, installation exits without terminating it.

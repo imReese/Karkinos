@@ -16,6 +16,7 @@ UV_CACHE_PATH="${REPO_ROOT}/.uv-cache"
 BACKEND_HOST="127.0.0.1"
 BACKEND_PORT="${KARKINOS_BACKEND_PORT:-8000}"
 HEALTH_TIMEOUT_SECONDS="${KARKINOS_LAUNCH_AGENT_HEALTH_TIMEOUT_SECONDS:-60}"
+UNLOAD_TIMEOUT_SECONDS="${KARKINOS_LAUNCH_AGENT_UNLOAD_TIMEOUT_SECONDS:-10}"
 
 usage() {
 	cat <<'EOF'
@@ -124,10 +125,7 @@ render_plist() {
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
-  <dict>
-    <key>SuccessfulExit</key>
-    <false/>
-  </dict>
+  <true/>
   <key>ProcessType</key>
   <string>Background</string>
   <key>ThrottleInterval</key>
@@ -279,8 +277,21 @@ install_agent() {
 
 uninstall_agent() {
 	require_darwin
+	require_positive_integer \
+		"${UNLOAD_TIMEOUT_SECONDS}" \
+		"KARKINOS_LAUNCH_AGENT_UNLOAD_TIMEOUT_SECONDS" \
+		60
 	if service_is_loaded; then
 		launchctl bootout "${SERVICE_TARGET}"
+		local deadline=$((SECONDS + UNLOAD_TIMEOUT_SECONDS))
+		while service_is_loaded && ((SECONDS < deadline)); do
+			sleep 1
+		done
+		if service_is_loaded; then
+			echo "Error: ${SERVICE_TARGET} remained loaded after ${UNLOAD_TIMEOUT_SECONDS}s." >&2
+			echo "The plist was preserved; inspect the exact job before retrying." >&2
+			exit 1
+		fi
 	fi
 	if [[ -f "${PLIST_PATH}" ]]; then
 		rm -f "${PLIST_PATH}"
