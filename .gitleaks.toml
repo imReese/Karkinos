@@ -10,3 +10,19 @@ condition = "AND"
 regexTarget = "line"
 regexes = ['''key="per_order_stage1_drift_fails_closed"''']
 paths = ['''analytics/acceptance_audit\.py''']
+
+[[allowlists]]
+description = "Historical strategy research idempotency fixture misclassified as an API key"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''idempotency_key="hypothesis-iteration-2"''']
+paths = ['''tests/ai_runtime/test_strategy_research_workflow\.py''']
+
+[[allowlists]]
+description = "Historical broker safety documentation misclassified as an API key"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+regexes = ['''does not start a broker client, retain credentials, submit/cancel orders, or''']
+paths = ['''docs/config-reference\.en\.md''']

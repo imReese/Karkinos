@@ -694,7 +694,7 @@ async def test_iteration_exports_exact_parent_feedback_and_one_draft_contract(
 
     result = await service.generate_hypotheses(
         HypothesisGenerationRequest(
-            idempotency_key="hypothesis-iteration-2",
+            idempotency_key="iter-2",
             requested_by="human:reese",
             account_alias="synthetic-research-only",
             research_question="Revise the prior formula from its frozen evidence.",
