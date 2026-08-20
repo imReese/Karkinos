@@ -387,6 +387,15 @@ def test_human_candidate_approval_records_paper_shadow_only(tmp_path) -> None:
                 "draft_id": "draft-1",
                 "formula_ast": {"schema_version": "fixture"},
                 "formula_fingerprint": "sha256:" + "f" * 64,
+                "economic_hypothesis": "Reviewed fixture hypothesis.",
+                "risk_impact": "Loss remains possible under the reviewed limits.",
+                "failure_conditions": ["OOS excess return turns non-positive."],
+                "limitations": [
+                    "Historical evidence does not establish future profit."
+                ],
+                "anti_lookahead_assumptions": [
+                    "Signals use closed persisted bars only."
+                ],
                 "validation": {"status": "valid", "errors": []},
             }
         ],
@@ -422,6 +431,7 @@ def test_human_candidate_approval_records_paper_shadow_only(tmp_path) -> None:
         {
             "selection": canonical["daily_selection"],
             "backup": canonical["daily_backup"],
+            "operating_constraints": daily_binding["operating_constraints"],
         }
     )
     assert "relative_path" not in daily_binding
@@ -469,7 +479,7 @@ def test_daily_binding_failure_precedes_candidate_approval_write(tmp_path) -> No
 
     with pytest.raises(
         DailyStrategyArtifactRejected,
-        match="daily_promotion_binding_not_verified",
+        match="daily_promotion_binding_artifact_missing",
     ):
         service.approve_candidate(
             "candidate-invalid-binding",

@@ -23,12 +23,15 @@ from server.services.daily_decision_evidence_automation import (
     DAILY_CANDIDATE_DECISION_WINDOW_SCHEMA_VERSION,
     DAILY_CANDIDATE_DECISION_WINDOW_START_MINUTE,
     DAILY_CANDIDATE_INPUT_IDENTITY_SCHEMA_VERSION,
+    DAILY_CANDIDATE_MANUAL_TICKET_SCHEMA_VERSION,
     DAILY_CANDIDATE_MAX_QUOTE_AGE_SECONDS,
+    DAILY_CANDIDATE_STRATEGY_GATE_BINDING_SCHEMA_VERSION,
     DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE,
     DAILY_DECISION_EVIDENCE_AUTOMATION_SCHEMA_VERSION,
     build_daily_candidate_strategy_gate_binding,
     daily_candidate_input_fingerprint,
     daily_candidate_record_fingerprint,
+    daily_candidate_strategy_operating_constraints_blockers,
     manual_ticket_candidate_fingerprint,
     project_daily_candidate_background_schedule,
 )
@@ -144,6 +147,9 @@ class DailyCandidateTrialService:
         fee_schedule_refs = (
             list(active_binding[1]) if active_binding is not None else []
         )
+        strategy_operating_constraint_refs = (
+            list(active_binding[2]) if active_binding is not None else []
+        )
         epoch_binding_days = [
             day for day in epoch_days if _trial_binding(day) == active_binding
         ]
@@ -155,10 +161,13 @@ class DailyCandidateTrialService:
         trial_epoch_id = (
             _fingerprint(
                 {
-                    "schema_version": "karkinos.daily_candidate_trial_epoch.v1",
+                    "schema_version": "karkinos.daily_candidate_trial_epoch.v2",
                     "trial_epoch_start_date": trial_epoch_start_date,
                     "strategy_advancement_refs": strategy_refs,
                     "reviewed_fee_schedule_refs": fee_schedule_refs,
+                    "strategy_operating_constraint_refs": (
+                        strategy_operating_constraint_refs
+                    ),
                 }
             )
             if trial_epoch_start_date and active_binding is not None
@@ -201,6 +210,7 @@ class DailyCandidateTrialService:
             "remaining_simulated_orders": max(TARGET_SIMULATED_ORDERS - order_count, 0),
             "strategy_advancement_refs": strategy_refs,
             "reviewed_fee_schedule_refs": fee_schedule_refs,
+            "strategy_operating_constraint_refs": (strategy_operating_constraint_refs),
             "qualifying_days": qualifying_days,
             "superseded_qualifying_day_count": len(superseded_qualifying_days),
             "superseded_qualifying_days": superseded_qualifying_days,
@@ -667,11 +677,12 @@ class DailyCandidateTrialService:
             blockers.append("daily_candidate_strategy_gate_binding_count_mismatch")
         paper = _object(payload.get("paper_shadow"))
         current_strategy_gates: dict[str, tuple[dict[str, Any], list[str]]] = {}
+        strategy_operating_constraint_refs: set[str] = set()
 
         for index, ticket in enumerate(ticket_candidates):
             prefix = f"manual_order_ticket_candidate_{index}"
             if ticket.get("schema_version") != (
-                "karkinos.manual_order_ticket_candidate.v1"
+                DAILY_CANDIDATE_MANUAL_TICKET_SCHEMA_VERSION
             ):
                 blockers.append(f"{prefix}:contract_invalid")
             stored_ticket_fingerprint = str(
@@ -758,9 +769,44 @@ class DailyCandidateTrialService:
                 if _object(ticket.get("strategy_gate_binding")) != strategy_binding:
                     blockers.append(f"{prefix}:strategy_gate_ticket_binding_mismatch")
                 if strategy_binding.get("schema_version") != (
-                    "karkinos.daily_candidate_strategy_gate_binding.v1"
+                    DAILY_CANDIDATE_STRATEGY_GATE_BINDING_SCHEMA_VERSION
                 ):
                     blockers.append(f"{prefix}:strategy_gate_binding_contract_invalid")
+                ticket_constraints = _object(
+                    ticket.get("strategy_operating_constraints")
+                )
+                binding_constraints = _object(
+                    strategy_binding.get("strategy_operating_constraints")
+                )
+                if ticket_constraints != binding_constraints:
+                    blockers.append(
+                        f"{prefix}:strategy_operating_constraints_binding_mismatch"
+                    )
+                daily_artifact_binding = _object(
+                    strategy_binding.get("daily_strategy_artifact_binding")
+                )
+                constraint_blockers = (
+                    daily_candidate_strategy_operating_constraints_blockers(
+                        binding_constraints,
+                        expected_candidate_id=str(
+                            daily_artifact_binding.get("winner_candidate_id") or ""
+                        ),
+                        expected_backup_fingerprint=str(
+                            daily_artifact_binding.get("backup_artifact_fingerprint")
+                            or ""
+                        ),
+                    )
+                )
+                blockers.extend(
+                    f"{prefix}:{blocker}" for blocker in constraint_blockers
+                )
+                constraint_fingerprint = str(
+                    binding_constraints.get("evidence_fingerprint") or ""
+                )
+                if not constraint_blockers and _is_sha256(constraint_fingerprint):
+                    strategy_operating_constraint_refs.add(
+                        f"strategy_operating_constraints:{constraint_fingerprint}"
+                    )
                 for ref_field in (
                     "strategy_ref",
                     "strategy_advancement_ref",
@@ -876,6 +922,13 @@ class DailyCandidateTrialService:
                 blockers.append(f"{prefix}:broker_submission_boundary_invalid")
             if ticket.get("does_not_change_capital_authority") is not True:
                 blockers.append(f"{prefix}:capital_authority_boundary_invalid")
+            invalidation_conditions = ticket.get("invalidation_conditions")
+            if (
+                not isinstance(invalidation_conditions, list)
+                or not invalidation_conditions
+                or any(not str(item).strip() for item in invalidation_conditions)
+            ):
+                blockers.append(f"{prefix}:invalidation_conditions_invalid")
 
         calendar = self._calendar_day(run_date)
         blockers.extend(calendar["blockers"])
@@ -953,6 +1006,9 @@ class DailyCandidateTrialService:
             ),
             "strategy_advancement_refs": advancement_refs,
             "reviewed_fee_schedule_refs": fee_schedule_refs,
+            "strategy_operating_constraint_refs": sorted(
+                strategy_operating_constraint_refs
+            ),
             "market_calendar_ref": calendar.get("evidence_ref"),
             "paper_shadow_run_id": paper_run_id or None,
             "execution_closure_fingerprint": execution_closure_fingerprint or None,
@@ -1023,21 +1079,30 @@ class DailyCandidateTrialService:
 
 def _trial_binding(
     day: dict[str, Any],
-) -> tuple[tuple[str, ...], tuple[str, ...]] | None:
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]] | None:
     strategy_refs = tuple(
         sorted(str(item) for item in day.get("strategy_advancement_refs") or [])
     )
     fee_schedule_refs = tuple(
         sorted(str(item) for item in day.get("reviewed_fee_schedule_refs") or [])
     )
-    if not strategy_refs or not fee_schedule_refs:
+    strategy_operating_constraint_refs = tuple(
+        sorted(
+            str(item) for item in day.get("strategy_operating_constraint_refs") or []
+        )
+    )
+    if (
+        not strategy_refs
+        or not fee_schedule_refs
+        or not strategy_operating_constraint_refs
+    ):
         return None
-    return strategy_refs, fee_schedule_refs
+    return strategy_refs, fee_schedule_refs, strategy_operating_constraint_refs
 
 
 def _latest_complete_trial_binding(
     evaluated_days: list[dict[str, Any]],
-) -> tuple[tuple[str, ...], tuple[str, ...]] | None:
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]] | None:
     for day in reversed(evaluated_days):
         binding = _trial_binding(day)
         if binding is not None:
@@ -1048,7 +1113,7 @@ def _latest_complete_trial_binding(
 def _current_trial_epoch_days(
     *,
     evaluated_days: list[dict[str, Any]],
-    active_binding: tuple[tuple[str, ...], tuple[str, ...]] | None,
+    active_binding: tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]] | None,
 ) -> list[dict[str, Any]]:
     if active_binding is None:
         return []
@@ -1070,6 +1135,7 @@ def _day_result(*, run_date: str, blockers: list[str]) -> dict[str, Any]:
         "simulated_order_count": 0,
         "strategy_advancement_refs": [],
         "reviewed_fee_schedule_refs": [],
+        "strategy_operating_constraint_refs": [],
         "market_calendar_ref": None,
         "paper_shadow_run_id": None,
         "execution_closure_fingerprint": None,

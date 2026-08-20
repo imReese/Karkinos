@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import pytest
 
 import server.services.daily_candidate_trial as daily_candidate_trial_module
+from server.ai_runtime.contracts import content_fingerprint
 from server.db import AppDatabase
 from server.services.account_truth_replay import (
     account_truth_replay_evidence_fingerprint,
@@ -32,8 +33,30 @@ from server.services.oms import OmsService
 
 STRATEGY_ADVANCEMENT_REF = "strategy_advancement:" + "a" * 64
 REVIEWED_FEE_SCHEDULE_REF = "reviewed_fee_schedule:" + "b" * 64
+STRATEGY_OPERATING_CONSTRAINTS = {
+    "schema_version": "karkinos.ai.strategy_operating_constraints.v1",
+    "candidate_id": "fixture",
+    "strategy_artifact_fingerprint": "3" * 64,
+    "source_backup_artifact_fingerprint": "2" * 64,
+    "economic_hypothesis": "Reviewed fixture hypothesis.",
+    "risk_impact": "Loss remains possible under the reviewed limits.",
+    "failure_conditions": ["OOS excess return turns non-positive."],
+    "limitations": ["Historical evidence does not establish future profit."],
+    "anti_lookahead_assumptions": ["Signals use closed persisted bars only."],
+    "automatic_enforcement_enabled": False,
+    "human_review_required": True,
+    "authorizes_execution": False,
+    "changes_capital_authority": False,
+}
+STRATEGY_OPERATING_CONSTRAINTS["evidence_fingerprint"] = content_fingerprint(
+    STRATEGY_OPERATING_CONSTRAINTS
+)
+STRATEGY_OPERATING_CONSTRAINT_REF = (
+    "strategy_operating_constraints:"
+    + STRATEGY_OPERATING_CONSTRAINTS["evidence_fingerprint"]
+)
 DAILY_STRATEGY_ARTIFACT_BINDING = {
-    "schema_version": "karkinos.ai.daily_strategy_promotion_binding.v1",
+    "schema_version": "karkinos.ai.daily_strategy_promotion_binding.v2",
     "run_id": "research-run-fixture",
     "market_date": "2026-06-30",
     "winner_candidate_id": "fixture",
@@ -41,6 +64,7 @@ DAILY_STRATEGY_ARTIFACT_BINDING = {
     "selection_fingerprint": "1" * 64,
     "backup_id": "backup-fixture",
     "backup_artifact_fingerprint": "2" * 64,
+    "operating_constraints": dict(STRATEGY_OPERATING_CONSTRAINTS),
     "contains_private_account_identifiers": False,
     "contains_broker_export_rows": False,
     "does_not_change_capital_authority": True,
@@ -134,7 +158,6 @@ def _fixture_strategy_gate_resolver(
             "comparison_fingerprint": binding.get("comparison_fingerprint"),
             "human_approval_id": binding.get("human_approval_id"),
             "strategy_advancement_gate_fingerprint": advancement_fingerprint,
-            "daily_strategy_artifact_binding": dict(DAILY_STRATEGY_ARTIFACT_BINDING),
             "fee_schedule_binding": {
                 "fee_schedule_review_fingerprint": fee_fingerprint,
             },
@@ -148,6 +171,10 @@ def _fixture_strategy_gate_resolver(
                 "baseline_snapshot_id": binding.get("baseline_snapshot_id"),
                 "candidate_snapshot_id": binding.get("candidate_snapshot_id"),
             },
+            "daily_strategy_artifact_binding": dict(
+                binding.get("daily_strategy_artifact_binding")
+                or DAILY_STRATEGY_ARTIFACT_BINDING
+            ),
         },
     }, []
 
@@ -204,7 +231,17 @@ def _seed_qualifying_day(
     schema_version: str = DAILY_DECISION_EVIDENCE_AUTOMATION_SCHEMA_VERSION,
     strategy_advancement_ref: str = STRATEGY_ADVANCEMENT_REF,
     reviewed_fee_schedule_ref: str = REVIEWED_FEE_SCHEDULE_REF,
+    strategy_operating_constraints: dict | None = None,
 ) -> None:
+    operating_constraints = dict(
+        STRATEGY_OPERATING_CONSTRAINTS
+        if strategy_operating_constraints is None
+        else strategy_operating_constraints
+    )
+    daily_strategy_artifact_binding = {
+        **DAILY_STRATEGY_ARTIFACT_BINDING,
+        "operating_constraints": operating_constraints,
+    }
     paper_fingerprint = f"paper-{day}-{suffix}"
     paper_run_id = f"shadow:{day}:{suffix}"
     db.upsert_paper_shadow_run_sync(
@@ -247,7 +284,7 @@ def _seed_qualifying_day(
     }
     strategy_gate_bindings = [
         {
-            "schema_version": "karkinos.daily_candidate_strategy_gate_binding.v1",
+            "schema_version": "karkinos.daily_candidate_strategy_gate_binding.v2",
             "action_id": index + 1,
             "strategy_ref": "strategy:ai_formula_shadow:fixture",
             "strategy_advancement_ref": strategy_advancement_ref,
@@ -257,7 +294,8 @@ def _seed_qualifying_day(
             "dataset_replay_fingerprint": "f" * 64,
             "baseline_snapshot_id": "dataset-fixture",
             "candidate_snapshot_id": "dataset-fixture",
-            "daily_strategy_artifact_binding": dict(DAILY_STRATEGY_ARTIFACT_BINDING),
+            "daily_strategy_artifact_binding": dict(daily_strategy_artifact_binding),
+            "strategy_operating_constraints": dict(operating_constraints),
             "persisted_facts_only": True,
             "provider_contact_performed": False,
             "paper_shadow_evaluation_only": True,
@@ -269,7 +307,7 @@ def _seed_qualifying_day(
     tickets = []
     for index in range(order_count):
         ticket = {
-            "schema_version": "karkinos.manual_order_ticket_candidate.v1",
+            "schema_version": "karkinos.manual_order_ticket_candidate.v2",
             "plan_date": day,
             "intent_id": f"intent-{index + 1}",
             "action_id": index + 1,
@@ -291,6 +329,7 @@ def _seed_qualifying_day(
                 "divergence_status": "within_expectations",
             },
             "strategy_gate_binding": strategy_gate_bindings[index],
+            "strategy_operating_constraints": dict(operating_constraints),
             "account_truth_binding": account_truth_binding,
             "prior_execution_closure_fingerprint": execution_closure[
                 "evidence_fingerprint"
@@ -307,6 +346,9 @@ def _seed_qualifying_day(
             "authorizes_execution": False,
             "broker_submission_enabled": False,
             "does_not_change_capital_authority": True,
+            "invalidation_conditions": [
+                "risk_strategy_fee_or_paper_shadow_binding_changes"
+            ],
         }
         ticket["ticket_candidate_fingerprint"] = manual_ticket_candidate_fingerprint(
             ticket
@@ -810,6 +852,78 @@ def test_daily_candidate_trial_replays_frozen_strategy_gate_binding(tmp_path) ->
     )
 
 
+def test_daily_candidate_trial_rejects_strategy_operating_constraint_drift(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    day = _trading_days()[0]
+    _seed_verified_calendar(db, [day])
+    _seed_qualifying_day(db, day=day, order_count=1)
+    row = db.list_automation_runs_sync(
+        run_type=DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE,
+        limit=1,
+        offset=0,
+    )[0]
+    payload = json.loads(row["payload_json"])
+    binding = payload["input_snapshot"]["strategy_gate_bindings"][0]
+    constraints = dict(binding["strategy_operating_constraints"])
+    constraints["risk_impact"] = "Drifted risk statement."
+    constraints["evidence_fingerprint"] = content_fingerprint(
+        {
+            key: value
+            for key, value in constraints.items()
+            if key != "evidence_fingerprint"
+        }
+    )
+    binding["strategy_operating_constraints"] = constraints
+    ticket = payload["manual_order_ticket_candidates"][0]
+    ticket["strategy_gate_binding"] = binding
+    ticket["strategy_operating_constraints"] = constraints
+    ticket["ticket_candidate_fingerprint"] = manual_ticket_candidate_fingerprint(ticket)
+    payload["production_record_fingerprint"] = daily_candidate_record_fingerprint(
+        payload
+    )
+    db.upsert_automation_run_sync({**row, "payload": payload})
+
+    status = DailyCandidateTrialService(db=db).get_status()
+
+    assert (
+        "manual_order_ticket_candidate_0:current_strategy_gate_binding_mismatch"
+        in status["excluded_days"][0]["blockers"]
+    )
+
+
+def test_daily_candidate_trial_requires_ticket_invalidation_conditions(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    day = _trading_days()[0]
+    _seed_verified_calendar(db, [day])
+    _seed_qualifying_day(db, day=day, order_count=1)
+    row = db.list_automation_runs_sync(
+        run_type=DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE,
+        limit=1,
+        offset=0,
+    )[0]
+    payload = json.loads(row["payload_json"])
+    ticket = payload["manual_order_ticket_candidates"][0]
+    ticket["invalidation_conditions"] = []
+    ticket["ticket_candidate_fingerprint"] = manual_ticket_candidate_fingerprint(ticket)
+    payload["production_record_fingerprint"] = daily_candidate_record_fingerprint(
+        payload
+    )
+    db.upsert_automation_run_sync({**row, "payload": payload})
+
+    status = DailyCandidateTrialService(db=db).get_status()
+
+    assert (
+        "manual_order_ticket_candidate_0:invalidation_conditions_invalid"
+        in status["excluded_days"][0]["blockers"]
+    )
+
+
 def test_daily_candidate_trial_rejects_legacy_missing_daily_artifact_binding(
     tmp_path,
 ) -> None:
@@ -960,9 +1074,50 @@ def test_daily_candidate_trial_starts_new_epoch_after_frozen_binding_change(
     assert status["superseded_qualifying_day_count"] == 10
     assert status["strategy_advancement_refs"] == [next_strategy]
     assert status["reviewed_fee_schedule_refs"] == [next_fee_schedule]
+    assert status["strategy_operating_constraint_refs"] == [
+        STRATEGY_OPERATING_CONSTRAINT_REF
+    ]
     assert status["eligible_for_human_go_no_go_review"] is True
     assert "strategy_trial_binding_changed" not in status["blockers"]
     assert "fee_schedule_trial_binding_changed" not in status["blockers"]
+
+
+def test_daily_candidate_trial_starts_new_epoch_after_operating_constraint_change(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    days = _trading_days(30)
+    _seed_verified_calendar(db, days)
+    next_constraints = {
+        **STRATEGY_OPERATING_CONSTRAINTS,
+        "risk_impact": "The newly reviewed risk boundary is frozen for this epoch.",
+    }
+    next_constraints.pop("evidence_fingerprint")
+    next_constraints["evidence_fingerprint"] = content_fingerprint(next_constraints)
+    next_constraint_ref = (
+        "strategy_operating_constraints:" + next_constraints["evidence_fingerprint"]
+    )
+    for day in days[:10]:
+        _seed_qualifying_day(db, day=day, order_count=3)
+    for day in days[10:]:
+        _seed_qualifying_day(
+            db,
+            day=day,
+            order_count=3,
+            strategy_operating_constraints=next_constraints,
+        )
+
+    status = DailyCandidateTrialService(db=db).get_status()
+
+    assert status["trial_epoch_start_date"] == days[10]
+    assert status["qualifying_trading_day_count"] == 20
+    assert status["simulated_order_count"] == 60
+    assert status["superseded_qualifying_day_count"] == 10
+    assert status["strategy_advancement_refs"] == [STRATEGY_ADVANCEMENT_REF]
+    assert status["reviewed_fee_schedule_refs"] == [REVIEWED_FEE_SCHEDULE_REF]
+    assert status["strategy_operating_constraint_refs"] == [next_constraint_ref]
+    assert status["eligible_for_human_go_no_go_review"] is True
 
 
 def test_daily_candidate_trial_blocks_review_when_latest_day_is_not_qualifying(

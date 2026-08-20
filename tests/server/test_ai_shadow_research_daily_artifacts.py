@@ -125,12 +125,17 @@ def test_five_complete_sequential_rounds_get_one_deterministic_winner_and_backup
     assert result["backup"]["verification_status"] == "verified"
     assert result["backup"]["contains_private_account_identifiers"] is False
     assert result["backup"]["contains_broker_export_rows"] is False
-    assert (
-        artifacts.require_verified_winner(
-            candidate_id="candidate-5", run_id="run-daily-selection"
-        )["backup"]["verification_status"]
-        == "verified"
+    verified = artifacts.require_verified_winner(
+        candidate_id="candidate-5", run_id="run-daily-selection"
     )
+    assert verified["backup"]["verification_status"] == "verified"
+    assert verified["operating_constraints"]["candidate_id"] == "candidate-5"
+    assert verified["operating_constraints"]["failure_conditions"] == [
+        "OOS evidence drifts"
+    ]
+    assert verified["operating_constraints"]["automatic_enforcement_enabled"] is False
+    assert verified["operating_constraints"]["human_review_required"] is True
+    assert verified["operating_constraints"]["authorizes_execution"] is False
     with pytest.raises(
         DailyStrategyArtifactRejected,
         match="candidate_is_not_verified_daily_winner",
@@ -225,6 +230,37 @@ def test_tampered_daily_backup_blocks_winner_approval(tmp_path) -> None:
     )
     with pytest.raises(
         DailyStrategyArtifactRejected, match="daily_strategy_backup_not_verified"
+    ):
+        artifacts.require_verified_winner(
+            candidate_id="candidate-5", run_id="run-daily-selection"
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_incomplete_operating_constraints_block_winner_approval(tmp_path) -> None:
+    _, candidates = _passed_candidates(tmp_path)
+    artifacts = DailyStrategyArtifactStore(
+        tmp_path / "app.db", tmp_path / "strategy-research-backups"
+    )
+    drafts = [_draft(ordinal) for ordinal in range(1, 6)]
+    drafts[-1]["failure_conditions"] = []
+    artifacts.record_daily_artifacts(
+        run={
+            "run_id": "run-daily-selection",
+            "market_date": "2026-08-11",
+            "input_fingerprint": "sha256:daily-input",
+        },
+        candidates=candidates,
+        drafts=drafts,
+        expected_candidate_count=5,
+        run_status="completed",
+        created_at="2026-08-11T08:30:00+00:00",
+    )
+
+    with pytest.raises(
+        DailyStrategyArtifactRejected,
+        match="daily_strategy_operating_constraints_incomplete",
     ):
         artifacts.require_verified_winner(
             candidate_id="candidate-5", run_id="run-daily-selection"
