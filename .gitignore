@@ -162,6 +162,8 @@ skills-lock.json
 
 # Docs
 docs/*
+!docs/assets/
+!docs/assets/*.svg
 !docs/README.en.md
 !docs/README.zh.md
 !docs/ARCHITECTURE.md
