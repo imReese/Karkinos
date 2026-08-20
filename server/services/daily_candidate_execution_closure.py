@@ -13,6 +13,9 @@ from server.services.execution_reconciliation import (
 DAILY_CANDIDATE_EXECUTION_CLOSURE_SCHEMA_VERSION = (
     "karkinos.daily_candidate_execution_closure.v1"
 )
+DAILY_CANDIDATE_EXECUTION_EVIDENCE_SUMMARY_SCHEMA_VERSION = (
+    "karkinos.daily_candidate_execution_evidence_summary.v1"
+)
 MAX_EXECUTION_CLOSURE_ORDERS = 500
 
 _NO_FILL_TERMINAL_ITEM_STATUSES = {
@@ -126,6 +129,142 @@ def build_daily_candidate_execution_closure(db: Any) -> dict[str, Any]:
     return {**core, "evidence_fingerprint": _fingerprint(core)}
 
 
+def project_daily_candidate_execution_evidence_summary(value: Any) -> dict[str, Any]:
+    """Project current real-order closure without attributing it to the trial."""
+
+    if not verify_daily_candidate_execution_closure(value):
+        core = {
+            "schema_version": (
+                DAILY_CANDIDATE_EXECUTION_EVIDENCE_SUMMARY_SCHEMA_VERSION
+            ),
+            "status": "blocked",
+            "current_execution_closure_fingerprint": None,
+            "population_scope": "all_current_non_paper_shadow_oms_orders",
+            "production_order_count": 0,
+            "clear_order_count": 0,
+            "reconciled_actual_order_count": 0,
+            "reconciled_no_fill_order_count": 0,
+            "comparison_coverage_complete": False,
+            "blockers": ["current_execution_closure_invalid"],
+            "actual_orders_attributed_to_trial": False,
+            "actual_orders_count_toward_simulated_trial_threshold": False,
+            "persisted_evidence_only": True,
+            "provider_contact_performed": False,
+            "manual_review_required": True,
+            "authorizes_execution": False,
+            "does_not_submit_broker_order": True,
+            "does_not_mutate_oms": True,
+            "does_not_mutate_production_ledger": True,
+            "does_not_change_capital_authority": True,
+        }
+        return {**core, "evidence_fingerprint": _fingerprint(core)}
+
+    closure = dict(value)
+    closure_blockers = closure.get("blockers")
+    blockers = []
+    if not isinstance(closure_blockers, list):
+        blockers.append("current_execution_closure_blockers_invalid")
+        closure_blockers = []
+    blockers.extend(
+        str(blocker) for blocker in closure_blockers if str(blocker or "").strip()
+    )
+    closure_status = str(closure.get("status") or "")
+    if closure_status not in {"blocked", "not_required", "pass"}:
+        blockers.append("current_execution_closure_status_invalid")
+
+    production_order_count = closure.get("production_order_count")
+    clear_order_count = closure.get("clear_order_count")
+    if not _is_nonnegative_int(production_order_count):
+        blockers.append("current_execution_production_order_count_invalid")
+        production_order_count = 0
+    if not _is_nonnegative_int(clear_order_count):
+        blockers.append("current_execution_clear_order_count_invalid")
+        clear_order_count = 0
+    if clear_order_count > production_order_count:
+        blockers.append("current_execution_clear_order_count_exceeds_population")
+
+    orders = closure.get("orders")
+    if not isinstance(orders, list):
+        blockers.append("current_execution_order_projection_invalid")
+        orders = []
+    if len(orders) != production_order_count:
+        blockers.append("current_execution_order_population_mismatch")
+
+    passing_order_count = 0
+    reconciled_actual_order_count = 0
+    reconciled_no_fill_order_count = 0
+    for item in orders:
+        if not isinstance(item, dict):
+            blockers.append("current_execution_order_projection_invalid")
+            continue
+        if item.get("status") != "pass":
+            continue
+        passing_order_count += 1
+        comparison_status = str(item.get("plan_paper_actual_status") or "")
+        comparison_fingerprint = item.get("plan_paper_actual_fingerprint")
+        if comparison_status == "pass" and _is_sha256(comparison_fingerprint):
+            reconciled_actual_order_count += 1
+        elif comparison_status != "pass" and (
+            str(item.get("reconciliation_item_status") or "")
+            in {
+                *_NO_FILL_TERMINAL_ITEM_STATUSES,
+                "controlled_submission_reconciliation_cleared",
+            }
+            or str(item.get("oms_status") or "") in _NO_FILL_TERMINAL_STATUSES
+        ):
+            reconciled_no_fill_order_count += 1
+        else:
+            blockers.append("current_execution_comparison_projection_invalid")
+
+    if passing_order_count != clear_order_count:
+        blockers.append("current_execution_clear_order_projection_mismatch")
+    scan_truncated = closure.get("scan_truncated")
+    if not isinstance(scan_truncated, bool):
+        blockers.append("current_execution_scan_status_invalid")
+        scan_truncated = True
+    if scan_truncated:
+        blockers.append("current_execution_closure_scan_truncated")
+    if closure_status == "not_required" and production_order_count != 0:
+        blockers.append("current_execution_not_required_population_mismatch")
+    if closure_status == "pass" and production_order_count == 0:
+        blockers.append("current_execution_pass_population_missing")
+    if closure_status in {"not_required", "pass"} and closure_blockers:
+        blockers.append("current_execution_clear_status_has_blockers")
+
+    blockers = list(dict.fromkeys(blockers))
+    comparison_coverage_complete = bool(
+        not blockers
+        and closure_status in {"not_required", "pass"}
+        and production_order_count
+        == clear_order_count
+        == reconciled_actual_order_count + reconciled_no_fill_order_count
+        and scan_truncated is False
+    )
+    core = {
+        "schema_version": DAILY_CANDIDATE_EXECUTION_EVIDENCE_SUMMARY_SCHEMA_VERSION,
+        "status": closure_status if comparison_coverage_complete else "blocked",
+        "current_execution_closure_fingerprint": closure["evidence_fingerprint"],
+        "population_scope": "all_current_non_paper_shadow_oms_orders",
+        "production_order_count": production_order_count,
+        "clear_order_count": clear_order_count,
+        "reconciled_actual_order_count": reconciled_actual_order_count,
+        "reconciled_no_fill_order_count": reconciled_no_fill_order_count,
+        "comparison_coverage_complete": comparison_coverage_complete,
+        "blockers": blockers,
+        "actual_orders_attributed_to_trial": False,
+        "actual_orders_count_toward_simulated_trial_threshold": False,
+        "persisted_evidence_only": True,
+        "provider_contact_performed": False,
+        "manual_review_required": not comparison_coverage_complete,
+        "authorizes_execution": False,
+        "does_not_submit_broker_order": True,
+        "does_not_mutate_oms": True,
+        "does_not_mutate_production_ledger": True,
+        "does_not_change_capital_authority": True,
+    }
+    return {**core, "evidence_fingerprint": _fingerprint(core)}
+
+
 def verify_daily_candidate_execution_closure(value: Any) -> bool:
     """Verify one persisted closure without contacting a provider or writing."""
 
@@ -209,6 +348,10 @@ def _is_sha256(value: Any) -> bool:
     return len(normalized) == 64 and all(
         character in "0123456789abcdef" for character in normalized
     )
+
+
+def _is_nonnegative_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
 def _fingerprint(value: Any) -> str:

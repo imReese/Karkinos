@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+from server.ai_runtime.contracts import content_fingerprint
 from server.services.ai_shadow_research_automation import (
     SHADOW_RESEARCH_POLICY_CONFIRMATION,
 )
@@ -12,6 +13,29 @@ from server.services.daily_candidate_production_readiness import (
 
 
 def _inputs() -> tuple[dict, dict]:
+    execution_evidence = {
+        "schema_version": ("karkinos.daily_candidate_execution_evidence_summary.v1"),
+        "status": "not_required",
+        "current_execution_closure_fingerprint": "d" * 64,
+        "population_scope": "all_current_non_paper_shadow_oms_orders",
+        "production_order_count": 0,
+        "clear_order_count": 0,
+        "reconciled_actual_order_count": 0,
+        "reconciled_no_fill_order_count": 0,
+        "comparison_coverage_complete": True,
+        "blockers": [],
+        "actual_orders_attributed_to_trial": False,
+        "actual_orders_count_toward_simulated_trial_threshold": False,
+        "persisted_evidence_only": True,
+        "provider_contact_performed": False,
+        "manual_review_required": False,
+        "authorizes_execution": False,
+        "does_not_submit_broker_order": True,
+        "does_not_mutate_oms": True,
+        "does_not_mutate_production_ledger": True,
+        "does_not_change_capital_authority": True,
+    }
+    execution_evidence["evidence_fingerprint"] = content_fingerprint(execution_evidence)
     cockpit = {
         "schema_version": "karkinos.automation_cockpit.v4",
         "broker_submission_enabled": False,
@@ -73,7 +97,7 @@ def _inputs() -> tuple[dict, dict]:
             "changes_capital_authority": False,
         },
         "daily_candidate_trial": {
-            "schema_version": "karkinos.daily_candidate_trial.v1",
+            "schema_version": "karkinos.daily_candidate_trial.v2",
             "status": "collecting_forward_operating_evidence",
             "trial_epoch_id": "b" * 64,
             "qualifying_trading_day_count": 7,
@@ -84,6 +108,7 @@ def _inputs() -> tuple[dict, dict]:
             "remaining_simulated_orders": 32,
             "eligible_for_human_go_no_go_review": False,
             "latest_review": None,
+            "current_execution_evidence": execution_evidence,
             "background_schedule": {
                 "schema_version": "karkinos.daily_candidate_background_schedule.v3",
                 "status": "waiting_for_decision_window",
@@ -164,6 +189,18 @@ def test_live_readiness_accepts_waiting_service_and_collects_forward_evidence() 
         "ready_for_five_sequential_iterations"
     )
     assert report["forward_trial"]["qualifying_trading_day_count"] == 7
+    assert (
+        report["forward_trial"]["execution_reconciliation"][
+            "comparison_coverage_complete"
+        ]
+        is True
+    )
+    assert (
+        report["forward_trial"]["execution_reconciliation"][
+            "actual_orders_attributed_to_trial"
+        ]
+        is False
+    )
     assert report["raw_xls_rows_included"] is False
     assert report["private_account_identifiers_included"] is False
     assert report["provider_contact_performed"] is False
@@ -270,6 +307,26 @@ def test_live_readiness_fails_closed_on_invalid_operator_checklist() -> None:
     ]
     assert report["daily_operation"]["operator_checklist_status"] == "invalid"
     assert report["daily_operation"]["operator_checklist"] == []
+
+
+def test_live_readiness_fails_closed_on_execution_evidence_drift() -> None:
+    cockpit, research = _inputs()
+    cockpit["daily_candidate_trial"]["current_execution_evidence"][
+        "production_order_count"
+    ] = 1
+
+    report = project_daily_candidate_production_readiness(
+        cockpit=cockpit,
+        research_status=research,
+    )
+
+    assert report["ready_for_production_operation"] is False
+    assert (
+        "trial_current_execution_evidence_contract_invalid"
+        in report["source_contract_blockers"]
+    )
+    assert report["daily_operation"]["status"] == "no_action"
+    assert report["forward_trial"]["execution_reconciliation"]["status"] == ("blocked")
 
 
 def test_live_readiness_hides_unsafe_next_window_without_changing_schedule() -> None:

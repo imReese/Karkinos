@@ -16,6 +16,7 @@ from server.services.account_truth_replay import (
 )
 from server.services.daily_candidate_execution_closure import (
     build_daily_candidate_execution_closure,
+    project_daily_candidate_execution_evidence_summary,
     verify_daily_candidate_execution_closure,
 )
 from server.services.daily_decision_evidence_automation import (
@@ -39,8 +40,8 @@ from server.services.strategy_promotion_pipeline import (
     resolve_strategy_order_generation_gate,
 )
 
-DAILY_CANDIDATE_TRIAL_SCHEMA_VERSION = "karkinos.daily_candidate_trial.v1"
-DAILY_CANDIDATE_TRIAL_REVIEW_SCHEMA_VERSION = "karkinos.daily_candidate_trial_review.v1"
+DAILY_CANDIDATE_TRIAL_SCHEMA_VERSION = "karkinos.daily_candidate_trial.v2"
+DAILY_CANDIDATE_TRIAL_REVIEW_SCHEMA_VERSION = "karkinos.daily_candidate_trial_review.v2"
 DAILY_CANDIDATE_TRIAL_REVIEW_EVENT_TYPE = "daily_candidate_trial.review_recorded"
 DAILY_CANDIDATE_TRIAL_REVIEW_ENTITY_TYPE = "daily_candidate_trial_review"
 DAILY_CANDIDATE_TRIAL_EVENT_SOURCE = "daily_candidate_trial"
@@ -102,6 +103,9 @@ class DailyCandidateTrialService:
             current_execution_closure = self._execution_closure_resolver(self._db)
         except Exception:
             current_execution_closure = None
+        current_execution_evidence = project_daily_candidate_execution_evidence_summary(
+            current_execution_closure
+        )
         rows, scan_truncated = self._read_complete_run_history()
         by_date: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for row in rows:
@@ -183,6 +187,8 @@ class DailyCandidateTrialService:
             "qualifying"
         ):
             global_blockers.append("latest_daily_candidate_not_qualifying")
+        if not current_execution_evidence["comparison_coverage_complete"]:
+            global_blockers.append("current_execution_evidence_incomplete")
 
         order_count = sum(int(day["simulated_order_count"]) for day in qualifying_days)
         day_count = len(qualifying_days)
@@ -217,6 +223,7 @@ class DailyCandidateTrialService:
             "excluded_days": excluded_days,
             "run_scan_truncated": scan_truncated,
             "latest_daily_run": latest_daily_run,
+            "current_execution_evidence": current_execution_evidence,
             "blockers": global_blockers,
         }
         trial_fingerprint = _fingerprint(trial_core)
@@ -307,6 +314,9 @@ class DailyCandidateTrialService:
         recorded_at = _aware_utc(self._clock()).isoformat()
         identity = {
             "trial_fingerprint": expected_trial_fingerprint,
+            "execution_evidence_fingerprint": current["current_execution_evidence"][
+                "evidence_fingerprint"
+            ],
             "decision": decision,
             "reviewed_by": str(reviewed_by or "").strip(),
             "note": str(note or "").strip(),
@@ -328,6 +338,9 @@ class DailyCandidateTrialService:
                 "schema_version": DAILY_CANDIDATE_TRIAL_REVIEW_SCHEMA_VERSION,
                 "review_id": review_id,
                 "trial_fingerprint": expected_trial_fingerprint,
+                "execution_evidence_fingerprint": current["current_execution_evidence"][
+                    "evidence_fingerprint"
+                ],
                 "decision": decision,
                 "reviewed_by": str(reviewed_by or "").strip(),
                 "note": str(note or "").strip(),

@@ -1011,6 +1011,28 @@ def test_daily_candidate_trial_rechecks_new_unreconciled_actual_order(
     )
 
 
+def test_daily_candidate_trial_blocks_invalid_current_execution_evidence(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    day = _trading_days()[0]
+    _seed_verified_calendar(db, [day])
+    _seed_qualifying_day(db, day=day, order_count=1)
+
+    status = DailyCandidateTrialService(
+        db=db,
+        execution_closure_resolver=lambda _db: {},
+    ).get_status()
+
+    assert status["eligible_for_human_go_no_go_review"] is False
+    assert "current_execution_evidence_incomplete" in status["blockers"]
+    assert status["current_execution_evidence"]["status"] == "blocked"
+    assert status["current_execution_evidence"]["blockers"] == [
+        "current_execution_closure_invalid"
+    ]
+
+
 def test_daily_candidate_trial_allows_new_reconciled_no_fill_as_safe_superset(
     tmp_path,
 ) -> None:
@@ -1043,6 +1065,116 @@ def test_daily_candidate_trial_allows_new_reconciled_no_fill_as_safe_superset(
 
     assert status["qualifying_trading_day_count"] == 1
     assert status["qualifying_days"][0]["blockers"] == []
+    summary = status["current_execution_evidence"]
+    assert set(summary) == {
+        "schema_version",
+        "status",
+        "current_execution_closure_fingerprint",
+        "population_scope",
+        "production_order_count",
+        "clear_order_count",
+        "reconciled_actual_order_count",
+        "reconciled_no_fill_order_count",
+        "comparison_coverage_complete",
+        "blockers",
+        "actual_orders_attributed_to_trial",
+        "actual_orders_count_toward_simulated_trial_threshold",
+        "persisted_evidence_only",
+        "provider_contact_performed",
+        "manual_review_required",
+        "authorizes_execution",
+        "does_not_submit_broker_order",
+        "does_not_mutate_oms",
+        "does_not_mutate_production_ledger",
+        "does_not_change_capital_authority",
+        "evidence_fingerprint",
+    }
+    assert summary["schema_version"] == (
+        "karkinos.daily_candidate_execution_evidence_summary.v1"
+    )
+    assert summary["status"] == "pass"
+    assert summary["population_scope"] == "all_current_non_paper_shadow_oms_orders"
+    assert summary["production_order_count"] == 1
+    assert summary["clear_order_count"] == 1
+    assert summary["reconciled_actual_order_count"] == 0
+    assert summary["reconciled_no_fill_order_count"] == 1
+    assert summary["comparison_coverage_complete"] is True
+    assert summary["blockers"] == []
+    assert summary["actual_orders_attributed_to_trial"] is False
+    assert summary["actual_orders_count_toward_simulated_trial_threshold"] is False
+    assert summary["persisted_evidence_only"] is True
+    assert summary["provider_contact_performed"] is False
+    assert summary["manual_review_required"] is False
+    assert summary["authorizes_execution"] is False
+    assert summary["does_not_submit_broker_order"] is True
+    assert summary["does_not_mutate_oms"] is True
+    assert summary["does_not_mutate_production_ledger"] is True
+    assert summary["does_not_change_capital_authority"] is True
+    assert len(summary["current_execution_closure_fingerprint"]) == 64
+    assert len(summary["evidence_fingerprint"]) == 64
+
+
+def test_daily_candidate_trial_invalidates_review_on_new_real_order_closure(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    days = _trading_days()
+    _seed_verified_calendar(db, days)
+    for day in days:
+        _seed_qualifying_day(db, day=day, order_count=3)
+    service = DailyCandidateTrialService(
+        db=db,
+        clock=lambda: datetime(2026, 8, 14, 2, 0, tzinfo=timezone.utc),
+    )
+    before = service.get_status()
+    recorded = service.record_review(
+        expected_trial_fingerprint=before["trial_fingerprint"],
+        decision="go_to_bounded_manual_trial",
+        reviewed_by="owner",
+        note="Proceed only with separately bounded manual orders.",
+        confirmation=DAILY_CANDIDATE_TRIAL_REVIEW_CONFIRMATION,
+    )
+
+    oms = OmsService(db=db)
+    order = oms.create_order_intent(
+        intent_key="post-review:cancelled",
+        symbol="600519",
+        side="buy",
+        asset_class="stock",
+        quantity=100,
+        order_type="limit",
+        limit_price=10.0,
+        source="manual_trial",
+        source_ref="manual-ticket:post-review-cancelled",
+    )
+    oms.transition_order(
+        order["order_id"],
+        to_status="cancelled",
+        reason="operator cancelled before broker execution",
+        actor="owner",
+    )
+    ExecutionReconciliationService(db=db).run_reconciliation(run_date="2026-08-14")
+
+    after = service.get_status()
+
+    assert (
+        recorded["execution_evidence_fingerprint"]
+        == before["current_execution_evidence"]["evidence_fingerprint"]
+    )
+    assert after["trial_fingerprint"] != before["trial_fingerprint"]
+    assert after["latest_review"] is None
+    assert after["status"] == "eligible_for_human_go_no_go_review"
+    assert after["qualifying_trading_day_count"] == 20
+    assert after["simulated_order_count"] == 60
+    assert after["current_execution_evidence"]["production_order_count"] == 1
+    assert after["current_execution_evidence"]["reconciled_no_fill_order_count"] == 1
+    assert (
+        after["current_execution_evidence"][
+            "actual_orders_count_toward_simulated_trial_threshold"
+        ]
+        is False
+    )
 
 
 def test_daily_candidate_trial_starts_new_epoch_after_frozen_binding_change(
@@ -1247,6 +1379,11 @@ def test_daily_candidate_trial_review_is_exact_human_no_authority_record(
     )
 
     assert recorded["status"] == "recorded"
+    assert recorded["schema_version"] == "karkinos.daily_candidate_trial_review.v2"
+    assert (
+        recorded["execution_evidence_fingerprint"]
+        == status["current_execution_evidence"]["evidence_fingerprint"]
+    )
     assert recorded["broker_submission_enabled"] is False
     assert recorded["authorizes_execution"] is False
     assert recorded["changes_capital_authority"] is False
