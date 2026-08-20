@@ -199,8 +199,8 @@ evidence. Before relying on the next decision window, first inspect the local
 user-level definition with `./scripts/manage_launch_agent.sh print-plist`, then
 explicitly install it with `./scripts/manage_launch_agent.sh install`. Verify
 `./scripts/manage_launch_agent.sh status` reports both a loaded LaunchAgent and
-process liveness. The service binds only `127.0.0.1`, restarts after an
-unexpected exit, and is fully reversible with `uninstall`. Installation does
+process liveness. The service binds only `127.0.0.1`, restarts after any
+process exit while loaded, and is fully reversible with `uninstall`. Installation does
 not edit `config.json` or `.env`, enable `live_auto_start`, contact a provider,
 or establish financial readiness. If another listener owns the backend port,
 installation fails without stopping it. The operator must resolve that exact

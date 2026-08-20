@@ -8,9 +8,30 @@ PID_FILE="${REPO_ROOT}/.run/server.pid"
 WEB_PID_FILE="${REPO_ROOT}/.run/web.pid"
 BACKEND_PORT="${KARKINOS_BACKEND_PORT:-8000}"
 FRONTEND_PORT="${KARKINOS_FRONTEND_PORT:-5173}"
+LAUNCH_AGENT_LABEL="com.karkinos.daily-candidate"
+LAUNCH_AGENT_TARGET="gui/$(id -u)/${LAUNCH_AGENT_LABEL}"
 
 is_number() {
 	[[ "${1:-}" =~ ^[0-9]+$ ]]
+}
+
+resident_service_is_loaded() {
+	[[ "$(uname -s)" == "Darwin" ]] || return 1
+	command -v launchctl >/dev/null 2>&1 || return 1
+	launchctl print "${LAUNCH_AGENT_TARGET}" >/dev/null 2>&1
+}
+
+signal_pid_tree() {
+	local pid="$1"
+	local signal="$2"
+	local child_pid
+
+	while IFS= read -r child_pid; do
+		[[ -z "${child_pid}" ]] && continue
+		signal_pid_tree "${child_pid}" "${signal}"
+	done < <(pgrep -P "${pid}" 2>/dev/null || true)
+
+	kill "-${signal}" "${pid}" >/dev/null 2>&1 || true
 }
 
 kill_pid_tree() {
@@ -26,14 +47,9 @@ kill_pid_tree() {
 		return 0
 	fi
 
-	local pgid
-	pgid="$(ps -o pgid= -p "${pid}" 2>/dev/null | tr -d ' ' || true)"
-	if [[ -n "${pgid}" ]] && is_number "${pgid}" && [[ "${pgid}" != "1" ]]; then
-		kill -- "-${pgid}" >/dev/null 2>&1 || true
-	else
-		pkill -TERM -P "${pid}" >/dev/null 2>&1 || true
-		kill "${pid}" >/dev/null 2>&1 || true
-	fi
+	# Never signal the whole process group: on macOS, a nohup child inherits the
+	# invoking terminal's group and would otherwise terminate the caller too.
+	signal_pid_tree "${pid}" TERM
 
 	for _ in {1..20}; do
 		if ! kill -0 "${pid}" >/dev/null 2>&1; then
@@ -42,12 +58,7 @@ kill_pid_tree() {
 		sleep 0.25
 	done
 
-	if [[ -n "${pgid}" ]] && is_number "${pgid}" && [[ "${pgid}" != "1" ]]; then
-		kill -9 -- "-${pgid}" >/dev/null 2>&1 || true
-	else
-		pkill -KILL -P "${pid}" >/dev/null 2>&1 || true
-		kill -9 "${pid}" >/dev/null 2>&1 || true
-	fi
+	signal_pid_tree "${pid}" KILL
 }
 
 stop_pid_file() {
@@ -119,12 +130,17 @@ cleanup_orphans_by_port() {
 }
 
 stop_pid_file "${WEB_PID_FILE}" "Karkinos Web frontend"
-stop_pid_file "${PID_FILE}" "Karkinos Web service"
-
 cleanup_orphans_by_command "${REPO_ROOT}/web/node_modules/.bin/vite --host .* --port ${FRONTEND_PORT}" "Karkinos Web frontend"
-cleanup_orphans_by_command "${REPO_ROOT}/.venv/bin/python.* -m server" "Karkinos Web service"
-cleanup_orphans_by_command "uv run python -m server" "Karkinos Web service"
 cleanup_orphans_by_port "${FRONTEND_PORT}" "Karkinos Web frontend"
-cleanup_orphans_by_port "${BACKEND_PORT}" "Karkinos Web service"
 
-echo "Karkinos Web processes stopped."
+if resident_service_is_loaded; then
+	echo "Karkinos resident Web service remains running under ${LAUNCH_AGENT_TARGET}."
+	echo "Remove it only with: ./scripts/manage_launch_agent.sh uninstall"
+	echo "Karkinos manual Web processes stopped; resident service preserved."
+else
+	stop_pid_file "${PID_FILE}" "Karkinos Web service"
+	cleanup_orphans_by_command "${REPO_ROOT}/.venv/bin/python.* -m server" "Karkinos Web service"
+	cleanup_orphans_by_command "uv run python -m server" "Karkinos Web service"
+	cleanup_orphans_by_port "${BACKEND_PORT}" "Karkinos Web service"
+	echo "Karkinos Web processes stopped."
+fi

@@ -49,7 +49,7 @@ AI-native research 基础已经实现。当前产品里程碑是[路线图](ROAD
 - 确定性的“仅进程存活”健康端点与健康感知启动预检：在前端构建或启动新进程前区分已响应的
   Karkinos 实例和无响应/非 Karkinos 端口监听者，只报告 listener 而不终止它，也不声明财务
   就绪度、不联系 provider、不写数据库、不执行券商动作、不修改账本、执行或资本权限；
-- 显式 macOS 用户级 LaunchAgent 运维入口会先渲染本地定义，再由 owner 安装；它使用直接参数在 `127.0.0.1` 运行生产后端，意外退出后重启，验证仅进程存活，拒绝替换已有 listener，并支持准确可撤销卸载。它不修改运行配置、不自行开启实时监控、不联系 provider 或券商，也不形成财务、执行或资本就绪结论；
+- 显式 macOS 用户级 LaunchAgent 运维入口会先渲染本地定义，再由 owner 安装；它使用直接参数在 `127.0.0.1` 运行生产后端，只要 job 仍处于加载状态，任何进程退出都会由 launchd 重新拉起；它验证仅进程存活，拒绝替换已有 listener，并支持准确可撤销卸载。它不修改运行配置、不自行开启实时监控、不联系 provider 或券商，也不形成财务、执行或资本就绪结论；
 - 显式启用的本地 broker-statement collector：等待 CSV 完整稳定后再读取，按文件 fingerprint
   在重复轮询和重启间幂等暂存 Account Truth 证据，文件消失时保留既有证据，并只读展示状态；
   它不联系 provider，也不修改 ledger、portfolio、OMS、risk、kill switch 或资本权限；

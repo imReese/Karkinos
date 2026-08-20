@@ -56,7 +56,12 @@ def _fake_launch_agent_repo(tmp_path: Path) -> tuple[Path, dict[str, str]]:
         '    touch "${state}"\n'
         "    ;;\n"
         "  bootout)\n"
-        '    rm -f "${state}"\n'
+        '    delay="${KARKINOS_TEST_BOOTOUT_DELAY_SECONDS:-0}"\n'
+        '    if [[ "${delay}" == "0" ]]; then\n'
+        '      rm -f "${state}"\n'
+        "    else\n"
+        '      (sleep "${delay}"; rm -f "${state}") >/dev/null 2>&1 &\n'
+        "    fi\n"
         "    ;;\n"
         "  *) exit 2 ;;\n"
         "esac\n",
@@ -93,8 +98,8 @@ def test_launch_agent_script_is_user_scoped_reversible_and_direct_exec():
     assert 'launchctl bootout "${SERVICE_TARGET}"' in script
     assert "<key>RunAtLoad</key>" in script
     assert "<key>KeepAlive</key>" in script
-    assert "<key>SuccessfulExit</key>" in script
-    assert "<false/>" in script
+    assert "<key>KeepAlive</key>\n  <true/>" in script
+    assert "<key>SuccessfulExit</key>" not in script
     assert "<string>/usr/bin/env</string>" in script
     assert "<string>server</string>" in script
     assert "<string>--frozen</string>" in script
@@ -181,6 +186,7 @@ def test_install_and_uninstall_are_explicit_user_scoped_and_reversible(
     assert "Process liveness: alive" in installed.stdout
     assert "Financial readiness: not claimed" in installed.stdout
 
+    env["KARKINOS_TEST_BOOTOUT_DELAY_SECONDS"] = "1"
     uninstalled = subprocess.run(
         [*command, "uninstall"],
         cwd=repo,
