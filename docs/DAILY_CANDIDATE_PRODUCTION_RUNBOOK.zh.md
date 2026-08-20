@@ -13,7 +13,7 @@
 
 ## 合格运行的前置证据
 
-1. 策略已有人工复核的 `paper_shadow` 晋级，并绑定完整的 `karkinos.strategy_advancement_gate.v2`。当前订单生成门禁还必须重放持久化冻结数据集，确认基准与候选 manifest 一致，保留已复核比较与人工批准 fingerprint，重新哈希晋级时绑定的准确每日选择和内容寻址策略备份，并继续关闭 provider 联系和 live-like 权限。
+1. 策略已有人工复核的 `paper_shadow` 晋级，并绑定完整的 `karkinos.strategy_advancement_gate.v2`。当前订单生成门禁还必须重放持久化冻结数据集，确认基准与候选 manifest 一致，保留已复核比较与人工批准 fingerprint，重新哈希晋级时绑定的准确每日选择和内容寻址策略备份，并继续关闭 provider 联系和 live-like 权限。该准确备份还必须冻结非空的经济假设、风险影响、失效条件、局限和防未来数据泄漏假设；其内容 fingerprint 是人工复核证据，不是自动止损或执行规则。
 2. 脱敏 Account Truth 晋级证据为 `clear`、`pass`、新鲜且账本覆盖为 `covered`，未解决不一致为零，并绑定计划所属上海市场日期内、且不晚于最终 Decision 的当前现金与持仓快照。采集时间取两类最新快照时间中更早者；更晚的本地文件导入时间只记录为 `imported_at`，不能把旧账单刷新成新证据。系统从快照采集时间和 Decision 时间重算年龄，必须处于已复核上限内，同时绑定源 fingerprint、估值快照和正数 ledger cutoff。
 3. 最终 Decision 与计划只能在上海时间 09:35 至 09:44 生成。每个订单意图使用当前持久化行情而不是历史信号价格，并绑定正数价格、来源、带时区时间和决策时行情年龄；该时间与 Decision、交易计划属于同一市场日期，且行情年龄不得超过 300 秒。
 4. 账户专属费用复核覆盖操作日期，每个意图都由该版本费用规则计算出非负费用。
@@ -60,16 +60,17 @@ Automation Cockpit v4 还会展示 `karkinos.daily_candidate_financial_preflight
 - 该 input fingerprint 可从持久化 Decision/计划身份、生产阻断、脱敏风控失败、冻结策略绑定、paper/shadow 结果和前序执行闭环重新计算；
 - 生产门禁通过并产生人工票据候选；
 - 每份只读票据的指纹可重放，日期、处于复核窗口内的最终 Decision/计划时间、年龄不超过 300 秒的当前报价、paper/shadow 身份和前序执行闭环精确一致，并明确保持“不创建 OMS、不提交券商、不改变资金权限”；
-- 每份票据与 daily snapshot 必须携带完全相同的策略门禁绑定：策略晋级、已复核费用、比较、人工批准、冻结基准/候选数据集身份、数据集重放 fingerprint，以及当前已验证的每日选择/策略备份 fingerprint；
+- 每份票据与 daily snapshot 必须携带完全相同的策略门禁绑定：策略晋级、已复核费用、比较、人工批准、冻结基准/候选数据集身份、数据集重放 fingerprint、当前已验证的每日选择/策略备份 fingerprint，以及从准确备份复制的策略运行约束；
+- 策略运行约束必须具有可重放内容 fingerprint 和非空的经济假设、风险影响、失效条件、局限、防未来数据泄漏假设，并明确保持仅人工复核、不授予执行和不改变资本权限；
 - 每份票据与 daily snapshot 必须携带完全相同的隐私最小化 Account Truth 绑定：源 fingerprint、采集/决策时年龄、已复核年龄上限、估值快照、ledger cutoff、对账和覆盖状态，以及对引用导入事件、人工复核、不可变估值和历史账本行计算的内容 fingerprint；其中不复制券商记录、账户标识或余额；
 - 同日 Account Truth 来源、采集时间不晚于 Decision、决策时年龄处于已复核上限内且完整账本覆盖仍然有效，全部前序非模拟订单都已完成当前对账；
 - trial 会按历史 ledger cutoff 重新解析所引用的 Account Truth，并重算其隐私最小化 replay fingerprint。cutoff 之后追加的新账本行属于安全延续；导入缺失、人工复核变化、源事件被修改、估值漂移，或 cutoff 及之前的账本行被修改/删除，都会排除该日；
 - trial 会重新计算当前执行闭环：历史闭环中已经存在的每笔订单必须仍为 clear 且 plan/paper/actual fingerprint 不变，后续新增并完整对账的订单可作为安全超集；当前出现未对账订单或历史来源漂移都会排除该日；
 - paper/shadow 日期、fingerprint、候选/订单数量完全一致，状态与偏差均为 `within_expectations`；
-- 当前试运行周期绑定同一组非空策略晋级和已复核费用 fingerprint。
+- 当前试运行周期绑定同一组非空策略晋级、已复核费用和策略运行约束 fingerprint。
 - trial 会按每个已存策略引用重新解析当前持久化出票门禁，并把完整绑定与 snapshot、票据逐项比较；AI 策略旧记录缺少 selection/backup 绑定、备份删除、指纹漂移、策略暂停或当前晋级阻断都会排除该日并阻断 GO 复核。
 
-策略晋级或费用复核绑定变化时，系统从首次观察到新绑定的 daily record 自动建立新试运行周期。旧周期的合格日期保留为已归档证据，但绝不会并入新周期的 20 日 / 50 单计数；即使后来重新使用旧绑定，也会再次开启新周期。
+策略晋级、费用复核或已复核策略运行约束绑定变化时，系统从首次观察到新绑定的 daily record 自动建立新试运行周期。旧周期的合格日期保留为已归档证据，但绝不会并入新周期的 20 日 / 50 单计数；即使后来重新使用旧绑定，也会再次开启新周期。
 
 最低阈值为 20 个合格交易日和 50 笔模拟订单。达到阈值后只开放绑定当前 trial fingerprint 的人工结论：
 
@@ -93,6 +94,7 @@ Automation Cockpit v4 还会展示 `karkinos.daily_candidate_financial_preflight
 | 后台认领日期与 Decision/计划日期不一致 | 在认领日记录 `no_action`，不运行后续风控或 paper/shadow；返回契约异常则 `failed_closed` | 保留 attempt 与告警，等待下一个已验证窗口；不得关联旧日 run 或自动重试 |
 | 意图价格与其绑定的当前报价不同，或报价来源缺失 | `no_action` | 从当前持久化行情重建 Decision 与计划 |
 | 策略晋级或费用绑定缺失 | `no_action` | 回到 Strategy Lab 或费用复核 |
+| 策略经济假设、风险影响、失效条件、局限或防未来数据泄漏假设缺失或漂移 | `no_action`，最新日期阻断 GO 复核 | 重建已验证备份并重新取得明确的人工 paper/shadow 晋级；不得在票据中推断或手补约束 |
 | 冻结数据集重放、比较、人工批准或票据/snapshot 策略绑定漂移 | `no_action`，最新日期阻断 GO 复核 | 重建并人工复核 canonical 策略晋级证据，不得修改 daily record |
 | 风控未完成或阻断 | `no_action` | 处理返回的风控/数据质量原因 |
 | paper/shadow 失败、偏差、缺失或数量不符 | `no_action` | 检查持久化模拟，不得手改 |
@@ -103,7 +105,7 @@ Automation Cockpit v4 还会展示 `karkinos.daily_candidate_financial_preflight
 | 后台监控被禁用、缺失、已结束、被取消或失败 | 不执行自动尝试，runtime 状态 fail closed | 保持停止，或仅在 owner 明确启用后重启，并在下个窗口前确认 `background_monitor_running=true` |
 | macOS LaunchAgent 未加载或进程存活不可用 | 不形成持久自动 monitor 结论 | 显式检查或重装该准确用户级服务；不得从 launchd 状态推断财务就绪 |
 | 后台窗口结束仍无当日记录 | `missed_decision_window`，不回填 | 在下一个已验证交易日窗口前准备好当前证据 |
-| 策略或已复核费用 fingerprint 变化 | 开始新试运行周期 | 旧样本保留为已归档证据，不并入新周期 |
+| 策略、已复核费用或策略运行约束 fingerprint 变化 | 开始新试运行周期 | 旧样本保留为已归档证据，不并入新周期 |
 | Kill Switch 不可用或已开启 | `no_action` | 恢复并复核交易控制证据 |
 
 ## 不能由此证明的事项

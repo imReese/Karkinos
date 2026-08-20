@@ -806,6 +806,23 @@ export type DailyCandidateTrialReview = {
   changes_capital_authority: false;
 };
 
+export type DailyStrategyOperatingConstraints = {
+  schema_version: 'karkinos.ai.strategy_operating_constraints.v1';
+  candidate_id: string;
+  strategy_artifact_fingerprint: string;
+  source_backup_artifact_fingerprint: string;
+  economic_hypothesis: string;
+  risk_impact: string;
+  failure_conditions: string[];
+  limitations: string[];
+  anti_lookahead_assumptions: string[];
+  automatic_enforcement_enabled: false;
+  human_review_required: true;
+  authorizes_execution: false;
+  changes_capital_authority: false;
+  evidence_fingerprint: string;
+};
+
 export type DailyCandidateRunResult = {
   schema_version: 'karkinos.daily_decision_evidence_automation.v3';
   input_identity_schema_version: 'karkinos.daily_candidate_input_identity.v2';
@@ -817,7 +834,7 @@ export type DailyCandidateRunResult = {
   decision_outcome: 'manual_order_ticket_candidate' | 'no_action';
   manual_ticket_candidate_count: number;
   manual_order_ticket_candidates: Array<{
-    schema_version: 'karkinos.manual_order_ticket_candidate.v1';
+    schema_version: 'karkinos.manual_order_ticket_candidate.v2';
     plan_date: string;
     intent_id: string | null;
     action_id: string | number | null;
@@ -845,7 +862,7 @@ export type DailyCandidateRunResult = {
       divergence_status: string;
     };
     strategy_gate_binding: {
-      schema_version: 'karkinos.daily_candidate_strategy_gate_binding.v1';
+      schema_version: 'karkinos.daily_candidate_strategy_gate_binding.v2';
       action_id: string | number;
       strategy_ref: string;
       strategy_advancement_ref: string;
@@ -856,7 +873,7 @@ export type DailyCandidateRunResult = {
       baseline_snapshot_id: string;
       candidate_snapshot_id: string;
       daily_strategy_artifact_binding?: {
-        schema_version: 'karkinos.ai.daily_strategy_promotion_binding.v1';
+        schema_version: 'karkinos.ai.daily_strategy_promotion_binding.v2';
         run_id: string;
         market_date: string;
         winner_candidate_id: string;
@@ -864,17 +881,20 @@ export type DailyCandidateRunResult = {
         selection_fingerprint: string;
         backup_id: string;
         backup_artifact_fingerprint: string;
+        operating_constraints: DailyStrategyOperatingConstraints;
         contains_private_account_identifiers: false;
         contains_broker_export_rows: false;
         does_not_change_capital_authority: true;
         authority_effect: 'research_only';
       };
+      strategy_operating_constraints: DailyStrategyOperatingConstraints;
       persisted_facts_only: true;
       provider_contact_performed: false;
       paper_shadow_evaluation_only: true;
       authorizes_execution: false;
       changes_capital_authority: false;
     };
+    strategy_operating_constraints?: DailyStrategyOperatingConstraints;
     account_truth_binding: {
       schema_version: 'karkinos.daily_candidate_account_truth_binding.v2';
       account_truth_ref: string;
@@ -958,6 +978,7 @@ export type DailyCandidateTrial = {
   remaining_simulated_orders: number;
   strategy_advancement_refs: string[];
   reviewed_fee_schedule_refs: string[];
+  strategy_operating_constraint_refs: string[];
   superseded_qualifying_day_count: number;
   run_scan_truncated: boolean;
   latest_daily_run: {

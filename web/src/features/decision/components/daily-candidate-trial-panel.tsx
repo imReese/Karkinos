@@ -188,6 +188,65 @@ export function DailyCandidateTrialPanel({
                     )}
                     …
                   </div>
+                  {ticket.strategy_operating_constraints ? (
+                    <div
+                      data-testid="strategy-operating-constraints"
+                      className="mt-1 rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] px-2 py-1"
+                    >
+                      <div className="font-semibold">
+                        {locale === 'zh'
+                          ? '冻结策略假设与失效条件'
+                          : 'Frozen strategy thesis and failure conditions'}
+                      </div>
+                      <div className="app-muted">
+                        {locale === 'zh' ? '假设：' : 'Thesis: '}
+                        {
+                          ticket.strategy_operating_constraints
+                            .economic_hypothesis
+                        }
+                      </div>
+                      <div className="app-muted">
+                        {locale === 'zh' ? '风险影响：' : 'Risk impact: '}
+                        {ticket.strategy_operating_constraints.risk_impact}
+                      </div>
+                      <div className="app-muted">
+                        {locale === 'zh'
+                          ? '失效条件：'
+                          : 'Failure conditions: '}
+                        {ticket.strategy_operating_constraints.failure_conditions.join(
+                          ' · ',
+                        )}
+                      </div>
+                      <div className="app-muted">
+                        {locale === 'zh' ? '限制：' : 'Limitations: '}
+                        {ticket.strategy_operating_constraints.limitations.join(
+                          ' · ',
+                        )}
+                      </div>
+                      <div className="app-muted">
+                        {locale === 'zh'
+                          ? '防未来数据假设：'
+                          : 'Anti-lookahead assumptions: '}
+                        {ticket.strategy_operating_constraints.anti_lookahead_assumptions.join(
+                          ' · ',
+                        )}
+                      </div>
+                      <div className="app-muted">
+                        {locale === 'zh'
+                          ? '仅供人工复核，不自动执行或改变资金授权。'
+                          : 'Human review only; these constraints do not execute trades or change capital authority.'}
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      data-testid="strategy-operating-constraints-missing"
+                      className="mt-1 rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-danger)_45%,transparent)] px-2 py-1 font-semibold text-[var(--app-danger)]"
+                    >
+                      {locale === 'zh'
+                        ? 'NO-ACTION：旧版或不完整票据缺少已复核策略失效条件，不可用于人工执行。'
+                        : 'NO-ACTION: this legacy or incomplete ticket lacks reviewed strategy failure conditions and is not eligible for manual execution.'}
+                    </div>
+                  )}
                   <div className="app-muted">
                     Account Truth ·{' '}
                     {locale === 'zh' ? '决策时年龄' : 'Age at decision'}{' '}
