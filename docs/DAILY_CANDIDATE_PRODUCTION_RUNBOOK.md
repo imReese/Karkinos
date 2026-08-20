@@ -145,9 +145,15 @@ Run `uv run python scripts/audit_daily_candidate_production.py --pretty` from
 the repository root to verify the current machine rather than only the code
 manifest. The command accepts only an explicit loopback HTTP base URL and reads
 the live Automation Cockpit plus shadow-research status. It returns a sanitized,
-fingerprinted `karkinos.daily_candidate_production_readiness.v1` report with the
+fingerprinted `karkinos.daily_candidate_production_readiness.v2` report with the
 current financial preflight, exact monitor liveness, five-sequential-iteration
-and unbounded-daily-token policy, and forward-trial counts. Exit `0` means the running service is ready to
+and unbounded-daily-token policy, and forward-trial counts. It also carries the
+canonical dependency-ordered operator checklist. Repeated per-candidate blockers
+are grouped by blocker code with occurrence and affected-candidate counts, while
+the exact first gate, safe action, required persisted evidence, and completion
+criteria remain visible. Invalid, missing, authority-granting, or non-canonical
+checklist input fails the report closed instead of being accepted as operator
+guidance. Exit `0` means the running service is ready to
 continue bounded paper/shadow evidence collection; it does not mean the 20-day /
 50-order threshold has been reached. Exit `2` means fail-closed non-readiness,
 including an unreachable service. Repository tests or a static acceptance

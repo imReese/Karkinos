@@ -27,6 +27,33 @@ def _inputs() -> tuple[dict, dict]:
             "no_action_reasons": ["daily_candidate_decision_window_not_open"],
             "next_safe_action": "keep_monitor_running_and_wait_for_reviewed_window",
             "preflight_fingerprint": "a" * 64,
+            "operator_checklist": [
+                {
+                    "step": 1,
+                    "gate": "runtime_window",
+                    "action": "keep_monitor_running_and_wait_for_reviewed_window",
+                    "completion_mode": "canonical_runtime",
+                    "blockers": ["daily_candidate_decision_window_not_open"],
+                    "evidence_contract_version": (
+                        "karkinos.daily_candidate_operator_evidence.v1"
+                    ),
+                    "required_evidence": [
+                        "loaded_local_daily_candidate_service_and_live_monitor_task"
+                    ],
+                    "completion_criteria": [
+                        "exactly_one_fail_closed_attempt_is_due_in_reviewed_window"
+                    ],
+                    "accepted_evidence_authority": (
+                        "canonical_persisted_evidence_only"
+                    ),
+                    "owner_attestation_is_financial_fact": False,
+                    "private_xls_rows_required": False,
+                    "private_account_identifiers_required": False,
+                    "automatic_action_performed": False,
+                    "authorizes_execution": False,
+                    "changes_capital_authority": False,
+                }
+            ],
             "provider_contact_performed": False,
             "database_writes_performed": False,
             "broker_submission_enabled": False,
@@ -99,6 +126,9 @@ def test_live_readiness_accepts_waiting_service_and_collects_forward_evidence() 
     assert report["ready_for_production_operation"] is True
     assert report["daily_operation"]["status"] == ("standing_by_for_reviewed_window")
     assert report["daily_operation"]["blockers"] == []
+    assert report["daily_operation"]["operator_checklist_status"] == "available"
+    assert report["daily_operation"]["first_blocking_gate"] == "runtime_window"
+    assert report["daily_operation"]["blocking_gate_count"] == 1
     assert report["research_cycle"]["status"] == (
         "ready_for_five_sequential_iterations"
     )
@@ -108,6 +138,107 @@ def test_live_readiness_accepts_waiting_service_and_collects_forward_evidence() 
     assert report["provider_contact_performed"] is False
     assert report["database_writes_performed"] is False
     assert report["authorizes_execution"] is False
+
+
+def test_live_readiness_compacts_repeated_candidate_blockers_for_operator() -> None:
+    cockpit, research = _inputs()
+    preflight = cockpit["daily_candidate_financial_preflight"]
+    preflight["financial_gate_status"] = "blocked"
+    preflight["financial_blockers"] = [
+        "candidate_0:strategy_promotion_not_pass",
+        "candidate_0:strategy_human_approval_missing",
+        "candidate_1:strategy_promotion_not_pass",
+        "candidate_1:strategy_human_approval_missing",
+        "reviewed_fee_schedule_review_missing",
+    ]
+    preflight["operator_checklist"] = [
+        {
+            "step": 1,
+            "gate": "strategy",
+            "action": "promote_evidence_bound_strategy_for_paper_shadow",
+            "completion_mode": "human_review",
+            "blockers": list(preflight["financial_blockers"][:4]),
+            "evidence_contract_version": (
+                "karkinos.daily_candidate_operator_evidence.v1"
+            ),
+            "required_evidence": [
+                "deterministic_local_backtest_and_promotion_evidence"
+            ],
+            "completion_criteria": [
+                "promoted_strategy_replays_from_frozen_data_and_current_fee_review"
+            ],
+            "accepted_evidence_authority": "canonical_persisted_evidence_only",
+            "owner_attestation_is_financial_fact": False,
+            "private_xls_rows_required": False,
+            "private_account_identifiers_required": False,
+            "automatic_action_performed": False,
+            "authorizes_execution": False,
+            "changes_capital_authority": False,
+        },
+        {
+            "step": 2,
+            "gate": "reviewed_fees",
+            "action": "review_account_specific_fee_schedule",
+            "completion_mode": "human_review",
+            "blockers": ["reviewed_fee_schedule_review_missing"],
+            "evidence_contract_version": (
+                "karkinos.daily_candidate_operator_evidence.v1"
+            ),
+            "required_evidence": ["human_accepted_fee_effective_date_window"],
+            "completion_criteria": ["fee_review_is_bounded_and_revocable"],
+            "accepted_evidence_authority": "canonical_persisted_evidence_only",
+            "owner_attestation_is_financial_fact": False,
+            "private_xls_rows_required": False,
+            "private_account_identifiers_required": False,
+            "automatic_action_performed": False,
+            "authorizes_execution": False,
+            "changes_capital_authority": False,
+        },
+    ]
+
+    report = project_daily_candidate_production_readiness(
+        cockpit=cockpit,
+        research_status=research,
+    )
+
+    assert report["daily_operation"]["blocking_gate_count"] == 2
+    strategy_step = report["daily_operation"]["operator_checklist"][0]
+    assert strategy_step["blocker_count"] == 4
+    assert strategy_step["unique_blocker_count"] == 2
+    assert strategy_step["blocker_summary"] == [
+        {
+            "code": "strategy_promotion_not_pass",
+            "occurrence_count": 2,
+            "affected_candidate_count": 2,
+        },
+        {
+            "code": "strategy_human_approval_missing",
+            "occurrence_count": 2,
+            "affected_candidate_count": 2,
+        },
+    ]
+    assert strategy_step["automatic_action_performed"] is False
+    assert strategy_step["authorizes_execution"] is False
+    assert strategy_step["changes_capital_authority"] is False
+
+
+def test_live_readiness_fails_closed_on_invalid_operator_checklist() -> None:
+    cockpit, research = _inputs()
+    cockpit["daily_candidate_financial_preflight"]["operator_checklist"][0][
+        "authorizes_execution"
+    ] = True
+
+    report = project_daily_candidate_production_readiness(
+        cockpit=cockpit,
+        research_status=research,
+    )
+
+    assert report["ready_for_production_operation"] is False
+    assert report["source_contract_blockers"] == [
+        "preflight_operator_checklist_contract_invalid"
+    ]
+    assert report["daily_operation"]["operator_checklist_status"] == "invalid"
+    assert report["daily_operation"]["operator_checklist"] == []
 
 
 def test_live_readiness_fails_closed_on_financial_or_runtime_blockers() -> None:
@@ -225,3 +356,45 @@ def test_unavailable_live_readiness_is_sanitized_no_action() -> None:
     assert report["raw_xls_rows_included"] is False
     assert report["private_account_identifiers_included"] is False
     assert report["broker_submission_enabled"] is False
+
+
+def test_unavailable_live_readiness_exposes_only_non_authorizing_recovery() -> None:
+    report = unavailable_daily_candidate_production_readiness()
+
+    daily_operation = report["daily_operation"]
+    assert daily_operation["operator_checklist_status"] == "unavailable"
+    assert daily_operation["first_blocking_gate"] == "source_evidence"
+    assert daily_operation["first_safe_action"] == (
+        "start_and_verify_local_karkinos_service"
+    )
+    assert daily_operation["operator_checklist"] == [
+        {
+            "step": 1,
+            "gate": "source_evidence",
+            "action": "start_and_verify_local_karkinos_service",
+            "completion_mode": "canonical_runtime",
+            "blocker_count": 1,
+            "unique_blocker_count": 1,
+            "blocker_summary": [
+                {
+                    "code": "local_karkinos_service_unreachable",
+                    "occurrence_count": 1,
+                    "affected_candidate_count": 0,
+                }
+            ],
+            "evidence_contract_version": (
+                "karkinos.daily_candidate_operator_evidence.v1"
+            ),
+            "required_evidence": ["reachable_loopback_karkinos_service"],
+            "completion_criteria": [
+                "local_service_liveness_and_persisted_sources_are_verified"
+            ],
+            "accepted_evidence_authority": "canonical_persisted_evidence_only",
+            "owner_attestation_is_financial_fact": False,
+            "private_xls_rows_required": False,
+            "private_account_identifiers_required": False,
+            "automatic_action_performed": False,
+            "authorizes_execution": False,
+            "changes_capital_authority": False,
+        }
+    ]

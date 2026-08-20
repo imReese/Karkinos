@@ -30,6 +30,33 @@ def test_live_readiness_cli_reads_only_expected_loopback_endpoints() -> None:
                     "no_action_reasons": ["account_truth_snapshot_stale"],
                     "next_safe_action": "resolve_named_financial_blockers",
                     "preflight_fingerprint": "a" * 64,
+                    "operator_checklist": [
+                        {
+                            "step": 1,
+                            "gate": "account_truth",
+                            "action": "complete_current_account_truth_evidence_review",
+                            "completion_mode": "human_review",
+                            "blockers": ["account_truth_snapshot_stale"],
+                            "evidence_contract_version": (
+                                "karkinos.daily_candidate_operator_evidence.v1"
+                            ),
+                            "required_evidence": [
+                                "current_cash_snapshot_with_aware_timestamp_and_cash_balance"
+                            ],
+                            "completion_criteria": [
+                                "cash_and_position_snapshots_share_current_shanghai_date"
+                            ],
+                            "accepted_evidence_authority": (
+                                "canonical_persisted_evidence_only"
+                            ),
+                            "owner_attestation_is_financial_fact": False,
+                            "private_xls_rows_required": False,
+                            "private_account_identifiers_required": False,
+                            "automatic_action_performed": False,
+                            "authorizes_execution": False,
+                            "changes_capital_authority": False,
+                        }
+                    ],
                     "provider_contact_performed": False,
                     "database_writes_performed": False,
                     "broker_submission_enabled": False,
@@ -100,6 +127,17 @@ def test_live_readiness_cli_reads_only_expected_loopback_endpoints() -> None:
     ]
     assert payload["status"] == "no_action_not_production_ready"
     assert payload["daily_operation"]["blockers"] == ["account_truth_snapshot_stale"]
+    assert payload["daily_operation"]["first_blocking_gate"] == "account_truth"
+    assert payload["daily_operation"]["first_safe_action"] == (
+        "complete_current_account_truth_evidence_review"
+    )
+    assert payload["daily_operation"]["operator_checklist"][0]["blocker_summary"] == [
+        {
+            "code": "account_truth_snapshot_stale",
+            "occurrence_count": 1,
+            "affected_candidate_count": 0,
+        }
+    ]
 
 
 def test_live_readiness_cli_rejects_external_hosts_without_contact() -> None:
