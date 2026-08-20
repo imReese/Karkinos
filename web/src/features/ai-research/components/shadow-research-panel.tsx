@@ -358,7 +358,7 @@ export function ShadowResearchPanel() {
         />
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-3">
         <StatusMetric
           label={copy.calls}
           value={`${status?.usage.provider_calls ?? 0} / ${status?.policy.max_provider_calls_per_market_date ?? policy.max_provider_calls_per_market_date}`}
@@ -864,7 +864,7 @@ function StatusMetric({
   detail: string;
 }) {
   return (
-    <div className="rounded-[var(--app-radius-control)] border border-[var(--app-divider)] p-3">
+    <div className="min-w-0 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] p-3">
       <div className="text-xs font-semibold text-[var(--app-muted)]">
         {label}
       </div>
