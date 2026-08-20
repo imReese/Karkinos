@@ -21,16 +21,23 @@ from execution.commission import MultiAssetCommission, StockACommission
 from server.db import AppDatabase
 from server.models import BacktestRequest
 from server.services.ai_shadow_research_automation import (
+    SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_PAUSE_CONFIRMATION,
     SHADOW_RESEARCH_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
     SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION,
+    SHADOW_RESEARCH_TOKEN_BUDGET_MODE_UNBOUNDED,
     AiShadowResearchAutomationService,
     PreparedBaseline,
     ShadowResearchPolicy,
     ShadowResearchRejected,
     ShadowResearchStore,
     _after_close,
+)
+from server.services.ai_shadow_research_daily_artifacts import (
+    DailyStrategyArtifactRejected,
+    DailyStrategyArtifactStore,
+    build_daily_strategy_promotion_binding,
 )
 from server.services.reviewed_fee_schedule import ReviewedFeeScheduleRejected
 from server.services.trading_controls import TradingControlState
@@ -51,9 +58,10 @@ def _policy_payload(*, enabled: bool) -> dict:
     return {
         "enabled": enabled,
         "after_close_time": "15:30",
-        "max_provider_calls_per_market_date": 3,
-        "daily_token_budget": 700_000,
-        "max_candidates_per_run": 2,
+        "max_provider_calls_per_market_date": 10,
+        "daily_token_budget": None,
+        "token_budget_mode": SHADOW_RESEARCH_TOKEN_BUDGET_MODE_UNBOUNDED,
+        "max_candidates_per_run": 5,
         "baseline_backtest_result_id": None,
         "require_complete_account_evidence": True,
         "research_question": "Generate one falsifiable formula improvement.",
@@ -88,17 +96,28 @@ def test_shadow_policy_defaults_disabled_and_requires_exact_standing_authorizati
     status = service.status()
 
     assert status["policy"]["enabled"] is False
+    assert status["policy"]["daily_token_budget"] is None
+    assert status["policy"]["token_budget_mode"] == "unbounded_daily"
     assert status["automatic_strategy_replacement_enabled"] is False
     assert status["broker_submission_enabled"] is False
     with pytest.raises(PermissionError, match="exact owner authorization"):
         service.update_policy({**_policy_payload(enabled=True), "confirmation": "yes"})
+    with pytest.raises(PermissionError, match="exact owner authorization"):
+        service.update_policy(
+            {
+                **_policy_payload(enabled=True),
+                "confirmation": SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION,
+            }
+        )
     with pytest.raises(
-        ShadowResearchRejected, match="token_budget_cannot_cover_reserved_calls"
+        ShadowResearchRejected,
+        match="enabled_shadow_research_requires_unbounded_daily_token_policy",
     ):
         service.update_policy(
             {
                 **_policy_payload(enabled=True),
                 "daily_token_budget": SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION,
+                "token_budget_mode": "legacy_bounded_daily",
             }
         )
 
@@ -112,7 +131,45 @@ def test_shadow_policy_defaults_disabled_and_requires_exact_standing_authorizati
 
 
 @pytest.mark.unit
-def test_provider_budget_claim_is_atomic_and_market_date_scoped(tmp_path) -> None:
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_enabled_partial_iteration_policy_fails_before_evidence_or_provider(
+    tmp_path, monkeypatch
+) -> None:
+    service = _service(tmp_path)
+    service.update_policy(
+        {
+            **_policy_payload(enabled=True),
+            "max_provider_calls_per_market_date": 2,
+            "max_candidates_per_run": 1,
+        }
+    )
+
+    def unexpected_baseline(policy):
+        raise AssertionError("baseline preparation must not run for a partial policy")
+
+    monkeypatch.setattr(service, "_prepare_baseline", unexpected_baseline)
+
+    result = await service.run_once()
+
+    assert result["run_status"] == "blocked_by_policy"
+    assert result["failure_code"] == "five_sequential_iterations_not_authorized"
+    with sqlite3.connect(tmp_path / "app.db") as conn:
+        audit = conn.execute(
+            "SELECT status, payload_json FROM automation_runs WHERE run_id=?",
+            (result["preflight_run_id"],),
+        ).fetchone()
+        provider_calls = conn.execute(
+            "SELECT COUNT(*) FROM ai_shadow_research_provider_calls"
+        ).fetchone()[0]
+    assert audit is not None
+    assert audit[0] == "blocked_by_policy"
+    assert json.loads(audit[1])["provider_call_performed"] is False
+    assert provider_calls == 0
+
+
+@pytest.mark.unit
+def test_provider_call_claim_is_atomic_capped_and_token_unbounded(tmp_path) -> None:
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     store = ShadowResearchStore(tmp_path / "app.db")
@@ -125,11 +182,18 @@ def test_provider_budget_claim_is_atomic_and_market_date_scoped(tmp_path) -> Non
             market_date="2026-08-11",
             call_kind="critique" if ordinal else "hypothesis",
             call_limit=3,
-            token_budget=700_000,
             now="2026-08-11T08:00:00+00:00",
         )
         assert reused is False
         assert call["status"] == "reserved"
+        if ordinal == 0:
+            store.finish_provider_call(
+                call["call_id"],
+                status="completed",
+                actual_tokens=SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION * 20,
+                failure_code=None,
+                now="2026-08-11T08:01:00+00:00",
+            )
 
     replay, reused = store.claim_provider_call(
         call_id="call-2",
@@ -137,7 +201,6 @@ def test_provider_budget_claim_is_atomic_and_market_date_scoped(tmp_path) -> Non
         market_date="2026-08-11",
         call_kind="critique",
         call_limit=3,
-        token_budget=700_000,
         now="2026-08-11T08:00:00+00:00",
     )
     assert reused is True
@@ -149,29 +212,45 @@ def test_provider_budget_claim_is_atomic_and_market_date_scoped(tmp_path) -> Non
             market_date="2026-08-11",
             call_kind="critique",
             call_limit=3,
-            token_budget=700_000,
             now="2026-08-11T08:00:00+00:00",
         )
 
-    store.claim_provider_call(
-        call_id="budget-call-1",
-        run_id="run-2",
-        market_date="2026-08-12",
-        call_kind="hypothesis",
-        call_limit=3,
-        token_budget=SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION,
-        now="2026-08-12T08:00:00+00:00",
+    usage = store.usage_for_market_date("2026-08-11")
+    assert usage["provider_calls"] == 3
+    assert usage["reserved_tokens"] == SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION * 3
+    assert usage["actual_tokens"] == SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION * 20
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_enabled_legacy_bounded_policy_is_audited_but_cannot_run(
+    tmp_path, monkeypatch
+) -> None:
+    service = _service(tmp_path)
+    legacy_payload = {
+        **_policy_payload(enabled=True),
+        "schema_version": "karkinos.ai.shadow_research_policy.v1",
+        "daily_token_budget": SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION * 10,
+        "authorization": SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION,
+    }
+    legacy_payload.pop("token_budget_mode")
+    service._db.upsert_automation_policy_sync(
+        policy_id="ai_shadow_research",
+        payload=legacy_payload,
+        updated_by="human:owner",
     )
-    with pytest.raises(ShadowResearchRejected, match="token_budget"):
-        store.claim_provider_call(
-            call_id="budget-call-2",
-            run_id="run-2",
-            market_date="2026-08-12",
-            call_kind="critique",
-            call_limit=3,
-            token_budget=SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION,
-            now="2026-08-12T08:00:00+00:00",
-        )
+
+    def unexpected_baseline(policy):
+        raise AssertionError("legacy bounded policy must not prepare evidence")
+
+    monkeypatch.setattr(service, "_prepare_baseline", unexpected_baseline)
+
+    result = await service.run_once()
+
+    assert result["run_status"] == "blocked_by_policy"
+    assert result["failure_code"] == "unbounded_daily_token_policy_not_authorized"
+    assert result["policy"]["token_budget_mode"] == "legacy_bounded_daily"
 
 
 @pytest.mark.unit
@@ -239,6 +318,16 @@ def test_human_candidate_approval_records_paper_shadow_only(tmp_path) -> None:
         recommendation="paper_shadow_review",
         comparison={
             **canonical_sources,
+            "iteration_lineage": {
+                "iteration_number": 1,
+                "total_iterations": 1,
+                "formula_fingerprint": "sha256:formula-1",
+                "parent_candidate_id": None,
+                "parent_draft_id": None,
+                "parent_formula_fingerprint": None,
+                "iteration_context_fingerprint": "sha256:iteration-1",
+                "sequential_feedback_bound": True,
+            },
             "automatic_strategy_replacement_enabled": False,
         },
         now="2026-08-11T08:00:00+00:00",
@@ -274,6 +363,43 @@ def test_human_candidate_approval_records_paper_shadow_only(tmp_path) -> None:
         store=store,
         data_store=DataStore(tmp_path / "market"),
     )
+    with pytest.raises(
+        DailyStrategyArtifactRejected, match="daily_selection_or_backup_missing"
+    ):
+        service.approve_candidate(
+            candidate["candidate_id"],
+            approved_by="human:owner",
+            notes="Reviewed OOS, costs, drawdown, and DeepSeek critique.",
+            confirmation=SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
+        )
+    daily_artifacts = DailyStrategyArtifactStore(
+        tmp_path / "app.db", tmp_path / "strategy-research-backups"
+    )
+    daily_artifacts.record_daily_artifacts(
+        run={
+            "run_id": "run-1",
+            "market_date": "2026-08-11",
+            "input_fingerprint": "sha256:approval-test",
+        },
+        candidates=[candidate],
+        drafts=[
+            {
+                "draft_id": "draft-1",
+                "formula_ast": {"schema_version": "fixture"},
+                "formula_fingerprint": "sha256:" + "f" * 64,
+                "validation": {"status": "valid", "errors": []},
+            }
+        ],
+        expected_candidate_count=1,
+        run_status="completed",
+        created_at="2026-08-11T08:04:00+00:00",
+    )
+    service = AiShadowResearchAutomationService(
+        state=_state(db),
+        store=store,
+        data_store=DataStore(tmp_path / "market"),
+        daily_artifact_store=daily_artifacts,
+    )
     canonical = service.approve_candidate(
         candidate["candidate_id"],
         approved_by="human:owner",
@@ -290,6 +416,18 @@ def test_human_candidate_approval_records_paper_shadow_only(tmp_path) -> None:
     assert canonical["paper_shadow_stage_recorded"] is True
     assert canonical["strategy_promotion"]["stage"] == "paper_shadow"
     assert canonical["strategy_promotion"]["live_like_enabled"] is False
+    readiness = canonical["strategy_promotion"]["payload"]["readiness"]
+    daily_binding = readiness["daily_strategy_artifact_binding"]
+    assert daily_binding == build_daily_strategy_promotion_binding(
+        {
+            "selection": canonical["daily_selection"],
+            "backup": canonical["daily_backup"],
+        }
+    )
+    assert "relative_path" not in daily_binding
+    assert daily_binding["contains_private_account_identifiers"] is False
+    assert daily_binding["contains_broker_export_rows"] is False
+    assert daily_binding["does_not_change_capital_authority"] is True
     assert canonical["strategy_registry_mutated"] is False
     assert replay["promotion_id"] == canonical["promotion_id"]
     assert store.get_candidate(candidate["candidate_id"])["promotion_status"] == (
@@ -299,6 +437,48 @@ def test_human_candidate_approval_records_paper_shadow_only(tmp_path) -> None:
     assert [item["event_type"] for item in events].count(
         "promoted_to_paper_shadow"
     ) == 1
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_daily_binding_failure_precedes_candidate_approval_write(tmp_path) -> None:
+    class TrackingStore:
+        approval_called = False
+
+        def get_candidate(self, candidate_id: str) -> dict:
+            return {"candidate_id": candidate_id, "run_id": "run-invalid-binding"}
+
+        def approve_candidate(self, *args, **kwargs) -> dict:
+            self.approval_called = True
+            raise AssertionError("candidate approval must not run")
+
+    class InvalidDailyArtifacts:
+        def require_verified_winner(self, **kwargs) -> dict:
+            return {
+                "selection": {"status": "winner_selected"},
+                "backup": {"verification_status": "verified"},
+            }
+
+    store = TrackingStore()
+    service = AiShadowResearchAutomationService(
+        state=SimpleNamespace(db=SimpleNamespace(_path=tmp_path / "app.db")),
+        store=store,
+        data_store=DataStore(tmp_path / "market"),
+        daily_artifact_store=InvalidDailyArtifacts(),
+    )
+
+    with pytest.raises(
+        DailyStrategyArtifactRejected,
+        match="daily_promotion_binding_not_verified",
+    ):
+        service.approve_candidate(
+            "candidate-invalid-binding",
+            approved_by="human:owner",
+            notes="This must not be persisted before binding validation.",
+            confirmation=SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
+        )
+
+    assert store.approval_called is False
 
 
 @pytest.mark.unit
@@ -449,17 +629,25 @@ class _FixtureResearch:
     async def generate_hypotheses(self, request):
         self.hypothesis_calls += 1
         self.hypothesis_requests.append(request)
+        ordinal = self.hypothesis_calls
+        iteration_context = dict(request.iteration_context or {})
         return {
-            "session_id": "session-auto-1",
+            "session_id": f"session-auto-{ordinal}",
             "status": "completed",
             "failure_code": None,
             "drafts": [
                 {
-                    "draft_id": "draft-auto-1",
+                    "draft_id": f"draft-auto-{ordinal}",
                     "economic_hypothesis": "A slower trend filter reduces drawdown.",
                     "risk_impact": "Lower churn, but delayed exits remain possible.",
                     "failure_conditions": ["OOS drawdown exceeds baseline"],
                     "limitations": ["Historical evidence only"],
+                    "formula_ast": {"schema_version": "fixture"},
+                    "formula_fingerprint": f"sha256:{ordinal:064x}",
+                    "iteration_context": iteration_context,
+                    "iteration_context_fingerprint": iteration_context.get(
+                        "context_fingerprint"
+                    ),
                     "validation": {"status": "valid", "errors": []},
                     "provider_provenance": {"usage": {"total_tokens": 1000}},
                 }
@@ -470,7 +658,7 @@ class _FixtureResearch:
         self.backtest_calls += 1
         return {
             "status": "completed",
-            "backtest_run_id": "formula-auto-1",
+            "backtest_run_id": f"formula-{request.draft_id}",
             "canonical_backtest": {"result_id": self.candidate_result_id},
         }
 
@@ -479,13 +667,100 @@ class _FixtureResearch:
         return {
             "status": "completed",
             "failure_code": None,
-            "critique_id": "critique-auto-1",
+            "critique_id": f"critique-{request.draft_id}",
             "artifact": {
                 "supported_claims": ["Drawdown improved in the frozen run."],
                 "evidence_gaps": ["More regimes are needed."],
                 "provider_provenance": {"usage": {"total_tokens": 900}},
             },
         }
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_five_round_policy_runs_sequential_generation_backtest_and_critique(
+    tmp_path, monkeypatch
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = ShadowResearchStore(tmp_path / "app.db")
+    store.init()
+    candidate_payload = _result(total_return=0.12, sharpe=1.2, drawdown=0.08)
+    candidate_result_id = await db.save_backtest_result(
+        config_json=json.dumps({"strategy": "ai_formula_research"}),
+        initial_cash=candidate_payload["initial_cash"],
+        final_equity=candidate_payload["final_equity"],
+        total_return=candidate_payload["total_return"],
+        sharpe=candidate_payload["sharpe"],
+        max_dd=candidate_payload["max_drawdown"],
+        equity_curve_json=json.dumps(candidate_payload["equity_curve"]),
+        annual_return=candidate_payload["annual_return"],
+        sortino=candidate_payload["sortino"],
+        win_rate=candidate_payload["win_rate"],
+        duration_days=candidate_payload["duration_days"],
+        metrics_json=json.dumps(candidate_payload["metrics_json"]),
+        cost_summary_json=json.dumps(candidate_payload["cost_summary_json"]),
+    )
+    fixture = _FixtureResearch(candidate_result_id)
+    service = AiShadowResearchAutomationService(
+        state=_state(db),
+        store=store,
+        data_store=DataStore(tmp_path / "market"),
+        research_service_builder=lambda external: fixture,
+        now=lambda: datetime(2026, 8, 11, 8, 0, tzinfo=ZoneInfo("UTC")),
+    )
+    service.update_policy(
+        {
+            **_policy_payload(enabled=True),
+            "max_provider_calls_per_market_date": 10,
+            "daily_token_budget": None,
+            "token_budget_mode": SHADOW_RESEARCH_TOKEN_BUDGET_MODE_UNBOUNDED,
+            "max_candidates_per_run": 5,
+        }
+    )
+    monkeypatch.setattr(
+        service, "_prepare_baseline", lambda policy: _prepared_baseline()
+    )
+    monkeypatch.setattr(
+        "server.services.ai_shadow_research_automation.build_current_valuation_snapshot",
+        _complete_valuation,
+    )
+
+    result = await service.run_once()
+
+    assert result["run_status"] == "completed"
+    assert fixture.hypothesis_calls == 5
+    assert fixture.backtest_calls == 5
+    assert fixture.critique_calls == 5
+    assert len(result["candidates"]) == 5
+    assert result["usage"]["provider_calls"] == 10
+    assert [
+        request.iteration_context["iteration_number"]
+        for request in fixture.hypothesis_requests
+    ] == [1, 2, 3, 4, 5]
+    assert fixture.hypothesis_requests[0].iteration_context["parent_iteration"] is None
+    for ordinal, request in enumerate(fixture.hypothesis_requests[1:], start=2):
+        parent = request.iteration_context["parent_iteration"]
+        assert parent["iteration_number"] == ordinal - 1
+        assert parent["draft_id"] == f"draft-auto-{ordinal - 1}"
+        assert parent["formula_fingerprint"] == f"sha256:{ordinal - 1:064x}"
+        assert parent["critique"]
+    assert result["daily_selections"][0]["observed_candidate_count"] == 5
+    assert result["daily_selections"][0]["status"] == "no_selection"
+    assert result["daily_backups"][0]["verification_status"] == "verified"
+    assert result["daily_new_candidate_winner_id"] is None
+    assert result["daily_winner_candidate_id"] is None
+    assert result["research_outcome"] == {
+        "status": "no_new_candidate_current_strategy_unchanged",
+        "new_candidate_winner_id": None,
+        "incumbent_strategy_policy": (
+            "leave_current_human_approved_strategy_unchanged"
+        ),
+        "incumbent_strategy_state_changed": False,
+        "daily_trading_decision_status": "not_evaluated",
+        "implies_daily_trading_no_action": False,
+    }
 
 
 @pytest.mark.unit
@@ -535,14 +810,14 @@ async def test_full_cycle_is_idempotent_and_stops_at_human_research_pool(
 
     assert first["run_status"] == "completed"
     assert replay["reused"] is True
-    assert fixture.hypothesis_calls == 1
+    assert fixture.hypothesis_calls == 5
     assert fixture.hypothesis_requests[0].selection.valuation_snapshot_id == (
         "valuation-latest"
     )
     assert fixture.hypothesis_requests[0].selection.ledger_cutoff_id == 11
     assert fixture.hypothesis_requests[0].selection.has_account_binding is True
-    assert fixture.backtest_calls == 1
-    assert fixture.critique_calls == 1
+    assert fixture.backtest_calls == 5
+    assert fixture.critique_calls == 5
     candidate = first["candidates"][0]
     assert candidate["recommendation"] == "keep_researching"
     assert candidate["status"] == "research_blocked"
@@ -647,7 +922,7 @@ async def test_provider_exception_is_audited_failed_and_replay_does_not_retry(
     assert first["failure_code"] == "deepseek_timeout"
     assert replay["reused"] is True
     assert fixture.hypothesis_calls == 1
-    call = store.get_provider_call(f"{first['run_id']}:hypothesis")
+    call = store.get_provider_call(f"{first['run_id']}:hypothesis:iteration:01")
     assert call["status"] == "failed"
     assert call["failure_code"] == "deepseek_timeout"
     assert store.usage_for_market_date("2026-08-11")["provider_calls"] == 1
@@ -898,7 +1173,8 @@ async def test_kill_switch_change_after_local_backtest_blocks_deepseek_critique(
 
     result = await service.run_once()
 
-    assert result["run_status"] == "partial"
+    assert result["run_status"] == "failed"
+    assert result["failure_code"] == "sequential_iteration_not_complete"
     assert fixture.hypothesis_calls == 1
     assert fixture.backtest_calls == 1
     assert fixture.critique_calls == 0

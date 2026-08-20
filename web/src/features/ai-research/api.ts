@@ -772,10 +772,11 @@ export type ShadowResearchCandidate = {
   critique_id: string | null;
   baseline_result_id: number;
   candidate_result_id: number | null;
-  status: 'awaiting_human_approval' | 'failed_closed';
+  status: 'awaiting_human_approval' | 'research_blocked' | 'failed_closed';
   recommendation: 'paper_shadow_review' | 'keep_researching' | 'reject';
   promotion_status:
     | 'awaiting_human_approval'
+    | 'blocked_by_evidence'
     | 'paper_shadow_approval_recorded'
     | 'paper_shadow_approved';
   created_at: string;
@@ -794,6 +795,16 @@ export type ShadowResearchCandidate = {
       evidence_gaps?: string[];
       uncertainty?: string;
     };
+    iteration_lineage?: {
+      iteration_number: number;
+      total_iterations: number;
+      formula_fingerprint: string;
+      parent_candidate_id: string | null;
+      parent_draft_id: string | null;
+      parent_formula_fingerprint: string | null;
+      iteration_context_fingerprint: string;
+      sequential_feedback_bound: boolean;
+    };
     recommendation?: string;
     promotion_gate: { status: string; blockers: string[] };
   };
@@ -810,6 +821,38 @@ export type StrategyPromotionState = {
   live_like_enabled: boolean;
 };
 
+export type ShadowResearchDailySelection = {
+  schema_version: 'karkinos.ai.daily_strategy_selection.v1';
+  selection_id: string;
+  run_id: string;
+  market_date: string;
+  status: 'winner_selected' | 'no_selection';
+  winner_candidate_id: string | null;
+  expected_candidate_count: number;
+  observed_candidate_count: number;
+  eligible_candidate_count: number;
+  blockers: string[];
+  selection_scope: 'new_candidate_research_only';
+  incumbent_strategy_policy: 'leave_current_human_approved_strategy_unchanged';
+  incumbent_strategy_state_changed: false;
+  daily_trading_decision_status: 'not_evaluated';
+  implies_daily_trading_no_action: false;
+  integrity_status: 'verified' | 'fingerprint_mismatch';
+};
+
+export type ShadowResearchDailyBackup = {
+  schema_version: 'karkinos.ai.daily_strategy_backup_receipt.v1';
+  backup_id: string;
+  run_id: string;
+  market_date: string;
+  relative_path: string;
+  artifact_fingerprint: string;
+  byte_count: number;
+  verification_status: string;
+  contains_private_account_identifiers: false;
+  contains_broker_export_rows: false;
+};
+
 export type ShadowResearchAutomationStatus = {
   schema_version: string;
   policy: {
@@ -817,7 +860,8 @@ export type ShadowResearchAutomationStatus = {
     after_close_time: string;
     timezone: 'Asia/Shanghai';
     max_provider_calls_per_market_date: number;
-    daily_token_budget: number;
+    daily_token_budget: number | null;
+    token_budget_mode: 'unbounded_daily' | 'legacy_bounded_daily';
     max_candidates_per_run: number;
     baseline_backtest_result_id: number | null;
     require_complete_account_evidence: boolean;
@@ -844,6 +888,21 @@ export type ShadowResearchAutomationStatus = {
     failure_code: string | null;
   }>;
   candidates: ShadowResearchCandidate[];
+  daily_selections: ShadowResearchDailySelection[];
+  daily_backups: ShadowResearchDailyBackup[];
+  daily_new_candidate_winner_id: string | null;
+  /** Compatibility alias; this is a research winner, not a trading decision. */
+  daily_winner_candidate_id: string | null;
+  research_outcome: {
+    status:
+      | 'new_candidate_available_for_human_review'
+      | 'no_new_candidate_current_strategy_unchanged';
+    new_candidate_winner_id: string | null;
+    incumbent_strategy_policy: 'leave_current_human_approved_strategy_unchanged';
+    incumbent_strategy_state_changed: false;
+    daily_trading_decision_status: 'not_evaluated';
+    implies_daily_trading_no_action: false;
+  };
   automatic_strategy_replacement_enabled: false;
   production_strategy_mutation_enabled: false;
   broker_submission_enabled: false;
@@ -855,7 +914,8 @@ export type ShadowResearchPolicyInput = {
   enabled: boolean;
   after_close_time: string;
   max_provider_calls_per_market_date: number;
-  daily_token_budget: number;
+  daily_token_budget: null;
+  token_budget_mode: 'unbounded_daily';
   max_candidates_per_run: number;
   baseline_backtest_result_id: number | null;
   require_complete_account_evidence: boolean;
@@ -895,7 +955,7 @@ export function useUpdateShadowResearchPolicyMutation() {
         {
           ...input,
           confirmation: input.enabled
-            ? 'authorize_after_close_deepseek_strategy_research_without_strategy_or_trade_authority'
+            ? 'authorize_five_sequential_after_close_deepseek_strategy_research_without_daily_token_budget_or_strategy_or_trade_authority'
             : 'pause_after_close_ai_strategy_research_without_changing_trading_authority',
         },
       ),

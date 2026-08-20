@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from data.store import DataStore
 from server.ai_runtime.contracts import content_fingerprint
@@ -25,7 +25,8 @@ from server.ai_runtime.strategy_research import (
     CRITIQUE_EXPORT_CONFIRMATION,
     HYPOTHESIS_EXPORT_CONFIRMATION,
     REVIEW_CONFIRMATION,
-    STRATEGY_RESEARCH_PROVIDER_TOKEN_RESERVATION,
+    STRATEGY_RESEARCH_MAX_CANDIDATES,
+    STRATEGY_RESEARCH_MAX_PROVIDER_CALLS,
     CritiqueRequest,
     FormulaBacktestRequest,
     HypothesisGenerationRequest,
@@ -140,18 +141,40 @@ class ShadowResearchPolicyPayload(BaseModel):
 
     enabled: bool
     after_close_time: str = Field(default="15:30", min_length=5, max_length=5)
-    max_provider_calls_per_market_date: int = Field(default=3, ge=1, le=4)
-    daily_token_budget: int = Field(
-        default=700_000,
-        ge=STRATEGY_RESEARCH_PROVIDER_TOKEN_RESERVATION,
-        le=1_000_000,
+    max_provider_calls_per_market_date: int = Field(
+        default=STRATEGY_RESEARCH_MAX_PROVIDER_CALLS,
+        ge=1,
+        le=STRATEGY_RESEARCH_MAX_PROVIDER_CALLS,
     )
-    max_candidates_per_run: int = Field(default=2, ge=1, le=3)
+    daily_token_budget: int | None = None
+    token_budget_mode: Literal["unbounded_daily"] = "unbounded_daily"
+    max_candidates_per_run: int = Field(
+        default=STRATEGY_RESEARCH_MAX_CANDIDATES,
+        ge=1,
+        le=STRATEGY_RESEARCH_MAX_CANDIDATES,
+    )
     baseline_backtest_result_id: int | None = Field(default=None, gt=0)
     require_complete_account_evidence: bool = True
     research_question: str = Field(min_length=1, max_length=4_000)
     updated_by: str = Field(min_length=1, max_length=128)
     confirmation: str = Field(min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def validate_sequential_iteration_budget(
+        self,
+    ) -> "ShadowResearchPolicyPayload":
+        required_calls = self.max_candidates_per_run * 2
+        if self.max_provider_calls_per_market_date < required_calls:
+            raise ValueError(
+                "max_provider_calls_per_market_date must cover one generation "
+                "and one critique per sequential iteration"
+            )
+        if self.daily_token_budget is not None:
+            raise ValueError(
+                "daily_token_budget must be null; five sequential iterations have "
+                "no Karkinos daily aggregate token budget"
+            )
+        return self
 
 
 class ShadowResearchPromotionPayload(BaseModel):
