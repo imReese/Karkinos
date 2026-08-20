@@ -14,8 +14,11 @@ from server.services.ai_shadow_research_automation import (
 )
 
 DAILY_CANDIDATE_PRODUCTION_READINESS_SCHEMA_VERSION = (
-    "karkinos.daily_candidate_production_readiness.v1"
+    "karkinos.daily_candidate_production_readiness.v2"
 )
+
+_OPERATOR_EVIDENCE_CONTRACT_VERSION = "karkinos.daily_candidate_operator_evidence.v1"
+_CANONICAL_EVIDENCE_AUTHORITY = "canonical_persisted_evidence_only"
 
 _EXPECTED_SCHEMAS = {
     "cockpit": "karkinos.automation_cockpit.v4",
@@ -53,6 +56,8 @@ def project_daily_candidate_production_readiness(
         research=research_status,
         research_policy=policy,
     )
+    source_contract_blockers.extend(_operator_checklist_contract_blockers(preflight))
+    source_contract_blockers = _unique(source_contract_blockers)
     boundary_blockers = _non_authority_boundary_blockers(
         cockpit=cockpit,
         preflight=preflight,
@@ -88,6 +93,12 @@ def project_daily_candidate_production_readiness(
             "daily_candidate_background_monitor_not_running"
         )
     daily_operation_blockers = _unique(daily_operation_blockers)
+    operator_checklist = _project_operator_checklist(preflight)
+    first_operator_step = operator_checklist[0] if operator_checklist else {}
+    first_blocking_step = next(
+        (item for item in operator_checklist if item["blocker_count"] > 0),
+        {},
+    )
 
     if daily_operation_blockers:
         daily_operation_status = "no_action"
@@ -152,11 +163,22 @@ def project_daily_candidate_production_readiness(
                 preflight.get("eligible_to_start_manual_attempt") is True
             ),
             "blockers": daily_operation_blockers,
+            "blocking_summary": _summarize_operator_blockers(daily_operation_blockers),
             "schedule_reasons": _unique(schedule_reasons),
             "next_safe_action": str(preflight.get("next_safe_action") or "no_action"),
             "preflight_fingerprint": _safe_fingerprint(
                 preflight.get("preflight_fingerprint")
             ),
+            "operator_checklist_status": (
+                "available" if operator_checklist else "invalid"
+            ),
+            "blocking_gate_count": sum(
+                1 for item in operator_checklist if item["blocker_count"] > 0
+            ),
+            "first_blocking_step": first_blocking_step.get("step"),
+            "first_blocking_gate": first_blocking_step.get("gate"),
+            "first_safe_action": first_operator_step.get("action"),
+            "operator_checklist": operator_checklist,
         },
         "research_cycle": {
             "status": research_cycle_status,
@@ -245,9 +267,50 @@ def unavailable_daily_candidate_production_readiness(
             "eligible_for_background_attempt": False,
             "eligible_to_start_manual_attempt": False,
             "blockers": [safe_blocker],
+            "blocking_summary": [
+                {
+                    "code": safe_blocker,
+                    "occurrence_count": 1,
+                    "affected_candidate_count": 0,
+                }
+            ],
             "schedule_reasons": [],
             "next_safe_action": "start_and_verify_local_karkinos_service",
             "preflight_fingerprint": None,
+            "operator_checklist_status": "unavailable",
+            "blocking_gate_count": 1,
+            "first_blocking_step": 1,
+            "first_blocking_gate": "source_evidence",
+            "first_safe_action": "start_and_verify_local_karkinos_service",
+            "operator_checklist": [
+                {
+                    "step": 1,
+                    "gate": "source_evidence",
+                    "action": "start_and_verify_local_karkinos_service",
+                    "completion_mode": "canonical_runtime",
+                    "blocker_count": 1,
+                    "unique_blocker_count": 1,
+                    "blocker_summary": [
+                        {
+                            "code": safe_blocker,
+                            "occurrence_count": 1,
+                            "affected_candidate_count": 0,
+                        }
+                    ],
+                    "evidence_contract_version": (_OPERATOR_EVIDENCE_CONTRACT_VERSION),
+                    "required_evidence": ["reachable_loopback_karkinos_service"],
+                    "completion_criteria": [
+                        "local_service_liveness_and_persisted_sources_are_verified"
+                    ],
+                    "accepted_evidence_authority": (_CANONICAL_EVIDENCE_AUTHORITY),
+                    "owner_attestation_is_financial_fact": False,
+                    "private_xls_rows_required": False,
+                    "private_account_identifiers_required": False,
+                    "automatic_action_performed": False,
+                    "authorizes_execution": False,
+                    "changes_capital_authority": False,
+                }
+            ],
         },
         "research_cycle": {
             "status": "unavailable",
@@ -302,6 +365,93 @@ def _schema_blockers(**payloads: dict[str, Any]) -> list[str]:
         if payloads[name].get("schema_version") != expected:
             blockers.append(f"{name}_contract_invalid")
     return blockers
+
+
+def _operator_checklist_contract_blockers(
+    preflight: dict[str, Any],
+) -> list[str]:
+    checklist = preflight.get("operator_checklist")
+    if not isinstance(checklist, list) or not checklist:
+        return ["preflight_operator_checklist_contract_invalid"]
+    for expected_step, raw_item in enumerate(checklist, start=1):
+        item = _mapping(raw_item)
+        if (
+            item.get("step") != expected_step
+            or not _is_safe_code(item.get("gate"))
+            or not _is_safe_code(item.get("action"))
+            or not _is_safe_code(item.get("completion_mode"))
+            or item.get("evidence_contract_version")
+            != _OPERATOR_EVIDENCE_CONTRACT_VERSION
+            or item.get("accepted_evidence_authority") != _CANONICAL_EVIDENCE_AUTHORITY
+            or item.get("owner_attestation_is_financial_fact") is not False
+            or item.get("private_xls_rows_required") is not False
+            or item.get("private_account_identifiers_required") is not False
+            or item.get("automatic_action_performed") is not False
+            or item.get("authorizes_execution") is not False
+            or item.get("changes_capital_authority") is not False
+            or not _is_safe_code_list(item.get("blockers"), allow_empty=True)
+            or not _is_safe_code_list(item.get("required_evidence"))
+            or not _is_safe_code_list(item.get("completion_criteria"))
+        ):
+            return ["preflight_operator_checklist_contract_invalid"]
+    return []
+
+
+def _project_operator_checklist(preflight: dict[str, Any]) -> list[dict[str, Any]]:
+    if _operator_checklist_contract_blockers(preflight):
+        return []
+    projected = []
+    for raw_item in preflight["operator_checklist"]:
+        item = _mapping(raw_item)
+        blockers = list(item["blockers"])
+        blocker_summary = _summarize_operator_blockers(blockers)
+        projected.append(
+            {
+                "step": item["step"],
+                "gate": item["gate"],
+                "action": item["action"],
+                "completion_mode": item["completion_mode"],
+                "blocker_count": len(blockers),
+                "unique_blocker_count": len(blocker_summary),
+                "blocker_summary": blocker_summary,
+                "evidence_contract_version": item["evidence_contract_version"],
+                "required_evidence": list(item["required_evidence"]),
+                "completion_criteria": list(item["completion_criteria"]),
+                "accepted_evidence_authority": item["accepted_evidence_authority"],
+                "owner_attestation_is_financial_fact": False,
+                "private_xls_rows_required": False,
+                "private_account_identifiers_required": False,
+                "automatic_action_performed": False,
+                "authorizes_execution": False,
+                "changes_capital_authority": False,
+            }
+        )
+    return projected
+
+
+def _summarize_operator_blockers(blockers: list[str]) -> list[dict[str, Any]]:
+    counts: dict[str, int] = {}
+    candidates: dict[str, set[str]] = {}
+    for blocker in blockers:
+        prefix, separator, remainder = blocker.partition(":")
+        candidate_scoped = bool(
+            separator
+            and prefix.startswith("candidate_")
+            and prefix.removeprefix("candidate_").isdigit()
+            and remainder
+        )
+        code = remainder if candidate_scoped else blocker
+        counts[code] = counts.get(code, 0) + 1
+        if candidate_scoped:
+            candidates.setdefault(code, set()).add(prefix)
+    return [
+        {
+            "code": code,
+            "occurrence_count": count,
+            "affected_candidate_count": len(candidates.get(code, set())),
+        }
+        for code, count in counts.items()
+    ]
 
 
 def _non_authority_boundary_blockers(
@@ -417,6 +567,18 @@ def _safe_code(value: Any) -> str:
     ):
         return "daily_candidate_production_readiness_unavailable"
     return normalized
+
+
+def _is_safe_code(value: Any) -> bool:
+    return isinstance(value, str) and value == _safe_code(value)
+
+
+def _is_safe_code_list(value: Any, *, allow_empty: bool = False) -> bool:
+    return bool(
+        isinstance(value, list)
+        and (value or allow_empty)
+        and all(_is_safe_code(item) for item in value)
+    )
 
 
 def _fingerprint(value: dict[str, Any]) -> str:
