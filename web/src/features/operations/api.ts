@@ -973,15 +973,19 @@ export type DailyCandidateTrial = {
   trial_fingerprint: string;
   latest_review: DailyCandidateTrialReview | null;
   background_schedule: {
-    schema_version: 'karkinos.daily_candidate_background_schedule.v2';
+    schema_version: 'karkinos.daily_candidate_background_schedule.v3';
     status: string;
     evaluated_at: string | null;
     timezone: 'Asia/Shanghai';
     run_date: string | null;
     decision_window_start: '09:35';
     decision_window_end: '09:45';
+    preparation_window_start: '08:45';
+    preparation_window_end: '09:35';
     due: boolean;
     existing_run_id: string | null;
+    preparation_check_due: boolean;
+    preparation_check_existing_run_id: string | null;
     blockers: string[];
     next_reviewed_window?: {
       schema_version: 'karkinos.daily_candidate_next_reviewed_window.v1';
@@ -1000,9 +1004,14 @@ export type DailyCandidateTrial = {
       authorizes_execution: false;
       changes_capital_authority: false;
     };
+    background_attempt_writes_enabled: boolean;
+    preparation_check_writes_enabled: boolean;
     background_writes_enabled: boolean;
+    preparation_check_changes_attempt_eligibility: false;
+    preparation_check_permits_retry_or_backfill: false;
     broker_submission_enabled: false;
     authorizes_execution: false;
+    changes_capital_authority: false;
   };
   next_safe_action: string;
   profitability_claim: 'not_established';

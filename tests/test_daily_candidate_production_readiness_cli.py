@@ -86,7 +86,7 @@ def test_live_readiness_cli_reads_only_expected_loopback_endpoints() -> None:
                     "latest_review": None,
                     "background_schedule": {
                         "schema_version": (
-                            "karkinos.daily_candidate_background_schedule.v2"
+                            "karkinos.daily_candidate_background_schedule.v3"
                         ),
                         "run_date": "2026-08-21",
                         "next_reviewed_window": {

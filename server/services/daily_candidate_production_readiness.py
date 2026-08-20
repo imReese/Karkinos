@@ -465,7 +465,7 @@ def _project_next_reviewed_window(trial: dict[str, Any]) -> dict[str, Any]:
     window = _mapping(schedule.get("next_reviewed_window"))
     if (
         schedule.get("schema_version")
-        != "karkinos.daily_candidate_background_schedule.v2"
+        != "karkinos.daily_candidate_background_schedule.v3"
         or window.get("schema_version")
         != "karkinos.daily_candidate_next_reviewed_window.v1"
     ):

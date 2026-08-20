@@ -1586,7 +1586,36 @@ class AppDatabase:
         payload: dict[str, Any],
     ) -> dict[str, Any]:
         """Atomically claim one fail-closed background attempt per market date."""
-        run_id = f"automation:daily-candidate-background-attempt:{run_date}"
+        return self.claim_automation_run_once_sync(
+            run_id=f"automation:daily-candidate-background-attempt:{run_date}",
+            run_type="daily_candidate_background_attempt",
+            run_date=run_date,
+            claimed_at=claimed_at,
+            execution_mode="paper_shadow",
+            payload=payload,
+        )
+
+    def claim_automation_run_once_sync(
+        self,
+        *,
+        run_id: str,
+        run_type: str,
+        run_date: str,
+        claimed_at: str,
+        execution_mode: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Atomically claim one exact automation run identity."""
+
+        normalized = {
+            "run_id": str(run_id).strip(),
+            "run_type": str(run_type).strip(),
+            "run_date": str(run_date).strip(),
+            "claimed_at": str(claimed_at).strip(),
+            "execution_mode": str(execution_mode).strip(),
+        }
+        if not all(normalized.values()):
+            raise ValueError("automation run claim identity is incomplete")
         payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         now = datetime.now().isoformat()
         with sqlite3.connect(self._path) as conn:
@@ -1600,12 +1629,12 @@ class AppDatabase:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    run_id,
-                    "daily_candidate_background_attempt",
-                    str(run_date),
+                    normalized["run_id"],
+                    normalized["run_type"],
+                    normalized["run_date"],
                     "claimed",
-                    "paper_shadow",
-                    str(claimed_at),
+                    normalized["execution_mode"],
+                    normalized["claimed_at"],
                     None,
                     None,
                     payload_json,
@@ -1615,11 +1644,17 @@ class AppDatabase:
             )
             row = conn.execute(
                 "SELECT * FROM automation_runs WHERE run_id = ?",
-                (run_id,),
+                (normalized["run_id"],),
             ).fetchone()
             conn.commit()
             if row is None:
-                raise RuntimeError("daily candidate background attempt was not claimed")
+                raise RuntimeError("automation run was not claimed")
+            if (
+                str(row["run_type"]) != normalized["run_type"]
+                or str(row["run_date"]) != normalized["run_date"]
+                or str(row["execution_mode"]) != normalized["execution_mode"]
+            ):
+                raise RuntimeError("automation run claim identity conflict")
             return {"claimed": cursor.rowcount == 1, "run": dict(row)}
 
     def list_automation_runs_sync(

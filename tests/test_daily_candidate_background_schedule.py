@@ -11,6 +11,7 @@ from server.db import AppDatabase
 from server.services import daily_decision_evidence_automation as automation_module
 from server.services.daily_decision_evidence_automation import (
     DAILY_CANDIDATE_BACKGROUND_ATTEMPT_RUN_TYPE,
+    DAILY_CANDIDATE_PREPARATION_CHECK_RUN_TYPE,
     DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE,
     project_daily_candidate_background_schedule,
     run_daily_decision_evidence_automation_loop,
@@ -18,6 +19,7 @@ from server.services.daily_decision_evidence_automation import (
 
 RUN_DATE = "2026-07-01"
 DECISION_TIME = datetime(2026, 7, 1, 1, 36, tzinfo=timezone.utc)
+PREPARATION_TIME = datetime(2026, 7, 1, 0, 45, tzinfo=timezone.utc)
 
 
 def _seed_calendar(db: AppDatabase, *, is_trading_day: bool = True) -> None:
@@ -64,6 +66,312 @@ def _record_daily_run(db: AppDatabase) -> None:
             "payload": {},
         }
     )
+
+
+def _preparation_result(*, blocked: bool = True) -> dict[str, object]:
+    blockers = ["account_truth_not_fresh"] if blocked else []
+    gates = [
+        {
+            "gate": gate,
+            "status": ("blocked" if blocked and gate == "account_truth" else "pass"),
+            "blockers": blockers if gate == "account_truth" else [],
+        }
+        for gate in (
+            "automation_policy",
+            "account_truth",
+            "reviewed_fees",
+            "strategy",
+            "execution_closure",
+        )
+    ]
+    core = {
+        "schema_version": "karkinos.daily_candidate_preparation_check.v1",
+        "status": "blocked" if blocked else "ready_for_window_time_evidence",
+        "run_date": RUN_DATE,
+        "gates": gates,
+        "blockers": blockers,
+        "blocker_count": len(blockers),
+        "blockers_truncated": False,
+        "first_blocking_gate": "account_truth" if blocked else None,
+        "first_safe_action": (
+            "complete_current_account_truth_evidence_review"
+            if blocked
+            else "persist_current_market_quotes_and_build_reviewed_window_plan"
+        ),
+        "deferred_window_time_gates": [
+            "market_data",
+            "decision_plan",
+            "runtime_window",
+        ],
+        "permits_risk_or_paper_shadow": False,
+        "changes_attempt_eligibility": False,
+        "permits_retry_or_backfill": False,
+        "qualifies_forward_trial": False,
+        "provider_contact_performed": False,
+        "database_writes_performed": False,
+        "manual_confirmation_required": True,
+        "does_not_create_oms_order": True,
+        "does_not_mutate_production_ledger": True,
+        "broker_submission_enabled": False,
+        "authorizes_execution": False,
+        "changes_capital_authority": False,
+        "profitability_claim": "not_established",
+    }
+    return {
+        **core,
+        "preparation_fingerprint": automation_module._fingerprint_json(core),
+    }
+
+
+def test_background_schedule_exposes_one_preparation_check_before_window(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _seed_calendar(db)
+
+    early = project_daily_candidate_background_schedule(
+        db=db,
+        now=datetime(2026, 7, 1, 0, 44, tzinfo=timezone.utc),
+    )
+    due = project_daily_candidate_background_schedule(db=db, now=PREPARATION_TIME)
+
+    assert early["preparation_check_due"] is False
+    assert early["background_writes_enabled"] is False
+    assert due["status"] == "waiting_for_decision_window"
+    assert due["due"] is False
+    assert due["preparation_check_due"] is True
+    assert due["preparation_check_writes_enabled"] is True
+    assert due["background_attempt_writes_enabled"] is False
+    assert due["background_writes_enabled"] is True
+    assert due["preparation_check_changes_attempt_eligibility"] is False
+    assert due["preparation_check_permits_retry_or_backfill"] is False
+    assert due["broker_submission_enabled"] is False
+    assert due["authorizes_execution"] is False
+    assert due["changes_capital_authority"] is False
+
+    claim = db.claim_automation_run_once_sync(
+        run_id=f"automation:daily-candidate-preparation:{RUN_DATE}",
+        run_type=DAILY_CANDIDATE_PREPARATION_CHECK_RUN_TYPE,
+        run_date=RUN_DATE,
+        claimed_at=PREPARATION_TIME.isoformat(),
+        execution_mode="read_only_preparation",
+        payload={"status": "claimed"},
+    )
+    replay = project_daily_candidate_background_schedule(
+        db=db,
+        now=PREPARATION_TIME,
+    )
+
+    assert claim["claimed"] is True
+    assert replay["preparation_check_due"] is False
+    assert replay["preparation_check_existing_run_id"] == (
+        f"automation:daily-candidate-preparation:{RUN_DATE}"
+    )
+    assert replay["background_writes_enabled"] is False
+
+
+def test_preparation_projection_is_deterministic_read_only_and_fail_closed(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    result = automation_module.build_daily_candidate_preparation_check(
+        SimpleNamespace(db=db, trading_controls=None),
+        run_date=RUN_DATE,
+    )
+
+    assert automation_module.verify_daily_candidate_preparation_check(
+        result,
+        run_date=RUN_DATE,
+    )
+    assert result["status"] == "blocked"
+    assert result["permits_risk_or_paper_shadow"] is False
+    assert result["provider_contact_performed"] is False
+    assert result["database_writes_performed"] is False
+    assert result["does_not_create_oms_order"] is True
+    assert result["broker_submission_enabled"] is False
+    assert result["authorizes_execution"] is False
+    assert result["changes_capital_authority"] is False
+    assert result["profitability_claim"] == "not_established"
+    assert not db.list_automation_runs_sync()
+    assert not db.list_automation_alerts_sync()
+
+
+def test_ready_preparation_uses_run_audit_without_open_alert(tmp_path) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    result = automation_module._record_daily_candidate_preparation_alert(
+        db=db,
+        run_date=RUN_DATE,
+        preparation=_preparation_result(blocked=False),
+        error_type=None,
+    )
+
+    assert result == {
+        "status": "not_required",
+        "recorded": False,
+        "reason": "preparation_gates_ready",
+    }
+    assert not db.list_automation_alerts_sync()
+
+
+def test_background_loop_records_one_preparation_reminder_without_attempt(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _seed_calendar(db)
+    projection_calls = 0
+    notifications: list[tuple[str, str]] = []
+
+    def project_preparation(state, *, run_date):
+        nonlocal projection_calls
+        assert state.db is db
+        assert run_date == RUN_DATE
+        projection_calls += 1
+        return _preparation_result()
+
+    class Notifier:
+        def send(self, *, title, message):
+            notifications.append((title, message))
+
+    monkeypatch.setattr(
+        automation_module,
+        "build_daily_candidate_preparation_check",
+        project_preparation,
+    )
+    sleeps = 0
+
+    async def stop_after_second_poll(_: float) -> None:
+        nonlocal sleeps
+        sleeps += 1
+        if sleeps >= 2:
+            raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(
+            run_daily_decision_evidence_automation_loop(
+                state=SimpleNamespace(
+                    db=db,
+                    trading_controls=None,
+                    notifier=Notifier(),
+                ),
+                interval_seconds=1,
+                clock=lambda: PREPARATION_TIME,
+                sleep=stop_after_second_poll,
+            )
+        )
+
+    assert projection_calls == 1
+    assert len(notifications) == 1
+    assert "account_truth_not_fresh" in notifications[0][1]
+    assert not db.list_automation_runs_sync(
+        run_type=DAILY_CANDIDATE_BACKGROUND_ATTEMPT_RUN_TYPE,
+        run_date=RUN_DATE,
+    )
+    assert not db.list_automation_runs_sync(
+        run_type=DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE,
+        run_date=RUN_DATE,
+    )
+    preparation_runs = db.list_automation_runs_sync(
+        run_type=DAILY_CANDIDATE_PREPARATION_CHECK_RUN_TYPE,
+        run_date=RUN_DATE,
+    )
+    assert len(preparation_runs) == 1
+    assert preparation_runs[0]["status"] == "blocked"
+    payload = json.loads(preparation_runs[0]["payload_json"])
+    assert payload["preparation"]["first_blocking_gate"] == "account_truth"
+    assert payload["preparation"]["changes_attempt_eligibility"] is False
+    assert payload["preparation"]["permits_retry_or_backfill"] is False
+    assert payload["preparation"]["qualifies_forward_trial"] is False
+    assert payload["preparation"]["provider_contact_performed"] is False
+    assert payload["preparation"]["broker_submission_enabled"] is False
+    assert payload["notification"] == {"status": "sent", "sent": True}
+    alerts = db.list_automation_alerts_sync(status="open")
+    assert len(alerts) == 1
+    assert alerts[0]["category"] == "daily_candidate_preparation"
+    alert_payload = json.loads(alerts[0]["payload_json"])
+    assert alert_payload["changes_attempt_eligibility"] is False
+    assert alert_payload["provider_contact_performed"] is False
+    assert alert_payload["broker_submission_enabled"] is False
+
+
+def test_background_preparation_contract_drift_fails_closed_without_retry(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _seed_calendar(db)
+    projection_calls = 0
+    notifications = 0
+
+    def invalid_projection(state, *, run_date):
+        nonlocal projection_calls
+        assert state.db is db
+        assert run_date == RUN_DATE
+        projection_calls += 1
+        result = _preparation_result(blocked=False)
+        result["authorizes_execution"] = True
+        return result
+
+    class Notifier:
+        def send(self, *, title, message):
+            del title, message
+            nonlocal notifications
+            notifications += 1
+
+    monkeypatch.setattr(
+        automation_module,
+        "build_daily_candidate_preparation_check",
+        invalid_projection,
+    )
+    sleeps = 0
+
+    async def stop_after_second_poll(_: float) -> None:
+        nonlocal sleeps
+        sleeps += 1
+        if sleeps >= 2:
+            raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(
+            run_daily_decision_evidence_automation_loop(
+                state=SimpleNamespace(
+                    db=db,
+                    trading_controls=None,
+                    notifier=Notifier(),
+                ),
+                interval_seconds=1,
+                clock=lambda: PREPARATION_TIME,
+                sleep=stop_after_second_poll,
+            )
+        )
+
+    assert projection_calls == 1
+    assert notifications == 0
+    run = db.list_automation_runs_sync(
+        run_type=DAILY_CANDIDATE_PREPARATION_CHECK_RUN_TYPE,
+        run_date=RUN_DATE,
+    )[0]
+    assert run["status"] == "failed_closed"
+    payload = json.loads(run["payload_json"])
+    assert payload["preparation"] is None
+    assert payload["notification"] is None
+    assert payload["error_type"] == "ValueError"
+    assert payload["operator_alert"]["severity"] == "critical"
+    alert = db.list_automation_alerts_sync(status="open")[0]
+    assert alert["category"] == "daily_candidate_preparation"
+    alert_payload = json.loads(alert["payload_json"])
+    assert alert_payload["preparation_status"] == "failed_closed"
+    assert alert_payload["error_type"] == "ValueError"
+    assert alert_payload["permits_retry_or_backfill"] is False
+    assert alert_payload["broker_submission_enabled"] is False
+    assert alert_payload["authorizes_execution"] is False
 
 
 def test_background_schedule_is_due_only_inside_verified_trading_window(

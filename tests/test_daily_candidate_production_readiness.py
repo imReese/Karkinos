@@ -85,7 +85,7 @@ def _inputs() -> tuple[dict, dict]:
             "eligible_for_human_go_no_go_review": False,
             "latest_review": None,
             "background_schedule": {
-                "schema_version": "karkinos.daily_candidate_background_schedule.v2",
+                "schema_version": "karkinos.daily_candidate_background_schedule.v3",
                 "status": "waiting_for_decision_window",
                 "run_date": "2026-08-21",
                 "next_reviewed_window": {

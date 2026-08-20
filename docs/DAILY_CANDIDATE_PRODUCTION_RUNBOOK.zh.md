@@ -34,7 +34,9 @@
 
 Owner 启用实时监控后，后台循环先读取持久化且已官方复核的上交所日历，只能在上海时间 09:35 至 09:44 调用同一服务。调用前会原子认领当日唯一后台尝试，并把认领日期绑定到证据链每次 Decision/计划读取；任一阶段的两个持久化日期不等于认领日期时，会在认领日写入可审计 `NO-ACTION`，停止下一步风控或 paper/shadow，且不通知、不关联旧日结果。调用方还会再次核对返回日期，任何契约回归都记录为脱敏 `failed_closed`。即使当前计划日期陈旧、运行失败、任务中断或应用重启，该认领也保持 fail-closed，不会用更晚信息自动重试。休市或日历未复核时不会写入；09:45 后没有认领则报告错过窗口，不使用更晚信息回填。完全相同的人工输入仍幂等复用；`karkinos.daily_candidate_input_identity.v2` 只忽略底层事实和门禁结论未变时自然增长的当前年龄计数，同时绑定生产阻断、脱敏风控错误指纹、冻结策略重放、准确 paper/shadow 结果和前序执行闭环。同一市场日任何来源或结果发生变化都会保留为不同 input fingerprint，该日期不计入试运行，而不是覆盖早先记录。
 
-`karkinos.daily_candidate_background_schedule.v2` 还会从同一份已持久化且经官方复核的 SSE 日历投影当前或下一个 `karkinos.daily_candidate_next_reviewed_window.v1`，包含准确的上海时区开始/结束时间。该投影只读、不联系 provider、不写数据库，不能重新开放已尝试日期、允许重试或回填，也不能改变尝试资格、执行或资本权限。跨年时必须存在下一年度单独持久化且经官方复核的日历，否则下一窗口明确显示不可用。该日期只用于提前准备 Account Truth、费用、策略人工复核和行情采集。
+`karkinos.daily_candidate_background_schedule.v3` 还会从同一份已持久化且经官方复核的 SSE 日历投影当前或下一个 `karkinos.daily_candidate_next_reviewed_window.v1`，包含准确的上海时区开始/结束时间。该投影只读、不联系 provider、不写数据库，不能重新开放已尝试日期、允许重试或回填，也不能改变尝试资格、执行或资本权限。跨年时必须存在下一年度单独持久化且经官方复核的日历，否则下一窗口明确显示不可用。该日期只用于提前准备 Account Truth、费用、策略人工复核和行情采集。
+
+上海时间 08:45 至 09:34，owner 已启用的 monitor 可以为已验证市场日期原子认领一次 `karkinos.daily_candidate_preparation_check.v1`。该检查只读取应在决策窗口前就绪的持久化门禁：安全的 paper/shadow 策略、同日 Account Truth、当前账户级费用复核、仍可精确重放的人工晋级策略，以及前序 plan → paper → actual 闭环；当前行情、最终 Decision/计划和运行窗口明确延后处理。阻断时只持久化并通知脱敏阻断码与第一项安全动作；通过也只表示下一步可以准备窗口内证据。该认领每天最多一次，不重试、不回填、不占用正式每日尝试或前瞻样本资格，也不联系 provider/券商、不运行风控或 paper/shadow、不创建 OMS 订单、不修改账本、不改变资金额度，且不构成盈利结论。
 
 每个已原子认领的后台尝试都会为 `no_action`、只读票据待复核、中断或 fail-closed 失败持久化一条隐私最小化 Operations 告警。若配置了通知，`no_action` 消息只包含市场日期和最多八个具名阻断项，发送最长等待十秒。attempt 会记录告警/通知状态；告警存储、超时或发送失败不能触发重试、创建 OMS 订单、联系券商、修改账本或改变资金额度。
 
@@ -97,6 +99,7 @@ Automation Cockpit v4 还会展示 `karkinos.daily_candidate_financial_preflight
 | 同日出现两个输入 fingerprint | 日期不计入 | 复核漂移，等待后续干净交易日 |
 | 持久化 daily input identity 无法重放 | 日期不计入 | 保留原记录，调查来源漂移或篡改，等待后续干净交易日 |
 | 后台告警或通知失败 | 候选结论保持不变且不得重试 | 在下个窗口前检查 attempt 中脱敏的 `operator_alert` / `notification` 状态 |
+| 盘前准备记录阻断、契约无效、中断或缺失 | 正式尝试不受影响，且不获得重试或回填资格 | 在后续干净窗口前复核脱敏第一门禁；不得把盘前准备当作交易结果 |
 | 后台监控被禁用、缺失、已结束、被取消或失败 | 不执行自动尝试，runtime 状态 fail closed | 保持停止，或仅在 owner 明确启用后重启，并在下个窗口前确认 `background_monitor_running=true` |
 | macOS LaunchAgent 未加载或进程存活不可用 | 不形成持久自动 monitor 结论 | 显式检查或重装该准确用户级服务；不得从 launchd 状态推断财务就绪 |
 | 后台窗口结束仍无当日记录 | `missed_decision_window`，不回填 | 在下一个已验证交易日窗口前准备好当前证据 |
