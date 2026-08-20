@@ -6,13 +6,21 @@ from types import SimpleNamespace
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
-from server.ai_runtime.strategy_research import HYPOTHESIS_EXPORT_CONFIRMATION
+from server.ai_runtime.strategy_research import (
+    HYPOTHESIS_EXPORT_CONFIRMATION,
+    STRATEGY_RESEARCH_PROVIDER_TOKEN_RESERVATION,
+)
 from server.app import create_app
 from server.db import AppDatabase
 from server.routes.ai_strategy_research import (
+    ShadowResearchPolicyPayload,
     _strategy_research_model_timeout_seconds,
     create_router,
+)
+from server.services.ai_shadow_research_automation import (
+    SHADOW_RESEARCH_POLICY_CONFIRMATION,
 )
 from tests.route_assertions import registered_app_routes
 
@@ -238,6 +246,9 @@ def test_shadow_status_get_is_provider_free_and_does_not_initialize_shadow_table
     body = response.json()
     assert body["policy"]["enabled"] is False
     assert body["candidates"] == []
+    assert body["daily_selections"] == []
+    assert body["daily_backups"] == []
+    assert body["daily_winner_candidate_id"] is None
     assert body["broker_submission_enabled"] is False
     with sqlite3.connect(db_path) as conn:
         after = {
@@ -248,6 +259,46 @@ def test_shadow_status_get_is_provider_free_and_does_not_initialize_shadow_table
         }
     assert after == before
     assert not any(name.startswith("ai_shadow_research_") for name in after)
+
+
+@pytest.mark.unit
+def test_shadow_policy_accepts_five_sequential_iterations_without_daily_budget():
+    payload = {
+        "enabled": True,
+        "after_close_time": "15:30",
+        "max_provider_calls_per_market_date": 10,
+        "daily_token_budget": None,
+        "token_budget_mode": "unbounded_daily",
+        "max_candidates_per_run": 5,
+        "baseline_backtest_result_id": 8,
+        "require_complete_account_evidence": True,
+        "research_question": "Generate five sequential revisions.",
+        "updated_by": "human:owner",
+        "confirmation": SHADOW_RESEARCH_POLICY_CONFIRMATION,
+    }
+
+    assert (
+        ShadowResearchPolicyPayload.model_validate(payload).max_candidates_per_run == 5
+    )
+    with pytest.raises(ValidationError):
+        ShadowResearchPolicyPayload.model_validate(
+            {**payload, "max_provider_calls_per_market_date": 11}
+        )
+    with pytest.raises(ValidationError):
+        ShadowResearchPolicyPayload.model_validate(
+            {**payload, "max_candidates_per_run": 6}
+        )
+    with pytest.raises(ValidationError):
+        ShadowResearchPolicyPayload.model_validate(
+            {**payload, "max_provider_calls_per_market_date": 9}
+        )
+    with pytest.raises(ValidationError):
+        ShadowResearchPolicyPayload.model_validate(
+            {
+                **payload,
+                "daily_token_budget": STRATEGY_RESEARCH_PROVIDER_TOKEN_RESERVATION,
+            }
+        )
 
 
 @pytest.mark.unit

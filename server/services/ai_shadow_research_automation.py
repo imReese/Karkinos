@@ -46,6 +46,9 @@ from server.ai_runtime.strategy_research import (
     BACKTEST_CONFIRMATION,
     CRITIQUE_EXPORT_CONFIRMATION,
     HYPOTHESIS_EXPORT_CONFIRMATION,
+    STRATEGY_RESEARCH_ITERATION_CONTEXT_CONTRACT,
+    STRATEGY_RESEARCH_MAX_CANDIDATES,
+    STRATEGY_RESEARCH_MAX_PROVIDER_CALLS,
     STRATEGY_RESEARCH_PROVIDER_TOKEN_RESERVATION,
     CritiqueRequest,
     FormulaBacktestRequest,
@@ -60,6 +63,11 @@ from server.routes.backtest import (
     _backtest_report_metrics_json,
     _fill_to_response,
 )
+from server.services.ai_shadow_research_daily_artifacts import (
+    DailyStrategyArtifactRejected,
+    DailyStrategyArtifactStore,
+    build_daily_strategy_promotion_binding,
+)
 from server.services.reviewed_fee_schedule import (
     ReviewedFeeScheduleReadRejected,
     ReviewedFeeScheduleRejected,
@@ -69,10 +77,19 @@ from server.services.valuation_snapshot import build_current_valuation_snapshot
 logger = logging.getLogger(__name__)
 
 SHADOW_RESEARCH_POLICY_ID = "ai_shadow_research"
-SHADOW_RESEARCH_POLICY_SCHEMA = "karkinos.ai.shadow_research_policy.v1"
+SHADOW_RESEARCH_POLICY_SCHEMA = "karkinos.ai.shadow_research_policy.v2"
 SHADOW_RESEARCH_API_SCHEMA = "karkinos.ai.shadow_research_automation.v1"
 SHADOW_RESEARCH_RUN_TYPE = "ai_shadow_research"
-SHADOW_RESEARCH_POLICY_CONFIRMATION = "authorize_after_close_deepseek_strategy_research_without_strategy_or_trade_authority"
+SHADOW_RESEARCH_POLICY_CONFIRMATION = (
+    "authorize_five_sequential_after_close_deepseek_strategy_research_without_"
+    "daily_token_budget_or_strategy_or_trade_authority"
+)
+SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION = (
+    "authorize_after_close_deepseek_strategy_research_without_strategy_or_trade_"
+    "authority"
+)
+SHADOW_RESEARCH_TOKEN_BUDGET_MODE_UNBOUNDED = "unbounded_daily"
+SHADOW_RESEARCH_TOKEN_BUDGET_MODE_LEGACY_BOUNDED = "legacy_bounded_daily"
 SHADOW_RESEARCH_PAUSE_CONFIRMATION = (
     "pause_after_close_ai_strategy_research_without_changing_trading_authority"
 )
@@ -81,6 +98,8 @@ _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION = (
     STRATEGY_RESEARCH_PROVIDER_TOKEN_RESERVATION
 )
+SHADOW_RESEARCH_MAX_PROVIDER_CALLS = STRATEGY_RESEARCH_MAX_PROVIDER_CALLS
+SHADOW_RESEARCH_MAX_CANDIDATES = STRATEGY_RESEARCH_MAX_CANDIDATES
 
 
 class ShadowResearchRejected(ValueError):
@@ -91,9 +110,9 @@ class ShadowResearchRejected(ValueError):
 class ShadowResearchPolicy:
     enabled: bool = False
     after_close_time: str = "15:30"
-    max_provider_calls_per_market_date: int = 3
-    daily_token_budget: int = 700_000
-    max_candidates_per_run: int = 2
+    max_provider_calls_per_market_date: int = SHADOW_RESEARCH_MAX_PROVIDER_CALLS
+    daily_token_budget: int | None = None
+    max_candidates_per_run: int = SHADOW_RESEARCH_MAX_CANDIDATES
     baseline_backtest_result_id: int | None = None
     require_complete_account_evidence: bool = True
     research_question: str = (
@@ -110,25 +129,28 @@ class ShadowResearchPolicy:
             raise ShadowResearchRejected("after_close_time_invalid") from exc
         if parsed.second or parsed.microsecond:
             raise ShadowResearchRejected("after_close_time_must_be_minute_precision")
-        if not 1 <= self.max_provider_calls_per_market_date <= 4:
-            raise ShadowResearchRejected("provider_call_limit_out_of_range")
         if not (
-            SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION
-            <= self.daily_token_budget
-            <= 1_000_000
+            1
+            <= self.max_provider_calls_per_market_date
+            <= SHADOW_RESEARCH_MAX_PROVIDER_CALLS
         ):
-            raise ShadowResearchRejected("daily_token_budget_out_of_range")
-        if not 1 <= self.max_candidates_per_run <= 3:
+            raise ShadowResearchRejected("provider_call_limit_out_of_range")
+        if self.daily_token_budget is not None and (
+            isinstance(self.daily_token_budget, bool)
+            or self.daily_token_budget < SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION
+        ):
+            raise ShadowResearchRejected("legacy_daily_token_budget_out_of_range")
+        if not 1 <= self.max_candidates_per_run <= SHADOW_RESEARCH_MAX_CANDIDATES:
             raise ShadowResearchRejected("candidate_limit_out_of_range")
-        if self.max_provider_calls_per_market_date < self.max_candidates_per_run + 1:
+        if self.max_provider_calls_per_market_date < self.max_candidates_per_run * 2:
             raise ShadowResearchRejected(
-                "provider_call_limit_cannot_cover_candidate_critiques"
+                "provider_call_limit_cannot_cover_sequential_iterations"
             )
-        if self.daily_token_budget < SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION * (
-            self.max_candidates_per_run + 1
+        if self.daily_token_budget is not None and self.daily_token_budget < (
+            SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION * self.max_candidates_per_run * 2
         ):
             raise ShadowResearchRejected(
-                "daily_token_budget_cannot_cover_reserved_calls"
+                "legacy_daily_token_budget_cannot_cover_reserved_calls"
             )
         if (
             self.baseline_backtest_result_id is not None
@@ -139,10 +161,24 @@ class ShadowResearchPolicy:
             raise ShadowResearchRejected("research_question_required")
         if not self.updated_by.strip():
             raise ShadowResearchRejected("updated_by_required")
-        if self.enabled and self.authorization != SHADOW_RESEARCH_POLICY_CONFIRMATION:
-            raise PermissionError(
-                "standing shadow research requires exact owner authorization"
+        if self.enabled:
+            required_authorization = (
+                SHADOW_RESEARCH_POLICY_CONFIRMATION
+                if self.daily_token_budget is None
+                else SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION
             )
+            if self.authorization != required_authorization:
+                raise PermissionError(
+                    "standing shadow research requires exact owner authorization"
+                )
+
+    @property
+    def token_budget_mode(self) -> str:
+        return (
+            SHADOW_RESEARCH_TOKEN_BUDGET_MODE_UNBOUNDED
+            if self.daily_token_budget is None
+            else SHADOW_RESEARCH_TOKEN_BUDGET_MODE_LEGACY_BOUNDED
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -153,6 +189,7 @@ class ShadowResearchPolicy:
             "timezone": "Asia/Shanghai",
             "max_provider_calls_per_market_date": self.max_provider_calls_per_market_date,
             "daily_token_budget": self.daily_token_budget,
+            "token_budget_mode": self.token_budget_mode,
             "max_candidates_per_run": self.max_candidates_per_run,
             "baseline_backtest_result_id": self.baseline_backtest_result_id,
             "require_complete_account_evidence": self.require_complete_account_evidence,
@@ -169,14 +206,33 @@ class ShadowResearchPolicy:
     @classmethod
     def from_mapping(cls, raw: Mapping[str, Any] | None) -> "ShadowResearchPolicy":
         value = dict(raw or {})
+        raw_daily_token_budget = (
+            value.get("daily_token_budget") if "daily_token_budget" in value else None
+        )
+        daily_token_budget = (
+            int(raw_daily_token_budget) if raw_daily_token_budget is not None else None
+        )
+        expected_token_budget_mode = (
+            SHADOW_RESEARCH_TOKEN_BUDGET_MODE_UNBOUNDED
+            if daily_token_budget is None
+            else SHADOW_RESEARCH_TOKEN_BUDGET_MODE_LEGACY_BOUNDED
+        )
+        if value.get("token_budget_mode") not in (
+            None,
+            expected_token_budget_mode,
+        ):
+            raise ShadowResearchRejected("token_budget_mode_conflicts_with_policy")
         return cls(
             enabled=bool(value.get("enabled", False)),
             after_close_time=str(value.get("after_close_time") or "15:30"),
             max_provider_calls_per_market_date=int(
-                value.get("max_provider_calls_per_market_date") or 3
+                value.get("max_provider_calls_per_market_date")
+                or SHADOW_RESEARCH_MAX_PROVIDER_CALLS
             ),
-            daily_token_budget=int(value.get("daily_token_budget") or 700_000),
-            max_candidates_per_run=int(value.get("max_candidates_per_run") or 2),
+            daily_token_budget=daily_token_budget,
+            max_candidates_per_run=int(
+                value.get("max_candidates_per_run") or SHADOW_RESEARCH_MAX_CANDIDATES
+            ),
             baseline_backtest_result_id=(
                 int(value["baseline_backtest_result_id"])
                 if value.get("baseline_backtest_result_id") is not None
@@ -397,7 +453,6 @@ class ShadowResearchStore:
         market_date: str,
         call_kind: str,
         call_limit: int,
-        token_budget: int,
         now: str,
     ) -> tuple[dict[str, Any], bool]:
         with self._connect(immediate=True) as conn:
@@ -409,24 +464,13 @@ class ShadowResearchStore:
                 return dict(existing), True
             totals = conn.execute(
                 """
-                SELECT COUNT(*) AS calls,
-                       COALESCE(SUM(
-                           CASE
-                               WHEN actual_tokens > reserved_tokens THEN actual_tokens
-                               ELSE reserved_tokens
-                           END
-                       ), 0) AS tokens
+                SELECT COUNT(*) AS calls
                 FROM ai_shadow_research_provider_calls WHERE market_date=?
                 """,
                 (market_date,),
             ).fetchone()
             if int(totals["calls"]) >= call_limit:
                 raise ShadowResearchRejected("daily_provider_call_limit_reached")
-            if (
-                int(totals["tokens"]) + SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION
-                > token_budget
-            ):
-                raise ShadowResearchRejected("daily_provider_token_budget_reached")
             conn.execute(
                 """
                 INSERT INTO ai_shadow_research_provider_calls
@@ -800,6 +844,7 @@ class AiShadowResearchAutomationService:
         data_store: DataStore,
         research_service_builder: Callable[[bool], Any] | None = None,
         reviewed_fee_schedule_resolver: Callable[..., Any] | None = None,
+        daily_artifact_store: DailyStrategyArtifactStore | None = None,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self._state = state
@@ -808,6 +853,10 @@ class AiShadowResearchAutomationService:
         self._data_store = data_store
         self._research_service_builder = research_service_builder
         self._reviewed_fee_schedule_resolver = reviewed_fee_schedule_resolver
+        self._daily_artifacts = daily_artifact_store or DailyStrategyArtifactStore(
+            db_path=Path(self._db._path),
+            backup_root=Path(store._path).parent / "strategy-research-backups",
+        )
         self._now = now or (lambda: datetime.now(timezone.utc))
 
     def get_policy(self) -> ShadowResearchPolicy:
@@ -817,9 +866,18 @@ class AiShadowResearchAutomationService:
     def update_policy(self, patch: Mapping[str, Any]) -> dict[str, Any]:
         current = self.get_policy().to_dict()
         merged = {**current, **dict(patch)}
+        merged["token_budget_mode"] = (
+            SHADOW_RESEARCH_TOKEN_BUDGET_MODE_UNBOUNDED
+            if merged.get("daily_token_budget") is None
+            else SHADOW_RESEARCH_TOKEN_BUDGET_MODE_LEGACY_BOUNDED
+        )
         enabled = bool(merged.get("enabled", False))
         confirmation = str(merged.pop("confirmation", "") or "")
         if enabled:
+            if merged.get("daily_token_budget") is not None:
+                raise ShadowResearchRejected(
+                    "enabled_shadow_research_requires_unbounded_daily_token_policy"
+                )
             if confirmation != SHADOW_RESEARCH_POLICY_CONFIRMATION:
                 raise PermissionError(
                     "standing shadow research requires exact owner authorization"
@@ -847,8 +905,36 @@ class AiShadowResearchAutomationService:
         policy = self.get_policy()
         runs = self._store.list_runs(limit=20)
         candidates = self._store.list_candidates(limit=50)
+        daily_selections = self._daily_artifacts.list_selections(limit=20)
+        daily_backups = self._daily_artifacts.list_backups(limit=20)
         latest_market_date = runs[0]["market_date"] if runs else None
         kill_switch = self._kill_switch()
+        latest_selection = daily_selections[0] if daily_selections else None
+        latest_backup = daily_backups[0] if daily_backups else None
+        daily_winner_candidate_id = None
+        if (
+            latest_selection
+            and latest_backup
+            and latest_selection.get("integrity_status") == "verified"
+            and latest_selection.get("status") == "winner_selected"
+            and latest_backup.get("verification_status") == "verified"
+            and latest_backup.get("run_id") == latest_selection.get("run_id")
+        ):
+            daily_winner_candidate_id = latest_selection.get("winner_candidate_id")
+        research_outcome = {
+            "status": (
+                "new_candidate_available_for_human_review"
+                if daily_winner_candidate_id
+                else "no_new_candidate_current_strategy_unchanged"
+            ),
+            "new_candidate_winner_id": daily_winner_candidate_id,
+            "incumbent_strategy_policy": (
+                "leave_current_human_approved_strategy_unchanged"
+            ),
+            "incumbent_strategy_state_changed": False,
+            "daily_trading_decision_status": "not_evaluated",
+            "implies_daily_trading_no_action": False,
+        }
         return {
             "schema_version": SHADOW_RESEARCH_API_SCHEMA,
             "policy": policy.to_dict(),
@@ -856,6 +942,11 @@ class AiShadowResearchAutomationService:
             "usage": self._store.usage_for_market_date(latest_market_date),
             "runs": runs,
             "candidates": candidates,
+            "daily_selections": daily_selections,
+            "daily_backups": daily_backups,
+            "daily_new_candidate_winner_id": daily_winner_candidate_id,
+            "daily_winner_candidate_id": daily_winner_candidate_id,
+            "research_outcome": research_outcome,
             "automatic_strategy_replacement_enabled": False,
             "production_strategy_mutation_enabled": False,
             "broker_submission_enabled": False,
@@ -871,6 +962,14 @@ class AiShadowResearchAutomationService:
         notes: str,
         confirmation: str,
     ) -> dict[str, Any]:
+        candidate = self._store.get_candidate(candidate_id)
+        daily_artifacts = self._daily_artifacts.require_verified_winner(
+            candidate_id=candidate_id,
+            run_id=str(candidate.get("run_id") or ""),
+        )
+        daily_strategy_artifact_binding = build_daily_strategy_promotion_binding(
+            daily_artifacts
+        )
         approval = self._store.approve_candidate(
             candidate_id,
             approved_by=approved_by,
@@ -895,6 +994,7 @@ class AiShadowResearchAutomationService:
             "comparison_fingerprint": content_fingerprint(candidate["comparison"]),
             "human_approval_id": approval["promotion_id"],
             "strategy_advancement_gate": candidate["comparison"]["promotion_gate"],
+            "daily_strategy_artifact_binding": daily_strategy_artifact_binding,
             "live_like_enabled": False,
             "broker_submission_enabled": False,
         }
@@ -916,6 +1016,17 @@ class AiShadowResearchAutomationService:
                 for item in pipeline.list_states()
                 if item["strategy_id"] == strategy_id
             )
+            current_readiness = promotion_state.get("payload", {}).get("readiness")
+            current_readiness = (
+                current_readiness if isinstance(current_readiness, dict) else {}
+            )
+            if (
+                current_readiness.get("daily_strategy_artifact_binding")
+                != daily_strategy_artifact_binding
+            ):
+                raise ShadowResearchRejected(
+                    "canonical_paper_shadow_daily_artifact_binding_conflict"
+                )
         else:
             pipeline.evaluate_readiness(readiness, actor=approved_by.strip())
             promotion_state = pipeline.request_promotion(
@@ -939,6 +1050,8 @@ class AiShadowResearchAutomationService:
             "production_strategy_replaced": False,
             "strategy_registry_mutated": False,
             "broker_order_created": False,
+            "daily_selection": daily_artifacts["selection"],
+            "daily_backup": daily_artifacts["backup"],
         }
 
     async def run_once(self) -> dict[str, Any]:
@@ -950,6 +1063,20 @@ class AiShadowResearchAutomationService:
             return self._record_preflight(
                 status="blocked_by_kill_switch",
                 failure_code="kill_switch_enabled",
+            )
+        if (
+            policy.max_candidates_per_run != SHADOW_RESEARCH_MAX_CANDIDATES
+            or policy.max_provider_calls_per_market_date
+            != SHADOW_RESEARCH_MAX_PROVIDER_CALLS
+            or policy.daily_token_budget is not None
+        ):
+            return self._record_preflight(
+                status="blocked_by_policy",
+                failure_code=(
+                    "unbounded_daily_token_policy_not_authorized"
+                    if policy.daily_token_budget is not None
+                    else "five_sequential_iterations_not_authorized"
+                ),
             )
 
         try:
@@ -1059,72 +1186,50 @@ class AiShadowResearchAutomationService:
             )
             self._require_deepseek_provider()
             research = self._build_research_service(external=True)
-            self._require_runtime_authorization(policy)
-            hypothesis_call_id = f"{run['run_id']}:hypothesis"
-            _, call_reused = self._store.claim_provider_call(
-                call_id=hypothesis_call_id,
-                run_id=run["run_id"],
-                market_date=prepared.market_date,
-                call_kind="hypothesis",
-                call_limit=policy.max_provider_calls_per_market_date,
-                token_budget=policy.daily_token_budget,
-                now=now_text,
-            )
-            if call_reused:
-                raise ShadowResearchRejected("hypothesis_provider_call_already_claimed")
-            try:
-                hypotheses = await research.generate_hypotheses(
-                    HypothesisGenerationRequest(
-                        idempotency_key=f"{run['run_id']}:hypothesis",
-                        requested_by=f"automation:{policy.updated_by}",
-                        account_alias="standing-owner-authorized-shadow-research",
-                        research_question=policy.research_question,
-                        selection=selection,
-                        confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
-                    )
-                )
-            except asyncio.CancelledError:
-                self._fail_provider_call(
-                    hypothesis_call_id, "provider_call_cancelled_uncertain"
-                )
-                raise
-            except Exception as exc:
-                self._fail_provider_call(hypothesis_call_id, _failure_code(exc))
-                raise
-            self._store.finish_provider_call(
-                hypothesis_call_id,
-                status=str(hypotheses.get("status") or "failed"),
-                actual_tokens=_hypothesis_usage(hypotheses),
-                failure_code=hypotheses.get("failure_code"),
-                now=self._utc_now(),
-            )
-            if hypotheses.get("status") != "completed":
-                raise ShadowResearchRejected("hypothesis_generation_not_complete")
-            self._store.update_run(
-                run["run_id"], now=self._utc_now(), session_id=hypotheses["session_id"]
-            )
-
             candidates: list[dict[str, Any]] = []
-            valid_drafts = [
-                draft
-                for draft in hypotheses.get("drafts", [])
-                if draft.get("validation", {}).get("status") == "valid"
-            ][: policy.max_candidates_per_run]
-            if not valid_drafts:
-                raise ShadowResearchRejected("no_locally_validated_hypothesis")
+            valid_drafts: list[dict[str, Any]] = []
             local_research = self._build_research_service(external=False)
-            for draft in valid_drafts:
-                candidates.append(
-                    await self._run_candidate(
-                        run=run,
-                        policy=policy,
-                        hypotheses=hypotheses,
-                        draft=draft,
-                        baseline_result_id=baseline_result_id,
-                        local_research=local_research,
-                        external_research=research,
-                    )
+            previous_iteration: dict[str, Any] | None = None
+            for iteration_number in range(1, policy.max_candidates_per_run + 1):
+                iteration_context = _build_iteration_context(
+                    iteration_number=iteration_number,
+                    total_iterations=policy.max_candidates_per_run,
+                    previous_iteration=previous_iteration,
                 )
+                hypotheses, draft = await self._generate_iteration_hypothesis(
+                    run=run,
+                    policy=policy,
+                    selection=selection,
+                    external_research=research,
+                    iteration_context=iteration_context,
+                )
+                run = self._store.update_run(
+                    run["run_id"],
+                    now=self._utc_now(),
+                    session_id=hypotheses["session_id"],
+                )
+                candidate = await self._run_candidate(
+                    run=run,
+                    policy=policy,
+                    hypotheses=hypotheses,
+                    draft=draft,
+                    iteration_context=iteration_context,
+                    baseline_result_id=baseline_result_id,
+                    local_research=local_research,
+                    external_research=research,
+                )
+                if candidate.get("status") not in {
+                    "awaiting_human_approval",
+                    "research_blocked",
+                }:
+                    raise ShadowResearchRejected("sequential_iteration_not_complete")
+                candidates.append(candidate)
+                valid_drafts.append(dict(draft))
+                previous_iteration = {
+                    "hypotheses": hypotheses,
+                    "draft": draft,
+                    "candidate": candidate,
+                }
             terminal_status = (
                 "completed"
                 if candidates
@@ -1134,23 +1239,40 @@ class AiShadowResearchAutomationService:
                 )
                 else "partial"
             )
+            daily_artifacts: dict[str, Any] | None = None
+            daily_artifact_failure: str | None = None
+            try:
+                daily_artifacts = self._daily_artifacts.record_daily_artifacts(
+                    run=run,
+                    candidates=candidates,
+                    drafts=valid_drafts,
+                    expected_candidate_count=policy.max_candidates_per_run,
+                    run_status=terminal_status,
+                    created_at=self._utc_now(),
+                )
+            except DailyStrategyArtifactRejected as exc:
+                daily_artifact_failure = _failure_code(exc)
+                terminal_status = "partial"
             self._store.update_run(
                 run["run_id"],
                 now=self._utc_now(),
                 status=terminal_status,
                 candidate_count=len(candidates),
                 failure_code=(
-                    None
-                    if terminal_status == "completed"
-                    else "candidate_stage_partial"
+                    daily_artifact_failure
+                    or (
+                        None
+                        if terminal_status == "completed"
+                        else "candidate_stage_partial"
+                    )
                 ),
             )
-            await self._notify(prepared.market_date, candidates)
+            await self._notify(prepared.market_date, candidates, daily_artifacts)
             return {
                 **self.status(),
                 "run_status": terminal_status,
                 "run_id": run["run_id"],
-                "reused": call_reused,
+                "reused": False,
             }
         except asyncio.CancelledError:
             raise
@@ -1171,6 +1293,72 @@ class AiShadowResearchAutomationService:
                 "failure_code": _failure_code(exc),
             }
 
+    async def _generate_iteration_hypothesis(
+        self,
+        *,
+        run: Mapping[str, Any],
+        policy: ShadowResearchPolicy,
+        selection: StrategyResearchSelection,
+        external_research: Any,
+        iteration_context: Mapping[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        iteration_number = int(iteration_context["iteration_number"])
+        self._require_runtime_authorization(policy)
+        call_id = f"{run['run_id']}:hypothesis:iteration:{iteration_number:02d}"
+        _, call_reused = self._store.claim_provider_call(
+            call_id=call_id,
+            run_id=str(run["run_id"]),
+            market_date=str(run["market_date"]),
+            call_kind="hypothesis_iteration",
+            call_limit=policy.max_provider_calls_per_market_date,
+            now=self._utc_now(),
+        )
+        if call_reused:
+            raise ShadowResearchRejected(
+                "iteration_hypothesis_provider_call_already_claimed"
+            )
+        try:
+            hypotheses = await external_research.generate_hypotheses(
+                HypothesisGenerationRequest(
+                    idempotency_key=call_id,
+                    requested_by=f"automation:{policy.updated_by}",
+                    account_alias="standing-owner-authorized-shadow-research",
+                    research_question=policy.research_question,
+                    selection=selection,
+                    confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
+                    iteration_context=dict(iteration_context),
+                )
+            )
+        except asyncio.CancelledError:
+            self._fail_provider_call(call_id, "provider_call_cancelled_uncertain")
+            raise
+        except Exception as exc:
+            self._fail_provider_call(call_id, _failure_code(exc))
+            raise
+        self._store.finish_provider_call(
+            call_id,
+            status=str(hypotheses.get("status") or "failed"),
+            actual_tokens=_hypothesis_usage(hypotheses),
+            failure_code=hypotheses.get("failure_code"),
+            now=self._utc_now(),
+        )
+        if hypotheses.get("status") != "completed":
+            raise ShadowResearchRejected("iteration_hypothesis_generation_not_complete")
+        drafts = hypotheses.get("drafts")
+        if not isinstance(drafts, list) or len(drafts) != 1:
+            raise ShadowResearchRejected("iteration_requires_exactly_one_draft")
+        draft = drafts[0]
+        if (
+            not isinstance(draft, dict)
+            or draft.get("validation", {}).get("status") != "valid"
+        ):
+            raise ShadowResearchRejected("iteration_hypothesis_not_locally_validated")
+        if draft.get("iteration_context_fingerprint") != iteration_context.get(
+            "context_fingerprint"
+        ):
+            raise ShadowResearchRejected("iteration_hypothesis_context_mismatch")
+        return dict(hypotheses), dict(draft)
+
     async def _run_candidate(
         self,
         *,
@@ -1178,6 +1366,7 @@ class AiShadowResearchAutomationService:
         policy: ShadowResearchPolicy,
         hypotheses: Mapping[str, Any],
         draft: Mapping[str, Any],
+        iteration_context: Mapping[str, Any],
         baseline_result_id: int,
         local_research: Any,
         external_research: Any,
@@ -1211,7 +1400,6 @@ class AiShadowResearchAutomationService:
                 market_date=str(run["market_date"]),
                 call_kind="critique",
                 call_limit=policy.max_provider_calls_per_market_date,
-                token_budget=policy.daily_token_budget,
                 now=self._utc_now(),
             )
             if call_reused:
@@ -1248,6 +1436,7 @@ class AiShadowResearchAutomationService:
                 candidate_result_id=candidate_result_id,
                 draft=draft,
                 critique=critique,
+                iteration_context=iteration_context,
             )
             recommendation = str(comparison["recommendation"])
             return self._store.save_candidate(
@@ -1281,6 +1470,10 @@ class AiShadowResearchAutomationService:
                 comparison={
                     "schema_version": "karkinos.ai.shadow_research_comparison.v1",
                     "failure_code": _failure_code(exc),
+                    "iteration_lineage": _iteration_lineage(
+                        iteration_context,
+                        current_formula_fingerprint=draft.get("formula_fingerprint"),
+                    ),
                     "promotion_gate": {
                         "status": "blocked",
                         "blockers": [_failure_code(exc)],
@@ -1298,6 +1491,7 @@ class AiShadowResearchAutomationService:
         candidate_result_id: int,
         draft: Mapping[str, Any],
         critique: Mapping[str, Any],
+        iteration_context: Mapping[str, Any],
     ) -> dict[str, Any]:
         baseline = await self._db.get_backtest_result(baseline_result_id)
         candidate = await self._db.get_backtest_result(candidate_result_id)
@@ -1354,6 +1548,10 @@ class AiShadowResearchAutomationService:
             },
             "improvements": improvements,
             "deepseek_critique": critique_artifact,
+            "iteration_lineage": _iteration_lineage(
+                iteration_context,
+                current_formula_fingerprint=draft.get("formula_fingerprint"),
+            ),
             "recommendation": recommendation,
             "promotion_gate": advancement_gate.to_json_dict(),
             "automatic_strategy_replacement_enabled": False,
@@ -1677,7 +1875,10 @@ class AiShadowResearchAutomationService:
         }
 
     async def _notify(
-        self, market_date: str, candidates: list[Mapping[str, Any]]
+        self,
+        market_date: str,
+        candidates: list[Mapping[str, Any]],
+        daily_artifacts: Mapping[str, Any] | None,
     ) -> None:
         sender = getattr(getattr(self._state, "notifier", None), "send", None)
         if not callable(sender) or not candidates:
@@ -1685,10 +1886,27 @@ class AiShadowResearchAutomationService:
         eligible = sum(
             item.get("recommendation") == "paper_shadow_review" for item in candidates
         )
+        selection = (
+            daily_artifacts.get("selection")
+            if isinstance(daily_artifacts, Mapping)
+            and isinstance(daily_artifacts.get("selection"), Mapping)
+            else {}
+        )
+        backup = (
+            daily_artifacts.get("backup")
+            if isinstance(daily_artifacts, Mapping)
+            and isinstance(daily_artifacts.get("backup"), Mapping)
+            else {}
+        )
+        winner = selection.get("winner_candidate_id") or "无新优胜者"
         message = (
             f"DeepSeek 收盘后策略研究已完成（{market_date}）。\n"
-            f"研究候选: {len(candidates)}\n"
+            f"已完成串行迭代轮次: {len(candidates)}\n"
             f"建议进入人工 paper/shadow 复核: {eligible}\n"
+            f"确定性新候选优胜者: {winner}\n"
+            f"策略备份校验: {backup.get('verification_status') or 'missing'}\n"
+            "无新优胜者只表示本批次不提出新晋级；当前已人工批准策略保持不变，"
+            "当天是否交易仍由独立的 Decision、Account Truth、行情、费用与风险门决定。\n"
             "请在 Web 的 AI 研究页检查新旧指标、成本、OOS 与风险。"
             "系统没有替换生产策略，也没有创建或提交真实订单。"
         )
@@ -1703,6 +1921,133 @@ class AiShadowResearchAutomationService:
 
     def _utc_now(self) -> str:
         return self._now().astimezone(timezone.utc).isoformat()
+
+
+def _build_iteration_context(
+    *,
+    iteration_number: int,
+    total_iterations: int,
+    previous_iteration: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    parent_iteration = None
+    if iteration_number == 1:
+        if previous_iteration is not None:
+            raise ShadowResearchRejected("initial_iteration_parent_forbidden")
+    else:
+        if not isinstance(previous_iteration, Mapping):
+            raise ShadowResearchRejected("sequential_iteration_parent_missing")
+        hypotheses = previous_iteration.get("hypotheses")
+        draft = previous_iteration.get("draft")
+        candidate = previous_iteration.get("candidate")
+        if not all(
+            isinstance(item, Mapping) for item in (hypotheses, draft, candidate)
+        ):
+            raise ShadowResearchRejected("sequential_iteration_parent_invalid")
+        comparison = candidate.get("comparison")
+        comparison = comparison if isinstance(comparison, Mapping) else {}
+        candidate_metrics = comparison.get("candidate")
+        candidate_metrics = (
+            candidate_metrics if isinstance(candidate_metrics, Mapping) else {}
+        )
+        deltas = comparison.get("deltas")
+        deltas = deltas if isinstance(deltas, Mapping) else {}
+        gate = comparison.get("promotion_gate")
+        gate = gate if isinstance(gate, Mapping) else {}
+        critique = comparison.get("deepseek_critique")
+        critique = critique if isinstance(critique, Mapping) else {}
+        parent_core = {
+            "iteration_number": iteration_number - 1,
+            "candidate_id": str(candidate.get("candidate_id") or ""),
+            "session_id": str(hypotheses.get("session_id") or ""),
+            "draft_id": str(draft.get("draft_id") or ""),
+            "formula_fingerprint": str(draft.get("formula_fingerprint") or ""),
+            "backtest_run_id": str(candidate.get("backtest_run_id") or ""),
+            "critique_id": str(candidate.get("critique_id") or ""),
+            "strategy": {
+                "economic_hypothesis": draft.get("economic_hypothesis"),
+                "formula_ast": draft.get("formula_ast"),
+                "parameter_values": draft.get("parameter_values") or {},
+                "parameter_ranges": draft.get("parameter_ranges") or {},
+                "risk_impact": draft.get("risk_impact"),
+                "failure_conditions": list(draft.get("failure_conditions") or []),
+                "limitations": list(draft.get("limitations") or []),
+            },
+            "evaluation": {
+                "total_return": candidate_metrics.get("total_return"),
+                "sharpe": candidate_metrics.get("sharpe"),
+                "max_drawdown": candidate_metrics.get("max_drawdown"),
+                "oos_fold_count": candidate_metrics.get("oos_fold_count"),
+                "mean_oos_return": candidate_metrics.get("mean_oos_return"),
+                "worst_oos_return": candidate_metrics.get("worst_oos_return"),
+                "oos_validation_status": candidate_metrics.get("oos_validation_status"),
+                "total_return_delta": deltas.get("total_return"),
+                "sharpe_delta": deltas.get("sharpe"),
+                "max_drawdown_delta": deltas.get("max_drawdown"),
+                "recommendation": candidate.get("recommendation"),
+                "promotion_gate_status": gate.get("status"),
+                "promotion_gate_blockers": list(gate.get("blockers") or []),
+                "promotion_gate_fingerprint": gate.get("evidence_fingerprint"),
+            },
+            "critique": {
+                key: critique.get(key)
+                for key in (
+                    "supported_claims",
+                    "contradicted_claims",
+                    "evidence_gaps",
+                    "cost_turnover_sensitivity",
+                    "concentration_risk",
+                    "sample_dependence",
+                    "possible_overfitting",
+                    "recommended_ablations",
+                    "recommended_walk_forward_stress_tests",
+                    "explicit_failure_conditions",
+                    "uncertainty",
+                    "citations",
+                )
+                if key in critique
+            },
+        }
+        parent_iteration = {
+            **parent_core,
+            "parent_artifact_fingerprint": "sha256:" + content_fingerprint(parent_core),
+        }
+    context_core = {
+        "schema_version": STRATEGY_RESEARCH_ITERATION_CONTEXT_CONTRACT,
+        "iteration_number": iteration_number,
+        "total_iterations": total_iterations,
+        "parent_iteration": parent_iteration,
+        "required_behavior": {
+            "draft_count": 1,
+            "must_change_formula_from_parent": iteration_number > 1,
+            "must_use_parent_backtest_and_critique": iteration_number > 1,
+            "authority_effect": "none",
+        },
+    }
+    return {
+        **context_core,
+        "context_fingerprint": "sha256:" + content_fingerprint(context_core),
+    }
+
+
+def _iteration_lineage(
+    iteration_context: Mapping[str, Any],
+    *,
+    current_formula_fingerprint: Any,
+) -> dict[str, Any]:
+    parent = iteration_context.get("parent_iteration")
+    parent = parent if isinstance(parent, Mapping) else {}
+    return {
+        "schema_version": STRATEGY_RESEARCH_ITERATION_CONTEXT_CONTRACT,
+        "iteration_number": iteration_context.get("iteration_number"),
+        "total_iterations": iteration_context.get("total_iterations"),
+        "formula_fingerprint": current_formula_fingerprint,
+        "parent_candidate_id": parent.get("candidate_id"),
+        "parent_draft_id": parent.get("draft_id"),
+        "parent_formula_fingerprint": parent.get("formula_fingerprint"),
+        "iteration_context_fingerprint": iteration_context.get("context_fingerprint"),
+        "sequential_feedback_bound": bool(parent)
+        or iteration_context.get("iteration_number") == 1,
+    }
 
 
 class _NullEventBus:

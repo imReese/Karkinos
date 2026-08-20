@@ -24,7 +24,7 @@ from server.ai_runtime.capture import (
     ContextCaptureAuditStore,
     HumanResearchContextCaptureService,
 )
-from server.ai_runtime.contracts import AgentRole, ArtifactKind
+from server.ai_runtime.contracts import AgentRole, ArtifactKind, content_fingerprint
 from server.ai_runtime.evidence import CanonicalEvidenceRepository
 from server.ai_runtime.formula_dsl import (
     FORMULA_AST_CONTRACT,
@@ -348,6 +348,51 @@ def _nested_keys(value) -> set[str]:
     return set()
 
 
+def _iteration_context(*, iteration_number: int, total_iterations: int = 5) -> dict:
+    parent = None
+    if iteration_number > 1:
+        parent_core = {
+            "iteration_number": iteration_number - 1,
+            "candidate_id": f"candidate-{iteration_number - 1}",
+            "session_id": f"session-{iteration_number - 1}",
+            "draft_id": f"draft-{iteration_number - 1}",
+            "formula_fingerprint": "sha256:" + "1" * 64,
+            "backtest_run_id": f"backtest-{iteration_number - 1}",
+            "critique_id": f"critique-{iteration_number - 1}",
+            "strategy": {
+                "economic_hypothesis": "The prior trend filter was too reactive.",
+                "parameter_values": {"window": 2},
+            },
+            "evaluation": {
+                "promotion_gate_status": "blocked",
+                "blockers": ["worst_oos_excess_return"],
+            },
+            "critique": {
+                "supported_claims": ["The frozen run is reproducible."],
+                "evidence_gaps": ["Worst-window excess remained negative."],
+            },
+        }
+        parent = {
+            **parent_core,
+            "parent_artifact_fingerprint": (
+                "sha256:" + content_fingerprint(parent_core)
+            ),
+        }
+    core = {
+        "schema_version": "karkinos.ai.strategy_iteration_context.v1",
+        "iteration_number": iteration_number,
+        "total_iterations": total_iterations,
+        "parent_iteration": parent,
+        "required_behavior": {
+            "draft_count": 1,
+            "must_change_formula_from_parent": iteration_number > 1,
+            "must_use_parent_backtest_and_critique": iteration_number > 1,
+            "authority_effect": "none",
+        },
+    }
+    return {**core, "context_fingerprint": "sha256:" + content_fingerprint(core)}
+
+
 def _service(tmp_path, *, bind_account: bool = True):
     market = DataStore(tmp_path / "market")
     symbol = Symbol("600000")
@@ -635,6 +680,80 @@ def test_selection_rejects_partial_account_fact_binding(
 @pytest.mark.unit
 @pytest.mark.trading_safety
 @pytest.mark.asyncio
+async def test_iteration_exports_exact_parent_feedback_and_one_draft_contract(
+    tmp_path,
+) -> None:
+    service, selection, transport, _ = _service(tmp_path)
+    iteration_context = _iteration_context(iteration_number=2)
+    response = transport._responses[0].payload
+    content = json.loads(response["choices"][0]["message"]["content"])
+    content["drafts"][0]["citations"].append(
+        "iteration_context.parent_iteration.evaluation.blockers"
+    )
+    response["choices"][0]["message"]["content"] = json.dumps(content)
+
+    result = await service.generate_hypotheses(
+        HypothesisGenerationRequest(
+            idempotency_key="hypothesis-iteration-2",
+            requested_by="human:reese",
+            account_alias="synthetic-research-only",
+            research_question="Revise the prior formula from its frozen evidence.",
+            selection=selection,
+            confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
+            iteration_context=iteration_context,
+        )
+    )
+
+    assert result["status"] == "completed"
+    assert len(result["drafts"]) == 1
+    assert result["iteration_context"] == iteration_context
+    assert result["drafts"][0]["iteration_context"] == iteration_context
+    assert result["drafts"][0]["iteration_context_fingerprint"] == (
+        iteration_context["context_fingerprint"]
+    )
+    external = json.loads(transport.calls[0]["payload"]["messages"][1]["content"])
+    assert external["iteration_context"] == iteration_context
+    assert external["output_contract"]["draft_count"] == "exactly 1"
+    assert not {
+        "account_id",
+        "valuation_snapshot_id",
+        "ledger_cutoff_id",
+        "broker_export",
+        "credentials",
+        "api_key",
+    }.intersection(_nested_keys(external["iteration_context"]))
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_iteration_rejects_multiple_provider_drafts_fail_closed(tmp_path) -> None:
+    service, selection, transport, _ = _service(tmp_path)
+    response = transport._responses[0].payload
+    content = json.loads(response["choices"][0]["message"]["content"])
+    content["drafts"].append(dict(content["drafts"][0]))
+    response["choices"][0]["message"]["content"] = json.dumps(content)
+
+    result = await service.generate_hypotheses(
+        HypothesisGenerationRequest(
+            idempotency_key="hypothesis-iteration-multiple-drafts",
+            requested_by="human:reese",
+            account_alias="synthetic-research-only",
+            research_question="Each sequential round must return one revision.",
+            selection=selection,
+            confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
+            iteration_context=_iteration_context(iteration_number=1),
+        )
+    )
+
+    assert result["status"] == "failed"
+    assert result["drafts"] == []
+    assert len(transport.calls) == 1
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
 async def test_fake_provider_completes_hypothesis_backtest_critique_without_authority(
     tmp_path,
 ) -> None:
@@ -736,7 +855,7 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
     )
     assert "account_state_projection.read" in current_role.allowed_tools
     assert (
-        current_role.instructions_version == "karkinos.ai.strategy_research_prompt.v8"
+        current_role.instructions_version == "karkinos.ai.strategy_research_prompt.v9"
     )
 
     backtest = await service.run_formula_backtest(

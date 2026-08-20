@@ -25,15 +25,33 @@ const COPY = {
     killSwitch: 'Kill switch',
     clear: 'Clear',
     calls: 'Provider calls',
-    tokens: 'Token budget',
-    candidates: 'Research candidates',
+    tokens: 'Token usage',
+    tokenPolicy: 'Daily token policy',
+    unboundedDailyTokens: 'No Karkinos daily aggregate limit',
+    legacyBoundedDailyTokens:
+      'Legacy bounded policy · blocked until reauthorized',
+    providerLimitsRemain: 'Per-request provider and context limits still apply',
+    tokenAccountingEstimate: 'accounting estimate',
+    candidates: 'Sequential revisions',
+    dailyWinner: 'New candidate winner',
+    noWinner: 'No new winner · current strategy unchanged',
+    backup: 'Daily strategy backup',
+    winnerBadge: 'New-candidate winner',
+    iterationRound: 'Sequential round',
+    backupVerified: 'Verified',
+    fiveCandidateRule:
+      'Five sequential rounds require ten provider calls: each round generates one revision, runs the canonical local backtest, records one critique, and binds that feedback into the next round. No new winner means no new promotion; the separate daily decision pipeline still decides trade or NO-ACTION.',
+    fiveRoundPolicyBlocked:
+      'Enabled research is blocked until the displayed policy authorizes exactly five sequential revisions, ten provider calls, and no Karkinos daily aggregate token limit.',
+    notDailyWinner:
+      'This candidate passed its own gate but is not the verified new-candidate winner, so public paper/shadow approval remains blocked.',
     closeTime: 'After-close time',
     question: 'Standing research question',
     operator: 'Owner identity',
     save: 'Save standing policy',
     saving: 'Saving…',
     confirmEnable:
-      'I authorize the displayed recurring saved-backtest and sanitized account risk/allocation payload within this budget. It has no strategy replacement or trading authority.',
+      'I authorize five strictly sequential research rounds and ten provider calls per market date with no Karkinos daily aggregate token limit. Provider per-request limits and usage accounting remain; this has no strategy replacement or trading authority.',
     confirmPause: 'I confirm pausing recurring AI strategy research.',
     run: 'Check and run now',
     running: 'Checking evidence…',
@@ -76,15 +94,32 @@ const COPY = {
     killSwitch: 'Kill Switch',
     clear: '未触发',
     calls: '模型调用',
-    tokens: 'Token 预算',
-    candidates: '研究候选',
+    tokens: 'Token 用量',
+    tokenPolicy: '每日 Token 策略',
+    unboundedDailyTokens: 'Karkinos 不设每日累计上限',
+    legacyBoundedDailyTokens: '旧版有界策略 · 重新授权前保持阻断',
+    providerLimitsRemain: '仍受模型单次请求与上下文窗口的技术限制',
+    tokenAccountingEstimate: '用量核算估计',
+    candidates: '串行修订轮数',
+    dailyWinner: '新候选确定性优胜者',
+    noWinner: '无新优胜者 · 当前策略不变',
+    backup: '每日策略备份',
+    winnerBadge: '新候选优胜者',
+    iterationRound: '串行迭代轮次',
+    backupVerified: '校验通过',
+    fiveCandidateRule:
+      '5 轮串行迭代需要 10 次模型调用：每轮生成 1 个修订版、本地权威回测并 critique，再把结果绑定给下一轮；无新优胜者只表示不发生新晋级，当天交易或 NO-ACTION 仍由独立日决策链判断。',
+    fiveRoundPolicyBlocked:
+      '启用状态下必须明确授权 5 轮严格串行修订、10 次模型调用且 Karkinos 不设每日累计 Token 上限，否则研究运行保持阻断。',
+    notDailyWinner:
+      '该候选虽通过自身门槛，但不是已校验的新候选优胜者，因此公开 paper/shadow 批准保持阻断。',
     closeTime: '收盘后时间',
     question: '长期研究问题',
     operator: '所有者身份',
     save: '保存站立授权',
     saving: '保存中…',
     confirmEnable:
-      '我授权按页面所示范围与预算周期性发送保存的回测证据及脱敏账户风险/配置 payload；该授权不包含策略替换权或交易权。',
+      '我授权每个交易日进行 5 轮严格串行研究、最多 10 次模型调用，Karkinos 不设每日累计 Token 上限；仍记录用量并受模型单次请求和上下文窗口限制。该授权不包含策略替换权或交易权。',
     confirmPause: '我确认暂停周期性 AI 策略研究。',
     run: '立即检查并运行',
     running: '正在检查证据…',
@@ -118,14 +153,30 @@ const COPY = {
   },
 } as const;
 
-const PROVIDER_TOKEN_RESERVATION = 225_280;
+const MAX_PROVIDER_CALLS = 10;
+const MAX_CANDIDATES = 5;
+
+function isFiveRoundPolicy(policy: {
+  max_provider_calls_per_market_date: number;
+  daily_token_budget: number | null;
+  token_budget_mode: 'unbounded_daily' | 'legacy_bounded_daily';
+  max_candidates_per_run: number;
+}) {
+  return (
+    policy.max_provider_calls_per_market_date === MAX_PROVIDER_CALLS &&
+    policy.daily_token_budget === null &&
+    policy.token_budget_mode === 'unbounded_daily' &&
+    policy.max_candidates_per_run === MAX_CANDIDATES
+  );
+}
 
 const EMPTY_POLICY: ShadowResearchPolicyInput = {
   enabled: false,
   after_close_time: '15:30',
-  max_provider_calls_per_market_date: 3,
-  daily_token_budget: 700_000,
-  max_candidates_per_run: 2,
+  max_provider_calls_per_market_date: MAX_PROVIDER_CALLS,
+  daily_token_budget: null,
+  token_budget_mode: 'unbounded_daily',
+  max_candidates_per_run: MAX_CANDIDATES,
   baseline_backtest_result_id: null,
   require_complete_account_evidence: true,
   research_question: '',
@@ -159,7 +210,8 @@ export function ShadowResearchPanel() {
         after_close_time: current.after_close_time,
         max_provider_calls_per_market_date:
           current.max_provider_calls_per_market_date,
-        daily_token_budget: current.daily_token_budget,
+        daily_token_budget: null,
+        token_budget_mode: 'unbounded_daily',
         max_candidates_per_run: current.max_candidates_per_run,
         baseline_backtest_result_id: current.baseline_backtest_result_id,
         require_complete_account_evidence:
@@ -227,7 +279,28 @@ export function ShadowResearchPanel() {
   };
 
   const status = query.data;
+  const draftPolicyReady = isFiveRoundPolicy(policy);
+  const persistedPolicyReady = status?.policy
+    ? isFiveRoundPolicy(status.policy)
+    : false;
   const latestRun = status?.runs[0];
+  const latestSelection = status?.daily_selections?.[0];
+  const latestBackup = status?.daily_backups?.[0];
+  const verifiedWinnerCandidateIds = new Set(
+    (status?.daily_selections ?? [])
+      .filter(
+        (selection) =>
+          selection.status === 'winner_selected' &&
+          selection.integrity_status === 'verified' &&
+          (status?.daily_backups ?? []).some(
+            (backup) =>
+              backup.run_id === selection.run_id &&
+              backup.verification_status === 'verified',
+          ),
+      )
+      .map((selection) => selection.winner_candidate_id)
+      .filter((candidateId): candidateId is string => Boolean(candidateId)),
+  );
 
   return (
     <section
@@ -260,6 +333,31 @@ export function ShadowResearchPanel() {
         </div>
       </div>
 
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <StatusMetric
+          label={copy.dailyWinner}
+          value={
+            status?.daily_new_candidate_winner_id
+              ? status.daily_new_candidate_winner_id
+              : copy.noWinner
+          }
+          detail={
+            latestSelection
+              ? `${latestSelection.market_date} · ${latestSelection.observed_candidate_count}/${latestSelection.expected_candidate_count}`
+              : '—'
+          }
+        />
+        <StatusMetric
+          label={copy.backup}
+          value={
+            latestBackup?.verification_status === 'verified'
+              ? copy.backupVerified
+              : latestBackup?.verification_status || '—'
+          }
+          detail={latestBackup?.artifact_fingerprint || '—'}
+        />
+      </div>
+
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         <StatusMetric
           label={copy.calls}
@@ -268,8 +366,8 @@ export function ShadowResearchPanel() {
         />
         <StatusMetric
           label={copy.tokens}
-          value={`${status?.usage.actual_tokens ?? 0} / ${status?.policy.daily_token_budget ?? policy.daily_token_budget}`}
-          detail={`reserved ${status?.usage.reserved_tokens ?? 0}`}
+          value={String(status?.usage.actual_tokens ?? 0)}
+          detail={`${status?.policy.token_budget_mode === 'unbounded_daily' ? copy.unboundedDailyTokens : copy.legacyBoundedDailyTokens} · ${copy.tokenAccountingEstimate} ${status?.usage.reserved_tokens ?? 0}`}
         />
         <StatusMetric
           label={copy.candidates}
@@ -279,6 +377,9 @@ export function ShadowResearchPanel() {
           }
         />
       </div>
+      <p className="app-muted mt-2 text-xs leading-5">
+        {copy.fiveCandidateRule}
+      </p>
 
       <div className="mt-5 grid gap-4 border-t border-[var(--app-divider)] pt-5 lg:grid-cols-[minmax(0,1fr)_18rem]">
         <label className="min-w-0 text-xs font-semibold text-[var(--app-text)]">
@@ -319,7 +420,7 @@ export function ShadowResearchPanel() {
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         <NumberField
           label={copy.calls}
-          max={4}
+          max={MAX_PROVIDER_CALLS}
           min={2}
           onChange={(value) =>
             setPolicy((current) => ({
@@ -327,37 +428,31 @@ export function ShadowResearchPanel() {
               max_provider_calls_per_market_date: value,
               max_candidates_per_run: Math.min(
                 current.max_candidates_per_run,
-                Math.max(1, value - 1),
+                Math.max(1, Math.floor(value / 2)),
               ),
             }))
           }
           value={policy.max_provider_calls_per_market_date}
         />
-        <NumberField
-          label={copy.tokens}
-          max={1_000_000}
-          min={PROVIDER_TOKEN_RESERVATION * (policy.max_candidates_per_run + 1)}
-          onChange={(value) =>
-            setPolicy((current) => ({
-              ...current,
-              daily_token_budget: value,
-            }))
-          }
-          step={1_000}
-          value={policy.daily_token_budget}
+        <StatusMetric
+          detail={copy.providerLimitsRemain}
+          label={copy.tokenPolicy}
+          value={copy.unboundedDailyTokens}
         />
         <NumberField
           label={copy.candidates}
-          max={Math.max(1, policy.max_provider_calls_per_market_date - 1)}
+          max={Math.min(
+            MAX_CANDIDATES,
+            Math.max(
+              1,
+              Math.floor(policy.max_provider_calls_per_market_date / 2),
+            ),
+          )}
           min={1}
           onChange={(value) =>
             setPolicy((current) => ({
               ...current,
               max_candidates_per_run: value,
-              daily_token_budget: Math.max(
-                current.daily_token_budget,
-                PROVIDER_TOKEN_RESERVATION * (value + 1),
-              ),
             }))
           }
           value={policy.max_candidates_per_run}
@@ -393,7 +488,8 @@ export function ShadowResearchPanel() {
           disabled={
             updatePolicy.isPending ||
             !policyConfirmed ||
-            !policy.research_question.trim()
+            !policy.research_question.trim() ||
+            (policy.enabled && !draftPolicyReady)
           }
           onClick={() => void savePolicy()}
           type="button"
@@ -402,7 +498,9 @@ export function ShadowResearchPanel() {
         </button>
         <button
           className="app-button-secondary min-h-11 px-4 py-2 text-sm font-semibold"
-          disabled={run.isPending || !status?.policy.enabled}
+          disabled={
+            run.isPending || !status?.policy.enabled || !persistedPolicyReady
+          }
           onClick={() => run.mutate()}
           type="button"
         >
@@ -410,6 +508,11 @@ export function ShadowResearchPanel() {
         </button>
       </div>
       <p className="app-muted mt-3 text-xs leading-5">{copy.noAuthority}</p>
+      {policy.enabled && !draftPolicyReady && (
+        <p className="mt-3 text-sm text-[var(--app-danger-text)]">
+          {copy.fiveRoundPolicyBlocked}
+        </p>
+      )}
       {(query.isError ||
         updatePolicy.isError ||
         run.isError ||
@@ -428,6 +531,9 @@ export function ShadowResearchPanel() {
               approvals={approvals}
               candidate={candidate}
               copy={copy}
+              isDailyWinner={verifiedWinnerCandidateIds.has(
+                candidate.candidate_id,
+              )}
               key={candidate.candidate_id}
               notes={notes}
               onPause={() => void pauseCandidate(candidate)}
@@ -494,6 +600,7 @@ function CandidateCard({
   onPause,
   promotionStage,
   promotionStateLoaded,
+  isDailyWinner,
   pending,
 }: {
   candidate: ShadowResearchCandidate;
@@ -510,6 +617,7 @@ function CandidateCard({
   onPause: () => void;
   promotionStage: string | undefined;
   promotionStateLoaded: boolean;
+  isDailyWinner: boolean;
   pending: boolean;
 }) {
   const comparison = candidate.comparison;
@@ -517,6 +625,7 @@ function CandidateCard({
     candidate.status === 'awaiting_human_approval' &&
     candidate.recommendation === 'paper_shadow_review' &&
     comparison.promotion_gate.status === 'pass' &&
+    isDailyWinner &&
     (candidate.promotion_status !== 'paper_shadow_approved' ||
       promotionStage === 'paused');
   const revocable =
@@ -546,6 +655,18 @@ function CandidateCard({
                 : candidate.status.replace(/_/g, ' ')
             : candidate.status.replace(/_/g, ' ')}
         </span>
+        {isDailyWinner ? (
+          <span className="rounded-full border border-[var(--app-success-border)] bg-[var(--app-success-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--app-success-text)]">
+            {copy.winnerBadge}
+          </span>
+        ) : null}
+        {candidate.comparison.iteration_lineage ? (
+          <span className="rounded-full border border-[var(--app-divider)] px-2.5 py-1 text-xs font-semibold">
+            {copy.iterationRound}{' '}
+            {candidate.comparison.iteration_lineage.iteration_number}/
+            {candidate.comparison.iteration_lineage.total_iterations}
+          </span>
+        ) : null}
       </div>
 
       {comparison.baseline && comparison.candidate ? (
@@ -584,6 +705,15 @@ function CandidateCard({
             {copy.risk}:{' '}
           </span>
           {comparison.risk_impact}
+        </p>
+      ) : null}
+
+      {candidate.status === 'awaiting_human_approval' &&
+      candidate.recommendation === 'paper_shadow_review' &&
+      comparison.promotion_gate.status === 'pass' &&
+      !isDailyWinner ? (
+        <p className="app-muted mt-4 text-xs leading-5">
+          {copy.notDailyWinner}
         </p>
       ) : null}
 

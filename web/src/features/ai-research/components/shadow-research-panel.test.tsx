@@ -18,9 +18,10 @@ const status = {
     enabled: true,
     after_close_time: '15:30',
     timezone: 'Asia/Shanghai',
-    max_provider_calls_per_market_date: 3,
-    daily_token_budget: 700000,
-    max_candidates_per_run: 2,
+    max_provider_calls_per_market_date: 10,
+    daily_token_budget: null,
+    token_budget_mode: 'unbounded_daily',
+    max_candidates_per_run: 5,
     baseline_backtest_result_id: null,
     require_complete_account_evidence: true,
     research_question:
@@ -36,7 +37,7 @@ const status = {
   usage: {
     market_date: '2026-08-11',
     provider_calls: 2,
-    reserved_tokens: 131072,
+    reserved_tokens: 450560,
     actual_tokens: 1900,
   },
   runs: [
@@ -105,6 +106,16 @@ const status = {
           supported_claims: ['Drawdown improved.'],
           evidence_gaps: ['More regimes are needed.'],
         },
+        iteration_lineage: {
+          iteration_number: 1,
+          total_iterations: 5,
+          formula_fingerprint: `sha256:${'1'.repeat(64)}`,
+          parent_candidate_id: null,
+          parent_draft_id: null,
+          parent_formula_fingerprint: null,
+          iteration_context_fingerprint: `sha256:${'2'.repeat(64)}`,
+          sequential_feedback_bound: true,
+        },
         recommendation: 'paper_shadow_review',
         promotion_gate: { status: 'pass', blockers: [] },
       },
@@ -114,6 +125,52 @@ const status = {
       human_paper_shadow_approval_required: true,
     },
   ],
+  daily_selections: [
+    {
+      schema_version: 'karkinos.ai.daily_strategy_selection.v1',
+      selection_id: 'selection-1',
+      run_id: 'run-1',
+      market_date: '2026-08-11',
+      status: 'winner_selected',
+      winner_candidate_id: 'candidate-1',
+      expected_candidate_count: 5,
+      observed_candidate_count: 5,
+      eligible_candidate_count: 1,
+      blockers: [],
+      selection_scope: 'new_candidate_research_only',
+      incumbent_strategy_policy:
+        'leave_current_human_approved_strategy_unchanged',
+      incumbent_strategy_state_changed: false,
+      daily_trading_decision_status: 'not_evaluated',
+      implies_daily_trading_no_action: false,
+      integrity_status: 'verified',
+    },
+  ],
+  daily_backups: [
+    {
+      schema_version: 'karkinos.ai.daily_strategy_backup_receipt.v1',
+      backup_id: 'backup-1',
+      run_id: 'run-1',
+      market_date: '2026-08-11',
+      relative_path: '2026-08-11/backup.json',
+      artifact_fingerprint: `sha256:${'a'.repeat(64)}`,
+      byte_count: 1024,
+      verification_status: 'verified',
+      contains_private_account_identifiers: false,
+      contains_broker_export_rows: false,
+    },
+  ],
+  daily_new_candidate_winner_id: 'candidate-1',
+  daily_winner_candidate_id: 'candidate-1',
+  research_outcome: {
+    status: 'new_candidate_available_for_human_review',
+    new_candidate_winner_id: 'candidate-1',
+    incumbent_strategy_policy:
+      'leave_current_human_approved_strategy_unchanged',
+    incumbent_strategy_state_changed: false,
+    daily_trading_decision_status: 'not_evaluated',
+    implies_daily_trading_no_action: false,
+  },
   automatic_strategy_replacement_enabled: false,
   production_strategy_mutation_enabled: false,
   broker_submission_enabled: false,
@@ -168,6 +225,9 @@ test('shows old/new OOS evidence and records only an explicit paper-shadow appro
   expect(await screen.findByText('Current baseline')).toBeTruthy();
   expect(screen.getByText('New candidate')).toBeTruthy();
   expect(screen.getByText('A slower trend filter reduces churn.')).toBeTruthy();
+  expect(screen.getByText('New-candidate winner')).toBeTruthy();
+  expect(screen.getByText('Sequential round 1/5')).toBeTruthy();
+  expect(screen.getByText('Verified')).toBeTruthy();
   expect(screen.getByText('More regimes are needed.')).toBeTruthy();
   expect(screen.getAllByText('Mean / worst OOS')).toHaveLength(2);
   const approveButton = screen.getByRole('button', {
@@ -203,7 +263,79 @@ test('shows old/new OOS evidence and records only an explicit paper-shadow appro
   });
 });
 
-test('manual run and policy pause use the bounded shadow-research endpoints', async () => {
+test('records the exact five-round unbounded-daily-token authorization', async () => {
+  window.matchMedia = vi.fn().mockReturnValue({
+    matches: false,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  });
+  const disabledStatus = {
+    ...status,
+    policy: { ...status.policy, enabled: false, authorization_recorded: false },
+  };
+  const fetchMock = vi.fn(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (
+        url.endsWith('/api/ai/strategy-research/shadow-automation/policy') &&
+        init?.method === 'PUT'
+      ) {
+        return jsonResponse({ ...status.policy, enabled: true });
+      }
+      if (url.endsWith('/api/ai/strategy-research/shadow-automation')) {
+        return jsonResponse(disabledStatus);
+      }
+      if (url.endsWith('/api/strategy-promotion/states')) {
+        return jsonResponse([]);
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    },
+  );
+  vi.stubGlobal('fetch', fetchMock);
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+
+  render(
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>
+        <ShadowResearchPanel />
+      </QueryClientProvider>
+    </PreferencesProvider>,
+  );
+
+  await screen.findByDisplayValue(
+    'Improve the persisted baseline without increasing risk.',
+  );
+  fireEvent.click(screen.getByLabelText('Paused'));
+  fireEvent.click(
+    await screen.findByText(
+      /I authorize five strictly sequential research rounds and ten provider calls/,
+    ),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Save standing policy' }));
+
+  await vi.waitFor(() => {
+    const policyCall = fetchMock.mock.calls.find(
+      ([input, init]) =>
+        String(input).endsWith(
+          '/api/ai/strategy-research/shadow-automation/policy',
+        ) && init?.method === 'PUT',
+    );
+    expect(policyCall).toBeTruthy();
+    const body = JSON.parse(String(policyCall?.[1]?.body));
+    expect(body.enabled).toBe(true);
+    expect(body.max_candidates_per_run).toBe(5);
+    expect(body.max_provider_calls_per_market_date).toBe(10);
+    expect(body.daily_token_budget).toBeNull();
+    expect(body.token_budget_mode).toBe('unbounded_daily');
+    expect(body.confirmation).toBe(
+      'authorize_five_sequential_after_close_deepseek_strategy_research_without_daily_token_budget_or_strategy_or_trade_authority',
+    );
+  });
+});
+
+test('manual run and policy pause preserve the unbounded token policy', async () => {
   window.matchMedia = vi.fn().mockReturnValue({
     matches: false,
     addEventListener: vi.fn(),
@@ -278,6 +410,8 @@ test('manual run and policy pause use the bounded shadow-research endpoints', as
     expect(policyCall).toBeTruthy();
     const body = JSON.parse(String(policyCall?.[1]?.body));
     expect(body.enabled).toBe(false);
+    expect(body.daily_token_budget).toBeNull();
+    expect(body.token_budget_mode).toBe('unbounded_daily');
     expect(body.confirmation).toBe(
       'pause_after_close_ai_strategy_research_without_changing_trading_authority',
     );
@@ -286,6 +420,126 @@ test('manual run and policy pause use the bounded shadow-research endpoints', as
     expect(queryClient.isMutating()).toBe(0);
     expect(queryClient.isFetching()).toBe(0);
   });
+});
+
+test('blocks an enabled legacy partial policy until five sequential rounds are saved', async () => {
+  window.matchMedia = vi.fn().mockReturnValue({
+    matches: false,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  });
+  const partialPolicyStatus = {
+    ...status,
+    policy: {
+      ...status.policy,
+      max_provider_calls_per_market_date: 2,
+      daily_token_budget: 450560,
+      token_budget_mode: 'legacy_bounded_daily',
+      max_candidates_per_run: 1,
+    },
+  };
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/api/ai/strategy-research/shadow-automation')) {
+        return jsonResponse(partialPolicyStatus);
+      }
+      if (url.endsWith('/api/strategy-promotion/states')) {
+        return jsonResponse([]);
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }),
+  );
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+
+  render(
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>
+        <ShadowResearchPanel />
+      </QueryClientProvider>
+    </PreferencesProvider>,
+  );
+
+  expect(
+    await screen.findByText(/Enabled research is blocked until/),
+  ).toBeTruthy();
+  const runButton = screen.getByRole('button', {
+    name: 'Check and run now',
+  }) as HTMLButtonElement;
+  expect(runButton.disabled).toBe(true);
+});
+
+test('keeps the current strategy while blocking promotion without a verified new winner', async () => {
+  window.matchMedia = vi.fn().mockReturnValue({
+    matches: false,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  });
+  const noWinnerStatus = {
+    ...status,
+    daily_new_candidate_winner_id: null,
+    daily_winner_candidate_id: null,
+    research_outcome: {
+      status: 'no_new_candidate_current_strategy_unchanged',
+      new_candidate_winner_id: null,
+      incumbent_strategy_policy:
+        'leave_current_human_approved_strategy_unchanged',
+      incumbent_strategy_state_changed: false,
+      daily_trading_decision_status: 'not_evaluated',
+      implies_daily_trading_no_action: false,
+    },
+    daily_selections: status.daily_selections.map((selection) => ({
+      ...selection,
+      status: 'no_selection',
+      winner_candidate_id: null,
+      blockers: ['no_candidate_passed_advancement_gate'],
+    })),
+  };
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/api/ai/strategy-research/shadow-automation')) {
+        return jsonResponse(noWinnerStatus);
+      }
+      if (url.endsWith('/api/strategy-promotion/states')) {
+        return jsonResponse([]);
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }),
+  );
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+
+  render(
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>
+        <ShadowResearchPanel />
+      </QueryClientProvider>
+    </PreferencesProvider>,
+  );
+
+  expect(
+    await screen.findByText('A slower trend filter reduces churn.'),
+  ).toBeTruthy();
+  expect(
+    screen.getByText('No new winner · current strategy unchanged'),
+  ).toBeTruthy();
+  expect(screen.getByText(/No new winner means no new promotion/)).toBeTruthy();
+  expect(
+    screen.getByText(
+      'This candidate passed its own gate but is not the verified new-candidate winner, so public paper/shadow approval remains blocked.',
+    ),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole('button', {
+      name: 'Approve for paper/shadow only',
+    }),
+  ).toBeNull();
 });
 
 test('pauses an approved candidate through the canonical lifecycle state', async () => {

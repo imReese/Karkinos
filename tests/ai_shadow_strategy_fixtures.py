@@ -4,6 +4,7 @@ import hashlib
 import json
 import sqlite3
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -36,6 +37,10 @@ from server.services.ai_shadow_research_automation import (
     SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
     ShadowResearchStore,
     _backtest_source_fingerprint,
+)
+from server.services.ai_shadow_research_daily_artifacts import (
+    DailyStrategyArtifactStore,
+    build_daily_strategy_promotion_binding,
 )
 from server.services.reviewed_fee_schedule import (
     REVIEWED_FEE_SCHEDULE_APPROVAL_CONFIRMATION,
@@ -265,6 +270,21 @@ def seed_approved_ai_shadow_strategy(
         backtest_run_id=backtest_run_id,
         critique_id=critique_id,
     )
+    comparison = {
+        **comparison,
+        "iteration_lineage": {
+            "iteration_number": 1,
+            "total_iterations": 1,
+            "formula_fingerprint": "sha256:formula-fixture",
+            "parent_candidate_id": None,
+            "parent_draft_id": None,
+            "parent_formula_fingerprint": None,
+            "iteration_context_fingerprint": (
+                "sha256:" + content_fingerprint({"fixture_id": fixture_id})
+            ),
+            "sequential_feedback_bound": True,
+        },
+    }
     promotion_gate = comparison["promotion_gate"]
     store = ShadowResearchStore(db._path)
     store.init()
@@ -280,6 +300,34 @@ def seed_approved_ai_shadow_strategy(
         recommendation="paper_shadow_review",
         comparison=comparison,
         now="2026-08-12T07:00:00+00:00",
+    )
+    database_path = Path(db._path)
+    daily_store = DailyStrategyArtifactStore(
+        database_path,
+        database_path.parent / "strategy-research-backups",
+    )
+    daily_store.record_daily_artifacts(
+        run={
+            "run_id": f"run-{fixture_id}",
+            "market_date": "2026-08-12",
+            "input_fingerprint": content_fingerprint({"run_id": f"run-{fixture_id}"}),
+        },
+        candidates=[candidate],
+        drafts=[
+            {
+                "draft_id": f"draft-{fixture_id}",
+                "formula_ast": {"schema_version": "fixture"},
+                "formula_fingerprint": "sha256:formula-fixture",
+                "validation": {"status": "valid", "errors": []},
+            }
+        ],
+        expected_candidate_count=1,
+        run_status="completed",
+        created_at="2026-08-12T07:04:00+00:00",
+    )
+    daily_artifacts = daily_store.require_verified_winner(
+        candidate_id=candidate["candidate_id"],
+        run_id=candidate["run_id"],
     )
     approval = store.approve_candidate(
         candidate["candidate_id"],
@@ -301,6 +349,9 @@ def seed_approved_ai_shadow_strategy(
         "comparison_fingerprint": content_fingerprint(comparison),
         "human_approval_id": approval["promotion_id"],
         "strategy_advancement_gate": promotion_gate,
+        "daily_strategy_artifact_binding": (
+            build_daily_strategy_promotion_binding(daily_artifacts)
+        ),
         "live_like_enabled": False,
         "broker_submission_enabled": False,
     }
@@ -318,6 +369,7 @@ def seed_approved_ai_shadow_strategy(
         "strategy_id": strategy_id,
         "candidate": candidate,
         "approval": approval,
+        "daily_artifacts": daily_artifacts,
         "readiness": readiness,
         "state": state,
     }

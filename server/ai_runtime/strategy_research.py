@@ -114,6 +114,9 @@ STRATEGY_HYPOTHESIS_DRAFT_CONTRACT = "karkinos.ai.strategy_hypothesis_draft.v1"
 STRATEGY_BACKTEST_CRITIQUE_CONTRACT = "karkinos.ai.strategy_backtest_critique.v1"
 STRATEGY_RESEARCH_SELECTION_CONTRACT = "karkinos.ai.strategy_research_selection.v1"
 STRATEGY_RESEARCH_API_CONTRACT = "karkinos.ai.strategy_research_api.v1"
+STRATEGY_RESEARCH_ITERATION_CONTEXT_CONTRACT = (
+    "karkinos.ai.strategy_iteration_context.v1"
+)
 
 HYPOTHESIS_EXPORT_CONFIRMATION = (
     "send_selected_sanitized_strategy_research_evidence_to_configured_external_"
@@ -136,7 +139,7 @@ _HYPOTHESIS_ROLE = "external.strategy_hypothesis_researcher.v7"
 _CRITIQUE_ROLE = "external.strategy_backtest_critic.v7"
 _HYPOTHESIS_STAGE = "strategy_hypothesis_generation"
 _CRITIQUE_STAGE = "strategy_backtest_critique"
-_PROMPT_VERSION = "karkinos.ai.strategy_research_prompt.v8"
+_PROMPT_VERSION = "karkinos.ai.strategy_research_prompt.v9"
 _SANITIZED_ACCOUNT_EVIDENCE_CONTRACT = "karkinos.ai.sanitized_account_risk_evidence.v1"
 STRATEGY_RESEARCH_MAX_INPUT_BYTES = 196_608
 STRATEGY_RESEARCH_MAX_OUTPUT_TOKENS = 12_288
@@ -145,6 +148,8 @@ STRATEGY_RESEARCH_MAX_OUTPUT_TOKENS = 12_288
 STRATEGY_RESEARCH_PROVIDER_TOKEN_RESERVATION = (
     STRATEGY_RESEARCH_MAX_INPUT_BYTES + STRATEGY_RESEARCH_MAX_OUTPUT_TOKENS + 16_384
 )
+STRATEGY_RESEARCH_MAX_PROVIDER_CALLS = 10
+STRATEGY_RESEARCH_MAX_CANDIDATES = 5
 _CRITIQUE_CITATION_PATHS = (
     "critique_input.canonical_backtest.initial_cash",
     "critique_input.canonical_backtest.final_equity",
@@ -287,6 +292,7 @@ class HypothesisGenerationRequest:
     research_question: str
     selection: StrategyResearchSelection
     confirmation: str
+    iteration_context: JsonObject | None = None
 
     def __post_init__(self) -> None:
         for name in (
@@ -299,6 +305,7 @@ class HypothesisGenerationRequest:
                 raise StrategyResearchRejected(f"{name}_required")
         if self.confirmation != HYPOTHESIS_EXPORT_CONFIRMATION:
             raise PermissionError("hypothesis export requires exact human confirmation")
+        _validate_iteration_context(self.iteration_context)
 
     @property
     def fingerprint(self) -> str:
@@ -309,6 +316,7 @@ class HypothesisGenerationRequest:
                 "research_question": self.research_question,
                 "selection": self.selection.to_dict(),
                 "confirmation": self.confirmation,
+                "iteration_context": self.iteration_context,
             }
         )
 
@@ -474,6 +482,7 @@ class StrategyResearchAuditStore:
                 "account_alias": request.account_alias,
                 "research_question": request.research_question,
                 "selection": request.selection.to_dict(),
+                "iteration_context": request.iteration_context,
                 "confirmation_recorded": True,
                 "api_key_recorded": False,
             }
@@ -1692,6 +1701,7 @@ class StrategyResearchModelProvider(ProviderAdapter):
         selection: JsonObject,
         research_question: str,
         critique_input: JsonObject | None,
+        iteration_context: JsonObject | None,
         transport: JsonHttpTransport,
         monotonic: Callable[[], float],
         timeout_seconds: float,
@@ -1705,6 +1715,7 @@ class StrategyResearchModelProvider(ProviderAdapter):
         self._selection = dict(selection)
         self._research_question = research_question
         self._critique_input = dict(critique_input or {})
+        self._iteration_context = dict(iteration_context or {})
         self._transport = transport
         self._monotonic = monotonic
         self._timeout_seconds = timeout_seconds
@@ -1818,6 +1829,9 @@ class StrategyResearchModelProvider(ProviderAdapter):
             "critique_input": (
                 self._critique_input if self._mode == "critique" else None
             ),
+            "iteration_context": (
+                self._iteration_context if self._mode == "hypothesis" else None
+            ),
             "boundaries": {
                 "provider_side_tools": False,
                 "arbitrary_code": False,
@@ -1827,7 +1841,7 @@ class StrategyResearchModelProvider(ProviderAdapter):
                 "authority_effect": "none",
             },
             "output_contract": (
-                _hypothesis_output_contract()
+                _hypothesis_output_contract(iterative=bool(self._iteration_context))
                 if self._mode == "hypothesis"
                 else _critique_output_contract()
             ),
@@ -1894,7 +1908,10 @@ class StrategyResearchModelProvider(ProviderAdapter):
             raise ExternalResearchInvalidResponseError("provider_content_missing")
         decoded = _decode_model_json(content)
         normalized = (
-            _normalize_hypothesis_payload(decoded)
+            _normalize_hypothesis_payload(
+                decoded,
+                expected_draft_count=(1 if self._iteration_context else None),
+            )
             if self._mode == "hypothesis"
             else _normalize_critique_payload(
                 decoded,
@@ -1907,6 +1924,7 @@ class StrategyResearchModelProvider(ProviderAdapter):
             "approved_formula_catalog": catalog,
             "operator_frozen_selection": selection,
             "critique_input": self._critique_input,
+            "iteration_context": self._iteration_context,
         }
         if account_evidence is not None:
             citation_sources["saved_account_evidence"] = account_evidence
@@ -2103,6 +2121,7 @@ class StrategyResearchService:
             selection=request.selection.to_external_dict(),
             research_question=request.research_question,
             critique_input=None,
+            iteration_context=request.iteration_context,
             transport=self._transport,
             monotonic=self._monotonic,
             timeout_seconds=self._model_timeout_seconds,
@@ -2152,6 +2171,7 @@ class StrategyResearchService:
                 evidence_reference_id=evidence.reference_id,
                 selection=request.selection,
                 research_question=request.research_question,
+                iteration_context=request.iteration_context,
                 provider_id=provider_id,
                 model_id=model_id,
             )
@@ -2374,6 +2394,7 @@ class StrategyResearchService:
             evidence_reference_id=evidence_reference_id,
             selection=selection.to_external_dict(),
             research_question=_request_json(session)["research_question"],
+            iteration_context=None,
             critique_input={
                 "hypothesis_draft": draft_row["contract"],
                 "canonical_backtest_result_id": backtest[
@@ -2471,6 +2492,7 @@ class StrategyResearchService:
             "status": session["status"],
             "failure_code": session.get("failure_code"),
             "research_question": request.get("research_question"),
+            "iteration_context": request.get("iteration_context"),
             "selection": request.get("selection"),
             "selection_fingerprint": session["selection_fingerprint"],
             "context_snapshot_id": session.get("context_snapshot_id"),
@@ -2854,6 +2876,7 @@ def _bind_and_validate_drafts(
     evidence_reference_id: str,
     selection: StrategyResearchSelection,
     research_question: str,
+    iteration_context: JsonObject | None,
     provider_id: str,
     model_id: str,
 ) -> list[JsonObject]:
@@ -2906,6 +2929,7 @@ def _bind_and_validate_drafts(
                     "saved_account_evidence.",
                     "operator_frozen_selection.",
                     "approved_formula_catalog.",
+                    "iteration_context.",
                 )
             )
             for item in citations
@@ -2937,6 +2961,20 @@ def _bind_and_validate_drafts(
         except FormulaValidationError as exc:
             errors.append(f"formula:{exc.code}:{exc.path}")
             formula_fingerprint = None
+        iteration_number = int((iteration_context or {}).get("iteration_number") or 0)
+        parent_iteration = (iteration_context or {}).get("parent_iteration")
+        if iteration_number > 1:
+            if not isinstance(parent_iteration, Mapping):
+                errors.append("iteration_parent_missing")
+            else:
+                if formula_fingerprint == parent_iteration.get("formula_fingerprint"):
+                    errors.append("iteration_formula_unchanged")
+                if not any(
+                    isinstance(item, str)
+                    and item.startswith("iteration_context.parent_iteration.")
+                    for item in (citations or [])
+                ):
+                    errors.append("iteration_parent_citation_required")
         if candidate.get("selected_universe") != list(selection.universe):
             errors.append("provider_changed_universe")
         if candidate.get("test_window") != {
@@ -2963,6 +3001,10 @@ def _bind_and_validate_drafts(
             "prompt_version": _PROMPT_VERSION,
             "provider_provenance": artifact.get("provider_provenance") or {},
             "research_question": research_question,
+            "iteration_context": json.loads(canonical_json(iteration_context or {})),
+            "iteration_context_fingerprint": (iteration_context or {}).get(
+                "context_fingerprint"
+            ),
             "economic_hypothesis": candidate.get("economic_hypothesis"),
             "selected_universe": list(selection.universe),
             "universe_fingerprint": content_fingerprint(list(selection.universe)),
@@ -3008,7 +3050,11 @@ def _bind_and_validate_drafts(
     return result
 
 
-def _normalize_hypothesis_payload(value: Any) -> JsonObject:
+def _normalize_hypothesis_payload(
+    value: Any,
+    *,
+    expected_draft_count: int | None = None,
+) -> JsonObject:
     if not isinstance(value, dict) or set(value) != {"drafts"}:
         raise ExternalResearchInvalidResponseError(
             "hypothesis_top_level_schema_invalid"
@@ -3016,6 +3062,10 @@ def _normalize_hypothesis_payload(value: Any) -> JsonObject:
     drafts = value.get("drafts")
     if not isinstance(drafts, list) or not 1 <= len(drafts) <= 3:
         raise ExternalResearchInvalidResponseError("hypothesis_draft_count_invalid")
+    if expected_draft_count is not None and len(drafts) != expected_draft_count:
+        raise ExternalResearchInvalidResponseError(
+            "iteration_hypothesis_draft_count_invalid"
+        )
     allowed = {
         "economic_hypothesis",
         "selected_universe",
@@ -3110,10 +3160,123 @@ def _normalize_critique_payload(
     }
 
 
-def _hypothesis_output_contract() -> JsonObject:
+def _validate_iteration_context(value: JsonObject | None) -> None:
+    if value is None:
+        return
+    required = {
+        "schema_version",
+        "iteration_number",
+        "total_iterations",
+        "parent_iteration",
+        "required_behavior",
+        "context_fingerprint",
+    }
+    if not isinstance(value, dict) or set(value) != required:
+        raise StrategyResearchRejected("iteration_context_schema_invalid")
+    if value.get("schema_version") != STRATEGY_RESEARCH_ITERATION_CONTEXT_CONTRACT:
+        raise StrategyResearchRejected("iteration_context_version_invalid")
+    iteration_number = value.get("iteration_number")
+    total_iterations = value.get("total_iterations")
+    if (
+        not isinstance(iteration_number, int)
+        or isinstance(iteration_number, bool)
+        or not isinstance(total_iterations, int)
+        or isinstance(total_iterations, bool)
+        or not 1
+        <= iteration_number
+        <= total_iterations
+        <= STRATEGY_RESEARCH_MAX_CANDIDATES
+    ):
+        raise StrategyResearchRejected("iteration_context_ordinal_invalid")
+    behavior = value.get("required_behavior")
+    if behavior != {
+        "draft_count": 1,
+        "must_change_formula_from_parent": iteration_number > 1,
+        "must_use_parent_backtest_and_critique": iteration_number > 1,
+        "authority_effect": "none",
+    }:
+        raise StrategyResearchRejected("iteration_context_behavior_invalid")
+    parent = value.get("parent_iteration")
+    if iteration_number == 1:
+        if parent is not None:
+            raise StrategyResearchRejected("initial_iteration_parent_forbidden")
+    else:
+        parent_required = {
+            "iteration_number",
+            "candidate_id",
+            "session_id",
+            "draft_id",
+            "formula_fingerprint",
+            "backtest_run_id",
+            "critique_id",
+            "strategy",
+            "evaluation",
+            "critique",
+            "parent_artifact_fingerprint",
+        }
+        if not isinstance(parent, dict) or set(parent) != parent_required:
+            raise StrategyResearchRejected("iteration_parent_schema_invalid")
+        if parent.get("iteration_number") != iteration_number - 1:
+            raise StrategyResearchRejected("iteration_parent_ordinal_invalid")
+        for name in (
+            "candidate_id",
+            "session_id",
+            "draft_id",
+            "formula_fingerprint",
+            "backtest_run_id",
+            "critique_id",
+        ):
+            if not isinstance(parent.get(name), str) or not parent[name].strip():
+                raise StrategyResearchRejected(f"iteration_parent_{name}_invalid")
+        if not all(
+            isinstance(parent.get(name), dict)
+            for name in ("strategy", "evaluation", "critique")
+        ):
+            raise StrategyResearchRejected("iteration_parent_evidence_invalid")
+        parent_fingerprint = parent.get("parent_artifact_fingerprint")
+        parent_core = {
+            key: item
+            for key, item in parent.items()
+            if key != "parent_artifact_fingerprint"
+        }
+        if parent_fingerprint != "sha256:" + content_fingerprint(parent_core):
+            raise StrategyResearchRejected("iteration_parent_fingerprint_mismatch")
+    _reject_private_iteration_keys(value)
+    context_fingerprint = value.get("context_fingerprint")
+    context_core = {
+        key: item for key, item in value.items() if key != "context_fingerprint"
+    }
+    if context_fingerprint != "sha256:" + content_fingerprint(context_core):
+        raise StrategyResearchRejected("iteration_context_fingerprint_mismatch")
+
+
+def _reject_private_iteration_keys(value: Any) -> None:
+    forbidden = {
+        "account_id",
+        "account_alias",
+        "valuation_snapshot_id",
+        "ledger_cutoff_id",
+        "cash",
+        "positions",
+        "holdings",
+        "broker_export",
+        "credentials",
+        "api_key",
+    }
+    if isinstance(value, Mapping):
+        if forbidden.intersection(str(key) for key in value):
+            raise StrategyResearchRejected("iteration_context_private_field_forbidden")
+        for item in value.values():
+            _reject_private_iteration_keys(item)
+    elif isinstance(value, list):
+        for item in value:
+            _reject_private_iteration_keys(item)
+
+
+def _hypothesis_output_contract(*, iterative: bool = False) -> JsonObject:
     return {
         "format": "one JSON object with exact top-level key drafts",
-        "draft_count": "1..3",
+        "draft_count": "exactly 1" if iterative else "1..3",
         "formula_schema": FORMULA_AST_CONTRACT,
         "formula_ast_exact_top_level_keys": [
             "schema_version",
@@ -3200,6 +3363,7 @@ def _hypothesis_output_contract() -> JsonObject:
             "saved_account_evidence.",
             "operator_frozen_selection.",
             "approved_formula_catalog.",
+            "iteration_context.",
         ],
         "formula_shape_example_only": {
             "schema_version": FORMULA_AST_CONTRACT,
@@ -3302,6 +3466,10 @@ def _system_prompt(mode: Literal["hypothesis", "critique"]) -> str:
             '"input" key. Other window operators must contain op, input, and window. '
             "Prefer one compact draft unless the evidence clearly supports additional "
             "materially distinct hypotheses; never pad the response. "
+            "When iteration_context is present, emit exactly one draft. For iteration "
+            "two or later, use the bound parent formula, canonical metric summary, "
+            "promotion blockers, and critique to produce a changed revision, and cite "
+            "at least one iteration_context.parent_iteration path. "
             "A signal observes only completed bars and is applied on the next "
             "available persisted bar."
         )
