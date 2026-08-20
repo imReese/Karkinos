@@ -66,6 +66,7 @@ Automation Cockpit v4 还会展示 `karkinos.daily_candidate_financial_preflight
 - 同日 Account Truth 来源、采集时间不晚于 Decision、决策时年龄处于已复核上限内且完整账本覆盖仍然有效，全部前序非模拟订单都已完成当前对账；
 - trial 会按历史 ledger cutoff 重新解析所引用的 Account Truth，并重算其隐私最小化 replay fingerprint。cutoff 之后追加的新账本行属于安全延续；导入缺失、人工复核变化、源事件被修改、估值漂移，或 cutoff 及之前的账本行被修改/删除，都会排除该日；
 - trial 会重新计算当前执行闭环：历史闭环中已经存在的每笔订单必须仍为 clear 且 plan/paper/actual fingerprint 不变，后续新增并完整对账的订单可作为安全超集；当前出现未对账订单或历史来源漂移都会排除该日；
+- trial v2 会另外把当前全部非 paper/shadow OMS 订单归纳为“实际成交已对账”或“终态无成交”。该摘要只从 canonical 执行闭环派生，经过隐私最小化并带 fingerprint；这些真实结果不归因于本次试运行策略，也绝不计入 50 笔模拟订单；
 - paper/shadow 日期、fingerprint、候选/订单数量完全一致，状态与偏差均为 `within_expectations`；
 - 当前试运行周期绑定同一组非空策略晋级、已复核费用和策略运行约束 fingerprint。
 - trial 会按每个已存策略引用重新解析当前持久化出票门禁，并把完整绑定与 snapshot、票据逐项比较；AI 策略旧记录缺少 selection/backup 绑定、备份删除、指纹漂移、策略暂停或当前晋级阻断都会排除该日并阻断 GO 复核。
@@ -78,7 +79,7 @@ Automation Cockpit v4 还会展示 `karkinos.daily_candidate_financial_preflight
 - `no_go`：记录不应晋级；
 - `go_to_bounded_manual_trial`：仅记录可进入另行授权、小额、可撤销人工试单的研究结论。
 
-人工结论必须包含复核人、说明和完整确认短语。它不会签发订单、执行授权或资金额度；后续证据漂移会形成新 fingerprint，必须重新复核。
+人工结论必须绑定当前 trial fingerprint、当前执行证据 fingerprint，并包含复核人、说明和完整确认短语。它不会签发订单、执行授权或资金额度；后续新增已对账成交、终态无成交、未解决订单或其他证据漂移都会形成新 fingerprint，必须重新复核。
 
 ## 失败与恢复
 
@@ -89,6 +90,7 @@ Automation Cockpit v4 还会展示 `karkinos.daily_candidate_financial_preflight
 | Account Truth 晚于 Decision 才采集，或决策时年龄超过已复核上限 | `no_action`，日期不计入 | 等待新的已复核快照和下一个干净决策窗口 |
 | 引用的 Account Truth 导入、复核、估值或历史账本无法精确重放 | `no_action`，日期不计入 | 恢复或重新导入 canonical 证据；不得编辑 daily record 或绕过 cutoff |
 | 前序非模拟订单缺少当前对账，或 plan/paper/actual 源发生变化 | `no_action` | 完成精确执行对账，不得绕过或手改证据 |
+| trial 复核后当前真实订单闭环发生变化 | 旧复核不再有效 | 检查新的 plan/paper/actual 或终态无成交摘要，并重新进行有界人工复核；不得把它计入模拟样本 |
 | 报价时间缺失或不属于计划日期 | `no_action` | 持久化当前日期可信行情 |
 | Decision/计划生成时间不在 09:35–09:45，或行情年龄超过 300 秒 | `no_action`，日期不计入 | 等待下一个已验证窗口，并在运行前刷新持久化行情 |
 | 后台认领日期与 Decision/计划日期不一致 | 在认领日记录 `no_action`，不运行后续风控或 paper/shadow；返回契约异常则 `failed_closed` | 保留 attempt 与告警，等待下一个已验证窗口；不得关联旧日 run 或自动重试 |

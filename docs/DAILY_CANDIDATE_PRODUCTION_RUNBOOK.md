@@ -253,6 +253,11 @@ The production panel counts a date only when all of the following are true:
   plan/paper/actual fingerprint, while later fully reconciled orders may form a
   safe superset; any current unresolved order or historical-source drift
   excludes the day;
+- trial v2 separately summarizes the complete current non-paper/shadow OMS
+  population as reconciled actual orders or terminal no-fills. The summary is
+  privacy-minimized, fingerprinted, and derived only from the canonical closure;
+  these real outcomes are not attributed to the trial strategy and never count
+  toward the 50 simulated-order threshold;
 - the persisted paper/shadow run has matching date and fingerprint, exact
   candidate/order counts, and `within_expectations` status and divergence;
 - the same non-empty strategy-advancement, reviewed-fee, and strategy-operating-
@@ -277,10 +282,11 @@ orders. Meeting it permits only an exact human GO/NO-GO review:
 - `go_to_bounded_manual_trial` records a research conclusion for a separately
   authorized, small, reversible manual trial.
 
-The review binds the current trial fingerprint, reviewer, note, and exact
-confirmation phrase. It does not issue an order, authorization, or capital
-limit. Later evidence drift produces a new fingerprint and requires a new
-review.
+The review binds the current trial fingerprint, current execution-evidence
+fingerprint, reviewer, note, and exact confirmation phrase. It does not issue
+an order, authorization, or capital limit. A later reconciled fill, terminal
+no-fill, unresolved order, or other evidence drift produces a new fingerprint
+and requires a new review.
 
 ## Failure and recovery
 
@@ -291,6 +297,7 @@ review.
 | Account Truth was captured after the Decision or exceeds its reviewed age at Decision | `no_action`; date excluded | Wait for a new reviewed snapshot and the next clean Decision |
 | Referenced Account Truth import/review/valuation/historical ledger cannot be replayed exactly | `no_action`; date excluded | Restore or re-import canonical evidence; never edit the daily record or bypass the cutoff |
 | Prior non-simulation order lacks current reconciliation or its plan/paper/actual source changed | `no_action` | Complete exact execution reconciliation; do not bypass or edit evidence |
+| Current real-order closure changes after a trial review | Old review is no longer current | Inspect the new plan/paper/actual or terminal-no-fill summary and record a new bounded human review; do not count it toward the simulated sample |
 | Quote timestamp absent or not on the plan date | `no_action` | Persist current-date trusted market evidence |
 | Decision/plan generated outside 09:35-09:45 or quote age exceeds 300 seconds | `no_action`; date excluded | Wait for the next verified window and refresh persisted quotes before running |
 | Intent price differs from its bound current quote, or quote source is absent | `no_action` | Rebuild Decision and plan from current persisted quotes |

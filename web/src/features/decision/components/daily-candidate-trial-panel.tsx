@@ -304,6 +304,49 @@ export function DailyCandidateTrialPanel({
         />
       </div>
 
+      {trial.current_execution_evidence ? (
+        <div
+          data-testid="daily-candidate-execution-evidence"
+          className="mt-3 rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-border)_32%,transparent)] bg-[color-mix(in_srgb,var(--app-surface-0)_12%,transparent)] px-3 py-2 text-xs leading-5 text-[var(--app-text)]"
+        >
+          <div className="font-semibold">
+            {locale === 'zh'
+              ? '当前真实执行闭环（计划—模拟—实际）'
+              : 'Current real execution closure (plan–paper–actual)'}
+          </div>
+          <div className="app-muted">
+            {locale === 'zh' ? '闭环覆盖' : 'Closure coverage'}{' '}
+            {trial.current_execution_evidence.clear_order_count}/
+            {trial.current_execution_evidence.production_order_count} ·{' '}
+            {locale === 'zh' ? '实际成交已对账' : 'reconciled actual'}{' '}
+            {trial.current_execution_evidence.reconciled_actual_order_count} ·{' '}
+            {locale === 'zh' ? '终态无成交' : 'terminal no-fill'}{' '}
+            {trial.current_execution_evidence.reconciled_no_fill_order_count} ·{' '}
+            {trial.current_execution_evidence.status}
+          </div>
+          <div className="app-muted">
+            {locale === 'zh'
+              ? '这些真实成交或终态无成交只用于闭环覆盖，不计入 50 笔模拟订单，也不归因于本次试运行策略。'
+              : 'Real fills and terminal no-fills are closure evidence only; they do not count toward the 50 simulated orders and are not attributed to this trial strategy.'}
+          </div>
+          {trial.current_execution_evidence.blockers.length > 0 ? (
+            <div className="text-[var(--app-warning)]">
+              {locale === 'zh' ? '闭环阻断：' : 'Closure blockers: '}
+              {trial.current_execution_evidence.blockers.join(' · ')}
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div
+          data-testid="daily-candidate-execution-evidence-missing"
+          className="mt-3 rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-danger)_45%,transparent)] px-3 py-2 text-xs font-semibold leading-5 text-[var(--app-danger)]"
+        >
+          {locale === 'zh'
+            ? 'NO-ACTION：缺少当前真实执行闭环契约，GO/NO-GO 复核不可用。'
+            : 'NO-ACTION: the current real-execution closure contract is missing; GO/NO-GO review is unavailable.'}
+        </div>
+      )}
+
       {trial.latest_daily_run ? (
         <div
           data-testid="daily-candidate-latest-outcome"

@@ -658,7 +658,7 @@ function installDecisionFetchMock({
       },
     ],
     daily_candidate_trial: {
-      schema_version: 'karkinos.daily_candidate_trial.v1',
+      schema_version: 'karkinos.daily_candidate_trial.v2',
       status: 'collecting_forward_operating_evidence',
       trial_epoch_id: 'b'.repeat(64),
       trial_epoch_start_date: '2026-06-03',
@@ -679,6 +679,30 @@ function installDecisionFetchMock({
         decision_outcome: 'manual_order_ticket_candidate',
         simulated_order_count: 2,
         blockers: [],
+      },
+      current_execution_evidence: {
+        schema_version:
+          'karkinos.daily_candidate_execution_evidence_summary.v1',
+        status: 'pass',
+        current_execution_closure_fingerprint: 'd'.repeat(64),
+        population_scope: 'all_current_non_paper_shadow_oms_orders',
+        production_order_count: 3,
+        clear_order_count: 3,
+        reconciled_actual_order_count: 2,
+        reconciled_no_fill_order_count: 1,
+        comparison_coverage_complete: true,
+        blockers: [],
+        actual_orders_attributed_to_trial: false,
+        actual_orders_count_toward_simulated_trial_threshold: false,
+        persisted_evidence_only: true,
+        provider_contact_performed: false,
+        manual_review_required: false,
+        authorizes_execution: false,
+        does_not_submit_broker_order: true,
+        does_not_mutate_oms: true,
+        does_not_mutate_production_ledger: true,
+        does_not_change_capital_authority: true,
+        evidence_fingerprint: 'e'.repeat(64),
       },
       blockers: [
         'qualifying_trading_days_insufficient',
@@ -1153,9 +1177,10 @@ function installDecisionFetchMock({
           note: string;
         };
         return jsonResponse({
-          schema_version: 'karkinos.daily_candidate_trial_review.v1',
+          schema_version: 'karkinos.daily_candidate_trial_review.v2',
           review_id: 'daily-candidate-review-fixture',
           trial_fingerprint: request.expected_trial_fingerprint,
+          execution_evidence_fingerprint: 'e'.repeat(64),
           decision: request.decision,
           reviewed_by: request.reviewed_by,
           note: request.note,
@@ -2833,6 +2858,15 @@ test('summarizes controlled automation cockpit status in the decision page', asy
   expect(automation.textContent).toContain('Production operating trial');
   expect(automation.textContent).toContain('7/20');
   expect(automation.textContent).toContain('18/50');
+  expect(automation.textContent).toContain(
+    'Current real execution closure (plan–paper–actual)',
+  );
+  expect(automation.textContent).toContain(
+    'Closure coverage 3/3 · reconciled actual 2 · terminal no-fill 1 · pass',
+  );
+  expect(automation.textContent).toContain(
+    'Real fills and terminal no-fills are closure evidence only; they do not count toward the 50 simulated orders and are not attributed to this trial strategy.',
+  );
   expect(automation.textContent).toContain(
     'Background schedule: due · 09:35–09:45 Asia/Shanghai',
   );
