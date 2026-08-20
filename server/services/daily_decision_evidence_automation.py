@@ -112,13 +112,48 @@ class DailyDecisionEvidenceAutomationService:
             trading_controls=trading_controls,
         )
 
-    async def run_once(self) -> dict[str, Any]:
+    async def run_once(
+        self,
+        *,
+        expected_plan_date: str | None = None,
+    ) -> dict[str, Any]:
         """Advance one fail-closed, idempotent evidence cycle."""
+        if expected_plan_date is not None:
+            try:
+                parsed_expected_date = datetime.strptime(
+                    expected_plan_date,
+                    "%Y-%m-%d",
+                ).date()
+            except (TypeError, ValueError) as exc:
+                raise ValueError("daily candidate expected plan date invalid") from exc
+            if parsed_expected_date.isoformat() != expected_plan_date:
+                raise ValueError("daily candidate expected plan date invalid")
+
         started_at = datetime.now(timezone.utc).isoformat()
         decision_before, plan_before = await self._plan_reader()
         plan_date = _plan_date(decision_before, plan_before)
         candidate_count = _candidate_count(decision_before, plan_before)
         policy_status = self._automation.get_status()
+
+        if expected_plan_date is not None and (
+            str(decision_before.get("decision_date") or "") != expected_plan_date
+            or str(plan_before.get("plan_date") or "") != expected_plan_date
+        ):
+            return self._record_cycle(
+                status="blocked_by_plan_date_mismatch",
+                plan_date=expected_plan_date,
+                decision_payload=decision_before,
+                trading_plan=plan_before,
+                started_at=started_at,
+                risk_result=None,
+                paper_shadow_run=None,
+                candidate_count=candidate_count,
+                limitations=[
+                    "The claimed trading date does not match the persisted decision "
+                    "and plan; risk and paper/shadow remained closed."
+                ],
+                additional_blockers=["daily_candidate_claimed_plan_date_mismatch"],
+            )
 
         if not _policy_allows_paper_shadow(policy_status):
             return self._record_cycle(
@@ -180,6 +215,25 @@ class DailyDecisionEvidenceAutomationService:
         decision_after, plan_after = await self._plan_reader()
         plan_date = _plan_date(decision_after, plan_after)
         candidate_count = _candidate_count(decision_after, plan_after)
+        if expected_plan_date is not None and (
+            str(decision_after.get("decision_date") or "") != expected_plan_date
+            or str(plan_after.get("plan_date") or "") != expected_plan_date
+        ):
+            return self._record_cycle(
+                status="blocked_by_plan_date_mismatch",
+                plan_date=expected_plan_date,
+                decision_payload=decision_after,
+                trading_plan=plan_after,
+                started_at=started_at,
+                risk_result=risk_result,
+                paper_shadow_run=None,
+                candidate_count=candidate_count,
+                limitations=[
+                    "The claimed trading date drifted while risk evidence was being "
+                    "evaluated; paper/shadow remained closed."
+                ],
+                additional_blockers=["daily_candidate_claimed_plan_date_mismatch"],
+            )
         risk_status = str(risk_result.get("status") or "unknown")
         if risk_status != "completed":
             return self._record_cycle(
@@ -279,6 +333,25 @@ class DailyDecisionEvidenceAutomationService:
             )
 
         final_plan_date = _plan_date(decision_final, plan_final)
+        if expected_plan_date is not None and (
+            str(decision_final.get("decision_date") or "") != expected_plan_date
+            or str(plan_final.get("plan_date") or "") != expected_plan_date
+        ):
+            return self._record_cycle(
+                status="blocked_by_plan_date_mismatch",
+                plan_date=expected_plan_date,
+                decision_payload=decision_final,
+                trading_plan=plan_final,
+                started_at=started_at,
+                risk_result=risk_result,
+                paper_shadow_run=paper_shadow_run,
+                candidate_count=_candidate_count(decision_final, plan_final),
+                limitations=[
+                    "The claimed trading date drifted after paper/shadow evidence was "
+                    "persisted; notification and ticket candidacy remained closed."
+                ],
+                additional_blockers=["daily_candidate_claimed_plan_date_mismatch"],
+            )
         result = self._record_cycle(
             status="paper_shadow_completed",
             plan_date=final_plan_date,
@@ -905,7 +978,7 @@ async def _run_claimed_background_attempt(
         return
     attempt_row = dict(claim.get("run") or {})
     try:
-        result = await service.run_once()
+        result = await service.run_once(expected_plan_date=run_date)
     except asyncio.CancelledError:
         operator_alert = _record_daily_candidate_background_alert(
             db=db,
@@ -947,6 +1020,32 @@ async def _run_claimed_background_attempt(
             source_ref=None,
         )
         raise
+    result_plan_date = str(result.get("plan_date") or "")
+    if result_plan_date != run_date:
+        error_type = "ResultPlanDateMismatch"
+        operator_alert = _record_daily_candidate_background_alert(
+            db=db,
+            run_date=run_date,
+            outcome="failed_closed",
+            result=None,
+            error_type=error_type,
+        )
+        _finish_background_attempt(
+            db=db,
+            attempt_row=attempt_row,
+            payload={
+                **claim_payload,
+                "status": "failed_closed",
+                "result_plan_date": result_plan_date or None,
+                "result_status": result.get("status"),
+                "error_type": error_type,
+                "operator_alert": operator_alert,
+            },
+            status="failed_closed",
+            source_ref=None,
+        )
+        return
+
     decision_outcome = str(result.get("decision_outcome") or "no_action")
     if decision_outcome == "no_action":
         notifier = getattr(service, "_send_no_action_notification", None)
