@@ -6,10 +6,18 @@ import hashlib
 import json
 import math
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
+from server.services.account_truth_replay import (
+    build_account_truth_replay_evidence,
+    verify_account_truth_replay_evidence,
+)
+from server.services.daily_candidate_execution_closure import (
+    build_daily_candidate_execution_closure,
+    verify_daily_candidate_execution_closure,
+)
 from server.services.daily_decision_evidence_automation import (
     DAILY_CANDIDATE_DECISION_WINDOW_END_MINUTE,
     DAILY_CANDIDATE_DECISION_WINDOW_SCHEMA_VERSION,
@@ -18,10 +26,14 @@ from server.services.daily_decision_evidence_automation import (
     DAILY_CANDIDATE_MAX_QUOTE_AGE_SECONDS,
     DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE,
     DAILY_DECISION_EVIDENCE_AUTOMATION_SCHEMA_VERSION,
+    build_daily_candidate_strategy_gate_binding,
     daily_candidate_input_fingerprint,
     daily_candidate_record_fingerprint,
     manual_ticket_candidate_fingerprint,
     project_daily_candidate_background_schedule,
+)
+from server.services.strategy_promotion_pipeline import (
+    resolve_strategy_order_generation_gate,
 )
 
 DAILY_CANDIDATE_TRIAL_SCHEMA_VERSION = "karkinos.daily_candidate_trial.v1"
@@ -35,6 +47,10 @@ DAILY_CANDIDATE_TRIAL_REVIEW_CONFIRMATION = (
 
 TARGET_QUALIFYING_TRADING_DAYS = 20
 TARGET_SIMULATED_ORDERS = 50
+
+StrategyGateResolver = Callable[..., tuple[dict[str, Any], list[str]]]
+ExecutionClosureResolver = Callable[[Any], dict[str, Any]]
+AccountTruthReplayResolver = Callable[..., dict[str, Any]]
 
 _SUPPORTED_REVIEW_DECISIONS = {
     "go_to_bounded_manual_trial",
@@ -61,11 +77,28 @@ class DailyCandidateTrialService:
         *,
         db: Any,
         clock: Callable[[], datetime] | None = None,
+        strategy_gate_resolver: StrategyGateResolver | None = None,
+        execution_closure_resolver: ExecutionClosureResolver | None = None,
+        account_truth_replay_resolver: AccountTruthReplayResolver | None = None,
     ) -> None:
         self._db = db
         self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self._strategy_gate_resolver = (
+            strategy_gate_resolver or resolve_strategy_order_generation_gate
+        )
+        self._execution_closure_resolver = (
+            execution_closure_resolver or build_daily_candidate_execution_closure
+        )
+        self._account_truth_replay_resolver = (
+            account_truth_replay_resolver or build_account_truth_replay_evidence
+        )
 
     def get_status(self) -> dict[str, Any]:
+        as_of = _aware_utc(self._clock())
+        try:
+            current_execution_closure = self._execution_closure_resolver(self._db)
+        except Exception:
+            current_execution_closure = None
         rows, scan_truncated = self._read_complete_run_history()
         by_date: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for row in rows:
@@ -75,7 +108,12 @@ class DailyCandidateTrialService:
         excluded_days: list[dict[str, Any]] = []
 
         for run_date in sorted(by_date):
-            day = self._evaluate_day(run_date=run_date, rows=by_date[run_date])
+            day = self._evaluate_day(
+                run_date=run_date,
+                rows=by_date[run_date],
+                as_of=as_of,
+                current_execution_closure=current_execution_closure,
+            )
             if day["status"] == "qualifying":
                 all_qualifying_days.append(day)
             else:
@@ -189,7 +227,7 @@ class DailyCandidateTrialService:
             "latest_review": latest_review,
             "background_schedule": project_daily_candidate_background_schedule(
                 db=self._db,
-                now=_aware_utc(self._clock()),
+                now=as_of,
             ),
             "next_safe_action": (
                 "record_human_go_no_go_review"
@@ -336,8 +374,20 @@ class DailyCandidateTrialService:
         *,
         run_date: str,
         rows: list[dict[str, Any]],
+        as_of: datetime,
+        current_execution_closure: dict[str, Any] | None,
     ) -> dict[str, Any]:
         blockers: list[str] = []
+        try:
+            parsed_run_date = date.fromisoformat(run_date)
+        except ValueError:
+            parsed_run_date = None
+            blockers.append("daily_candidate_run_date_invalid")
+        if (
+            parsed_run_date is not None
+            and parsed_run_date > as_of.astimezone(_SHANGHAI_TZ).date()
+        ):
+            blockers.append("daily_candidate_run_date_in_future")
         payloads = [(_payload(row), row) for row in rows]
         v2 = [
             (payload, row)
@@ -380,6 +430,12 @@ class DailyCandidateTrialService:
                 or ""
             ),
         )
+        for field in ("started_at", "finished_at"):
+            timestamp = _aware_datetime(row.get(field))
+            if timestamp is None:
+                blockers.append(f"daily_candidate_run_{field}_invalid")
+            elif timestamp > as_of:
+                blockers.append(f"daily_candidate_run_{field}_in_future")
         gate = _object(payload.get("production_gate"))
         record_fingerprint = str(payload.get("production_record_fingerprint") or "")
         if not record_fingerprint:
@@ -496,11 +552,14 @@ class DailyCandidateTrialService:
             blockers.append("daily_candidate_account_truth_ledger_not_covered")
         account_truth_binding = _object(snapshot.get("account_truth_binding"))
         if account_truth_binding.get("schema_version") != (
-            "karkinos.daily_candidate_account_truth_binding.v1"
+            "karkinos.daily_candidate_account_truth_binding.v2"
         ):
             blockers.append("daily_candidate_account_truth_binding_contract_invalid")
+        stored_account_truth_replay = _object(
+            snapshot.get("account_truth_replay_evidence")
+        )
         expected_account_truth_binding = {
-            "schema_version": "karkinos.daily_candidate_account_truth_binding.v1",
+            "schema_version": "karkinos.daily_candidate_account_truth_binding.v2",
             "account_truth_ref": snapshot.get("account_truth_ref"),
             "source_fingerprint": snapshot.get("account_truth_source_fingerprint"),
             "captured_at": snapshot.get("account_truth_captured_at"),
@@ -516,6 +575,7 @@ class DailyCandidateTrialService:
             "ledger_coverage_status": snapshot.get(
                 "account_truth_ledger_coverage_status"
             ),
+            "replay_evidence": stored_account_truth_replay,
             "persisted_facts_only": True,
             "provider_contact_performed": False,
             "authorizes_execution": False,
@@ -523,6 +583,28 @@ class DailyCandidateTrialService:
         }
         if account_truth_binding != expected_account_truth_binding:
             blockers.append("daily_candidate_account_truth_binding_mismatch")
+        if not verify_account_truth_replay_evidence(stored_account_truth_replay):
+            blockers.append("daily_candidate_account_truth_replay_invalid")
+        elif stored_account_truth_replay.get("status") != "pass":
+            blockers.append("daily_candidate_account_truth_replay_not_clear")
+        try:
+            current_account_truth_replay = self._account_truth_replay_resolver(
+                self._db,
+                account_truth_ref=str(snapshot.get("account_truth_ref") or ""),
+                source_fingerprint=account_truth_source_fingerprint,
+                valuation_snapshot_id=str(snapshot.get("valuation_snapshot_id") or ""),
+                ledger_cutoff_id=ledger_cutoff_id,
+            )
+        except Exception:
+            current_account_truth_replay = {}
+        if not verify_account_truth_replay_evidence(current_account_truth_replay):
+            blockers.append("current_account_truth_replay_invalid")
+        elif current_account_truth_replay.get("status") != "pass":
+            blockers.append("current_account_truth_replay_not_clear")
+        elif current_account_truth_replay.get("evidence_fingerprint") != (
+            stored_account_truth_replay.get("evidence_fingerprint")
+        ):
+            blockers.append("current_account_truth_replay_drifted")
 
         execution_closure = _object(payload.get("execution_closure"))
         execution_closure_fingerprint = str(
@@ -532,6 +614,8 @@ class DailyCandidateTrialService:
             "karkinos.daily_candidate_execution_closure.v1"
         ):
             blockers.append("daily_candidate_execution_closure_contract_invalid")
+        if not verify_daily_candidate_execution_closure(execution_closure):
+            blockers.append("daily_candidate_execution_closure_fingerprint_mismatch")
         if execution_closure.get("status") not in {"pass", "not_required"}:
             blockers.append("daily_candidate_prior_execution_not_reconciled")
         if not _is_sha256(execution_closure_fingerprint):
@@ -540,6 +624,34 @@ class DailyCandidateTrialService:
             execution_closure_fingerprint
         ):
             blockers.append("daily_candidate_execution_closure_snapshot_mismatch")
+        if not verify_daily_candidate_execution_closure(current_execution_closure):
+            blockers.append("current_execution_closure_invalid")
+        elif current_execution_closure.get("status") not in {
+            "pass",
+            "not_required",
+        }:
+            blockers.append("current_execution_closure_not_clear")
+        else:
+            current_orders = {
+                str(item.get("order_ref") or ""): item
+                for item in _list(current_execution_closure.get("orders"))
+                if str(item.get("order_ref") or "")
+            }
+            for historical_order in _list(execution_closure.get("orders")):
+                order_ref = str(historical_order.get("order_ref") or "")
+                current_order = current_orders.get(order_ref)
+                if not order_ref or current_order is None:
+                    blockers.append("current_execution_closure_order_missing")
+                    continue
+                if current_order.get("status") != "pass":
+                    blockers.append("current_execution_closure_order_not_clear")
+                historical_comparison = str(
+                    historical_order.get("plan_paper_actual_fingerprint") or ""
+                )
+                if historical_comparison and historical_comparison != str(
+                    current_order.get("plan_paper_actual_fingerprint") or ""
+                ):
+                    blockers.append("current_execution_closure_order_drifted")
 
         market_quote_bindings = {
             str(item.get("intent_ref") or ""): item
@@ -554,6 +666,7 @@ class DailyCandidateTrialService:
         if len(strategy_gate_bindings) != ticket_candidate_count:
             blockers.append("daily_candidate_strategy_gate_binding_count_mismatch")
         paper = _object(payload.get("paper_shadow"))
+        current_strategy_gates: dict[str, tuple[dict[str, Any], list[str]]] = {}
 
         for index, ticket in enumerate(ticket_candidates):
             prefix = f"manual_order_ticket_candidate_{index}"
@@ -677,6 +790,68 @@ class DailyCandidateTrialService:
                     blockers.append(f"{prefix}:strategy_execution_boundary_invalid")
                 if strategy_binding.get("changes_capital_authority") is not False:
                     blockers.append(f"{prefix}:strategy_capital_boundary_invalid")
+                strategy_ref = str(strategy_binding.get("strategy_ref") or "")
+                strategy_id = strategy_ref.removeprefix("strategy:")
+                if not strategy_ref.startswith("strategy:") or not strategy_id:
+                    blockers.append(f"{prefix}:current_strategy_identity_invalid")
+                else:
+                    if strategy_id not in current_strategy_gates:
+                        try:
+                            current_strategy_gates[strategy_id] = (
+                                self._strategy_gate_resolver(
+                                    self._db,
+                                    strategy_id,
+                                    as_of_date=run_date,
+                                )
+                            )
+                        except Exception:
+                            current_strategy_gates[strategy_id] = (
+                                {},
+                                ["strategy_gate_resolution_failed"],
+                            )
+                    current_gate, current_gate_blockers = current_strategy_gates[
+                        strategy_id
+                    ]
+                    if current_gate_blockers:
+                        blockers.extend(
+                            f"{prefix}:current_{blocker}"
+                            for blocker in current_gate_blockers
+                        )
+                    else:
+                        current_binding, current_binding_blockers = (
+                            build_daily_candidate_strategy_gate_binding(
+                                candidate={
+                                    "evidence": {
+                                        "strategy": {
+                                            "strategy_id": strategy_id,
+                                            "order_generation_gate": current_gate,
+                                        }
+                                    }
+                                },
+                                plan_date=run_date,
+                                expected_strategy_ref=strategy_ref,
+                                expected_advancement_ref=str(
+                                    strategy_binding.get("strategy_advancement_ref")
+                                    or ""
+                                ),
+                                expected_fee_review_ref=str(
+                                    strategy_binding.get("reviewed_fee_schedule_ref")
+                                    or ""
+                                ),
+                                action_id=strategy_binding.get("action_id"),
+                            )
+                        )
+                        blockers.extend(
+                            f"{prefix}:current_{blocker}"
+                            for blocker in current_binding_blockers
+                        )
+                        if (
+                            not current_binding_blockers
+                            and current_binding != strategy_binding
+                        ):
+                            blockers.append(
+                                f"{prefix}:current_strategy_gate_binding_mismatch"
+                            )
             if _object(ticket.get("account_truth_binding")) != account_truth_binding:
                 blockers.append(f"{prefix}:account_truth_binding_mismatch")
             if not any(
@@ -957,6 +1132,11 @@ def _shanghai_date(value: Any) -> str | None:
 
 
 def _aware_iso(value: Any) -> str | None:
+    parsed = _aware_datetime(value)
+    return parsed.isoformat() if parsed is not None else None
+
+
+def _aware_datetime(value: Any) -> datetime | None:
     normalized = str(value or "").strip()
     if not normalized:
         return None
@@ -966,7 +1146,7 @@ def _aware_iso(value: Any) -> str | None:
         return None
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         return None
-    return parsed.astimezone(timezone.utc).isoformat()
+    return parsed.astimezone(timezone.utc)
 
 
 def _in_daily_candidate_decision_window(value: Any, *, run_date: str) -> bool:

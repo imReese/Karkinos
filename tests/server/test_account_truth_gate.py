@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from dataclasses import replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -21,6 +22,11 @@ from server.account_truth_gate import (
 )
 from server.db import AppDatabase
 from server.ledger.repository import LedgerRepository
+from server.services.account_truth_replay import (
+    build_account_truth_replay_evidence,
+    verify_account_truth_replay_evidence,
+)
+from server.services.valuation_snapshot import build_current_valuation_snapshot
 
 _INCOMPLETE_CITIC_SOURCE = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note,transfer_fee,cost_basis_method,broker_order_id,client_order_id
 private-buy,trade_buy,2026-01-05T09:35:00+08:00,2026-01-06,PRIVATE-SYMBOL,PRIVATE-NAME,stock,CNY,100,10,1000,0,0,-1005,,,,PRIVATE-NOTE,0,,PRIVATE-ORDER,
@@ -42,6 +48,94 @@ def _incomplete_citic_preview():
             )
         ],
     )
+
+
+def test_account_truth_replay_is_historical_and_detects_source_or_ledger_drift(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "replay-account-truth.db")
+    db.init_sync()
+    db.insert_ledger_entry_sync(
+        entry_type="cash_deposit",
+        timestamp="2026-07-10T09:00:00+08:00",
+        amount=2000.0,
+        asset_class="cash",
+        source_ref="deposit-replay-1",
+    )
+    db.save_quote_snapshot_sync(
+        symbol="603659",
+        asset_class="stock",
+        price=24.6,
+        volume=1000.0,
+        timestamp="2026-07-10T09:34:00+08:00",
+        quote_status="live",
+    )
+    statement = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note,transfer_fee,cost_basis_method
+cash-replay,cash_snapshot,2026-07-10T09:30:00+08:00,2026-07-10,,,,CNY,0,0,0.00,0.00,0.00,0.00,2000.00,,,cash snapshot,0.00,
+"""
+    import_run = BrokerEvidenceRepository(db._path).save_preview(
+        parse_broker_statement_csv(statement),
+        source_name="private-name-must-not-leak.csv",
+    )
+    valuation = build_current_valuation_snapshot(db)
+
+    first = build_account_truth_replay_evidence(
+        db,
+        account_truth_ref=import_run.import_run_id,
+        source_fingerprint="c" * 64,
+        valuation_snapshot_id=valuation["snapshot_id"],
+        ledger_cutoff_id=valuation["ledger_cutoff_id"],
+    )
+
+    assert first["status"] == "pass"
+    assert verify_account_truth_replay_evidence(first) is True
+    assert first["contains_broker_export_rows"] is False
+    assert first["contains_private_account_identifiers"] is False
+    assert "private-name-must-not-leak.csv" not in json.dumps(first)
+
+    db.insert_ledger_entry_sync(
+        entry_type="fee",
+        timestamp="2026-07-10T10:00:00+08:00",
+        amount=1.0,
+        asset_class="cash",
+        source_ref="later-safe-ledger-row",
+    )
+    after_append = build_account_truth_replay_evidence(
+        db,
+        account_truth_ref=import_run.import_run_id,
+        source_fingerprint="c" * 64,
+        valuation_snapshot_id=valuation["snapshot_id"],
+        ledger_cutoff_id=valuation["ledger_cutoff_id"],
+    )
+    assert after_append == first
+
+    with sqlite3.connect(db._path) as conn:
+        conn.execute(
+            "UPDATE broker_evidence_events SET note = ? WHERE import_run_id = ?",
+            ("tampered", import_run.import_run_id),
+        )
+        conn.commit()
+    after_source_drift = build_account_truth_replay_evidence(
+        db,
+        account_truth_ref=import_run.import_run_id,
+        source_fingerprint="c" * 64,
+        valuation_snapshot_id=valuation["snapshot_id"],
+        ledger_cutoff_id=valuation["ledger_cutoff_id"],
+    )
+    assert after_source_drift["evidence_fingerprint"] != first["evidence_fingerprint"]
+
+    with sqlite3.connect(db._path) as conn:
+        conn.execute("UPDATE ledger_entries SET amount = 2001 WHERE id = 1")
+        conn.commit()
+    after_ledger_drift = build_account_truth_replay_evidence(
+        db,
+        account_truth_ref=import_run.import_run_id,
+        source_fingerprint="c" * 64,
+        valuation_snapshot_id=valuation["snapshot_id"],
+        ledger_cutoff_id=valuation["ledger_cutoff_id"],
+    )
+    assert after_ledger_drift["status"] == "blocked"
+    assert "account_truth_replay_ledger_drifted" in after_ledger_drift["blockers"]
 
 
 def test_account_truth_promotion_evidence_is_fresh_sanitized_and_source_sensitive(

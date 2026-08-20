@@ -17,6 +17,11 @@ from analytics.strategy_advancement_gate import (
     strategy_advancement_backtest_view,
 )
 from server.ai_runtime.contracts import content_fingerprint
+from server.services.ai_shadow_research_daily_artifacts import (
+    DailyStrategyArtifactRejected,
+    DailyStrategyArtifactStore,
+    build_daily_strategy_promotion_binding,
+)
 from server.services.reviewed_fee_schedule import active_review_matches_fee_evidence
 
 STRATEGY_PROMOTION_SCHEMA_VERSION = "karkinos.strategy_promotion_pipeline.v1"
@@ -358,6 +363,12 @@ def resolve_ai_shadow_strategy_promotion_binding(
     blockers = list(dict.fromkeys(blockers))
     fee_schedule_binding = _ai_shadow_fee_schedule_binding(db, candidate_id)
     dataset_replay = _ai_shadow_dataset_replay_evidence(db, candidate_id)
+    daily_strategy_artifact_binding = readiness.get("daily_strategy_artifact_binding")
+    daily_strategy_artifact_binding = (
+        dict(daily_strategy_artifact_binding)
+        if isinstance(daily_strategy_artifact_binding, dict)
+        else {}
+    )
     return {
         "status": "pass" if not blockers else "blocked",
         "strategy_id": normalized_strategy_id,
@@ -372,6 +383,7 @@ def resolve_ai_shadow_strategy_promotion_binding(
             str(human_review.get("review_note") or "").strip()
         ),
         "strategy_advancement_gate_fingerprint": gate_fingerprint,
+        "daily_strategy_artifact_binding": daily_strategy_artifact_binding,
         "fee_schedule_binding": fee_schedule_binding,
         "dataset_replay": dataset_replay,
         "live_like_enabled": bool(state.get("live_like_enabled")),
@@ -505,6 +517,13 @@ def _ai_shadow_readiness_binding_blockers(
     if not isinstance(binding, dict):
         return ["ai_shadow_candidate_approval_binding_missing"]
 
+    current_daily_strategy_artifact_binding = (
+        _resolve_ai_shadow_daily_strategy_artifact_binding(
+            db,
+            candidate_id=candidate_id,
+            run_id=str(binding.get("run_id") or ""),
+        )
+    )
     comparison = _json_object(binding.get("comparison_json"))
     expected_candidate_fingerprint = content_fingerprint(
         {
@@ -515,6 +534,19 @@ def _ai_shadow_readiness_binding_blockers(
         }
     )
     blockers: list[str] = []
+    readiness_daily_strategy_artifact_binding = readiness.get(
+        "daily_strategy_artifact_binding"
+    )
+    if not isinstance(readiness_daily_strategy_artifact_binding, dict):
+        blockers.append("ai_shadow_readiness_daily_strategy_artifact_binding_missing")
+    if current_daily_strategy_artifact_binding is None:
+        blockers.append("ai_shadow_daily_strategy_artifact_not_verified")
+    elif (
+        not isinstance(readiness_daily_strategy_artifact_binding, dict)
+        or readiness_daily_strategy_artifact_binding
+        != current_daily_strategy_artifact_binding
+    ):
+        blockers.append("ai_shadow_readiness_daily_strategy_artifact_binding_mismatch")
     if binding.get("candidate_id") != candidate_id:
         blockers.append("ai_shadow_candidate_identity_mismatch")
     if binding.get("candidate_status") != "awaiting_human_approval":
@@ -661,6 +693,30 @@ def _ai_shadow_readiness_binding_blockers(
     ):
         blockers.append("ai_shadow_readiness_authority_boundary_invalid")
     return list(dict.fromkeys(blockers))
+
+
+def _resolve_ai_shadow_daily_strategy_artifact_binding(
+    db: Any,
+    *,
+    candidate_id: str,
+    run_id: str,
+) -> dict[str, Any] | None:
+    database_path = getattr(db, "_path", None)
+    if database_path is None or not candidate_id or not run_id:
+        return None
+    path = Path(database_path)
+    artifacts = DailyStrategyArtifactStore(
+        db_path=path,
+        backup_root=path.parent / "strategy-research-backups",
+    )
+    try:
+        verified = artifacts.require_verified_winner(
+            candidate_id=candidate_id,
+            run_id=run_id,
+        )
+        return build_daily_strategy_promotion_binding(verified)
+    except (DailyStrategyArtifactRejected, OSError, ValueError):
+        return None
 
 
 def _ai_shadow_fee_schedule_binding(db: Any, candidate_id: str) -> dict[str, Any]:

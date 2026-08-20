@@ -12,6 +12,10 @@ from datetime import datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from server.services.account_truth_replay import (
+    build_account_truth_replay_evidence,
+    verify_account_truth_replay_evidence,
+)
 from server.services.automation_control import AutomationControlService
 from server.services.daily_candidate_execution_closure import (
     build_daily_candidate_execution_closure,
@@ -76,6 +80,7 @@ logger = logging.getLogger(__name__)
 
 PlanReader = Callable[[], Awaitable[tuple[dict[str, Any], dict[str, Any]]]]
 RiskRunner = Callable[[], Awaitable[dict[str, Any]]]
+AccountTruthReplayResolver = Callable[..., dict[str, Any]]
 
 
 class DailyDecisionEvidenceAutomationService:
@@ -89,12 +94,16 @@ class DailyDecisionEvidenceAutomationService:
         notifier: Any,
         plan_reader: PlanReader,
         risk_runner: RiskRunner,
+        account_truth_replay_resolver: AccountTruthReplayResolver | None = None,
     ) -> None:
         self._db = db
         self._trading_controls = trading_controls
         self._notifier = notifier
         self._plan_reader = plan_reader
         self._risk_runner = risk_runner
+        self._account_truth_replay_resolver = (
+            account_truth_replay_resolver or build_account_truth_replay_evidence
+        )
         self._automation = AutomationControlService(
             db=db,
             trading_controls=trading_controls,
@@ -313,6 +322,19 @@ class DailyDecisionEvidenceAutomationService:
         risk_summary = _risk_summary(risk_result, decision_payload)
         paper_shadow_summary = _paper_shadow_summary(paper_shadow_run)
         execution_closure = build_daily_candidate_execution_closure(self._db)
+        summary = _object_dict(decision_payload.get("summary"))
+        portfolio = _object_dict(summary.get("portfolio"))
+        account_truth = _object_dict(summary.get("account_truth"))
+        try:
+            account_truth_replay = self._account_truth_replay_resolver(
+                self._db,
+                account_truth_ref=str(account_truth.get("import_run_id") or ""),
+                source_fingerprint=str(account_truth.get("source_fingerprint") or ""),
+                valuation_snapshot_id=str(portfolio.get("valuation_snapshot_id") or ""),
+                ledger_cutoff_id=_nonnegative_int(portfolio.get("ledger_cutoff_id")),
+            )
+        except Exception:
+            account_truth_replay = {}
         production = _production_outcome(
             cycle_status=status,
             plan_date=plan_date,
@@ -320,6 +342,7 @@ class DailyDecisionEvidenceAutomationService:
             trading_plan=trading_plan,
             paper_shadow=paper_shadow_summary,
             execution_closure=execution_closure,
+            account_truth_replay=account_truth_replay,
             additional_blockers=additional_blockers or [],
         )
         production["input_snapshot"][
@@ -1617,15 +1640,151 @@ def _preflight_operator_step(
     blockers: list[str],
     completion_mode: str,
 ) -> dict[str, Any]:
+    evidence_contract = _preflight_operator_evidence_contract(gate)
     return {
         "step": step,
         "gate": gate,
         "action": action,
         "completion_mode": completion_mode,
         "blockers": list(dict.fromkeys(blockers)),
+        **evidence_contract,
         "automatic_action_performed": False,
         "authorizes_execution": False,
         "changes_capital_authority": False,
+    }
+
+
+def _preflight_operator_evidence_contract(gate: str) -> dict[str, Any]:
+    """Describe exact, privacy-minimized evidence without accepting it."""
+
+    contracts = {
+        "automation_policy": {
+            "required_evidence": [
+                "persisted_paper_shadow_only_automation_policy",
+                "manual_confirmation_and_kill_switch_controls",
+            ],
+            "completion_criteria": [
+                "broker_submission_remains_disabled",
+                "manual_confirmation_remains_required",
+                "allowed_modes_exclude_live_like_execution",
+            ],
+        },
+        "account_truth": {
+            "required_evidence": [
+                "current_cash_snapshot_with_aware_timestamp_and_cash_balance",
+                "current_position_snapshots_with_symbol_asset_currency_quantity_and_cost_basis",
+                "itemized_trade_rows_with_quantity_price_gross_fee_tax_transfer_fee_and_net_amount",
+                "reviewed_source_hash_window_scope_and_completeness_attestations",
+                "current_ledger_cutoff_and_reconciliation_evidence",
+            ],
+            "completion_criteria": [
+                "cash_and_position_snapshots_share_current_shanghai_date",
+                "snapshots_are_no_more_than_86400_seconds_old_and_not_before_latest_event",
+                "account_truth_covers_latest_ledger_cutoff",
+                "cash_position_fee_and_cost_basis_pass_with_zero_unresolved_mismatches",
+                "private_xls_content_and_account_identifiers_remain_unstored",
+            ],
+        },
+        "reviewed_fees": {
+            "required_evidence": [
+                "account_specific_commission_minimum_stamp_tax_transfer_fee_and_other_fee_terms",
+                "historical_buy_and_sell_itemized_fee_components",
+                "human_accepted_fee_effective_date_window",
+            ],
+            "completion_criteria": [
+                "historical_buy_and_sell_fee_component_reconciliation_passes",
+                "action_date_is_inside_accepted_fee_window",
+                "fee_review_matches_current_account_truth_and_strategy_bindings",
+                "fee_review_is_bounded_and_revocable",
+            ],
+        },
+        "strategy": {
+            "required_evidence": [
+                "five_sequential_research_iterations",
+                "deterministic_local_backtest_and_promotion_evidence",
+                "content_addressed_daily_strategy_backup",
+                "bounded_revocable_human_promotion_review",
+            ],
+            "completion_criteria": [
+                "each_iteration_binds_previous_formula_metrics_blockers_and_critique",
+                "research_policy_authorizes_exactly_five_iterations_and_ten_provider_calls",
+                "winner_passes_every_deterministic_gate_or_incumbent_remains_unchanged",
+                "promoted_strategy_replays_from_frozen_data_and_current_fee_review",
+                "live_like_execution_remains_disabled",
+            ],
+        },
+        "execution_closure": {
+            "required_evidence": [
+                "persisted_plan_paper_and_actual_execution_records",
+                "per_order_terminal_and_ledger_reconciliation",
+            ],
+            "completion_criteria": [
+                "every_prior_required_order_is_reconciled_or_explicitly_not_required",
+                "unresolved_or_drifted_execution_evidence_count_is_zero",
+            ],
+        },
+        "market_data": {
+            "required_evidence": [
+                "persisted_trusted_quote_with_source_price_and_aware_timestamp",
+            ],
+            "completion_criteria": [
+                "quote_is_bound_to_plan_date_and_not_after_decision_time",
+                "quote_age_at_decision_is_no_more_than_300_seconds",
+            ],
+        },
+        "decision_plan": {
+            "required_evidence": [
+                "persisted_same_day_decision_and_trading_plan",
+                "matching_account_market_strategy_fee_and_closure_bindings",
+            ],
+            "completion_criteria": [
+                "decision_and_plan_are_rebuilt_inside_reviewed_window",
+                "decision_plan_bindings_replay_without_drift",
+            ],
+        },
+        "runtime_window": {
+            "required_evidence": [
+                "loaded_local_daily_candidate_service_and_live_monitor_task",
+                "reviewed_exchange_calendar_and_current_decision_window",
+            ],
+            "completion_criteria": [
+                "launch_agent_and_process_liveness_are_both_confirmed",
+                "exactly_one_fail_closed_attempt_is_due_in_reviewed_window",
+                "runtime_liveness_does_not_claim_financial_readiness",
+            ],
+        },
+        "source_evidence": {
+            "required_evidence": [
+                "readable_persisted_decision_plan_fee_closure_and_runtime_sources",
+            ],
+            "completion_criteria": [
+                "all_preflight_sources_are_readable_and_contract_valid",
+                "source_restoration_does_not_mutate_financial_state",
+            ],
+        },
+        "ready": {
+            "required_evidence": ["persisted_current_preflight_facts"],
+            "completion_criteria": [
+                "start_only_one_canonical_risk_and_paper_shadow_attempt",
+                "separate_post_shadow_gate_and_human_confirmation_remain_required",
+            ],
+        },
+    }
+    contract = contracts.get(
+        gate,
+        {
+            "required_evidence": ["canonical_persisted_gate_evidence"],
+            "completion_criteria": ["named_gate_blockers_are_resolved"],
+        },
+    )
+    return {
+        "evidence_contract_version": "karkinos.daily_candidate_operator_evidence.v1",
+        "required_evidence": list(contract["required_evidence"]),
+        "completion_criteria": list(contract["completion_criteria"]),
+        "accepted_evidence_authority": "canonical_persisted_evidence_only",
+        "owner_attestation_is_financial_fact": False,
+        "private_xls_rows_required": False,
+        "private_account_identifiers_required": False,
     }
 
 
@@ -1757,6 +1916,7 @@ def _production_outcome(
     trading_plan: dict[str, Any],
     paper_shadow: dict[str, Any],
     execution_closure: dict[str, Any],
+    account_truth_replay: dict[str, Any],
     additional_blockers: list[str],
 ) -> dict[str, Any]:
     """Resolve one deterministic ticket-candidate or NO-ACTION conclusion."""
@@ -1786,6 +1946,31 @@ def _production_outcome(
     plan_generated_at = base_gate["plan_generated_at"]
     decision_in_window = bool(base_gate["decision_in_window"])
     plan_in_window = bool(base_gate["plan_in_window"])
+
+    if not verify_account_truth_replay_evidence(account_truth_replay):
+        blockers.append("account_truth_replay_evidence_invalid")
+    elif account_truth_replay.get("status") != "pass":
+        blockers.extend(
+            f"account_truth_replay:{item}"
+            for item in account_truth_replay.get("blockers") or []
+            if str(item)
+        )
+        blockers.append("account_truth_replay_not_clear")
+    expected_account_truth_ref = (
+        f"account_truth:{account_truth_ref}" if account_truth_ref else None
+    )
+    if account_truth_replay.get("account_truth_ref") != expected_account_truth_ref:
+        blockers.append("account_truth_replay_import_ref_mismatch")
+    if account_truth_replay.get("source_fingerprint") != (
+        account_truth_source_fingerprint or None
+    ):
+        blockers.append("account_truth_replay_source_fingerprint_mismatch")
+    if account_truth_replay.get("valuation_snapshot_id") != (
+        valuation_snapshot_id or None
+    ):
+        blockers.append("account_truth_replay_valuation_snapshot_mismatch")
+    if account_truth_replay.get("ledger_cutoff_id") != ledger_cutoff_id:
+        blockers.append("account_truth_replay_ledger_cutoff_mismatch")
 
     order_intents = _object_list(trading_plan.get("order_intents"))
     strategy_bindings: list[dict[str, Any]] = []
@@ -1960,7 +2145,7 @@ def _production_outcome(
         else blockers or ["no_strategy_action"]
     )
     account_truth_binding = {
-        "schema_version": "karkinos.daily_candidate_account_truth_binding.v1",
+        "schema_version": "karkinos.daily_candidate_account_truth_binding.v2",
         "account_truth_ref": (
             f"account_truth:{account_truth_ref}" if account_truth_ref else None
         ),
@@ -1976,6 +2161,7 @@ def _production_outcome(
         "ledger_cutoff_id": ledger_cutoff_id,
         "reconciliation_status": account_truth.get("reconciliation_status"),
         "ledger_coverage_status": ledger_coverage.get("status"),
+        "replay_evidence": account_truth_replay,
         "persisted_facts_only": True,
         "provider_contact_performed": False,
         "authorizes_execution": False,
@@ -2025,6 +2211,7 @@ def _production_outcome(
             "reconciliation_status"
         ),
         "account_truth_ledger_coverage_status": ledger_coverage.get("status"),
+        "account_truth_replay_evidence": account_truth_replay,
         "account_truth_binding": account_truth_binding,
         "market_quote_timestamp": quote_timestamp or None,
         "market_quote_age_seconds_at_decision": (
@@ -2100,6 +2287,27 @@ def _strategy_gate_binding(
     expected_fee_review_ref: str | None,
     action_id: Any,
 ) -> tuple[dict[str, Any], list[str]]:
+    return build_daily_candidate_strategy_gate_binding(
+        candidate=candidate,
+        plan_date=plan_date,
+        expected_strategy_ref=expected_strategy_ref,
+        expected_advancement_ref=expected_advancement_ref,
+        expected_fee_review_ref=expected_fee_review_ref,
+        action_id=action_id,
+    )
+
+
+def build_daily_candidate_strategy_gate_binding(
+    *,
+    candidate: dict[str, Any],
+    plan_date: str,
+    expected_strategy_ref: str | None,
+    expected_advancement_ref: str | None,
+    expected_fee_review_ref: str | None,
+    action_id: Any,
+) -> tuple[dict[str, Any], list[str]]:
+    """Build one replayable current-strategy binding for a daily ticket."""
+
     blockers: list[str] = []
     strategy = _object_dict(_object_dict(candidate.get("evidence")).get("strategy"))
     strategy_id = str(strategy.get("strategy_id") or "")
@@ -2144,6 +2352,44 @@ def _strategy_gate_binding(
     human_approval_id = str(promotion.get("human_approval_id") or "")
     if not human_approval_id:
         blockers.append("strategy_human_approval_missing")
+    daily_strategy_artifact_binding = _object_dict(
+        promotion.get("daily_strategy_artifact_binding")
+    )
+    if strategy_id.startswith("ai_formula_shadow:"):
+        if daily_strategy_artifact_binding.get("schema_version") != (
+            "karkinos.ai.daily_strategy_promotion_binding.v1"
+        ):
+            blockers.append("strategy_daily_artifact_binding_contract_invalid")
+        for field in (
+            "run_id",
+            "market_date",
+            "winner_candidate_id",
+            "selection_id",
+            "backup_id",
+        ):
+            if not str(daily_strategy_artifact_binding.get(field) or "").strip():
+                blockers.append(f"strategy_daily_artifact_{field}_missing")
+        for field in (
+            "selection_fingerprint",
+            "backup_artifact_fingerprint",
+        ):
+            if not _is_sha256(daily_strategy_artifact_binding.get(field)):
+                blockers.append(f"strategy_daily_artifact_{field}_invalid")
+        if daily_strategy_artifact_binding.get("winner_candidate_id") != (
+            strategy_id.removeprefix("ai_formula_shadow:")
+        ):
+            blockers.append("strategy_daily_artifact_candidate_mismatch")
+        if (
+            daily_strategy_artifact_binding.get("contains_private_account_identifiers")
+            is not False
+            or daily_strategy_artifact_binding.get("contains_broker_export_rows")
+            is not False
+            or daily_strategy_artifact_binding.get("does_not_change_capital_authority")
+            is not True
+            or daily_strategy_artifact_binding.get("authority_effect")
+            != "research_only"
+        ):
+            blockers.append("strategy_daily_artifact_authority_boundary_invalid")
 
     advancement_fingerprint = str(
         promotion.get("strategy_advancement_gate_fingerprint") or ""
@@ -2184,7 +2430,7 @@ def _strategy_gate_binding(
     blockers = list(dict.fromkeys(blockers))
     if blockers:
         return {}, blockers
-    return {
+    binding = {
         "schema_version": "karkinos.daily_candidate_strategy_gate_binding.v1",
         "action_id": action_id,
         "strategy_ref": expected_strategy_ref,
@@ -2200,7 +2446,10 @@ def _strategy_gate_binding(
         "paper_shadow_evaluation_only": True,
         "authorizes_execution": False,
         "changes_capital_authority": False,
-    }, []
+    }
+    if daily_strategy_artifact_binding:
+        binding["daily_strategy_artifact_binding"] = daily_strategy_artifact_binding
+    return binding, []
 
 
 def _manual_order_ticket_candidate(
