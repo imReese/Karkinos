@@ -973,7 +973,7 @@ export type DailyCandidateTrial = {
   trial_fingerprint: string;
   latest_review: DailyCandidateTrialReview | null;
   background_schedule: {
-    schema_version: 'karkinos.daily_candidate_background_schedule.v1';
+    schema_version: 'karkinos.daily_candidate_background_schedule.v2';
     status: string;
     evaluated_at: string | null;
     timezone: 'Asia/Shanghai';
@@ -983,6 +983,23 @@ export type DailyCandidateTrial = {
     due: boolean;
     existing_run_id: string | null;
     blockers: string[];
+    next_reviewed_window?: {
+      schema_version: 'karkinos.daily_candidate_next_reviewed_window.v1';
+      status: 'available' | 'unavailable';
+      market_date: string | null;
+      window_start: string | null;
+      window_end: string | null;
+      is_current_market_date: boolean;
+      official_calendar_verified: boolean;
+      blockers: string[];
+      provider_contact_performed: false;
+      database_writes_performed: false;
+      permits_retry_or_backfill: false;
+      changes_attempt_eligibility: false;
+      broker_submission_enabled: false;
+      authorizes_execution: false;
+      changes_capital_authority: false;
+    };
     background_writes_enabled: boolean;
     broker_submission_enabled: false;
     authorizes_execution: false;

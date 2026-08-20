@@ -28,8 +28,8 @@ def _seed_calendar(db: AppDatabase, *, is_trading_day: bool = True) -> None:
             "provider": "fixture",
             "schema_version": "karkinos.market_calendar.v1",
             "status": "available",
-            "trading_day_count": 1 if is_trading_day else 0,
-            "closed_day_count": 364 if is_trading_day else 365,
+            "trading_day_count": 2 if is_trading_day else 1,
+            "closed_day_count": 363 if is_trading_day else 364,
             "source_fingerprint": "calendar-fingerprint",
             "official_verification_status": "verified",
             "days": [
@@ -38,7 +38,13 @@ def _seed_calendar(db: AppDatabase, *, is_trading_day: bool = True) -> None:
                     "is_trading_day": is_trading_day,
                     "day_type": "trading_day" if is_trading_day else "closed",
                     "reason_code": "trading_day" if is_trading_day else "closed",
-                }
+                },
+                {
+                    "date": "2026-07-02",
+                    "is_trading_day": True,
+                    "day_type": "trading_day",
+                    "reason_code": "trading_day",
+                },
             ],
         }
     )
@@ -79,12 +85,22 @@ def test_background_schedule_is_due_only_inside_verified_trading_window(
 
     assert before["status"] == "waiting_for_decision_window"
     assert before["due"] is False
+    assert before["next_reviewed_window"]["market_date"] == RUN_DATE
+    assert before["next_reviewed_window"]["window_start"] == (
+        "2026-07-01T09:35:00+08:00"
+    )
+    assert before["next_reviewed_window"]["is_current_market_date"] is True
     assert due["status"] == "due"
     assert due["due"] is True
     assert due["background_writes_enabled"] is True
     assert due["broker_submission_enabled"] is False
     assert missed["status"] == "missed_decision_window"
     assert missed["blockers"] == ["daily_candidate_background_window_missed"]
+    assert missed["next_reviewed_window"]["market_date"] == "2026-07-02"
+    assert missed["next_reviewed_window"]["is_current_market_date"] is False
+    assert missed["next_reviewed_window"]["provider_contact_performed"] is False
+    assert missed["next_reviewed_window"]["database_writes_performed"] is False
+    assert missed["next_reviewed_window"]["authorizes_execution"] is False
 
 
 def test_background_schedule_skips_non_trading_and_already_recorded_days(
@@ -98,6 +114,7 @@ def test_background_schedule_skips_non_trading_and_already_recorded_days(
 
     assert closed["status"] == "not_trading_day"
     assert closed["due"] is False
+    assert closed["next_reviewed_window"]["market_date"] == "2026-07-02"
 
     _seed_calendar(db, is_trading_day=True)
     _record_daily_run(db)
@@ -106,6 +123,99 @@ def test_background_schedule_skips_non_trading_and_already_recorded_days(
     assert recorded["status"] == "already_recorded"
     assert recorded["existing_run_id"] == "daily-candidate:fixture"
     assert recorded["due"] is False
+    assert recorded["next_reviewed_window"]["market_date"] == "2026-07-02"
+
+
+def test_background_schedule_resolves_next_year_only_from_verified_calendar(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    for year, verified, days in (
+        (
+            2026,
+            True,
+            [
+                {
+                    "date": "2026-12-31",
+                    "is_trading_day": True,
+                    "day_type": "trading_day",
+                    "reason_code": "trading_day",
+                }
+            ],
+        ),
+        (
+            2027,
+            True,
+            [
+                {
+                    "date": "2027-01-04",
+                    "is_trading_day": True,
+                    "day_type": "trading_day",
+                    "reason_code": "trading_day",
+                }
+            ],
+        ),
+    ):
+        db.upsert_market_calendar_snapshot_sync(
+            {
+                "exchange": "SSE",
+                "year": year,
+                "provider": "fixture",
+                "schema_version": "karkinos.market_calendar.v1",
+                "status": "available",
+                "trading_day_count": len(days),
+                "closed_day_count": 365 - len(days),
+                "source_fingerprint": f"calendar-{year}",
+                "official_verification_status": (
+                    "verified" if verified else "needs_review"
+                ),
+                "days": days,
+            }
+        )
+
+    result = project_daily_candidate_background_schedule(
+        db=db,
+        now=datetime(2026, 12, 31, 1, 46, tzinfo=timezone.utc),
+    )
+
+    assert result["status"] == "missed_decision_window"
+    assert result["next_reviewed_window"] == {
+        "schema_version": "karkinos.daily_candidate_next_reviewed_window.v1",
+        "status": "available",
+        "market_date": "2027-01-04",
+        "window_start": "2027-01-04T09:35:00+08:00",
+        "window_end": "2027-01-04T09:45:00+08:00",
+        "is_current_market_date": False,
+        "official_calendar_verified": True,
+        "blockers": [],
+        "provider_contact_performed": False,
+        "database_writes_performed": False,
+        "permits_retry_or_backfill": False,
+        "changes_attempt_eligibility": False,
+        "broker_submission_enabled": False,
+        "authorizes_execution": False,
+        "changes_capital_authority": False,
+    }
+
+    db.update_market_calendar_verification_sync(
+        exchange="SSE",
+        year=2027,
+        verification_status="needs_review",
+        official_source_url="https://example.invalid",
+        verified_by="fixture",
+        day_labels={},
+    )
+    blocked = project_daily_candidate_background_schedule(
+        db=db,
+        now=datetime(2026, 12, 31, 1, 46, tzinfo=timezone.utc),
+    )
+
+    assert blocked["next_reviewed_window"]["status"] == "unavailable"
+    assert blocked["next_reviewed_window"]["blockers"] == [
+        "next_verified_trading_day_not_available"
+    ]
+    assert blocked["due"] is False
 
 
 def test_background_loop_claims_once_even_when_result_plan_date_is_stale(

@@ -32,6 +32,7 @@ export function DailyCandidateTrialPanel({
     reviewedBy.trim().length > 0 && note.trim().length > 0 && !review.isPending;
   const goDisabled = !trial.eligible_for_human_go_no_go_review;
   const dailyRunWindowOpen = trial.background_schedule.due;
+  const nextWindow = trial.background_schedule.next_reviewed_window;
 
   return (
     <section
@@ -78,6 +79,15 @@ export function DailyCandidateTrialPanel({
               {trial.background_schedule.status} ·{' '}
               {trial.background_schedule.decision_window_start}–
               {trial.background_schedule.decision_window_end} Asia/Shanghai
+            </div>
+            <div data-testid="daily-candidate-next-reviewed-window">
+              {nextWindow?.status === 'available' && nextWindow.market_date
+                ? locale === 'zh'
+                  ? `${nextWindow.is_current_market_date ? '当前' : '下个'}已验证窗口：${nextWindow.market_date} · 09:35–09:45 Asia/Shanghai · 仅用于准备证据，不允许重试或回填`
+                  : `${nextWindow.is_current_market_date ? 'Current' : 'Next'} verified window: ${nextWindow.market_date} · 09:35–09:45 Asia/Shanghai · preparation only; no retry or backfill`
+                : locale === 'zh'
+                  ? `下个已验证窗口：不可用${nextWindow?.blockers.length ? ` · ${nextWindow.blockers.join(' · ')}` : ''}`
+                  : `Next verified window: unavailable${nextWindow?.blockers.length ? ` · ${nextWindow.blockers.join(' · ')}` : ''}`}
             </div>
             <div
               data-testid="daily-candidate-runtime-monitor"

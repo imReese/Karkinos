@@ -29,7 +29,10 @@ DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE = "daily_decision_evidence"
 DAILY_DECISION_EVIDENCE_AUTOMATION_TASK_NAME = "daily-decision-evidence-automation"
 DAILY_CANDIDATE_BACKGROUND_ATTEMPT_RUN_TYPE = "daily_candidate_background_attempt"
 DAILY_CANDIDATE_BACKGROUND_SCHEDULE_SCHEMA_VERSION = (
-    "karkinos.daily_candidate_background_schedule.v1"
+    "karkinos.daily_candidate_background_schedule.v2"
+)
+DAILY_CANDIDATE_NEXT_REVIEWED_WINDOW_SCHEMA_VERSION = (
+    "karkinos.daily_candidate_next_reviewed_window.v1"
 )
 DAILY_CANDIDATE_DECISION_WINDOW_SCHEMA_VERSION = (
     "karkinos.daily_candidate_decision_window.v1"
@@ -628,12 +631,19 @@ def project_daily_candidate_background_schedule(
             blockers=["market_calendar_day_missing"],
         )
     if calendar_day.get("is_trading_day") is not True:
+        next_reviewed_window = _next_verified_trading_window(
+            calendar_reader=calendar_reader,
+            shanghai_now=shanghai_now,
+            current_days=days,
+            include_current_date=False,
+        )
         return _background_schedule_result(
             status="not_trading_day",
             evaluated_at=evaluated_at_text,
             run_date=run_date,
             due=False,
             blockers=[],
+            next_reviewed_window=next_reviewed_window,
         )
 
     run_reader = getattr(db, "list_automation_runs_sync", None)
@@ -648,6 +658,12 @@ def project_daily_candidate_background_schedule(
         else []
     )
     if attempts:
+        next_reviewed_window = _next_verified_trading_window(
+            calendar_reader=calendar_reader,
+            shanghai_now=shanghai_now,
+            current_days=days,
+            include_current_date=False,
+        )
         return _background_schedule_result(
             status="already_attempted",
             evaluated_at=evaluated_at_text,
@@ -655,6 +671,7 @@ def project_daily_candidate_background_schedule(
             due=False,
             blockers=[],
             existing_run_id=str(attempts[0].get("run_id") or "") or None,
+            next_reviewed_window=next_reviewed_window,
         )
     existing = (
         run_reader(
@@ -667,6 +684,12 @@ def project_daily_candidate_background_schedule(
         else []
     )
     if existing:
+        next_reviewed_window = _next_verified_trading_window(
+            calendar_reader=calendar_reader,
+            shanghai_now=shanghai_now,
+            current_days=days,
+            include_current_date=False,
+        )
         return _background_schedule_result(
             status="already_recorded",
             evaluated_at=evaluated_at_text,
@@ -674,6 +697,7 @@ def project_daily_candidate_background_schedule(
             due=False,
             blockers=[],
             existing_run_id=str(existing[0].get("run_id") or "") or None,
+            next_reviewed_window=next_reviewed_window,
         )
 
     minute_of_day = shanghai_now.hour * 60 + shanghai_now.minute
@@ -686,12 +710,19 @@ def project_daily_candidate_background_schedule(
     else:
         status = "due"
         blockers = []
+    next_reviewed_window = _next_verified_trading_window(
+        calendar_reader=calendar_reader,
+        shanghai_now=shanghai_now,
+        current_days=days,
+        include_current_date=status != "missed_decision_window",
+    )
     return _background_schedule_result(
         status=status,
         evaluated_at=evaluated_at_text,
         run_date=run_date,
         due=status == "due",
         blockers=blockers,
+        next_reviewed_window=next_reviewed_window,
     )
 
 
@@ -703,6 +734,7 @@ def _background_schedule_result(
     due: bool,
     blockers: list[str],
     existing_run_id: str | None = None,
+    next_reviewed_window: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "schema_version": DAILY_CANDIDATE_BACKGROUND_SCHEDULE_SCHEMA_VERSION,
@@ -715,9 +747,125 @@ def _background_schedule_result(
         "due": due,
         "existing_run_id": existing_run_id,
         "blockers": list(dict.fromkeys(blockers)),
+        "next_reviewed_window": (
+            dict(next_reviewed_window)
+            if isinstance(next_reviewed_window, dict)
+            else _unavailable_next_reviewed_window(
+                "next_verified_trading_window_source_unavailable"
+            )
+        ),
         "background_writes_enabled": due,
         "broker_submission_enabled": False,
         "authorizes_execution": False,
+    }
+
+
+def _next_verified_trading_window(
+    *,
+    calendar_reader: Any,
+    shanghai_now: datetime,
+    current_days: list[dict[str, Any]],
+    include_current_date: bool,
+) -> dict[str, Any]:
+    run_date = shanghai_now.date().isoformat()
+    candidate = _next_trading_day(
+        days=current_days,
+        run_date=run_date,
+        include_current_date=include_current_date,
+    )
+    if candidate is None and callable(calendar_reader):
+        next_calendar = calendar_reader(
+            exchange="SSE",
+            year=shanghai_now.year + 1,
+        )
+        if (
+            isinstance(next_calendar, dict)
+            and str(next_calendar.get("official_verification_status") or "").lower()
+            in _VERIFIED_CALENDAR_STATUSES
+        ):
+            candidate = _next_trading_day(
+                days=_json_object_list(next_calendar.get("days_json")),
+                run_date=run_date,
+                include_current_date=False,
+            )
+    if candidate is None:
+        return _unavailable_next_reviewed_window(
+            "next_verified_trading_day_not_available"
+        )
+
+    market_date = datetime.strptime(candidate, "%Y-%m-%d").date()
+    window_start = datetime(
+        market_date.year,
+        market_date.month,
+        market_date.day,
+        DAILY_CANDIDATE_DECISION_WINDOW_START_MINUTE // 60,
+        DAILY_CANDIDATE_DECISION_WINDOW_START_MINUTE % 60,
+        tzinfo=_SHANGHAI_TZ,
+    )
+    window_end = datetime(
+        market_date.year,
+        market_date.month,
+        market_date.day,
+        DAILY_CANDIDATE_DECISION_WINDOW_END_MINUTE // 60,
+        DAILY_CANDIDATE_DECISION_WINDOW_END_MINUTE % 60,
+        tzinfo=_SHANGHAI_TZ,
+    )
+    return {
+        "schema_version": DAILY_CANDIDATE_NEXT_REVIEWED_WINDOW_SCHEMA_VERSION,
+        "status": "available",
+        "market_date": candidate,
+        "window_start": window_start.isoformat(),
+        "window_end": window_end.isoformat(),
+        "is_current_market_date": candidate == run_date,
+        "official_calendar_verified": True,
+        "blockers": [],
+        "provider_contact_performed": False,
+        "database_writes_performed": False,
+        "permits_retry_or_backfill": False,
+        "changes_attempt_eligibility": False,
+        "broker_submission_enabled": False,
+        "authorizes_execution": False,
+        "changes_capital_authority": False,
+    }
+
+
+def _next_trading_day(
+    *,
+    days: list[dict[str, Any]],
+    run_date: str,
+    include_current_date: bool,
+) -> str | None:
+    candidates = []
+    for item in days:
+        candidate = str(item.get("date") or "")
+        try:
+            parsed = datetime.strptime(candidate, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        if parsed.isoformat() != candidate or item.get("is_trading_day") is not True:
+            continue
+        if candidate > run_date or (include_current_date and candidate == run_date):
+            candidates.append(candidate)
+    return min(candidates) if candidates else None
+
+
+def _unavailable_next_reviewed_window(blocker: str) -> dict[str, Any]:
+    return {
+        "schema_version": DAILY_CANDIDATE_NEXT_REVIEWED_WINDOW_SCHEMA_VERSION,
+        "status": "unavailable",
+        "market_date": None,
+        "window_start": None,
+        "window_end": None,
+        "is_current_market_date": False,
+        "official_calendar_verified": False,
+        "blockers": [blocker],
+        "provider_contact_performed": False,
+        "database_writes_performed": False,
+        "permits_retry_or_backfill": False,
+        "changes_attempt_eligibility": False,
+        "broker_submission_enabled": False,
+        "authorizes_execution": False,
+        "changes_capital_authority": False,
     }
 
 

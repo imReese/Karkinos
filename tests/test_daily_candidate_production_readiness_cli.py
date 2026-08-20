@@ -84,6 +84,31 @@ def test_live_readiness_cli_reads_only_expected_loopback_endpoints() -> None:
                     "remaining_simulated_orders": 50,
                     "eligible_for_human_go_no_go_review": False,
                     "latest_review": None,
+                    "background_schedule": {
+                        "schema_version": (
+                            "karkinos.daily_candidate_background_schedule.v2"
+                        ),
+                        "run_date": "2026-08-21",
+                        "next_reviewed_window": {
+                            "schema_version": (
+                                "karkinos.daily_candidate_next_reviewed_window.v1"
+                            ),
+                            "status": "available",
+                            "market_date": "2026-08-22",
+                            "window_start": "2026-08-22T09:35:00+08:00",
+                            "window_end": "2026-08-22T09:45:00+08:00",
+                            "is_current_market_date": False,
+                            "official_calendar_verified": True,
+                            "blockers": [],
+                            "provider_contact_performed": False,
+                            "database_writes_performed": False,
+                            "permits_retry_or_backfill": False,
+                            "changes_attempt_eligibility": False,
+                            "broker_submission_enabled": False,
+                            "authorizes_execution": False,
+                            "changes_capital_authority": False,
+                        },
+                    },
                     "blockers": ["qualifying_trading_days_insufficient"],
                     "run_scan_truncated": False,
                     "trial_fingerprint": "b" * 64,
@@ -130,6 +155,9 @@ def test_live_readiness_cli_reads_only_expected_loopback_endpoints() -> None:
     assert payload["daily_operation"]["first_blocking_gate"] == "account_truth"
     assert payload["daily_operation"]["first_safe_action"] == (
         "complete_current_account_truth_evidence_review"
+    )
+    assert payload["daily_operation"]["next_reviewed_window"]["market_date"] == (
+        "2026-08-22"
     )
     assert payload["daily_operation"]["operator_checklist"][0]["blocker_summary"] == [
         {

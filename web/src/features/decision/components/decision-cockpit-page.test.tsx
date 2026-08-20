@@ -668,7 +668,7 @@ function installDecisionFetchMock({
       trial_fingerprint: 'a'.repeat(64),
       latest_review: null,
       background_schedule: {
-        schema_version: 'karkinos.daily_candidate_background_schedule.v1',
+        schema_version: 'karkinos.daily_candidate_background_schedule.v2',
         status: 'due',
         evaluated_at: '2026-06-13T09:40:00+08:00',
         timezone: 'Asia/Shanghai',
@@ -678,6 +678,23 @@ function installDecisionFetchMock({
         due: true,
         existing_run_id: null,
         blockers: [],
+        next_reviewed_window: {
+          schema_version: 'karkinos.daily_candidate_next_reviewed_window.v1',
+          status: 'available',
+          market_date: '2026-06-13',
+          window_start: '2026-06-13T09:35:00+08:00',
+          window_end: '2026-06-13T09:45:00+08:00',
+          is_current_market_date: true,
+          official_calendar_verified: true,
+          blockers: [],
+          provider_contact_performed: false,
+          database_writes_performed: false,
+          permits_retry_or_backfill: false,
+          changes_attempt_eligibility: false,
+          broker_submission_enabled: false,
+          authorizes_execution: false,
+          changes_capital_authority: false,
+        },
         background_writes_enabled: true,
         broker_submission_enabled: false,
         authorizes_execution: false,
@@ -2798,6 +2815,9 @@ test('summarizes controlled automation cockpit status in the decision page', asy
   expect(automation.textContent).toContain('18/50');
   expect(automation.textContent).toContain(
     'Background schedule: due · 09:35–09:45 Asia/Shanghai',
+  );
+  expect(automation.textContent).toContain(
+    'Current verified window: 2026-06-13 · 09:35–09:45 Asia/Shanghai · preparation only; no retry or backfill',
   );
   expect(automation.textContent).toContain(
     'Background monitor: enabled and running · task liveness only; financial readiness is not claimed',
