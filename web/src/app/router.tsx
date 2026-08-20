@@ -2257,6 +2257,11 @@ function DashboardTodayQueue({
     : dataNeedsReview
       ? 'first'
       : 'normal';
+  const dataRefreshSymbols =
+    marketReviewContractValid &&
+    marketEvidenceReview?.status === 'review_required'
+      ? marketEvidenceReview.refreshable_symbols
+      : [];
   const strategyReady = canUseStrategyContribution(strategyContribution);
   const strategyHasNoLinkedFills =
     strategyContribution?.contribution_status === 'no_linked_fills' &&
@@ -2604,14 +2609,25 @@ function DashboardTodayQueue({
       title: item.title,
       reason: item.detail,
       unblockCondition: item.resolution,
-      nextAction: (
-        <a
-          href={item.href}
-          className="font-semibold text-[var(--app-accent)] hover:underline"
-        >
-          {item.actionLabel}
-        </a>
-      ),
+      nextAction:
+        item.key === 'data' && dataRefreshSymbols.length > 0 ? (
+          <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
+            <MarketRefreshButton compact symbols={dataRefreshSymbols} />
+            <a
+              href={item.href}
+              className="inline-flex min-h-8 items-center font-semibold text-[var(--app-accent)] hover:underline"
+            >
+              {item.actionLabel}
+            </a>
+          </div>
+        ) : (
+          <a
+            href={item.href}
+            className="font-semibold text-[var(--app-accent)] hover:underline"
+          >
+            {item.actionLabel}
+          </a>
+        ),
       evidence: item.meta,
     }));
   const normalCount = items.length - actionableCount;
