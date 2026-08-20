@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="420" viewBox="0 0 1320 420" role="img" aria-labelledby="title desc">
+  <title id="title">Karkinos evidence-bound investment operating loop</title>
+  <desc id="desc">Research and backtesting flow through daily decisions, evidence gates, paper and shadow validation, human control, and reconciliation before returning to research.</desc>
+  <defs>
+    <linearGradient id="canvas" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#181825"/>
+      <stop offset="1" stop-color="#242433"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#cba6f7"/>
+      <stop offset="0.52" stop-color="#89b4fa"/>
+      <stop offset="1" stop-color="#94e2d5"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#11111b" flood-opacity="0.5"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6c7086"/>
+    </marker>
+    <style>
+      .eyebrow { font: 700 14px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 2.4px; fill: #94e2d5; }
+      .meta { font: 500 14px Inter, ui-sans-serif, system-ui, sans-serif; fill: #a6adc8; }
+      .step { font: 700 13px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 1.5px; fill: #cba6f7; }
+      .name { font: 700 21px Inter, ui-sans-serif, system-ui, sans-serif; fill: #f5e0dc; }
+      .detail { font: 500 14px Inter, ui-sans-serif, system-ui, sans-serif; fill: #bac2de; }
+      .feedback { font: 600 13px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 1px; fill: #94e2d5; }
+    </style>
+  </defs>
+
+  <rect width="1320" height="420" rx="28" fill="url(#canvas)"/>
+  <rect x="1" y="1" width="1318" height="418" rx="27" fill="none" stroke="#45475a"/>
+  <rect x="64" y="74" width="1192" height="3" rx="1.5" fill="url(#accent)"/>
+  <text x="64" y="46" class="eyebrow">EVIDENCE-BOUND OPERATING LOOP</text>
+  <text x="1256" y="46" text-anchor="end" class="meta">local-first · human-supervised</text>
+
+  <g stroke="#6c7086" stroke-width="2" fill="none" marker-end="url(#arrow)">
+    <path d="M 240 190 H 273"/>
+    <path d="M 448 190 H 481"/>
+    <path d="M 656 190 H 689"/>
+    <path d="M 864 190 H 897"/>
+    <path d="M 1072 190 H 1105"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <g transform="translate(64 100)">
+      <rect width="176" height="180" rx="18" fill="#2b2c3c" stroke="#585b70"/>
+      <rect width="176" height="5" rx="2.5" fill="#cba6f7"/>
+      <text x="20" y="36" class="step">01</text>
+      <text x="20" y="75" class="name">Research</text>
+      <text x="20" y="101" class="name">+ backtest</text>
+      <text x="20" y="138" class="detail">Frozen data</text>
+      <text x="20" y="159" class="detail">Reproducible evidence</text>
+    </g>
+    <g transform="translate(272 100)">
+      <rect width="176" height="180" rx="18" fill="#2b2c3c" stroke="#585b70"/>
+      <rect width="176" height="5" rx="2.5" fill="#b4befe"/>
+      <text x="20" y="36" class="step">02</text>
+      <text x="20" y="75" class="name">Daily</text>
+      <text x="20" y="101" class="name">decision</text>
+      <text x="20" y="138" class="detail">Plan or no-action</text>
+      <text x="20" y="159" class="detail">Named blockers</text>
+    </g>
+    <g transform="translate(480 100)">
+      <rect width="176" height="180" rx="18" fill="#2b2c3c" stroke="#585b70"/>
+      <rect width="176" height="5" rx="2.5" fill="#89b4fa"/>
+      <text x="20" y="36" class="step">03</text>
+      <text x="20" y="75" class="name">Evidence</text>
+      <text x="20" y="101" class="name">gates</text>
+      <text x="20" y="138" class="detail">Data · account · risk</text>
+      <text x="20" y="159" class="detail">Fees · reconciliation</text>
+    </g>
+    <g transform="translate(688 100)">
+      <rect width="176" height="180" rx="18" fill="#2b2c3c" stroke="#585b70"/>
+      <rect width="176" height="5" rx="2.5" fill="#74c7ec"/>
+      <text x="20" y="36" class="step">04</text>
+      <text x="20" y="75" class="name">Paper /</text>
+      <text x="20" y="101" class="name">shadow</text>
+      <text x="20" y="138" class="detail">Simulated execution</text>
+      <text x="20" y="159" class="detail">Drift and cost checks</text>
+    </g>
+    <g transform="translate(896 100)">
+      <rect width="176" height="180" rx="18" fill="#2b2c3c" stroke="#585b70"/>
+      <rect width="176" height="5" rx="2.5" fill="#94e2d5"/>
+      <text x="20" y="36" class="step">05</text>
+      <text x="20" y="75" class="name">Human</text>
+      <text x="20" y="101" class="name">control</text>
+      <text x="20" y="138" class="detail">Explicit confirmation</text>
+      <text x="20" y="159" class="detail">Bounded capability</text>
+    </g>
+    <g transform="translate(1104 100)">
+      <rect width="152" height="180" rx="18" fill="#2b2c3c" stroke="#585b70"/>
+      <rect width="152" height="5" rx="2.5" fill="#a6e3a1"/>
+      <text x="20" y="36" class="step">06</text>
+      <text x="20" y="75" class="name">Reconcile</text>
+      <text x="20" y="101" class="name">+ learn</text>
+      <text x="20" y="138" class="detail">Ledger truth</text>
+      <text x="20" y="159" class="detail">Review outcomes</text>
+    </g>
+  </g>
+
+  <path d="M 1180 298 C 1180 356 152 356 152 298" fill="none" stroke="#94e2d5" stroke-width="2" stroke-dasharray="7 7" marker-end="url(#arrow)"/>
+  <rect x="547" y="333" width="226" height="34" rx="17" fill="#181825" stroke="#3d665f"/>
+  <text x="660" y="355" text-anchor="middle" class="feedback">REVIEW → NEXT HYPOTHESIS</text>
+</svg>

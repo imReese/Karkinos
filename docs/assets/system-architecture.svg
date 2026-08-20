@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="700" viewBox="0 0 1320 700" role="img" aria-labelledby="title desc">
+  <title id="title">Karkinos local-first system architecture</title>
+  <desc id="desc">External sources enter explicit ingestion boundaries, local application and domain services consume canonical persisted evidence, and execution stays behind fail-closed checks and explicit human authority.</desc>
+  <defs>
+    <linearGradient id="canvas" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#181825"/>
+      <stop offset="1" stop-color="#242433"/>
+    </linearGradient>
+    <linearGradient id="core" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#313244"/>
+      <stop offset="1" stop-color="#292a3a"/>
+    </linearGradient>
+    <linearGradient id="rail" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#cba6f7"/>
+      <stop offset="0.5" stop-color="#89b4fa"/>
+      <stop offset="1" stop-color="#94e2d5"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#11111b" flood-opacity="0.55"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7f849c"/>
+    </marker>
+    <style>
+      .eyebrow { font: 700 14px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 2.4px; fill: #94e2d5; }
+      .meta { font: 500 14px Inter, ui-sans-serif, system-ui, sans-serif; fill: #a6adc8; }
+      .column { font: 700 13px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 1.8px; fill: #cba6f7; }
+      .heading { font: 700 21px Inter, ui-sans-serif, system-ui, sans-serif; fill: #f5e0dc; }
+      .label { font: 650 16px Inter, ui-sans-serif, system-ui, sans-serif; fill: #cdd6f4; }
+      .small { font: 500 13px Inter, ui-sans-serif, system-ui, sans-serif; fill: #bac2de; }
+      .chip { font: 600 13px Inter, ui-sans-serif, system-ui, sans-serif; fill: #cdd6f4; }
+      .rail { font: 650 14px Inter, ui-sans-serif, system-ui, sans-serif; fill: #cdd6f4; }
+      .blocked { font: 650 13px Inter, ui-sans-serif, system-ui, sans-serif; fill: #f38ba8; }
+    </style>
+  </defs>
+
+  <rect width="1320" height="700" rx="28" fill="url(#canvas)"/>
+  <rect x="1" y="1" width="1318" height="698" rx="27" fill="none" stroke="#45475a"/>
+  <rect x="64" y="74" width="1192" height="3" rx="1.5" fill="url(#rail)"/>
+  <text x="64" y="46" class="eyebrow">LOCAL-FIRST SYSTEM ARCHITECTURE</text>
+  <text x="1256" y="46" text-anchor="end" class="meta">persisted facts · explicit authority</text>
+
+  <text x="64" y="112" class="column">EXTERNAL EDGES</text>
+  <text x="334" y="112" class="column">LOCAL KARKINOS CORE</text>
+  <text x="1048" y="112" class="column">CONTROLLED EDGE</text>
+
+  <g filter="url(#shadow)">
+    <rect x="64" y="132" width="220" height="410" rx="22" fill="#242433" stroke="#45475a"/>
+    <rect x="334" y="132" width="664" height="410" rx="22" fill="url(#core)" stroke="#585b70"/>
+    <rect x="1048" y="132" width="208" height="410" rx="22" fill="#242433" stroke="#45475a"/>
+  </g>
+
+  <g>
+    <rect x="88" y="166" width="172" height="82" rx="15" fill="#2b2c3c" stroke="#585b70"/>
+    <circle cx="110" cy="188" r="5" fill="#89b4fa"/>
+    <text x="124" y="193" class="label">Market data</text>
+    <text x="110" y="220" class="small">Quotes · NAV · bars</text>
+
+    <rect x="88" y="270" width="172" height="82" rx="15" fill="#2b2c3c" stroke="#585b70"/>
+    <circle cx="110" cy="292" r="5" fill="#94e2d5"/>
+    <text x="124" y="297" class="label">Account facts</text>
+    <text x="110" y="324" class="small">Imports · collectors</text>
+
+    <rect x="88" y="374" width="172" height="82" rx="15" fill="#2b2c3c" stroke="#585b70"/>
+    <circle cx="110" cy="396" r="5" fill="#cba6f7"/>
+    <text x="124" y="401" class="label">Model edge</text>
+    <text x="110" y="428" class="small">Research artifacts only</text>
+
+    <rect x="88" y="478" width="172" height="38" rx="12" fill="#1e1e2e" stroke="#45475a"/>
+    <text x="174" y="502" text-anchor="middle" class="small">Untrusted until persisted</text>
+  </g>
+
+  <g>
+    <rect x="362" y="158" width="608" height="62" rx="15" fill="#242433" stroke="#585b70"/>
+    <text x="386" y="184" class="label">Experience</text>
+    <text x="946" y="184" text-anchor="end" class="small">React / Vite Web UI · CLI</text>
+    <text x="386" y="204" class="small">Operator workflows and explainable status</text>
+
+    <rect x="362" y="236" width="608" height="72" rx="15" fill="#242433" stroke="#585b70"/>
+    <text x="386" y="265" class="label">Application boundary</text>
+    <text x="946" y="265" text-anchor="end" class="small">FastAPI · application services</text>
+    <text x="386" y="288" class="small">Typed commands, read models, validation and orchestration</text>
+
+    <rect x="362" y="324" width="608" height="116" rx="15" fill="#242433" stroke="#585b70"/>
+    <text x="386" y="352" class="label">Canonical domains</text>
+    <g>
+      <rect x="386" y="370" width="88" height="32" rx="10" fill="#35364a"/>
+      <text x="430" y="391" text-anchor="middle" class="chip">Research</text>
+      <rect x="484" y="370" width="88" height="32" rx="10" fill="#35364a"/>
+      <text x="528" y="391" text-anchor="middle" class="chip">Decision</text>
+      <rect x="582" y="370" width="72" height="32" rx="10" fill="#35364a"/>
+      <text x="618" y="391" text-anchor="middle" class="chip">Risk</text>
+      <rect x="664" y="370" width="96" height="32" rx="10" fill="#35364a"/>
+      <text x="712" y="391" text-anchor="middle" class="chip">Operations</text>
+      <rect x="770" y="370" width="70" height="32" rx="10" fill="#35364a"/>
+      <text x="805" y="391" text-anchor="middle" class="chip">OMS</text>
+      <rect x="850" y="370" width="96" height="32" rx="10" fill="#35364a"/>
+      <text x="898" y="391" text-anchor="middle" class="chip">Reconcile</text>
+    </g>
+    <text x="386" y="424" class="small">One canonical implementation per financial concept</text>
+
+    <rect x="362" y="456" width="608" height="62" rx="15" fill="#1e1e2e" stroke="#89b4fa" stroke-opacity="0.75"/>
+    <text x="386" y="483" class="label">Evidence foundation</text>
+    <text x="946" y="483" text-anchor="end" class="small">SQLite · append-oriented stores</text>
+    <text x="386" y="504" class="small">Portfolio · ledger · valuation · audit · fingerprints</text>
+  </g>
+
+  <g>
+    <rect x="1072" y="166" width="160" height="74" rx="15" fill="#2b2c3c" stroke="#f9e2af" stroke-opacity="0.6"/>
+    <text x="1152" y="194" text-anchor="middle" class="label">Fail-closed gates</text>
+    <text x="1152" y="218" text-anchor="middle" class="small">fresh · complete · bound</text>
+
+    <path d="M 1152 250 V 276" stroke="#7f849c" stroke-width="2" marker-end="url(#arrow)"/>
+    <rect x="1072" y="286" width="160" height="74" rx="15" fill="#2b2c3c" stroke="#94e2d5" stroke-opacity="0.7"/>
+    <text x="1152" y="314" text-anchor="middle" class="label">Human review</text>
+    <text x="1152" y="338" text-anchor="middle" class="small">explicit confirmation</text>
+
+    <path d="M 1152 370 V 396" stroke="#7f849c" stroke-width="2" marker-end="url(#arrow)"/>
+    <rect x="1072" y="406" width="160" height="74" rx="15" fill="#2b2c3c" stroke="#a6e3a1" stroke-opacity="0.7"/>
+    <text x="1152" y="434" text-anchor="middle" class="label">Bounded capability</text>
+    <text x="1152" y="458" text-anchor="middle" class="small">revocable · auditable</text>
+
+    <rect x="1072" y="496" width="160" height="22" rx="11" fill="#1e1e2e"/>
+    <text x="1152" y="512" text-anchor="middle" class="small">Broker execution edge</text>
+  </g>
+
+  <g fill="none" stroke="#7f849c" stroke-width="2" marker-end="url(#arrow)">
+    <path d="M 284 207 C 316 207 320 487 354 487"/>
+    <path d="M 284 311 C 316 311 320 487 354 487"/>
+    <path d="M 284 415 H 354"/>
+    <path d="M 998 382 H 1038"/>
+  </g>
+  <text x="317" y="473" text-anchor="middle" class="small" transform="rotate(-90 317 473)">validate + persist</text>
+  <text x="1018" y="368" text-anchor="middle" class="small">proposal</text>
+
+  <rect x="64" y="576" width="1192" height="72" rx="18" fill="#1e1e2e" stroke="#45475a"/>
+  <rect x="64" y="576" width="8" height="72" rx="4" fill="url(#rail)"/>
+  <text x="94" y="607" class="rail">Persisted facts are authoritative</text>
+  <circle cx="348" cy="603" r="3" fill="#6c7086"/>
+  <text x="370" y="607" class="rail">Runtime responses are ingestion inputs</text>
+  <circle cx="691" cy="603" r="3" fill="#6c7086"/>
+  <text x="713" y="607" class="rail">Authority is explicit, bounded and revocable</text>
+  <text x="94" y="632" class="blocked">MISSING · STALE · PARTIAL · CONFLICTING EVIDENCE  →  NO ACTION / REVIEW REQUIRED</text>
+</svg>
