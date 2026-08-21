@@ -220,6 +220,7 @@ reconciliation gate 及仍待补证的已知来源。只有 Account Truth gate �
   "account_truth": {
     "broker_statement_collector": {
       "enabled": true,
+      "daily_snapshot_roll_forward_enabled": false,
       "path": "broker_statement.csv",
       "poll_interval_seconds": 5,
       "stability_delay_seconds": 2,
@@ -237,6 +238,19 @@ fingerprint 暂存证据；相同内容的重复轮询和进程重启复用同�
 
 这不是自动入账：collector 不联系 provider，不修改生产 ledger、持仓、OMS、风控、kill switch
 或资本授权。差异仍需在 Account Truth 中人工复核，手工上传继续作为 fallback。
+
+Owner 可将 `daily_snapshot_roll_forward_enabled` 显式改为 `true`。准备阶段会以最后完整现金锚点
+加其后的净流水重算现金，并从每个已知标的的最后完整状态派生持仓快照，统一写为当日上海时间
+08:45。旧的 Karkinos 派生行会先被移除，因此文件不会逐日累积；同日重复运行不改文件。任何源
+事件晚于决策前时点、账本更新未被源文件覆盖、缺失/冲突/非有限状态或并发文件变化都会阻断。
+它不把“无活动”推断成新交易事实，也不接触券商、生产账本、OMS 或资本授权。
+
+账户范围与费用复核绑定 `karkinos.account_truth.source_fact_lineage.v1`：它对全部非派生、
+标准化原始行做与行顺序无关的完整指纹。只有该 lineage、已复核账户/窗口/资产范围以及从复核
+导入到当前导入之间的每一次 import 都完全一致时，当日派生快照才可继承复核。任何新增、修订、
+删除、损坏或中途短暂出现的不同原始事实都会立即使继承失效；之后把文件恢复成旧内容也不会让
+旧复核复活。当天快照仍保留独立的精确 import/promotion identity；继承仍可撤销，也不授予订单、
+账本、执行或资本权限。
 
 ## Canonical CSV 列
 
@@ -480,8 +494,10 @@ POST /api/account-truth/fee-schedule/reviews/revoke
 
 Account Truth Review Center 以显式人工流程提供同一顺序：选择已审查证据窗口、重新计算预览、
 检查买卖覆盖和汇总分项匹配，再输入复核人及完整确认短语。预览被阻断或已过期时不能接受。
-一条已接受记录只有在只读重算仍与其精确预览 fingerprint 一致时才显示为 `active`；当前
-Account Truth 或费用证据漂移会显示 `blocked`，旧记录仍保留供审计，并且仍可被人工明确撤销。
+一条已接受记录只有在只读重算仍与其预览 fingerprint 一致时才显示为 `active`。v2 预览绑定
+稳定原始事实 lineage 与范围复核 binding，而不是每天被替换的派生快照行；当前 Account Truth、
+费用证据或任一中间 import 漂移仍会显示 `blocked`，恢复旧文件也不能绕过。旧记录仍保留供审计，
+并且仍可被人工明确撤销。
 
 生效复核会生成版本化 cost-model reference。同一解析后的计算器（包括交易所覆盖和
 逐费用分项的金额舍入）同时用于刷新基准、每个 Formula 候选和参数变体。Critique、晋级

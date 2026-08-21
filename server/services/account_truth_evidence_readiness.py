@@ -18,6 +18,12 @@ from account_truth.evidence_scope_review import (
     EvidenceScopeReview,
     EvidenceScopeReviewRepository,
 )
+from account_truth.source_fact_lineage import (
+    account_truth_scope_review_binding_fingerprint,
+    project_account_truth_source_fact_lineage,
+    source_fact_lineage_history_is_continuous,
+    source_fact_lineages_match,
+)
 from server.account_truth_gate import (
     broker_events_for_import_run,
     build_latest_account_truth_promotion_evidence,
@@ -79,15 +85,73 @@ def build_account_truth_evidence_scope(
         import_run=import_run,
         events=events,
     )
-    review = (
-        EvidenceScopeReviewRepository(db_path).get_latest_review(import_run_id)
+    review_repository = (
+        EvidenceScopeReviewRepository(db_path)
         if db_path is not None and import_run_id
         else None
     )
+    review = (
+        review_repository.get_latest_review(import_run_id)
+        if review_repository is not None
+        else None
+    )
+    reviewed_import_run: BrokerImportRun | None = None
+    reviewed_observed_scope: dict[str, object] | None = None
+    inherited = False
+    if (
+        review is None
+        and review_repository is not None
+        and import_run is not None
+        and _lineage_allows_inheritance(observed_scope)
+    ):
+        candidates = review_repository.list_latest_reviews_across_imports(limit=1000)
+        for candidate in candidates:
+            if candidate.import_run_id == import_run.import_run_id:
+                continue
+            candidate_import = repository.get_import_run(candidate.import_run_id)
+            if candidate_import is None:
+                continue
+            candidate_events = broker_events_for_import_run(
+                repository, candidate_import
+            )
+            candidate_scope = project_account_truth_evidence_scope(
+                score={**score, "import_run_id": candidate_import.import_run_id},
+                import_run=candidate_import,
+                events=candidate_events,
+            )
+            if not source_fact_lineages_match(
+                _mapping(observed_scope.get("source_fact_lineage")),
+                _mapping(candidate_scope.get("source_fact_lineage")),
+            ):
+                continue
+            if not source_fact_lineage_history_is_continuous(
+                repository=repository,
+                current_import=import_run,
+                reviewed_import=candidate_import,
+            ):
+                continue
+            review = candidate
+            reviewed_import_run = candidate_import
+            reviewed_observed_scope = candidate_scope
+            inherited = True
+            break
+        if review is None and len(candidates) == 1000:
+            return _scope_with_blocker(
+                observed_scope,
+                "account_truth_evidence_scope_review_lineage_scan_truncated",
+            )
+        if review is None and candidates:
+            return _scope_with_blocker(
+                observed_scope,
+                "account_truth_evidence_scope_review_lineage_drift",
+            )
     return apply_account_truth_evidence_scope_review(
         observed_scope=observed_scope,
         import_run=import_run,
         review=review,
+        reviewed_import_run=reviewed_import_run,
+        reviewed_observed_scope=reviewed_observed_scope,
+        inherited=inherited,
     )
 
 
@@ -110,10 +174,24 @@ def project_account_truth_evidence_scope(
     )
     expected_event_count = int(import_run.valid_row_count) if import_run else 0
     event_count_matches = import_matches_score and len(events) == expected_event_count
+    source_fact_lineage = (
+        project_account_truth_source_fact_lineage(
+            import_run=import_run,
+            events=events,
+        )
+        if import_run is not None
+        else {
+            "status": "blocked",
+            "source_fact_fingerprint": None,
+            "derived_snapshot_count": 0,
+            "blockers": ["account_truth_source_fact_lineage_import_missing"],
+        }
+    )
 
     unique_events = [event for event in events if not event.is_row_duplicate]
     occurred_dates = [_aware_event_date(event.occurred_at) for event in unique_events]
-    settled_dates = [_settlement_date(event.settled_at) for event in unique_events]
+    settlement_values = [event.settled_at.strip() for event in unique_events]
+    settled_dates = [_settlement_date(value) for value in settlement_values if value]
     timestamps_valid = (
         bool(unique_events) and all(occurred_dates) and all(settled_dates)
     )
@@ -153,6 +231,7 @@ def project_account_truth_evidence_scope(
         blockers.append("account_truth_observed_scope_code_invalid")
     if not unique_events:
         blockers.append("account_truth_observed_events_missing")
+    blockers.extend(_unique_strings(source_fact_lineage.get("blockers")))
 
     required_actions = [
         "bind_account_truth_evidence_to_reviewed_account_scope",
@@ -166,6 +245,7 @@ def project_account_truth_evidence_scope(
         "source_schema_version": (
             str(import_run.schema_version) if import_run is not None else None
         ),
+        "source_fact_lineage": source_fact_lineage,
         "account_binding": {
             "status": "missing",
             "account_alias": None,
@@ -182,6 +262,9 @@ def project_account_truth_evidence_scope(
             "occurred_end_date": _maximum_date(occurred_dates),
             "settled_start_date": _minimum_date(settled_dates),
             "settled_end_date": _maximum_date(settled_dates),
+            "settlement_date_missing_count": sum(
+                not value for value in settlement_values
+            ),
             "event_count": len(events),
             "unique_event_count": len(unique_events),
             "expected_event_count": expected_event_count,
@@ -235,23 +318,38 @@ def apply_account_truth_evidence_scope_review(
     observed_scope: dict[str, object],
     import_run: BrokerImportRun | None,
     review: EvidenceScopeReview | None,
+    reviewed_import_run: BrokerImportRun | None = None,
+    reviewed_observed_scope: dict[str, object] | None = None,
+    inherited: bool = False,
 ) -> dict[str, object]:
     """Apply one exact, current human review without weakening observed facts."""
 
     if review is None:
         return observed_scope
     blockers = nonreviewable_account_truth_evidence_scope_blockers(observed_scope)
-    observed_fingerprint = str(observed_scope.get("observed_scope_fingerprint") or "")
-    if import_run is None or review.import_run_id != import_run.import_run_id:
+    review_scope = reviewed_observed_scope if inherited else observed_scope
+    review_import = reviewed_import_run if inherited else import_run
+    review_scope_fingerprint = str(
+        (review_scope or {}).get("observed_scope_fingerprint") or ""
+    )
+    if review_import is None or review.import_run_id != review_import.import_run_id:
         blockers.append("account_truth_evidence_scope_review_import_mismatch")
-    elif review.import_file_fingerprint != import_run.file_fingerprint:
+    elif review.import_file_fingerprint != review_import.file_fingerprint:
         blockers.append("account_truth_evidence_scope_review_source_drift")
-    if review.observed_scope_fingerprint != observed_fingerprint:
+    if not _reviewed_scope_fingerprint_matches(
+        review.observed_scope_fingerprint,
+        review_scope or {},
+    ):
         blockers.append("account_truth_evidence_scope_review_observed_drift")
+    if inherited:
+        current_lineage = _mapping(observed_scope.get("source_fact_lineage"))
+        reviewed_lineage = _mapping((review_scope or {}).get("source_fact_lineage"))
+        if not source_fact_lineages_match(current_lineage, reviewed_lineage):
+            blockers.append("account_truth_evidence_scope_review_lineage_drift")
     if review.decision == "revoked":
         blockers.append("account_truth_evidence_scope_review_revoked")
 
-    observed_window = _mapping(observed_scope.get("observed_event_window"))
+    observed_window = _mapping((review_scope or {}).get("observed_event_window"))
     observed_start = str(observed_window.get("occurred_start_date") or "")
     observed_end = str(observed_window.get("occurred_end_date") or "")
     if (
@@ -262,8 +360,10 @@ def apply_account_truth_evidence_scope_review(
     ):
         blockers.append("account_truth_evidence_scope_review_window_incomplete")
 
-    asset_scope = _mapping(observed_scope.get("asset_scope"))
-    observed_assets = set(_unique_strings(asset_scope.get("observed_asset_classes")))
+    reviewed_asset_scope = _mapping((review_scope or {}).get("asset_scope"))
+    observed_assets = set(
+        _unique_strings(reviewed_asset_scope.get("observed_asset_classes"))
+    )
     if not observed_assets.issubset(set(review.asset_classes)):
         blockers.append("account_truth_evidence_scope_review_assets_incomplete")
     if review.full_account_scope_attested is not True:
@@ -276,6 +376,10 @@ def apply_account_truth_evidence_scope_review(
         "provider": review.provider,
         "review_fingerprint": review.review_fingerprint,
         "reviewed_at": review.created_at,
+        "binding_mode": (
+            "inherited_source_fact_lineage" if inherited else "exact_import"
+        ),
+        "reviewed_import_run_id": review.import_run_id,
     }
     if blockers:
         blocked = {
@@ -295,6 +399,17 @@ def apply_account_truth_evidence_scope_review(
         blocked["evidence_fingerprint"] = _fingerprint(_scope_fingerprint_core(blocked))
         return blocked
 
+    current_asset_scope = _mapping(observed_scope.get("asset_scope"))
+    source_fact_fingerprint = str(
+        _mapping(observed_scope.get("source_fact_lineage")).get(
+            "source_fact_fingerprint"
+        )
+        or ""
+    )
+    review_binding_fingerprint = account_truth_scope_review_binding_fingerprint(
+        review,
+        source_fact_fingerprint=source_fact_fingerprint,
+    )
     complete = {
         **observed_scope,
         "status": "complete",
@@ -310,11 +425,12 @@ def apply_account_truth_evidence_scope_review(
             "end_date": review.coverage_end_date,
         },
         "asset_scope": {
-            **asset_scope,
+            **current_asset_scope,
             "status": "complete",
             "reviewed_asset_classes": review.asset_classes,
         },
         "review": review_payload,
+        "review_binding_fingerprint": review_binding_fingerprint,
         "blockers": [],
         "required_actions": [],
         "limitations": [
@@ -771,6 +887,12 @@ def _missing_evidence_scope() -> dict[str, object]:
         "status": "blocked",
         "import_run_id": None,
         "source_schema_version": None,
+        "source_fact_lineage": {
+            "status": "blocked",
+            "source_fact_fingerprint": None,
+            "derived_snapshot_count": 0,
+            "blockers": ["account_truth_source_fact_lineage_import_missing"],
+        },
         "account_binding": {
             "status": "missing",
             "account_alias": None,
@@ -787,6 +909,7 @@ def _missing_evidence_scope() -> dict[str, object]:
             "occurred_end_date": None,
             "settled_start_date": None,
             "settled_end_date": None,
+            "settlement_date_missing_count": 0,
             "event_count": 0,
             "unique_event_count": 0,
             "expected_event_count": 0,
@@ -832,6 +955,58 @@ def _missing_evidence_scope() -> dict[str, object]:
 
 def _mapping(value: object) -> dict[str, object]:
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _lineage_allows_inheritance(scope: dict[str, object]) -> bool:
+    lineage = _mapping(scope.get("source_fact_lineage"))
+    return bool(
+        lineage.get("status") == "pass"
+        and str(lineage.get("source_fact_fingerprint") or "")
+        and int(lineage.get("derived_snapshot_count") or 0) > 0
+    )
+
+
+def _scope_with_blocker(
+    scope: dict[str, object],
+    blocker: str,
+) -> dict[str, object]:
+    blocked = {
+        **scope,
+        "status": "blocked",
+        "blockers": list(
+            dict.fromkeys([*_unique_strings(scope.get("blockers")), blocker])
+        ),
+        "required_actions": ["record_reviewed_account_truth_evidence_scope"],
+    }
+    blocked["evidence_fingerprint"] = _fingerprint(_scope_fingerprint_core(blocked))
+    return blocked
+
+
+def _reviewed_scope_fingerprint_matches(
+    expected: str,
+    scope: dict[str, object],
+) -> bool:
+    current = str(scope.get("observed_scope_fingerprint") or "")
+    if expected == current:
+        return True
+    legacy_core = {
+        key: value
+        for key, value in scope.items()
+        if key
+        not in {
+            "source_fact_lineage",
+            "observed_scope_fingerprint",
+            "evidence_fingerprint",
+            "review",
+            "limitations",
+            "persisted_facts_only",
+            "provider_contacted",
+            "database_writes_performed",
+            "authorizes_execution",
+            "changes_capital_authority",
+        }
+    }
+    return expected == _fingerprint(legacy_core)
 
 
 def _scope_fingerprint_core(scope: dict[str, object]) -> dict[str, object]:

@@ -16,6 +16,7 @@ from server.account_truth_gate import (
 )
 from server.services.account_truth_evidence_readiness import (
     build_account_truth_evidence_readiness,
+    build_account_truth_evidence_scope,
     nonreviewable_account_truth_evidence_scope_blockers,
     project_account_truth_evidence_scope,
 )
@@ -127,9 +128,29 @@ def revoke_account_truth_evidence_scope_review(
         raise EvidenceScopeReviewRejected(
             "account_truth_evidence_scope_review_import_superseded"
         )
-    review = EvidenceScopeReviewRepository(db_path).revoke_latest(
-        import_run_id=import_run_id,
-        expected_observed_scope_fingerprint=expected_observed_scope_fingerprint,
+    current_scope = build_account_truth_evidence_scope(db_path=db_path, score=score)
+    if (
+        str(current_scope.get("observed_scope_fingerprint") or "")
+        != expected_observed_scope_fingerprint
+    ):
+        raise EvidenceScopeReviewRejected(
+            "account_truth_evidence_scope_review_fingerprint_mismatch"
+        )
+    review_binding = _mapping(current_scope.get("review"))
+    reviewed_import_run_id = str(
+        review_binding.get("reviewed_import_run_id") or import_run_id
+    )
+    repository = EvidenceScopeReviewRepository(db_path)
+    latest = repository.get_latest_review(reviewed_import_run_id)
+    if latest is None:
+        raise EvidenceScopeReviewRejected("account_truth_evidence_scope_review_missing")
+    if str(review_binding.get("review_id") or "") != latest.review_id:
+        raise EvidenceScopeReviewRejected(
+            "account_truth_evidence_scope_review_binding_drift"
+        )
+    review = repository.revoke_latest(
+        import_run_id=reviewed_import_run_id,
+        expected_observed_scope_fingerprint=latest.observed_scope_fingerprint,
         reviewer=reviewer,
     )
     return _command_response(

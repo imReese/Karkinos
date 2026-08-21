@@ -1,13 +1,29 @@
 from __future__ import annotations
 
+import hashlib
 from types import SimpleNamespace
 
-from account_truth.evidence_scope_review import EvidenceScopeReview
+from account_truth.broker_evidence import BrokerEvidenceRepository
+from account_truth.broker_statement import parse_broker_statement_csv
+from account_truth.broker_statement_roll_forward import (
+    roll_forward_daily_broker_statement,
+)
+from account_truth.evidence_scope_review import (
+    EvidenceScopeReview,
+    EvidenceScopeReviewRepository,
+)
 from server.services.account_truth_evidence_readiness import (
     apply_account_truth_evidence_scope_review,
+    build_account_truth_evidence_scope,
     project_account_truth_evidence_readiness,
     project_account_truth_evidence_scope,
 )
+
+_ROLL_FORWARD_STATEMENT = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note
+cash-anchor,cash_snapshot,2026-08-10T15:00:00+08:00,2026-08-10,,,,CNY,0,0,0,0,0,0,1000,,,
+position-anchor,position_snapshot,2026-08-10T15:00:00+08:00,2026-08-10,SYN001,Synthetic Stock,stock,CNY,0,10,0,0,0,0,,10,10,source position
+sell-001,trade_sell,2026-08-17T10:00:00+08:00,,SYN001,Synthetic Stock,stock,CNY,10,12,120,1,1,118,,0,0,source sell
+"""
 
 
 def _score(*, gate_status: str = "pass") -> dict[str, object]:
@@ -66,13 +82,24 @@ def _stored_event(
     settled_at: str = "2026-01-15",
     asset_class: str = "stock",
 ) -> SimpleNamespace:
+    identity = f"{event_type}:{occurred_at}:{settled_at}:{asset_class}"
+    row_number = {
+        "trade_buy": 2,
+        "trade_sell": 3,
+        "position_snapshot": 4,
+        "cash_snapshot": 5,
+    }.get(event_type, 6)
     return SimpleNamespace(
+        row_number=row_number,
+        row_fingerprint=hashlib.sha256(identity.encode("utf-8")).hexdigest(),
+        event_id=f"synthetic-{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:16]}",
         is_row_duplicate=False,
         event_type=event_type,
         occurred_at=occurred_at,
         settled_at=settled_at,
         asset_class=asset_class,
         currency="CNY",
+        note="synthetic persisted fact",
     )
 
 
@@ -353,6 +380,7 @@ def test_evidence_scope_exposes_observed_span_without_claiming_complete_coverage
         "occurred_end_date": "2026-01-15",
         "settled_start_date": "2026-01-15",
         "settled_end_date": "2026-01-15",
+        "settlement_date_missing_count": 0,
         "event_count": 3,
         "unique_event_count": 3,
         "expected_event_count": 3,
@@ -386,6 +414,30 @@ def test_evidence_scope_fails_closed_on_invalid_event_time_or_count():
     assert scope["observed_event_window"]["status"] == "blocked"
     assert "account_truth_evidence_scope_event_count_mismatch" in scope["blockers"]
     assert "account_truth_observed_event_time_invalid" in scope["blockers"]
+
+
+def test_evidence_scope_exposes_missing_optional_settlement_date() -> None:
+    scope = project_account_truth_evidence_scope(
+        score=_score(),
+        import_run=SimpleNamespace(
+            import_run_id="synthetic-import",
+            schema_version="karkinos.account_truth.broker_evidence.v2",
+            valid_row_count=1,
+        ),
+        events=[
+            _stored_event(
+                event_type="cash_snapshot",
+                occurred_at="2026-01-15T15:10:00+08:00",
+                settled_at="",
+                asset_class="",
+            )
+        ],
+    )
+
+    assert scope["observed_event_window"]["status"] == "available"
+    assert scope["observed_event_window"]["settled_start_date"] is None
+    assert scope["observed_event_window"]["settlement_date_missing_count"] == 1
+    assert "account_truth_observed_event_time_invalid" not in scope["blockers"]
 
 
 def test_human_scope_review_cannot_clear_persisted_evidence_integrity_blocker():
@@ -494,3 +546,193 @@ def test_revoked_scope_review_fails_closed():
 
     assert scope["status"] == "blocked"
     assert "account_truth_evidence_scope_review_revoked" in scope["blockers"]
+
+
+def test_scope_review_inherits_across_valid_daily_derived_snapshots(tmp_path):
+    statement_path = tmp_path / "broker_statement.csv"
+    statement_path.write_text(_ROLL_FORWARD_STATEMENT, encoding="utf-8")
+    database_path = tmp_path / "app.db"
+    broker_repository = BrokerEvidenceRepository(database_path)
+
+    first_roll = roll_forward_daily_broker_statement(
+        path=statement_path,
+        run_date="2026-08-21",
+        max_file_bytes=1024 * 1024,
+    )
+    first_import = broker_repository.save_preview(
+        parse_broker_statement_csv(statement_path.read_bytes())
+    )
+    first_scope = project_account_truth_evidence_scope(
+        score={"import_run_id": first_import.import_run_id},
+        import_run=first_import,
+        events=broker_repository.list_events(first_import.import_run_id),
+    )
+    scope_repository = EvidenceScopeReviewRepository(database_path)
+    accepted = scope_repository.record_review(
+        import_run_id=first_import.import_run_id,
+        import_file_fingerprint=first_import.file_fingerprint,
+        observed_scope_fingerprint=str(first_scope["observed_scope_fingerprint"]),
+        provider="synthetic_broker",
+        account_alias="synthetic_account",
+        account_reference_hash="sha256:" + "a" * 64,
+        coverage_start_date="2026-01-01",
+        coverage_end_date="2026-12-31",
+        asset_classes=["stock"],
+        full_account_scope_attested=True,
+        reviewer="synthetic_owner",
+    )
+
+    second_roll = roll_forward_daily_broker_statement(
+        path=statement_path,
+        run_date="2026-08-24",
+        max_file_bytes=1024 * 1024,
+    )
+    second_import = broker_repository.save_preview(
+        parse_broker_statement_csv(statement_path.read_bytes())
+    )
+    inherited = build_account_truth_evidence_scope(
+        db_path=database_path,
+        score={"import_run_id": second_import.import_run_id},
+    )
+
+    assert first_roll.source_fact_fingerprint == second_roll.source_fact_fingerprint
+    assert inherited["status"] == "complete"
+    assert inherited["review"]["review_id"] == accepted.review_id
+    assert inherited["review"]["binding_mode"] == "inherited_source_fact_lineage"
+    assert inherited["review"]["reviewed_import_run_id"] == first_import.import_run_id
+    assert inherited["snapshot_evidence"]["latest_cash_snapshot_date"] == "2026-08-24"
+    assert inherited["blockers"] == []
+
+
+def test_scope_review_inheritance_fails_closed_on_source_fact_drift(tmp_path):
+    statement_path = tmp_path / "broker_statement.csv"
+    statement_path.write_text(_ROLL_FORWARD_STATEMENT, encoding="utf-8")
+    database_path = tmp_path / "app.db"
+    broker_repository = BrokerEvidenceRepository(database_path)
+
+    roll_forward_daily_broker_statement(
+        path=statement_path,
+        run_date="2026-08-21",
+        max_file_bytes=1024 * 1024,
+    )
+    first_import = broker_repository.save_preview(
+        parse_broker_statement_csv(statement_path.read_bytes())
+    )
+    first_scope = project_account_truth_evidence_scope(
+        score={"import_run_id": first_import.import_run_id},
+        import_run=first_import,
+        events=broker_repository.list_events(first_import.import_run_id),
+    )
+    EvidenceScopeReviewRepository(database_path).record_review(
+        import_run_id=first_import.import_run_id,
+        import_file_fingerprint=first_import.file_fingerprint,
+        observed_scope_fingerprint=str(first_scope["observed_scope_fingerprint"]),
+        provider="synthetic_broker",
+        account_alias="synthetic_account",
+        account_reference_hash="sha256:" + "a" * 64,
+        coverage_start_date="2026-01-01",
+        coverage_end_date="2026-12-31",
+        asset_classes=["stock"],
+        full_account_scope_attested=True,
+        reviewer="synthetic_owner",
+    )
+
+    changed = statement_path.read_text(encoding="utf-8").replace(
+        "source sell\n",
+        "source sell corrected\n",
+    )
+    statement_path.write_text(changed, encoding="utf-8")
+    roll_forward_daily_broker_statement(
+        path=statement_path,
+        run_date="2026-08-24",
+        max_file_bytes=1024 * 1024,
+    )
+    changed_import = broker_repository.save_preview(
+        parse_broker_statement_csv(statement_path.read_bytes())
+    )
+    blocked = build_account_truth_evidence_scope(
+        db_path=database_path,
+        score={"import_run_id": changed_import.import_run_id},
+    )
+
+    assert blocked["status"] == "blocked"
+    assert "account_truth_evidence_scope_review_lineage_drift" in blocked["blockers"]
+    assert blocked["review"] is None
+
+    statement_path.write_text(_ROLL_FORWARD_STATEMENT, encoding="utf-8")
+    roll_forward_daily_broker_statement(
+        path=statement_path,
+        run_date="2026-08-25",
+        max_file_bytes=1024 * 1024,
+    )
+    reverted_import = broker_repository.save_preview(
+        parse_broker_statement_csv(statement_path.read_bytes())
+    )
+    still_blocked = build_account_truth_evidence_scope(
+        db_path=database_path,
+        score={"import_run_id": reverted_import.import_run_id},
+    )
+
+    assert still_blocked["status"] == "blocked"
+    assert "account_truth_evidence_scope_review_lineage_drift" in (
+        still_blocked["blockers"]
+    )
+
+
+def test_revoking_inherited_scope_review_blocks_current_daily_snapshot(tmp_path):
+    statement_path = tmp_path / "broker_statement.csv"
+    statement_path.write_text(_ROLL_FORWARD_STATEMENT, encoding="utf-8")
+    database_path = tmp_path / "app.db"
+    broker_repository = BrokerEvidenceRepository(database_path)
+
+    roll_forward_daily_broker_statement(
+        path=statement_path,
+        run_date="2026-08-21",
+        max_file_bytes=1024 * 1024,
+    )
+    first_import = broker_repository.save_preview(
+        parse_broker_statement_csv(statement_path.read_bytes())
+    )
+    first_scope = project_account_truth_evidence_scope(
+        score={"import_run_id": first_import.import_run_id},
+        import_run=first_import,
+        events=broker_repository.list_events(first_import.import_run_id),
+    )
+    scope_repository = EvidenceScopeReviewRepository(database_path)
+    scope_repository.record_review(
+        import_run_id=first_import.import_run_id,
+        import_file_fingerprint=first_import.file_fingerprint,
+        observed_scope_fingerprint=str(first_scope["observed_scope_fingerprint"]),
+        provider="synthetic_broker",
+        account_alias="synthetic_account",
+        account_reference_hash="sha256:" + "a" * 64,
+        coverage_start_date="2026-01-01",
+        coverage_end_date="2026-12-31",
+        asset_classes=["stock"],
+        full_account_scope_attested=True,
+        reviewer="synthetic_owner",
+    )
+    roll_forward_daily_broker_statement(
+        path=statement_path,
+        run_date="2026-08-24",
+        max_file_bytes=1024 * 1024,
+    )
+    current_import = broker_repository.save_preview(
+        parse_broker_statement_csv(statement_path.read_bytes())
+    )
+    scope_repository.revoke_latest(
+        import_run_id=first_import.import_run_id,
+        expected_observed_scope_fingerprint=str(
+            first_scope["observed_scope_fingerprint"]
+        ),
+        reviewer="synthetic_owner",
+    )
+
+    blocked = build_account_truth_evidence_scope(
+        db_path=database_path,
+        score={"import_run_id": current_import.import_run_id},
+    )
+
+    assert blocked["status"] == "blocked"
+    assert blocked["review"]["binding_mode"] == "inherited_source_fact_lineage"
+    assert "account_truth_evidence_scope_review_revoked" in blocked["blockers"]

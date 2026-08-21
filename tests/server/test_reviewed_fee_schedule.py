@@ -12,10 +12,17 @@ from fastapi.routing import APIRoute
 
 from account_truth.broker_evidence import BrokerEvidenceRepository
 from account_truth.broker_statement import parse_broker_statement_csv
+from account_truth.broker_statement_roll_forward import (
+    roll_forward_daily_broker_statement,
+)
 from account_truth.evidence_scope_review import EvidenceScopeReviewRepository
 from core.types import CommissionType, OrderSide
 from server.config import BrokerFeeScheduleConfig
 from server.db import AppDatabase
+from server.services.account_truth_evidence_readiness import (
+    build_account_truth_evidence_scope,
+    project_account_truth_evidence_scope,
+)
 from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
 from server.services.reviewed_fee_schedule import (
     REVIEWED_FEE_SCHEDULE_APPROVAL_CONFIRMATION,
@@ -703,3 +710,172 @@ def test_fee_schedule_http_workflow_rechecks_drift_and_revokes_exact_review(
     assert revoked["status"] == "revoked"
     assert revoked["authorizes_execution"] is False
     assert asyncio.run(get_status())["status"] == "revoked"
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_reviewed_fee_schedule_survives_only_valid_daily_snapshot_lineage(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    statement_path = tmp_path / "broker_statement.csv"
+    statement_path.write_text(_BROKER_TRADES, encoding="utf-8")
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    broker_repository = BrokerEvidenceRepository(db._path)
+    state = SimpleNamespace(
+        db=db,
+        config=SimpleNamespace(broker_fee_schedule=_schedule()),
+    )
+
+    roll_forward_daily_broker_statement(
+        path=statement_path,
+        run_date="2026-08-21",
+        max_file_bytes=1024 * 1024,
+    )
+    reviewed_import = broker_repository.save_preview(
+        parse_broker_statement_csv(statement_path.read_bytes())
+    )
+    observed = project_account_truth_evidence_scope(
+        score={"import_run_id": reviewed_import.import_run_id},
+        import_run=reviewed_import,
+        events=broker_repository.list_events(reviewed_import.import_run_id),
+    )
+    scope_repository = EvidenceScopeReviewRepository(db._path)
+    scope_review = scope_repository.record_review(
+        import_run_id=reviewed_import.import_run_id,
+        import_file_fingerprint=reviewed_import.file_fingerprint,
+        observed_scope_fingerprint=str(observed["observed_scope_fingerprint"]),
+        provider="synthetic_broker",
+        account_alias="synthetic_account",
+        account_reference_hash="sha256:" + "a" * 64,
+        coverage_start_date="2026-01-01",
+        coverage_end_date="2026-12-31",
+        asset_classes=["stock"],
+        full_account_scope_attested=True,
+        reviewer="synthetic_owner",
+    )
+    reviewed_scope = build_account_truth_evidence_scope(
+        db_path=db._path,
+        score={"import_run_id": reviewed_import.import_run_id},
+    )
+    context = {
+        "readiness": {
+            "status": "ready",
+            "account_truth_import_run_id": reviewed_import.import_run_id,
+            "evidence_scope": reviewed_scope,
+        },
+        "promotion": {
+            "status": "clear",
+            "import_run_id": reviewed_import.import_run_id,
+            "source_fingerprint": "sha256:" + "c" * 64,
+        },
+    }
+    monkeypatch.setattr(
+        "server.services.reviewed_fee_schedule.build_account_truth_evidence_readiness",
+        lambda state: context["readiness"],
+    )
+    monkeypatch.setattr(
+        "server.services.reviewed_fee_schedule.build_latest_account_truth_promotion_evidence",
+        lambda state: context["promotion"],
+    )
+    preview = build_reviewed_fee_schedule_preview(
+        state,
+        effective_start_date="2026-01-01",
+        effective_end_date="2026-12-31",
+    )
+    assert preview["status"] == "ready"
+    assert preview["account_truth_binding_mode"] == "stable_source_fact_lineage"
+    fee_review = ReviewedFeeScheduleReviewRepository(db._path).record_review(
+        preview=preview,
+        expected_preview_fingerprint=preview["preview_fingerprint"],
+        reviewer="synthetic_owner",
+        confirmation=REVIEWED_FEE_SCHEDULE_APPROVAL_CONFIRMATION,
+    )
+
+    roll_forward_daily_broker_statement(
+        path=statement_path,
+        run_date="2026-08-24",
+        max_file_bytes=1024 * 1024,
+    )
+    current_import = broker_repository.save_preview(
+        parse_broker_statement_csv(statement_path.read_bytes())
+    )
+    current_scope = build_account_truth_evidence_scope(
+        db_path=db._path,
+        score={"import_run_id": current_import.import_run_id},
+    )
+    context["readiness"] = {
+        "status": "ready",
+        "account_truth_import_run_id": current_import.import_run_id,
+        "evidence_scope": current_scope,
+    }
+    context["promotion"] = {
+        "status": "clear",
+        "import_run_id": current_import.import_run_id,
+        "source_fingerprint": "sha256:" + "d" * 64,
+    }
+
+    replayed_preview = build_reviewed_fee_schedule_preview(
+        state,
+        effective_start_date="2026-01-01",
+        effective_end_date="2026-12-31",
+    )
+    status = build_reviewed_fee_schedule_review_status(
+        state,
+        as_of_date="2026-08-24",
+    )
+    resolution = resolve_reviewed_fee_schedule(
+        state,
+        start_date="2026-01-01",
+        end_date="2026-08-24",
+        universe=("600000.SH",),
+        asset_classes=("stock",),
+        expected_cost_model_reference=reviewed_cost_model_reference(fee_review),
+    )
+
+    assert current_scope["review"]["review_id"] == scope_review.review_id
+    assert current_scope["review"]["binding_mode"] == ("inherited_source_fact_lineage")
+    assert replayed_preview["preview_fingerprint"] == preview["preview_fingerprint"]
+    assert status["status"] == "active"
+    assert status["blockers"] == []
+    assert (
+        active_review_matches_fee_evidence(
+            db,
+            resolution.fee_evidence,
+            as_of_date="2026-08-24",
+        )
+        == []
+    )
+
+    scope_repository.revoke_latest(
+        import_run_id=reviewed_import.import_run_id,
+        expected_observed_scope_fingerprint=str(observed["observed_scope_fingerprint"]),
+        reviewer="synthetic_owner",
+    )
+    blockers = active_review_matches_fee_evidence(
+        db,
+        resolution.fee_evidence,
+        as_of_date="2026-08-24",
+    )
+    assert "reviewed_fee_schedule_account_truth_scope_review_revoked" in blockers
+
+    changed = statement_path.read_text(encoding="utf-8").replace(
+        "synthetic sell,0.10",
+        "synthetic sell corrected,0.10",
+    )
+    statement_path.write_text(changed, encoding="utf-8")
+    roll_forward_daily_broker_statement(
+        path=statement_path,
+        run_date="2026-08-25",
+        max_file_bytes=1024 * 1024,
+    )
+    broker_repository.save_preview(
+        parse_broker_statement_csv(statement_path.read_bytes())
+    )
+    drift_blockers = active_review_matches_fee_evidence(
+        db,
+        resolution.fee_evidence,
+        as_of_date="2026-08-25",
+    )
+    assert "reviewed_fee_schedule_account_truth_import_drift" in drift_blockers

@@ -294,6 +294,20 @@ def _validate_row(
             )
         )
 
+    # Settlement evidence is optional for transaction rows whose broker export
+    # has not supplied a separate settlement date.  A non-empty settlement
+    # value is validated by downstream scope projections; occurred_at and
+    # currency remain mandatory persisted facts.
+    for column in ("occurred_at", "currency"):
+        if not row[column]:
+            errors.append(
+                BrokerStatementValidationError(
+                    row_number=row_number,
+                    code="missing_required_value",
+                    message=f"{column} is required",
+                )
+            )
+
     for column in ("broker_order_id", "client_order_id"):
         if row[column] and not _ORDER_ID_PATTERN.fullmatch(row[column]):
             errors.append(

@@ -34,10 +34,17 @@ from account_truth.broker_evidence import (
     BrokerEvidenceRepository,
 )
 from account_truth.evidence_scope_review import (
+    EvidenceScopeReview,
     EvidenceScopeReviewReadRejected,
     EvidenceScopeReviewRepository,
 )
 from account_truth.reconciliation import MONEY_RECONCILIATION_TOLERANCE
+from account_truth.source_fact_lineage import (
+    account_truth_scope_review_binding_fingerprint,
+    project_account_truth_source_fact_lineage,
+    source_fact_lineage_history_is_continuous,
+    source_fact_lineages_match,
+)
 from core.types import CommissionType, OrderSide
 from execution.commission import (
     CommissionCalculator,
@@ -53,7 +60,13 @@ from server.services.account_truth_evidence_readiness import (
 from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
 
 REVIEWED_FEE_SCHEDULE_PREVIEW_SCHEMA_VERSION = (
-    "karkinos.account_truth.reviewed_fee_schedule_preview.v1"
+    "karkinos.account_truth.reviewed_fee_schedule_preview.v2"
+)
+_SUPPORTED_REVIEWED_FEE_SCHEDULE_PREVIEW_SCHEMA_VERSIONS = frozenset(
+    {
+        "karkinos.account_truth.reviewed_fee_schedule_preview.v1",
+        REVIEWED_FEE_SCHEDULE_PREVIEW_SCHEMA_VERSION,
+    }
 )
 REVIEWED_FEE_SCHEDULE_REVIEW_SCHEMA_VERSION = (
     "karkinos.account_truth.reviewed_fee_schedule_review.v1"
@@ -575,9 +588,30 @@ def build_reviewed_fee_schedule_preview(
     promotion = build_latest_account_truth_promotion_evidence(state)
     evidence_scope = _mapping(readiness.get("evidence_scope"))
     account_binding = _mapping(evidence_scope.get("account_binding"))
+    scope_review = _mapping(evidence_scope.get("review"))
+    source_fact_lineage = _mapping(evidence_scope.get("source_fact_lineage"))
     account_alias = str(account_binding.get("account_alias") or "")
     account_reference_hash = str(account_binding.get("account_reference_hash") or "")
     import_run_id = str(readiness.get("account_truth_import_run_id") or "")
+    reviewed_import_run_id = str(
+        scope_review.get("reviewed_import_run_id") or import_run_id
+    )
+    account_truth_source_fingerprint = str(
+        source_fact_lineage.get("source_fact_fingerprint")
+        or promotion.get("source_fingerprint")
+        or ""
+    )
+    account_truth_scope_fingerprint = str(
+        evidence_scope.get("review_binding_fingerprint")
+        or evidence_scope.get("evidence_fingerprint")
+        or ""
+    )
+    account_truth_binding_mode = (
+        "stable_source_fact_lineage"
+        if source_fact_lineage.get("status") == "pass"
+        and evidence_scope.get("review_binding_fingerprint")
+        else "legacy_exact_import"
+    )
     issues: list[str] = []
     if readiness.get("status") != "ready":
         issues.append("reviewed_fee_schedule_account_truth_not_ready")
@@ -589,9 +623,9 @@ def build_reviewed_fee_schedule_preview(
         issues.append("reviewed_fee_schedule_account_binding_mismatch")
     if not _SHA256.fullmatch(account_reference_hash):
         issues.append("reviewed_fee_schedule_account_reference_invalid")
-    if not _SHA256.fullmatch(str(promotion.get("source_fingerprint") or "")):
+    if not _SHA256.fullmatch(account_truth_source_fingerprint):
         issues.append("reviewed_fee_schedule_account_truth_source_fingerprint_invalid")
-    if not _SHA256.fullmatch(str(evidence_scope.get("evidence_fingerprint") or "")):
+    if not _SHA256.fullmatch(account_truth_scope_fingerprint):
         issues.append("reviewed_fee_schedule_account_truth_scope_fingerprint_invalid")
 
     events: Sequence[Any] = ()
@@ -623,13 +657,10 @@ def build_reviewed_fee_schedule_preview(
         "schedule_fingerprint": schedule_fingerprint,
         "effective_start_date": start_date,
         "effective_end_date": end_date,
-        "account_truth_import_run_id": import_run_id,
-        "account_truth_source_fingerprint": str(
-            promotion.get("source_fingerprint") or ""
-        ),
-        "account_truth_scope_fingerprint": str(
-            evidence_scope.get("evidence_fingerprint") or ""
-        ),
+        "account_truth_import_run_id": reviewed_import_run_id,
+        "account_truth_source_fingerprint": account_truth_source_fingerprint,
+        "account_truth_scope_fingerprint": account_truth_scope_fingerprint,
+        "account_truth_binding_mode": account_truth_binding_mode,
         "account_reference_hash": account_reference_hash,
         "account_truth_readiness_status": readiness.get("status"),
         "account_truth_promotion_status": promotion.get("status"),
@@ -690,7 +721,11 @@ def build_reviewed_fee_schedule_review_status(
         )
 
     blockers = [str(item) for item in current_preview.get("issues") or []]
-    if current_preview.get("preview_fingerprint") != review.preview_fingerprint:
+    if not _review_matches_current_preview(
+        state=state,
+        review=review,
+        current_preview=current_preview,
+    ):
         blockers.append("reviewed_fee_schedule_source_drift")
     if as_of_date is not None:
         try:
@@ -731,6 +766,89 @@ def _review_status_payload(
         "authorizes_execution": False,
         "changes_capital_authority": False,
     }
+
+
+def _review_matches_current_preview(
+    *,
+    state: Any,
+    review: ReviewedFeeScheduleReview,
+    current_preview: Mapping[str, Any],
+) -> bool:
+    """Permit only exact v2 replay or bounded migration from a legacy v1 review."""
+
+    if current_preview.get("preview_fingerprint") == review.preview_fingerprint:
+        return True
+    stored_preview = _validated_preview(review.preview)
+    if stored_preview.get("schema_version") != (
+        "karkinos.account_truth.reviewed_fee_schedule_preview.v1"
+    ):
+        return False
+    if current_preview.get("status") != "ready" or current_preview.get("issues"):
+        return False
+    stable_fields = (
+        "status",
+        "schedule",
+        "schedule_fingerprint",
+        "effective_start_date",
+        "effective_end_date",
+        "account_reference_hash",
+        "component_reconciliation",
+        "persisted_broker_events_only",
+        "stores_broker_event_details",
+        "provider_contacted",
+        "authorizes_execution",
+        "changes_capital_authority",
+    )
+    if any(
+        stored_preview.get(key) != current_preview.get(key) for key in stable_fields
+    ):
+        return False
+
+    db_path = _db_path(state)
+    if db_path is None:
+        return False
+    try:
+        repository = BrokerEvidenceRepository(db_path)
+        reviewed_import = repository.get_import_run(review.account_truth_import_run_id)
+        promotion = build_latest_account_truth_promotion_evidence(state)
+        current_import_id = str(promotion.get("import_run_id") or "")
+        current_import = repository.get_import_run(current_import_id)
+        if reviewed_import is None or current_import is None:
+            return False
+        reviewed_lineage = _source_fact_lineage_for_import(repository, reviewed_import)
+        current_lineage = _source_fact_lineage_for_import(repository, current_import)
+        lineage_history_continuous = source_fact_lineage_history_is_continuous(
+            repository=repository,
+            current_import=current_import,
+            reviewed_import=reviewed_import,
+        )
+        readiness = build_account_truth_evidence_readiness(state)
+        original_scope_review = EvidenceScopeReviewRepository(
+            db_path
+        ).get_latest_review(review.account_truth_import_run_id)
+    except (BrokerEvidenceReadRejected, EvidenceScopeReviewReadRejected):
+        return False
+    if not source_fact_lineages_match(
+        current_lineage,
+        reviewed_lineage,
+        require_current_derived_snapshot=(
+            current_import.import_run_id != reviewed_import.import_run_id
+        ),
+    ):
+        return False
+    if not lineage_history_continuous:
+        return False
+
+    current_scope = _mapping(readiness.get("evidence_scope"))
+    current_scope_review = _mapping(current_scope.get("review"))
+    return bool(
+        readiness.get("status") == "ready"
+        and original_scope_review is not None
+        and original_scope_review.decision == "accepted"
+        and current_scope_review.get("review_id") == original_scope_review.review_id
+        and original_scope_review.account_reference_hash
+        == review.account_reference_hash
+    )
 
 
 def resolve_reviewed_fee_schedule(
@@ -779,7 +897,11 @@ def resolve_reviewed_fee_schedule(
         raise ReviewedFeeScheduleRejected(
             "reviewed_fee_schedule_current_reconciliation_blocked"
         )
-    if preview.get("preview_fingerprint") != review.preview_fingerprint:
+    if not _review_matches_current_preview(
+        state=state,
+        review=review,
+        current_preview=preview,
+    ):
         raise ReviewedFeeScheduleRejected("reviewed_fee_schedule_source_drift")
     notional_limits, notional_envelope_fingerprint = _validated_notional_envelope(
         _mapping(preview.get("component_reconciliation")).get(
@@ -897,17 +1019,60 @@ def active_review_matches_fee_evidence(
         if fee_evidence.get(key) != value:
             blockers.append(f"reviewed_fee_schedule_binding_mismatch:{key}")
     try:
-        import_runs = BrokerEvidenceRepository(path).list_import_runs(limit=1)
-        latest_scope_review = EvidenceScopeReviewRepository(path).get_latest_review(
+        broker_repository = BrokerEvidenceRepository(path)
+        import_runs = broker_repository.list_import_runs(limit=1)
+        reviewed_import = broker_repository.get_import_run(
+            review.account_truth_import_run_id
+        )
+        current_import = import_runs[0] if import_runs else None
+        scope_repository = EvidenceScopeReviewRepository(path)
+        latest_scope_review = (
+            _current_scope_review_for_lineage(
+                broker_repository=broker_repository,
+                review_repository=scope_repository,
+                current_import=current_import,
+            )
+            if current_import is not None
+            else None
+        )
+        current_lineage = (
+            _source_fact_lineage_for_import(broker_repository, current_import)
+            if current_import is not None
+            else {}
+        )
+        reviewed_lineage = (
+            _source_fact_lineage_for_import(broker_repository, reviewed_import)
+            if reviewed_import is not None
+            else {}
+        )
+        lineage_history_continuous = bool(
+            current_import is not None
+            and reviewed_import is not None
+            and source_fact_lineage_history_is_continuous(
+                repository=broker_repository,
+                current_import=current_import,
+                reviewed_import=reviewed_import,
+            )
+        )
+        original_scope_review = scope_repository.get_latest_review(
             review.account_truth_import_run_id
         )
     except (BrokerEvidenceReadRejected, EvidenceScopeReviewReadRejected) as exc:
         blockers.append(str(getattr(exc, "code", "account_truth_review_read_failed")))
     else:
-        if not import_runs:
+        if current_import is None or reviewed_import is None:
             blockers.append("reviewed_fee_schedule_account_truth_import_missing")
-        elif import_runs[0].import_run_id != review.account_truth_import_run_id:
-            blockers.append("reviewed_fee_schedule_account_truth_import_drift")
+        else:
+            if not source_fact_lineages_match(
+                current_lineage,
+                reviewed_lineage,
+                require_current_derived_snapshot=(
+                    current_import.import_run_id != reviewed_import.import_run_id
+                ),
+            ):
+                blockers.append("reviewed_fee_schedule_account_truth_import_drift")
+            elif not lineage_history_continuous:
+                blockers.append("reviewed_fee_schedule_account_truth_import_drift")
         if latest_scope_review is None:
             blockers.append("reviewed_fee_schedule_account_truth_scope_review_missing")
         elif latest_scope_review.decision != "accepted":
@@ -916,6 +1081,41 @@ def active_review_matches_fee_evidence(
             latest_scope_review.account_reference_hash != review.account_reference_hash
         ):
             blockers.append("reviewed_fee_schedule_account_reference_drift")
+        elif current_import is not None:
+            preview_schema_version = str(review.preview.get("schema_version") or "")
+            if (
+                preview_schema_version == REVIEWED_FEE_SCHEDULE_PREVIEW_SCHEMA_VERSION
+                and review.preview.get("account_truth_binding_mode")
+                == "stable_source_fact_lineage"
+            ):
+                current_source_fingerprint = str(
+                    current_lineage.get("source_fact_fingerprint") or ""
+                )
+                current_scope_fingerprint = (
+                    account_truth_scope_review_binding_fingerprint(
+                        latest_scope_review,
+                        source_fact_fingerprint=current_source_fingerprint,
+                    )
+                )
+                if (
+                    review.account_truth_source_fingerprint
+                    != current_source_fingerprint
+                ):
+                    blockers.append(
+                        "reviewed_fee_schedule_account_truth_source_lineage_drift"
+                    )
+                if review.account_truth_scope_fingerprint != current_scope_fingerprint:
+                    blockers.append(
+                        "reviewed_fee_schedule_account_truth_scope_binding_drift"
+                    )
+            else:
+                if (
+                    original_scope_review is None
+                    or latest_scope_review.review_id != original_scope_review.review_id
+                ):
+                    blockers.append(
+                        "reviewed_fee_schedule_account_truth_scope_binding_drift"
+                    )
     if as_of_date:
         try:
             normalized = date.fromisoformat(str(as_of_date)[:10]).isoformat()
@@ -927,6 +1127,47 @@ def active_review_matches_fee_evidence(
             ):
                 blockers.append("reviewed_fee_schedule_action_date_not_covered")
     return list(dict.fromkeys(blockers))
+
+
+def _current_scope_review_for_lineage(
+    *,
+    broker_repository: BrokerEvidenceRepository,
+    review_repository: EvidenceScopeReviewRepository,
+    current_import: Any,
+) -> EvidenceScopeReview | None:
+    exact = review_repository.get_latest_review(current_import.import_run_id)
+    if exact is not None:
+        return exact
+    current_lineage = _source_fact_lineage_for_import(
+        broker_repository,
+        current_import,
+    )
+    if (
+        current_lineage.get("status") != "pass"
+        or int(current_lineage.get("derived_snapshot_count") or 0) < 1
+    ):
+        return None
+    candidates = review_repository.list_latest_reviews_across_imports(limit=1000)
+    if len(candidates) == 1000:
+        raise EvidenceScopeReviewReadRejected(
+            "account_truth_evidence_scope_review_lineage_scan_truncated"
+        )
+    for candidate in candidates:
+        candidate_import = broker_repository.get_import_run(candidate.import_run_id)
+        if candidate_import is None:
+            continue
+        candidate_lineage = _source_fact_lineage_for_import(
+            broker_repository,
+            candidate_import,
+        )
+        if source_fact_lineages_match(current_lineage, candidate_lineage):
+            if source_fact_lineage_history_is_continuous(
+                repository=broker_repository,
+                current_import=current_import,
+                reviewed_import=candidate_import,
+            ):
+                return candidate
+    return None
 
 
 def _compare_schedule_to_events(
@@ -1101,6 +1342,19 @@ def _compare_schedule_to_events(
         "reconciled_notional_envelope": notional_envelope,
         "issues": list(dict.fromkeys(issues)),
     }
+
+
+def _source_fact_lineage_for_import(
+    repository: BrokerEvidenceRepository,
+    import_run: Any,
+) -> dict[str, object]:
+    events = repository.list_events(
+        import_run.duplicate_of_import_run_id or import_run.import_run_id
+    )
+    return project_account_truth_source_fact_lineage(
+        import_run=import_run,
+        events=events,
+    )
 
 
 def _schedule_from_config(config: Any) -> dict[str, Any]:
@@ -1336,7 +1590,9 @@ def _commission_calculator(
 
 def _validated_preview(preview: Mapping[str, Any]) -> dict[str, Any]:
     normalized = dict(preview)
-    if normalized.get("schema_version") != REVIEWED_FEE_SCHEDULE_PREVIEW_SCHEMA_VERSION:
+    if normalized.get("schema_version") not in (
+        _SUPPORTED_REVIEWED_FEE_SCHEDULE_PREVIEW_SCHEMA_VERSIONS
+    ):
         raise ReviewedFeeScheduleRejected(
             "reviewed_fee_schedule_preview_schema_invalid"
         )

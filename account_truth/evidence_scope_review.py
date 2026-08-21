@@ -213,6 +213,37 @@ class EvidenceScopeReviewRepository:
             ).fetchall()
         return [_review_from_row(row) for row in rows]
 
+    def list_latest_reviews_across_imports(
+        self,
+        *,
+        limit: int = 1000,
+    ) -> list[EvidenceScopeReview]:
+        """Return the latest append-only decision for each reviewed import."""
+
+        if limit < 1 or limit > 1000:
+            raise EvidenceScopeReviewReadRejected(
+                "account_truth_evidence_scope_review_scan_limit_invalid"
+            )
+        with self._read_connection() as conn:
+            if conn is None:
+                return []
+            rows = conn.execute(
+                """
+                SELECT review.*
+                FROM account_truth_evidence_scope_reviews AS review
+                JOIN (
+                    SELECT import_run_id, MAX(id) AS latest_id
+                    FROM account_truth_evidence_scope_reviews
+                    GROUP BY import_run_id
+                ) AS latest
+                  ON latest.latest_id = review.id
+                ORDER BY review.id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [_review_from_row(row) for row in rows]
+
     @contextmanager
     def _read_connection(self) -> Iterator[sqlite3.Connection | None]:
         if not self._path.is_file():

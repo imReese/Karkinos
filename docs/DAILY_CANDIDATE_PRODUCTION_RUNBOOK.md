@@ -35,6 +35,10 @@ capital authority. A candidate is not a promise of profit.
    cannot refresh old evidence. Snapshot age at Decision must remain inside the
    reviewed maximum. The evidence also binds its source fingerprint, valuation
    snapshot, and positive ledger cutoff.
+   Owner-enabled no-activity roll-forward may carry an existing scope/fee
+   review to the current date only through the stable non-derived source-fact
+   lineage. Every intervening import must have the same lineage; a temporary
+   drift followed by byte restoration does not reactivate the old review.
 3. The final Decision and plan are generated only from 09:35 through 09:44
    Asia/Shanghai. Every order intent uses its current persisted market quote
    rather than the historical signal price, and binds that quote's positive
@@ -52,7 +56,9 @@ unreproducible evidence produces `no_action`.
 ## Daily operator sequence
 
 1. Before the decision cutoff, explicitly ingest or review current market and
-   Account Truth evidence. Read pages do not refresh providers.
+   Account Truth evidence. Read pages do not refresh providers. A valid daily
+   no-activity derivation does not require repeating the same scope/fee review;
+   a named lineage, scope, or fee drift blocker does.
 2. If any prior non-simulation OMS order exists, run execution reconciliation
    and finish its current plan → paper → actual or no-fill terminal closure.
    Open Decision → Automation and inspect the Account Truth, execution-closure,

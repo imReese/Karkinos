@@ -92,6 +92,7 @@ risk, kill switch, or capital authority.
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `enabled` | boolean | `false` | Starts the read-only collector with the server only when explicitly enabled. |
+| `daily_snapshot_roll_forward_enabled` | boolean | `false` | During the 08:45-09:35 preparation window on a reviewed trading day, derives the last complete cash and per-symbol position state forward to 08:45 with no activity; requires `enabled=true`. |
 | `path` | string | `broker_statement.csv` | Local CSV path; relative paths resolve from the server process working directory. |
 | `poll_interval_seconds` | number | `5` | Polling interval in the range 0.5–3600 seconds. |
 | `stability_delay_seconds` | number | `2` | Required stable size/mtime window before reading, in the range 0–60 seconds. |

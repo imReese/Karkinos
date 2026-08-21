@@ -90,6 +90,7 @@ kill switch 或资本权限。
 | 字段 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `enabled` | boolean | `false` | 是否随服务器启动只读 collector；必须显式开启。 |
+| `daily_snapshot_roll_forward_enabled` | boolean | `false` | 是否在已复核交易日的 08:45–09:35 准备阶段，将最后完整的现金与逐标的持仓状态按“无活动”派生到当日 08:45；要求 `enabled=true`。 |
 | `path` | string | `broker_statement.csv` | 本地 CSV 路径；相对路径以服务进程工作目录解析。 |
 | `poll_interval_seconds` | number | `5` | 文件轮询间隔，范围 `0.5`–`3600` 秒。 |
 | `stability_delay_seconds` | number | `2` | 同一文件 size/mtime 保持稳定后才读取，范围 `0`–`60` 秒。 |
@@ -99,6 +100,13 @@ kill switch 或资本权限。
 不完整事件。相同 fingerprint 在重复轮询或重启后复用既有 import run，不产生重复 Account Truth
 事件。状态可从 `GET /api/account-truth/broker-statement/collector` 查看。手工上传仍作为显式
 fallback，但不再是已启用本地 collector 的日常必需步骤。
+
+启用每日快照滚动后，系统会删除由同一功能生成的旧日快照，从未变的原始行重算一个现金快照
+和每个已知标的的持仓快照，再原子替换 CSV。固定时点为当日上海时间 08:45；同日重放必须字节
+一致。来源事件晚于该时点、现金锚点或逐标的状态不完整、数值非有限、账本事件晚于来源、账本
+在文件刷新后被回填，或文件并发变化时均 fail closed。collector 仍须等待文件稳定并独立校验，
+之后准备检查才会继续。该功能不联系券商，不修改生产账本，不创建/提交订单，也不改变执行或
+资本权限。
 
 `account_truth.citic_history_xls_directory` 是另一条显式启用、按需触发的中信旧版 XLS
 检查来源，不会在后台自动轮询。`GET /api/account-truth/citic-history-xls/directory`
