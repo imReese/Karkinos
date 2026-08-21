@@ -329,8 +329,8 @@ export function useRefreshMarketQuotesMutation() {
         '/api/market/quotes/refresh',
         payload ?? {},
       ),
-    onSuccess: async () => {
-      await Promise.all([
+    onSuccess: () => {
+      void Promise.allSettled([
         queryClient.invalidateQueries({ queryKey: ['market-data-health'] }),
         queryClient.invalidateQueries({ queryKey: ['market-research-board'] }),
         queryClient.invalidateQueries({ queryKey: ['portfolio-snapshot'] }),
@@ -360,8 +360,8 @@ export function useRefreshConfirmedFundNavMutation() {
         '/api/market/fund-nav/confirmed/refresh',
         payload,
       ),
-    onSuccess: async () => {
-      await Promise.all([
+    onSuccess: () => {
+      void Promise.allSettled([
         queryClient.invalidateQueries({ queryKey: ['market-data-health'] }),
         queryClient.invalidateQueries({ queryKey: ['market-research-board'] }),
         queryClient.invalidateQueries({
