@@ -134,6 +134,7 @@ _ACCOUNT_TRUTH_CONFIG_GROUP_FIELDS = frozenset(
 _BROKER_STATEMENT_COLLECTOR_ALLOWED_FIELDS = frozenset(
     {
         "enabled",
+        "daily_snapshot_roll_forward_enabled",
         "path",
         "poll_interval_seconds",
         "stability_delay_seconds",
@@ -387,6 +388,7 @@ class BrokerStatementCollectorConfig:
     """Explicitly enabled local-file ingestion with evidence-only authority."""
 
     enabled: bool = False
+    daily_snapshot_roll_forward_enabled: bool = False
     path: str = "broker_statement.csv"
     poll_interval_seconds: float = 5.0
     stability_delay_seconds: float = 2.0
@@ -396,6 +398,16 @@ class BrokerStatementCollectorConfig:
         if not isinstance(self.enabled, bool):
             raise ValueError(
                 "account_truth.broker_statement_collector.enabled must be boolean"
+            )
+        if not isinstance(self.daily_snapshot_roll_forward_enabled, bool):
+            raise ValueError(
+                "account_truth.broker_statement_collector."
+                "daily_snapshot_roll_forward_enabled must be boolean"
+            )
+        if self.daily_snapshot_roll_forward_enabled and not self.enabled:
+            raise ValueError(
+                "account_truth.broker_statement_collector."
+                "daily_snapshot_roll_forward_enabled requires enabled=true"
             )
         if not isinstance(self.path, str) or not self.path.strip():
             raise ValueError(
@@ -697,6 +709,10 @@ def _parse_broker_statement_collector_config(
         )
     return BrokerStatementCollectorConfig(
         enabled=value.get("enabled", False),
+        daily_snapshot_roll_forward_enabled=value.get(
+            "daily_snapshot_roll_forward_enabled",
+            False,
+        ),
         path=value.get("path", "broker_statement.csv"),
         poll_interval_seconds=value.get("poll_interval_seconds", 5.0),
         stability_delay_seconds=value.get("stability_delay_seconds", 2.0),

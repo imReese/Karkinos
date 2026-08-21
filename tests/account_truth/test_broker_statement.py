@@ -120,6 +120,35 @@ def test_broker_statement_preview_requires_symbol_for_trade_events() -> None:
     assert "symbol is required" in preview.errors[0].message
 
 
+def test_broker_statement_preview_blocks_missing_persisted_required_value() -> None:
+    statement = SYNTHETIC_STATEMENT.replace(
+        "2026-01-05T09:35:00+08:00,2026-01-06",
+        ",2026-01-06",
+        1,
+    )
+
+    preview = parse_broker_statement_csv(statement)
+
+    assert preview.validation_status == "blocked"
+    assert preview.invalid_row_count == 1
+    assert preview.errors[0].row_number == 2
+    assert preview.errors[0].code == "missing_required_value"
+    assert preview.errors[0].message == "occurred_at is required"
+
+
+def test_broker_statement_preview_allows_missing_settlement_date() -> None:
+    statement = SYNTHETIC_STATEMENT.replace(
+        "2026-01-06,SYN001",
+        ",SYN001",
+        1,
+    )
+
+    preview = parse_broker_statement_csv(statement)
+
+    assert preview.validation_status == "pass"
+    assert preview.events[0].settled_at == ""
+
+
 def test_broker_statement_preview_preserves_optional_reconciliation_components() -> (
     None
 ):

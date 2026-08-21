@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -366,6 +367,87 @@ def test_broker_evidence_repository_reimports_same_file_idempotently(
     assert import_runs[0].import_run_id == first_run.import_run_id
     assert import_runs[0].source_name == "second.csv"
     assert len(repository.list_events(second_run.import_run_id)) == 9
+
+
+def test_broker_evidence_repository_replay_removes_newly_blocked_events(
+    tmp_path: Path,
+) -> None:
+    repository = BrokerEvidenceRepository(tmp_path / "account-truth.db")
+    preview = parse_broker_statement_csv(ALL_EVENT_TYPES_STATEMENT)
+    first_run = repository.save_preview(preview, source_name="first.csv")
+
+    blocked_run = repository.save_preview(
+        replace(preview, validation_status="blocked"),
+        source_name="revalidated.csv",
+    )
+
+    assert blocked_run.import_run_id == first_run.import_run_id
+    assert blocked_run.created_at == first_run.created_at
+    assert blocked_run.validation_status == "blocked"
+    assert repository.list_events(blocked_run.import_run_id) == []
+
+
+def test_broker_evidence_repository_replay_rebuilds_newly_valid_events(
+    tmp_path: Path,
+) -> None:
+    repository = BrokerEvidenceRepository(tmp_path / "account-truth.db")
+    preview = parse_broker_statement_csv(ALL_EVENT_TYPES_STATEMENT)
+    blocked_run = repository.save_preview(
+        replace(preview, validation_status="blocked"),
+        source_name="blocked.csv",
+    )
+    assert repository.list_events(blocked_run.import_run_id) == []
+
+    valid_run = repository.save_preview(preview, source_name="revalidated.csv")
+
+    assert valid_run.import_run_id == blocked_run.import_run_id
+    assert valid_run.created_at == blocked_run.created_at
+    assert valid_run.validation_status == "pass"
+    assert len(repository.list_events(valid_run.import_run_id)) == 9
+
+
+def test_broker_evidence_repository_replay_recovers_legacy_empty_pass_batch(
+    tmp_path: Path,
+) -> None:
+    repository = BrokerEvidenceRepository(tmp_path / "account-truth.db")
+    preview = parse_broker_statement_csv(ALL_EVENT_TYPES_STATEMENT)
+    imported = repository.save_preview(preview, source_name="first.csv")
+    with sqlite3.connect(tmp_path / "account-truth.db") as conn:
+        conn.execute(
+            "DELETE FROM broker_evidence_events WHERE import_run_id = ?",
+            (imported.import_run_id,),
+        )
+        conn.commit()
+
+    replay = repository.save_preview(preview, source_name="replayed.csv")
+
+    assert replay.import_run_id == imported.import_run_id
+    assert replay.created_at == imported.created_at
+    assert replay.validation_status == "pass"
+    assert len(repository.list_events(replay.import_run_id)) == 9
+
+
+def test_broker_evidence_repository_replay_rejects_partial_pass_batch(
+    tmp_path: Path,
+) -> None:
+    repository = BrokerEvidenceRepository(tmp_path / "account-truth.db")
+    preview = parse_broker_statement_csv(ALL_EVENT_TYPES_STATEMENT)
+    imported = repository.save_preview(preview, source_name="first.csv")
+    with sqlite3.connect(tmp_path / "account-truth.db") as conn:
+        conn.execute(
+            """
+            DELETE FROM broker_evidence_events
+            WHERE import_run_id = ? AND row_number = 2
+            """,
+            (imported.import_run_id,),
+        )
+        conn.commit()
+
+    with pytest.raises(BrokerEvidenceReadRejected) as exc_info:
+        repository.save_preview(preview, source_name="replayed.csv")
+
+    assert exc_info.value.code == "broker_evidence_replay_state_conflict"
+    assert len(repository.list_events(imported.import_run_id)) == 8
 
 
 def test_broker_evidence_repository_does_not_mutate_production_ledger(

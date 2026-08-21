@@ -321,6 +321,7 @@ file does not need to be selected in the browser after every change:
   "account_truth": {
     "broker_statement_collector": {
       "enabled": true,
+      "daily_snapshot_roll_forward_enabled": false,
       "path": "broker_statement.csv",
       "poll_interval_seconds": 5,
       "stability_delay_seconds": 2,
@@ -342,6 +343,25 @@ This is not automatic ledger posting. The collector cannot contact a provider
 or modify the production ledger, positions, OMS, risk, kill switch, or capital
 authority. Differences still require Account Truth review; manual upload stays
 available as a fallback.
+
+The owner may explicitly set `daily_snapshot_roll_forward_enabled` to `true`.
+During the reviewed preparation window, Karkinos derives one 08:45 Shanghai
+cash snapshot from the last complete cash anchor plus subsequent net flows and
+one position snapshot from each symbol's last complete state. It removes only
+its own prior derived rows before rewriting, so the file does not accumulate
+daily snapshots. A future source event, uncovered ledger event or revision,
+missing/conflicting/non-finite state, or concurrent file change blocks the
+roll-forward.
+
+Scope and fee reviews bind `karkinos.account_truth.source_fact_lineage.v1`, the
+complete ordered-independent set of every non-derived normalized row. A valid
+daily snapshot may inherit those reviews only when that full lineage, the
+reviewed account/window/assets, and every intervening import remain identical.
+Any new, corrected, removed, malformed, or temporarily divergent source fact
+invalidates inheritance; later restoring old bytes does not resurrect the old
+review. The current daily snapshot keeps its own exact import and promotion
+identity. Inheritance remains append-only and revocable and grants no order,
+ledger, execution, or capital authority.
 
 ## Canonical CSV columns
 
@@ -581,9 +601,12 @@ workflow: choose the reviewed evidence window, recompute the preview, inspect
 buy/sell coverage and aggregate component matches, then enter a reviewer and
 the complete confirmation phrase. Approval is unavailable for a blocked or
 stale preview. An accepted record is displayed as `active` only while a
-query-only recomputation still matches its exact preview fingerprint; current
-Account Truth or fee-evidence drift displays `blocked`, even though the older
-accepted record remains visible for audit and can still be explicitly revoked.
+query-only recomputation still matches its preview fingerprint. The v2 preview
+binds the stable source-fact lineage and scope-review binding rather than the
+replaceable daily derived snapshot rows. Current Account Truth or fee-evidence
+drift still displays `blocked`; an intervening divergent import cannot be
+bypassed by later restoring old content. The older accepted record remains
+visible for audit and can still be explicitly revoked.
 
 An active review becomes a versioned cost-model reference. The same resolved
 calculator, including exchange overrides and per-component money rounding, is

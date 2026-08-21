@@ -24,7 +24,7 @@
 
 ## 每日操作顺序
 
-1. 在每日决策截止前显式导入或复核当前行情与 Account Truth。任何 GET 页面都不会隐式刷新 provider。
+1. 在每日决策截止前显式导入或复核当前行情与 Account Truth。任何 GET 页面都不会隐式刷新 provider。有效的每日“无活动”派生可沿稳定的非派生原始事实 lineage 继承相同账户范围与费用复核，不要求每天重复人工确认；任一中间 import 漂移、范围漂移或费用漂移都会具名阻断，恢复旧文件也不会让旧复核复活。
 2. 若存在前序非模拟 OMS 订单，先运行执行对账并完成当前 `plan → paper → actual` 或零成交终态闭环；再打开“决策 → 自动化”，检查账户、执行闭环、行情、策略、风控和费用阻断项。
 3. 在页面显示的 09:35–09:45 决策窗口内，从应用启动 canonical 运行，或调用 `POST /api/automation/run/daily-candidate`。该接口不接受调用方传入的计划、价格、数量、账户余额或策略 fingerprint。窗口外页面会禁用人工运行按钮；直接调用 API 也只能持久化带明确原因的 `no_action`，不能计入样本。
 4. Karkinos 重建当前 Decision 与计划，运行 canonical 批量风控，持久化一次确定性 paper/shadow，再次重建计划后才给出生产结论。

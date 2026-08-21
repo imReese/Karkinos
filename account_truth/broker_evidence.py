@@ -193,8 +193,44 @@ class BrokerEvidenceRepository:
         # The same file fingerprint is an idempotent replay, not new evidence.
         # Preserve the first-seen timestamp so restart/polling cannot refresh
         # Account Truth freshness without a changed evidence file.
-        del updated_at
         with sqlite3.connect(self._path) as conn:
+            existing_row = conn.execute(
+                """
+                SELECT validation_status
+                FROM broker_import_runs
+                WHERE import_run_id = ?
+                LIMIT 1
+                """,
+                (import_run_id,),
+            ).fetchone()
+            if existing_row is None:
+                raise RuntimeError(
+                    "Broker import run disappeared during idempotent import"
+                )
+            previous_validation_status = str(existing_row[0])
+            existing_event_count = int(
+                conn.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM broker_evidence_events
+                    WHERE import_run_id = ?
+                    """,
+                    (import_run_id,),
+                ).fetchone()[0]
+            )
+            if previous_validation_status == "blocked" and existing_event_count:
+                raise BrokerEvidenceReadRejected(
+                    "broker_evidence_replay_state_conflict"
+                )
+            if (
+                previous_validation_status != "blocked"
+                and preview.validation_status != "blocked"
+                and existing_event_count != preview.valid_row_count
+                and existing_event_count != 0
+            ):
+                raise BrokerEvidenceReadRejected(
+                    "broker_evidence_replay_state_conflict"
+                )
             conn.execute(
                 """
                 UPDATE broker_import_runs
@@ -222,6 +258,42 @@ class BrokerEvidenceRepository:
                     import_run_id,
                 ),
             )
+            if preview.validation_status == "blocked":
+                # A stricter parser may reject a previously accepted file with
+                # the same content fingerprint.  Keep the first-seen import
+                # identity, but never retain events that the current parser
+                # refuses to stage.
+                conn.execute(
+                    "DELETE FROM broker_evidence_events WHERE import_run_id = ?",
+                    (import_run_id,),
+                )
+            elif previous_validation_status == "blocked" or existing_event_count == 0:
+                # The same bytes may become valid after a parser contract fix.
+                # Also recover a completely empty batch left by the legacy
+                # blocked-to-pass replay bug. Never use replay to silently
+                # repair a partial non-blocked batch.
+                conn.executemany(
+                    """
+                    INSERT INTO broker_evidence_events (
+                        import_run_id, row_number, row_fingerprint, event_id,
+                        event_type, occurred_at, settled_at, symbol,
+                        instrument_name, asset_class, currency, quantity,
+                        price, gross_amount, fee, tax, net_amount,
+                        cash_balance, position_quantity, cost_basis, note,
+                        is_row_duplicate, duplicate_of_row_number, transfer_fee,
+                        cost_basis_method, broker_order_id, client_order_id,
+                        created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        self._event_insert_values(
+                            event,
+                            import_run_id=import_run_id,
+                            created_at=updated_at,
+                        )
+                        for event in preview.events
+                    ],
+                )
             conn.commit()
 
         existing = self.get_import_run(import_run_id)
@@ -654,7 +726,6 @@ def _validate_stored_event(event: StoredBrokerEvidenceEvent) -> None:
         or not event.event_id.strip()
         or event.event_type not in BROKER_STATEMENT_EVENT_TYPES
         or not event.occurred_at.strip()
-        or not event.settled_at.strip()
         or not event.currency.strip()
         or any(not _is_finite_decimal(value) for value in required_decimals)
         or any(

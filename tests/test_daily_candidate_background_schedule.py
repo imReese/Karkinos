@@ -300,6 +300,73 @@ def test_background_loop_records_one_preparation_reminder_without_attempt(
     assert alert_payload["broker_submission_enabled"] is False
 
 
+def test_background_loop_waits_for_collector_after_daily_snapshot_roll_forward(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _seed_calendar(db)
+    roll_forward_calls = 0
+    preparation_calls = 0
+
+    def roll_forward(*, state, run_date):
+        del state
+        nonlocal roll_forward_calls
+        assert run_date == RUN_DATE
+        roll_forward_calls += 1
+        return SimpleNamespace(
+            status="rolled_forward" if roll_forward_calls == 1 else "unchanged"
+        )
+
+    def project_preparation(state, *, run_date):
+        del state
+        nonlocal preparation_calls
+        assert run_date == RUN_DATE
+        preparation_calls += 1
+        return _preparation_result()
+
+    monkeypatch.setattr(
+        automation_module,
+        "roll_forward_daily_broker_statement_for_state",
+        roll_forward,
+    )
+    monkeypatch.setattr(
+        automation_module,
+        "build_daily_candidate_preparation_check",
+        project_preparation,
+    )
+    sleeps = 0
+
+    async def stop_after_second_poll(_: float) -> None:
+        nonlocal sleeps
+        sleeps += 1
+        if sleeps >= 2:
+            raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(
+            run_daily_decision_evidence_automation_loop(
+                state=SimpleNamespace(
+                    db=db,
+                    notifier=None,
+                    trading_controls=None,
+                ),
+                interval_seconds=1,
+                clock=lambda: PREPARATION_TIME,
+                sleep=stop_after_second_poll,
+            )
+        )
+
+    assert roll_forward_calls == 2
+    assert preparation_calls == 1
+    preparation_runs = db.list_automation_runs_sync(
+        run_type=DAILY_CANDIDATE_PREPARATION_CHECK_RUN_TYPE,
+        run_date=RUN_DATE,
+    )
+    assert len(preparation_runs) == 1
+
+
 def test_background_preparation_contract_drift_fails_closed_without_retry(
     tmp_path,
     monkeypatch,

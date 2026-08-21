@@ -126,6 +126,7 @@ def test_server_config_loads_explicit_local_broker_statement_collector(tmp_path)
                 "account_truth": {
                     "broker_statement_collector": {
                         "enabled": True,
+                        "daily_snapshot_roll_forward_enabled": True,
                         "path": "private/account.csv",
                         "poll_interval_seconds": 7,
                         "stability_delay_seconds": 3,
@@ -141,6 +142,7 @@ def test_server_config_loads_explicit_local_broker_statement_collector(tmp_path)
 
     assert config.broker_statement_collector == BrokerStatementCollectorConfig(
         enabled=True,
+        daily_snapshot_roll_forward_enabled=True,
         path="private/account.csv",
         poll_interval_seconds=7,
         stability_delay_seconds=3,
@@ -152,6 +154,17 @@ def test_server_config_loads_explicit_local_broker_statement_collector(tmp_path)
     ("collector", "message"),
     [
         ({"enabled": "true"}, "enabled must be boolean"),
+        (
+            {"daily_snapshot_roll_forward_enabled": True},
+            "requires enabled=true",
+        ),
+        (
+            {
+                "enabled": True,
+                "daily_snapshot_roll_forward_enabled": "true",
+            },
+            "daily_snapshot_roll_forward_enabled must be boolean",
+        ),
         ({"path": ""}, "path must be a non-empty string"),
         ({"poll_interval_seconds": 0.1}, "poll_interval_seconds"),
         ({"stability_delay_seconds": 61}, "stability_delay_seconds"),
@@ -1258,6 +1271,7 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
     assert example["account_truth"] == {
         "broker_statement_collector": {
             "enabled": False,
+            "daily_snapshot_roll_forward_enabled": False,
             "path": "broker_statement.csv",
             "poll_interval_seconds": 5,
             "stability_delay_seconds": 2,

@@ -22,6 +22,7 @@
     "account_truth": {
         "broker_statement_collector": {
             "enabled": false,
+            "daily_snapshot_roll_forward_enabled": false,
             "path": "broker_statement.csv",
             "poll_interval_seconds": 5,
             "stability_delay_seconds": 2,

@@ -12,6 +12,9 @@ from datetime import datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from account_truth.broker_statement_roll_forward import (
+    roll_forward_daily_broker_statement_for_state,
+)
 from server.services.account_truth_replay import (
     build_account_truth_replay_evidence,
     verify_account_truth_replay_evidence,
@@ -647,10 +650,19 @@ async def run_daily_decision_evidence_automation_loop(
                 now=current_time(),
             )
             if schedule["preparation_check_due"]:
-                await _run_claimed_daily_candidate_preparation_check(
+                roll_forward = await asyncio.to_thread(
+                    roll_forward_daily_broker_statement_for_state,
                     state=state,
-                    schedule=schedule,
+                    run_date=str(schedule["run_date"]),
                 )
+                # A changed file must first pass the independent collector's
+                # stability delay and canonical staging.  Leave the once-only
+                # preparation claim open until the next polling iteration.
+                if roll_forward.status != "rolled_forward":
+                    await _run_claimed_daily_candidate_preparation_check(
+                        state=state,
+                        schedule=schedule,
+                    )
             if schedule["due"]:
                 await _run_claimed_background_attempt(
                     db=state.db,
