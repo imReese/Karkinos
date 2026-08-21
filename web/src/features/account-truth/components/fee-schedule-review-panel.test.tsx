@@ -210,8 +210,11 @@ test('requires an exact current preview and explicit human confirmation before a
   await user.click(screen.getByRole('button', { name: 'Recompute preview' }));
   expect(await screen.findByText('Exact fee evidence matches')).toBeTruthy();
   expect(screen.getAllByText('2', { selector: 'dd' })).toHaveLength(2);
+  expect(
+    screen.getByText(/Daily-candidate fee scope: stocks only/),
+  ).toBeTruthy();
   expect(screen.getByText('Stock transfer fee')).toBeTruthy();
-  expect(screen.getByText('ETF transfer fee')).toBeTruthy();
+  expect(screen.queryByText('ETF transfer fee')).toBeNull();
 
   const approve = screen.getByRole('button', {
     name: 'Accept reviewed fee schedule',
@@ -236,6 +239,7 @@ test('requires an exact current preview and explicit human confirmation before a
   expect(approvalRequest?.body).toEqual({
     effective_start_date: '2026-01-01',
     effective_end_date: '2026-12-31',
+    reviewed_asset_classes: ['stock'],
     expected_preview_fingerprint: previewFingerprint,
     reviewer: 'synthetic_owner',
     confirmation: REVIEWED_FEE_SCHEDULE_APPROVAL_CONFIRMATION,

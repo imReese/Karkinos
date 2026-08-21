@@ -145,6 +145,12 @@ def _candidate_blocker(
     account_truth_status: str,
     market_status: str,
 ) -> dict[str, Any] | None:
+    if str(candidate.get("asset_class") or "").strip().lower() != "stock":
+        return _blocker(
+            candidate,
+            "asset_class_outside_daily_candidate_scope",
+            "strategy-lab",
+        )
     if account_truth_status in _BLOCKING_ACCOUNT_TRUTH_STATUSES:
         return _blocker(candidate, "account_truth_blocked", "account-truth")
     if market_status in _BLOCKING_MARKET_STATUSES:

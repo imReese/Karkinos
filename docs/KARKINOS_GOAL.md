@@ -55,6 +55,10 @@ action is allowed, blocked, or requires review.
 
 - Backtests bind frozen datasets, parameters, modeled costs, OOS evidence,
   limitations, and quality status.
+- The production daily-candidate strategy scope is stocks only. ETF and fund
+  facts remain in Account Truth, valuation, and risk evidence, but cannot enter
+  daily-candidate research, promotion, or order tickets without a separately
+  reviewed future scope change.
 - Strategy output is research evidence until it passes data, cost, risk,
   account, paper/shadow, and operator gates.
 - Strategy code proposes signals or targets; it cannot import or call broker

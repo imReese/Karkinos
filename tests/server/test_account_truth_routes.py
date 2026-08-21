@@ -18,6 +18,9 @@ from account_truth.citic_history_xls import (
     CITIC_HISTORY_XLS_COLUMNS,
     CITIC_HISTORY_XLS_SOURCE_TYPE,
 )
+from account_truth.citic_source_canonical_resolution import (
+    citic_source_set_fingerprint,
+)
 from account_truth.citic_source_intake import CiticSourceIntakeRepository
 from server.config import CiticHistoryXlsDirectoryConfig
 from server.db import AppDatabase
@@ -1254,6 +1257,108 @@ def test_account_truth_scope_review_is_exact_append_only_and_revocable(
             ).fetchone()[0]
             == 2
         )
+
+
+def test_citic_source_canonical_resolution_requires_complete_scope_and_is_revocable(
+    tmp_path,
+    monkeypatch,
+):
+    from server.routes import account_truth as account_truth_routes
+
+    db, _first_run, import_run = _seed_account_truth_db(tmp_path)
+    preview = replace(
+        parse_broker_statement_csv(BROKER_STATEMENT),
+        source_type=CITIC_HISTORY_XLS_SOURCE_TYPE,
+        normalized_columns=CITIC_HISTORY_XLS_COLUMNS,
+        validation_status="blocked",
+        limitations=["settlement components are missing"],
+    )
+    intake = CiticSourceIntakeRepository(db._path).record_review(
+        preview,
+        expected_file_fingerprint=preview.file_fingerprint,
+        review_status="follow_up_required",
+    )
+    monkeypatch.setattr(
+        "server.app.get_app_state",
+        lambda: SimpleNamespace(db=db),
+    )
+    router = account_truth_routes.create_router()
+    readiness_endpoint = _route(
+        router,
+        "/api/account-truth/evidence-readiness",
+    ).endpoint
+    scope_endpoint = _route(
+        router,
+        "/api/account-truth/evidence-scope/reviews",
+        "POST",
+    ).endpoint
+    resolve_endpoint = _route(
+        router,
+        "/api/account-truth/citic-history-xls/canonical-resolutions",
+        "POST",
+    ).endpoint
+    revoke_endpoint = _route(
+        router,
+        "/api/account-truth/citic-history-xls/canonical-resolutions/revoke",
+        "POST",
+    ).endpoint
+    before = asyncio.run(readiness_endpoint())
+    scope_result = asyncio.run(
+        scope_endpoint(
+            body=account_truth_routes.EvidenceScopeReviewCreate(
+                import_run_id=import_run.import_run_id,
+                expected_observed_scope_fingerprint=before["evidence_scope"][
+                    "observed_scope_fingerprint"
+                ],
+                provider="citic",
+                account_alias="primary",
+                account_reference_hash="sha256:" + "c" * 64,
+                coverage_start_date="2026-01-01",
+                coverage_end_date="2026-01-31",
+                asset_classes=["stock"],
+                full_account_scope_attested=True,
+            )
+        )
+    )
+    scope_review = scope_result["readiness"]["evidence_scope"]["review"]
+    source_set_fingerprint = citic_source_set_fingerprint(
+        [intake.source_preview_fingerprint]
+    )
+
+    recorded = asyncio.run(
+        resolve_endpoint(
+            body=account_truth_routes.CiticSourceCanonicalResolutionCreate(
+                expected_source_set_fingerprint=source_set_fingerprint,
+                expected_scope_review_id=scope_review["review_id"],
+                expected_scope_review_fingerprint=scope_review["review_fingerprint"],
+                canonical_statement_covers_sources_attested=True,
+            )
+        )
+    )
+
+    assert recorded["status"] == "recorded"
+    assert recorded["citic_source_follow_up"]["status"] == ("no_follow_up_required")
+    assert recorded["citic_source_follow_up"]["pending_source_count"] == 0
+    assert recorded["writes_only_canonical_resolution_store"] is True
+    assert recorded["does_not_mutate_broker_evidence"] is True
+    assert recorded["does_not_mutate_production_ledger"] is True
+    assert recorded["authorizes_execution"] is False
+    assert recorded["changes_capital_authority"] is False
+
+    resolution = recorded["resolution"]
+    revoked = asyncio.run(
+        revoke_endpoint(
+            body=account_truth_routes.CiticSourceCanonicalResolutionRevoke(
+                expected_resolution_id=resolution["resolution_id"],
+                expected_resolution_fingerprint=resolution["resolution_fingerprint"],
+            )
+        )
+    )
+
+    assert revoked["status"] == "revoked"
+    assert revoked["citic_source_follow_up"]["status"] == "follow_up_required"
+    assert revoked["citic_source_follow_up"]["pending_source_count"] == 1
+    assert revoked["authorizes_execution"] is False
 
 
 def test_account_truth_scope_review_rejects_stale_observed_fingerprint(

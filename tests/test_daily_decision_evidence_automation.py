@@ -146,6 +146,7 @@ def _decision(*, risk_checked: bool) -> dict:
             {
                 "action_id": 1,
                 "symbol": "600519",
+                "asset_class": "stock",
                 "action": "buy",
                 "evidence": {
                     "strategy": {
@@ -352,6 +353,20 @@ def test_financial_preflight_opens_only_risk_and_paper_shadow_attempt() -> None:
     assert result["authorizes_execution"] is False
     assert result["changes_capital_authority"] is False
     assert result["profitability_claim"] == "not_established"
+
+
+def test_financial_preflight_rejects_non_stock_daily_candidate() -> None:
+    inputs = _financial_preflight_inputs()
+    inputs["decision_payload"]["candidates"][0]["asset_class"] = "etf"
+
+    result = project_daily_candidate_financial_preflight(**inputs)
+
+    assert result["status"] == "no_action"
+    assert result["eligible_candidate_count"] == 0
+    assert any(
+        "daily_candidate_asset_class_outside_strategy_scope" in blocker
+        for blocker in result["financial_blockers"]
+    )
 
 
 def test_financial_preflight_fails_closed_on_account_truth_staleness() -> None:
@@ -1075,6 +1090,42 @@ def test_automatic_evidence_chain_obeys_kill_switch_before_risk_writes(
 
     assert result["status"] == "blocked_by_kill_switch"
     assert risk_called is False
+    assert db.get_risk_decisions_sync() == []
+    assert db.latest_paper_shadow_run_sync(plan_date="2026-07-02") is None
+    assert db.list_orders_sync() == []
+
+
+def test_daily_candidate_rejects_non_stock_before_risk_writes(tmp_path) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    risk_called = False
+
+    async def read_plan():
+        decision = _decision(risk_checked=False)
+        decision["candidates"][0]["asset_class"] = "fund"
+        return decision, _plan(risk_checked=False)
+
+    async def run_risk():
+        nonlocal risk_called
+        risk_called = True
+        return {"status": "completed"}
+
+    service = DailyDecisionEvidenceAutomationService(
+        db=db,
+        trading_controls=TradingControlState(db=db),
+        notifier=RecordingNotifier(),
+        plan_reader=read_plan,
+        risk_runner=run_risk,
+    )
+
+    result = asyncio.run(service.run_once())
+
+    assert result["status"] == "blocked_by_strategy_asset_scope"
+    assert risk_called is False
+    assert (
+        "candidate_0:daily_candidate_asset_class_outside_strategy_scope"
+        in result["no_action_reasons"]
+    )
     assert db.get_risk_decisions_sync() == []
     assert db.latest_paper_shadow_run_sync(plan_date="2026-07-02") is None
     assert db.list_orders_sync() == []

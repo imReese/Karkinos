@@ -6,11 +6,11 @@ This file records release-level outcomes and validation evidence. It is not a co
 
 ## Current Baseline
 
-As of 2026-08-17, v0.2 through v1.7 are complete. The v1.8 control-plane foundation and AI-native research foundation through Phase 1.18 are implemented. The active product milestone is the broker-connected controlled per-order pilot in [ROADMAP.md](ROADMAP.md).
+As of 2026-08-21, v0.2.2 is the stable local release baseline. The v1.8 control-plane foundation and AI-native research foundation through Phase 1.18 are implemented. The active product milestone is the broker-connected controlled per-order pilot in [ROADMAP.md](ROADMAP.md).
 
 The latest completed cross-cutting work includes:
 
-- persisted observations as the authoritative read source;
+- a stock-only production daily-candidate boundary: ETF and fund facts remain in Account Truth, valuation, and risk, but are excluded from reviewed strategy fees, research/promotion, daily candidates, paper/shadow trial orders, and manual tickets; non-stock candidates fail closed at every direct and replayed order-generation boundary. A reviewed-fee preview records the exact stock scope, excludes non-stock trade counts deterministically, and rejects downstream asset classes outside that scope. Separately, an append-only, revocable CITIC canonical-resolution record can close an exact legacy source set only against a complete fingerprint-bound Account Truth scope review; scope revocation or drift automatically reopens follow-up, and neither transition changes broker evidence, reconciliation, execution, or capital authority; persisted observations remain the authoritative read source;
 - immutable valuation snapshots and ledger identity;
 - evidence-bound strategy contribution v2, assuming the controlled posting contract's immutable `ledger_entries.source_ref = fill_id` identity; linked fills expose P/L only after exact production-ledger and valuation-snapshot replay, while the read path remains provider-free, write-free, and without trading or capital authority;
 - canonical daily performance across Holdings, Equity Curve, Overview, and

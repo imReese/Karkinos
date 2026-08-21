@@ -37,6 +37,10 @@ from account_truth.citic_history_xls_directory import (
     find_citic_history_xls_directory_preview,
     scan_citic_history_xls_directory,
 )
+from account_truth.citic_source_canonical_resolution import (
+    CiticSourceCanonicalResolutionReadRejected,
+    CiticSourceCanonicalResolutionRejected,
+)
 from account_truth.citic_source_intake import (
     CiticSourceIntake,
     CiticSourceIntakeReadRejected,
@@ -87,6 +91,10 @@ from server.services.account_truth_evidence_scope_review import (
 )
 from server.services.citic_history_canonical_lineage import (
     build_citic_history_canonical_lineage_assessment,
+)
+from server.services.citic_source_canonical_resolution import (
+    record_citic_source_canonical_resolution,
+    revoke_citic_source_canonical_resolution,
 )
 from server.services.citic_source_query_window_review import (
     citic_source_query_window_review_response,
@@ -217,9 +225,28 @@ class EvidenceScopeReviewRevoke(BaseModel):
     reviewer: str = Field(default="local_owner", min_length=1, max_length=128)
 
 
+class CiticSourceCanonicalResolutionCreate(BaseModel):
+    expected_source_set_fingerprint: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    expected_scope_review_id: str = Field(min_length=1, max_length=128)
+    expected_scope_review_fingerprint: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    canonical_statement_covers_sources_attested: Literal[True]
+    reviewer: str = Field(default="local_owner", min_length=1, max_length=128)
+
+
+class CiticSourceCanonicalResolutionRevoke(BaseModel):
+    expected_resolution_id: str = Field(min_length=1, max_length=128)
+    expected_resolution_fingerprint: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    reviewer: str = Field(default="local_owner", min_length=1, max_length=128)
+
+
 class ReviewedFeeSchedulePreviewCreate(BaseModel):
     effective_start_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     effective_end_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    reviewed_asset_classes: list[Literal["stock"]] = Field(
+        default_factory=lambda: ["stock"],
+        min_length=1,
+        max_length=1,
+    )
 
 
 class ReviewedFeeScheduleReviewCreate(ReviewedFeeSchedulePreviewCreate):
@@ -634,6 +661,7 @@ def create_router() -> APIRouter:
                 state,
                 effective_start_date=body.effective_start_date,
                 effective_end_date=body.effective_end_date,
+                reviewed_asset_classes=body.reviewed_asset_classes,
             )
             review = _reviewed_fee_schedule_repository_for_state(state).record_review(
                 preview=preview,
@@ -720,6 +748,38 @@ def create_router() -> APIRouter:
             EvidenceScopeReviewReadRejected,
         ) as exc:
             raise _account_truth_read_http_exception(exc) from exc
+
+    @r.post("/citic-history-xls/canonical-resolutions")
+    async def record_citic_canonical_resolution(
+        body: CiticSourceCanonicalResolutionCreate,
+    ) -> dict[str, object]:
+        from server.app import get_app_state
+
+        try:
+            return record_citic_source_canonical_resolution(
+                get_app_state(),
+                **body.model_dump(),
+            )
+        except CiticSourceCanonicalResolutionRejected as exc:
+            raise _citic_canonical_resolution_http_exception(exc) from exc
+        except CiticSourceCanonicalResolutionReadRejected as exc:
+            raise _citic_canonical_resolution_read_http_exception(exc) from exc
+
+    @r.post("/citic-history-xls/canonical-resolutions/revoke")
+    async def revoke_citic_canonical_resolution(
+        body: CiticSourceCanonicalResolutionRevoke,
+    ) -> dict[str, object]:
+        from server.app import get_app_state
+
+        try:
+            return revoke_citic_source_canonical_resolution(
+                get_app_state(),
+                **body.model_dump(),
+            )
+        except CiticSourceCanonicalResolutionRejected as exc:
+            raise _citic_canonical_resolution_http_exception(exc) from exc
+        except CiticSourceCanonicalResolutionReadRejected as exc:
+            raise _citic_canonical_resolution_read_http_exception(exc) from exc
 
     @r.get("/reconciliation-reports/{import_run_id}")
     async def get_reconciliation_report(import_run_id: str) -> dict[str, object]:
@@ -851,6 +911,30 @@ def _evidence_scope_review_http_exception(
         detail={
             "code": exc.code,
             "message": "Account Truth evidence scope could not be recorded safely.",
+        },
+    )
+
+
+def _citic_canonical_resolution_http_exception(
+    exc: CiticSourceCanonicalResolutionRejected,
+) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": exc.code,
+            "message": "CITIC source canonical coverage could not be recorded safely.",
+        },
+    )
+
+
+def _citic_canonical_resolution_read_http_exception(
+    exc: CiticSourceCanonicalResolutionReadRejected,
+) -> HTTPException:
+    return HTTPException(
+        status_code=503,
+        detail={
+            "code": exc.code,
+            "message": "Persisted CITIC source canonical coverage is unavailable.",
         },
     )
 

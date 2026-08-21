@@ -195,6 +195,27 @@ class DailyDecisionEvidenceAutomationService:
                 ],
             )
 
+        asset_scope_blockers = _daily_candidate_asset_scope_blockers(
+            decision_payload=decision_before,
+            trading_plan=plan_before,
+        )
+        if asset_scope_blockers:
+            return self._record_cycle(
+                status="blocked_by_strategy_asset_scope",
+                plan_date=plan_date,
+                decision_payload=decision_before,
+                trading_plan=plan_before,
+                started_at=started_at,
+                risk_result=None,
+                paper_shadow_run=None,
+                candidate_count=candidate_count,
+                limitations=[
+                    "Daily candidate risk and paper/shadow evaluation are limited "
+                    "to stock candidates."
+                ],
+                additional_blockers=asset_scope_blockers,
+            )
+
         if candidate_count <= 0:
             return self._record_cycle(
                 status="no_candidates",
@@ -255,6 +276,26 @@ class DailyDecisionEvidenceAutomationService:
                 additional_blockers=["daily_candidate_claimed_plan_date_mismatch"],
             )
         risk_status = str(risk_result.get("status") or "unknown")
+        asset_scope_blockers = _daily_candidate_asset_scope_blockers(
+            decision_payload=decision_after,
+            trading_plan=plan_after,
+        )
+        if asset_scope_blockers:
+            return self._record_cycle(
+                status="blocked_by_strategy_asset_scope",
+                plan_date=plan_date,
+                decision_payload=decision_after,
+                trading_plan=plan_after,
+                started_at=started_at,
+                risk_result=risk_result,
+                paper_shadow_run=None,
+                candidate_count=candidate_count,
+                limitations=[
+                    "The post-risk Decision or plan left the stock-only daily "
+                    "candidate scope; paper/shadow remained closed."
+                ],
+                additional_blockers=asset_scope_blockers,
+            )
         if risk_status != "completed":
             return self._record_cycle(
                 status=(
@@ -1838,6 +1879,25 @@ def _candidate_count(
     )
 
 
+def _daily_candidate_asset_scope_blockers(
+    *,
+    decision_payload: dict[str, Any],
+    trading_plan: dict[str, Any],
+) -> list[str]:
+    blockers: list[str] = []
+    for index, candidate in enumerate(_object_list(decision_payload.get("candidates"))):
+        if str(candidate.get("asset_class") or "").strip().lower() != "stock":
+            blockers.append(
+                f"candidate_{index}:daily_candidate_asset_class_outside_strategy_scope"
+            )
+    for index, intent in enumerate(_object_list(trading_plan.get("order_intents"))):
+        if str(intent.get("asset_class") or "").strip().lower() != "stock":
+            blockers.append(
+                f"order_intent_{index}:asset_class_outside_daily_candidate_scope"
+            )
+    return list(dict.fromkeys(blockers))
+
+
 def _daily_candidate_base_gate(
     *,
     decision_payload: dict[str, Any],
@@ -2062,6 +2122,10 @@ def project_daily_candidate_financial_preflight(
         strategy_blockers.append("daily_candidate_strategy_candidate_missing")
     for index, candidate in enumerate(candidates):
         candidate_blockers: list[str] = []
+        if str(candidate.get("asset_class") or "").strip().lower() != "stock":
+            candidate_blockers.append(
+                "daily_candidate_asset_class_outside_strategy_scope"
+            )
         manual_status = str(candidate.get("manual_confirmation_status") or "")
         if manual_status not in {
             "awaiting_risk_gate",
@@ -2832,6 +2896,8 @@ def _production_outcome(
     candidate_count = 0
     for index, intent in enumerate(order_intents):
         prefix = f"order_intent_{index}"
+        if str(intent.get("asset_class") or "").strip().lower() != "stock":
+            blockers.append(f"{prefix}:asset_class_outside_daily_candidate_scope")
         evidence_refs = [
             str(item) for item in intent.get("evidence_refs") or [] if str(item)
         ]

@@ -1600,7 +1600,11 @@ class AiShadowResearchAutomationService:
             if not isinstance(asset, dict) or not asset.get("symbol"):
                 raise ShadowResearchRejected("baseline_asset_invalid")
             symbol = Symbol(str(asset["symbol"]))
-            asset_class_text = str(asset.get("asset_class") or "stock")
+            asset_class_text = str(asset.get("asset_class") or "stock").strip().lower()
+            if asset_class_text != "stock":
+                raise ShadowResearchRejected(
+                    "daily_candidate_strategy_asset_class_not_supported"
+                )
             asset_class = _asset_class(asset_class_text)
             frame = self._data_store.load_bars(symbol, BarFrequency.DAILY)
             if frame is None or frame.empty or "timestamp" not in frame.columns:

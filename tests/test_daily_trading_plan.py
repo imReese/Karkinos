@@ -116,6 +116,22 @@ def test_trading_plan_carries_risk_and_account_truth_evidence_refs() -> None:
     assert "account_truth:import-456" in refs
 
 
+def test_daily_candidate_plan_rejects_etf_and_fund_candidates() -> None:
+    for asset_class in ("etf", "fund"):
+        plan = _plan(
+            candidate=_candidate(
+                symbol="510300",
+                asset_class=asset_class,
+            )
+        )
+
+        assert plan["order_intents"] == []
+        assert plan["blockers"][0]["reason"] == (
+            "asset_class_outside_daily_candidate_scope"
+        )
+        assert plan["blockers"][0]["target"] == "strategy-lab"
+
+
 def test_trading_plan_blocker_summary_preserves_specific_risk_gate_reasons() -> None:
     plan = build_daily_trading_plan(
         decision_payload={

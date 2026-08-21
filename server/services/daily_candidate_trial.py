@@ -714,6 +714,8 @@ class DailyCandidateTrialService:
                 blockers.append(f"{prefix}:intent_identity_missing")
             if str(ticket.get("side") or "").lower() not in {"buy", "sell"}:
                 blockers.append(f"{prefix}:side_invalid")
+            if str(ticket.get("asset_class") or "").strip().lower() != "stock":
+                blockers.append(f"{prefix}:asset_class_outside_daily_candidate_scope")
             if _positive_float(ticket.get("quantity")) is None:
                 blockers.append(f"{prefix}:quantity_invalid")
             if _positive_float(ticket.get("limit_price")) is None:

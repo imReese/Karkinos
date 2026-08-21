@@ -312,6 +312,7 @@ def _seed_qualifying_day(
             "intent_id": f"intent-{index + 1}",
             "action_id": index + 1,
             "symbol": f"600{index:03d}",
+            "asset_class": "stock",
             "side": "buy",
             "quantity": 100,
             "limit_price": 10.0,
@@ -567,6 +568,37 @@ def test_daily_candidate_trial_excludes_tampered_manual_ticket(tmp_path) -> None
     blockers = status["excluded_days"][0]["blockers"]
     assert "manual_order_ticket_candidate_0:fingerprint_mismatch" in blockers
     assert "manual_order_ticket_candidate_0:market_quote_price_mismatch" in blockers
+
+
+def test_daily_candidate_trial_excludes_non_stock_ticket_even_when_refingerprinted(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    day = _trading_days()[0]
+    _seed_verified_calendar(db, [day])
+    _seed_qualifying_day(db, day=day, order_count=1)
+    row = db.list_automation_runs_sync(
+        run_type=DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE,
+        limit=1,
+        offset=0,
+    )[0]
+    payload = json.loads(row["payload_json"])
+    ticket = payload["manual_order_ticket_candidates"][0]
+    ticket["asset_class"] = "etf"
+    ticket["ticket_candidate_fingerprint"] = manual_ticket_candidate_fingerprint(ticket)
+    payload["production_record_fingerprint"] = daily_candidate_record_fingerprint(
+        payload
+    )
+    db.upsert_automation_run_sync({**row, "payload": payload})
+
+    status = DailyCandidateTrialService(db=db).get_status()
+
+    assert status["qualifying_trading_day_count"] == 0
+    assert (
+        "manual_order_ticket_candidate_0:asset_class_outside_daily_candidate_scope"
+        in status["excluded_days"][0]["blockers"]
+    )
 
 
 def test_daily_candidate_trial_replays_ticket_paper_shadow_binding(tmp_path) -> None:

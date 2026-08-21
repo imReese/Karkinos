@@ -1104,6 +1104,37 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
         for fill in prepared.result["fills"]
     )
 
+    etf_seed_result_id = asyncio.run(
+        db.save_backtest_result(
+            config_json=json.dumps(
+                {
+                    "start_date": "2026-01-02",
+                    "end_date": bars["timestamp"].iloc[-1].date().isoformat(),
+                    "initial_cash": 100_000,
+                    "strategy": "dual_ma",
+                    "short_period": 5,
+                    "long_period": 20,
+                    "assets": [{"symbol": str(symbol), "asset_class": "etf"}],
+                }
+            ),
+            initial_cash=100_000,
+            final_equity=100_000,
+            total_return=0,
+            sharpe=0,
+            max_dd=0,
+            equity_curve_json="[]",
+            metrics_json="{}",
+            cost_summary_json="{}",
+        )
+    )
+    with pytest.raises(
+        ShadowResearchRejected,
+        match="daily_candidate_strategy_asset_class_not_supported",
+    ):
+        service._prepare_baseline(
+            ShadowResearchPolicy(baseline_backtest_result_id=etf_seed_result_id)
+        )
+
 
 @pytest.mark.unit
 @pytest.mark.trading_safety
