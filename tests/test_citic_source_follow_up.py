@@ -13,6 +13,10 @@ from account_truth.citic_history_xls import (
     CITIC_HISTORY_XLS_COLUMNS,
     CITIC_HISTORY_XLS_SOURCE_TYPE,
 )
+from account_truth.citic_source_canonical_resolution import (
+    CiticSourceCanonicalResolutionRepository,
+    citic_source_set_fingerprint,
+)
 from account_truth.citic_source_intake import (
     CiticSourceIntakeRepository,
     citic_source_preview_fingerprint,
@@ -21,6 +25,7 @@ from account_truth.citic_source_query_window_review import (
     CiticSourceQueryWindowReviewRepository,
 )
 from account_truth.citic_source_scope_review import CiticSourceScopeReviewRepository
+from account_truth.evidence_scope_review import EvidenceScopeReviewRepository
 from server.services.citic_source_follow_up import build_citic_source_follow_up
 
 _PRIVATE_SOURCE = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note,transfer_fee,cost_basis_method,broker_order_id,client_order_id
@@ -232,7 +237,7 @@ def test_citic_source_follow_up_advances_only_after_exact_source_scope_review(
     assert reviewed["source_scope_complete_returned_results_attested"] is True
     assert "reviewed_source_scope_for_source" not in reviewed["required_evidence"]
     assert reviewed["next_manual_action"] == (
-        "provide_citic_account_truth_evidence_or_reject_source"
+        "record_citic_source_canonical_resolution_or_reject_source"
     )
     assert reviewed["eligible_for_account_truth"] is False
     assert reviewed["eligible_for_reconciliation"] is False
@@ -366,6 +371,60 @@ def test_citic_source_follow_up_closes_only_after_explicit_rejection(
     assert closed["evidence_fingerprint"] != pending["evidence_fingerprint"]
 
 
+def test_citic_source_follow_up_closes_on_reviewed_canonical_coverage_and_reopens(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "app.db"
+    preview = _preview()
+    intake = CiticSourceIntakeRepository(db_path).record_review(
+        preview,
+        expected_file_fingerprint=preview.file_fingerprint,
+        review_status="follow_up_required",
+    )
+    scope_repository = EvidenceScopeReviewRepository(db_path)
+    scope_review = scope_repository.record_review(
+        import_run_id="canonical-import",
+        import_file_fingerprint="a" * 64,
+        observed_scope_fingerprint="sha256:" + "b" * 64,
+        provider="citic",
+        account_alias="primary",
+        account_reference_hash="sha256:" + "c" * 64,
+        coverage_start_date="2026-04-01",
+        coverage_end_date="2026-08-21",
+        asset_classes=["cash", "fund", "stock"],
+        full_account_scope_attested=True,
+    )
+    sources = [intake.source_preview_fingerprint]
+    resolution = CiticSourceCanonicalResolutionRepository(db_path).record_resolution(
+        source_preview_fingerprints=sources,
+        expected_source_set_fingerprint=citic_source_set_fingerprint(sources),
+        scope_review_id=scope_review.review_id,
+        scope_review_import_run_id=scope_review.import_run_id,
+        scope_review_fingerprint=scope_review.review_fingerprint,
+    )
+
+    closed = build_citic_source_follow_up(db_path)
+
+    assert closed["status"] == "no_follow_up_required"
+    assert closed["pending_source_count"] == 0
+    assert closed["canonical_resolution"]["status"] == "active"
+    assert closed["canonical_resolution"]["covered_source_count"] == 1
+    assert closed["canonical_resolution"]["resolution_id"] == (resolution.resolution_id)
+    assert closed["authorizes_execution"] is False
+    assert closed["changes_capital_authority"] is False
+
+    scope_repository.revoke_latest(
+        import_run_id=scope_review.import_run_id,
+        expected_observed_scope_fingerprint=scope_review.observed_scope_fingerprint,
+    )
+    reopened = build_citic_source_follow_up(db_path)
+
+    assert reopened["status"] == "follow_up_required"
+    assert reopened["pending_source_count"] == 1
+    assert reopened["canonical_resolution"]["status"] == "binding_drift"
+    assert "citic_source_canonical_resolution_binding_drift" in reopened["blockers"]
+
+
 def test_citic_source_follow_up_surfaces_partial_schema_without_repair(
     tmp_path: Path,
 ) -> None:
@@ -408,7 +467,7 @@ def test_citic_source_follow_up_surfaces_partial_query_window_store_without_repa
     )
     with sqlite3.connect(db_path) as conn:
         conn.execute(
-            "CREATE TABLE citic_source_query_window_reviews " "(id INTEGER PRIMARY KEY)"
+            "CREATE TABLE citic_source_query_window_reviews (id INTEGER PRIMARY KEY)"
         )
         conn.commit()
     before = db_path.stat()

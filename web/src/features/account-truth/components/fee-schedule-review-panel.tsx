@@ -25,7 +25,7 @@ const copy = {
     kicker: 'Account-bound research cost',
     title: 'Reviewed fee schedule',
     detail:
-      'Compare the configured schedule with persisted buy and sell settlement components before it can become the only eligible research cost model.',
+      'Compare stock fees with persisted stock buy and sell settlement components before they can become the only eligible daily-candidate research cost model. ETF and fund trades stay in Account Truth but are excluded from this strategy scope.',
     boundary:
       'This review is append-only and revocable. It cannot place an order, register a production strategy, or change capital authority.',
     current: 'Current review',
@@ -62,11 +62,11 @@ const copy = {
     buys: 'Buys',
     sells: 'Sells',
     tolerance: 'Tolerance',
+    reviewedScope: 'Daily-candidate fee scope: stocks only',
+    excludedTrades: 'Out-of-scope ETF/fund trades excluded',
     stockTerms: 'Stock commission',
-    etfTerms: 'ETF commission',
     sellTax: 'Sell stamp tax',
     stockTransfer: 'Stock transfer fee',
-    etfTransfer: 'ETF transfer fee',
     mismatchBreakdown: 'Mismatch breakdown by asset and side',
     feeMismatch: 'fee',
     taxMismatch: 'tax',
@@ -99,7 +99,7 @@ const copy = {
     kicker: '账户绑定的研究成本',
     title: '经审查费率表',
     detail:
-      '先把配置费率与已持久化的买入、卖出结算分项逐项比较，通过后才可成为唯一合格的研究成本模型。',
+      '仅将股票费率与已持久化的股票买卖结算分项逐项比较，通过后才可成为每日候选策略唯一合格的研究成本模型。ETF/基金仍保留在 Account Truth，但排除在策略范围外。',
     boundary: '该审查仅追加、可撤销；不能下单、注册生产策略或改变资金额度。',
     current: '当前审查',
     statusMissing: '缺失',
@@ -133,11 +133,11 @@ const copy = {
     buys: '买入',
     sells: '卖出',
     tolerance: '容差',
+    reviewedScope: '每日候选费用范围：仅股票',
+    excludedTrades: '已排除范围外 ETF/基金成交',
     stockTerms: '股票佣金',
-    etfTerms: 'ETF 佣金',
     sellTax: '卖出印花税',
     stockTransfer: '股票过户费',
-    etfTransfer: 'ETF 过户费',
     mismatchBreakdown: '按资产与方向拆分的差异',
     feeMismatch: '佣金',
     taxMismatch: '税费',
@@ -170,6 +170,8 @@ const copy = {
 
 const inputClass =
   'min-h-10 w-full rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface)] px-3 py-2 text-sm text-[var(--app-text)] outline-none focus-visible:border-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]';
+
+const DAILY_CANDIDATE_REVIEWED_ASSET_CLASSES: ['stock'] = ['stock'];
 
 const feeScheduleIssueLabels: Record<string, { en: string; zh: string }> = {
   reviewed_fee_schedule_account_truth_not_ready: {
@@ -249,6 +251,10 @@ function PreviewSummary({
           {formatPublicCode(preview.status, locale)}
         </StatusBadge>
       </div>
+      <p className="mt-2 text-xs font-semibold text-[var(--app-text-secondary)]">
+        {text.reviewedScope} · {text.excludedTrades}:{' '}
+        {components.excluded_trade_count ?? 0}
+      </p>
       <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-5">
         {[
           [text.trades, String(components.trade_count)],
@@ -265,19 +271,12 @@ function PreviewSummary({
           </div>
         ))}
       </dl>
-      <dl className="mt-3 grid gap-2 border-t border-[var(--app-divider)] pt-3 text-xs sm:grid-cols-2 lg:grid-cols-5">
+      <dl className="mt-3 grid gap-2 border-t border-[var(--app-divider)] pt-3 text-xs sm:grid-cols-3">
         <div>
           <dt className="text-[var(--app-text-tertiary)]">{text.stockTerms}</dt>
           <dd className="mt-0.5 font-mono text-[var(--app-text)]">
             {schedule.stock_a_commission_rate} · {text.min}{' '}
             {schedule.stock_a_min_commission}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-[var(--app-text-tertiary)]">{text.etfTerms}</dt>
-          <dd className="mt-0.5 font-mono text-[var(--app-text)]">
-            {schedule.fund_etf_commission_rate} · {text.min}{' '}
-            {schedule.fund_etf_min_commission}
           </dd>
         </div>
         <div>
@@ -292,14 +291,6 @@ function PreviewSummary({
           </dt>
           <dd className="mt-0.5 font-mono text-[var(--app-text)]">
             {schedule.transfer_fee_rate}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-[var(--app-text-tertiary)]">
-            {text.etfTransfer}
-          </dt>
-          <dd className="mt-0.5 font-mono text-[var(--app-text)]">
-            {schedule.fund_etf_transfer_fee_rate}
           </dd>
         </div>
       </dl>
@@ -395,6 +386,7 @@ export function FeeScheduleReviewPanel({
     previewMutation.mutate({
       effective_start_date: startDate,
       effective_end_date: endDate,
+      reviewed_asset_classes: DAILY_CANDIDATE_REVIEWED_ASSET_CLASSES,
     });
   };
 
@@ -603,6 +595,8 @@ export function FeeScheduleReviewPanel({
                 {
                   effective_start_date: startDate,
                   effective_end_date: endDate,
+                  reviewed_asset_classes:
+                    DAILY_CANDIDATE_REVIEWED_ASSET_CLASSES,
                   expected_preview_fingerprint: preview.preview_fingerprint,
                   reviewer: reviewer.trim(),
                   confirmation: approvalConfirmation,

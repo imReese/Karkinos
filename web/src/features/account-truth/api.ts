@@ -823,12 +823,16 @@ export type ReviewedFeeSchedule = {
 };
 
 export type ReviewedFeeSchedulePreview = {
-  schema_version: 'karkinos.account_truth.reviewed_fee_schedule_preview.v1';
+  schema_version:
+    | 'karkinos.account_truth.reviewed_fee_schedule_preview.v1'
+    | 'karkinos.account_truth.reviewed_fee_schedule_preview.v2'
+    | 'karkinos.account_truth.reviewed_fee_schedule_preview.v3';
   status: 'ready' | 'blocked';
   schedule: ReviewedFeeSchedule;
   schedule_fingerprint: string;
   effective_start_date: string;
   effective_end_date: string;
+  reviewed_asset_classes?: Array<'stock' | 'etf'>;
   account_truth_import_run_id: string;
   account_truth_source_fingerprint: string;
   account_truth_scope_fingerprint: string;
@@ -837,7 +841,11 @@ export type ReviewedFeeSchedulePreview = {
   account_truth_promotion_status: string;
   component_reconciliation: {
     status: 'pass' | 'blocked';
+    reviewed_asset_classes?: Array<'stock' | 'etf'>;
+    source_trade_count?: number;
     trade_count: number;
+    excluded_trade_count?: number;
+    excluded_asset_class_counts?: Record<string, number>;
     matched_trade_count: number;
     side_counts: { buy: number; sell: number };
     asset_class_counts: Record<string, number>;
@@ -923,6 +931,7 @@ export function useReviewedFeeSchedulePreviewMutation() {
     mutationFn: (payload: {
       effective_start_date: string;
       effective_end_date: string;
+      reviewed_asset_classes: ['stock'];
     }) =>
       postBrokerStatement<ReviewedFeeSchedulePreview>(
         '/api/account-truth/fee-schedule/preview',
@@ -937,6 +946,7 @@ export function useReviewedFeeScheduleApprovalMutation() {
     mutationFn: (payload: {
       effective_start_date: string;
       effective_end_date: string;
+      reviewed_asset_classes: ['stock'];
       expected_preview_fingerprint: string;
       reviewer: string;
       confirmation: string;

@@ -6,6 +6,11 @@ import hashlib
 import json
 from pathlib import Path
 
+from account_truth.citic_source_canonical_resolution import (
+    CiticSourceCanonicalResolution,
+    CiticSourceCanonicalResolutionReadRejected,
+    CiticSourceCanonicalResolutionRepository,
+)
 from account_truth.citic_source_intake import (
     CiticSourceIntake,
     CiticSourceIntakeReadRejected,
@@ -20,6 +25,10 @@ from account_truth.citic_source_scope_review import (
     CiticSourceScopeReview,
     CiticSourceScopeReviewReadRejected,
     CiticSourceScopeReviewRepository,
+)
+from account_truth.evidence_scope_review import (
+    EvidenceScopeReviewReadRejected,
+    EvidenceScopeReviewRepository,
 )
 from server.services.citic_source_query_window_review import (
     project_citic_query_window_batch_assessment,
@@ -87,13 +96,42 @@ def build_citic_source_follow_up(db_path: str | Path | None) -> dict[str, object
             count_complete=False,
         )
 
-    pending = sorted(
+    unresolved = sorted(
         (item for item in intakes if item.review_status == "follow_up_required"),
         key=lambda item: (
             item.source_preview_fingerprint,
             item.review_id,
         ),
     )
+    try:
+        persisted_resolution = CiticSourceCanonicalResolutionRepository(
+            db_path
+        ).get_latest()
+        canonical_resolution, covered_source_fingerprints = (
+            _canonical_resolution_projection(
+                db_path,
+                persisted_resolution,
+                unresolved_sources=unresolved,
+            )
+        )
+    except CiticSourceCanonicalResolutionReadRejected as exc:
+        return _follow_up_projection(
+            status=exc.code,
+            subsystem_status="blocked",
+            pending_sources=unresolved,
+            query_window_reviews={},
+            next_manual_action="repair_citic_source_canonical_resolution_store",
+            limitations=[
+                "Persisted CITIC canonical coverage metadata could not be read safely; no repair was attempted."
+            ],
+            count_complete=False,
+            scanned_source_count=len(intakes),
+        )
+    pending = [
+        source
+        for source in unresolved
+        if source.source_preview_fingerprint not in covered_source_fingerprints
+    ]
     intake_scan_truncated = len(intakes) >= _CITIC_SOURCE_FOLLOW_UP_SCAN_LIMIT
     if intake_scan_truncated:
         return _follow_up_projection(
@@ -108,6 +146,7 @@ def build_citic_source_follow_up(db_path: str | Path | None) -> dict[str, object
             count_complete=False,
             scanned_source_count=len(intakes),
             intake_scan_truncated=True,
+            canonical_resolution=canonical_resolution,
         )
 
     try:
@@ -130,6 +169,7 @@ def build_citic_source_follow_up(db_path: str | Path | None) -> dict[str, object
             ],
             count_complete=False,
             scanned_source_count=len(intakes),
+            canonical_resolution=canonical_resolution,
         )
 
     try:
@@ -152,6 +192,7 @@ def build_citic_source_follow_up(db_path: str | Path | None) -> dict[str, object
             ],
             count_complete=False,
             scanned_source_count=len(intakes),
+            canonical_resolution=canonical_resolution,
         )
 
     if not pending:
@@ -166,6 +207,7 @@ def build_citic_source_follow_up(db_path: str | Path | None) -> dict[str, object
                 "No persisted CITIC source review currently requires follow-up."
             ],
             scanned_source_count=len(intakes),
+            canonical_resolution=canonical_resolution,
         )
     missing_query_window_count = sum(
         not _active_query_window_review(source, query_window_reviews)
@@ -193,16 +235,18 @@ def build_citic_source_follow_up(db_path: str | Path | None) -> dict[str, object
             else (
                 "review_citic_source_scopes"
                 if source_scope_batch_assessment["integrity_status"] != "clear"
-                else "provide_citic_account_truth_evidence_or_reject_source"
+                else "record_citic_source_canonical_resolution_or_reject_source"
             )
         ),
         limitations=[
             "CITIC History Trades remain incomplete, non-authoritative source material.",
-            "Completing or rejecting source follow-up does not itself create Account Truth evidence, reconcile the account, or grant trading authority.",
+            "A canonical coverage resolution requires a separately reviewed complete Account Truth scope and remains revocable.",
+            "Resolving or rejecting source follow-up does not itself reconcile the account or grant trading authority.",
         ],
         scanned_source_count=len(intakes),
         query_window_batch_assessment=query_window_batch_assessment,
         source_scope_batch_assessment=source_scope_batch_assessment,
+        canonical_resolution=canonical_resolution,
     )
 
 
@@ -216,6 +260,7 @@ def _projection(
     next_manual_action: str,
     limitations: list[str],
     count_complete: bool = True,
+    canonical_resolution: dict[str, object] | None = None,
 ) -> dict[str, object]:
     effective_source_scope_reviews = source_scope_reviews or {}
     active_query_window_reviews = {
@@ -265,6 +310,11 @@ def _projection(
             *[source.reviewed_at for source in pending_sources],
             *[review.created_at for review in active_query_window_reviews.values()],
             *[review.created_at for review in active_source_scope_reviews.values()],
+            *(
+                [str(canonical_resolution.get("created_at"))]
+                if canonical_resolution and canonical_resolution.get("created_at")
+                else []
+            ),
         ),
         default=None,
     )
@@ -272,6 +322,7 @@ def _projection(
         "schema_version": CITIC_SOURCE_FOLLOW_UP_SCHEMA_VERSION,
         "status": status,
         "count_complete": count_complete,
+        "canonical_resolution": canonical_resolution,
         "sources": [
             {
                 "source_preview_fingerprint": source.source_preview_fingerprint,
@@ -348,6 +399,8 @@ def _projection(
         "eligible_for_reconciliation": False,
         "authorizes_execution": False,
         "changes_capital_authority": False,
+        "canonical_resolution": canonical_resolution
+        or _missing_canonical_resolution_projection(),
     }
 
 
@@ -365,6 +418,7 @@ def _follow_up_projection(
     intake_scan_truncated: bool = False,
     query_window_batch_assessment: dict[str, object] | None = None,
     source_scope_batch_assessment: dict[str, object] | None = None,
+    canonical_resolution: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Bind persisted source counts to one sanitized window-integrity projection."""
 
@@ -377,6 +431,7 @@ def _follow_up_projection(
         next_manual_action=next_manual_action,
         limitations=limitations,
         count_complete=count_complete,
+        canonical_resolution=canonical_resolution,
     )
     assessment = query_window_batch_assessment or _query_window_batch_assessment(
         pending_sources,
@@ -397,7 +452,16 @@ def _follow_up_projection(
         for blocker in scope_assessment.get("blockers", [])
         if blocker in _SOURCE_SCOPE_INTEGRITY_BLOCKERS
     ]
-    blockers = [*assessment_blockers, *scope_assessment_blockers]
+    resolution_blockers = [
+        str(item)
+        for item in (canonical_resolution or {}).get("blockers", [])
+        if str(item)
+    ]
+    blockers = [
+        *assessment_blockers,
+        *scope_assessment_blockers,
+        *resolution_blockers,
+    ]
     required_evidence = list(projection["required_evidence"])
     if intake_scan_truncated:
         blockers.insert(0, "citic_source_intake_scan_truncated")
@@ -474,9 +538,98 @@ def _follow_up_projection(
         "source_scope_batch_assessment_fingerprint": projection[
             "source_scope_batch_assessment_fingerprint"
         ],
+        "canonical_resolution_fingerprint": (
+            (canonical_resolution or {}).get("resolution_fingerprint")
+        ),
+        "canonical_resolution_status": (canonical_resolution or {}).get("status"),
     }
     projection["evidence_fingerprint"] = _fingerprint(fingerprint_payload)
     return projection
+
+
+def _canonical_resolution_projection(
+    db_path: str | Path,
+    resolution: CiticSourceCanonicalResolution | None,
+    *,
+    unresolved_sources: list[CiticSourceIntake],
+) -> tuple[dict[str, object], set[str]]:
+    if resolution is None:
+        return _missing_canonical_resolution_projection(), set()
+    base = {
+        "schema_version": resolution.schema_version,
+        "resolution_id": resolution.resolution_id,
+        "source_set_fingerprint": resolution.source_set_fingerprint,
+        "covered_source_count": 0,
+        "scope_review_id": resolution.scope_review_id,
+        "scope_review_fingerprint": resolution.scope_review_fingerprint,
+        "decision": resolution.decision,
+        "resolution_fingerprint": resolution.resolution_fingerprint,
+        "created_at": resolution.created_at,
+        "blockers": [],
+        "provider_contacted": False,
+        "database_writes_performed": False,
+        "authorizes_execution": False,
+        "changes_capital_authority": False,
+    }
+    if resolution.decision == "revoked":
+        return {
+            **base,
+            "status": "revoked",
+            "next_manual_action": "record_citic_source_canonical_resolution",
+        }, set()
+    try:
+        scope_review = EvidenceScopeReviewRepository(db_path).get_latest_review(
+            resolution.scope_review_import_run_id
+        )
+    except EvidenceScopeReviewReadRejected as exc:
+        raise CiticSourceCanonicalResolutionReadRejected(exc.code) from exc
+    if (
+        scope_review is None
+        or scope_review.decision != "accepted"
+        or scope_review.review_id != resolution.scope_review_id
+        or scope_review.review_fingerprint != resolution.scope_review_fingerprint
+    ):
+        return {
+            **base,
+            "status": "binding_drift",
+            "next_manual_action": "reestablish_canonical_account_scope_review",
+            "blockers": ["citic_source_canonical_resolution_binding_drift"],
+        }, set()
+    unresolved_fingerprints = {
+        source.source_preview_fingerprint for source in unresolved_sources
+    }
+    covered = unresolved_fingerprints.intersection(
+        resolution.source_preview_fingerprints
+    )
+    return {
+        **base,
+        "status": "active",
+        "covered_source_count": len(covered),
+        "next_manual_action": "none",
+    }, covered
+
+
+def _missing_canonical_resolution_projection() -> dict[str, object]:
+    return {
+        "schema_version": (
+            "karkinos.account_truth.citic_source_canonical_resolution.v1"
+        ),
+        "status": "not_recorded",
+        "resolution_id": None,
+        "source_set_fingerprint": None,
+        "covered_source_count": 0,
+        "scope_review_id": None,
+        "scope_review_fingerprint": None,
+        "decision": None,
+        "resolution_fingerprint": None,
+        "created_at": None,
+        "next_manual_action": "record_citic_source_canonical_resolution",
+        "blockers": [],
+        "provider_contacted": False,
+        "database_writes_performed": False,
+        "authorizes_execution": False,
+        "changes_capital_authority": False,
+    }
 
 
 def _query_window_batch_assessment(

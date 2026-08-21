@@ -200,6 +200,75 @@ def test_reviewed_schedule_preview_binds_exact_reconciled_trade_components(
 
 @pytest.mark.unit
 @pytest.mark.trading_safety
+def test_stock_only_review_excludes_etf_mismatches_and_rejects_etf_resolution(
+    tmp_path, monkeypatch
+) -> None:
+    mixed_trades = (
+        _BROKER_TRADES.rstrip()
+        + "\n"
+        + "\n".join(_BROKER_FUND_TRADES_WITHOUT_TRANSFER_FEE.splitlines()[1:])
+    )
+    state, imported = _state(
+        tmp_path,
+        broker_trades=mixed_trades,
+        asset_classes=["stock", "fund"],
+    )
+    _patch_ready_account_truth(monkeypatch, imported)
+
+    preview = build_reviewed_fee_schedule_preview(
+        state,
+        effective_start_date="2026-01-01",
+        effective_end_date="2026-12-31",
+        reviewed_asset_classes=["stock"],
+    )
+
+    assert preview["status"] == "ready"
+    assert preview["issues"] == []
+    assert preview["reviewed_asset_classes"] == ["stock"]
+    comparison = preview["component_reconciliation"]
+    assert comparison["source_trade_count"] == 4
+    assert comparison["trade_count"] == 2
+    assert comparison["matched_trade_count"] == 2
+    assert comparison["excluded_trade_count"] == 2
+    assert comparison["excluded_asset_class_counts"] == {"etf": 2}
+    assert comparison["mismatch_counts"] == {
+        "fee": 0,
+        "tax": 0,
+        "transfer_fee": 0,
+    }
+
+    review = ReviewedFeeScheduleReviewRepository(state.db._path).record_review(
+        preview=preview,
+        expected_preview_fingerprint=preview["preview_fingerprint"],
+        reviewer="synthetic_owner",
+        confirmation=REVIEWED_FEE_SCHEDULE_APPROVAL_CONFIRMATION,
+    )
+    stock_resolution = resolve_reviewed_fee_schedule(
+        state,
+        start_date="2026-01-01",
+        end_date="2026-12-31",
+        universe=("600000.SH",),
+        asset_classes=("stock",),
+        expected_cost_model_reference=reviewed_cost_model_reference(review),
+    )
+    assert stock_resolution.fee_evidence["fee_schedule_reviewed_asset_classes"] == [
+        "stock"
+    ]
+    with pytest.raises(
+        ReviewedFeeScheduleRejected,
+        match="reviewed_fee_schedule_backtest_assets_outside_reviewed_scope:etf",
+    ):
+        resolve_reviewed_fee_schedule(
+            state,
+            start_date="2026-01-01",
+            end_date="2026-12-31",
+            universe=("510300.SH",),
+            asset_classes=("etf",),
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
 def test_reviewed_schedule_accepts_canonical_fund_alias_for_etf_costs(
     tmp_path, monkeypatch
 ) -> None:
@@ -447,6 +516,7 @@ def test_review_repository_missing_read_is_zero_write_and_tamper_blocks(
         "schedule_fingerprint": _fingerprint(schedule),
         "effective_start_date": "2026-01-01",
         "effective_end_date": "2026-12-31",
+        "reviewed_asset_classes": ["etf", "stock"],
         "account_truth_import_run_id": "import_fixture",
         "account_truth_source_fingerprint": "sha256:" + "1" * 64,
         "account_truth_scope_fingerprint": "sha256:" + "2" * 64,
@@ -507,6 +577,7 @@ def test_legacy_review_without_etf_transfer_term_is_readable_but_drifts(
         "schedule_fingerprint": _fingerprint(schedule),
         "effective_start_date": "2026-01-01",
         "effective_end_date": "2026-12-31",
+        "reviewed_asset_classes": ["etf", "stock"],
         "account_truth_import_run_id": "import_fixture",
         "account_truth_source_fingerprint": "sha256:" + "1" * 64,
         "account_truth_scope_fingerprint": "sha256:" + "2" * 64,

@@ -95,6 +95,7 @@ def seed_ai_shadow_canonical_sources(
         "fee_notional_envelope_enforced": True,
         "fee_notional_envelope_fingerprint": notional_envelope["evidence_fingerprint"],
         "fee_notional_covered_asset_classes": notional_envelope["asset_classes"],
+        "fee_schedule_reviewed_asset_classes": ["etf"],
     }
     baseline_metrics = _strategy_advancement_metrics(
         candidate=False,
@@ -446,6 +447,7 @@ def _seed_reviewed_fee_schedule(db: Any):
         "schedule_fingerprint": _fingerprint(schedule),
         "effective_start_date": "2026-01-01",
         "effective_end_date": "2026-12-31",
+        "reviewed_asset_classes": ["etf"],
         "account_truth_import_run_id": imported.import_run_id,
         "account_truth_source_fingerprint": "sha256:" + "1" * 64,
         "account_truth_scope_fingerprint": "sha256:" + "2" * 64,

@@ -60,11 +60,12 @@ from server.services.account_truth_evidence_readiness import (
 from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
 
 REVIEWED_FEE_SCHEDULE_PREVIEW_SCHEMA_VERSION = (
-    "karkinos.account_truth.reviewed_fee_schedule_preview.v2"
+    "karkinos.account_truth.reviewed_fee_schedule_preview.v3"
 )
 _SUPPORTED_REVIEWED_FEE_SCHEDULE_PREVIEW_SCHEMA_VERSIONS = frozenset(
     {
         "karkinos.account_truth.reviewed_fee_schedule_preview.v1",
+        "karkinos.account_truth.reviewed_fee_schedule_preview.v2",
         REVIEWED_FEE_SCHEDULE_PREVIEW_SCHEMA_VERSION,
     }
 )
@@ -316,6 +317,9 @@ class ReviewedFeeScheduleResolution:
             ),
             "account_truth_scope_fingerprint": (
                 self.review.account_truth_scope_fingerprint
+            ),
+            "reviewed_asset_classes": list(
+                _reviewed_asset_classes_from_preview(self.review.preview)
             ),
             "broker_statement_reconciled": True,
             "persisted_review_only": True,
@@ -573,11 +577,15 @@ def build_reviewed_fee_schedule_preview(
     *,
     effective_start_date: str,
     effective_end_date: str,
+    reviewed_asset_classes: Sequence[str] | None = None,
     schedule_override: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Compare safe schedule terms with the exact current Account Truth trades."""
 
     start_date, end_date = _date_window(effective_start_date, effective_end_date)
+    normalized_reviewed_assets = _normalize_reviewed_asset_classes(
+        reviewed_asset_classes
+    )
     schedule = (
         _normalize_schedule(schedule_override)
         if schedule_override is not None
@@ -647,6 +655,7 @@ def build_reviewed_fee_schedule_preview(
         events=events,
         start_date=start_date,
         end_date=end_date,
+        reviewed_asset_classes=normalized_reviewed_assets,
     )
     issues.extend(comparison["issues"])
     issues = list(dict.fromkeys(issues))
@@ -657,6 +666,7 @@ def build_reviewed_fee_schedule_preview(
         "schedule_fingerprint": schedule_fingerprint,
         "effective_start_date": start_date,
         "effective_end_date": end_date,
+        "reviewed_asset_classes": list(normalized_reviewed_assets),
         "account_truth_import_run_id": reviewed_import_run_id,
         "account_truth_source_fingerprint": account_truth_source_fingerprint,
         "account_truth_scope_fingerprint": account_truth_scope_fingerprint,
@@ -710,6 +720,7 @@ def build_reviewed_fee_schedule_review_status(
             state,
             effective_start_date=review.effective_start_date,
             effective_end_date=review.effective_end_date,
+            reviewed_asset_classes=_reviewed_asset_classes_from_preview(review.preview),
             schedule_override=review.schedule,
         )
     except ReviewedFeeScheduleRejected as exc:
@@ -779,12 +790,29 @@ def _review_matches_current_preview(
     if current_preview.get("preview_fingerprint") == review.preview_fingerprint:
         return True
     stored_preview = _validated_preview(review.preview)
-    if stored_preview.get("schema_version") != (
-        "karkinos.account_truth.reviewed_fee_schedule_preview.v1"
-    ):
+    stored_schema_version = stored_preview.get("schema_version")
+    if stored_schema_version not in {
+        "karkinos.account_truth.reviewed_fee_schedule_preview.v1",
+        "karkinos.account_truth.reviewed_fee_schedule_preview.v2",
+    }:
         return False
     if current_preview.get("status") != "ready" or current_preview.get("issues"):
         return False
+    if _reviewed_asset_classes_from_preview(current_preview) != tuple(
+        sorted(_SUPPORTED_ASSET_CLASSES)
+    ):
+        return False
+    if (
+        stored_schema_version
+        == "karkinos.account_truth.reviewed_fee_schedule_preview.v2"
+    ):
+        stored_core = {
+            key: value
+            for key, value in stored_preview.items()
+            if key not in {"schema_version", "preview_fingerprint"}
+        }
+        if any(current_preview.get(key) != value for key, value in stored_core.items()):
+            return False
     stable_fields = (
         "status",
         "schedule",
@@ -887,10 +915,20 @@ def resolve_reviewed_fee_schedule(
         raise ReviewedFeeScheduleRejected(
             "reviewed_fee_schedule_backtest_assets_not_covered"
         )
+    reviewed_asset_classes = _reviewed_asset_classes_from_preview(review.preview)
+    uncovered_review_assets = sorted(
+        set(normalized_assets) - set(reviewed_asset_classes)
+    )
+    if uncovered_review_assets:
+        raise ReviewedFeeScheduleRejected(
+            "reviewed_fee_schedule_backtest_assets_outside_reviewed_scope:"
+            + ",".join(uncovered_review_assets)
+        )
     preview = build_reviewed_fee_schedule_preview(
         state,
         effective_start_date=review.effective_start_date,
         effective_end_date=review.effective_end_date,
+        reviewed_asset_classes=reviewed_asset_classes,
         schedule_override=review.schedule,
     )
     if preview.get("status") != "ready":
@@ -943,6 +981,7 @@ def resolve_reviewed_fee_schedule(
         "fee_notional_envelope_enforced": True,
         "fee_notional_envelope_fingerprint": notional_envelope_fingerprint,
         "fee_notional_covered_asset_classes": sorted(notional_limits),
+        "fee_schedule_reviewed_asset_classes": list(reviewed_asset_classes),
     }
     return ReviewedFeeScheduleResolution(
         cost_model_reference=cost_model_reference,
@@ -1015,6 +1054,12 @@ def active_review_matches_fee_evidence(
         "fee_notional_envelope_fingerprint": notional_envelope_fingerprint,
         "fee_notional_covered_asset_classes": sorted(notional_limits),
     }
+    if review.preview.get("schema_version") == (
+        REVIEWED_FEE_SCHEDULE_PREVIEW_SCHEMA_VERSION
+    ):
+        expected["fee_schedule_reviewed_asset_classes"] = list(
+            _reviewed_asset_classes_from_preview(review.preview)
+        )
     for key, value in expected.items():
         if fee_evidence.get(key) != value:
             blockers.append(f"reviewed_fee_schedule_binding_mismatch:{key}")
@@ -1176,14 +1221,31 @@ def _compare_schedule_to_events(
     events: Sequence[Any],
     start_date: str,
     end_date: str,
+    reviewed_asset_classes: Sequence[str],
 ) -> dict[str, Any]:
     issues: list[str] = []
-    trade_events = [
+    normalized_reviewed_assets = _normalize_reviewed_asset_classes(
+        reviewed_asset_classes
+    )
+    source_trade_events = [
         event
         for event in events
         if not bool(getattr(event, "is_row_duplicate", False))
         and str(getattr(event, "event_type", "")) in _TRADE_EVENT_TYPES
     ]
+    trade_events = [
+        event
+        for event in source_trade_events
+        if _normalize_asset_class(getattr(event, "asset_class", ""))
+        in normalized_reviewed_assets
+    ]
+    excluded_asset_counts: dict[str, int] = {}
+    for event in source_trade_events:
+        asset_class = _normalize_asset_class(getattr(event, "asset_class", ""))
+        if asset_class not in normalized_reviewed_assets:
+            excluded_asset_counts[asset_class or "unknown"] = (
+                excluded_asset_counts.get(asset_class or "unknown", 0) + 1
+            )
     if not trade_events:
         issues.append("reviewed_fee_schedule_trade_evidence_missing")
     side_counts = {"buy": 0, "sell": 0}
@@ -1316,7 +1378,11 @@ def _compare_schedule_to_events(
     }
     return {
         "status": "pass" if not issues else "blocked",
+        "reviewed_asset_classes": list(normalized_reviewed_assets),
+        "source_trade_count": len(source_trade_events),
         "trade_count": len(trade_events),
+        "excluded_trade_count": len(source_trade_events) - len(trade_events),
+        "excluded_asset_class_counts": dict(sorted(excluded_asset_counts.items())),
         "matched_trade_count": match_count,
         "side_counts": side_counts,
         "asset_class_counts": dict(sorted(asset_counts.items())),
@@ -1590,9 +1656,8 @@ def _commission_calculator(
 
 def _validated_preview(preview: Mapping[str, Any]) -> dict[str, Any]:
     normalized = dict(preview)
-    if normalized.get("schema_version") not in (
-        _SUPPORTED_REVIEWED_FEE_SCHEDULE_PREVIEW_SCHEMA_VERSIONS
-    ):
+    schema_version = normalized.get("schema_version")
+    if schema_version not in (_SUPPORTED_REVIEWED_FEE_SCHEDULE_PREVIEW_SCHEMA_VERSIONS):
         raise ReviewedFeeScheduleRejected(
             "reviewed_fee_schedule_preview_schema_invalid"
         )
@@ -1602,6 +1667,14 @@ def _validated_preview(preview: Mapping[str, Any]) -> dict[str, Any]:
             "reviewed_fee_schedule_preview_fingerprint_invalid"
         )
     normalized["preview_fingerprint"] = fingerprint
+    if schema_version == REVIEWED_FEE_SCHEDULE_PREVIEW_SCHEMA_VERSION:
+        reviewed_asset_classes = _normalize_reviewed_asset_classes(
+            normalized.get("reviewed_asset_classes")
+        )
+        if list(reviewed_asset_classes) != normalized.get("reviewed_asset_classes"):
+            raise ReviewedFeeScheduleRejected(
+                "reviewed_fee_schedule_preview_asset_scope_invalid"
+            )
     for field_name in (
         "schedule_fingerprint",
         "account_truth_source_fingerprint",
@@ -1727,6 +1800,33 @@ def _review_from_row(row: sqlite3.Row) -> ReviewedFeeScheduleReview:
 def _normalize_asset_class(value: object) -> str:
     normalized = str(value or "").strip().lower()
     return "etf" if normalized in {"fund", "fund_etf"} else normalized
+
+
+def _normalize_reviewed_asset_classes(
+    values: Sequence[str] | object | None,
+) -> tuple[str, ...]:
+    if values is None:
+        return tuple(sorted(_SUPPORTED_ASSET_CLASSES))
+    if isinstance(values, (str, bytes)) or not isinstance(values, Sequence):
+        raise ReviewedFeeScheduleRejected(
+            "reviewed_fee_schedule_reviewed_asset_classes_invalid"
+        )
+    normalized = tuple(sorted({_normalize_asset_class(item) for item in values}))
+    if not normalized or any(
+        item not in _SUPPORTED_ASSET_CLASSES for item in normalized
+    ):
+        raise ReviewedFeeScheduleRejected(
+            "reviewed_fee_schedule_reviewed_asset_classes_invalid"
+        )
+    return normalized
+
+
+def _reviewed_asset_classes_from_preview(
+    preview: Mapping[str, Any],
+) -> tuple[str, ...]:
+    if preview.get("schema_version") == REVIEWED_FEE_SCHEDULE_PREVIEW_SCHEMA_VERSION:
+        return _normalize_reviewed_asset_classes(preview.get("reviewed_asset_classes"))
+    return tuple(sorted(_SUPPORTED_ASSET_CLASSES))
 
 
 def _infer_stock_exchange(symbol: str) -> str | None:
