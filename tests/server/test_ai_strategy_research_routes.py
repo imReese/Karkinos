@@ -21,6 +21,7 @@ from server.routes.ai_strategy_research import (
 )
 from server.services.ai_shadow_research_automation import (
     SHADOW_RESEARCH_POLICY_CONFIRMATION,
+    SHADOW_RESEARCH_RETRY_CONFIRMATION,
 )
 from tests.route_assertions import registered_app_routes
 
@@ -302,6 +303,80 @@ def test_shadow_policy_accepts_five_sequential_iterations_without_daily_budget()
 
 
 @pytest.mark.unit
+@pytest.mark.trading_safety
+def test_shadow_retry_route_requires_exact_confirmation_and_stays_research_only(
+    monkeypatch,
+):
+    class RetryFixture:
+        def __init__(self) -> None:
+            self.requests = []
+
+        def authorize_retry(self, run_id, **payload):
+            self.requests.append((run_id, payload))
+            return {
+                "authorization_id": "ai-shadow-research-retry:route",
+                "failed_run_id": run_id,
+                "authorized_additional_calls": 10,
+                "provider_call_ceiling": 11,
+                "consumed": False,
+                "automatic_strategy_replacement_enabled": False,
+                "production_strategy_mutation_enabled": False,
+                "broker_submission_enabled": False,
+                "capital_authority_changed": False,
+                "authority_effect": "research_only",
+            }
+
+    fixture = RetryFixture()
+    client = _client(monkeypatch, FixtureService())
+    monkeypatch.setattr(
+        "server.routes.ai_strategy_research._build_shadow_write_service",
+        lambda state: fixture,
+    )
+    path = (
+        "/api/ai/strategy-research/shadow-automation/runs/failed-run/"
+        "retry-authorizations"
+    )
+    invalid = client.post(
+        path,
+        json={
+            "approved_by": "human:owner",
+            "notes": "Retry once.",
+            "confirmation": "yes",
+        },
+    )
+    assert invalid.status_code == 422
+    assert fixture.requests == []
+
+    response = client.post(
+        path,
+        json={
+            "approved_by": "human:owner",
+            "notes": "Retry once.",
+            "confirmation": SHADOW_RESEARCH_RETRY_CONFIRMATION,
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["authorized_additional_calls"] == 10
+    assert body["provider_call_ceiling"] == 11
+    assert body["automatic_strategy_replacement_enabled"] is False
+    assert body["broker_submission_enabled"] is False
+    assert body["capital_authority_changed"] is False
+    assert body["authority_effect"] == "research_only"
+    assert fixture.requests == [
+        (
+            "failed-run",
+            {
+                "approved_by": "human:owner",
+                "notes": "Retry once.",
+                "confirmation": SHADOW_RESEARCH_RETRY_CONFIRMATION,
+            },
+        )
+    ]
+
+
+@pytest.mark.unit
 def test_main_app_registers_explicit_strategy_research_routes_only():
     app = create_app({"live_auto_start": False})
     routes = {
@@ -320,6 +395,10 @@ def test_main_app_registers_explicit_strategy_research_routes_only():
         "PUT",
     ) in routes
     assert ("/api/ai/strategy-research/shadow-automation/run", "POST") in routes
+    retry_authorization_path = (
+        "/api/ai/strategy-research/shadow-automation/runs/{run_id}/retry-authorizations"
+    )
+    assert (retry_authorization_path, "POST") in routes
     assert (
         "/api/ai/strategy-research/shadow-candidates/{candidate_id}/paper-shadow-approvals",
         "POST",

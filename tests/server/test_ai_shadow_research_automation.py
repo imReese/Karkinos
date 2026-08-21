@@ -26,6 +26,7 @@ from server.services.ai_shadow_research_automation import (
     SHADOW_RESEARCH_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
     SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION,
+    SHADOW_RESEARCH_RETRY_CONFIRMATION,
     SHADOW_RESEARCH_TOKEN_BUDGET_MODE_UNBOUNDED,
     AiShadowResearchAutomationService,
     PreparedBaseline,
@@ -33,6 +34,7 @@ from server.services.ai_shadow_research_automation import (
     ShadowResearchRejected,
     ShadowResearchStore,
     _after_close,
+    _failure_code,
 )
 from server.services.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactRejected,
@@ -219,6 +221,276 @@ def test_provider_call_claim_is_atomic_capped_and_token_unbounded(tmp_path) -> N
     assert usage["provider_calls"] == 3
     assert usage["reserved_tokens"] == SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION * 3
     assert usage["actual_tokens"] == SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION * 20
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.parametrize(
+    "failure_code",
+    [
+        "research_initial_cash_exceeds_current_account_equity",
+        "account_evidence_binding_mismatch",
+        "ai_runtime_role_identity_conflict",
+    ],
+)
+def test_provider_free_failed_run_can_be_rearmed_after_input_correction(
+    tmp_path,
+    failure_code,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = ShadowResearchStore(tmp_path / "app.db")
+    store.init()
+    first, reused = store.claim_run(
+        market_date="2026-08-11",
+        input_fingerprint="first-input-fingerprint",
+        baseline_seed_result_id=8,
+        valuation_snapshot_id="valuation-first",
+        ledger_cutoff_id=11,
+        now="2026-08-11T08:00:00+00:00",
+    )
+    assert reused is False
+    provider_call, reused = store.claim_provider_call(
+        call_id=f"{first['run_id']}:hypothesis:iteration:01",
+        run_id=first["run_id"],
+        market_date="2026-08-11",
+        call_kind="hypothesis_iteration",
+        call_limit=1,
+        now="2026-08-11T08:01:00+00:00",
+    )
+    assert reused is False
+    store.finish_provider_call(
+        provider_call["call_id"],
+        status="failed",
+        actual_tokens=None,
+        failure_code=failure_code,
+        now="2026-08-11T08:02:00+00:00",
+    )
+    store.update_run(
+        first["run_id"],
+        now="2026-08-11T08:02:00+00:00",
+        status="failed",
+        failure_code=failure_code,
+    )
+
+    replacement, reused = store.claim_run(
+        market_date="2026-08-11",
+        input_fingerprint="corrected-input-fingerprint",
+        baseline_seed_result_id=25,
+        valuation_snapshot_id="valuation-corrected",
+        ledger_cutoff_id=12,
+        now="2026-08-11T08:03:00+00:00",
+    )
+
+    assert reused is False
+    assert replacement["run_id"] != first["run_id"]
+    assert replacement["status"] == "running"
+    assert replacement["baseline_seed_result_id"] == 25
+    assert replacement["failure_code"] is None
+    replacement_call, reused = store.claim_provider_call(
+        call_id=f"{replacement['run_id']}:hypothesis:iteration:01",
+        run_id=replacement["run_id"],
+        market_date="2026-08-11",
+        call_kind="hypothesis_iteration",
+        call_limit=1,
+        now="2026-08-11T08:04:00+00:00",
+    )
+    assert reused is False
+    assert replacement_call["status"] == "reserved"
+    usage = store.usage_for_market_date("2026-08-11")
+    assert usage["provider_calls"] == 1
+    assert usage["recorded_call_attempts"] == 2
+    assert usage["provider_free_rejections"] == 1
+    with sqlite3.connect(tmp_path / "app.db") as conn:
+        attempt = conn.execute("""
+            SELECT superseded_run_id, replacement_run_id, failure_code
+            FROM ai_shadow_research_run_attempts
+            """).fetchone()
+    assert attempt == (
+        first["run_id"],
+        replacement["run_id"],
+        failure_code,
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_owner_authorized_provider_retry_is_append_only_consumed_once_and_adds_exactly_ten_calls(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = ShadowResearchStore(tmp_path / "app.db")
+    store.init()
+    first, reused = store.claim_run(
+        market_date="2026-08-11",
+        input_fingerprint="provider-failed-input-fingerprint",
+        baseline_seed_result_id=25,
+        valuation_snapshot_id="valuation-complete",
+        ledger_cutoff_id=12,
+        now="2026-08-11T08:00:00+00:00",
+    )
+    assert reused is False
+    first_call, reused = store.claim_provider_call(
+        call_id=f"{first['run_id']}:hypothesis:iteration:01",
+        run_id=first["run_id"],
+        market_date="2026-08-11",
+        call_kind="hypothesis_iteration",
+        call_limit=10,
+        now="2026-08-11T08:01:00+00:00",
+    )
+    assert reused is False
+    store.finish_provider_call(
+        first_call["call_id"],
+        status="failed",
+        actual_tokens=None,
+        failure_code="provider_citation_not_in_bound_input",
+        now="2026-08-11T08:02:00+00:00",
+    )
+    store.update_run(
+        first["run_id"],
+        status="failed",
+        failure_code="iteration_hypothesis_generation_not_complete",
+        now="2026-08-11T08:02:00+00:00",
+    )
+
+    unchanged, reused = store.claim_run(
+        market_date="2026-08-11",
+        input_fingerprint=first["input_fingerprint"],
+        baseline_seed_result_id=25,
+        valuation_snapshot_id="valuation-complete",
+        ledger_cutoff_id=12,
+        now="2026-08-11T08:03:00+00:00",
+    )
+    assert reused is True
+    assert unchanged["run_id"] == first["run_id"]
+    with pytest.raises(PermissionError, match="exact owner confirmation"):
+        store.authorize_retry(
+            first["run_id"],
+            approved_by="human:owner",
+            notes="Retry the rejected provider response once.",
+            confirmation="yes",
+            now="2026-08-11T08:04:00+00:00",
+        )
+
+    authorization = store.authorize_retry(
+        first["run_id"],
+        approved_by="human:owner",
+        notes="Retry the rejected provider response once.",
+        confirmation=SHADOW_RESEARCH_RETRY_CONFIRMATION,
+        now="2026-08-11T08:04:00+00:00",
+    )
+    replayed_authorization = store.authorize_retry(
+        first["run_id"],
+        approved_by="human:owner",
+        notes="Retry the rejected provider response once.",
+        confirmation=SHADOW_RESEARCH_RETRY_CONFIRMATION,
+        now="2026-08-11T08:05:00+00:00",
+    )
+    assert replayed_authorization == authorization
+    assert authorization["provider_calls_at_authorization"] == 1
+    assert authorization["authorized_additional_calls"] == 10
+    assert authorization["provider_call_ceiling"] == 11
+    assert authorization["consumed"] is False
+    assert authorization["authority_effect"] == "research_only"
+    assert authorization["automatic_strategy_replacement_enabled"] is False
+    assert authorization["broker_submission_enabled"] is False
+    assert authorization["capital_authority_changed"] is False
+
+    replacement, reused = store.claim_run(
+        market_date="2026-08-11",
+        input_fingerprint=first["input_fingerprint"],
+        baseline_seed_result_id=25,
+        valuation_snapshot_id="valuation-complete",
+        ledger_cutoff_id=12,
+        now="2026-08-11T08:06:00+00:00",
+    )
+    assert reused is False
+    assert replacement["run_id"] != first["run_id"]
+    assert replacement["input_fingerprint"] != first["input_fingerprint"]
+    for ordinal in range(1, 11):
+        call, reused = store.claim_provider_call(
+            call_id=f"{replacement['run_id']}:authorized:{ordinal:02d}",
+            run_id=replacement["run_id"],
+            market_date="2026-08-11",
+            call_kind="authorized_retry",
+            call_limit=10,
+            now=f"2026-08-11T08:{ordinal + 6:02d}:00+00:00",
+        )
+        assert reused is False
+        assert call["status"] == "reserved"
+    with pytest.raises(ShadowResearchRejected, match="call_limit"):
+        store.claim_provider_call(
+            call_id=f"{replacement['run_id']}:authorized:11",
+            run_id=replacement["run_id"],
+            market_date="2026-08-11",
+            call_kind="authorized_retry",
+            call_limit=10,
+            now="2026-08-11T08:17:00+00:00",
+        )
+
+    usage = store.usage_for_market_date("2026-08-11")
+    assert usage["provider_calls"] == 11
+    assert usage["authorized_additional_calls"] == 10
+    assert usage["authorized_provider_call_ceiling"] == 11
+    assert usage["retry_authorization_consumed"] is True
+    assert usage["retry_replacement_run_id"] == replacement["run_id"]
+    consumed = store.authorize_retry(
+        first["run_id"],
+        approved_by="human:owner",
+        notes="Retry the rejected provider response once.",
+        confirmation=SHADOW_RESEARCH_RETRY_CONFIRMATION,
+        now="2026-08-11T08:18:00+00:00",
+    )
+    assert consumed["consumed"] is True
+    assert consumed["replacement_run_id"] == replacement["run_id"]
+    replayed_run, reused = store.claim_run(
+        market_date="2026-08-11",
+        input_fingerprint=first["input_fingerprint"],
+        baseline_seed_result_id=25,
+        valuation_snapshot_id="valuation-complete",
+        ledger_cutoff_id=12,
+        now="2026-08-11T08:19:00+00:00",
+    )
+    assert reused is True
+    assert replayed_run["run_id"] == replacement["run_id"]
+    with sqlite3.connect(tmp_path / "app.db") as conn:
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM ai_shadow_research_retry_authorizations"
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM ai_shadow_research_retry_consumptions"
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM ai_shadow_research_candidates"
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM ai_shadow_research_promotions"
+            ).fetchone()[0]
+            == 0
+        )
+
+
+@pytest.mark.unit
+def test_runtime_role_conflict_has_provider_free_failure_code() -> None:
+    assert (
+        _failure_code(
+            ValueError(
+                "conflicting role id: external.strategy_hypothesis_researcher.v7"
+            )
+        )
+        == "ai_runtime_role_identity_conflict"
+    )
 
 
 @pytest.mark.unit

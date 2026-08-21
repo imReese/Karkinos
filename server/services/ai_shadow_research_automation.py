@@ -94,12 +94,28 @@ SHADOW_RESEARCH_PAUSE_CONFIRMATION = (
     "pause_after_close_ai_strategy_research_without_changing_trading_authority"
 )
 SHADOW_RESEARCH_PROMOTION_CONFIRMATION = "approve_evidence_bound_candidate_for_paper_shadow_only_without_production_or_trade_authority"
+SHADOW_RESEARCH_RETRY_CONFIRMATION = (
+    "authorize_one_additional_complete_five_round_ten_call_strategy_research_"
+    "retry_without_strategy_trade_or_capital_authority"
+)
 _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION = (
     STRATEGY_RESEARCH_PROVIDER_TOKEN_RESERVATION
 )
 SHADOW_RESEARCH_MAX_PROVIDER_CALLS = STRATEGY_RESEARCH_MAX_PROVIDER_CALLS
 SHADOW_RESEARCH_MAX_CANDIDATES = STRATEGY_RESEARCH_MAX_CANDIDATES
+_PROVIDER_FREE_RETRYABLE_FAILURE_CODES = (
+    "account_evidence_binding_mismatch",
+    "ai_runtime_role_identity_conflict",
+    "research_account_binding_required",
+    "research_account_capital_evidence_not_passing",
+    "research_account_evidence_identity_mismatch",
+    "research_account_evidence_not_authoritative",
+    "research_account_total_equity_invalid",
+    "research_account_truth_binding_not_reconciled",
+    "research_initial_cash_exceeds_current_account_equity",
+    "research_initial_cash_invalid",
+)
 
 
 class ShadowResearchRejected(ValueError):
@@ -291,6 +307,37 @@ class ShadowResearchStore:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS ai_shadow_research_run_attempts (
+                    attempt_id TEXT PRIMARY KEY,
+                    market_date TEXT NOT NULL,
+                    superseded_run_id TEXT NOT NULL UNIQUE,
+                    superseded_input_fingerprint TEXT NOT NULL UNIQUE,
+                    replacement_run_id TEXT NOT NULL,
+                    replacement_input_fingerprint TEXT NOT NULL,
+                    failure_code TEXT NOT NULL,
+                    run_snapshot_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS ai_shadow_research_retry_authorizations (
+                    authorization_id TEXT PRIMARY KEY,
+                    failed_run_id TEXT NOT NULL UNIQUE,
+                    market_date TEXT NOT NULL UNIQUE,
+                    failed_input_fingerprint TEXT NOT NULL,
+                    failure_code TEXT NOT NULL,
+                    provider_calls_at_authorization INTEGER NOT NULL,
+                    authorized_additional_calls INTEGER NOT NULL
+                        CHECK(authorized_additional_calls = 10),
+                    provider_call_ceiling INTEGER NOT NULL,
+                    approved_by TEXT NOT NULL,
+                    notes TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS ai_shadow_research_retry_consumptions (
+                    authorization_id TEXT PRIMARY KEY,
+                    replacement_run_id TEXT NOT NULL UNIQUE,
+                    replacement_input_fingerprint TEXT NOT NULL UNIQUE,
+                    consumed_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS ai_shadow_research_candidates (
                     candidate_id TEXT PRIMARY KEY,
                     run_id TEXT NOT NULL,
@@ -337,18 +384,117 @@ class ShadowResearchStore:
         ledger_cutoff_id: int,
         now: str,
     ) -> tuple[dict[str, Any], bool]:
-        run_id = f"ai-shadow-research:{market_date}:{input_fingerprint[:16]}"
         with self._connect(immediate=True) as conn:
             existing = conn.execute(
                 """
-                SELECT * FROM ai_shadow_research_runs
-                WHERE input_fingerprint=? OR market_date=?
+                SELECT * FROM ai_shadow_research_runs WHERE market_date=?
                 ORDER BY created_at LIMIT 1
                 """,
-                (input_fingerprint, market_date),
+                (market_date,),
             ).fetchone()
             if existing is not None:
-                return dict(existing), True
+                existing_run = dict(existing)
+                retry_authorization = self._unconsumed_retry_authorization(
+                    conn, existing_run
+                )
+                provider_free_rearm = input_fingerprint != existing_run[
+                    "input_fingerprint"
+                ] and self._can_rearm_provider_free_failure(conn, existing_run)
+                if retry_authorization is not None:
+                    input_fingerprint = content_fingerprint(
+                        {
+                            "failed_input_fingerprint": existing_run[
+                                "input_fingerprint"
+                            ],
+                            "current_input_fingerprint": input_fingerprint,
+                            "retry_authorization_id": retry_authorization[
+                                "authorization_id"
+                            ],
+                        }
+                    )
+                elif not provider_free_rearm:
+                    return existing_run, True
+                run_id = f"ai-shadow-research:{market_date}:{input_fingerprint[:16]}"
+                attempt_id = (
+                    "ai-shadow-research-attempt:"
+                    + content_fingerprint(
+                        {
+                            "superseded_run_id": existing_run["run_id"],
+                            "replacement_run_id": run_id,
+                            "recorded_at": now,
+                        }
+                    )[:24]
+                )
+                conn.execute(
+                    """
+                    INSERT INTO ai_shadow_research_run_attempts
+                    (attempt_id, market_date, superseded_run_id,
+                     superseded_input_fingerprint, replacement_run_id,
+                     replacement_input_fingerprint, failure_code,
+                     run_snapshot_json, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        attempt_id,
+                        market_date,
+                        existing_run["run_id"],
+                        existing_run["input_fingerprint"],
+                        run_id,
+                        input_fingerprint,
+                        existing_run["failure_code"],
+                        canonical_json(existing_run),
+                        now,
+                    ),
+                )
+                conn.execute(
+                    """
+                    UPDATE ai_shadow_research_runs
+                    SET run_id=?, input_fingerprint=?, status='running',
+                        baseline_seed_result_id=?, baseline_result_id=NULL,
+                        valuation_snapshot_id=?, ledger_cutoff_id=?,
+                        session_id=NULL, failure_code=NULL, candidate_count=0,
+                        created_at=?, updated_at=?
+                    WHERE run_id=?
+                    """,
+                    (
+                        run_id,
+                        input_fingerprint,
+                        baseline_seed_result_id,
+                        valuation_snapshot_id,
+                        ledger_cutoff_id,
+                        now,
+                        now,
+                        existing_run["run_id"],
+                    ),
+                )
+                if retry_authorization is not None:
+                    conn.execute(
+                        """
+                        INSERT INTO ai_shadow_research_retry_consumptions
+                        (authorization_id, replacement_run_id,
+                         replacement_input_fingerprint, consumed_at)
+                        VALUES (?, ?, ?, ?)
+                        """,
+                        (
+                            retry_authorization["authorization_id"],
+                            run_id,
+                            input_fingerprint,
+                            now,
+                        ),
+                    )
+                rearmed = conn.execute(
+                    "SELECT * FROM ai_shadow_research_runs WHERE run_id=?", (run_id,)
+                ).fetchone()
+                if rearmed is None:
+                    raise RuntimeError("shadow research retry persistence failed")
+                return dict(rearmed), False
+            duplicate_input = conn.execute(
+                "SELECT * FROM ai_shadow_research_runs WHERE input_fingerprint=?",
+                (input_fingerprint,),
+            ).fetchone()
+            if duplicate_input is not None:
+                return dict(duplicate_input), True
+            run_id = f"ai-shadow-research:{market_date}:{input_fingerprint[:16]}"
             conn.execute(
                 """
                 INSERT INTO ai_shadow_research_runs
@@ -369,6 +515,196 @@ class ShadowResearchStore:
                 ),
             )
         return self.get_run(run_id), False
+
+    def authorize_retry(
+        self,
+        failed_run_id: str,
+        *,
+        approved_by: str,
+        notes: str,
+        confirmation: str,
+        now: str,
+    ) -> dict[str, Any]:
+        """Append one owner-authorized, research-only ten-call retry envelope."""
+        if confirmation != SHADOW_RESEARCH_RETRY_CONFIRMATION:
+            raise PermissionError("research retry requires exact owner confirmation")
+        approved_by = approved_by.strip()
+        notes = notes.strip()
+        if not approved_by or not notes:
+            raise ShadowResearchRejected("retry_approver_and_notes_required")
+        with self._connect(immediate=True) as conn:
+            existing = conn.execute(
+                """
+                SELECT * FROM ai_shadow_research_retry_authorizations
+                WHERE failed_run_id=?
+                """,
+                (failed_run_id,),
+            ).fetchone()
+            if existing is not None:
+                if existing["approved_by"] != approved_by or existing["notes"] != notes:
+                    raise ShadowResearchRejected("retry_authorization_conflict")
+                return self._retry_authorization_row(conn, existing)
+
+            failed_run = conn.execute(
+                "SELECT * FROM ai_shadow_research_runs WHERE run_id=?",
+                (failed_run_id,),
+            ).fetchone()
+            if failed_run is None:
+                raise LookupError(f"shadow research run not found: {failed_run_id}")
+            if (
+                failed_run["status"] != "failed"
+                or not str(failed_run["failure_code"] or "")
+                or int(failed_run["candidate_count"] or 0) != 0
+            ):
+                raise ShadowResearchRejected("retry_requires_failed_zero_candidate_run")
+            candidate = conn.execute(
+                "SELECT 1 FROM ai_shadow_research_candidates WHERE run_id=? LIMIT 1",
+                (failed_run_id,),
+            ).fetchone()
+            if candidate is not None:
+                raise ShadowResearchRejected("retry_requires_no_candidate_artifact")
+            placeholders = ", ".join(
+                "?" for _ in _PROVIDER_FREE_RETRYABLE_FAILURE_CODES
+            )
+            failed_provider_call = conn.execute(
+                f"""
+                SELECT status, failure_code
+                FROM ai_shadow_research_provider_calls
+                WHERE run_id=? AND NOT (
+                    status='failed'
+                    AND COALESCE(actual_tokens, 0)=0
+                    AND failure_code IN ({placeholders})
+                )
+                ORDER BY created_at DESC, call_id DESC LIMIT 1
+                """,
+                (failed_run_id, *_PROVIDER_FREE_RETRYABLE_FAILURE_CODES),
+            ).fetchone()
+            if (
+                failed_provider_call is None
+                or failed_provider_call["status"] != "failed"
+                or not str(failed_provider_call["failure_code"] or "")
+            ):
+                raise ShadowResearchRejected(
+                    "retry_requires_failed_real_provider_call_evidence"
+                )
+            market_date = str(failed_run["market_date"])
+            market_conflict = conn.execute(
+                """
+                SELECT 1 FROM ai_shadow_research_retry_authorizations
+                WHERE market_date=? LIMIT 1
+                """,
+                (market_date,),
+            ).fetchone()
+            if market_conflict is not None:
+                raise ShadowResearchRejected(
+                    "one_research_retry_authorization_per_market_date"
+                )
+            provider_calls = self._real_provider_call_count(conn, market_date)
+            if provider_calls <= 0:
+                raise ShadowResearchRejected(
+                    "retry_requires_failed_real_provider_call_evidence"
+                )
+            additional_calls = SHADOW_RESEARCH_MAX_PROVIDER_CALLS
+            provider_call_ceiling = provider_calls + additional_calls
+            authorization_id = (
+                "ai-shadow-research-retry:"
+                + content_fingerprint(
+                    {
+                        "failed_run_id": failed_run_id,
+                        "failure_code": failed_run["failure_code"],
+                        "provider_calls_at_authorization": provider_calls,
+                        "authorized_additional_calls": additional_calls,
+                        "approved_by": approved_by,
+                        "notes": notes,
+                    }
+                )[:24]
+            )
+            conn.execute(
+                """
+                INSERT INTO ai_shadow_research_retry_authorizations
+                (authorization_id, failed_run_id, market_date,
+                 failed_input_fingerprint, failure_code,
+                 provider_calls_at_authorization, authorized_additional_calls,
+                 provider_call_ceiling, approved_by, notes, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    authorization_id,
+                    failed_run_id,
+                    market_date,
+                    failed_run["input_fingerprint"],
+                    failed_run["failure_code"],
+                    provider_calls,
+                    additional_calls,
+                    provider_call_ceiling,
+                    approved_by,
+                    notes,
+                    now,
+                ),
+            )
+            saved = conn.execute(
+                """
+                SELECT * FROM ai_shadow_research_retry_authorizations
+                WHERE authorization_id=?
+                """,
+                (authorization_id,),
+            ).fetchone()
+            if saved is None:
+                raise RuntimeError("research retry authorization persistence failed")
+            return self._retry_authorization_row(conn, saved)
+
+    def _unconsumed_retry_authorization(
+        self,
+        conn: sqlite3.Connection,
+        run: Mapping[str, Any],
+    ) -> sqlite3.Row | None:
+        if run.get("status") != "failed" or int(run.get("candidate_count") or 0) != 0:
+            return None
+        return conn.execute(
+            """
+            SELECT authorization.*
+            FROM ai_shadow_research_retry_authorizations AS authorization
+            LEFT JOIN ai_shadow_research_retry_consumptions AS consumption
+              ON consumption.authorization_id=authorization.authorization_id
+            WHERE authorization.failed_run_id=?
+              AND authorization.failed_input_fingerprint=?
+              AND consumption.authorization_id IS NULL
+            """,
+            (run["run_id"], run["input_fingerprint"]),
+        ).fetchone()
+
+    def _can_rearm_provider_free_failure(
+        self,
+        conn: sqlite3.Connection,
+        run: Mapping[str, Any],
+    ) -> bool:
+        if (
+            run.get("status") != "failed"
+            or str(run.get("failure_code") or "")
+            not in _PROVIDER_FREE_RETRYABLE_FAILURE_CODES
+            or int(run.get("candidate_count") or 0) != 0
+        ):
+            return False
+        candidate = conn.execute(
+            "SELECT 1 FROM ai_shadow_research_candidates WHERE run_id=? LIMIT 1",
+            (run["run_id"],),
+        ).fetchone()
+        if candidate is not None:
+            return False
+        placeholders = ", ".join("?" for _ in _PROVIDER_FREE_RETRYABLE_FAILURE_CODES)
+        contacted = conn.execute(
+            f"""
+            SELECT 1 FROM ai_shadow_research_provider_calls
+            WHERE run_id=? AND NOT (
+                status='failed'
+                AND COALESCE(actual_tokens, 0)=0
+                AND failure_code IN ({placeholders})
+            )
+            LIMIT 1
+            """,
+            (run["run_id"], *_PROVIDER_FREE_RETRYABLE_FAILURE_CODES),
+        ).fetchone()
+        return contacted is None
 
     def get_run(self, run_id: str) -> dict[str, Any]:
         with self._connect_readonly() as conn:
@@ -462,14 +798,24 @@ class ShadowResearchStore:
             ).fetchone()
             if existing is not None:
                 return dict(existing), True
-            totals = conn.execute(
+            provider_calls = self._real_provider_call_count(conn, market_date)
+            authorized_ceiling = conn.execute(
                 """
-                SELECT COUNT(*) AS calls
-                FROM ai_shadow_research_provider_calls WHERE market_date=?
+                SELECT authorization.provider_call_ceiling
+                FROM ai_shadow_research_retry_consumptions AS consumption
+                JOIN ai_shadow_research_retry_authorizations AS authorization
+                  ON authorization.authorization_id=consumption.authorization_id
+                WHERE consumption.replacement_run_id=?
+                  AND authorization.market_date=?
                 """,
-                (market_date,),
+                (run_id, market_date),
             ).fetchone()
-            if int(totals["calls"]) >= call_limit:
+            effective_call_limit = (
+                int(authorized_ceiling["provider_call_ceiling"])
+                if authorized_ceiling is not None
+                else call_limit
+            )
+            if provider_calls >= effective_call_limit:
                 raise ShadowResearchRejected("daily_provider_call_limit_reached")
             conn.execute(
                 """
@@ -489,6 +835,59 @@ class ShadowResearchStore:
                 ),
             )
         return self.get_provider_call(call_id), False
+
+    def _real_provider_call_count(
+        self,
+        conn: sqlite3.Connection,
+        market_date: str,
+    ) -> int:
+        totals = conn.execute(
+            f"""
+            SELECT COUNT(*) AS calls
+            FROM ai_shadow_research_provider_calls
+            WHERE market_date=? AND NOT (
+                status='failed'
+                AND COALESCE(actual_tokens, 0)=0
+                AND failure_code IN ({", ".join("?" for _ in _PROVIDER_FREE_RETRYABLE_FAILURE_CODES)})
+            )
+            """,
+            (market_date, *_PROVIDER_FREE_RETRYABLE_FAILURE_CODES),
+        ).fetchone()
+        return int(totals["calls"])
+
+    def _retry_authorization_row(
+        self,
+        conn: sqlite3.Connection,
+        row: sqlite3.Row,
+    ) -> dict[str, Any]:
+        consumption = conn.execute(
+            """
+            SELECT replacement_run_id, replacement_input_fingerprint, consumed_at
+            FROM ai_shadow_research_retry_consumptions
+            WHERE authorization_id=?
+            """,
+            (row["authorization_id"],),
+        ).fetchone()
+        return {
+            **dict(row),
+            "consumed": consumption is not None,
+            "replacement_run_id": (
+                consumption["replacement_run_id"] if consumption is not None else None
+            ),
+            "replacement_input_fingerprint": (
+                consumption["replacement_input_fingerprint"]
+                if consumption is not None
+                else None
+            ),
+            "consumed_at": (
+                consumption["consumed_at"] if consumption is not None else None
+            ),
+            "automatic_strategy_replacement_enabled": False,
+            "production_strategy_mutation_enabled": False,
+            "broker_submission_enabled": False,
+            "capital_authority_changed": False,
+            "authority_effect": "research_only",
+        }
 
     def get_provider_call(self, call_id: str) -> dict[str, Any]:
         with self._connect_readonly() as conn:
@@ -746,17 +1145,50 @@ class ShadowResearchStore:
             return {
                 "market_date": None,
                 "provider_calls": 0,
+                "recorded_call_attempts": 0,
+                "provider_free_rejections": 0,
                 "reserved_tokens": 0,
                 "actual_tokens": 0,
+                "retry_authorization_id": None,
+                "retry_authorization_consumed": False,
+                "authorized_additional_calls": 0,
+                "authorized_provider_call_ceiling": None,
+                "retry_replacement_run_id": None,
             }
         try:
             with self._connect_readonly() as conn:
                 row = conn.execute(
-                    """
-                    SELECT COUNT(*) AS calls,
-                           COALESCE(SUM(reserved_tokens), 0) AS reserved,
+                    f"""
+                    SELECT COUNT(*) AS recorded_calls,
+                           COALESCE(SUM(CASE WHEN NOT (
+                               status='failed'
+                               AND COALESCE(actual_tokens, 0)=0
+                               AND failure_code IN ({", ".join("?" for _ in _PROVIDER_FREE_RETRYABLE_FAILURE_CODES)})
+                           ) THEN 1 ELSE 0 END), 0) AS calls,
+                           COALESCE(SUM(CASE WHEN NOT (
+                               status='failed'
+                               AND COALESCE(actual_tokens, 0)=0
+                               AND failure_code IN ({", ".join("?" for _ in _PROVIDER_FREE_RETRYABLE_FAILURE_CODES)})
+                           ) THEN reserved_tokens ELSE 0 END), 0) AS reserved,
                            COALESCE(SUM(actual_tokens), 0) AS actual
                     FROM ai_shadow_research_provider_calls WHERE market_date=?
+                    """,
+                    (
+                        *_PROVIDER_FREE_RETRYABLE_FAILURE_CODES,
+                        *_PROVIDER_FREE_RETRYABLE_FAILURE_CODES,
+                        market_date,
+                    ),
+                ).fetchone()
+                authorization = conn.execute(
+                    """
+                    SELECT authorization.authorization_id,
+                           authorization.authorized_additional_calls,
+                           authorization.provider_call_ceiling,
+                           consumption.replacement_run_id
+                    FROM ai_shadow_research_retry_authorizations AS authorization
+                    LEFT JOIN ai_shadow_research_retry_consumptions AS consumption
+                      ON consumption.authorization_id=authorization.authorization_id
+                    WHERE authorization.market_date=?
                     """,
                     (market_date,),
                 ).fetchone()
@@ -764,14 +1196,45 @@ class ShadowResearchStore:
             return {
                 "market_date": market_date,
                 "provider_calls": 0,
+                "recorded_call_attempts": 0,
+                "provider_free_rejections": 0,
                 "reserved_tokens": 0,
                 "actual_tokens": 0,
+                "retry_authorization_id": None,
+                "retry_authorization_consumed": False,
+                "authorized_additional_calls": 0,
+                "authorized_provider_call_ceiling": None,
+                "retry_replacement_run_id": None,
             }
         return {
             "market_date": market_date,
             "provider_calls": int(row["calls"]),
+            "recorded_call_attempts": int(row["recorded_calls"]),
+            "provider_free_rejections": int(row["recorded_calls"]) - int(row["calls"]),
             "reserved_tokens": int(row["reserved"]),
             "actual_tokens": int(row["actual"]),
+            "retry_authorization_id": (
+                authorization["authorization_id"] if authorization is not None else None
+            ),
+            "retry_authorization_consumed": bool(
+                authorization is not None
+                and authorization["replacement_run_id"] is not None
+            ),
+            "authorized_additional_calls": (
+                int(authorization["authorized_additional_calls"])
+                if authorization is not None
+                else 0
+            ),
+            "authorized_provider_call_ceiling": (
+                int(authorization["provider_call_ceiling"])
+                if authorization is not None
+                else None
+            ),
+            "retry_replacement_run_id": (
+                authorization["replacement_run_id"]
+                if authorization is not None
+                else None
+            ),
         }
 
     def _connect(self, *, immediate: bool = False) -> _CommitConnection:
@@ -953,6 +1416,22 @@ class AiShadowResearchAutomationService:
             "human_paper_shadow_approval_required": True,
             "authority_effect": "research_only",
         }
+
+    def authorize_retry(
+        self,
+        failed_run_id: str,
+        *,
+        approved_by: str,
+        notes: str,
+        confirmation: str,
+    ) -> dict[str, Any]:
+        return self._store.authorize_retry(
+            failed_run_id,
+            approved_by=approved_by,
+            notes=notes,
+            confirmation=confirmation,
+            now=self._utc_now(),
+        )
 
     def approve_candidate(
         self,
@@ -2204,6 +2683,10 @@ def _json_list(value: Any) -> list[Any]:
 
 def _failure_code(exc: Exception) -> str:
     value = str(exc).strip()
+    if isinstance(exc, ValueError) and value.startswith(
+        "conflicting role id: external.strategy_"
+    ):
+        return "ai_runtime_role_identity_conflict"
     if (
         value
         and len(value) <= 160
