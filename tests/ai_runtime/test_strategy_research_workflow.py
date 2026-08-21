@@ -801,6 +801,10 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
             "external.strategy_hypothesis_researcher.v6",
             "karkinos.ai.strategy_research_prompt.v7",
         ),
+        (
+            "external.strategy_hypothesis_researcher.v7",
+            "karkinos.ai.strategy_research_prompt.v8",
+        ),
     ):
         registry.register_role(
             AgentRole(
@@ -848,10 +852,11 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
     assert "external.strategy_hypothesis_researcher.v5" in role_ids
     assert "external.strategy_hypothesis_researcher.v6" in role_ids
     assert "external.strategy_hypothesis_researcher.v7" in role_ids
+    assert "external.strategy_hypothesis_researcher.v8" in role_ids
     current_role = next(
         item
         for item in service._ai_store.list_roles()
-        if item.role_id == "external.strategy_hypothesis_researcher.v7"
+        if item.role_id == "external.strategy_hypothesis_researcher.v8"
     )
     assert "account_state_projection.read" in current_role.allowed_tools
     assert (
