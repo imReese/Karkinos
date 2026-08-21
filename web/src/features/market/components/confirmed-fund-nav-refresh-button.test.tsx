@@ -175,3 +175,17 @@ test('invalidates evidence and decision projections after an audited run', async
     });
   });
 });
+
+test('finishes the audited refresh without waiting for projection refetches', async () => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    jsonResponse(createResponse('success')),
+  );
+  const user = userEvent.setup();
+  const { invalidateSpy } = renderButton();
+  invalidateSpy.mockImplementation(() => new Promise(() => undefined));
+
+  await user.click(screen.getByRole('button', { name: 'Sync confirmed NAV' }));
+
+  expect(await screen.findByText('1 confirmed fund NAV recorded')).toBeTruthy();
+  expect(invalidateSpy).toHaveBeenCalled();
+});

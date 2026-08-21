@@ -1,18 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiClient } from '../../lib/api/client';
-
-const LIVE_REFETCH_MS = 5_000;
-
-function liveRefetchInterval() {
-  if (
-    typeof document !== 'undefined' &&
-    document.visibilityState !== 'visible'
-  ) {
-    return false;
-  }
-  return LIVE_REFETCH_MS;
-}
+import { visiblePersistedProjectionRefetchInterval } from '../../lib/api/query-policy';
 
 export type LedgerEntry = {
   id: number;
@@ -145,7 +134,7 @@ export function useLedgerEntriesQuery(limit = 50, enabled = true) {
       apiClient<LedgerEntry[]>(`/api/ledger/entries?limit=${limit}`),
     staleTime: 2_000,
     enabled,
-    refetchInterval: liveRefetchInterval,
+    refetchInterval: visiblePersistedProjectionRefetchInterval,
     refetchOnWindowFocus: true,
   });
 }

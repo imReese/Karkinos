@@ -191,6 +191,21 @@ test('disables the button while refresh is pending', async () => {
   expect(screen.queryByTestId('market-refresh-spinner')).toBeNull();
 });
 
+test('finishes the refresh action without waiting for projection refetches', async () => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+    jsonResponse(createRefreshResponse()),
+  );
+  const user = userEvent.setup();
+  const { invalidateSpy } = renderRefreshButton();
+  invalidateSpy.mockImplementation(() => new Promise(() => undefined));
+
+  await user.click(screen.getByRole('button', { name: 'Refresh quotes' }));
+
+  await screen.findByText('Quote refresh completed');
+  expect(screen.queryByTestId('market-refresh-spinner')).toBeNull();
+  expect(invalidateSpy).toHaveBeenCalled();
+});
+
 test('shows cached quote result without claiming real-time success', async () => {
   vi.spyOn(globalThis, 'fetch').mockResolvedValue(
     jsonResponse(createRefreshResponse('stale')),

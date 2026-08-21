@@ -1,18 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { apiClient } from '../../lib/api/client';
-
-const LIVE_REFETCH_MS = 5_000;
-
-function liveRefetchInterval() {
-  if (
-    typeof document !== 'undefined' &&
-    document.visibilityState !== 'visible'
-  ) {
-    return false;
-  }
-  return LIVE_REFETCH_MS;
-}
+import { visiblePersistedProjectionRefetchInterval } from '../../lib/api/query-policy';
 
 export type Position = {
   symbol: string;
@@ -257,7 +246,7 @@ export function usePositionsQuery(enabled = true) {
     queryFn: () => apiClient<Position[]>('/api/portfolio/positions'),
     staleTime: 10_000,
     enabled,
-    refetchInterval: liveRefetchInterval,
+    refetchInterval: visiblePersistedProjectionRefetchInterval,
     refetchOnWindowFocus: true,
   });
 }
@@ -267,7 +256,7 @@ export function useAllocationQuery() {
     queryKey: ['portfolio-allocation'],
     queryFn: () => apiClient<AllocationItem[]>('/api/portfolio/allocation'),
     staleTime: 15_000,
-    refetchInterval: liveRefetchInterval,
+    refetchInterval: visiblePersistedProjectionRefetchInterval,
     refetchOnWindowFocus: true,
   });
 }
@@ -277,7 +266,7 @@ export function usePortfolioSnapshotQuery() {
     queryKey: ['portfolio-snapshot'],
     queryFn: () => apiClient<PortfolioSnapshot>('/api/portfolio'),
     staleTime: 10_000,
-    refetchInterval: liveRefetchInterval,
+    refetchInterval: visiblePersistedProjectionRefetchInterval,
     refetchOnWindowFocus: true,
   });
 }
@@ -291,7 +280,7 @@ export function useCurrentHoldingMarketEvidenceReviewQuery(enabled = true) {
       ),
     staleTime: 10_000,
     enabled,
-    refetchInterval: liveRefetchInterval,
+    refetchInterval: visiblePersistedProjectionRefetchInterval,
     refetchOnWindowFocus: true,
   });
 }
@@ -302,7 +291,7 @@ export function usePortfolioCockpitQuery(enabled = true) {
     queryFn: () => apiClient<PortfolioCockpit>('/api/portfolio/cockpit'),
     staleTime: 10_000,
     enabled,
-    refetchInterval: liveRefetchInterval,
+    refetchInterval: visiblePersistedProjectionRefetchInterval,
     refetchOnWindowFocus: true,
   });
 }
@@ -314,7 +303,7 @@ export function useLiveHoldingsQuery(enabled = true) {
       apiClient<LiveHoldingsResponse>('/api/portfolio/live-holdings'),
     staleTime: 10_000,
     enabled,
-    refetchInterval: liveRefetchInterval,
+    refetchInterval: visiblePersistedProjectionRefetchInterval,
     refetchOnWindowFocus: true,
   });
 }
