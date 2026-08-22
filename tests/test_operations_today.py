@@ -57,6 +57,157 @@ def _plan(order_intent_count: int = 1) -> dict:
     }
 
 
+def _stale_account_truth_decision() -> dict:
+    decision = _decision()
+    decision["summary"]["account_truth"] = {
+        "gate_status": "blocked",
+        "has_evidence": True,
+        "data_freshness_status": "stale",
+        "unresolved_mismatch_count": 0,
+        "reconciliation_status": "pass",
+        "blocking_reasons": [
+            "account_truth_snapshot_stale",
+            "account_truth_gate_not_pass:degraded",
+        ],
+        "ledger_coverage": {"status": "covered"},
+        "captured_at": "2026-07-03T08:45:00+08:00",
+        "limitations": ["Account Truth is stale."],
+    }
+    return decision
+
+
+def _non_trading_schedule() -> dict:
+    return {
+        "status": "not_trading_day",
+        "run_date": "2026-07-04",
+        "due": False,
+    }
+
+
+def test_operations_today_suppresses_staleness_only_on_a_non_trading_day() -> None:
+    summary = build_operations_today_summary(
+        decision_payload=_stale_account_truth_decision(),
+        trading_plan={
+            **_plan(order_intent_count=0),
+            "plan_date": "2026-07-03",
+            "manual_ready_count": 0,
+            "conclusion_status": "no_manual_action",
+        },
+        daily_operations=_operations(manual_ready_count=0).model_copy(
+            update={
+                "conclusion_status": "no_manual_action",
+                "primary_target": "decision",
+            }
+        ),
+        order_facts=[],
+        fill_facts=[],
+        daily_candidate_schedule=_non_trading_schedule(),
+    )
+
+    account_truth = next(
+        item for item in summary["subsystems"] if item["id"] == "account_truth"
+    )
+    scheduler = next(
+        item for item in summary["subsystems"] if item["id"] == "scheduler"
+    )
+    assert account_truth["status"] == "skipped"
+    assert account_truth["next_action"] == "none"
+    assert account_truth["detail_status"] == "stale_non_trading_day"
+    assert account_truth["last_run_at"] == "2026-07-03T08:45:00+08:00"
+    assert scheduler["status"] == "skipped"
+    assert scheduler["detail_status"] == "not_trading_day"
+    assert all(
+        item["subsystem_id"] not in {"account_truth", "scheduler"}
+        for item in summary["attention_items"]
+    )
+
+
+def test_operations_today_keeps_real_account_mismatch_on_a_non_trading_day() -> None:
+    decision = _stale_account_truth_decision()
+    decision["summary"]["account_truth"].update(
+        {
+            "unresolved_mismatch_count": 1,
+            "blocking_reasons": [
+                "account_truth_snapshot_stale",
+                "account_truth_unresolved_mismatch",
+            ],
+        }
+    )
+
+    summary = build_operations_today_summary(
+        decision_payload=decision,
+        trading_plan=_plan(order_intent_count=0),
+        daily_operations=_operations(manual_ready_count=0),
+        order_facts=[],
+        fill_facts=[],
+        daily_candidate_schedule=_non_trading_schedule(),
+    )
+
+    account_truth = next(
+        item for item in summary["subsystems"] if item["id"] == "account_truth"
+    )
+    assert account_truth["status"] == "blocked"
+    assert account_truth["next_action"] == "resolve_account_truth_mismatch"
+    attention = next(
+        item
+        for item in summary["attention_items"]
+        if item["subsystem_id"] == "account_truth"
+    )
+    assert attention["resolution_condition"] == (
+        "new_complete_account_truth_evidence_required"
+    )
+
+
+def test_operations_today_does_not_suppress_unproven_staleness() -> None:
+    decision = _stale_account_truth_decision()
+    decision["summary"]["account_truth"].pop("has_evidence")
+
+    summary = build_operations_today_summary(
+        decision_payload=decision,
+        trading_plan=_plan(order_intent_count=0),
+        daily_operations=_operations(manual_ready_count=0),
+        order_facts=[],
+        fill_facts=[],
+        daily_candidate_schedule=_non_trading_schedule(),
+    )
+
+    account_truth = next(
+        item for item in summary["subsystems"] if item["id"] == "account_truth"
+    )
+    assert account_truth["status"] == "blocked"
+    assert account_truth["next_action"] == "resolve_account_truth_mismatch"
+
+
+def test_operations_today_labels_trading_day_staleness_as_snapshot_refresh() -> None:
+    summary = build_operations_today_summary(
+        decision_payload=_stale_account_truth_decision(),
+        trading_plan=_plan(order_intent_count=0),
+        daily_operations=_operations(manual_ready_count=0),
+        order_facts=[],
+        fill_facts=[],
+        daily_candidate_schedule={
+            "status": "waiting_for_decision_window",
+            "run_date": "2026-07-01",
+            "due": False,
+        },
+    )
+
+    account_truth = next(
+        item for item in summary["subsystems"] if item["id"] == "account_truth"
+    )
+    assert account_truth["status"] == "blocked"
+    assert account_truth["next_action"] == "refresh_account_truth_snapshot"
+    assert account_truth["detail_status"] == "stale"
+    attention = next(
+        item
+        for item in summary["attention_items"]
+        if item["subsystem_id"] == "account_truth"
+    )
+    assert attention["resolution_condition"] == (
+        "current_account_truth_snapshot_required"
+    )
+
+
 def test_operations_today_requires_shadow_run_for_order_intents() -> None:
     summary = build_operations_today_summary(
         decision_payload=_decision(),
@@ -717,6 +868,42 @@ def test_operations_today_marks_shadow_review_within_expectations() -> None:
     assert summary["paper_shadow"]["next_manual_review_step"] == (
         "review_manual_confirmation"
     )
+
+
+def test_operations_today_excludes_historical_shadow_orders_and_fills() -> None:
+    summary = build_operations_today_summary(
+        decision_payload=_decision(),
+        trading_plan=_plan(),
+        daily_operations=_operations(),
+        order_facts=[
+            {
+                "order_id": "SHADOW-2026-07-01-1",
+                "execution_mode": "paper_shadow",
+                "payload_json": '{"run_id": "shadow:2026-07-01"}',
+            },
+            {
+                "order_id": "SHADOW-2026-06-30-1",
+                "execution_mode": "paper_shadow",
+                "payload_json": '{"run_id": "shadow:2026-06-30"}',
+            },
+        ],
+        fill_facts=[
+            {
+                "fill_id": "FILL-CURRENT",
+                "order_id": "SHADOW-2026-07-01-1",
+                "execution_mode": "paper_shadow",
+            },
+            {
+                "fill_id": "FILL-HISTORICAL",
+                "order_id": "SHADOW-2026-06-30-1",
+                "execution_mode": "paper_shadow",
+            },
+        ],
+    )
+
+    assert summary["paper_shadow"]["simulated_order_count"] == 1
+    assert summary["paper_shadow"]["simulated_fill_count"] == 1
+    assert summary["paper_shadow"]["orders"][0]["order_id"] == ("SHADOW-2026-07-01-1")
 
 
 def test_operations_today_prefers_persisted_paper_shadow_run() -> None:
