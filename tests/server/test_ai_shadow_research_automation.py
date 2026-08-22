@@ -231,6 +231,7 @@ def test_provider_call_claim_is_atomic_capped_and_token_unbounded(tmp_path) -> N
         "research_initial_cash_exceeds_current_account_equity",
         "account_evidence_binding_mismatch",
         "ai_runtime_role_identity_conflict",
+        "reviewed_fee_schedule_current_reconciliation_blocked",
     ],
 )
 def test_provider_free_failed_run_can_be_rearmed_after_input_correction(
@@ -408,6 +409,43 @@ def test_owner_authorized_provider_retry_is_append_only_consumed_once_and_adds_e
     assert reused is False
     assert replacement["run_id"] != first["run_id"]
     assert replacement["input_fingerprint"] != first["input_fingerprint"]
+    provider_free_call, reused = store.claim_provider_call(
+        call_id=f"{replacement['run_id']}:hypothesis:iteration:01",
+        run_id=replacement["run_id"],
+        market_date="2026-08-11",
+        call_kind="hypothesis_iteration",
+        call_limit=10,
+        now="2026-08-11T08:07:00+00:00",
+    )
+    assert reused is False
+    store.finish_provider_call(
+        provider_free_call["call_id"],
+        status="failed",
+        actual_tokens=None,
+        failure_code="reviewed_fee_schedule_current_reconciliation_blocked",
+        now="2026-08-11T08:08:00+00:00",
+    )
+    store.update_run(
+        replacement["run_id"],
+        status="failed",
+        failure_code="reviewed_fee_schedule_current_reconciliation_blocked",
+        now="2026-08-11T08:08:00+00:00",
+    )
+    resumed, reused = store.claim_run(
+        market_date="2026-08-11",
+        input_fingerprint="corrected-runtime-contract-input-fingerprint",
+        baseline_seed_result_id=25,
+        valuation_snapshot_id="valuation-complete",
+        ledger_cutoff_id=12,
+        now="2026-08-11T08:09:00+00:00",
+    )
+    assert reused is False
+    assert resumed["run_id"] != replacement["run_id"]
+    replacement = resumed
+    usage = store.usage_for_market_date("2026-08-11")
+    assert usage["provider_calls"] == 1
+    assert usage["provider_free_rejections"] == 1
+    assert usage["retry_replacement_run_id"] == replacement["run_id"]
     for ordinal in range(1, 11):
         call, reused = store.claim_provider_call(
             call_id=f"{replacement['run_id']}:authorized:{ordinal:02d}",

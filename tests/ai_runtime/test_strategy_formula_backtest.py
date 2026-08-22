@@ -63,6 +63,57 @@ def _formula() -> dict:
     }
 
 
+def test_strategy_selection_binds_or_compatibly_derives_account_truth_clock() -> None:
+    bound = StrategyResearchSelection(
+        saved_backtest_result_id=1,
+        universe=("600000",),
+        asset_classes=("stock",),
+        dataset_snapshot_id="sha256:" + "a" * 64,
+        start_date="2026-01-02",
+        end_date="2026-08-21",
+        frequency="1d",
+        initial_cash=100_000,
+        account_truth_freshness_as_of="2026-08-21T15:45:00+08:00",
+    )
+    assert bound.account_truth_freshness_datetime.isoformat() == (
+        "2026-08-21T15:45:00+08:00"
+    )
+    assert bound.to_external_dict()["account_truth_freshness_as_of"] == (
+        "2026-08-21T15:45:00+08:00"
+    )
+
+    legacy = StrategyResearchSelection(
+        saved_backtest_result_id=1,
+        universe=("600000",),
+        asset_classes=("stock",),
+        dataset_snapshot_id="sha256:" + "b" * 64,
+        start_date="2026-01-02",
+        end_date="2026-08-21",
+        frequency="1d",
+        initial_cash=100_000,
+    )
+    assert legacy.account_truth_freshness_datetime.isoformat() == (
+        "2026-08-21T15:30:00+08:00"
+    )
+    assert "account_truth_freshness_as_of" not in legacy.to_dict()
+
+    with pytest.raises(
+        StrategyResearchRejected,
+        match="account_truth_freshness_as_of_date_mismatch",
+    ):
+        StrategyResearchSelection(
+            saved_backtest_result_id=1,
+            universe=("600000",),
+            asset_classes=("stock",),
+            dataset_snapshot_id="sha256:" + "c" * 64,
+            start_date="2026-01-02",
+            end_date="2026-08-21",
+            frequency="1d",
+            initial_cash=100_000,
+            account_truth_freshness_as_of="2026-08-22T15:30:00+08:00",
+        )
+
+
 def test_restricted_formula_adapter_uses_canonical_after_cost_engine_without_db_sink(
     tmp_path,
 ) -> None:

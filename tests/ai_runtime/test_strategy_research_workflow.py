@@ -657,6 +657,22 @@ def test_external_selection_redacts_account_snapshot_and_ledger_identifiers() ->
 
 
 @pytest.mark.unit
+def test_fee_resolution_uses_selection_bound_account_truth_clock(tmp_path) -> None:
+    service, selection, _, _ = _service(tmp_path)
+    calls: list[dict] = []
+
+    def resolve_fees(**kwargs):
+        calls.append(kwargs)
+        return _reviewed_fee_resolution()
+
+    service._reviewed_fee_schedule_resolver = resolve_fees
+
+    service._resolve_reviewed_fee_schedule(selection)
+
+    assert calls[0]["account_truth_as_of"].isoformat() == ("2025-01-09T15:30:00+08:00")
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize(
     ("valuation_snapshot_id", "ledger_cutoff_id"),
     (("valuation-only", None), (None, 88)),
