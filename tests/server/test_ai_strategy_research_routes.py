@@ -20,6 +20,7 @@ from server.routes.ai_strategy_research import (
     create_router,
 )
 from server.services.ai_shadow_research_automation import (
+    SHADOW_RESEARCH_CITATION_CALL_EXTENSION_CONFIRMATION,
     SHADOW_RESEARCH_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_RETRY_CONFIRMATION,
 )
@@ -377,6 +378,82 @@ def test_shadow_retry_route_requires_exact_confirmation_and_stays_research_only(
 
 
 @pytest.mark.unit
+@pytest.mark.trading_safety
+def test_citation_call_extension_route_is_exactly_one_call_and_research_only(
+    monkeypatch,
+):
+    class ExtensionFixture:
+        def __init__(self) -> None:
+            self.requests = []
+
+        def authorize_citation_call_extension(self, run_id, **payload):
+            self.requests.append((run_id, payload))
+            return {
+                "extension_id": "ai-shadow-research-citation-extension:route",
+                "failed_run_id": run_id,
+                "authorized_additional_calls": 1,
+                "prior_provider_call_ceiling": 11,
+                "provider_call_ceiling": 12,
+                "consumed": False,
+                "automatic_strategy_replacement_enabled": False,
+                "production_strategy_mutation_enabled": False,
+                "broker_submission_enabled": False,
+                "capital_authority_changed": False,
+                "authority_effect": "research_only",
+            }
+
+    fixture = ExtensionFixture()
+    client = _client(monkeypatch, FixtureService())
+    monkeypatch.setattr(
+        "server.routes.ai_strategy_research._build_shadow_write_service",
+        lambda state: fixture,
+    )
+    path = (
+        "/api/ai/strategy-research/shadow-automation/runs/failed-run/"
+        "citation-call-extensions"
+    )
+    invalid = client.post(
+        path,
+        json={
+            "approved_by": "human:owner",
+            "notes": "Restore exactly one call.",
+            "confirmation": "yes",
+        },
+    )
+    assert invalid.status_code == 422
+    assert fixture.requests == []
+
+    response = client.post(
+        path,
+        json={
+            "approved_by": "human:owner",
+            "notes": "Restore exactly one call.",
+            "confirmation": SHADOW_RESEARCH_CITATION_CALL_EXTENSION_CONFIRMATION,
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["authorized_additional_calls"] == 1
+    assert body["prior_provider_call_ceiling"] == 11
+    assert body["provider_call_ceiling"] == 12
+    assert body["automatic_strategy_replacement_enabled"] is False
+    assert body["broker_submission_enabled"] is False
+    assert body["capital_authority_changed"] is False
+    assert body["authority_effect"] == "research_only"
+    assert fixture.requests == [
+        (
+            "failed-run",
+            {
+                "approved_by": "human:owner",
+                "notes": "Restore exactly one call.",
+                "confirmation": (SHADOW_RESEARCH_CITATION_CALL_EXTENSION_CONFIRMATION),
+            },
+        )
+    ]
+
+
+@pytest.mark.unit
 def test_main_app_registers_explicit_strategy_research_routes_only():
     app = create_app({"live_auto_start": False})
     routes = {
@@ -399,6 +476,11 @@ def test_main_app_registers_explicit_strategy_research_routes_only():
         "/api/ai/strategy-research/shadow-automation/runs/{run_id}/retry-authorizations"
     )
     assert (retry_authorization_path, "POST") in routes
+    citation_extension_path = (
+        "/api/ai/strategy-research/shadow-automation/runs/{run_id}/"
+        "citation-call-extensions"
+    )
+    assert (citation_extension_path, "POST") in routes
     assert (
         "/api/ai/strategy-research/shadow-candidates/{candidate_id}/paper-shadow-approvals",
         "POST",

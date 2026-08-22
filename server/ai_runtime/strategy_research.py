@@ -139,7 +139,7 @@ _HYPOTHESIS_ROLE = "external.strategy_hypothesis_researcher.v9"
 _CRITIQUE_ROLE = "external.strategy_backtest_critic.v9"
 _HYPOTHESIS_STAGE = "strategy_hypothesis_generation"
 _CRITIQUE_STAGE = "strategy_backtest_critique"
-_PROMPT_VERSION = "karkinos.ai.strategy_research_prompt.v10"
+_PROMPT_VERSION = "karkinos.ai.strategy_research_prompt.v11"
 _SANITIZED_ACCOUNT_EVIDENCE_CONTRACT = "karkinos.ai.sanitized_account_risk_evidence.v1"
 STRATEGY_RESEARCH_MAX_INPUT_BYTES = 196_608
 STRATEGY_RESEARCH_MAX_OUTPUT_TOKENS = 12_288
@@ -1860,11 +1860,15 @@ class StrategyResearchModelProvider(ProviderAdapter):
         }
         if account_evidence is not None:
             citation_sources["saved_account_evidence"] = account_evidence
-        hypothesis_citation_catalog = (
-            _build_hypothesis_citation_catalog(citation_sources)
-            if self._mode == "hypothesis"
-            else None
-        )
+        hypothesis_citation_catalog = None
+        if self._mode == "hypothesis":
+            complete_citation_catalog = _build_hypothesis_citation_catalog(
+                citation_sources
+            )
+            hypothesis_citation_catalog = _compact_hypothesis_citation_catalog(
+                complete_citation_catalog,
+                citation_sources=citation_sources,
+            )
         input_payload = {
             "mode": self._mode,
             "research_question": self._research_question,
@@ -3411,10 +3415,12 @@ def _hypothesis_output_contract(
             ),
         },
         "citation_catalog": dict(citation_catalog),
+        "required_citation_ids": list(citation_catalog),
         "citation_catalog_fingerprint": "sha256:"
         + content_fingerprint(dict(citation_catalog)),
         "citation_rules": {
             "copy_catalog_ids_verbatim": True,
+            "return_required_citation_ids_exactly_and_no_other_values": True,
             "construct_or_rewrite_paths": False,
             "catalog_ids_are_resolved_to_bound_paths_locally": True,
             "unknown_ids_or_paths_fail_closed": True,
@@ -3523,10 +3529,10 @@ def _system_prompt(mode: Literal["hypothesis", "critique"]) -> str:
             "When iteration_context is present, emit exactly one draft. For iteration "
             "two or later, use the bound parent formula, canonical metric summary, "
             "promotion blockers, and critique to produce a changed revision, and cite "
-            "at least one citation_catalog ID whose bound path starts with "
-            "iteration_context.parent_iteration. Copy citation IDs verbatim from "
-            "output_contract.citation_catalog keys; never construct, abbreviate, or "
-            "return the paths themselves. "
+            "the citation ID bound to iteration_context.parent_iteration. Set every "
+            "draft citations field to exactly output_contract.required_citation_ids, "
+            "in the given order, with no other values. Copy those short IDs verbatim; "
+            "never construct, abbreviate, or return the paths themselves. "
             "A signal observes only completed bars and is applied on the next "
             "available persisted bar."
         )
@@ -3794,6 +3800,57 @@ def _build_hypothesis_citation_catalog(
     return catalog
 
 
+def _compact_hypothesis_citation_catalog(
+    complete_catalog: Mapping[str, str],
+    *,
+    citation_sources: Mapping[str, Any],
+) -> dict[str, str]:
+    """Expose a tiny deterministic set of easy-to-copy IDs to the model."""
+    available_paths = set(complete_catalog.values())
+    path_groups = (
+        (
+            "saved_backtest_evidence.performance_summary",
+            "saved_backtest_evidence",
+        ),
+        (
+            "operator_frozen_selection.dataset_snapshot_id",
+            "operator_frozen_selection",
+        ),
+        (
+            "operator_frozen_selection.cost_model_reference",
+            "operator_frozen_selection",
+        ),
+        (
+            "saved_account_evidence.summary.cash_ratio",
+            "saved_account_evidence",
+        ),
+        (
+            "iteration_context.parent_iteration.parent_artifact_fingerprint",
+            "iteration_context.parent_iteration",
+            "iteration_context.context_fingerprint",
+            "iteration_context",
+        ),
+    )
+    selected_paths: list[str] = []
+    for alternatives in path_groups:
+        selected = next(
+            (
+                path
+                for path in alternatives
+                if path in available_paths
+                and _citation_path_exists(path, citation_sources)
+            ),
+            None,
+        )
+        if selected is not None and selected not in selected_paths:
+            selected_paths.append(selected)
+    if not selected_paths:
+        raise StrategyResearchRejected("strategy_research_citation_catalog_empty")
+    return {
+        f"cite_{index:02d}": path for index, path in enumerate(selected_paths, start=1)
+    }
+
+
 def _resolve_hypothesis_citations(
     payload: Mapping[str, Any],
     *,
@@ -3815,11 +3872,13 @@ def _resolve_hypothesis_citations(
             or any(not isinstance(item, str) or not item for item in citations)
         ):
             raise ExternalResearchInvalidResponseError("hypothesis_citations_invalid")
+        if citations != list(citation_catalog):
+            raise ExternalResearchInvalidResponseError(
+                "provider_citation_contract_mismatch"
+            )
         resolved = []
         for citation in citations:
             path = citation_catalog.get(citation)
-            if path is None and _citation_path_exists(citation, citation_sources):
-                path = citation
             if path is None or not _citation_path_exists(path, citation_sources):
                 raise ExternalResearchInvalidResponseError(
                     "provider_citation_not_in_bound_input"

@@ -7,20 +7,18 @@ commit 和 pull request。
 
 ## 当前基线
 
-截至 2026-08-22，v0.2.7 是当前本地稳定发布基线。
+截至 2026-08-22，v0.2.8 是当前本地稳定发布基线。
 v1.8 control-plane 基础以及截至 Phase 1.18 的 AI-native research 基础已经实现。当前产品
 里程碑是[路线图](ROADMAP.zh.md)中的券商连接、逐单受控 pilot。
 
 最近完成的跨领域工作包括：
 
-- v0.2.7 在 v0.2.6 的冻结市场日 Account Truth 时钟基础上，把精确 as-of 持久化进每个 research
-  selection，并在五轮研究的每次恢复中继续用于费用解析。若调用 reservation 在 provider transport
-  之前失败，只记 provider-free，不消耗外部调用上限；修正软件重新激活运行时，会把既有一次性 retry
-  consumption 原子迁移到 replacement run identity，继续受原人工授权和原总上限约束，不产生新权限。
-  DeepSeek 的确定性冻结证据引用目录继续把短 ID 本地解析为 canonical 路径；缺失、决策时已陈旧、
-  未来、漂移、未对账、未知或不可表示的证据仍 fail-closed。Operations Today 继续区分“已对账但快照
-  陈旧”和真实 Account Truth 不一致，并把 paper/shadow 统计限定到当前运行；
-- v0.2.7 验证证据：2,504 项 Python 测试与 697 项 Web 测试通过；Web 格式检查、生产构建、文档健康、
+- v0.2.8 修复 DeepSeek citation contract，同时保留完整冻结路径校验：每次 hypothesis 仍构建并验证
+  完整目录，但只外发确定性的 4 至 5 个 `cite_01`…`cite_05`，且每个草稿必须原序返回完整 ID 列表，
+  才会在本地解析路径。只有已持久化的零候选 citation 失败、既有完整 retry 已消费，且从 11 精确提高
+  到 12 后正好恢复原定五轮所需 10 次调用时，owner 才能追加一次不可变授权；该授权只能消费一次，
+  不产生策略、订单、券商或资本权限；
+- v0.2.8 验证证据：2,506 项 Python 测试与 697 项 Web 测试通过；Web 格式检查、生产构建、文档健康、
   staged GitNexus 影响检查和 pre-commit 检查通过。验证未联系券商、未下单，也未修改
   OMS/ledger/risk/capital 事实；
 - v0.2.4 Daily Data Flywheel：不可变 Account Truth 导入历史由隐私最小化的物质连续性契约分类。

@@ -80,7 +80,7 @@ SHADOW_RESEARCH_POLICY_ID = "ai_shadow_research"
 SHADOW_RESEARCH_POLICY_SCHEMA = "karkinos.ai.shadow_research_policy.v2"
 SHADOW_RESEARCH_API_SCHEMA = "karkinos.ai.shadow_research_automation.v1"
 SHADOW_RESEARCH_RUN_TYPE = "ai_shadow_research"
-SHADOW_RESEARCH_RUNTIME_CONTRACT = "karkinos.ai.shadow_research_runtime.v4"
+SHADOW_RESEARCH_RUNTIME_CONTRACT = "karkinos.ai.shadow_research_runtime.v5"
 SHADOW_RESEARCH_POLICY_CONFIRMATION = (
     "authorize_five_sequential_after_close_deepseek_strategy_research_without_"
     "daily_token_budget_or_strategy_or_trade_authority"
@@ -99,6 +99,11 @@ SHADOW_RESEARCH_RETRY_CONFIRMATION = (
     "authorize_one_additional_complete_five_round_ten_call_strategy_research_"
     "retry_without_strategy_trade_or_capital_authority"
 )
+SHADOW_RESEARCH_CITATION_CALL_EXTENSION_CONFIRMATION = (
+    "authorize_one_additional_deepseek_call_for_citation_contract_retry_without_"
+    "strategy_trade_or_capital_authority"
+)
+_CITATION_CONTRACT_RETRYABLE_FAILURE_CODES = ("provider_citation_not_in_bound_input",)
 _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION = (
     STRATEGY_RESEARCH_PROVIDER_TOKEN_RESERVATION
@@ -340,6 +345,27 @@ class ShadowResearchStore:
                     replacement_input_fingerprint TEXT NOT NULL UNIQUE,
                     consumed_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS ai_shadow_research_citation_call_extensions (
+                    extension_id TEXT PRIMARY KEY,
+                    failed_run_id TEXT NOT NULL UNIQUE,
+                    market_date TEXT NOT NULL UNIQUE,
+                    failed_input_fingerprint TEXT NOT NULL,
+                    failure_code TEXT NOT NULL,
+                    provider_calls_at_authorization INTEGER NOT NULL,
+                    prior_provider_call_ceiling INTEGER NOT NULL,
+                    authorized_additional_calls INTEGER NOT NULL
+                        CHECK(authorized_additional_calls = 1),
+                    provider_call_ceiling INTEGER NOT NULL,
+                    approved_by TEXT NOT NULL,
+                    notes TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS ai_shadow_research_citation_call_extension_consumptions (
+                    extension_id TEXT PRIMARY KEY,
+                    replacement_run_id TEXT NOT NULL UNIQUE,
+                    replacement_input_fingerprint TEXT NOT NULL UNIQUE,
+                    consumed_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS ai_shadow_research_candidates (
                     candidate_id TEXT PRIMARY KEY,
                     run_id TEXT NOT NULL,
@@ -399,6 +425,11 @@ class ShadowResearchStore:
                 retry_authorization = self._unconsumed_retry_authorization(
                     conn, existing_run
                 )
+                citation_extension = (
+                    self._unconsumed_citation_call_extension(conn, existing_run)
+                    if input_fingerprint != existing_run["input_fingerprint"]
+                    else None
+                )
                 provider_free_rearm = input_fingerprint != existing_run[
                     "input_fingerprint"
                 ] and self._can_rearm_provider_free_failure(conn, existing_run)
@@ -414,6 +445,18 @@ class ShadowResearchStore:
                             ],
                         }
                     )
+                elif citation_extension is not None:
+                    input_fingerprint = content_fingerprint(
+                        {
+                            "failed_input_fingerprint": existing_run[
+                                "input_fingerprint"
+                            ],
+                            "current_input_fingerprint": input_fingerprint,
+                            "citation_call_extension_id": citation_extension[
+                                "extension_id"
+                            ],
+                        }
+                    )
                 elif not provider_free_rearm:
                     return existing_run, True
                 retry_consumption = (
@@ -425,7 +468,7 @@ class ShadowResearchStore:
                         """,
                         (existing_run["run_id"],),
                     ).fetchone()
-                    if provider_free_rearm
+                    if provider_free_rearm or citation_extension is not None
                     else None
                 )
                 run_id = f"ai-shadow-research:{market_date}:{input_fingerprint[:16]}"
@@ -507,6 +550,21 @@ class ShadowResearchStore:
                             run_id,
                             input_fingerprint,
                             retry_consumption["authorization_id"],
+                        ),
+                    )
+                if citation_extension is not None:
+                    conn.execute(
+                        """
+                        INSERT INTO ai_shadow_research_citation_call_extension_consumptions
+                        (extension_id, replacement_run_id,
+                         replacement_input_fingerprint, consumed_at)
+                        VALUES (?, ?, ?, ?)
+                        """,
+                        (
+                            citation_extension["extension_id"],
+                            run_id,
+                            input_fingerprint,
+                            now,
                         ),
                     )
                 rearmed = conn.execute(
@@ -680,6 +738,173 @@ class ShadowResearchStore:
                 raise RuntimeError("research retry authorization persistence failed")
             return self._retry_authorization_row(conn, saved)
 
+    def authorize_citation_call_extension(
+        self,
+        failed_run_id: str,
+        *,
+        approved_by: str,
+        notes: str,
+        confirmation: str,
+        now: str,
+    ) -> dict[str, Any]:
+        """Append exactly one call that restores one complete five-round retry."""
+        if confirmation != SHADOW_RESEARCH_CITATION_CALL_EXTENSION_CONFIRMATION:
+            raise PermissionError(
+                "citation call extension requires exact owner confirmation"
+            )
+        approved_by = approved_by.strip()
+        notes = notes.strip()
+        if not approved_by or not notes:
+            raise ShadowResearchRejected(
+                "citation_call_extension_approver_and_notes_required"
+            )
+        with self._connect(immediate=True) as conn:
+            existing = conn.execute(
+                """
+                SELECT * FROM ai_shadow_research_citation_call_extensions
+                WHERE failed_run_id=?
+                """,
+                (failed_run_id,),
+            ).fetchone()
+            if existing is not None:
+                if existing["approved_by"] != approved_by or existing["notes"] != notes:
+                    raise ShadowResearchRejected(
+                        "citation_call_extension_authorization_conflict"
+                    )
+                return self._citation_call_extension_row(conn, existing)
+
+            failed_run = conn.execute(
+                "SELECT * FROM ai_shadow_research_runs WHERE run_id=?",
+                (failed_run_id,),
+            ).fetchone()
+            if failed_run is None:
+                raise LookupError(f"shadow research run not found: {failed_run_id}")
+            if (
+                failed_run["status"] != "failed"
+                or failed_run["failure_code"]
+                not in _CITATION_CONTRACT_RETRYABLE_FAILURE_CODES
+                or int(failed_run["candidate_count"] or 0) != 0
+            ):
+                raise ShadowResearchRejected(
+                    "citation_call_extension_requires_exact_zero_candidate_failure"
+                )
+            retry = conn.execute(
+                """
+                SELECT authorization.authorization_id,
+                       authorization.provider_call_ceiling
+                FROM ai_shadow_research_retry_consumptions AS consumption
+                JOIN ai_shadow_research_retry_authorizations AS authorization
+                  ON authorization.authorization_id=consumption.authorization_id
+                WHERE consumption.replacement_run_id=?
+                  AND authorization.market_date=?
+                """,
+                (failed_run_id, failed_run["market_date"]),
+            ).fetchone()
+            if retry is None:
+                raise ShadowResearchRejected(
+                    "citation_call_extension_requires_consumed_retry_authorization"
+                )
+            failed_call = conn.execute(
+                """
+                SELECT call_id FROM ai_shadow_research_provider_calls
+                WHERE run_id=? AND status='failed' AND failure_code=?
+                ORDER BY created_at DESC, call_id DESC LIMIT 1
+                """,
+                (failed_run_id, failed_run["failure_code"]),
+            ).fetchone()
+            if failed_call is None:
+                raise ShadowResearchRejected(
+                    "citation_call_extension_requires_failed_provider_call"
+                )
+            market_date = str(failed_run["market_date"])
+            provider_calls = self._real_provider_call_count(conn, market_date)
+            prior_ceiling = int(retry["provider_call_ceiling"])
+            provider_call_ceiling = prior_ceiling + 1
+            if (
+                provider_calls != 2
+                or prior_ceiling != 11
+                or provider_call_ceiling != 12
+                or provider_call_ceiling - provider_calls
+                != SHADOW_RESEARCH_MAX_PROVIDER_CALLS
+            ):
+                raise ShadowResearchRejected(
+                    "citation_call_extension_must_restore_exact_five_round_capacity"
+                )
+            extension_id = (
+                "ai-shadow-research-citation-extension:"
+                + content_fingerprint(
+                    {
+                        "failed_run_id": failed_run_id,
+                        "failure_code": failed_run["failure_code"],
+                        "provider_calls_at_authorization": provider_calls,
+                        "prior_provider_call_ceiling": prior_ceiling,
+                        "provider_call_ceiling": provider_call_ceiling,
+                        "approved_by": approved_by,
+                        "notes": notes,
+                    }
+                )[:24]
+            )
+            conn.execute(
+                """
+                INSERT INTO ai_shadow_research_citation_call_extensions
+                (extension_id, failed_run_id, market_date,
+                 failed_input_fingerprint, failure_code,
+                 provider_calls_at_authorization, prior_provider_call_ceiling,
+                 authorized_additional_calls, provider_call_ceiling,
+                 approved_by, notes, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+                """,
+                (
+                    extension_id,
+                    failed_run_id,
+                    market_date,
+                    failed_run["input_fingerprint"],
+                    failed_run["failure_code"],
+                    provider_calls,
+                    prior_ceiling,
+                    provider_call_ceiling,
+                    approved_by,
+                    notes,
+                    now,
+                ),
+            )
+            saved = conn.execute(
+                """
+                SELECT * FROM ai_shadow_research_citation_call_extensions
+                WHERE extension_id=?
+                """,
+                (extension_id,),
+            ).fetchone()
+            if saved is None:
+                raise RuntimeError(
+                    "citation call extension authorization persistence failed"
+                )
+            return self._citation_call_extension_row(conn, saved)
+
+    def _unconsumed_citation_call_extension(
+        self,
+        conn: sqlite3.Connection,
+        run: Mapping[str, Any],
+    ) -> sqlite3.Row | None:
+        if (
+            run.get("status") != "failed"
+            or run.get("failure_code") not in _CITATION_CONTRACT_RETRYABLE_FAILURE_CODES
+            or int(run.get("candidate_count") or 0) != 0
+        ):
+            return None
+        return conn.execute(
+            """
+            SELECT extension.*
+            FROM ai_shadow_research_citation_call_extensions AS extension
+            LEFT JOIN ai_shadow_research_citation_call_extension_consumptions AS consumption
+              ON consumption.extension_id=extension.extension_id
+            WHERE extension.failed_run_id=?
+              AND extension.failed_input_fingerprint=?
+              AND consumption.extension_id IS NULL
+            """,
+            (run["run_id"], run["input_fingerprint"]),
+        ).fetchone()
+
     def _unconsumed_retry_authorization(
         self,
         conn: sqlite3.Connection,
@@ -837,10 +1062,29 @@ class ShadowResearchStore:
                 """,
                 (run_id, market_date),
             ).fetchone()
-            effective_call_limit = (
-                int(authorized_ceiling["provider_call_ceiling"])
-                if authorized_ceiling is not None
-                else call_limit
+            extension_ceiling = conn.execute(
+                """
+                SELECT extension.provider_call_ceiling
+                FROM ai_shadow_research_citation_call_extension_consumptions AS consumption
+                JOIN ai_shadow_research_citation_call_extensions AS extension
+                  ON extension.extension_id=consumption.extension_id
+                WHERE consumption.replacement_run_id=?
+                  AND extension.market_date=?
+                """,
+                (run_id, market_date),
+            ).fetchone()
+            effective_call_limit = max(
+                call_limit,
+                (
+                    int(authorized_ceiling["provider_call_ceiling"])
+                    if authorized_ceiling is not None
+                    else call_limit
+                ),
+                (
+                    int(extension_ceiling["provider_call_ceiling"])
+                    if extension_ceiling is not None
+                    else call_limit
+                ),
             )
             if provider_calls >= effective_call_limit:
                 raise ShadowResearchRejected("daily_provider_call_limit_reached")
@@ -894,6 +1138,40 @@ class ShadowResearchStore:
             WHERE authorization_id=?
             """,
             (row["authorization_id"],),
+        ).fetchone()
+        return {
+            **dict(row),
+            "consumed": consumption is not None,
+            "replacement_run_id": (
+                consumption["replacement_run_id"] if consumption is not None else None
+            ),
+            "replacement_input_fingerprint": (
+                consumption["replacement_input_fingerprint"]
+                if consumption is not None
+                else None
+            ),
+            "consumed_at": (
+                consumption["consumed_at"] if consumption is not None else None
+            ),
+            "automatic_strategy_replacement_enabled": False,
+            "production_strategy_mutation_enabled": False,
+            "broker_submission_enabled": False,
+            "capital_authority_changed": False,
+            "authority_effect": "research_only",
+        }
+
+    def _citation_call_extension_row(
+        self,
+        conn: sqlite3.Connection,
+        row: sqlite3.Row,
+    ) -> dict[str, Any]:
+        consumption = conn.execute(
+            """
+            SELECT replacement_run_id, replacement_input_fingerprint, consumed_at
+            FROM ai_shadow_research_citation_call_extension_consumptions
+            WHERE extension_id=?
+            """,
+            (row["extension_id"],),
         ).fetchone()
         return {
             **dict(row),
@@ -1181,6 +1459,10 @@ class ShadowResearchStore:
                 "authorized_additional_calls": 0,
                 "authorized_provider_call_ceiling": None,
                 "retry_replacement_run_id": None,
+                "citation_call_extension_id": None,
+                "citation_call_extension_consumed": False,
+                "citation_authorized_additional_calls": 0,
+                "citation_extension_replacement_run_id": None,
             }
         try:
             with self._connect_readonly() as conn:
@@ -1219,6 +1501,19 @@ class ShadowResearchStore:
                     """,
                     (market_date,),
                 ).fetchone()
+                extension = conn.execute(
+                    """
+                    SELECT extension.extension_id,
+                           extension.authorized_additional_calls,
+                           extension.provider_call_ceiling,
+                           consumption.replacement_run_id
+                    FROM ai_shadow_research_citation_call_extensions AS extension
+                    LEFT JOIN ai_shadow_research_citation_call_extension_consumptions AS consumption
+                      ON consumption.extension_id=extension.extension_id
+                    WHERE extension.market_date=?
+                    """,
+                    (market_date,),
+                ).fetchone()
         except sqlite3.OperationalError:
             return {
                 "market_date": market_date,
@@ -1232,6 +1527,10 @@ class ShadowResearchStore:
                 "authorized_additional_calls": 0,
                 "authorized_provider_call_ceiling": None,
                 "retry_replacement_run_id": None,
+                "citation_call_extension_id": None,
+                "citation_call_extension_consumed": False,
+                "citation_authorized_additional_calls": 0,
+                "citation_extension_replacement_run_id": None,
             }
         return {
             "market_date": market_date,
@@ -1248,19 +1547,44 @@ class ShadowResearchStore:
                 and authorization["replacement_run_id"] is not None
             ),
             "authorized_additional_calls": (
-                int(authorization["authorized_additional_calls"])
-                if authorization is not None
-                else 0
+                (
+                    int(authorization["authorized_additional_calls"])
+                    if authorization is not None
+                    else 0
+                )
+                + (
+                    int(extension["authorized_additional_calls"])
+                    if extension is not None
+                    else 0
+                )
             ),
             "authorized_provider_call_ceiling": (
-                int(authorization["provider_call_ceiling"])
-                if authorization is not None
-                else None
+                int(extension["provider_call_ceiling"])
+                if extension is not None
+                else (
+                    int(authorization["provider_call_ceiling"])
+                    if authorization is not None
+                    else None
+                )
             ),
             "retry_replacement_run_id": (
                 authorization["replacement_run_id"]
                 if authorization is not None
                 else None
+            ),
+            "citation_call_extension_id": (
+                extension["extension_id"] if extension is not None else None
+            ),
+            "citation_call_extension_consumed": bool(
+                extension is not None and extension["replacement_run_id"] is not None
+            ),
+            "citation_authorized_additional_calls": (
+                int(extension["authorized_additional_calls"])
+                if extension is not None
+                else 0
+            ),
+            "citation_extension_replacement_run_id": (
+                extension["replacement_run_id"] if extension is not None else None
             ),
         }
 
@@ -1453,6 +1777,22 @@ class AiShadowResearchAutomationService:
         confirmation: str,
     ) -> dict[str, Any]:
         return self._store.authorize_retry(
+            failed_run_id,
+            approved_by=approved_by,
+            notes=notes,
+            confirmation=confirmation,
+            now=self._utc_now(),
+        )
+
+    def authorize_citation_call_extension(
+        self,
+        failed_run_id: str,
+        *,
+        approved_by: str,
+        notes: str,
+        confirmation: str,
+    ) -> dict[str, Any]:
+        return self._store.authorize_citation_call_extension(
             failed_run_id,
             approved_by=approved_by,
             notes=notes,

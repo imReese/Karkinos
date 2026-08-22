@@ -21,6 +21,7 @@ from execution.commission import MultiAssetCommission, StockACommission
 from server.db import AppDatabase
 from server.models import BacktestRequest
 from server.services.ai_shadow_research_automation import (
+    SHADOW_RESEARCH_CITATION_CALL_EXTENSION_CONFIRMATION,
     SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_PAUSE_CONFIRMATION,
     SHADOW_RESEARCH_POLICY_CONFIRMATION,
@@ -511,6 +512,178 @@ def test_owner_authorized_provider_retry_is_append_only_consumed_once_and_adds_e
             ).fetchone()[0]
             == 0
         )
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM ai_shadow_research_promotions"
+            ).fetchone()[0]
+            == 0
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_citation_call_extension_is_one_shot_and_restores_exact_ten_call_capacity(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = ShadowResearchStore(tmp_path / "app.db")
+    store.init()
+    first, _ = store.claim_run(
+        market_date="2026-08-21",
+        input_fingerprint="first-provider-input",
+        baseline_seed_result_id=25,
+        valuation_snapshot_id="valuation-complete",
+        ledger_cutoff_id=24,
+        now="2026-08-21T14:00:00+00:00",
+    )
+    first_call, _ = store.claim_provider_call(
+        call_id=f"{first['run_id']}:hypothesis:iteration:01",
+        run_id=first["run_id"],
+        market_date="2026-08-21",
+        call_kind="hypothesis_iteration",
+        call_limit=10,
+        now="2026-08-21T14:01:00+00:00",
+    )
+    store.finish_provider_call(
+        first_call["call_id"],
+        status="failed",
+        actual_tokens=None,
+        failure_code="external_research_invalid_response",
+        now="2026-08-21T14:02:00+00:00",
+    )
+    store.update_run(
+        first["run_id"],
+        status="failed",
+        failure_code="external_research_invalid_response",
+        now="2026-08-21T14:02:00+00:00",
+    )
+    store.authorize_retry(
+        first["run_id"],
+        approved_by="human:owner",
+        notes="Authorize the complete bounded retry.",
+        confirmation=SHADOW_RESEARCH_RETRY_CONFIRMATION,
+        now="2026-08-21T14:03:00+00:00",
+    )
+    replacement, reused = store.claim_run(
+        market_date="2026-08-21",
+        input_fingerprint="retry-runtime-input",
+        baseline_seed_result_id=25,
+        valuation_snapshot_id="valuation-complete",
+        ledger_cutoff_id=24,
+        now="2026-08-21T14:04:00+00:00",
+    )
+    assert reused is False
+    rejected_call, _ = store.claim_provider_call(
+        call_id=f"{replacement['run_id']}:hypothesis:iteration:01",
+        run_id=replacement["run_id"],
+        market_date="2026-08-21",
+        call_kind="hypothesis_iteration",
+        call_limit=10,
+        now="2026-08-21T14:05:00+00:00",
+    )
+    store.finish_provider_call(
+        rejected_call["call_id"],
+        status="failed",
+        actual_tokens=None,
+        failure_code="provider_citation_not_in_bound_input",
+        now="2026-08-21T14:06:00+00:00",
+    )
+    store.update_run(
+        replacement["run_id"],
+        status="failed",
+        failure_code="provider_citation_not_in_bound_input",
+        now="2026-08-21T14:06:00+00:00",
+    )
+
+    with pytest.raises(PermissionError, match="exact owner confirmation"):
+        store.authorize_citation_call_extension(
+            replacement["run_id"],
+            approved_by="human:owner",
+            notes="Restore exactly one complete five-round attempt.",
+            confirmation="yes",
+            now="2026-08-21T14:07:00+00:00",
+        )
+    real_provider_call_count = store._real_provider_call_count
+    monkeypatch.setattr(store, "_real_provider_call_count", lambda conn, date: 3)
+    with pytest.raises(
+        ShadowResearchRejected,
+        match="citation_call_extension_must_restore_exact_five_round_capacity",
+    ):
+        store.authorize_citation_call_extension(
+            replacement["run_id"],
+            approved_by="human:owner",
+            notes="Restore exactly one complete five-round attempt.",
+            confirmation=SHADOW_RESEARCH_CITATION_CALL_EXTENSION_CONFIRMATION,
+            now="2026-08-21T14:07:00+00:00",
+        )
+    monkeypatch.setattr(store, "_real_provider_call_count", real_provider_call_count)
+    extension = store.authorize_citation_call_extension(
+        replacement["run_id"],
+        approved_by="human:owner",
+        notes="Restore exactly one complete five-round attempt.",
+        confirmation=SHADOW_RESEARCH_CITATION_CALL_EXTENSION_CONFIRMATION,
+        now="2026-08-21T14:07:00+00:00",
+    )
+    assert extension["provider_calls_at_authorization"] == 2
+    assert extension["prior_provider_call_ceiling"] == 11
+    assert extension["authorized_additional_calls"] == 1
+    assert extension["provider_call_ceiling"] == 12
+    assert extension["consumed"] is False
+    assert extension["broker_submission_enabled"] is False
+    assert extension["capital_authority_changed"] is False
+
+    unchanged, reused = store.claim_run(
+        market_date="2026-08-21",
+        input_fingerprint=replacement["input_fingerprint"],
+        baseline_seed_result_id=25,
+        valuation_snapshot_id="valuation-complete",
+        ledger_cutoff_id=24,
+        now="2026-08-21T14:08:00+00:00",
+    )
+    assert reused is True
+    assert unchanged["run_id"] == replacement["run_id"]
+    resumed, reused = store.claim_run(
+        market_date="2026-08-21",
+        input_fingerprint="corrected-citation-runtime-input",
+        baseline_seed_result_id=25,
+        valuation_snapshot_id="valuation-complete",
+        ledger_cutoff_id=24,
+        now="2026-08-21T14:09:00+00:00",
+    )
+    assert reused is False
+    assert resumed["run_id"] != replacement["run_id"]
+    usage = store.usage_for_market_date("2026-08-21")
+    assert usage["provider_calls"] == 2
+    assert usage["authorized_additional_calls"] == 11
+    assert usage["authorized_provider_call_ceiling"] == 12
+    assert usage["retry_replacement_run_id"] == resumed["run_id"]
+    assert usage["citation_call_extension_consumed"] is True
+    assert usage["citation_authorized_additional_calls"] == 1
+    assert usage["citation_extension_replacement_run_id"] == resumed["run_id"]
+
+    for ordinal in range(1, 11):
+        call, reused = store.claim_provider_call(
+            call_id=f"{resumed['run_id']}:remaining:{ordinal:02d}",
+            run_id=resumed["run_id"],
+            market_date="2026-08-21",
+            call_kind="citation_contract_retry",
+            call_limit=10,
+            now=f"2026-08-21T14:{ordinal + 9:02d}:00+00:00",
+        )
+        assert reused is False
+        assert call["status"] == "reserved"
+    with pytest.raises(ShadowResearchRejected, match="call_limit"):
+        store.claim_provider_call(
+            call_id=f"{resumed['run_id']}:remaining:11",
+            run_id=resumed["run_id"],
+            market_date="2026-08-21",
+            call_kind="citation_contract_retry",
+            call_limit=10,
+            now="2026-08-21T14:20:00+00:00",
+        )
+    with sqlite3.connect(tmp_path / "app.db") as conn:
         assert (
             conn.execute(
                 "SELECT COUNT(*) FROM ai_shadow_research_promotions"
