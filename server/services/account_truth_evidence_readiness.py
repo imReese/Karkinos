@@ -7,7 +7,7 @@ import json
 import re
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 from account_truth.broker_evidence import (
     BrokerEvidenceRepository,
@@ -48,7 +48,11 @@ _SAFE_SCOPE_CODE = re.compile(r"^[A-Za-z][A-Za-z0-9_:-]{0,63}$")
 _SAFE_CURRENCY = re.compile(r"^[A-Z]{3}$")
 
 
-def build_account_truth_evidence_readiness(state: Any) -> dict[str, object]:
+def build_account_truth_evidence_readiness(
+    state: Any,
+    *,
+    clock: Callable[[], datetime] | None = None,
+) -> dict[str, object]:
     """Build one zero-write projection from canonical persisted evidence."""
 
     db_path = _db_path_for_state(state)
@@ -58,7 +62,11 @@ def build_account_truth_evidence_readiness(state: Any) -> dict[str, object]:
         db_path=db_path,
         score=score,
     )
-    promotion_evidence = build_latest_account_truth_promotion_evidence(state)
+    promotion_evidence = (
+        build_latest_account_truth_promotion_evidence(state)
+        if clock is None
+        else build_latest_account_truth_promotion_evidence(state, clock=clock)
+    )
     return project_account_truth_evidence_readiness(
         score=score,
         citic_source_follow_up=follow_up,

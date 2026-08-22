@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from account_truth.broker_evidence import BrokerEvidenceRepository
@@ -14,6 +15,7 @@ from account_truth.evidence_scope_review import (
 )
 from server.services.account_truth_evidence_readiness import (
     apply_account_truth_evidence_scope_review,
+    build_account_truth_evidence_readiness,
     build_account_truth_evidence_scope,
     project_account_truth_evidence_readiness,
     project_account_truth_evidence_scope,
@@ -122,6 +124,51 @@ def _accepted_review(observed_scope_fingerprint: str) -> EvidenceScopeReview:
         review_fingerprint="sha256:" + "d" * 64,
         created_at="2026-02-01T00:00:00+00:00",
     )
+
+
+def test_build_readiness_uses_an_explicit_frozen_clock(tmp_path, monkeypatch):
+    frozen = datetime(2026, 8, 21, 7, 30, tzinfo=timezone.utc)
+    observed: list[datetime] = []
+    state = SimpleNamespace(db=SimpleNamespace(_path=tmp_path / "app.db"))
+    monkeypatch.setattr(
+        "server.services.account_truth_evidence_readiness."
+        "build_latest_account_truth_score_payload",
+        lambda state: _score(),
+    )
+    monkeypatch.setattr(
+        "server.services.account_truth_evidence_readiness."
+        "build_citic_source_follow_up",
+        lambda path: _follow_up(),
+    )
+    monkeypatch.setattr(
+        "server.services.account_truth_evidence_readiness."
+        "build_account_truth_evidence_scope",
+        lambda **kwargs: _complete_scope(),
+    )
+
+    def promotion_at_clock(state, *, clock=None):
+        assert clock is not None
+        observed.append(clock())
+        return {
+            "status": "clear",
+            "data_freshness_status": "fresh",
+            "blockers": [],
+            "snapshot_capture": {"status": "clear"},
+        }
+
+    monkeypatch.setattr(
+        "server.services.account_truth_evidence_readiness."
+        "build_latest_account_truth_promotion_evidence",
+        promotion_at_clock,
+    )
+
+    projection = build_account_truth_evidence_readiness(
+        state,
+        clock=lambda: frozen,
+    )
+
+    assert projection["status"] == "ready"
+    assert observed == [frozen]
 
 
 def test_evidence_readiness_blocks_incomplete_citic_sources_without_authority():
