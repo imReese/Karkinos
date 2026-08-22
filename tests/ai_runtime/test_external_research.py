@@ -467,7 +467,7 @@ async def test_malformed_provider_report_fails_closed_without_raw_body_persisten
     second = await service.run(_request())
 
     assert first.workflow.status.value == "failed"
-    assert first.workflow.failure_code == "external_research_invalid_response"
+    assert first.workflow.failure_code == "provider_report_is_not_json"
     assert first.report is None
     assert second.workflow.status.value == "failed"
     assert len(transport.calls) == 1

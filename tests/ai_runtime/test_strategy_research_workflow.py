@@ -40,12 +40,15 @@ from server.ai_runtime.strategy_research import (
     CRITIQUE_EXPORT_CONFIRMATION,
     HYPOTHESIS_EXPORT_CONFIRMATION,
     REVIEW_CONFIRMATION,
+    STRATEGY_RESEARCH_MAX_CITATION_PATHS,
     CritiqueRequest,
     FormulaBacktestRequest,
     HypothesisGenerationRequest,
     StrategyResearchAuditStore,
+    StrategyResearchRejected,
     StrategyResearchSelection,
     StrategyResearchService,
+    _build_hypothesis_citation_catalog,
 )
 
 NOW = "2026-07-15T01:00:00+00:00"
@@ -805,6 +808,10 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
             "external.strategy_hypothesis_researcher.v7",
             "karkinos.ai.strategy_research_prompt.v8",
         ),
+        (
+            "external.strategy_hypothesis_researcher.v8",
+            "karkinos.ai.strategy_research_prompt.v9",
+        ),
     ):
         registry.register_role(
             AgentRole(
@@ -853,14 +860,15 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
     assert "external.strategy_hypothesis_researcher.v6" in role_ids
     assert "external.strategy_hypothesis_researcher.v7" in role_ids
     assert "external.strategy_hypothesis_researcher.v8" in role_ids
+    assert "external.strategy_hypothesis_researcher.v9" in role_ids
     current_role = next(
         item
         for item in service._ai_store.list_roles()
-        if item.role_id == "external.strategy_hypothesis_researcher.v8"
+        if item.role_id == "external.strategy_hypothesis_researcher.v9"
     )
     assert "account_state_projection.read" in current_role.allowed_tools
     assert (
-        current_role.instructions_version == "karkinos.ai.strategy_research_prompt.v9"
+        current_role.instructions_version == "karkinos.ai.strategy_research_prompt.v10"
     )
 
     backtest = await service.run_formula_backtest(
@@ -1207,6 +1215,72 @@ async def test_bound_account_evidence_drift_invalidates_research_session(
 
     assert replay["binding_validity"] == "invalidated_by_drift"
     assert replay["binding_errors"] == ["account_evidence_drift"]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_hypothesis_citation_catalog_resolves_bound_ids_to_audited_paths(
+    tmp_path,
+) -> None:
+    service, selection, transport, _ = _service(tmp_path)
+    citation_path = "saved_account_evidence.summary.cash_ratio"
+    citation_id = "cite_" + content_fingerprint({"path": citation_path})[:16]
+    response = transport._responses[0].payload
+    content = json.loads(response["choices"][0]["message"]["content"])
+    content["drafts"][0]["citations"] = [citation_id]
+    response["choices"][0]["message"]["content"] = json.dumps(content)
+
+    result = await service.generate_hypotheses(
+        HypothesisGenerationRequest(
+            idempotency_key="hypothesis-citation-catalog-id",
+            requested_by="human:reese",
+            account_alias="synthetic-research-only",
+            research_question="Catalog IDs must resolve only to frozen evidence.",
+            selection=selection,
+            confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
+        )
+    )
+
+    assert result["status"] == "completed"
+    assert result["drafts"][0]["citations"] == [citation_path]
+    external = json.loads(transport.calls[0]["payload"]["messages"][1]["content"])
+    contract = external["output_contract"]
+    assert contract["citation_catalog"][citation_id] == citation_path
+    assert contract["citation_rules"] == {
+        "copy_catalog_ids_verbatim": True,
+        "construct_or_rewrite_paths": False,
+        "catalog_ids_are_resolved_to_bound_paths_locally": True,
+        "unknown_ids_or_paths_fail_closed": True,
+    }
+    catalog_paths = tuple(contract["citation_catalog"].values())
+    assert all(
+        private_field not in path
+        for path in catalog_paths
+        for private_field in (
+            "available_cash",
+            "total_equity",
+            "quantity",
+            "avg_cost",
+            "ledger_cutoff_id",
+            "valuation_snapshot_id",
+        )
+    )
+
+
+@pytest.mark.unit
+def test_hypothesis_citation_catalog_fails_closed_when_path_bound_is_exceeded() -> None:
+    oversized = {
+        "saved_backtest_evidence": {
+            f"field_{index}": index
+            for index in range(STRATEGY_RESEARCH_MAX_CITATION_PATHS + 1)
+        }
+    }
+
+    with pytest.raises(
+        StrategyResearchRejected,
+        match="strategy_research_citation_catalog_too_large",
+    ):
+        _build_hypothesis_citation_catalog(oversized)
 
 
 @pytest.mark.unit

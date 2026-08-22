@@ -1822,6 +1822,13 @@ class AiShadowResearchAutomationService:
             now=self._utc_now(),
         )
         if hypotheses.get("status") != "completed":
+            failure_code = str(hypotheses.get("failure_code") or "").strip()
+            if (
+                failure_code
+                and len(failure_code) <= 160
+                and all(char.isalnum() or char in "_:-." for char in failure_code)
+            ):
+                raise ShadowResearchRejected(failure_code)
             raise ShadowResearchRejected("iteration_hypothesis_generation_not_complete")
         drafts = hypotheses.get("drafts")
         if not isinstance(drafts, list) or len(drafts) != 1:
