@@ -80,7 +80,7 @@ SHADOW_RESEARCH_POLICY_ID = "ai_shadow_research"
 SHADOW_RESEARCH_POLICY_SCHEMA = "karkinos.ai.shadow_research_policy.v2"
 SHADOW_RESEARCH_API_SCHEMA = "karkinos.ai.shadow_research_automation.v1"
 SHADOW_RESEARCH_RUN_TYPE = "ai_shadow_research"
-SHADOW_RESEARCH_RUNTIME_CONTRACT = "karkinos.ai.shadow_research_runtime.v5"
+SHADOW_RESEARCH_RUNTIME_CONTRACT = "karkinos.ai.shadow_research_runtime.v6"
 SHADOW_RESEARCH_POLICY_CONFIRMATION = (
     "authorize_five_sequential_after_close_deepseek_strategy_research_without_"
     "daily_token_budget_or_strategy_or_trade_authority"
@@ -471,6 +471,18 @@ class ShadowResearchStore:
                     if provider_free_rearm or citation_extension is not None
                     else None
                 )
+                citation_extension_consumption = (
+                    conn.execute(
+                        """
+                        SELECT extension_id
+                        FROM ai_shadow_research_citation_call_extension_consumptions
+                        WHERE replacement_run_id=?
+                        """,
+                        (existing_run["run_id"],),
+                    ).fetchone()
+                    if provider_free_rearm
+                    else None
+                )
                 run_id = f"ai-shadow-research:{market_date}:{input_fingerprint[:16]}"
                 attempt_id = (
                     "ai-shadow-research-attempt:"
@@ -565,6 +577,19 @@ class ShadowResearchStore:
                             run_id,
                             input_fingerprint,
                             now,
+                        ),
+                    )
+                elif citation_extension_consumption is not None:
+                    conn.execute(
+                        """
+                        UPDATE ai_shadow_research_citation_call_extension_consumptions
+                        SET replacement_run_id=?, replacement_input_fingerprint=?
+                        WHERE extension_id=?
+                        """,
+                        (
+                            run_id,
+                            input_fingerprint,
+                            citation_extension_consumption["extension_id"],
                         ),
                     )
                 rearmed = conn.execute(

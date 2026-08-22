@@ -654,8 +654,42 @@ def test_citation_call_extension_is_one_shot_and_restores_exact_ten_call_capacit
     )
     assert reused is False
     assert resumed["run_id"] != replacement["run_id"]
+    provider_free_call, reused = store.claim_provider_call(
+        call_id=f"{resumed['run_id']}:provider-free-role-conflict",
+        run_id=resumed["run_id"],
+        market_date="2026-08-21",
+        call_kind="hypothesis_iteration",
+        call_limit=10,
+        now="2026-08-21T14:10:00+00:00",
+    )
+    assert reused is False
+    store.finish_provider_call(
+        provider_free_call["call_id"],
+        status="failed",
+        actual_tokens=None,
+        failure_code="ai_runtime_role_identity_conflict",
+        now="2026-08-21T14:11:00+00:00",
+    )
+    store.update_run(
+        resumed["run_id"],
+        status="failed",
+        failure_code="ai_runtime_role_identity_conflict",
+        now="2026-08-21T14:11:00+00:00",
+    )
+    corrected, reused = store.claim_run(
+        market_date="2026-08-21",
+        input_fingerprint="corrected-role-identity-runtime-input",
+        baseline_seed_result_id=25,
+        valuation_snapshot_id="valuation-complete",
+        ledger_cutoff_id=24,
+        now="2026-08-21T14:12:00+00:00",
+    )
+    assert reused is False
+    assert corrected["run_id"] != resumed["run_id"]
+    resumed = corrected
     usage = store.usage_for_market_date("2026-08-21")
     assert usage["provider_calls"] == 2
+    assert usage["provider_free_rejections"] == 1
     assert usage["authorized_additional_calls"] == 11
     assert usage["authorized_provider_call_ceiling"] == 12
     assert usage["retry_replacement_run_id"] == resumed["run_id"]

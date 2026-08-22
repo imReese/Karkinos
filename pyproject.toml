@@ -1,6 +1,6 @@
 [project]
 name = "karkinos"
-version = "0.2.8"
+version = "0.2.9"
 description = "面向中国市场的个人量化投研与交易平台"
 requires-python = ">=3.12"
 dependencies = [
