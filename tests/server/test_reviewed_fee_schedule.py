@@ -857,12 +857,54 @@ def test_reviewed_fee_schedule_survives_only_valid_daily_snapshot_lineage(
     )
     assert preview["status"] == "ready"
     assert preview["account_truth_binding_mode"] == "stable_source_fact_lineage"
-    fee_review = ReviewedFeeScheduleReviewRepository(db._path).record_review(
+    fee_repository = ReviewedFeeScheduleReviewRepository(db._path)
+    fee_review = fee_repository.record_review(
         preview=preview,
         expected_preview_fingerprint=preview["preview_fingerprint"],
         reviewer="synthetic_owner",
         confirmation=REVIEWED_FEE_SCHEDULE_APPROVAL_CONFIRMATION,
     )
+    stored_v3_core = {
+        **{
+            key: value for key, value in preview.items() if key != "preview_fingerprint"
+        },
+        "schema_version": "karkinos.account_truth.reviewed_fee_schedule_preview.v3",
+    }
+    stored_v3 = {
+        **stored_v3_core,
+        "preview_fingerprint": _fingerprint(stored_v3_core),
+    }
+    review_core = {
+        "schema_version": fee_review.schema_version,
+        "decision": fee_review.decision,
+        "schedule_fingerprint": fee_review.schedule_fingerprint,
+        "preview_fingerprint": stored_v3["preview_fingerprint"],
+        "account_truth_import_run_id": fee_review.account_truth_import_run_id,
+        "account_truth_source_fingerprint": fee_review.account_truth_source_fingerprint,
+        "account_truth_scope_fingerprint": fee_review.account_truth_scope_fingerprint,
+        "account_reference_hash": fee_review.account_reference_hash,
+        "effective_start_date": fee_review.effective_start_date,
+        "effective_end_date": fee_review.effective_end_date,
+        "reviewer": fee_review.reviewer,
+    }
+    with sqlite3.connect(db._path) as conn:
+        conn.execute(
+            """
+            UPDATE reviewed_fee_schedule_reviews
+            SET preview_json=?, preview_fingerprint=?, review_fingerprint=?
+            WHERE review_id=?
+            """,
+            (
+                json.dumps(stored_v3, sort_keys=True, separators=(",", ":")),
+                stored_v3["preview_fingerprint"],
+                _fingerprint(review_core),
+                fee_review.review_id,
+            ),
+        )
+        conn.commit()
+    fee_review = fee_repository.get_latest_review()
+    assert fee_review is not None
+    assert fee_review.preview["schema_version"].endswith(".v3")
 
     roll_forward_daily_broker_statement(
         path=statement_path,
@@ -907,6 +949,7 @@ def test_reviewed_fee_schedule_survives_only_valid_daily_snapshot_lineage(
 
     assert current_scope["review"]["review_id"] == scope_review.review_id
     assert current_scope["review"]["binding_mode"] == ("inherited_source_fact_lineage")
+    assert replayed_preview["schema_version"].endswith(".v4")
     assert replayed_preview["preview_fingerprint"] == preview["preview_fingerprint"]
     assert status["status"] == "active"
     assert status["blockers"] == []
@@ -918,6 +961,62 @@ def test_reviewed_fee_schedule_survives_only_valid_daily_snapshot_lineage(
         )
         == []
     )
+
+    statement_path.write_text(
+        statement_path.read_text(encoding="utf-8")
+        + "synthetic-buy-002,trade_buy,2026-08-24T10:00:00+08:00,"
+        "2026-08-25,600000.SH,synthetic stock,stock,CNY,1000,20.00,"
+        "20000.00,5.00,0.00,-20005.20,79979.60,1000,20.01,"
+        "synthetic buy 2,0.20,broker_remaining_cost\n",
+        encoding="utf-8",
+    )
+    roll_forward_daily_broker_statement(
+        path=statement_path,
+        run_date="2026-08-25",
+        max_file_bytes=1024 * 1024,
+    )
+    appended_import = broker_repository.save_preview(
+        parse_broker_statement_csv(statement_path.read_bytes())
+    )
+    appended_scope = build_account_truth_evidence_scope(
+        db_path=db._path,
+        score={"import_run_id": appended_import.import_run_id},
+    )
+    context["readiness"] = {
+        "status": "ready",
+        "account_truth_import_run_id": appended_import.import_run_id,
+        "evidence_scope": appended_scope,
+    }
+    context["promotion"] = {
+        "status": "clear",
+        "import_run_id": appended_import.import_run_id,
+        "source_fingerprint": "sha256:" + "e" * 64,
+    }
+    appended_status = build_reviewed_fee_schedule_review_status(
+        state,
+        as_of_date="2026-08-25",
+    )
+    appended_resolution = resolve_reviewed_fee_schedule(
+        state,
+        start_date="2026-01-01",
+        end_date="2026-08-25",
+        universe=("600000.SH",),
+        asset_classes=("stock",),
+        expected_cost_model_reference=reviewed_cost_model_reference(fee_review),
+    )
+
+    assert appended_scope["source_fact_continuity"]["added_activity_count"] == 1
+    assert appended_status["status"] == "active"
+    with pytest.raises(
+        ReviewedFeeScheduleRejected,
+        match="reviewed_fee_schedule_notional_envelope_exceeded",
+    ):
+        appended_resolution.commission_calc.calculate_for(
+            CommissionType.STOCK_A,
+            OrderSide.BUY,
+            Decimal("20"),
+            Decimal("1000"),
+        )
 
     scope_repository.revoke_latest(
         import_run_id=reviewed_import.import_run_id,
@@ -933,7 +1032,7 @@ def test_reviewed_fee_schedule_survives_only_valid_daily_snapshot_lineage(
 
     changed = statement_path.read_text(encoding="utf-8").replace(
         "synthetic sell,0.10",
-        "synthetic sell corrected,0.10",
+        "synthetic sell,0.11",
     )
     statement_path.write_text(changed, encoding="utf-8")
     roll_forward_daily_broker_statement(

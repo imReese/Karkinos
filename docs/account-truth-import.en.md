@@ -353,15 +353,22 @@ daily snapshots. A future source event, uncovered ledger event or revision,
 missing/conflicting/non-finite state, or concurrent file change blocks the
 roll-forward.
 
-Scope and fee reviews bind `karkinos.account_truth.source_fact_lineage.v1`, the
-complete ordered-independent set of every non-derived normalized row. A valid
-daily snapshot may inherit those reviews only when that full lineage, the
-reviewed account/window/assets, and every intervening import remain identical.
-Any new, corrected, removed, malformed, or temporarily divergent source fact
-invalidates inheritance; later restoring old bytes does not resurrect the old
-review. The current daily snapshot keeps its own exact import and promotion
-identity. Inheritance remains append-only and revocable and grants no order,
-ledger, execution, or capital authority.
+Scope and fee reviews preserve immutable import facts through
+`karkinos.account_truth.source_fact_lineage.v1`, while
+`karkinos.account_truth.source_fact_continuity.v1` classifies whether adjacent
+imports remain one economically continuous canonical account history. Older
+cash/position state rows may be superseded by the current derived snapshot,
+historical non-decision settlement metadata may be normalized, and
+chronologically appended activity may extend the reviewed window. Every
+intervening import is checked, and each existing economic activity row must
+retain its type, time, instrument, quantity, price, amounts, costs, cash and
+position effects, cost basis, and order identities. Removal, economic revision,
+back-dated addition, malformed evidence, or a temporary material divergence
+breaks continuity; restoring older bytes cannot bypass it. The current snapshot
+keeps its exact import/promotion identity, while current asset scope,
+reconciliation, valuation, and ledger cutoff are recomputed daily. Inheritance
+remains revocable and grants no order, ledger, execution, strategy-promotion, or
+capital authority.
 
 ## Canonical CSV columns
 
@@ -601,12 +608,16 @@ workflow: choose the reviewed evidence window, recompute the preview, inspect
 buy/sell coverage and aggregate component matches, then enter a reviewer and
 the complete confirmation phrase. Approval is unavailable for a blocked or
 stale preview. An accepted record is displayed as `active` only while a
-query-only recomputation still matches its preview fingerprint. The v2 preview
-binds the stable source-fact lineage and scope-review binding rather than the
-replaceable daily derived snapshot rows. Current Account Truth or fee-evidence
-drift still displays `blocked`; an intervening divergent import cannot be
-bypassed by later restoring old content. The older accepted record remains
-visible for audit and can still be explicitly revoked.
+query-only recomputation still satisfies the reviewed rules. The v4 preview
+binds the stable scope-review root and materially continuous canonical history
+rather than replaceable daily derived snapshot rows. Chronologically appended
+stock trades automatically revalidate only when every fee component matches
+the same approved terms, so the owner need not repeat the approval. The
+original reviewed notional envelope remains fixed and cannot grow because a
+larger trade appeared. Changed or removed economic activity, a new fee mismatch,
+asset-scope drift, or a material divergence in any intermediate import still
+fails closed; restoring old content cannot bypass it. Older accepted records
+remain visible for audit and can still be explicitly revoked.
 
 An active review becomes a versioned cost-model reference. The same resolved
 calculator, including exchange overrides and per-component money rounding, is

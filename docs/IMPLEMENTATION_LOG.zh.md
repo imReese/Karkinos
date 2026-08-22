@@ -7,12 +7,21 @@ commit 和 pull request。
 
 ## 当前基线
 
-截至 2026-08-17，v0.2 至 v1.7 已完成。v1.8 control-plane 基础以及截至 Phase 1.18 的
-AI-native research 基础已经实现。当前产品里程碑是[路线图](ROADMAP.zh.md)中的券商连接、逐单
-受控 pilot。
+截至 2026-08-21，v0.2.3 是当前已部署的本地稳定基线，v0.2.4 是当前 release candidate。
+v1.8 control-plane 基础以及截至 Phase 1.18 的 AI-native research 基础已经实现。当前产品
+里程碑是[路线图](ROADMAP.zh.md)中的券商连接、逐单受控 pilot。
 
 最近完成的跨领域工作包括：
 
+- v0.2.4 Daily Data Flywheel：不可变 Account Truth 导入历史由隐私最小化的物质连续性契约分类。
+  每日现金/持仓快照替代、历史非决策结算元数据整理和按时间追加的账户流水会自动继承已复核账户
+  范围，同时仍逐日重算当前对账、估值、ledger cutoff 与当日晋级证据；系统检查每一个中间导入，
+  因此经济流水修改/删除、倒序补写、损坏或短暂实质漂移不能通过恢复旧文件隐藏。新增股票成交仅在
+  所有费用分项符合原复核规则时自动复验，原成交金额包络保持不变；ETF/基金仍进入 Account Truth、
+  估值与风险，但不能进入股票策略。该飞轮不联系 provider、不下单、不晋级策略，也不扩大资本权限；
+- v0.2.4 验证证据：2,492 项 Python 测试与 696 项 Web 测试通过，Web 格式检查和生产构建通过；
+  基于当前共享持久化数据的只读运行得到 Account Truth `ready`、scope `complete`、canonical state
+  物质连续继承以及费用复核 `active`，Account Truth/费用阻断项均为空，且未联系 provider、未写库；
 - 将 persisted observations 作为权威读取来源；
 - 不可变 valuation snapshot 与 ledger identity；
 - evidence-bound 策略贡献 v2，假设受控入账契约以不可变的

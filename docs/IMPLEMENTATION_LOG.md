@@ -6,17 +6,17 @@ This file records release-level outcomes and validation evidence. It is not a co
 
 ## Current Baseline
 
-As of 2026-08-21, v0.2.2 is the stable local release baseline. The v1.8 control-plane foundation and AI-native research foundation through Phase 1.18 are implemented. The active product milestone is the broker-connected controlled per-order pilot in [ROADMAP.md](ROADMAP.md).
+As of 2026-08-21, v0.2.3 is the deployed stable local release baseline and v0.2.4 is the current release candidate. The v1.8 control-plane foundation and AI-native research foundation through Phase 1.18 are implemented. The active product milestone is the broker-connected controlled per-order pilot in [ROADMAP.md](ROADMAP.md).
 
 The latest completed cross-cutting work includes:
 
+- the v0.2.4 Daily Data Flywheel: immutable Account Truth import history is classified by a privacy-minimized material-continuity contract. Daily cash/position snapshot supersession, historical non-decision settlement metadata normalization, and chronological append-only account activity automatically carry the reviewed account scope while current reconciliation, valuation, ledger cutoff, and same-day promotion evidence are still recomputed. Every intermediate import is checked, so changed/removed economic activity, back-dated additions, malformed evidence, or temporary material drift cannot be hidden by restoring older bytes. Newly appended stock trades automatically revalidate the active fee review only when every component matches the approved terms; the originally reviewed notional envelope remains fixed. ETF/fund facts remain Account Truth, valuation, and risk inputs but cannot enter the stock strategy. The flywheel contacts no provider, places no order, changes no strategy promotion, and expands no capital authority;
+- v0.2.4 validation: 2,492 Python tests and 696 Web tests passed; Web formatting and the production build passed. A read-only run against the current shared persistent store projected Account Truth `ready`, scope `complete`, materially inherited canonical-state continuity, and reviewed fees `active`, with no Account Truth or fee blockers and no provider contact or database write;
 - a stock-only production daily-candidate boundary: ETF and fund facts remain in Account Truth, valuation, and risk, but are excluded from reviewed strategy fees, research/promotion, daily candidates, paper/shadow trial orders, and manual tickets; non-stock candidates fail closed at every direct and replayed order-generation boundary. A reviewed-fee preview records the exact stock scope, excludes non-stock trade counts deterministically, and rejects downstream asset classes outside that scope. Separately, an append-only, revocable CITIC canonical-resolution record can close an exact legacy source set only against a complete fingerprint-bound Account Truth scope review; scope revocation or drift automatically reopens follow-up, and neither transition changes broker evidence, reconciliation, execution, or capital authority; persisted observations remain the authoritative read source;
 - immutable valuation snapshots and ledger identity;
 - evidence-bound strategy contribution v2, assuming the controlled posting contract's immutable `ledger_entries.source_ref = fill_id` identity; linked fills expose P/L only after exact production-ledger and valuation-snapshot replay, while the read path remains provider-free, write-free, and without trading or capital authority;
-- canonical daily performance across Holdings, Equity Curve, Overview, and
-  explainability surfaces;
-- provider-neutral evidence-bound AI research, review, and memory lineage, including explicit exact-strategy capture
-  of the canonical posted-fill and valuation-bound contribution report without P/L recomputation or authority;
+- canonical daily performance across Holdings, Equity Curve, Overview, and explainability surfaces;
+- provider-neutral evidence-bound AI research, review, and memory lineage, including explicit exact-strategy capture of the canonical posted-fill and valuation-bound contribution report without P/L recomputation or authority;
 - an evidence-bound human post-decision review that freezes one persisted signal/action/risk/order/fill chain together
   with the canonical strategy contribution snapshot, rejects drift, records idempotently with a replayable append-only
   audit chain, and cannot mutate financial facts or authority;

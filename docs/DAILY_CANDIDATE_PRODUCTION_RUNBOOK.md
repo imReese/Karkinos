@@ -35,10 +35,14 @@ capital authority. A candidate is not a promise of profit.
    cannot refresh old evidence. Snapshot age at Decision must remain inside the
    reviewed maximum. The evidence also binds its source fingerprint, valuation
    snapshot, and positive ledger cutoff.
-   Owner-enabled no-activity roll-forward may carry an existing scope/fee
-   review to the current date only through the stable non-derived source-fact
-   lineage. Every intervening import must have the same lineage; a temporary
-   drift followed by byte restoration does not reactivate the old review.
+   Owner-enabled daily roll-forward may carry an existing scope review through
+   materially continuous canonical history: superseded state snapshots,
+   historical non-decision metadata, and chronological append-only activity.
+   Newly appended stock trades automatically revalidate the fee review only
+   when every component matches the approved terms, without expanding its
+   reviewed notional envelope. Every intervening import is checked; changed or
+   removed economic activity, back-dated additions, fee mismatches, or asset-
+   scope drift require exception review, and byte restoration cannot hide them.
 3. The final Decision and plan are generated only from 09:35 through 09:44
    Asia/Shanghai. Every order intent uses its current persisted market quote
    rather than the historical signal price, and binds that quote's positive
@@ -55,10 +59,14 @@ unreproducible evidence produces `no_action`.
 
 ## Daily operator sequence
 
-1. Before the decision cutoff, explicitly ingest or review current market and
-   Account Truth evidence. Read pages do not refresh providers. A valid daily
-   no-activity derivation does not require repeating the same scope/fee review;
-   a named lineage, scope, or fee drift blocker does.
+1. Before the decision cutoff, let the collector and daily snapshot roll-
+   forward prepare current Account Truth, and explicitly ingest or review
+   current market evidence. Read pages do not refresh providers. Materially
+   continuous canonical history carries the account scope automatically.
+   Appended stock trades also revalidate automatically when all fee components
+   match the approved terms, while the reviewed notional envelope stays fixed.
+   Changed/removed economic activity, back-dated additions, fee mismatches, or
+   asset-scope changes enter exception review.
 2. If any prior non-simulation OMS order exists, run execution reconciliation
    and finish its current plan → paper → actual or no-fill terminal closure.
    Open Decision → Automation and inspect the Account Truth, execution-closure,

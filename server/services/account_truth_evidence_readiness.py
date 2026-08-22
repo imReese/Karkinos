@@ -18,11 +18,13 @@ from account_truth.evidence_scope_review import (
     EvidenceScopeReview,
     EvidenceScopeReviewRepository,
 )
+from account_truth.source_fact_continuity import (
+    assess_account_truth_source_fact_history_continuity,
+    source_fact_continuity_allows_inheritance,
+)
 from account_truth.source_fact_lineage import (
     account_truth_scope_review_binding_fingerprint,
     project_account_truth_source_fact_lineage,
-    source_fact_lineage_history_is_continuous,
-    source_fact_lineages_match,
 )
 from server.account_truth_gate import (
     broker_events_for_import_run,
@@ -97,6 +99,7 @@ def build_account_truth_evidence_scope(
     )
     reviewed_import_run: BrokerImportRun | None = None
     reviewed_observed_scope: dict[str, object] | None = None
+    continuity: dict[str, object] | None = None
     inherited = False
     if (
         review is None
@@ -119,20 +122,17 @@ def build_account_truth_evidence_scope(
                 import_run=candidate_import,
                 events=candidate_events,
             )
-            if not source_fact_lineages_match(
-                _mapping(observed_scope.get("source_fact_lineage")),
-                _mapping(candidate_scope.get("source_fact_lineage")),
-            ):
-                continue
-            if not source_fact_lineage_history_is_continuous(
+            candidate_continuity = assess_account_truth_source_fact_history_continuity(
                 repository=repository,
                 current_import=import_run,
                 reviewed_import=candidate_import,
-            ):
+            )
+            if not source_fact_continuity_allows_inheritance(candidate_continuity):
                 continue
             review = candidate
             reviewed_import_run = candidate_import
             reviewed_observed_scope = candidate_scope
+            continuity = candidate_continuity
             inherited = True
             break
         if review is None and len(candidates) == 1000:
@@ -151,6 +151,7 @@ def build_account_truth_evidence_scope(
         review=review,
         reviewed_import_run=reviewed_import_run,
         reviewed_observed_scope=reviewed_observed_scope,
+        continuity=continuity,
         inherited=inherited,
     )
 
@@ -320,9 +321,10 @@ def apply_account_truth_evidence_scope_review(
     review: EvidenceScopeReview | None,
     reviewed_import_run: BrokerImportRun | None = None,
     reviewed_observed_scope: dict[str, object] | None = None,
+    continuity: dict[str, object] | None = None,
     inherited: bool = False,
 ) -> dict[str, object]:
-    """Apply one exact, current human review without weakening observed facts."""
+    """Apply one exact or materially continuous human scope review."""
 
     if review is None:
         return observed_scope
@@ -341,26 +343,23 @@ def apply_account_truth_evidence_scope_review(
         review_scope or {},
     ):
         blockers.append("account_truth_evidence_scope_review_observed_drift")
-    if inherited:
-        current_lineage = _mapping(observed_scope.get("source_fact_lineage"))
-        reviewed_lineage = _mapping((review_scope or {}).get("source_fact_lineage"))
-        if not source_fact_lineages_match(current_lineage, reviewed_lineage):
-            blockers.append("account_truth_evidence_scope_review_lineage_drift")
+    if inherited and not source_fact_continuity_allows_inheritance(continuity):
+        blockers.append("account_truth_evidence_scope_review_lineage_drift")
     if review.decision == "revoked":
         blockers.append("account_truth_evidence_scope_review_revoked")
 
-    observed_window = _mapping((review_scope or {}).get("observed_event_window"))
+    observed_window = _mapping(observed_scope.get("observed_event_window"))
     observed_start = str(observed_window.get("occurred_start_date") or "")
     observed_end = str(observed_window.get("occurred_end_date") or "")
     if (
         not observed_start
         or not observed_end
         or review.coverage_start_date > observed_start
-        or review.coverage_end_date < observed_end
+        or (not inherited and review.coverage_end_date < observed_end)
     ):
         blockers.append("account_truth_evidence_scope_review_window_incomplete")
 
-    reviewed_asset_scope = _mapping((review_scope or {}).get("asset_scope"))
+    reviewed_asset_scope = _mapping(observed_scope.get("asset_scope"))
     observed_assets = set(
         _unique_strings(reviewed_asset_scope.get("observed_asset_classes"))
     )
@@ -377,9 +376,17 @@ def apply_account_truth_evidence_scope_review(
         "review_fingerprint": review.review_fingerprint,
         "reviewed_at": review.created_at,
         "binding_mode": (
-            "inherited_source_fact_lineage" if inherited else "exact_import"
+            (
+                "inherited_source_fact_lineage"
+                if str((continuity or {}).get("mode") or "")
+                == "daily_snapshot_roll_forward"
+                else "inherited_source_fact_continuity"
+            )
+            if inherited
+            else "exact_import"
         ),
         "reviewed_import_run_id": review.import_run_id,
+        "continuity": continuity if inherited else None,
     }
     if blockers:
         blocked = {
@@ -400,11 +407,16 @@ def apply_account_truth_evidence_scope_review(
         return blocked
 
     current_asset_scope = _mapping(observed_scope.get("asset_scope"))
-    source_fact_fingerprint = str(
+    current_source_fact_fingerprint = str(
         _mapping(observed_scope.get("source_fact_lineage")).get(
             "source_fact_fingerprint"
         )
         or ""
+    )
+    source_fact_fingerprint = (
+        str((continuity or {}).get("reviewed_source_fact_fingerprint") or "")
+        if inherited
+        else current_source_fact_fingerprint
     )
     review_binding_fingerprint = account_truth_scope_review_binding_fingerprint(
         review,
@@ -422,7 +434,19 @@ def apply_account_truth_evidence_scope_review(
         "declared_coverage_window": {
             "status": "complete",
             "start_date": review.coverage_start_date,
-            "end_date": review.coverage_end_date,
+            "end_date": (
+                max(review.coverage_end_date, observed_end)
+                if inherited
+                else review.coverage_end_date
+            ),
+            **(
+                {
+                    "reviewed_end_date": review.coverage_end_date,
+                    "extension_mode": "materially_continuous_canonical_source",
+                }
+                if inherited
+                else {}
+            ),
         },
         "asset_scope": {
             **current_asset_scope,
@@ -430,12 +454,14 @@ def apply_account_truth_evidence_scope_review(
             "reviewed_asset_classes": review.asset_classes,
         },
         "review": review_payload,
+        "source_fact_continuity": continuity if inherited else None,
+        "review_binding_source_fact_fingerprint": source_fact_fingerprint,
         "review_binding_fingerprint": review_binding_fingerprint,
         "blockers": [],
         "required_actions": [],
         "limitations": [
             *_unique_strings(observed_scope.get("limitations")),
-            "Scope completeness is an explicit local-owner review bound to exact persisted evidence; it is not a broker assertion or execution authority.",
+            "Scope completeness is an explicit local-owner review bound to exact or materially continuous persisted evidence; it is not a broker assertion or execution authority.",
         ],
     }
     complete["evidence_fingerprint"] = _fingerprint(_scope_fingerprint_core(complete))
