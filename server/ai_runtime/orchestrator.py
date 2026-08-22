@@ -620,6 +620,21 @@ class DeterministicWorkflowOrchestrator:
 
 
 def _failure_code(exc: Exception) -> str:
+    if type(exc).__name__ in {
+        "ExternalResearchAuthenticationError",
+        "ExternalResearchRateLimitedError",
+        "ExternalResearchHttpError",
+        "ExternalResearchTimeoutError",
+        "ExternalResearchNetworkError",
+        "ExternalResearchInvalidResponseError",
+    }:
+        value = str(exc).strip()
+        if (
+            value
+            and len(value) <= 160
+            and all(char.isalnum() or char in "_:-." for char in value)
+        ):
+            return value
     name = exc.__class__.__name__.replace("Error", "").strip("_")
     normalized = "".join(
         f"_{char.lower()}" if char.isupper() else char for char in name

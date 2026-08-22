@@ -135,14 +135,16 @@ _RESEARCH_TOOL = "research_evidence.read"
 _ACCOUNT_STATE_TOOL = "account_state_projection.read"
 _CATALOG_TOOL = "formula_operator_catalog.read"
 _SELECTION_TOOL = "strategy_research_selection.read"
-_HYPOTHESIS_ROLE = "external.strategy_hypothesis_researcher.v8"
-_CRITIQUE_ROLE = "external.strategy_backtest_critic.v8"
+_HYPOTHESIS_ROLE = "external.strategy_hypothesis_researcher.v9"
+_CRITIQUE_ROLE = "external.strategy_backtest_critic.v9"
 _HYPOTHESIS_STAGE = "strategy_hypothesis_generation"
 _CRITIQUE_STAGE = "strategy_backtest_critique"
-_PROMPT_VERSION = "karkinos.ai.strategy_research_prompt.v9"
+_PROMPT_VERSION = "karkinos.ai.strategy_research_prompt.v10"
 _SANITIZED_ACCOUNT_EVIDENCE_CONTRACT = "karkinos.ai.sanitized_account_risk_evidence.v1"
 STRATEGY_RESEARCH_MAX_INPUT_BYTES = 196_608
 STRATEGY_RESEARCH_MAX_OUTPUT_TOKENS = 12_288
+STRATEGY_RESEARCH_MAX_CITATION_PATHS = 512
+STRATEGY_RESEARCH_MAX_CITATION_CATALOG_BYTES = 49_152
 # One token cannot contain less than one input byte. The additional allowance
 # covers the system prompt and request envelope outside the capped user payload.
 STRATEGY_RESEARCH_PROVIDER_TOKEN_RESERVATION = (
@@ -1819,6 +1821,19 @@ class StrategyResearchModelProvider(ProviderAdapter):
         catalog: JsonObject,
         selection: JsonObject,
     ) -> ProviderResponse:
+        citation_sources = {
+            "saved_backtest_evidence": evidence.get("payload"),
+            "approved_formula_catalog": catalog,
+            "operator_frozen_selection": selection,
+            "iteration_context": self._iteration_context,
+        }
+        if account_evidence is not None:
+            citation_sources["saved_account_evidence"] = account_evidence
+        hypothesis_citation_catalog = (
+            _build_hypothesis_citation_catalog(citation_sources)
+            if self._mode == "hypothesis"
+            else None
+        )
         input_payload = {
             "mode": self._mode,
             "research_question": self._research_question,
@@ -1841,7 +1856,10 @@ class StrategyResearchModelProvider(ProviderAdapter):
                 "authority_effect": "none",
             },
             "output_contract": (
-                _hypothesis_output_contract(iterative=bool(self._iteration_context))
+                _hypothesis_output_contract(
+                    iterative=bool(self._iteration_context),
+                    citation_catalog=hypothesis_citation_catalog or {},
+                )
                 if self._mode == "hypothesis"
                 else _critique_output_contract()
             ),
@@ -1907,27 +1925,23 @@ class StrategyResearchModelProvider(ProviderAdapter):
         if not content:
             raise ExternalResearchInvalidResponseError("provider_content_missing")
         decoded = _decode_model_json(content)
-        normalized = (
-            _normalize_hypothesis_payload(
+        if self._mode == "hypothesis":
+            normalized = _normalize_hypothesis_payload(
                 decoded,
                 expected_draft_count=(1 if self._iteration_context else None),
             )
-            if self._mode == "hypothesis"
-            else _normalize_critique_payload(
+            normalized = _resolve_hypothesis_citations(
+                normalized,
+                citation_catalog=hypothesis_citation_catalog or {},
+                citation_sources=citation_sources,
+            )
+        else:
+            normalized = _normalize_critique_payload(
                 decoded,
                 self._evidence_reference_id,
                 self._critique_input,
             )
-        )
-        citation_sources = {
-            "saved_backtest_evidence": evidence.get("payload"),
-            "approved_formula_catalog": catalog,
-            "operator_frozen_selection": selection,
-            "critique_input": self._critique_input,
-            "iteration_context": self._iteration_context,
-        }
-        if account_evidence is not None:
-            citation_sources["saved_account_evidence"] = account_evidence
+            citation_sources["critique_input"] = self._critique_input
         citation_groups = (
             [draft.get("citations") for draft in normalized["drafts"]]
             if self._mode == "hypothesis"
@@ -3273,7 +3287,11 @@ def _reject_private_iteration_keys(value: Any) -> None:
             _reject_private_iteration_keys(item)
 
 
-def _hypothesis_output_contract(*, iterative: bool = False) -> JsonObject:
+def _hypothesis_output_contract(
+    *,
+    iterative: bool = False,
+    citation_catalog: Mapping[str, str],
+) -> JsonObject:
     return {
         "format": "one JSON object with exact top-level key drafts",
         "draft_count": "exactly 1" if iterative else "1..3",
@@ -3356,15 +3374,19 @@ def _hypothesis_output_contract(*, iterative: bool = False) -> JsonObject:
             "failure_conditions": "non-empty array[string]",
             "limitations": "non-empty array[string]",
             "risk_impact": "non-empty string",
-            "citations": "non-empty array[string] using allowed prefixes",
+            "citations": (
+                "non-empty array[string] copied only from citation_catalog keys"
+            ),
         },
-        "allowed_citation_prefixes": [
-            "saved_backtest_evidence.",
-            "saved_account_evidence.",
-            "operator_frozen_selection.",
-            "approved_formula_catalog.",
-            "iteration_context.",
-        ],
+        "citation_catalog": dict(citation_catalog),
+        "citation_catalog_fingerprint": "sha256:"
+        + content_fingerprint(dict(citation_catalog)),
+        "citation_rules": {
+            "copy_catalog_ids_verbatim": True,
+            "construct_or_rewrite_paths": False,
+            "catalog_ids_are_resolved_to_bound_paths_locally": True,
+            "unknown_ids_or_paths_fail_closed": True,
+        },
         "formula_shape_example_only": {
             "schema_version": FORMULA_AST_CONTRACT,
             "entry": {
@@ -3469,7 +3491,10 @@ def _system_prompt(mode: Literal["hypothesis", "critique"]) -> str:
             "When iteration_context is present, emit exactly one draft. For iteration "
             "two or later, use the bound parent formula, canonical metric summary, "
             "promotion blockers, and critique to produce a changed revision, and cite "
-            "at least one iteration_context.parent_iteration path. "
+            "at least one citation_catalog ID whose bound path starts with "
+            "iteration_context.parent_iteration. Copy citation IDs verbatim from "
+            "output_contract.citation_catalog keys; never construct, abbreviate, or "
+            "return the paths themselves. "
             "A signal observes only completed bars and is applied on the next "
             "available persisted bar."
         )
@@ -3682,6 +3707,89 @@ def _decode_model_json(content: str) -> JsonObject:
     if not isinstance(decoded, dict):
         raise ExternalResearchInvalidResponseError("provider_content_not_json_object")
     return decoded
+
+
+def _build_hypothesis_citation_catalog(
+    sources: Mapping[str, Any],
+) -> dict[str, str]:
+    """Bind short model-facing IDs to exact paths in the exported JSON."""
+    paths: list[str] = []
+
+    def visit(value: Any, path: str) -> None:
+        if path:
+            paths.append(path)
+        if isinstance(value, Mapping):
+            for key in sorted(str(item) for item in value):
+                if not key or any(char in key for char in ".[]"):
+                    raise StrategyResearchRejected(
+                        "strategy_research_citation_source_key_unrepresentable"
+                    )
+                visit(value[key], f"{path}.{key}" if path else key)
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                visit(item, f"{path}[{index}]")
+
+    for source_name in sorted(sources):
+        source = sources[source_name]
+        if source is not None:
+            visit(source, source_name)
+    unique_paths = sorted(
+        path for path in set(paths) if _citation_path_exists(path, sources)
+    )
+    if not unique_paths:
+        raise StrategyResearchRejected("strategy_research_citation_catalog_empty")
+    if len(unique_paths) > STRATEGY_RESEARCH_MAX_CITATION_PATHS:
+        raise StrategyResearchRejected("strategy_research_citation_catalog_too_large")
+    catalog: dict[str, str] = {}
+    for path in unique_paths:
+        citation_id = "cite_" + content_fingerprint({"path": path})[:16]
+        existing = catalog.get(citation_id)
+        if existing is not None and existing != path:
+            raise StrategyResearchRejected(
+                "strategy_research_citation_catalog_collision"
+            )
+        catalog[citation_id] = path
+    if (
+        len(canonical_json(catalog).encode("utf-8"))
+        > STRATEGY_RESEARCH_MAX_CITATION_CATALOG_BYTES
+    ):
+        raise StrategyResearchRejected("strategy_research_citation_catalog_too_large")
+    return catalog
+
+
+def _resolve_hypothesis_citations(
+    payload: Mapping[str, Any],
+    *,
+    citation_catalog: Mapping[str, str],
+    citation_sources: Mapping[str, Any],
+) -> JsonObject:
+    """Resolve catalog IDs to audited paths without inventing missing evidence."""
+    drafts = payload.get("drafts")
+    if not isinstance(drafts, list):
+        raise ExternalResearchInvalidResponseError("hypothesis_draft_count_invalid")
+    resolved_drafts = []
+    for draft in drafts:
+        if not isinstance(draft, dict):
+            raise ExternalResearchInvalidResponseError("hypothesis_draft_invalid")
+        citations = draft.get("citations")
+        if (
+            not isinstance(citations, list)
+            or not citations
+            or any(not isinstance(item, str) or not item for item in citations)
+        ):
+            raise ExternalResearchInvalidResponseError("hypothesis_citations_invalid")
+        resolved = []
+        for citation in citations:
+            path = citation_catalog.get(citation)
+            if path is None and _citation_path_exists(citation, citation_sources):
+                path = citation
+            if path is None or not _citation_path_exists(path, citation_sources):
+                raise ExternalResearchInvalidResponseError(
+                    "provider_citation_not_in_bound_input"
+                )
+            resolved.append(path)
+        resolved_drafts.append({**draft, "citations": resolved})
+    return {"drafts": resolved_drafts}
 
 
 def _citation_path_exists(citation: str, sources: Mapping[str, Any]) -> bool:

@@ -1170,6 +1170,16 @@ class _FailingHypothesisResearch(_FixtureResearch):
         raise RuntimeError("deepseek_timeout")
 
 
+class _RejectedHypothesisResearch(_FixtureResearch):
+    async def generate_hypotheses(self, request):
+        self.hypothesis_calls += 1
+        return {
+            "status": "failed",
+            "failure_code": "provider_citation_not_in_bound_input",
+            "drafts": [],
+        }
+
+
 @pytest.mark.unit
 @pytest.mark.trading_safety
 @pytest.mark.asyncio
@@ -1208,6 +1218,43 @@ async def test_provider_exception_is_audited_failed_and_replay_does_not_retry(
     assert call["status"] == "failed"
     assert call["failure_code"] == "deepseek_timeout"
     assert store.usage_for_market_date("2026-08-11")["provider_calls"] == 1
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_provider_rejection_keeps_exact_safe_failure_code(
+    tmp_path, monkeypatch
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = ShadowResearchStore(tmp_path / "app.db")
+    store.init()
+    fixture = _RejectedHypothesisResearch(candidate_result_id=99)
+    service = AiShadowResearchAutomationService(
+        state=_state(db),
+        store=store,
+        data_store=DataStore(tmp_path / "market"),
+        research_service_builder=lambda external: fixture,
+        now=lambda: datetime(2026, 8, 11, 8, 0, tzinfo=ZoneInfo("UTC")),
+    )
+    service.update_policy(_policy_payload(enabled=True))
+    monkeypatch.setattr(
+        service, "_prepare_baseline", lambda policy: _prepared_baseline()
+    )
+    monkeypatch.setattr(
+        "server.services.ai_shadow_research_automation.build_current_valuation_snapshot",
+        _complete_valuation,
+    )
+
+    result = await service.run_once()
+
+    assert result["run_status"] == "failed"
+    assert result["failure_code"] == "provider_citation_not_in_bound_input"
+    assert fixture.hypothesis_calls == 1
+    call = store.get_provider_call(f"{result['run_id']}:hypothesis:iteration:01")
+    assert call["status"] == "failed"
+    assert call["failure_code"] == "provider_citation_not_in_bound_input"
 
 
 @pytest.mark.unit
