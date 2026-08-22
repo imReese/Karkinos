@@ -80,6 +80,7 @@ SHADOW_RESEARCH_POLICY_ID = "ai_shadow_research"
 SHADOW_RESEARCH_POLICY_SCHEMA = "karkinos.ai.shadow_research_policy.v2"
 SHADOW_RESEARCH_API_SCHEMA = "karkinos.ai.shadow_research_automation.v1"
 SHADOW_RESEARCH_RUN_TYPE = "ai_shadow_research"
+SHADOW_RESEARCH_RUNTIME_CONTRACT = "karkinos.ai.shadow_research_runtime.v4"
 SHADOW_RESEARCH_POLICY_CONFIRMATION = (
     "authorize_five_sequential_after_close_deepseek_strategy_research_without_"
     "daily_token_budget_or_strategy_or_trade_authority"
@@ -115,6 +116,7 @@ _PROVIDER_FREE_RETRYABLE_FAILURE_CODES = (
     "research_account_truth_binding_not_reconciled",
     "research_initial_cash_exceeds_current_account_equity",
     "research_initial_cash_invalid",
+    "reviewed_fee_schedule_current_reconciliation_blocked",
 )
 
 
@@ -414,6 +416,18 @@ class ShadowResearchStore:
                     )
                 elif not provider_free_rearm:
                     return existing_run, True
+                retry_consumption = (
+                    conn.execute(
+                        """
+                        SELECT authorization_id
+                        FROM ai_shadow_research_retry_consumptions
+                        WHERE replacement_run_id=?
+                        """,
+                        (existing_run["run_id"],),
+                    ).fetchone()
+                    if provider_free_rearm
+                    else None
+                )
                 run_id = f"ai-shadow-research:{market_date}:{input_fingerprint[:16]}"
                 attempt_id = (
                     "ai-shadow-research-attempt:"
@@ -480,6 +494,19 @@ class ShadowResearchStore:
                             run_id,
                             input_fingerprint,
                             now,
+                        ),
+                    )
+                elif retry_consumption is not None:
+                    conn.execute(
+                        """
+                        UPDATE ai_shadow_research_retry_consumptions
+                        SET replacement_run_id=?, replacement_input_fingerprint=?
+                        WHERE authorization_id=?
+                        """,
+                        (
+                            run_id,
+                            input_fingerprint,
+                            retry_consumption["authorization_id"],
                         ),
                     )
                 rearmed = conn.execute(
@@ -1610,6 +1637,7 @@ class AiShadowResearchAutomationService:
 
         input_fingerprint = content_fingerprint(
             {
+                "runtime_contract": SHADOW_RESEARCH_RUNTIME_CONTRACT,
                 "policy": policy.to_dict(),
                 "baseline_fingerprint": prepared.fingerprint,
                 "valuation_snapshot_id": valuation["snapshot_id"],
@@ -1660,6 +1688,10 @@ class AiShadowResearchAutomationService:
                 frequency=BarFrequency.DAILY.value,
                 initial_cash=prepared.request.initial_cash,
                 cost_model_reference=prepared.cost_model_reference,
+                account_truth_freshness_as_of=_frozen_market_close_as_of(
+                    prepared.market_date,
+                    policy.after_close_time,
+                ).isoformat(),
                 valuation_snapshot_id=str(valuation["snapshot_id"]),
                 ledger_cutoff_id=int(valuation["ledger_cutoff_id"]),
             )

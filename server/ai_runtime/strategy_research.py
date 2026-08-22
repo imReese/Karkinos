@@ -213,6 +213,7 @@ class StrategyResearchSelection:
     frequency: str
     initial_cash: float
     cost_model_reference: str = CANONICAL_COST_MODEL_REFERENCE
+    account_truth_freshness_as_of: str | None = None
     valuation_snapshot_id: str | None = None
     ledger_cutoff_id: int | None = None
     schema_version: str = STRATEGY_RESEARCH_SELECTION_CONTRACT
@@ -234,6 +235,24 @@ class StrategyResearchSelection:
             raise StrategyResearchRejected("selected_window_invalid")
         if self.initial_cash <= 0:
             raise StrategyResearchRejected("initial_cash_invalid")
+        if self.account_truth_freshness_as_of is not None:
+            try:
+                account_truth_as_of = datetime.fromisoformat(
+                    self.account_truth_freshness_as_of
+                )
+            except ValueError as exc:
+                raise StrategyResearchRejected(
+                    "account_truth_freshness_as_of_invalid"
+                ) from exc
+            if (
+                account_truth_as_of.tzinfo is None
+                or account_truth_as_of.utcoffset() is None
+            ):
+                raise StrategyResearchRejected("account_truth_freshness_as_of_invalid")
+            if account_truth_as_of.date().isoformat() != self.end_date:
+                raise StrategyResearchRejected(
+                    "account_truth_freshness_as_of_date_mismatch"
+                )
         if (self.valuation_snapshot_id is None) != (self.ledger_cutoff_id is None):
             raise StrategyResearchRejected("account_fact_binding_incomplete")
         if self.has_account_binding:
@@ -248,8 +267,15 @@ class StrategyResearchSelection:
             self.valuation_snapshot_id is not None and self.ledger_cutoff_id is not None
         )
 
+    @property
+    def account_truth_freshness_datetime(self) -> datetime:
+        value = self.account_truth_freshness_as_of
+        if value is None:
+            value = f"{self.end_date}T15:30:00+08:00"
+        return datetime.fromisoformat(value)
+
     def to_dict(self) -> JsonObject:
-        return {
+        payload = {
             "schema_version": self.schema_version,
             "saved_backtest_result_id": self.saved_backtest_result_id,
             "universe": list(self.universe),
@@ -268,6 +294,11 @@ class StrategyResearchSelection:
                 else "not_applicable_strategy_only_research"
             ),
         }
+        if self.account_truth_freshness_as_of is not None:
+            payload["account_truth_freshness_as_of"] = (
+                self.account_truth_freshness_as_of
+            )
+        return payload
 
     def to_external_dict(self) -> JsonObject:
         """Expose research identifiers while keeping account bindings local."""
@@ -2645,6 +2676,7 @@ class StrategyResearchService:
             universe=selection.universe,
             asset_classes=selection.asset_classes,
             expected_cost_model_reference=selection.cost_model_reference,
+            account_truth_as_of=selection.account_truth_freshness_datetime,
         )
 
     def _require_settings(self) -> ProviderConnectivitySettings:
@@ -3540,6 +3572,11 @@ def _selection_from_session(session: Mapping[str, Any]) -> StrategyResearchSelec
         frequency=str(selection["frequency"]),
         initial_cash=float(selection["initial_cash"]),
         cost_model_reference=str(selection["cost_model_reference"]),
+        account_truth_freshness_as_of=(
+            str(selection["account_truth_freshness_as_of"])
+            if selection.get("account_truth_freshness_as_of") is not None
+            else None
+        ),
         valuation_snapshot_id=(
             str(selection["valuation_snapshot_id"])
             if selection.get("valuation_snapshot_id") is not None
