@@ -7,19 +7,21 @@ commit 和 pull request。
 
 ## 当前基线
 
-截至 2026-08-22，v0.2.9 是当前本地稳定发布基线。
+截至 2026-08-22，v0.2.10 是当前本地稳定发布基线。
 v1.8 control-plane 基础以及截至 Phase 1.18 的 AI-native research 基础已经实现。当前产品
 里程碑是[路线图](ROADMAP.zh.md)中的券商连接、逐单受控 pilot。
 
 最近完成的跨领域工作包括：
 
-- v0.2.9 完成 v0.2.8 的 DeepSeek citation contract 修复，同时保留完整冻结路径校验：每次 hypothesis 仍构建并验证
+- v0.2.10 完成 v0.2.8 的 DeepSeek citation contract 修复，同时保留完整冻结路径校验：每次 hypothesis 仍构建并验证
   完整目录，但只外发确定性的 4 至 5 个 `cite_01`…`cite_05`，且每个草稿必须原序返回完整 ID 列表，
   才会在本地解析路径。只有已持久化的零候选 citation 失败、既有完整 retry 已消费，且从 11 精确提高
   到 12 后正好恢复原定五轮所需 10 次调用时，owner 才能追加一次不可变授权；该授权只能消费一次，
   不产生策略、订单、券商或资本权限。Prompt v11 使用新的不可变 hypothesis/critique 角色身份；修正软件
-  重新激活 provider-free 失败时，会把既有 retry 与 citation extension consumption 一起原子迁移到新 run；
-- v0.2.9 验证证据：2,506 项 Python 测试与 697 项 Web 测试通过；Web 格式检查、生产构建、文档健康、
+  重新激活 provider-free 失败时，会把既有 retry 与同一市场日唯一的 citation extension consumption
+  一起原子迁移到新 run；即使旧 runtime 把 extension 留在祖先 run，也必须先有当前 retry lineage 才能恢复，
+  且绝不跨日期迁移；
+- v0.2.10 验证证据：2,506 项 Python 测试与 697 项 Web 测试通过；Web 格式检查、生产构建、文档健康、
   staged GitNexus 影响检查和 pre-commit 检查通过。验证未联系券商、未下单，也未修改
   OMS/ledger/risk/capital 事实；
 - v0.2.4 Daily Data Flywheel：不可变 Account Truth 导入历史由隐私最小化的物质连续性契约分类。
