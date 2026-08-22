@@ -80,7 +80,7 @@ SHADOW_RESEARCH_POLICY_ID = "ai_shadow_research"
 SHADOW_RESEARCH_POLICY_SCHEMA = "karkinos.ai.shadow_research_policy.v2"
 SHADOW_RESEARCH_API_SCHEMA = "karkinos.ai.shadow_research_automation.v1"
 SHADOW_RESEARCH_RUN_TYPE = "ai_shadow_research"
-SHADOW_RESEARCH_RUNTIME_CONTRACT = "karkinos.ai.shadow_research_runtime.v6"
+SHADOW_RESEARCH_RUNTIME_CONTRACT = "karkinos.ai.shadow_research_runtime.v7"
 SHADOW_RESEARCH_POLICY_CONFIRMATION = (
     "authorize_five_sequential_after_close_deepseek_strategy_research_without_"
     "daily_token_budget_or_strategy_or_trade_authority"
@@ -474,13 +474,16 @@ class ShadowResearchStore:
                 citation_extension_consumption = (
                     conn.execute(
                         """
-                        SELECT extension_id
+                        SELECT consumption.extension_id
                         FROM ai_shadow_research_citation_call_extension_consumptions
-                        WHERE replacement_run_id=?
+                             AS consumption
+                        JOIN ai_shadow_research_citation_call_extensions AS extension
+                          ON extension.extension_id=consumption.extension_id
+                        WHERE extension.market_date=?
                         """,
-                        (existing_run["run_id"],),
+                        (market_date,),
                     ).fetchone()
-                    if provider_free_rearm
+                    if provider_free_rearm and retry_consumption is not None
                     else None
                 )
                 run_id = f"ai-shadow-research:{market_date}:{input_fingerprint[:16]}"

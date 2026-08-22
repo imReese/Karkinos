@@ -676,6 +676,14 @@ def test_citation_call_extension_is_one_shot_and_restores_exact_ten_call_capacit
         failure_code="ai_runtime_role_identity_conflict",
         now="2026-08-21T14:11:00+00:00",
     )
+    with sqlite3.connect(tmp_path / "app.db") as conn:
+        conn.execute(
+            """
+            UPDATE ai_shadow_research_citation_call_extension_consumptions
+            SET replacement_run_id=?, replacement_input_fingerprint=?
+            """,
+            (replacement["run_id"], replacement["input_fingerprint"]),
+        )
     corrected, reused = store.claim_run(
         market_date="2026-08-21",
         input_fingerprint="corrected-role-identity-runtime-input",
