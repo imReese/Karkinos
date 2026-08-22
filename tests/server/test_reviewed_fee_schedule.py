@@ -4,8 +4,10 @@ import asyncio
 import hashlib
 import json
 import sqlite3
+from datetime import datetime
 from decimal import Decimal
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.routing import APIRoute
@@ -842,13 +844,25 @@ def test_reviewed_fee_schedule_survives_only_valid_daily_snapshot_lineage(
             "source_fingerprint": "sha256:" + "c" * 64,
         },
     }
+    account_truth_clock_observations: list[tuple[str, datetime]] = []
+
+    def readiness_at_clock(state, *, clock=None):
+        if clock is not None:
+            account_truth_clock_observations.append(("readiness", clock()))
+        return context["readiness"]
+
+    def promotion_at_clock(state, *, clock=None):
+        if clock is not None:
+            account_truth_clock_observations.append(("promotion", clock()))
+        return context["promotion"]
+
     monkeypatch.setattr(
         "server.services.reviewed_fee_schedule.build_account_truth_evidence_readiness",
-        lambda state: context["readiness"],
+        readiness_at_clock,
     )
     monkeypatch.setattr(
         "server.services.reviewed_fee_schedule.build_latest_account_truth_promotion_evidence",
-        lambda state: context["promotion"],
+        promotion_at_clock,
     )
     preview = build_reviewed_fee_schedule_preview(
         state,
@@ -938,6 +952,14 @@ def test_reviewed_fee_schedule_survives_only_valid_daily_snapshot_lineage(
         state,
         as_of_date="2026-08-24",
     )
+    frozen_market_close = datetime(
+        2026,
+        8,
+        24,
+        15,
+        30,
+        tzinfo=ZoneInfo("Asia/Shanghai"),
+    )
     resolution = resolve_reviewed_fee_schedule(
         state,
         start_date="2026-01-01",
@@ -945,6 +967,7 @@ def test_reviewed_fee_schedule_survives_only_valid_daily_snapshot_lineage(
         universe=("600000.SH",),
         asset_classes=("stock",),
         expected_cost_model_reference=reviewed_cost_model_reference(fee_review),
+        account_truth_as_of=frozen_market_close,
     )
 
     assert current_scope["review"]["review_id"] == scope_review.review_id
@@ -953,6 +976,15 @@ def test_reviewed_fee_schedule_survives_only_valid_daily_snapshot_lineage(
     assert replayed_preview["preview_fingerprint"] == preview["preview_fingerprint"]
     assert status["status"] == "active"
     assert status["blockers"] == []
+    assert resolution.fee_evidence["account_truth_freshness_as_of"] == (
+        frozen_market_close.isoformat()
+    )
+    assert account_truth_clock_observations[-4:] == [
+        ("readiness", frozen_market_close),
+        ("promotion", frozen_market_close),
+        ("promotion", frozen_market_close),
+        ("readiness", frozen_market_close),
+    ]
     assert (
         active_review_matches_fee_evidence(
             db,

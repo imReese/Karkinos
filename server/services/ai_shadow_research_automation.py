@@ -2150,6 +2150,10 @@ class AiShadowResearchAutomationService:
             end_date=market_date,
             universe=tuple(asset["symbol"] for asset in normalized_assets),
             asset_classes=tuple(asset["asset_class"] for asset in normalized_assets),
+            account_truth_as_of=_frozen_market_close_as_of(
+                market_date,
+                policy.after_close_time,
+            ),
         )
         commission_calc = getattr(fee_resolution, "commission_calc", None)
         fee_schedule_evidence = getattr(fee_resolution, "fee_evidence", None)
@@ -2593,6 +2597,20 @@ def _after_close(market_date: str, now: datetime, after_close_time: str) -> bool
     if evidence_date > now.date():
         return False
     return now.time().replace(tzinfo=None) >= time.fromisoformat(after_close_time)
+
+
+def _frozen_market_close_as_of(
+    market_date: str,
+    after_close_time: str,
+) -> datetime:
+    try:
+        return datetime.combine(
+            datetime.fromisoformat(market_date).date(),
+            time.fromisoformat(after_close_time),
+            tzinfo=_SHANGHAI_TZ,
+        )
+    except ValueError as exc:
+        raise ShadowResearchRejected("frozen_market_close_invalid") from exc
 
 
 def _asset_class(value: str) -> AssetClass:

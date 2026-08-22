@@ -27,7 +27,7 @@ from decimal import (
 )
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Iterator, Mapping, Sequence
+from typing import Any, Callable, Iterator, Mapping, Sequence
 
 from account_truth.broker_evidence import (
     BrokerEvidenceReadRejected,
@@ -582,8 +582,9 @@ def build_reviewed_fee_schedule_preview(
     effective_end_date: str,
     reviewed_asset_classes: Sequence[str] | None = None,
     schedule_override: Mapping[str, Any] | None = None,
+    account_truth_as_of: datetime | None = None,
 ) -> dict[str, Any]:
-    """Compare safe schedule terms with the exact current Account Truth trades."""
+    """Compare safe schedule terms with exact Account Truth at a bound clock."""
 
     start_date, end_date = _date_window(effective_start_date, effective_end_date)
     normalized_reviewed_assets = _normalize_reviewed_asset_classes(
@@ -595,8 +596,23 @@ def build_reviewed_fee_schedule_preview(
         else _schedule_from_config(getattr(state, "config", None))
     )
     schedule_fingerprint = _fingerprint(schedule)
-    readiness = build_account_truth_evidence_readiness(state)
-    promotion = build_latest_account_truth_promotion_evidence(state)
+    account_truth_clock = _account_truth_clock(account_truth_as_of)
+    readiness = (
+        build_account_truth_evidence_readiness(state)
+        if account_truth_clock is None
+        else build_account_truth_evidence_readiness(
+            state,
+            clock=account_truth_clock,
+        )
+    )
+    promotion = (
+        build_latest_account_truth_promotion_evidence(state)
+        if account_truth_clock is None
+        else build_latest_account_truth_promotion_evidence(
+            state,
+            clock=account_truth_clock,
+        )
+    )
     evidence_scope = _mapping(readiness.get("evidence_scope"))
     account_binding = _mapping(evidence_scope.get("account_binding"))
     scope_review = _mapping(evidence_scope.get("review"))
@@ -788,6 +804,7 @@ def _review_matches_current_preview(
     state: Any,
     review: ReviewedFeeScheduleReview,
     current_preview: Mapping[str, Any],
+    account_truth_as_of: datetime | None = None,
 ) -> bool:
     """Permit exact replay or a reconciled, materially continuous extension."""
 
@@ -841,7 +858,15 @@ def _review_matches_current_preview(
     try:
         repository = BrokerEvidenceRepository(db_path)
         reviewed_import = repository.get_import_run(review.account_truth_import_run_id)
-        promotion = build_latest_account_truth_promotion_evidence(state)
+        account_truth_clock = _account_truth_clock(account_truth_as_of)
+        promotion = (
+            build_latest_account_truth_promotion_evidence(state)
+            if account_truth_clock is None
+            else build_latest_account_truth_promotion_evidence(
+                state,
+                clock=account_truth_clock,
+            )
+        )
         current_import_id = str(promotion.get("import_run_id") or "")
         current_import = repository.get_import_run(current_import_id)
         if reviewed_import is None or current_import is None:
@@ -851,7 +876,14 @@ def _review_matches_current_preview(
             current_import=current_import,
             reviewed_import=reviewed_import,
         )
-        readiness = build_account_truth_evidence_readiness(state)
+        readiness = (
+            build_account_truth_evidence_readiness(state)
+            if account_truth_clock is None
+            else build_account_truth_evidence_readiness(
+                state,
+                clock=account_truth_clock,
+            )
+        )
         original_scope_review = EvidenceScopeReviewRepository(
             db_path
         ).get_latest_review(review.account_truth_import_run_id)
@@ -880,6 +912,7 @@ def resolve_reviewed_fee_schedule(
     universe: Sequence[str],
     asset_classes: Sequence[str],
     expected_cost_model_reference: str | None = None,
+    account_truth_as_of: datetime | None = None,
 ) -> ReviewedFeeScheduleResolution:
     """Resolve one active review and recheck its current Account Truth binding."""
 
@@ -892,6 +925,14 @@ def resolve_reviewed_fee_schedule(
     if review.decision != "accepted":
         raise ReviewedFeeScheduleRejected("reviewed_fee_schedule_review_revoked")
     requested_start, requested_end = _date_window(start_date, end_date)
+    _account_truth_clock(account_truth_as_of)
+    if (
+        account_truth_as_of is not None
+        and account_truth_as_of.date().isoformat() != requested_end
+    ):
+        raise ReviewedFeeScheduleRejected(
+            "reviewed_fee_schedule_account_truth_as_of_date_mismatch"
+        )
     if (
         requested_start < review.effective_start_date
         or requested_end > review.effective_end_date
@@ -923,6 +964,7 @@ def resolve_reviewed_fee_schedule(
         effective_end_date=review.effective_end_date,
         reviewed_asset_classes=reviewed_asset_classes,
         schedule_override=review.schedule,
+        account_truth_as_of=account_truth_as_of,
     )
     if preview.get("status") != "ready":
         raise ReviewedFeeScheduleRejected(
@@ -932,6 +974,7 @@ def resolve_reviewed_fee_schedule(
         state=state,
         review=review,
         current_preview=preview,
+        account_truth_as_of=account_truth_as_of,
     ):
         raise ReviewedFeeScheduleRejected("reviewed_fee_schedule_source_drift")
     notional_limits, notional_envelope_fingerprint = _validated_notional_envelope(
@@ -976,6 +1019,8 @@ def resolve_reviewed_fee_schedule(
         "fee_notional_covered_asset_classes": sorted(notional_limits),
         "fee_schedule_reviewed_asset_classes": list(reviewed_asset_classes),
     }
+    if account_truth_as_of is not None:
+        fee_evidence["account_truth_freshness_as_of"] = account_truth_as_of.isoformat()
     return ReviewedFeeScheduleResolution(
         cost_model_reference=cost_model_reference,
         commission_calc=calculator,
@@ -1877,6 +1922,23 @@ def _infer_stock_exchange(symbol: str) -> str | None:
     ):
         return "shenzhen"
     return None
+
+
+def _account_truth_clock(
+    account_truth_as_of: datetime | None,
+) -> Callable[[], datetime] | None:
+    if account_truth_as_of is None:
+        return None
+    if (
+        not isinstance(account_truth_as_of, datetime)
+        or account_truth_as_of.tzinfo is None
+        or account_truth_as_of.utcoffset() is None
+    ):
+        raise ReviewedFeeScheduleRejected(
+            "reviewed_fee_schedule_account_truth_as_of_invalid"
+        )
+    frozen = account_truth_as_of
+    return lambda: frozen
 
 
 def _date_window(start: str, end: str) -> tuple[str, str]:

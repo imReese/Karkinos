@@ -1402,11 +1402,17 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
             "fee_notional_covered_asset_classes": ["stock"],
         },
     )
+    resolver_calls: list[dict] = []
+
+    def resolve_fees(**kwargs):
+        resolver_calls.append(kwargs)
+        return resolution
+
     service = AiShadowResearchAutomationService(
         state=_state(db),
         store=ShadowResearchStore(db._path),
         data_store=market,
-        reviewed_fee_schedule_resolver=lambda **kwargs: resolution,
+        reviewed_fee_schedule_resolver=resolve_fees,
     )
 
     prepared = service._prepare_baseline(
@@ -1414,6 +1420,11 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
     )
 
     assert prepared.cost_model_reference == cost_model_reference
+    assert resolver_calls[-1]["account_truth_as_of"] == datetime.combine(
+        bars["timestamp"].iloc[-1].date(),
+        datetime.strptime("15:30", "%H:%M").time(),
+        tzinfo=ZoneInfo("Asia/Shanghai"),
+    )
     fee_evidence = prepared.result["metrics_json"]["fee_component_evidence"]
     assert fee_evidence["account_specific"] is True
     assert fee_evidence["fee_rule_version"] == cost_model_reference
