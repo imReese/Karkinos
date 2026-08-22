@@ -245,12 +245,15 @@ Owner 可将 `daily_snapshot_roll_forward_enabled` 显式改为 `true`。准备�
 事件晚于决策前时点、账本更新未被源文件覆盖、缺失/冲突/非有限状态或并发文件变化都会阻断。
 它不把“无活动”推断成新交易事实，也不接触券商、生产账本、OMS 或资本授权。
 
-账户范围与费用复核绑定 `karkinos.account_truth.source_fact_lineage.v1`：它对全部非派生、
-标准化原始行做与行顺序无关的完整指纹。只有该 lineage、已复核账户/窗口/资产范围以及从复核
-导入到当前导入之间的每一次 import 都完全一致时，当日派生快照才可继承复核。任何新增、修订、
-删除、损坏或中途短暂出现的不同原始事实都会立即使继承失效；之后把文件恢复成旧内容也不会让
-旧复核复活。当天快照仍保留独立的精确 import/promotion identity；继承仍可撤销，也不授予订单、
-账本、执行或资本权限。
+账户范围与费用复核以 `karkinos.account_truth.source_fact_lineage.v1` 保存不可变导入事实，
+并由 `karkinos.account_truth.source_fact_continuity.v1` 判断相邻导入是否构成同一条具备经济
+连续性的 canonical 账户历史。旧现金/持仓状态行可由当前派生快照替代，历史结算日期等
+非决策元数据可整理，按时间追加的新流水可把已复核窗口延伸到当天；但每一笔已有经济流水的
+类型、时间、标的、数量、价格、金额、费用、现金/持仓影响、成本基础及订单身份都必须原样保留。
+系统检查复核导入到当前导入之间的每一次 import；删除、经济修订、倒序补写、损坏或中途短暂
+出现的实质差异都会使连续性失效，恢复旧文件也不能绕过。当天快照仍保留独立的精确
+import/promotion identity，当前资产范围、对账、估值和 ledger cutoff 仍逐日重算；继承可撤销，
+也不授予订单、账本、执行、策略晋级或资本权限。
 
 ## Canonical CSV 列
 
@@ -478,10 +481,10 @@ POST /api/account-truth/fee-schedule/reviews/revoke
 ```
 
 预览要求 Account Truth readiness 为 ready、promotion projection 为 clear、费用配置的
-账户别名与已审查账户一致、来源/范围 fingerprint 有效，并且持久化的 stock/ETF 买卖
-成交同时覆盖。佣金与其他费用、印花税、过户费必须分别落在 reconciliation tolerance
-内。canonical `fund`/`fund_etf` 仅在费用审查中归一为 ETF；差异按资产类别、买卖方向和
-费用分项聚合。股票与 ETF 过户费率分别审查；ETF 条款未填时继承旧版股票条款。
+账户别名与已审查账户一致、来源/范围 fingerprint 有效，并且持久化的股票买卖成交同时覆盖。
+佣金与其他费用、印花税、过户费必须分别落在 reconciliation tolerance 内。ETF、场内基金和
+其他基金仍属于 Account Truth、估值与风险事实，但从股票策略费用样本、金额包络、研究、晋级、
+Decision 候选和票据中排除。差异按股票买卖方向和费用分项聚合。
 旧版已接受审查仅保留可读审计能力，必须重新计算并人工接受后才能供下游使用。
 响应和复核表只保留汇总数量、最大差异、安全费用条款与 fingerprint，
 不复制券商事件行、symbol、私有账户标识、文件名或来源明细。
@@ -494,9 +497,11 @@ POST /api/account-truth/fee-schedule/reviews/revoke
 
 Account Truth Review Center 以显式人工流程提供同一顺序：选择已审查证据窗口、重新计算预览、
 检查买卖覆盖和汇总分项匹配，再输入复核人及完整确认短语。预览被阻断或已过期时不能接受。
-一条已接受记录只有在只读重算仍与其预览 fingerprint 一致时才显示为 `active`。v2 预览绑定
-稳定原始事实 lineage 与范围复核 binding，而不是每天被替换的派生快照行；当前 Account Truth、
-费用证据或任一中间 import 漂移仍会显示 `blocked`，恢复旧文件也不能绕过。旧记录仍保留供审计，
+一条已接受记录只有在只读重算仍满足原复核规则时才显示为 `active`。v4 预览绑定稳定的范围复核
+根与物质性连续的 canonical 历史，而不是每天被替换的派生快照行；同一费用规则内按时间追加且
+全部分项对账通过的新股票成交会自动复验，无需重复人工批准。原复核的成交金额包络保持不变，
+不会因新增大额流水自动扩大。已有经济流水被修改/删除、新增成交费用不匹配、资产范围变化或
+任一中间 import 出现实质漂移时仍会 fail closed，恢复旧文件也不能绕过。旧记录保留供审计，
 并且仍可被人工明确撤销。
 
 生效复核会生成版本化 cost-model reference。同一解析后的计算器（包括交易所覆盖和

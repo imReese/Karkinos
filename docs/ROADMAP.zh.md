@@ -39,9 +39,9 @@ Karkinos 是面向中国市场的个人量化投研与交易平台，目标是�
 | v1.8 控制面 | 基础已实现 | 签名限时授权、原子预算、session、实时门禁、暂停/replacement、单笔提交边界、互锁、broker-neutral 生命周期证据、完整成交/partial-cancel/零成交撤单精确终态 clearance、扩缩容评审 |
 | v1.8 adapter acceptance | Provider-neutral 基础已实现 | 版本化 manifest、deterministic local conformance 证据、capability/boundary matrix、append-only accept/reject/revoke review、live collector 精确绑定与 persisted-only operator readiness 可见性；尚未选择或注册真实 provider |
 | AI 原生 Phase 1-1.18 + shadow 研究/结果/复盘/质量桥接 | 已实现 | provider-neutral、证据绑定的研究、记忆、Formula DSL/回测/rolling-OOS/批判，具备原子 capped 调用 claim、记录但每日不设累计上限的 Token 用量、owner 授权收盘后候选自动化与仅人工 paper/shadow 晋级，以及 canonical 策略贡献、人工决策后复盘、persisted-only 策略学习队列和 Decision Quality 捕获；不具备生产策略替换或交易权限 |
+| v0.2.4 Daily Data Flywheel | 已实现 | 物质连续的 Account Truth 历史会在每日状态刷新与按时间追加流水时自动继承已复核账户范围；匹配原规则的新股票成交自动复验费用，但不扩大原复核金额包络。当前对账/估值/ledger 门禁保持强制，策略晋级、订单与资本变化继续仅由人工决定 |
 
-Account Truth 和对账继续作为强制安全门，但不再是下一阶段产品主线。Phase 1.18 已按一次明确
-授权完成公式研究纵向闭环；v1.8 仍是当前产品目标。新增的只读结果捕获、人工复盘和决策质量
+Account Truth 和对账继续作为强制安全门，但不再是下一阶段产品主线。Phase 1.18 已按一次明确授权完成公式研究纵向闭环；v1.8 仍是当前产品目标。新增的只读结果捕获、人工复盘和决策质量
 桥接与只读人工策略学习队列不启动 Phase 1.19，也不会自动进入 AI prompt 或长期记忆；学习交接
 只提供供人工另行启动研究任务复制的问题。Decision Quality 只覆盖显式捕获日期的五维过程证据，
 不是收益指标或执行门禁。进一步 AI、语义记忆扩展和自动 prompt 注入继续延后，直到受控执行闭环。

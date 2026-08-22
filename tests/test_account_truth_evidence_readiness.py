@@ -638,8 +638,8 @@ def test_scope_review_inheritance_fails_closed_on_source_fact_drift(tmp_path):
     )
 
     changed = statement_path.read_text(encoding="utf-8").replace(
-        "source sell\n",
-        "source sell corrected\n",
+        ",120,1,1,118,,0,0,source sell\n",
+        ",120,2,1,117,,0,0,source sell\n",
     )
     statement_path.write_text(changed, encoding="utf-8")
     roll_forward_daily_broker_statement(

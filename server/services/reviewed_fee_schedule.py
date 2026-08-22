@@ -39,11 +39,13 @@ from account_truth.evidence_scope_review import (
     EvidenceScopeReviewRepository,
 )
 from account_truth.reconciliation import MONEY_RECONCILIATION_TOLERANCE
+from account_truth.source_fact_continuity import (
+    assess_account_truth_source_fact_history_continuity,
+    source_fact_continuity_allows_inheritance,
+)
 from account_truth.source_fact_lineage import (
     account_truth_scope_review_binding_fingerprint,
     project_account_truth_source_fact_lineage,
-    source_fact_lineage_history_is_continuous,
-    source_fact_lineages_match,
 )
 from core.types import CommissionType, OrderSide
 from execution.commission import (
@@ -60,12 +62,13 @@ from server.services.account_truth_evidence_readiness import (
 from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
 
 REVIEWED_FEE_SCHEDULE_PREVIEW_SCHEMA_VERSION = (
-    "karkinos.account_truth.reviewed_fee_schedule_preview.v3"
+    "karkinos.account_truth.reviewed_fee_schedule_preview.v4"
 )
 _SUPPORTED_REVIEWED_FEE_SCHEDULE_PREVIEW_SCHEMA_VERSIONS = frozenset(
     {
         "karkinos.account_truth.reviewed_fee_schedule_preview.v1",
         "karkinos.account_truth.reviewed_fee_schedule_preview.v2",
+        "karkinos.account_truth.reviewed_fee_schedule_preview.v3",
         REVIEWED_FEE_SCHEDULE_PREVIEW_SCHEMA_VERSION,
     }
 )
@@ -605,7 +608,8 @@ def build_reviewed_fee_schedule_preview(
         scope_review.get("reviewed_import_run_id") or import_run_id
     )
     account_truth_source_fingerprint = str(
-        source_fact_lineage.get("source_fact_fingerprint")
+        evidence_scope.get("review_binding_source_fact_fingerprint")
+        or source_fact_lineage.get("source_fact_fingerprint")
         or promotion.get("source_fingerprint")
         or ""
     )
@@ -785,34 +789,29 @@ def _review_matches_current_preview(
     review: ReviewedFeeScheduleReview,
     current_preview: Mapping[str, Any],
 ) -> bool:
-    """Permit only exact v2 replay or bounded migration from a legacy v1 review."""
+    """Permit exact replay or a reconciled, materially continuous extension."""
 
     if current_preview.get("preview_fingerprint") == review.preview_fingerprint:
         return True
     stored_preview = _validated_preview(review.preview)
     stored_schema_version = stored_preview.get("schema_version")
-    if stored_schema_version not in {
-        "karkinos.account_truth.reviewed_fee_schedule_preview.v1",
-        "karkinos.account_truth.reviewed_fee_schedule_preview.v2",
-    }:
+    if (
+        stored_schema_version
+        not in _SUPPORTED_REVIEWED_FEE_SCHEDULE_PREVIEW_SCHEMA_VERSIONS
+    ):
         return False
     if current_preview.get("status") != "ready" or current_preview.get("issues"):
         return False
-    if _reviewed_asset_classes_from_preview(current_preview) != tuple(
-        sorted(_SUPPORTED_ASSET_CLASSES)
-    ):
-        return False
-    if (
-        stored_schema_version
-        == "karkinos.account_truth.reviewed_fee_schedule_preview.v2"
-    ):
-        stored_core = {
-            key: value
-            for key, value in stored_preview.items()
-            if key not in {"schema_version", "preview_fingerprint"}
-        }
-        if any(current_preview.get(key) != value for key, value in stored_core.items()):
+    current_assets = _reviewed_asset_classes_from_preview(current_preview)
+    stored_assets = _reviewed_asset_classes_from_preview(stored_preview)
+    if stored_schema_version in {
+        "karkinos.account_truth.reviewed_fee_schedule_preview.v1",
+        "karkinos.account_truth.reviewed_fee_schedule_preview.v2",
+    }:
+        if current_assets != tuple(sorted(_SUPPORTED_ASSET_CLASSES)):
             return False
+    elif current_assets != stored_assets:
+        return False
     stable_fields = (
         "status",
         "schedule",
@@ -820,7 +819,6 @@ def _review_matches_current_preview(
         "effective_start_date",
         "effective_end_date",
         "account_reference_hash",
-        "component_reconciliation",
         "persisted_broker_events_only",
         "stores_broker_event_details",
         "provider_contacted",
@@ -829,6 +827,11 @@ def _review_matches_current_preview(
     )
     if any(
         stored_preview.get(key) != current_preview.get(key) for key in stable_fields
+    ):
+        return False
+    if not _component_reconciliation_extends_reviewed(
+        stored_preview.get("component_reconciliation"),
+        current_preview.get("component_reconciliation"),
     ):
         return False
 
@@ -843,9 +846,7 @@ def _review_matches_current_preview(
         current_import = repository.get_import_run(current_import_id)
         if reviewed_import is None or current_import is None:
             return False
-        reviewed_lineage = _source_fact_lineage_for_import(repository, reviewed_import)
-        current_lineage = _source_fact_lineage_for_import(repository, current_import)
-        lineage_history_continuous = source_fact_lineage_history_is_continuous(
+        continuity = assess_account_truth_source_fact_history_continuity(
             repository=repository,
             current_import=current_import,
             reviewed_import=reviewed_import,
@@ -856,15 +857,7 @@ def _review_matches_current_preview(
         ).get_latest_review(review.account_truth_import_run_id)
     except (BrokerEvidenceReadRejected, EvidenceScopeReviewReadRejected):
         return False
-    if not source_fact_lineages_match(
-        current_lineage,
-        reviewed_lineage,
-        require_current_derived_snapshot=(
-            current_import.import_run_id != reviewed_import.import_run_id
-        ),
-    ):
-        return False
-    if not lineage_history_continuous:
+    if not source_fact_continuity_allows_inheritance(continuity):
         return False
 
     current_scope = _mapping(readiness.get("evidence_scope"))
@@ -942,7 +935,7 @@ def resolve_reviewed_fee_schedule(
     ):
         raise ReviewedFeeScheduleRejected("reviewed_fee_schedule_source_drift")
     notional_limits, notional_envelope_fingerprint = _validated_notional_envelope(
-        _mapping(preview.get("component_reconciliation")).get(
+        _mapping(review.preview.get("component_reconciliation")).get(
             "reconciled_notional_envelope"
         )
     )
@@ -1080,24 +1073,19 @@ def active_review_matches_fee_evidence(
             if current_import is not None
             else None
         )
-        current_lineage = (
-            _source_fact_lineage_for_import(broker_repository, current_import)
-            if current_import is not None
-            else {}
-        )
-        reviewed_lineage = (
-            _source_fact_lineage_for_import(broker_repository, reviewed_import)
-            if reviewed_import is not None
+        continuity = (
+            assess_account_truth_source_fact_history_continuity(
+                repository=broker_repository,
+                current_import=current_import,
+                reviewed_import=reviewed_import,
+            )
+            if current_import is not None and reviewed_import is not None
             else {}
         )
         lineage_history_continuous = bool(
             current_import is not None
             and reviewed_import is not None
-            and source_fact_lineage_history_is_continuous(
-                repository=broker_repository,
-                current_import=current_import,
-                reviewed_import=reviewed_import,
-            )
+            and source_fact_continuity_allows_inheritance(continuity)
         )
         original_scope_review = scope_repository.get_latest_review(
             review.account_truth_import_run_id
@@ -1108,15 +1096,7 @@ def active_review_matches_fee_evidence(
         if current_import is None or reviewed_import is None:
             blockers.append("reviewed_fee_schedule_account_truth_import_missing")
         else:
-            if not source_fact_lineages_match(
-                current_lineage,
-                reviewed_lineage,
-                require_current_derived_snapshot=(
-                    current_import.import_run_id != reviewed_import.import_run_id
-                ),
-            ):
-                blockers.append("reviewed_fee_schedule_account_truth_import_drift")
-            elif not lineage_history_continuous:
+            if not lineage_history_continuous:
                 blockers.append("reviewed_fee_schedule_account_truth_import_drift")
         if latest_scope_review is None:
             blockers.append("reviewed_fee_schedule_account_truth_scope_review_missing")
@@ -1134,7 +1114,7 @@ def active_review_matches_fee_evidence(
                 == "stable_source_fact_lineage"
             ):
                 current_source_fingerprint = str(
-                    current_lineage.get("source_fact_fingerprint") or ""
+                    continuity.get("reviewed_source_fact_fingerprint") or ""
                 )
                 current_scope_fingerprint = (
                     account_truth_scope_review_binding_fingerprint(
@@ -1201,18 +1181,72 @@ def _current_scope_review_for_lineage(
         candidate_import = broker_repository.get_import_run(candidate.import_run_id)
         if candidate_import is None:
             continue
-        candidate_lineage = _source_fact_lineage_for_import(
-            broker_repository,
-            candidate_import,
+        continuity = assess_account_truth_source_fact_history_continuity(
+            repository=broker_repository,
+            current_import=current_import,
+            reviewed_import=candidate_import,
         )
-        if source_fact_lineages_match(current_lineage, candidate_lineage):
-            if source_fact_lineage_history_is_continuous(
-                repository=broker_repository,
-                current_import=current_import,
-                reviewed_import=candidate_import,
-            ):
-                return candidate
+        if source_fact_continuity_allows_inheritance(continuity):
+            return candidate
     return None
+
+
+def _component_reconciliation_extends_reviewed(
+    stored_value: object,
+    current_value: object,
+) -> bool:
+    """Accept only an all-matched superset of reviewed fee observations."""
+
+    stored = _mapping(stored_value)
+    current = _mapping(current_value)
+    stored_trade_count = _nonnegative_int(stored.get("trade_count"))
+    current_trade_count = _nonnegative_int(current.get("trade_count"))
+    stored_matched = _nonnegative_int(stored.get("matched_trade_count"))
+    current_matched = _nonnegative_int(current.get("matched_trade_count"))
+    if None in {
+        stored_trade_count,
+        current_trade_count,
+        stored_matched,
+        current_matched,
+    }:
+        return False
+    if stored_matched != stored_trade_count or current_matched != current_trade_count:
+        return False
+    if current_trade_count < stored_trade_count:
+        return False
+    if current.get("mismatch_counts_by_asset_and_side"):
+        return False
+    for key in ("side_counts", "asset_side_counts"):
+        if not _count_tree_is_superset(stored.get(key), current.get(key)):
+            return False
+    return True
+
+
+def _count_tree_is_superset(stored_value: object, current_value: object) -> bool:
+    stored = _mapping(stored_value)
+    current = _mapping(current_value)
+    for key, stored_item in stored.items():
+        if isinstance(stored_item, Mapping):
+            if not _count_tree_is_superset(stored_item, current.get(key)):
+                return False
+            continue
+        stored_count = _nonnegative_int(stored_item)
+        current_count = _nonnegative_int(current.get(key))
+        if (
+            stored_count is None
+            or current_count is None
+            or current_count < stored_count
+        ):
+            return False
+    return True
+
+
+def _nonnegative_int(value: object) -> int | None:
+    try:
+        parsed = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
 
 
 def _compare_schedule_to_events(
@@ -1824,7 +1858,10 @@ def _normalize_reviewed_asset_classes(
 def _reviewed_asset_classes_from_preview(
     preview: Mapping[str, Any],
 ) -> tuple[str, ...]:
-    if preview.get("schema_version") == REVIEWED_FEE_SCHEDULE_PREVIEW_SCHEMA_VERSION:
+    if preview.get("schema_version") in {
+        "karkinos.account_truth.reviewed_fee_schedule_preview.v3",
+        REVIEWED_FEE_SCHEDULE_PREVIEW_SCHEMA_VERSION,
+    }:
         return _normalize_reviewed_asset_classes(preview.get("reviewed_asset_classes"))
     return tuple(sorted(_SUPPORTED_ASSET_CLASSES))
 
