@@ -839,6 +839,10 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
             "external.strategy_hypothesis_researcher.v9",
             "karkinos.ai.strategy_research_prompt.v10",
         ),
+        (
+            "external.strategy_hypothesis_researcher.v10",
+            "karkinos.ai.strategy_research_prompt.v11",
+        ),
     ):
         registry.register_role(
             AgentRole(
@@ -889,14 +893,15 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
     assert "external.strategy_hypothesis_researcher.v8" in role_ids
     assert "external.strategy_hypothesis_researcher.v9" in role_ids
     assert "external.strategy_hypothesis_researcher.v10" in role_ids
+    assert "external.strategy_hypothesis_researcher.v11" in role_ids
     current_role = next(
         item
         for item in service._ai_store.list_roles()
-        if item.role_id == "external.strategy_hypothesis_researcher.v10"
+        if item.role_id == "external.strategy_hypothesis_researcher.v11"
     )
     assert "account_state_projection.read" in current_role.allowed_tools
     assert (
-        current_role.instructions_version == "karkinos.ai.strategy_research_prompt.v11"
+        current_role.instructions_version == "karkinos.ai.strategy_research_prompt.v12"
     )
 
     backtest = await service.run_formula_backtest(
@@ -947,8 +952,9 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
     assert len(transport.calls) == 2
     assert all(call["payload"].get("tools") is None for call in transport.calls)
     assert all(
-        call["payload"]["thinking"] == {"type": "enabled"} for call in transport.calls
+        call["payload"]["thinking"] == {"type": "disabled"} for call in transport.calls
     )
+    assert all("reasoning_effort" not in call["payload"] for call in transport.calls)
     hypothesis_payload = transport.calls[0]["payload"]
     hypothesis_system_prompt = hypothesis_payload["messages"][0]["content"]
     hypothesis_input = json.loads(hypothesis_payload["messages"][1]["content"])

@@ -135,11 +135,11 @@ _RESEARCH_TOOL = "research_evidence.read"
 _ACCOUNT_STATE_TOOL = "account_state_projection.read"
 _CATALOG_TOOL = "formula_operator_catalog.read"
 _SELECTION_TOOL = "strategy_research_selection.read"
-_HYPOTHESIS_ROLE = "external.strategy_hypothesis_researcher.v10"
-_CRITIQUE_ROLE = "external.strategy_backtest_critic.v10"
+_HYPOTHESIS_ROLE = "external.strategy_hypothesis_researcher.v11"
+_CRITIQUE_ROLE = "external.strategy_backtest_critic.v11"
 _HYPOTHESIS_STAGE = "strategy_hypothesis_generation"
 _CRITIQUE_STAGE = "strategy_backtest_critique"
-_PROMPT_VERSION = "karkinos.ai.strategy_research_prompt.v11"
+_PROMPT_VERSION = "karkinos.ai.strategy_research_prompt.v12"
 _SANITIZED_ACCOUNT_EVIDENCE_CONTRACT = "karkinos.ai.sanitized_account_risk_evidence.v1"
 STRATEGY_RESEARCH_MAX_INPUT_BYTES = 196_608
 STRATEGY_RESEARCH_MAX_OUTPUT_TOKENS = 12_288
@@ -152,6 +152,18 @@ STRATEGY_RESEARCH_PROVIDER_TOKEN_RESERVATION = (
 )
 STRATEGY_RESEARCH_MAX_PROVIDER_CALLS = 10
 STRATEGY_RESEARCH_MAX_CANDIDATES = 5
+
+
+def _strategy_research_request_options(
+    settings: ProviderConnectivitySettings,
+) -> JsonObject:
+    """Reserve the response budget for the bounded final JSON contract."""
+    provider = settings.provider_id.strip().lower()
+    if provider == "deepseek" or settings.endpoint_origin.endswith("deepseek.com"):
+        return {"thinking": {"type": "disabled"}}
+    return _edge_request_options(settings)
+
+
 _CRITIQUE_CITATION_PATHS = (
     "critique_input.canonical_backtest.initial_cash",
     "critique_input.canonical_backtest.final_equity",
@@ -1914,7 +1926,7 @@ class StrategyResearchModelProvider(ProviderAdapter):
             "max_tokens": STRATEGY_RESEARCH_MAX_OUTPUT_TOKENS,
             "stream": False,
         }
-        payload.update(_edge_request_options(self._settings))
+        payload.update(_strategy_research_request_options(self._settings))
         started = self._monotonic()
         try:
             response = self._transport.post_json(

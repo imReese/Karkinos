@@ -21,6 +21,7 @@ from server.routes.ai_strategy_research import (
 )
 from server.services.ai_shadow_research_automation import (
     SHADOW_RESEARCH_CITATION_CALL_EXTENSION_CONFIRMATION,
+    SHADOW_RESEARCH_OUTPUT_TRUNCATION_CALL_EXTENSION_CONFIRMATION,
     SHADOW_RESEARCH_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_RETRY_CONFIRMATION,
 )
@@ -448,6 +449,86 @@ def test_citation_call_extension_route_is_exactly_one_call_and_research_only(
                 "approved_by": "human:owner",
                 "notes": "Restore exactly one call.",
                 "confirmation": (SHADOW_RESEARCH_CITATION_CALL_EXTENSION_CONFIRMATION),
+            },
+        )
+    ]
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_output_truncation_extension_route_is_exactly_one_call_and_research_only(
+    monkeypatch,
+):
+    class ExtensionFixture:
+        def __init__(self) -> None:
+            self.requests = []
+
+        def authorize_output_truncation_call_extension(self, run_id, **payload):
+            self.requests.append((run_id, payload))
+            return {
+                "extension_id": "ai-shadow-research-output-truncation-extension:route",
+                "failed_run_id": run_id,
+                "authorized_additional_calls": 1,
+                "prior_provider_call_ceiling": 12,
+                "provider_call_ceiling": 13,
+                "consumed": False,
+                "automatic_strategy_replacement_enabled": False,
+                "production_strategy_mutation_enabled": False,
+                "broker_submission_enabled": False,
+                "capital_authority_changed": False,
+                "authority_effect": "research_only",
+            }
+
+    fixture = ExtensionFixture()
+    client = _client(monkeypatch, FixtureService())
+    monkeypatch.setattr(
+        "server.routes.ai_strategy_research._build_shadow_write_service",
+        lambda state: fixture,
+    )
+    path = (
+        "/api/ai/strategy-research/shadow-automation/runs/failed-run/"
+        "output-truncation-call-extensions"
+    )
+    invalid = client.post(
+        path,
+        json={
+            "approved_by": "human:owner",
+            "notes": "Restore one truncated output call.",
+            "confirmation": "yes",
+        },
+    )
+    assert invalid.status_code == 422
+    assert fixture.requests == []
+
+    response = client.post(
+        path,
+        json={
+            "approved_by": "human:owner",
+            "notes": "Restore one truncated output call.",
+            "confirmation": (
+                SHADOW_RESEARCH_OUTPUT_TRUNCATION_CALL_EXTENSION_CONFIRMATION
+            ),
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["authorized_additional_calls"] == 1
+    assert body["prior_provider_call_ceiling"] == 12
+    assert body["provider_call_ceiling"] == 13
+    assert body["automatic_strategy_replacement_enabled"] is False
+    assert body["broker_submission_enabled"] is False
+    assert body["capital_authority_changed"] is False
+    assert body["authority_effect"] == "research_only"
+    assert fixture.requests == [
+        (
+            "failed-run",
+            {
+                "approved_by": "human:owner",
+                "notes": "Restore one truncated output call.",
+                "confirmation": (
+                    SHADOW_RESEARCH_OUTPUT_TRUNCATION_CALL_EXTENSION_CONFIRMATION
+                ),
             },
         )
     ]
