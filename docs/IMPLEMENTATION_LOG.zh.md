@@ -7,12 +7,21 @@ commit 和 pull request。
 
 ## 当前基线
 
-截至 2026-08-22，v0.2.10 是当前本地稳定发布基线。
+截至 2026-08-23，v0.2.11 是当前本地稳定发布基线。
 v1.8 control-plane 基础以及截至 Phase 1.18 的 AI-native research 基础已经实现。当前产品
 里程碑是[路线图](ROADMAP.zh.md)中的券商连接、逐单受控 pilot。
 
 最近完成的跨领域工作包括：
 
+- v0.2.11 仅对 Strategy Research 的 hypothesis/critique 请求显式关闭 DeepSeek thinking，把完整
+  12,288 token 输出额度保留给有界最终 JSON；其他外部研究与 memory 流程仍保留各自经审查的推理
+  行为。`finish_reason=length` 仍不可变地记录为 fail-closed `provider_output_truncated`，不会静默重试。
+  只有既有完整 retry 与 citation extension 均已消费、当前零候选失败精确为该截断、真实调用数恰好为
+  3，且 ceiling 从 12 增至 13 后恰好恢复 10 次完整五轮容量时，owner 才能追加一次恢复授权；授权和
+  consumption 使用独立 append-only 表，并把同一市场日全部既有 lineage 原子迁移到 replacement run，
+  不产生策略、订单、券商或资本权限。验证通过 2,508 项 Python 测试、697 项 Web 测试、Web 格式与
+  生产构建、文档健康、broker-authority 闸门、聚焦 route/runtime 测试；基于当前数据库副本的迁移
+  `PRAGMA quick_check=ok`；
 - v0.2.10 完成 v0.2.8 的 DeepSeek citation contract 修复，同时保留完整冻结路径校验：每次 hypothesis 仍构建并验证
   完整目录，但只外发确定性的 4 至 5 个 `cite_01`…`cite_05`，且每个草稿必须原序返回完整 ID 列表，
   才会在本地解析路径。只有已持久化的零候选 citation 失败、既有完整 retry 已消费，且从 11 精确提高

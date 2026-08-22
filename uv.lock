@@ -714,7 +714,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/cf/a1/693351acd0a9edca4
 
 [[package]]
 name = "karkinos"
-version = "0.2.10"
+version = "0.2.11"
 source = { virtual = "." }
 dependencies = [
     { name = "akshare" },

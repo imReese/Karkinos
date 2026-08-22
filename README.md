@@ -60,7 +60,7 @@ guarantee.
 ## Project status
 
 The latest tagged release is
-[v0.2.10](https://github.com/imReese/Karkinos/releases/tag/v0.2.10). Karkinos is
+[v0.2.11](https://github.com/imReese/Karkinos/releases/tag/v0.2.11). Karkinos is
 under active development; the tagged release is the stable local baseline,
 while `main` continues to evolve.
 

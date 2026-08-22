@@ -23,6 +23,7 @@ from server.models import BacktestRequest
 from server.services.ai_shadow_research_automation import (
     SHADOW_RESEARCH_CITATION_CALL_EXTENSION_CONFIRMATION,
     SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION,
+    SHADOW_RESEARCH_OUTPUT_TRUNCATION_CALL_EXTENSION_CONFIRMATION,
     SHADOW_RESEARCH_PAUSE_CONFIRMATION,
     SHADOW_RESEARCH_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
@@ -726,6 +727,203 @@ def test_citation_call_extension_is_one_shot_and_restores_exact_ten_call_capacit
             now="2026-08-21T14:20:00+00:00",
         )
     with sqlite3.connect(tmp_path / "app.db") as conn:
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM ai_shadow_research_promotions"
+            ).fetchone()[0]
+            == 0
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_output_truncation_extension_restores_exact_ten_calls_at_ceiling_thirteen(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = ShadowResearchStore(tmp_path / "app.db")
+    store.init()
+    market_date = "2026-08-21"
+    first, _ = store.claim_run(
+        market_date=market_date,
+        input_fingerprint="first-output-contract",
+        baseline_seed_result_id=25,
+        valuation_snapshot_id="valuation-complete",
+        ledger_cutoff_id=24,
+        now="2026-08-21T14:00:00+00:00",
+    )
+    first_call, _ = store.claim_provider_call(
+        call_id=f"{first['run_id']}:hypothesis:iteration:01",
+        run_id=first["run_id"],
+        market_date=market_date,
+        call_kind="hypothesis_iteration",
+        call_limit=10,
+        now="2026-08-21T14:01:00+00:00",
+    )
+    store.finish_provider_call(
+        first_call["call_id"],
+        status="failed",
+        actual_tokens=None,
+        failure_code="external_research_invalid_response",
+        now="2026-08-21T14:02:00+00:00",
+    )
+    store.update_run(
+        first["run_id"],
+        status="failed",
+        failure_code="external_research_invalid_response",
+        now="2026-08-21T14:02:00+00:00",
+    )
+    store.authorize_retry(
+        first["run_id"],
+        approved_by="human:owner",
+        notes="Authorize the complete bounded retry.",
+        confirmation=SHADOW_RESEARCH_RETRY_CONFIRMATION,
+        now="2026-08-21T14:03:00+00:00",
+    )
+    citation_failed, reused = store.claim_run(
+        market_date=market_date,
+        input_fingerprint="citation-contract",
+        baseline_seed_result_id=25,
+        valuation_snapshot_id="valuation-complete",
+        ledger_cutoff_id=24,
+        now="2026-08-21T14:04:00+00:00",
+    )
+    assert reused is False
+    citation_call, _ = store.claim_provider_call(
+        call_id=f"{citation_failed['run_id']}:hypothesis:iteration:01",
+        run_id=citation_failed["run_id"],
+        market_date=market_date,
+        call_kind="hypothesis_iteration",
+        call_limit=10,
+        now="2026-08-21T14:05:00+00:00",
+    )
+    store.finish_provider_call(
+        citation_call["call_id"],
+        status="failed",
+        actual_tokens=None,
+        failure_code="provider_citation_not_in_bound_input",
+        now="2026-08-21T14:06:00+00:00",
+    )
+    store.update_run(
+        citation_failed["run_id"],
+        status="failed",
+        failure_code="provider_citation_not_in_bound_input",
+        now="2026-08-21T14:06:00+00:00",
+    )
+    store.authorize_citation_call_extension(
+        citation_failed["run_id"],
+        approved_by="human:owner",
+        notes="Restore exactly one complete five-round attempt.",
+        confirmation=SHADOW_RESEARCH_CITATION_CALL_EXTENSION_CONFIRMATION,
+        now="2026-08-21T14:07:00+00:00",
+    )
+    truncated, reused = store.claim_run(
+        market_date=market_date,
+        input_fingerprint="thinking-enabled-contract",
+        baseline_seed_result_id=25,
+        valuation_snapshot_id="valuation-complete",
+        ledger_cutoff_id=24,
+        now="2026-08-21T14:08:00+00:00",
+    )
+    assert reused is False
+    truncated_call, _ = store.claim_provider_call(
+        call_id=f"{truncated['run_id']}:hypothesis:iteration:01",
+        run_id=truncated["run_id"],
+        market_date=market_date,
+        call_kind="hypothesis_iteration",
+        call_limit=10,
+        now="2026-08-21T14:09:00+00:00",
+    )
+    store.finish_provider_call(
+        truncated_call["call_id"],
+        status="failed",
+        actual_tokens=12_288,
+        failure_code="provider_output_truncated",
+        now="2026-08-21T14:10:00+00:00",
+    )
+    store.update_run(
+        truncated["run_id"],
+        status="failed",
+        failure_code="provider_output_truncated",
+        now="2026-08-21T14:10:00+00:00",
+    )
+
+    with pytest.raises(PermissionError, match="exact owner confirmation"):
+        store.authorize_output_truncation_call_extension(
+            truncated["run_id"],
+            approved_by="human:owner",
+            notes="Restore one call after the bounded JSON was truncated.",
+            confirmation="yes",
+            now="2026-08-21T14:11:00+00:00",
+        )
+    extension = store.authorize_output_truncation_call_extension(
+        truncated["run_id"],
+        approved_by="human:owner",
+        notes="Restore one call after the bounded JSON was truncated.",
+        confirmation=SHADOW_RESEARCH_OUTPUT_TRUNCATION_CALL_EXTENSION_CONFIRMATION,
+        now="2026-08-21T14:11:00+00:00",
+    )
+    assert extension["provider_calls_at_authorization"] == 3
+    assert extension["prior_provider_call_ceiling"] == 12
+    assert extension["authorized_additional_calls"] == 1
+    assert extension["provider_call_ceiling"] == 13
+    assert extension["consumed"] is False
+    assert extension["broker_submission_enabled"] is False
+    assert extension["capital_authority_changed"] is False
+
+    resumed, reused = store.claim_run(
+        market_date=market_date,
+        input_fingerprint="thinking-disabled-contract",
+        baseline_seed_result_id=25,
+        valuation_snapshot_id="valuation-complete",
+        ledger_cutoff_id=24,
+        now="2026-08-21T14:12:00+00:00",
+    )
+    assert reused is False
+    usage = store.usage_for_market_date(market_date)
+    assert usage["provider_calls"] == 3
+    assert usage["authorized_additional_calls"] == 12
+    assert usage["authorized_provider_call_ceiling"] == 13
+    assert usage["retry_replacement_run_id"] == resumed["run_id"]
+    assert usage["citation_extension_replacement_run_id"] == resumed["run_id"]
+    assert usage["output_truncation_call_extension_consumed"] is True
+    assert usage["output_truncation_authorized_additional_calls"] == 1
+    assert usage["output_truncation_extension_replacement_run_id"] == resumed["run_id"]
+
+    for ordinal in range(1, 11):
+        call, reused = store.claim_provider_call(
+            call_id=f"{resumed['run_id']}:remaining:{ordinal:02d}",
+            run_id=resumed["run_id"],
+            market_date=market_date,
+            call_kind="output_truncation_retry",
+            call_limit=10,
+            now=f"2026-08-21T14:{ordinal + 12:02d}:00+00:00",
+        )
+        assert reused is False
+        assert call["status"] == "reserved"
+    with pytest.raises(ShadowResearchRejected, match="call_limit"):
+        store.claim_provider_call(
+            call_id=f"{resumed['run_id']}:remaining:11",
+            run_id=resumed["run_id"],
+            market_date=market_date,
+            call_kind="output_truncation_retry",
+            call_limit=10,
+            now="2026-08-21T14:23:00+00:00",
+        )
+    with sqlite3.connect(tmp_path / "app.db") as conn:
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM ai_shadow_research_output_truncation_call_extensions"
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM ai_shadow_research_output_truncation_call_extension_consumptions"
+            ).fetchone()[0]
+            == 1
+        )
         assert (
             conn.execute(
                 "SELECT COUNT(*) FROM ai_shadow_research_promotions"
