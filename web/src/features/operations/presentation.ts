@@ -106,6 +106,10 @@ export function operationsNextActionLabel(
       en: 'Review market data freshness',
       zh: '复核行情新鲜度',
     },
+    refresh_account_truth_snapshot: {
+      en: 'Refresh the current Account Truth snapshot',
+      zh: '刷新当前账户事实快照',
+    },
     resolve_account_truth_mismatch: {
       en: 'Resolve account truth mismatch',
       zh: '处理账户事实不一致',
@@ -177,6 +181,10 @@ export function operationsAttentionResolutionLabel(
     new_complete_account_truth_evidence_required: {
       en: 'new complete Account Truth evidence is recorded',
       zh: '新的完整 Account Truth 证据已记录',
+    },
+    current_account_truth_snapshot_required: {
+      en: 'a current, complete Account Truth snapshot is recorded',
+      zh: '当前完整的 Account Truth 快照已记录',
     },
     candidate_strategy_evidence_must_pass: {
       en: 'candidate strategy evidence passes the required review',

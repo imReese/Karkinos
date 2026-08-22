@@ -27,6 +27,9 @@ from server.services.controlled_execution_operator_view import (
 from server.services.controlled_per_order_pilot_readiness import (
     build_controlled_per_order_pilot_readiness,
 )
+from server.services.daily_decision_evidence_automation import (
+    project_daily_candidate_background_schedule,
+)
 from server.services.daily_operations import build_daily_operations_summary
 from server.services.daily_trading_plan import build_daily_trading_plan
 from server.services.operations_today import build_operations_today_summary
@@ -46,6 +49,7 @@ async def build_today_operations_payload(state: Any) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail="Database is not initialized")
 
     decision_payload, trading_plan = await _current_decision_and_trading_plan(state)
+    daily_candidate_schedule = project_daily_candidate_background_schedule(db=state.db)
     pending_manual_orders = _call_list(
         state.db,
         "list_manual_orders_sync",
@@ -117,6 +121,7 @@ async def build_today_operations_payload(state: Any) -> dict[str, Any]:
         ),
         broker_adapter_readiness=broker_adapter_readiness,
         citic_source_follow_up=citic_source_follow_up,
+        daily_candidate_schedule=daily_candidate_schedule,
     )
     return {
         **summary,

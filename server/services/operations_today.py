@@ -14,6 +14,10 @@ _BLOCKING_MARKET_STATUSES = {"blocked", "error", "missing", "unavailable"}
 _DEGRADED_MARKET_STATUSES = {"partial", "stale", "estimated", "unknown"}
 _BLOCKING_ACCOUNT_STATUSES = {"blocked", "fail", "failed", "missing"}
 _PASS_STATUSES = {"pass", "passed", "live", "fresh", "complete", "healthy"}
+_STALE_ONLY_ACCOUNT_TRUTH_BLOCKERS = {
+    "account_truth_snapshot_stale",
+    "account_truth_gate_not_pass:degraded",
+}
 _PAPER_SHADOW_MODE = "paper_shadow"
 _PAPER_SHADOW_SOURCE = "paper_shadow_daily"
 
@@ -31,6 +35,7 @@ def build_operations_today_summary(
     acceptance_audit_export: dict[str, Any] | None = None,
     broker_adapter_readiness: dict[str, Any] | None = None,
     citic_source_follow_up: dict[str, Any] | None = None,
+    daily_candidate_schedule: dict[str, Any] | None = None,
     generated_at: str | None = None,
 ) -> dict[str, Any]:
     """Build a UI-facing operations summary without mutating trading state."""
@@ -64,12 +69,18 @@ def build_operations_today_summary(
     )
     subsystems = [
         _market_subsystem(decision_payload),
-        _account_truth_subsystem(decision_payload),
+        _account_truth_subsystem(
+            decision_payload,
+            daily_candidate_schedule=daily_candidate_schedule,
+        ),
         _strategy_subsystem(decision_payload, daily_operations),
         _risk_subsystem(trading_plan, daily_operations),
         _daily_plan_subsystem(trading_plan),
         _paper_shadow_subsystem(shadow),
-        _scheduler_subsystem(scheduler),
+        _scheduler_subsystem(
+            scheduler,
+            daily_candidate_schedule=daily_candidate_schedule,
+        ),
         _execution_reconciliation_subsystem(execution_reconciliation),
         _acceptance_audit_subsystem(
             daily_operations,
@@ -205,26 +216,65 @@ def _market_subsystem(decision_payload: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def _account_truth_subsystem(decision_payload: dict[str, Any]) -> dict[str, Any]:
+def _account_truth_subsystem(
+    decision_payload: dict[str, Any],
+    *,
+    daily_candidate_schedule: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     account_truth = _nested(decision_payload, "summary", "account_truth")
     gate_status = _status(account_truth.get("gate_status"))
+    stale_only = _account_truth_is_stale_only(account_truth)
     if gate_status in _BLOCKING_ACCOUNT_STATUSES:
-        operation_status = "blocked"
-        next_action = "resolve_account_truth_mismatch"
+        if stale_only and _is_non_trading_day(daily_candidate_schedule):
+            operation_status = "skipped"
+            next_action = "none"
+            detail_status = "stale_non_trading_day"
+        elif stale_only:
+            operation_status = "blocked"
+            next_action = "refresh_account_truth_snapshot"
+            detail_status = "stale"
+        else:
+            operation_status = "blocked"
+            next_action = "resolve_account_truth_mismatch"
+            detail_status = gate_status
     elif gate_status in _PASS_STATUSES:
         operation_status = "pass"
         next_action = "none"
+        detail_status = gate_status
     else:
         operation_status = "degraded"
         next_action = "attach_account_truth_evidence"
+        detail_status = gate_status
     return _subsystem(
         "account_truth",
         operation_status,
         target="account-truth",
-        last_run_at=decision_payload.get("generated_at"),
+        last_run_at=account_truth.get("captured_at")
+        or decision_payload.get("generated_at"),
         next_action=next_action,
         limitations=_list(account_truth.get("limitations")),
-        detail_status=gate_status,
+        detail_status=detail_status,
+    )
+
+
+def _account_truth_is_stale_only(account_truth: dict[str, Any]) -> bool:
+    blockers = set(_list(account_truth.get("blocking_reasons")))
+    return bool(blockers) and (
+        _status(account_truth.get("data_freshness_status")) == "stale"
+        and blockers <= _STALE_ONLY_ACCOUNT_TRUTH_BLOCKERS
+        and account_truth.get("has_evidence") is True
+        and account_truth.get("unresolved_mismatch_count") == 0
+        and _status(account_truth.get("reconciliation_status")) in _PASS_STATUSES
+        and _status(_nested(account_truth, "ledger_coverage").get("status"))
+        == "covered"
+    )
+
+
+def _is_non_trading_day(schedule: dict[str, Any] | None) -> bool:
+    return bool(
+        isinstance(schedule, dict)
+        and _status(schedule.get("status")) == "not_trading_day"
+        and schedule.get("due") is False
     )
 
 
@@ -337,7 +387,23 @@ def _paper_shadow_subsystem(shadow: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def _scheduler_subsystem(summary: dict[str, Any]) -> dict[str, Any]:
+def _scheduler_subsystem(
+    summary: dict[str, Any],
+    *,
+    daily_candidate_schedule: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if _is_non_trading_day(daily_candidate_schedule) and str(
+        summary.get("run_date") or ""
+    ) != str(daily_candidate_schedule.get("run_date") or ""):
+        return _subsystem(
+            "scheduler",
+            "skipped",
+            target="scheduler",
+            last_run_at=summary.get("last_run_at"),
+            next_action="none",
+            limitations=_list(summary.get("limitations")),
+            detail_status="not_trading_day",
+        )
     status, next_action = _scheduler_operation_state(str(summary.get("status") or ""))
     return _subsystem(
         "scheduler",
@@ -563,13 +629,7 @@ def _paper_shadow_summary(
     order_ids = {
         str(order.get("order_id")) for order in orders if order.get("order_id")
     }
-    fills = [
-        fill
-        for fill in fill_facts
-        if str(fill.get("execution_mode") or "").lower() == _PAPER_SHADOW_MODE
-        or str(fill.get("source") or "").lower() == _PAPER_SHADOW_SOURCE
-        or str(fill.get("order_id")) in order_ids
-    ]
+    fills = [fill for fill in fill_facts if str(fill.get("order_id")) in order_ids]
     divergence_statuses = [
         status
         for order in orders
@@ -1180,14 +1240,17 @@ def _is_daily_shadow_order(
     run_id: str,
     plan_date: str,
 ) -> bool:
-    if str(order.get("execution_mode") or "").lower() == _PAPER_SHADOW_MODE:
-        return True
-    if str(order.get("source") or "").lower() == _PAPER_SHADOW_SOURCE:
-        return True
     payload = _payload(order)
-    if payload.get("run_id") == run_id:
+    payload_run_id = str(payload.get("run_id") or "")
+    if payload_run_id == run_id or payload_run_id.startswith(f"{run_id}:"):
         return True
-    return str(order.get("order_id") or "").startswith(f"SHADOW-{plan_date}-")
+    if str(order.get("order_id") or "").startswith(f"SHADOW-{plan_date}-"):
+        return True
+    explicit_plan_date = str(order.get("plan_date") or payload.get("plan_date") or "")
+    return explicit_plan_date == plan_date and (
+        str(order.get("execution_mode") or "").lower() == _PAPER_SHADOW_MODE
+        or str(order.get("source") or "").lower() == _PAPER_SHADOW_SOURCE
+    )
 
 
 def _paper_shadow_default_next_step(
@@ -1328,6 +1391,7 @@ def _attention_resolution_condition(
     by_action = {
         "repair_market_data_source": "new_complete_market_evidence_required",
         "review_market_data_freshness": "new_complete_market_evidence_required",
+        "refresh_account_truth_snapshot": "current_account_truth_snapshot_required",
         "resolve_account_truth_mismatch": "new_complete_account_truth_evidence_required",
         "attach_account_truth_evidence": "new_complete_account_truth_evidence_required",
         "review_strategy_evidence": "candidate_strategy_evidence_must_pass",
