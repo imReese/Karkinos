@@ -7,12 +7,20 @@ commit 和 pull request。
 
 ## 当前基线
 
-截至 2026-08-21，v0.2.3 是当前已部署的本地稳定基线，v0.2.4 是当前 release candidate。
+截至 2026-08-22，v0.2.5 是当前本地稳定发布基线。
 v1.8 control-plane 基础以及截至 Phase 1.18 的 AI-native research 基础已经实现。当前产品
 里程碑是[路线图](ROADMAP.zh.md)中的券商连接、逐单受控 pilot。
 
 最近完成的跨领域工作包括：
 
+- v0.2.5 将每个 DeepSeek 假设引用绑定到由精确冻结、脱敏外发输入生成的确定性指纹目录；模型只接触
+  短 ID，本地再把 ID 解析为 canonical 证据路径并对冻结输入复验。空目录、超限、不可表示、碰撞、未知
+  或漂移引用全部 fail-closed；安全的精确 provider 失败码可穿透 workflow 与 automation 边界，同时不
+  暴露原始响应。Operations Today 另行区分“已对账但快照陈旧”和真实 Account Truth 不一致，在非交易日
+  隐藏仅由陈旧性产生的待办，并把 paper/shadow 统计限定到当前运行；
+- v0.2.5 验证证据：2,500 项 Python 测试与 697 项 Web 测试通过；Web 格式检查、生产构建、文档健康、
+  staged GitNexus 影响检查和 pre-commit 检查通过。验证未联系券商、未下单、未修改 OMS/ledger/risk/
+  capital 事实，也未消费 owner 已授权的 provider retry；
 - v0.2.4 Daily Data Flywheel：不可变 Account Truth 导入历史由隐私最小化的物质连续性契约分类。
   每日现金/持仓快照替代、历史非决策结算元数据整理和按时间追加的账户流水会自动继承已复核账户
   范围，同时仍逐日重算当前对账、估值、ledger cutoff 与当日晋级证据；系统检查每一个中间导入，
