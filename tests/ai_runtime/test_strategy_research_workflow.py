@@ -49,6 +49,7 @@ from server.ai_runtime.strategy_research import (
     StrategyResearchSelection,
     StrategyResearchService,
     _build_hypothesis_citation_catalog,
+    _citation_path_exists,
 )
 
 NOW = "2026-07-15T01:00:00+00:00"
@@ -114,6 +115,21 @@ class FixtureTransport:
                     content["canonical_binding_echo"] = input_payload["critique_input"][
                         "required_binding_echo"
                     ]
+                response.payload["choices"][0]["message"]["content"] = json.dumps(
+                    content
+                )
+            elif input_payload.get("mode") == "hypothesis":
+                try:
+                    content = json.loads(
+                        response.payload["choices"][0]["message"]["content"]
+                    )
+                except json.JSONDecodeError:
+                    return response
+                for draft in content.get("drafts", []):
+                    if draft.get("citations") == ["__required_citation_ids__"]:
+                        draft["citations"] = input_payload["output_contract"][
+                            "required_citation_ids"
+                        ]
                 response.payload["choices"][0]["message"]["content"] = json.dumps(
                     content
                 )
@@ -286,14 +302,7 @@ def _hypothesis_response(
         "failure_conditions": ["成本后收益为负。"],
         "limitations": ["单一短样本不能支持策略晋级。"],
         "risk_impact": "可能产生高换手和集中度风险，仅供研究。",
-        "citations": [
-            "saved_backtest_evidence.performance_summary",
-            *(
-                ["saved_account_evidence.summary.cash_ratio"]
-                if include_account_evidence
-                else []
-            ),
-        ],
+        "citations": ["__required_citation_ids__"],
     }
     return _model_response({"drafts": [draft]}, model="fixture-hypothesis")
 
@@ -704,12 +713,6 @@ async def test_iteration_exports_exact_parent_feedback_and_one_draft_contract(
 ) -> None:
     service, selection, transport, _ = _service(tmp_path)
     iteration_context = _iteration_context(iteration_number=2)
-    response = transport._responses[0].payload
-    content = json.loads(response["choices"][0]["message"]["content"])
-    content["drafts"][0]["citations"].append(
-        "iteration_context.parent_iteration.evaluation.blockers"
-    )
-    response["choices"][0]["message"]["content"] = json.dumps(content)
 
     result = await service.generate_hypotheses(
         HypothesisGenerationRequest(
@@ -733,6 +736,10 @@ async def test_iteration_exports_exact_parent_feedback_and_one_draft_contract(
     external = json.loads(transport.calls[0]["payload"]["messages"][1]["content"])
     assert external["iteration_context"] == iteration_context
     assert external["output_contract"]["draft_count"] == "exactly 1"
+    assert (
+        "iteration_context.parent_iteration.parent_artifact_fingerprint"
+        in result["drafts"][0]["citations"]
+    )
     assert not {
         "account_id",
         "valuation_snapshot_id",
@@ -884,7 +891,7 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
     )
     assert "account_state_projection.read" in current_role.allowed_tools
     assert (
-        current_role.instructions_version == "karkinos.ai.strategy_research_prompt.v10"
+        current_role.instructions_version == "karkinos.ai.strategy_research_prompt.v11"
     )
 
     backtest = await service.run_formula_backtest(
@@ -1240,11 +1247,7 @@ async def test_hypothesis_citation_catalog_resolves_bound_ids_to_audited_paths(
 ) -> None:
     service, selection, transport, _ = _service(tmp_path)
     citation_path = "saved_account_evidence.summary.cash_ratio"
-    citation_id = "cite_" + content_fingerprint({"path": citation_path})[:16]
-    response = transport._responses[0].payload
-    content = json.loads(response["choices"][0]["message"]["content"])
-    content["drafts"][0]["citations"] = [citation_id]
-    response["choices"][0]["message"]["content"] = json.dumps(content)
+    citation_id = "cite_04"
 
     result = await service.generate_hypotheses(
         HypothesisGenerationRequest(
@@ -1258,12 +1261,22 @@ async def test_hypothesis_citation_catalog_resolves_bound_ids_to_audited_paths(
     )
 
     assert result["status"] == "completed"
-    assert result["drafts"][0]["citations"] == [citation_path]
     external = json.loads(transport.calls[0]["payload"]["messages"][1]["content"])
     contract = external["output_contract"]
+    assert result["drafts"][0]["citations"] == list(
+        contract["citation_catalog"].values()
+    )
     assert contract["citation_catalog"][citation_id] == citation_path
+    assert contract["required_citation_ids"] == list(contract["citation_catalog"])
+    assert list(contract["citation_catalog"]) == [
+        "cite_01",
+        "cite_02",
+        "cite_03",
+        "cite_04",
+    ]
     assert contract["citation_rules"] == {
         "copy_catalog_ids_verbatim": True,
+        "return_required_citation_ids_exactly_and_no_other_values": True,
         "construct_or_rewrite_paths": False,
         "catalog_ids_are_resolved_to_bound_paths_locally": True,
         "unknown_ids_or_paths_fail_closed": True,
@@ -1461,31 +1474,12 @@ async def test_persisted_dataset_drift_blocks_formula_backtest_before_engine_run
         "saved_account_evidence.risks[0].level",
     ),
 )
-@pytest.mark.asyncio
-async def test_hypothesis_citation_accepts_bounded_array_index(
-    tmp_path,
-    citation: str,
-) -> None:
-    service, selection, transport, _ = _service(tmp_path)
-    response = transport._responses[0].payload
-    content = json.loads(response["choices"][0]["message"]["content"])
-    content["drafts"][0]["citations"] = [citation]
-    response["choices"][0]["message"]["content"] = json.dumps(content)
+def test_hypothesis_citation_accepts_bounded_array_index(citation: str) -> None:
+    sources = {
+        "saved_account_evidence": {"risks": [{"level": "warning"}]},
+    }
 
-    result = await service.generate_hypotheses(
-        HypothesisGenerationRequest(
-            idempotency_key=f"hypothesis-array-citation-{citation}",
-            requested_by="human:reese",
-            account_alias="synthetic-research-only",
-            research_question="Bound array citations must remain auditable.",
-            selection=selection,
-            confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
-        )
-    )
-
-    assert result["status"] == "completed"
-    assert result["drafts"][0]["citations"] == [citation]
-    assert len(transport.calls) == 1
+    assert _citation_path_exists(citation, sources) is True
 
 
 @pytest.mark.unit
