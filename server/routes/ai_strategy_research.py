@@ -39,7 +39,7 @@ from server.bootstrap import resolve_data_dir
 from server.routes.ai_research import build_human_context_capture_service
 
 _DEFAULT_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS = 180.0
-_DEEPSEEK_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS = 300.0
+_DEEPSEEK_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS = 600.0
 
 
 class StrategyResearchSelectionPayload(BaseModel):
@@ -221,6 +221,17 @@ class ShadowResearchOutputTruncationCallExtensionPayload(BaseModel):
     ]
 
 
+class ShadowResearchTimeoutResumeCallExtensionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    approved_by: str = Field(min_length=1, max_length=128)
+    notes: str = Field(min_length=1, max_length=8_000)
+    confirmation: Literal[
+        "authorize_one_additional_deepseek_call_for_partial_fifth_round_timeout_"
+        "resume_without_strategy_trade_or_capital_authority"
+    ]
+
+
 def create_router() -> APIRouter:
     router = APIRouter(prefix="/api/ai/strategy-research", tags=["ai-research"])
 
@@ -329,6 +340,27 @@ def create_router() -> APIRouter:
             authorization = _build_shadow_write_service(
                 get_app_state()
             ).authorize_output_truncation_call_extension(
+                run_id,
+                approved_by=payload.approved_by,
+                notes=payload.notes,
+                confirmation=payload.confirmation,
+            )
+            return JSONResponse(status_code=201, content=authorization)
+        except Exception as exc:
+            _raise_http(exc)
+
+    @router.post("/shadow-automation/runs/{run_id}/timeout-resume-call-extensions")
+    async def authorize_shadow_research_timeout_resume_call_extension(
+        run_id: str,
+        payload: ShadowResearchTimeoutResumeCallExtensionPayload,
+    ) -> JSONResponse:
+        """Resume only a persisted fifth-round timeout; never add trade authority."""
+        from server.app import get_app_state
+
+        try:
+            authorization = _build_shadow_write_service(
+                get_app_state()
+            ).authorize_timeout_resume_call_extension(
                 run_id,
                 approved_by=payload.approved_by,
                 notes=payload.notes,
@@ -516,7 +548,7 @@ def _build_write_service(state: Any, *, external: bool) -> StrategyResearchServi
 
 
 def _strategy_research_model_timeout_seconds(settings: Any | None) -> float:
-    """Allow the configured DeepSeek research call up to five minutes."""
+    """Allow the configured DeepSeek research call up to ten minutes."""
     if settings is not None and settings.provider_id.strip().casefold() == "deepseek":
         return _DEEPSEEK_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS
     return _DEFAULT_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS

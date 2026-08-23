@@ -24,6 +24,7 @@ from server.services.ai_shadow_research_automation import (
     SHADOW_RESEARCH_OUTPUT_TRUNCATION_CALL_EXTENSION_CONFIRMATION,
     SHADOW_RESEARCH_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_RETRY_CONFIRMATION,
+    SHADOW_RESEARCH_TIMEOUT_RESUME_CALL_EXTENSION_CONFIRMATION,
 )
 from tests.route_assertions import registered_app_routes
 
@@ -535,6 +536,87 @@ def test_output_truncation_extension_route_is_exactly_one_call_and_research_only
 
 
 @pytest.mark.unit
+@pytest.mark.trading_safety
+def test_timeout_resume_extension_route_is_one_call_and_fifth_round_only(
+    monkeypatch,
+):
+    class ExtensionFixture:
+        def __init__(self) -> None:
+            self.requests = []
+
+        def authorize_timeout_resume_call_extension(self, run_id, **payload):
+            self.requests.append((run_id, payload))
+            return {
+                "extension_id": "ai-shadow-research-timeout-resume-extension:route",
+                "failed_run_id": run_id,
+                "completed_iteration_count": 4,
+                "resume_iteration": 5,
+                "authorized_additional_calls": 1,
+                "prior_provider_call_ceiling": 13,
+                "provider_call_ceiling": 14,
+                "consumed": False,
+                "automatic_strategy_replacement_enabled": False,
+                "production_strategy_mutation_enabled": False,
+                "broker_submission_enabled": False,
+                "capital_authority_changed": False,
+                "authority_effect": "research_only",
+            }
+
+    fixture = ExtensionFixture()
+    client = _client(monkeypatch, FixtureService())
+    monkeypatch.setattr(
+        "server.routes.ai_strategy_research._build_shadow_write_service",
+        lambda state: fixture,
+    )
+    path = (
+        "/api/ai/strategy-research/shadow-automation/runs/failed-run/"
+        "timeout-resume-call-extensions"
+    )
+    invalid = client.post(
+        path,
+        json={
+            "approved_by": "human:owner",
+            "notes": "Resume only the fifth round.",
+            "confirmation": "yes",
+        },
+    )
+    assert invalid.status_code == 422
+    assert fixture.requests == []
+
+    response = client.post(
+        path,
+        json={
+            "approved_by": "human:owner",
+            "notes": "Resume only the fifth round.",
+            "confirmation": SHADOW_RESEARCH_TIMEOUT_RESUME_CALL_EXTENSION_CONFIRMATION,
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["completed_iteration_count"] == 4
+    assert body["resume_iteration"] == 5
+    assert body["authorized_additional_calls"] == 1
+    assert body["prior_provider_call_ceiling"] == 13
+    assert body["provider_call_ceiling"] == 14
+    assert body["broker_submission_enabled"] is False
+    assert body["capital_authority_changed"] is False
+    assert body["authority_effect"] == "research_only"
+    assert fixture.requests == [
+        (
+            "failed-run",
+            {
+                "approved_by": "human:owner",
+                "notes": "Resume only the fifth round.",
+                "confirmation": (
+                    SHADOW_RESEARCH_TIMEOUT_RESUME_CALL_EXTENSION_CONFIRMATION
+                ),
+            },
+        )
+    ]
+
+
+@pytest.mark.unit
 def test_main_app_registers_explicit_strategy_research_routes_only():
     app = create_app({"live_auto_start": False})
     routes = {
@@ -562,6 +644,11 @@ def test_main_app_registers_explicit_strategy_research_routes_only():
         "citation-call-extensions"
     )
     assert (citation_extension_path, "POST") in routes
+    timeout_resume_extension_path = (
+        "/api/ai/strategy-research/shadow-automation/runs/{run_id}/"
+        "timeout-resume-call-extensions"
+    )
+    assert (timeout_resume_extension_path, "POST") in routes
     assert (
         "/api/ai/strategy-research/shadow-candidates/{candidate_id}/paper-shadow-approvals",
         "POST",
@@ -575,10 +662,10 @@ def test_main_app_registers_explicit_strategy_research_routes_only():
 
 
 @pytest.mark.unit
-def test_deepseek_strategy_research_timeout_is_five_minutes():
+def test_deepseek_strategy_research_timeout_is_ten_minutes():
     deepseek = SimpleNamespace(provider_id="DeepSeek")
     other_provider = SimpleNamespace(provider_id="compatible-provider")
 
-    assert _strategy_research_model_timeout_seconds(deepseek) == 300.0
+    assert _strategy_research_model_timeout_seconds(deepseek) == 600.0
     assert _strategy_research_model_timeout_seconds(other_provider) == 180.0
     assert _strategy_research_model_timeout_seconds(None) == 180.0
