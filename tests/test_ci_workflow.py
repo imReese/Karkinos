@@ -13,7 +13,7 @@ def test_ci_runs_backend_frontend_and_profit_discipline_smoke_path() -> None:
     assert "uv run python -m pytest" in workflow
     assert "Run deterministic Profit Discipline smoke path" in workflow
     assert "uv run python -m pytest tests/test_profit_discipline_smoke.py" in workflow
-    assert "Run acceptance audit report" in workflow
+    assert "Run repository acceptance audit report" in workflow
     assert "uv run python scripts/export_acceptance_audit.py --audit all" in workflow
 
     assert "format:check" in package["scripts"]
