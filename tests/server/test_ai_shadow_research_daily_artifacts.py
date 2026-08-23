@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import sqlite3
 from copy import deepcopy
 from pathlib import Path
 
 import pytest
 
-from server.ai_runtime.contracts import content_fingerprint
+from server.ai_runtime.contracts import canonical_json, content_fingerprint
 from server.db import AppDatabase
+from server.services.ai_shadow_research_automation import ShadowResearchStore
 from server.services.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactRejected,
     DailyStrategyArtifactStore,
@@ -265,3 +267,93 @@ def test_incomplete_operating_constraints_block_winner_approval(tmp_path) -> Non
         artifacts.require_verified_winner(
             candidate_id="candidate-5", run_id="run-daily-selection"
         )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_authorized_corrected_panel_result_atomically_supersedes_old_no_selection(
+    tmp_path,
+) -> None:
+    _, candidates = _passed_candidates(tmp_path)
+    db_path = tmp_path / "app.db"
+    ShadowResearchStore(db_path).init()
+    artifacts = DailyStrategyArtifactStore(
+        db_path, tmp_path / "strategy-research-backups"
+    )
+    blocked = []
+    for candidate in deepcopy(candidates):
+        blocked.append(
+            {
+                **candidate,
+                "run_id": "old-single-stock-run",
+                "status": "research_blocked",
+                "recommendation": "keep_researching",
+            }
+        )
+    old_result = artifacts.record_daily_artifacts(
+        run={
+            "run_id": "old-single-stock-run",
+            "market_date": "2026-08-21",
+            "input_fingerprint": "sha256:old-single-stock",
+        },
+        candidates=blocked,
+        drafts=[_draft(ordinal) for ordinal in range(1, 6)],
+        expected_candidate_count=5,
+        run_status="completed",
+        created_at="2026-08-22T00:00:00+00:00",
+    )
+    assert old_result["selection"]["status"] == "no_selection"
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO ai_shadow_research_corrected_panel_rearm_authorizations
+            (authorization_id, completed_run_id, market_date,
+             completed_input_fingerprint, completed_selection_fingerprint,
+             expected_rearm_evidence_json, expected_rearm_evidence_fingerprint,
+             provider_calls_at_authorization, prior_provider_call_ceiling,
+             authorized_additional_calls, provider_call_ceiling,
+             approved_by, notes, created_at)
+            VALUES ('corrected-auth', 'old-single-stock-run', '2026-08-21',
+                    'sha256:old-single-stock', ?, '{}', 'sha256:rearm',
+                    14, 14, 10, 24, 'human:owner', 'Exact 40-stock rearm.',
+                    '2026-08-23T00:00:00+00:00')
+            """,
+            (old_result["selection"]["selection_fingerprint"],),
+        )
+        conn.execute("""
+            INSERT INTO ai_shadow_research_corrected_panel_rearm_consumptions
+            (authorization_id, replacement_run_id, replacement_input_fingerprint,
+             consumed_rearm_evidence_fingerprint, consumed_at)
+            VALUES ('corrected-auth', 'new-forty-stock-run',
+                    'sha256:new-forty-stock', 'sha256:rearm',
+                    '2026-08-23T00:01:00+00:00')
+            """)
+
+    corrected_candidates = [
+        {**candidate, "run_id": "new-forty-stock-run"}
+        for candidate in deepcopy(candidates)
+    ]
+    corrected = artifacts.record_daily_artifacts(
+        run={
+            "run_id": "new-forty-stock-run",
+            "market_date": "2026-08-21",
+            "input_fingerprint": "sha256:new-forty-stock",
+        },
+        candidates=corrected_candidates,
+        drafts=[_draft(ordinal) for ordinal in range(1, 6)],
+        expected_candidate_count=5,
+        run_status="completed",
+        created_at="2026-08-23T00:30:00+00:00",
+    )
+
+    assert corrected["selection"]["status"] == "winner_selected"
+    assert artifacts.list_selections()[0]["run_id"] == "new-forty-stock-run"
+    assert artifacts.list_backups()[0]["run_id"] == "new-forty-stock-run"
+    superseded_selections = artifacts.list_superseded_selections()
+    superseded_backups = artifacts.list_superseded_backups()
+    assert superseded_selections[0]["run_id"] == "old-single-stock-run"
+    assert superseded_selections[0]["integrity_status"] == "verified"
+    assert superseded_selections[0]["superseded_by_run_id"] == ("new-forty-stock-run")
+    assert superseded_backups[0]["run_id"] == "old-single-stock-run"
+    assert superseded_backups[0]["verification_status"] == "verified"

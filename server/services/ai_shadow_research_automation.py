@@ -70,6 +70,8 @@ from server.services.ai_shadow_research_daily_artifacts import (
 )
 from server.services.market_universe_automation import verified_trading_dates
 from server.services.market_universe_truth import (
+    MARKET_UNIVERSE_TRUTH_SCHEMA_VERSION,
+    RESEARCH_PANEL_SCHEMA_VERSION,
     MarketUniversePolicy,
     MarketUniverseRejected,
     build_market_universe_truth,
@@ -104,6 +106,10 @@ SHADOW_RESEARCH_PROMOTION_CONFIRMATION = "approve_evidence_bound_candidate_for_p
 SHADOW_RESEARCH_RETRY_CONFIRMATION = (
     "authorize_one_additional_complete_five_round_ten_call_strategy_research_"
     "retry_without_strategy_trade_or_capital_authority"
+)
+SHADOW_RESEARCH_CORRECTED_PANEL_REARM_CONFIRMATION = (
+    "authorize_one_corrected_full_market_40_stock_panel_five_round_ten_call_"
+    "research_without_strategy_trade_or_capital_authority"
 )
 SHADOW_RESEARCH_CITATION_CALL_EXTENSION_CONFIRMATION = (
     "authorize_one_additional_deepseek_call_for_citation_contract_retry_without_"
@@ -435,6 +441,30 @@ class ShadowResearchStore:
                     completed_evidence_fingerprint TEXT NOT NULL,
                     consumed_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS ai_shadow_research_corrected_panel_rearm_authorizations (
+                    authorization_id TEXT PRIMARY KEY,
+                    completed_run_id TEXT NOT NULL UNIQUE,
+                    market_date TEXT NOT NULL UNIQUE,
+                    completed_input_fingerprint TEXT NOT NULL,
+                    completed_selection_fingerprint TEXT NOT NULL,
+                    expected_rearm_evidence_json TEXT NOT NULL,
+                    expected_rearm_evidence_fingerprint TEXT NOT NULL UNIQUE,
+                    provider_calls_at_authorization INTEGER NOT NULL,
+                    prior_provider_call_ceiling INTEGER NOT NULL,
+                    authorized_additional_calls INTEGER NOT NULL
+                        CHECK(authorized_additional_calls = 10),
+                    provider_call_ceiling INTEGER NOT NULL,
+                    approved_by TEXT NOT NULL,
+                    notes TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS ai_shadow_research_corrected_panel_rearm_consumptions (
+                    authorization_id TEXT PRIMARY KEY,
+                    replacement_run_id TEXT NOT NULL UNIQUE,
+                    replacement_input_fingerprint TEXT NOT NULL UNIQUE,
+                    consumed_rearm_evidence_fingerprint TEXT NOT NULL,
+                    consumed_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS ai_shadow_research_candidates (
                     candidate_id TEXT PRIMARY KEY,
                     run_id TEXT NOT NULL,
@@ -481,6 +511,7 @@ class ShadowResearchStore:
         ledger_cutoff_id: int,
         now: str,
         timeout_resume_input_evidence: Mapping[str, Any] | None = None,
+        corrected_panel_rearm_evidence: Mapping[str, Any] | None = None,
     ) -> tuple[dict[str, Any], bool]:
         with self._connect(immediate=True) as conn:
             existing = conn.execute(
@@ -575,6 +606,13 @@ class ShadowResearchStore:
                     if input_fingerprint != existing_run["input_fingerprint"]
                     else None
                 )
+                corrected_panel_rearm = (
+                    self._unconsumed_corrected_panel_rearm_authorization(
+                        conn, existing_run
+                    )
+                    if input_fingerprint != existing_run["input_fingerprint"]
+                    else None
+                )
                 provider_free_rearm = input_fingerprint != existing_run[
                     "input_fingerprint"
                 ] and self._can_rearm_provider_free_failure(conn, existing_run)
@@ -611,6 +649,30 @@ class ShadowResearchStore:
                             "current_input_fingerprint": input_fingerprint,
                             "output_truncation_call_extension_id": (
                                 output_truncation_extension["extension_id"]
+                            ),
+                        }
+                    )
+                elif corrected_panel_rearm is not None:
+                    normalized_rearm_evidence = _require_corrected_panel_rearm_evidence(
+                        corrected_panel_rearm_evidence
+                    )
+                    if normalized_rearm_evidence["evidence_fingerprint"] != (
+                        corrected_panel_rearm["expected_rearm_evidence_fingerprint"]
+                    ):
+                        raise ShadowResearchRejected(
+                            "corrected_panel_rearm_evidence_drift"
+                        )
+                    input_fingerprint = content_fingerprint(
+                        {
+                            "completed_input_fingerprint": existing_run[
+                                "input_fingerprint"
+                            ],
+                            "current_input_fingerprint": input_fingerprint,
+                            "corrected_panel_rearm_authorization_id": (
+                                corrected_panel_rearm["authorization_id"]
+                            ),
+                            "corrected_panel_rearm_evidence_fingerprint": (
+                                normalized_rearm_evidence["evidence_fingerprint"]
                             ),
                         }
                     )
@@ -672,6 +734,26 @@ class ShadowResearchStore:
                     )
                     else None
                 )
+                corrected_panel_rearm_consumption = (
+                    conn.execute(
+                        """
+                        SELECT consumption.authorization_id
+                        FROM ai_shadow_research_corrected_panel_rearm_consumptions
+                             AS consumption
+                        JOIN ai_shadow_research_corrected_panel_rearm_authorizations
+                             AS authorization
+                          ON authorization.authorization_id=consumption.authorization_id
+                        WHERE authorization.market_date=?
+                        """,
+                        (market_date,),
+                    ).fetchone()
+                    if (
+                        provider_free_rearm
+                        or citation_extension is not None
+                        or output_truncation_extension is not None
+                    )
+                    else None
+                )
                 run_id = f"ai-shadow-research:{market_date}:{input_fingerprint[:16]}"
                 attempt_id = (
                     "ai-shadow-research-attempt:"
@@ -699,7 +781,14 @@ class ShadowResearchStore:
                         existing_run["input_fingerprint"],
                         run_id,
                         input_fingerprint,
-                        existing_run["failure_code"],
+                        (
+                            existing_run["failure_code"]
+                            or (
+                                "corrected_panel_rearm_authorized"
+                                if corrected_panel_rearm is not None
+                                else "provider_free_rearm"
+                            )
+                        ),
                         canonical_json(existing_run),
                         now,
                     ),
@@ -807,6 +896,38 @@ class ShadowResearchStore:
                             run_id,
                             input_fingerprint,
                             output_truncation_extension_consumption["extension_id"],
+                        ),
+                    )
+                if corrected_panel_rearm is not None:
+                    conn.execute(
+                        """
+                        INSERT INTO ai_shadow_research_corrected_panel_rearm_consumptions
+                        (authorization_id, replacement_run_id,
+                         replacement_input_fingerprint,
+                         consumed_rearm_evidence_fingerprint, consumed_at)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (
+                            corrected_panel_rearm["authorization_id"],
+                            run_id,
+                            input_fingerprint,
+                            corrected_panel_rearm[
+                                "expected_rearm_evidence_fingerprint"
+                            ],
+                            now,
+                        ),
+                    )
+                elif corrected_panel_rearm_consumption is not None:
+                    conn.execute(
+                        """
+                        UPDATE ai_shadow_research_corrected_panel_rearm_consumptions
+                        SET replacement_run_id=?, replacement_input_fingerprint=?
+                        WHERE authorization_id=?
+                        """,
+                        (
+                            run_id,
+                            input_fingerprint,
+                            corrected_panel_rearm_consumption["authorization_id"],
                         ),
                     )
                 rearmed = conn.execute(
@@ -1057,6 +1178,168 @@ class ShadowResearchStore:
             if saved is None:
                 raise RuntimeError("research retry authorization persistence failed")
             return self._retry_authorization_row(conn, saved)
+
+    def authorize_corrected_panel_rearm(
+        self,
+        completed_run_id: str,
+        *,
+        rearm_evidence: Mapping[str, Any],
+        approved_by: str,
+        notes: str,
+        confirmation: str,
+        now: str,
+    ) -> dict[str, Any]:
+        """Authorize one exact full-market panel replacement research run."""
+        if confirmation != SHADOW_RESEARCH_CORRECTED_PANEL_REARM_CONFIRMATION:
+            raise PermissionError(
+                "corrected panel rearm requires exact owner confirmation"
+            )
+        approved_by = approved_by.strip()
+        notes = notes.strip()
+        if not approved_by or not notes:
+            raise ShadowResearchRejected(
+                "corrected_panel_rearm_approver_and_notes_required"
+            )
+        normalized_evidence = _require_corrected_panel_rearm_evidence(rearm_evidence)
+        with self._connect(immediate=True) as conn:
+            existing = conn.execute(
+                """
+                SELECT *
+                FROM ai_shadow_research_corrected_panel_rearm_authorizations
+                WHERE completed_run_id=?
+                """,
+                (completed_run_id,),
+            ).fetchone()
+            if existing is not None:
+                if (
+                    existing["approved_by"] != approved_by
+                    or existing["notes"] != notes
+                    or existing["expected_rearm_evidence_fingerprint"]
+                    != normalized_evidence["evidence_fingerprint"]
+                ):
+                    raise ShadowResearchRejected(
+                        "corrected_panel_rearm_authorization_conflict"
+                    )
+                return self._corrected_panel_rearm_authorization_row(conn, existing)
+
+            run = conn.execute(
+                "SELECT * FROM ai_shadow_research_runs WHERE run_id=?",
+                (completed_run_id,),
+            ).fetchone()
+            if run is None:
+                raise LookupError(f"shadow research run not found: {completed_run_id}")
+            if (
+                run["status"] != "completed"
+                or int(run["candidate_count"] or 0) != SHADOW_RESEARCH_MAX_CANDIDATES
+                or str(run["market_date"]) != normalized_evidence["market_date"]
+            ):
+                raise ShadowResearchRejected(
+                    "corrected_panel_rearm_requires_completed_five_candidate_run"
+                )
+            candidate_counts = conn.execute(
+                """
+                SELECT COUNT(*) AS total,
+                       SUM(CASE WHEN status IN
+                           ('awaiting_human_approval', 'research_blocked')
+                           THEN 1 ELSE 0 END) AS terminal
+                FROM ai_shadow_research_candidates WHERE run_id=?
+                """,
+                (completed_run_id,),
+            ).fetchone()
+            if (
+                candidate_counts is None
+                or int(candidate_counts["total"] or 0) != SHADOW_RESEARCH_MAX_CANDIDATES
+                or int(candidate_counts["terminal"] or 0)
+                != SHADOW_RESEARCH_MAX_CANDIDATES
+            ):
+                raise ShadowResearchRejected(
+                    "corrected_panel_rearm_candidate_lineage_incomplete"
+                )
+            selection = conn.execute(
+                """
+                SELECT * FROM ai_shadow_research_daily_selections
+                WHERE run_id=? AND market_date=?
+                """,
+                (completed_run_id, run["market_date"]),
+            ).fetchone()
+            selection_fingerprint = _require_verified_no_selection(
+                selection,
+                run_id=completed_run_id,
+                market_date=str(run["market_date"]),
+            )
+            provider_calls = self._real_provider_call_count(
+                conn, str(run["market_date"])
+            )
+            prior_ceiling = self._effective_provider_call_ceiling(
+                conn,
+                run_id=completed_run_id,
+                market_date=str(run["market_date"]),
+                call_limit=SHADOW_RESEARCH_MAX_PROVIDER_CALLS,
+            )
+            if provider_calls != prior_ceiling:
+                raise ShadowResearchRejected(
+                    "corrected_panel_rearm_requires_consumed_prior_call_ceiling"
+                )
+            provider_call_ceiling = prior_ceiling + SHADOW_RESEARCH_MAX_PROVIDER_CALLS
+            authorization_id = (
+                "ai-shadow-research-corrected-panel-rearm:"
+                + content_fingerprint(
+                    {
+                        "completed_run_id": completed_run_id,
+                        "completed_input_fingerprint": run["input_fingerprint"],
+                        "completed_selection_fingerprint": selection_fingerprint,
+                        "expected_rearm_evidence_fingerprint": normalized_evidence[
+                            "evidence_fingerprint"
+                        ],
+                        "provider_calls_at_authorization": provider_calls,
+                        "prior_provider_call_ceiling": prior_ceiling,
+                        "provider_call_ceiling": provider_call_ceiling,
+                        "approved_by": approved_by,
+                        "notes": notes,
+                    }
+                )[:24]
+            )
+            conn.execute(
+                """
+                INSERT INTO ai_shadow_research_corrected_panel_rearm_authorizations
+                (authorization_id, completed_run_id, market_date,
+                 completed_input_fingerprint, completed_selection_fingerprint,
+                 expected_rearm_evidence_json,
+                 expected_rearm_evidence_fingerprint,
+                 provider_calls_at_authorization, prior_provider_call_ceiling,
+                 authorized_additional_calls, provider_call_ceiling,
+                 approved_by, notes, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 10, ?, ?, ?, ?)
+                """,
+                (
+                    authorization_id,
+                    completed_run_id,
+                    run["market_date"],
+                    run["input_fingerprint"],
+                    selection_fingerprint,
+                    canonical_json(normalized_evidence),
+                    normalized_evidence["evidence_fingerprint"],
+                    provider_calls,
+                    prior_ceiling,
+                    provider_call_ceiling,
+                    approved_by,
+                    notes,
+                    now,
+                ),
+            )
+            saved = conn.execute(
+                """
+                SELECT *
+                FROM ai_shadow_research_corrected_panel_rearm_authorizations
+                WHERE authorization_id=?
+                """,
+                (authorization_id,),
+            ).fetchone()
+            if saved is None:
+                raise RuntimeError(
+                    "corrected panel rearm authorization persistence failed"
+                )
+            return self._corrected_panel_rearm_authorization_row(conn, saved)
 
     def authorize_citation_call_extension(
         self,
@@ -1856,6 +2139,31 @@ class ShadowResearchStore:
             (run["run_id"], run["input_fingerprint"]),
         ).fetchone()
 
+    def _unconsumed_corrected_panel_rearm_authorization(
+        self,
+        conn: sqlite3.Connection,
+        run: Mapping[str, Any],
+    ) -> sqlite3.Row | None:
+        if (
+            run.get("status") != "completed"
+            or int(run.get("candidate_count") or 0) != SHADOW_RESEARCH_MAX_CANDIDATES
+        ):
+            return None
+        return conn.execute(
+            """
+            SELECT authorization.*
+            FROM ai_shadow_research_corrected_panel_rearm_authorizations
+                 AS authorization
+            LEFT JOIN ai_shadow_research_corrected_panel_rearm_consumptions
+                 AS consumption
+              ON consumption.authorization_id=authorization.authorization_id
+            WHERE authorization.completed_run_id=?
+              AND authorization.completed_input_fingerprint=?
+              AND consumption.authorization_id IS NULL
+            """,
+            (run["run_id"], run["input_fingerprint"]),
+        ).fetchone()
+
     def _can_rearm_provider_free_failure(
         self,
         conn: sqlite3.Connection,
@@ -1982,74 +2290,11 @@ class ShadowResearchStore:
             if existing is not None:
                 return dict(existing), True
             provider_calls = self._real_provider_call_count(conn, market_date)
-            authorized_ceiling = conn.execute(
-                """
-                SELECT authorization.provider_call_ceiling
-                FROM ai_shadow_research_retry_consumptions AS consumption
-                JOIN ai_shadow_research_retry_authorizations AS authorization
-                  ON authorization.authorization_id=consumption.authorization_id
-                WHERE consumption.replacement_run_id=?
-                  AND authorization.market_date=?
-                """,
-                (run_id, market_date),
-            ).fetchone()
-            extension_ceiling = conn.execute(
-                """
-                SELECT extension.provider_call_ceiling
-                FROM ai_shadow_research_citation_call_extension_consumptions AS consumption
-                JOIN ai_shadow_research_citation_call_extensions AS extension
-                  ON extension.extension_id=consumption.extension_id
-                WHERE consumption.replacement_run_id=?
-                  AND extension.market_date=?
-                """,
-                (run_id, market_date),
-            ).fetchone()
-            output_truncation_extension_ceiling = conn.execute(
-                """
-                SELECT extension.provider_call_ceiling
-                FROM ai_shadow_research_output_truncation_call_extension_consumptions
-                     AS consumption
-                JOIN ai_shadow_research_output_truncation_call_extensions AS extension
-                  ON extension.extension_id=consumption.extension_id
-                WHERE consumption.replacement_run_id=?
-                  AND extension.market_date=?
-                """,
-                (run_id, market_date),
-            ).fetchone()
-            timeout_resume_extension_ceiling = conn.execute(
-                """
-                SELECT extension.provider_call_ceiling
-                FROM ai_shadow_research_timeout_resume_call_extension_consumptions
-                     AS consumption
-                JOIN ai_shadow_research_timeout_resume_call_extensions AS extension
-                  ON extension.extension_id=consumption.extension_id
-                WHERE consumption.resumed_run_id=?
-                  AND extension.market_date=?
-                """,
-                (run_id, market_date),
-            ).fetchone()
-            effective_call_limit = max(
-                call_limit,
-                (
-                    int(authorized_ceiling["provider_call_ceiling"])
-                    if authorized_ceiling is not None
-                    else call_limit
-                ),
-                (
-                    int(extension_ceiling["provider_call_ceiling"])
-                    if extension_ceiling is not None
-                    else call_limit
-                ),
-                (
-                    int(output_truncation_extension_ceiling["provider_call_ceiling"])
-                    if output_truncation_extension_ceiling is not None
-                    else call_limit
-                ),
-                (
-                    int(timeout_resume_extension_ceiling["provider_call_ceiling"])
-                    if timeout_resume_extension_ceiling is not None
-                    else call_limit
-                ),
+            effective_call_limit = self._effective_provider_call_ceiling(
+                conn,
+                run_id=run_id,
+                market_date=market_date,
+                call_limit=call_limit,
             )
             if provider_calls >= effective_call_limit:
                 raise ShadowResearchRejected("daily_provider_call_limit_reached")
@@ -2071,6 +2316,69 @@ class ShadowResearchStore:
                 ),
             )
         return self.get_provider_call(call_id), False
+
+    def _effective_provider_call_ceiling(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        run_id: str,
+        market_date: str,
+        call_limit: int,
+    ) -> int:
+        rows = conn.execute(
+            """
+            SELECT authorization.provider_call_ceiling AS ceiling
+            FROM ai_shadow_research_retry_consumptions AS consumption
+            JOIN ai_shadow_research_retry_authorizations AS authorization
+              ON authorization.authorization_id=consumption.authorization_id
+            WHERE consumption.replacement_run_id=?
+              AND authorization.market_date=?
+            UNION ALL
+            SELECT extension.provider_call_ceiling AS ceiling
+            FROM ai_shadow_research_citation_call_extension_consumptions AS consumption
+            JOIN ai_shadow_research_citation_call_extensions AS extension
+              ON extension.extension_id=consumption.extension_id
+            WHERE consumption.replacement_run_id=?
+              AND extension.market_date=?
+            UNION ALL
+            SELECT extension.provider_call_ceiling AS ceiling
+            FROM ai_shadow_research_output_truncation_call_extension_consumptions
+                 AS consumption
+            JOIN ai_shadow_research_output_truncation_call_extensions AS extension
+              ON extension.extension_id=consumption.extension_id
+            WHERE consumption.replacement_run_id=?
+              AND extension.market_date=?
+            UNION ALL
+            SELECT extension.provider_call_ceiling AS ceiling
+            FROM ai_shadow_research_timeout_resume_call_extension_consumptions
+                 AS consumption
+            JOIN ai_shadow_research_timeout_resume_call_extensions AS extension
+              ON extension.extension_id=consumption.extension_id
+            WHERE consumption.resumed_run_id=?
+              AND extension.market_date=?
+            UNION ALL
+            SELECT authorization.provider_call_ceiling AS ceiling
+            FROM ai_shadow_research_corrected_panel_rearm_consumptions AS consumption
+            JOIN ai_shadow_research_corrected_panel_rearm_authorizations
+                 AS authorization
+              ON authorization.authorization_id=consumption.authorization_id
+            WHERE consumption.replacement_run_id=?
+              AND authorization.market_date=?
+            """,
+            (
+                run_id,
+                market_date,
+                run_id,
+                market_date,
+                run_id,
+                market_date,
+                run_id,
+                market_date,
+                run_id,
+                market_date,
+            ),
+        ).fetchall()
+        return max([call_limit, *(int(row["ceiling"]) for row in rows)])
 
     def _real_provider_call_count(
         self,
@@ -2112,6 +2420,50 @@ class ShadowResearchStore:
             ),
             "replacement_input_fingerprint": (
                 consumption["replacement_input_fingerprint"]
+                if consumption is not None
+                else None
+            ),
+            "consumed_at": (
+                consumption["consumed_at"] if consumption is not None else None
+            ),
+            "automatic_strategy_replacement_enabled": False,
+            "production_strategy_mutation_enabled": False,
+            "broker_submission_enabled": False,
+            "capital_authority_changed": False,
+            "authority_effect": "research_only",
+        }
+
+    def _corrected_panel_rearm_authorization_row(
+        self,
+        conn: sqlite3.Connection,
+        row: sqlite3.Row,
+    ) -> dict[str, Any]:
+        consumption = conn.execute(
+            """
+            SELECT replacement_run_id, replacement_input_fingerprint,
+                   consumed_rearm_evidence_fingerprint, consumed_at
+            FROM ai_shadow_research_corrected_panel_rearm_consumptions
+            WHERE authorization_id=?
+            """,
+            (row["authorization_id"],),
+        ).fetchone()
+        payload = dict(row)
+        payload["expected_rearm_evidence"] = _json_object(
+            payload.pop("expected_rearm_evidence_json", None)
+        )
+        return {
+            **payload,
+            "consumed": consumption is not None,
+            "replacement_run_id": (
+                consumption["replacement_run_id"] if consumption is not None else None
+            ),
+            "replacement_input_fingerprint": (
+                consumption["replacement_input_fingerprint"]
+                if consumption is not None
+                else None
+            ),
+            "consumed_rearm_evidence_fingerprint": (
+                consumption["consumed_rearm_evidence_fingerprint"]
                 if consumption is not None
                 else None
             ),
@@ -2506,6 +2858,10 @@ class ShadowResearchStore:
                 "timeout_resume_authorized_additional_calls": 0,
                 "timeout_resume_resumed_run_id": None,
                 "timeout_resume_iteration": None,
+                "corrected_panel_rearm_authorization_id": None,
+                "corrected_panel_rearm_consumed": False,
+                "corrected_panel_rearm_authorized_additional_calls": 0,
+                "corrected_panel_rearm_replacement_run_id": None,
             }
         try:
             with self._connect_readonly() as conn:
@@ -2588,6 +2944,21 @@ class ShadowResearchStore:
                     """,
                     (market_date,),
                 ).fetchone()
+                corrected_panel_rearm = conn.execute(
+                    """
+                    SELECT authorization.authorization_id,
+                           authorization.authorized_additional_calls,
+                           authorization.provider_call_ceiling,
+                           consumption.replacement_run_id
+                    FROM ai_shadow_research_corrected_panel_rearm_authorizations
+                         AS authorization
+                    LEFT JOIN ai_shadow_research_corrected_panel_rearm_consumptions
+                         AS consumption
+                      ON consumption.authorization_id=authorization.authorization_id
+                    WHERE authorization.market_date=?
+                    """,
+                    (market_date,),
+                ).fetchone()
         except sqlite3.OperationalError:
             return {
                 "market_date": market_date,
@@ -2614,6 +2985,10 @@ class ShadowResearchStore:
                 "timeout_resume_authorized_additional_calls": 0,
                 "timeout_resume_resumed_run_id": None,
                 "timeout_resume_iteration": None,
+                "corrected_panel_rearm_authorization_id": None,
+                "corrected_panel_rearm_consumed": False,
+                "corrected_panel_rearm_authorized_additional_calls": 0,
+                "corrected_panel_rearm_replacement_run_id": None,
             }
         return {
             "market_date": market_date,
@@ -2650,20 +3025,29 @@ class ShadowResearchStore:
                     if timeout_resume_extension is not None
                     else 0
                 )
+                + (
+                    int(corrected_panel_rearm["authorized_additional_calls"])
+                    if corrected_panel_rearm is not None
+                    else 0
+                )
             ),
             "authorized_provider_call_ceiling": (
-                int(timeout_resume_extension["provider_call_ceiling"])
-                if timeout_resume_extension is not None
+                int(corrected_panel_rearm["provider_call_ceiling"])
+                if corrected_panel_rearm is not None
                 else (
-                    int(output_truncation_extension["provider_call_ceiling"])
-                    if output_truncation_extension is not None
+                    int(timeout_resume_extension["provider_call_ceiling"])
+                    if timeout_resume_extension is not None
                     else (
-                        int(extension["provider_call_ceiling"])
-                        if extension is not None
+                        int(output_truncation_extension["provider_call_ceiling"])
+                        if output_truncation_extension is not None
                         else (
-                            int(authorization["provider_call_ceiling"])
-                            if authorization is not None
-                            else None
+                            int(extension["provider_call_ceiling"])
+                            if extension is not None
+                            else (
+                                int(authorization["provider_call_ceiling"])
+                                if authorization is not None
+                                else None
+                            )
                         )
                     )
                 )
@@ -2730,6 +3114,25 @@ class ShadowResearchStore:
                 if timeout_resume_extension is not None
                 else None
             ),
+            "corrected_panel_rearm_authorization_id": (
+                corrected_panel_rearm["authorization_id"]
+                if corrected_panel_rearm is not None
+                else None
+            ),
+            "corrected_panel_rearm_consumed": bool(
+                corrected_panel_rearm is not None
+                and corrected_panel_rearm["replacement_run_id"] is not None
+            ),
+            "corrected_panel_rearm_authorized_additional_calls": (
+                int(corrected_panel_rearm["authorized_additional_calls"])
+                if corrected_panel_rearm is not None
+                else 0
+            ),
+            "corrected_panel_rearm_replacement_run_id": (
+                corrected_panel_rearm["replacement_run_id"]
+                if corrected_panel_rearm is not None
+                else None
+            ),
         }
 
     def _connect(self, *, immediate: bool = False) -> _CommitConnection:
@@ -2789,6 +3192,136 @@ class PreparedBaseline:
                 "fee_schedule_evidence": self.fee_schedule_evidence,
             }
         )
+
+
+def _build_corrected_panel_rearm_evidence(
+    prepared: PreparedBaseline,
+) -> dict[str, Any]:
+    metrics = prepared.result.get("metrics_json")
+    metrics = metrics if isinstance(metrics, Mapping) else {}
+    truth = metrics.get("market_universe_truth")
+    truth = truth if isinstance(truth, Mapping) else {}
+    panel = truth.get("research_panel")
+    panel = panel if isinstance(panel, Mapping) else {}
+    core = {
+        "schema_version": "karkinos.ai.corrected_panel_rearm_evidence.v1",
+        "market_date": prepared.market_date,
+        "runtime_contract": SHADOW_RESEARCH_RUNTIME_CONTRACT,
+        "prepared_baseline_fingerprint": prepared.fingerprint,
+        "dataset_snapshot_id": str(prepared.snapshot.get("snapshot_id") or ""),
+        "market_universe_truth_schema_version": str(truth.get("schema_version") or ""),
+        "market_universe_truth_fingerprint": str(
+            truth.get("evidence_fingerprint") or ""
+        ),
+        "market_universe_snapshot_id": str(
+            truth.get("market_universe_snapshot_id") or ""
+        ),
+        "research_panel_schema_version": str(panel.get("schema_version") or ""),
+        "research_panel_fingerprint": str(panel.get("panel_fingerprint") or ""),
+        "research_panel_member_count": int(panel.get("member_count") or 0),
+        "required_trading_date_count": int(
+            truth.get("required_trading_date_count") or 0
+        ),
+        "receipt_bound_history": truth.get("receipt_bound_history") is True,
+        "stock_only": truth.get("stock_only") is True,
+        "provider_contacted_during_build": False,
+        "authorizes_strategy_promotion": False,
+        "authorizes_order_creation": False,
+        "changes_capital_authority": False,
+    }
+    return _require_corrected_panel_rearm_evidence(
+        {**core, "evidence_fingerprint": content_fingerprint(core)}
+    )
+
+
+def _optional_corrected_panel_rearm_evidence(
+    prepared: PreparedBaseline,
+) -> dict[str, Any] | None:
+    try:
+        return _build_corrected_panel_rearm_evidence(prepared)
+    except ShadowResearchRejected:
+        return None
+
+
+def _require_corrected_panel_rearm_evidence(
+    evidence: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if not isinstance(evidence, Mapping):
+        raise ShadowResearchRejected("corrected_panel_rearm_evidence_missing")
+    payload = dict(evidence)
+    expected_fingerprint = str(payload.pop("evidence_fingerprint", ""))
+    if (
+        payload.get("schema_version") != "karkinos.ai.corrected_panel_rearm_evidence.v1"
+        or payload.get("runtime_contract") != SHADOW_RESEARCH_RUNTIME_CONTRACT
+        or payload.get("market_universe_truth_schema_version")
+        != MARKET_UNIVERSE_TRUTH_SCHEMA_VERSION
+        or payload.get("research_panel_schema_version") != RESEARCH_PANEL_SCHEMA_VERSION
+        or int(payload.get("research_panel_member_count") or 0) != 40
+        or int(payload.get("required_trading_date_count") or 0) <= 0
+        or payload.get("receipt_bound_history") is not True
+        or payload.get("stock_only") is not True
+        or payload.get("provider_contacted_during_build") is not False
+        or payload.get("authorizes_strategy_promotion") is not False
+        or payload.get("authorizes_order_creation") is not False
+        or payload.get("changes_capital_authority") is not False
+        or not str(payload.get("market_date") or "")
+        or not str(payload.get("prepared_baseline_fingerprint") or "")
+        or not str(payload.get("dataset_snapshot_id") or "").startswith("sha256:")
+        or not str(payload.get("market_universe_truth_fingerprint") or "").startswith(
+            "sha256:"
+        )
+        or not str(payload.get("market_universe_snapshot_id") or "").startswith(
+            "sha256:"
+        )
+        or not str(payload.get("research_panel_fingerprint") or "").startswith(
+            "sha256:"
+        )
+        or expected_fingerprint != content_fingerprint(payload)
+    ):
+        raise ShadowResearchRejected("corrected_panel_rearm_evidence_invalid")
+    return {**payload, "evidence_fingerprint": expected_fingerprint}
+
+
+def _require_verified_no_selection(
+    row: sqlite3.Row | None,
+    *,
+    run_id: str,
+    market_date: str,
+) -> str:
+    if row is None:
+        raise ShadowResearchRejected(
+            "corrected_panel_rearm_requires_verified_no_selection"
+        )
+    try:
+        payload = json.loads(str(row["selection_json"]))
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise ShadowResearchRejected(
+            "corrected_panel_rearm_selection_fingerprint_invalid"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise ShadowResearchRejected(
+            "corrected_panel_rearm_selection_fingerprint_invalid"
+        )
+    expected_fingerprint = payload.pop("selection_fingerprint", None)
+    if (
+        expected_fingerprint != row["selection_fingerprint"]
+        or content_fingerprint(payload) != expected_fingerprint
+        or payload.get("run_id") != run_id
+        or payload.get("market_date") != market_date
+        or payload.get("status") != "no_selection"
+        or payload.get("winner_candidate_id") is not None
+        or int(payload.get("expected_candidate_count") or 0)
+        != SHADOW_RESEARCH_MAX_CANDIDATES
+        or int(payload.get("observed_candidate_count") or 0)
+        != SHADOW_RESEARCH_MAX_CANDIDATES
+        or int(payload.get("eligible_candidate_count") or 0) != 0
+        or payload.get("automatic_strategy_replacement_enabled") is not False
+        or payload.get("broker_submission_enabled") is not False
+    ):
+        raise ShadowResearchRejected(
+            "corrected_panel_rearm_selection_fingerprint_invalid"
+        )
+    return str(expected_fingerprint)
 
 
 class AiShadowResearchAutomationService:
@@ -2865,6 +3398,12 @@ class AiShadowResearchAutomationService:
         candidates = self._store.list_candidates(limit=50)
         daily_selections = self._daily_artifacts.list_selections(limit=20)
         daily_backups = self._daily_artifacts.list_backups(limit=20)
+        superseded_daily_selections = self._daily_artifacts.list_superseded_selections(
+            limit=20
+        )
+        superseded_daily_backups = self._daily_artifacts.list_superseded_backups(
+            limit=20
+        )
         latest_market_date = runs[0]["market_date"] if runs else None
         kill_switch = self._kill_switch()
         latest_selection = daily_selections[0] if daily_selections else None
@@ -2902,6 +3441,8 @@ class AiShadowResearchAutomationService:
             "candidates": candidates,
             "daily_selections": daily_selections,
             "daily_backups": daily_backups,
+            "superseded_daily_selections": superseded_daily_selections,
+            "superseded_daily_backups": superseded_daily_backups,
             "daily_new_candidate_winner_id": daily_winner_candidate_id,
             "daily_winner_candidate_id": daily_winner_candidate_id,
             "research_outcome": research_outcome,
@@ -2922,6 +3463,37 @@ class AiShadowResearchAutomationService:
     ) -> dict[str, Any]:
         return self._store.authorize_retry(
             failed_run_id,
+            approved_by=approved_by,
+            notes=notes,
+            confirmation=confirmation,
+            now=self._utc_now(),
+        )
+
+    async def authorize_corrected_panel_rearm(
+        self,
+        completed_run_id: str,
+        *,
+        approved_by: str,
+        notes: str,
+        confirmation: str,
+    ) -> dict[str, Any]:
+        policy = self.get_policy()
+        if (
+            not policy.enabled
+            or policy.max_candidates_per_run != SHADOW_RESEARCH_MAX_CANDIDATES
+            or policy.max_provider_calls_per_market_date
+            != SHADOW_RESEARCH_MAX_PROVIDER_CALLS
+            or policy.daily_token_budget is not None
+        ):
+            raise ShadowResearchRejected(
+                "corrected_panel_rearm_requires_complete_enabled_policy"
+            )
+        prepared = await asyncio.to_thread(self._prepare_baseline, policy)
+        rearm_evidence = _build_corrected_panel_rearm_evidence(prepared)
+        return await asyncio.to_thread(
+            self._store.authorize_corrected_panel_rearm,
+            completed_run_id,
+            rearm_evidence=rearm_evidence,
             approved_by=approved_by,
             notes=notes,
             confirmation=confirmation,
@@ -3195,6 +3767,9 @@ class AiShadowResearchAutomationService:
                 "research_question": policy.research_question,
                 "selection_components": selection_components,
             },
+            corrected_panel_rearm_evidence=(
+                _optional_corrected_panel_rearm_evidence(prepared)
+            ),
         )
         if reused:
             return {

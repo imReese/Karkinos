@@ -21,6 +21,7 @@ from server.routes.ai_strategy_research import (
 )
 from server.services.ai_shadow_research_automation import (
     SHADOW_RESEARCH_CITATION_CALL_EXTENSION_CONFIRMATION,
+    SHADOW_RESEARCH_CORRECTED_PANEL_REARM_CONFIRMATION,
     SHADOW_RESEARCH_OUTPUT_TRUNCATION_CALL_EXTENSION_CONFIRMATION,
     SHADOW_RESEARCH_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_RETRY_CONFIRMATION,
@@ -374,6 +375,78 @@ def test_shadow_retry_route_requires_exact_confirmation_and_stays_research_only(
                 "approved_by": "human:owner",
                 "notes": "Retry once.",
                 "confirmation": SHADOW_RESEARCH_RETRY_CONFIRMATION,
+            },
+        )
+    ]
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_corrected_panel_rearm_route_requires_exact_bounded_authorization(
+    monkeypatch,
+):
+    class CorrectedPanelFixture:
+        def __init__(self) -> None:
+            self.requests = []
+
+        async def authorize_corrected_panel_rearm(self, run_id, **payload):
+            self.requests.append((run_id, payload))
+            return {
+                "authorization_id": "ai-shadow-research-corrected-panel-rearm:route",
+                "completed_run_id": run_id,
+                "authorized_additional_calls": 10,
+                "provider_call_ceiling": 24,
+                "consumed": False,
+                "automatic_strategy_replacement_enabled": False,
+                "production_strategy_mutation_enabled": False,
+                "broker_submission_enabled": False,
+                "capital_authority_changed": False,
+                "authority_effect": "research_only",
+            }
+
+    fixture = CorrectedPanelFixture()
+    client = _client(monkeypatch, FixtureService())
+    monkeypatch.setattr(
+        "server.routes.ai_strategy_research._build_shadow_write_service",
+        lambda state: fixture,
+    )
+    path = (
+        "/api/ai/strategy-research/shadow-automation/runs/completed-run/"
+        "corrected-panel-rearm-authorizations"
+    )
+    invalid = client.post(
+        path,
+        json={
+            "approved_by": "human:owner",
+            "notes": "Bind the corrected panel.",
+            "confirmation": "yes",
+        },
+    )
+    assert invalid.status_code == 422
+    assert fixture.requests == []
+
+    response = client.post(
+        path,
+        json={
+            "approved_by": "human:owner",
+            "notes": "Bind the corrected panel.",
+            "confirmation": SHADOW_RESEARCH_CORRECTED_PANEL_REARM_CONFIRMATION,
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["authorized_additional_calls"] == 10
+    assert body["provider_call_ceiling"] == 24
+    assert body["broker_submission_enabled"] is False
+    assert body["capital_authority_changed"] is False
+    assert fixture.requests == [
+        (
+            "completed-run",
+            {
+                "approved_by": "human:owner",
+                "notes": "Bind the corrected panel.",
+                "confirmation": SHADOW_RESEARCH_CORRECTED_PANEL_REARM_CONFIRMATION,
             },
         )
     ]

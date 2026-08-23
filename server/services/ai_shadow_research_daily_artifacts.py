@@ -93,6 +93,32 @@ class DailyStrategyArtifactStore:
                     byte_count INTEGER NOT NULL,
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS ai_shadow_research_superseded_daily_selections (
+                    selection_id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL UNIQUE,
+                    market_date TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    winner_candidate_id TEXT,
+                    expected_candidate_count INTEGER NOT NULL,
+                    observed_candidate_count INTEGER NOT NULL,
+                    selection_json TEXT NOT NULL,
+                    selection_fingerprint TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    superseded_by_run_id TEXT NOT NULL,
+                    superseded_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS ai_shadow_research_superseded_daily_backups (
+                    backup_id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL UNIQUE,
+                    market_date TEXT NOT NULL,
+                    selection_id TEXT NOT NULL,
+                    relative_path TEXT NOT NULL,
+                    artifact_fingerprint TEXT NOT NULL,
+                    byte_count INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    superseded_by_run_id TEXT NOT NULL,
+                    superseded_at TEXT NOT NULL
+                );
                 CREATE INDEX IF NOT EXISTS idx_ai_shadow_daily_selection_date
                     ON ai_shadow_research_daily_selections(market_date DESC);
                 CREATE INDEX IF NOT EXISTS idx_ai_shadow_daily_backup_date
@@ -153,6 +179,11 @@ class DailyStrategyArtifactStore:
                     "backup": self._backup_projection(existing_backup),
                     "reused": True,
                 }
+            self._supersede_authorized_market_date_artifacts(
+                conn,
+                replacement_selection=selection,
+                superseded_at=created_at,
+            )
             conn.execute(
                 """
                 INSERT INTO ai_shadow_research_daily_selections
@@ -194,6 +225,125 @@ class DailyStrategyArtifactStore:
             )
         return {"selection": selection, "backup": receipt, "reused": False}
 
+    def _supersede_authorized_market_date_artifacts(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        replacement_selection: Mapping[str, Any],
+        superseded_at: str,
+    ) -> None:
+        market_date = str(replacement_selection.get("market_date") or "")
+        replacement_run_id = str(replacement_selection.get("run_id") or "")
+        existing_selection = conn.execute(
+            """
+            SELECT * FROM ai_shadow_research_daily_selections
+            WHERE market_date=?
+            """,
+            (market_date,),
+        ).fetchone()
+        if existing_selection is None:
+            return
+        try:
+            authorization = conn.execute(
+                """
+                SELECT authorization.completed_run_id,
+                       authorization.completed_selection_fingerprint,
+                       consumption.consumed_rearm_evidence_fingerprint
+                FROM ai_shadow_research_corrected_panel_rearm_consumptions
+                     AS consumption
+                JOIN ai_shadow_research_corrected_panel_rearm_authorizations
+                     AS authorization
+                  ON authorization.authorization_id=consumption.authorization_id
+                WHERE consumption.replacement_run_id=?
+                  AND authorization.market_date=?
+                """,
+                (replacement_run_id, market_date),
+            ).fetchone()
+        except sqlite3.OperationalError as exc:
+            raise DailyStrategyArtifactRejected(
+                "daily_artifact_market_date_conflict"
+            ) from exc
+        if (
+            authorization is None
+            or existing_selection["run_id"] != authorization["completed_run_id"]
+            or existing_selection["selection_fingerprint"]
+            != authorization["completed_selection_fingerprint"]
+            or not str(authorization["consumed_rearm_evidence_fingerprint"] or "")
+        ):
+            raise DailyStrategyArtifactRejected("daily_artifact_market_date_conflict")
+        if _selection_from_row(existing_selection).get("integrity_status") != (
+            "verified"
+        ):
+            raise DailyStrategyArtifactRejected(
+                "superseded_daily_selection_fingerprint_mismatch"
+            )
+        existing_backup = conn.execute(
+            """
+            SELECT * FROM ai_shadow_research_daily_backups
+            WHERE run_id=? AND market_date=?
+            """,
+            (existing_selection["run_id"], market_date),
+        ).fetchone()
+        if (
+            existing_backup is None
+            or self._backup_projection(existing_backup).get("verification_status")
+            != "verified"
+        ):
+            raise DailyStrategyArtifactRejected("superseded_daily_backup_not_verified")
+        conn.execute(
+            """
+            INSERT INTO ai_shadow_research_superseded_daily_selections
+            (selection_id, run_id, market_date, status, winner_candidate_id,
+             expected_candidate_count, observed_candidate_count, selection_json,
+             selection_fingerprint, created_at, superseded_by_run_id,
+             superseded_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                existing_selection["selection_id"],
+                existing_selection["run_id"],
+                existing_selection["market_date"],
+                existing_selection["status"],
+                existing_selection["winner_candidate_id"],
+                existing_selection["expected_candidate_count"],
+                existing_selection["observed_candidate_count"],
+                existing_selection["selection_json"],
+                existing_selection["selection_fingerprint"],
+                existing_selection["created_at"],
+                replacement_run_id,
+                superseded_at,
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO ai_shadow_research_superseded_daily_backups
+            (backup_id, run_id, market_date, selection_id, relative_path,
+             artifact_fingerprint, byte_count, created_at,
+             superseded_by_run_id, superseded_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                existing_backup["backup_id"],
+                existing_backup["run_id"],
+                existing_backup["market_date"],
+                existing_backup["selection_id"],
+                existing_backup["relative_path"],
+                existing_backup["artifact_fingerprint"],
+                existing_backup["byte_count"],
+                existing_backup["created_at"],
+                replacement_run_id,
+                superseded_at,
+            ),
+        )
+        conn.execute(
+            "DELETE FROM ai_shadow_research_daily_backups WHERE run_id=?",
+            (existing_selection["run_id"],),
+        )
+        conn.execute(
+            "DELETE FROM ai_shadow_research_daily_selections WHERE run_id=?",
+            (existing_selection["run_id"],),
+        )
+
     def list_selections(self, limit: int = 20) -> list[dict[str, Any]]:
         try:
             with self._connect_readonly() as conn:
@@ -221,6 +371,49 @@ class DailyStrategyArtifactStore:
         except sqlite3.OperationalError:
             return []
         return [self._backup_projection(row) for row in rows]
+
+    def list_superseded_selections(self, limit: int = 20) -> list[dict[str, Any]]:
+        try:
+            with self._connect_readonly() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT *
+                    FROM ai_shadow_research_superseded_daily_selections
+                    ORDER BY market_date DESC, superseded_at DESC LIMIT ?
+                    """,
+                    (limit,),
+                ).fetchall()
+        except sqlite3.OperationalError:
+            return []
+        return [
+            {
+                **_selection_from_row(row),
+                "superseded_by_run_id": row["superseded_by_run_id"],
+                "superseded_at": row["superseded_at"],
+            }
+            for row in rows
+        ]
+
+    def list_superseded_backups(self, limit: int = 20) -> list[dict[str, Any]]:
+        try:
+            with self._connect_readonly() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM ai_shadow_research_superseded_daily_backups
+                    ORDER BY market_date DESC, superseded_at DESC LIMIT ?
+                    """,
+                    (limit,),
+                ).fetchall()
+        except sqlite3.OperationalError:
+            return []
+        return [
+            {
+                **self._backup_projection(row),
+                "superseded_by_run_id": row["superseded_by_run_id"],
+                "superseded_at": row["superseded_at"],
+            }
+            for row in rows
+        ]
 
     def require_verified_winner(
         self, *, candidate_id: str, run_id: str

@@ -27,6 +27,7 @@ from server.db import AppDatabase
 from server.models import BacktestRequest
 from server.services.ai_shadow_research_automation import (
     SHADOW_RESEARCH_CITATION_CALL_EXTENSION_CONFIRMATION,
+    SHADOW_RESEARCH_CORRECTED_PANEL_REARM_CONFIRMATION,
     SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_OUTPUT_TRUNCATION_CALL_EXTENSION_CONFIRMATION,
     SHADOW_RESEARCH_PAUSE_CONFIRMATION,
@@ -51,6 +52,7 @@ from server.services.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactRejected,
     DailyStrategyArtifactStore,
     build_daily_strategy_promotion_binding,
+    build_daily_strategy_selection,
 )
 from server.services.market_universe_truth import (
     MarketUniversePolicy,
@@ -90,6 +92,255 @@ def _policy_payload(*, enabled: bool) -> dict:
             else SHADOW_RESEARCH_PAUSE_CONFIRMATION
         ),
     }
+
+
+def _corrected_panel_rearm_evidence() -> dict:
+    core = {
+        "schema_version": "karkinos.ai.corrected_panel_rearm_evidence.v1",
+        "market_date": "2026-08-21",
+        "runtime_contract": SHADOW_RESEARCH_RUNTIME_CONTRACT,
+        "prepared_baseline_fingerprint": "sha256:prepared-baseline",
+        "dataset_snapshot_id": "sha256:dataset",
+        "market_universe_truth_schema_version": "karkinos.market_universe_truth.v2",
+        "market_universe_truth_fingerprint": "sha256:truth",
+        "market_universe_snapshot_id": "sha256:universe",
+        "research_panel_schema_version": "karkinos.research_panel_snapshot.v2",
+        "research_panel_fingerprint": "sha256:panel",
+        "research_panel_member_count": 40,
+        "required_trading_date_count": 154,
+        "receipt_bound_history": True,
+        "stock_only": True,
+        "provider_contacted_during_build": False,
+        "authorizes_strategy_promotion": False,
+        "authorizes_order_creation": False,
+        "changes_capital_authority": False,
+    }
+    return {**core, "evidence_fingerprint": content_fingerprint(core)}
+
+
+def _seed_completed_no_selection_for_corrected_panel_rearm(
+    tmp_path,
+) -> tuple[ShadowResearchStore, dict, dict]:
+    db_path = tmp_path / "app.db"
+    db = AppDatabase(db_path)
+    db.init_sync()
+    store = ShadowResearchStore(db_path)
+    store.init()
+    DailyStrategyArtifactStore(db_path, tmp_path / "strategy-research-backups").init()
+    run, reused = store.claim_run(
+        market_date="2026-08-21",
+        input_fingerprint="sha256:single-stock-input",
+        baseline_seed_result_id=1,
+        valuation_snapshot_id="valuation-old",
+        ledger_cutoff_id=1,
+        now="2026-08-22T00:00:00+00:00",
+    )
+    assert reused is False
+    candidates = []
+    with sqlite3.connect(db_path) as conn:
+        for ordinal in range(1, 6):
+            candidate = {
+                "candidate_id": f"old-candidate-{ordinal}",
+                "run_id": run["run_id"],
+                "draft_id": f"old-draft-{ordinal}",
+                "status": "research_blocked",
+                "recommendation": "keep_researching",
+                "comparison": {
+                    "iteration_lineage": {
+                        "iteration_number": ordinal,
+                        "total_iterations": 5,
+                    },
+                    "promotion_gate": {"status": "blocked", "blockers": ["test"]},
+                },
+            }
+            candidates.append(candidate)
+            conn.execute(
+                """
+                INSERT INTO ai_shadow_research_candidates
+                (candidate_id, run_id, session_id, draft_id, baseline_result_id,
+                 status, recommendation, comparison_json, promotion_status,
+                 created_at, updated_at)
+                VALUES (?, ?, ?, ?, 1, ?, ?, ?, 'blocked_by_evidence', ?, ?)
+                """,
+                (
+                    candidate["candidate_id"],
+                    run["run_id"],
+                    "old-session",
+                    candidate["draft_id"],
+                    candidate["status"],
+                    candidate["recommendation"],
+                    canonical_json(candidate["comparison"]),
+                    "2026-08-22T00:00:00+00:00",
+                    "2026-08-22T00:00:00+00:00",
+                ),
+            )
+        selection = build_daily_strategy_selection(
+            run=run,
+            candidates=candidates,
+            expected_candidate_count=5,
+            created_at="2026-08-22T00:00:00+00:00",
+        )
+        conn.execute(
+            """
+            INSERT INTO ai_shadow_research_daily_selections
+            (selection_id, run_id, market_date, status, winner_candidate_id,
+             expected_candidate_count, observed_candidate_count, selection_json,
+             selection_fingerprint, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                selection["selection_id"],
+                selection["run_id"],
+                selection["market_date"],
+                selection["status"],
+                selection["winner_candidate_id"],
+                selection["expected_candidate_count"],
+                selection["observed_candidate_count"],
+                canonical_json(selection),
+                selection["selection_fingerprint"],
+                selection["created_at"],
+            ),
+        )
+        conn.execute("""
+            INSERT INTO ai_shadow_research_timeout_resume_call_extensions
+            (extension_id, failed_run_id, market_date, failed_input_fingerprint,
+             failure_code, completed_iteration_count,
+             completed_evidence_fingerprint, failed_call_id,
+             provider_calls_at_authorization, prior_provider_call_ceiling,
+             authorized_additional_calls, provider_call_ceiling,
+             resume_iteration, approved_by, notes, created_at)
+            VALUES ('timeout-extension', 'old-failed-run', '2026-08-21',
+                    'sha256:old-failed-input', 'provider_timeout', 4,
+                    'sha256:completed-four', 'old-failed-call', 12, 13, 1, 14,
+                    5, 'human:owner', 'Prior bounded resume.',
+                    '2026-08-22T00:00:00+00:00')
+            """)
+        conn.execute(
+            """
+            INSERT INTO ai_shadow_research_timeout_resume_call_extension_consumptions
+            (extension_id, resumed_run_id, resumed_input_fingerprint,
+             completed_evidence_fingerprint, consumed_at)
+            VALUES ('timeout-extension', ?, ?, 'sha256:completed-four',
+                    '2026-08-22T00:00:00+00:00')
+            """,
+            (run["run_id"], run["input_fingerprint"]),
+        )
+        conn.commit()
+    store.update_run(
+        run["run_id"],
+        now="2026-08-23T00:00:00+00:00",
+        status="completed",
+        candidate_count=5,
+    )
+    for ordinal in range(14):
+        call, _ = store.claim_provider_call(
+            call_id=f"old-call-{ordinal}",
+            run_id=run["run_id"],
+            market_date="2026-08-21",
+            call_kind="hypothesis_iteration" if ordinal % 2 == 0 else "critique",
+            call_limit=10,
+            now="2026-08-23T00:00:00+00:00",
+        )
+        store.finish_provider_call(
+            call["call_id"],
+            status="completed",
+            actual_tokens=1,
+            failure_code=None,
+            now="2026-08-23T00:00:01+00:00",
+        )
+    return store, store.get_run(run["run_id"]), selection
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_corrected_panel_rearm_is_exactly_one_bound_ten_call_envelope(
+    tmp_path,
+) -> None:
+    store, completed_run, selection = (
+        _seed_completed_no_selection_for_corrected_panel_rearm(tmp_path)
+    )
+    evidence = _corrected_panel_rearm_evidence()
+    authorization = store.authorize_corrected_panel_rearm(
+        completed_run["run_id"],
+        rearm_evidence=evidence,
+        approved_by="human:owner",
+        notes="Replace the legacy single-stock evidence with the frozen 40-stock panel.",
+        confirmation=SHADOW_RESEARCH_CORRECTED_PANEL_REARM_CONFIRMATION,
+        now="2026-08-23T01:00:00+00:00",
+    )
+
+    assert authorization["completed_selection_fingerprint"] == (
+        selection["selection_fingerprint"]
+    )
+    assert authorization["provider_calls_at_authorization"] == 14
+    assert authorization["prior_provider_call_ceiling"] == 14
+    assert authorization["authorized_additional_calls"] == 10
+    assert authorization["provider_call_ceiling"] == 24
+    assert authorization["consumed"] is False
+    assert authorization["broker_submission_enabled"] is False
+    assert authorization["capital_authority_changed"] is False
+
+    drifted = {
+        **evidence,
+        "research_panel_fingerprint": "sha256:drifted-panel",
+    }
+    drifted.pop("evidence_fingerprint")
+    drifted["evidence_fingerprint"] = content_fingerprint(drifted)
+    with pytest.raises(
+        ShadowResearchRejected, match="corrected_panel_rearm_evidence_drift"
+    ):
+        store.claim_run(
+            market_date="2026-08-21",
+            input_fingerprint="sha256:forty-stock-input",
+            baseline_seed_result_id=1,
+            valuation_snapshot_id="valuation-new",
+            ledger_cutoff_id=1,
+            now="2026-08-23T01:01:00+00:00",
+            corrected_panel_rearm_evidence=drifted,
+        )
+    assert (
+        store.usage_for_market_date("2026-08-21")["corrected_panel_rearm_consumed"]
+        is False
+    )
+
+    replacement, reused = store.claim_run(
+        market_date="2026-08-21",
+        input_fingerprint="sha256:forty-stock-input",
+        baseline_seed_result_id=1,
+        valuation_snapshot_id="valuation-new",
+        ledger_cutoff_id=1,
+        now="2026-08-23T01:02:00+00:00",
+        corrected_panel_rearm_evidence=evidence,
+    )
+    assert reused is False
+    assert replacement["run_id"] != completed_run["run_id"]
+
+    for ordinal in range(10):
+        store.claim_provider_call(
+            call_id=f"corrected-call-{ordinal}",
+            run_id=replacement["run_id"],
+            market_date="2026-08-21",
+            call_kind="hypothesis_iteration" if ordinal % 2 == 0 else "critique",
+            call_limit=10,
+            now="2026-08-23T01:03:00+00:00",
+        )
+    with pytest.raises(
+        ShadowResearchRejected, match="daily_provider_call_limit_reached"
+    ):
+        store.claim_provider_call(
+            call_id="corrected-call-over-ceiling",
+            run_id=replacement["run_id"],
+            market_date="2026-08-21",
+            call_kind="hypothesis_iteration",
+            call_limit=10,
+            now="2026-08-23T01:04:00+00:00",
+        )
+    usage = store.usage_for_market_date("2026-08-21")
+    assert usage["provider_calls"] == 24
+    assert usage["authorized_provider_call_ceiling"] == 24
+    assert usage["corrected_panel_rearm_consumed"] is True
+    assert usage["corrected_panel_rearm_authorized_additional_calls"] == 10
+    assert usage["corrected_panel_rearm_replacement_run_id"] == replacement["run_id"]
 
 
 def _service(tmp_path) -> AiShadowResearchAutomationService:
