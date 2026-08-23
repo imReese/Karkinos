@@ -7,7 +7,7 @@ from scripts.verify_docker_runtime import _assert_fail_closed_defaults
 
 def _safe_statuses() -> dict:
     return {
-        "settings": {},
+        "settings": {"live_auto_start": False},
         "capital_authority": {
             "runtime_authority_status": "disabled",
             "execution_authority_enabled": False,
@@ -35,6 +35,7 @@ def test_docker_runtime_smoke_accepts_fail_closed_defaults() -> None:
 @pytest.mark.parametrize(
     ("section", "field", "unsafe_value"),
     [
+        ("settings", "live_auto_start", True),
         ("capital_authority", "runtime_authority_status", "enabled"),
         ("controlled_bridge", "broker_submission_enabled", True),
         ("controlled_submission", "automatic_submission_enabled", True),

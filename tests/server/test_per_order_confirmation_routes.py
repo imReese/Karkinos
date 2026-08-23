@@ -314,7 +314,7 @@ def test_route_service_wires_current_stage1_promotion_evidence(monkeypatch) -> N
             captured["gateway_verification_fingerprint"] = fingerprint
             return {"verification_fingerprint": fingerprint, "status": "blocked"}
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         route_module, "build_broker_connectors", lambda config: [connector]
     )

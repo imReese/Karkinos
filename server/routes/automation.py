@@ -79,7 +79,7 @@ def create_router() -> APIRouter:
         from server.account_truth_gate import (
             build_latest_account_truth_promotion_evidence,
         )
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
         from server.services.automation_cockpit import AutomationCockpitService
         from server.services.current_per_order_dossier_factory import (
             build_current_per_order_dossier_service,
@@ -175,7 +175,7 @@ def create_router() -> APIRouter:
     async def run_daily_paper_shadow(
         request: DailyPaperShadowRunRequest,
     ) -> dict[str, Any]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
         from server.routes.operations import _current_decision_and_trading_plan
         from server.services.paper_shadow_run import run_paper_shadow_from_trading_plan
 
@@ -207,18 +207,26 @@ def create_router() -> APIRouter:
     ) -> dict[str, Any]:
         """Run the canonical current-facts chain; caller supplies no trade facts."""
 
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
+        from server.routes.decision import run_batch_pre_trade_risk_for_state
+        from server.routes.market import _refresh_one_quote
+        from server.routes.operations import _current_decision_and_trading_plan
         from server.services.daily_decision_evidence_automation import (
             build_daily_decision_evidence_automation_service,
         )
 
         del request
         state = get_app_state()
-        return await build_daily_decision_evidence_automation_service(state).run_once()
+        return await build_daily_decision_evidence_automation_service(
+            state,
+            plan_reader=_current_decision_and_trading_plan,
+            risk_runner=run_batch_pre_trade_risk_for_state,
+            quote_refresher=_refresh_one_quote,
+        ).run_once()
 
     @r.get("/daily-candidate/trial")
     async def get_daily_candidate_trial() -> dict[str, Any]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
         from server.services.daily_candidate_trial import DailyCandidateTrialService
 
         return DailyCandidateTrialService(db=get_app_state().db).get_status()
@@ -227,7 +235,7 @@ def create_router() -> APIRouter:
     async def record_daily_candidate_trial_review(
         request: DailyCandidateTrialReviewRequest,
     ) -> dict[str, Any]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
         from server.services.daily_candidate_trial import (
             DailyCandidateTrialReviewRejected,
             DailyCandidateTrialService,
@@ -242,7 +250,7 @@ def create_router() -> APIRouter:
 
     @r.get("/daily-candidate/trial/reviews")
     async def list_daily_candidate_trial_reviews() -> list[dict[str, Any]]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
         from server.services.daily_candidate_trial import DailyCandidateTrialService
 
         return DailyCandidateTrialService(db=get_app_state().db).list_reviews()
@@ -251,7 +259,7 @@ def create_router() -> APIRouter:
     async def run_market_session(
         request: MarketSessionRunRequest,
     ) -> dict[str, Any]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
         from server.routes.operations import _current_decision_and_trading_plan
         from server.services.market_session_automation import (
             MarketSessionAutomationService,
@@ -269,7 +277,7 @@ def create_router() -> APIRouter:
 
     @r.get("/alerts")
     async def list_alerts(status: str | None = None) -> list[dict[str, Any]]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
         from server.services.automation_alerts import AutomationAlertService
 
         state = get_app_state()
@@ -282,7 +290,7 @@ def create_router() -> APIRouter:
     async def scan_alerts(
         request: AlertScanRequest | None = None,
     ) -> dict[str, Any]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
         from server.services.automation_alerts import AutomationAlertService
         from server.services.current_per_order_dossier_factory import (
             build_current_per_order_dossier_service,
@@ -313,7 +321,7 @@ def create_router() -> APIRouter:
         alert_id: int,
         request: AlertAckRequest,
     ) -> dict[str, Any]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
         from server.services.automation_alerts import AutomationAlertService
 
         state = get_app_state()
@@ -329,7 +337,7 @@ def create_router() -> APIRouter:
 
 
 def _service() -> AutomationControlService:
-    from server.app import get_app_state
+    from server.dependencies import get_app_state
 
     state = get_app_state()
     return AutomationControlService(

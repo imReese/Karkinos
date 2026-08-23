@@ -48,3 +48,17 @@ export function formatInstrumentDisplayLabelsBySymbol(
     })
     .join(', ');
 }
+
+export function formatInstrumentDisplayLabelFromNameMap(
+  symbol: string,
+  instrumentNames?: Map<string, string>,
+) {
+  const normalizedSymbol = symbol.trim();
+  const name = normalizedSymbol
+    ? instrumentNames?.get(normalizedSymbol.toLowerCase())
+    : null;
+  if (!name || name === symbol) {
+    return symbol;
+  }
+  return `${name} ${symbol}`;
+}

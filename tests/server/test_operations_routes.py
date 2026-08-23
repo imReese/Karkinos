@@ -316,7 +316,7 @@ def test_today_operations_route_returns_read_only_runbook(monkeypatch):
             ),
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     endpoint = _endpoint("/api/operations/today")
     response = asyncio.run(endpoint())
@@ -452,7 +452,7 @@ def test_today_operations_route_surfaces_execution_reconciliation_open_items(
             ),
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     endpoint = _endpoint("/api/operations/today")
     response = asyncio.run(endpoint())
@@ -538,7 +538,7 @@ def test_today_operations_route_surfaces_scheduler_run_evidence(monkeypatch):
             ),
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     endpoint = _endpoint("/api/operations/today")
     response = asyncio.run(endpoint())
@@ -611,7 +611,7 @@ def test_paper_shadow_run_route_creates_idempotent_simulation_evidence(monkeypat
             ),
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     endpoint = _endpoint("/api/operations/paper-shadow/run", method="POST")
     first = asyncio.run(endpoint())
@@ -660,7 +660,7 @@ def test_paper_shadow_run_review_route_records_review_without_execution_mutation
         payload={"orders": [{"order_id": "SHADOW-1"}]},
     )
     fake_state = SimpleNamespace(db=fake_db)
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     endpoint = _endpoint(
         "/api/operations/paper-shadow/runs/{run_id}/review",
@@ -708,7 +708,7 @@ def test_paper_shadow_run_review_route_rejects_failed_run_manual_handoff(
         payload={"orders": [{"order_id": "SHADOW-1", "status": "failed"}]},
     )
     fake_state = SimpleNamespace(db=db)
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     endpoint = _endpoint(
         "/api/operations/paper-shadow/runs/{run_id}/review",

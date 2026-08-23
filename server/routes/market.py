@@ -2209,7 +2209,7 @@ def create_router() -> APIRouter:
         year: int = 2026,
     ) -> MarketCalendarSnapshotResponse:
         """Read the stored exchange calendar snapshot without network access."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         db = getattr(state, "db", None)
@@ -2226,7 +2226,7 @@ def create_router() -> APIRouter:
         request: MarketCalendarSyncRequest,
     ) -> MarketCalendarSnapshotResponse:
         """Synchronize a provider calendar snapshot into local storage."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         db = getattr(state, "db", None)
@@ -2269,7 +2269,7 @@ def create_router() -> APIRouter:
         request: MarketCalendarVerificationRequest,
     ) -> MarketCalendarSnapshotResponse:
         """Record manual official-notice verification for a stored snapshot."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         db = getattr(state, "db", None)
@@ -2300,7 +2300,7 @@ def create_router() -> APIRouter:
     @r.get("/watchlist", response_model=list[WatchlistItem])
     async def get_watchlist() -> list[WatchlistItem]:
         """获取配置的关注列表，并附带持仓与快照信息。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         _, positions, _, latest_quotes = _extract_runtime_portfolio(state)
@@ -2339,7 +2339,7 @@ def create_router() -> APIRouter:
         request: WatchlistCreateRequest,
     ) -> list[WatchlistItem]:
         """新增关注标的并写入持久数据库。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         symbol = request.symbol.strip()
@@ -2366,7 +2366,7 @@ def create_router() -> APIRouter:
     @r.delete("/watchlist/{symbol}", response_model=list[WatchlistItem])
     async def remove_watchlist_item(symbol: str) -> list[WatchlistItem]:
         """从持久数据库移除关注标的。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         db = getattr(state, "db", None)
@@ -2385,7 +2385,7 @@ def create_router() -> APIRouter:
     ) -> MarketQuote:
         """只读取持久化报价事实；行情刷新必须走显式命令接口。"""
         del background_tasks
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         asset_class = _ASSET_CLASS_MAP.get(
@@ -2468,7 +2468,7 @@ def create_router() -> APIRouter:
     @r.get("/data-health")
     async def get_data_health() -> MarketDataHealthResponse:
         """获取数据缓存与快照健康度概览。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         market_health_assets = _with_default_market_indices(
@@ -2484,7 +2484,7 @@ def create_router() -> APIRouter:
         provider: str | None = None,
     ) -> list[QuoteFetchRunResponse]:
         """List recent quote fetch audit runs for backend diagnostics."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         if limit < 1:
             raise HTTPException(status_code=422, detail="limit must be at least 1")
@@ -2511,7 +2511,7 @@ def create_router() -> APIRouter:
         request: InstrumentMetadataBackfillRequest,
     ) -> InstrumentMetadataBackfillResponse:
         """Backfill local instrument names from AKShare into the database."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         return await _backfill_instrument_metadata(state, request)
@@ -2521,7 +2521,7 @@ def create_router() -> APIRouter:
         request: MarketBarsBackfillRequest,
     ) -> MarketBarsBackfillResponse:
         """Backfill historical OHLCV bars into the authoritative local store."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         return await _backfill_market_bars(state, request)
@@ -2534,7 +2534,7 @@ def create_router() -> APIRouter:
         request: ConfirmedFundNavRefreshRequest,
     ) -> ConfirmedFundNavRefreshResponse:
         """Ingest confirmed fund NAV evidence without changing account authority."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         return await _refresh_confirmed_fund_nav(state, request)
@@ -2542,7 +2542,7 @@ def create_router() -> APIRouter:
     @r.post("/quotes/refresh", response_model=QuoteRefreshResponse)
     async def refresh_quotes(request: QuoteRefreshRequest) -> QuoteRefreshResponse:
         """手动刷新行情快照，逐标的返回刷新结果。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         started_at_dt = datetime.now()
@@ -2718,7 +2718,7 @@ def create_router() -> APIRouter:
     @r.get("/research-board", response_model=ResearchBoardResponse)
     async def get_research_board() -> ResearchBoardResponse:
         """聚合 watchlist、最新报价与数据健康，供研究工作台消费。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         watchlist = await get_watchlist()
@@ -2780,7 +2780,7 @@ def create_router() -> APIRouter:
         limit: int = 100,
     ) -> ResearchNoteListResponse:
         """列出研究记录，支持按 symbol 过滤。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         if state.db is None or not hasattr(state.db, "get_research_notes"):
@@ -2802,7 +2802,7 @@ def create_router() -> APIRouter:
     @r.post("/research-notes", response_model=ResearchNoteResponse)
     async def create_research_note(body: ResearchNoteCreate) -> ResearchNoteResponse:
         """新增研究记录，支持 note / thesis / catalyst。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         if state.db is None or not hasattr(state.db, "add_research_note"):
@@ -2838,7 +2838,7 @@ def create_router() -> APIRouter:
         note_id: int, body: ResearchNoteUpdate
     ) -> ResearchNoteResponse:
         """更新研究记录内容与分类。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         if state.db is None or not hasattr(state.db, "update_research_note"):
@@ -2871,7 +2871,7 @@ def create_router() -> APIRouter:
     @r.delete("/research-notes/{note_id}")
     async def delete_research_note(note_id: int) -> dict[str, str]:
         """删除研究记录。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         if state.db is None or not hasattr(state.db, "delete_research_note"):

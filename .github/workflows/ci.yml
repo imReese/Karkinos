@@ -34,7 +34,7 @@ jobs:
       - name: Install quality dependencies
         run: uv sync --extra dev --frozen
 
-      - name: Check changed Python files
+      - name: Check changed Python files and stable boundaries
         shell: bash
         env:
           BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
@@ -48,10 +48,13 @@ jobs:
           )
           if (( ${#python_files[@]} == 0 )); then
             echo "No changed Python files to check."
-            exit 0
+          else
+            uv run ruff check "${python_files[@]}"
+            uv run black --check "${python_files[@]}"
+            uv run isort --check-only "${python_files[@]}"
           fi
-          uv run black --check "${python_files[@]}"
-          uv run isort --check-only "${python_files[@]}"
+          uv run mypy
+          uv run python tools/check_python_architecture.py
 
   backend:
     name: Backend tests
@@ -203,10 +206,54 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Seed ignored build-context sentinels
+        run: |
+          mkdir -p data/store logs reports exports screenshots .playwright-mcp
+          printf 'docker-context-sentinel\n' > config.json
+          printf 'docker-context-sentinel\n' > broker_statement.csv
+          printf 'docker-context-sentinel\n' > secret.py
+          printf 'docker-context-sentinel\n' > .env
+          printf 'docker-context-sentinel\n' > data/store/runtime.sqlite
+          printf 'docker-context-sentinel\n' > logs/runtime.log
+          printf 'docker-context-sentinel\n' > reports/private-report.json
+          printf 'docker-context-sentinel\n' > exports/private-export.csv
+          printf 'docker-context-sentinel\n' > screenshots/private-shot.png
+          printf 'docker-context-sentinel\n' > .playwright-mcp/session.json
+          printf 'docker-context-sentinel\n' > strategy/extensions/private_strategy.py
+          printf 'docker-context-sentinel\n' > account_truth/private-export.csv
+          printf 'docker-context-sentinel\n' > server/account-snapshot.json
+          printf 'docker-context-sentinel\n' > web/src/private-account.json
+
       - name: Build locked runtime image
         run: docker build --tag karkinos:ci .
 
-      - name: Start runtime without live scheduler
+      - name: Verify private artifacts stay outside the build context
+        run: |
+          docker build --tag karkinos-context-contract --file - . <<'DOCKERFILE'
+          FROM karkinos:ci
+          USER root
+          COPY . /build-context
+          RUN test -e /build-context/pyproject.toml \
+              && test -e /build-context/README.md \
+              && test -e /build-context/LICENSE \
+              && test -e /build-context/server/app.py \
+              && test ! -e /build-context/config.json \
+              && test ! -e /build-context/broker_statement.csv \
+              && test ! -e /build-context/secret.py \
+              && test ! -e /build-context/.env \
+              && test ! -e /build-context/data/store \
+              && test ! -e /build-context/logs \
+              && test ! -e /build-context/reports \
+              && test ! -e /build-context/exports \
+              && test ! -e /build-context/screenshots \
+              && test ! -e /build-context/.playwright-mcp \
+              && test ! -e /build-context/strategy/extensions/private_strategy.py \
+              && test ! -e /build-context/account_truth/private-export.csv \
+              && test ! -e /build-context/server/account-snapshot.json \
+              && test ! -e /build-context/web/src/private-account.json
+          DOCKERFILE
+
+      - name: Start runtime with fail-closed defaults
         run: |
           mkdir -p "${RUNNER_TEMP}/karkinos-data"
           runtime_uid="$(docker run --rm --entrypoint id karkinos:ci -u)"
@@ -218,7 +265,7 @@ jobs:
             --publish 127.0.0.1:8000:8000 \
             --volume "${RUNNER_TEMP}/karkinos-data:/app/data/store" \
             --volume "${RUNNER_TEMP}/karkinos-config.json:/app/config.json:ro" \
-            karkinos:ci python -m server --no-live
+            karkinos:ci
 
       - name: Verify non-root fail-closed runtime
         run: |

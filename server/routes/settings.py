@@ -297,7 +297,7 @@ def create_router() -> APIRouter:
     @r.get("", response_model=SettingsResponse)
     async def get_settings() -> SettingsResponse:
         """读取当前配置。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         return _settings_response(state)
@@ -305,7 +305,7 @@ def create_router() -> APIRouter:
     @r.put("", response_model=SettingsResponse)
     async def update_settings(settings: SettingsResponse) -> SettingsResponse:
         """Update runtime settings and persist account commission rules."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         config = state.config
@@ -336,14 +336,14 @@ def create_router() -> APIRouter:
     @r.get("/data-source", response_model=DataSourceStatusResponse)
     async def get_data_source_settings() -> DataSourceStatusResponse:
         """读取当前数据源能力与本地切换状态。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         return _build_data_source_status(get_app_state())
 
     @r.get("/asset-metadata", response_model=AssetMetadataStatusResponse)
     async def get_asset_metadata_status() -> AssetMetadataStatusResponse:
         """读取资产元数据配置覆盖情况与缺失模板。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         return AssetMetadataStatusResponse(
             **build_asset_metadata_status(get_app_state())
@@ -354,7 +354,7 @@ def create_router() -> APIRouter:
         payload: DataSourceSettingsUpdate,
     ) -> SettingsResponse:
         """Update data-source runtime settings and persist local config."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         config = state.config
@@ -373,7 +373,7 @@ def create_router() -> APIRouter:
     @r.post("/live/start", response_model=LiveStatusResponse)
     async def start_live() -> LiveStatusResponse:
         """启动实时监控。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         scheduler = state.scheduler
@@ -386,7 +386,7 @@ def create_router() -> APIRouter:
     @r.post("/live/stop", response_model=LiveStatusResponse)
     async def stop_live() -> LiveStatusResponse:
         """停止实时监控。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         scheduler = state.scheduler
@@ -399,7 +399,7 @@ def create_router() -> APIRouter:
     @r.get("/live/status", response_model=LiveStatusResponse)
     async def live_status() -> LiveStatusResponse:
         """查询实时监控状态。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         scheduler = state.scheduler
@@ -410,7 +410,7 @@ def create_router() -> APIRouter:
     @r.post("/notification/test")
     async def test_notification() -> dict:
         """发送测试通知。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         notifier = state.notifier

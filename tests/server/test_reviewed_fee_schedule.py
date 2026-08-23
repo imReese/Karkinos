@@ -668,7 +668,7 @@ def test_review_status_route_read_does_not_initialize_review_table(
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=db),
     )
     with sqlite3.connect(db._path) as conn:
@@ -705,7 +705,7 @@ def test_fee_schedule_http_workflow_rechecks_drift_and_revokes_exact_review(
 
     state, imported = _state(tmp_path)
     _patch_ready_account_truth(monkeypatch, imported)
-    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
     router = account_truth_routes.create_router()
 
     def endpoint(path: str, method: str):

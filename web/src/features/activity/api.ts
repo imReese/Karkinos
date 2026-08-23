@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { apiClient } from '../../lib/api/client';
+import { apiClient, postJson } from '../../lib/api/client';
 import { visiblePersistedProjectionRefetchInterval } from '../../lib/api/query-policy';
 
 export type LedgerEntry = {
@@ -99,33 +99,6 @@ export type AdjustmentPayload = {
   price: number | null;
   note: string;
 };
-
-async function postJson<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(path, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const detail = await response.text();
-    let message = detail || `Request failed: ${response.status}`;
-    try {
-      const parsed = JSON.parse(detail) as { detail?: unknown };
-      if (typeof parsed.detail === 'string') {
-        message = parsed.detail;
-      }
-    } catch {
-      // Keep the raw response text when it is not JSON.
-    }
-    throw new Error(message);
-  }
-
-  return (await response.json()) as T;
-}
 
 export function useLedgerEntriesQuery(limit = 50, enabled = true) {
   return useQuery({

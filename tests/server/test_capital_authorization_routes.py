@@ -29,7 +29,7 @@ from tests.route_assertions import registered_app_routes
 
 def _client_for_db(monkeypatch, db: AppDatabase, *, config=None) -> TestClient:
     fake_state = SimpleNamespace(db=db, config=config)
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     app = FastAPI()
     app.include_router(create_router())
     return TestClient(app)

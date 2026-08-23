@@ -187,7 +187,7 @@ def test_zero_quantity_with_inconsistent_evidence_requires_review(
         ),
         db=EmptyDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
 
     snapshot = asyncio.run(
         _endpoint(portfolio_routes.create_router(), "/api/portfolio")()
@@ -215,7 +215,7 @@ def test_closed_ledger_position_is_historical_but_not_current_across_consumers(
         scheduler=None,
         db=db,
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
 
     portfolio_router = portfolio_routes.create_router()
     snapshot = asyncio.run(_endpoint(portfolio_router, "/api/portfolio")())

@@ -59,7 +59,7 @@ def _payload() -> dict:
 
 def _client(monkeypatch, service: FixtureService) -> TestClient:
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=object()),
     )
     monkeypatch.setattr(

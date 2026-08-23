@@ -133,7 +133,7 @@ def build_human_reviewed_memory_retrieval_service(
 
 
 def _service(*, initialize: bool) -> HumanReviewedMemoryRetrievalService:
-    from server.app import get_app_state
+    from server.dependencies import get_app_state
 
     state = get_app_state()
     if state.db is None:

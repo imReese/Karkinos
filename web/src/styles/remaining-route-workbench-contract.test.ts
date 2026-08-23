@@ -7,6 +7,8 @@ const SRC_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const source = (path: string) => readFileSync(resolve(SRC_ROOT, path), 'utf8');
 
 const ROUTER = source('app/router.tsx');
+const ACTIVITY = source('features/activity/pages/activity-page.tsx');
+const MARKET = source('features/market/pages/market-page.tsx');
 const BACKTEST = source('features/backtest/components/backtest-page.tsx');
 const TRADING = source('features/trading/components/trading-page.tsx');
 const SETTINGS = source('features/settings/components/settings-page.tsx');
@@ -21,9 +23,9 @@ const PRICE_STRUCTURE_CHART = source(
 const MARKET_INSTRUMENT_WORKSPACE = source(
   'features/market/components/market-instrument-workspace.tsx',
 );
-const MARKET_DATA_OPERATIONS = ROUTER.slice(
-  ROUTER.indexOf('function MarketDataOperationsPanel'),
-  ROUTER.indexOf('function formatAge'),
+const MARKET_DATA_OPERATIONS = MARKET.slice(
+  MARKET.indexOf('function MarketDataOperationsPanel'),
+  MARKET.indexOf('function formatAge'),
 );
 const ACTIVITY_FORMS = [
   source('features/activity/components/trade-form.tsx'),
@@ -71,8 +73,8 @@ const CSS = source('styles/globals.css');
 
 describe('remaining route workbench contract', () => {
   it('migrates every phase-four route to the compact workbench shell', () => {
-    expect(ROUTER).toContain('data-workbench-route="market"');
-    expect(ROUTER).toContain('data-workbench-route="activity"');
+    expect(MARKET).toContain('data-workbench-route="market"');
+    expect(ACTIVITY).toContain('data-workbench-route="activity"');
     expect(BACKTEST).toContain('data-workbench-route="backtest"');
     expect(AI_RESEARCH).toContain('data-workbench-route="ai-research"');
     expect(TRADING).toContain('data-workbench-route="trading"');
@@ -81,6 +83,8 @@ describe('remaining route workbench contract', () => {
 
     for (const page of [
       ROUTER,
+      MARKET,
+      ACTIVITY,
       BACKTEST,
       AI_RESEARCH,
       TRADING,
@@ -126,9 +130,9 @@ describe('remaining route workbench contract', () => {
       tradingPage.indexOf('data-testid="trading-review-queue"'),
     ).toBeLessThan(tradingPage.indexOf('<KillSwitchPanel'));
 
-    const activityPage = ROUTER.slice(
-      ROUTER.indexOf('export function ActivityPage'),
-      ROUTER.indexOf('type ActivityEntryTool'),
+    const activityPage = ACTIVITY.slice(
+      ACTIVITY.indexOf('export function ActivityPage'),
+      ACTIVITY.indexOf('type ActivityEntryTool'),
     );
     expect(activityPage).toContain('data-activity-surface="audit-history"');
     expect(activityPage).not.toContain(
@@ -140,8 +144,8 @@ describe('remaining route workbench contract', () => {
     expect(
       activityPage.indexOf('data-activity-surface="audit-history"'),
     ).toBeLessThan(activityPage.indexOf('<ActivityFeed'));
-    expect(ROUTER).toContain('<ControlledActionZone');
-    expect(ROUTER).toContain('copy.activity.entryTools.boundary');
+    expect(ACTIVITY).toContain('<ControlledActionZone');
+    expect(ACTIVITY).toContain('copy.activity.entryTools.boundary');
   });
 
   it('marks AI output as cited research rather than deterministic account fact', () => {
@@ -226,7 +230,7 @@ describe('remaining route workbench contract', () => {
   });
 
   it('removes superseded route-local metric card components', () => {
-    expect(ROUTER).not.toContain('function ActivityMetric');
+    expect(ACTIVITY).not.toContain('function ActivityMetric');
     expect(TRADING).not.toContain('function StatusTile');
     expect(
       SETTINGS.match(/<ControlledActionZone/g)?.length ?? 0,
@@ -254,9 +258,8 @@ describe('remaining route workbench contract', () => {
       ACTIVITY_FEED.indexOf('export function ActivityFeed'),
       ACTIVITY_FEED.indexOf('function activityAmountClass'),
     );
-    const marketPage = ROUTER.slice(
-      ROUTER.indexOf('export function MarketPage'),
-      ROUTER.indexOf('export function ActivityPage'),
+    const marketPage = MARKET.slice(
+      MARKET.indexOf('export function MarketPage'),
     );
     const settingsSection = SETTINGS.slice(
       SETTINGS.indexOf('function SettingsSection'),
@@ -383,9 +386,9 @@ describe('remaining route workbench contract', () => {
   });
 
   it('keeps Activity ledger entry surfaces flat and token-shaped', () => {
-    const activityTools = ROUTER.slice(
-      ROUTER.indexOf('function ActivityEntryToolsPanel'),
-      ROUTER.indexOf('function formatPendingStatus'),
+    const activityTools = ACTIVITY.slice(
+      ACTIVITY.indexOf('function ActivityEntryToolsPanel'),
+      ACTIVITY.indexOf('function formatPendingStatus'),
     );
 
     expect(activityTools).toContain('<ControlledActionZone');

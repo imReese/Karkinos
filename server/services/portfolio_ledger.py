@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from decimal import Decimal
 from types import SimpleNamespace
@@ -12,6 +13,7 @@ from core.events import FillEvent
 from core.types import AssetClass, OrderSide, Symbol
 from data.manager import DataManager
 from domain.portfolio import Portfolio
+from domain.portfolio_accounting import total_trade_fee
 
 _ASSET_CLASS_MAP = {
     "stock": AssetClass.STOCK,
@@ -23,26 +25,34 @@ _ASSET_CLASS_MAP = {
 
 
 def _sorted_rows(rows: list[dict]) -> list[dict]:
-    return sorted(rows, key=lambda row: (row.get("timestamp") or "", row.get("id") or 0))
+    return sorted(
+        rows, key=lambda row: (row.get("timestamp") or "", row.get("id") or 0)
+    )
 
 
 def _trade_rows_from_ledger(db) -> list[dict]:
     trades = db.get_trades_sync(limit=1000, offset=0)
-    trade_refs = {
-        f"trade:{row.get('id')}" for row in trades if row.get("id") is not None
-    }
     if not hasattr(db, "get_ledger_entries_sync"):
         return _sorted_rows(trades)
 
+    trade_refs = {
+        f"trade:{row.get('id')}" for row in trades if row.get("id") is not None
+    }
+    ledger_backed_trade_refs: set[str] = set()
     ledger_trades = []
     for row in db.get_ledger_entries_sync(limit=1000, offset=0):
         entry_type = row.get("entry_type")
         if entry_type not in {"trade_buy", "trade_sell"}:
             continue
-        if row.get("source_ref") in trade_refs:
+        if (
+            row.get("symbol") is None
+            or row.get("quantity") is None
+            or row.get("price") is None
+        ):
             continue
-        if row.get("symbol") is None or row.get("quantity") is None or row.get("price") is None:
-            continue
+        source_ref = row.get("source_ref")
+        if source_ref in trade_refs:
+            ledger_backed_trade_refs.add(source_ref)
         direction = row.get("direction") or (
             "buy" if entry_type == "trade_buy" else "sell"
         )
@@ -55,11 +65,29 @@ def _trade_rows_from_ledger(db) -> list[dict]:
                 "quantity": row.get("quantity"),
                 "price": row.get("price"),
                 "commission": row.get("commission") or 0.0,
+                "fee_breakdown": _fee_breakdown(row),
+                "fee_rule_id": row.get("fee_rule_id"),
+                "fee_rule_version": row.get("fee_rule_version"),
                 "asset_class": row.get("asset_class") or "stock",
                 "note": row.get("note") or "",
             }
         )
-    return _sorted_rows([*trades, *ledger_trades])
+    legacy_trades = [
+        row
+        for row in trades
+        if f"trade:{row.get('id')}" not in ledger_backed_trade_refs
+    ]
+    return _sorted_rows([*legacy_trades, *ledger_trades])
+
+
+def _fee_breakdown(row: dict) -> dict | None:
+    value = row.get("fee_breakdown") or row.get("fee_breakdown_json")
+    if isinstance(value, dict):
+        return value
+    if not isinstance(value, str) or not value.strip():
+        return None
+    parsed = json.loads(value)
+    return parsed if isinstance(parsed, dict) else None
 
 
 def rebuild_portfolio_from_ledger(
@@ -93,6 +121,11 @@ def rebuild_portfolio_from_ledger(
 
     for trade in _trade_rows_from_ledger(db):
         ensure_instrument(trade["symbol"], trade["asset_class"])
+        fee_breakdown = trade.get("fee_breakdown")
+        commission = total_trade_fee(
+            commission=Decimal(str(trade["commission"])),
+            fee_breakdown=fee_breakdown,
+        )
         fill = FillEvent(
             timestamp=datetime.fromisoformat(trade["timestamp"]),
             fill_id=f"LEDGER-{uuid4().hex[:8]}",
@@ -101,8 +134,11 @@ def rebuild_portfolio_from_ledger(
             side=OrderSide.BUY if trade["direction"] == "buy" else OrderSide.SELL,
             fill_price=Decimal(str(trade["price"])),
             fill_quantity=Decimal(str(trade["quantity"])),
-            commission=Decimal(str(trade["commission"])),
+            commission=commission,
             slippage=Decimal("0"),
+            fee_breakdown=fee_breakdown,
+            fee_rule_id=trade.get("fee_rule_id"),
+            fee_rule_version=trade.get("fee_rule_version"),
         )
         portfolio.on_fill(fill)
 

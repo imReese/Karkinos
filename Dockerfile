@@ -3,7 +3,8 @@ FROM node:24-alpine AS frontend-build
 WORKDIR /app/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
-COPY web/ ./
+COPY web/index.html web/tsconfig.json web/vite.config.ts ./
+COPY web/src/ ./src/
 RUN npm run build
 
 # ---- Stage 2: Python runtime ----
@@ -23,7 +24,21 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir "uv==${UV_VERSION}"
 
-COPY . .
+# Keep the runtime image limited to locked packaging metadata and production
+# Python packages. README and LICENSE are required by the package build;
+# private configuration and local runtime evidence are never build inputs.
+COPY pyproject.toml uv.lock README.md LICENSE ./
+COPY account_truth/ ./account_truth/
+COPY analytics/ ./analytics/
+COPY backtest/ ./backtest/
+COPY core/ ./core/
+COPY data/ ./data/
+COPY domain/ ./domain/
+COPY execution/ ./execution/
+COPY notification/ ./notification/
+COPY risk/ ./risk/
+COPY server/ ./server/
+COPY strategy/ ./strategy/
 COPY --from=frontend-build /app/web/dist /app/web/dist
 
 RUN uv sync --frozen --extra server --no-dev && \

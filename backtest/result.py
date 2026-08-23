@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-from analytics.backtest_metrics import AfterCostEvidence, BacktestMetrics, CostSummary
+from backtest.metrics import AfterCostEvidence, BacktestMetrics, CostSummary
 from core.events import FillEvent
 from core.types import ZERO, Symbol
 from domain.position import Position

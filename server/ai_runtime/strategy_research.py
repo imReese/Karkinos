@@ -44,7 +44,10 @@ from data.handler import DataHandler
 from data.manager import DataManager
 from data.store import DataStore
 from server.models import BacktestRequest
-from server.routes.backtest import _backtest_report_metrics_json, _fill_to_response
+from server.services.backtest_result_projection import (
+    build_backtest_report_metrics_json,
+    fill_to_response,
+)
 from strategy.base import Strategy
 
 from .capture import (
@@ -1452,7 +1455,7 @@ class RestrictedFormulaBacktestAdapter:
             "metrics_json": metrics_json,
             "cost_summary_json": result.cost_summary.to_json_dict(),
             "evidence_json": evidence_json,
-            "fills": [_fill_to_response(fill) for fill in result.fills],
+            "fills": [fill_to_response(fill) for fill in result.fills],
         }
         request = BacktestRequest(
             start_date=selection.start_date,
@@ -1475,7 +1478,10 @@ class RestrictedFormulaBacktestAdapter:
             oos_test_window_points=test_window_points,
             oos_step_points=step_points,
         )
-        bt_result["metrics_json"] = _backtest_report_metrics_json(request, bt_result)
+        bt_result["metrics_json"] = build_backtest_report_metrics_json(
+            request,
+            bt_result,
+        )
         return bt_result, request
 
     def validate_selection(

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { apiClient } from '../../lib/api/client';
+import { apiClient, deleteJson, postJson, putJson } from '../../lib/api/client';
 import { visiblePersistedProjectionRefetchInterval } from '../../lib/api/query-policy';
 
 export type MarketHealthQuote = {
@@ -228,58 +228,6 @@ export type MarketBarsBackfillResponse = {
   cached_count: number;
   failed_count: number;
 };
-
-async function postJson<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(path, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(detail || `Request failed: ${response.status}`);
-  }
-
-  return (await response.json()) as T;
-}
-
-async function putJson<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(path, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(detail || `Request failed: ${response.status}`);
-  }
-
-  return (await response.json()) as T;
-}
-
-async function deleteJson<T>(path: string): Promise<T> {
-  const response = await fetch(path, {
-    method: 'DELETE',
-    headers: {
-      Accept: 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(detail || `Request failed: ${response.status}`);
-  }
-
-  return (await response.json()) as T;
-}
 
 export function useResearchBoardQuery() {
   return useQuery({

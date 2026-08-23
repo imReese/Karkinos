@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import inspect
 import json
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any
 
 from .capture import (
@@ -21,27 +23,46 @@ from .capture import (
 from .evidence import EvidenceIdentityMismatch
 
 
+@dataclass(frozen=True)
+class CaptureProjectionReaders:
+    """Application projection ports required by the read-only capture source."""
+
+    portfolio_snapshot: Callable[[Any], Awaitable[Any]]
+    account_state: Callable[..., Awaitable[Any]]
+    operations_today: Callable[[Any], Awaitable[dict[str, Any]]]
+    current_valuation_snapshot: Callable[[Any], dict[str, Any]]
+    strategy_contribution_report: Callable[[Any, Any], Any]
+
+
 class PersistedKarkinosCaptureSource:
     """Select canonical projections and exact rows from one application state."""
 
-    def __init__(self, state: Any) -> None:
+    def __init__(
+        self,
+        state: Any,
+        projection_readers: CaptureProjectionReaders | None = None,
+    ) -> None:
         self._state = state
+        self._projection_readers = projection_readers or getattr(
+            state,
+            "ai_capture_projection_readers",
+            None,
+        )
 
     async def load(
         self,
         request: HumanContextCaptureRequest,
     ) -> CaptureSourceBatch:
-        from server.routes.portfolio import (
-            _current_valuation_snapshot,
-            build_account_state_response,
-            build_portfolio_snapshot,
-        )
-
         db = getattr(self._state, "db", None)
         if db is None:
             raise CaptureSelectionError("database is not initialized")
+        readers = self._projection_readers
+        if not isinstance(readers, CaptureProjectionReaders):
+            raise CaptureSelectionError(
+                "canonical capture projection readers are not configured"
+            )
 
-        portfolio = await build_portfolio_snapshot(self._state)
+        portfolio = await readers.portfolio_snapshot(self._state)
         identity = _portfolio_identity(portfolio)
         _require_persisted_valuation_snapshot(db, identity)
         portfolio_status = _portfolio_evidence_status(portfolio)
@@ -60,7 +81,7 @@ class PersistedKarkinosCaptureSource:
                     )
                 )
             elif evidence_type == CaptureEvidenceType.ACCOUNT_STATE:
-                account_state = await build_account_state_response(
+                account_state = await readers.account_state(
                     self._state,
                     snapshot=portfolio,
                 )
@@ -74,9 +95,7 @@ class PersistedKarkinosCaptureSource:
                     )
                 )
             elif evidence_type == CaptureEvidenceType.OPERATIONS:
-                from server.routes.operations import build_today_operations_payload
-
-                operations = await build_today_operations_payload(self._state)
+                operations = await readers.operations_today(self._state)
                 projections.append(
                     CapturedProjection(
                         tool_name=tool_name,
@@ -127,6 +146,7 @@ class PersistedKarkinosCaptureSource:
                         strategy_id=str(request.strategy_id or ""),
                         identity=identity,
                         fallback_as_of=str(portfolio.valuation_as_of),
+                        report_builder=readers.strategy_contribution_report,
                     )
                 )
             else:  # pragma: no cover - enum construction prevents this path
@@ -134,7 +154,7 @@ class PersistedKarkinosCaptureSource:
                     f"unsupported evidence type: {evidence_type}"
                 )
 
-        final_snapshot = _current_valuation_snapshot(self._state)
+        final_snapshot = readers.current_valuation_snapshot(self._state)
         final_identity = (
             str(final_snapshot.get("snapshot_id") or ""),
             int(final_snapshot.get("ledger_cutoff_id") or 0),
@@ -236,31 +256,33 @@ def _strategy_contribution_projection(
     strategy_id: str,
     identity: tuple[str, int, str],
     fallback_as_of: str,
+    report_builder: Callable[[Any, Any], Any],
 ) -> CapturedProjection:
     """Wrap the existing contribution projection without recalculating it."""
-    from server.routes.account_strategy import (
-        _CONTROL_KEY,
-        _assignment_from_payload,
-        _build_contribution_report,
-        _default_assignment,
+    from server.services.account_strategy_assignment import (
+        ACCOUNT_STRATEGY_ASSIGNMENT_CONTROL_KEY,
+        account_strategy_assignment_from_payload,
+        default_account_strategy_assignment,
     )
 
     reader = getattr(db, "get_runtime_control_sync", None)
-    assignment_payload = reader(_CONTROL_KEY) if callable(reader) else None
+    assignment_payload = (
+        reader(ACCOUNT_STRATEGY_ASSIGNMENT_CONTROL_KEY) if callable(reader) else None
+    )
     assignment = (
-        _assignment_from_payload(
+        account_strategy_assignment_from_payload(
             assignment_payload,
             fallback_config=state.config,
         )
         if isinstance(assignment_payload, dict)
-        else _default_assignment(state.config)
+        else default_account_strategy_assignment(state.config)
     )
     if assignment.strategy_id != strategy_id:
         raise CaptureSelectionError(
             "selected strategy changed before contribution evidence capture"
         )
 
-    report = _build_contribution_report(db, assignment)
+    report = report_builder(db, assignment)
     report_payload = report.model_dump(mode="json")
     status = _strategy_contribution_evidence_status(report_payload)
     _require_strategy_contribution_identity(
@@ -438,11 +460,14 @@ def _account_truth_projection(
     tool_name: str,
     fallback_as_of: str,
 ) -> CapturedProjection:
-    from server.account_truth_gate import build_latest_account_truth_score_payload
-    from server.routes.account_truth import _missing_score_response
+    from server.account_truth_gate import (
+        build_latest_account_truth_score_payload,
+        missing_account_truth_score_payload,
+    )
 
     payload = (
-        build_latest_account_truth_score_payload(state) or _missing_score_response()
+        build_latest_account_truth_score_payload(state)
+        or missing_account_truth_score_payload()
     )
     gate_status = str(payload.get("gate_status") or "blocked")
     freshness = str(payload.get("data_freshness_status") or "missing")

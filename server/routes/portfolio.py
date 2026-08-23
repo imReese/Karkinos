@@ -4225,7 +4225,7 @@ def create_router() -> APIRouter:
     @r.post("/valuation-snapshots")
     async def create_valuation_snapshot() -> dict:
         """Persist an immutable valuation identity from current database facts."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         if state.db is None:
@@ -4235,7 +4235,7 @@ def create_router() -> APIRouter:
     @r.get("/valuation-snapshots/{snapshot_id}")
     async def get_valuation_snapshot(snapshot_id: str) -> dict:
         """Read one persisted valuation snapshot without refreshing providers."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         if state.db is None or not hasattr(state.db, "get_valuation_snapshot_sync"):
@@ -4248,7 +4248,7 @@ def create_router() -> APIRouter:
     @r.get("", response_model=PortfolioSnapshot)
     async def get_portfolio() -> PortfolioSnapshot:
         """获取当前持仓 + 现金 + 总权益 + 资产配置。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         return await build_portfolio_snapshot(get_app_state())
 
@@ -4260,7 +4260,7 @@ def create_router() -> APIRouter:
         CurrentHoldingMarketEvidenceReviewResponse
     ):
         """Project current holding quote blockers from one persisted snapshot."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         snapshot = await build_portfolio_snapshot(get_app_state())
         return build_current_holding_market_evidence_review(snapshot)
@@ -4268,7 +4268,7 @@ def create_router() -> APIRouter:
     @r.get("/live-holdings", response_model=LiveHoldingsResponse)
     async def get_live_holdings() -> LiveHoldingsResponse:
         """按资产类别返回当前持仓的实时价格、累计收益和日内变化。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         return _build_live_holdings_response(state)
@@ -4288,7 +4288,7 @@ def create_router() -> APIRouter:
     @r.get("/overview", response_model=AccountOverview)
     async def get_overview() -> AccountOverview:
         """获取首页账户总览投影。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         snapshot = await get_portfolio()
@@ -4352,14 +4352,14 @@ def create_router() -> APIRouter:
     @r.get("/state", response_model=AccountStateResponse)
     async def get_account_state() -> AccountStateResponse:
         """获取规范化账户状态投影。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         return await build_account_state_response(get_app_state())
 
     @r.get("/cockpit", response_model=PortfolioCockpitResponse)
     async def get_portfolio_cockpit() -> PortfolioCockpitResponse:
         """Return portfolio weights, drift, action queue, and risk alerts."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         snapshot = await get_portfolio()
@@ -4412,7 +4412,7 @@ def create_router() -> APIRouter:
     @r.get("/risk-summary", response_model=list[RiskSummaryItem])
     async def get_risk_summary() -> list[RiskSummaryItem]:
         """获取首页风险摘要。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         snapshot = await get_portfolio()
@@ -4421,7 +4421,7 @@ def create_router() -> APIRouter:
     @r.get("/equity-curve", response_model=list[EquityPoint])
     async def get_equity_curve() -> list[EquityPoint]:
         """获取权益曲线。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         scheduler = state.scheduler
@@ -4470,7 +4470,7 @@ def create_router() -> APIRouter:
     @r.get("/equity-curve/series", response_model=list[EquitySeriesPoint])
     async def get_equity_curve_series(range: str = "1m") -> list[EquitySeriesPoint]:
         """获取按资产类别拆分的权益曲线。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         valuation_snapshot = _current_valuation_snapshot(state)
@@ -4633,7 +4633,7 @@ def create_router() -> APIRouter:
     @r.get("/activity", response_model=list[ActivityItem])
     async def get_activity(limit: int = 10) -> list[ActivityItem]:
         """获取首页最近活动流。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         trades = await state.db.get_trades(limit=limit, offset=0)
@@ -4648,7 +4648,7 @@ def create_router() -> APIRouter:
         event_kind: str | None = None,
     ) -> ExplainabilityResponse:
         """Return traceable drivers for equity, PnL, and current positions."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         snapshot = await get_portfolio()
@@ -4720,7 +4720,7 @@ def create_router() -> APIRouter:
     @r.get("/risk-workspace", response_model=RiskWorkspaceResponse)
     async def get_risk_workspace() -> RiskWorkspaceResponse:
         """Return richer drawdown, exposure, and concentration diagnostics."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         snapshot = await get_portfolio()
@@ -4749,7 +4749,7 @@ def create_router() -> APIRouter:
     @r.post("/cash-flow", response_model=CashFlowResponse)
     async def create_cash_flow(body: CashFlowCreate) -> CashFlowResponse:
         """记录入金/出金。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         db = state.db
@@ -4780,7 +4780,7 @@ def create_router() -> APIRouter:
         limit: int = 50, offset: int = 0
     ) -> list[CashFlowResponse]:
         """列出资金流水。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         flows = await state.db.get_cash_flows(limit, offset)
@@ -4789,7 +4789,7 @@ def create_router() -> APIRouter:
     @r.delete("/cash-flow/{flow_id}")
     async def delete_cash_flow(flow_id: int) -> dict:
         """删除资金流水记录。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         deleted = await state.db.delete_cash_flow(flow_id)
@@ -4800,7 +4800,7 @@ def create_router() -> APIRouter:
     @r.post("/trade/preview", response_model=TradePreviewResponse)
     async def preview_trade(body: TradeCreate) -> TradePreviewResponse:
         """Preview manual trade fees and cash impact without writing ledger facts."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         return TradePreviewResponse(**_manual_trade_preview_payload(state.config, body))
@@ -4813,7 +4813,7 @@ def create_router() -> APIRouter:
 
         from core.events import FillEvent
         from core.types import OrderSide, Symbol
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         db = state.db
@@ -5004,8 +5004,11 @@ def create_router() -> APIRouter:
                         side=side,
                         fill_price=Decimal(str(price)),
                         fill_quantity=Decimal(str(quantity)),
-                        commission=Decimal(str(commission)),
+                        commission=Decimal(str(total_fee)),
                         slippage=Decimal("0"),
+                        fee_breakdown=fee_breakdown_json,
+                        fee_rule_id=fee_rule_id,
+                        fee_rule_version=fee_rule_version,
                     )
                     portfolio.on_fill(fill)
 
@@ -5015,7 +5018,7 @@ def create_router() -> APIRouter:
     @r.get("/trades", response_model=list[TradeResponse])
     async def list_trades(limit: int = 50, offset: int = 0) -> list[TradeResponse]:
         """列出交易记录。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         trades = await state.db.get_trades(limit, offset)
@@ -5024,7 +5027,7 @@ def create_router() -> APIRouter:
     @r.get("/pending-fund-orders", response_model=list[PendingFundOrderResponse])
     async def list_pending_fund_orders() -> list[PendingFundOrderResponse]:
         """列出等待确认净值的基金申购。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         if state.db is None or not hasattr(state.db, "get_pending_fund_orders_sync"):
@@ -5035,7 +5038,7 @@ def create_router() -> APIRouter:
     @r.delete("/trade/{trade_id}")
     async def delete_trade(trade_id: int) -> dict:
         """删除交易记录。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         deleted = await state.db.delete_trade(trade_id)

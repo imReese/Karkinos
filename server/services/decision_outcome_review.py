@@ -18,10 +18,10 @@ from server.ai_runtime.contracts import canonical_json, content_fingerprint
 from server.ai_runtime.store import IdempotencyConflict
 from server.db import _insert_event_sync
 from server.models import AccountStrategyAssignment
-from server.routes.account_strategy import (
-    _fill_metadata,
-    _linked_strategy_evidence,
-    _order_source_signal_id,
+from server.services.account_strategy_evidence import (
+    fill_metadata,
+    linked_strategy_evidence,
+    order_source_signal_id,
 )
 from server.services.strategy_contribution import build_strategy_contribution_report
 
@@ -608,7 +608,7 @@ def build_decision_outcome_review_target(
             "This symbol-scoped assignment exists only to project persisted review evidence."
         ],
     )
-    linked = _linked_strategy_evidence(db, assignment)
+    linked = linked_strategy_evidence(db, assignment)
     contribution = build_strategy_contribution_report(
         db=db,
         assignment=assignment,
@@ -620,7 +620,7 @@ def build_decision_outcome_review_target(
     exact_orders = [
         _project_order(order)
         for order in linked["linked_orders"]
-        if _order_source_signal_id(order) == signal_id
+        if order_source_signal_id(order) == signal_id
         or (
             risk_decision_id
             and str(order.get("risk_decision_id") or "") == risk_decision_id
@@ -632,7 +632,7 @@ def build_decision_outcome_review_target(
         _project_fill(fill)
         for fill in linked["linked_fills"]
         if str(fill.get("order_id") or "") in exact_order_ids
-        or _metadata_signal_id(_fill_metadata(fill)) == signal_id
+        or _metadata_signal_id(fill_metadata(fill)) == signal_id
     ]
     execution_status = _execution_status(
         risk_decision=risk_decision,

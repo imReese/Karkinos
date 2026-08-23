@@ -276,7 +276,7 @@ def test_fixture_cache_to_decision_api_dashboard_contract(
         positions={"510300": SimpleNamespace(market_value=19600.0)},
     )
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(
             config=SimpleNamespace(
                 assets=[{"symbol": "510300", "asset_class": "fund"}]

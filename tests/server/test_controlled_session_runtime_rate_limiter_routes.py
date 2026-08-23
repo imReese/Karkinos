@@ -78,7 +78,7 @@ def test_route_service_wires_persistent_authentication_but_keeps_api_read_only(
     fake_live_gates = SimpleNamespace(
         latest=lambda session_id: {"session_id": session_id}
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "server.routes.controlled_session_runtime_authority._service",
         lambda: fake_authority,

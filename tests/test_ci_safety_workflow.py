@@ -29,8 +29,11 @@ def test_ci_has_incremental_python_quality_and_independent_trading_safety_jobs()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
     assert "Python changed-file quality" in workflow
+    assert "uv run ruff check" in workflow
     assert "uv run black --check" in workflow
     assert "uv run isort --check-only" in workflow
+    assert "uv run mypy" in workflow
+    assert "uv run python tools/check_python_architecture.py" in workflow
     assert "Trading safety invariants" in workflow
     assert "python -m pytest -m trading_safety" in workflow
     assert "needs: [backend, frontend, trading-safety]" in workflow

@@ -208,7 +208,7 @@ def test_route_service_wires_exact_evidence_providers_without_gateway(
     fake_envelope = SimpleNamespace(
         resolve_attestation=lambda value: {"attestation_id": value}
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "server.routes.controlled_session_budget_reservation._service",
         lambda: fake_budget,

@@ -94,7 +94,7 @@ def test_route_service_wires_persisted_session_and_live_gate_providers(
     fake_envelope = SimpleNamespace(
         resolve_attestation=lambda value: {"attestation_id": value}
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "server.routes.controlled_session_runtime_authority._service",
         lambda: fake_authority,

@@ -54,7 +54,7 @@ def create_router() -> APIRouter:
     async def run_external_backtest_report(
         payload: HumanExternalBacktestReportPayload,
     ) -> JSONResponse:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         if state.db is None:

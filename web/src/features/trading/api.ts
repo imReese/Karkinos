@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { apiClient } from '../../lib/api/client';
+import { apiClient, requestJson } from '../../lib/api/client';
 
 const CONTROL_REFETCH_MS = 5_000;
 
@@ -12,42 +12,6 @@ function liveRefetchInterval() {
     return false;
   }
   return CONTROL_REFETCH_MS;
-}
-
-async function requestJson<T>(
-  path: string,
-  {
-    method,
-    body,
-  }: {
-    method: 'POST' | 'PUT';
-    body?: unknown;
-  },
-): Promise<T> {
-  const response = await fetch(path, {
-    method,
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const detail = await response.text();
-    let message = detail || `Request failed: ${response.status}`;
-    try {
-      const parsed = JSON.parse(detail) as { detail?: unknown };
-      if (typeof parsed.detail === 'string') {
-        message = parsed.detail;
-      }
-    } catch {
-      // Keep the raw response text when it is not JSON.
-    }
-    throw new Error(message);
-  }
-
-  return (await response.json()) as T;
 }
 
 export type KillSwitchSnapshot = {

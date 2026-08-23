@@ -12,6 +12,15 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from server.persistence.market_calendar import MarketCalendarRepository
+from server.persistence.migrations import (
+    apply_schema_migrations,
+    assert_schema_compatible,
+)
+from server.persistence.runtime_controls import RuntimeControlRepository
+from server.persistence.watchlist import WatchlistRepository
+from server.runtime_paths import resolve_data_dir
+
 logger = logging.getLogger(__name__)
 
 _DB_DIR = Path("data/store")
@@ -268,61 +277,68 @@ def _ensure_controlled_submission_clearance_terminal_schema(
         """)
 
 
-def _merge_market_calendar_snapshot_payload(
-    payload: dict[str, Any],
-    existing: dict[str, Any],
-) -> dict[str, Any]:
-    """Preserve reviewed holiday labels when refreshing provider snapshots."""
-    merged = dict(payload)
-    existing_days = _json_list(existing.get("days_json"))
-    incoming_days = list(merged.get("days") or [])
-    existing_holiday_labels = {
-        str(day.get("date")): day
-        for day in existing_days
-        if isinstance(day, dict)
-        and day.get("reason_code") == "market_holiday"
-        and not bool(day.get("is_trading_day"))
-        and day.get("date")
-        and day.get("reason")
-    }
-    if existing_holiday_labels:
-        merged_days: list[dict[str, Any]] = []
-        for day in incoming_days:
-            if not isinstance(day, dict):
-                merged_days.append(day)
-                continue
-            label = existing_holiday_labels.get(str(day.get("date")))
-            if label and not bool(day.get("is_trading_day")):
-                merged_days.append(
-                    {
-                        **day,
-                        "day_type": "holiday",
-                        "reason_code": "market_holiday",
-                        "reason": label["reason"],
-                        "is_trading_day": False,
-                    }
-                )
-            else:
-                merged_days.append(day)
-        merged["days"] = merged_days
-
-    existing_status = str(existing.get("official_verification_status") or "unverified")
-    incoming_status = str(merged.get("official_verification_status") or "unverified")
-    if existing_status != "unverified" and incoming_status == "unverified":
-        merged["official_verification_status"] = existing_status
-        merged["official_source_url"] = existing.get("official_source_url")
-        merged["official_verified_at"] = existing.get("official_verified_at")
-        merged["official_verified_by"] = existing.get("official_verified_by")
-
-    merged["limitations"] = list(
-        dict.fromkeys(
-            [
-                *(merged.get("limitations") or []),
-                *_json_list(existing.get("limitations_json")),
-            ]
-        )
+def _initialize_v1_baseline_schema(conn: sqlite3.Connection) -> None:
+    """Create the frozen v1 baseline used by legacy upgrades and verification."""
+    conn.executescript(_SCHEMA)
+    _ensure_controlled_submission_clearance_terminal_schema(conn)
+    conn.executescript(_CONTROLLED_SUBMISSION_LEDGER_POSTING_TABLE_SQL)
+    conn.executescript(_CONTROLLED_SUBMISSION_LEDGER_CORRECTION_TABLE_SQL)
+    _ensure_column(conn, "backtest_results", "metrics_json", "TEXT")
+    _ensure_column(conn, "backtest_results", "cost_summary_json", "TEXT")
+    _ensure_column(conn, "quote_snapshots", "quote_source", "TEXT")
+    _ensure_column(conn, "quote_snapshots", "provider_name", "TEXT")
+    _ensure_column(conn, "quote_snapshots", "quote_status", "TEXT")
+    _ensure_column(conn, "quote_snapshots", "stale_reason", "TEXT")
+    _ensure_column(conn, "quote_snapshots", "provider_status", "TEXT")
+    _ensure_column(conn, "quote_snapshots", "captured_reason", "TEXT")
+    _ensure_column(conn, "quote_snapshots", "nav_date", "TEXT")
+    _ensure_column(conn, "quote_snapshots", "fetch_run_id", "TEXT")
+    _ensure_column(conn, "latest_quotes", "fetch_run_id", "TEXT")
+    _ensure_column(conn, "ledger_entries", "gross_amount", "REAL")
+    _ensure_column(conn, "ledger_entries", "net_cash_impact", "REAL")
+    _ensure_column(conn, "ledger_entries", "fee_breakdown_json", "TEXT")
+    _ensure_column(conn, "ledger_entries", "fee_rule_id", "TEXT")
+    _ensure_column(conn, "ledger_entries", "fee_rule_version", "TEXT")
+    _ensure_column(conn, "ledger_entries", "estimated_commission", "REAL")
+    _ensure_column(conn, "ledger_entries", "estimated_net_cash_impact", "REAL")
+    _ensure_column(conn, "ledger_entries", "estimated_fee_breakdown_json", "TEXT")
+    _ensure_column(conn, "ledger_entries", "estimated_fee_rule_id", "TEXT")
+    _ensure_column(conn, "ledger_entries", "estimated_fee_rule_version", "TEXT")
+    _ensure_column(conn, "ledger_entries", "settlement_status", "TEXT")
+    _ensure_column(conn, "ledger_entries", "settled_at", "TEXT")
+    _ensure_column(conn, "ledger_entries", "settlement_source", "TEXT")
+    _ensure_column(conn, "ledger_entries", "settlement_source_ref", "TEXT")
+    _ensure_column(conn, "ledger_entries", "settlement_note", "TEXT")
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS
+        idx_ledger_entries_settlement_evidence
+        ON ledger_entries(settlement_source, settlement_source_ref)
+        WHERE settlement_source_ref IS NOT NULL
+        """)
+    _ensure_column(conn, "ledger_entries", "cost_basis_method", "TEXT")
+    _ensure_column(conn, "ledger_entries", "correction_payload_json", "TEXT")
+    _ensure_column(
+        conn,
+        "execution_reconciliation_items",
+        "broker_event_count",
+        "INTEGER NOT NULL DEFAULT 0",
     )
-    return merged
+    _ensure_column(conn, "paper_shadow_runs", "review_status", "TEXT")
+    _ensure_column(conn, "paper_shadow_runs", "reviewed_at", "TEXT")
+    _ensure_column(conn, "paper_shadow_runs", "review_notes", "TEXT")
+    _ensure_column(conn, "paper_shadow_runs", "reviewer", "TEXT")
+    _ensure_column(
+        conn,
+        "controlled_session_budget_reservations",
+        "reserved_by_symbol_json",
+        "TEXT NOT NULL DEFAULT '{}'",
+    )
+    _ensure_column(
+        conn,
+        "controlled_session_budget_reservations",
+        "symbol_capacity_json",
+        "TEXT NOT NULL DEFAULT '{}'",
+    )
 
 
 def _apply_manual_confirmation_readiness(
@@ -356,8 +372,20 @@ class AppDatabase:
     """
 
     def __init__(self, db_path: str | Path | None = None) -> None:
-        self._path = Path(db_path) if db_path else _DB_PATH
+        self._path = (
+            Path(db_path)
+            if db_path is not None
+            else Path(resolve_data_dir()) / _DB_PATH.name
+        )
         self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._market_calendar = MarketCalendarRepository(self._path)
+        self._watchlist = WatchlistRepository(self._path)
+        self._runtime_controls = RuntimeControlRepository(self._path)
+
+    @property
+    def path(self) -> Path:
+        """Public database identity for repositories sharing this SQLite store."""
+        return self._path
 
     async def init(self) -> None:
         """初始化数据库表。"""
@@ -368,71 +396,14 @@ class AppDatabase:
         """同步初始化数据库表。"""
         with sqlite3.connect(self._path, timeout=2) as conn:
             conn.execute("PRAGMA busy_timeout=2000")
+            assert_schema_compatible(
+                conn, baseline_initializer=_initialize_v1_baseline_schema
+            )
             journal_mode = conn.execute("PRAGMA journal_mode").fetchone()
             if journal_mode and str(journal_mode[0]).lower() != "wal":
                 conn.execute("PRAGMA journal_mode=WAL")
-            conn.executescript(_SCHEMA)
-            _ensure_controlled_submission_clearance_terminal_schema(conn)
-            conn.executescript(_CONTROLLED_SUBMISSION_LEDGER_POSTING_TABLE_SQL)
-            conn.executescript(_CONTROLLED_SUBMISSION_LEDGER_CORRECTION_TABLE_SQL)
-            _ensure_column(conn, "backtest_results", "metrics_json", "TEXT")
-            _ensure_column(conn, "backtest_results", "cost_summary_json", "TEXT")
-            _ensure_column(conn, "quote_snapshots", "quote_source", "TEXT")
-            _ensure_column(conn, "quote_snapshots", "provider_name", "TEXT")
-            _ensure_column(conn, "quote_snapshots", "quote_status", "TEXT")
-            _ensure_column(conn, "quote_snapshots", "stale_reason", "TEXT")
-            _ensure_column(conn, "quote_snapshots", "provider_status", "TEXT")
-            _ensure_column(conn, "quote_snapshots", "captured_reason", "TEXT")
-            _ensure_column(conn, "quote_snapshots", "nav_date", "TEXT")
-            _ensure_column(conn, "quote_snapshots", "fetch_run_id", "TEXT")
-            _ensure_column(conn, "latest_quotes", "fetch_run_id", "TEXT")
-            _ensure_column(conn, "ledger_entries", "gross_amount", "REAL")
-            _ensure_column(conn, "ledger_entries", "net_cash_impact", "REAL")
-            _ensure_column(conn, "ledger_entries", "fee_breakdown_json", "TEXT")
-            _ensure_column(conn, "ledger_entries", "fee_rule_id", "TEXT")
-            _ensure_column(conn, "ledger_entries", "fee_rule_version", "TEXT")
-            _ensure_column(conn, "ledger_entries", "estimated_commission", "REAL")
-            _ensure_column(conn, "ledger_entries", "estimated_net_cash_impact", "REAL")
-            _ensure_column(
-                conn, "ledger_entries", "estimated_fee_breakdown_json", "TEXT"
-            )
-            _ensure_column(conn, "ledger_entries", "estimated_fee_rule_id", "TEXT")
-            _ensure_column(conn, "ledger_entries", "estimated_fee_rule_version", "TEXT")
-            _ensure_column(conn, "ledger_entries", "settlement_status", "TEXT")
-            _ensure_column(conn, "ledger_entries", "settled_at", "TEXT")
-            _ensure_column(conn, "ledger_entries", "settlement_source", "TEXT")
-            _ensure_column(conn, "ledger_entries", "settlement_source_ref", "TEXT")
-            _ensure_column(conn, "ledger_entries", "settlement_note", "TEXT")
-            conn.execute("""
-                CREATE UNIQUE INDEX IF NOT EXISTS
-                idx_ledger_entries_settlement_evidence
-                ON ledger_entries(settlement_source, settlement_source_ref)
-                WHERE settlement_source_ref IS NOT NULL
-                """)
-            _ensure_column(conn, "ledger_entries", "cost_basis_method", "TEXT")
-            _ensure_column(conn, "ledger_entries", "correction_payload_json", "TEXT")
-            _ensure_column(
-                conn,
-                "execution_reconciliation_items",
-                "broker_event_count",
-                "INTEGER NOT NULL DEFAULT 0",
-            )
-            _ensure_column(conn, "paper_shadow_runs", "review_status", "TEXT")
-            _ensure_column(conn, "paper_shadow_runs", "reviewed_at", "TEXT")
-            _ensure_column(conn, "paper_shadow_runs", "review_notes", "TEXT")
-            _ensure_column(conn, "paper_shadow_runs", "reviewer", "TEXT")
-            _ensure_column(
-                conn,
-                "controlled_session_budget_reservations",
-                "reserved_by_symbol_json",
-                "TEXT NOT NULL DEFAULT '{}'",
-            )
-            _ensure_column(
-                conn,
-                "controlled_session_budget_reservations",
-                "symbol_capacity_json",
-                "TEXT NOT NULL DEFAULT '{}'",
-            )
+            _initialize_v1_baseline_schema(conn)
+            apply_schema_migrations(conn)
             conn.commit()
         logger.info("Database initialized: %s", self._path)
 
@@ -440,86 +411,7 @@ class AppDatabase:
 
     def upsert_market_calendar_snapshot_sync(self, snapshot: Any) -> dict[str, Any]:
         """Persist a provider-normalized market calendar snapshot."""
-        payload = (
-            snapshot.to_payload() if hasattr(snapshot, "to_payload") else dict(snapshot)
-        )
-        now = datetime.now().isoformat()
-        days = payload.get("days") or []
-        limitations = payload.get("limitations") or []
-        exchange = str(payload["exchange"]).upper()
-        year = int(payload["year"])
-        with sqlite3.connect(self._path) as conn:
-            conn.row_factory = sqlite3.Row
-            existing = conn.execute(
-                """
-                SELECT *
-                FROM market_calendar_snapshots
-                WHERE exchange = ? AND year = ?
-                LIMIT 1
-                """,
-                (exchange, year),
-            ).fetchone()
-            if existing is not None:
-                payload = _merge_market_calendar_snapshot_payload(
-                    payload,
-                    dict(existing),
-                )
-                days = payload.get("days") or []
-                limitations = payload.get("limitations") or []
-            conn.execute(
-                """
-                INSERT INTO market_calendar_snapshots (
-                    exchange, year, provider, schema_version, status,
-                    trading_day_count, closed_day_count, source_fingerprint,
-                    official_verification_status, official_source_url,
-                    official_verified_at, official_verified_by, limitations_json,
-                    days_json, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(exchange, year) DO UPDATE SET
-                    provider = excluded.provider,
-                    schema_version = excluded.schema_version,
-                    status = excluded.status,
-                    trading_day_count = excluded.trading_day_count,
-                    closed_day_count = excluded.closed_day_count,
-                    source_fingerprint = excluded.source_fingerprint,
-                    official_verification_status = excluded.official_verification_status,
-                    official_source_url = excluded.official_source_url,
-                    official_verified_at = excluded.official_verified_at,
-                    official_verified_by = excluded.official_verified_by,
-                    limitations_json = excluded.limitations_json,
-                    days_json = excluded.days_json,
-                    updated_at = excluded.updated_at
-                """,
-                (
-                    exchange,
-                    year,
-                    str(payload.get("provider") or "unknown"),
-                    str(payload.get("schema_version") or "karkinos.market_calendar.v1"),
-                    str(payload.get("status") or "available"),
-                    int(payload.get("trading_day_count") or 0),
-                    int(payload.get("closed_day_count") or 0),
-                    str(payload.get("source_fingerprint") or ""),
-                    str(payload.get("official_verification_status") or "unverified"),
-                    payload.get("official_source_url"),
-                    payload.get("official_verified_at"),
-                    payload.get("official_verified_by"),
-                    json.dumps(limitations, ensure_ascii=False, sort_keys=True),
-                    json.dumps(days, ensure_ascii=False, sort_keys=True),
-                    now,
-                    now,
-                ),
-            )
-            conn.commit()
-            row = conn.execute(
-                """
-                SELECT *
-                FROM market_calendar_snapshots
-                WHERE exchange = ? AND year = ?
-                LIMIT 1
-                """,
-                (exchange, year),
-            ).fetchone()
-            return dict(row)
+        return self._market_calendar.upsert_snapshot(snapshot)
 
     def get_market_calendar_snapshot_sync(
         self,
@@ -528,18 +420,7 @@ class AppDatabase:
         year: int,
     ) -> dict[str, Any] | None:
         """Fetch the latest stored market calendar snapshot for an exchange/year."""
-        with sqlite3.connect(self._path) as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                """
-                SELECT *
-                FROM market_calendar_snapshots
-                WHERE exchange = ? AND year = ?
-                LIMIT 1
-                """,
-                (str(exchange).upper(), int(year)),
-            ).fetchone()
-            return dict(row) if row else None
+        return self._market_calendar.get_snapshot(exchange=exchange, year=year)
 
     def update_market_calendar_verification_sync(
         self,
@@ -553,73 +434,15 @@ class AppDatabase:
         day_labels: dict[str, str] | None = None,
     ) -> dict[str, Any] | None:
         """Attach manual official-notice verification metadata to a snapshot."""
-        row = self.get_market_calendar_snapshot_sync(exchange=exchange, year=year)
-        if row is None:
-            return None
-        now = datetime.now().isoformat()
-        limitations = json.loads(row.get("limitations_json") or "[]")
-        days = json.loads(row.get("days_json") or "[]")
-        normalized_day_labels = {
-            str(day).strip()[:10]: str(label).strip()
-            for day, label in (day_labels or {}).items()
-            if str(day).strip() and str(label).strip()
-        }
-        if normalized_day_labels:
-            days = [
-                (
-                    {
-                        **day,
-                        "reason": normalized_day_labels[day.get("date")],
-                        "day_type": "holiday",
-                        "reason_code": "market_holiday",
-                        "is_trading_day": False,
-                    }
-                    if isinstance(day, dict)
-                    and day.get("date") in normalized_day_labels
-                    and not bool(day.get("is_trading_day"))
-                    else day
-                )
-                for day in days
-            ]
-        if review_notes:
-            limitations = [*limitations, review_notes]
-        with sqlite3.connect(self._path) as conn:
-            conn.row_factory = sqlite3.Row
-            conn.execute(
-                """
-                UPDATE market_calendar_snapshots
-                SET official_verification_status = ?,
-                    official_source_url = ?,
-                    official_verified_at = ?,
-                    official_verified_by = ?,
-                    limitations_json = ?,
-                    days_json = ?,
-                    updated_at = ?
-                WHERE exchange = ? AND year = ?
-                """,
-                (
-                    verification_status,
-                    official_source_url,
-                    now,
-                    verified_by,
-                    json.dumps(limitations, ensure_ascii=False, sort_keys=True),
-                    json.dumps(days, ensure_ascii=False, sort_keys=True),
-                    now,
-                    str(exchange).upper(),
-                    int(year),
-                ),
-            )
-            conn.commit()
-            updated = conn.execute(
-                """
-                SELECT *
-                FROM market_calendar_snapshots
-                WHERE exchange = ? AND year = ?
-                LIMIT 1
-                """,
-                (str(exchange).upper(), int(year)),
-            ).fetchone()
-            return dict(updated) if updated else None
+        return self._market_calendar.update_verification(
+            exchange=exchange,
+            year=year,
+            verification_status=verification_status,
+            official_source_url=official_source_url,
+            verified_by=verified_by,
+            review_notes=review_notes,
+            day_labels=day_labels,
+        )
 
     # ---------- Watchlist Assets ----------
 
@@ -632,108 +455,24 @@ class AppDatabase:
         source: str = "manual",
     ) -> dict[str, Any] | None:
         """Upsert a user-tracked asset into the persistent watchlist."""
-        clean_symbol = str(symbol).strip()
-        clean_asset_class = str(asset_class or "stock").strip().lower() or "stock"
-        clean_display_name = str(display_name or clean_symbol).strip() or clean_symbol
-        if not clean_symbol:
-            return None
-        now = datetime.now().isoformat()
-        with sqlite3.connect(self._path) as conn:
-            conn.row_factory = sqlite3.Row
-            conn.execute(
-                """
-                INSERT INTO watchlist_assets (
-                    symbol, asset_class, display_name, source, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(symbol) DO UPDATE SET
-                    asset_class = excluded.asset_class,
-                    display_name = excluded.display_name,
-                    source = excluded.source,
-                    updated_at = excluded.updated_at
-                """,
-                (
-                    clean_symbol,
-                    clean_asset_class,
-                    clean_display_name,
-                    source,
-                    now,
-                    now,
-                ),
-            )
-            conn.commit()
-            row = conn.execute(
-                """
-                SELECT *
-                FROM watchlist_assets
-                WHERE lower(symbol) = lower(?)
-                LIMIT 1
-                """,
-                (clean_symbol,),
-            ).fetchone()
-            return dict(row) if row else None
+        return self._watchlist.upsert_asset(
+            symbol=symbol,
+            asset_class=asset_class,
+            display_name=display_name,
+            source=source,
+        )
 
     def list_watchlist_assets_sync(self) -> list[dict[str, Any]]:
         """List persistent watchlist assets in user insertion order."""
-        with sqlite3.connect(self._path) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute("""
-                SELECT *
-                FROM watchlist_assets
-                ORDER BY created_at ASC, id ASC
-                """).fetchall()
-            return [dict(row) for row in rows]
+        return self._watchlist.list_assets()
 
     def delete_watchlist_asset_sync(self, symbol: str) -> bool:
         """Remove a user-tracked asset from the persistent watchlist."""
-        clean_symbol = str(symbol).strip()
-        if not clean_symbol:
-            return False
-        with sqlite3.connect(self._path) as conn:
-            cursor = conn.execute(
-                "DELETE FROM watchlist_assets WHERE lower(symbol) = lower(?)",
-                (clean_symbol,),
-            )
-            conn.commit()
-            return cursor.rowcount > 0
+        return self._watchlist.delete_asset(symbol)
 
     def seed_watchlist_assets_from_config_sync(self, assets: Any) -> int:
         """Migrate legacy config assets into the persistent watchlist."""
-        seeded = 0
-        if not assets:
-            return seeded
-        iterable = assets.items() if isinstance(assets, dict) else enumerate(assets)
-        for key, raw_asset in iterable:
-            if isinstance(raw_asset, str):
-                symbol = str(key if not isinstance(key, int) else raw_asset).strip()
-                asset_class = "stock"
-                display_name = raw_asset if not isinstance(key, int) else symbol
-            elif isinstance(raw_asset, dict):
-                symbol = str(
-                    raw_asset.get("provider_symbol")
-                    or raw_asset.get("provider_code")
-                    or raw_asset.get("code")
-                    or raw_asset.get("symbol")
-                    or ("" if isinstance(key, int) else key)
-                ).strip()
-                asset_class = str(raw_asset.get("asset_class") or "stock")
-                display_name = str(
-                    raw_asset.get("display_name")
-                    or raw_asset.get("name")
-                    or raw_asset.get("symbol")
-                    or symbol
-                )
-            else:
-                continue
-            if not symbol:
-                continue
-            if self.upsert_watchlist_asset_sync(
-                symbol=symbol,
-                asset_class=asset_class,
-                display_name=display_name,
-                source="config_migration",
-            ):
-                seeded += 1
-        return seeded
+        return self._watchlist.seed_from_config(assets)
 
     # ---------- Instrument Metadata ----------
 
@@ -1416,34 +1155,11 @@ class AppDatabase:
 
     def set_runtime_control_sync(self, key: str, value: dict[str, Any]) -> None:
         """Persist runtime control state such as kill switch."""
-        with sqlite3.connect(self._path) as conn:
-            conn.execute(
-                """
-                INSERT INTO runtime_controls (key, value_json, updated_at)
-                VALUES (?, ?, ?)
-                ON CONFLICT(key) DO UPDATE SET
-                    value_json = excluded.value_json,
-                    updated_at = excluded.updated_at
-                """,
-                (
-                    key,
-                    json.dumps(value, ensure_ascii=False),
-                    datetime.now().isoformat(),
-                ),
-            )
-            conn.commit()
+        self._runtime_controls.set_value(key, value)
 
     def get_runtime_control_sync(self, key: str) -> dict[str, Any] | None:
         """Read persisted runtime control state."""
-        with sqlite3.connect(self._path) as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                "SELECT value_json FROM runtime_controls WHERE key = ?",
-                (key,),
-            ).fetchone()
-            if row is None:
-                return None
-            return json.loads(row["value_json"])
+        return self._runtime_controls.get_value(key)
 
     # ---------- Automation Control ----------
 

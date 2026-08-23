@@ -60,7 +60,7 @@ def test_current_holding_market_review_route_uses_canonical_snapshot_only(
         calls.append(received_state)
         return snapshot
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
     monkeypatch.setattr(
         "server.routes.portfolio.build_portfolio_snapshot", build_snapshot
     )

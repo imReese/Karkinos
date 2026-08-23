@@ -92,8 +92,8 @@ describe('Karkinos brand motion contract', () => {
     expect([...new Set(uses.map(({ file }) => file))].sort()).toEqual([
       'app/components/workbench/workspace.tsx',
       'app/layout/app-shell.tsx',
-      'app/router.tsx',
       'features/activity/components/activity-feed.tsx',
+      'features/activity/pages/activity-page.tsx',
       'features/market/components/market-instrument-workspace.tsx',
       'features/market/components/market-refresh-button.tsx',
     ]);

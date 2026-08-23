@@ -118,6 +118,10 @@ Docker runtime:
 docker compose up --build
 ```
 
+Docker Compose keeps the live market-data scheduler disabled by default. Set
+`KARKINOS_LIVE_AUTO_START=true` only for an explicit owner-supervised ingestion
+session; this does not grant broker or order authority.
+
 ## Documentation map
 
 - [Product goal](docs/KARKINOS_GOAL.md) — North Star and durable boundaries.

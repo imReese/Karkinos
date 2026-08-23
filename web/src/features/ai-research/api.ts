@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { apiClient } from '../../lib/api/client';
+import { apiClient, postJson, putJson } from '../../lib/api/client';
 
 export type ResearchEvidenceType =
   | 'portfolio'
@@ -175,52 +175,6 @@ export type StartFixtureAnalysisInput = {
   idempotency_key: string;
   requested_by: string;
 };
-
-async function postJson<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(path, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) {
-    const raw = await response.text();
-    let detail = raw;
-    try {
-      const payload = JSON.parse(raw) as { detail?: string };
-      detail = payload.detail ?? raw;
-    } catch {
-      // Preserve the plain-text response.
-    }
-    throw new Error(detail || `Request failed: ${response.status}`);
-  }
-  return (await response.json()) as T;
-}
-
-async function putJson<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(path, {
-    method: 'PUT',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) {
-    const raw = await response.text();
-    let detail = raw;
-    try {
-      const payload = JSON.parse(raw) as { detail?: string };
-      detail = payload.detail ?? raw;
-    } catch {
-      // Preserve the plain-text response.
-    }
-    throw new Error(detail || `Request failed: ${response.status}`);
-  }
-  return (await response.json()) as T;
-}
 
 export function useResearchTasksQuery(enabled: boolean) {
   return useQuery({

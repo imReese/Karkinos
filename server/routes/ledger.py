@@ -232,7 +232,7 @@ def create_router() -> APIRouter:
     async def list_entries(
         limit: int = 50, offset: int = 0
     ) -> list[LedgerEntryResponse]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         repo = LedgerRepository(state.db)
@@ -241,7 +241,7 @@ def create_router() -> APIRouter:
 
     @r.post("/trades", response_model=LedgerEntryCreatedResponse)
     async def create_trade_entry(body: LedgerTradeCreate) -> LedgerEntryCreatedResponse:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         repo = LedgerRepository(state.db)
@@ -257,7 +257,7 @@ def create_router() -> APIRouter:
         entry_id: int,
         body: LedgerTradeSettlementCreate,
     ) -> LedgerTradeSettlementResponse:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         repo = LedgerRepository(state.db)
@@ -299,7 +299,7 @@ def create_router() -> APIRouter:
     async def create_cash_flow_entry(
         body: LedgerCashFlowCreate,
     ) -> LedgerEntryCreatedResponse:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         repo = LedgerRepository(state.db)
@@ -311,7 +311,7 @@ def create_router() -> APIRouter:
     async def create_dividend_entry(
         body: LedgerDividendCreate,
     ) -> LedgerEntryCreatedResponse:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         repo = LedgerRepository(state.db)
@@ -323,7 +323,7 @@ def create_router() -> APIRouter:
     async def create_adjustment_entry(
         body: LedgerAdjustmentCreate,
     ) -> LedgerEntryCreatedResponse:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         repo = LedgerRepository(state.db)

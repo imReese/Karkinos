@@ -7,6 +7,7 @@ import logging
 from core.event_bus import EventBus
 from core.events import FillEvent, OrderEvent, RiskAlertEvent
 from core.types import ZERO, OrderSide, OrderStatus, Symbol
+from domain.portfolio_accounting import total_trade_fee
 from domain.position import Position
 from risk.rules import RiskCheckResult, RiskRule
 
@@ -89,9 +90,13 @@ class RiskManager:
             self.positions[event.symbol] = Position(event.symbol)
 
         pos = self.positions[event.symbol]
+        fee = total_trade_fee(
+            commission=event.commission,
+            fee_breakdown=event.fee_breakdown,
+        )
         pos.update_on_fill(
             side=event.side.value,
             fill_quantity=event.fill_quantity,
             fill_price=event.fill_price,
-            commission=event.commission,
+            commission=fee,
         )

@@ -104,6 +104,12 @@ logger = logging.getLogger(__name__)
 PlanReader = Callable[[], Awaitable[tuple[dict[str, Any], dict[str, Any]]]]
 RiskRunner = Callable[[], Awaitable[dict[str, Any]]]
 AccountTruthReplayResolver = Callable[..., dict[str, Any]]
+StatePlanReader = Callable[
+    [Any],
+    Awaitable[tuple[dict[str, Any], dict[str, Any]]],
+]
+StateRiskRunner = Callable[[Any], Awaitable[dict[str, Any]]]
+QuoteRefresher = Callable[..., Awaitable[Any]]
 
 
 class DailyDecisionEvidenceAutomationService:
@@ -653,11 +659,12 @@ class DailyDecisionEvidenceAutomationService:
 
 def build_daily_decision_evidence_automation_service(
     state: Any,
+    *,
+    plan_reader: StatePlanReader,
+    risk_runner: StateRiskRunner,
+    quote_refresher: QuoteRefresher,
 ) -> DailyDecisionEvidenceAutomationService:
-    """Bind the canonical route adapters to the background evidence service."""
-    from server.routes.decision import run_batch_pre_trade_risk_for_state
-    from server.routes.market import _refresh_one_quote
-    from server.routes.operations import _current_decision_and_trading_plan
+    """Bind explicit application adapters to the background evidence service."""
     from server.services.daily_candidate_quote_freeze import (
         DailyCandidateQuoteFreezeService,
     )
@@ -678,12 +685,12 @@ def build_daily_decision_evidence_automation_service(
     quote_freezer = DailyCandidateQuoteFreezeService(
         db=state.db,
         state=state,
-        quote_refresher=_refresh_one_quote,
+        quote_refresher=quote_refresher,
     )
     scan_cache: dict[tuple[object, ...], dict[str, Any]] = {}
 
     async def read_plan() -> tuple[dict[str, Any], dict[str, Any]]:
-        decision, trading_plan = await _current_decision_and_trading_plan(state)
+        decision, trading_plan = await plan_reader(state)
         decision_date = str(decision.get("decision_date") or "")
         plan_date = str(trading_plan.get("plan_date") or "")
         if decision_date and decision_date == plan_date:
@@ -700,7 +707,7 @@ def build_daily_decision_evidence_automation_service(
                     persist_actions=False,
                 )
                 quote_freeze = await quote_freezer.run_once(prepared)
-                decision, trading_plan = await _current_decision_and_trading_plan(state)
+                decision, trading_plan = await plan_reader(state)
                 final_portfolio = _object_dict(
                     _object_dict(decision.get("summary")).get("portfolio")
                 )
@@ -717,7 +724,7 @@ def build_daily_decision_evidence_automation_service(
                     ),
                     additional_blockers=quote_blockers,
                 )
-                decision, trading_plan = await _current_decision_and_trading_plan(state)
+                decision, trading_plan = await plan_reader(state)
                 cached = {
                     "scan": final_scan,
                     "quote_freeze": quote_freeze,
@@ -740,7 +747,7 @@ def build_daily_decision_evidence_automation_service(
         return decision, trading_plan
 
     async def run_risk() -> dict[str, Any]:
-        return await run_batch_pre_trade_risk_for_state(state)
+        return await risk_runner(state)
 
     return DailyDecisionEvidenceAutomationService(
         db=state.db,
@@ -825,11 +832,19 @@ async def run_daily_decision_evidence_automation_loop(
     *,
     state: Any,
     interval_seconds: float,
+    plan_reader: StatePlanReader | None = None,
+    risk_runner: StateRiskRunner | None = None,
+    quote_refresher: QuoteRefresher | None = None,
     clock: Callable[[], datetime] | None = None,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> None:
     """Run at most once in the verified trading day's decision window."""
-    service = build_daily_decision_evidence_automation_service(state)
+    adapters = (plan_reader, risk_runner, quote_refresher)
+    if any(adapter is not None for adapter in adapters) and not all(
+        adapter is not None for adapter in adapters
+    ):
+        raise ValueError("daily decision evidence adapters must be supplied together")
+    service: DailyDecisionEvidenceAutomationService | None = None
     interval = max(float(interval_seconds), 1.0)
     current_time = clock or (lambda: datetime.now(timezone.utc))
     while True:
@@ -853,6 +868,20 @@ async def run_daily_decision_evidence_automation_loop(
                         schedule=schedule,
                     )
             if schedule["due"]:
+                if service is None:
+                    if plan_reader is None:
+                        # Backward-compatible seam for tests that replace the
+                        # factory entirely.
+                        service = build_daily_decision_evidence_automation_service(  # type: ignore[call-arg]
+                            state
+                        )
+                    else:
+                        service = build_daily_decision_evidence_automation_service(
+                            state,
+                            plan_reader=plan_reader,
+                            risk_runner=risk_runner,  # type: ignore[arg-type]
+                            quote_refresher=quote_refresher,  # type: ignore[arg-type]
+                        )
                 await _run_claimed_background_attempt(
                     db=state.db,
                     service=service,

@@ -186,7 +186,7 @@ def test_quality_get_is_read_only_and_capture_is_restart_safe_and_idempotent(
     async def current_payload(_state):
         return copy.deepcopy(payload)
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
     monkeypatch.setattr(decision_routes, "_today_decision_payload", current_payload)
     get_quality = _endpoint("/api/decision/quality")
     capture_quality = _endpoint("/api/decision/quality/capture", method="POST")
@@ -264,7 +264,7 @@ def test_quality_capture_rejects_drift_and_latest_day_replaces_old_score(
     async def current_payload(_state):
         return copy.deepcopy(payload)
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
     monkeypatch.setattr(decision_routes, "_today_decision_payload", current_payload)
     get_quality = _endpoint("/api/decision/quality")
     capture_quality = _endpoint("/api/decision/quality/capture", method="POST")
@@ -314,7 +314,7 @@ def test_quality_replay_detects_target_tampering(monkeypatch, tmp_path) -> None:
     async def current_payload(_state):
         return copy.deepcopy(payload)
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
     monkeypatch.setattr(decision_routes, "_today_decision_payload", current_payload)
     get_quality = _endpoint("/api/decision/quality")
     capture_quality = _endpoint("/api/decision/quality/capture", method="POST")

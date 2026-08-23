@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from typing import Any
 
@@ -16,14 +15,32 @@ from server.models import (
     AttributionReviewPrerequisite,
     HoldingStrategyAttributionReport,
 )
+from server.services.account_strategy_assignment import (
+    ACCOUNT_STRATEGY_ASSIGNMENT_CONTROL_KEY as _CONTROL_KEY,
+)
+from server.services.account_strategy_assignment import (
+    ACCOUNT_STRATEGY_ASSIGNMENT_LIMITATION as _ASSIGNMENT_LIMITATION,
+)
+from server.services.account_strategy_assignment import (
+    account_strategy_assignment_from_payload as _assignment_from_payload,
+)
+from server.services.account_strategy_assignment import (
+    default_account_strategy_assignment as _default_assignment,
+)
+from server.services.account_strategy_evidence import fill_metadata as _fill_metadata
+from server.services.account_strategy_evidence import (
+    linked_strategy_evidence as _linked_strategy_evidence,
+)
+from server.services.account_strategy_evidence import (
+    order_source_signal_id as _order_source_signal_id,
+)
+from server.services.account_strategy_evidence import same_symbol as _same_symbol
+from server.services.account_strategy_evidence import (
+    source_signal_id as _source_signal_id,
+)
 from server.services.strategy_contribution import build_strategy_contribution_report
 
-_CONTROL_KEY = "account_strategy_assignment"
 _ASSIGNMENT_REGISTRY_KEY = "instrument_strategy_assignments"
-_ASSIGNMENT_LIMITATION = (
-    "Strategy assignment is research context; contribution is shown only when "
-    "current signals, reviews, orders, and fills have traceable references."
-)
 _PNL_PENDING_LIMITATION = (
     "P/L contribution is not calculated until fills are reconciled with position "
     "and valuation history."
@@ -32,33 +49,6 @@ _HOLDING_ATTRIBUTION_LIMITATION = (
     "Holding-level strategy attribution is evidence-only until the linked fills "
     "are reviewed against the production ledger and valuation history."
 )
-
-
-def _default_assignment(config: Any) -> AccountStrategyAssignment:
-    strategy_id = str(getattr(config, "strategy", "dual_ma") or "dual_ma")
-    return AccountStrategyAssignment(
-        strategy_id=strategy_id,
-        strategy_name=strategy_id,
-        status="research_only",
-        scope="account",
-        auto_trade_enabled=False,
-        attribution_status="not_started",
-        limitations=[_ASSIGNMENT_LIMITATION],
-    )
-
-
-def _assignment_from_payload(
-    payload: dict[str, Any],
-    *,
-    fallback_config: Any,
-) -> AccountStrategyAssignment:
-    fallback = _default_assignment(fallback_config).model_dump()
-    merged = {**fallback, **payload}
-    merged["auto_trade_enabled"] = False
-    merged.setdefault("limitations", [_ASSIGNMENT_LIMITATION])
-    if not merged.get("limitations"):
-        merged["limitations"] = [_ASSIGNMENT_LIMITATION]
-    return AccountStrategyAssignment(**merged)
 
 
 def _assignment_update_payload(
@@ -162,152 +152,6 @@ def _scoped_assignment_for_symbol(
         if assignment.scope == "symbol" and _same_symbol(assignment.symbol, symbol):
             return assignment
     return None
-
-
-def _json_dict(value: Any) -> dict[str, Any]:
-    if isinstance(value, dict):
-        return value
-    if not isinstance(value, str) or not value.strip():
-        return {}
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
-
-
-def _source_signal_id(value: Any) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _same_symbol(left: Any, right: str) -> bool:
-    return str(left or "").strip().lower() == right.strip().lower()
-
-
-def _assignment_matches_signal(
-    assignment: AccountStrategyAssignment,
-    signal: dict[str, Any],
-) -> bool:
-    if signal.get("strategy_id") != assignment.strategy_id:
-        return False
-    if assignment.scope == "asset_class" and assignment.asset_class:
-        return signal.get("asset_class") == assignment.asset_class
-    if assignment.scope == "symbol" and assignment.symbol:
-        return signal.get("symbol") == assignment.symbol
-    return True
-
-
-def _order_source_signal_id(order: dict[str, Any]) -> int | None:
-    payload = _json_dict(order.get("payload_json"))
-    return _source_signal_id(
-        payload.get("source_signal_id")
-        or payload.get("signal_id")
-        or payload.get("intent", {}).get("source_signal_id")
-    )
-
-
-def _fill_metadata(fill: dict[str, Any]) -> dict[str, Any]:
-    return _json_dict(fill.get("metadata_json"))
-
-
-def _linked_strategy_evidence(
-    db: Any,
-    assignment: AccountStrategyAssignment,
-) -> dict[str, Any]:
-    journal_reader = getattr(db, "list_signal_journal_sync", None)
-    order_reader = getattr(db, "list_orders_sync", None)
-    fill_reader = getattr(db, "list_fills_sync", None)
-
-    journal_entries = (
-        journal_reader(limit=500, offset=0) if callable(journal_reader) else []
-    )
-    strategy_entries = [
-        entry
-        for entry in journal_entries
-        if _assignment_matches_signal(assignment, entry.get("signal") or {})
-    ]
-    signal_ids = {
-        int(entry["signal"]["id"])
-        for entry in strategy_entries
-        if (entry.get("signal") or {}).get("id") is not None
-    }
-    risk_decisions = [
-        entry.get("risk_decision")
-        for entry in strategy_entries
-        if entry.get("risk_decision") is not None
-    ]
-    risk_decision_ids = {
-        str(risk["decision_id"])
-        for risk in risk_decisions
-        if risk and risk.get("decision_id")
-    }
-    intent_ids = {
-        str(risk["intent_id"])
-        for risk in risk_decisions
-        if risk and risk.get("intent_id")
-    }
-
-    all_orders = order_reader(limit=1000, offset=0) if callable(order_reader) else []
-    excluded_simulation_order_ids = {
-        str(order.get("order_id"))
-        for order in all_orders
-        if _is_simulation_order(order)
-    }
-    orders = [order for order in all_orders if not _is_simulation_order(order)]
-    linked_orders = []
-    for order in orders:
-        source_signal_id = _order_source_signal_id(order)
-        if (
-            source_signal_id in signal_ids
-            or order.get("risk_decision_id") in risk_decision_ids
-            or order.get("intent_id") in intent_ids
-        ):
-            linked_orders.append(order)
-    linked_order_ids = {str(order["order_id"]) for order in linked_orders}
-
-    fills = fill_reader(limit=1000, offset=0) if callable(fill_reader) else []
-    linked_fills = []
-    unattributed_fills = []
-    unattributed_fill_count = 0
-    for fill in fills:
-        metadata = _fill_metadata(fill)
-        if str(fill.get("order_id")) in excluded_simulation_order_ids or str(
-            metadata.get("execution_mode") or ""
-        ).lower() in {"paper", "paper_shadow", "shadow", "backtest"}:
-            continue
-        metadata_signal_id = _source_signal_id(
-            metadata.get("source_signal_id") or metadata.get("signal_id")
-        )
-        metadata_strategy_id = metadata.get("strategy_id")
-        order_linked = str(fill.get("order_id")) in linked_order_ids
-        if order_linked or metadata_signal_id in signal_ids:
-            linked_fills.append(fill)
-        elif metadata_strategy_id == assignment.strategy_id:
-            unattributed_fills.append(fill)
-            unattributed_fill_count += 1
-
-    return {
-        "strategy_entries": strategy_entries,
-        "signal_ids": signal_ids,
-        "risk_decisions": risk_decisions,
-        "linked_orders": linked_orders,
-        "linked_fills": linked_fills,
-        "unattributed_fills": unattributed_fills,
-        "unattributed_fill_count": unattributed_fill_count,
-    }
-
-
-def _is_simulation_order(order: dict[str, Any]) -> bool:
-    payload = _json_dict(order.get("payload_json"))
-    execution_mode = str(
-        order.get("execution_mode") or payload.get("execution_mode") or ""
-    ).lower()
-    return execution_mode in {"paper", "paper_shadow", "shadow", "backtest"}
 
 
 def _build_attribution_summary(
@@ -614,7 +458,7 @@ def create_router() -> APIRouter:
     @r.get("", response_model=AccountStrategyAssignment)
     async def get_account_strategy() -> AccountStrategyAssignment:
         """Read the current research-only account strategy assignment."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         db = getattr(state, "db", None)
@@ -627,7 +471,7 @@ def create_router() -> APIRouter:
     @r.get("/assignments", response_model=list[AccountStrategyAssignment])
     async def list_account_strategy_assignments() -> list[AccountStrategyAssignment]:
         """List symbol/asset-class strategy assignments for research context."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         db = getattr(state, "db", None)
@@ -641,7 +485,7 @@ def create_router() -> APIRouter:
     @r.get("/attribution", response_model=AccountStrategyAttributionSummary)
     async def get_account_strategy_attribution() -> AccountStrategyAttributionSummary:
         """Summarize attribution evidence without mutating account facts."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         db = getattr(state, "db", None)
@@ -657,7 +501,7 @@ def create_router() -> APIRouter:
     @r.get("/contribution", response_model=AccountStrategyContributionReport)
     async def get_account_strategy_contribution() -> AccountStrategyContributionReport:
         """Estimate strategy contribution from linked fills without mutating facts."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         db = getattr(state, "db", None)
@@ -678,7 +522,7 @@ def create_router() -> APIRouter:
         symbol: str,
     ) -> HoldingStrategyAttributionReport:
         """Read symbol-filtered strategy attribution evidence without mutation."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         db = getattr(state, "db", None)
@@ -708,7 +552,7 @@ def create_router() -> APIRouter:
         update: AccountStrategyAssignmentUpdate,
     ) -> AccountStrategyAssignment:
         """Persist a research-only account strategy assignment."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         payload = _assignment_update_payload(update)
@@ -723,7 +567,7 @@ def create_router() -> APIRouter:
         update: AccountStrategyAssignmentUpdate,
     ) -> AccountStrategyAssignment:
         """Persist a scoped research-only strategy assignment."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         _validate_scoped_assignment(update)
         state = get_app_state()

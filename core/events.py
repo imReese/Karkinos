@@ -98,7 +98,12 @@ class OrderEvent(Event):
 
 @dataclass(frozen=True)
 class FillEvent(Event):
-    """成交回报事件。"""
+    """成交回报事件。
+
+    ``commission`` is the legacy field name for the fill's complete trading
+    fee. When present, ``fee_breakdown.total_fee`` is the authoritative
+    structured value and consumers must not add its components a second time.
+    """
 
     fill_id: str
     order_id: str

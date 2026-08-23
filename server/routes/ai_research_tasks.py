@@ -145,7 +145,7 @@ def build_human_research_task_service(
 
 
 def _service(*, initialize: bool) -> HumanResearchTaskService:
-    from server.app import get_app_state
+    from server.dependencies import get_app_state
 
     state = get_app_state()
     if state.db is None:

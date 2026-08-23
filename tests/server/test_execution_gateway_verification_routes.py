@@ -191,7 +191,7 @@ def test_execution_gateway_verification_service_uses_runtime_registry(
 ) -> None:
     gateway = object()
     fake_state = SimpleNamespace(db=object(), execution_gateways=[gateway])
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     service = route_module._service()
 

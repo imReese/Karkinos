@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from typing import Callable
+from typing import Callable, TypeVar, cast
 
 from core.events import Event
 
@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 # 回调签名
 Handler = Callable[[Event], None]
+EventT = TypeVar("EventT", bound=Event)
 
 
 class EventBus:
@@ -30,22 +31,27 @@ class EventBus:
 
     def subscribe(
         self,
-        event_type: type[Event],
-        handler: Handler,
+        event_type: type[EventT],
+        handler: Callable[[EventT], None],
         priority: int = 0,
     ) -> None:
         """订阅事件。priority 越小越先执行。"""
-        self._handlers[event_type].append((priority, handler))
+        self._handlers[event_type].append((priority, cast(Handler, handler)))
         self._handlers[event_type].sort(key=lambda x: x[0])
 
     def unsubscribe(
         self,
-        event_type: type[Event],
-        handler: Handler,
+        event_type: type[EventT],
+        handler: Callable[[EventT], None],
     ) -> None:
         """取消订阅。"""
         entries = self._handlers.get(event_type, [])
-        self._handlers[event_type] = [(p, h) for p, h in entries if h != handler]
+        stored_handler = cast(Handler, handler)
+        self._handlers[event_type] = [
+            (priority, registered)
+            for priority, registered in entries
+            if registered != stored_handler
+        ]
 
     # ---------- 发布 ----------
 

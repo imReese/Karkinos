@@ -40,7 +40,7 @@ def create_router() -> APIRouter:
     async def run_provider_connectivity_check(
         payload: HumanProviderConnectivityCheckPayload,
     ) -> JSONResponse:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         if state.db is None:

@@ -6,7 +6,7 @@ import os
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 
-from server.config_contract import SUPPORTED_NOTIFICATION_TYPES
+from notification.contracts import SUPPORTED_NOTIFICATION_TYPES
 
 
 class Notifier(ABC):

@@ -36,10 +36,9 @@ const globalStyles = readFileSync(
   resolve(SRC_ROOT, 'styles/globals.css'),
   'utf8',
 );
-const routerSource = readFileSync(resolve(SRC_ROOT, 'app/router.tsx'), 'utf8');
-const portfolioPageSource = routerSource.slice(
-  routerSource.indexOf('export function PortfolioPage()'),
-  routerSource.indexOf('export function RiskPage()'),
+const portfolioPageSource = readFileSync(
+  resolve(SRC_ROOT, 'features/portfolio/pages/portfolio-page.tsx'),
+  'utf8',
 );
 const portfolioInitialLoadingSource = portfolioPageSource.slice(
   portfolioPageSource.indexOf('if (isInitialPortfolioLoad)'),

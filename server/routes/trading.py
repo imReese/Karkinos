@@ -51,13 +51,13 @@ def create_router() -> APIRouter:
 
     @r.get("/kill-switch", response_model=TradingControlSnapshot)
     async def get_kill_switch() -> TradingControlSnapshot:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         return get_app_state().trading_controls.snapshot()
 
     @r.put("/kill-switch", response_model=TradingControlSnapshot)
     async def set_kill_switch(payload: KillSwitchRequest) -> TradingControlSnapshot:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         snapshot = state.trading_controls.set_kill_switch(
@@ -78,7 +78,7 @@ def create_router() -> APIRouter:
 
     @r.get("/orders")
     async def list_manual_orders(status: str | None = None) -> list[dict]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         return state.db.list_manual_orders_sync(status=status)
@@ -88,7 +88,7 @@ def create_router() -> APIRouter:
         action_id: int,
         payload: ActionManualOrderRequest,
     ) -> dict:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         if payload.quantity <= 0:
             raise HTTPException(status_code=400, detail="quantity must be positive")
@@ -183,7 +183,7 @@ def create_router() -> APIRouter:
     async def run_daily_shadow_orders(
         payload: ShadowRunRequest | None = None,
     ) -> dict:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
         from server.routes.decision import (
             _decision_portfolio_context,
             _today_decision_payload,
@@ -243,7 +243,7 @@ def create_router() -> APIRouter:
         limit: int = 100,
         offset: int = 0,
     ) -> list[dict]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         return state.db.list_orders_sync(
@@ -260,7 +260,7 @@ def create_router() -> APIRouter:
         limit: int = 100,
         offset: int = 0,
     ) -> list[dict]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         return state.db.list_fills_sync(
@@ -275,7 +275,7 @@ def create_router() -> APIRouter:
         order_id: str,
         payload: ShadowDivergenceReviewRequest,
     ) -> dict:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         order = state.db.get_order_sync(order_id)
@@ -300,7 +300,7 @@ def create_router() -> APIRouter:
 
     @r.post("/orders/{order_id}/confirm")
     async def confirm_manual_order(order_id: str) -> dict:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         current = state.db.get_manual_order_sync(order_id)
@@ -354,7 +354,7 @@ def create_router() -> APIRouter:
 
     @r.post("/orders/{order_id}/reject")
     async def reject_manual_order(order_id: str, payload: OrderRejectRequest) -> dict:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         updated = state.db.update_manual_order_status_sync(

@@ -50,7 +50,7 @@ def _client_for_db(
             else trading_controls
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "server.routes.broker_gateway.build_current_per_order_dossier_service",
         lambda _state: SimpleNamespace(

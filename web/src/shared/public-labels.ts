@@ -1,4 +1,4 @@
-import type { Locale } from '../app/preferences';
+import type { Locale } from './locale';
 
 type LabelMap = Record<string, string>;
 

@@ -103,7 +103,7 @@ def test_decision_batch_pre_trade_risk_route_runs_without_creating_orders(
         trading_controls=TradingControlState(db=db),
         scheduler=SimpleNamespace(portfolio=None, instruments={}),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     endpoint = _route(
         decision_routes.create_router(),
         "/api/decision/pre-trade-risk/batch",
@@ -142,7 +142,7 @@ def test_decision_batch_pre_trade_risk_route_applies_cash_bounded_allocation(
         trading_controls=TradingControlState(db=db),
         scheduler=SimpleNamespace(portfolio=portfolio),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     endpoint = _route(
         decision_routes.create_router(),
@@ -199,7 +199,7 @@ def test_decision_batch_pre_trade_risk_promotes_ready_trading_plan(
         trading_controls=TradingControlState(db=db),
         scheduler=scheduler,
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         decision_routes,
         "_account_truth_gate_evidence",
@@ -307,7 +307,7 @@ def test_decision_batch_pre_trade_risk_blocks_unconfirmed_fund_without_writes(
         trading_controls=TradingControlState(db=db),
         scheduler=SimpleNamespace(portfolio=None, instruments={}),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     endpoint = _route(
         decision_routes.create_router(),
         "/api/decision/pre-trade-risk/batch",

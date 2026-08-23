@@ -42,7 +42,7 @@ def _client_for_db(monkeypatch, db: AppDatabase) -> TestClient:
         db=db,
         config=SimpleNamespace(data_source="akshare", tushare_token=""),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     app = FastAPI()
     app.include_router(create_router())
     return TestClient(app)

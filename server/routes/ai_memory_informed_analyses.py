@@ -133,7 +133,7 @@ def build_human_memory_informed_analysis_service(
 
 
 def _service(*, initialize: bool) -> HumanMemoryInformedFixtureAnalysisService:
-    from server.app import get_app_state
+    from server.dependencies import get_app_state
 
     state = get_app_state()
     if state.db is None:

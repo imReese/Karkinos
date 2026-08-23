@@ -640,7 +640,7 @@ def test_route_service_is_default_closed_without_injected_release_provider(
         execution_gateways=[gateway],
         trading_controls=object(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
     monkeypatch.setattr(
         "server.routes.per_order_confirmation._service",
         lambda: per_order,
@@ -665,7 +665,7 @@ def test_cancellation_route_service_is_default_closed_without_release_provider(
         config=SimpleNamespace(trusted_operator_identities=[]),
         execution_gateways=[gateway],
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
 
     service = route_module._controlled_cancellation_service()
 

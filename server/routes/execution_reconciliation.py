@@ -65,7 +65,7 @@ def create_router() -> APIRouter:
         limit: int = Query(default=50, ge=1, le=200),
         offset: int = Query(default=0, ge=0),
     ) -> list[dict[str, Any]]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         return [
             _project_execution_reconciliation_run(run)
@@ -77,7 +77,7 @@ def create_router() -> APIRouter:
 
     @r.get("/runs/{run_id}")
     async def get_execution_reconciliation_run(run_id: str) -> dict[str, Any]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         db = get_app_state().db
         run = db.get_execution_reconciliation_run_sync(run_id)
@@ -141,13 +141,13 @@ def create_router() -> APIRouter:
 
 
 def _service() -> ExecutionReconciliationService:
-    from server.app import get_app_state
+    from server.dependencies import get_app_state
 
     return ExecutionReconciliationService(db=get_app_state().db)
 
 
 def _batch_service() -> ExecutionBatchReconciliationService:
-    from server.app import get_app_state
+    from server.dependencies import get_app_state
 
     return ExecutionBatchReconciliationService(db=get_app_state().db)
 
