@@ -48,6 +48,12 @@ capital authority. A candidate is not a promise of profit.
    rather than the historical signal price, and binds that quote's positive
    price, source, aware timestamp, and age at decision. The quote must be on the
    same market date and no more than 300 seconds old.
+   Before recommendation tasks are written, the promoted strategy must also
+   replay the complete receipt-bound stock universe on the previous verified
+   close. Current stock holdings use a separate exit lane; funds and ETFs never
+   become strategy candidates. The run refreshes only selected new-buy symbols,
+   rebuilds Account Truth, and repeats the scan. The two signal-selection
+   fingerprints must match exactly.
 4. The account-specific reviewed fee schedule covers the action date and every
    order intent resolves a non-negative fee from that schedule.
 5. Pre-trade risk is passed and bound by one exact risk decision per intent.
@@ -77,9 +83,14 @@ unreproducible evidence produces `no_action`.
    supplied plan, price, quantity, account balance, or strategy fingerprint.
    The Web disables its manual run control outside that window; a direct API
    call outside it persists only a named `no_action` result and cannot qualify.
-4. Karkinos rebuilds Decision and the trading plan, runs the canonical batch
-   risk gate, persists one deterministic paper/shadow simulation, then rebuilds
-   the plan again before resolving the production outcome.
+4. Karkinos previews the promoted strategy over the complete frozen stock pool
+   without writing signals, refreshes and audits selected buy quotes, rebuilds
+   Account Truth, and repeats the scan. Only an unchanged selection may become
+   persisted recommendation tasks. It then rebuilds Decision and the trading
+   plan, runs the canonical batch risk gate, persists one deterministic
+   paper/shadow simulation, and rebuilds the plan again before resolving the
+   production outcome. A complete scan with no entry or exit signal is a normal
+   deterministic `no_action`, not a missing-strategy blocker.
 5. If the result is `no_action`, resolve only the named evidence source for the
    next clean market date. A manual same-day rerun remains auditable; if its
    input fingerprint differs, that date is excluded from the trial. Do not edit

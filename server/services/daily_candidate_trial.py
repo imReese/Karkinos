@@ -1019,6 +1019,12 @@ class DailyCandidateTrialService:
             "simulated_order_count": (
                 int(paper.get("simulated_order_count") or 0) if not blockers else 0
             ),
+            "manual_order_ticket_candidates": (
+                ticket_candidates if not blockers else []
+            ),
+            "production_record_fingerprint": (
+                record_fingerprint if not blockers else None
+            ),
             "strategy_advancement_refs": advancement_refs,
             "reviewed_fee_schedule_refs": fee_schedule_refs,
             "strategy_operating_constraint_refs": sorted(

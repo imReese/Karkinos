@@ -19,6 +19,77 @@ def test_tushare_bars_capability_is_stock_daily_only():
     assert source.supports_bars(AssetClass.STOCK, BarFrequency.MIN_1) is False
 
 
+def test_tushare_fetches_one_full_market_daily_cross_section(monkeypatch):
+    calls: dict[str, object] = {}
+
+    class FakePro:
+        def daily(self, *, trade_date):
+            calls["trade_date"] = trade_date
+            return pd.DataFrame(
+                {
+                    "ts_code": ["600001.SH", "000001.SZ", "430001.BJ"],
+                    "trade_date": [trade_date] * 3,
+                    "open": [10.0, 20.0, 30.0],
+                    "high": [10.2, 20.2, 30.2],
+                    "low": [9.8, 19.8, 29.8],
+                    "close": [10.1, 20.1, 30.1],
+                    "vol": [100.0, 200.0, 300.0],
+                    "amount": [1_000.0, 4_000.0, 9_000.0],
+                }
+            )
+
+    monkeypatch.setattr(TushareSource, "_get_pro", lambda self: FakePro())
+
+    frame = TushareSource(token="token-1234").fetch_market_daily_bars("2026-08-21")
+
+    assert calls["trade_date"] == "20260821"
+    assert frame["symbol"].tolist() == ["600001", "000001", "430001"]
+    assert frame["timestamp"].dt.date.astype(str).unique().tolist() == ["2026-08-21"]
+    assert frame["volume"].tolist() == [100.0, 200.0, 300.0]
+
+
+def test_tushare_fetch_bars_uses_beijing_exchange_symbol(monkeypatch):
+    calls: dict[str, object] = {}
+
+    class FakePro:
+        def daily(self, *, ts_code, start_date, end_date):
+            calls.update(
+                ts_code=ts_code,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            return pd.DataFrame(
+                {
+                    "trade_date": ["20260821"],
+                    "open": [10.0],
+                    "high": [10.2],
+                    "low": [9.8],
+                    "close": [10.1],
+                    "vol": [100.0],
+                    "amount": [1010.0],
+                }
+            )
+
+    monkeypatch.setattr(TushareSource, "_get_pro", lambda self: FakePro())
+
+    frame = TushareSource(token="token-1234").fetch_bars(
+        Symbol("430001"),
+        pd.Timestamp("2026-08-01").to_pydatetime(),
+        pd.Timestamp("2026-08-21").to_pydatetime(),
+    )
+
+    assert calls == {
+        "ts_code": "430001.BJ",
+        "start_date": "20260801",
+        "end_date": "20260821",
+    }
+    assert frame.iloc[0]["close"] == 10.1
+
+
+def test_tushare_maps_new_beijing_92_prefix_to_bj_exchange() -> None:
+    assert TushareSource._stock_ts_code(Symbol("920001")) == "920001.BJ"
+
+
 def test_tushare_fetch_latest_stock_uses_realtime_quote(monkeypatch):
     calls: dict[str, object] = {}
 

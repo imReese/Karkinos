@@ -490,6 +490,8 @@ def test_daily_candidate_trial_requires_20_days_and_50_orders(tmp_path) -> None:
         "manual_order_ticket_candidate"
     )
     assert ready["latest_daily_run"]["run_date"] == days[19]
+    assert len(ready["latest_daily_run"]["manual_order_ticket_candidates"]) == 3
+    assert len(ready["latest_daily_run"]["production_record_fingerprint"]) == 64
     assert ready["does_not_establish_future_profitability"] is True
     assert ready["automatic_order_submission_enabled"] is False
     assert ready["automatic_capital_scaling_enabled"] is False

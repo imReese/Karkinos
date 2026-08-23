@@ -68,6 +68,7 @@ from server.services.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactStore,
     build_daily_strategy_promotion_binding,
 )
+from server.services.market_universe_automation import verified_trading_dates
 from server.services.market_universe_truth import (
     MarketUniversePolicy,
     MarketUniverseRejected,
@@ -3678,13 +3679,53 @@ class AiShadowResearchAutomationService:
             config.get("initial_cash") or seed.get("initial_cash") or 0
         )
         market_universe_snapshot = self._data_store.get_market_universe_snapshot()
+        market_date = str((market_universe_snapshot or {}).get("trade_date") or "")
+        provider_name = str((market_universe_snapshot or {}).get("provider_name") or "")
         try:
+            ingestion_run = self._db.get_automation_run_sync(
+                f"market_universe_sync:v2:{provider_name}:{market_date}"
+            )
+            ingestion_payload = _json_object(
+                ingestion_run.get("payload_json") if ingestion_run else None
+            )
+            if (
+                not ingestion_run
+                or ingestion_run.get("status") != "completed"
+                or ingestion_payload.get("schema_version")
+                != "karkinos.market_universe_automation.v2"
+                or ingestion_payload.get("market_universe_snapshot_id")
+                != (market_universe_snapshot or {}).get("snapshot_id")
+                or ingestion_payload.get("full_market_history_frozen") is not True
+            ):
+                raise MarketUniverseRejected(
+                    "full_market_universe_ingestion_not_complete"
+                )
+            trading_dates = verified_trading_dates(
+                self._db,
+                start_date=start_date,
+                end_date=market_date,
+            )
+            receipts = self._data_store.list_market_daily_ingestion_receipts(
+                start_date=start_date,
+                end_date=market_date,
+                provider_name=provider_name,
+            )
+            if [str(item.get("trade_date") or "") for item in receipts] != (
+                trading_dates
+            ):
+                raise MarketUniverseRejected(
+                    "full_market_daily_receipt_coverage_incomplete"
+                )
             market_universe_truth = build_market_universe_truth(
                 data_store=self._data_store,
                 snapshot=market_universe_snapshot or {},
                 start_date=start_date,
-                end_date=str((market_universe_snapshot or {}).get("trade_date") or ""),
+                end_date=market_date,
                 initial_cash=initial_cash,
+                receipt_fingerprints=[
+                    str(item.get("receipt_fingerprint") or "") for item in receipts
+                ],
+                required_trading_date_count=len(trading_dates),
                 policy=MarketUniversePolicy(),
             )
         except MarketUniverseRejected as exc:

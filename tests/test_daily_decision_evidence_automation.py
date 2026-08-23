@@ -355,6 +355,52 @@ def test_financial_preflight_opens_only_risk_and_paper_shadow_attempt() -> None:
     assert result["profitability_claim"] == "not_established"
 
 
+def test_financial_preflight_treats_complete_scan_without_signal_as_normal() -> None:
+    inputs = _financial_preflight_inputs()
+    decision = inputs["decision_payload"]
+    decision["candidates"] = []
+    decision["summary"]["candidate_count"] = 0
+    decision["summary"]["promoted_strategy_universe_scan"] = {
+        "schema_version": "karkinos.promoted_strategy_universe_scan.v1",
+        "status": "completed_no_signal",
+        "normal_no_signal": True,
+        "blockers": [],
+    }
+
+    result = project_daily_candidate_financial_preflight(**inputs)
+
+    assert result["status"] == "ready_to_record_deterministic_no_action"
+    assert result["financial_gate_status"] == "pass"
+    assert result["normal_no_signal"] is True
+    assert result["eligible_candidate_count"] == 0
+    assert (
+        "daily_candidate_strategy_candidate_missing" not in result["financial_blockers"]
+    )
+    assert result["next_safe_action"] == "record_full_market_scan_no_action"
+
+
+def test_financial_preflight_surfaces_exact_full_market_scan_blocker() -> None:
+    inputs = _financial_preflight_inputs()
+    decision = inputs["decision_payload"]
+    decision["candidates"] = []
+    decision["summary"]["candidate_count"] = 0
+    decision["summary"]["promoted_strategy_universe_scan"] = {
+        "schema_version": "karkinos.promoted_strategy_universe_scan.v1",
+        "status": "blocked",
+        "normal_no_signal": False,
+        "blockers": ["full_market_daily_receipt_coverage_incomplete"],
+    }
+
+    result = project_daily_candidate_financial_preflight(**inputs)
+
+    assert result["status"] == "no_action"
+    assert result["financial_gate_status"] == "blocked"
+    assert (
+        "promoted_strategy_universe_scan:"
+        "full_market_daily_receipt_coverage_incomplete"
+    ) in result["financial_blockers"]
+
+
 def test_financial_preflight_rejects_non_stock_daily_candidate() -> None:
     inputs = _financial_preflight_inputs()
     inputs["decision_payload"]["candidates"][0]["asset_class"] = "etf"

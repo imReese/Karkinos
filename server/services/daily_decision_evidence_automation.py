@@ -656,10 +656,88 @@ def build_daily_decision_evidence_automation_service(
 ) -> DailyDecisionEvidenceAutomationService:
     """Bind the canonical route adapters to the background evidence service."""
     from server.routes.decision import run_batch_pre_trade_risk_for_state
+    from server.routes.market import _refresh_one_quote
     from server.routes.operations import _current_decision_and_trading_plan
+    from server.services.daily_candidate_quote_freeze import (
+        DailyCandidateQuoteFreezeService,
+    )
+    from server.services.promoted_strategy_universe_scan import (
+        PromotedStrategyUniverseScanService,
+    )
+
+    automation_controls = AutomationControlService(
+        db=state.db,
+        trading_controls=state.trading_controls,
+    )
+    runtime_config = getattr(state, "config", None)
+    scanner = PromotedStrategyUniverseScanService(
+        db=state.db,
+        config=runtime_config,
+        safety_gate_reader=automation_controls.get_status,
+    )
+    quote_freezer = DailyCandidateQuoteFreezeService(
+        db=state.db,
+        state=state,
+        quote_refresher=_refresh_one_quote,
+    )
+    scan_cache: dict[tuple[object, ...], dict[str, Any]] = {}
 
     async def read_plan() -> tuple[dict[str, Any], dict[str, Any]]:
-        return await _current_decision_and_trading_plan(state)
+        decision, trading_plan = await _current_decision_and_trading_plan(state)
+        decision_date = str(decision.get("decision_date") or "")
+        plan_date = str(trading_plan.get("plan_date") or "")
+        if decision_date and decision_date == plan_date:
+            portfolio = _object_dict(
+                _object_dict(decision.get("summary")).get("portfolio")
+            )
+            cache_key = _promoted_scan_cache_key(decision_date, portfolio)
+            cached = scan_cache.get(cache_key)
+            if cached is None:
+                prepared = await asyncio.to_thread(
+                    scanner.run_once,
+                    decision_date=decision_date,
+                    portfolio_summary=portfolio,
+                    persist_actions=False,
+                )
+                quote_freeze = await quote_freezer.run_once(prepared)
+                decision, trading_plan = await _current_decision_and_trading_plan(state)
+                final_portfolio = _object_dict(
+                    _object_dict(decision.get("summary")).get("portfolio")
+                )
+                quote_blockers = [
+                    f"daily_candidate_quote_freeze:{item}"
+                    for item in quote_freeze.get("blockers") or []
+                ]
+                final_scan = await asyncio.to_thread(
+                    scanner.run_once,
+                    decision_date=decision_date,
+                    portfolio_summary=final_portfolio,
+                    expected_signal_selection_fingerprint=prepared.get(
+                        "signal_selection_fingerprint"
+                    ),
+                    additional_blockers=quote_blockers,
+                )
+                decision, trading_plan = await _current_decision_and_trading_plan(state)
+                cached = {
+                    "scan": final_scan,
+                    "quote_freeze": quote_freeze,
+                }
+                if final_scan.get("status") in {
+                    "completed",
+                    "completed_no_signal",
+                }:
+                    final_portfolio = _object_dict(
+                        _object_dict(decision.get("summary")).get("portfolio")
+                    )
+                    scan_cache[
+                        _promoted_scan_cache_key(decision_date, final_portfolio)
+                    ] = cached
+            decision = _bind_promoted_strategy_scan(
+                decision,
+                cached["scan"],
+                quote_freeze=cached["quote_freeze"],
+            )
+        return decision, trading_plan
 
     async def run_risk() -> dict[str, Any]:
         return await run_batch_pre_trade_risk_for_state(state)
@@ -670,6 +748,76 @@ def build_daily_decision_evidence_automation_service(
         notifier=state.notifier,
         plan_reader=read_plan,
         risk_runner=run_risk,
+    )
+
+
+def _bind_promoted_strategy_scan(
+    decision_payload: dict[str, Any],
+    scan: dict[str, Any],
+    *,
+    quote_freeze: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Attach one persisted scanner projection to the in-memory decision read."""
+
+    decision = dict(decision_payload)
+    summary = _object_dict(decision.get("summary"))
+    status = str(scan.get("status") or "blocked")
+    blockers = [str(item) for item in scan.get("blockers") or [] if str(item)]
+    summary["promoted_strategy_universe_scan"] = {
+        "schema_version": scan.get("schema_version"),
+        "run_id": scan.get("run_id"),
+        "status": status,
+        "decision_date": scan.get("decision_date"),
+        "market_date": scan.get("market_date"),
+        "input_fingerprint": scan.get("input_fingerprint"),
+        "output_fingerprint": scan.get("output_fingerprint"),
+        "active_strategy_count": len(scan.get("strategy_bindings") or []),
+        "selected_signal_count": int(scan.get("selected_signal_count") or 0),
+        "normal_no_signal": scan.get("normal_no_signal") is True,
+        "blockers": blockers,
+        "provider_contact_performed": False,
+        "creates_oms_order": False,
+        "submits_broker_order": False,
+        "changes_capital_authority": False,
+    }
+    if quote_freeze is not None:
+        summary["daily_candidate_quote_freeze"] = {
+            "schema_version": quote_freeze.get("schema_version"),
+            "run_id": quote_freeze.get("run_id"),
+            "status": quote_freeze.get("status"),
+            "decision_date": quote_freeze.get("decision_date"),
+            "symbols": list(quote_freeze.get("symbols") or []),
+            "blockers": list(quote_freeze.get("blockers") or []),
+            "provider_contact_performed": quote_freeze.get("provider_contact_performed")
+            is True,
+            "creates_oms_order": False,
+            "submits_broker_order": False,
+            "changes_capital_authority": False,
+        }
+    decision["summary"] = summary
+    if not _object_list(decision.get("candidates")):
+        if status == "completed_no_signal":
+            decision["no_action_reasons"] = [
+                "full_market_scan_completed_without_strategy_signal"
+            ]
+        elif blockers:
+            decision["no_action_reasons"] = [
+                f"promoted_strategy_universe_scan:{item}" for item in blockers
+            ]
+    return decision
+
+
+def _promoted_scan_cache_key(
+    decision_date: str,
+    portfolio: dict[str, Any],
+) -> tuple[object, ...]:
+    return (
+        decision_date,
+        portfolio.get("valuation_snapshot_id"),
+        portfolio.get("ledger_cutoff_id"),
+        portfolio.get("ledger_fingerprint"),
+        portfolio.get("quote_set_fingerprint"),
+        portfolio.get("total_equity"),
     )
 
 
@@ -1925,6 +2073,16 @@ def _daily_candidate_base_gate(
         decision_plan_blockers.append("daily_trading_plan_contract_invalid")
 
     summary = _object_dict(decision_payload.get("summary"))
+    promoted_scan = _object_dict(summary.get("promoted_strategy_universe_scan"))
+    if promoted_scan and promoted_scan.get("status") == "blocked":
+        scan_blockers = [
+            str(item) for item in promoted_scan.get("blockers") or [] if str(item)
+        ]
+        decision_plan_blockers.extend(
+            f"promoted_strategy_universe_scan:{item}" for item in scan_blockers
+        )
+        if not scan_blockers:
+            decision_plan_blockers.append("promoted_strategy_universe_scan_blocked")
     portfolio = _object_dict(summary.get("portfolio"))
     valuation_snapshot_id = str(portfolio.get("valuation_snapshot_id") or "")
     ledger_cutoff_id = _positive_int(portfolio.get("ledger_cutoff_id"))
@@ -2118,8 +2276,29 @@ def project_daily_candidate_financial_preflight(
         active_fee_review.get("review_fingerprint") or ""
     )
     candidates = _object_list(decision_payload.get("candidates"))
+    promoted_scan = _object_dict(
+        _object_dict(decision_payload.get("summary")).get(
+            "promoted_strategy_universe_scan"
+        )
+    )
+    normal_no_signal = bool(
+        not candidates
+        and promoted_scan.get("status") == "completed_no_signal"
+        and promoted_scan.get("normal_no_signal") is True
+        and not promoted_scan.get("blockers")
+    )
     if not candidates:
-        strategy_blockers.append("daily_candidate_strategy_candidate_missing")
+        if promoted_scan.get("status") == "blocked":
+            scan_blockers = [
+                str(item) for item in promoted_scan.get("blockers") or [] if str(item)
+            ]
+            strategy_blockers.extend(
+                f"promoted_strategy_universe_scan:{item}" for item in scan_blockers
+            )
+            if not scan_blockers:
+                strategy_blockers.append("promoted_strategy_universe_scan_blocked")
+        elif not normal_no_signal:
+            strategy_blockers.append("daily_candidate_strategy_candidate_missing")
     for index, candidate in enumerate(candidates):
         candidate_blockers: list[str] = []
         if str(candidate.get("asset_class") or "").strip().lower() != "stock":
@@ -2282,11 +2461,27 @@ def project_daily_candidate_financial_preflight(
     no_action_reasons = list(dict.fromkeys(no_action_reasons))
 
     if background_ready:
-        status = "ready_for_paper_shadow_attempt"
-        next_safe_action = "allow_single_claimed_fail_closed_background_attempt"
+        status = (
+            "ready_to_record_deterministic_no_action"
+            if normal_no_signal
+            else "ready_for_paper_shadow_attempt"
+        )
+        next_safe_action = (
+            "record_full_market_scan_no_action"
+            if normal_no_signal
+            else "allow_single_claimed_fail_closed_background_attempt"
+        )
     elif manual_ready:
-        status = "ready_for_manual_paper_shadow_attempt"
-        next_safe_action = "start_one_canonical_daily_candidate_attempt"
+        status = (
+            "ready_to_record_deterministic_no_action"
+            if normal_no_signal
+            else "ready_for_manual_paper_shadow_attempt"
+        )
+        next_safe_action = (
+            "record_full_market_scan_no_action"
+            if normal_no_signal
+            else "start_one_canonical_daily_candidate_attempt"
+        )
     elif financial_blockers:
         status = "no_action"
         next_safe_action = "resolve_named_financial_blockers_before_next_window"
@@ -2318,6 +2513,7 @@ def project_daily_candidate_financial_preflight(
         "financial_gate_status": "pass" if financial_clear else "blocked",
         "operational_gate_status": "pass" if not runtime_blockers else "blocked",
         "eligible_candidate_count": eligible_candidate_count,
+        "normal_no_signal": normal_no_signal,
         "eligible_to_start_manual_attempt": manual_ready,
         "eligible_for_background_attempt": background_ready,
         "eligible_to_create_manual_ticket": False,
@@ -3053,10 +3249,15 @@ def _production_outcome(
         if gate_status == "pass" and candidate_count > 0
         else "no_action"
     )
+    decision_no_action_reasons = [
+        str(item)
+        for item in decision_payload.get("no_action_reasons") or []
+        if str(item)
+    ]
     no_action_reasons = (
         []
         if decision_outcome == "manual_order_ticket_candidate"
-        else blockers or ["no_strategy_action"]
+        else blockers or decision_no_action_reasons or ["no_strategy_action"]
     )
     account_truth_binding = {
         "schema_version": "karkinos.daily_candidate_account_truth_binding.v2",
