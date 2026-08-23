@@ -12,6 +12,8 @@ from typing import Any, Mapping
 
 import pandas as pd
 
+from data.store import _build_bar_diagnostics
+
 logger = logging.getLogger(__name__)
 
 
@@ -202,9 +204,13 @@ def build_backtest_dataset_snapshot(
         meta = _safe_store_meta(store, symbol, frequency)
         metadata_available = metadata_available or bool(meta)
         attrs = _handler_attrs(handler)
-        diagnostics = meta.get("diagnostics")
-        if not isinstance(diagnostics, dict):
-            diagnostics = {}
+        source_diagnostics = meta.get("diagnostics")
+        if not isinstance(source_diagnostics, dict):
+            source_diagnostics = {}
+        frame = _handler_dataframe(handler)
+        diagnostics = (
+            _build_bar_diagnostics(frame) if isinstance(frame, pd.DataFrame) else {}
+        )
         row_count = _handler_row_count(handler)
         first_timestamp, last_timestamp = _handler_timestamp_bounds(handler)
         content_digest = _handler_content_digest(handler)
@@ -245,6 +251,8 @@ def build_backtest_dataset_snapshot(
                 "adjustment_mode": adjustment_mode,
                 "source_dataset_id": meta.get("dataset_id") or attrs.get("dataset_id"),
                 "content_digest": content_digest,
+                "consumed_frame_diagnostics": diagnostics,
+                "source_diagnostics": source_diagnostics,
                 "data_quality": quality,
             }
         )
