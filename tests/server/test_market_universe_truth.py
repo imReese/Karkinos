@@ -177,3 +177,35 @@ def test_market_universe_rejects_previous_day_or_short_history(tmp_path) -> None
             end_date="2026-08-21",
             initial_cash=100_000,
         )
+
+
+def test_research_panel_hard_filters_the_full_stock_directory(tmp_path) -> None:
+    store = DataStore(tmp_path / "market")
+    snapshot = _snapshot(store)
+    policy = MarketUniversePolicy()
+    preliminary = set(preliminary_research_panel_symbols(snapshot, policy=policy))
+    eligible_outside_preliminary = [
+        symbol for symbol in _symbols() if symbol not in preliminary
+    ][:40]
+    for symbol in eligible_outside_preliminary:
+        store.save_bars(
+            Symbol(symbol),
+            BarFrequency.DAILY,
+            _bars(),
+            provider_name="unit_fixture",
+            data_source="unit_fixture",
+            adjustment_mode="none",
+        )
+
+    result = build_market_universe_truth(
+        data_store=store,
+        snapshot=snapshot,
+        start_date="2026-04-01",
+        end_date="2026-08-21",
+        initial_cash=100_000,
+        policy=policy,
+    )
+
+    assert result["research_screened_stock_count"] == 1_000
+    assert result["research_eligible_count"] == 40
+    assert set(result["research_panel"]["symbols"]) == set(eligible_outside_preliminary)

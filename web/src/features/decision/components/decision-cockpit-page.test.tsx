@@ -426,6 +426,7 @@ const decisionQualityResponse: DecisionQualityView = {
 function installDecisionFetchMock({
   todayResponse = dailyDecision,
   intradayResponse = intradayDecision,
+  persistedManualTicketCandidates = [],
   tradingPlanResponse = {
     schema_version: 'karkinos.daily_trading_plan.v1',
     plan_date: '2026-06-12',
@@ -678,6 +679,8 @@ function installDecisionFetchMock({
         run_id: 'daily-candidate:2026-06-12:fixture',
         decision_outcome: 'manual_order_ticket_candidate',
         simulated_order_count: 2,
+        manual_order_ticket_candidates: persistedManualTicketCandidates,
+        production_record_fingerprint: 'c'.repeat(64),
         blockers: [],
       },
       current_execution_evidence: {
@@ -1065,6 +1068,7 @@ function installDecisionFetchMock({
 }: {
   todayResponse?: DecisionResponse;
   intradayResponse?: DecisionResponse;
+  persistedManualTicketCandidates?: unknown[];
   tradingPlanResponse?: unknown;
   operationsTodayResponse?: unknown;
   automationCockpitResponse?: unknown;
@@ -3194,6 +3198,48 @@ test('renders a read-only manual ticket candidate without execution authority', 
   expect(tickets.textContent).toContain(
     'Anti-lookahead assumptions: Signals use closed persisted bars only.',
   );
+  expect(tickets.textContent).toContain(
+    'no OMS order, broker submission, or capital expansion is authorized',
+  );
+});
+
+test('reloads a persisted manual ticket candidate from the latest daily run', async () => {
+  renderDecisionCockpit({
+    persistedManualTicketCandidates: [
+      {
+        ticket_candidate_fingerprint: 'f'.repeat(64),
+        symbol: '600519',
+        side: 'buy',
+        quantity: 100,
+        limit_price: 123.45,
+        estimated_total_fee: 5,
+        market_quote: {
+          timestamp: '2026-06-12T09:34:00+08:00',
+          age_seconds_at_decision: 60,
+          max_age_seconds: 300,
+        },
+        strategy_gate_binding: {
+          candidate_snapshot_id: 'dataset-fixture',
+          strategy_advancement_ref: `strategy_advancement:${'a'.repeat(64)}`,
+        },
+        strategy_operating_constraints: strategyOperatingConstraintsFixture,
+        account_truth_binding: {
+          age_seconds_at_decision: 300,
+          max_age_seconds: 86400,
+          ledger_cutoff_id: 7,
+          valuation_snapshot_id: 'valuation-001',
+        },
+      },
+    ],
+  });
+
+  const tickets = await screen.findByTestId(
+    'persisted-manual-order-ticket-candidates',
+  );
+  expect(tickets.textContent).toContain(
+    'Read-only manual ticket · 600519 · BUY · 100 @ ¥123.45',
+  );
+  expect(tickets.textContent).toContain('Account Truth');
   expect(tickets.textContent).toContain(
     'no OMS order, broker submission, or capital expansion is authorized',
   );

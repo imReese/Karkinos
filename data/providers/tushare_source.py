@@ -63,9 +63,7 @@ class TushareSource(DataSource):
 
         if frequency == BarFrequency.DAILY:
             df = pro.daily(
-                ts_code=(
-                    f"{symbol}.SH" if str(symbol).startswith("6") else f"{symbol}.SZ"
-                ),
+                ts_code=self._stock_ts_code(symbol),
                 start_date=start.strftime("%Y%m%d"),
                 end_date=end.strftime("%Y%m%d"),
             )
@@ -75,6 +73,20 @@ class TushareSource(DataSource):
             )
 
         return self._normalize_bars(df)
+
+    def fetch_market_daily_bars(self, trade_date: str) -> pd.DataFrame:
+        """Fetch one complete TuShare daily cross-section for local freezing."""
+
+        try:
+            normalized_date = datetime.strptime(str(trade_date), "%Y-%m-%d")
+        except (TypeError, ValueError) as exc:
+            raise ValueError("tushare_market_daily_trade_date_invalid") from exc
+        frame = self._get_pro().daily(trade_date=normalized_date.strftime("%Y%m%d"))
+        if frame is None or frame.empty or "ts_code" not in frame.columns:
+            raise ValueError("tushare_market_daily_result_empty")
+        normalized = self._normalize_bars(frame)
+        normalized["symbol"] = frame["ts_code"].astype(str).str[:6].to_numpy()
+        return normalized
 
     def fetch_ticks(
         self,
@@ -291,7 +303,7 @@ class TushareSource(DataSource):
             return raw
         if raw.startswith("6"):
             return f"{raw}.SH"
-        if raw.startswith(("4", "8")):
+        if raw.startswith(("4", "8", "92")):
             return f"{raw}.BJ"
         return f"{raw}.SZ"
 

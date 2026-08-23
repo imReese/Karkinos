@@ -1012,6 +1012,8 @@ export type DailyCandidateTrial = {
     run_id: string | null;
     decision_outcome: 'manual_order_ticket_candidate' | 'no_action' | null;
     simulated_order_count: number;
+    manual_order_ticket_candidates?: DailyCandidateRunResult['manual_order_ticket_candidates'];
+    production_record_fingerprint?: string | null;
     blockers: string[];
   } | null;
   current_execution_evidence: DailyCandidateExecutionEvidenceSummary;

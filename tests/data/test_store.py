@@ -183,3 +183,58 @@ class TestDataStore:
         assert len(symbols) == 2
         assert Symbol("600519") in symbols
         assert Symbol("000001") in symbols
+
+    def test_full_market_daily_receipt_is_idempotent_and_detects_bar_drift(
+        self, store: DataStore
+    ) -> None:
+        bars = pd.DataFrame(
+            {
+                "symbol": ["000001", "600519"],
+                "timestamp": pd.to_datetime(["2026-08-21", "2026-08-21"]),
+                "open": [10.0, 20.0],
+                "high": [10.2, 20.2],
+                "low": [9.8, 19.8],
+                "close": [10.1, 20.1],
+                "volume": [1000.0, 2000.0],
+                "amount": [10100.0, 40200.0],
+            }
+        )
+
+        first = store.ingest_market_daily_batch(
+            trade_date="2026-08-21",
+            provider_name="fixture",
+            bars=bars,
+        )
+        second = store.ingest_market_daily_batch(
+            trade_date="2026-08-21",
+            provider_name="fixture",
+            bars=bars,
+        )
+
+        assert second == first
+        assert first["row_count"] == 2
+        assert store.list_market_daily_ingestion_receipts(
+            start_date="2026-08-21",
+            end_date="2026-08-21",
+            provider_name="fixture",
+        ) == [first]
+
+        with sqlite3.connect(store._meta_path) as conn:
+            conn.execute("""
+                UPDATE market_bars SET close = 99
+                WHERE symbol = '000001' AND frequency = '1d'
+                  AND substr(timestamp, 1, 10) = '2026-08-21'
+                """)
+            conn.commit()
+
+        with pytest.raises(ValueError, match="market_daily_ingestion_receipt_drift"):
+            store.get_market_daily_ingestion_receipt(
+                trade_date="2026-08-21",
+                provider_name="fixture",
+            )
+        with pytest.raises(ValueError, match="market_daily_ingestion_receipt_conflict"):
+            store.ingest_market_daily_batch(
+                trade_date="2026-08-21",
+                provider_name="fixture",
+                bars=bars,
+            )

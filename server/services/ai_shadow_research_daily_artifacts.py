@@ -265,6 +265,82 @@ class DailyStrategyArtifactStore:
             "operating_constraints": operating_constraints,
         }
 
+    def load_verified_winner_strategy(
+        self,
+        *,
+        candidate_id: str,
+        run_id: str,
+    ) -> dict[str, Any]:
+        """Load the exact frozen Formula DSL snapshot selected for promotion."""
+
+        verified = self.require_verified_winner(
+            candidate_id=candidate_id,
+            run_id=run_id,
+        )
+        try:
+            with self._connect_readonly() as conn:
+                row = conn.execute(
+                    "SELECT * FROM ai_shadow_research_daily_backups WHERE run_id=?",
+                    (run_id,),
+                ).fetchone()
+            if row is None:
+                raise DailyStrategyArtifactRejected("daily_strategy_backup_missing")
+            path = (self._backup_root / str(row["relative_path"])).resolve()
+            path.relative_to(self._backup_root.resolve())
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            raise DailyStrategyArtifactRejected(
+                "daily_strategy_snapshot_unreadable"
+            ) from exc
+        if (
+            not isinstance(payload, Mapping)
+            or content_fingerprint(payload) != row["artifact_fingerprint"]
+        ):
+            raise DailyStrategyArtifactRejected(
+                "daily_strategy_snapshot_backup_mismatch"
+            )
+        matches = [
+            item
+            for item in payload.get("candidates") or []
+            if isinstance(item, Mapping) and item.get("candidate_id") == candidate_id
+        ]
+        if len(matches) != 1:
+            raise DailyStrategyArtifactRejected(
+                "daily_strategy_snapshot_candidate_mismatch"
+            )
+        snapshot = matches[0]
+        strategy = snapshot.get("strategy")
+        if (
+            not isinstance(strategy, Mapping)
+            or snapshot.get("strategy_artifact_fingerprint")
+            != content_fingerprint(strategy)
+            or not isinstance(strategy.get("formula_ast"), Mapping)
+            or not str(strategy.get("formula_fingerprint") or "")
+            or not _nonempty_text_list(strategy.get("selected_universe"))
+        ):
+            raise DailyStrategyArtifactRejected(
+                "daily_strategy_snapshot_strategy_mismatch"
+            )
+        return {
+            "schema_version": "karkinos.ai.verified_winner_strategy.v1",
+            "candidate_id": candidate_id,
+            "run_id": run_id,
+            "market_date": verified["selection"].get("market_date"),
+            "selection_id": verified["selection"].get("selection_id"),
+            "backup_artifact_fingerprint": verified["backup"].get(
+                "artifact_fingerprint"
+            ),
+            "strategy_artifact_fingerprint": snapshot.get(
+                "strategy_artifact_fingerprint"
+            ),
+            "strategy": dict(strategy),
+            "operating_constraints": verified["operating_constraints"],
+            "provider_contact_performed": False,
+            "authorizes_strategy_promotion": False,
+            "authorizes_order_creation": False,
+            "changes_capital_authority": False,
+        }
+
     def _write_backup(
         self, payload: Mapping[str, Any], *, created_at: str
     ) -> dict[str, Any]:

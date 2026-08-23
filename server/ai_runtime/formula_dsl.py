@@ -1,8 +1,9 @@
-"""Research-only, deterministic Formula DSL for AI strategy hypotheses.
+"""Deterministic Formula DSL for research and human-promoted shadow signals.
 
-The DSL deliberately describes signals rather than executable code.  It may be
-evaluated only by the restricted research adapter and never enters the strategy
-registry, OMS, ledger, risk, capital-authority, or broker boundaries.
+The DSL describes signals rather than executable code.  Research drafts remain
+non-authorizing; only an exact, evidence-bound, human-promoted snapshot may feed
+the local daily-candidate scanner.  Its output still cannot enter OMS, ledger,
+capital-authority, automatic execution, or broker-submission boundaries.
 """
 
 from __future__ import annotations

@@ -19,20 +19,19 @@ from server.services.market_hours import get_shanghai_now
 from server.services.market_universe_truth import (
     MarketUniversePolicy,
     normalize_a_share_members,
-    preliminary_research_panel_symbols,
     require_complete_market_universe_snapshot,
 )
 
 logger = logging.getLogger(__name__)
 
-MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION = "karkinos.market_universe_automation.v1"
+MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION = "karkinos.market_universe_automation.v2"
 MARKET_UNIVERSE_AUTOMATION_RUN_TYPE = "market_universe_sync"
 MARKET_UNIVERSE_AUTOMATION_INTERVAL_SECONDS = 60 * 60
 _POST_CLOSE_INGESTION_TIME = time(16, 0)
 
 
 class MarketUniverseAutomationService:
-    """Refresh and persist stock membership plus an overcomplete bar panel."""
+    """Refresh and freeze the stock master plus full-market bar history."""
 
     def __init__(
         self,
@@ -91,7 +90,7 @@ class MarketUniverseAutomationService:
                     "retryable": True,
                 },
             )
-        run_id = f"market_universe_sync:{provider_name}:{trade_date}"
+        run_id = f"market_universe_sync:v2:{provider_name}:{trade_date}"
         existing = self._db.get_automation_run_sync(run_id)
         if existing and str(existing.get("status")) == "completed":
             return existing
@@ -117,63 +116,144 @@ class MarketUniverseAutomationService:
                 policy=self._policy,
                 expected_trade_date=trade_date,
             )
-            preliminary = preliminary_research_panel_symbols(
-                snapshot,
-                policy=self._policy,
-            )
+            members = [str(member["symbol"]) for member in snapshot["members"]]
             start_date = _history_start(self._config, trade_date)
+            trading_dates = verified_trading_dates(
+                self._db,
+                start_date=start_date.isoformat(),
+                end_date=trade_date,
+            )
+            if len(trading_dates) < self._policy.minimum_history_rows:
+                raise ValueError("verified_market_history_window_incomplete")
             updated = 0
             failed = 0
-            ready = 0
-            skipped_ready = 0
             remote_attempted = 0
-            for symbol_text in preliminary:
-                symbol = Symbol(symbol_text)
-                if _persisted_window_ready(
-                    self._data_store,
-                    symbol=symbol,
-                    start_date=start_date.isoformat(),
+            receipt_skipped = 0
+            batch_fetcher = getattr(self._source, "fetch_market_daily_bars", None)
+            if callable(batch_fetcher):
+                member_set = set(members)
+                for market_date in trading_dates:
+                    receipt = self._data_store.get_market_daily_ingestion_receipt(
+                        trade_date=market_date,
+                        provider_name=provider_name,
+                    )
+                    if receipt is not None:
+                        receipt_skipped += 1
+                        continue
+                    if self._throttle_seconds:
+                        self._sleep(self._throttle_seconds)
+                    remote_attempted += 1
+                    try:
+                        frame = batch_fetcher(market_date)
+                        frame = frame.loc[
+                            frame["symbol"].astype(str).isin(member_set)
+                        ].copy()
+                        if frame.empty:
+                            raise ValueError("market_daily_batch_no_active_members")
+                        self._data_store.ingest_market_daily_batch(
+                            trade_date=market_date,
+                            provider_name=provider_name,
+                            bars=frame,
+                        )
+                        updated += 1
+                    except Exception:
+                        failed += 1
+                        logger.warning(
+                            "Full-market daily batch refresh failed for %s",
+                            market_date,
+                            exc_info=True,
+                        )
+                        break
+            else:
+                for symbol_text in members:
+                    symbol = Symbol(symbol_text)
+                    if _persisted_window_ready(
+                        self._data_store,
+                        symbol=symbol,
+                        start_date=start_date.isoformat(),
+                        end_date=trade_date,
+                        minimum_rows=self._policy.minimum_history_rows,
+                    ):
+                        continue
+                    if self._throttle_seconds:
+                        self._sleep(self._throttle_seconds)
+                    remote_attempted += 1
+                    try:
+                        self._data_manager.get_bars(
+                            symbol,
+                            start=datetime.combine(start_date, time.min),
+                            end=datetime.combine(
+                                datetime.fromisoformat(trade_date).date(), time.min
+                            ),
+                            frequency=BarFrequency.DAILY,
+                            asset_class=AssetClass.STOCK,
+                            allow_remote_refresh=True,
+                            refresh_ttl_seconds=0,
+                            degrade_to_cache=False,
+                        )
+                        updated += 1
+                    except Exception:
+                        failed += 1
+                        logger.warning(
+                            "Full-market per-symbol bar refresh failed for %s",
+                            symbol_text,
+                            exc_info=True,
+                        )
+                if not failed:
+                    _freeze_persisted_market_dates(
+                        data_store=self._data_store,
+                        provider_name=provider_name,
+                        symbols=members,
+                        start_date=start_date.isoformat(),
+                        end_date=trade_date,
+                        trading_dates=trading_dates,
+                    )
+
+            receipts = self._data_store.list_market_daily_ingestion_receipts(
+                start_date=start_date.isoformat(),
+                end_date=trade_date,
+                provider_name=provider_name,
+            )
+            receipt_dates = {str(item["trade_date"]) for item in receipts}
+            frames = self._data_store.load_market_bar_windows(
+                symbols=members,
+                start_date=start_date.isoformat(),
+                end_date=trade_date,
+            )
+            ready = sum(
+                1
+                for frame in frames.values()
+                if _frame_window_ready(
+                    frame,
                     end_date=trade_date,
                     minimum_rows=self._policy.minimum_history_rows,
-                ):
-                    ready += 1
-                    skipped_ready += 1
-                    continue
-                if self._throttle_seconds:
-                    self._sleep(self._throttle_seconds)
-                remote_attempted += 1
-                try:
-                    self._data_manager.get_bars(
-                        symbol,
-                        start=datetime.combine(start_date, time.min),
-                        end=datetime.combine(
-                            datetime.fromisoformat(trade_date).date(), time.min
-                        ),
-                        frequency=BarFrequency.DAILY,
-                        asset_class=AssetClass.STOCK,
-                        allow_remote_refresh=True,
-                        refresh_ttl_seconds=0,
-                        degrade_to_cache=False,
-                    )
-                    updated += 1
-                except Exception:
-                    failed += 1
-                    logger.warning(
-                        "Market-universe research-panel bar refresh failed for %s",
-                        symbol_text,
-                        exc_info=True,
-                    )
-                if _persisted_window_ready(
-                    self._data_store,
-                    symbol=symbol,
-                    start_date=start_date.isoformat(),
-                    end_date=trade_date,
-                    minimum_rows=self._policy.minimum_history_rows,
-                ):
-                    ready += 1
+                )
+            )
             blockers: list[str] = []
-            if ready < self._policy.panel_size:
-                blockers.append("research_panel_persisted_bar_coverage_incomplete")
+            missing_receipt_dates = sorted(set(trading_dates) - receipt_dates)
+            if missing_receipt_dates:
+                blockers.append("full_market_daily_receipt_coverage_incomplete")
+            end_receipt = next(
+                (
+                    item
+                    for item in receipts
+                    if str(item.get("trade_date") or "") == trade_date
+                ),
+                {},
+            )
+            end_cross_section_count = int(end_receipt.get("row_count") or 0)
+            minimum_end_cross_section_count = max(
+                self._policy.panel_size,
+                int(len(members) * 0.9),
+            )
+            minimum_ready_count = max(
+                self._policy.panel_size,
+                int(len(members) * 0.8),
+            )
+            if end_cross_section_count < minimum_end_cross_section_count:
+                blockers.append("full_market_latest_cross_section_incomplete")
+            if ready < minimum_ready_count:
+                blockers.append("full_market_persisted_bar_coverage_incomplete")
             status = "completed" if not blockers else "failed"
             return self._record_run(
                 run_id=run_id,
@@ -185,14 +265,27 @@ class MarketUniverseAutomationService:
                     "trade_date": trade_date,
                     "market_universe_snapshot_id": snapshot["snapshot_id"],
                     "market_universe_member_count": snapshot["member_count"],
-                    "preliminary_research_panel_count": len(preliminary),
+                    "verified_history_start_date": start_date.isoformat(),
+                    "verified_trading_date_count": len(trading_dates),
+                    "full_market_daily_receipt_count": len(receipts),
+                    "full_market_missing_receipt_dates": missing_receipt_dates[:100],
+                    "full_market_missing_receipt_date_count": len(
+                        missing_receipt_dates
+                    ),
                     "persisted_bar_ready_count": ready,
-                    "persisted_bar_skipped_ready_count": skipped_ready,
+                    "persisted_bar_excluded_count": len(members) - ready,
+                    "minimum_persisted_bar_ready_count": minimum_ready_count,
+                    "latest_cross_section_row_count": end_cross_section_count,
+                    "minimum_latest_cross_section_row_count": (
+                        minimum_end_cross_section_count
+                    ),
+                    "persisted_receipt_skipped_count": receipt_skipped,
                     "remote_bar_refresh_attempt_count": remote_attempted,
                     "bar_refresh_success_count": updated,
                     "bar_refresh_failure_count": failed,
                     "provider_request_interval_seconds": self._throttle_seconds,
                     "provider_contacted": provider_contacted or remote_attempted > 0,
+                    "full_market_history_frozen": not missing_receipt_dates,
                     "blockers": blockers,
                     "retryable": bool(blockers),
                 },
@@ -308,6 +401,93 @@ def _history_start(config: Any, trade_date: str):
         except ValueError:
             pass
     return start
+
+
+def verified_trading_dates(
+    db: Any,
+    *,
+    start_date: str,
+    end_date: str,
+) -> list[str]:
+    start = datetime.fromisoformat(start_date).date()
+    end = datetime.fromisoformat(end_date).date()
+    dates: set[str] = set()
+    for year in range(start.year, end.year + 1):
+        row = db.get_market_calendar_snapshot_sync(exchange="SSE", year=year)
+        if not row or row.get("official_verification_status") != "verified":
+            continue
+        try:
+            days = json.loads(str(row.get("days_json") or "[]"))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        dates.update(
+            str(day.get("date"))
+            for day in days
+            if isinstance(day, dict)
+            and day.get("is_trading_day") is True
+            and start_date <= str(day.get("date") or "") <= end_date
+        )
+    return sorted(dates)
+
+
+def _freeze_persisted_market_dates(
+    *,
+    data_store: DataStore,
+    provider_name: str,
+    symbols: list[str],
+    start_date: str,
+    end_date: str,
+    trading_dates: list[str],
+) -> None:
+    frames = data_store.load_market_bar_windows(
+        symbols=symbols,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    rows_by_date: dict[str, list[pd.DataFrame]] = {
+        market_date: [] for market_date in trading_dates
+    }
+    for symbol, frame in frames.items():
+        dated = frame.copy()
+        dated["trade_date"] = pd.to_datetime(dated["timestamp"]).dt.date.map(
+            lambda value: value.isoformat()
+        )
+        for market_date, selected in dated.groupby("trade_date", sort=False):
+            if market_date not in rows_by_date:
+                continue
+            batch = selected.drop(columns=["trade_date"]).copy()
+            batch["symbol"] = symbol
+            rows_by_date[market_date].append(batch)
+    for market_date in trading_dates:
+        existing = data_store.get_market_daily_ingestion_receipt(
+            trade_date=market_date,
+            provider_name=provider_name,
+        )
+        if existing is not None:
+            continue
+        parts = rows_by_date[market_date]
+        if not parts:
+            raise ValueError(f"persisted_market_date_missing:{market_date}")
+        data_store.ingest_market_daily_batch(
+            trade_date=market_date,
+            provider_name=provider_name,
+            bars=pd.concat(parts, ignore_index=True),
+        )
+
+
+def _frame_window_ready(
+    frame: pd.DataFrame,
+    *,
+    end_date: str,
+    minimum_rows: int,
+) -> bool:
+    if frame is None or frame.empty or "timestamp" not in frame.columns:
+        return False
+    timestamps = pd.to_datetime(frame["timestamp"]).sort_values()
+    return bool(
+        len(timestamps) >= minimum_rows
+        and timestamps.iloc[-1].date().isoformat() == end_date
+    )
 
 
 def _persisted_window_ready(

@@ -14,19 +14,35 @@ from server.services.market_universe_automation import (
     MarketUniverseAutomationService,
 )
 from server.services.market_universe_truth import (
-    MarketUniversePolicy,
     normalize_a_share_members,
-    preliminary_research_panel_symbols,
 )
 
 
 class _Source:
     def __init__(self) -> None:
         self.calls = 0
+        self.daily_calls: list[str] = []
 
     def list_symbols(self):
         self.calls += 1
         return [f"{600000 + index:06d}" for index in range(1_000)]
+
+    def fetch_market_daily_bars(self, trade_date: str) -> pd.DataFrame:
+        self.daily_calls.append(trade_date)
+        symbols = self.list_symbols()
+        self.calls -= 1
+        return pd.DataFrame(
+            {
+                "symbol": symbols,
+                "timestamp": [pd.Timestamp(trade_date)] * len(symbols),
+                "open": [10.0] * len(symbols),
+                "high": [10.1] * len(symbols),
+                "low": [9.9] * len(symbols),
+                "close": [10.0] * len(symbols),
+                "volume": [1_000_000] * len(symbols),
+                "amount": [10_000_000] * len(symbols),
+            }
+        )
 
 
 class _PersistingManager:
@@ -60,22 +76,24 @@ class _PersistingManager:
 
 
 def _verified_calendar(db: AppDatabase) -> None:
+    trading_dates = pd.bdate_range(end="2026-08-21", periods=80)
     db.upsert_market_calendar_snapshot_sync(
         {
             "exchange": "SSE",
             "year": 2026,
             "provider": "unit_fixture",
             "status": "available",
-            "trading_day_count": 1,
+            "trading_day_count": len(trading_dates),
             "closed_day_count": 0,
             "source_fingerprint": "calendar-fixture",
             "days": [
                 {
-                    "date": "2026-08-21",
+                    "date": market_date.date().isoformat(),
                     "is_trading_day": True,
                     "day_type": "trading",
                     "reason_code": "scheduled_trading_day",
                 }
+                for market_date in trading_dates
             ],
             "limitations": [],
         }
@@ -120,13 +138,16 @@ def test_market_universe_automation_ingests_once_and_never_changes_authority(
     assert first["status"] == "completed"
     assert second["run_id"] == first["run_id"]
     assert source.calls == 1
-    assert manager.calls == 160
-    assert sleeps == [2.0] * 160
+    assert manager.calls == 0
+    assert len(source.daily_calls) == 80
+    assert sleeps == [2.0] * 80
     payload = json.loads(first["payload_json"])
     assert payload["trade_date"] == "2026-08-21"
     assert payload["market_universe_member_count"] == 1_000
-    assert payload["persisted_bar_ready_count"] == 160
-    assert payload["remote_bar_refresh_attempt_count"] == 160
+    assert payload["persisted_bar_ready_count"] == 1_000
+    assert payload["full_market_daily_receipt_count"] == 80
+    assert payload["full_market_history_frozen"] is True
+    assert payload["remote_bar_refresh_attempt_count"] == 80
     assert payload["provider_request_interval_seconds"] == 2.0
     assert payload["changes_account_truth"] is False
     assert payload["changes_strategy_promotion"] is False
@@ -157,7 +178,7 @@ def test_market_universe_automation_blocks_without_verified_calendar(tmp_path) -
     assert payload["blockers"] == ["verified_closed_trading_date_unavailable"]
 
 
-def test_market_universe_automation_resumes_without_refetching_ready_bars(
+def test_market_universe_automation_resumes_without_refetching_frozen_dates(
     tmp_path,
 ) -> None:
     db = AppDatabase(tmp_path / "app.db")
@@ -170,13 +191,18 @@ def test_market_universe_automation_resumes_without_refetching_ready_bars(
         provider_name="unit_fixture",
         members=normalize_a_share_members(source.list_symbols()),
     )
-    first_symbol = preliminary_research_panel_symbols(
-        snapshot,
-        policy=MarketUniversePolicy(),
-    )[0]
+    trading_dates = [
+        market_date.date().isoformat()
+        for market_date in pd.bdate_range(end="2026-08-21", periods=80)
+    ]
+    for market_date in trading_dates[:10]:
+        store.ingest_market_daily_batch(
+            trade_date=market_date,
+            provider_name="unit_fixture",
+            bars=source.fetch_market_daily_bars(market_date),
+        )
+    source.daily_calls.clear()
     manager = _PersistingManager(store)
-    manager.get_bars(first_symbol)
-    manager.calls = 0
     service = MarketUniverseAutomationService(
         db=db,
         config=SimpleNamespace(
@@ -195,7 +221,8 @@ def test_market_universe_automation_resumes_without_refetching_ready_bars(
     )
 
     assert result["status"] == "completed"
-    assert manager.calls == 159
+    assert manager.calls == 0
+    assert source.daily_calls == trading_dates[10:]
     payload = json.loads(result["payload_json"])
-    assert payload["persisted_bar_skipped_ready_count"] == 1
-    assert payload["remote_bar_refresh_attempt_count"] == 159
+    assert payload["persisted_receipt_skipped_count"] == 10
+    assert payload["remote_bar_refresh_attempt_count"] == 70

@@ -2432,10 +2432,13 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
             [f"{600000 + index:06d}" for index in range(1_000)]
         ),
     )
-    for panel_symbol in preliminary_research_panel_symbols(
-        universe_snapshot,
-        policy=MarketUniversePolicy(),
-    ):
+    panel_symbols = list(
+        preliminary_research_panel_symbols(
+            universe_snapshot,
+            policy=MarketUniversePolicy(),
+        )
+    )
+    for panel_symbol in panel_symbols:
         market.save_bars(
             Symbol(panel_symbol),
             BarFrequency.DAILY,
@@ -2444,6 +2447,68 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
             data_source="deterministic_fixture",
             adjustment_mode="none",
         )
+    market_dates = [timestamp.date().isoformat() for timestamp in bars["timestamp"]]
+    db.upsert_market_calendar_snapshot_sync(
+        {
+            "exchange": "SSE",
+            "year": 2026,
+            "provider": "deterministic_fixture",
+            "status": "available",
+            "trading_day_count": len(market_dates),
+            "closed_day_count": 0,
+            "source_fingerprint": "fixture-calendar",
+            "days": [
+                {
+                    "date": market_date,
+                    "is_trading_day": True,
+                    "day_type": "trading",
+                    "reason_code": "scheduled_trading_day",
+                }
+                for market_date in market_dates
+            ],
+            "limitations": [],
+        }
+    )
+    db.update_market_calendar_verification_sync(
+        exchange="SSE",
+        year=2026,
+        verification_status="verified",
+        official_source_url="https://example.test/calendar",
+        verified_by="unit-test",
+    )
+    for index, market_date in enumerate(market_dates):
+        market.ingest_market_daily_batch(
+            trade_date=market_date,
+            provider_name="deterministic_fixture",
+            bars=pd.DataFrame(
+                {
+                    "symbol": panel_symbols,
+                    "timestamp": [bars["timestamp"].iloc[index]] * len(panel_symbols),
+                    "open": [bars["open"].iloc[index]] * len(panel_symbols),
+                    "high": [bars["high"].iloc[index]] * len(panel_symbols),
+                    "low": [bars["low"].iloc[index]] * len(panel_symbols),
+                    "close": [bars["close"].iloc[index]] * len(panel_symbols),
+                    "volume": [bars["volume"].iloc[index]] * len(panel_symbols),
+                }
+            ),
+        )
+    db.upsert_automation_run_sync(
+        {
+            "run_id": (
+                "market_universe_sync:v2:deterministic_fixture:" f"{market_dates[-1]}"
+            ),
+            "run_type": "market_universe_sync",
+            "run_date": market_dates[-1],
+            "status": "completed",
+            "execution_mode": "market_data_ingestion",
+            "source_ref": universe_snapshot["snapshot_id"],
+            "payload": {
+                "schema_version": "karkinos.market_universe_automation.v2",
+                "market_universe_snapshot_id": universe_snapshot["snapshot_id"],
+                "full_market_history_frozen": True,
+            },
+        }
+    )
     seed_result_id = asyncio.run(
         db.save_backtest_result(
             config_json=json.dumps(
