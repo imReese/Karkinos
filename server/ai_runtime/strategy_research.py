@@ -135,11 +135,11 @@ _RESEARCH_TOOL = "research_evidence.read"
 _ACCOUNT_STATE_TOOL = "account_state_projection.read"
 _CATALOG_TOOL = "formula_operator_catalog.read"
 _SELECTION_TOOL = "strategy_research_selection.read"
-_HYPOTHESIS_ROLE = "external.strategy_hypothesis_researcher.v11"
-_CRITIQUE_ROLE = "external.strategy_backtest_critic.v11"
+_HYPOTHESIS_ROLE = "external.strategy_hypothesis_researcher.v12"
+_CRITIQUE_ROLE = "external.strategy_backtest_critic.v12"
 _HYPOTHESIS_STAGE = "strategy_hypothesis_generation"
 _CRITIQUE_STAGE = "strategy_backtest_critique"
-_PROMPT_VERSION = "karkinos.ai.strategy_research_prompt.v12"
+_PROMPT_VERSION = "karkinos.ai.strategy_research_prompt.v13"
 _SANITIZED_ACCOUNT_EVIDENCE_CONTRACT = "karkinos.ai.sanitized_account_risk_evidence.v1"
 STRATEGY_RESEARCH_MAX_INPUT_BYTES = 196_608
 STRATEGY_RESEARCH_MAX_OUTPUT_TOKENS = 12_288
@@ -1979,6 +1979,7 @@ class StrategyResearchModelProvider(ProviderAdapter):
         if account_evidence is not None:
             citation_sources["saved_account_evidence"] = account_evidence
         hypothesis_citation_catalog = None
+        critique_citation_catalog = None
         if self._mode == "hypothesis":
             complete_citation_catalog = _build_hypothesis_citation_catalog(
                 citation_sources
@@ -1986,6 +1987,11 @@ class StrategyResearchModelProvider(ProviderAdapter):
             hypothesis_citation_catalog = _compact_hypothesis_citation_catalog(
                 complete_citation_catalog,
                 citation_sources=citation_sources,
+            )
+        else:
+            citation_sources["critique_input"] = self._critique_input
+            critique_citation_catalog = _build_critique_citation_catalog(
+                self._critique_input
             )
         input_payload = {
             "mode": self._mode,
@@ -2014,7 +2020,9 @@ class StrategyResearchModelProvider(ProviderAdapter):
                     citation_catalog=hypothesis_citation_catalog or {},
                 )
                 if self._mode == "hypothesis"
-                else _critique_output_contract()
+                else _critique_output_contract(
+                    citation_catalog=critique_citation_catalog or {}
+                )
             ),
         }
         if account_evidence is not None:
@@ -2093,8 +2101,8 @@ class StrategyResearchModelProvider(ProviderAdapter):
                 decoded,
                 self._evidence_reference_id,
                 self._critique_input,
+                citation_catalog=critique_citation_catalog or {},
             )
-            citation_sources["critique_input"] = self._critique_input
         citation_groups = (
             [draft.get("citations") for draft in normalized["drafts"]]
             if self._mode == "hypothesis"
@@ -3287,6 +3295,8 @@ def _normalize_critique_payload(
     value: Any,
     evidence_reference_id: str,
     critique_input: Mapping[str, Any],
+    *,
+    citation_catalog: Mapping[str, str],
 ) -> JsonObject:
     required = {
         "supported_claims",
@@ -3330,18 +3340,29 @@ def _normalize_critique_payload(
         value.get("canonical_binding_echo")
     ) != canonical_json(expected_binding_echo):
         raise ExternalResearchInvalidResponseError("critique_binding_echo_mismatch")
-    if any(item not in _CRITIQUE_CITATION_PATHS for item in value["citations"]):
-        raise ExternalResearchInvalidResponseError("critique_citation_outside_binding")
+    if value["citations"] != list(citation_catalog):
+        raise ExternalResearchInvalidResponseError(
+            "critique_citation_contract_mismatch"
+        )
+    citation_sources = {"critique_input": critique_input}
+    resolved_citations: list[str] = []
+    for citation_id in value["citations"]:
+        path = citation_catalog.get(citation_id)
+        if path is None or not _citation_path_exists(path, citation_sources):
+            raise ExternalResearchInvalidResponseError(
+                "critique_citation_outside_binding"
+            )
+        resolved_citations.append(path)
     if not any(
         item.startswith("critique_input.canonical_backtest.")
-        for item in value["citations"]
+        for item in resolved_citations
     ):
         raise ExternalResearchInvalidResponseError(
             "critique_canonical_backtest_citation_required"
         )
     return {
         "schema_version": STRATEGY_BACKTEST_CRITIQUE_CONTRACT,
-        **json.loads(canonical_json(value)),
+        **json.loads(canonical_json({**value, "citations": resolved_citations})),
         "evidence_reference_ids": [evidence_reference_id],
     }
 
@@ -3593,7 +3614,7 @@ def _hypothesis_output_contract(
     }
 
 
-def _critique_output_contract() -> JsonObject:
+def _critique_output_contract(*, citation_catalog: Mapping[str, str]) -> JsonObject:
     return {
         "format": "one JSON object with exact required keys",
         "required_keys": [
@@ -3623,13 +3644,24 @@ def _critique_output_contract() -> JsonObject:
             "recommended_walk_forward_stress_tests": "non-empty array[string]",
             "explicit_failure_conditions": "non-empty array[string]",
             "uncertainty": "non-empty string",
-            "citations": "non-empty array[string] using allowed prefixes",
+            "citations": (
+                "array[string] exactly equal to required_citation_ids in order"
+            ),
             "canonical_binding_echo": (
                 "object exactly equal to critique_input.required_binding_echo"
             ),
         },
-        "allowed_citation_paths": list(_CRITIQUE_CITATION_PATHS),
-        "required_citation_prefix": "critique_input.canonical_backtest.",
+        "citation_catalog": dict(citation_catalog),
+        "required_citation_ids": list(citation_catalog),
+        "citation_catalog_fingerprint": "sha256:"
+        + content_fingerprint(dict(citation_catalog)),
+        "citation_rules": {
+            "copy_catalog_ids_verbatim": True,
+            "return_required_citation_ids_exactly_and_no_other_values": True,
+            "construct_or_rewrite_paths": False,
+            "catalog_ids_are_resolved_to_bound_paths_locally": True,
+            "unknown_ids_or_paths_fail_closed": True,
+        },
         "required_exact_echo_path": "critique_input.required_binding_echo",
         "claims_are_non_authoritative": True,
         "trade_plan_created": False,
@@ -3685,8 +3717,9 @@ def _system_prompt(mode: Literal["hypothesis", "critique"]) -> str:
         "drawdown, and trade-count claim about the formula result. Copy "
         "critique_input.required_binding_echo exactly into canonical_binding_echo; "
         "any changed or omitted value invalidates the response. Cite only exact paths "
-        "listed in output_contract.allowed_citation_paths, copy each path exactly, "
-        "and include at least one canonical_backtest citation. "
+        "listed in output_contract.required_citation_ids. Set citations to that exact "
+        "ordered ID list with no omissions or additions; copy IDs verbatim and never "
+        "return or construct paths. Karkinos resolves each ID to bound input locally. "
         "Separate supported and contradicted claims, evidence gaps, cost/turnover "
         "sensitivity, concentration, sample dependence, possible overfitting, "
         "ablations, walk-forward/stress tests, failure conditions, uncertainty, "
@@ -3988,6 +4021,49 @@ def _compact_hypothesis_citation_catalog(
             selected_paths.append(selected)
     if not selected_paths:
         raise StrategyResearchRejected("strategy_research_citation_catalog_empty")
+    return {
+        f"cite_{index:02d}": path for index, path in enumerate(selected_paths, start=1)
+    }
+
+
+def _build_critique_citation_catalog(
+    critique_input: Mapping[str, Any],
+) -> dict[str, str]:
+    """Expose a small exact citation set for the bound critique payload."""
+    sources = {"critique_input": critique_input}
+    path_groups = (
+        ("critique_input.canonical_backtest.total_return",),
+        ("critique_input.canonical_backtest.max_drawdown",),
+        (
+            "critique_input.canonical_backtest.total_cost",
+            "critique_input.canonical_backtest.cost_summary",
+        ),
+        (
+            "critique_input.canonical_backtest.oos_validation.aggregate.mean_out_of_sample_return",
+            "critique_input.canonical_backtest.oos_validation",
+        ),
+        (
+            "critique_input.hypothesis_draft.failure_conditions",
+            "critique_input.hypothesis_draft.limitations",
+        ),
+    )
+    selected_paths: list[str] = []
+    for alternatives in path_groups:
+        selected = next(
+            (
+                path
+                for path in alternatives
+                if path in _CRITIQUE_CITATION_PATHS
+                and _citation_path_exists(path, sources)
+            ),
+            None,
+        )
+        if selected is not None and selected not in selected_paths:
+            selected_paths.append(selected)
+    if not selected_paths or not any(
+        path.startswith("critique_input.canonical_backtest.") for path in selected_paths
+    ):
+        raise StrategyResearchRejected("strategy_critique_citation_catalog_empty")
     return {
         f"cite_{index:02d}": path for index, path in enumerate(selected_paths, start=1)
     }

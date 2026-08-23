@@ -115,6 +115,10 @@ class FixtureTransport:
                     content["canonical_binding_echo"] = input_payload["critique_input"][
                         "required_binding_echo"
                     ]
+                if content.get("citations") == ["__required_citation_ids__"]:
+                    content["citations"] = input_payload["output_contract"][
+                        "required_citation_ids"
+                    ]
                 response.payload["choices"][0]["message"]["content"] = json.dumps(
                     content
                 )
@@ -328,7 +332,7 @@ def _critique_response() -> HttpJsonResponse:
             "recommended_walk_forward_stress_tests": ["新增滚动样本外窗口。"],
             "explicit_failure_conditions": ["样本外成本后收益持续为负。"],
             "uncertainty": "当前证据不足，结论置信度低。",
-            "citations": ["critique_input.canonical_backtest.total_return"],
+            "citations": ["__required_citation_ids__"],
             "canonical_binding_echo": {},
         },
         model="fixture-critique",
@@ -902,15 +906,15 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
     assert "external.strategy_hypothesis_researcher.v8" in role_ids
     assert "external.strategy_hypothesis_researcher.v9" in role_ids
     assert "external.strategy_hypothesis_researcher.v10" in role_ids
-    assert "external.strategy_hypothesis_researcher.v11" in role_ids
+    assert "external.strategy_hypothesis_researcher.v12" in role_ids
     current_role = next(
         item
         for item in service._ai_store.list_roles()
-        if item.role_id == "external.strategy_hypothesis_researcher.v11"
+        if item.role_id == "external.strategy_hypothesis_researcher.v12"
     )
     assert "account_state_projection.read" in current_role.allowed_tools
     assert (
-        current_role.instructions_version == "karkinos.ai.strategy_research_prompt.v12"
+        current_role.instructions_version == "karkinos.ai.strategy_research_prompt.v13"
     )
 
     backtest = await service.run_formula_backtest(
@@ -1076,15 +1080,21 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
         critique_input["critique_input"]["required_binding_echo"]
         == critique["artifact"]["canonical_binding_echo"]
     )
+    critique_contract = critique_input["output_contract"]
+    assert critique_contract["required_citation_ids"] == list(
+        critique_contract["citation_catalog"]
+    )
     assert (
         "critique_input.canonical_backtest.total_return"
-        in critique_input["output_contract"]["allowed_citation_paths"]
+        in critique_contract["citation_catalog"].values()
     )
-    assert (
-        "critique_input.canonical_backtest.oos_validation.aggregate."
-        "worst_out_of_sample_return"
-        in critique_input["output_contract"]["allowed_citation_paths"]
-    )
+    assert critique_contract["citation_rules"] == {
+        "copy_catalog_ids_verbatim": True,
+        "return_required_citation_ids_exactly_and_no_other_values": True,
+        "construct_or_rewrite_paths": False,
+        "catalog_ids_are_resolved_to_bound_paths_locally": True,
+        "unknown_ids_or_paths_fail_closed": True,
+    }
     assert all(
         citation.startswith("critique_input.")
         for citation in critique["artifact"]["citations"]
@@ -1262,8 +1272,7 @@ async def test_bound_account_evidence_drift_invalidates_research_session(
             "WHERE tool_name='account_state_projection.read'"
         ).fetchone()[0]
         conn.execute(
-            "UPDATE ai_canonical_evidence SET payload_json='{}' "
-            "WHERE reference_id=?",
+            "UPDATE ai_canonical_evidence SET payload_json='{}' WHERE reference_id=?",
             (account_reference_id,),
         )
 
