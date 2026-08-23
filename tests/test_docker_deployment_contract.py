@@ -92,6 +92,44 @@ def test_docker_context_is_deny_by_default_and_matches_copy_allowlist() -> None:
     assert "web/dist/" in lines
 
 
+def test_docker_context_contract_checks_private_sentinel_files() -> None:
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    absent_checks = {
+        line.strip().removeprefix("&& ").removesuffix("\\").strip()
+        for line in workflow.splitlines()
+        if "test ! -e /build-context/" in line
+    }
+    expected_checks = {
+        "test ! -e /build-context/config.json",
+        "test ! -e /build-context/broker_statement.csv",
+        "test ! -e /build-context/secret.py",
+        "test ! -e /build-context/.env",
+        "test ! -e /build-context/data/store/runtime.sqlite",
+        "test ! -e /build-context/data/store/private_runtime.py",
+        "test ! -e /build-context/logs",
+        "test ! -e /build-context/reports",
+        "test ! -e /build-context/exports",
+        "test ! -e /build-context/screenshots",
+        "test ! -e /build-context/.playwright-mcp",
+        "test ! -e /build-context/strategy/extensions/private_strategy.py",
+        "test ! -e /build-context/account_truth/private-export.csv",
+        "test ! -e /build-context/server/account-snapshot.json",
+        "test ! -e /build-context/web/src/private-account.json",
+    }
+
+    assert absent_checks == expected_checks
+    assert "test ! -e /build-context/data/store" not in absent_checks
+
+
+def test_docker_runtime_uses_the_python_and_uv_release_baseline() -> None:
+    dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
+
+    assert "FROM python:3.12-slim" in dockerfile
+    assert "FROM python:3.14-slim" not in dockerfile
+    assert "ARG UV_VERSION=0.11.28" in dockerfile
+    assert 'pip install --no-cache-dir "uv==${UV_VERSION}"' in dockerfile
+
+
 def test_deployment_examples_default_to_no_live_scheduler() -> None:
     environment_template = Path(".env.example").read_text(encoding="utf-8")
     compose = Path("docker-compose.yml").read_text(encoding="utf-8")

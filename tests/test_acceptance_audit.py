@@ -863,7 +863,7 @@ def test_operations_runbook_acceptance_audit_has_evidence_for_completed_capabili
         if criterion.key == "scheduler_run_persistence"
     )
     assert "web/src/app/router.tsx" in scheduler_run_persistence.evidence_paths
-    assert "web/src/app/overview-page.test.tsx" in (
+    assert "web/src/features/overview/pages/overview-page.test.tsx" in (
         scheduler_run_persistence.evidence_paths
     )
     assert any(
@@ -889,7 +889,10 @@ def test_operations_runbook_acceptance_audit_has_evidence_for_completed_capabili
         if criterion.key == "paper_shadow_manual_handoff_gate"
     )
     assert "server/services/operations_today.py" in manual_handoff_gate.evidence_paths
-    assert "web/src/app/overview-page.test.tsx" in manual_handoff_gate.evidence_paths
+    assert (
+        "web/src/features/overview/pages/overview-page.test.tsx"
+        in manual_handoff_gate.evidence_paths
+    )
     assert "web/src/features/decision/components/decision-cockpit-page.test.tsx" in (
         manual_handoff_gate.evidence_paths
     )
@@ -986,7 +989,7 @@ def test_controlled_broker_bridge_foundation_acceptance_audit_has_evidence() -> 
         reconciliation_evidence.evidence_paths
     )
     assert "tests/test_operations_today.py" in reconciliation_evidence.evidence_paths
-    assert "web/src/app/overview-page.test.tsx" in (
+    assert "web/src/features/overview/pages/overview-page.test.tsx" in (
         reconciliation_evidence.evidence_paths
     )
     assert any(

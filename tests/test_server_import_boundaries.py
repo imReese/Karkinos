@@ -51,6 +51,21 @@ def _violations(
     return sorted(set(violations))
 
 
+def _private_import_violations(
+    paths: list[Path],
+    *,
+    module: str,
+    root: Path = PROJECT_ROOT,
+) -> list[str]:
+    prefix = f"{module}._"
+    violations: list[str] = []
+    for path in paths:
+        for imported in _imported_modules(path, root=root):
+            if imported.startswith(prefix):
+                violations.append(f"{path.relative_to(root).as_posix()} -> {imported}")
+    return sorted(set(violations))
+
+
 def test_application_and_ai_runtime_do_not_import_http_routes() -> None:
     paths = sorted((PROJECT_ROOT / "server/services").rglob("*.py"))
     paths.extend(sorted((PROJECT_ROOT / "server/ai_runtime").rglob("*.py")))
@@ -70,6 +85,12 @@ def test_non_composition_modules_do_not_import_server_app() -> None:
     assert _violations(paths, forbidden_prefix="server.app") == []
 
 
+def test_services_do_not_import_private_server_db_symbols() -> None:
+    paths = sorted((PROJECT_ROOT / "server/services").rglob("*.py"))
+
+    assert _private_import_violations(paths, module="server.db") == []
+
+
 def test_boundary_scanner_resolves_absolute_and_relative_imports(
     tmp_path: Path,
 ) -> None:
@@ -78,7 +99,8 @@ def test_boundary_scanner_resolves_absolute_and_relative_imports(
     service.write_text(
         "from server.routes.market import refresh\n"
         "from ..routes import decision\n"
-        "from server import app\n",
+        "from server import app\n"
+        "from server.db import AppDatabase, _private_helper\n",
         encoding="utf-8",
     )
 
@@ -97,3 +119,8 @@ def test_boundary_scanner_resolves_absolute_and_relative_imports(
         forbidden_prefix="server.app",
         root=tmp_path,
     ) == ["server/services/rogue.py -> server.app"]
+    assert _private_import_violations(
+        [service],
+        module="server.db",
+        root=tmp_path,
+    ) == ["server/services/rogue.py -> server.db._private_helper"]

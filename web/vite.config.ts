@@ -40,14 +40,18 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks(id) {
-          const appChunk = appFeatureChunk(id);
-
-          if (appChunk) {
-            return appChunk;
-          }
-
-          return vendorChunk(id);
+        codeSplitting: {
+          includeDependenciesRecursively: false,
+          groups: [
+            {
+              name: (id) => appFeatureChunk(id) ?? null,
+              priority: 2,
+            },
+            {
+              name: (id) => vendorChunk(id) ?? null,
+              priority: 1,
+            },
+          ],
         },
       },
     },

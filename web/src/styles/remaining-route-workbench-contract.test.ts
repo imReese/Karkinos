@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const SRC_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const source = (path: string) => readFileSync(resolve(SRC_ROOT, path), 'utf8');
 
-const ROUTER = source('app/router.tsx');
+const OVERVIEW = source('features/overview/pages/overview-page.tsx');
 const ACTIVITY = source('features/activity/pages/activity-page.tsx');
 const MARKET = source('features/market/pages/market-page.tsx');
 const BACKTEST = source('features/backtest/components/backtest-page.tsx');
@@ -82,7 +82,7 @@ describe('remaining route workbench contract', () => {
     expect(ACCOUNT_TRUTH).toContain('data-workbench-route="account-truth"');
 
     for (const page of [
-      ROUTER,
+      OVERVIEW,
       MARKET,
       ACTIVITY,
       BACKTEST,

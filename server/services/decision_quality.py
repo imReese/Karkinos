@@ -17,7 +17,7 @@ from typing import Any, Iterator
 from data.market_data import is_fund_estimate_quote_source
 from server.ai_runtime.contracts import canonical_json, content_fingerprint
 from server.ai_runtime.store import IdempotencyConflict
-from server.db import _insert_event_sync
+from server.persistence.event_log import insert_event_sync
 
 DECISION_QUALITY_TARGET_VERSION = "karkinos.decision_quality_target.v1"
 DECISION_QUALITY_CAPTURE_VERSION = "karkinos.decision_quality_capture.v1"
@@ -439,7 +439,7 @@ class DecisionQualityStore:
                 },
                 created_at=captured_at,
             )
-            _insert_event_sync(
+            insert_event_sync(
                 conn,
                 event_type="decision.quality.captured",
                 timestamp=captured_at,

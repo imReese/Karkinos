@@ -45,12 +45,6 @@ import {
   formatPublicStatus,
 } from '../../../shared/public-labels';
 
-type PortfolioSearchState = {
-  assetClass: string;
-  pnl: 'all' | 'winners' | 'losers';
-  q: string;
-};
-
 const portfolioRouteApi = getRouteApi('/portfolio');
 
 function PortfolioEvidenceReviewPanel({
@@ -434,8 +428,9 @@ export function PortfolioPage() {
           onSearchChange={(value) => {
             void navigate({
               to: '/portfolio',
-              search: (current: PortfolioSearchState) => ({
-                ...current,
+              search: (current) => ({
+                assetClass: current.assetClass ?? 'all',
+                pnl: current.pnl ?? 'all',
                 q: value,
               }),
               replace: true,
@@ -445,9 +440,10 @@ export function PortfolioPage() {
           onAssetClassFilterChange={(value) => {
             void navigate({
               to: '/portfolio',
-              search: (current: PortfolioSearchState) => ({
-                ...current,
+              search: (current) => ({
                 assetClass: value,
+                pnl: current.pnl ?? 'all',
+                q: current.q ?? '',
               }),
             });
           }}
@@ -455,9 +451,10 @@ export function PortfolioPage() {
           onPnlFilterChange={(value) => {
             void navigate({
               to: '/portfolio',
-              search: (current: PortfolioSearchState) => ({
-                ...current,
+              search: (current) => ({
+                assetClass: current.assetClass ?? 'all',
                 pnl: value,
+                q: current.q ?? '',
               }),
             });
           }}
