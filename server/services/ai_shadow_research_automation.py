@@ -474,6 +474,7 @@ class ShadowResearchStore:
         valuation_snapshot_id: str,
         ledger_cutoff_id: int,
         now: str,
+        timeout_resume_input_evidence: Mapping[str, Any] | None = None,
     ) -> tuple[dict[str, Any], bool]:
         with self._connect(immediate=True) as conn:
             existing = conn.execute(
@@ -489,7 +490,16 @@ class ShadowResearchStore:
                     self._unconsumed_timeout_resume_call_extension(conn, existing_run)
                 )
                 if timeout_resume_extension is not None:
-                    if input_fingerprint != existing_run["input_fingerprint"]:
+                    if timeout_resume_input_evidence is not None:
+                        self._validate_timeout_resume_input_evidence(
+                            conn,
+                            run=existing_run,
+                            baseline_seed_result_id=baseline_seed_result_id,
+                            valuation_snapshot_id=valuation_snapshot_id,
+                            ledger_cutoff_id=ledger_cutoff_id,
+                            evidence=timeout_resume_input_evidence,
+                        )
+                    elif input_fingerprint != existing_run["input_fingerprint"]:
                         raise ShadowResearchRejected(
                             "timeout_resume_input_fingerprint_drift"
                         )
@@ -523,7 +533,7 @@ class ShadowResearchStore:
                         (
                             timeout_resume_extension["extension_id"],
                             existing_run["run_id"],
-                            existing_run["input_fingerprint"],
+                            input_fingerprint,
                             checkpoint["completed_evidence_fingerprint"],
                             now,
                         ),
@@ -826,6 +836,84 @@ class ShadowResearchStore:
                 ),
             )
         return self.get_run(run_id), False
+
+    def _validate_timeout_resume_input_evidence(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        run: Mapping[str, Any],
+        baseline_seed_result_id: int,
+        valuation_snapshot_id: str,
+        ledger_cutoff_id: int,
+        evidence: Mapping[str, Any],
+    ) -> None:
+        selection_components = evidence.get("selection_components")
+        if not isinstance(selection_components, Mapping):
+            raise ShadowResearchRejected("timeout_resume_input_evidence_invalid")
+        if (
+            int(run.get("baseline_seed_result_id") or 0) != int(baseline_seed_result_id)
+            or str(run.get("valuation_snapshot_id") or "") != str(valuation_snapshot_id)
+            or int(run.get("ledger_cutoff_id") or 0) != int(ledger_cutoff_id)
+        ):
+            raise ShadowResearchRejected("timeout_resume_input_evidence_drift")
+
+        baseline_result_id = int(run.get("baseline_result_id") or 0)
+        baseline = conn.execute(
+            """
+            SELECT baseline_fingerprint
+            FROM ai_shadow_research_baselines
+            WHERE backtest_result_id=?
+            """,
+            (baseline_result_id,),
+        ).fetchone()
+        if baseline is None or baseline["baseline_fingerprint"] != str(
+            evidence.get("baseline_fingerprint") or ""
+        ):
+            raise ShadowResearchRejected("timeout_resume_input_evidence_drift")
+
+        try:
+            expected_selection = StrategyResearchSelection(
+                saved_backtest_result_id=baseline_result_id,
+                **dict(selection_components),
+            ).to_dict()
+        except (TypeError, ValueError, StrategyResearchRejected) as exc:
+            raise ShadowResearchRejected(
+                "timeout_resume_input_evidence_invalid"
+            ) from exc
+        requests = conn.execute(
+            """
+            SELECT session.request_json
+            FROM ai_shadow_research_candidates AS candidate
+            JOIN ai_strategy_research_sessions AS session
+              ON session.session_id=candidate.session_id
+            WHERE candidate.run_id=?
+            ORDER BY CAST(json_extract(candidate.comparison_json,
+                         '$.iteration_lineage.iteration_number') AS INTEGER),
+                     candidate.created_at, candidate.candidate_id
+            """,
+            (run["run_id"],),
+        ).fetchall()
+        expected_request_fields = {
+            "requested_by": str(evidence.get("requested_by") or ""),
+            "account_alias": str(evidence.get("account_alias") or ""),
+            "research_question": str(evidence.get("research_question") or ""),
+        }
+        if len(requests) != _TIMEOUT_RESUME_COMPLETED_ITERATIONS or not all(
+            expected_request_fields.values()
+        ):
+            raise ShadowResearchRejected("timeout_resume_input_evidence_invalid")
+        for row in requests:
+            request = _json_object(row["request_json"])
+            if (
+                any(
+                    request.get(key) != value
+                    for key, value in expected_request_fields.items()
+                )
+                or request.get("selection") != expected_selection
+                or request.get("confirmation_recorded") is not True
+                or request.get("api_key_recorded") is not False
+            ):
+                raise ShadowResearchRejected("timeout_resume_input_evidence_drift")
 
     def authorize_retry(
         self,
@@ -3066,6 +3154,26 @@ class AiShadowResearchAutomationService:
                 "ledger_cutoff_id": valuation["ledger_cutoff_id"],
             }
         )
+        selection_components = {
+            "universe": tuple(
+                asset["symbol"] for asset in prepared.request.assets or []
+            ),
+            "asset_classes": tuple(
+                asset["asset_class"] for asset in prepared.request.assets or []
+            ),
+            "dataset_snapshot_id": str(prepared.snapshot["snapshot_id"]),
+            "start_date": prepared.request.start_date,
+            "end_date": prepared.request.end_date,
+            "frequency": BarFrequency.DAILY.value,
+            "initial_cash": prepared.request.initial_cash,
+            "cost_model_reference": prepared.cost_model_reference,
+            "account_truth_freshness_as_of": _frozen_market_close_as_of(
+                prepared.market_date,
+                policy.after_close_time,
+            ).isoformat(),
+            "valuation_snapshot_id": str(valuation["snapshot_id"]),
+            "ledger_cutoff_id": int(valuation["ledger_cutoff_id"]),
+        }
         now_text = self._now().astimezone(timezone.utc).isoformat()
         run, reused = self._store.claim_run(
             market_date=prepared.market_date,
@@ -3074,6 +3182,13 @@ class AiShadowResearchAutomationService:
             valuation_snapshot_id=str(valuation["snapshot_id"]),
             ledger_cutoff_id=int(valuation["ledger_cutoff_id"]),
             now=now_text,
+            timeout_resume_input_evidence={
+                "baseline_fingerprint": prepared.fingerprint,
+                "requested_by": f"automation:{policy.updated_by}",
+                "account_alias": "standing-owner-authorized-shadow-research",
+                "research_question": policy.research_question,
+                "selection_components": selection_components,
+            },
         )
         if reused:
             return {
@@ -3098,24 +3213,7 @@ class AiShadowResearchAutomationService:
 
             selection = StrategyResearchSelection(
                 saved_backtest_result_id=baseline_result_id,
-                universe=tuple(
-                    asset["symbol"] for asset in prepared.request.assets or []
-                ),
-                asset_classes=tuple(
-                    asset["asset_class"] for asset in prepared.request.assets or []
-                ),
-                dataset_snapshot_id=str(prepared.snapshot["snapshot_id"]),
-                start_date=prepared.request.start_date,
-                end_date=prepared.request.end_date,
-                frequency=BarFrequency.DAILY.value,
-                initial_cash=prepared.request.initial_cash,
-                cost_model_reference=prepared.cost_model_reference,
-                account_truth_freshness_as_of=_frozen_market_close_as_of(
-                    prepared.market_date,
-                    policy.after_close_time,
-                ).isoformat(),
-                valuation_snapshot_id=str(valuation["snapshot_id"]),
-                ledger_cutoff_id=int(valuation["ledger_cutoff_id"]),
+                **selection_components,
             )
             self._require_deepseek_provider()
             research = self._build_research_service(external=True)

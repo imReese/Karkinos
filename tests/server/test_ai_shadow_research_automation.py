@@ -19,7 +19,10 @@ from core.types import BarFrequency, CommissionType, Symbol
 from data.store import DataStore
 from execution.commission import MultiAssetCommission, StockACommission
 from server.ai_runtime.contracts import canonical_json, content_fingerprint
-from server.ai_runtime.strategy_research import StrategyResearchAuditStore
+from server.ai_runtime.strategy_research import (
+    StrategyResearchAuditStore,
+    StrategyResearchSelection,
+)
 from server.db import AppDatabase
 from server.models import BacktestRequest
 from server.services.ai_shadow_research_automation import (
@@ -1875,7 +1878,66 @@ async def test_fifth_round_timeout_resume_preserves_four_rounds_and_uses_two_cal
         baseline_result_id=baseline_result_id,
         candidate_result_id=candidate_result_id,
     )
+    persisted_selection = StrategyResearchSelection(
+        saved_backtest_result_id=baseline_result_id,
+        universe=tuple(asset["symbol"] for asset in prepared.request.assets or []),
+        asset_classes=tuple(
+            asset["asset_class"] for asset in prepared.request.assets or []
+        ),
+        dataset_snapshot_id=str(prepared.snapshot["snapshot_id"]),
+        start_date=prepared.request.start_date,
+        end_date=prepared.request.end_date,
+        frequency=BarFrequency.DAILY.value,
+        initial_cash=prepared.request.initial_cash,
+        cost_model_reference=prepared.cost_model_reference,
+        account_truth_freshness_as_of="2026-08-11T15:30:00+08:00",
+        valuation_snapshot_id=valuation["snapshot_id"],
+        ledger_cutoff_id=valuation["ledger_cutoff_id"],
+    ).to_dict()
+    wrapped_input_fingerprint = content_fingerprint(
+        {
+            "retry_wrapped_input_fingerprint": input_fingerprint,
+            "authorization_lineage": "persisted-prior-retries",
+        }
+    )
     with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO ai_shadow_research_baselines VALUES (?, ?, ?)",
+            (prepared.fingerprint, baseline_result_id, "2026-08-11T08:00:00+00:00"),
+        )
+        conn.execute(
+            "UPDATE ai_shadow_research_runs SET input_fingerprint=? WHERE run_id=?",
+            (wrapped_input_fingerprint, run["run_id"]),
+        )
+        for iteration_number in range(1, 5):
+            session_id = f"persisted-session-{iteration_number}"
+            current = conn.execute(
+                "SELECT request_json FROM ai_strategy_research_sessions WHERE session_id=?",
+                (session_id,),
+            ).fetchone()
+            iteration_context = json.loads(current[0])["iteration_context"]
+            conn.execute(
+                """
+                UPDATE ai_strategy_research_sessions SET request_json=?
+                WHERE session_id=?
+                """,
+                (
+                    canonical_json(
+                        {
+                            "requested_by": "automation:human:owner",
+                            "account_alias": (
+                                "standing-owner-authorized-shadow-research"
+                            ),
+                            "research_question": policy.research_question,
+                            "selection": persisted_selection,
+                            "iteration_context": iteration_context,
+                            "confirmation_recorded": True,
+                            "api_key_recorded": False,
+                        }
+                    ),
+                    session_id,
+                ),
+            )
         first_four_calls_before = conn.execute(
             """
             SELECT call_id, status, actual_tokens, failure_code, created_at, updated_at
@@ -1901,6 +1963,36 @@ async def test_fifth_round_timeout_resume_preserves_four_rounds_and_uses_two_cal
     assert extension["consumed"] is False
     assert extension["broker_submission_enabled"] is False
     assert extension["capital_authority_changed"] is False
+
+    selection_components = dict(persisted_selection)
+    selection_components.pop("schema_version")
+    selection_components.pop("saved_backtest_result_id")
+    selection_components.pop("account_fact_binding")
+    with pytest.raises(
+        ShadowResearchRejected,
+        match="timeout_resume_input_evidence_drift",
+    ):
+        store.claim_run(
+            market_date=prepared.market_date,
+            input_fingerprint=input_fingerprint,
+            baseline_seed_result_id=prepared.seed_result_id,
+            valuation_snapshot_id=valuation["snapshot_id"],
+            ledger_cutoff_id=valuation["ledger_cutoff_id"],
+            now="2026-08-11T08:01:30+00:00",
+            timeout_resume_input_evidence={
+                "baseline_fingerprint": prepared.fingerprint,
+                "requested_by": "automation:human:owner",
+                "account_alias": "standing-owner-authorized-shadow-research",
+                "research_question": "A different research question.",
+                "selection_components": selection_components,
+            },
+        )
+    assert (
+        store.usage_for_market_date(prepared.market_date)[
+            "timeout_resume_call_extension_consumed"
+        ]
+        is False
+    )
 
     monkeypatch.setattr(service, "_prepare_baseline", lambda policy: prepared)
     monkeypatch.setattr(
