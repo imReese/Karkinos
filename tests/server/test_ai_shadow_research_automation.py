@@ -52,6 +52,11 @@ from server.services.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactStore,
     build_daily_strategy_promotion_binding,
 )
+from server.services.market_universe_truth import (
+    MarketUniversePolicy,
+    normalize_a_share_members,
+    preliminary_research_panel_symbols,
+)
 from server.services.reviewed_fee_schedule import ReviewedFeeScheduleRejected
 from server.services.trading_controls import TradingControlState
 from tests.ai_shadow_strategy_fixtures import seed_ai_shadow_canonical_sources
@@ -2409,7 +2414,7 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
     db.init_sync()
     market = DataStore(tmp_path / "market")
     symbol = Symbol("600000")
-    closes = [10.0] * 20 + [20.0] * 20
+    closes = [10.0] * 40 + [20.0] * 40
     bars = pd.DataFrame(
         {
             "timestamp": pd.bdate_range("2026-01-02", periods=len(closes)),
@@ -2420,14 +2425,25 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
             "volume": [1_000_000.0] * len(closes),
         }
     )
-    market.save_bars(
-        symbol,
-        BarFrequency.DAILY,
-        bars,
+    universe_snapshot = market.save_market_universe_snapshot(
+        trade_date=bars["timestamp"].iloc[-1].date().isoformat(),
         provider_name="deterministic_fixture",
-        data_source="deterministic_fixture",
-        adjustment_mode="none",
+        members=normalize_a_share_members(
+            [f"{600000 + index:06d}" for index in range(1_000)]
+        ),
     )
+    for panel_symbol in preliminary_research_panel_symbols(
+        universe_snapshot,
+        policy=MarketUniversePolicy(),
+    ):
+        market.save_bars(
+            Symbol(panel_symbol),
+            BarFrequency.DAILY,
+            bars,
+            provider_name="deterministic_fixture",
+            data_source="deterministic_fixture",
+            adjustment_mode="none",
+        )
     seed_result_id = asyncio.run(
         db.save_backtest_result(
             config_json=json.dumps(

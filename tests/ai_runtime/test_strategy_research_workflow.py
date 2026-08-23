@@ -287,7 +287,14 @@ def _hypothesis_response(
             "end_date": selection.end_date,
         },
         "frequency": selection.frequency,
-        "formula_ast": _formula(),
+        "formula_ast": {
+            **_formula(),
+            "position_size": {
+                "op": "max_weight",
+                "input": {"op": "equal_weight"},
+                "value": 0.99,
+            },
+        },
         "parameter_values": {"window": 3},
         "parameter_ranges": {"window": [3, 5]},
         "entry_conditions": "收盘价从下向上穿越三日均线。",
@@ -877,6 +884,8 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
     assert len(hypotheses["drafts"]) == 1
     draft = hypotheses["drafts"][0]
     assert draft["validation"]["status"] == "valid"
+    assert draft["formula_ast"]["position_size"] == {"op": "equal_weight"}
+    assert draft["provider_position_size_ignored"] is True
     assert draft["executable"] is False
     assert draft["authority_effect"] == "none"
     assert draft["provider_provenance"]["usage"]["total_tokens"] == 300
@@ -917,6 +926,19 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
     assert backtest["canonical_backtest"]["result_id"] == 18
     assert backtest["canonical_backtest"]["total_return"] < 0
     assert backtest["canonical_backtest"]["cost_summary"]["total_trades"] > 0
+    execution_evidence = backtest["canonical_backtest"]["signal_execution_evidence"]
+    assert execution_evidence["allocation_slots"] == 1
+    assert execution_evidence["canonical_target_weight"] == 1.0
+    assert execution_evidence["model_position_size_ignored"] is True
+    assert execution_evidence["contains_absolute_balance"] is False
+    assert execution_evidence["contains_holding_quantity"] is False
+    assert execution_evidence["authority_effect"] == "none"
+    assert (
+        backtest["canonical_backtest"]["lot_feasibility_evidence"][
+            "model_controls_position_size"
+        ]
+        is False
+    )
     assert (
         backtest["canonical_backtest"]["dataset_snapshot"]["snapshot_id"]
         == selection.dataset_snapshot_id

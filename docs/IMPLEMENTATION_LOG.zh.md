@@ -7,12 +7,19 @@ commit 和 pull request。
 
 ## 当前基线
 
-截至 2026-08-23，v0.2.11 是当前本地稳定发布基线。
+截至 2026-08-23，v0.3.0 是当前本地稳定发布基线。
 v1.8 control-plane 基础以及截至 Phase 1.18 的 AI-native research 基础已经实现。当前产品
 里程碑是[路线图](ROADMAP.zh.md)中的券商连接、逐单受控 pilot。
 
 最近完成的跨领域工作包括：
 
+- v0.3.0 以 `karkinos.market_universe_truth.v1` 替代“仅从当前持仓研究”：每个 provider/交易日
+  保存一个完整、不可变、内容寻址的 A 股股票范围快照；确定性补全 160 只股票的持久化历史，
+  并在任何模型调用前冻结恰好 40 只可复现面板。基金/ETF 不进入策略范围，行情缺失、过期、
+  历史过短、数值异常、不可交易或按 100 股一手不可买都会在本地拒绝。DeepSeek 仅负责信号逻辑，
+  provider 返回的仓位权重被本地固定四槽策略覆盖；canonical critique 新增信号到成交与一手可买性
+  证据，多资产权益使用各持仓自身盯市价值。收盘后每小时 ingestion 受已验证交易日历约束且幂等，
+  完成后的重放不联系 provider，也不修改 Account Truth、策略晋级、订单、券商、账本、执行或资本权限；验证通过 2,519 项 Python 测试、697 项 Web 测试、Web 格式与生产构建、文档健康、策略—券商边界和目标文件格式/导入检查，并以 TuShare 真实跑通 2026-08-21 的 5,210 只股票范围、159/160 份持久化历史、78 只资金/手数合格标的及确定性 40 股票面板；
 - v0.2.11 仅对 Strategy Research 的 hypothesis/critique 请求显式关闭 DeepSeek thinking，把完整
   12,288 token 输出额度保留给有界最终 JSON；其他外部研究与 memory 流程仍保留各自经审查的推理
   行为。`finish_reason=length` 仍不可变地记录为 fail-closed `provider_output_truncated`，不会静默重试。
