@@ -111,6 +111,10 @@ SHADOW_RESEARCH_CORRECTED_PANEL_REARM_CONFIRMATION = (
     "authorize_one_corrected_full_market_40_stock_panel_five_round_ten_call_"
     "research_without_strategy_trade_or_capital_authority"
 )
+SHADOW_RESEARCH_CORRECTED_PANEL_CITATION_RESUME_CONFIRMATION = (
+    "authorize_one_additional_deepseek_call_for_corrected_panel_first_critique_"
+    "citation_resume_without_strategy_trade_or_capital_authority"
+)
 SHADOW_RESEARCH_CITATION_CALL_EXTENSION_CONFIRMATION = (
     "authorize_one_additional_deepseek_call_for_citation_contract_retry_without_"
     "strategy_trade_or_capital_authority"
@@ -128,6 +132,10 @@ _OUTPUT_TRUNCATION_RETRYABLE_FAILURE_CODES = ("provider_output_truncated",)
 _TIMEOUT_RESUME_RETRYABLE_FAILURE_CODES = ("provider_timeout",)
 _TIMEOUT_RESUME_COMPLETED_ITERATIONS = 4
 _TIMEOUT_RESUME_ITERATION = 5
+_CORRECTED_PANEL_CITATION_RESUME_ITERATION = 1
+_CORRECTED_PANEL_CITATION_RESUME_STAGE = "critique"
+_CORRECTED_PANEL_CITATION_FAILURE_CODE = "critique_citation_outside_binding"
+_CORRECTED_PANEL_CITATION_CANDIDATE_FAILURE_CODE = "strategy_critique_not_complete"
 _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION = (
     STRATEGY_RESEARCH_PROVIDER_TOKEN_RESERVATION
@@ -465,6 +473,33 @@ class ShadowResearchStore:
                     consumed_rearm_evidence_fingerprint TEXT NOT NULL,
                     consumed_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS ai_shadow_research_corrected_panel_citation_resume_extensions (
+                    extension_id TEXT PRIMARY KEY,
+                    failed_run_id TEXT NOT NULL UNIQUE,
+                    market_date TEXT NOT NULL UNIQUE,
+                    failed_input_fingerprint TEXT NOT NULL,
+                    failed_call_id TEXT NOT NULL UNIQUE,
+                    failed_call_failure_code TEXT NOT NULL
+                        CHECK(failed_call_failure_code = 'critique_citation_outside_binding'),
+                    checkpoint_fingerprint TEXT NOT NULL,
+                    provider_calls_at_authorization INTEGER NOT NULL,
+                    prior_provider_call_ceiling INTEGER NOT NULL,
+                    authorized_additional_calls INTEGER NOT NULL
+                        CHECK(authorized_additional_calls = 1),
+                    provider_call_ceiling INTEGER NOT NULL,
+                    resume_iteration INTEGER NOT NULL CHECK(resume_iteration = 1),
+                    resume_stage TEXT NOT NULL CHECK(resume_stage = 'critique'),
+                    approved_by TEXT NOT NULL,
+                    notes TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS ai_shadow_research_corrected_panel_citation_resume_consumptions (
+                    extension_id TEXT PRIMARY KEY,
+                    resumed_run_id TEXT NOT NULL UNIQUE,
+                    resumed_input_fingerprint TEXT NOT NULL UNIQUE,
+                    checkpoint_fingerprint TEXT NOT NULL,
+                    consumed_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS ai_shadow_research_candidates (
                     candidate_id TEXT PRIMARY KEY,
                     run_id TEXT NOT NULL,
@@ -523,6 +558,102 @@ class ShadowResearchStore:
             ).fetchone()
             if existing is not None:
                 existing_run = dict(existing)
+                corrected_panel_citation_resume = (
+                    self._unconsumed_corrected_panel_citation_resume_extension(
+                        conn, existing_run
+                    )
+                )
+                if corrected_panel_citation_resume is not None:
+                    normalized_rearm_evidence = _require_corrected_panel_rearm_evidence(
+                        corrected_panel_rearm_evidence
+                    )
+                    rearm_binding = conn.execute(
+                        """
+                        SELECT authorization.expected_rearm_evidence_fingerprint
+                        FROM ai_shadow_research_corrected_panel_rearm_consumptions
+                             AS consumption
+                        JOIN ai_shadow_research_corrected_panel_rearm_authorizations
+                             AS authorization
+                          ON authorization.authorization_id=consumption.authorization_id
+                        WHERE consumption.replacement_run_id=?
+                          AND authorization.market_date=?
+                        """,
+                        (existing_run["run_id"], market_date),
+                    ).fetchone()
+                    if (
+                        rearm_binding is None
+                        or normalized_rearm_evidence["evidence_fingerprint"]
+                        != rearm_binding["expected_rearm_evidence_fingerprint"]
+                        or int(existing_run["baseline_seed_result_id"])
+                        != int(baseline_seed_result_id)
+                        or existing_run["valuation_snapshot_id"]
+                        != valuation_snapshot_id
+                        or int(existing_run["ledger_cutoff_id"])
+                        != int(ledger_cutoff_id)
+                    ):
+                        raise ShadowResearchRejected(
+                            "corrected_panel_citation_resume_input_drift"
+                        )
+                    checkpoint = self._first_critique_resume_checkpoint(
+                        conn, existing_run
+                    )
+                    if checkpoint["checkpoint_fingerprint"] != (
+                        corrected_panel_citation_resume["checkpoint_fingerprint"]
+                    ):
+                        raise ShadowResearchRejected(
+                            "corrected_panel_citation_resume_checkpoint_drift"
+                        )
+                    cursor = conn.execute(
+                        """
+                        UPDATE ai_shadow_research_runs
+                        SET status='running', failure_code=NULL,
+                            candidate_count=0, updated_at=?
+                        WHERE run_id=? AND status='failed'
+                        """,
+                        (now, existing_run["run_id"]),
+                    )
+                    if cursor.rowcount != 1:
+                        raise ShadowResearchRejected(
+                            "corrected_panel_citation_resume_run_not_claimable"
+                        )
+                    conn.execute(
+                        """
+                        INSERT INTO ai_shadow_research_corrected_panel_citation_resume_consumptions
+                        (extension_id, resumed_run_id, resumed_input_fingerprint,
+                         checkpoint_fingerprint, consumed_at)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (
+                            corrected_panel_citation_resume["extension_id"],
+                            existing_run["run_id"],
+                            input_fingerprint,
+                            checkpoint["checkpoint_fingerprint"],
+                            now,
+                        ),
+                    )
+                    resumed = conn.execute(
+                        "SELECT * FROM ai_shadow_research_runs WHERE run_id=?",
+                        (existing_run["run_id"],),
+                    ).fetchone()
+                    if resumed is None:
+                        raise RuntimeError(
+                            "corrected panel citation resume persistence failed"
+                        )
+                    return {
+                        **dict(resumed),
+                        "partial_resume_iteration": (
+                            _CORRECTED_PANEL_CITATION_RESUME_ITERATION
+                        ),
+                        "partial_resume_stage": (
+                            _CORRECTED_PANEL_CITATION_RESUME_STAGE
+                        ),
+                        "partial_resume_extension_id": (
+                            corrected_panel_citation_resume["extension_id"]
+                        ),
+                        "partial_resume_evidence_fingerprint": checkpoint[
+                            "checkpoint_fingerprint"
+                        ],
+                    }, False
                 timeout_resume_extension = (
                     self._unconsumed_timeout_resume_call_extension(conn, existing_run)
                 )
@@ -1484,6 +1615,165 @@ class ShadowResearchStore:
                 )
             return self._citation_call_extension_row(conn, saved)
 
+    def authorize_corrected_panel_citation_resume_extension(
+        self,
+        failed_run_id: str,
+        *,
+        rearm_evidence: Mapping[str, Any],
+        approved_by: str,
+        notes: str,
+        confirmation: str,
+        now: str,
+    ) -> dict[str, Any]:
+        """Authorize one call to resume the exact failed first critique."""
+        if confirmation != SHADOW_RESEARCH_CORRECTED_PANEL_CITATION_RESUME_CONFIRMATION:
+            raise PermissionError(
+                "corrected panel citation resume requires exact owner confirmation"
+            )
+        approved_by = approved_by.strip()
+        notes = notes.strip()
+        if not approved_by or not notes:
+            raise ShadowResearchRejected(
+                "corrected_panel_citation_resume_approver_and_notes_required"
+            )
+        normalized_rearm_evidence = _require_corrected_panel_rearm_evidence(
+            rearm_evidence
+        )
+        with self._connect(immediate=True) as conn:
+            existing = conn.execute(
+                """
+                SELECT *
+                FROM ai_shadow_research_corrected_panel_citation_resume_extensions
+                WHERE failed_run_id=?
+                """,
+                (failed_run_id,),
+            ).fetchone()
+            if existing is not None:
+                if existing["approved_by"] != approved_by or existing["notes"] != notes:
+                    raise ShadowResearchRejected(
+                        "corrected_panel_citation_resume_authorization_conflict"
+                    )
+                return self._corrected_panel_citation_resume_extension_row(
+                    conn, existing
+                )
+
+            failed_run = conn.execute(
+                "SELECT * FROM ai_shadow_research_runs WHERE run_id=?",
+                (failed_run_id,),
+            ).fetchone()
+            if failed_run is None:
+                raise LookupError(f"shadow research run not found: {failed_run_id}")
+            failed_run_mapping = dict(failed_run)
+            if (
+                failed_run["status"] != "failed"
+                or failed_run["failure_code"] != "sequential_iteration_not_complete"
+                or int(failed_run["candidate_count"] or 0) != 0
+                or failed_run["market_date"] != normalized_rearm_evidence["market_date"]
+            ):
+                raise ShadowResearchRejected(
+                    "corrected_panel_citation_resume_requires_exact_failed_run"
+                )
+            rearm = conn.execute(
+                """
+                SELECT authorization.provider_call_ceiling,
+                       authorization.expected_rearm_evidence_fingerprint
+                FROM ai_shadow_research_corrected_panel_rearm_consumptions
+                     AS consumption
+                JOIN ai_shadow_research_corrected_panel_rearm_authorizations
+                     AS authorization
+                  ON authorization.authorization_id=consumption.authorization_id
+                WHERE consumption.replacement_run_id=?
+                  AND authorization.market_date=?
+                """,
+                (failed_run_id, failed_run["market_date"]),
+            ).fetchone()
+            if (
+                rearm is None
+                or rearm["expected_rearm_evidence_fingerprint"]
+                != normalized_rearm_evidence["evidence_fingerprint"]
+            ):
+                raise ShadowResearchRejected(
+                    "corrected_panel_citation_resume_rearm_evidence_drift"
+                )
+            checkpoint = self._first_critique_resume_checkpoint(
+                conn, failed_run_mapping
+            )
+            market_date = str(failed_run["market_date"])
+            provider_calls = self._real_provider_call_count(conn, market_date)
+            prior_ceiling = self._effective_provider_call_ceiling(
+                conn,
+                run_id=failed_run_id,
+                market_date=market_date,
+                call_limit=SHADOW_RESEARCH_MAX_PROVIDER_CALLS,
+            )
+            provider_call_ceiling = prior_ceiling + 1
+            failed_call_id = str(checkpoint["failed_call_id"])
+            if (
+                provider_calls != 16
+                or prior_ceiling != 24
+                or int(rearm["provider_call_ceiling"]) != 24
+                or provider_call_ceiling != 25
+                or provider_call_ceiling - provider_calls != 9
+            ):
+                raise ShadowResearchRejected(
+                    "corrected_panel_citation_resume_must_add_exactly_one_call"
+                )
+            extension_id = (
+                "ai-shadow-research-corrected-panel-citation-resume:"
+                + content_fingerprint(
+                    {
+                        "failed_run_id": failed_run_id,
+                        "failed_call_id": failed_call_id,
+                        "checkpoint_fingerprint": checkpoint["checkpoint_fingerprint"],
+                        "provider_calls_at_authorization": provider_calls,
+                        "prior_provider_call_ceiling": prior_ceiling,
+                        "provider_call_ceiling": provider_call_ceiling,
+                        "approved_by": approved_by,
+                        "notes": notes,
+                    }
+                )[:24]
+            )
+            conn.execute(
+                """
+                INSERT INTO ai_shadow_research_corrected_panel_citation_resume_extensions
+                (extension_id, failed_run_id, market_date,
+                 failed_input_fingerprint, failed_call_id,
+                 failed_call_failure_code, checkpoint_fingerprint,
+                 provider_calls_at_authorization, prior_provider_call_ceiling,
+                 authorized_additional_calls, provider_call_ceiling,
+                 resume_iteration, resume_stage, approved_by, notes, created_at)
+                VALUES (?, ?, ?, ?, ?, 'critique_citation_outside_binding', ?,
+                        ?, ?, 1, ?, 1, 'critique', ?, ?, ?)
+                """,
+                (
+                    extension_id,
+                    failed_run_id,
+                    market_date,
+                    failed_run["input_fingerprint"],
+                    failed_call_id,
+                    checkpoint["checkpoint_fingerprint"],
+                    provider_calls,
+                    prior_ceiling,
+                    provider_call_ceiling,
+                    approved_by,
+                    notes,
+                    now,
+                ),
+            )
+            saved = conn.execute(
+                """
+                SELECT *
+                FROM ai_shadow_research_corrected_panel_citation_resume_extensions
+                WHERE extension_id=?
+                """,
+                (extension_id,),
+            ).fetchone()
+            if saved is None:
+                raise RuntimeError(
+                    "corrected panel citation resume authorization persistence failed"
+                )
+            return self._corrected_panel_citation_resume_extension_row(conn, saved)
+
     def authorize_output_truncation_call_extension(
         self,
         failed_run_id: str,
@@ -1681,8 +1971,7 @@ class ShadowResearchStore:
                 )
             checkpoint = self._partial_resume_checkpoint(conn, failed_run_mapping)
             failed_call_id = (
-                f"{failed_run_id}:hypothesis:iteration:"
-                f"{_TIMEOUT_RESUME_ITERATION:02d}"
+                f"{failed_run_id}:hypothesis:iteration:{_TIMEOUT_RESUME_ITERATION:02d}"
             )
             failed_call = conn.execute(
                 """
@@ -1832,6 +2121,268 @@ class ShadowResearchStore:
             """,
             (run["run_id"], run["input_fingerprint"]),
         ).fetchone()
+
+    def _unconsumed_corrected_panel_citation_resume_extension(
+        self,
+        conn: sqlite3.Connection,
+        run: Mapping[str, Any],
+    ) -> sqlite3.Row | None:
+        if (
+            run.get("status") != "failed"
+            or run.get("failure_code") != "sequential_iteration_not_complete"
+            or int(run.get("candidate_count") or 0) != 0
+        ):
+            return None
+        return conn.execute(
+            """
+            SELECT extension.*
+            FROM ai_shadow_research_corrected_panel_citation_resume_extensions
+                 AS extension
+            LEFT JOIN ai_shadow_research_corrected_panel_citation_resume_consumptions
+                 AS consumption
+              ON consumption.extension_id=extension.extension_id
+            WHERE extension.failed_run_id=?
+              AND extension.failed_input_fingerprint=?
+              AND extension.failed_call_failure_code=?
+              AND extension.resume_iteration=?
+              AND extension.resume_stage=?
+              AND consumption.extension_id IS NULL
+            """,
+            (
+                run["run_id"],
+                run["input_fingerprint"],
+                _CORRECTED_PANEL_CITATION_FAILURE_CODE,
+                _CORRECTED_PANEL_CITATION_RESUME_ITERATION,
+                _CORRECTED_PANEL_CITATION_RESUME_STAGE,
+            ),
+        ).fetchone()
+
+    def load_first_critique_resume_checkpoint(
+        self,
+        run_id: str,
+        *,
+        expected_fingerprint: str,
+    ) -> dict[str, Any]:
+        with self._connect_readonly() as conn:
+            run = conn.execute(
+                "SELECT * FROM ai_shadow_research_runs WHERE run_id=?", (run_id,)
+            ).fetchone()
+            if run is None:
+                raise LookupError(f"shadow research run not found: {run_id}")
+            checkpoint = self._first_critique_resume_checkpoint(conn, dict(run))
+        if checkpoint["checkpoint_fingerprint"] != expected_fingerprint:
+            raise ShadowResearchRejected(
+                "corrected_panel_citation_resume_checkpoint_drift"
+            )
+        return checkpoint
+
+    def _first_critique_resume_checkpoint(
+        self,
+        conn: sqlite3.Connection,
+        run: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        candidate_rows = conn.execute(
+            "SELECT * FROM ai_shadow_research_candidates WHERE run_id=?",
+            (run["run_id"],),
+        ).fetchall()
+        if len(candidate_rows) != 1:
+            raise ShadowResearchRejected(
+                "corrected_panel_citation_resume_candidate_lineage_invalid"
+            )
+        candidate = _candidate_row(candidate_rows[0])
+        session = conn.execute(
+            "SELECT * FROM ai_strategy_research_sessions WHERE session_id=?",
+            (candidate["session_id"],),
+        ).fetchone()
+        draft_row = conn.execute(
+            "SELECT * FROM ai_strategy_hypothesis_drafts WHERE draft_id=?",
+            (candidate["draft_id"],),
+        ).fetchone()
+        backtest = conn.execute(
+            "SELECT * FROM ai_strategy_formula_backtests WHERE backtest_run_id=?",
+            (candidate["backtest_run_id"],),
+        ).fetchone()
+        critique_rows = conn.execute(
+            """
+            SELECT * FROM ai_strategy_backtest_critiques
+            WHERE session_id=? AND draft_id=? AND backtest_run_id=?
+            ORDER BY created_at, critique_id
+            """,
+            (
+                candidate["session_id"],
+                candidate["draft_id"],
+                candidate["backtest_run_id"],
+            ),
+        ).fetchall()
+        provider_calls = conn.execute(
+            """
+            SELECT call_id, run_id, market_date, call_kind, status,
+                   actual_tokens, failure_code
+            FROM ai_shadow_research_provider_calls
+            WHERE run_id=? ORDER BY created_at, call_id
+            """,
+            (run["run_id"],),
+        ).fetchall()
+        resume_consumption = conn.execute(
+            """
+            SELECT consumption.checkpoint_fingerprint
+            FROM ai_shadow_research_corrected_panel_citation_resume_consumptions
+                 AS consumption
+            JOIN ai_shadow_research_corrected_panel_citation_resume_extensions
+                 AS extension
+              ON extension.extension_id=consumption.extension_id
+            WHERE consumption.resumed_run_id=?
+              AND extension.failed_input_fingerprint=?
+            """,
+            (run["run_id"], run["input_fingerprint"]),
+        ).fetchone()
+        if (
+            session is None
+            or draft_row is None
+            or backtest is None
+            or len(critique_rows) != 1
+            or len(provider_calls) != 2
+        ):
+            raise ShadowResearchRejected(
+                "corrected_panel_citation_resume_checkpoint_incomplete"
+            )
+        critique = critique_rows[0]
+        draft = _json_object(draft_row["contract_json"])
+        session_request = _json_object(session["request_json"])
+        comparison = candidate.get("comparison")
+        comparison = comparison if isinstance(comparison, Mapping) else {}
+        expected_context = _build_iteration_context(
+            iteration_number=_CORRECTED_PANEL_CITATION_RESUME_ITERATION,
+            total_iterations=SHADOW_RESEARCH_MAX_CANDIDATES,
+            previous_iteration=None,
+        )
+        expected_hypothesis_call_id = (
+            f"{run['run_id']}:hypothesis:iteration:"
+            f"{_CORRECTED_PANEL_CITATION_RESUME_ITERATION:02d}"
+        )
+        expected_backtest_idempotency_key = (
+            f"{run['run_id']}:backtest:{candidate['draft_id']}"
+        )
+        expected_critique_call_id = f"{run['run_id']}:critique:{candidate['draft_id']}"
+        call_by_id = {str(row["call_id"]): row for row in provider_calls}
+        hypothesis_call = call_by_id.get(expected_hypothesis_call_id)
+        failed_critique_call = call_by_id.get(expected_critique_call_id)
+        expected_lineage = _iteration_lineage(
+            expected_context,
+            current_formula_fingerprint=draft.get("formula_fingerprint"),
+        )
+        failed_state = (
+            run.get("status") == "failed"
+            and run.get("failure_code") == "sequential_iteration_not_complete"
+            and resume_consumption is None
+        )
+        resumed_state = (
+            run.get("status") == "running"
+            and run.get("failure_code") is None
+            and resume_consumption is not None
+        )
+        if (
+            not (failed_state or resumed_state)
+            or int(run.get("candidate_count") or 0) != 0
+            or candidate["status"] != "failed_closed"
+            or candidate["recommendation"] != "reject"
+            or candidate["promotion_status"] != "blocked_by_evidence"
+            or candidate.get("critique_id") is not None
+            or int(candidate.get("baseline_result_id") or 0)
+            != int(run.get("baseline_result_id") or 0)
+            or int(candidate.get("candidate_result_id") or 0) <= 0
+            or comparison.get("failure_code")
+            != _CORRECTED_PANEL_CITATION_CANDIDATE_FAILURE_CODE
+            or comparison.get("iteration_lineage") != expected_lineage
+            or comparison.get("promotion_gate", {}).get("status") != "blocked"
+            or comparison.get("promotion_gate", {}).get("blockers")
+            != [_CORRECTED_PANEL_CITATION_CANDIDATE_FAILURE_CODE]
+            or session["status"] != "completed"
+            or session["failure_code"] is not None
+            or session["idempotency_key"] != expected_hypothesis_call_id
+            or session_request.get("iteration_context") != expected_context
+            or draft_row["session_id"] != candidate["session_id"]
+            or draft_row["validation_status"] != "valid"
+            or not draft
+            or draft_row["artifact_fingerprint"] != content_fingerprint(draft)
+            or draft_row["formula_fingerprint"] != draft.get("formula_fingerprint")
+            or draft.get("iteration_context_fingerprint")
+            != expected_context["context_fingerprint"]
+            or backtest["idempotency_key"] != expected_backtest_idempotency_key
+            or backtest["session_id"] != candidate["session_id"]
+            or backtest["draft_id"] != candidate["draft_id"]
+            or backtest["status"] != "completed"
+            or backtest["failure_code"] is not None
+            or int(backtest["canonical_backtest_result_id"] or 0)
+            != int(candidate["candidate_result_id"])
+            or critique["idempotency_key"] != expected_critique_call_id
+            or critique["session_id"] != candidate["session_id"]
+            or critique["draft_id"] != candidate["draft_id"]
+            or critique["backtest_run_id"] != candidate["backtest_run_id"]
+            or critique["status"] != "failed"
+            or critique["failure_code"] != _CORRECTED_PANEL_CITATION_FAILURE_CODE
+            or critique["normalized_artifact_json"] is not None
+            or critique["artifact_fingerprint"] is not None
+            or hypothesis_call is None
+            or failed_critique_call is None
+            or hypothesis_call["call_kind"] != "hypothesis_iteration"
+            or hypothesis_call["status"] != "completed"
+            or hypothesis_call["failure_code"] is not None
+            or failed_critique_call["call_kind"] != "critique"
+            or failed_critique_call["status"] != "failed"
+            or failed_critique_call["failure_code"]
+            != _CORRECTED_PANEL_CITATION_FAILURE_CODE
+            or any(row["run_id"] != run["run_id"] for row in provider_calls)
+            or any(row["market_date"] != run["market_date"] for row in provider_calls)
+        ):
+            raise ShadowResearchRejected(
+                "corrected_panel_citation_resume_checkpoint_invalid"
+            )
+        checkpoint_core = {
+            "schema_version": "karkinos.ai.first_critique_resume_checkpoint.v1",
+            "run_id": run["run_id"],
+            "input_fingerprint": run["input_fingerprint"],
+            "baseline_result_id": run.get("baseline_result_id"),
+            "valuation_snapshot_id": run.get("valuation_snapshot_id"),
+            "ledger_cutoff_id": run.get("ledger_cutoff_id"),
+            "session_id": candidate["session_id"],
+            "session_request_fingerprint": session["request_fingerprint"],
+            "draft_id": candidate["draft_id"],
+            "draft_artifact_fingerprint": draft_row["artifact_fingerprint"],
+            "draft_formula_fingerprint": draft_row["formula_fingerprint"],
+            "backtest_run_id": candidate["backtest_run_id"],
+            "backtest_result_id": candidate["candidate_result_id"],
+            "backtest_evidence_fingerprint": backtest["evidence_fingerprint"],
+            "failed_critique_id": critique["critique_id"],
+            "failed_call_id": expected_critique_call_id,
+            "failure_code": _CORRECTED_PANEL_CITATION_FAILURE_CODE,
+            "provider_calls": [dict(row) for row in provider_calls],
+            "iteration_context": expected_context,
+        }
+        checkpoint_fingerprint = content_fingerprint(checkpoint_core)
+        if (
+            resume_consumption is not None
+            and resume_consumption["checkpoint_fingerprint"] != checkpoint_fingerprint
+        ):
+            raise ShadowResearchRejected(
+                "corrected_panel_citation_resume_checkpoint_drift"
+            )
+        return {
+            "checkpoint_fingerprint": checkpoint_fingerprint,
+            "resume_iteration": _CORRECTED_PANEL_CITATION_RESUME_ITERATION,
+            "resume_stage": _CORRECTED_PANEL_CITATION_RESUME_STAGE,
+            "hypotheses": {
+                "session_id": candidate["session_id"],
+                "status": "completed",
+            },
+            "draft": draft,
+            "completed_backtest": {
+                "backtest_run_id": candidate["backtest_run_id"],
+                "candidate_result_id": int(candidate["candidate_result_id"]),
+            },
+            "iteration_context": expected_context,
+            "failed_call_id": expected_critique_call_id,
+        }
 
     def load_partial_resume_checkpoint(
         self,
@@ -2364,8 +2915,19 @@ class ShadowResearchStore:
               ON authorization.authorization_id=consumption.authorization_id
             WHERE consumption.replacement_run_id=?
               AND authorization.market_date=?
+            UNION ALL
+            SELECT extension.provider_call_ceiling AS ceiling
+            FROM ai_shadow_research_corrected_panel_citation_resume_consumptions
+                 AS consumption
+            JOIN ai_shadow_research_corrected_panel_citation_resume_extensions
+                 AS extension
+              ON extension.extension_id=consumption.extension_id
+            WHERE consumption.resumed_run_id=?
+              AND extension.market_date=?
             """,
             (
+                run_id,
+                market_date,
                 run_id,
                 market_date,
                 run_id,
@@ -2498,6 +3060,46 @@ class ShadowResearchStore:
             ),
             "replacement_input_fingerprint": (
                 consumption["replacement_input_fingerprint"]
+                if consumption is not None
+                else None
+            ),
+            "consumed_at": (
+                consumption["consumed_at"] if consumption is not None else None
+            ),
+            "automatic_strategy_replacement_enabled": False,
+            "production_strategy_mutation_enabled": False,
+            "broker_submission_enabled": False,
+            "capital_authority_changed": False,
+            "authority_effect": "research_only",
+        }
+
+    def _corrected_panel_citation_resume_extension_row(
+        self,
+        conn: sqlite3.Connection,
+        row: sqlite3.Row,
+    ) -> dict[str, Any]:
+        consumption = conn.execute(
+            """
+            SELECT resumed_run_id, resumed_input_fingerprint,
+                   checkpoint_fingerprint, consumed_at
+            FROM ai_shadow_research_corrected_panel_citation_resume_consumptions
+            WHERE extension_id=?
+            """,
+            (row["extension_id"],),
+        ).fetchone()
+        return {
+            **dict(row),
+            "consumed": consumption is not None,
+            "resumed_run_id": (
+                consumption["resumed_run_id"] if consumption is not None else None
+            ),
+            "resumed_input_fingerprint": (
+                consumption["resumed_input_fingerprint"]
+                if consumption is not None
+                else None
+            ),
+            "consumed_checkpoint_fingerprint": (
+                consumption["checkpoint_fingerprint"]
                 if consumption is not None
                 else None
             ),
@@ -2862,6 +3464,12 @@ class ShadowResearchStore:
                 "corrected_panel_rearm_consumed": False,
                 "corrected_panel_rearm_authorized_additional_calls": 0,
                 "corrected_panel_rearm_replacement_run_id": None,
+                "corrected_panel_citation_resume_extension_id": None,
+                "corrected_panel_citation_resume_consumed": False,
+                "corrected_panel_citation_resume_authorized_additional_calls": 0,
+                "corrected_panel_citation_resume_resumed_run_id": None,
+                "corrected_panel_citation_resume_iteration": None,
+                "corrected_panel_citation_resume_stage": None,
             }
         try:
             with self._connect_readonly() as conn:
@@ -2959,6 +3567,23 @@ class ShadowResearchStore:
                     """,
                     (market_date,),
                 ).fetchone()
+                corrected_panel_citation_resume = conn.execute(
+                    """
+                    SELECT extension.extension_id,
+                           extension.authorized_additional_calls,
+                           extension.provider_call_ceiling,
+                           extension.resume_iteration,
+                           extension.resume_stage,
+                           consumption.resumed_run_id
+                    FROM ai_shadow_research_corrected_panel_citation_resume_extensions
+                         AS extension
+                    LEFT JOIN ai_shadow_research_corrected_panel_citation_resume_consumptions
+                         AS consumption
+                      ON consumption.extension_id=extension.extension_id
+                    WHERE extension.market_date=?
+                    """,
+                    (market_date,),
+                ).fetchone()
         except sqlite3.OperationalError:
             return {
                 "market_date": market_date,
@@ -2989,6 +3614,12 @@ class ShadowResearchStore:
                 "corrected_panel_rearm_consumed": False,
                 "corrected_panel_rearm_authorized_additional_calls": 0,
                 "corrected_panel_rearm_replacement_run_id": None,
+                "corrected_panel_citation_resume_extension_id": None,
+                "corrected_panel_citation_resume_consumed": False,
+                "corrected_panel_citation_resume_authorized_additional_calls": 0,
+                "corrected_panel_citation_resume_resumed_run_id": None,
+                "corrected_panel_citation_resume_iteration": None,
+                "corrected_panel_citation_resume_stage": None,
             }
         return {
             "market_date": market_date,
@@ -3030,23 +3661,32 @@ class ShadowResearchStore:
                     if corrected_panel_rearm is not None
                     else 0
                 )
+                + (
+                    int(corrected_panel_citation_resume["authorized_additional_calls"])
+                    if corrected_panel_citation_resume is not None
+                    else 0
+                )
             ),
             "authorized_provider_call_ceiling": (
-                int(corrected_panel_rearm["provider_call_ceiling"])
-                if corrected_panel_rearm is not None
+                int(corrected_panel_citation_resume["provider_call_ceiling"])
+                if corrected_panel_citation_resume is not None
                 else (
-                    int(timeout_resume_extension["provider_call_ceiling"])
-                    if timeout_resume_extension is not None
+                    int(corrected_panel_rearm["provider_call_ceiling"])
+                    if corrected_panel_rearm is not None
                     else (
-                        int(output_truncation_extension["provider_call_ceiling"])
-                        if output_truncation_extension is not None
+                        int(timeout_resume_extension["provider_call_ceiling"])
+                        if timeout_resume_extension is not None
                         else (
-                            int(extension["provider_call_ceiling"])
-                            if extension is not None
+                            int(output_truncation_extension["provider_call_ceiling"])
+                            if output_truncation_extension is not None
                             else (
-                                int(authorization["provider_call_ceiling"])
-                                if authorization is not None
-                                else None
+                                int(extension["provider_call_ceiling"])
+                                if extension is not None
+                                else (
+                                    int(authorization["provider_call_ceiling"])
+                                    if authorization is not None
+                                    else None
+                                )
                             )
                         )
                     )
@@ -3131,6 +3771,35 @@ class ShadowResearchStore:
             "corrected_panel_rearm_replacement_run_id": (
                 corrected_panel_rearm["replacement_run_id"]
                 if corrected_panel_rearm is not None
+                else None
+            ),
+            "corrected_panel_citation_resume_extension_id": (
+                corrected_panel_citation_resume["extension_id"]
+                if corrected_panel_citation_resume is not None
+                else None
+            ),
+            "corrected_panel_citation_resume_consumed": bool(
+                corrected_panel_citation_resume is not None
+                and corrected_panel_citation_resume["resumed_run_id"] is not None
+            ),
+            "corrected_panel_citation_resume_authorized_additional_calls": (
+                int(corrected_panel_citation_resume["authorized_additional_calls"])
+                if corrected_panel_citation_resume is not None
+                else 0
+            ),
+            "corrected_panel_citation_resume_resumed_run_id": (
+                corrected_panel_citation_resume["resumed_run_id"]
+                if corrected_panel_citation_resume is not None
+                else None
+            ),
+            "corrected_panel_citation_resume_iteration": (
+                int(corrected_panel_citation_resume["resume_iteration"])
+                if corrected_panel_citation_resume is not None
+                else None
+            ),
+            "corrected_panel_citation_resume_stage": (
+                corrected_panel_citation_resume["resume_stage"]
+                if corrected_panel_citation_resume is not None
                 else None
             ),
         }
@@ -3516,6 +4185,37 @@ class AiShadowResearchAutomationService:
             now=self._utc_now(),
         )
 
+    async def authorize_corrected_panel_citation_resume_extension(
+        self,
+        failed_run_id: str,
+        *,
+        approved_by: str,
+        notes: str,
+        confirmation: str,
+    ) -> dict[str, Any]:
+        policy = self.get_policy()
+        if (
+            not policy.enabled
+            or policy.max_candidates_per_run != SHADOW_RESEARCH_MAX_CANDIDATES
+            or policy.max_provider_calls_per_market_date
+            != SHADOW_RESEARCH_MAX_PROVIDER_CALLS
+            or policy.daily_token_budget is not None
+        ):
+            raise ShadowResearchRejected(
+                "corrected_panel_citation_resume_requires_complete_enabled_policy"
+            )
+        prepared = await asyncio.to_thread(self._prepare_baseline, policy)
+        rearm_evidence = _build_corrected_panel_rearm_evidence(prepared)
+        return await asyncio.to_thread(
+            self._store.authorize_corrected_panel_citation_resume_extension,
+            failed_run_id,
+            rearm_evidence=rearm_evidence,
+            approved_by=approved_by,
+            notes=notes,
+            confirmation=confirmation,
+            now=self._utc_now(),
+        )
+
     def authorize_output_truncation_call_extension(
         self,
         failed_run_id: str,
@@ -3800,10 +4500,28 @@ class AiShadowResearchAutomationService:
             research = self._build_research_service(external=True)
             local_research = self._build_research_service(external=False)
             resume_iteration = int(run.get("partial_resume_iteration") or 1)
-            if resume_iteration == 1:
+            resume_stage = str(run.get("partial_resume_stage") or "")
+            first_critique_checkpoint: dict[str, Any] | None = None
+            if resume_stage == _CORRECTED_PANEL_CITATION_RESUME_STAGE:
+                if resume_iteration != _CORRECTED_PANEL_CITATION_RESUME_ITERATION:
+                    raise ShadowResearchRejected(
+                        "corrected_panel_citation_resume_iteration_invalid"
+                    )
+                first_critique_checkpoint = (
+                    self._store.load_first_critique_resume_checkpoint(
+                        str(run["run_id"]),
+                        expected_fingerprint=str(
+                            run.get("partial_resume_evidence_fingerprint") or ""
+                        ),
+                    )
+                )
                 candidates: list[dict[str, Any]] = []
                 valid_drafts: list[dict[str, Any]] = []
                 previous_iteration: dict[str, Any] | None = None
+            elif resume_iteration == 1:
+                candidates = []
+                valid_drafts = []
+                previous_iteration = None
             else:
                 if resume_iteration != _TIMEOUT_RESUME_ITERATION:
                     raise ShadowResearchRejected("partial_resume_iteration_invalid")
@@ -3831,13 +4549,44 @@ class AiShadowResearchAutomationService:
                     total_iterations=policy.max_candidates_per_run,
                     previous_iteration=previous_iteration,
                 )
-                hypotheses, draft = await self._generate_iteration_hypothesis(
-                    run=run,
-                    policy=policy,
-                    selection=selection,
-                    external_research=research,
-                    iteration_context=iteration_context,
-                )
+                completed_backtest: Mapping[str, Any] | None = None
+                critique_resume_extension_id: str | None = None
+                if first_critique_checkpoint is not None and iteration_number == 1:
+                    if (
+                        iteration_context
+                        != first_critique_checkpoint["iteration_context"]
+                    ):
+                        raise ShadowResearchRejected(
+                            "corrected_panel_citation_resume_iteration_context_drift"
+                        )
+                    hypotheses = dict(first_critique_checkpoint["hypotheses"])
+                    draft = dict(first_critique_checkpoint["draft"])
+                    completed_backtest = dict(
+                        first_critique_checkpoint["completed_backtest"]
+                    )
+                    critique_resume_extension_id = str(
+                        run.get("partial_resume_extension_id") or ""
+                    )
+                    if not critique_resume_extension_id:
+                        raise ShadowResearchRejected(
+                            "corrected_panel_citation_resume_extension_missing"
+                        )
+                else:
+                    generation_run = run
+                    if resume_stage == _CORRECTED_PANEL_CITATION_RESUME_STAGE:
+                        generation_run = {
+                            **run,
+                            "partial_resume_extension_id": None,
+                            "partial_resume_iteration": None,
+                            "partial_resume_stage": None,
+                        }
+                    hypotheses, draft = await self._generate_iteration_hypothesis(
+                        run=generation_run,
+                        policy=policy,
+                        selection=selection,
+                        external_research=research,
+                        iteration_context=iteration_context,
+                    )
                 run = self._store.update_run(
                     run["run_id"],
                     now=self._utc_now(),
@@ -3852,6 +4601,8 @@ class AiShadowResearchAutomationService:
                     baseline_result_id=baseline_result_id,
                     local_research=local_research,
                     external_research=research,
+                    completed_backtest=completed_backtest,
+                    critique_resume_extension_id=critique_resume_extension_id,
                 )
                 if candidate.get("status") not in {
                     "awaiting_human_approval",
@@ -4022,30 +4773,53 @@ class AiShadowResearchAutomationService:
         baseline_result_id: int,
         local_research: Any,
         external_research: Any,
+        completed_backtest: Mapping[str, Any] | None = None,
+        critique_resume_extension_id: str | None = None,
     ) -> dict[str, Any]:
         draft_id = str(draft["draft_id"])
         backtest_run_id: str | None = None
         candidate_result_id: int | None = None
         critique_id: str | None = None
         try:
-            self._require_runtime_authorization(policy)
-            backtest = await local_research.run_formula_backtest(
-                FormulaBacktestRequest(
-                    idempotency_key=f"{run['run_id']}:backtest:{draft_id}",
-                    requested_by=f"automation:{policy.updated_by}",
-                    session_id=str(hypotheses["session_id"]),
-                    draft_id=draft_id,
-                    confirmation=BACKTEST_CONFIRMATION,
+            if bool(critique_resume_extension_id) != (completed_backtest is not None):
+                raise ShadowResearchRejected(
+                    "critique_resume_checkpoint_binding_incomplete"
                 )
-            )
-            if backtest.get("status") != "completed" or not backtest.get(
-                "canonical_backtest"
-            ):
-                raise ShadowResearchRejected("formula_backtest_not_complete")
-            backtest_run_id = str(backtest["backtest_run_id"])
-            candidate_result_id = int(backtest["canonical_backtest"]["result_id"])
+            self._require_runtime_authorization(policy)
+            if completed_backtest is None:
+                backtest = await local_research.run_formula_backtest(
+                    FormulaBacktestRequest(
+                        idempotency_key=f"{run['run_id']}:backtest:{draft_id}",
+                        requested_by=f"automation:{policy.updated_by}",
+                        session_id=str(hypotheses["session_id"]),
+                        draft_id=draft_id,
+                        confirmation=BACKTEST_CONFIRMATION,
+                    )
+                )
+                if backtest.get("status") != "completed" or not backtest.get(
+                    "canonical_backtest"
+                ):
+                    raise ShadowResearchRejected("formula_backtest_not_complete")
+                backtest_run_id = str(backtest["backtest_run_id"])
+                candidate_result_id = int(backtest["canonical_backtest"]["result_id"])
+            else:
+                backtest_run_id = str(completed_backtest.get("backtest_run_id") or "")
+                candidate_result_id = int(
+                    completed_backtest.get("candidate_result_id") or 0
+                )
+                if not backtest_run_id or candidate_result_id <= 0:
+                    raise ShadowResearchRejected(
+                        "completed_formula_backtest_checkpoint_invalid"
+                    )
             self._require_runtime_authorization(policy)
             call_id = f"{run['run_id']}:critique:{draft_id}"
+            if critique_resume_extension_id:
+                call_id += (
+                    ":corrected-panel-citation-resume:"
+                    + content_fingerprint(
+                        {"extension_id": critique_resume_extension_id}
+                    )[:12]
+                )
             _, call_reused = self._store.claim_provider_call(
                 call_id=call_id,
                 run_id=str(run["run_id"]),
@@ -4059,7 +4833,7 @@ class AiShadowResearchAutomationService:
             try:
                 critique = await external_research.critique(
                     CritiqueRequest(
-                        idempotency_key=f"{run['run_id']}:critique:{draft_id}",
+                        idempotency_key=call_id,
                         requested_by=f"automation:{policy.updated_by}",
                         session_id=str(hypotheses["session_id"]),
                         draft_id=draft_id,
@@ -4081,6 +4855,13 @@ class AiShadowResearchAutomationService:
                 now=self._utc_now(),
             )
             if critique.get("status") != "completed":
+                failure_code = str(critique.get("failure_code") or "").strip()
+                if (
+                    failure_code
+                    and len(failure_code) <= 160
+                    and all(char.isalnum() or char in "_:-." for char in failure_code)
+                ):
+                    raise ShadowResearchRejected(failure_code)
                 raise ShadowResearchRejected("strategy_critique_not_complete")
             critique_id = str(critique["critique_id"])
             comparison = await self._build_comparison(

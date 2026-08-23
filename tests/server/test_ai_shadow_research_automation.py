@@ -27,6 +27,7 @@ from server.db import AppDatabase
 from server.models import BacktestRequest
 from server.services.ai_shadow_research_automation import (
     SHADOW_RESEARCH_CITATION_CALL_EXTENSION_CONFIRMATION,
+    SHADOW_RESEARCH_CORRECTED_PANEL_CITATION_RESUME_CONFIRMATION,
     SHADOW_RESEARCH_CORRECTED_PANEL_REARM_CONFIRMATION,
     SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_OUTPUT_TRUNCATION_CALL_EXTENSION_CONFIRMATION,
@@ -126,7 +127,10 @@ def _seed_completed_no_selection_for_corrected_panel_rearm(
     db.init_sync()
     store = ShadowResearchStore(db_path)
     store.init()
-    DailyStrategyArtifactStore(db_path, tmp_path / "strategy-research-backups").init()
+    daily_artifacts = DailyStrategyArtifactStore(
+        db_path, tmp_path / "strategy-research-backups"
+    )
+    daily_artifacts.init()
     run, reused = store.claim_run(
         market_date="2026-08-21",
         input_fingerprint="sha256:single-stock-input",
@@ -199,6 +203,35 @@ def _seed_completed_no_selection_for_corrected_panel_rearm(
                 canonical_json(selection),
                 selection["selection_fingerprint"],
                 selection["created_at"],
+            ),
+        )
+        backup = daily_artifacts._write_backup(
+            {
+                "schema_version": "karkinos.ai.daily_strategy_backup.v1",
+                "run_id": run["run_id"],
+                "market_date": run["market_date"],
+                "selection": selection,
+                "candidates": candidates,
+                "drafts": [],
+            },
+            created_at="2026-08-22T00:00:00+00:00",
+        )
+        conn.execute(
+            """
+            INSERT INTO ai_shadow_research_daily_backups
+            (backup_id, run_id, market_date, selection_id, relative_path,
+             artifact_fingerprint, byte_count, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                backup["backup_id"],
+                backup["run_id"],
+                backup["market_date"],
+                backup["selection_id"],
+                backup["relative_path"],
+                backup["artifact_fingerprint"],
+                backup["byte_count"],
+                backup["created_at"],
             ),
         )
         conn.execute("""
@@ -341,6 +374,392 @@ def test_corrected_panel_rearm_is_exactly_one_bound_ten_call_envelope(
     assert usage["corrected_panel_rearm_consumed"] is True
     assert usage["corrected_panel_rearm_authorized_additional_calls"] == 10
     assert usage["corrected_panel_rearm_replacement_run_id"] == replacement["run_id"]
+
+
+def _seed_corrected_panel_first_critique_failure(tmp_path):
+    store, completed_run, _ = _seed_completed_no_selection_for_corrected_panel_rearm(
+        tmp_path
+    )
+    StrategyResearchAuditStore(tmp_path / "app.db").init()
+    evidence = _corrected_panel_rearm_evidence()
+    store.authorize_corrected_panel_rearm(
+        completed_run["run_id"],
+        rearm_evidence=evidence,
+        approved_by="human:owner",
+        notes="Bind the corrected frozen 40-stock panel.",
+        confirmation=SHADOW_RESEARCH_CORRECTED_PANEL_REARM_CONFIRMATION,
+        now="2026-08-23T01:00:00+00:00",
+    )
+    run, reused = store.claim_run(
+        market_date="2026-08-21",
+        input_fingerprint="sha256:forty-stock-input",
+        baseline_seed_result_id=1,
+        valuation_snapshot_id="valuation-new",
+        ledger_cutoff_id=1,
+        now="2026-08-23T01:01:00+00:00",
+        corrected_panel_rearm_evidence=evidence,
+    )
+    assert reused is False
+    store.update_run(
+        run["run_id"],
+        now="2026-08-23T01:01:01+00:00",
+        baseline_result_id=1,
+    )
+    run = store.get_run(run["run_id"])
+    context = _build_iteration_context(
+        iteration_number=1,
+        total_iterations=5,
+        previous_iteration=None,
+    )
+    hypothesis_call_id = f"{run['run_id']}:hypothesis:iteration:01"
+    session_id = "session-corrected-panel-iteration-1"
+    draft_id = "draft-corrected-panel-iteration-1"
+    backtest_run_id = "backtest-corrected-panel-iteration-1"
+    critique_call_id = f"{run['run_id']}:critique:{draft_id}"
+    formula_fingerprint = "sha256:" + "1" * 64
+    draft = {
+        "draft_id": draft_id,
+        "formula_fingerprint": formula_fingerprint,
+        "iteration_context_fingerprint": context["context_fingerprint"],
+        "economic_hypothesis": "Testable corrected-panel hypothesis.",
+        "formula_ast": {"operator": "rank", "operand": "momentum"},
+        "parameter_values": {"lookback": 20},
+        "parameter_ranges": {"lookback": [10, 40]},
+        "risk_impact": "Bounded research-only risk.",
+        "failure_conditions": ["OOS return is non-positive."],
+        "limitations": ["Daily bars only."],
+    }
+    now = "2026-08-23T01:02:00+00:00"
+    with sqlite3.connect(tmp_path / "app.db") as conn:
+        conn.execute(
+            """
+            INSERT INTO ai_strategy_research_sessions
+            (session_id, idempotency_key, request_fingerprint, request_json,
+             selection_fingerprint, status, failure_code, prompt_version,
+             created_at, updated_at)
+            VALUES (?, ?, 'session-request-fingerprint', ?,
+                    'selection-fingerprint', 'completed', NULL, 'v-test', ?, ?)
+            """,
+            (
+                session_id,
+                hypothesis_call_id,
+                canonical_json({"iteration_context": context}),
+                now,
+                now,
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO ai_strategy_hypothesis_drafts
+            (draft_id, session_id, ordinal, contract_json,
+             artifact_fingerprint, formula_fingerprint, validation_status,
+             validation_errors_json, created_at)
+            VALUES (?, ?, 1, ?, ?, ?, 'valid', '[]', ?)
+            """,
+            (
+                draft_id,
+                session_id,
+                canonical_json(draft),
+                content_fingerprint(draft),
+                formula_fingerprint,
+                now,
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO ai_strategy_formula_backtests
+            (backtest_run_id, idempotency_key, request_fingerprint, session_id,
+             draft_id, formula_fingerprint, dataset_snapshot_id,
+             cost_model_reference, status, canonical_backtest_result_id,
+             evidence_fingerprint, failure_code, created_at, updated_at)
+            VALUES (?, ?, 'backtest-request-fingerprint', ?, ?, ?,
+                    'sha256:dataset', 'reviewed-fees', 'completed', 2,
+                    'backtest-evidence-fingerprint', NULL, ?, ?)
+            """,
+            (
+                backtest_run_id,
+                f"{run['run_id']}:backtest:{draft_id}",
+                session_id,
+                draft_id,
+                formula_fingerprint,
+                now,
+                now,
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO ai_strategy_backtest_critiques
+            (critique_id, idempotency_key, request_fingerprint, session_id,
+             draft_id, backtest_run_id, status, failure_code, prompt_version,
+             created_at, updated_at)
+            VALUES ('failed-critique-corrected-panel', ?,
+                    'critique-request-fingerprint', ?, ?, ?, 'failed',
+                    'critique_citation_outside_binding', 'v-test', ?, ?)
+            """,
+            (critique_call_id, session_id, draft_id, backtest_run_id, now, now),
+        )
+        conn.commit()
+    comparison = {
+        "schema_version": "karkinos.ai.shadow_research_comparison.v1",
+        "failure_code": "strategy_critique_not_complete",
+        "iteration_lineage": _iteration_lineage(
+            context, current_formula_fingerprint=formula_fingerprint
+        ),
+        "promotion_gate": {
+            "status": "blocked",
+            "blockers": ["strategy_critique_not_complete"],
+        },
+        "automatic_strategy_replacement_enabled": False,
+        "broker_submission_enabled": False,
+    }
+    store.save_candidate(
+        run_id=run["run_id"],
+        session_id=session_id,
+        draft_id=draft_id,
+        backtest_run_id=backtest_run_id,
+        critique_id=None,
+        baseline_result_id=1,
+        candidate_result_id=2,
+        status="failed_closed",
+        recommendation="reject",
+        comparison=comparison,
+        now=now,
+    )
+    hypothesis_call, reused = store.claim_provider_call(
+        call_id=hypothesis_call_id,
+        run_id=run["run_id"],
+        market_date="2026-08-21",
+        call_kind="hypothesis_iteration",
+        call_limit=10,
+        now=now,
+    )
+    assert reused is False
+    store.finish_provider_call(
+        hypothesis_call["call_id"],
+        status="completed",
+        actual_tokens=100,
+        failure_code=None,
+        now=now,
+    )
+    critique_call, reused = store.claim_provider_call(
+        call_id=critique_call_id,
+        run_id=run["run_id"],
+        market_date="2026-08-21",
+        call_kind="critique",
+        call_limit=10,
+        now=now,
+    )
+    assert reused is False
+    store.finish_provider_call(
+        critique_call["call_id"],
+        status="failed",
+        actual_tokens=100,
+        failure_code="critique_citation_outside_binding",
+        now=now,
+    )
+    store.update_run(
+        run["run_id"],
+        now=now,
+        status="failed",
+        candidate_count=0,
+        failure_code="sequential_iteration_not_complete",
+    )
+    return store, store.get_run(run["run_id"]), evidence
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_corrected_panel_first_critique_resume_adds_one_call_and_reuses_checkpoint(
+    tmp_path,
+) -> None:
+    store, failed_run, evidence = _seed_corrected_panel_first_critique_failure(tmp_path)
+    extension = store.authorize_corrected_panel_citation_resume_extension(
+        failed_run["run_id"],
+        rearm_evidence=evidence,
+        approved_by="human:owner",
+        notes="Reuse completed iteration-one hypothesis and local backtest.",
+        confirmation=SHADOW_RESEARCH_CORRECTED_PANEL_CITATION_RESUME_CONFIRMATION,
+        now="2026-08-23T02:00:00+00:00",
+    )
+
+    assert extension["provider_calls_at_authorization"] == 16
+    assert extension["prior_provider_call_ceiling"] == 24
+    assert extension["authorized_additional_calls"] == 1
+    assert extension["provider_call_ceiling"] == 25
+    assert extension["resume_iteration"] == 1
+    assert extension["resume_stage"] == "critique"
+    assert extension["consumed"] is False
+    assert extension["broker_submission_enabled"] is False
+    assert extension["capital_authority_changed"] is False
+
+    resumed, reused = store.claim_run(
+        market_date="2026-08-21",
+        input_fingerprint="sha256:forty-stock-input",
+        baseline_seed_result_id=1,
+        valuation_snapshot_id="valuation-new",
+        ledger_cutoff_id=1,
+        now="2026-08-23T02:01:00+00:00",
+        corrected_panel_rearm_evidence=evidence,
+    )
+    assert reused is False
+    assert resumed["run_id"] == failed_run["run_id"]
+    assert resumed["partial_resume_iteration"] == 1
+    assert resumed["partial_resume_stage"] == "critique"
+    checkpoint = store.load_first_critique_resume_checkpoint(
+        resumed["run_id"],
+        expected_fingerprint=resumed["partial_resume_evidence_fingerprint"],
+    )
+    assert checkpoint["hypotheses"]["session_id"] == (
+        "session-corrected-panel-iteration-1"
+    )
+    assert checkpoint["draft"]["draft_id"] == "draft-corrected-panel-iteration-1"
+    assert checkpoint["completed_backtest"] == {
+        "backtest_run_id": "backtest-corrected-panel-iteration-1",
+        "candidate_result_id": 2,
+    }
+
+    usage = store.usage_for_market_date("2026-08-21")
+    assert usage["provider_calls"] == 16
+    assert usage["authorized_provider_call_ceiling"] == 25
+    assert usage["authorized_additional_calls"] == 12
+    assert usage["corrected_panel_citation_resume_consumed"] is True
+    assert usage["corrected_panel_citation_resume_authorized_additional_calls"] == 1
+    assert usage["corrected_panel_citation_resume_resumed_run_id"] == resumed["run_id"]
+    assert usage["corrected_panel_citation_resume_iteration"] == 1
+    assert usage["corrected_panel_citation_resume_stage"] == "critique"
+
+    for ordinal in range(9):
+        store.claim_provider_call(
+            call_id=f"remaining-call-{ordinal}",
+            run_id=resumed["run_id"],
+            market_date="2026-08-21",
+            call_kind="critique" if ordinal % 2 == 0 else "hypothesis_iteration",
+            call_limit=10,
+            now="2026-08-23T02:02:00+00:00",
+        )
+    with pytest.raises(
+        ShadowResearchRejected, match="daily_provider_call_limit_reached"
+    ):
+        store.claim_provider_call(
+            call_id="call-over-25",
+            run_id=resumed["run_id"],
+            market_date="2026-08-21",
+            call_kind="critique",
+            call_limit=10,
+            now="2026-08-23T02:03:00+00:00",
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_corrected_panel_resume_runs_only_failed_critique_then_four_rounds(
+    tmp_path, monkeypatch
+) -> None:
+    store, failed_run, evidence = _seed_corrected_panel_first_critique_failure(tmp_path)
+    store.authorize_corrected_panel_citation_resume_extension(
+        failed_run["run_id"],
+        rearm_evidence=evidence,
+        approved_by="human:owner",
+        notes="Resume only the failed first critique, then complete rounds two to five.",
+        confirmation=SHADOW_RESEARCH_CORRECTED_PANEL_CITATION_RESUME_CONFIRMATION,
+        now="2026-08-23T02:00:00+00:00",
+    )
+    db = AppDatabase(tmp_path / "app.db")
+    baseline_payload = _result(total_return=0.05, sharpe=0.6, drawdown=0.12)
+    candidate_payload = _result(total_return=0.12, sharpe=1.2, drawdown=0.08)
+    result_ids = []
+    for payload, strategy in (
+        (baseline_payload, "dual_ma"),
+        (candidate_payload, "ai_formula_research"),
+    ):
+        result_ids.append(
+            await db.save_backtest_result(
+                config_json=json.dumps({"strategy": strategy}),
+                initial_cash=payload["initial_cash"],
+                final_equity=payload["final_equity"],
+                total_return=payload["total_return"],
+                sharpe=payload["sharpe"],
+                max_dd=payload["max_drawdown"],
+                equity_curve_json=json.dumps(payload["equity_curve"]),
+                annual_return=payload["annual_return"],
+                sortino=payload["sortino"],
+                win_rate=payload["win_rate"],
+                duration_days=payload["duration_days"],
+                metrics_json=json.dumps(payload["metrics_json"]),
+                cost_summary_json=json.dumps(payload["cost_summary_json"]),
+            )
+        )
+    assert result_ids == [1, 2]
+    prepared = PreparedBaseline(
+        seed_result_id=1,
+        market_date="2026-08-21",
+        snapshot={"snapshot_id": "sha256:dataset"},
+        request=BacktestRequest(
+            start_date="2026-01-01",
+            end_date="2026-08-21",
+            initial_cash=100_000,
+            strategy="dual_ma",
+            assets=[{"symbol": "600000", "asset_class": "stock"}],
+            oos_mode="rolling",
+        ),
+        result=baseline_payload,
+        cost_model_reference=(
+            "karkinos.backtest.reviewed_account_fee_schedule.v1:"
+            f"fee_review_{'a' * 32}:{'b' * 64}"
+        ),
+        fee_schedule_evidence={
+            "fee_schedule_review_id": "fee_review_" + "a" * 32,
+            "fee_schedule_review_fingerprint": "sha256:" + "b" * 64,
+        },
+    )
+    fixture = _FixtureResearch(candidate_result_id=2)
+    service = AiShadowResearchAutomationService(
+        state=_state(db),
+        store=store,
+        data_store=DataStore(tmp_path / "market"),
+        research_service_builder=lambda external: fixture,
+        now=lambda: datetime(2026, 8, 23, 8, 0, tzinfo=ZoneInfo("UTC")),
+    )
+    service.update_policy(_policy_payload(enabled=True))
+    monkeypatch.setattr(service, "_prepare_baseline", lambda policy: prepared)
+    monkeypatch.setattr(
+        "server.services.ai_shadow_research_automation._build_corrected_panel_rearm_evidence",
+        lambda current: evidence,
+    )
+    monkeypatch.setattr(
+        "server.services.ai_shadow_research_automation.build_current_valuation_snapshot",
+        lambda db, persist: {
+            "snapshot_id": "valuation-new",
+            "ledger_cutoff_id": 1,
+            "status": "complete",
+            "trade_date": "2026-08-21",
+        },
+    )
+
+    result = await service.run_once()
+
+    assert result["run_status"] == "completed"
+    assert result["run_id"] == failed_run["run_id"]
+    assert fixture.hypothesis_calls == 4
+    assert fixture.backtest_calls == 4
+    assert fixture.critique_calls == 5
+    assert [
+        request.iteration_context["iteration_number"]
+        for request in fixture.hypothesis_requests
+    ] == [2, 3, 4, 5]
+    assert result["usage"]["provider_calls"] == 25
+    assert result["usage"]["authorized_provider_call_ceiling"] == 25
+    resumed_candidates = [
+        candidate
+        for candidate in result["candidates"]
+        if candidate["run_id"] == failed_run["run_id"]
+    ]
+    assert len(resumed_candidates) == 5
+    assert all(
+        candidate["status"] in {"awaiting_human_approval", "research_blocked"}
+        for candidate in resumed_candidates
+    )
 
 
 def _service(tmp_path) -> AiShadowResearchAutomationService:
@@ -2746,7 +3165,7 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
     db.upsert_automation_run_sync(
         {
             "run_id": (
-                "market_universe_sync:v2:deterministic_fixture:" f"{market_dates[-1]}"
+                f"market_universe_sync:v2:deterministic_fixture:{market_dates[-1]}"
             ),
             "run_type": "market_universe_sync",
             "run_date": market_dates[-1],

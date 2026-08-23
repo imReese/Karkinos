@@ -13,6 +13,7 @@ v1.8 control-plane 基础以及截至 Phase 1.18 的 AI-native research 基础�
 
 最近完成的跨领域工作包括：
 
+- 当前未打 tag 的 candidate 为 critique 增加与 hypothesis 相同的确定性短 citation ID contract，并为 corrected-panel 第 1 轮 critique 的精确失败增加一次证据绑定的本地断点续跑。owner extension 只追加、只消费一次，要求已持久化的 16 次调用/ceiling-24 lineage，以及未变化的 corrected-panel、baseline、valuation、ledger、session、draft、backtest、失败 critique、provider call 与 candidate 证据，只把 ceiling 提高到 25。续跑复用第 1 轮已经完成的 hypothesis 与本地回测，仅以绑定授权的新 idempotency key 重做 critique，再完成第 2 至 5 轮，不重跑既有工作；任一证据漂移继续 fail closed。验证通过 2,540 项 Python 测试、定向 citation/route/resume 测试、格式与 diff 检查，并在当前数据库副本上完成迁移与 claim，`PRAGMA quick_check=ok`；旧 runtime 也能安全打开迁移后的副本。该路径不能晋级策略、创建或提交订单、修改账户/账本证据或扩大资本授权；
 - 未打 tag 的 v0.3.0 candidate 以 `karkinos.market_universe_truth.v2` 替代“仅从当前持仓研究”：每个 provider/交易日保存一个完整、不可变、内容寻址的 A 股股票范围快照，以不可变 receipt 绑定完整市场日线，对全目录执行硬过滤后再冻结恰好 40 只可复现研究面板。人工晋级公式扫描完整合格股票池，当前股票持仓保留独立卖出通道。两阶段决策窗口先用前收盘预选，仅刷新入选的新买入股票，再重建 Account Truth，并要求信号选择指纹完全不变后才持久化推荐任务。DeepSeek 仅负责信号逻辑；本地代码拥有固定四槽仓位、费用、手数、风控和权限。人工票据可在页面刷新后重载，完整扫描无信号与阻断运行分开表达。验证通过 2,532 项 Python 测试、698 项 Web 测试、Web 格式与生产构建、文档健康、策略—券商边界、目标文件格式/导入检查和低风险变更分析。任何路径都不会自动晋级策略、创建或提交券商订单、修改账户账本或扩大资本授权；
 - v0.2.11 仅对 Strategy Research 的 hypothesis/critique 请求显式关闭 DeepSeek thinking，把完整
   12,288 token 输出额度保留给有界最终 JSON；其他外部研究与 memory 流程仍保留各自经审查的推理
