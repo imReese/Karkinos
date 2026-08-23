@@ -29,6 +29,7 @@ from server.ai_runtime.evidence import CanonicalEvidenceRepository
 from server.ai_runtime.formula_dsl import (
     FORMULA_AST_CONTRACT,
 )
+from server.ai_runtime.orchestrator import _failure_code as _workflow_failure_code
 from server.ai_runtime.provider_connectivity import (
     HttpJsonResponse,
     ProviderConnectivitySettings,
@@ -50,6 +51,7 @@ from server.ai_runtime.strategy_research import (
     StrategyResearchService,
     _build_hypothesis_citation_catalog,
     _citation_path_exists,
+    _compact_hypothesis_citation_catalog,
 )
 
 NOW = "2026-07-15T01:00:00+00:00"
@@ -1352,6 +1354,45 @@ def test_hypothesis_citation_catalog_fails_closed_when_path_bound_is_exceeded() 
         match="strategy_research_citation_catalog_too_large",
     ):
         _build_hypothesis_citation_catalog(oversized)
+
+
+@pytest.mark.unit
+def test_compact_hypothesis_catalog_ignores_unexported_nested_paths() -> None:
+    sources = {
+        "saved_backtest_evidence": {
+            "performance_summary": {"total_return": 0.1},
+            "irrelevant": {
+                f"field_{index}": index
+                for index in range(STRATEGY_RESEARCH_MAX_CITATION_PATHS + 1)
+            },
+        },
+        "operator_frozen_selection": {
+            "dataset_snapshot_id": "sha256:dataset",
+            "cost_model_reference": "reviewed-costs",
+        },
+        "saved_account_evidence": {"summary": {"cash_ratio": 0.2}},
+        "iteration_context": {
+            "parent_iteration": {"parent_artifact_fingerprint": "sha256:parent"}
+        },
+    }
+
+    assert _compact_hypothesis_citation_catalog(citation_sources=sources) == {
+        "cite_01": "saved_backtest_evidence.performance_summary",
+        "cite_02": "operator_frozen_selection.dataset_snapshot_id",
+        "cite_03": "operator_frozen_selection.cost_model_reference",
+        "cite_04": "saved_account_evidence.summary.cash_ratio",
+        "cite_05": "iteration_context.parent_iteration.parent_artifact_fingerprint",
+    }
+
+
+@pytest.mark.unit
+def test_workflow_preserves_safe_local_strategy_research_failure_code() -> None:
+    assert (
+        _workflow_failure_code(
+            StrategyResearchRejected("strategy_research_citation_catalog_too_large")
+        )
+        == "strategy_research_citation_catalog_too_large"
+    )
 
 
 @pytest.mark.unit

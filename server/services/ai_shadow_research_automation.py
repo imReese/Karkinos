@@ -88,7 +88,7 @@ SHADOW_RESEARCH_POLICY_ID = "ai_shadow_research"
 SHADOW_RESEARCH_POLICY_SCHEMA = "karkinos.ai.shadow_research_policy.v2"
 SHADOW_RESEARCH_API_SCHEMA = "karkinos.ai.shadow_research_automation.v1"
 SHADOW_RESEARCH_RUN_TYPE = "ai_shadow_research"
-SHADOW_RESEARCH_RUNTIME_CONTRACT = "karkinos.ai.shadow_research_runtime.v9"
+SHADOW_RESEARCH_RUNTIME_CONTRACT = "karkinos.ai.shadow_research_runtime.v10"
 SHADOW_RESEARCH_POLICY_CONFIRMATION = (
     "authorize_five_sequential_after_close_deepseek_strategy_research_without_"
     "daily_token_budget_or_strategy_or_trade_authority"
@@ -154,6 +154,9 @@ _PROVIDER_FREE_RETRYABLE_FAILURE_CODES = (
     "research_initial_cash_exceeds_current_account_equity",
     "research_initial_cash_invalid",
     "reviewed_fee_schedule_current_reconciliation_blocked",
+)
+_LOCAL_PROVIDER_FREE_PARTIAL_FAILURE_CODES = (
+    "strategy_research_citation_catalog_too_large",
 )
 
 
@@ -346,6 +349,24 @@ class ShadowResearchStore:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS ai_shadow_research_provider_free_partial_resumes (
+                    resume_id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL UNIQUE,
+                    market_date TEXT NOT NULL,
+                    failed_call_id TEXT NOT NULL UNIQUE,
+                    failed_session_id TEXT NOT NULL UNIQUE,
+                    failed_workflow_id TEXT NOT NULL UNIQUE,
+                    failed_agent_run_id TEXT NOT NULL UNIQUE,
+                    failure_code TEXT NOT NULL
+                        CHECK(failure_code = 'strategy_research_citation_catalog_too_large'),
+                    failure_evidence_fingerprint TEXT NOT NULL UNIQUE,
+                    prior_input_fingerprint TEXT NOT NULL,
+                    resumed_input_fingerprint TEXT NOT NULL UNIQUE,
+                    completed_iteration_count INTEGER NOT NULL,
+                    completed_evidence_fingerprint TEXT NOT NULL,
+                    resume_iteration INTEGER NOT NULL,
+                    consumed_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS ai_shadow_research_run_attempts (
                     attempt_id TEXT PRIMARY KEY,
                     market_date TEXT NOT NULL,
@@ -534,6 +555,10 @@ class ShadowResearchStore:
                     ON ai_shadow_research_candidates(created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_ai_shadow_calls_market_date
                     ON ai_shadow_research_provider_calls(market_date, created_at);
+                CREATE INDEX IF NOT EXISTS idx_ai_shadow_provider_free_partial_market_date
+                    ON ai_shadow_research_provider_free_partial_resumes(
+                        market_date, consumed_at
+                    );
             """)
 
     def claim_run(
@@ -558,6 +583,144 @@ class ShadowResearchStore:
             ).fetchone()
             if existing is not None:
                 existing_run = dict(existing)
+                provider_free_partial_resume = (
+                    self._provider_free_partial_resume_evidence(conn, existing_run)
+                    if input_fingerprint != existing_run["input_fingerprint"]
+                    else None
+                )
+                if provider_free_partial_resume is not None:
+                    if (
+                        int(existing_run["baseline_seed_result_id"])
+                        != int(baseline_seed_result_id)
+                        or existing_run["valuation_snapshot_id"]
+                        != valuation_snapshot_id
+                        or int(existing_run["ledger_cutoff_id"])
+                        != int(ledger_cutoff_id)
+                    ):
+                        raise ShadowResearchRejected(
+                            "provider_free_partial_resume_input_drift"
+                        )
+                    resume_iteration = int(
+                        provider_free_partial_resume["resume_iteration"]
+                    )
+                    completed_iteration_count = int(
+                        provider_free_partial_resume["completed_iteration_count"]
+                    )
+                    real_calls_before_classification = self._real_provider_call_count(
+                        conn, market_date
+                    )
+                    effective_call_limit = self._effective_provider_call_ceiling(
+                        conn,
+                        run_id=str(existing_run["run_id"]),
+                        market_date=market_date,
+                        call_limit=SHADOW_RESEARCH_MAX_PROVIDER_CALLS,
+                    )
+                    remaining_calls = (
+                        SHADOW_RESEARCH_MAX_CANDIDATES - resume_iteration + 1
+                    ) * 2
+                    if (
+                        real_calls_before_classification <= 0
+                        or effective_call_limit - (real_calls_before_classification - 1)
+                        != remaining_calls
+                    ):
+                        raise ShadowResearchRejected(
+                            "provider_free_partial_resume_capacity_mismatch"
+                        )
+                    resume_id = (
+                        "ai-shadow-research-provider-free-partial-resume:"
+                        + content_fingerprint(
+                            {
+                                "run_id": existing_run["run_id"],
+                                "failed_call_id": provider_free_partial_resume[
+                                    "failed_call_id"
+                                ],
+                                "failure_evidence_fingerprint": (
+                                    provider_free_partial_resume[
+                                        "failure_evidence_fingerprint"
+                                    ]
+                                ),
+                                "prior_input_fingerprint": existing_run[
+                                    "input_fingerprint"
+                                ],
+                                "resumed_input_fingerprint": input_fingerprint,
+                                "completed_evidence_fingerprint": (
+                                    provider_free_partial_resume[
+                                        "completed_evidence_fingerprint"
+                                    ]
+                                ),
+                            }
+                        )[:24]
+                    )
+                    conn.execute(
+                        """
+                        INSERT INTO ai_shadow_research_provider_free_partial_resumes
+                        (resume_id, run_id, market_date, failed_call_id,
+                         failed_session_id, failed_workflow_id, failed_agent_run_id,
+                         failure_code, failure_evidence_fingerprint,
+                         prior_input_fingerprint, resumed_input_fingerprint,
+                         completed_iteration_count, completed_evidence_fingerprint,
+                         resume_iteration, consumed_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            resume_id,
+                            existing_run["run_id"],
+                            market_date,
+                            provider_free_partial_resume["failed_call_id"],
+                            provider_free_partial_resume["failed_session_id"],
+                            provider_free_partial_resume["failed_workflow_id"],
+                            provider_free_partial_resume["failed_agent_run_id"],
+                            provider_free_partial_resume["failure_code"],
+                            provider_free_partial_resume[
+                                "failure_evidence_fingerprint"
+                            ],
+                            existing_run["input_fingerprint"],
+                            input_fingerprint,
+                            completed_iteration_count,
+                            provider_free_partial_resume[
+                                "completed_evidence_fingerprint"
+                            ],
+                            resume_iteration,
+                            now,
+                        ),
+                    )
+                    cursor = conn.execute(
+                        """
+                        UPDATE ai_shadow_research_runs
+                        SET input_fingerprint=?, status='running', failure_code=NULL,
+                            candidate_count=?, updated_at=?
+                        WHERE run_id=? AND status='failed' AND input_fingerprint=?
+                        """,
+                        (
+                            input_fingerprint,
+                            completed_iteration_count,
+                            now,
+                            existing_run["run_id"],
+                            existing_run["input_fingerprint"],
+                        ),
+                    )
+                    if cursor.rowcount != 1:
+                        raise ShadowResearchRejected(
+                            "provider_free_partial_resume_run_not_claimable"
+                        )
+                    resumed = conn.execute(
+                        "SELECT * FROM ai_shadow_research_runs WHERE run_id=?",
+                        (existing_run["run_id"],),
+                    ).fetchone()
+                    if resumed is None:
+                        raise RuntimeError(
+                            "provider-free partial resume persistence failed"
+                        )
+                    return {
+                        **dict(resumed),
+                        "partial_resume_iteration": resume_iteration,
+                        "partial_resume_evidence_fingerprint": (
+                            provider_free_partial_resume[
+                                "completed_evidence_fingerprint"
+                            ]
+                        ),
+                        "provider_free_partial_resume_id": resume_id,
+                    }, False
                 corrected_panel_citation_resume = (
                     self._unconsumed_corrected_panel_citation_resume_extension(
                         conn, existing_run
@@ -2401,10 +2564,231 @@ class ShadowResearchStore:
             raise ShadowResearchRejected("timeout_resume_completed_evidence_drift")
         return checkpoint
 
+    def load_provider_free_partial_resume_checkpoint(
+        self,
+        run_id: str,
+        *,
+        resume_id: str,
+        expected_fingerprint: str,
+    ) -> dict[str, Any]:
+        with self._connect_readonly() as conn:
+            run = conn.execute(
+                "SELECT * FROM ai_shadow_research_runs WHERE run_id=?", (run_id,)
+            ).fetchone()
+            resume = conn.execute(
+                """
+                SELECT * FROM ai_shadow_research_provider_free_partial_resumes
+                WHERE resume_id=? AND run_id=?
+                """,
+                (resume_id, run_id),
+            ).fetchone()
+            if run is None or resume is None:
+                raise ShadowResearchRejected(
+                    "provider_free_partial_resume_evidence_missing"
+                )
+            checkpoint = self._partial_resume_checkpoint(
+                conn,
+                {
+                    **dict(run),
+                    "input_fingerprint": resume["prior_input_fingerprint"],
+                },
+                completed_iteration_count=int(resume["completed_iteration_count"]),
+                resume_iteration=int(resume["resume_iteration"]),
+            )
+        if (
+            checkpoint["completed_evidence_fingerprint"] != expected_fingerprint
+            or expected_fingerprint != resume["completed_evidence_fingerprint"]
+        ):
+            raise ShadowResearchRejected(
+                "provider_free_partial_resume_completed_evidence_drift"
+            )
+        return checkpoint
+
+    def _provider_free_partial_resume_evidence(
+        self,
+        conn: sqlite3.Connection,
+        run: Mapping[str, Any],
+    ) -> dict[str, Any] | None:
+        if run.get("status") != "failed" or run.get("failure_code") not in {
+            "strategy_research_rejected",
+            *_LOCAL_PROVIDER_FREE_PARTIAL_FAILURE_CODES,
+        }:
+            return None
+        existing = conn.execute(
+            """
+            SELECT 1 FROM ai_shadow_research_provider_free_partial_resumes
+            WHERE run_id=? LIMIT 1
+            """,
+            (run["run_id"],),
+        ).fetchone()
+        if existing is not None:
+            return None
+        failed_calls = conn.execute(
+            """
+            SELECT * FROM ai_shadow_research_provider_calls
+            WHERE run_id=? AND call_kind='hypothesis_iteration'
+              AND status='failed' AND COALESCE(actual_tokens, 0)=0
+              AND failure_code IN (
+                  'strategy_research_rejected',
+                  'strategy_research_citation_catalog_too_large'
+              )
+            ORDER BY created_at, call_id
+            """,
+            (run["run_id"],),
+        ).fetchall()
+        if len(failed_calls) != 1:
+            return None
+        failed_call = failed_calls[0]
+        last_call = conn.execute(
+            """
+            SELECT call_id FROM ai_shadow_research_provider_calls
+            WHERE run_id=? ORDER BY created_at DESC, call_id DESC LIMIT 1
+            """,
+            (run["run_id"],),
+        ).fetchone()
+        if last_call is None or last_call["call_id"] != failed_call["call_id"]:
+            return None
+        call_prefix = f"{run['run_id']}:hypothesis:iteration:"
+        call_suffix = str(failed_call["call_id"])[len(call_prefix) :]
+        if (
+            not str(failed_call["call_id"]).startswith(call_prefix)
+            or len(call_suffix) != 2
+            or not call_suffix.isdigit()
+        ):
+            return None
+        resume_iteration = int(call_suffix)
+        completed_iteration_count = resume_iteration - 1
+        if not 1 <= completed_iteration_count < SHADOW_RESEARCH_MAX_CANDIDATES:
+            return None
+        session = conn.execute(
+            """
+            SELECT * FROM ai_strategy_research_sessions
+            WHERE idempotency_key=?
+            """,
+            (failed_call["call_id"],),
+        ).fetchone()
+        if (
+            session is None
+            or session["status"] != "failed"
+            or session["failure_code"]
+            not in {
+                "strategy_research_rejected",
+                *_LOCAL_PROVIDER_FREE_PARTIAL_FAILURE_CODES,
+            }
+            or not session["workflow_id"]
+        ):
+            return None
+        workflow = conn.execute(
+            "SELECT * FROM ai_workflows WHERE workflow_id=?",
+            (session["workflow_id"],),
+        ).fetchone()
+        agent_runs = conn.execute(
+            "SELECT * FROM ai_agent_runs WHERE workflow_id=?",
+            (session["workflow_id"],),
+        ).fetchall()
+        if (
+            workflow is None
+            or workflow["status"] != "failed"
+            or workflow["failure_code"]
+            not in {
+                "strategy_research_rejected",
+                *_LOCAL_PROVIDER_FREE_PARTIAL_FAILURE_CODES,
+            }
+            or len(agent_runs) != 1
+        ):
+            return None
+        agent_run = agent_runs[0]
+        response = _json_object(agent_run["response_json"])
+        turns = response.get("turns")
+        first_turn = turns[0] if isinstance(turns, list) and len(turns) == 1 else None
+        tool_requests = (
+            first_turn.get("tool_requests") if isinstance(first_turn, Mapping) else None
+        )
+        tool_names = (
+            {str(item.get("tool_name") or "") for item in tool_requests}
+            if isinstance(tool_requests, list)
+            and all(isinstance(item, Mapping) for item in tool_requests)
+            else set()
+        )
+        failure_code = str(response.get("error") or "")
+        if (
+            agent_run["status"] != "failed"
+            or agent_run["error_code"]
+            not in {
+                "strategy_research_rejected",
+                *_LOCAL_PROVIDER_FREE_PARTIAL_FAILURE_CODES,
+            }
+            or failure_code not in _LOCAL_PROVIDER_FREE_PARTIAL_FAILURE_CODES
+            or not response
+            or content_fingerprint(response) != agent_run["response_fingerprint"]
+            or not isinstance(first_turn, Mapping)
+            or first_turn.get("artifacts") != []
+            or first_turn.get("partial") is not False
+            or not isinstance(tool_requests, list)
+            or len(tool_requests) != 4
+            or tool_names
+            != {
+                "research_evidence.read",
+                "account_state_projection.read",
+                "formula_operator_catalog.read",
+                "strategy_research_selection.read",
+            }
+        ):
+            return None
+        checkpoint = self._partial_resume_checkpoint(
+            conn,
+            run,
+            completed_iteration_count=completed_iteration_count,
+            resume_iteration=resume_iteration,
+        )
+        failure_evidence = {
+            "schema_version": "karkinos.ai.provider_free_partial_failure.v1",
+            "run_id": run["run_id"],
+            "market_date": run["market_date"],
+            "failed_call": {
+                key: failed_call[key]
+                for key in (
+                    "call_id",
+                    "call_kind",
+                    "status",
+                    "actual_tokens",
+                    "failure_code",
+                    "created_at",
+                    "updated_at",
+                )
+            },
+            "failed_session_id": session["session_id"],
+            "session_request_fingerprint": session["request_fingerprint"],
+            "failed_workflow_id": workflow["workflow_id"],
+            "workflow_definition_fingerprint": workflow["definition_fingerprint"],
+            "failed_agent_run_id": agent_run["run_id"],
+            "agent_request_fingerprint": agent_run["request_fingerprint"],
+            "agent_response_fingerprint": agent_run["response_fingerprint"],
+            "failure_code": failure_code,
+            "completed_iteration_count": completed_iteration_count,
+            "completed_evidence_fingerprint": checkpoint[
+                "completed_evidence_fingerprint"
+            ],
+            "resume_iteration": resume_iteration,
+            "provider_transport_started": False,
+            "authority_effect": "none",
+        }
+        return {
+            **failure_evidence,
+            "failed_call_id": failed_call["call_id"],
+            "failed_session_id": session["session_id"],
+            "failed_workflow_id": workflow["workflow_id"],
+            "failed_agent_run_id": agent_run["run_id"],
+            "failure_evidence_fingerprint": content_fingerprint(failure_evidence),
+        }
+
     def _partial_resume_checkpoint(
         self,
         conn: sqlite3.Connection,
         run: Mapping[str, Any],
+        *,
+        completed_iteration_count: int = _TIMEOUT_RESUME_COMPLETED_ITERATIONS,
+        resume_iteration: int = _TIMEOUT_RESUME_ITERATION,
     ) -> dict[str, Any]:
         rows = conn.execute(
             """
@@ -2451,7 +2835,12 @@ class ShadowResearchStore:
             """,
             (run["run_id"],),
         ).fetchall()
-        if len(rows) != _TIMEOUT_RESUME_COMPLETED_ITERATIONS:
+        if (
+            completed_iteration_count <= 0
+            or resume_iteration != completed_iteration_count + 1
+            or resume_iteration > SHADOW_RESEARCH_MAX_CANDIDATES
+            or len(rows) != completed_iteration_count
+        ):
             raise ShadowResearchRejected(
                 "timeout_resume_requires_exact_four_completed_candidates"
             )
@@ -2490,15 +2879,17 @@ class ShadowResearchStore:
                 expected_context,
                 current_formula_fingerprint=draft.get("formula_fingerprint"),
             )
-            expected_hypothesis_call_id = (
+            expected_hypothesis_call_prefix = (
                 f"{run['run_id']}:hypothesis:iteration:{expected_iteration:02d}"
             )
             expected_backtest_idempotency_key = (
                 f"{run['run_id']}:backtest:{candidate['draft_id']}"
             )
-            expected_critique_idempotency_key = (
+            expected_critique_call_prefix = (
                 f"{run['run_id']}:critique:{candidate['draft_id']}"
             )
+            hypothesis_call_id = str(row["session_idempotency_key"] or "")
+            critique_call_id = str(row["critique_idempotency_key"] or "")
             completed_calls = conn.execute(
                 """
                 SELECT call_id, run_id, market_date, call_kind, status,
@@ -2507,14 +2898,14 @@ class ShadowResearchStore:
                 WHERE call_id IN (?, ?)
                 ORDER BY call_id
                 """,
-                (expected_hypothesis_call_id, expected_critique_idempotency_key),
+                (hypothesis_call_id, critique_call_id),
             ).fetchall()
             completed_call_evidence = [dict(call) for call in completed_calls]
             completed_call_by_id = {
                 str(call["call_id"]): call for call in completed_call_evidence
             }
-            hypothesis_call = completed_call_by_id.get(expected_hypothesis_call_id)
-            critique_call = completed_call_by_id.get(expected_critique_idempotency_key)
+            hypothesis_call = completed_call_by_id.get(hypothesis_call_id)
+            critique_call = completed_call_by_id.get(critique_call_id)
             if (
                 candidate["status"]
                 not in {"awaiting_human_approval", "research_blocked"}
@@ -2523,7 +2914,12 @@ class ShadowResearchStore:
                 or int(candidate["baseline_result_id"] or 0)
                 != int(run.get("baseline_result_id") or 0)
                 or row["session_status"] != "completed"
-                or row["session_idempotency_key"] != expected_hypothesis_call_id
+                or not (
+                    hypothesis_call_id == expected_hypothesis_call_prefix
+                    or hypothesis_call_id.startswith(
+                        expected_hypothesis_call_prefix + ":provider-free-resume:"
+                    )
+                )
                 or session_request.get("iteration_context") != expected_context
                 or row["draft_validation_status"] != "valid"
                 or not draft
@@ -2537,7 +2933,13 @@ class ShadowResearchStore:
                 or row["backtest_status"] != "completed"
                 or int(row["canonical_backtest_result_id"] or 0)
                 != int(candidate["candidate_result_id"] or 0)
-                or row["critique_idempotency_key"] != expected_critique_idempotency_key
+                or not (
+                    critique_call_id == expected_critique_call_prefix
+                    or critique_call_id.startswith(
+                        expected_critique_call_prefix
+                        + ":corrected-panel-citation-resume:"
+                    )
+                )
                 or row["critique_session_id"] != candidate["session_id"]
                 or row["critique_draft_id"] != candidate["draft_id"]
                 or row["critique_backtest_run_id"] != candidate["backtest_run_id"]
@@ -2610,12 +3012,12 @@ class ShadowResearchStore:
             "input_fingerprint": run["input_fingerprint"],
             "baseline_result_id": run.get("baseline_result_id"),
             "completed_iterations": evidence_iterations,
-            "resume_iteration": _TIMEOUT_RESUME_ITERATION,
+            "resume_iteration": resume_iteration,
         }
         return {
             "completed_evidence_fingerprint": content_fingerprint(checkpoint_core),
             "completed_iteration_count": len(candidates),
-            "resume_iteration": _TIMEOUT_RESUME_ITERATION,
+            "resume_iteration": resume_iteration,
             "candidates": candidates,
             "drafts": drafts,
             "previous_iteration": previous_iteration,
@@ -2947,19 +3349,50 @@ class ShadowResearchStore:
         conn: sqlite3.Connection,
         market_date: str,
     ) -> int:
+        return int(self._provider_call_usage_totals(conn, market_date)["calls"])
+
+    def _provider_call_usage_totals(
+        self,
+        conn: sqlite3.Connection,
+        market_date: str,
+    ) -> sqlite3.Row:
         totals = conn.execute(
             f"""
-            SELECT COUNT(*) AS calls
-            FROM ai_shadow_research_provider_calls
-            WHERE market_date=? AND NOT (
-                status='failed'
-                AND COALESCE(actual_tokens, 0)=0
-                AND failure_code IN ({", ".join("?" for _ in _PROVIDER_FREE_RETRYABLE_FAILURE_CODES)})
-            )
+            SELECT COUNT(*) AS recorded_calls,
+                   COALESCE(SUM(CASE WHEN NOT (
+                       call.status='failed'
+                       AND COALESCE(call.actual_tokens, 0)=0
+                       AND (
+                           call.failure_code IN ({", ".join("?" for _ in _PROVIDER_FREE_RETRYABLE_FAILURE_CODES)})
+                           OR partial_resume.resume_id IS NOT NULL
+                       )
+                   ) THEN 1 ELSE 0 END), 0) AS calls,
+                   COALESCE(SUM(CASE WHEN NOT (
+                       call.status='failed'
+                       AND COALESCE(call.actual_tokens, 0)=0
+                       AND (
+                           call.failure_code IN ({", ".join("?" for _ in _PROVIDER_FREE_RETRYABLE_FAILURE_CODES)})
+                           OR partial_resume.resume_id IS NOT NULL
+                       )
+                   ) THEN call.reserved_tokens ELSE 0 END), 0) AS reserved,
+                   COALESCE(SUM(call.actual_tokens), 0) AS actual
+            FROM ai_shadow_research_provider_calls AS call
+            LEFT JOIN ai_shadow_research_provider_free_partial_resumes
+                 AS partial_resume
+              ON partial_resume.failed_call_id=call.call_id
+             AND partial_resume.run_id=call.run_id
+             AND partial_resume.market_date=call.market_date
+            WHERE call.market_date=?
             """,
-            (market_date, *_PROVIDER_FREE_RETRYABLE_FAILURE_CODES),
+            (
+                *_PROVIDER_FREE_RETRYABLE_FAILURE_CODES,
+                *_PROVIDER_FREE_RETRYABLE_FAILURE_CODES,
+                market_date,
+            ),
         ).fetchone()
-        return int(totals["calls"])
+        if totals is None:
+            raise RuntimeError("provider call usage totals unavailable")
+        return totals
 
     def _retry_authorization_row(
         self,
@@ -3470,31 +3903,16 @@ class ShadowResearchStore:
                 "corrected_panel_citation_resume_resumed_run_id": None,
                 "corrected_panel_citation_resume_iteration": None,
                 "corrected_panel_citation_resume_stage": None,
+                "provider_free_partial_resume_id": None,
+                "provider_free_partial_resume_run_id": None,
+                "provider_free_partial_resume_failed_call_id": None,
+                "provider_free_partial_resume_failure_code": None,
+                "provider_free_partial_resume_completed_iteration_count": None,
+                "provider_free_partial_resume_iteration": None,
             }
         try:
             with self._connect_readonly() as conn:
-                row = conn.execute(
-                    f"""
-                    SELECT COUNT(*) AS recorded_calls,
-                           COALESCE(SUM(CASE WHEN NOT (
-                               status='failed'
-                               AND COALESCE(actual_tokens, 0)=0
-                               AND failure_code IN ({", ".join("?" for _ in _PROVIDER_FREE_RETRYABLE_FAILURE_CODES)})
-                           ) THEN 1 ELSE 0 END), 0) AS calls,
-                           COALESCE(SUM(CASE WHEN NOT (
-                               status='failed'
-                               AND COALESCE(actual_tokens, 0)=0
-                               AND failure_code IN ({", ".join("?" for _ in _PROVIDER_FREE_RETRYABLE_FAILURE_CODES)})
-                           ) THEN reserved_tokens ELSE 0 END), 0) AS reserved,
-                           COALESCE(SUM(actual_tokens), 0) AS actual
-                    FROM ai_shadow_research_provider_calls WHERE market_date=?
-                    """,
-                    (
-                        *_PROVIDER_FREE_RETRYABLE_FAILURE_CODES,
-                        *_PROVIDER_FREE_RETRYABLE_FAILURE_CODES,
-                        market_date,
-                    ),
-                ).fetchone()
+                row = self._provider_call_usage_totals(conn, market_date)
                 authorization = conn.execute(
                     """
                     SELECT authorization.authorization_id,
@@ -3584,6 +4002,15 @@ class ShadowResearchStore:
                     """,
                     (market_date,),
                 ).fetchone()
+                provider_free_partial_resume = conn.execute(
+                    """
+                    SELECT resume_id, run_id, failed_call_id, failure_code,
+                           completed_iteration_count, resume_iteration
+                    FROM ai_shadow_research_provider_free_partial_resumes
+                    WHERE market_date=? ORDER BY consumed_at DESC LIMIT 1
+                    """,
+                    (market_date,),
+                ).fetchone()
         except sqlite3.OperationalError:
             return {
                 "market_date": market_date,
@@ -3620,6 +4047,12 @@ class ShadowResearchStore:
                 "corrected_panel_citation_resume_resumed_run_id": None,
                 "corrected_panel_citation_resume_iteration": None,
                 "corrected_panel_citation_resume_stage": None,
+                "provider_free_partial_resume_id": None,
+                "provider_free_partial_resume_run_id": None,
+                "provider_free_partial_resume_failed_call_id": None,
+                "provider_free_partial_resume_failure_code": None,
+                "provider_free_partial_resume_completed_iteration_count": None,
+                "provider_free_partial_resume_iteration": None,
             }
         return {
             "market_date": market_date,
@@ -3800,6 +4233,36 @@ class ShadowResearchStore:
             "corrected_panel_citation_resume_stage": (
                 corrected_panel_citation_resume["resume_stage"]
                 if corrected_panel_citation_resume is not None
+                else None
+            ),
+            "provider_free_partial_resume_id": (
+                provider_free_partial_resume["resume_id"]
+                if provider_free_partial_resume is not None
+                else None
+            ),
+            "provider_free_partial_resume_run_id": (
+                provider_free_partial_resume["run_id"]
+                if provider_free_partial_resume is not None
+                else None
+            ),
+            "provider_free_partial_resume_failed_call_id": (
+                provider_free_partial_resume["failed_call_id"]
+                if provider_free_partial_resume is not None
+                else None
+            ),
+            "provider_free_partial_resume_failure_code": (
+                provider_free_partial_resume["failure_code"]
+                if provider_free_partial_resume is not None
+                else None
+            ),
+            "provider_free_partial_resume_completed_iteration_count": (
+                int(provider_free_partial_resume["completed_iteration_count"])
+                if provider_free_partial_resume is not None
+                else None
+            ),
+            "provider_free_partial_resume_iteration": (
+                int(provider_free_partial_resume["resume_iteration"])
+                if provider_free_partial_resume is not None
                 else None
             ),
         }
@@ -4501,8 +4964,33 @@ class AiShadowResearchAutomationService:
             local_research = self._build_research_service(external=False)
             resume_iteration = int(run.get("partial_resume_iteration") or 1)
             resume_stage = str(run.get("partial_resume_stage") or "")
+            provider_free_partial_resume_id = str(
+                run.get("provider_free_partial_resume_id") or ""
+            )
             first_critique_checkpoint: dict[str, Any] | None = None
-            if resume_stage == _CORRECTED_PANEL_CITATION_RESUME_STAGE:
+            if provider_free_partial_resume_id:
+                if resume_stage:
+                    raise ShadowResearchRejected(
+                        "provider_free_partial_resume_stage_conflict"
+                    )
+                checkpoint = self._store.load_provider_free_partial_resume_checkpoint(
+                    str(run["run_id"]),
+                    resume_id=provider_free_partial_resume_id,
+                    expected_fingerprint=str(
+                        run.get("partial_resume_evidence_fingerprint") or ""
+                    ),
+                )
+                candidates = list(checkpoint["candidates"])
+                valid_drafts = list(checkpoint["drafts"])
+                previous_iteration = checkpoint["previous_iteration"]
+                if (
+                    len(candidates) != resume_iteration - 1
+                    or len(valid_drafts) != resume_iteration - 1
+                ):
+                    raise ShadowResearchRejected(
+                        "provider_free_partial_resume_completed_iteration_count_invalid"
+                    )
+            elif resume_stage == _CORRECTED_PANEL_CITATION_RESUME_STAGE:
                 if resume_iteration != _CORRECTED_PANEL_CITATION_RESUME_ITERATION:
                     raise ShadowResearchRejected(
                         "corrected_panel_citation_resume_iteration_invalid"
@@ -4692,6 +5180,11 @@ class AiShadowResearchAutomationService:
         self._require_runtime_authorization(policy)
         call_id = f"{run['run_id']}:hypothesis:iteration:{iteration_number:02d}"
         resume_extension_id = str(run.get("partial_resume_extension_id") or "")
+        provider_free_partial_resume_id = str(
+            run.get("provider_free_partial_resume_id") or ""
+        )
+        if resume_extension_id and provider_free_partial_resume_id:
+            raise ShadowResearchRejected("partial_resume_authority_conflict")
         if resume_extension_id:
             if iteration_number != _TIMEOUT_RESUME_ITERATION:
                 raise ShadowResearchRejected(
@@ -4700,6 +5193,15 @@ class AiShadowResearchAutomationService:
             call_id += (
                 ":timeout-resume:"
                 + content_fingerprint({"extension_id": resume_extension_id})[:12]
+            )
+        if provider_free_partial_resume_id and iteration_number == int(
+            run.get("partial_resume_iteration") or 0
+        ):
+            call_id += (
+                ":provider-free-resume:"
+                + content_fingerprint({"resume_id": provider_free_partial_resume_id})[
+                    :12
+                ]
             )
         _, call_reused = self._store.claim_provider_call(
             call_id=call_id,

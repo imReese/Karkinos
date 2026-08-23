@@ -19,6 +19,7 @@ from core.types import BarFrequency, CommissionType, Symbol
 from data.store import DataStore
 from execution.commission import MultiAssetCommission, StockACommission
 from server.ai_runtime.contracts import canonical_json, content_fingerprint
+from server.ai_runtime.store import AiAuditStore
 from server.ai_runtime.strategy_research import (
     StrategyResearchAuditStore,
     StrategyResearchSelection,
@@ -998,6 +999,342 @@ def test_provider_free_failed_run_can_be_rearmed_after_input_correction(
         replacement["run_id"],
         failure_code,
     )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_local_second_iteration_failure_resumes_from_completed_first_round(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "app.db"
+    db = AppDatabase(db_path)
+    db.init_sync()
+    AiAuditStore(db_path).init()
+    StrategyResearchAuditStore(db_path).init()
+    store = ShadowResearchStore(db_path)
+    store.init()
+    market_date = "2026-08-21"
+    now = "2026-08-23T11:00:00+00:00"
+    run, reused = store.claim_run(
+        market_date=market_date,
+        input_fingerprint="runtime-v9-input",
+        baseline_seed_result_id=8,
+        valuation_snapshot_id="valuation-complete",
+        ledger_cutoff_id=12,
+        now=now,
+    )
+    assert reused is False
+    store.update_run(run["run_id"], now=now, baseline_result_id=34)
+    run = store.get_run(run["run_id"])
+
+    first_context = _build_iteration_context(
+        iteration_number=1,
+        total_iterations=5,
+        previous_iteration=None,
+    )
+    session_id = "completed-session-1"
+    draft_id = "completed-draft-1"
+    backtest_run_id = "completed-backtest-1"
+    critique_id = "completed-critique-1"
+    formula_fingerprint = f"sha256:{1:064x}"
+    hypothesis_call_id = f"{run['run_id']}:hypothesis:iteration:01"
+    critique_call_id = (
+        f"{run['run_id']}:critique:{draft_id}:corrected-panel-citation-resume:fixture"
+    )
+    draft = {
+        "draft_id": draft_id,
+        "formula_ast": {"schema_version": "fixture"},
+        "formula_fingerprint": formula_fingerprint,
+        "iteration_context": first_context,
+        "iteration_context_fingerprint": first_context["context_fingerprint"],
+        "validation": {"status": "valid", "errors": []},
+    }
+    critique_artifact = {
+        "supported_claims": ["Persisted result."],
+        "evidence_gaps": ["Continue research."],
+    }
+    comparison = {
+        "deepseek_critique": critique_artifact,
+        "iteration_lineage": _iteration_lineage(
+            first_context,
+            current_formula_fingerprint=formula_fingerprint,
+        ),
+        "promotion_gate": {
+            "status": "blocked",
+            "blockers": ["research_evidence_incomplete"],
+        },
+    }
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO ai_strategy_research_sessions
+            (session_id, idempotency_key, request_fingerprint, request_json,
+             selection_fingerprint, status, prompt_version, created_at, updated_at)
+            VALUES (?, ?, 'request-1', ?, 'selection-1', 'completed', 'fixture', ?, ?)
+            """,
+            (
+                session_id,
+                hypothesis_call_id,
+                canonical_json({"iteration_context": first_context}),
+                now,
+                now,
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO ai_strategy_hypothesis_drafts
+            VALUES (?, ?, 1, ?, ?, ?, 'valid', '[]', ?)
+            """,
+            (
+                draft_id,
+                session_id,
+                canonical_json(draft),
+                content_fingerprint(draft),
+                formula_fingerprint,
+                now,
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO ai_strategy_formula_backtests
+            (backtest_run_id, idempotency_key, request_fingerprint, session_id,
+             draft_id, formula_fingerprint, dataset_snapshot_id,
+             cost_model_reference, status, canonical_backtest_result_id,
+             evidence_fingerprint, created_at, updated_at)
+            VALUES (?, ?, 'backtest-request', ?, ?, ?, 'dataset-fixture',
+                    'reviewed-fees-fixture', 'completed', 77,
+                    'backtest-evidence-1', ?, ?)
+            """,
+            (
+                backtest_run_id,
+                f"{run['run_id']}:backtest:{draft_id}",
+                session_id,
+                draft_id,
+                formula_fingerprint,
+                now,
+                now,
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO ai_strategy_backtest_critiques
+            (critique_id, idempotency_key, request_fingerprint, session_id,
+             draft_id, backtest_run_id, status, normalized_artifact_json,
+             artifact_fingerprint, prompt_version, created_at, updated_at)
+            VALUES (?, ?, 'critique-request', ?, ?, ?, 'completed', ?, ?,
+                    'fixture', ?, ?)
+            """,
+            (
+                critique_id,
+                critique_call_id,
+                session_id,
+                draft_id,
+                backtest_run_id,
+                canonical_json(critique_artifact),
+                content_fingerprint(critique_artifact),
+                now,
+                now,
+            ),
+        )
+    for call_id, call_kind in (
+        (hypothesis_call_id, "hypothesis_iteration"),
+        (critique_call_id, "critique"),
+    ):
+        call, reused = store.claim_provider_call(
+            call_id=call_id,
+            run_id=run["run_id"],
+            market_date=market_date,
+            call_kind=call_kind,
+            call_limit=10,
+            now=now,
+        )
+        assert reused is False
+        store.finish_provider_call(
+            call["call_id"],
+            status="completed",
+            actual_tokens=1_000,
+            failure_code=None,
+            now=now,
+        )
+    candidate = store.save_candidate(
+        run_id=run["run_id"],
+        session_id=session_id,
+        draft_id=draft_id,
+        backtest_run_id=backtest_run_id,
+        critique_id=critique_id,
+        baseline_result_id=34,
+        candidate_result_id=77,
+        status="research_blocked",
+        recommendation="keep_researching",
+        comparison=comparison,
+        now=now,
+    )
+
+    second_context = _build_iteration_context(
+        iteration_number=2,
+        total_iterations=5,
+        previous_iteration={
+            "hypotheses": {"session_id": session_id},
+            "draft": draft,
+            "candidate": candidate,
+        },
+    )
+    failed_call_id = f"{run['run_id']}:hypothesis:iteration:02"
+    failed_session_id = "failed-session-2"
+    failed_workflow_id = "failed-workflow-2"
+    failed_agent_run_id = "failed-agent-run-2"
+    failure_response = {
+        "error": "strategy_research_citation_catalog_too_large",
+        "turns": [
+            {
+                "artifacts": [],
+                "message": "Read exact local evidence.",
+                "partial": False,
+                "tool_requests": [
+                    {"tool_name": "research_evidence.read"},
+                    {"tool_name": "account_state_projection.read"},
+                    {"tool_name": "formula_operator_catalog.read"},
+                    {"tool_name": "strategy_research_selection.read"},
+                ],
+            }
+        ],
+    }
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO ai_strategy_research_sessions
+            (session_id, idempotency_key, request_fingerprint, request_json,
+             selection_fingerprint, workflow_id, status, failure_code,
+             prompt_version, created_at, updated_at)
+            VALUES (?, ?, 'request-2', ?, 'selection-1', ?, 'failed',
+                    'strategy_research_rejected', 'fixture', ?, ?)
+            """,
+            (
+                failed_session_id,
+                failed_call_id,
+                canonical_json({"iteration_context": second_context}),
+                failed_workflow_id,
+                now,
+                now,
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO ai_workflows
+            (workflow_id, idempotency_key, definition_id,
+             definition_fingerprint, definition_json, context_snapshot_id,
+             context_fingerprint, status, current_stage_index, partial_result,
+             failure_code, created_at, updated_at)
+            VALUES (?, ?, 'definition', 'definition-fingerprint', '{}',
+                    'context', 'context-fingerprint', 'failed', 0, 0,
+                    'strategy_research_rejected', ?, ?)
+            """,
+            (failed_workflow_id, failed_call_id, now, now),
+        )
+        conn.execute(
+            """
+            INSERT INTO ai_agent_runs
+            (run_id, workflow_id, stage_id, role_id, model_id, provider_id,
+             status, request_json, request_fingerprint, response_json,
+             response_fingerprint, error_code, started_at, finished_at)
+            VALUES (?, ?, 'hypothesis', 'role', 'model', 'deepseek', 'failed',
+                    '{}', 'agent-request', ?, ?, 'strategy_research_rejected', ?, ?)
+            """,
+            (
+                failed_agent_run_id,
+                failed_workflow_id,
+                canonical_json(failure_response),
+                content_fingerprint(failure_response),
+                now,
+                now,
+            ),
+        )
+    failed_call, reused = store.claim_provider_call(
+        call_id=failed_call_id,
+        run_id=run["run_id"],
+        market_date=market_date,
+        call_kind="hypothesis_iteration",
+        call_limit=10,
+        now=now,
+    )
+    assert reused is False
+    store.finish_provider_call(
+        failed_call["call_id"],
+        status="failed",
+        actual_tokens=None,
+        failure_code="strategy_research_rejected",
+        now=now,
+    )
+    store.update_run(
+        run["run_id"],
+        status="failed",
+        failure_code="strategy_research_rejected",
+        now=now,
+    )
+
+    resumed, reused = store.claim_run(
+        market_date=market_date,
+        input_fingerprint="runtime-v10-input",
+        baseline_seed_result_id=8,
+        valuation_snapshot_id="valuation-complete",
+        ledger_cutoff_id=12,
+        now="2026-08-23T11:01:00+00:00",
+    )
+
+    assert reused is False
+    assert resumed["run_id"] == run["run_id"]
+    assert resumed["status"] == "running"
+    assert resumed["candidate_count"] == 1
+    assert resumed["partial_resume_iteration"] == 2
+    checkpoint = store.load_provider_free_partial_resume_checkpoint(
+        resumed["run_id"],
+        resume_id=resumed["provider_free_partial_resume_id"],
+        expected_fingerprint=resumed["partial_resume_evidence_fingerprint"],
+    )
+    assert [item["candidate_id"] for item in checkpoint["candidates"]] == [
+        candidate["candidate_id"]
+    ]
+    assert checkpoint["previous_iteration"]["draft"]["draft_id"] == draft_id
+    usage = store.usage_for_market_date(market_date)
+    assert usage["provider_calls"] == 2
+    assert usage["recorded_call_attempts"] == 3
+    assert usage["provider_free_rejections"] == 1
+    assert (
+        usage["provider_free_partial_resume_failure_code"]
+        == "strategy_research_citation_catalog_too_large"
+    )
+    for ordinal in range(1, 9):
+        _, reused = store.claim_provider_call(
+            call_id=f"{run['run_id']}:remaining:{ordinal}",
+            run_id=run["run_id"],
+            market_date=market_date,
+            call_kind="remaining",
+            call_limit=10,
+            now=now,
+        )
+        assert reused is False
+    with pytest.raises(ShadowResearchRejected, match="call_limit"):
+        store.claim_provider_call(
+            call_id=f"{run['run_id']}:remaining:9",
+            run_id=run["run_id"],
+            market_date=market_date,
+            call_kind="remaining",
+            call_limit=10,
+            now=now,
+        )
+    with sqlite3.connect(db_path) as conn:
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM ai_shadow_research_provider_free_partial_resumes"
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM ai_shadow_research_promotions"
+            ).fetchone()[0]
+            == 0
+        )
 
 
 @pytest.mark.unit
