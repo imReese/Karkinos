@@ -29,8 +29,7 @@ npm --prefix web run build
 npm --prefix web run test
 ```
 
-更完整的运行参数、通知、数据目录和本地配置见配置参考：
-[中文](config-reference.zh.md) / [English](config-reference.en.md)。
+更完整的运行参数、通知、数据目录和本地配置见配置参考：[中文](config-reference.zh.md) / [English](config-reference.en.md)。
 
 ## 文档导航
 
@@ -45,8 +44,7 @@ npm --prefix web run test
 - [Account Truth 导入与复核](account-truth-import.zh.md) — 预览、证据暂存、对账和人工处置。
 - [收益与成本口径](return-accounting.zh.md) — 今日、浮动和已实现收益的统一计算规则。
 - [券商订单生命周期](broker-order-lifecycle-ingestion.zh.md) — 只读 lifecycle evidence 与 collector ingestion。
-- [券商适配器一致性验证](broker-adapter-conformance.zh.md) — 本地 deterministic fixture、精确
-  release 绑定与 latest-result-wins 门禁。
+- [券商适配器一致性验证](broker-adapter-conformance.zh.md) — 本地 deterministic fixture、精确 release 绑定与 latest-result-wins 门禁。
 - [券商执行边缘一致性验证](broker-execution-edge-conformance.zh.md) — default-closed 的 dry-run、submit、query、cancel 与幂等契约 fixture。
 - [受控券商撤单](controlled-broker-cancellation.zh.md) — 精确签名的 one-shot 撤单、原子幂等与 query-only recovery。
 - [券商适配器发布审查](broker-adapter-release-review.zh.md) — provider-neutral capability、威胁、部署、回滚、隐私与显式人工 acceptance 证据。
@@ -66,6 +64,8 @@ npm --prefix web run test
 在 Strategy Lab 选择注册策略、标的或 universe、日期范围和参数。保存的实验会绑定数据快照、
 参数、成本、OOS、风险、限制和证据状态。参数 sweep 和策略 comparison 必须复用冻结的数据
 输入，结果只能作为研究证据。
+
+v0.3.0 的收盘后策略研究不再把当前持仓当作候选池。系统在正式收盘后自动保存完整 A 股股票范围的不可变快照（基金/ETF 不进入策略范围），确定性补全 160 只备选股票的历史日线，再仅从持久化数据中筛出恰好 40 只、历史完整且至少能按 100 股一手买入的冻结研究面板。DeepSeek 只提出信号公式；它返回的仓位权重会被丢弃，四槽等权、资金可行性、费用、手数、风控和权限均由本地确定性代码控制。该流程不会自动晋级策略、创建或提交订单，也不会扩大资本授权。
 
 ### 每日决策
 

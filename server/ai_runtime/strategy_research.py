@@ -192,6 +192,8 @@ _CRITIQUE_CITATION_PATHS = (
     "critique_input.canonical_backtest.research_evidence_bundle.analyzers",
     "critique_input.canonical_backtest.research_evidence_bundle.evidence_references",
     "critique_input.canonical_backtest.research_evidence_bundle.promotion_gate",
+    "critique_input.canonical_backtest.signal_execution_evidence",
+    "critique_input.canonical_backtest.lot_feasibility_evidence",
     "critique_input.hypothesis_draft.economic_hypothesis",
     "critique_input.hypothesis_draft.failure_conditions",
     "critique_input.hypothesis_draft.limitations",
@@ -1160,13 +1162,24 @@ class StrategyResearchAuditStore:
 class _FormulaSignalStrategy(Strategy):
     """Translate a validated formula into target-weight signals only."""
 
-    def __init__(self, formula_ast: JsonObject, universe_size: int) -> None:
+    def __init__(
+        self,
+        formula_ast: JsonObject,
+        universe_size: int,
+        *,
+        allocation_slots: int = 4,
+    ) -> None:
         super().__init__("ai_formula_research", _NullEventBus())
         self._formula_ast = formula_ast
         self._universe_size = universe_size
+        self._allocation_slots = min(max(allocation_slots, 1), universe_size)
+        self._canonical_target_weight = 1.0 / self._allocation_slots
         self._frames: dict[Symbol, list[dict[str, Any]]] = {}
         self._active: dict[Symbol, bool] = {}
         self._pending_target: dict[Symbol, float | None] = {}
+        self._entry_signal_count = 0
+        self._exit_signal_count = 0
+        self._entry_target_count = 0
 
     def on_init(self, symbols: list[Symbol]) -> None:
         self._frames = {symbol: [] for symbol in symbols}
@@ -1197,7 +1210,7 @@ class _FormulaSignalStrategy(Strategy):
             }
         )
         frame = pd.DataFrame(rows)
-        entry, exit_signal, target_weight = evaluate_formula(
+        entry, exit_signal, _provider_sizing_ignored = evaluate_formula(
             self._formula_ast,
             frame,
             universe_size=self._universe_size,
@@ -1206,9 +1219,32 @@ class _FormulaSignalStrategy(Strategy):
         should_enter = bool(entry.iloc[-1])
         active = self._active[event.symbol]
         if active and should_exit:
+            self._exit_signal_count += 1
             self._pending_target[event.symbol] = 0.0
         elif not active and should_enter and not should_exit:
-            self._pending_target[event.symbol] = target_weight
+            self._entry_signal_count += 1
+            self._entry_target_count += 1
+            self._pending_target[event.symbol] = self._canonical_target_weight
+
+    def execution_evidence(self, *, fill_count: int) -> JsonObject:
+        """Return privacy-minimized signal-to-fill diagnostics for critique."""
+        core = {
+            "schema_version": "karkinos.ai.formula_signal_execution.v1",
+            "entry_signal_count": self._entry_signal_count,
+            "exit_signal_count": self._exit_signal_count,
+            "entry_target_count": self._entry_target_count,
+            "fill_count": int(fill_count),
+            "zero_fill_after_entry_targets": bool(
+                self._entry_target_count and not fill_count
+            ),
+            "allocation_slots": self._allocation_slots,
+            "canonical_target_weight": self._canonical_target_weight,
+            "model_position_size_ignored": True,
+            "contains_absolute_balance": False,
+            "contains_holding_quantity": False,
+            "authority_effect": "none",
+        }
+        return {**core, "evidence_fingerprint": content_fingerprint(core)}
 
 
 class _NullEventBus:
@@ -1301,8 +1337,15 @@ class RestrictedFormulaBacktestAdapter:
                 "research_account_capital_evidence_not_passing"
             )
 
+        allocation_slots = min(4, len(selection.universe))
+        target_weight = Decimal("1") / Decimal(allocation_slots)
+        formula_strategy = _FormulaSignalStrategy(
+            formula_ast,
+            len(selection.universe),
+            allocation_slots=allocation_slots,
+        )
         engine = BacktestEngine(
-            strategy=_FormulaSignalStrategy(formula_ast, len(selection.universe)),
+            strategy=formula_strategy,
             instruments=instruments,
             data_handlers=handlers,
             initial_cash=Decimal(str(selection.initial_cash)),
@@ -1379,6 +1422,14 @@ class RestrictedFormulaBacktestAdapter:
                 "market_regime_robustness": build_backtest_market_regime_evidence(
                     result=result,
                     data_handlers=handlers,
+                ),
+                "signal_execution_evidence": formula_strategy.execution_evidence(
+                    fill_count=len(result.fills)
+                ),
+                "lot_feasibility_evidence": _research_lot_feasibility_evidence(
+                    handlers=handlers,
+                    initial_cash=Decimal(str(selection.initial_cash)),
+                    target_weight=target_weight,
                 ),
                 "research_only": True,
                 "authority_effect": "none",
@@ -1481,7 +1532,11 @@ def _formula_parameter_robustness(
             variant_result = selected_result
         else:
             variant_result = BacktestEngine(
-                strategy=_FormulaSignalStrategy(variant.formula_ast, len(instruments)),
+                strategy=_FormulaSignalStrategy(
+                    variant.formula_ast,
+                    len(instruments),
+                    allocation_slots=4,
+                ),
                 instruments=instruments,
                 data_handlers=handlers,
                 initial_cash=initial_cash,
@@ -1503,6 +1558,57 @@ def _formula_parameter_robustness(
         ),
         None,
     )
+
+
+def _research_lot_feasibility_evidence(
+    *,
+    handlers: Mapping[Symbol, DataHandler],
+    initial_cash: Decimal,
+    target_weight: Decimal,
+) -> JsonObject:
+    """Summarize whether the local fixed sizing can purchase one stock lot."""
+    lot_size = Decimal("100")
+    fee_buffer = Decimal("1.01")
+    per_name_budget = initial_cash * target_weight
+    feasible_count = 0
+    invalid_price_count = 0
+    one_lot_too_expensive_count = 0
+    for handler in handlers.values():
+        frame = getattr(handler, "_df", None)
+        if (
+            not isinstance(frame, pd.DataFrame)
+            or frame.empty
+            or "close" not in frame.columns
+        ):
+            invalid_price_count += 1
+            continue
+        try:
+            close = Decimal(str(frame["close"].iloc[-1]))
+        except Exception:
+            invalid_price_count += 1
+            continue
+        if not close.is_finite() or close <= 0:
+            invalid_price_count += 1
+        elif close * lot_size * fee_buffer <= per_name_budget:
+            feasible_count += 1
+        else:
+            one_lot_too_expensive_count += 1
+    core = {
+        "schema_version": "karkinos.ai.research_lot_feasibility.v1",
+        "symbol_count": len(handlers),
+        "feasible_symbol_count": feasible_count,
+        "invalid_price_count": invalid_price_count,
+        "one_lot_too_expensive_count": one_lot_too_expensive_count,
+        "lot_size": int(lot_size),
+        "allocation_slots": int(Decimal("1") / target_weight),
+        "target_weight": float(target_weight),
+        "fee_buffer_rate": 0.01,
+        "model_controls_position_size": False,
+        "contains_absolute_balance": False,
+        "contains_holding_quantity": False,
+        "authority_effect": "none",
+    }
+    return {**core, "evidence_fingerprint": content_fingerprint(core)}
 
 
 def _validated_fee_schedule_resolution(
@@ -2468,6 +2574,12 @@ class StrategyResearchService:
                     "cost_summary": cost_summary,
                     "oos_validation": oos_validation,
                     "research_evidence_bundle": evidence,
+                    "signal_execution_evidence": _json_object(
+                        metrics.get("signal_execution_evidence")
+                    ),
+                    "lot_feasibility_evidence": _json_object(
+                        metrics.get("lot_feasibility_evidence")
+                    ),
                 },
                 "required_binding_echo": required_binding_echo,
                 "canonical_research_evidence": evidence,
@@ -2783,6 +2895,10 @@ class StrategyResearchService:
                     "research_evidence_bundle": metrics.get("research_evidence_bundle"),
                     "dataset_snapshot": metrics.get("dataset_snapshot"),
                     "formula_binding": metrics.get("formula_binding"),
+                    "signal_execution_evidence": metrics.get(
+                        "signal_execution_evidence"
+                    ),
+                    "lot_feasibility_evidence": metrics.get("lot_feasibility_evidence"),
                 }
         return {
             "schema_version": STRATEGY_RESEARCH_API_CONTRACT,
@@ -2998,7 +3114,14 @@ def _bind_and_validate_drafts(
             if isinstance(item, str)
         ):
             errors.append("citation_outside_bound_input")
-        formula_ast = candidate.get("formula_ast")
+        provider_formula_ast = candidate.get("formula_ast")
+        formula_ast = (
+            json.loads(canonical_json(provider_formula_ast))
+            if isinstance(provider_formula_ast, dict)
+            else provider_formula_ast
+        )
+        if isinstance(formula_ast, dict):
+            formula_ast["position_size"] = {"op": "equal_weight"}
         try:
             if not isinstance(formula_ast, dict):
                 raise FormulaValidationError("formula_must_be_object")
@@ -3078,6 +3201,7 @@ def _bind_and_validate_drafts(
             "frequency": selection.frequency,
             "formula_ast": formula_ast,
             "formula_fingerprint": formula_fingerprint,
+            "provider_position_size_ignored": True,
             "parameter_values": candidate.get("parameter_values") or {},
             "parameter_ranges": candidate.get("parameter_ranges") or {},
             "entry_conditions": candidate.get("entry_conditions"),
@@ -3457,11 +3581,14 @@ def _hypothesis_output_contract(
                     "window": 20,
                 },
             },
-            "position_size": {
-                "op": "max_weight",
-                "input": {"op": "equal_weight"},
-                "value": 0.2,
-            },
+            "position_size": {"op": "equal_weight"},
+        },
+        "position_sizing_policy": {
+            "formula_position_size_literal": {"op": "equal_weight"},
+            "provider_value_is_ignored_and_replaced_locally": True,
+            "local_allocation_slots": 4,
+            "local_target_weight": 0.25,
+            "model_controls_position_size": False,
         },
     }
 
@@ -3536,6 +3663,9 @@ def _system_prompt(mode: Literal["hypothesis", "critique"]) -> str:
             "output_contract.formula_ast_node_exact_keys. ATR is a special operator: "
             'it must be exactly {"op":"atr","window":N} and must not contain an '
             '"input" key. Other window operators must contain op, input, and window. '
+            'position_size must be exactly {"op":"equal_weight"}; local Karkinos '
+            "policy owns allocation slots, lot rounding, fees, and capital limits, so "
+            "the model must not propose a weight or cap. "
             "Prefer one compact draft unless the evidence clearly supports additional "
             "materially distinct hypotheses; never pad the response. "
             "When iteration_context is present, emit exactly one draft. For iteration "

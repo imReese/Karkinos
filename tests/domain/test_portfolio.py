@@ -6,8 +6,8 @@ from datetime import datetime
 from decimal import Decimal
 
 from core.event_bus import EventBus
-from core.events import OrderEvent, OrderIntentEvent, SignalEvent
-from core.types import Symbol
+from core.events import FillEvent, OrderEvent, OrderIntentEvent, SignalEvent
+from core.types import OrderSide, Symbol
 from domain.instrument import make_stock
 from domain.portfolio import Portfolio
 
@@ -49,3 +49,28 @@ def test_signal_emits_order_intent_not_order_event() -> None:
     assert intent.target_weight == Decimal("0.50")
     assert intent.quantity == Decimal("500")
     assert intent.reference_price == Decimal("100")
+
+
+def test_multi_asset_equity_uses_each_positions_own_mark_price() -> None:
+    bus = EventBus()
+    portfolio = Portfolio(bus, initial_cash=Decimal("100000"))
+    first = Symbol("600001")
+    second = Symbol("000001")
+    for symbol in (first, second):
+        portfolio.add_instrument(make_stock(str(symbol), str(symbol)))
+        portfolio.on_fill(
+            FillEvent(
+                timestamp=datetime(2026, 8, 21, 10),
+                fill_id=f"fill-{symbol}",
+                order_id=f"order-{symbol}",
+                symbol=symbol,
+                side=OrderSide.BUY,
+                fill_price=Decimal("10"),
+                fill_quantity=Decimal("100"),
+                commission=Decimal("0"),
+                slippage=Decimal("0"),
+            )
+        )
+    portfolio.mark_to_market({first: Decimal("11"), second: Decimal("23")})
+
+    assert portfolio._calculate_equity() == Decimal("101400")

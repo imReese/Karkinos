@@ -68,6 +68,11 @@ from server.services.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactStore,
     build_daily_strategy_promotion_binding,
 )
+from server.services.market_universe_truth import (
+    MarketUniversePolicy,
+    MarketUniverseRejected,
+    build_market_universe_truth,
+)
 from server.services.reviewed_fee_schedule import (
     ReviewedFeeScheduleReadRejected,
     ReviewedFeeScheduleRejected,
@@ -80,7 +85,7 @@ SHADOW_RESEARCH_POLICY_ID = "ai_shadow_research"
 SHADOW_RESEARCH_POLICY_SCHEMA = "karkinos.ai.shadow_research_policy.v2"
 SHADOW_RESEARCH_API_SCHEMA = "karkinos.ai.shadow_research_automation.v1"
 SHADOW_RESEARCH_RUN_TYPE = "ai_shadow_research"
-SHADOW_RESEARCH_RUNTIME_CONTRACT = "karkinos.ai.shadow_research_runtime.v8"
+SHADOW_RESEARCH_RUNTIME_CONTRACT = "karkinos.ai.shadow_research_runtime.v9"
 SHADOW_RESEARCH_POLICY_CONFIRMATION = (
     "authorize_five_sequential_after_close_deepseek_strategy_research_without_"
     "daily_token_budget_or_strategy_or_trade_authority"
@@ -3659,23 +3664,41 @@ class AiShadowResearchAutomationService:
         assets = config.get("assets")
         if not isinstance(assets, list) or not assets:
             raise ShadowResearchRejected("baseline_assets_missing")
-        start_date = str(config.get("start_date") or "")
-        if not start_date:
-            raise ShadowResearchRejected("baseline_start_date_missing")
-        handlers: dict[Symbol, DataHandler] = {}
-        instruments: dict[Symbol, Any] = {}
-        frames: dict[Symbol, pd.DataFrame] = {}
-        last_dates: list[str] = []
-        normalized_assets: list[dict[str, str]] = []
         for asset in assets:
             if not isinstance(asset, dict) or not asset.get("symbol"):
                 raise ShadowResearchRejected("baseline_asset_invalid")
-            symbol = Symbol(str(asset["symbol"]))
-            asset_class_text = str(asset.get("asset_class") or "stock").strip().lower()
-            if asset_class_text != "stock":
+            if str(asset.get("asset_class") or "stock").strip().lower() != "stock":
                 raise ShadowResearchRejected(
                     "daily_candidate_strategy_asset_class_not_supported"
                 )
+        start_date = str(config.get("start_date") or "")
+        if not start_date:
+            raise ShadowResearchRejected("baseline_start_date_missing")
+        initial_cash = float(
+            config.get("initial_cash") or seed.get("initial_cash") or 0
+        )
+        market_universe_snapshot = self._data_store.get_market_universe_snapshot()
+        try:
+            market_universe_truth = build_market_universe_truth(
+                data_store=self._data_store,
+                snapshot=market_universe_snapshot or {},
+                start_date=start_date,
+                end_date=str((market_universe_snapshot or {}).get("trade_date") or ""),
+                initial_cash=initial_cash,
+                policy=MarketUniversePolicy(),
+            )
+        except MarketUniverseRejected as exc:
+            raise ShadowResearchRejected(str(exc)) from exc
+        research_panel = market_universe_truth["research_panel"]
+        market_date = str(research_panel["trade_date"])
+        panel_symbols = [str(symbol) for symbol in research_panel["symbols"]]
+        handlers: dict[Symbol, DataHandler] = {}
+        instruments: dict[Symbol, Any] = {}
+        frames: dict[Symbol, pd.DataFrame] = {}
+        normalized_assets: list[dict[str, str]] = []
+        for symbol_text in panel_symbols:
+            symbol = Symbol(symbol_text)
+            asset_class_text = "stock"
             asset_class = _asset_class(asset_class_text)
             frame = self._data_store.load_bars(symbol, BarFrequency.DAILY)
             if frame is None or frame.empty or "timestamp" not in frame.columns:
@@ -3687,13 +3710,13 @@ class AiShadowResearchAutomationService:
             ].sort_values("timestamp")
             if frame.empty:
                 raise ShadowResearchRejected(f"persisted_window_empty:{symbol}")
+            if frame["timestamp"].iloc[-1].date().isoformat() != market_date:
+                raise ShadowResearchRejected(f"persisted_market_date_missing:{symbol}")
             frames[symbol] = frame
-            last_dates.append(frame["timestamp"].iloc[-1].date().isoformat())
             normalized_assets.append(
                 {"symbol": str(symbol), "asset_class": asset_class_text}
             )
             instruments[symbol] = DataManager.get_instrument(symbol, asset_class)
-        market_date = min(last_dates)
         for asset, (symbol, frame) in zip(
             normalized_assets, frames.items(), strict=True
         ):
@@ -3720,9 +3743,7 @@ class AiShadowResearchAutomationService:
         request = BacktestRequest(
             start_date=start_date,
             end_date=market_date,
-            initial_cash=float(
-                config.get("initial_cash") or seed.get("initial_cash") or 0
-            ),
+            initial_cash=initial_cash,
             strategy=str(config.get("strategy")),
             short_period=int(config.get("short_period") or 5),
             long_period=int(config.get("long_period") or 20),
@@ -3819,6 +3840,7 @@ class AiShadowResearchAutomationService:
                     result=result,
                     data_handlers=handlers,
                 ),
+                "market_universe_truth": market_universe_truth,
                 "automatic_baseline_refresh": True,
                 "persisted_market_data_only": True,
             }

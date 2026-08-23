@@ -58,7 +58,7 @@ class Portfolio:
             return
 
         # 计算当前持仓权重
-        total_equity = self._calculate_equity(current_price)
+        total_equity = self._calculate_equity()
         current_value = self._position_value(symbol, current_price)
         current_weight = current_value / total_equity if total_equity > ZERO else ZERO
 
@@ -183,9 +183,9 @@ class Portfolio:
         equity = self._calculate_equity_with_prices(prices)
         self.equity_curve.append((timestamp, equity))
 
-    def _calculate_equity(self, price: Decimal) -> Decimal:
-        """估算总权益（简化：用单一价格）。"""
-        positions_value = sum(pos.quantity * price for pos in self.positions.values())
+    def _calculate_equity(self) -> Decimal:
+        """使用每个持仓各自最近一次盯市价值计算总权益。"""
+        positions_value = sum(pos.market_value for pos in self.positions.values())
         return self.cash + positions_value
 
     def _calculate_equity_with_prices(self, prices: dict[Symbol, Decimal]) -> Decimal:

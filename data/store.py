@@ -82,6 +82,21 @@ class DataStore:
                 CREATE INDEX IF NOT EXISTS idx_market_bars_symbol_frequency_ts
                 ON market_bars(symbol, frequency, timestamp)
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS market_universe_snapshots (
+                    snapshot_id TEXT PRIMARY KEY,
+                    trade_date TEXT NOT NULL,
+                    provider_name TEXT NOT NULL,
+                    member_count INTEGER NOT NULL,
+                    snapshot_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(trade_date, provider_name)
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_market_universe_snapshots_date
+                ON market_universe_snapshots(trade_date DESC, created_at DESC)
+            """)
 
     # ---------- 行情数据 ----------
 
@@ -323,6 +338,112 @@ class DataStore:
         if freq_dir.exists():
             symbols.update(Symbol(p.stem) for p in freq_dir.glob("*.parquet"))
         return sorted(symbols, key=str)
+
+    def save_market_universe_snapshot(
+        self,
+        *,
+        trade_date: str,
+        provider_name: str,
+        members: list[dict[str, object]],
+    ) -> dict[str, object]:
+        """Persist one immutable, content-addressed market-universe snapshot."""
+        normalized_date = str(trade_date).strip()
+        normalized_provider = str(provider_name).strip()
+        if not normalized_date or not normalized_provider or not members:
+            raise ValueError("market_universe_snapshot_input_invalid")
+        normalized_members = sorted(
+            (dict(member) for member in members),
+            key=lambda member: str(member.get("symbol") or ""),
+        )
+        if any(
+            not str(member.get("symbol") or "").strip() for member in normalized_members
+        ):
+            raise ValueError("market_universe_member_symbol_invalid")
+        if len({str(member["symbol"]) for member in normalized_members}) != len(
+            normalized_members
+        ):
+            raise ValueError("market_universe_member_duplicate")
+        core = {
+            "schema_version": "karkinos.market_universe_snapshot.v1",
+            "trade_date": normalized_date,
+            "provider_name": normalized_provider,
+            "asset_scope": ["stock"],
+            "members": normalized_members,
+            "member_count": len(normalized_members),
+            "provider_contact_performed_during_ingestion": True,
+            "read_endpoints_contact_providers": False,
+            "authorizes_strategy_promotion": False,
+            "authorizes_order_creation": False,
+            "changes_capital_authority": False,
+        }
+        canonical = json.dumps(
+            core,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        snapshot_id = "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        payload = {**core, "snapshot_id": snapshot_id}
+        payload_json = json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        now = datetime.now().isoformat()
+        with sqlite3.connect(self._meta_path) as conn:
+            conn.row_factory = sqlite3.Row
+            existing = conn.execute(
+                """
+                SELECT * FROM market_universe_snapshots
+                WHERE trade_date = ? AND provider_name = ?
+                """,
+                (normalized_date, normalized_provider),
+            ).fetchone()
+            if existing is not None:
+                if str(existing["snapshot_id"]) != snapshot_id:
+                    raise ValueError("market_universe_snapshot_conflict")
+                return json.loads(str(existing["snapshot_json"]))
+            conn.execute(
+                """
+                INSERT INTO market_universe_snapshots
+                    (snapshot_id, trade_date, provider_name, member_count,
+                     snapshot_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    snapshot_id,
+                    normalized_date,
+                    normalized_provider,
+                    len(normalized_members),
+                    payload_json,
+                    now,
+                ),
+            )
+        return payload
+
+    def get_market_universe_snapshot(
+        self,
+        *,
+        trade_date: str | None = None,
+    ) -> dict[str, object] | None:
+        """Read the exact-date or latest immutable market-universe snapshot."""
+        query = """
+            SELECT snapshot_json FROM market_universe_snapshots
+            {where_clause}
+            ORDER BY trade_date DESC, created_at DESC
+            LIMIT 1
+        """
+        where_clause = "WHERE trade_date = ?" if trade_date is not None else ""
+        params = (str(trade_date),) if trade_date is not None else ()
+        with sqlite3.connect(self._meta_path) as conn:
+            row = conn.execute(
+                query.format(where_clause=where_clause), params
+            ).fetchone()
+        if row is None:
+            return None
+        payload = json.loads(str(row[0]))
+        return payload if isinstance(payload, dict) else None
 
     def _list_bar_frequencies(self) -> list[BarFrequency]:
         bars_root = self._root / "bars"

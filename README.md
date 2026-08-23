@@ -44,6 +44,9 @@ canonical ownership, invariants, and failure semantics.
   gates before live-like actions.
 - Evidence-bound AI research whose output remains non-authoritative and cannot
   grant trading or capital authority.
+- Immutable full-market stock-universe snapshots and deterministic 40-stock
+  research panels, with local lot/capital feasibility and model-independent
+  position sizing.
 
 ## Safety by design
 
@@ -60,7 +63,7 @@ guarantee.
 ## Project status
 
 The latest tagged release is
-[v0.2.12](https://github.com/imReese/Karkinos/releases/tag/v0.2.12). Karkinos is
+[v0.3.0](https://github.com/imReese/Karkinos/releases/tag/v0.3.0). Karkinos is
 under active development; the tagged release is the stable local baseline,
 while `main` continues to evolve.
 

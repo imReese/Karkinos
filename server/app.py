@@ -176,6 +176,9 @@ async def lifespan(app: FastAPI):
     from server.services.market_calendar_automation import (
         run_market_calendar_automation_loop,
     )
+    from server.services.market_universe_automation import (
+        run_market_universe_automation_loop,
+    )
 
     # create_app() loads the runtime config once and lifespan reuses the same
     # object so config.json remains a startup-only input.
@@ -275,6 +278,7 @@ async def lifespan(app: FastAPI):
     forward_task = asyncio.create_task(_forward_events(bridge, hub))
     broker_statement_collector_task: asyncio.Task[None] | None = None
     market_calendar_task: asyncio.Task[None] | None = None
+    market_universe_task: asyncio.Task[None] | None = None
     decision_evidence_task: asyncio.Task[None] | None = None
     state.daily_decision_evidence_task = None
     shadow_research_task: asyncio.Task[None] | None = None
@@ -302,6 +306,10 @@ async def lifespan(app: FastAPI):
     # 自动启动实时监控
     if config.live_auto_start:
         scheduler.start()
+        market_universe_task = asyncio.create_task(
+            run_market_universe_automation_loop(db=db, config=config),
+            name="market-universe-automation",
+        )
         decision_evidence_task = asyncio.create_task(
             run_daily_decision_evidence_automation_loop(
                 state=state,
@@ -339,6 +347,12 @@ async def lifespan(app: FastAPI):
         market_calendar_task.cancel()
         try:
             await market_calendar_task
+        except asyncio.CancelledError:
+            pass
+    if market_universe_task is not None:
+        market_universe_task.cancel()
+        try:
+            await market_universe_task
         except asyncio.CancelledError:
             pass
     if broker_statement_collector_task is not None:
