@@ -627,6 +627,7 @@ def _failure_code(exc: Exception) -> str:
         "ExternalResearchTimeoutError",
         "ExternalResearchNetworkError",
         "ExternalResearchInvalidResponseError",
+        "StrategyResearchRejected",
     }:
         value = str(exc).strip()
         if (

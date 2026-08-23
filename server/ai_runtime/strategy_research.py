@@ -1981,11 +1981,7 @@ class StrategyResearchModelProvider(ProviderAdapter):
         hypothesis_citation_catalog = None
         critique_citation_catalog = None
         if self._mode == "hypothesis":
-            complete_citation_catalog = _build_hypothesis_citation_catalog(
-                citation_sources
-            )
             hypothesis_citation_catalog = _compact_hypothesis_citation_catalog(
-                complete_citation_catalog,
                 citation_sources=citation_sources,
             )
         else:
@@ -3976,12 +3972,10 @@ def _build_hypothesis_citation_catalog(
 
 
 def _compact_hypothesis_citation_catalog(
-    complete_catalog: Mapping[str, str],
     *,
     citation_sources: Mapping[str, Any],
 ) -> dict[str, str]:
-    """Expose a tiny deterministic set of easy-to-copy IDs to the model."""
-    available_paths = set(complete_catalog.values())
+    """Expose only the deterministic evidence anchors required by the model."""
     path_groups = (
         (
             "saved_backtest_evidence.performance_summary",
@@ -4012,8 +4006,7 @@ def _compact_hypothesis_citation_catalog(
             (
                 path
                 for path in alternatives
-                if path in available_paths
-                and _citation_path_exists(path, citation_sources)
+                if _citation_path_exists(path, citation_sources)
             ),
             None,
         )
