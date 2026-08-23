@@ -107,8 +107,15 @@ SHADOW_RESEARCH_OUTPUT_TRUNCATION_CALL_EXTENSION_CONFIRMATION = (
     "authorize_one_additional_deepseek_call_for_output_truncation_retry_without_"
     "strategy_trade_or_capital_authority"
 )
+SHADOW_RESEARCH_TIMEOUT_RESUME_CALL_EXTENSION_CONFIRMATION = (
+    "authorize_one_additional_deepseek_call_for_partial_fifth_round_timeout_"
+    "resume_without_strategy_trade_or_capital_authority"
+)
 _CITATION_CONTRACT_RETRYABLE_FAILURE_CODES = ("provider_citation_not_in_bound_input",)
 _OUTPUT_TRUNCATION_RETRYABLE_FAILURE_CODES = ("provider_output_truncated",)
+_TIMEOUT_RESUME_RETRYABLE_FAILURE_CODES = ("provider_timeout",)
+_TIMEOUT_RESUME_COMPLETED_ITERATIONS = 4
+_TIMEOUT_RESUME_ITERATION = 5
 _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION = (
     STRATEGY_RESEARCH_PROVIDER_TOKEN_RESERVATION
@@ -393,6 +400,35 @@ class ShadowResearchStore:
                     replacement_input_fingerprint TEXT NOT NULL UNIQUE,
                     consumed_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS ai_shadow_research_timeout_resume_call_extensions (
+                    extension_id TEXT PRIMARY KEY,
+                    failed_run_id TEXT NOT NULL UNIQUE,
+                    market_date TEXT NOT NULL UNIQUE,
+                    failed_input_fingerprint TEXT NOT NULL,
+                    failure_code TEXT NOT NULL
+                        CHECK(failure_code = 'provider_timeout'),
+                    completed_iteration_count INTEGER NOT NULL
+                        CHECK(completed_iteration_count = 4),
+                    completed_evidence_fingerprint TEXT NOT NULL,
+                    failed_call_id TEXT NOT NULL UNIQUE,
+                    provider_calls_at_authorization INTEGER NOT NULL,
+                    prior_provider_call_ceiling INTEGER NOT NULL,
+                    authorized_additional_calls INTEGER NOT NULL
+                        CHECK(authorized_additional_calls = 1),
+                    provider_call_ceiling INTEGER NOT NULL,
+                    resume_iteration INTEGER NOT NULL
+                        CHECK(resume_iteration = 5),
+                    approved_by TEXT NOT NULL,
+                    notes TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS ai_shadow_research_timeout_resume_call_extension_consumptions (
+                    extension_id TEXT PRIMARY KEY,
+                    resumed_run_id TEXT NOT NULL UNIQUE,
+                    resumed_input_fingerprint TEXT NOT NULL UNIQUE,
+                    completed_evidence_fingerprint TEXT NOT NULL,
+                    consumed_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS ai_shadow_research_candidates (
                     candidate_id TEXT PRIMARY KEY,
                     run_id TEXT NOT NULL,
@@ -449,6 +485,65 @@ class ShadowResearchStore:
             ).fetchone()
             if existing is not None:
                 existing_run = dict(existing)
+                timeout_resume_extension = (
+                    self._unconsumed_timeout_resume_call_extension(conn, existing_run)
+                )
+                if timeout_resume_extension is not None:
+                    if input_fingerprint != existing_run["input_fingerprint"]:
+                        raise ShadowResearchRejected(
+                            "timeout_resume_input_fingerprint_drift"
+                        )
+                    checkpoint = self._partial_resume_checkpoint(conn, existing_run)
+                    if checkpoint["completed_evidence_fingerprint"] != (
+                        timeout_resume_extension["completed_evidence_fingerprint"]
+                    ):
+                        raise ShadowResearchRejected(
+                            "timeout_resume_completed_evidence_drift"
+                        )
+                    conn.execute(
+                        """
+                        UPDATE ai_shadow_research_runs
+                        SET status='running', failure_code=NULL,
+                            candidate_count=?, updated_at=?
+                        WHERE run_id=? AND status='failed'
+                        """,
+                        (
+                            _TIMEOUT_RESUME_COMPLETED_ITERATIONS,
+                            now,
+                            existing_run["run_id"],
+                        ),
+                    )
+                    conn.execute(
+                        """
+                        INSERT INTO ai_shadow_research_timeout_resume_call_extension_consumptions
+                        (extension_id, resumed_run_id, resumed_input_fingerprint,
+                         completed_evidence_fingerprint, consumed_at)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (
+                            timeout_resume_extension["extension_id"],
+                            existing_run["run_id"],
+                            existing_run["input_fingerprint"],
+                            checkpoint["completed_evidence_fingerprint"],
+                            now,
+                        ),
+                    )
+                    resumed = conn.execute(
+                        "SELECT * FROM ai_shadow_research_runs WHERE run_id=?",
+                        (existing_run["run_id"],),
+                    ).fetchone()
+                    if resumed is None:
+                        raise RuntimeError("timeout resume persistence failed")
+                    return {
+                        **dict(resumed),
+                        "partial_resume_iteration": _TIMEOUT_RESUME_ITERATION,
+                        "partial_resume_extension_id": timeout_resume_extension[
+                            "extension_id"
+                        ],
+                        "partial_resume_evidence_fingerprint": checkpoint[
+                            "completed_evidence_fingerprint"
+                        ],
+                    }, False
                 retry_authorization = self._unconsumed_retry_authorization(
                     conn, existing_run
                 )
@@ -1156,6 +1251,448 @@ class ShadowResearchStore:
                 )
             return self._output_truncation_call_extension_row(conn, saved)
 
+    def authorize_timeout_resume_call_extension(
+        self,
+        failed_run_id: str,
+        *,
+        approved_by: str,
+        notes: str,
+        confirmation: str,
+        now: str,
+    ) -> dict[str, Any]:
+        """Authorize one extra call for an exact fifth-round timeout resume."""
+        if confirmation != SHADOW_RESEARCH_TIMEOUT_RESUME_CALL_EXTENSION_CONFIRMATION:
+            raise PermissionError(
+                "timeout resume call extension requires exact owner confirmation"
+            )
+        approved_by = approved_by.strip()
+        notes = notes.strip()
+        if not approved_by or not notes:
+            raise ShadowResearchRejected(
+                "timeout_resume_call_extension_approver_and_notes_required"
+            )
+        with self._connect(immediate=True) as conn:
+            existing = conn.execute(
+                """
+                SELECT * FROM ai_shadow_research_timeout_resume_call_extensions
+                WHERE failed_run_id=?
+                """,
+                (failed_run_id,),
+            ).fetchone()
+            if existing is not None:
+                if existing["approved_by"] != approved_by or existing["notes"] != notes:
+                    raise ShadowResearchRejected(
+                        "timeout_resume_call_extension_authorization_conflict"
+                    )
+                return self._timeout_resume_call_extension_row(conn, existing)
+
+            failed_run = conn.execute(
+                "SELECT * FROM ai_shadow_research_runs WHERE run_id=?",
+                (failed_run_id,),
+            ).fetchone()
+            if failed_run is None:
+                raise LookupError(f"shadow research run not found: {failed_run_id}")
+            failed_run_mapping = dict(failed_run)
+            if (
+                failed_run["status"] != "failed"
+                or failed_run["failure_code"]
+                not in _TIMEOUT_RESUME_RETRYABLE_FAILURE_CODES
+                or int(failed_run["candidate_count"] or 0) != 0
+            ):
+                raise ShadowResearchRejected(
+                    "timeout_resume_requires_exact_partial_fifth_round_failure"
+                )
+            checkpoint = self._partial_resume_checkpoint(conn, failed_run_mapping)
+            failed_call_id = (
+                f"{failed_run_id}:hypothesis:iteration:"
+                f"{_TIMEOUT_RESUME_ITERATION:02d}"
+            )
+            failed_call = conn.execute(
+                """
+                SELECT * FROM ai_shadow_research_provider_calls
+                WHERE call_id=? AND run_id=? AND market_date=?
+                  AND call_kind='hypothesis_iteration'
+                  AND status='failed' AND failure_code='provider_timeout'
+                """,
+                (failed_call_id, failed_run_id, failed_run["market_date"]),
+            ).fetchone()
+            if failed_call is None:
+                raise ShadowResearchRejected(
+                    "timeout_resume_requires_exact_failed_fifth_hypothesis_call"
+                )
+            run_call_summary = conn.execute(
+                """
+                SELECT COUNT(*) AS recorded_calls,
+                       SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END)
+                           AS completed_calls,
+                       SUM(CASE WHEN status='failed'
+                                     AND failure_code='provider_timeout'
+                                THEN 1 ELSE 0 END) AS timeout_calls
+                FROM ai_shadow_research_provider_calls
+                WHERE run_id=?
+                """,
+                (failed_run_id,),
+            ).fetchone()
+            if (
+                run_call_summary is None
+                or int(run_call_summary["recorded_calls"] or 0) != 9
+                or int(run_call_summary["completed_calls"] or 0) != 8
+                or int(run_call_summary["timeout_calls"] or 0) != 1
+            ):
+                raise ShadowResearchRejected(
+                    "timeout_resume_requires_exact_four_round_call_lineage"
+                )
+            prior_extension = conn.execute(
+                """
+                SELECT extension.provider_call_ceiling
+                FROM ai_shadow_research_output_truncation_call_extensions
+                     AS extension
+                JOIN ai_shadow_research_output_truncation_call_extension_consumptions
+                     AS consumption
+                  ON consumption.extension_id=extension.extension_id
+                WHERE extension.market_date=?
+                  AND consumption.replacement_run_id=?
+                """,
+                (failed_run["market_date"], failed_run_id),
+            ).fetchone()
+            if prior_extension is None:
+                raise ShadowResearchRejected(
+                    "timeout_resume_requires_consumed_output_truncation_extension"
+                )
+            market_date = str(failed_run["market_date"])
+            provider_calls = self._real_provider_call_count(conn, market_date)
+            prior_ceiling = int(prior_extension["provider_call_ceiling"])
+            provider_call_ceiling = prior_ceiling + 1
+            if (
+                provider_calls != SHADOW_RESEARCH_MAX_PROVIDER_CALLS + 2
+                or prior_ceiling != SHADOW_RESEARCH_MAX_PROVIDER_CALLS + 3
+                or prior_ceiling - provider_calls != 1
+                or provider_call_ceiling != SHADOW_RESEARCH_MAX_PROVIDER_CALLS + 4
+                or provider_call_ceiling - provider_calls != 2
+            ):
+                raise ShadowResearchRejected(
+                    "timeout_resume_must_provide_exact_fifth_round_capacity"
+                )
+            extension_id = (
+                "ai-shadow-research-timeout-resume-extension:"
+                + content_fingerprint(
+                    {
+                        "failed_run_id": failed_run_id,
+                        "failed_call_id": failed_call_id,
+                        "completed_evidence_fingerprint": checkpoint[
+                            "completed_evidence_fingerprint"
+                        ],
+                        "provider_calls_at_authorization": provider_calls,
+                        "prior_provider_call_ceiling": prior_ceiling,
+                        "provider_call_ceiling": provider_call_ceiling,
+                        "approved_by": approved_by,
+                        "notes": notes,
+                    }
+                )[:24]
+            )
+            conn.execute(
+                """
+                INSERT INTO ai_shadow_research_timeout_resume_call_extensions
+                (extension_id, failed_run_id, market_date,
+                 failed_input_fingerprint, failure_code,
+                 completed_iteration_count, completed_evidence_fingerprint,
+                 failed_call_id, provider_calls_at_authorization,
+                 prior_provider_call_ceiling, authorized_additional_calls,
+                 provider_call_ceiling, resume_iteration, approved_by, notes,
+                 created_at)
+                VALUES (?, ?, ?, ?, 'provider_timeout', 4, ?, ?, ?, ?, 1, ?, 5,
+                        ?, ?, ?)
+                """,
+                (
+                    extension_id,
+                    failed_run_id,
+                    market_date,
+                    failed_run["input_fingerprint"],
+                    checkpoint["completed_evidence_fingerprint"],
+                    failed_call_id,
+                    provider_calls,
+                    prior_ceiling,
+                    provider_call_ceiling,
+                    approved_by,
+                    notes,
+                    now,
+                ),
+            )
+            saved = conn.execute(
+                """
+                SELECT * FROM ai_shadow_research_timeout_resume_call_extensions
+                WHERE extension_id=?
+                """,
+                (extension_id,),
+            ).fetchone()
+            if saved is None:
+                raise RuntimeError(
+                    "timeout resume call extension authorization persistence failed"
+                )
+            return self._timeout_resume_call_extension_row(conn, saved)
+
+    def _unconsumed_timeout_resume_call_extension(
+        self,
+        conn: sqlite3.Connection,
+        run: Mapping[str, Any],
+    ) -> sqlite3.Row | None:
+        if (
+            run.get("status") != "failed"
+            or run.get("failure_code") not in _TIMEOUT_RESUME_RETRYABLE_FAILURE_CODES
+            or int(run.get("candidate_count") or 0) != 0
+        ):
+            return None
+        return conn.execute(
+            """
+            SELECT extension.*
+            FROM ai_shadow_research_timeout_resume_call_extensions AS extension
+            LEFT JOIN ai_shadow_research_timeout_resume_call_extension_consumptions
+                 AS consumption
+              ON consumption.extension_id=extension.extension_id
+            WHERE extension.failed_run_id=?
+              AND extension.failed_input_fingerprint=?
+              AND consumption.extension_id IS NULL
+            """,
+            (run["run_id"], run["input_fingerprint"]),
+        ).fetchone()
+
+    def load_partial_resume_checkpoint(
+        self,
+        run_id: str,
+        *,
+        expected_fingerprint: str,
+    ) -> dict[str, Any]:
+        with self._connect_readonly() as conn:
+            run = conn.execute(
+                "SELECT * FROM ai_shadow_research_runs WHERE run_id=?", (run_id,)
+            ).fetchone()
+            if run is None:
+                raise LookupError(f"shadow research run not found: {run_id}")
+            checkpoint = self._partial_resume_checkpoint(conn, dict(run))
+        if checkpoint["completed_evidence_fingerprint"] != expected_fingerprint:
+            raise ShadowResearchRejected("timeout_resume_completed_evidence_drift")
+        return checkpoint
+
+    def _partial_resume_checkpoint(
+        self,
+        conn: sqlite3.Connection,
+        run: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        rows = conn.execute(
+            """
+            SELECT c.candidate_id, c.run_id, c.session_id, c.draft_id,
+                   c.backtest_run_id, c.critique_id, c.baseline_result_id,
+                   c.candidate_result_id, c.status, c.recommendation,
+                   c.comparison_json, c.promotion_status, c.created_at,
+                   c.updated_at,
+                   s.idempotency_key AS session_idempotency_key,
+                   s.request_fingerprint AS session_request_fingerprint,
+                   s.request_json AS session_request_json,
+                   s.selection_fingerprint AS session_selection_fingerprint,
+                   s.status AS session_status,
+                   d.contract_json AS draft_contract_json,
+                   d.artifact_fingerprint AS draft_artifact_fingerprint,
+                   d.formula_fingerprint AS draft_formula_fingerprint,
+                   d.validation_status AS draft_validation_status,
+                   b.idempotency_key AS backtest_idempotency_key,
+                   b.session_id AS backtest_session_id,
+                   b.draft_id AS backtest_draft_id,
+                   b.status AS backtest_status,
+                   b.canonical_backtest_result_id,
+                   b.evidence_fingerprint AS backtest_evidence_fingerprint,
+                   q.idempotency_key AS critique_idempotency_key,
+                   q.session_id AS critique_session_id,
+                   q.draft_id AS critique_draft_id,
+                   q.backtest_run_id AS critique_backtest_run_id,
+                   q.status AS critique_status,
+                   q.normalized_artifact_json AS critique_artifact_json,
+                   q.artifact_fingerprint AS critique_artifact_fingerprint
+            FROM ai_shadow_research_candidates AS c
+            LEFT JOIN ai_strategy_research_sessions AS s
+              ON s.session_id=c.session_id
+            LEFT JOIN ai_strategy_hypothesis_drafts AS d
+              ON d.session_id=c.session_id AND d.draft_id=c.draft_id
+            LEFT JOIN ai_strategy_formula_backtests AS b
+              ON b.backtest_run_id=c.backtest_run_id
+            LEFT JOIN ai_strategy_backtest_critiques AS q
+              ON q.critique_id=c.critique_id
+            WHERE c.run_id=?
+            ORDER BY CAST(json_extract(c.comparison_json,
+                         '$.iteration_lineage.iteration_number') AS INTEGER),
+                     c.created_at, c.candidate_id
+            """,
+            (run["run_id"],),
+        ).fetchall()
+        if len(rows) != _TIMEOUT_RESUME_COMPLETED_ITERATIONS:
+            raise ShadowResearchRejected(
+                "timeout_resume_requires_exact_four_completed_candidates"
+            )
+        candidates: list[dict[str, Any]] = []
+        drafts: list[dict[str, Any]] = []
+        evidence_iterations: list[dict[str, Any]] = []
+        previous_iteration: dict[str, Any] | None = None
+        candidate_columns = (
+            "candidate_id",
+            "run_id",
+            "session_id",
+            "draft_id",
+            "backtest_run_id",
+            "critique_id",
+            "baseline_result_id",
+            "candidate_result_id",
+            "status",
+            "recommendation",
+            "comparison_json",
+            "promotion_status",
+            "created_at",
+            "updated_at",
+        )
+        for expected_iteration, row in enumerate(rows, start=1):
+            candidate = _candidate_row({key: row[key] for key in candidate_columns})
+            draft = _json_object(row["draft_contract_json"])
+            session_request = _json_object(row["session_request_json"])
+            critique_artifact = _json_object(row["critique_artifact_json"])
+            expected_context = _build_iteration_context(
+                iteration_number=expected_iteration,
+                total_iterations=SHADOW_RESEARCH_MAX_CANDIDATES,
+                previous_iteration=previous_iteration,
+            )
+            comparison = candidate["comparison"]
+            expected_lineage = _iteration_lineage(
+                expected_context,
+                current_formula_fingerprint=draft.get("formula_fingerprint"),
+            )
+            expected_hypothesis_call_id = (
+                f"{run['run_id']}:hypothesis:iteration:{expected_iteration:02d}"
+            )
+            expected_backtest_idempotency_key = (
+                f"{run['run_id']}:backtest:{candidate['draft_id']}"
+            )
+            expected_critique_idempotency_key = (
+                f"{run['run_id']}:critique:{candidate['draft_id']}"
+            )
+            completed_calls = conn.execute(
+                """
+                SELECT call_id, run_id, market_date, call_kind, status,
+                       actual_tokens, failure_code, created_at, updated_at
+                FROM ai_shadow_research_provider_calls
+                WHERE call_id IN (?, ?)
+                ORDER BY call_id
+                """,
+                (expected_hypothesis_call_id, expected_critique_idempotency_key),
+            ).fetchall()
+            completed_call_evidence = [dict(call) for call in completed_calls]
+            completed_call_by_id = {
+                str(call["call_id"]): call for call in completed_call_evidence
+            }
+            hypothesis_call = completed_call_by_id.get(expected_hypothesis_call_id)
+            critique_call = completed_call_by_id.get(expected_critique_idempotency_key)
+            if (
+                candidate["status"]
+                not in {"awaiting_human_approval", "research_blocked"}
+                or candidate["promotion_status"]
+                not in {"awaiting_human_approval", "blocked_by_evidence"}
+                or int(candidate["baseline_result_id"] or 0)
+                != int(run.get("baseline_result_id") or 0)
+                or row["session_status"] != "completed"
+                or row["session_idempotency_key"] != expected_hypothesis_call_id
+                or session_request.get("iteration_context") != expected_context
+                or row["draft_validation_status"] != "valid"
+                or not draft
+                or row["draft_artifact_fingerprint"] != content_fingerprint(draft)
+                or row["draft_formula_fingerprint"] != draft.get("formula_fingerprint")
+                or draft.get("iteration_context_fingerprint")
+                != expected_context["context_fingerprint"]
+                or row["backtest_idempotency_key"] != expected_backtest_idempotency_key
+                or row["backtest_session_id"] != candidate["session_id"]
+                or row["backtest_draft_id"] != candidate["draft_id"]
+                or row["backtest_status"] != "completed"
+                or int(row["canonical_backtest_result_id"] or 0)
+                != int(candidate["candidate_result_id"] or 0)
+                or row["critique_idempotency_key"] != expected_critique_idempotency_key
+                or row["critique_session_id"] != candidate["session_id"]
+                or row["critique_draft_id"] != candidate["draft_id"]
+                or row["critique_backtest_run_id"] != candidate["backtest_run_id"]
+                or row["critique_status"] != "completed"
+                or not critique_artifact
+                or row["critique_artifact_fingerprint"]
+                != content_fingerprint(critique_artifact)
+                or comparison.get("deepseek_critique") != critique_artifact
+                or comparison.get("iteration_lineage") != expected_lineage
+                or len(completed_calls) != 2
+                or hypothesis_call is None
+                or critique_call is None
+                or hypothesis_call["run_id"] != run["run_id"]
+                or critique_call["run_id"] != run["run_id"]
+                or hypothesis_call["market_date"] != run["market_date"]
+                or critique_call["market_date"] != run["market_date"]
+                or hypothesis_call["call_kind"] != "hypothesis_iteration"
+                or critique_call["call_kind"] != "critique"
+                or hypothesis_call["status"] != "completed"
+                or critique_call["status"] != "completed"
+                or hypothesis_call["failure_code"] is not None
+                or critique_call["failure_code"] is not None
+            ):
+                raise ShadowResearchRejected(
+                    "timeout_resume_completed_iteration_evidence_invalid"
+                )
+            candidates.append(candidate)
+            drafts.append(draft)
+            previous_iteration = {
+                "hypotheses": {"session_id": candidate["session_id"]},
+                "draft": draft,
+                "candidate": candidate,
+            }
+            evidence_iterations.append(
+                {
+                    "iteration_number": expected_iteration,
+                    "candidate_id": candidate["candidate_id"],
+                    "candidate_fingerprint": content_fingerprint(
+                        {
+                            "candidate_id": candidate["candidate_id"],
+                            "session_id": candidate["session_id"],
+                            "draft_id": candidate["draft_id"],
+                            "backtest_run_id": candidate["backtest_run_id"],
+                            "critique_id": candidate["critique_id"],
+                            "candidate_result_id": candidate["candidate_result_id"],
+                            "status": candidate["status"],
+                            "recommendation": candidate["recommendation"],
+                            "comparison": comparison,
+                        }
+                    ),
+                    "session_request_fingerprint": row["session_request_fingerprint"],
+                    "session_request_json_fingerprint": content_fingerprint(
+                        session_request
+                    ),
+                    "session_selection_fingerprint": row[
+                        "session_selection_fingerprint"
+                    ],
+                    "draft_artifact_fingerprint": row["draft_artifact_fingerprint"],
+                    "backtest_evidence_fingerprint": row[
+                        "backtest_evidence_fingerprint"
+                    ],
+                    "critique_artifact_fingerprint": row[
+                        "critique_artifact_fingerprint"
+                    ],
+                    "provider_calls": completed_call_evidence,
+                }
+            )
+        checkpoint_core = {
+            "run_id": run["run_id"],
+            "input_fingerprint": run["input_fingerprint"],
+            "baseline_result_id": run.get("baseline_result_id"),
+            "completed_iterations": evidence_iterations,
+            "resume_iteration": _TIMEOUT_RESUME_ITERATION,
+        }
+        return {
+            "completed_evidence_fingerprint": content_fingerprint(checkpoint_core),
+            "completed_iteration_count": len(candidates),
+            "resume_iteration": _TIMEOUT_RESUME_ITERATION,
+            "candidates": candidates,
+            "drafts": drafts,
+            "previous_iteration": previous_iteration,
+        }
+
     def _unconsumed_citation_call_extension(
         self,
         conn: sqlite3.Connection,
@@ -1385,6 +1922,18 @@ class ShadowResearchStore:
                 """,
                 (run_id, market_date),
             ).fetchone()
+            timeout_resume_extension_ceiling = conn.execute(
+                """
+                SELECT extension.provider_call_ceiling
+                FROM ai_shadow_research_timeout_resume_call_extension_consumptions
+                     AS consumption
+                JOIN ai_shadow_research_timeout_resume_call_extensions AS extension
+                  ON extension.extension_id=consumption.extension_id
+                WHERE consumption.resumed_run_id=?
+                  AND extension.market_date=?
+                """,
+                (run_id, market_date),
+            ).fetchone()
             effective_call_limit = max(
                 call_limit,
                 (
@@ -1400,6 +1949,11 @@ class ShadowResearchStore:
                 (
                     int(output_truncation_extension_ceiling["provider_call_ceiling"])
                     if output_truncation_extension_ceiling is not None
+                    else call_limit
+                ),
+                (
+                    int(timeout_resume_extension_ceiling["provider_call_ceiling"])
+                    if timeout_resume_extension_ceiling is not None
                     else call_limit
                 ),
             )
@@ -1532,6 +2086,41 @@ class ShadowResearchStore:
             ),
             "replacement_input_fingerprint": (
                 consumption["replacement_input_fingerprint"]
+                if consumption is not None
+                else None
+            ),
+            "consumed_at": (
+                consumption["consumed_at"] if consumption is not None else None
+            ),
+            "automatic_strategy_replacement_enabled": False,
+            "production_strategy_mutation_enabled": False,
+            "broker_submission_enabled": False,
+            "capital_authority_changed": False,
+            "authority_effect": "research_only",
+        }
+
+    def _timeout_resume_call_extension_row(
+        self,
+        conn: sqlite3.Connection,
+        row: sqlite3.Row,
+    ) -> dict[str, Any]:
+        consumption = conn.execute(
+            """
+            SELECT resumed_run_id, resumed_input_fingerprint,
+                   completed_evidence_fingerprint, consumed_at
+            FROM ai_shadow_research_timeout_resume_call_extension_consumptions
+            WHERE extension_id=?
+            """,
+            (row["extension_id"],),
+        ).fetchone()
+        return {
+            **dict(row),
+            "consumed": consumption is not None,
+            "resumed_run_id": (
+                consumption["resumed_run_id"] if consumption is not None else None
+            ),
+            "resumed_input_fingerprint": (
+                consumption["resumed_input_fingerprint"]
                 if consumption is not None
                 else None
             ),
@@ -1818,6 +2407,11 @@ class ShadowResearchStore:
                 "output_truncation_call_extension_consumed": False,
                 "output_truncation_authorized_additional_calls": 0,
                 "output_truncation_extension_replacement_run_id": None,
+                "timeout_resume_call_extension_id": None,
+                "timeout_resume_call_extension_consumed": False,
+                "timeout_resume_authorized_additional_calls": 0,
+                "timeout_resume_resumed_run_id": None,
+                "timeout_resume_iteration": None,
             }
         try:
             with self._connect_readonly() as conn:
@@ -1884,6 +2478,22 @@ class ShadowResearchStore:
                     """,
                     (market_date,),
                 ).fetchone()
+                timeout_resume_extension = conn.execute(
+                    """
+                    SELECT extension.extension_id,
+                           extension.authorized_additional_calls,
+                           extension.provider_call_ceiling,
+                           extension.resume_iteration,
+                           consumption.resumed_run_id
+                    FROM ai_shadow_research_timeout_resume_call_extensions
+                         AS extension
+                    LEFT JOIN ai_shadow_research_timeout_resume_call_extension_consumptions
+                         AS consumption
+                      ON consumption.extension_id=extension.extension_id
+                    WHERE extension.market_date=?
+                    """,
+                    (market_date,),
+                ).fetchone()
         except sqlite3.OperationalError:
             return {
                 "market_date": market_date,
@@ -1905,6 +2515,11 @@ class ShadowResearchStore:
                 "output_truncation_call_extension_consumed": False,
                 "output_truncation_authorized_additional_calls": 0,
                 "output_truncation_extension_replacement_run_id": None,
+                "timeout_resume_call_extension_id": None,
+                "timeout_resume_call_extension_consumed": False,
+                "timeout_resume_authorized_additional_calls": 0,
+                "timeout_resume_resumed_run_id": None,
+                "timeout_resume_iteration": None,
             }
         return {
             "market_date": market_date,
@@ -1936,17 +2551,26 @@ class ShadowResearchStore:
                     if output_truncation_extension is not None
                     else 0
                 )
+                + (
+                    int(timeout_resume_extension["authorized_additional_calls"])
+                    if timeout_resume_extension is not None
+                    else 0
+                )
             ),
             "authorized_provider_call_ceiling": (
-                int(output_truncation_extension["provider_call_ceiling"])
-                if output_truncation_extension is not None
+                int(timeout_resume_extension["provider_call_ceiling"])
+                if timeout_resume_extension is not None
                 else (
-                    int(extension["provider_call_ceiling"])
-                    if extension is not None
+                    int(output_truncation_extension["provider_call_ceiling"])
+                    if output_truncation_extension is not None
                     else (
-                        int(authorization["provider_call_ceiling"])
-                        if authorization is not None
-                        else None
+                        int(extension["provider_call_ceiling"])
+                        if extension is not None
+                        else (
+                            int(authorization["provider_call_ceiling"])
+                            if authorization is not None
+                            else None
+                        )
                     )
                 )
             ),
@@ -1986,6 +2610,30 @@ class ShadowResearchStore:
             "output_truncation_extension_replacement_run_id": (
                 output_truncation_extension["replacement_run_id"]
                 if output_truncation_extension is not None
+                else None
+            ),
+            "timeout_resume_call_extension_id": (
+                timeout_resume_extension["extension_id"]
+                if timeout_resume_extension is not None
+                else None
+            ),
+            "timeout_resume_call_extension_consumed": bool(
+                timeout_resume_extension is not None
+                and timeout_resume_extension["resumed_run_id"] is not None
+            ),
+            "timeout_resume_authorized_additional_calls": (
+                int(timeout_resume_extension["authorized_additional_calls"])
+                if timeout_resume_extension is not None
+                else 0
+            ),
+            "timeout_resume_resumed_run_id": (
+                timeout_resume_extension["resumed_run_id"]
+                if timeout_resume_extension is not None
+                else None
+            ),
+            "timeout_resume_iteration": (
+                int(timeout_resume_extension["resume_iteration"])
+                if timeout_resume_extension is not None
                 else None
             ),
         }
@@ -2179,6 +2827,22 @@ class AiShadowResearchAutomationService:
         confirmation: str,
     ) -> dict[str, Any]:
         return self._store.authorize_retry(
+            failed_run_id,
+            approved_by=approved_by,
+            notes=notes,
+            confirmation=confirmation,
+            now=self._utc_now(),
+        )
+
+    def authorize_timeout_resume_call_extension(
+        self,
+        failed_run_id: str,
+        *,
+        approved_by: str,
+        notes: str,
+        confirmation: str,
+    ) -> dict[str, Any]:
+        return self._store.authorize_timeout_resume_call_extension(
             failed_run_id,
             approved_by=approved_by,
             notes=notes,
@@ -2455,11 +3119,34 @@ class AiShadowResearchAutomationService:
             )
             self._require_deepseek_provider()
             research = self._build_research_service(external=True)
-            candidates: list[dict[str, Any]] = []
-            valid_drafts: list[dict[str, Any]] = []
             local_research = self._build_research_service(external=False)
-            previous_iteration: dict[str, Any] | None = None
-            for iteration_number in range(1, policy.max_candidates_per_run + 1):
+            resume_iteration = int(run.get("partial_resume_iteration") or 1)
+            if resume_iteration == 1:
+                candidates: list[dict[str, Any]] = []
+                valid_drafts: list[dict[str, Any]] = []
+                previous_iteration: dict[str, Any] | None = None
+            else:
+                if resume_iteration != _TIMEOUT_RESUME_ITERATION:
+                    raise ShadowResearchRejected("partial_resume_iteration_invalid")
+                checkpoint = self._store.load_partial_resume_checkpoint(
+                    str(run["run_id"]),
+                    expected_fingerprint=str(
+                        run.get("partial_resume_evidence_fingerprint") or ""
+                    ),
+                )
+                candidates = list(checkpoint["candidates"])
+                valid_drafts = list(checkpoint["drafts"])
+                previous_iteration = checkpoint["previous_iteration"]
+                if (
+                    len(candidates) != _TIMEOUT_RESUME_COMPLETED_ITERATIONS
+                    or len(valid_drafts) != _TIMEOUT_RESUME_COMPLETED_ITERATIONS
+                ):
+                    raise ShadowResearchRejected(
+                        "partial_resume_completed_iteration_count_invalid"
+                    )
+            for iteration_number in range(
+                resume_iteration, policy.max_candidates_per_run + 1
+            ):
                 iteration_context = _build_iteration_context(
                     iteration_number=iteration_number,
                     total_iterations=policy.max_candidates_per_run,
@@ -2574,6 +3261,16 @@ class AiShadowResearchAutomationService:
         iteration_number = int(iteration_context["iteration_number"])
         self._require_runtime_authorization(policy)
         call_id = f"{run['run_id']}:hypothesis:iteration:{iteration_number:02d}"
+        resume_extension_id = str(run.get("partial_resume_extension_id") or "")
+        if resume_extension_id:
+            if iteration_number != _TIMEOUT_RESUME_ITERATION:
+                raise ShadowResearchRejected(
+                    "timeout_resume_may_only_generate_fifth_hypothesis"
+                )
+            call_id += (
+                ":timeout-resume:"
+                + content_fingerprint({"extension_id": resume_extension_id})[:12]
+            )
         _, call_reused = self._store.claim_provider_call(
             call_id=call_id,
             run_id=str(run["run_id"]),

@@ -18,6 +18,8 @@ from analytics.strategy_advancement_gate import (
 from core.types import BarFrequency, CommissionType, Symbol
 from data.store import DataStore
 from execution.commission import MultiAssetCommission, StockACommission
+from server.ai_runtime.contracts import canonical_json, content_fingerprint
+from server.ai_runtime.strategy_research import StrategyResearchAuditStore
 from server.db import AppDatabase
 from server.models import BacktestRequest
 from server.services.ai_shadow_research_automation import (
@@ -29,6 +31,8 @@ from server.services.ai_shadow_research_automation import (
     SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
     SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION,
     SHADOW_RESEARCH_RETRY_CONFIRMATION,
+    SHADOW_RESEARCH_RUNTIME_CONTRACT,
+    SHADOW_RESEARCH_TIMEOUT_RESUME_CALL_EXTENSION_CONFIRMATION,
     SHADOW_RESEARCH_TOKEN_BUDGET_MODE_UNBOUNDED,
     AiShadowResearchAutomationService,
     PreparedBaseline,
@@ -36,7 +40,9 @@ from server.services.ai_shadow_research_automation import (
     ShadowResearchRejected,
     ShadowResearchStore,
     _after_close,
+    _build_iteration_context,
     _failure_code,
+    _iteration_lineage,
 )
 from server.services.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactRejected,
@@ -1409,6 +1415,299 @@ class _FixtureResearch:
         }
 
 
+def _seed_four_round_timeout_resume_state(
+    *,
+    store: ShadowResearchStore,
+    db_path,
+    run: dict,
+    baseline_result_id: int,
+    candidate_result_id: int,
+) -> tuple[list[dict], list[dict]]:
+    StrategyResearchAuditStore(db_path).init()
+    market_date = str(run["market_date"])
+    now = "2026-08-11T08:00:00+00:00"
+    store.update_run(
+        run["run_id"],
+        now=now,
+        baseline_result_id=baseline_result_id,
+    )
+    run = store.get_run(run["run_id"])
+    for ordinal in range(1, 4):
+        call, reused = store.claim_provider_call(
+            call_id=f"prior-real-provider-call-{ordinal}",
+            run_id=f"prior-run-{ordinal}",
+            market_date=market_date,
+            call_kind="prior_attempt",
+            call_limit=13,
+            now=now,
+        )
+        assert reused is False
+        store.finish_provider_call(
+            call["call_id"],
+            status="failed",
+            actual_tokens=None,
+            failure_code="external_research_invalid_response",
+            now=now,
+        )
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO ai_shadow_research_retry_authorizations
+            VALUES ('retry-auth', 'prior-run-1', ?, 'prior-input-1',
+                    'external_research_invalid_response', 1, 10, 11,
+                    'human:owner', 'Bounded retry.', ?)
+            """,
+            (market_date, now),
+        )
+        conn.execute(
+            """
+            INSERT INTO ai_shadow_research_retry_consumptions
+            VALUES ('retry-auth', ?, ?, ?)
+            """,
+            (run["run_id"], run["input_fingerprint"], now),
+        )
+        conn.execute(
+            """
+            INSERT INTO ai_shadow_research_citation_call_extensions
+            VALUES ('citation-extension', 'prior-run-2', ?, 'prior-input-2',
+                    'provider_citation_not_in_bound_input', 2, 11, 1, 12,
+                    'human:owner', 'Bounded citation extension.', ?)
+            """,
+            (market_date, now),
+        )
+        conn.execute(
+            """
+            INSERT INTO ai_shadow_research_citation_call_extension_consumptions
+            VALUES ('citation-extension', ?, ?, ?)
+            """,
+            (run["run_id"], run["input_fingerprint"], now),
+        )
+        conn.execute(
+            """
+            INSERT INTO ai_shadow_research_output_truncation_call_extensions
+            VALUES ('output-extension', 'prior-run-3', ?, 'prior-input-3',
+                    'provider_output_truncated', 3, 12, 1, 13,
+                    'human:owner', 'Bounded output extension.', ?)
+            """,
+            (market_date, now),
+        )
+        conn.execute(
+            """
+            INSERT INTO ai_shadow_research_output_truncation_call_extension_consumptions
+            VALUES ('output-extension', ?, ?, ?)
+            """,
+            (run["run_id"], run["input_fingerprint"], now),
+        )
+
+    candidates: list[dict] = []
+    drafts: list[dict] = []
+    previous_iteration = None
+    for iteration_number in range(1, 5):
+        iteration_context = _build_iteration_context(
+            iteration_number=iteration_number,
+            total_iterations=5,
+            previous_iteration=previous_iteration,
+        )
+        session_id = f"persisted-session-{iteration_number}"
+        draft_id = f"persisted-draft-{iteration_number}"
+        backtest_run_id = f"persisted-backtest-{iteration_number}"
+        critique_id = f"persisted-critique-{iteration_number}"
+        formula_fingerprint = f"sha256:{iteration_number:064x}"
+        hypothesis_call_id = (
+            f"{run['run_id']}:hypothesis:iteration:{iteration_number:02d}"
+        )
+        critique_call_id = f"{run['run_id']}:critique:{draft_id}"
+        draft = {
+            "draft_id": draft_id,
+            "economic_hypothesis": f"Persisted hypothesis {iteration_number}.",
+            "risk_impact": "Research only; no execution authority.",
+            "failure_conditions": ["OOS evidence fails"],
+            "limitations": ["Historical evidence only"],
+            "formula_ast": {
+                "schema_version": "fixture",
+                "iteration": iteration_number,
+            },
+            "formula_fingerprint": formula_fingerprint,
+            "parameter_values": {},
+            "parameter_ranges": {},
+            "iteration_context": iteration_context,
+            "iteration_context_fingerprint": iteration_context["context_fingerprint"],
+            "validation": {"status": "valid", "errors": []},
+        }
+        critique_artifact = {
+            "supported_claims": ["Persisted result."],
+            "evidence_gaps": ["Continue research."],
+        }
+        comparison = {
+            "schema_version": "karkinos.ai.shadow_research_comparison.v1",
+            "candidate": {
+                "total_return": 0.1 + iteration_number / 100,
+                "sharpe": 1.0,
+                "max_drawdown": 0.1,
+                "oos_fold_count": 3,
+                "mean_oos_return": 0.02,
+                "worst_oos_return": -0.01,
+                "oos_validation_status": "pass",
+            },
+            "deltas": {
+                "total_return": 0.01,
+                "sharpe": 0.1,
+                "max_drawdown": -0.01,
+            },
+            "deepseek_critique": critique_artifact,
+            "iteration_lineage": _iteration_lineage(
+                iteration_context,
+                current_formula_fingerprint=formula_fingerprint,
+            ),
+            "recommendation": "keep_researching",
+            "promotion_gate": {
+                "status": "blocked",
+                "blockers": ["research_evidence_incomplete"],
+                "evidence_fingerprint": f"sha256:{iteration_number + 10:064x}",
+            },
+        }
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO ai_strategy_research_sessions
+                (session_id, idempotency_key, request_fingerprint, request_json,
+                 selection_fingerprint, status, prompt_version, created_at,
+                 updated_at)
+                VALUES (?, ?, ?, ?, ?, 'completed', 'fixture', ?, ?)
+                """,
+                (
+                    session_id,
+                    hypothesis_call_id,
+                    f"request-{iteration_number}",
+                    canonical_json({"iteration_context": iteration_context}),
+                    "selection-fixture",
+                    now,
+                    now,
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO ai_strategy_hypothesis_drafts
+                VALUES (?, ?, 1, ?, ?, ?, 'valid', '[]', ?)
+                """,
+                (
+                    draft_id,
+                    session_id,
+                    canonical_json(draft),
+                    content_fingerprint(draft),
+                    formula_fingerprint,
+                    now,
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO ai_strategy_formula_backtests
+                (backtest_run_id, idempotency_key, request_fingerprint,
+                 session_id, draft_id, formula_fingerprint,
+                 dataset_snapshot_id, cost_model_reference, status,
+                 canonical_backtest_result_id, evidence_fingerprint,
+                 created_at, updated_at)
+                VALUES (?, ?, 'backtest-request', ?, ?, ?, 'dataset-fixture',
+                        'reviewed-fees-fixture', 'completed', ?, ?, ?, ?)
+                """,
+                (
+                    backtest_run_id,
+                    f"{run['run_id']}:backtest:{draft_id}",
+                    session_id,
+                    draft_id,
+                    formula_fingerprint,
+                    candidate_result_id,
+                    f"backtest-evidence-{iteration_number}",
+                    now,
+                    now,
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO ai_strategy_backtest_critiques
+                (critique_id, idempotency_key, request_fingerprint, session_id,
+                 draft_id, backtest_run_id, status, normalized_artifact_json,
+                 artifact_fingerprint, prompt_version, created_at, updated_at)
+                VALUES (?, ?, 'critique-request', ?, ?, ?, 'completed', ?, ?,
+                        'fixture', ?, ?)
+                """,
+                (
+                    critique_id,
+                    critique_call_id,
+                    session_id,
+                    draft_id,
+                    backtest_run_id,
+                    canonical_json(critique_artifact),
+                    content_fingerprint(critique_artifact),
+                    now,
+                    now,
+                ),
+            )
+        for call_id, call_kind in (
+            (hypothesis_call_id, "hypothesis_iteration"),
+            (critique_call_id, "critique"),
+        ):
+            call, reused = store.claim_provider_call(
+                call_id=call_id,
+                run_id=run["run_id"],
+                market_date=market_date,
+                call_kind=call_kind,
+                call_limit=13,
+                now=now,
+            )
+            assert reused is False
+            store.finish_provider_call(
+                call["call_id"],
+                status="completed",
+                actual_tokens=1_000,
+                failure_code=None,
+                now=now,
+            )
+        candidate = store.save_candidate(
+            run_id=run["run_id"],
+            session_id=session_id,
+            draft_id=draft_id,
+            backtest_run_id=backtest_run_id,
+            critique_id=critique_id,
+            baseline_result_id=baseline_result_id,
+            candidate_result_id=candidate_result_id,
+            status="research_blocked",
+            recommendation="keep_researching",
+            comparison=comparison,
+            now=now,
+        )
+        candidates.append(candidate)
+        drafts.append(draft)
+        previous_iteration = {
+            "hypotheses": {"session_id": session_id},
+            "draft": draft,
+            "candidate": candidate,
+        }
+    failed_call, reused = store.claim_provider_call(
+        call_id=f"{run['run_id']}:hypothesis:iteration:05",
+        run_id=run["run_id"],
+        market_date=market_date,
+        call_kind="hypothesis_iteration",
+        call_limit=13,
+        now=now,
+    )
+    assert reused is False
+    store.finish_provider_call(
+        failed_call["call_id"],
+        status="failed",
+        actual_tokens=None,
+        failure_code="provider_timeout",
+        now=now,
+    )
+    store.update_run(
+        run["run_id"],
+        now=now,
+        status="failed",
+        failure_code="provider_timeout",
+    )
+    return candidates, drafts
+
+
 @pytest.mark.unit
 @pytest.mark.trading_safety
 @pytest.mark.asyncio
@@ -1494,6 +1793,251 @@ async def test_five_round_policy_runs_sequential_generation_backtest_and_critiqu
         "daily_trading_decision_status": "not_evaluated",
         "implies_daily_trading_no_action": False,
     }
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_fifth_round_timeout_resume_preserves_four_rounds_and_uses_two_calls(
+    tmp_path, monkeypatch
+) -> None:
+    db_path = tmp_path / "app.db"
+    db = AppDatabase(db_path)
+    db.init_sync()
+    store = ShadowResearchStore(db_path)
+    store.init()
+    baseline_payload = _result(total_return=0.05, sharpe=0.6, drawdown=0.12)
+    candidate_payload = _result(total_return=0.12, sharpe=1.2, drawdown=0.08)
+    baseline_result_id = await db.save_backtest_result(
+        config_json=json.dumps({"strategy": "dual_ma"}),
+        initial_cash=baseline_payload["initial_cash"],
+        final_equity=baseline_payload["final_equity"],
+        total_return=baseline_payload["total_return"],
+        sharpe=baseline_payload["sharpe"],
+        max_dd=baseline_payload["max_drawdown"],
+        equity_curve_json=json.dumps(baseline_payload["equity_curve"]),
+        annual_return=baseline_payload["annual_return"],
+        sortino=baseline_payload["sortino"],
+        win_rate=baseline_payload["win_rate"],
+        duration_days=baseline_payload["duration_days"],
+        metrics_json=json.dumps(baseline_payload["metrics_json"]),
+        cost_summary_json=json.dumps(baseline_payload["cost_summary_json"]),
+    )
+    candidate_result_id = await db.save_backtest_result(
+        config_json=json.dumps({"strategy": "ai_formula_research"}),
+        initial_cash=candidate_payload["initial_cash"],
+        final_equity=candidate_payload["final_equity"],
+        total_return=candidate_payload["total_return"],
+        sharpe=candidate_payload["sharpe"],
+        max_dd=candidate_payload["max_drawdown"],
+        equity_curve_json=json.dumps(candidate_payload["equity_curve"]),
+        annual_return=candidate_payload["annual_return"],
+        sortino=candidate_payload["sortino"],
+        win_rate=candidate_payload["win_rate"],
+        duration_days=candidate_payload["duration_days"],
+        metrics_json=json.dumps(candidate_payload["metrics_json"]),
+        cost_summary_json=json.dumps(candidate_payload["cost_summary_json"]),
+    )
+    fixture = _FixtureResearch(candidate_result_id)
+    service = AiShadowResearchAutomationService(
+        state=_state(db),
+        store=store,
+        data_store=DataStore(tmp_path / "market"),
+        research_service_builder=lambda external: fixture,
+        now=lambda: datetime(2026, 8, 11, 8, 0, tzinfo=ZoneInfo("UTC")),
+    )
+    service.update_policy(_policy_payload(enabled=True))
+    prepared = _prepared_baseline()
+    policy = service.get_policy()
+    valuation = _complete_valuation(db, True)
+    input_fingerprint = content_fingerprint(
+        {
+            "runtime_contract": SHADOW_RESEARCH_RUNTIME_CONTRACT,
+            "policy": policy.to_dict(),
+            "baseline_fingerprint": prepared.fingerprint,
+            "valuation_snapshot_id": valuation["snapshot_id"],
+            "ledger_cutoff_id": valuation["ledger_cutoff_id"],
+        }
+    )
+    run, reused = store.claim_run(
+        market_date=prepared.market_date,
+        input_fingerprint=input_fingerprint,
+        baseline_seed_result_id=prepared.seed_result_id,
+        valuation_snapshot_id=valuation["snapshot_id"],
+        ledger_cutoff_id=valuation["ledger_cutoff_id"],
+        now="2026-08-11T08:00:00+00:00",
+    )
+    assert reused is False
+    candidates, _ = _seed_four_round_timeout_resume_state(
+        store=store,
+        db_path=db_path,
+        run=run,
+        baseline_result_id=baseline_result_id,
+        candidate_result_id=candidate_result_id,
+    )
+    with sqlite3.connect(db_path) as conn:
+        first_four_calls_before = conn.execute(
+            """
+            SELECT call_id, status, actual_tokens, failure_code, created_at, updated_at
+            FROM ai_shadow_research_provider_calls
+            WHERE run_id=? AND status='completed'
+            ORDER BY call_id
+            """,
+            (run["run_id"],),
+        ).fetchall()
+
+    extension = service.authorize_timeout_resume_call_extension(
+        run["run_id"],
+        approved_by="human:owner",
+        notes="Resume only the persisted fifth round after its provider timeout.",
+        confirmation=SHADOW_RESEARCH_TIMEOUT_RESUME_CALL_EXTENSION_CONFIRMATION,
+    )
+    assert extension["completed_iteration_count"] == 4
+    assert extension["resume_iteration"] == 5
+    assert extension["provider_calls_at_authorization"] == 12
+    assert extension["prior_provider_call_ceiling"] == 13
+    assert extension["authorized_additional_calls"] == 1
+    assert extension["provider_call_ceiling"] == 14
+    assert extension["consumed"] is False
+    assert extension["broker_submission_enabled"] is False
+    assert extension["capital_authority_changed"] is False
+
+    monkeypatch.setattr(service, "_prepare_baseline", lambda policy: prepared)
+    monkeypatch.setattr(
+        "server.services.ai_shadow_research_automation.build_current_valuation_snapshot",
+        _complete_valuation,
+    )
+    result = await service.run_once()
+    replay = await service.run_once()
+
+    assert result["run_status"] == "completed"
+    assert replay["reused"] is True
+    assert fixture.hypothesis_calls == 1
+    assert fixture.backtest_calls == 1
+    assert fixture.critique_calls == 1
+    assert fixture.hypothesis_requests[0].iteration_context["iteration_number"] == 5
+    assert (
+        fixture.hypothesis_requests[0].iteration_context["parent_iteration"][
+            "candidate_id"
+        ]
+        == candidates[-1]["candidate_id"]
+    )
+    assert result["usage"]["provider_calls"] == 14
+    assert result["usage"]["authorized_additional_calls"] == 13
+    assert result["usage"]["authorized_provider_call_ceiling"] == 14
+    assert result["usage"]["timeout_resume_call_extension_consumed"] is True
+    assert result["usage"]["timeout_resume_iteration"] == 5
+    assert result["broker_submission_enabled"] is False
+    assert result["automatic_strategy_replacement_enabled"] is False
+    with sqlite3.connect(db_path) as conn:
+        first_four_calls_after = conn.execute(
+            """
+            SELECT call_id, status, actual_tokens, failure_code, created_at, updated_at
+            FROM ai_shadow_research_provider_calls
+            WHERE run_id=? AND status='completed'
+              AND call_id NOT LIKE '%timeout-resume%'
+              AND call_id NOT LIKE '%draft-auto-1%'
+            ORDER BY call_id
+            """,
+            (run["run_id"],),
+        ).fetchall()
+        saved_run = conn.execute(
+            """
+            SELECT status, failure_code, candidate_count
+            FROM ai_shadow_research_runs WHERE run_id=?
+            """,
+            (run["run_id"],),
+        ).fetchone()
+        failed_fifth = conn.execute(
+            """
+            SELECT status, failure_code FROM ai_shadow_research_provider_calls
+            WHERE call_id=?
+            """,
+            (f"{run['run_id']}:hypothesis:iteration:05",),
+        ).fetchone()
+        timeout_retry_calls = conn.execute(
+            """
+            SELECT call_kind, status FROM ai_shadow_research_provider_calls
+            WHERE run_id=? AND call_id LIKE '%timeout-resume%'
+            """,
+            (run["run_id"],),
+        ).fetchall()
+        candidate_count = conn.execute(
+            "SELECT COUNT(*) FROM ai_shadow_research_candidates WHERE run_id=?",
+            (run["run_id"],),
+        ).fetchone()[0]
+        promotion_count = conn.execute(
+            "SELECT COUNT(*) FROM ai_shadow_research_promotions"
+        ).fetchone()[0]
+    assert first_four_calls_after == first_four_calls_before
+    assert saved_run == ("completed", None, 5)
+    assert failed_fifth == ("failed", "provider_timeout")
+    assert timeout_retry_calls == [("hypothesis_iteration", "completed")]
+    assert candidate_count == 5
+    assert promotion_count == 0
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_fifth_round_timeout_resume_fails_closed_on_completed_evidence_drift(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "app.db"
+    db = AppDatabase(db_path)
+    db.init_sync()
+    store = ShadowResearchStore(db_path)
+    store.init()
+    run, reused = store.claim_run(
+        market_date="2026-08-11",
+        input_fingerprint="persisted-four-round-input",
+        baseline_seed_result_id=7,
+        valuation_snapshot_id="valuation-latest",
+        ledger_cutoff_id=11,
+        now="2026-08-11T08:00:00+00:00",
+    )
+    assert reused is False
+    candidates, _ = _seed_four_round_timeout_resume_state(
+        store=store,
+        db_path=db_path,
+        run=run,
+        baseline_result_id=28,
+        candidate_result_id=29,
+    )
+    store.authorize_timeout_resume_call_extension(
+        run["run_id"],
+        approved_by="human:owner",
+        notes="Resume only unchanged persisted fifth-round evidence.",
+        confirmation=SHADOW_RESEARCH_TIMEOUT_RESUME_CALL_EXTENSION_CONFIRMATION,
+        now="2026-08-11T08:01:00+00:00",
+    )
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE ai_shadow_research_candidates SET comparison_json='{}'
+            WHERE candidate_id=?
+            """,
+            (candidates[-1]["candidate_id"],),
+        )
+
+    with pytest.raises(
+        ShadowResearchRejected,
+        match="timeout_resume_completed_iteration_evidence_invalid",
+    ):
+        store.claim_run(
+            market_date=run["market_date"],
+            input_fingerprint=run["input_fingerprint"],
+            baseline_seed_result_id=run["baseline_seed_result_id"],
+            valuation_snapshot_id=run["valuation_snapshot_id"],
+            ledger_cutoff_id=run["ledger_cutoff_id"],
+            now="2026-08-11T08:02:00+00:00",
+        )
+    saved = store.get_run(run["run_id"])
+    usage = store.usage_for_market_date(run["market_date"])
+    assert saved["status"] == "failed"
+    assert saved["failure_code"] == "provider_timeout"
+    assert usage["provider_calls"] == 12
+    assert usage["authorized_provider_call_ceiling"] == 14
+    assert usage["timeout_resume_call_extension_consumed"] is False
 
 
 @pytest.mark.unit
