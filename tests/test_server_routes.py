@@ -812,6 +812,17 @@ def test_run_single_backtest_attaches_dataset_snapshot_metadata(monkeypatch):
             "data_source": "fixture",
             "adjustment_mode": "qfq",
             "source_dataset_id": "cache-dataset-600519",
+            "consumed_frame_diagnostics": {
+                "duplicate_timestamp_count": 0,
+                "missing_ohlcv_count": 0,
+                "is_monotonic": True,
+                "row_count": 2,
+            },
+            "source_diagnostics": {
+                "duplicate_timestamp_count": 0,
+                "missing_ohlcv_count": 0,
+                "is_monotonic": True,
+            },
             "data_quality": {"status": "ok", "issues": []},
         }
     ]

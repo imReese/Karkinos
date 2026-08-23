@@ -80,13 +80,96 @@ def test_dataset_snapshot_fails_quality_when_content_cannot_be_hashed() -> None:
     assert snapshot["data_quality"]["issues"] == [
         {
             "symbol": "600000",
+            "code": "missing_ohlcv",
+            "count": 3,
+            "message": "One or more OHLCV fields were missing in source bars.",
+        },
+        {
+            "symbol": "600000",
             "code": "dataset_content_digest_unavailable",
             "message": (
                 "The exact ordered timestamp/OHLCV rows could not be hashed; this "
                 "dataset cannot be treated as frozen evidence."
             ),
-        }
+        },
     ]
+
+
+def test_dataset_snapshot_quality_uses_exact_consumed_frame_not_stale_source_order(
+    tmp_path,
+) -> None:
+    symbol = Symbol("600000")
+    source = _bars().iloc[::-1].reset_index(drop=True)
+    consumed = source.sort_values("timestamp").reset_index(drop=True)
+    store = DataStore(tmp_path)
+    store.save_bars(
+        symbol,
+        BarFrequency.DAILY,
+        source,
+        provider_name="fixture_provider",
+        data_source="fixture_provider",
+        adjustment_mode="qfq",
+    )
+
+    snapshot = build_backtest_dataset_snapshot(
+        start_date="2025-01-02",
+        end_date="2025-01-04",
+        configured_source="fixture_provider",
+        data_handlers={
+            symbol: DataHandler(
+                consumed,
+                symbol,
+                BarFrequency.DAILY,
+                AssetClass.STOCK,
+            )
+        },
+        store=store,
+        source_names=["fixture_provider"],
+    )
+
+    evidence = snapshot["symbol_universe"][0]
+    assert snapshot["data_quality"] == {"status": "ok", "issues": []}
+    assert evidence["consumed_frame_diagnostics"]["is_monotonic"] is True
+    assert evidence["source_diagnostics"]["is_monotonic"] is False
+
+
+def test_dataset_snapshot_still_blocks_actual_non_monotonic_consumed_frame(
+    tmp_path,
+) -> None:
+    symbol = Symbol("600000")
+    source = _bars()
+    consumed = source.iloc[::-1].reset_index(drop=True)
+    store = DataStore(tmp_path)
+    store.save_bars(
+        symbol,
+        BarFrequency.DAILY,
+        source,
+        provider_name="fixture_provider",
+        data_source="fixture_provider",
+        adjustment_mode="qfq",
+    )
+
+    snapshot = build_backtest_dataset_snapshot(
+        start_date="2025-01-02",
+        end_date="2025-01-04",
+        configured_source="fixture_provider",
+        data_handlers={
+            symbol: DataHandler(
+                consumed,
+                symbol,
+                BarFrequency.DAILY,
+                AssetClass.STOCK,
+            )
+        },
+        store=store,
+        source_names=["fixture_provider"],
+    )
+
+    evidence = snapshot["symbol_universe"][0]
+    assert snapshot["data_quality"]["status"] == "warning"
+    assert snapshot["data_quality"]["issues"][0]["code"] == ("non_monotonic_timestamps")
+    assert evidence["consumed_frame_diagnostics"]["is_monotonic"] is False
+    assert evidence["source_diagnostics"]["is_monotonic"] is True
 
 
 def test_dataset_snapshot_replay_uses_exact_persisted_window_and_detects_drift(
