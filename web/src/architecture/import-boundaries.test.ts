@@ -10,6 +10,19 @@ const APP_ROOT = resolve(SRC_ROOT, 'app');
 const SHARED_ROOT = resolve(SRC_ROOT, 'shared');
 const FEATURES_ROOT = resolve(SRC_ROOT, 'features');
 const ACCOUNT_FEATURE_ROOT = resolve(FEATURES_ROOT, 'account');
+const OVERVIEW_FEATURE_ROOT = resolve(FEATURES_ROOT, 'overview');
+const OVERVIEW_PAGE_SOURCE = resolve(
+  OVERVIEW_FEATURE_ROOT,
+  'pages/overview-page.tsx',
+);
+const OVERVIEW_TODAY_QUEUE_SOURCE = resolve(
+  OVERVIEW_FEATURE_ROOT,
+  'pages/overview-today-queue.tsx',
+);
+const OVERVIEW_TODAY_QUEUE = resolve(
+  OVERVIEW_FEATURE_ROOT,
+  'pages/overview-today-queue',
+);
 const APP_ROUTER = resolve(APP_ROOT, 'router');
 const APP_ROUTER_SOURCE = resolve(APP_ROOT, 'router.tsx');
 const APP_SHELL = resolve(APP_ROOT, 'layout/app-shell');
@@ -59,8 +72,8 @@ const LAZY_ROUTE_PAGES = [
     routePath: '/operations',
   },
   {
-    path: resolve(FEATURES_ROOT, 'overview/pages/overview-page.tsx'),
-    featureRoot: resolve(FEATURES_ROOT, 'overview'),
+    path: OVERVIEW_PAGE_SOURCE,
+    featureRoot: OVERVIEW_FEATURE_ROOT,
     routePath: '/overview',
   },
   {
@@ -186,6 +199,37 @@ test('lazy route pages do not import router or another feature page', () => {
       })
       .map((target) => describeImport(path, target)),
   );
+
+  expect(violations).toEqual([]);
+});
+
+test('the overview page delegates its today queue to one same-feature route module', () => {
+  const pageSource = readFileSync(OVERVIEW_PAGE_SOURCE, 'utf8');
+  const queueSource = readFileSync(OVERVIEW_TODAY_QUEUE_SOURCE, 'utf8');
+  const sameFeatureTargets = staticRelativeImportTargets(
+    OVERVIEW_PAGE_SOURCE,
+  ).filter((target) => isInside(target, OVERVIEW_FEATURE_ROOT));
+
+  expect(sameFeatureTargets).toEqual([OVERVIEW_TODAY_QUEUE]);
+  expect(pageSource).toContain('<DashboardTodayQueue');
+  expect(pageSource).not.toMatch(/\bfunction\s+DashboardTodayQueue\s*\(/);
+  expect(queueSource).toMatch(/\bexport\s+function\s+DashboardTodayQueue\s*\(/);
+  expect(queueSource.match(/^export\s+/gm)).toEqual(['export ']);
+});
+
+test('the overview today queue does not import any feature page', () => {
+  const violations = relativeImportTargets(OVERVIEW_TODAY_QUEUE_SOURCE)
+    .filter((target) => {
+      const targetFromFeatures = relative(FEATURES_ROOT, target).replace(
+        /\\/g,
+        '/',
+      );
+      return (
+        isInside(target, FEATURES_ROOT) &&
+        targetFromFeatures.includes('/pages/')
+      );
+    })
+    .map((target) => describeImport(OVERVIEW_TODAY_QUEUE_SOURCE, target));
 
   expect(violations).toEqual([]);
 });

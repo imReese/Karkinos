@@ -335,7 +335,7 @@ jobs:
           if-no-files-found: warn
 
   acceptance-evidence:
-    name: Acceptance evidence
+    name: Repository acceptance audit
     needs: [backend, frontend, trading-safety]
     runs-on: ubuntu-latest
     steps:
@@ -365,7 +365,7 @@ jobs:
           name: frontend-test-evidence
           path: reports/ci
 
-      - name: Run acceptance audit report
+      - name: Run repository acceptance audit report
         run: |
           uv run python scripts/export_acceptance_audit.py --audit all \
             --verify-evidence \
@@ -431,7 +431,7 @@ jobs:
           echo "No tracked private artifacts found."
 
   release-gate:
-    name: Release gate
+    name: Code CI gate
     if: always()
     needs:
       - python-quality
@@ -446,7 +446,7 @@ jobs:
       - hygiene
     runs-on: ubuntu-latest
     steps:
-      - name: Require every release check to pass
+      - name: Require every code CI check to pass
         env:
           PYTHON_QUALITY_RESULT: ${{ needs.python-quality.result }}
           BACKEND_RESULT: ${{ needs.backend.result }}

@@ -67,6 +67,11 @@ The latest tagged release is
 [v0.2.3](https://github.com/imReese/Karkinos/releases/tag/v0.2.3). It remains
 the stable release baseline. `main` contains the untagged v0.3.0 candidate and
 must complete production acceptance before a new release tag is created.
+The Code CI gate is required repository evidence; it does not replace the real-
+provider adapter, broker soak, or controlled-pilot acceptance required before
+tagging.
+Roadmap labels such as `v1.8` are product milestones, separate from SemVer
+software tags.
 
 Research, backtesting, portfolio evidence, daily planning, paper/shadow, OMS,
 reconciliation, and the provider-neutral controlled-execution foundation are

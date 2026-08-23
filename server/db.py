@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from server.persistence.automation_alerts import AutomationAlertRepository
 from server.persistence.backtest_results import BacktestResultsRepository
 from server.persistence.event_log import (
     EventLogRepository,
@@ -388,6 +389,11 @@ class AppDatabase:
             else Path(resolve_data_dir()) / _DB_PATH.name
         )
         self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._automation_alerts = AutomationAlertRepository(
+            self._path,
+            utc_now=lambda: datetime.now(timezone.utc).isoformat(),
+            local_now=lambda: datetime.now().isoformat(),
+        )
         self._backtest_results = BacktestResultsRepository(self._path)
         self._event_log = EventLogRepository(self._path)
         self._instrument_metadata = InstrumentMetadataRepository(self._path)
@@ -4234,62 +4240,16 @@ class AppDatabase:
         payload: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Persist an idempotent automation alert by alert key."""
-        now = datetime.now(timezone.utc).isoformat()
-        payload_json = json.dumps(payload or {}, ensure_ascii=False, sort_keys=True)
-        with sqlite3.connect(self._path) as conn:
-            conn.row_factory = sqlite3.Row
-            existing = conn.execute(
-                """
-                SELECT created_at, status, acknowledged_at, acknowledged_by
-                FROM automation_alerts
-                WHERE alert_key = ?
-                LIMIT 1
-                """,
-                (alert_key,),
-            ).fetchone()
-            created_at = str(existing["created_at"]) if existing else now
-            status = str(existing["status"]) if existing else "open"
-            acknowledged_at = existing["acknowledged_at"] if existing else None
-            acknowledged_by = existing["acknowledged_by"] if existing else None
-            conn.execute(
-                """
-                INSERT INTO automation_alerts (
-                    alert_key, severity, category, title, detail, status,
-                    source, source_ref, payload_json, acknowledged_at,
-                    acknowledged_by, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(alert_key) DO UPDATE SET
-                    severity = excluded.severity,
-                    category = excluded.category,
-                    title = excluded.title,
-                    detail = excluded.detail,
-                    source = excluded.source,
-                    source_ref = excluded.source_ref,
-                    payload_json = excluded.payload_json,
-                    updated_at = excluded.updated_at
-                """,
-                (
-                    alert_key,
-                    severity,
-                    category,
-                    title,
-                    detail,
-                    status,
-                    source,
-                    source_ref,
-                    payload_json,
-                    acknowledged_at,
-                    acknowledged_by,
-                    created_at,
-                    now,
-                ),
-            )
-            row = conn.execute(
-                "SELECT * FROM automation_alerts WHERE alert_key = ?",
-                (alert_key,),
-            ).fetchone()
-            conn.commit()
-            return dict(row)
+        return self._automation_alerts.upsert_alert(
+            alert_key=alert_key,
+            severity=severity,
+            category=category,
+            title=title,
+            detail=detail,
+            source=source,
+            source_ref=source_ref,
+            payload=payload,
+        )
 
     def list_automation_alerts_sync(
         self,
@@ -4299,33 +4259,11 @@ class AppDatabase:
         offset: int = 0,
     ) -> list[dict[str, Any]]:
         """List persisted automation alerts."""
-        conditions: list[str] = []
-        params: list[Any] = []
-        if status is not None:
-            conditions.append("status = ?")
-            params.append(status)
-        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-        params.extend([int(limit), int(offset)])
-        with sqlite3.connect(self._path) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                f"""
-                SELECT *
-                FROM automation_alerts
-                {where_clause}
-                ORDER BY
-                    CASE severity
-                        WHEN 'critical' THEN 0
-                        WHEN 'warning' THEN 1
-                        ELSE 2
-                    END,
-                    updated_at DESC,
-                    id DESC
-                LIMIT ? OFFSET ?
-                """,
-                tuple(params),
-            ).fetchall()
-            return [dict(row) for row in rows]
+        return self._automation_alerts.list_alerts(
+            status=status,
+            limit=limit,
+            offset=offset,
+        )
 
     def acknowledge_automation_alert_sync(
         self,
@@ -4334,28 +4272,10 @@ class AppDatabase:
         actor: str | None = None,
     ) -> dict[str, Any]:
         """Mark one automation alert acknowledged."""
-        now = datetime.now().isoformat()
-        with sqlite3.connect(self._path) as conn:
-            conn.row_factory = sqlite3.Row
-            conn.execute(
-                """
-                UPDATE automation_alerts
-                SET status = 'acknowledged',
-                    acknowledged_at = ?,
-                    acknowledged_by = ?,
-                    updated_at = ?
-                WHERE id = ?
-                """,
-                (now, actor, now, int(alert_id)),
-            )
-            row = conn.execute(
-                "SELECT * FROM automation_alerts WHERE id = ?",
-                (int(alert_id),),
-            ).fetchone()
-            conn.commit()
-            if row is None:
-                raise KeyError(f"automation alert not found: {alert_id}")
-            return dict(row)
+        return self._automation_alerts.acknowledge_alert(
+            alert_id=alert_id,
+            actor=actor,
+        )
 
     def list_execution_reconciliation_open_items_sync(
         self,

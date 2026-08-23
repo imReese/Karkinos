@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
+from datetime import datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 
 from server.db import AppDatabase
+from server.persistence.automation_alerts import AutomationAlertRepository
 from server.persistence.backtest_results import BacktestResultsRepository
 from server.persistence.event_log import EventLogRepository, insert_event_sync
 from server.persistence.instrument_metadata import InstrumentMetadataRepository
@@ -107,6 +109,156 @@ def test_runtime_control_repository_overwrites_one_key_without_duplication(
             ("kill_switch",),
         ).fetchone()[0]
     assert count == 1
+
+
+def test_automation_alert_repository_preserves_storage_and_ordering_contract(
+    tmp_path,
+) -> None:
+    database = AppDatabase(tmp_path / "app.db")
+    database.init_sync()
+    repository = AutomationAlertRepository(database.path)
+
+    info = repository.upsert_alert(
+        alert_key="info:one",
+        severity="info",
+        category="operations",
+        title="Info",
+        detail="Informational evidence",
+        source="unit",
+    )
+    warning_one = repository.upsert_alert(
+        alert_key="warning:one",
+        severity="warning",
+        category="operations",
+        title="Warning one",
+        detail="First warning",
+        source="unit",
+    )
+    warning_two = repository.upsert_alert(
+        alert_key="warning:two",
+        severity="warning",
+        category="operations",
+        title="Warning two",
+        detail="Second warning",
+        source="unit",
+    )
+    critical = repository.upsert_alert(
+        alert_key="critical:one",
+        severity="critical",
+        category="trading_control",
+        title="Critical",
+        detail="Requires operator review",
+        source="unit",
+        source_ref="critical-source",
+        payload={"z": "中文", "a": 1},
+    )
+
+    with sqlite3.connect(database.path) as conn:
+        conn.execute(
+            "UPDATE automation_alerts SET updated_at = ? WHERE id IN (?, ?)",
+            (
+                "2026-08-24T09:30:00",
+                warning_one["id"],
+                warning_two["id"],
+            ),
+        )
+        conn.commit()
+
+    rows = repository.list_alerts()
+    assert [row["id"] for row in rows] == [
+        critical["id"],
+        warning_two["id"],
+        warning_one["id"],
+        info["id"],
+    ]
+    assert critical["payload_json"] == '{"a": 1, "z": "中文"}'
+    assert datetime.fromisoformat(critical["created_at"]).tzinfo is not None
+    assert repository.list_alerts(limit=2, offset=1) == rows[1:3]
+
+    acknowledged = repository.acknowledge_alert(
+        alert_id=critical["id"],
+        actor="operator-review",
+    )
+    assert acknowledged["status"] == "acknowledged"
+    assert acknowledged["acknowledged_by"] == "operator-review"
+    assert datetime.fromisoformat(acknowledged["acknowledged_at"]).tzinfo is None
+
+    rescanned = repository.upsert_alert(
+        alert_key="critical:one",
+        severity="critical",
+        category="trading_control",
+        title="Critical updated",
+        detail="Still requires operator review",
+        source="unit",
+        source_ref="critical-source-updated",
+        payload={"phase": "rescanned"},
+    )
+    assert rescanned["id"] == critical["id"]
+    assert rescanned["created_at"] == critical["created_at"]
+    assert rescanned["status"] == "acknowledged"
+    assert rescanned["acknowledged_at"] == acknowledged["acknowledged_at"]
+    assert rescanned["acknowledged_by"] == "operator-review"
+    assert rescanned["source_ref"] == "critical-source-updated"
+    assert repository.list_alerts(status="acknowledged") == [rescanned]
+
+    with pytest.raises(KeyError, match="automation alert not found: 999999"):
+        repository.acknowledge_alert(alert_id=999999)
+
+
+def test_app_database_automation_alert_facades_delegate_to_repository(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    database = AppDatabase(tmp_path / "app.db")
+    expected = {"id": 11, "alert_key": "test:alert"}
+    upsert_alert = Mock(return_value=expected)
+    list_alerts = Mock(return_value=[expected])
+    acknowledge_alert = Mock(return_value={**expected, "status": "acknowledged"})
+    monkeypatch.setattr(database._automation_alerts, "upsert_alert", upsert_alert)
+    monkeypatch.setattr(database._automation_alerts, "list_alerts", list_alerts)
+    monkeypatch.setattr(
+        database._automation_alerts,
+        "acknowledge_alert",
+        acknowledge_alert,
+    )
+
+    assert (
+        database.upsert_automation_alert_sync(
+            alert_key="test:alert",
+            severity="warning",
+            category="operations",
+            title="Test alert",
+            detail="Requires review",
+            source="unit",
+            payload={"safe": True},
+        )
+        == expected
+    )
+    assert database.list_automation_alerts_sync(
+        status="open",
+        limit=5,
+        offset=1,
+    ) == [expected]
+    assert database.acknowledge_automation_alert_sync(
+        alert_id=11,
+        actor="operator-review",
+    ) == {**expected, "status": "acknowledged"}
+
+    upsert_alert.assert_called_once_with(
+        alert_key="test:alert",
+        severity="warning",
+        category="operations",
+        title="Test alert",
+        detail="Requires review",
+        source="unit",
+        source_ref=None,
+        payload={"safe": True},
+    )
+    list_alerts.assert_called_once_with(status="open", limit=5, offset=1)
+    acknowledge_alert.assert_called_once_with(
+        alert_id=11,
+        actor="operator-review",
+    )
 
 
 def test_instrument_metadata_repository_preserves_storage_contract(tmp_path) -> None:

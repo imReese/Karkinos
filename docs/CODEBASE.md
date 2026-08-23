@@ -24,8 +24,9 @@ The left-hand package may import only the listed internal packages:
 | `notification` | none |
 | `backtest` | `core`, `data`, `domain`, `execution`, `risk`, `strategy` |
 
-`server` composes the application and may depend on the packages above; its
-boundaries are being migrated incrementally and are not covered by this table.
+`server` composes the application and may depend on the packages above.
+`server` and `analytics` boundaries are being migrated incrementally and are
+not covered by this table.
 
 `tools/check_python_architecture.py` is the executable source of truth for the
 protected package edges. A diagram or directory name never overrides that
@@ -55,6 +56,9 @@ New single-context persistence belongs in `server/persistence/`. Cross-context
 atomic flows such as controlled submission, reconciliation, posting, and
 correction stay on one SQLite connection until a tested unit-of-work boundary
 can preserve their exact idempotency and rollback semantics.
+Existing route-to-route imports are migration debt captured by an exact
+no-new-edge ratchet in `tests/test_server_import_boundaries.py`. New reusable
+behavior belongs behind a service or another public application contract.
 
 ## Web Ownership
 
@@ -108,4 +112,5 @@ The preferred sequence for remaining architecture debt is:
 
 The real-provider adapter, broker soak, and controlled-pilot evidence in the
 roadmap are product release gates. A code-organization refactor cannot satisfy
-or waive them.
+or waive them. The GitHub Actions Code CI gate covers repository checks only;
+it is necessary, but not sufficient, release evidence.
