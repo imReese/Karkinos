@@ -145,7 +145,7 @@ def test_controlled_session_budget_route_rejects_stale_and_credentials(
 def test_route_service_wires_current_controlled_session_resolver(monkeypatch) -> None:
     fake_state = SimpleNamespace(db=object())
     envelope_service = SimpleNamespace(resolve_attestation=lambda value: {"id": value})
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "server.routes.controlled_session_envelope._service",
         lambda: envelope_service,

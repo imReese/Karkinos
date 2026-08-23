@@ -13,6 +13,7 @@ from server.ai_runtime.capture import (
 )
 from server.ai_runtime.evidence import EvidenceIdentityMismatch
 from server.ai_runtime.karkinos_source import PersistedKarkinosCaptureSource
+from server.routes.ai_research import build_capture_projection_readers
 
 NOW = "2026-07-13T12:30:00+00:00"
 VALUATION_ID = "valuation-source-001"
@@ -111,6 +112,13 @@ def _portfolio() -> FixtureModel:
             "ledger_cutoff_id": LEDGER_CUTOFF_ID,
             "ledger_fingerprint": LEDGER_FINGERPRINT,
         }
+    )
+
+
+def _source(state) -> PersistedKarkinosCaptureSource:
+    return PersistedKarkinosCaptureSource(
+        state,
+        build_capture_projection_readers(),
     )
 
 
@@ -229,7 +237,7 @@ async def test_production_source_reuses_canonical_builders_and_exact_persisted_r
         config=SimpleNamespace(strategy="dual_ma"),
     )
 
-    batch = await PersistedKarkinosCaptureSource(state).load(_request())
+    batch = await _source(state).load(_request())
 
     assert batch.valuation_snapshot_id == VALUATION_ID
     assert batch.ledger_cutoff_id == LEDGER_CUTOFF_ID
@@ -300,9 +308,7 @@ async def test_production_source_blocks_valuation_or_ledger_drift(monkeypatch):
     )
 
     with pytest.raises(EvidenceIdentityMismatch, match="drifted during"):
-        await PersistedKarkinosCaptureSource(
-            SimpleNamespace(db=FixtureDatabase())
-        ).load(request)
+        await _source(SimpleNamespace(db=FixtureDatabase())).load(request)
 
 
 @pytest.mark.unit
@@ -325,7 +331,7 @@ async def test_production_source_requires_replayable_persisted_valuation(monkeyp
     db = SimpleNamespace(get_valuation_snapshot_sync=lambda snapshot_id: None)
 
     with pytest.raises(EvidenceIdentityMismatch, match="not persisted"):
-        await PersistedKarkinosCaptureSource(SimpleNamespace(db=db)).load(request)
+        await _source(SimpleNamespace(db=db)).load(request)
 
 
 @pytest.mark.unit
@@ -353,7 +359,7 @@ async def test_strategy_contribution_capture_rejects_assignment_drift(monkeypatc
     )
 
     with pytest.raises(CaptureSelectionError, match="selected strategy changed"):
-        await PersistedKarkinosCaptureSource(state).load(request)
+        await _source(state).load(request)
 
 
 @pytest.mark.unit
@@ -400,7 +406,7 @@ async def test_strategy_contribution_capture_rejects_financial_identity_drift(
     )
 
     with pytest.raises(EvidenceIdentityMismatch, match="valuation_snapshot_id"):
-        await PersistedKarkinosCaptureSource(state).load(request)
+        await _source(state).load(request)
 
 
 @pytest.mark.unit
@@ -456,7 +462,7 @@ async def test_incomplete_strategy_contribution_remains_blocked_evidence(monkeyp
         config=SimpleNamespace(strategy="dual_ma"),
     )
 
-    batch = await PersistedKarkinosCaptureSource(state).load(request)
+    batch = await _source(state).load(request)
 
     assert batch.projections[0].status == "blocked"
     assert batch.projections[0].payload["valuation_snapshot_id"] == VALUATION_ID

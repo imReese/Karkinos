@@ -150,7 +150,7 @@ def create_router() -> APIRouter:
 
 
 def _service() -> ControlledSessionEnvelopeService:
-    from server.app import get_app_state
+    from server.dependencies import get_app_state
 
     state = get_app_state()
     config = getattr(state, "config", None)

@@ -61,11 +61,13 @@ def _fetch_json(url: str) -> dict[str, Any]:
 
 
 def _assert_fail_closed_defaults(statuses: Mapping[str, Mapping[str, Any]]) -> None:
+    settings = statuses["settings"]
     capital = statuses["capital_authority"]
     bridge = statuses["controlled_bridge"]
     submission = statuses["controlled_submission"]
 
     expected = {
+        "live scheduler auto-start": settings.get("live_auto_start") is False,
         "capital runtime authority": capital.get("runtime_authority_status")
         == "disabled",
         "capital execution authority": capital.get("execution_authority_enabled")

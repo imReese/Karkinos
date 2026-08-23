@@ -73,7 +73,7 @@ def _client(monkeypatch, db: AppDatabase, connector: object) -> TestClient:
         db=db,
         config=SimpleNamespace(broker_connectors=[connector]),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     app = FastAPI()
     app.include_router(create_router())
     return TestClient(app)

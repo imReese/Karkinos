@@ -7,6 +7,11 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
+from domain.portfolio_accounting import (
+    moving_average_cost_after_buy,
+    realized_pnl_after_sell,
+    total_trade_fee,
+)
 from server.ledger.models import LedgerEntry
 from server.projections.models import ZERO, PortfolioProjection, ProjectedPosition
 from server.services.position_presence import is_economically_zero_quantity
@@ -24,15 +29,6 @@ _CONTROLLED_CORRECTION_TYPES = {"controlled_projection_correction"}
 _CONTROLLED_CORRECTION_SOURCE = "controlled_submission_ledger_correction"
 _CONTROLLED_CORRECTION_PLAN_SCHEMA_VERSION = (
     "karkinos.controlled_submission_ledger_correction_plan.v1"
-)
-_ADDITIONAL_TRADE_FEE_KEYS = (
-    ("subscription_fee",),
-    ("redemption_fee",),
-    ("stamp_tax", "tax"),
-    ("transfer_fee",),
-    ("other_fees",),
-    ("surcharge_fee",),
-    ("exchange_clearing_fee",),
 )
 
 
@@ -302,12 +298,13 @@ def _apply_buy(
         position.closed_at = None
     added_cost = quantity * price + commission
     projection.cash -= added_cost
-    if position.quantity == ZERO:
-        position.avg_cost = added_cost / quantity
-    else:
-        previous_cost = position.quantity * position.avg_cost
-        total_quantity = position.quantity + quantity
-        position.avg_cost = (previous_cost + added_cost) / total_quantity
+    position.avg_cost = moving_average_cost_after_buy(
+        current_quantity=position.quantity,
+        current_average_cost=position.avg_cost,
+        fill_quantity=quantity,
+        fill_price=price,
+        total_fee=commission,
+    )
 
     position.broker_displayed_cost_basis += added_cost
     position.quantity += quantity
@@ -332,7 +329,12 @@ def _apply_sell(
 
     net_proceeds = quantity * price - commission
     projection.cash += net_proceeds
-    position.realized_pnl += net_proceeds - position.avg_cost * quantity
+    position.realized_pnl += realized_pnl_after_sell(
+        average_cost=position.avg_cost,
+        fill_quantity=quantity,
+        fill_price=price,
+        total_fee=commission,
+    )
     position.commission_paid += commission
     position.broker_displayed_cost_basis -= net_proceeds
     position.quantity -= quantity
@@ -589,21 +591,10 @@ def _trade_side(entry: LedgerEntry) -> str:
 
 
 def _trade_total_fee(entry: LedgerEntry) -> Decimal:
-    breakdown = entry.fee_breakdown or {}
-    total_fee = _breakdown_decimal(breakdown, "total_fee")
-    if total_fee is not None:
-        return abs(total_fee)
-
-    commission = _breakdown_decimal(breakdown, "commission")
-    total = abs(commission if commission is not None else _as_decimal(entry.commission))
-    if not breakdown:
-        return total
-
-    for aliases in _ADDITIONAL_TRADE_FEE_KEYS:
-        value = _breakdown_decimal(breakdown, *aliases)
-        if value is not None:
-            total += abs(value)
-    return total
+    return total_trade_fee(
+        commission=_as_decimal(entry.commission),
+        fee_breakdown=entry.fee_breakdown,
+    )
 
 
 def _breakdown_decimal(breakdown: Mapping[str, Any], *keys: str) -> Decimal | None:

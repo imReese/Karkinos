@@ -100,7 +100,7 @@ def create_router() -> APIRouter:
 
 
 def _service() -> SessionStartAccountTruthService:
-    from server.app import get_app_state
+    from server.dependencies import get_app_state
 
     state = get_app_state()
     return SessionStartAccountTruthService(

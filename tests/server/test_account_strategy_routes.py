@@ -114,7 +114,7 @@ async def _strategy_contribution_response(monkeypatch, db):
     from server.routes import account_strategy as account_strategy_routes
 
     state = SimpleNamespace(config=SimpleNamespace(strategy="dual_ma"), db=db)
-    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
     router = account_strategy_routes.create_router()
     endpoint = _route(router, "/api/account-strategy/contribution", "GET").endpoint
     return await endpoint()
@@ -131,7 +131,7 @@ async def test_account_strategy_defaults_to_research_only_config_strategy(monkey
         config=SimpleNamespace(strategy="dual_ma"),
         db=SimpleNamespace(get_runtime_control_sync=lambda key: None),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
 
     response = await endpoint()
 
@@ -199,7 +199,7 @@ async def test_account_strategy_update_persists_manual_confirm_assignment(monkey
             persisted[key] = value
 
     state = SimpleNamespace(config=SimpleNamespace(strategy="dual_ma"), db=FakeDb())
-    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
 
     response = await endpoint(
         AccountStrategyAssignmentUpdate(
@@ -250,7 +250,7 @@ async def test_account_strategy_scoped_assignments_support_different_symbol_stra
             persisted[key] = value
 
     state = SimpleNamespace(config=SimpleNamespace(strategy="dual_ma"), db=FakeDb())
-    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
 
     await upsert_endpoint(
         AccountStrategyAssignmentUpdate(
@@ -339,7 +339,7 @@ async def test_account_strategy_asset_class_scope_filters_attribution(monkeypatc
             return []
 
     state = SimpleNamespace(config=SimpleNamespace(strategy="dual_ma"), db=FakeDb())
-    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
 
     response = await update_endpoint(
         AccountStrategyAssignmentUpdate(
@@ -480,7 +480,7 @@ async def test_account_strategy_attribution_links_signal_order_and_fill_without_
         metadata={"strategy_id": "dual_ma", "source_signal_id": 1},
     )
     state = SimpleNamespace(config=SimpleNamespace(strategy="dual_ma"), db=db)
-    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
     router = account_strategy_routes.create_router()
     endpoint = _route(router, "/api/account-strategy/attribution", "GET").endpoint
 
@@ -610,7 +610,7 @@ async def test_holding_strategy_attribution_filters_exact_symbol_evidence(
             ]
 
     state = SimpleNamespace(config=SimpleNamespace(strategy="dual_ma"), db=FakeDb())
-    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
     router = account_strategy_routes.create_router()
     endpoint = _route(
         router,
@@ -812,7 +812,7 @@ async def test_account_strategy_contribution_separates_unrealized_pnl_and_costs(
     published = db.publish_current_valuation_snapshot_sync()
 
     state = SimpleNamespace(config=SimpleNamespace(strategy="dual_ma"), db=db)
-    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
     router = account_strategy_routes.create_router()
     endpoint = _route(router, "/api/account-strategy/contribution", "GET").endpoint
 
@@ -1038,7 +1038,7 @@ async def test_account_strategy_contribution_separates_tax_manual_cash_and_missi
     db.publish_current_valuation_snapshot_sync()
 
     state = SimpleNamespace(config=SimpleNamespace(strategy="dual_ma"), db=db)
-    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
     router = account_strategy_routes.create_router()
     endpoint = _route(router, "/api/account-strategy/contribution", "GET").endpoint
 

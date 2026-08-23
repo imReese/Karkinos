@@ -124,7 +124,7 @@ def test_decision_uses_persisted_portfolio_and_current_deduplicated_batch(
             latest_quotes={"603659": {"price": 1.0}},
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
 
     response = asyncio.run(_endpoint("/api/decision/today")())
 
@@ -203,7 +203,7 @@ def test_decision_blocks_unconfirmed_fund_estimate_as_persisted_evidence(
             latest_quotes={},
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
 
     response = asyncio.run(_endpoint("/api/decision/today")())
     candidate = response["candidates"][0]

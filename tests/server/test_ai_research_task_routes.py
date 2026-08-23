@@ -59,7 +59,7 @@ class FixtureService:
 
 def _client(monkeypatch, service):
     monkeypatch.setattr(
-        "server.app.get_app_state", lambda: SimpleNamespace(db=object())
+        "server.dependencies.get_app_state", lambda: SimpleNamespace(db=object())
     )
     monkeypatch.setattr(
         "server.routes.ai_research_tasks.build_human_research_task_service",

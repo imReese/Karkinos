@@ -64,7 +64,7 @@ def test_account_truth_import_runs_list_review_metadata(tmp_path, monkeypatch):
     db, first_run, duplicate_run = _seed_account_truth_db(tmp_path)
     assert duplicate_run.import_run_id == first_run.import_run_id
     fake_state = SimpleNamespace(db=db)
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     router = account_truth_routes.create_router()
     endpoint = _route(router, "/api/account-truth/import-runs").endpoint
@@ -93,7 +93,7 @@ def test_account_truth_broker_statement_preview_is_read_only(tmp_path, monkeypat
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     fake_state = SimpleNamespace(db=db)
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     router = account_truth_routes.create_router()
     endpoint = _route(
@@ -141,7 +141,7 @@ def test_citic_history_xls_preview_is_private_and_never_persisted(monkeypatch):
 
     monkeypatch.setattr(account_truth_routes, "parse_citic_history_xls", parse_preview)
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: pytest.fail("read-only CITIC preview must not access app state"),
     )
     endpoint = _route(
@@ -215,7 +215,7 @@ def test_citic_history_xls_intake_requires_explicit_review_and_stores_no_events(
         account_truth_routes, "parse_citic_history_xls", lambda _: parsed_preview
     )
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=db),
     )
     router = account_truth_routes.create_router()
@@ -278,7 +278,7 @@ def test_citic_history_xls_intake_rechecks_previewed_file_identity(
         account_truth_routes, "parse_citic_history_xls", lambda _: parsed_preview
     )
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=db),
     )
     endpoint = _route(
@@ -323,7 +323,7 @@ def test_citic_query_window_review_is_explicit_revocable_and_non_authorizing(
         account_truth_routes, "parse_citic_history_xls", lambda _: parsed_preview
     )
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=db),
     )
     router = account_truth_routes.create_router()
@@ -487,7 +487,7 @@ def test_citic_history_xls_intake_list_get_does_not_create_database_or_schema(
 
     db_path = tmp_path / "missing-parent" / "app.db"
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=SimpleNamespace(_path=db_path)),
     )
     endpoint = _route(
@@ -542,7 +542,7 @@ def test_configured_citic_directory_scan_and_review_are_private_and_non_authoriz
             )
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
     router = account_truth_routes.create_router()
     status_endpoint = _route(
         router,
@@ -766,7 +766,7 @@ def test_configured_citic_directory_review_rejects_source_drift(
         max_total_bytes=4096,
     )
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(
             db=db, config=SimpleNamespace(citic_history_xls_directory=config)
         ),
@@ -879,7 +879,7 @@ def test_account_truth_collector_status_is_read_only(tmp_path, monkeypatch):
     status = SimpleNamespace(to_dict=lambda: dict(payload))
     collector = SimpleNamespace(status=lambda: status)
     fake_state = SimpleNamespace(db=db, broker_statement_collector=collector)
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     endpoint = _route(
         account_truth_routes.create_router(),
         "/api/account-truth/broker-statement/collector",
@@ -901,7 +901,7 @@ def test_account_truth_broker_statement_import_stages_evidence_only(
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     fake_state = SimpleNamespace(db=db)
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     router = account_truth_routes.create_router()
     endpoint = _route(
@@ -939,7 +939,7 @@ def test_account_truth_reconciliation_reports_list_and_detail(
     db, first_run, duplicate_run = _seed_account_truth_db(tmp_path)
     assert duplicate_run.import_run_id == first_run.import_run_id
     fake_state = SimpleNamespace(db=db)
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     router = account_truth_routes.create_router()
     list_endpoint = _route(
@@ -1010,7 +1010,7 @@ def test_account_truth_review_action_records_ledger_candidate_without_mutating_l
 
     db, first_run, _duplicate_run = _seed_account_truth_db(tmp_path)
     fake_state = SimpleNamespace(db=db)
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     router = account_truth_routes.create_router()
     review_endpoint = _route(
@@ -1089,7 +1089,7 @@ def test_account_truth_score_endpoint_exposes_component_reasons(
 
     db, _first_run, duplicate_run = _seed_account_truth_db(tmp_path)
     fake_state = SimpleNamespace(db=db)
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     router = account_truth_routes.create_router()
     score_endpoint = _route(router, "/api/account-truth/score").endpoint
@@ -1121,7 +1121,7 @@ def test_account_truth_evidence_readiness_projects_canonical_blockers(
 
     db, _first_run, duplicate_run = _seed_account_truth_db(tmp_path)
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=db),
     )
     endpoint = _route(
@@ -1172,7 +1172,7 @@ def test_account_truth_scope_review_is_exact_append_only_and_revocable(
 
     db, _first_run, import_run = _seed_account_truth_db(tmp_path)
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=db),
     )
     router = account_truth_routes.create_router()
@@ -1279,7 +1279,7 @@ def test_citic_source_canonical_resolution_requires_complete_scope_and_is_revoca
         review_status="follow_up_required",
     )
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=db),
     )
     router = account_truth_routes.create_router()
@@ -1369,7 +1369,7 @@ def test_account_truth_scope_review_rejects_stale_observed_fingerprint(
 
     db, _first_run, import_run = _seed_account_truth_db(tmp_path)
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=db),
     )
     endpoint = _route(
@@ -1424,7 +1424,7 @@ def test_account_truth_scope_review_cannot_override_evidence_integrity_blocker(
         )
         conn.commit()
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=db),
     )
     router = account_truth_routes.create_router()
@@ -1489,7 +1489,7 @@ def test_account_truth_score_blocks_when_broker_import_predates_ledger(
         created_at="2099-01-01T00:00:00+08:00",
     )
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=db),
     )
     score_endpoint = _route(
@@ -1517,7 +1517,7 @@ def test_account_truth_get_routes_do_not_initialize_missing_database(
 
     db_path = tmp_path / "missing" / "app.db"
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=SimpleNamespace(_path=db_path)),
     )
     router = account_truth_routes.create_router()
@@ -1564,7 +1564,7 @@ def test_account_truth_get_route_rejects_partial_broker_schema_without_repair(
         conn.execute("CREATE TABLE broker_import_runs (id INTEGER PRIMARY KEY)")
         conn.commit()
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=SimpleNamespace(_path=db_path)),
     )
     endpoint = _route(
@@ -1603,7 +1603,7 @@ def test_account_truth_detail_rejects_partial_review_schema_without_repair(
         )
         conn.commit()
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=db),
     )
     endpoint = _route(

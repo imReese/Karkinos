@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { apiClient } from '../../lib/api/client';
+import { apiClient, postJson } from '../../lib/api/client';
 
 const DECISION_REFETCH_MS = 15_000;
 
@@ -589,24 +589,6 @@ export type DecisionQualityCaptureResult = {
   authorizes_execution: false;
   authority_effect: 'none';
 };
-
-async function postJson<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(path, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(detail || `Request failed: ${response.status}`);
-  }
-
-  return (await response.json()) as T;
-}
 
 function decisionQuery(path: string, key: readonly string[], enabled = true) {
   return useQuery({

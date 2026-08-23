@@ -14,8 +14,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.staticfiles import StaticFiles
 
+from server import __version__
 from server.bridge import EventBusBridge
 from server.db import AppDatabase
+from server.dependencies import (
+    AppState,
+    AppStateContextMiddleware,
+    bind_app_state,
+)
 from server.scheduler import TradingScheduler
 from server.services.trading_controls import TradingControlState
 from server.ws.hub import ConnectionHub
@@ -60,31 +66,6 @@ def _cors_allow_credentials(allowed_origins: list[str]) -> bool:
     return "*" not in allowed_origins
 
 
-class AppState:
-    """全局应用状态，供路由通过 get_app_state() 访问。"""
-
-    def __init__(self) -> None:
-        self.config: Any = None
-        self.db: AppDatabase | None = None
-        self.hub: ConnectionHub | None = None
-        self.bridge: EventBusBridge | None = None
-        self.scheduler: TradingScheduler | None = None
-        self.daily_decision_evidence_task: asyncio.Task[None] | None = None
-        self.notifier: Any = None
-        self.trading_controls: TradingControlState | None = None
-
-
-_app_state: AppState | None = None
-
-
-def get_app_state() -> AppState:
-    """获取全局应用状态。"""
-    global _app_state
-    if _app_state is None:
-        _app_state = AppState()
-    return _app_state
-
-
 async def _forward_events(bridge: EventBusBridge, hub: ConnectionHub) -> None:
     """后台任务：从 bridge 队列消费事件，广播到所有 WebSocket 连接。"""
     while True:
@@ -112,13 +93,17 @@ def _confirm_pending_fund_orders_on_startup(state: AppState) -> None:
         )
 
 
-def _evaluate_controlled_session_pauses() -> dict[str, Any]:
+def _evaluate_controlled_session_pauses(state: AppState) -> dict[str, Any]:
     """Build fresh persisted gates and pause enabled sessions if required."""
     from server.routes.controlled_session_automatic_pause import (
         _orchestrator_service,
     )
 
-    return _orchestrator_service().evaluate_all()
+    # The scheduler invokes this outside an HTTP request. Bind only the state
+    # explicitly owned by its application while legacy route factories finish
+    # migrating to constructor injection.
+    with bind_app_state(state):
+        return _orchestrator_service().evaluate_all()
 
 
 def _is_spa_fallback_path(path: str) -> bool:
@@ -152,9 +137,7 @@ class SPAStaticFiles(StaticFiles):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理。"""
-    global _app_state
-
-    state = get_app_state()
+    state = app.state.app_state
 
     # ---- Startup ----
     from account_truth.broker_evidence import BrokerEvidenceRepository
@@ -166,6 +149,10 @@ async def lifespan(app: FastAPI):
     from notification.notifier import build_notifier
     from server.bootstrap import load_runtime_config
     from server.config import BrokerStatementCollectorConfig, ServerConfig
+    from server.routes.ai_strategy_research import _build_write_service
+    from server.routes.decision import run_batch_pre_trade_risk_for_state
+    from server.routes.market import _refresh_one_quote
+    from server.routes.operations import _current_decision_and_trading_plan
     from server.services.ai_shadow_research_automation import (
         run_ai_shadow_research_automation_loop,
     )
@@ -243,7 +230,9 @@ async def lifespan(app: FastAPI):
         notifier,
         db=db,
         trading_controls=trading_controls,
-        controlled_session_pause_runner=_evaluate_controlled_session_pauses,
+        controlled_session_pause_runner=lambda: _evaluate_controlled_session_pauses(
+            state
+        ),
     )
     state.scheduler = scheduler
 
@@ -263,7 +252,7 @@ async def lifespan(app: FastAPI):
     )
     broker_statement_collector = LocalBrokerStatementCollector(
         repository=(
-            BrokerEvidenceRepository(db._path) if collector_config.enabled else None
+            BrokerEvidenceRepository(db.path) if collector_config.enabled else None
         ),
         path=collector_config.path,
         enabled=collector_config.enabled,
@@ -299,7 +288,13 @@ async def lifespan(app: FastAPI):
     # It remains independent of live monitoring because it reads persisted
     # after-close evidence and has no execution authority.
     shadow_research_task = asyncio.create_task(
-        run_ai_shadow_research_automation_loop(state=state),
+        run_ai_shadow_research_automation_loop(
+            state=state,
+            research_service_builder=lambda external: _build_write_service(
+                state,
+                external=external,
+            ),
+        ),
         name="ai-shadow-research-automation",
     )
 
@@ -314,6 +309,9 @@ async def lifespan(app: FastAPI):
             run_daily_decision_evidence_automation_loop(
                 state=state,
                 interval_seconds=config.live_poll_interval,
+                plan_reader=_current_decision_and_trading_plan,
+                risk_runner=run_batch_pre_trade_risk_for_state,
+                quote_refresher=_refresh_one_quote,
             ),
             name=DAILY_DECISION_EVIDENCE_AUTOMATION_TASK_NAME,
         )
@@ -388,9 +386,11 @@ def create_app(
     app = FastAPI(
         title="Karkinos Server",
         description="面向中国市场的个人量化投研与交易平台",
-        version="0.1.0",
+        version=__version__,
         lifespan=lifespan,
     )
+    app_state = AppState()
+    app.state.app_state = app_state
     app.state.config_overrides = effective_overrides
     app.state.runtime_config = runtime_config
     cors_allowed_origins = _resolve_cors_allowed_origins(
@@ -410,6 +410,7 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(AppStateContextMiddleware, app_state=app_state)
 
     # 注册路由
     from server.routes.acceptance_audit import create_router as acceptance_audit_router

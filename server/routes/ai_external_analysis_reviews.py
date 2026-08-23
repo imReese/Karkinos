@@ -174,7 +174,7 @@ def build_human_external_analysis_review_service(
 
 
 def _service(*, initialize: bool) -> HumanExternalAnalysisReviewService:
-    from server.app import get_app_state
+    from server.dependencies import get_app_state
 
     state = get_app_state()
     if state.db is None:

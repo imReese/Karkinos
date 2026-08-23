@@ -319,7 +319,7 @@ def test_valuation_snapshot_routes_separate_create_and_read(monkeypatch, tmp_pat
         timestamp="2026-07-10T14:57:03+08:00",
     )
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=db),
     )
     router = portfolio_routes.create_router()

@@ -5,7 +5,7 @@ import {
   appFeatureChunk,
   normalizeModuleId,
   type ChunkName,
-} from './src/app/chunk-config';
+} from './src/app/chunk-config.ts';
 
 function vendorChunk(id: string): ChunkName {
   const normalizedId = normalizeModuleId(id);
@@ -13,7 +13,10 @@ function vendorChunk(id: string): ChunkName {
   if (!normalizedId.includes('node_modules')) {
     return undefined;
   }
-  if (normalizedId.includes('/react/') || normalizedId.includes('/react-dom/')) {
+  if (
+    normalizedId.includes('/react/') ||
+    normalizedId.includes('/react-dom/')
+  ) {
     return 'react-vendor';
   }
   if (normalizedId.includes('/@tanstack/')) {

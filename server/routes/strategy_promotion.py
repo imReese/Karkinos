@@ -94,6 +94,6 @@ def create_router() -> APIRouter:
 
 
 def _service() -> StrategyPromotionPipeline:
-    from server.app import get_app_state
+    from server.dependencies import get_app_state
 
     return StrategyPromotionPipeline(db=get_app_state().db)

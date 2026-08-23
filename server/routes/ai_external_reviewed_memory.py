@@ -165,7 +165,7 @@ def build_external_reviewed_memory_promotion_service(
 
 
 def _service(*, initialize: bool) -> ExternalReviewedMemoryPromotionService:
-    from server.app import get_app_state
+    from server.dependencies import get_app_state
 
     state = get_app_state()
     if state.db is None:

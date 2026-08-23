@@ -16,7 +16,7 @@ from server.services.oms import OmsService
 
 def _client_for_db(monkeypatch, db: AppDatabase) -> TestClient:
     fake_state = SimpleNamespace(db=db)
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     app = FastAPI()
     app.include_router(create_router())
     return TestClient(app)

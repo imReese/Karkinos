@@ -81,6 +81,9 @@ from server.account_truth_gate import (
     build_latest_account_truth_score_payload,
     build_reconciliation_report_for_import_run,
 )
+from server.account_truth_gate import (
+    missing_account_truth_score_payload as _missing_score_response,
+)
 from server.config import CiticHistoryXlsDirectoryConfig
 from server.services.account_truth_evidence_readiness import (
     build_account_truth_evidence_readiness,
@@ -284,7 +287,7 @@ def create_router() -> APIRouter:
     async def record_citic_history_xls_intake(
         body: CiticHistoryXlsIntakeCreate,
     ) -> dict[str, object]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         preview = _parse_citic_history_xls_transport(body.content_base64)
         return _record_citic_source_intake(
@@ -296,14 +299,14 @@ def create_router() -> APIRouter:
 
     @r.get("/citic-history-xls/directory")
     async def get_citic_history_xls_directory_status() -> dict[str, object]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         config = _citic_history_xls_directory_config_for_state(get_app_state())
         return _citic_history_xls_directory_status_response(config)
 
     @r.post("/citic-history-xls/directory/scan")
     async def scan_configured_citic_history_xls_directory() -> dict[str, object]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         config = _citic_history_xls_directory_config_for_state(state)
@@ -335,7 +338,7 @@ def create_router() -> APIRouter:
     async def record_configured_citic_history_xls_directory_intake(
         body: CiticHistoryXlsDirectoryIntakeCreate,
     ) -> dict[str, object]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         config = _citic_history_xls_directory_config_for_state(state)
@@ -367,7 +370,7 @@ def create_router() -> APIRouter:
     async def record_citic_history_xls_query_window_review(
         body: CiticHistoryXlsQueryWindowReviewCreate,
     ) -> dict[str, object]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         preview = _parse_citic_history_xls_transport(body.content_base64)
         try:
@@ -385,7 +388,7 @@ def create_router() -> APIRouter:
     async def record_configured_citic_history_xls_query_window_review(
         body: CiticHistoryXlsDirectoryQueryWindowReviewCreate,
     ) -> dict[str, object]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         config = _citic_history_xls_directory_config_for_state(state)
@@ -420,7 +423,7 @@ def create_router() -> APIRouter:
     async def revoke_citic_history_xls_query_window_review(
         body: CiticHistoryXlsQueryWindowReviewRevoke,
     ) -> dict[str, object]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             return revoke_citic_source_query_window_review(
@@ -436,7 +439,7 @@ def create_router() -> APIRouter:
     async def record_citic_history_xls_source_scope_review(
         body: CiticHistoryXlsSourceScopeReviewCreate,
     ) -> dict[str, object]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             return record_citic_source_scope_review(
@@ -452,7 +455,7 @@ def create_router() -> APIRouter:
     async def revoke_citic_history_xls_source_scope_review(
         body: CiticHistoryXlsSourceScopeReviewRevoke,
     ) -> dict[str, object]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             return revoke_citic_source_scope_review(
@@ -468,7 +471,7 @@ def create_router() -> APIRouter:
     async def list_citic_history_xls_intakes(
         limit: int = 50,
     ) -> list[dict[str, object]]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         intakes, reviews, scope_reviews = _citic_source_reviews_for_state(
             get_app_state(),
@@ -487,7 +490,7 @@ def create_router() -> APIRouter:
     async def import_broker_statement(
         body: BrokerStatementPreviewCreate,
     ) -> dict[str, object]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         repository = _repository_for_state(state)
@@ -517,7 +520,7 @@ def create_router() -> APIRouter:
 
     @r.get("/broker-statement/collector")
     async def get_broker_statement_collector_status() -> dict[str, object]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         collector = getattr(get_app_state(), "broker_statement_collector", None)
         if collector is None:
@@ -554,7 +557,7 @@ def create_router() -> APIRouter:
 
     @r.get("/import-runs")
     async def list_import_runs(limit: int = 50) -> list[dict[str, object]]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         repository = _repository_for_state(get_app_state())
         try:
@@ -572,7 +575,7 @@ def create_router() -> APIRouter:
         status: ReconciliationStatus | None = None,
         limit: int = 50,
     ) -> list[dict[str, object]]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         repository = _repository_for_state(state)
@@ -591,7 +594,7 @@ def create_router() -> APIRouter:
 
     @r.get("/score")
     async def get_account_truth_score() -> dict[str, object]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         try:
@@ -604,7 +607,7 @@ def create_router() -> APIRouter:
 
     @r.get("/evidence-readiness")
     async def get_account_truth_evidence_readiness() -> dict[str, object]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             return build_account_truth_evidence_readiness(get_app_state())
@@ -619,7 +622,7 @@ def create_router() -> APIRouter:
     async def preview_reviewed_fee_schedule(
         body: ReviewedFeeSchedulePreviewCreate,
     ) -> dict[str, object]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             return build_reviewed_fee_schedule_preview(
@@ -636,7 +639,7 @@ def create_router() -> APIRouter:
 
     @r.get("/fee-schedule/review")
     async def get_reviewed_fee_schedule_review() -> dict[str, object]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             return build_reviewed_fee_schedule_review_status(get_app_state())
@@ -653,7 +656,7 @@ def create_router() -> APIRouter:
     async def record_reviewed_fee_schedule_review(
         body: ReviewedFeeScheduleReviewCreate,
     ) -> dict[str, object]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         try:
@@ -691,7 +694,7 @@ def create_router() -> APIRouter:
     async def revoke_reviewed_fee_schedule_review(
         body: ReviewedFeeScheduleReviewRevoke,
     ) -> dict[str, object]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             review = _reviewed_fee_schedule_repository_for_state(
@@ -713,7 +716,7 @@ def create_router() -> APIRouter:
     async def record_evidence_scope_review(
         body: EvidenceScopeReviewCreate,
     ) -> dict[str, object]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             return record_account_truth_evidence_scope_review(
@@ -733,7 +736,7 @@ def create_router() -> APIRouter:
     async def revoke_evidence_scope_review(
         body: EvidenceScopeReviewRevoke,
     ) -> dict[str, object]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             return revoke_account_truth_evidence_scope_review(
@@ -753,7 +756,7 @@ def create_router() -> APIRouter:
     async def record_citic_canonical_resolution(
         body: CiticSourceCanonicalResolutionCreate,
     ) -> dict[str, object]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             return record_citic_source_canonical_resolution(
@@ -769,7 +772,7 @@ def create_router() -> APIRouter:
     async def revoke_citic_canonical_resolution(
         body: CiticSourceCanonicalResolutionRevoke,
     ) -> dict[str, object]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             return revoke_citic_source_canonical_resolution(
@@ -783,7 +786,7 @@ def create_router() -> APIRouter:
 
     @r.get("/reconciliation-reports/{import_run_id}")
     async def get_reconciliation_report(import_run_id: str) -> dict[str, object]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         repository = _repository_for_state(state)
@@ -802,7 +805,7 @@ def create_router() -> APIRouter:
         item_key: str,
         body: ReviewDecisionCreate,
     ) -> dict[str, object]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         repository = _repository_for_state(state)
@@ -1704,26 +1707,4 @@ def _decision_response(decision: ManualReviewDecision) -> dict[str, object]:
         "created_at": decision.created_at,
         "updated_at": decision.updated_at,
         "does_not_mutate_production_ledger": True,
-    }
-
-
-def _missing_score_response() -> dict[str, object]:
-    return {
-        "schema_version": "karkinos.account_truth.score.v1",
-        "status": "missing",
-        "import_run_id": None,
-        "score": None,
-        "gate_status": "blocked",
-        "cash_status": "missing",
-        "position_status": "missing",
-        "fee_status": "missing",
-        "cost_basis_status": "missing",
-        "data_freshness_status": "missing",
-        "unresolved_mismatch_count": None,
-        "resolved_review_count": 0,
-        "required_actions": ["import_and_reconcile_broker_evidence"],
-        "blocking_reasons": ["account_truth_score_unavailable"],
-        "limitations": [
-            "Account Truth review requires staged broker evidence before trusted use."
-        ],
     }

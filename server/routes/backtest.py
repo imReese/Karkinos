@@ -34,6 +34,19 @@ from server.models import (
     EquityPoint,
     StrategyCompareItem,
 )
+from server.services.backtest_result_projection import (
+    backtest_evidence_from_payload as _backtest_evidence_from_payload,
+)
+from server.services.backtest_result_projection import (
+    build_backtest_report_metrics_json as _backtest_report_metrics_json,
+)
+from server.services.backtest_result_projection import (
+    fill_to_response as _fill_to_response,
+)
+from server.services.backtest_result_projection import json_object as _json_object
+from server.services.backtest_result_projection import (
+    strategy_metadata_snapshot as _strategy_metadata_snapshot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -200,39 +213,6 @@ class BacktestAttributionPreviewRequest(BaseModel):
     paper_shadow_fill: dict[str, Any] | None = None
 
 
-def _json_object(raw: Any) -> dict[str, Any]:
-    if isinstance(raw, dict):
-        return raw
-    if not raw:
-        return {}
-    try:
-        parsed = json.loads(str(raw))
-    except (TypeError, json.JSONDecodeError):
-        logger.warning("Failed to parse backtest JSON payload", exc_info=True)
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
-
-
-def _fill_to_response(fill: Any) -> dict[str, Any]:
-    timestamp = getattr(fill, "timestamp", None)
-    raw_side = getattr(fill, "side", "")
-    side = getattr(raw_side, "value", str(raw_side))
-    return {
-        "fill_id": getattr(fill, "fill_id", None),
-        "order_id": getattr(fill, "order_id", None),
-        "timestamp": timestamp.isoformat() if timestamp is not None else None,
-        "symbol": str(getattr(fill, "symbol", "")),
-        "side": side,
-        "fill_price": float(getattr(fill, "fill_price", 0)),
-        "fill_quantity": float(getattr(fill, "fill_quantity", 0)),
-        "commission": float(getattr(fill, "commission", 0)),
-        "slippage": float(getattr(fill, "slippage", 0)),
-        "fee_breakdown": getattr(fill, "fee_breakdown", None),
-        "fee_rule_id": getattr(fill, "fee_rule_id", None),
-        "fee_rule_version": getattr(fill, "fee_rule_version", None),
-    }
-
-
 def _backtest_metrics_from_payload(payload: dict[str, Any]) -> BacktestMetrics:
     metrics_json = _json_object(payload.get("metrics_json"))
     return BacktestMetrics(
@@ -252,14 +232,6 @@ def _backtest_metrics_from_payload(payload: dict[str, Any]) -> BacktestMetrics:
         total_trades=metrics_json.get("total_trades", 0),
         gross_turnover=metrics_json.get("gross_turnover", 0.0),
     )
-
-
-def _backtest_evidence_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    evidence_json = _json_object(payload.get("evidence_json"))
-    if evidence_json:
-        return evidence_json
-    metrics_json = _json_object(payload.get("metrics_json"))
-    return _json_object(metrics_json.get("evidence_bundle"))
 
 
 def _validate_backtest_strategy_params(request: BacktestRequest) -> BacktestRequest:
@@ -988,71 +960,6 @@ def _build_rolling_oos_validation_payload(
     return evidence.to_json_dict()
 
 
-def _strategy_metadata_snapshot(request: BacktestRequest) -> dict[str, Any]:
-    """Build a persisted strategy metadata snapshot for backtest audit."""
-    import strategy.builtins  # noqa: F401
-    from strategy.registry import StrategyRegistry
-
-    strategies = StrategyRegistry.get_info()
-    strategy_info = next(
-        (
-            item
-            for item in strategies
-            if item["name"] == request.strategy
-            or item["strategy_id"] == request.strategy
-        ),
-        None,
-    )
-    if strategy_info is None:
-        return {
-            "schema_version": "karkinos.strategy_metadata.v1",
-            "strategy_id": request.strategy,
-            "name": request.strategy,
-            "params": dict(request.params or {}),
-            "parameter_schema": [],
-        }
-    return {
-        "schema_version": "karkinos.strategy_metadata.v1",
-        "strategy_id": strategy_info["strategy_id"],
-        "name": strategy_info["name"],
-        "display_name": strategy_info["display_name"],
-        "description": strategy_info["description"],
-        "asset_universe": list(strategy_info.get("asset_universe", [])),
-        "supported_frequencies": list(strategy_info.get("supported_frequencies", [])),
-        "benchmark_role": strategy_info.get("benchmark_role"),
-        "benchmark_universe": list(strategy_info.get("benchmark_universe", [])),
-        "requires_out_of_sample_validation": bool(
-            strategy_info.get("requires_out_of_sample_validation", False)
-        ),
-        "requires_after_cost_report": bool(
-            strategy_info.get("requires_after_cost_report", False)
-        ),
-        "validation_notes": list(strategy_info.get("validation_notes", [])),
-        "parameter_schema": list(strategy_info.get("parameter_schema", [])),
-        "params": dict(request.params or {}),
-    }
-
-
-def _backtest_report_metrics_json(
-    request: BacktestRequest,
-    bt_result: dict[str, Any],
-) -> dict[str, Any]:
-    from analytics.research_evidence import build_research_evidence_bundle
-
-    metrics_json = dict(bt_result.get("metrics_json") or {})
-    metrics_json["evidence_bundle"] = _backtest_evidence_from_payload(bt_result)
-    strategy_metadata = _strategy_metadata_snapshot(request)
-    metrics_json["strategy_metadata"] = strategy_metadata
-    metrics_json["research_evidence_bundle"] = build_research_evidence_bundle(
-        metrics_json=metrics_json,
-        cost_summary_json=dict(bt_result.get("cost_summary_json") or {}),
-        evidence_json=metrics_json["evidence_bundle"],
-        strategy_metadata=strategy_metadata,
-        fills=list(bt_result.get("fills") or []),
-    )
-    return metrics_json
-
-
 def _last_equity_from_curve(equity_data: list[Any]) -> float | None:
     if not equity_data:
         return None
@@ -1320,7 +1227,7 @@ def create_router() -> APIRouter:
         from analytics.strategy_validation_matrix import (
             build_strategy_validation_matrix,
         )
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
         from strategy.registry import StrategyRegistry
 
         state = get_app_state()
@@ -1339,7 +1246,7 @@ def create_router() -> APIRouter:
             build_strategy_promotion_readiness,
         )
         from server.account_truth_gate import build_latest_account_truth_score_payload
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
         from server.routes.account_strategy import (
             _assignment_from_payload,
             _build_attribution_summary,
@@ -1398,7 +1305,7 @@ def create_router() -> APIRouter:
         request: StrategySignalPreviewRequest,
     ) -> StrategySignalPreviewResponse:
         """Preview strategy outputs as research evidence without persistence."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         config = state.config or BacktestConfig()
@@ -1409,7 +1316,7 @@ def create_router() -> APIRouter:
     @r.post("/risk-preview")
     async def preview_backtest_risk(request: BacktestRiskPreviewRequest) -> dict:
         """Preview pre-trade risk without persisting decisions or orders."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         return _run_backtest_risk_preview(request, state)
@@ -1419,7 +1326,7 @@ def create_router() -> APIRouter:
         request: BacktestPaperShadowPreviewRequest,
     ) -> dict:
         """Preview paper/shadow simulation without persisting orders or fills."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         return _run_backtest_paper_shadow_preview(request, state)
@@ -1429,7 +1336,7 @@ def create_router() -> APIRouter:
         request: BacktestAttributionPreviewRequest,
     ) -> dict:
         """Preview attribution evidence without claiming or persisting P/L."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         return _run_backtest_attribution_preview(request, state)
@@ -1437,7 +1344,7 @@ def create_router() -> APIRouter:
     @r.post("/run", response_model=BacktestResponse)
     async def run_backtest(request: BacktestRequest) -> BacktestResponse:
         """运行回测（在线程池中执行，不阻塞事件循环）。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         config = state.config
@@ -1497,7 +1404,7 @@ def create_router() -> APIRouter:
         request: BacktestSweepRequest,
     ) -> BacktestSweepResponse:
         """Run a bounded deterministic parameter sweep for one registered strategy."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         config = state.config
@@ -1601,7 +1508,7 @@ def create_router() -> APIRouter:
     @r.get("/results", response_model=list[BacktestSummary])
     async def list_backtest_results() -> list[BacktestSummary]:
         """获取回测结果列表。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         rows = await state.db.get_backtest_results()
@@ -1632,7 +1539,7 @@ def create_router() -> APIRouter:
     @r.get("/results/{result_id}", response_model=BacktestResponse)
     async def get_backtest_result(result_id: int) -> BacktestResponse:
         """获取单个回测详情 + 权益曲线。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         row = await state.db.get_backtest_result(result_id)
@@ -1676,9 +1583,8 @@ def create_router() -> APIRouter:
     @r.post("/compare", response_model=CompareResponse)
     async def compare_strategies(request: CompareRequest) -> CompareResponse:
         """Compare strategies or parameter sets on one frozen dataset snapshot."""
-        from server.app import get_app_state
-
         import strategy.builtins  # noqa: F401
+        from server.dependencies import get_app_state
         from strategy.registry import StrategyRegistry
 
         state = get_app_state()

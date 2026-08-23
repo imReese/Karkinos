@@ -209,7 +209,7 @@ def create_router() -> APIRouter:
 
 
 def _service() -> BrokerConnectorSoakService:
-    from server.app import get_app_state
+    from server.dependencies import get_app_state
 
     state = get_app_state()
     config = getattr(state, "config", None)
@@ -218,7 +218,7 @@ def _service() -> BrokerConnectorSoakService:
 
 
 def _runbook_service() -> BrokerConnectorSoakRunbookService:
-    from server.app import get_app_state
+    from server.dependencies import get_app_state
 
     state = get_app_state()
     config = getattr(state, "config", None)
@@ -227,7 +227,7 @@ def _runbook_service() -> BrokerConnectorSoakRunbookService:
 
 
 def _promotion_service() -> BrokerConnectorSoakPromotionService:
-    from server.app import get_app_state
+    from server.dependencies import get_app_state
 
     state = get_app_state()
     config = getattr(state, "config", None)

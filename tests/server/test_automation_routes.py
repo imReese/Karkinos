@@ -44,7 +44,7 @@ def _client_for_db(
         trading_controls=TradingControlState(db=db),
         hub=None,
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     app = FastAPI()
     app.include_router(create_router())
     return TestClient(app)
@@ -127,7 +127,7 @@ def test_automation_cockpit_route_reports_exact_running_daily_candidate_task(
         daily_decision_evidence_task=_RunningTask(),
         hub=None,
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     app = FastAPI()
     app.include_router(create_router())
 
@@ -342,7 +342,7 @@ def test_daily_candidate_run_uses_canonical_bound_service(
     monkeypatch.setattr(
         "server.services.daily_decision_evidence_automation."
         "build_daily_decision_evidence_automation_service",
-        lambda state: _Service(),
+        lambda state, **kwargs: _Service(),
     )
 
     response = client.post("/api/automation/run/daily-candidate", json={})
@@ -396,7 +396,7 @@ def test_automation_alert_routes_scan_list_and_ack(tmp_path, monkeypatch) -> Non
     controls = TradingControlState(db=db)
     controls.set_kill_switch(True, "operator pause")
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=db, trading_controls=controls, hub=None),
     )
     app = FastAPI()
@@ -459,7 +459,7 @@ def test_automation_alert_scan_route_records_connector_health_alert(
     db.init_sync()
     controls = TradingControlState(db=db)
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(
             db=db,
             config=SimpleNamespace(
@@ -716,7 +716,7 @@ def test_automation_cockpit_route_returns_read_only_summary(
     controls = TradingControlState(db=db)
     controls.set_kill_switch(True, "operator pause")
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=db, trading_controls=controls, hub=None),
     )
     app = FastAPI()

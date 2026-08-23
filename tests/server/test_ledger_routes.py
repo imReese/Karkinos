@@ -35,7 +35,7 @@ def test_ledger_entries_include_instrument_display_name(tmp_path, monkeypatch):
         source_ref="manual-stock-a-20260115-100000",
     )
     fake_state = SimpleNamespace(db=db)
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     router = ledger_routes.create_router()
     list_route = next(
@@ -62,7 +62,7 @@ def test_post_trade_and_read_positions_uses_ledger_projection(tmp_path, monkeypa
         scheduler=None,
         db=db,
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     ledger_router = ledger_routes.create_router()
     create_trade_route = next(
@@ -114,7 +114,7 @@ def test_ledger_trade_route_preserves_structured_sell_cost_fields(
     db.init_sync()
 
     fake_state = SimpleNamespace(db=db)
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     router = ledger_routes.create_router()
     create_trade = next(
@@ -184,7 +184,7 @@ def test_ledger_trade_route_uses_configured_fee_contract_when_fee_is_omitted(
             ),
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     router = ledger_routes.create_router()
     create_trade = next(
@@ -258,7 +258,7 @@ def test_ledger_trade_route_uses_symbol_exchange_transfer_fee_split(
             ),
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     router = ledger_routes.create_router()
     create_trade = next(
@@ -314,7 +314,7 @@ def test_ledger_trade_route_preserves_broker_fee_schedule_version(
             ),
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     router = ledger_routes.create_router()
     create_trade = next(
@@ -367,7 +367,7 @@ def test_ledger_trade_route_uses_configured_convertible_bond_fee_contract(
             ),
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     router = ledger_routes.create_router()
     create_trade = next(
@@ -439,7 +439,7 @@ def test_ledger_trade_settlement_route_confirms_broker_values(tmp_path, monkeypa
         source_ref="sell-stock-600066-20260703",
     )
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=db),
     )
 
@@ -504,7 +504,7 @@ def test_ledger_trade_settlement_route_rejects_inconsistent_net_cash(
         source_ref="sell-stock-600066-20260703",
     )
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=db),
     )
     router = ledger_routes.create_router()

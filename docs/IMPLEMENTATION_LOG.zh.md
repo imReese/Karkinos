@@ -33,7 +33,7 @@ v1.8 control-plane 基础以及截至 Phase 1.18 的 AI-native research 基础�
   一起原子迁移到新 run；即使旧 runtime 把 extension 留在祖先 run，也必须先有当前 retry lineage 才能恢复，
   且绝不跨日期迁移；
 - v0.2.10 验证证据：2,506 项 Python 测试与 697 项 Web 测试通过；Web 格式检查、生产构建、文档健康、
-  staged GitNexus 影响检查和 pre-commit 检查通过。验证未联系券商、未下单，也未修改
+  staged 变更范围检查和 pre-commit 检查通过。验证未联系券商、未下单，也未修改
   OMS/ledger/risk/capital 事实；
 - v0.2.4 Daily Data Flywheel：不可变 Account Truth 导入历史由隐私最小化的物质连续性契约分类。
   每日现金/持仓快照替代、历史非决策结算元数据整理和按时间追加的账户流水会自动继承已复核账户

@@ -16,6 +16,7 @@ from server.config_contract import (
     MIN_LIVE_POLL_INTERVAL_SECONDS,
     SUPPORTED_DATA_SOURCES,
 )
+from server.runtime_paths import resolve_data_dir
 
 _ASSET_CLASS_MAP = {
     "stock": AssetClass.STOCK,
@@ -83,11 +84,6 @@ class RuntimeContext:
 def resolve_config_path() -> Path:
     """Return the runtime config path, defaulting to ./config.json."""
     return Path(os.environ.get("KARKINOS_CONFIG_PATH") or "config.json")
-
-
-def resolve_data_dir() -> str:
-    """Return the runtime data directory, defaulting to data/store."""
-    return os.environ.get("KARKINOS_DATA_DIR") or "data/store"
 
 
 def load_runtime_environment_file(

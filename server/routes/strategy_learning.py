@@ -27,7 +27,7 @@ def create_router() -> APIRouter:
     ) -> dict[str, Any]:
         """Project reviewed learning evidence without provider or write effects."""
 
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             service = build_strategy_learning_review_service(get_app_state())

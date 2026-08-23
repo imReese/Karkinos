@@ -109,7 +109,7 @@ def create_router() -> APIRouter:
 
 def _service() -> ControlledSubmissionLedgerCorrectionService:
     from server.account_truth_gate import build_latest_account_truth_promotion_evidence
-    from server.app import get_app_state
+    from server.dependencies import get_app_state
 
     state = get_app_state()
     config = getattr(state, "config", None)

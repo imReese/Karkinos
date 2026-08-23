@@ -10,6 +10,7 @@ from core.event_bus import EventBus
 from core.events import FillEvent, OrderIntentEvent, SignalEvent
 from core.types import ZERO, OrderSide, Symbol
 from domain.instrument import Instrument
+from domain.portfolio_accounting import total_trade_fee
 from domain.position import Position
 
 logger = logging.getLogger(__name__)
@@ -139,19 +140,23 @@ class Portfolio:
         if symbol not in self.positions:
             self.positions[symbol] = Position(symbol)
 
+        total_fee = total_trade_fee(
+            commission=event.commission,
+            fee_breakdown=event.fee_breakdown,
+        )
         pos = self.positions[symbol]
         pos.update_on_fill(
             side=event.side.value,
             fill_quantity=event.fill_quantity,
             fill_price=event.fill_price,
-            commission=event.commission,
+            commission=total_fee,
         )
 
         # 更新资金
         if event.side == OrderSide.BUY:
-            self.cash -= event.fill_price * event.fill_quantity + event.commission
+            self.cash -= event.fill_price * event.fill_quantity + total_fee
         else:
-            self.cash += event.fill_price * event.fill_quantity - event.commission
+            self.cash += event.fill_price * event.fill_quantity - total_fee
 
     def advance_settlement_day(self) -> None:
         """每日结算：解冻 T+1。"""

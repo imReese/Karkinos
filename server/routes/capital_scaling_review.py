@@ -236,13 +236,13 @@ def create_router() -> APIRouter:
 
 
 def _service() -> CapitalScalingReviewAuditService:
-    from server.app import get_app_state
+    from server.dependencies import get_app_state
 
     return CapitalScalingReviewAuditService(db=get_app_state().db)
 
 
 def _evidence_service() -> CapitalScalingEvidenceWindowService:
-    from server.app import get_app_state
+    from server.dependencies import get_app_state
 
     state = get_app_state()
     return CapitalScalingEvidenceWindowService(

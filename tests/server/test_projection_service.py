@@ -330,7 +330,7 @@ def test_portfolio_route_keeps_legacy_rebuild_when_ledger_is_empty(monkeypatch):
         ),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -399,7 +399,7 @@ def test_portfolio_route_prefers_ledger_rows_over_legacy_trade_rows(monkeypatch)
         ),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -468,7 +468,7 @@ def test_portfolio_route_prefers_db_ledger_over_stale_scheduler_portfolio(monkey
         ),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -533,7 +533,7 @@ def test_live_holdings_groups_ledger_positions_by_metadata_asset_class(monkeypat
         ),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 

@@ -206,7 +206,7 @@ def test_current_route_service_uses_persisted_verification_without_runtime_gatew
             "runtime_gateway_call_performed": False,
         }
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         factory_module,
         "resolve_persisted_execution_gateway_verification",

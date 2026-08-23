@@ -37,6 +37,8 @@ class TestPositionBuy:
         pos.update_on_fill(
             "buy", Decimal("100"), Decimal("1800"), commission=Decimal("5")
         )
+        assert pos.avg_cost == Decimal("1800.05")
+        assert pos.cost_basis == Decimal("180005.00")
         assert pos.commission_paid == Decimal("5")
 
 

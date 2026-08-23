@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
@@ -12,16 +10,15 @@ from pydantic import BaseModel, ConfigDict, Field
 from server.ai_runtime.capture import (
     CaptureEvidenceType,
     CaptureSelectionError,
-    ContextCaptureAuditStore,
     HumanContextCaptureRequest,
     HumanResearchContextCaptureService,
 )
-from server.ai_runtime.evidence import (
-    CanonicalEvidenceRepository,
-    EvidenceIdentityMismatch,
+from server.ai_runtime.evidence import EvidenceIdentityMismatch
+from server.ai_runtime.karkinos_source import CaptureProjectionReaders
+from server.ai_runtime.store import IdempotencyConflict
+from server.services.ai_context_capture_factory import (
+    build_human_context_capture_service as build_capture_service,
 )
-from server.ai_runtime.karkinos_source import PersistedKarkinosCaptureSource
-from server.ai_runtime.store import AiAuditStore, IdempotencyConflict
 
 
 class HumanResearchContextCaptureRequest(BaseModel):
@@ -47,7 +44,7 @@ def create_router() -> APIRouter:
     async def capture_research_context(
         payload: HumanResearchContextCaptureRequest,
     ) -> dict:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         if state.db is None:
@@ -84,28 +81,26 @@ def build_human_context_capture_service(
     state,
 ) -> HumanResearchContextCaptureService:
     """Build audit-only capture services on the application's SQLite database."""
-    db_path = _database_path(state.db)
-    evidence_repository = CanonicalEvidenceRepository(db_path)
-    context_store = AiAuditStore(db_path)
-    capture_store = ContextCaptureAuditStore(db_path)
-    evidence_repository.init()
-    context_store.init()
-    capture_store.init()
-    return HumanResearchContextCaptureService(
-        source=PersistedKarkinosCaptureSource(state),
-        evidence_repository=evidence_repository,
-        context_store=context_store,
-        capture_store=capture_store,
-        now=_utc_now,
+    return build_capture_service(
+        state,
+        projection_readers=build_capture_projection_readers(),
     )
 
 
-def _database_path(db) -> Path:
-    path = getattr(db, "_path", None)
-    if path is None:
-        raise CaptureSelectionError("database path is unavailable")
-    return Path(path)
+def build_capture_projection_readers() -> CaptureProjectionReaders:
+    """Bind canonical application projections at the HTTP composition edge."""
+    from server.routes.account_strategy import _build_contribution_report
+    from server.routes.operations import build_today_operations_payload
+    from server.routes.portfolio import (
+        _current_valuation_snapshot,
+        build_account_state_response,
+        build_portfolio_snapshot,
+    )
 
-
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return CaptureProjectionReaders(
+        portfolio_snapshot=build_portfolio_snapshot,
+        account_state=build_account_state_response,
+        operations_today=build_today_operations_payload,
+        current_valuation_snapshot=_current_valuation_snapshot,
+        strategy_contribution_report=_build_contribution_report,
+    )

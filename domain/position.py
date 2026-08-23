@@ -5,6 +5,10 @@ from __future__ import annotations
 from decimal import Decimal
 
 from core.types import ZERO, Money, Symbol
+from domain.portfolio_accounting import (
+    moving_average_cost_after_buy,
+    realized_pnl_after_sell,
+)
 
 
 class Position:
@@ -21,10 +25,11 @@ class Position:
         self.symbol = symbol
         self.quantity: Decimal = ZERO  # 总持仓
         self.frozen_qty: Decimal = ZERO  # T+1 冻结数量（当日买入）
-        self.avg_cost: Decimal = ZERO  # 持仓均价（含佣金）
+        self.avg_cost: Decimal = ZERO  # 持仓均价（含全部已记录交易费用）
         self.realized_pnl: Decimal = ZERO  # 已实现盈亏
         self.unrealized_pnl: Decimal = ZERO  # 未实现盈亏
-        self.commission_paid: Decimal = ZERO  # 累计佣金
+        # Legacy public field name; value is the cumulative complete trade fee.
+        self.commission_paid: Decimal = ZERO
         self.market_value: Decimal = ZERO  # 当前市值
 
     @property
@@ -48,6 +53,9 @@ class Position:
 
         买入：加仓或新建，当日买入部分冻结（T+1）。
         卖出：减仓或清仓，按移动加权平均计算已实现盈亏。
+
+        ``commission`` is retained for API compatibility and represents the
+        fill's already-resolved total fee at this domain boundary.
         """
         if side == "buy":
             self._handle_buy(fill_quantity, fill_price, commission)
@@ -58,14 +66,13 @@ class Position:
 
     def _handle_buy(self, qty: Decimal, price: Decimal, commission: Decimal) -> None:
         """买入更新：加权平均计算新均价，冻结 T+1 数量。"""
-        if self.quantity == ZERO:
-            self.avg_cost = price
-        else:
-            # 移动加权平均
-            old_total = self.quantity * self.avg_cost
-            new_total = qty * price
-            total_qty = self.quantity + qty
-            self.avg_cost = (old_total + new_total) / total_qty
+        self.avg_cost = moving_average_cost_after_buy(
+            current_quantity=self.quantity,
+            current_average_cost=self.avg_cost,
+            fill_quantity=qty,
+            fill_price=price,
+            total_fee=commission,
+        )
 
         self.quantity += qty
         self.frozen_qty += qty  # 当日买入冻结
@@ -78,8 +85,12 @@ class Position:
                 f"Sell quantity {qty} exceeds position {self.quantity} for {self.symbol}"
             )
 
-        # 已实现盈亏 = (卖出价 - 均价) × 数量 - 佣金
-        pnl = (price - self.avg_cost) * qty - commission
+        pnl = realized_pnl_after_sell(
+            average_cost=self.avg_cost,
+            fill_quantity=qty,
+            fill_price=price,
+            total_fee=commission,
+        )
         self.realized_pnl += pnl
         self.commission_paid += commission
         self.quantity -= qty

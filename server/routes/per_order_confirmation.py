@@ -196,7 +196,7 @@ def create_router() -> APIRouter:
 
 
 def _service() -> PerOrderConfirmationService:
-    from server.app import get_app_state
+    from server.dependencies import get_app_state
 
     state = get_app_state()
     config = getattr(state, "config", None)
@@ -236,6 +236,6 @@ def _service() -> PerOrderConfirmationService:
 
 
 def _current_dossier_service() -> CurrentPerOrderDossierService:
-    from server.app import get_app_state
+    from server.dependencies import get_app_state
 
     return build_current_per_order_dossier_service(get_app_state())

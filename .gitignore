@@ -146,9 +146,6 @@ config.json
 secret.py
 broker_statement.csv
 
-# GitNexus index (regenerated locally)
-.gitnexus/
-
 # Local AI tool state
 .claude/
 .codex

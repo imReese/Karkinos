@@ -164,7 +164,7 @@ def test_record_signal_review_outcome_is_evidence_bound_and_journaled(
     db.init_sync()
     _seed_signal_chain(db)
     fake_state = SimpleNamespace(db=db)
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     preview_endpoint = _endpoint(
         "/api/signals/journal/{signal_id}/review/preview", method="POST"
     )
@@ -201,7 +201,7 @@ def test_signal_review_preview_is_read_only_and_record_is_idempotent(
     db.init_sync()
     _seed_signal_chain(db)
     fake_state = SimpleNamespace(db=db)
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     preview_endpoint = _endpoint(
         "/api/signals/journal/{signal_id}/review/preview", method="POST"
     )
@@ -258,7 +258,7 @@ def test_signal_review_rejects_evidence_drift_and_unbound_outcome(
     db.init_sync()
     _seed_signal_chain(db)
     fake_state = SimpleNamespace(db=db)
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     preview_endpoint = _endpoint(
         "/api/signals/journal/{signal_id}/review/preview", method="POST"
     )
@@ -299,7 +299,7 @@ def test_signal_review_replay_detects_tampering(monkeypatch, tmp_path) -> None:
     db.init_sync()
     _seed_signal_chain(db)
     fake_state = SimpleNamespace(db=db)
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     preview_endpoint = _endpoint(
         "/api/signals/journal/{signal_id}/review/preview", method="POST"
     )
@@ -334,7 +334,7 @@ def test_signal_review_read_rejects_tampered_main_record(monkeypatch, tmp_path) 
     db.init_sync()
     _seed_signal_chain(db)
     fake_state = SimpleNamespace(db=db)
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     preview_endpoint = _endpoint(
         "/api/signals/journal/{signal_id}/review/preview", method="POST"
     )
@@ -378,7 +378,7 @@ def test_signal_review_binds_canonical_contribution_and_exposes_later_drift(
     _seed_signal_chain(db)
     published = _seed_bound_contribution_chain(db)
     fake_state = SimpleNamespace(db=db)
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     preview_endpoint = _endpoint(
         "/api/signals/journal/{signal_id}/review/preview", method="POST"
     )

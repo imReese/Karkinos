@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { apiClient } from '../../lib/api/client';
+import { apiClient, postJson } from '../../lib/api/client';
 import type { DailyOperationsSummary } from '../account/api';
 import type { DailyTradingPlanBlockerSummary } from '../decision/api';
 
@@ -2819,33 +2819,6 @@ export function useReviewPaperShadowRunMutation() {
       ]);
     },
   });
-}
-
-async function postJson<T>(path: string, body?: unknown): Promise<T> {
-  const response = await fetch(path, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  if (!response.ok) {
-    const raw = await response.text();
-    let detail = raw;
-    try {
-      const parsed = JSON.parse(raw) as { detail?: unknown };
-      if (typeof parsed.detail === 'string') {
-        detail = parsed.detail;
-      } else if (parsed.detail !== undefined) {
-        detail = JSON.stringify(parsed.detail);
-      }
-    } catch {
-      // Preserve the server body when it is not JSON.
-    }
-    throw new Error(detail || `Request failed: ${response.status}`);
-  }
-  return (await response.json()) as T;
 }
 
 export function useOperatorApprovalStatusQuery(enabled: boolean) {

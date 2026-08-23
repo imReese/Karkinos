@@ -68,7 +68,7 @@ class FixtureService:
 def _client(monkeypatch, service):
     initialize_calls = []
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=object()),
     )
 

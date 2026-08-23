@@ -1,7 +1,13 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "karkinos"
-version = "0.3.0"
+dynamic = ["version"]
 description = "面向中国市场的个人量化投研与交易平台"
+readme = "README.md"
+license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
     "akshare>=1.18.91",
@@ -9,8 +15,6 @@ dependencies = [
     "pandas>=3.0.5",
     "numpy>=2.5.2",
     "pyarrow>=25.0.1",
-    "pytest>=9.1.1",
-    "pytest-asyncio>=1.4.0",
     "httpx>=0.28.1",
     "cryptography>=50.0.0",
     "xlrd>=2.0.2",
@@ -19,11 +23,14 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
     "pip-audit==2.10.1",
     "pre-commit>=4.6.2",
     "isort>=8.0.1",
     "black>=26.5.1",
+    "mypy>=1.18.2",
+    "ruff>=0.15.1",
 ]
 server = [
     "fastapi>=0.141.1",
@@ -33,6 +40,11 @@ server = [
     "websockets>=16.1",
     "pydantic>=2.13.4",
 ]
+
+[project.urls]
+Homepage = "https://github.com/imReese/Karkinos"
+Repository = "https://github.com/imReese/Karkinos"
+Issues = "https://github.com/imReese/Karkinos/issues"
 
 [tool.setuptools.packages.find]
 include = [
@@ -49,6 +61,9 @@ include = [
     "server", "server.*",
 ]
 
+[tool.setuptools.dynamic]
+version = {attr = "server.__version__"}
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
@@ -60,15 +75,27 @@ markers = [
     "slow: deterministic tests that intentionally exercise timeout or wait behavior",
 ]
 
-[dependency-groups]
-dev-dependencies = [
-    "pytest>=9.1.1",
-    "pytest-cov>=7.1.0",
-    "pip-audit==2.10.1",
-    "pre-commit>=4.6.2",
-    "isort>=8.0.1",
-    "black>=26.5.1",
-]
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+# Start with correctness rules that are clean across the existing repository.
+# Broader style cleanup remains incremental through Black and isort.
+select = ["E9", "F63", "F7", "F82"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["core", "domain", "risk", "execution", "notification"]
+check_untyped_defs = true
+ignore_missing_imports = true
+no_implicit_optional = true
+show_error_codes = true
+strict_equality = true
+warn_redundant_casts = true
+warn_unreachable = true
+warn_unused_configs = true
+warn_unused_ignores = true
 
 # === isort 配置 ===
 # 与 black 兼容的关键设置

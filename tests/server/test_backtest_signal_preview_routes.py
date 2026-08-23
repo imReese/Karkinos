@@ -20,9 +20,15 @@ def _route(router, path: str, method: str = "GET"):
     )
 
 
-def test_backtest_signal_preview_route_returns_research_only_candidate() -> None:
+def test_backtest_signal_preview_route_returns_research_only_candidate(
+    monkeypatch,
+) -> None:
     from server.routes import backtest as backtest_routes
 
+    monkeypatch.setattr(
+        "server.dependencies.get_app_state",
+        lambda: SimpleNamespace(config=None),
+    )
     router = backtest_routes.create_router()
     endpoint = _route(router, "/api/backtest/signal-preview", "POST").endpoint
 
@@ -107,6 +113,10 @@ def test_backtest_signal_preview_route_can_load_server_side_bars(monkeypatch) ->
     monkeypatch.setattr(
         "data.manager.build_sources", lambda **kwargs: {"fixture": object()}
     )
+    monkeypatch.setattr(
+        "server.dependencies.get_app_state",
+        lambda: SimpleNamespace(config=None),
+    )
 
     router = backtest_routes.create_router()
     endpoint = _route(router, "/api/backtest/signal-preview", "POST").endpoint
@@ -148,6 +158,10 @@ def test_backtest_signal_preview_route_rejects_unknown_params_before_running(
         raise AssertionError("signal preview should not run invalid params")
 
     monkeypatch.setattr(backtest_routes, "_run_strategy_signal_preview", fail_if_called)
+    monkeypatch.setattr(
+        "server.dependencies.get_app_state",
+        lambda: SimpleNamespace(config=None),
+    )
 
     with pytest.raises(HTTPException) as error:
         asyncio.run(
@@ -204,7 +218,7 @@ def test_backtest_risk_preview_route_evaluates_without_order_or_audit_writes(
             record_order_sync=forbid("record_order_sync"),
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     router = backtest_routes.create_router()
     endpoint = _route(router, "/api/backtest/risk-preview", "POST").endpoint
@@ -261,7 +275,7 @@ def test_backtest_paper_shadow_preview_route_simulates_without_order_or_fill_wri
             ),
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     router = backtest_routes.create_router()
     endpoint = _route(router, "/api/backtest/paper-shadow-preview", "POST").endpoint
@@ -330,7 +344,7 @@ def test_backtest_attribution_preview_summarizes_preview_evidence_without_writes
             insert_ledger_entry_sync=forbid("insert_ledger_entry_sync"),
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     router = backtest_routes.create_router()
     endpoint = _route(router, "/api/backtest/attribution-preview", "POST").endpoint

@@ -32,6 +32,7 @@ from server.config import (
     ServerConfig,
     TrustedOperatorIdentityConfig,
 )
+from server.dependencies import AppState
 from server.models import SettingsResponse
 
 
@@ -1473,8 +1474,13 @@ def test_lifespan_reuses_cached_runtime_config(monkeypatch):
 
     runtime_config = ServerConfig(live_auto_start=False)
     schedulers = []
+    application_state = AppState()
     fake_app = SimpleNamespace(
-        state=SimpleNamespace(config_overrides={}, runtime_config=runtime_config)
+        state=SimpleNamespace(
+            app_state=application_state,
+            config_overrides={},
+            runtime_config=runtime_config,
+        )
     )
 
     class FakeDB:
@@ -1518,19 +1524,16 @@ def test_lifespan_reuses_cached_runtime_config(monkeypatch):
     monkeypatch.setattr(
         app_module, "_confirm_pending_fund_orders_on_startup", lambda state: None
     )
-    app_module._app_state = None
 
     async def run_lifespan():
         async with app_module.lifespan(fake_app):
-            assert app_module.get_app_state().config is runtime_config
+            assert fake_app.state.app_state is application_state
+            assert application_state.config is runtime_config
             assert fake_app.state.config is runtime_config
             assert len(schedulers) == 1
             assert schedulers[0].started is False
 
-    try:
-        asyncio.run(run_lifespan())
-    finally:
-        app_module._app_state = None
+    asyncio.run(run_lifespan())
 
 
 def test_lifespan_starts_daily_decision_evidence_automation_with_live_scheduler(
@@ -1543,8 +1546,13 @@ def test_lifespan_starts_daily_decision_evidence_automation_with_live_scheduler(
         market_calendar_auto_sync=False,
         live_poll_interval=73,
     )
+    application_state = AppState()
     fake_app = SimpleNamespace(
-        state=SimpleNamespace(config_overrides={}, runtime_config=runtime_config)
+        state=SimpleNamespace(
+            app_state=application_state,
+            config_overrides={},
+            runtime_config=runtime_config,
+        )
     )
     scheduler_started = False
     automation_started = asyncio.Event()
@@ -1575,7 +1583,9 @@ def test_lifespan_starts_daily_decision_evidence_automation_with_live_scheduler(
         def stop(self):
             pass
 
-    async def fake_decision_evidence_loop(*, state, interval_seconds):
+    async def fake_decision_evidence_loop(*, state, interval_seconds, **adapters):
+        assert set(adapters) == {"plan_reader", "risk_runner", "quote_refresher"}
+        assert all(callable(adapter) for adapter in adapters.values())
         automation_arguments.update(
             {"state": state, "interval_seconds": interval_seconds}
         )
@@ -1599,21 +1609,17 @@ def test_lifespan_starts_daily_decision_evidence_automation_with_live_scheduler(
     monkeypatch.setattr(
         app_module, "_confirm_pending_fund_orders_on_startup", lambda state: None
     )
-    app_module._app_state = None
 
     async def run_lifespan():
         async with app_module.lifespan(fake_app):
             await asyncio.wait_for(automation_started.wait(), timeout=1)
             assert scheduler_started is True
             assert automation_arguments == {
-                "state": app_module.get_app_state(),
+                "state": application_state,
                 "interval_seconds": 73,
             }
 
-    try:
-        asyncio.run(run_lifespan())
-    finally:
-        app_module._app_state = None
+    asyncio.run(run_lifespan())
 
 
 def _cors_middleware_options(app):

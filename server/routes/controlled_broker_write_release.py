@@ -170,7 +170,7 @@ def build_controlled_broker_write_release_service(
 
 
 def _service() -> ControlledBrokerWriteReleaseService:
-    from server.app import get_app_state
+    from server.dependencies import get_app_state
 
     return build_controlled_broker_write_release_service(get_app_state())
 

@@ -56,7 +56,7 @@ def create_router() -> APIRouter:
     @r.get("", response_model=list[SignalResponse])
     async def get_signals(limit: int = 50, offset: int = 0) -> list[SignalResponse]:
         """获取信号历史（分页）。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         db = state.db
@@ -78,7 +78,7 @@ def create_router() -> APIRouter:
     @r.get("/latest", response_model=list[SignalResponse])
     async def get_latest_signals(limit: int = 10) -> list[SignalResponse]:
         """获取最新信号。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         db = state.db
@@ -100,7 +100,7 @@ def create_router() -> APIRouter:
     @r.get("/actions", response_model=list[ActionCard])
     async def get_action_cards(limit: int = 6) -> list[ActionCard]:
         """同步信号到待执行任务，并返回首页动作卡。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         db = state.db
@@ -149,7 +149,7 @@ def create_router() -> APIRouter:
         limit: int = 20, offset: int = 0
     ) -> list[SignalJournalEntry]:
         """Return signal → action → risk audit chain entries."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         rows = await state.db.list_signal_journal(limit=limit, offset=offset)
@@ -158,7 +158,7 @@ def create_router() -> APIRouter:
     @r.post("/journal/{signal_id}/review/preview")
     async def preview_signal_journal_review(signal_id: int) -> dict:
         """Build a read-only review target from persisted evidence."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             service = _decision_outcome_review_service(get_app_state())
@@ -173,7 +173,7 @@ def create_router() -> APIRouter:
         body: SignalJournalReviewRequest,
     ) -> dict:
         """Record an idempotent review bound to the exact previewed evidence."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             service = _decision_outcome_review_service(get_app_state())
@@ -197,7 +197,7 @@ def create_router() -> APIRouter:
     @r.get("/journal/reviews/{review_id}")
     async def get_signal_journal_review(review_id: str) -> dict:
         """Revalidate one stored review against current persisted evidence."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             service = _decision_outcome_review_service(get_app_state())
@@ -209,7 +209,7 @@ def create_router() -> APIRouter:
     @r.get("/journal/reviews/{review_id}/replay")
     async def replay_signal_journal_review(review_id: str) -> dict:
         """Replay the append-only decision review audit chain."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             service = _decision_outcome_review_service(get_app_state())
@@ -223,7 +223,7 @@ def create_router() -> APIRouter:
         action_id: int, body: ActionTaskStatusUpdate
     ) -> ActionCard:
         """更新待执行任务状态。"""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         task = await state.db.update_action_task_status(action_id, body.status)

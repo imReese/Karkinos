@@ -53,20 +53,21 @@ from server.ai_runtime.strategy_research import (
     CritiqueRequest,
     FormulaBacktestRequest,
     HypothesisGenerationRequest,
+    StrategyResearchRejected,
     StrategyResearchSelection,
     _rolling_oos_parameters,
 )
 from server.bootstrap import build_strategy
 from server.config import BacktestConfig
 from server.models import BacktestRequest
-from server.routes.backtest import (
-    _backtest_report_metrics_json,
-    _fill_to_response,
-)
 from server.services.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactRejected,
     DailyStrategyArtifactStore,
     build_daily_strategy_promotion_binding,
+)
+from server.services.backtest_result_projection import (
+    build_backtest_report_metrics_json,
+    fill_to_response,
 )
 from server.services.market_universe_automation import verified_trading_dates
 from server.services.market_universe_truth import (
@@ -4477,7 +4478,7 @@ class AiShadowResearchAutomationService:
         self._research_service_builder = research_service_builder
         self._reviewed_fee_schedule_resolver = reviewed_fee_schedule_resolver
         self._daily_artifacts = daily_artifact_store or DailyStrategyArtifactStore(
-            db_path=Path(self._db._path),
+            db_path=Path(self._db.path),
             backup_root=Path(store._path).parent / "strategy-research-backups",
         )
         self._now = now or (lambda: datetime.now(timezone.utc))
@@ -5761,9 +5762,12 @@ class AiShadowResearchAutomationService:
             "metrics_json": metrics_json,
             "cost_summary_json": result.cost_summary.to_json_dict(),
             "evidence_json": evidence,
-            "fills": [_fill_to_response(fill) for fill in result.fills],
+            "fills": [fill_to_response(fill) for fill in result.fills],
         }
-        payload["metrics_json"] = _backtest_report_metrics_json(request, payload)
+        payload["metrics_json"] = build_backtest_report_metrics_json(
+            request,
+            payload,
+        )
         return PreparedBaseline(
             seed_result_id=int(seed["id"]),
             market_date=market_date,
@@ -5780,11 +5784,9 @@ class AiShadowResearchAutomationService:
         return self._reviewed_fee_schedule_resolver(**kwargs)
 
     def _build_research_service(self, *, external: bool) -> Any:
-        if self._research_service_builder is not None:
-            return self._research_service_builder(external)
-        from server.routes.ai_strategy_research import _build_write_service
-
-        return _build_write_service(self._state, external=external)
+        if self._research_service_builder is None:
+            raise ShadowResearchRejected("strategy_research_service_builder_missing")
+        return self._research_service_builder(external)
 
     def _require_deepseek_provider(self) -> None:
         """Fail closed before export unless the configured edge is DeepSeek."""
@@ -6060,6 +6062,8 @@ class _NullEventBus:
 
 def build_ai_shadow_research_automation_service(
     state: Any,
+    *,
+    research_service_builder: Callable[[bool], Any],
 ) -> AiShadowResearchAutomationService:
     path = Path(getattr(state.db, "_path"))
     store = ShadowResearchStore(path)
@@ -6071,6 +6075,7 @@ def build_ai_shadow_research_automation_service(
         state=state,
         store=store,
         data_store=DataStore(resolve_data_dir()),
+        research_service_builder=research_service_builder,
         reviewed_fee_schedule_resolver=lambda **kwargs: resolve_reviewed_fee_schedule(
             state, **kwargs
         ),
@@ -6078,14 +6083,20 @@ def build_ai_shadow_research_automation_service(
 
 
 async def run_ai_shadow_research_automation_loop(
-    *, state: Any, interval_seconds: float = 300.0
+    *,
+    state: Any,
+    research_service_builder: Callable[[bool], Any],
+    interval_seconds: float = 300.0,
 ) -> None:
     """Poll a read-mostly standing policy and run once per new evidence identity."""
     service: AiShadowResearchAutomationService | None = None
     while True:
         try:
             if service is None:
-                service = build_ai_shadow_research_automation_service(state)
+                service = build_ai_shadow_research_automation_service(
+                    state,
+                    research_service_builder=research_service_builder,
+                )
             await service.run_once()
         except asyncio.CancelledError:
             raise

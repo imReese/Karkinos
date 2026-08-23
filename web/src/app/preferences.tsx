@@ -7,7 +7,9 @@ import {
   type ReactNode,
 } from 'react';
 
-export type Locale = 'en' | 'zh';
+import type { Locale } from '../shared/locale';
+
+export type { Locale } from '../shared/locale';
 export type ThemePreference = 'system' | 'light' | 'dark';
 type ResolvedTheme = 'light' | 'dark';
 

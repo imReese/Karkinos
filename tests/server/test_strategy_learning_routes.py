@@ -39,7 +39,7 @@ def test_strategy_learning_queue_route_is_read_only(monkeypatch) -> None:
         lambda state: fake,
     )
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=object()),
     )
     app = FastAPI()

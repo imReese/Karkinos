@@ -137,7 +137,7 @@ def test_kill_switch_routes_read_and_update_state(monkeypatch) -> None:
     controls = TradingControlState()
     hub = SimpleNamespace(broadcast=lambda data: None)
     fake_state = SimpleNamespace(trading_controls=controls, hub=hub)
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     get_endpoint = _endpoint("/api/trading/kill-switch")
     put_endpoint = _endpoint("/api/trading/kill-switch", method="PUT")
@@ -229,7 +229,7 @@ def test_manual_order_confirmation_blocks_unlinked_legacy_order_but_rejects_safe
         trading_controls=TradingControlState(),
         hub=SimpleNamespace(broadcast=lambda data: None),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     confirm_endpoint = _endpoint(
         "/api/trading/orders/{order_id}/confirm",
@@ -271,7 +271,7 @@ def test_create_manual_order_blocks_risk_passed_action_without_promotion_evidenc
         trading_controls=TradingControlState(),
         hub=SimpleNamespace(broadcast=lambda data: broadcasts.append(data)),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     endpoint = _endpoint(
         "/api/trading/actions/{action_id}/manual-order",
@@ -306,7 +306,7 @@ def test_create_manual_order_writes_only_after_current_gate_passes(
         trading_controls=TradingControlState(),
         hub=SimpleNamespace(broadcast=lambda data: broadcasts.append(data)),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         trading_routes,
         "_current_action_manual_ticket_gate",
@@ -600,7 +600,7 @@ def test_create_manual_order_rejects_actions_not_ready_for_manual_confirmation(
         trading_controls=TradingControlState(),
         hub=None,
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     endpoint = _endpoint(
         "/api/trading/actions/{action_id}/manual-order",
         method="POST",
@@ -662,7 +662,7 @@ def test_manual_order_decisions_update_action_status_and_signal_journal(
         trading_controls=TradingControlState(),
         hub=None,
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         trading_routes,
         "_current_action_manual_ticket_gate",
@@ -746,7 +746,7 @@ def test_daily_shadow_route_delegates_to_canonical_decision_plan_and_service(
         trading_controls=TradingControlState(),
         hub=None,
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "server.routes.decision._decision_portfolio_context",
         lambda state: {"source": "persisted_account_truth"},
@@ -791,7 +791,7 @@ def test_daily_shadow_route_rejects_caller_supplied_equity(
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     fake_state = SimpleNamespace(db=db, hub=None)
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     endpoint = _endpoint("/api/trading/shadow-runs/daily", method="POST")
 
     with pytest.raises(HTTPException) as exc:
@@ -835,7 +835,7 @@ def test_shadow_order_divergence_review_updates_paper_fact_without_execution(
         trading_controls=TradingControlState(),
         hub=None,
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     review_endpoint = _endpoint(
         "/api/trading/order-facts/{order_id}/shadow-divergence-review",
         method="POST",
@@ -891,7 +891,7 @@ def test_shadow_order_divergence_review_rejects_non_shadow_order(
         trading_controls=TradingControlState(),
         hub=None,
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     endpoint = _endpoint(
         "/api/trading/order-facts/{order_id}/shadow-divergence-review",
         method="POST",
@@ -953,7 +953,7 @@ def test_trading_routes_list_shared_order_and_fill_facts(
         trading_controls=TradingControlState(),
         hub=None,
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     orders_endpoint = _endpoint("/api/trading/order-facts")
     fills_endpoint = _endpoint("/api/trading/fills")

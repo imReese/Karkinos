@@ -185,7 +185,7 @@ def test_session_start_account_truth_route_service_wires_current_source(
         captured["max_age_seconds"] = max_age_seconds
         return {"status": "blocked"}
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         route_module,
         "build_latest_account_truth_promotion_evidence",

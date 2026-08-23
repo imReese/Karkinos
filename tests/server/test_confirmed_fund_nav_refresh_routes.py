@@ -110,7 +110,7 @@ def test_confirmed_fund_nav_refresh_persists_audited_evidence_only(
         },
     )
     state = _state(db)
-    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
     ledger_before = db.get_ledger_entries_sync(limit=100)
     request_id = "confirmed-nav-route-0001"
 
@@ -168,7 +168,7 @@ def test_confirmed_fund_nav_refresh_replays_same_request_without_provider_contac
             "akshare": source,
         },
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: _state(db))
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: _state(db))
     request = ConfirmedFundNavRefreshRequest(
         symbols=["FUND-A"],
         request_id="confirmed-nav-route-replay-0001",
@@ -198,7 +198,7 @@ def test_confirmed_fund_nav_refresh_maps_request_payload_drift_to_conflict(
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
-    monkeypatch.setattr("server.app.get_app_state", lambda: _state(db))
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: _state(db))
 
     def reject_payload_drift(*args, **kwargs):
         raise fund_nav_sync.FundNavSyncIdempotencyConflict("payload drift")
@@ -242,7 +242,7 @@ def test_confirmed_fund_nav_refresh_rejects_estimate_and_keeps_review_open(
             "deterministic_fixture": source,
         },
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: _state(db))
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: _state(db))
 
     response = asyncio.run(
         _route_endpoint()(ConfirmedFundNavRefreshRequest(symbols=["FUND-A"]))
@@ -277,7 +277,7 @@ def test_confirmed_fund_nav_refresh_rejects_non_fund_before_provider_contact(
         },
     )
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: _state(db, asset_class="stock"),
     )
 

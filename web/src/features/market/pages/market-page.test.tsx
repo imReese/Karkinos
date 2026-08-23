@@ -3,8 +3,8 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { PreferencesProvider } from './preferences';
-import { MarketPage } from './router';
+import { PreferencesProvider } from '../../../app/preferences';
+import { MarketPage } from './market-page';
 
 function jsonResponse(body: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(body), {

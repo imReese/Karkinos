@@ -160,7 +160,7 @@ def test_decision_trading_plan_route_returns_read_only_order_intent(monkeypatch)
             ),
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         decision_routes,
         "_account_truth_gate_evidence",

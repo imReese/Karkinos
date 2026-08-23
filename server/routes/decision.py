@@ -122,7 +122,7 @@ def create_router() -> APIRouter:
 
     @r.get("/today")
     async def get_today_decision() -> dict[str, Any]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         return await _today_decision_payload(state)
@@ -130,7 +130,7 @@ def create_router() -> APIRouter:
     @r.get("/quality")
     async def get_decision_quality() -> dict[str, Any]:
         """Project the current target and captured North Star history."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             state = get_app_state()
@@ -146,7 +146,7 @@ def create_router() -> APIRouter:
         body: DecisionQualityCaptureBody,
     ) -> dict[str, Any]:
         """Append one evidence-bound daily quality snapshot."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             state = get_app_state()
@@ -169,7 +169,7 @@ def create_router() -> APIRouter:
     @r.get("/quality/snapshots/{snapshot_id}")
     async def get_decision_quality_snapshot(snapshot_id: str) -> dict[str, Any]:
         """Read one immutable capture together with its audit replay."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             service = _decision_quality_service(get_app_state())
@@ -180,7 +180,7 @@ def create_router() -> APIRouter:
     @r.get("/quality/snapshots/{snapshot_id}/replay")
     async def replay_decision_quality_snapshot(snapshot_id: str) -> dict[str, Any]:
         """Verify the append-only capture event chain."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             service = _decision_quality_service(get_app_state())
@@ -191,7 +191,7 @@ def create_router() -> APIRouter:
 
     @r.get("/trading-plan")
     async def get_daily_trading_plan() -> dict[str, Any]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
         from server.services.daily_trading_plan import build_daily_trading_plan
 
         state = get_app_state()
@@ -211,13 +211,13 @@ def create_router() -> APIRouter:
 
     @r.post("/pre-trade-risk/batch")
     async def run_batch_pre_trade_risk() -> dict[str, Any]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         return await run_batch_pre_trade_risk_for_state(get_app_state())
 
     @r.get("/intraday")
     async def get_intraday_decision() -> dict[str, Any]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         db = state.db

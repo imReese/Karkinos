@@ -34,6 +34,29 @@ ACCOUNT_TRUTH_PROMOTION_MAX_AGE_SECONDS = 86400
 _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 
 
+def missing_account_truth_score_payload() -> dict[str, object]:
+    """Return the shared fail-closed projection when no score is available."""
+    return {
+        "schema_version": "karkinos.account_truth.score.v1",
+        "status": "missing",
+        "import_run_id": None,
+        "score": None,
+        "gate_status": "blocked",
+        "cash_status": "missing",
+        "position_status": "missing",
+        "fee_status": "missing",
+        "cost_basis_status": "missing",
+        "data_freshness_status": "missing",
+        "unresolved_mismatch_count": None,
+        "resolved_review_count": 0,
+        "required_actions": ["import_and_reconcile_broker_evidence"],
+        "blocking_reasons": ["account_truth_score_unavailable"],
+        "limitations": [
+            "Account Truth review requires staged broker evidence before trusted use."
+        ],
+    }
+
+
 def build_latest_account_truth_score_payload(
     state: Any,
     *,

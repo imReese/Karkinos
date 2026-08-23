@@ -2,9 +2,11 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test, vi } from 'vitest';
 
-import type { MarketCalendarSnapshot } from '../features/market/api';
-import { PreferencesProvider } from './preferences';
-import { ReturnCalendarCard } from './router';
+import { PreferencesProvider } from '../../../app/preferences';
+import {
+  ReturnCalendarCard,
+  type ReturnCalendarMarketCalendar,
+} from './return-calendar-card';
 
 const timeline = [
   {
@@ -72,33 +74,29 @@ const positionSnapshot = [
   },
 ];
 
-const januaryCalendarSnapshot: Pick<MarketCalendarSnapshot, 'days' | 'status'> =
-  {
-    status: 'available',
-    days: [
-      {
-        schema_version: 'karkinos.market_calendar.v1',
-        date: '2026-01-01',
-        day_type: 'closed',
-        reason_code: 'market_closed',
-        reason: '官方公告：元旦休市',
-        is_trading_day: false,
-      },
-      {
-        schema_version: 'karkinos.market_calendar.v1',
-        date: '2026-01-04',
-        day_type: 'weekend',
-        reason_code: 'weekend',
-        reason: '周末',
-        is_trading_day: false,
-      },
-    ],
-  };
+const januaryCalendarSnapshot: ReturnCalendarMarketCalendar = {
+  status: 'available',
+  days: [
+    {
+      schema_version: 'karkinos.market_calendar.v1',
+      date: '2026-01-01',
+      day_type: 'closed',
+      reason_code: 'market_closed',
+      reason: '官方公告：元旦休市',
+      is_trading_day: false,
+    },
+    {
+      schema_version: 'karkinos.market_calendar.v1',
+      date: '2026-01-04',
+      day_type: 'weekend',
+      reason_code: 'weekend',
+      reason: '周末',
+      is_trading_day: false,
+    },
+  ],
+};
 
-const dragonBoatCalendarSnapshot: Pick<
-  MarketCalendarSnapshot,
-  'days' | 'status'
-> = {
+const dragonBoatCalendarSnapshot: ReturnCalendarMarketCalendar = {
   status: 'available',
   days: [
     {

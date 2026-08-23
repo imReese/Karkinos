@@ -106,7 +106,7 @@ def build_signed_broker_adapter_release_review_service(
 
 
 def _service() -> SignedBrokerAdapterReleaseReviewService:
-    from server.app import get_app_state
+    from server.dependencies import get_app_state
 
     return build_signed_broker_adapter_release_review_service(get_app_state())
 

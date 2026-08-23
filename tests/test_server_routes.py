@@ -398,7 +398,7 @@ def test_backtest_run_returns_metrics_json_cost_summary_and_fills(
         ],
     }
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     def fake_run_backtest(request, config, db=None):
         captured_runner_args["db"] = db
@@ -858,7 +858,7 @@ def test_backtest_result_returns_json_contract_and_empty_fills(monkeypatch):
             }
 
     fake_state = SimpleNamespace(db=FakeDb())
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint(7))
 
@@ -927,7 +927,7 @@ def test_backtest_result_normalizes_legacy_final_equity_from_curve(monkeypatch):
             }
 
     fake_state = SimpleNamespace(db=FakeDb())
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint(8))
 
@@ -1027,7 +1027,7 @@ def test_market_quote_prefers_persisted_snapshot_and_refreshes_async(monkeypatch
                 "timestamp": "2026-04-18T09:41:00",
             }
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
         "data.manager.build_sources", lambda **kwargs: {"akshare": FakeSource()}
@@ -1073,7 +1073,7 @@ def test_market_quote_refresh_is_throttled(monkeypatch):
     )
 
     market_routes._QUOTE_REFRESH_ATTEMPTS.clear()
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
 
     first_tasks = BackgroundTasks()
@@ -1121,7 +1121,7 @@ def test_market_quote_accepts_scheduler_quote_with_symbol(monkeypatch):
     )
 
     market_routes._QUOTE_REFRESH_ATTEMPTS.clear()
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
 
     response = asyncio.run(endpoint("600003", BackgroundTasks()))
@@ -1163,7 +1163,7 @@ def test_market_quote_prefers_persisted_snapshot_without_refresh_when_closed(
         db=SimpleNamespace(get_latest_quote=fake_get_latest_quote),
     )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
 
     background_tasks = BackgroundTasks()
@@ -1201,7 +1201,7 @@ def test_market_data_health_uses_watchlist_and_latest_snapshots(monkeypatch):
         ),
         db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
 
     response = asyncio.run(endpoint())
@@ -1247,7 +1247,7 @@ def test_market_data_health_includes_default_market_indices(monkeypatch):
             list_latest_quotes_sync=lambda: [],
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
 
     response = asyncio.run(health_route.endpoint())
@@ -1307,7 +1307,7 @@ def test_market_data_health_prefers_materialized_latest_quotes(monkeypatch):
         scheduler=SimpleNamespace(watchlist=[("600519", "stock")], latest_quotes={}),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
 
     response = asyncio.run(health_route.endpoint())
@@ -1357,7 +1357,7 @@ def test_market_data_health_preserves_cache_source_health(monkeypatch):
         scheduler=SimpleNamespace(watchlist=[("600519", "stock")], latest_quotes={}),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
 
     response = asyncio.run(health_route.endpoint())
@@ -1405,7 +1405,7 @@ def test_market_data_health_treats_live_fund_fallback_as_supported(monkeypatch):
         scheduler=SimpleNamespace(watchlist=[("019999", "fund")], latest_quotes={}),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "server.routes.portfolio.get_shanghai_now",
         lambda now=None: datetime.fromisoformat("2026-06-15T11:11:36+08:00"),
@@ -1664,7 +1664,7 @@ def test_market_data_health_includes_ledger_holdings_not_in_scheduler(monkeypatc
         ),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
 
     response = asyncio.run(health_route.endpoint())
@@ -1731,7 +1731,7 @@ def test_market_data_health_prefers_materialized_quote_over_runtime(monkeypatch)
         ),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
 
     response = asyncio.run(health_route.endpoint())
@@ -1777,7 +1777,7 @@ def test_market_data_health_falls_back_to_quote_snapshots(monkeypatch):
         scheduler=SimpleNamespace(watchlist=[("600519", "stock")], latest_quotes={}),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
 
     response = asyncio.run(health_route.endpoint())
@@ -1813,7 +1813,7 @@ def test_market_quote_refresh_endpoint_returns_structured_result(monkeypatch):
         db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
     )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
         market_routes, "_resolve_quote_status", lambda state, quote: "live"
@@ -1872,7 +1872,7 @@ def test_market_quote_refresh_without_symbols_includes_default_indices(monkeypat
         ),
     )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
         market_routes,
@@ -1948,7 +1948,7 @@ def test_market_quote_refresh_records_successful_fetch_run(monkeypatch, tmp_path
         db=db,
     )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
         market_routes, "_resolve_quote_status", lambda state, quote: "live"
@@ -2039,7 +2039,7 @@ def test_market_quote_refresh_success_upserts_latest_quote(monkeypatch, tmp_path
         db=db,
     )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
         market_routes, "_resolve_quote_status", lambda state, quote: "live"
@@ -2118,7 +2118,7 @@ def test_market_quote_refresh_records_cache_fallback_fetch_run(monkeypatch, tmp_
     def fail_fetch(state, symbol, asset_class):
         raise RuntimeError("provider unavailable")
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
         market_routes, "_load_latest_snapshot_from_provider", fail_fetch
@@ -2181,7 +2181,7 @@ def test_market_quote_refresh_records_failed_run_without_provider_fallback(
         db=db,
     )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
         "data.manager.build_sources",
@@ -2244,7 +2244,7 @@ def test_market_quote_fetch_runs_endpoint_lists_recent_runs(monkeypatch, tmp_pat
         metadata={"provider_status": "failed"},
     )
     fake_state = SimpleNamespace(db=db)
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(route.endpoint())
     limited = asyncio.run(route.endpoint(limit=1))
@@ -2293,7 +2293,7 @@ def test_market_quote_fetch_runs_endpoint_filters_runs(monkeypatch, tmp_path):
         status="success",
     )
     fake_state = SimpleNamespace(db=db)
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(
         route.endpoint(
@@ -2337,7 +2337,7 @@ def test_market_quote_fetch_runs_endpoint_tolerates_malformed_metadata(
         )
         conn.commit()
     fake_state = SimpleNamespace(db=db)
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(route.endpoint())
 
@@ -2395,7 +2395,7 @@ def test_market_instrument_metadata_backfill_updates_watchlist_and_holdings(
                 }
             raise AssertionError(f"unexpected symbol {symbol}")
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": FakeAkshare()},
@@ -2460,7 +2460,7 @@ def test_market_instrument_metadata_backfill_preserves_provider_quote_identity(
                 "market": "CN",
             }
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": FakeAkshare()},
@@ -2518,7 +2518,7 @@ def test_market_instrument_metadata_backfill_skips_existing_metadata(
         def fetch_latest(self, symbol, asset_class):
             raise AssertionError("existing metadata should not be fetched")
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": UnexpectedAkshare()},
@@ -2566,7 +2566,7 @@ def test_market_instrument_metadata_backfill_reports_missing_provider_name(
         def fetch_latest(self, symbol, asset_class):
             return {"price": 8.69, "timestamp": "2026-06-01 11:22:00"}
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": NamelessAkshare()},
@@ -2607,7 +2607,7 @@ def test_market_data_health_reports_provider_configuration_next_action(monkeypat
         ),
         db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
 
     response = asyncio.run(health_route.endpoint())
@@ -2753,7 +2753,7 @@ def test_market_quote_refresh_defaults_to_holding_symbols_and_market_indices(
         db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
     )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
         market_routes, "_resolve_quote_status", lambda state, quote: "live"
@@ -2820,7 +2820,7 @@ def test_market_quote_refresh_single_symbol_failure_does_not_500(monkeypatch):
             "timestamp": "2026-05-12T10:05:00+08:00",
         }
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
         market_routes, "_resolve_quote_status", lambda state, quote: "live"
@@ -2875,7 +2875,7 @@ def test_market_quote_refresh_cache_only_returns_stale_without_fresh_claim(
         ),
     )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
     monkeypatch.setattr(
         market_routes,
@@ -2930,7 +2930,7 @@ def test_market_quote_refresh_times_out_without_blocking_request(monkeypatch):
             "timestamp": "2026-05-12T10:05:00+08:00",
         }
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
         market_routes, "_load_latest_snapshot_from_provider", slow_fetch
@@ -2991,7 +2991,7 @@ def test_market_research_board_merges_watchlist_and_health(monkeypatch):
         ),
         db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
 
     response = asyncio.run(endpoint())
@@ -3051,7 +3051,7 @@ def test_market_research_board_reuses_resolved_watchlist_for_health(monkeypatch)
             }
         ]
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         market_routes, "_merged_watchlist_assets", merged_watchlist_assets
     )
@@ -3114,7 +3114,7 @@ def test_market_research_notes_create_and_list(monkeypatch):
             get_research_notes=fake_get_research_notes,
         )
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     created = asyncio.run(
         create_route.endpoint(
@@ -3210,7 +3210,7 @@ def test_market_research_notes_update_and_filter(monkeypatch):
             get_research_notes=fake_get_research_notes,
         )
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     updated = asyncio.run(
         update_route.endpoint(
@@ -3274,7 +3274,7 @@ def test_market_quote_falls_back_to_persisted_snapshot(monkeypatch):
         def fetch_latest(self, symbol, asset_class):
             raise RuntimeError("provider down")
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "data.manager.build_sources", lambda **kwargs: {"akshare": BrokenSource()}
     )
@@ -3314,7 +3314,7 @@ def test_market_watchlist_includes_holding_fields(monkeypatch):
         ),
         db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -3366,7 +3366,7 @@ def test_market_watchlist_auto_includes_ledger_holdings(monkeypatch):
         ),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -3418,7 +3418,7 @@ def test_market_kline_reads_only_the_persisted_store(monkeypatch, tmp_path):
         db=None,
     )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "data.manager.build_sources",
         lambda *args, **kwargs: pytest.fail("GET must not construct providers"),
@@ -3452,7 +3452,7 @@ def test_market_kline_missing_store_is_write_free_and_non_blocking(
         db=None,
     )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     started = time.monotonic()
     response = asyncio.run(endpoint("600519"))
@@ -3505,7 +3505,7 @@ def test_market_bars_backfill_writes_authoritative_store(monkeypatch, tmp_path):
                 }
             )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr("data.store.DataStore", lambda: store)
     monkeypatch.setattr(
         "data.manager.build_sources",
@@ -3565,7 +3565,7 @@ def test_market_bars_backfill_reports_provider_failure(monkeypatch, tmp_path):
         def fetch_bars(self, symbol, start, end, frequency, asset_class):
             raise RuntimeError("provider unavailable")
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr("data.store.DataStore", lambda: store)
     monkeypatch.setattr(
         "data.manager.build_sources",
@@ -3637,7 +3637,7 @@ def test_market_quote_resolves_asset_class_from_auto_added_holdings(monkeypatch)
         ),
     )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
 
     response = asyncio.run(endpoint("示例成长混合C", BackgroundTasks()))
@@ -3678,7 +3678,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_for_fund_when_tushare_retur
                 "previous_close_date": "2026-04-18",
             }
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "data.manager.build_sources",
         lambda **kwargs: {
@@ -4087,7 +4087,7 @@ def test_portfolio_live_holdings_prefers_reported_previous_close_from_latest_quo
             ]
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(live_holdings_route.endpoint())
 
@@ -4123,7 +4123,7 @@ def test_market_watchlist_prefers_display_name_from_config(monkeypatch):
         scheduler=SimpleNamespace(is_running=False, latest_quotes={}, portfolio=None),
         db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -4210,7 +4210,7 @@ def test_market_watchlist_add_and_remove(monkeypatch):
         scheduler=SimpleNamespace(is_running=False, latest_quotes={}, portfolio=None),
         db=fake_db,
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     config_path = resolve_config_path()
     original_config = {"data_source": "akshare", "sentinel": "watchlist-read-only"}
     config_path.write_text(json.dumps(original_config), encoding="utf-8")
@@ -4268,7 +4268,7 @@ def test_update_data_source_settings_persists_runtime_config_only(monkeypatch):
         live_poll_interval=60,
     )
     fake_state = SimpleNamespace(config=config)
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     config_path = resolve_config_path()
     original_config = {
@@ -4394,7 +4394,7 @@ def test_notification_probe_blocks_missing_environment_credentials(monkeypatch):
     monkeypatch.delenv("KARKINOS_TELEGRAM_BOT_TOKEN", raising=False)
     monkeypatch.delenv("KARKINOS_TELEGRAM_CHAT_ID", raising=False)
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(
             config=SimpleNamespace(notification={"type": "telegram"}),
             notifier=notifier,
@@ -4450,7 +4450,7 @@ def test_update_settings_persists_account_commission_without_credentials(
         ),
     )
     fake_state = SimpleNamespace(config=config)
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     config_path = resolve_config_path()
     original_config = {
@@ -4518,7 +4518,7 @@ def test_full_settings_update_blocks_tushare_without_environment_credential(
     )
     config = SimpleNamespace(tushare_token="")
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(config=config),
     )
 
@@ -4559,7 +4559,7 @@ def test_get_asset_metadata_status_reports_missing_symbols(monkeypatch):
         ),
         db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(status_route.endpoint())
 
@@ -4684,7 +4684,7 @@ def test_portfolio_overview_summarizes_account_state(monkeypatch):
             ],
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -4790,7 +4790,7 @@ def test_portfolio_overview_includes_daily_operations_summary(monkeypatch):
         "_build_live_holdings_response",
         lambda state: portfolio_routes.LiveHoldingsResponse(groups=[]),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -4922,7 +4922,7 @@ def test_portfolio_overview_drawdown_ignores_external_cash_deposit(monkeypatch):
         ),
     )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         portfolio_routes,
         "_current_equity_series_point",
@@ -5042,7 +5042,7 @@ def test_portfolio_overview_drawdown_counts_already_applied_future_cash_deposit(
         ),
     )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         portfolio_routes,
         "_current_equity_series_point",
@@ -5119,7 +5119,7 @@ def test_portfolio_snapshot_prefers_display_name_from_config(monkeypatch):
         ),
     )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -5163,7 +5163,7 @@ def test_empty_portfolio_snapshot_does_not_seed_config_initial_cash(monkeypatch)
         db=EmptyDb(),
         scheduler=SimpleNamespace(portfolio=None, latest_quotes={}, instruments={}),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -5210,7 +5210,7 @@ def test_portfolio_snapshot_uses_simple_asset_mapping(monkeypatch):
             instruments={},
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -5303,7 +5303,7 @@ def test_portfolio_snapshot_does_not_fetch_missing_fund_quotes_in_request(
             instruments=fake_state.scheduler.instruments,
         )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "server.routes.market._fetch_latest_snapshot",
         lambda *args, **kwargs: pytest.fail(
@@ -5379,7 +5379,7 @@ def test_portfolio_rebuild_uses_persisted_quotes_for_fund_pnl(monkeypatch):
         ),
     )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -5428,7 +5428,7 @@ def test_portfolio_state_projection_exposes_totals_and_next_step(monkeypatch):
             instruments={},
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -5477,7 +5477,7 @@ def test_portfolio_risk_summary_flags_concentration_and_low_cash(monkeypatch):
             instruments={},
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -5535,7 +5535,7 @@ def test_portfolio_risk_summary_flags_stale_quote_data(monkeypatch):
             latest_quotes={},
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -5591,7 +5591,7 @@ def test_portfolio_risk_summary_accepts_timezone_aware_quote_timestamps(monkeypa
             latest_quotes={},
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -5643,7 +5643,7 @@ def test_portfolio_activity_merges_trades_and_cash_flows(monkeypatch):
             get_trades=fake_get_trades,
         )
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -5732,7 +5732,7 @@ def test_portfolio_explainability_uses_snapshot_and_ledger(monkeypatch):
             instruments={},
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -5827,7 +5827,7 @@ def test_portfolio_explainability_filters_timeline(monkeypatch):
             instruments={},
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(
         endpoint(
@@ -5948,7 +5948,7 @@ def test_portfolio_explainability_builds_daily_timeline_from_ledger_history(
         db=FakeDb(),
     )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         portfolio_routes,
         "get_shanghai_now",
@@ -6038,7 +6038,7 @@ def test_portfolio_explainability_marks_missing_historical_prices(monkeypatch):
         db=FakeDb(),
     )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         portfolio_routes,
         "get_shanghai_now",
@@ -6157,7 +6157,7 @@ def test_portfolio_explainability_does_not_attribute_weekend_current_quotes(
         db=FakeDb(),
     )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         portfolio_routes,
         "get_shanghai_now",
@@ -6279,7 +6279,7 @@ def test_portfolio_explainability_does_not_attribute_stale_quote_to_current_day(
         db=FakeDb(),
     )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         portfolio_routes,
         "get_shanghai_now",
@@ -7003,7 +7003,7 @@ def test_portfolio_explainability_prefers_market_bars_for_stock_daily_returns(
         db=FakeDb(),
     )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         portfolio_routes,
         "get_shanghai_now",
@@ -7069,7 +7069,7 @@ def test_portfolio_risk_workspace_returns_drawdown_and_concentration(monkeypatch
             instruments={},
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -7133,7 +7133,7 @@ def test_portfolio_risk_workspace_uses_equity_series_when_legacy_curve_is_empty(
             instruments={},
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         portfolio_routes,
         "_resolve_projection_sources",
@@ -7250,7 +7250,7 @@ def test_portfolio_cockpit_returns_targets_drift_actions_and_risk_alerts(
             instruments={},
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -7356,7 +7356,7 @@ def test_portfolio_cockpit_marks_construction_recommendation_actionable_only_aft
             instruments={},
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -7426,7 +7426,7 @@ def test_portfolio_rebuilds_from_ledger_when_scheduler_not_running(monkeypatch):
             get_trades_sync=fake_get_trades_sync,
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -7519,7 +7519,7 @@ def test_portfolio_trade_auto_confirms_fund_buy_from_amount(monkeypatch, tmp_pat
                 }
             )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": FakeAkshareSource()},
@@ -7580,15 +7580,29 @@ def test_portfolio_trade_uses_configured_account_commission_when_missing(
         async def get_trades(self, limit=50, offset=0):
             return self.trades[offset : offset + limit]
 
+    class FakeLock:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+    live_fills = []
+    live_portfolio = SimpleNamespace(on_fill=live_fills.append)
+
     fake_state = SimpleNamespace(
         config=SimpleNamespace(
             account_commission_rate=0.00025,
             account_min_commission=3.0,
         ),
-        scheduler=SimpleNamespace(is_running=False),
+        scheduler=SimpleNamespace(
+            is_running=True,
+            _lock=FakeLock(),
+            _portfolio=live_portfolio,
+        ),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(
         trade_route.endpoint(
@@ -7620,6 +7634,9 @@ def test_portfolio_trade_uses_configured_account_commission_when_missing(
     assert ledger_entry["fee_rule_id"] == "manual_configured_commission"
     assert ledger_entry["fee_rule_version"] == "broker_fee_schedule"
     assert ledger_entry["cost_basis_method"] == "moving_average_buy_cost"
+    assert len(live_fills) == 1
+    assert live_fills[0].commission == Decimal("3.05764")
+    assert live_fills[0].fee_breakdown["total_fee"] == "3.057640"
 
 
 def test_portfolio_stock_trade_persists_refreshable_asset_identity(monkeypatch):
@@ -7688,7 +7705,7 @@ def test_portfolio_stock_trade_persists_refreshable_asset_identity(monkeypatch):
         scheduler=SimpleNamespace(is_running=False),
         db=db,
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(
         trade_route.endpoint(
@@ -7765,7 +7782,7 @@ def test_portfolio_trade_preview_uses_configured_fee_contract_without_writing(
         scheduler=SimpleNamespace(is_running=False),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(
         preview_route.endpoint(
@@ -7840,7 +7857,7 @@ def test_portfolio_trade_sell_uses_structured_fee_model_components(monkeypatch):
         scheduler=SimpleNamespace(is_running=False),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(
         trade_route.endpoint(
@@ -7914,7 +7931,7 @@ def test_portfolio_trade_with_explicit_commission_keeps_manual_fee_marker(
         scheduler=SimpleNamespace(is_running=False),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(
         trade_route.endpoint(
@@ -8014,7 +8031,7 @@ def test_portfolio_trade_returns_pending_when_fund_nav_not_published(
                 }
             )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": FakeAkshareSource()},
@@ -8137,7 +8154,7 @@ def test_signal_actions_convert_latest_signals_into_action_cards(monkeypatch):
             get_action_tasks=fake_get_action_tasks,
         )
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -8215,7 +8232,7 @@ def test_signal_actions_return_pending_tasks_after_sync(monkeypatch):
             get_action_tasks=fake_get_action_tasks,
         )
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -8291,7 +8308,7 @@ def test_signal_journal_route_returns_auditable_chain(monkeypatch):
     fake_state = SimpleNamespace(
         db=SimpleNamespace(list_signal_journal=fake_list_signal_journal)
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -8397,7 +8414,7 @@ def test_decision_today_returns_candidate_with_evidence_bundle(monkeypatch):
         "_account_truth_gate_evidence",
         lambda state: _decision_account_truth_evidence(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -8508,7 +8525,7 @@ def test_decision_today_attaches_latest_after_cost_oos_validation(monkeypatch):
             ]
 
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=FakeDb()),
     )
 
@@ -8583,7 +8600,7 @@ def test_decision_today_blocks_when_account_truth_score_is_missing(monkeypatch):
             return []
 
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=FakeDb()),
     )
 
@@ -8658,7 +8675,7 @@ def test_decision_today_degrades_when_account_truth_score_degrades(monkeypatch):
             }
 
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=FakeDb()),
     )
     monkeypatch.setattr(
@@ -8739,7 +8756,7 @@ def test_decision_today_requires_review_when_candidate_quote_is_stale(monkeypatc
             }
 
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=FakeDb()),
     )
     monkeypatch.setattr(
@@ -8845,7 +8862,7 @@ def test_decision_today_requires_strategy_attribution_for_assigned_strategy(
         "_account_truth_gate_evidence",
         lambda state: _decision_account_truth_evidence(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -8979,7 +8996,7 @@ def test_decision_today_summary_aggregates_portfolio_market_and_audit_state(
         ),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -9044,7 +9061,7 @@ def test_decision_today_returns_no_action_reason(monkeypatch):
             get_latest_quote_sync=lambda symbol, asset_type=None: None,
         )
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -9193,7 +9210,7 @@ def test_decision_intraday_returns_stock_and_etf_candidates_only(monkeypatch):
         "_account_truth_gate_evidence",
         lambda state: _decision_account_truth_evidence(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -9249,7 +9266,7 @@ def test_decision_intraday_returns_no_action_reason_when_only_daily_assets(
             get_latest_quote_sync=lambda symbol, asset_type=None: None,
         )
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -9392,7 +9409,7 @@ def test_backtest_run_accepts_generic_params_and_persists_exact_payload(monkeypa
         config=SimpleNamespace(assets=[]),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     def fake_run_backtest(request, config, db=None):
         captured_request["params"] = request.params
@@ -9532,7 +9549,7 @@ class LocalThresholdStrategy(Strategy):
         config=SimpleNamespace(assets=[]),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     class FakeEventBus:
         def subscribe(self, *args, **kwargs):
@@ -9605,7 +9622,7 @@ def test_backtest_run_rejects_unknown_generic_params_before_execution(monkeypatc
         config=SimpleNamespace(assets=[]),
         db=SimpleNamespace(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     def fail_if_called(*args, **kwargs):
         raise AssertionError("backtest runner should not execute invalid params")
@@ -9654,7 +9671,7 @@ def test_backtest_sweep_runs_bounded_grid_and_persists_each_configuration(
         config=SimpleNamespace(assets=[]),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     def fake_run_backtest(request, config, db=None):
         captured_params.append(dict(request.params or {}))
@@ -9738,7 +9755,7 @@ def test_backtest_sweep_returns_parameter_robustness_evidence(monkeypatch):
         config=SimpleNamespace(assets=[]),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     returns_by_short_period = {3: 0.04, 5: 0.05, 7: 0.01}
 
@@ -9827,7 +9844,7 @@ def test_backtest_sweep_rejects_unbounded_grid_before_execution(monkeypatch):
         config=SimpleNamespace(assets=[]),
         db=SimpleNamespace(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     def fail_if_called(*args, **kwargs):
         raise AssertionError("sweep should reject oversized grids before execution")
@@ -9866,7 +9883,7 @@ def test_backtest_sweep_rejects_unsupported_rank_metric_before_execution(
         config=SimpleNamespace(assets=[]),
         db=SimpleNamespace(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     def fail_if_called(*args, **kwargs):
         raise AssertionError("sweep should reject invalid rank_by before execution")
@@ -9905,7 +9922,7 @@ def test_backtest_compare_runs_parameter_sets_on_one_dataset_snapshot(monkeypatc
         config=SimpleNamespace(assets=[]),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     def fake_run_backtest(request, config, db=None):
         captured_requests.append((request.strategy, dict(request.params or {})))
@@ -10018,7 +10035,7 @@ def test_backtest_compare_rejects_mismatched_dataset_snapshots_before_persisting
         config=SimpleNamespace(assets=[]),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     snapshot_ids = iter(["snapshot-a", "snapshot-b"])
 
@@ -10086,7 +10103,7 @@ def test_backtest_strategy_validation_route_returns_evidence_matrix(monkeypatch)
             return build_benchmark_fixture_backtest_rows()
 
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=FakeDb()),
     )
 
@@ -10155,7 +10172,7 @@ def test_backtest_strategy_promotion_readiness_route_requires_all_gates(monkeypa
             ]
 
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=FakeDb()),
     )
 
@@ -10237,7 +10254,7 @@ def test_backtest_strategy_promotion_readiness_route_blocks_assigned_strategy_wi
             }
 
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(
             db=FakeDb(), config=SimpleNamespace(strategy="dual_ma")
         ),
@@ -10296,7 +10313,7 @@ def test_signal_action_status_update_returns_updated_task(monkeypatch):
     fake_state = SimpleNamespace(
         db=SimpleNamespace(update_action_task_status=fake_update_action_task_status)
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     body = signal_routes.ActionTaskStatusUpdate(status="executed")
     response = asyncio.run(endpoint(7, body))
@@ -10379,7 +10396,7 @@ def test_portfolio_equity_curve_uses_ledger_projection_when_scheduler_missing(
         ),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     curve = asyncio.run(endpoint())
 
@@ -10542,7 +10559,7 @@ def test_portfolio_equity_curve_series_groups_asset_buckets(monkeypatch):
         ),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     series = asyncio.run(endpoint())
 
@@ -10677,7 +10694,7 @@ def test_portfolio_equity_curve_series_uses_intraday_mtm_for_1d(monkeypatch):
         db=FakeDb(),
     )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "data.manager.build_sources",
         lambda **kwargs: (_ for _ in ()).throw(
@@ -10797,7 +10814,7 @@ def test_portfolio_equity_curve_series_1d_falls_back_to_flat_previous_close(
         def fetch_bars(self, symbol, start, end, frequency, asset_class):
             return pd.DataFrame(columns=["timestamp", "close"])
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": FakeSource()},
@@ -10882,7 +10899,7 @@ def test_portfolio_equity_curve_series_1d_marks_current_quote_when_minute_bars_m
         def fetch_bars(self, symbol, start, end, frequency, asset_class):
             return pd.DataFrame(columns=["timestamp", "close"])
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": FakeSource()},
@@ -10978,7 +10995,7 @@ def test_portfolio_equity_curve_series_1d_does_not_fabricate_missing_quote_value
         def fetch_bars(self, symbol, start, end, frequency, asset_class):
             return pd.DataFrame(columns=["timestamp", "close"])
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": FakeSource()},
@@ -11097,7 +11114,7 @@ def test_portfolio_equity_curve_series_1d_uses_local_quote_snapshots(
         def fetch_bars(self, symbol, start, end, frequency, asset_class):
             raise AssertionError("local quote snapshots should avoid remote bars")
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": EmptySource()},
@@ -11226,7 +11243,7 @@ def test_portfolio_equity_curve_series_1d_uses_intraday_buy_cost_basis(
         def fetch_bars(self, symbol, start, end, frequency, asset_class):
             return pd.DataFrame(columns=["timestamp", "close"])
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": FakeSource()},
@@ -11357,7 +11374,7 @@ def test_portfolio_equity_curve_series_1d_splits_overnight_and_intraday_lots(
         def fetch_bars(self, symbol, start, end, frequency, asset_class):
             return pd.DataFrame(columns=["timestamp", "close"])
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
     monkeypatch.setattr(
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": EmptySource()},
@@ -11436,7 +11453,7 @@ def test_portfolio_equity_curve_series_1d_skips_intraday_source_when_market_clos
         def fetch_bars(self, symbol, start, end, frequency, asset_class):
             raise AssertionError("closed market 1d curve must not fetch intraday bars")
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": UnexpectedSource()},
@@ -11531,7 +11548,7 @@ def test_portfolio_live_holdings_groups_positions_and_computes_returns(monkeypat
         ),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(live_holdings_route.endpoint())
 
@@ -11629,7 +11646,7 @@ def test_portfolio_live_holdings_uses_intraday_buy_cost_for_today_pnl(monkeypatc
         ),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         portfolio_routes,
         "get_shanghai_now",
@@ -11902,7 +11919,7 @@ def test_daily_performance_is_identical_across_holdings_curve_and_overview(
         ),
         db=db,
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
     monkeypatch.setattr(
         portfolio_routes,
         "get_shanghai_now",
@@ -12182,7 +12199,7 @@ def test_portfolio_positions_exposes_latest_quote_price(monkeypatch):
         ),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(positions_route.endpoint())
 
@@ -12248,7 +12265,7 @@ def test_portfolio_positions_exposes_broker_cost_basis_evidence(monkeypatch):
         ),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(positions_route.endpoint())
 
@@ -12323,7 +12340,7 @@ synthetic-position-001,position_snapshot,2026-01-15T15:10:00+08:00,2026-01-15,SY
         ),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(positions_route.endpoint())
 
@@ -12407,7 +12424,7 @@ def test_portfolio_live_holdings_merges_materialized_previous_close(monkeypatch)
         ),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(live_holdings_route.endpoint())
 
@@ -12510,7 +12527,7 @@ def test_portfolio_live_holdings_prefers_local_daily_close_over_quote_previous_c
         ),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(live_holdings_route.endpoint())
     item = response.groups[0].items[0]
@@ -12622,7 +12639,7 @@ def test_portfolio_live_holdings_uses_same_day_market_bar_close_after_session(
         ),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "server.routes.portfolio.get_shanghai_now",
         lambda now=None: datetime(
@@ -12737,7 +12754,7 @@ def test_portfolio_live_holdings_fund_uses_confirmed_same_day_nav_after_session(
         ),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "server.routes.portfolio.get_shanghai_now",
         lambda now=None: datetime(
@@ -12851,7 +12868,7 @@ def test_portfolio_live_holdings_marks_unconfirmed_fund_estimate_after_session(
         ),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "server.routes.portfolio.get_shanghai_now",
         lambda now=None: datetime(
@@ -12921,7 +12938,7 @@ def test_portfolio_live_holdings_fails_closed_when_only_runtime_quote_exists(
             get_total_deposits=lambda: 0.0,
         ),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "server.routes.market._fetch_latest_snapshot",
         lambda *args, **kwargs: pytest.fail("live holdings must not fetch remotely"),
@@ -13000,7 +13017,7 @@ def test_portfolio_live_holdings_falls_back_to_previous_quote_close(monkeypatch)
         ),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(live_holdings_route.endpoint())
 
@@ -13066,7 +13083,7 @@ def test_portfolio_live_holdings_marks_missing_baseline(monkeypatch):
         ),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(live_holdings_route.endpoint())
 
@@ -13197,7 +13214,7 @@ def test_portfolio_snapshot_does_not_refresh_stale_quote_in_request(monkeypatch)
             instruments=fake_instruments,
         )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         portfolio_routes,
         "get_shanghai_now",
@@ -13317,7 +13334,7 @@ def test_portfolio_snapshot_does_not_fetch_missing_ledger_quote_in_request(monke
                 "previous_close_date": "2026-06-03",
             }
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         portfolio_routes,
         "get_shanghai_now",
@@ -13419,7 +13436,7 @@ def test_portfolio_live_holdings_marks_cached_stale_quote_when_market_closed(
         db=FakeDb(),
     )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         portfolio_routes,
         "get_shanghai_now",
@@ -13507,7 +13524,7 @@ def test_portfolio_live_holdings_uses_dict_asset_mapping(monkeypatch):
         ),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
 
@@ -13590,7 +13607,7 @@ def test_portfolio_live_holdings_prefers_latest_quote_identity(monkeypatch):
         ),
         db=FakeDb(),
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint())
     groups = {group.asset_class: group for group in response.groups}
@@ -13774,7 +13791,7 @@ def test_portfolio_equity_curve_series_appends_current_valuation_point(
         db=FakeDb(),
     )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         portfolio_routes,
         "get_shanghai_now",
@@ -13906,7 +13923,7 @@ def test_portfolio_equity_curve_series_uses_daily_close_history(monkeypatch):
         db=FakeDb(),
     )
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         portfolio_routes,
         "get_shanghai_now",
@@ -13992,7 +14009,7 @@ def test_portfolio_equity_curve_series_1d_falls_back_when_intraday_source_blocks
         await asyncio.sleep(0.2)
         return func(*args, **kwargs)
 
-    monkeypatch.setattr("server.app.get_app_state", lambda: fake_state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(portfolio_routes.asyncio, "to_thread", slow_intraday_builder)
     monkeypatch.setattr(
         "data.manager.build_sources",

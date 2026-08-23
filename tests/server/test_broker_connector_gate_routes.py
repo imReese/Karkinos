@@ -61,7 +61,7 @@ def test_decision_today_blocks_from_unresolved_connector_evidence(
     db.get_backtest_results = _empty_backtest_results
 
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=db, config=SimpleNamespace(initial_cash=0)),
     )
 
@@ -122,7 +122,7 @@ def test_backtest_promotion_readiness_blocks_from_unresolved_connector_evidence(
     ]
 
     monkeypatch.setattr(
-        "server.app.get_app_state",
+        "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=db, config=SimpleNamespace(initial_cash=0)),
     )
 

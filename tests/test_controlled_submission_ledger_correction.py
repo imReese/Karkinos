@@ -389,7 +389,7 @@ def test_correction_reconciles_ledger_portfolio_overview_and_account_truth(
         ),
         scheduler=None,
     )
-    monkeypatch.setattr("server.app.get_app_state", lambda: state)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
 
     portfolio_router = portfolio_routes.create_router()
     snapshot = asyncio.run(_endpoint(portfolio_router, "/api/portfolio")())
@@ -530,13 +530,16 @@ def test_canonical_replay_derives_exact_sell_posting_reversal() -> None:
 def test_existing_database_adds_explicit_correction_schema(tmp_path) -> None:
     db = AppDatabase(tmp_path / "existing-before-correction.db")
     db.init_sync()
-    with sqlite3.connect(db._path) as conn:
+    with sqlite3.connect(db.path) as conn:
+        # Model a pre-v0.3.0 database: legacy bootstrap remains compatible only
+        # before the migration ledger claims the frozen v1 schema contract.
+        conn.execute("DROP TABLE schema_migrations")
         conn.execute("DROP TABLE controlled_submission_ledger_corrections")
         conn.execute("ALTER TABLE ledger_entries DROP COLUMN correction_payload_json")
         conn.commit()
 
-    AppDatabase(db._path).init_sync()
-    with sqlite3.connect(db._path) as conn:
+    AppDatabase(db.path).init_sync()
+    with sqlite3.connect(db.path) as conn:
         ledger_columns = {
             row[1] for row in conn.execute("PRAGMA table_info(ledger_entries)")
         }

@@ -9,7 +9,6 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from data.store import DataStore
 from server.ai_runtime.contracts import content_fingerprint
 from server.ai_runtime.evidence import CanonicalEvidenceRepository
 from server.ai_runtime.formula_dsl import (
@@ -17,7 +16,6 @@ from server.ai_runtime.formula_dsl import (
 )
 from server.ai_runtime.provider_connectivity import (
     ConnectivityConfigurationError,
-    load_provider_connectivity_settings,
 )
 from server.ai_runtime.store import AiAuditStore, IdempotencyConflict
 from server.ai_runtime.strategy_research import (
@@ -35,11 +33,13 @@ from server.ai_runtime.strategy_research import (
     StrategyResearchSelection,
     StrategyResearchService,
 )
-from server.bootstrap import resolve_data_dir
 from server.routes.ai_research import build_human_context_capture_service
-
-_DEFAULT_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS = 180.0
-_DEEPSEEK_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS = 600.0
+from server.services.strategy_research_factory import (
+    build_strategy_research_write_service,
+)
+from server.services.strategy_research_factory import (
+    strategy_research_model_timeout_seconds as _strategy_research_model_timeout_seconds,
+)
 
 
 class StrategyResearchSelectionPayload(BaseModel):
@@ -264,7 +264,7 @@ def create_router() -> APIRouter:
 
     @router.get("/sessions/{session_id}")
     async def get_strategy_research_session(session_id: str) -> dict[str, Any]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         if state.db is None:
@@ -278,7 +278,7 @@ def create_router() -> APIRouter:
     @router.get("/shadow-automation")
     async def get_shadow_research_automation() -> dict[str, Any]:
         """Provider-free, write-free projection of policy, runs, and candidates."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         if state.db is None:
@@ -289,7 +289,7 @@ def create_router() -> APIRouter:
     async def update_shadow_research_policy(
         payload: ShadowResearchPolicyPayload,
     ) -> dict[str, Any]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             return _build_shadow_write_service(get_app_state()).update_policy(
@@ -301,7 +301,7 @@ def create_router() -> APIRouter:
     @router.post("/shadow-automation/run")
     async def run_shadow_research_now() -> dict[str, Any]:
         """Run the same after-close and standing-policy gates as the background loop."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             return await _build_shadow_write_service(get_app_state()).run_once()
@@ -314,7 +314,7 @@ def create_router() -> APIRouter:
         payload: ShadowResearchRetryPayload,
     ) -> JSONResponse:
         """Record one append-only research retry; no strategy or trade authority."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             authorization = _build_shadow_write_service(
@@ -337,7 +337,7 @@ def create_router() -> APIRouter:
         payload: ShadowResearchCorrectedPanelRearmPayload,
     ) -> JSONResponse:
         """Bind one exact 40-stock panel and ten-call research-only rerun."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             authorization = await _build_shadow_write_service(
@@ -358,7 +358,7 @@ def create_router() -> APIRouter:
         payload: ShadowResearchCitationCallExtensionPayload,
     ) -> JSONResponse:
         """Add exactly one provider call; never add strategy or trade authority."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             authorization = _build_shadow_write_service(
@@ -381,7 +381,7 @@ def create_router() -> APIRouter:
         payload: ShadowResearchCorrectedPanelCitationResumePayload,
     ) -> JSONResponse:
         """Resume one evidence-bound first critique with exactly one added call."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             authorization = await _build_shadow_write_service(
@@ -402,7 +402,7 @@ def create_router() -> APIRouter:
         payload: ShadowResearchOutputTruncationCallExtensionPayload,
     ) -> JSONResponse:
         """Add one truncation-recovery call; never add trade authority."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             authorization = _build_shadow_write_service(
@@ -423,7 +423,7 @@ def create_router() -> APIRouter:
         payload: ShadowResearchTimeoutResumeCallExtensionPayload,
     ) -> JSONResponse:
         """Resume only a persisted fifth-round timeout; never add trade authority."""
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             authorization = _build_shadow_write_service(
@@ -443,7 +443,7 @@ def create_router() -> APIRouter:
         candidate_id: str,
         payload: ShadowResearchPromotionPayload,
     ) -> JSONResponse:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         try:
             service = _build_shadow_write_service(get_app_state())
@@ -461,7 +461,7 @@ def create_router() -> APIRouter:
     async def generate_strategy_hypotheses(
         payload: HypothesisGenerationPayload,
     ) -> JSONResponse:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         try:
@@ -484,7 +484,7 @@ def create_router() -> APIRouter:
     async def run_strategy_formula_backtest(
         payload: FormulaBacktestPayload,
     ) -> JSONResponse:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         try:
@@ -504,7 +504,7 @@ def create_router() -> APIRouter:
 
     @router.post("/critiques")
     async def critique_strategy_backtest(payload: CritiquePayload) -> JSONResponse:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         try:
@@ -528,7 +528,7 @@ def create_router() -> APIRouter:
         session_id: str,
         payload: HumanReviewPayload,
     ) -> JSONResponse:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         try:
@@ -587,39 +587,11 @@ def create_router() -> APIRouter:
 
 
 def _build_write_service(state: Any, *, external: bool) -> StrategyResearchService:
-    if state.db is None:
-        raise ConnectivityConfigurationError("database is not initialized")
-    db_path = _database_path(state.db)
-    evidence_repository = CanonicalEvidenceRepository(db_path)
-    ai_store = AiAuditStore(db_path)
-    research_store = StrategyResearchAuditStore(db_path)
-    evidence_repository.init()
-    ai_store.init()
-    research_store.init()
-    settings = load_provider_connectivity_settings(state.config) if external else None
-    from server.services.reviewed_fee_schedule import resolve_reviewed_fee_schedule
-
-    return StrategyResearchService(
-        db=state.db,
-        db_path=db_path,
-        settings=settings,
+    return build_strategy_research_write_service(
+        state,
+        external=external,
         capture_service=build_human_context_capture_service(state),
-        evidence_repository=evidence_repository,
-        ai_store=ai_store,
-        research_store=research_store,
-        data_store=DataStore(resolve_data_dir()),
-        model_timeout_seconds=_strategy_research_model_timeout_seconds(settings),
-        reviewed_fee_schedule_resolver=lambda **kwargs: resolve_reviewed_fee_schedule(
-            state, **kwargs
-        ),
     )
-
-
-def _strategy_research_model_timeout_seconds(settings: Any | None) -> float:
-    """Allow the configured DeepSeek research call up to ten minutes."""
-    if settings is not None and settings.provider_id.strip().casefold() == "deepseek":
-        return _DEEPSEEK_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS
-    return _DEFAULT_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS
 
 
 def _build_read_service(state: Any) -> StrategyResearchService:
@@ -644,7 +616,13 @@ def _build_shadow_write_service(state: Any) -> Any:
         build_ai_shadow_research_automation_service,
     )
 
-    return build_ai_shadow_research_automation_service(state)
+    return build_ai_shadow_research_automation_service(
+        state,
+        research_service_builder=lambda external: _build_write_service(
+            state,
+            external=external,
+        ),
+    )
 
 
 def _build_shadow_read_service(state: Any) -> Any:

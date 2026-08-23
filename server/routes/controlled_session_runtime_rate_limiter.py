@@ -31,7 +31,7 @@ def create_router() -> APIRouter:
 
 
 def _service() -> ControlledSessionRuntimeRateLimiterService:
-    from server.app import get_app_state
+    from server.dependencies import get_app_state
     from server.routes.controlled_session_automatic_pause import (
         _live_gate_service as controlled_session_live_gate_service,
     )

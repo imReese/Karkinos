@@ -80,7 +80,7 @@ def create_router() -> APIRouter:
 
 
 def _service() -> ControlledSessionBudgetReservationService:
-    from server.app import get_app_state
+    from server.dependencies import get_app_state
     from server.routes.controlled_session_envelope import (
         _service as controlled_session_envelope_service,
     )

@@ -1,5 +1,5 @@
-import type { Locale } from '../app/preferences';
 import { formatCurrency, formatQuantity } from './format';
+import type { Locale } from './locale';
 import {
   formatPublicEvidenceReference,
   formatPublicNote,

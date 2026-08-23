@@ -139,13 +139,13 @@ def create_router() -> APIRouter:
 
     @router.get("/today")
     async def today_operations() -> dict[str, Any]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         return await build_today_operations_payload(get_app_state())
 
     @router.post("/paper-shadow/run")
     async def run_paper_shadow_daily() -> dict[str, Any]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         if state.db is None:
@@ -164,7 +164,7 @@ def create_router() -> APIRouter:
         run_id: str,
         payload: PaperShadowRunReviewRequest,
     ) -> dict[str, Any]:
-        from server.app import get_app_state
+        from server.dependencies import get_app_state
 
         state = get_app_state()
         if state.db is None:

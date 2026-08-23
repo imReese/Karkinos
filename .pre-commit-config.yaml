@@ -1,6 +1,25 @@
 repos:
   - repo: local
     hooks:
+      - id: ruff-correctness-locked
+        name: Ruff correctness (uv locked)
+        entry: uv run --frozen --extra dev ruff check
+        language: system
+        types: [python]
+        require_serial: true
+      - id: mypy-foundation-locked
+        name: mypy foundational packages (uv locked)
+        entry: uv run --frozen --extra dev mypy
+        language: system
+        pass_filenames: false
+        files: ^((core|domain|risk|execution|notification)/.*\.py|pyproject\.toml)$
+        require_serial: true
+      - id: python-dependency-boundaries
+        name: Python dependency boundaries
+        entry: python tools/check_python_architecture.py
+        language: system
+        pass_filenames: false
+        files: ^((core|domain|data|strategy|risk|execution|account_truth|notification|backtest)/.*\.py|tools/check_python_architecture\.py|tests/scripts/test_check_python_architecture\.py)$
       - id: isort-locked
         name: isort (uv locked)
         entry: uv run --frozen --extra dev isort
