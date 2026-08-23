@@ -1,4 +1,13 @@
+// @ts-nocheck -- Node built-ins are used only by this deterministic source audit.
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { appFeatureChunk } from './chunk-config';
+
+const viteConfigSource = readFileSync(
+  resolve(process.cwd(), 'vite.config.ts'),
+  'utf8',
+);
 
 describe('appFeatureChunk', () => {
   it('splits growing workspace features by domain-sized chunks', () => {
@@ -48,5 +57,11 @@ describe('appFeatureChunk', () => {
       undefined,
     );
     expect(appFeatureChunk('/repo/web/src/app/router.tsx')).toBe(undefined);
+  });
+
+  it('does not recursively pull workspace dependencies into the public entry', () => {
+    expect(viteConfigSource).toContain('codeSplitting');
+    expect(viteConfigSource).toContain('includeDependenciesRecursively: false');
+    expect(viteConfigSource).not.toContain('manualChunks');
   });
 });

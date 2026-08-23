@@ -12,11 +12,21 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from server.persistence.backtest_results import BacktestResultsRepository
+from server.persistence.event_log import (
+    EventLogRepository,
+    insert_event_sync,
+)
+from server.persistence.event_log import (
+    serialize_event_payload_json as _serialize_event_payload_json,
+)
+from server.persistence.instrument_metadata import InstrumentMetadataRepository
 from server.persistence.market_calendar import MarketCalendarRepository
 from server.persistence.migrations import (
     apply_schema_migrations,
     assert_schema_compatible,
 )
+from server.persistence.research_notes import ResearchNotesRepository
 from server.persistence.runtime_controls import RuntimeControlRepository
 from server.persistence.watchlist import WatchlistRepository
 from server.runtime_paths import resolve_data_dir
@@ -378,7 +388,11 @@ class AppDatabase:
             else Path(resolve_data_dir()) / _DB_PATH.name
         )
         self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._backtest_results = BacktestResultsRepository(self._path)
+        self._event_log = EventLogRepository(self._path)
+        self._instrument_metadata = InstrumentMetadataRepository(self._path)
         self._market_calendar = MarketCalendarRepository(self._path)
+        self._research_notes = ResearchNotesRepository(self._path)
         self._watchlist = WatchlistRepository(self._path)
         self._runtime_controls = RuntimeControlRepository(self._path)
 
@@ -491,97 +505,28 @@ class AppDatabase:
         metadata: dict[str, Any] | str | None = None,
     ) -> dict[str, Any] | None:
         """Upsert local instrument identity metadata."""
-        clean_symbol = str(symbol).strip()
-        clean_name = str(display_name).strip()
-        if not clean_symbol or not clean_name:
-            return None
-        now = datetime.now().isoformat()
-        fetched_at_value = fetched_at or now
-        with sqlite3.connect(self._path) as conn:
-            conn.row_factory = sqlite3.Row
-            conn.execute(
-                """
-                INSERT INTO instrument_metadata (
-                    symbol, asset_type, display_name, provider_symbol, exchange,
-                    market, provider_name, source, fetched_at, metadata_json,
-                    created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(symbol, asset_type) DO UPDATE SET
-                    display_name = excluded.display_name,
-                    provider_symbol = excluded.provider_symbol,
-                    exchange = excluded.exchange,
-                    market = excluded.market,
-                    provider_name = excluded.provider_name,
-                    source = excluded.source,
-                    fetched_at = excluded.fetched_at,
-                    metadata_json = excluded.metadata_json,
-                    updated_at = excluded.updated_at
-                """,
-                (
-                    clean_symbol,
-                    asset_type,
-                    clean_name,
-                    provider_symbol,
-                    exchange,
-                    market,
-                    provider_name,
-                    source,
-                    fetched_at_value,
-                    _serialize_metadata_json(metadata),
-                    now,
-                    now,
-                ),
-            )
-            conn.commit()
-            row = conn.execute(
-                """
-                SELECT *
-                FROM instrument_metadata
-                WHERE symbol = ? AND asset_type = ?
-                """,
-                (clean_symbol, asset_type),
-            ).fetchone()
-            return dict(row) if row else None
+        return self._instrument_metadata.upsert_metadata(
+            symbol=symbol,
+            asset_type=asset_type,
+            display_name=display_name,
+            provider_symbol=provider_symbol,
+            exchange=exchange,
+            market=market,
+            provider_name=provider_name,
+            source=source,
+            fetched_at=fetched_at,
+            metadata=metadata,
+        )
 
     def get_instrument_metadata_sync(
         self, symbol: str, asset_type: str | None = None
     ) -> dict[str, Any] | None:
         """Read local instrument identity metadata."""
-        with sqlite3.connect(self._path) as conn:
-            conn.row_factory = sqlite3.Row
-            if asset_type:
-                row = conn.execute(
-                    """
-                    SELECT *
-                    FROM instrument_metadata
-                    WHERE symbol = ? AND asset_type = ?
-                    LIMIT 1
-                    """,
-                    (symbol, asset_type),
-                ).fetchone()
-            else:
-                row = conn.execute(
-                    """
-                    SELECT *
-                    FROM instrument_metadata
-                    WHERE symbol = ?
-                    ORDER BY fetched_at DESC, updated_at DESC, id DESC
-                    LIMIT 1
-                    """,
-                    (symbol,),
-                ).fetchone()
-            return dict(row) if row else None
+        return self._instrument_metadata.get_metadata(symbol, asset_type)
 
     def list_instrument_metadata_sync(self) -> list[dict[str, Any]]:
         """List local instrument identities newest first."""
-        with sqlite3.connect(self._path) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute("""
-                SELECT *
-                FROM instrument_metadata
-                ORDER BY fetched_at DESC, updated_at DESC, id DESC
-                """).fetchall()
-            return [dict(row) for row in rows]
+        return self._instrument_metadata.list_metadata()
 
     # ---------- Signals ----------
 
@@ -820,7 +765,7 @@ class AppDatabase:
                 (source_signal_id,),
             ).fetchone()
             if row is not None:
-                _insert_event_sync(
+                insert_event_sync(
                     conn,
                     event_type="task.action.created",
                     timestamp=row["timestamp"],
@@ -964,7 +909,7 @@ class AppDatabase:
                 (task_id,),
             ).fetchone()
             if row is not None:
-                _insert_event_sync(
+                insert_event_sync(
                     conn,
                     event_type="task.action.status_changed",
                     timestamp=datetime.now().isoformat(),
@@ -1024,7 +969,7 @@ class AppDatabase:
             ).fetchone()
             if signal is None:
                 return None
-            cursor = _insert_event_sync(
+            cursor = insert_event_sync(
                 conn,
                 event_type="signal.review.recorded",
                 timestamp=reviewed_at,
@@ -1098,7 +1043,7 @@ class AppDatabase:
                 ),
             )
             row_id = cursor.lastrowid or 0
-            _insert_event_sync(
+            insert_event_sync(
                 conn,
                 event_type="risk.signal.recorded",
                 timestamp=decision.timestamp.isoformat(),
@@ -1950,7 +1895,7 @@ class AppDatabase:
                     "claimed_at_epoch_ms": int(claimed_at_epoch_ms),
                     "claimed_at": claimed_at,
                 }
-                cursor = _insert_event_sync(
+                cursor = insert_event_sync(
                     conn,
                     event_type="controlled_broker.recovery_query_claimed",
                     timestamp=claimed_at,
@@ -2657,7 +2602,7 @@ class AppDatabase:
                         "post_ledger_cutoff_id": correction_entry_id,
                     }
                 )
-                _insert_event_sync(
+                insert_event_sync(
                     conn,
                     event_type="portfolio.ledger_entry.recorded",
                     timestamp=_normalize_timestamp(derived_plan["effective_at"]),
@@ -2721,7 +2666,7 @@ class AppDatabase:
                         requested["applied_at"],
                     ),
                 )
-                _insert_event_sync(
+                insert_event_sync(
                     conn,
                     event_type="controlled_broker.ledger_corrected",
                     timestamp=requested["applied_at"],
@@ -3055,7 +3000,7 @@ class AppDatabase:
                     )
                     entry_id = int(cursor.lastrowid or 0)
                     ledger_entry_ids.append(entry_id)
-                    _insert_event_sync(
+                    insert_event_sync(
                         conn,
                         event_type="portfolio.ledger_entry.recorded",
                         timestamp=normalized_timestamp,
@@ -3137,7 +3082,7 @@ class AppDatabase:
                         requested["applied_at"],
                     ),
                 )
-                _insert_event_sync(
+                insert_event_sync(
                     conn,
                     event_type="controlled_broker.ledger_posted",
                     timestamp=requested["applied_at"],
@@ -3521,7 +3466,7 @@ class AppDatabase:
                         (fill["fill_id"],),
                     ).fetchone()
                     if saved_fill is not None:
-                        _insert_event_sync(
+                        insert_event_sync(
                             conn,
                             event_type="order.fill.recorded",
                             timestamp=str(saved_fill["timestamp"]),
@@ -3722,7 +3667,7 @@ class AppDatabase:
                         requested["cleared_at"],
                     ),
                 )
-                _insert_event_sync(
+                insert_event_sync(
                     conn,
                     event_type="controlled_broker.reconciliation_cleared",
                     timestamp=requested["cleared_at"],
@@ -4650,7 +4595,7 @@ class AppDatabase:
                 (run_id,),
             ).fetchone()
             if updated is not None:
-                _insert_event_sync(
+                insert_event_sync(
                     conn,
                     event_type="paper_shadow_run.review_recorded",
                     timestamp=reviewed_at,
@@ -4746,7 +4691,7 @@ class AppDatabase:
                 (order_id,),
             ).fetchone()
             if row is not None:
-                _insert_event_sync(
+                insert_event_sync(
                     conn,
                     event_type="order.recorded",
                     timestamp=row["timestamp"],
@@ -4815,7 +4760,7 @@ class AppDatabase:
                 (order_id,),
             ).fetchone()
             if updated is not None:
-                _insert_event_sync(
+                insert_event_sync(
                     conn,
                     event_type="order.shadow_divergence_reviewed",
                     timestamp=reviewed_at,
@@ -4882,7 +4827,7 @@ class AppDatabase:
             if row is not None:
                 payload = _order_event_payload(row)
                 payload["note"] = note
-                _insert_event_sync(
+                insert_event_sync(
                     conn,
                     event_type="order.status_changed",
                     timestamp=datetime.now().isoformat(),
@@ -4959,7 +4904,7 @@ class AppDatabase:
                 (order_id,),
             ).fetchone()
             if row is not None:
-                _insert_event_sync(
+                insert_event_sync(
                     conn,
                     event_type="order.submitted",
                     timestamp=row["timestamp"],
@@ -5017,7 +4962,7 @@ class AppDatabase:
                 (order_id,),
             ).fetchone()
             if row is not None:
-                _insert_event_sync(
+                insert_event_sync(
                     conn,
                     event_type="order.status_changed",
                     timestamp=datetime.now().isoformat(),
@@ -5109,7 +5054,7 @@ class AppDatabase:
                 (fill_id,),
             ).fetchone()
             if row is not None:
-                _insert_event_sync(
+                insert_event_sync(
                     conn,
                     event_type="order.fill.recorded",
                     timestamp=row["timestamp"],
@@ -5184,50 +5129,29 @@ class AppDatabase:
         cost_summary_json: str = "{}",
     ) -> int:
         """保存回测结果，返回 ID。"""
-        with sqlite3.connect(self._path) as conn:
-            cursor = conn.execute(
-                """INSERT INTO backtest_results
-                   (created_at, config_json, initial_cash, final_equity, total_return,
-                    sharpe, sortino, max_drawdown, win_rate, duration_days,
-                    equity_curve_json, metrics_json, cost_summary_json)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    datetime.now().isoformat(),
-                    config_json,
-                    initial_cash,
-                    final_equity,
-                    total_return,
-                    sharpe,
-                    sortino,
-                    max_dd,
-                    win_rate,
-                    duration_days,
-                    equity_curve_json,
-                    metrics_json,
-                    cost_summary_json,
-                ),
-            )
-            conn.commit()
-            return cursor.lastrowid or 0
+        return await self._backtest_results.save(
+            config_json=config_json,
+            initial_cash=initial_cash,
+            final_equity=final_equity,
+            total_return=total_return,
+            sharpe=sharpe,
+            max_dd=max_dd,
+            equity_curve_json=equity_curve_json,
+            annual_return=annual_return,
+            sortino=sortino,
+            win_rate=win_rate,
+            duration_days=duration_days,
+            metrics_json=metrics_json,
+            cost_summary_json=cost_summary_json,
+        )
 
     async def get_backtest_results(self) -> list[dict[str, Any]]:
         """获取所有回测结果摘要。"""
-        with sqlite3.connect(self._path) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute("""SELECT id, created_at, config_json, initial_cash,
-                          final_equity, total_return, sharpe, max_drawdown,
-                          equity_curve_json, metrics_json, cost_summary_json
-                   FROM backtest_results ORDER BY id DESC""").fetchall()
-            return [dict(row) for row in rows]
+        return await self._backtest_results.list_results()
 
     async def get_backtest_result(self, result_id: int) -> dict[str, Any] | None:
         """获取单个回测结果详情。"""
-        with sqlite3.connect(self._path) as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                "SELECT * FROM backtest_results WHERE id = ?", (result_id,)
-            ).fetchone()
-            return dict(row) if row else None
+        return await self._backtest_results.get_result(result_id)
 
     # ---------- Quote Fetch Runs ----------
 
@@ -5349,7 +5273,7 @@ class AppDatabase:
                     _serialize_metadata_json(metadata),
                 ),
             )
-            _insert_event_sync(
+            insert_event_sync(
                 conn,
                 event_type="task_run.started",
                 timestamp=started_at,
@@ -5455,7 +5379,7 @@ class AppDatabase:
                 (run_id,),
             ).fetchone()
             if row is not None:
-                _insert_event_sync(
+                insert_event_sync(
                     conn,
                     event_type="task_run.completed",
                     timestamp=finished_at,
@@ -5542,19 +5466,15 @@ class AppDatabase:
         payload: dict[str, Any] | str | None = None,
     ) -> int:
         """Append one normalized domain event to the shared event stream."""
-        with sqlite3.connect(self._path) as conn:
-            cursor = _insert_event_sync(
-                conn,
-                event_type=event_type,
-                timestamp=timestamp,
-                entity_type=entity_type,
-                entity_id=entity_id,
-                source=source,
-                source_ref=source_ref,
-                payload=payload,
-            )
-            conn.commit()
-            return cursor.lastrowid or 0
+        return self._event_log.append(
+            event_type=event_type,
+            timestamp=timestamp,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            source=source,
+            source_ref=source_ref,
+            payload=payload,
+        )
 
     def list_events_sync(
         self,
@@ -5567,36 +5487,14 @@ class AppDatabase:
         offset: int = 0,
     ) -> list[dict[str, Any]]:
         """List normalized domain events newest first."""
-        conditions: list[str] = []
-        params: list[Any] = []
-        if event_type is not None:
-            conditions.append("event_type = ?")
-            params.append(event_type)
-        if entity_type is not None:
-            conditions.append("entity_type = ?")
-            params.append(entity_type)
-        if entity_id is not None:
-            conditions.append("entity_id = ?")
-            params.append(entity_id)
-        if source is not None:
-            conditions.append("source = ?")
-            params.append(source)
-
-        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-        params.extend([limit, offset])
-        with sqlite3.connect(self._path) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                f"""
-                SELECT *
-                FROM event_log
-                {where_clause}
-                ORDER BY timestamp DESC, id DESC
-                LIMIT ? OFFSET ?
-                """,
-                tuple(params),
-            ).fetchall()
-            return [dict(row) for row in rows]
+        return self._event_log.list_events(
+            event_type=event_type,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            source=source,
+            limit=limit,
+            offset=offset,
+        )
 
     # ---------- Controlled Session Budget Reservations ----------
 
@@ -7607,7 +7505,7 @@ class AppDatabase:
                 (symbol, asset_type),
             ).fetchone()
             if row is not None:
-                _insert_event_sync(
+                insert_event_sync(
                     conn,
                     event_type="market.quote.refreshed",
                     timestamp=row["quote_timestamp"],
@@ -7706,7 +7604,7 @@ class AppDatabase:
                 ),
             )
             snapshot_id = cursor.lastrowid or 0
-            _insert_event_sync(
+            insert_event_sync(
                 conn,
                 event_type="market.quote.snapshot.recorded",
                 timestamp=timestamp,
@@ -7984,7 +7882,7 @@ class AppDatabase:
                 ),
             )
             snapshot_id = cursor.lastrowid or 0
-            _insert_event_sync(
+            insert_event_sync(
                 conn,
                 event_type="portfolio.snapshot.created",
                 timestamp=timestamp,
@@ -8363,7 +8261,7 @@ class AppDatabase:
                     if value is not None
                 }
             )
-            _insert_event_sync(
+            insert_event_sync(
                 conn,
                 event_type="portfolio.ledger_entry.recorded",
                 timestamp=normalized_timestamp,
@@ -8527,7 +8425,7 @@ class AppDatabase:
             if updated_row is None:
                 raise RuntimeError("settled ledger entry could not be reloaded")
             updated = dict(updated_row)
-            _insert_event_sync(
+            insert_event_sync(
                 conn,
                 event_type="portfolio.trade_settlement.confirmed",
                 timestamp=normalized_settled_at,
@@ -8588,46 +8486,15 @@ class AppDatabase:
         event_date: str | None = None,
     ) -> int:
         """新增研究记录，供市场研究工作台持久化使用。"""
-        now = datetime.now().isoformat()
-        with sqlite3.connect(self._path) as conn:
-            cursor = conn.execute(
-                """INSERT INTO market_research_notes
-                   (symbol, asset_class, entry_kind, title, content, priority, event_date, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    symbol,
-                    asset_class,
-                    entry_kind,
-                    title,
-                    content,
-                    priority,
-                    event_date,
-                    now,
-                    now,
-                ),
-            )
-            note_id = cursor.lastrowid or 0
-            _insert_event_sync(
-                conn,
-                event_type="research.note.created",
-                timestamp=now,
-                entity_type="instrument",
-                entity_id=symbol,
-                source="market_research_notes",
-                source_ref=str(note_id),
-                payload={
-                    "note_id": note_id,
-                    "symbol": symbol,
-                    "asset_class": asset_class,
-                    "entry_kind": entry_kind,
-                    "title": title,
-                    "content": content,
-                    "priority": priority,
-                    "event_date": event_date,
-                },
-            )
-            conn.commit()
-            return note_id
+        return await self._research_notes.add(
+            symbol=symbol,
+            asset_class=asset_class,
+            entry_kind=entry_kind,
+            title=title,
+            content=content,
+            priority=priority,
+            event_date=event_date,
+        )
 
     async def get_research_notes(
         self,
@@ -8641,36 +8508,15 @@ class AppDatabase:
         offset: int = 0,
     ) -> list[dict[str, Any]]:
         """异步读取研究记录，按更新时间倒序。"""
-        import aiosqlite
-
-        query = "SELECT * FROM market_research_notes"
-        clauses: list[str] = []
-        params: list[Any] = []
-        if symbol:
-            clauses.append("symbol = ?")
-            params.append(symbol)
-        if entry_kind:
-            clauses.append("entry_kind = ?")
-            params.append(entry_kind)
-        if priority:
-            clauses.append("priority = ?")
-            params.append(priority)
-        if event_date_from:
-            clauses.append("COALESCE(event_date, '') >= ?")
-            params.append(event_date_from)
-        if event_date_to:
-            clauses.append("COALESCE(event_date, '') <= ?")
-            params.append(event_date_to)
-        if clauses:
-            query += " WHERE " + " AND ".join(clauses)
-        query += " ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?"
-        params.extend([limit, offset])
-
-        async with aiosqlite.connect(self._path) as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute(query, tuple(params))
-            rows = await cursor.fetchall()
-            return [dict(row) for row in rows]
+        return await self._research_notes.list_notes(
+            symbol=symbol,
+            entry_kind=entry_kind,
+            priority=priority,
+            event_date_from=event_date_from,
+            event_date_to=event_date_to,
+            limit=limit,
+            offset=offset,
+        )
 
     def get_research_notes_sync(
         self,
@@ -8684,45 +8530,19 @@ class AppDatabase:
         offset: int = 0,
     ) -> list[dict[str, Any]]:
         """同步读取研究记录，供聚合看板快速汇总。"""
-        query = "SELECT * FROM market_research_notes"
-        clauses: list[str] = []
-        params: list[Any] = []
-        if symbol:
-            clauses.append("symbol = ?")
-            params.append(symbol)
-        if entry_kind:
-            clauses.append("entry_kind = ?")
-            params.append(entry_kind)
-        if priority:
-            clauses.append("priority = ?")
-            params.append(priority)
-        if event_date_from:
-            clauses.append("COALESCE(event_date, '') >= ?")
-            params.append(event_date_from)
-        if event_date_to:
-            clauses.append("COALESCE(event_date, '') <= ?")
-            params.append(event_date_to)
-        if clauses:
-            query += " WHERE " + " AND ".join(clauses)
-        query += " ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?"
-        params.extend([limit, offset])
-
-        with sqlite3.connect(self._path) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(query, tuple(params)).fetchall()
-            return [dict(row) for row in rows]
+        return self._research_notes.list_notes_sync(
+            symbol=symbol,
+            entry_kind=entry_kind,
+            priority=priority,
+            event_date_from=event_date_from,
+            event_date_to=event_date_to,
+            limit=limit,
+            offset=offset,
+        )
 
     async def delete_research_note(self, note_id: int) -> bool:
         """删除研究记录。"""
-        import aiosqlite
-
-        async with aiosqlite.connect(self._path) as db:
-            cursor = await db.execute(
-                "DELETE FROM market_research_notes WHERE id = ?",
-                (note_id,),
-            )
-            await db.commit()
-            return cursor.rowcount > 0
+        return await self._research_notes.delete(note_id)
 
     async def update_research_note(
         self,
@@ -8735,25 +8555,14 @@ class AppDatabase:
         event_date: str | None = None,
     ) -> bool:
         """更新研究记录。"""
-        import aiosqlite
-
-        async with aiosqlite.connect(self._path) as db:
-            cursor = await db.execute(
-                """UPDATE market_research_notes
-                   SET entry_kind = ?, title = ?, content = ?, priority = ?, event_date = ?, updated_at = ?
-                   WHERE id = ?""",
-                (
-                    entry_kind,
-                    title,
-                    content,
-                    priority,
-                    event_date,
-                    datetime.now().isoformat(),
-                    note_id,
-                ),
-            )
-            await db.commit()
-            return cursor.rowcount > 0
+        return await self._research_notes.update(
+            note_id=note_id,
+            entry_kind=entry_kind,
+            title=title,
+            content=content,
+            priority=priority,
+            event_date=event_date,
+        )
 
 
 def _controlled_session_budget_rejection(
@@ -10486,49 +10295,3 @@ def _validate_paper_shadow_run_review_transition(
             "failed paper/shadow run cannot be accepted for manual confirmation; "
             "inspect the failed run or rerun paper/shadow first"
         )
-
-
-def _serialize_event_payload_json(value: dict[str, Any] | str | None) -> str:
-    """Serialize event payloads with Decimal-safe stable JSON."""
-    if value is None:
-        return "{}"
-    if isinstance(value, str):
-        return value
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        default=str,
-    )
-
-
-def _insert_event_sync(
-    conn: sqlite3.Connection,
-    *,
-    event_type: str,
-    timestamp: str,
-    entity_type: str | None,
-    entity_id: str | None,
-    source: str,
-    source_ref: str | None,
-    payload: dict[str, Any] | str | None,
-) -> sqlite3.Cursor:
-    now = datetime.now().isoformat()
-    return conn.execute(
-        """
-        INSERT INTO event_log (
-            event_type, timestamp, entity_type, entity_id, source,
-            source_ref, payload_json, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            event_type,
-            timestamp,
-            entity_type,
-            entity_id,
-            source,
-            source_ref,
-            _serialize_event_payload_json(payload),
-            now,
-        ),
-    )

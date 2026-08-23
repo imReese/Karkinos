@@ -164,6 +164,9 @@ test('workspace command menu navigates without adding execution authority', asyn
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/overview');
+  const commandTrigger = page.getByTestId('workspace-command-trigger');
+  await expect(commandTrigger).toBeVisible();
+  await expect(commandTrigger).toHaveAttribute('aria-expanded', 'false');
 
   await page.keyboard.press('Control+k');
   const commandMenu = page.getByRole('dialog', { name: 'Go to workspace' });
@@ -178,6 +181,58 @@ test('workspace command menu navigates without adding execution authority', asyn
   await expect(
     page.getByRole('heading', { name: 'Risk control center' }),
   ).toBeVisible();
+});
+
+test('a delayed route chunk replaces the prior page with non-interactive pending state', async ({
+  page,
+}) => {
+  let markRiskChunkRequested = () => undefined;
+  const riskChunkRequested = new Promise<void>((resolve) => {
+    markRiskChunkRequested = resolve;
+  });
+  let releaseRiskChunk = () => undefined;
+  const riskChunkRelease = new Promise<void>((resolve) => {
+    releaseRiskChunk = resolve;
+  });
+
+  await page.route(/\/assets\/risk-page-[^/]+\.js(?:\?.*)?$/, async (route) => {
+    markRiskChunkRequested();
+    await riskChunkRelease;
+    await route.continue();
+  });
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/overview');
+  const overviewControl = page
+    .getByTestId('overview-performance-card')
+    .getByRole('tab')
+    .first();
+  await expect(overviewControl).toBeVisible({ timeout: 15_000 });
+
+  const riskLink = page.getByRole('link', { name: 'Risk', exact: true });
+  await riskLink.evaluate((element) => (element as HTMLElement).click());
+  await riskChunkRequested;
+
+  try {
+    const pending = page.getByTestId('route-pending');
+    await expect(pending).toBeVisible();
+    await expect(pending).toHaveAttribute('aria-busy', 'true');
+    await expect(pending.getByRole('status')).toContainText(
+      'Loading Karkinos…',
+    );
+    await expect(overviewControl).toHaveCount(0);
+    await expect(
+      pending.locator('a, button, input, select, textarea, [role="button"]'),
+    ).toHaveCount(0);
+  } finally {
+    releaseRiskChunk();
+  }
+
+  await expect(page).toHaveURL(/\/risk$/);
+  await expect(
+    page.getByRole('heading', { name: 'Risk control center' }),
+  ).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('route-pending')).toHaveCount(0);
 });
 
 test('desktop keyboard order reaches a named command with a visible focus ring', async ({

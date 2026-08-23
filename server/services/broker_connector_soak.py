@@ -13,7 +13,7 @@ from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 from account_truth.broker_connector import LOCAL_JSON_SNAPSHOT_SCHEMA_VERSION
-from server.db import _insert_event_sync
+from server.persistence.event_log import insert_event_sync
 
 BROKER_CONNECTOR_SOAK_OBSERVATION_SCHEMA_VERSION = (
     "karkinos.broker_connector_soak_observation.v1"
@@ -515,7 +515,7 @@ def _record_sequenced_soak_observation(
             conn.commit()
             return dict(existing), True
 
-        cursor = _insert_event_sync(
+        cursor = insert_event_sync(
             conn,
             event_type=BROKER_CONNECTOR_SOAK_EVENT_TYPE,
             timestamp=observed_at.isoformat(),

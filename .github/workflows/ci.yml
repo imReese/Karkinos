@@ -9,6 +9,9 @@ on:
 permissions:
   contents: read
 
+env:
+  UV_VERSION: "0.11.28"
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -29,7 +32,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        run: python -m pip install uv
+        run: python -m pip install "uv==${UV_VERSION}"
 
       - name: Install quality dependencies
         run: uv sync --extra dev --frozen
@@ -69,7 +72,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        run: python -m pip install uv
+        run: python -m pip install "uv==${UV_VERSION}"
 
       - name: Install backend dependencies
         run: uv sync --extra server --extra dev --frozen
@@ -117,7 +120,7 @@ jobs:
 
       - name: Install uv and locked audit tooling
         run: |
-          python -m pip install uv
+          python -m pip install "uv==${UV_VERSION}"
           uv sync --extra server --extra dev --frozen
 
       - name: Audit locked Python production dependencies
@@ -144,7 +147,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        run: python -m pip install uv
+        run: python -m pip install "uv==${UV_VERSION}"
 
       - name: Install backend dependencies
         run: uv sync --extra server --extra dev --frozen
@@ -214,6 +217,7 @@ jobs:
           printf 'docker-context-sentinel\n' > secret.py
           printf 'docker-context-sentinel\n' > .env
           printf 'docker-context-sentinel\n' > data/store/runtime.sqlite
+          printf 'docker-context-sentinel\n' > data/store/private_runtime.py
           printf 'docker-context-sentinel\n' > logs/runtime.log
           printf 'docker-context-sentinel\n' > reports/private-report.json
           printf 'docker-context-sentinel\n' > exports/private-export.csv
@@ -241,7 +245,8 @@ jobs:
               && test ! -e /build-context/broker_statement.csv \
               && test ! -e /build-context/secret.py \
               && test ! -e /build-context/.env \
-              && test ! -e /build-context/data/store \
+              && test ! -e /build-context/data/store/runtime.sqlite \
+              && test ! -e /build-context/data/store/private_runtime.py \
               && test ! -e /build-context/logs \
               && test ! -e /build-context/reports \
               && test ! -e /build-context/exports \
@@ -303,7 +308,7 @@ jobs:
           cache-dependency-path: web/package-lock.json
 
       - name: Install uv
-        run: python -m pip install uv
+        run: python -m pip install "uv==${UV_VERSION}"
 
       - name: Install backend and frontend dependencies
         run: |
@@ -343,7 +348,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        run: python -m pip install uv
+        run: python -m pip install "uv==${UV_VERSION}"
 
       - name: Install acceptance dependencies
         run: uv sync --extra server --extra dev --frozen
@@ -424,3 +429,44 @@ jobs:
           fi
 
           echo "No tracked private artifacts found."
+
+  release-gate:
+    name: Release gate
+    if: always()
+    needs:
+      - python-quality
+      - backend
+      - dependency-audit
+      - trading-safety
+      - frontend
+      - docker-runtime
+      - browser-safety
+      - acceptance-evidence
+      - secret-scan
+      - hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every release check to pass
+        env:
+          PYTHON_QUALITY_RESULT: ${{ needs.python-quality.result }}
+          BACKEND_RESULT: ${{ needs.backend.result }}
+          DEPENDENCY_AUDIT_RESULT: ${{ needs.dependency-audit.result }}
+          TRADING_SAFETY_RESULT: ${{ needs.trading-safety.result }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          DOCKER_RUNTIME_RESULT: ${{ needs.docker-runtime.result }}
+          BROWSER_SAFETY_RESULT: ${{ needs.browser-safety.result }}
+          ACCEPTANCE_EVIDENCE_RESULT: ${{ needs.acceptance-evidence.result }}
+          SECRET_SCAN_RESULT: ${{ needs.secret-scan.result }}
+          HYGIENE_RESULT: ${{ needs.hygiene.result }}
+        run: |
+          set -euo pipefail
+          test "${PYTHON_QUALITY_RESULT}" = "success"
+          test "${BACKEND_RESULT}" = "success"
+          test "${DEPENDENCY_AUDIT_RESULT}" = "success"
+          test "${TRADING_SAFETY_RESULT}" = "success"
+          test "${FRONTEND_RESULT}" = "success"
+          test "${DOCKER_RUNTIME_RESULT}" = "success"
+          test "${BROWSER_SAFETY_RESULT}" = "success"
+          test "${ACCEPTANCE_EVIDENCE_RESULT}" = "success"
+          test "${SECRET_SCAN_RESULT}" = "success"
+          test "${HYGIENE_RESULT}" = "success"

@@ -8,7 +8,7 @@ COPY web/src/ ./src/
 RUN npm run build
 
 # ---- Stage 2: Python runtime ----
-FROM python:3.14-slim
+FROM python:3.12-slim
 
 ARG UV_VERSION=0.11.28
 

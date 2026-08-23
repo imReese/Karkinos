@@ -16,8 +16,8 @@ from typing import Any, Iterator
 
 from server.ai_runtime.contracts import canonical_json, content_fingerprint
 from server.ai_runtime.store import IdempotencyConflict
-from server.db import _insert_event_sync
 from server.models import AccountStrategyAssignment
+from server.persistence.event_log import insert_event_sync
 from server.services.account_strategy_evidence import (
     fill_metadata,
     linked_strategy_evidence,
@@ -362,7 +362,7 @@ class DecisionOutcomeReviewStore:
                 created_at=created_at,
             )
             contribution = target.strategy_contribution_report
-            _insert_event_sync(
+            insert_event_sync(
                 conn,
                 event_type="decision.outcome_review.recorded",
                 timestamp=created_at,

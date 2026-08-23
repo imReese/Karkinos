@@ -128,6 +128,7 @@ session; this does not grant broker or order authority.
 - [Roadmap](docs/ROADMAP.md) — milestones, priorities, and release gates.
 - [Architecture](docs/ARCHITECTURE.md) — canonical ownership and failure
   semantics.
+- [Codebase guide](docs/CODEBASE.md) — source layout and dependency rules.
 - [English documentation](docs/README.en.md) / [中文文档](docs/README.zh.md) —
   setup, workflows, configuration, and operator guides.
 - [AI collaboration policy](AI_COLLABORATION.md) — integrity, authority, and
