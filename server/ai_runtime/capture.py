@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from collections.abc import Callable, Sequence
-from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Iterator, Mapping, Protocol
+from typing import Any, Mapping, Protocol
 
 from .contracts import (
     EvidenceBoundContextSnapshot,
@@ -24,6 +22,7 @@ from .evidence import (
     EvidenceContextBuilder,
     EvidenceIdentityMismatch,
 )
+from .persistence.context_capture import ContextCaptureSqliteRepository
 from .store import AiAuditStore, IdempotencyConflict
 
 CAPTURE_CONFIRMATION = "capture_read_only_research_context"
@@ -231,46 +230,15 @@ class ContextCaptureResult:
         }
 
 
-_CAPTURE_SCHEMA = """
-CREATE TABLE IF NOT EXISTS ai_context_capture_runs (
-    capture_id TEXT PRIMARY KEY,
-    idempotency_key TEXT NOT NULL UNIQUE,
-    request_json TEXT NOT NULL,
-    request_fingerprint TEXT NOT NULL,
-    status TEXT NOT NULL,
-    context_snapshot_id TEXT,
-    evidence_reference_ids_json TEXT NOT NULL DEFAULT '[]',
-    failure_code TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_ai_context_capture_runs_status
-ON ai_context_capture_runs(status, updated_at DESC);
-"""
-
-
 class ContextCaptureAuditStore:
     """Durable lifecycle records for explicit, model-free context capture."""
 
     def __init__(self, db_path: str | Path) -> None:
         self._path = Path(db_path)
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-
-    @contextmanager
-    def _connection(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self._path, timeout=2)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA busy_timeout=2000")
-        try:
-            with conn:
-                yield conn
-        finally:
-            conn.close()
+        self._repository = ContextCaptureSqliteRepository(self._path)
 
     def init(self) -> None:
-        with self._connection() as conn:
-            conn.executescript(_CAPTURE_SCHEMA)
+        self._repository.init()
 
     def create_or_get(
         self,
@@ -284,35 +252,21 @@ class ContextCaptureAuditStore:
             "request_fingerprint": request.fingerprint,
         }
         capture_id = f"ai-capture-{content_fingerprint(capture_identity)[:24]}"
-        with self._connection() as conn:
-            cursor = conn.execute(
-                """
-                INSERT OR IGNORE INTO ai_context_capture_runs (
-                    capture_id, idempotency_key, request_json,
-                    request_fingerprint, status, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    capture_id,
-                    request.idempotency_key,
-                    request_json,
-                    request.fingerprint,
-                    CaptureRunStatus.RUNNING.value,
-                    created_at,
-                    created_at,
-                ),
-            )
-            row = conn.execute(
-                "SELECT * FROM ai_context_capture_runs WHERE idempotency_key = ?",
-                (request.idempotency_key,),
-            ).fetchone()
+        row, reused = self._repository.create_or_get(
+            capture_id=capture_id,
+            idempotency_key=request.idempotency_key,
+            request_json=request_json,
+            request_fingerprint=request.fingerprint,
+            status=CaptureRunStatus.RUNNING.value,
+            created_at=created_at,
+        )
         if row is None:
             raise IdempotencyConflict("capture identity collision")
         if str(row["request_fingerprint"]) != request.fingerprint:
             raise IdempotencyConflict(
                 "capture idempotency key was reused with different input"
             )
-        return _capture_run_from_row(row), cursor.rowcount == 0
+        return _capture_run_from_mapping(row), reused
 
     def mark_running(self, capture_id: str, *, updated_at: str) -> ContextCaptureRun:
         return self._update(
@@ -381,14 +335,10 @@ class ContextCaptureAuditStore:
         )
 
     def get(self, capture_id: str) -> ContextCaptureRun:
-        with self._connection() as conn:
-            row = conn.execute(
-                "SELECT * FROM ai_context_capture_runs WHERE capture_id = ?",
-                (capture_id,),
-            ).fetchone()
+        row = self._repository.get(capture_id)
         if row is None:
             raise LookupError(f"context capture run not found: {capture_id}")
-        return _capture_run_from_row(row)
+        return _capture_run_from_mapping(row)
 
     def _update(
         self,
@@ -401,40 +351,25 @@ class ContextCaptureAuditStore:
         updated_at: str,
         preserve_completed: bool = False,
     ) -> ContextCaptureRun:
-        with self._connection() as conn:
-            completed_guard = " AND status != ?" if preserve_completed else ""
-            params: list[Any] = [
-                status.value,
-                context_snapshot_id,
-                canonical_json(list(evidence_reference_ids)),
-                failure_code,
-                updated_at,
-                capture_id,
-            ]
-            if preserve_completed:
-                params.append(CaptureRunStatus.COMPLETED.value)
-            cursor = conn.execute(
-                f"""
-                UPDATE ai_context_capture_runs
-                SET status = ?, context_snapshot_id = ?,
-                    evidence_reference_ids_json = ?, failure_code = ?,
-                    updated_at = ?
-                WHERE capture_id = ?{completed_guard}
-                """,
-                params,
-            )
-            row = conn.execute(
-                "SELECT * FROM ai_context_capture_runs WHERE capture_id = ?",
-                (capture_id,),
-            ).fetchone()
+        row, updated = self._repository.update(
+            capture_id=capture_id,
+            status=status.value,
+            context_snapshot_id=context_snapshot_id,
+            evidence_reference_ids_json=canonical_json(list(evidence_reference_ids)),
+            failure_code=failure_code,
+            updated_at=updated_at,
+            preserve_status=(
+                CaptureRunStatus.COMPLETED.value if preserve_completed else None
+            ),
+        )
         if row is None:
             raise LookupError(f"context capture run not found: {capture_id}")
-        if cursor.rowcount != 1 and not (
+        if not updated and not (
             preserve_completed
             and str(row["status"]) == CaptureRunStatus.COMPLETED.value
         ):
             raise RuntimeError(f"context capture update failed: {capture_id}")
-        return _capture_run_from_row(row)
+        return _capture_run_from_mapping(row)
 
 
 class HumanResearchContextCaptureService:
@@ -638,7 +573,7 @@ def _capture_failure_code(exc: Exception) -> str:
     return "capture_runtime_error"
 
 
-def _capture_run_from_row(row: sqlite3.Row) -> ContextCaptureRun:
+def _capture_run_from_mapping(row: Mapping[str, Any]) -> ContextCaptureRun:
     return ContextCaptureRun(
         capture_id=str(row["capture_id"]),
         idempotency_key=str(row["idempotency_key"]),

@@ -9,12 +9,10 @@ identity.  AI tools may then read only that frozen record.
 from __future__ import annotations
 
 import json
-import sqlite3
 from collections.abc import Callable, Mapping, Sequence
-from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from .contracts import (
     EvidenceBoundContextSnapshot,
@@ -23,6 +21,7 @@ from .contracts import (
     canonical_json,
     content_fingerprint,
 )
+from .persistence.canonical_evidence import CanonicalEvidenceSqliteRepository
 
 
 class EvidenceIdentityMismatch(ValueError):
@@ -55,33 +54,6 @@ _EVIDENCE_STATUSES = frozenset(
         "unreconciled",
     }
 )
-
-_EVIDENCE_SCHEMA = """
-CREATE TABLE IF NOT EXISTS ai_canonical_evidence (
-    reference_id TEXT PRIMARY KEY,
-    tool_name TEXT NOT NULL,
-    kind TEXT NOT NULL,
-    valuation_snapshot_id TEXT NOT NULL,
-    ledger_cutoff_id INTEGER NOT NULL CHECK(ledger_cutoff_id >= 0),
-    ledger_fingerprint TEXT NOT NULL,
-    status TEXT NOT NULL,
-    as_of TEXT NOT NULL,
-    source_schema_version TEXT NOT NULL,
-    payload_json TEXT NOT NULL,
-    payload_fingerprint TEXT NOT NULL,
-    record_fingerprint TEXT NOT NULL UNIQUE,
-    captured_at TEXT NOT NULL,
-    persisted_facts_only INTEGER NOT NULL CHECK(persisted_facts_only = 1)
-);
-
-CREATE INDEX IF NOT EXISTS idx_ai_canonical_evidence_identity
-ON ai_canonical_evidence(
-    valuation_snapshot_id,
-    ledger_cutoff_id,
-    ledger_fingerprint,
-    tool_name
-);
-"""
 
 
 def _require_text(value: str, field_name: str) -> None:
@@ -218,77 +190,48 @@ class CanonicalEvidenceRecord:
 
 
 class CanonicalEvidenceRepository:
-    """SQLite store limited to immutable ``ai_canonical_evidence`` records."""
+    """Domain repository for immutable canonical evidence records."""
 
     def __init__(self, db_path: str | Path) -> None:
         self._path = Path(db_path)
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-
-    @contextmanager
-    def _connection(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self._path, timeout=2)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA busy_timeout=2000")
-        try:
-            with conn:
-                yield conn
-        finally:
-            conn.close()
+        self._repository = CanonicalEvidenceSqliteRepository(self._path)
 
     def init(self) -> None:
-        with self._connection() as conn:
-            conn.executescript(_EVIDENCE_SCHEMA)
+        self._repository.init()
 
     def persist(self, record: CanonicalEvidenceRecord) -> CanonicalEvidenceRecord:
         """Persist one content-addressed capture idempotently."""
         payload_json = canonical_json(record.payload)
-        with self._connection() as conn:
-            existing = conn.execute(
-                "SELECT * FROM ai_canonical_evidence WHERE reference_id = ?",
-                (record.reference_id,),
-            ).fetchone()
-            if existing is None:
-                conn.execute(
-                    """
-                    INSERT INTO ai_canonical_evidence (
-                        reference_id, tool_name, kind, valuation_snapshot_id,
-                        ledger_cutoff_id, ledger_fingerprint, status, as_of,
-                        source_schema_version, payload_json, payload_fingerprint,
-                        record_fingerprint, captured_at, persisted_facts_only
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-                    """,
-                    (
-                        record.reference_id,
-                        record.tool_name,
-                        record.kind,
-                        record.valuation_snapshot_id,
-                        record.ledger_cutoff_id,
-                        record.ledger_fingerprint,
-                        record.status,
-                        record.as_of,
-                        record.source_schema_version,
-                        payload_json,
-                        record.payload_fingerprint,
-                        record.record_fingerprint,
-                        record.captured_at,
-                    ),
-                )
-                return record
-            persisted = _record_from_row(existing)
-            if persisted.record_fingerprint != record.record_fingerprint:
-                raise EvidenceIdentityMismatch(
-                    f"conflicting canonical evidence: {record.reference_id}"
-                )
-            return persisted
+        existing = self._repository.persist(
+            {
+                "reference_id": record.reference_id,
+                "tool_name": record.tool_name,
+                "kind": record.kind,
+                "valuation_snapshot_id": record.valuation_snapshot_id,
+                "ledger_cutoff_id": record.ledger_cutoff_id,
+                "ledger_fingerprint": record.ledger_fingerprint,
+                "status": record.status,
+                "as_of": record.as_of,
+                "source_schema_version": record.source_schema_version,
+                "payload_json": payload_json,
+                "payload_fingerprint": record.payload_fingerprint,
+                "record_fingerprint": record.record_fingerprint,
+                "captured_at": record.captured_at,
+            }
+        )
+        if existing is None:
+            return record
+        persisted = _record_from_mapping(existing)
+        if persisted.record_fingerprint != record.record_fingerprint:
+            raise EvidenceIdentityMismatch(
+                f"conflicting canonical evidence: {record.reference_id}"
+            )
+        return persisted
 
     def get(self, reference_id: str) -> CanonicalEvidenceRecord | None:
         """Read one exact record without refreshing or contacting any provider."""
-        with self._connection() as conn:
-            row = conn.execute(
-                "SELECT * FROM ai_canonical_evidence WHERE reference_id = ?",
-                (reference_id,),
-            ).fetchone()
-        return _record_from_row(row) if row is not None else None
+        row = self._repository.get(reference_id)
+        return _record_from_mapping(row) if row is not None else None
 
     def list_for_identity(
         self,
@@ -298,22 +241,12 @@ class CanonicalEvidenceRepository:
         ledger_fingerprint: str,
     ) -> tuple[CanonicalEvidenceRecord, ...]:
         """List captures for one exact valuation/ledger identity."""
-        with self._connection() as conn:
-            rows = conn.execute(
-                """
-                SELECT * FROM ai_canonical_evidence
-                WHERE valuation_snapshot_id = ?
-                  AND ledger_cutoff_id = ?
-                  AND ledger_fingerprint = ?
-                ORDER BY tool_name, reference_id
-                """,
-                (
-                    valuation_snapshot_id,
-                    ledger_cutoff_id,
-                    ledger_fingerprint,
-                ),
-            ).fetchall()
-        return tuple(_record_from_row(row) for row in rows)
+        rows = self._repository.list_for_identity(
+            valuation_snapshot_id=valuation_snapshot_id,
+            ledger_cutoff_id=ledger_cutoff_id,
+            ledger_fingerprint=ledger_fingerprint,
+        )
+        return tuple(_record_from_mapping(row) for row in rows)
 
 
 class EvidenceContextBuilder:
@@ -494,7 +427,7 @@ def _validate_payload_identity(record: CanonicalEvidenceRecord) -> None:
         )
 
 
-def _record_from_row(row: sqlite3.Row) -> CanonicalEvidenceRecord:
+def _record_from_mapping(row: Mapping[str, Any]) -> CanonicalEvidenceRecord:
     return CanonicalEvidenceRecord(
         reference_id=str(row["reference_id"]),
         tool_name=str(row["tool_name"]),
