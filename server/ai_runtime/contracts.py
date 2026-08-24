@@ -6,28 +6,13 @@ ledger, risk-decision, capital-authorization, or broker authority.
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from typing import Any, Mapping, Sequence
 
+from server.contracts.content_identity import canonical_json, content_fingerprint
+
 JsonObject = dict[str, Any]
-
-
-def canonical_json(value: Any) -> str:
-    """Return stable JSON used by ids, audit events, and replay checks."""
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-
-
-def content_fingerprint(value: Any) -> str:
-    """Return a SHA-256 content fingerprint for a JSON-compatible value."""
-    return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
 
 def _require_text(value: str, field_name: str) -> None:

@@ -15,6 +15,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from server.contracts.idempotency import IdempotencyConflict
+
 from .contracts import (
     AgentRole,
     AgentRun,
@@ -34,10 +36,6 @@ from .contracts import (
     canonical_json,
     content_fingerprint,
 )
-
-
-class IdempotencyConflict(ValueError):
-    """Raised when an idempotency key is reused with different immutable input."""
 
 
 @dataclass(frozen=True)
