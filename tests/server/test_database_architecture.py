@@ -117,6 +117,7 @@ def test_unit_of_work_boundaries_remain_explicit() -> None:
         "decision_outcome_reviews.py": 1,
         "decision_quality.py": 1,
         "daily_strategy_artifacts.py": 1,
+        "external_memory_analysis.py": 1,
         "reviewed_fee_schedule_reviews.py": 1,
         "strategy_research_uow.py": 1,
     }
