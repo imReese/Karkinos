@@ -21,6 +21,13 @@ from server.services.market_hours import is_cn_trading_session
 from server.services.market_indices import (
     market_index_display_name,
 )
+from server.services.market_refresh_errors import (
+    TUSHARE_FUND_NAV_PERMISSION_DENIED as _TUSHARE_FUND_NAV_PERMISSION_DENIED,
+)
+from server.services.market_refresh_errors import (
+    provider_error_code,
+    provider_error_reason,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +47,6 @@ _BLOCKING_FETCH_EXECUTOR = ThreadPoolExecutor(
 )
 
 _SH_TZ = ZoneInfo("Asia/Shanghai")
-
-_TUSHARE_FUND_NAV_PERMISSION_DENIED = "tushare_fund_nav_permission_denied"
 
 
 def shanghai_now() -> datetime:
@@ -118,33 +123,6 @@ def mark_persistent_cache_quote(
     marked["using_persistent_cache"] = True
     marked["persistent_cache_status"] = "available"
     return marked
-
-
-def provider_error_code(exc: Exception) -> str | None:
-    message = str(exc)
-    normalized = message.lower()
-    if "fund_nav" in normalized and (
-        "访问权限" in message
-        or "没有接口" in message
-        or "permission" in normalized
-        or "access" in normalized
-    ):
-        return _TUSHARE_FUND_NAV_PERMISSION_DENIED
-    return None
-
-
-def provider_error_reason(error_code: str, *, using_cache: bool) -> str:
-    if error_code == _TUSHARE_FUND_NAV_PERMISSION_DENIED:
-        return (
-            "TuShare fund_nav 权限不足，继续使用本地基金缓存"
-            if using_cache
-            else "TuShare fund_nav 权限不足，请使用免费盘中基金估值或提升 TuShare 权限"
-        )
-    return (
-        "行情源刷新失败，继续使用本地缓存"
-        if using_cache
-        else "行情源刷新失败，暂无真实行情数据"
-    )
 
 
 def stale_reason(

@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
-import re
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any, Callable
 
 from server.services.controlled_session_automatic_pause import (
@@ -14,6 +11,30 @@ from server.services.controlled_session_automatic_pause import (
 )
 from server.services.controlled_session_gate_contract import (
     CONTROLLED_SESSION_LIVE_GATE_MAX_AGE_SECONDS,
+)
+from server.services.controlled_session_live_gate_values import aware_utc as _aware_utc
+from server.services.controlled_session_live_gate_values import (
+    decimal_value as _decimal,
+)
+from server.services.controlled_session_live_gate_values import (
+    fingerprint as _fingerprint,
+)
+from server.services.controlled_session_live_gate_values import (
+    is_fingerprint as _is_fingerprint,
+)
+from server.services.controlled_session_live_gate_values import json_list as _json_list
+from server.services.controlled_session_live_gate_values import (
+    json_object as _json_object,
+)
+from server.services.controlled_session_live_gate_values import mapping as _mapping
+from server.services.controlled_session_live_gate_values import (
+    parse_timestamp as _parse_timestamp,
+)
+from server.services.controlled_session_live_gate_values import (
+    positive_int as _positive_int,
+)
+from server.services.controlled_session_live_gate_values import (
+    safety_flags as _safety_flags,
 )
 from server.services.controlled_session_runtime_rate_limiter import (
     CONTROLLED_SESSION_RATE_REJECTION_EVENT_TYPE,
@@ -33,8 +54,6 @@ CONTROLLED_SESSION_LIVE_GATE_EVENT_SOURCE = "controlled_session_live_gates"
 CONTROLLED_SESSION_MARKET_DATA_MAX_AGE_SECONDS = 120
 CONTROLLED_SESSION_REJECTION_WINDOW_SECONDS = 60
 CONTROLLED_SESSION_REJECTION_SPIKE_THRESHOLD = 3
-
-_FINGERPRINT_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 
 
 class ControlledSessionLiveGateRejected(ValueError):
@@ -108,7 +127,7 @@ class ControlledSessionLiveGateSnapshotService:
             normalized,
         )
         if (
-            not _FINGERPRINT_PATTERN.fullmatch(normalized)
+            not _is_fingerprint(normalized)
             or session.get("status") != "monitorable_bounded_session"
             or not session.get("monitoring_identity_verified")
         ):
@@ -124,7 +143,7 @@ class ControlledSessionLiveGateSnapshotService:
         reservation_id = str(session.get("reservation_id") or "")
         attestation_id = str(session.get("attestation_id") or "")
         if not all(
-            _FINGERPRINT_PATTERN.fullmatch(value)
+            _is_fingerprint(value)
             for value in (session_fingerprint, reservation_id, attestation_id)
         ):
             evidence = self._record_rejection(
@@ -736,92 +755,4 @@ def _missing_snapshot(session_id: str, blockers: list[str]) -> dict[str, Any]:
         "persisted": False,
         "broker_submission_enabled": False,
         "safety": _safety_flags(),
-    }
-
-
-def _mapping(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
-def _json_object(value: Any) -> dict[str, Any]:
-    if isinstance(value, dict):
-        return value
-    if not isinstance(value, str) or not value:
-        return {}
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
-
-
-def _json_list(value: Any) -> list[str]:
-    if isinstance(value, (list, tuple)):
-        return [str(item) for item in value]
-    if not isinstance(value, str) or not value:
-        return []
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return []
-    return [str(item) for item in parsed] if isinstance(parsed, list) else []
-
-
-def _decimal(value: Any) -> Decimal | None:
-    if value in {None, ""}:
-        return None
-    try:
-        parsed = Decimal(str(value))
-    except (InvalidOperation, TypeError, ValueError):
-        return None
-    return parsed if parsed.is_finite() else None
-
-
-def _positive_int(value: Any) -> int | None:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        return None
-    return parsed if parsed > 0 else None
-
-
-def _parse_timestamp(value: Any) -> datetime | None:
-    normalized = str(value or "").strip()
-    if not normalized:
-        return None
-    if normalized.endswith("Z"):
-        normalized = f"{normalized[:-1]}+00:00"
-    try:
-        parsed = datetime.fromisoformat(normalized)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        return None
-    return parsed.astimezone(timezone.utc)
-
-
-def _aware_utc(value: datetime) -> datetime:
-    if value.tzinfo is None or value.utcoffset() is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
-
-
-def _fingerprint(value: Any) -> str:
-    encoded = json.dumps(
-        value,
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
-
-
-def _safety_flags() -> dict[str, bool]:
-    return {
-        "does_not_contact_broker": True,
-        "does_not_submit_or_cancel_broker_order": True,
-        "does_not_mutate_oms": True,
-        "does_not_mutate_production_ledger": True,
-        "does_not_issue_resume_renew_or_expand_session": True,
-        "does_not_grant_or_scale_capital_authority": True,
     }
