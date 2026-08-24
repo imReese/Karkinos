@@ -14,8 +14,8 @@ import {
   WorkspaceHeader,
 } from '../../../shared/ui/workbench';
 import { usePreferences } from '../../../shared/preferences/context';
-import { useAccountStrategyContributionQuery } from '../../account-strategy/api';
-import { StrategyContributionGateCard } from '../../account-strategy/components/strategy-contribution-gate-card';
+import { useAccountStrategyContributionQuery } from '../portfolio-feature-boundary';
+import { StrategyContributionGateCard } from '../portfolio-feature-boundary';
 import {
   useLiveHoldingsQuery,
   usePortfolioCockpitQuery,

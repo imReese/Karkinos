@@ -3,14 +3,14 @@ import {
   formatPublicCode,
   formatPublicStatus,
 } from '../../../shared/public-labels';
-import { type AutomationCockpitResponse } from '../../operations/api';
-import { ControlledBrokerRecoveryOperatorPanel } from '../../operations/controlled-broker-recovery-operator-panel';
-import { ControlledBrokerRejectionEvidencePanel } from '../../operations/controlled-broker-rejection-evidence-panel';
-import { ControlledLedgerPostingOperatorPanel } from '../../operations/controlled-ledger-posting-operator-panel';
-import { ControlledLedgerCorrectionOperatorPanel } from '../../operations/controlled-ledger-correction-operator-panel';
-import { ControlledSessionRevocationOperatorPanel } from '../../operations/controlled-session-revocation-operator-panel';
-import { ControlledTerminalClearanceOperatorPanel } from '../../operations/controlled-terminal-clearance-operator-panel';
-import { ManualBrokerCancellationTicketPanel } from '../../operations/manual-broker-cancellation-ticket-panel';
+import { type AutomationCockpitResponse } from '../decision-feature-boundary';
+import { ControlledBrokerRecoveryOperatorPanel } from '../decision-feature-boundary';
+import { ControlledBrokerRejectionEvidencePanel } from '../decision-feature-boundary';
+import { ControlledLedgerPostingOperatorPanel } from '../decision-feature-boundary';
+import { ControlledLedgerCorrectionOperatorPanel } from '../decision-feature-boundary';
+import { ControlledSessionRevocationOperatorPanel } from '../decision-feature-boundary';
+import { ControlledTerminalClearanceOperatorPanel } from '../decision-feature-boundary';
+import { ManualBrokerCancellationTicketPanel } from '../decision-feature-boundary';
 import {
   controlledExecutionCurrency,
   controlledExecutionStatusLabel,

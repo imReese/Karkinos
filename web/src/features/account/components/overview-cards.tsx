@@ -19,7 +19,7 @@ import {
   normalizeMarketDataStatus,
 } from '../../../shared/market-data-status';
 import { formatPublicStatus } from '../../../shared/public-labels';
-import type { PortfolioSnapshot } from '../../portfolio/api';
+import type { PortfolioSnapshot } from '../account-feature-boundary';
 import type { AccountOverview } from '../api';
 
 type OverviewCardMetrics = AccountOverview & {

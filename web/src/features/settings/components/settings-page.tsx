@@ -6,9 +6,9 @@ import {
   type ReactNode,
 } from 'react';
 
-import { useAccountOverviewQuery } from '../../account/api';
-import { MarketRefreshButton } from '../../market/components/market-refresh-button';
-import { useMarketDataHealthQuery } from '../../market/api';
+import { useAccountOverviewQuery } from '../settings-feature-boundary';
+import { MarketRefreshButton } from '../settings-feature-boundary';
+import { useMarketDataHealthQuery } from '../settings-feature-boundary';
 import { useCopy } from '../../../shared/i18n/context';
 import {
   ControlledActionZone,

@@ -7,7 +7,7 @@ import {
   type DailyCandidateTrial,
   useDailyCandidateTrialReviewMutation,
   useRunDailyCandidateMutation,
-} from '../../operations/api';
+} from '../decision-feature-boundary';
 
 type ReviewDecision =
   'go_to_bounded_manual_trial' | 'continue_paper_shadow' | 'no_go';

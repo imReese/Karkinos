@@ -7,7 +7,7 @@ import {
   type BrokerGatewayFillsQueryResponse,
   type BrokerGatewayOrderQueryResponse,
   type BrokerGatewayStatusResponse,
-} from '../../operations/api';
+} from '../decision-feature-boundary';
 import { DailyCandidateTrialPanel } from './daily-candidate-trial-panel';
 import {
   automationExecutionMode,

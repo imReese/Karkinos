@@ -6,7 +6,7 @@ import {
 import {
   type AutomationCockpitResponse,
   type BrokerGatewayCapability,
-} from '../../operations/api';
+} from '../decision-feature-boundary';
 import { objectRecord } from './decision-status-model';
 import {
   numericSnapshotValue,

@@ -27,7 +27,7 @@ import {
   useUpdateResearchNoteMutation,
   type QuoteFetchRun,
 } from '../api';
-import { useCurrentHoldingMarketEvidenceReviewQuery } from '../../portfolio/api';
+import { useCurrentHoldingMarketEvidenceReviewQuery } from '../market-feature-boundary';
 import { CurrentHoldingMarketEvidenceReviewPanel } from '../components/current-holding-market-evidence-review-panel';
 import {
   MarketInstrumentWorkspace,

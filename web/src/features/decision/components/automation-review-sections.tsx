@@ -3,7 +3,7 @@ import {
   formatPublicCode,
   formatPublicStatus,
 } from '../../../shared/public-labels';
-import { type AutomationCockpitResponse } from '../../operations/api';
+import { type AutomationCockpitResponse } from '../decision-feature-boundary';
 import { objectRecord } from './decision-status-model';
 import {
   automationOpenAlertReviewLabels,

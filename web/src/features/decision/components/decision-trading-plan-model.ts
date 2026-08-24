@@ -9,7 +9,7 @@ import {
 import {
   type OperationsTodayResponse,
   type PaperShadowReviewQueueItem,
-} from '../../operations/api';
+} from '../decision-feature-boundary';
 import type { DecisionCopy } from './decision-status-model';
 import {
   formatPaperShadowRefs,

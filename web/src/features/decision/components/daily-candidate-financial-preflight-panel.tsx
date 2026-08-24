@@ -1,6 +1,6 @@
 import { usePreferences } from '../../../shared/preferences/context';
 import { formatPublicCode } from '../../../shared/public-labels';
-import { type DailyCandidateFinancialPreflight } from '../../operations/api';
+import { type DailyCandidateFinancialPreflight } from '../decision-feature-boundary';
 import {
   actionLabels,
   completionLabels,

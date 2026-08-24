@@ -1,6 +1,6 @@
 import { useCopy } from '../../../shared/i18n/context';
 import { formatCurrency } from '../../../shared/format';
-import type { LiveHoldingGroup } from '../../portfolio/api';
+import type { LiveHoldingGroup } from '../account-feature-boundary';
 
 function toneClass(value: number | null) {
   if (value === null || value === 0) {

@@ -15,7 +15,7 @@ import type { AccountOverview } from '../api';
 import {
   useRefreshMarketQuotesMutation,
   type MarketDataHealthResponse,
-} from '../../market/api';
+} from '../account-feature-boundary';
 
 export type QuoteDiagnosticItem = {
   symbol: string;
