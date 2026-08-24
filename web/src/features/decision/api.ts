@@ -1,6 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiClient, postJson } from '../../shared/api/client';
+import type { DailyTradingPlanBlockerSummary } from '../../shared/contracts/daily-operations';
+
+export type { DailyTradingPlanBlockerSummary } from '../../shared/contracts/daily-operations';
 
 const DECISION_REFETCH_MS = 15_000;
 
@@ -273,14 +276,6 @@ export type DailyTradingPlanBlocker = {
   target: string;
   risk_gate_status?: string | null;
   manual_confirmation_status?: string | null;
-};
-
-export type DailyTradingPlanBlockerSummary = {
-  category: string;
-  target: string;
-  count: number;
-  reasons: string[];
-  sample_symbols: string[];
 };
 
 export type DailyTradingPlanResponse = {
