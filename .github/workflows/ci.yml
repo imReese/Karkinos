@@ -334,7 +334,7 @@ jobs:
             web/test-results/
           if-no-files-found: warn
 
-  acceptance-evidence:
+  repository-acceptance-audit:
     name: Repository acceptance audit
     needs: [backend, frontend, trading-safety]
     runs-on: ubuntu-latest
@@ -377,7 +377,7 @@ jobs:
       - name: Upload acceptance evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: acceptance-evidence
+          name: repository-acceptance-audit
           path: reports/ci/acceptance-audit.json
           if-no-files-found: error
 
@@ -430,7 +430,7 @@ jobs:
 
           echo "No tracked private artifacts found."
 
-  release-gate:
+  code-ci-gate:
     name: Code CI gate
     if: always()
     needs:
@@ -441,7 +441,7 @@ jobs:
       - frontend
       - docker-runtime
       - browser-safety
-      - acceptance-evidence
+      - repository-acceptance-audit
       - secret-scan
       - hygiene
     runs-on: ubuntu-latest
@@ -455,7 +455,7 @@ jobs:
           FRONTEND_RESULT: ${{ needs.frontend.result }}
           DOCKER_RUNTIME_RESULT: ${{ needs.docker-runtime.result }}
           BROWSER_SAFETY_RESULT: ${{ needs.browser-safety.result }}
-          ACCEPTANCE_EVIDENCE_RESULT: ${{ needs.acceptance-evidence.result }}
+          REPOSITORY_ACCEPTANCE_AUDIT_RESULT: ${{ needs.repository-acceptance-audit.result }}
           SECRET_SCAN_RESULT: ${{ needs.secret-scan.result }}
           HYGIENE_RESULT: ${{ needs.hygiene.result }}
         run: |
@@ -467,6 +467,6 @@ jobs:
           test "${FRONTEND_RESULT}" = "success"
           test "${DOCKER_RUNTIME_RESULT}" = "success"
           test "${BROWSER_SAFETY_RESULT}" = "success"
-          test "${ACCEPTANCE_EVIDENCE_RESULT}" = "success"
+          test "${REPOSITORY_ACCEPTANCE_AUDIT_RESULT}" = "success"
           test "${SECRET_SCAN_RESULT}" = "success"
           test "${HYGIENE_RESULT}" = "success"

@@ -39,7 +39,7 @@ def test_ci_has_incremental_python_quality_and_independent_trading_safety_jobs()
     assert "needs: [backend, frontend, trading-safety]" in workflow
 
 
-def test_ci_pins_uv_and_requires_every_release_job_to_pass() -> None:
+def test_ci_pins_uv_and_requires_every_code_ci_job_to_pass() -> None:
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     expected_results = {
         "python-quality": "PYTHON_QUALITY_RESULT",
@@ -49,7 +49,7 @@ def test_ci_pins_uv_and_requires_every_release_job_to_pass() -> None:
         "frontend": "FRONTEND_RESULT",
         "docker-runtime": "DOCKER_RUNTIME_RESULT",
         "browser-safety": "BROWSER_SAFETY_RESULT",
-        "acceptance-evidence": "ACCEPTANCE_EVIDENCE_RESULT",
+        "repository-acceptance-audit": "REPOSITORY_ACCEPTANCE_AUDIT_RESULT",
         "secret-scan": "SECRET_SCAN_RESULT",
         "hygiene": "HYGIENE_RESULT",
     }
@@ -62,17 +62,17 @@ def test_ci_pins_uv_and_requires_every_release_job_to_pass() -> None:
     }
     assert pip_install_lines == {'python -m pip install "uv==${UV_VERSION}"'}
 
-    release_gate = workflow.partition("\n  release-gate:\n")[2]
-    assert release_gate
-    assert "    if: always()" in release_gate
+    code_ci_gate = workflow.partition("\n  code-ci-gate:\n")[2]
+    assert code_ci_gate
+    assert "    if: always()" in code_ci_gate
     required_jobs = {
         line.strip().removeprefix("- ")
-        for line in release_gate.splitlines()
+        for line in code_ci_gate.splitlines()
         if line.startswith("      - ") and not line.startswith("      - name:")
     }
     assert required_jobs == set(expected_results)
     for job, result_variable in expected_results.items():
         assert (
             f"          {result_variable}: " f"${{{{ needs.{job}.result }}}}"
-        ) in release_gate
-        assert f'          test "${{{result_variable}}}" = "success"' in release_gate
+        ) in code_ci_gate
+        assert f'          test "${{{result_variable}}}" = "success"' in code_ci_gate
