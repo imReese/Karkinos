@@ -1,7 +1,7 @@
 import { type ColumnDef } from '@tanstack/react-table';
 import { useMemo } from 'react';
 
-import { useCopy } from '../../../app/copy';
+import { useCopy } from '../../../shared/i18n/context';
 import { DataTable } from '../../../shared/ui/workbench';
 import {
   usePreferences,

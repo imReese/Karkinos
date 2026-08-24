@@ -15,7 +15,7 @@ import {
   YAxis,
 } from 'recharts';
 
-import { useCopy } from '../../../app/copy';
+import { useCopy } from '../../../shared/i18n/context';
 import { EvidenceState } from '../../../shared/ui/workbench';
 import { APP_MOTION, useReducedMotion } from '../../../shared/motion';
 import {

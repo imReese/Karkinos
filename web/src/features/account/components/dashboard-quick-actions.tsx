@@ -1,4 +1,4 @@
-import { useCopy } from '../../../app/copy';
+import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
 import { formatDateTime, formatTimestamp } from '../../../shared/format';
 import {

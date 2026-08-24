@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 
-import { useCopy } from '../../../app/copy';
+import { useCopy } from '../../../shared/i18n/context';
 import { toDatetimeLocalInputValue } from '../datetime-local';
 
 export type ManualAdjustmentFormValues = {

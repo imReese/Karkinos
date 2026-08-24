@@ -66,7 +66,11 @@ function reportWithOosStrategy(strategyId: string): BacktestReport {
 }
 
 test('shows localized strategy name before internal id in OOS evidence', () => {
-  render(<ValidationEvidencePanel report={reportWithOosStrategy('dual_ma')} />);
+  render(
+    <PreferencesProvider>
+      <ValidationEvidencePanel report={reportWithOosStrategy('dual_ma')} />
+    </PreferencesProvider>,
+  );
 
   expect(screen.getByText('Dual Moving Average')).toBeTruthy();
   expect(screen.getByText('Audit id')).toBeTruthy();

@@ -1,6 +1,6 @@
 import { ChevronDown } from 'lucide-react';
 
-import { useCopy, type AppCopy } from '../../../app/copy';
+import { useCopy, type AppCopy } from '../../../shared/i18n/context';
 import {
   ExceptionList,
   type ExceptionItem,

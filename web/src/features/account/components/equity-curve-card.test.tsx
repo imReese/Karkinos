@@ -916,7 +916,11 @@ test('renders a terminal empty state for periods without chart data', async () =
 });
 
 test('renders a compact evidence-first chart loading state without a fake curve', () => {
-  render(<EquityCurveSkeleton />);
+  render(
+    <PreferencesProvider>
+      <EquityCurveSkeleton />
+    </PreferencesProvider>,
+  );
 
   const skeleton = screen.getByTestId('equity-curve-skeleton');
   const frame = screen.getByTestId('equity-curve-loading-frame');

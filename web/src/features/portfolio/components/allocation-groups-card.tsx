@@ -1,4 +1,4 @@
-import { useCopy } from '../../../app/copy';
+import { useCopy } from '../../../shared/i18n/context';
 import { MetricStrip } from '../../../shared/ui/workbench';
 import { formatAssetClassLabel } from '../../../shared/asset-class';
 import { formatCurrency, formatPercent } from '../../../shared/format';

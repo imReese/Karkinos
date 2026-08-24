@@ -13,7 +13,7 @@ import {
   type ExceptionItem,
   type StatusTone,
 } from '../../../shared/ui/workbench';
-import { useCopy } from '../../../app/copy';
+import { useCopy } from '../../../shared/i18n/context';
 import {
   usePreferences,
   type Locale,

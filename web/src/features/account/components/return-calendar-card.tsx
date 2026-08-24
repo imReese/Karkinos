@@ -7,7 +7,7 @@ import {
   Table2,
 } from 'lucide-react';
 
-import { useCopy, type AppCopy } from '../../../app/copy';
+import { useCopy, type AppCopy } from '../../../shared/i18n/context';
 import { formatAssetClassLabel } from '../../../shared/asset-class';
 import {
   formatCurrency as formatCurrencyValue,

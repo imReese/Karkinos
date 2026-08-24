@@ -1,4 +1,4 @@
-import { useCopy } from '../../../app/copy';
+import { useCopy } from '../../../shared/i18n/context';
 import { MetricStrip, WorkspaceHeader } from '../../../shared/ui/workbench';
 import {
   useAccountStrategyAssignmentQuery,

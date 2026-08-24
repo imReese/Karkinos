@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { createLazyRoute } from '@tanstack/react-router';
 import { ChevronDown } from 'lucide-react';
 
-import { useCopy, type AppCopy } from '../../../app/copy';
+import { useCopy, type AppCopy } from '../../../shared/i18n/context';
 import { ToastStack, type ToastItem } from '../../../shared/ui/toast-stack';
 import {
   EvidenceState,

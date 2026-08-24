@@ -1,6 +1,14 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  fireEvent,
+  render as renderTestingLibrary,
+  screen,
+  waitFor,
+} from '@testing-library/react';
+import type { ReactElement } from 'react';
 import { expect, test, vi } from 'vitest';
 
+import { copy } from '../../app/copy';
+import { CopyContext } from '../../shared/i18n/context';
 import { TradeForm } from './components/trade-form';
 import { FundBatchForm } from './components/fund-batch-form';
 import { CashFlowForm } from './components/cash-flow-form';
@@ -8,6 +16,12 @@ import { DividendForm } from './components/dividend-form';
 import { ManualAdjustmentForm } from './components/manual-adjustment-form';
 import { ActivityFeed } from './components/activity-feed';
 import type { LedgerEntry } from './api';
+
+function render(ui: ReactElement) {
+  return renderTestingLibrary(
+    <CopyContext.Provider value={copy.en}>{ui}</CopyContext.Provider>,
+  );
+}
 
 test('submits a manual trade payload', async () => {
   const onSubmit = vi.fn().mockResolvedValue(undefined);

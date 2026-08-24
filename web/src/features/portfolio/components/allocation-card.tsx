@@ -1,4 +1,4 @@
-import { useCopy } from '../../../app/copy';
+import { useCopy } from '../../../shared/i18n/context';
 import { DataTable } from '../../../shared/ui/workbench';
 import { formatCurrency, formatPercent } from '../../../shared/format';
 import type { AllocationItem } from '../api';

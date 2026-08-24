@@ -9,7 +9,7 @@ import {
 import { useAccountOverviewQuery } from '../../account/api';
 import { MarketRefreshButton } from '../../market/components/market-refresh-button';
 import { useMarketDataHealthQuery } from '../../market/api';
-import { useCopy } from '../../../app/copy';
+import { useCopy } from '../../../shared/i18n/context';
 import {
   ControlledActionZone,
   MetricStrip,
