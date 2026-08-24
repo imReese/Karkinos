@@ -11,9 +11,7 @@ execution, or capital.
 
 from __future__ import annotations
 
-import hashlib
 import json
-import re
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -30,6 +28,25 @@ from account_truth.citic_source_query_window_review import (
     CiticSourceQueryWindowReviewReadRejected,
     CiticSourceQueryWindowReviewRepository,
 )
+from account_truth.citic_source_scope_values import (
+    EVIDENCE_FINGERPRINT as _EVIDENCE_FINGERPRINT,
+)
+from account_truth.citic_source_scope_values import (
+    FILE_FINGERPRINT as _FILE_FINGERPRINT,
+)
+from account_truth.citic_source_scope_values import SAFE_SCOPE_CODE as _SAFE_SCOPE_CODE
+from account_truth.citic_source_scope_values import (
+    normalized_codes as _normalized_codes,
+)
+from account_truth.citic_source_scope_values import (
+    review_fingerprint as _review_fingerprint,
+)
+from account_truth.citic_source_scope_values import review_payload as _review_payload
+from account_truth.citic_source_scope_values import (
+    safe_human_label as _safe_human_label,
+)
+from account_truth.citic_source_scope_values import stored_codes as _stored_codes
+from account_truth.citic_source_scope_values import stored_true as _stored_true
 
 CITIC_SOURCE_SCOPE_REVIEW_SCHEMA_VERSION = (
     "karkinos.account_truth.citic_source_scope_review.v2"
@@ -42,10 +59,6 @@ _SUPPORTED_SCHEMA_VERSIONS = {
     CITIC_SOURCE_SCOPE_REVIEW_SCHEMA_VERSION,
 }
 CiticSourceScopeReviewDecision = Literal["accepted", "revoked"]
-
-_FILE_FINGERPRINT = re.compile(r"^[0-9a-f]{64}$")
-_EVIDENCE_FINGERPRINT = re.compile(r"^sha256:[0-9a-f]{64}$")
-_SAFE_SCOPE_CODE = re.compile(r"^[a-z][a-z0-9_:-]{0,63}$")
 
 
 class CiticSourceScopeReviewRejected(ValueError):
@@ -755,31 +768,6 @@ def _same_accepted_scope(
     return _review_payload(review, reviewer=review.reviewer) == normalized
 
 
-def _review_payload(
-    review: CiticSourceScopeReview,
-    *,
-    reviewer: str,
-) -> dict[str, object]:
-    return {
-        "intake_id": review.intake_id,
-        "file_fingerprint": review.file_fingerprint,
-        "source_preview_fingerprint": review.source_preview_fingerprint,
-        "query_window_review_id": review.query_window_review_id,
-        "query_window_review_fingerprint": review.query_window_review_fingerprint,
-        "account_alias": review.account_alias,
-        "account_reference_hash": review.account_reference_hash,
-        "account_type": review.account_type,
-        "market_scopes": list(review.market_scopes),
-        "asset_classes": list(review.asset_classes),
-        "account_value_band": review.account_value_band,
-        "business_types": list(review.business_types),
-        "no_other_filters_attested": True,
-        "complete_returned_results_attested": True,
-        "source_scope_attested": True,
-        "reviewer": reviewer,
-    }
-
-
 def _fingerprint_payload(
     normalized: dict[str, object],
     *,
@@ -796,50 +784,6 @@ def _fingerprint_payload(
         "decision": decision,
         "supersedes_review_id": supersedes_review_id,
     }
-
-
-def _normalized_codes(values: list[str]) -> list[str]:
-    return sorted(
-        {str(value).strip().lower() for value in values if str(value).strip()}
-    )
-
-
-def _stored_codes(value: object) -> list[str]:
-    parsed = json.loads(str(value))
-    if not isinstance(parsed, list) or any(
-        not isinstance(item, str) for item in parsed
-    ):
-        raise ValueError("invalid source-scope codes")
-    normalized = _normalized_codes(parsed)
-    if normalized != parsed:
-        raise ValueError("source-scope codes are not canonical")
-    return normalized
-
-
-def _stored_true(value: object) -> bool:
-    if value != 1:
-        raise ValueError("stored attestation is not true")
-    return True
-
-
-def _review_fingerprint(payload: dict[str, object]) -> str:
-    encoded = json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
-
-
-def _safe_human_label(value: str) -> bool:
-    return (
-        bool(value)
-        and len(value) <= 128
-        and all(
-            character.isprintable() and character not in "\r\n\t" for character in value
-        )
-    )
 
 
 def _aware_now(value: datetime) -> datetime:
