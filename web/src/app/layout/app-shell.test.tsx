@@ -227,7 +227,13 @@ function renderShell(options: ShellStatusMockOptions = {}) {
     component: () => <div>Overview page</div>,
   });
 
-  const routeTree = rootRoute.addChildren([indexRoute]);
+  const portfolioRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/portfolio',
+    component: () => <div>Portfolio page</div>,
+  });
+
+  const routeTree = rootRoute.addChildren([indexRoute, portfolioRoute]);
   const router = createRouter({
     routeTree,
     history: createMemoryHistory({ initialEntries: ['/overview'] }),
@@ -704,6 +710,32 @@ test('keeps app shell overflow from clipping responsive content', async () => {
   expect(content?.className).not.toContain('overflow-x-auto');
   expect(content?.className).toContain('[contain:layout_paint]');
   expect(contentInner?.className).toContain('min-w-0');
+});
+
+test('restores independent workspace scroll positions across routes', async () => {
+  renderShell();
+  const user = userEvent.setup();
+  expect(await screen.findByText('Overview page')).toBeTruthy();
+  const content = document.querySelector('.app-shell-content') as HTMLElement;
+
+  content.scrollLeft = 9;
+  content.scrollTop = 128;
+  await user.click(await screen.findByTestId('sidebar-nav-portfolio'));
+  expect(await screen.findByText('Portfolio page')).toBeTruthy();
+  expect(content.scrollLeft).toBe(0);
+  expect(content.scrollTop).toBe(0);
+
+  content.scrollLeft = 3;
+  content.scrollTop = 44;
+  await user.click(await screen.findByTestId('sidebar-nav-overview'));
+  expect(await screen.findByText('Overview page')).toBeTruthy();
+  expect(content.scrollLeft).toBe(9);
+  expect(content.scrollTop).toBe(128);
+
+  await user.click(await screen.findByTestId('sidebar-nav-portfolio'));
+  expect(await screen.findByText('Portfolio page')).toBeTruthy();
+  expect(content.scrollLeft).toBe(3);
+  expect(content.scrollTop).toBe(44);
 });
 
 test('uses full language names and fluid menu width', async () => {
