@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from account_truth.broker_adapter_conformance import (
     BrokerAdapterConformanceRepository,
@@ -16,6 +15,10 @@ from account_truth.broker_adapter_release import (
 )
 from account_truth.broker_order_lifecycle_collector import (
     BrokerOrderLifecycleCollectorRepository,
+)
+from server.persistence.broker_adapter_readiness import (
+    BrokerAdapterEvidenceReader,
+    BrokerAdapterEvidenceReadError,
 )
 
 BROKER_ADAPTER_READINESS_SCHEMA_VERSION = "karkinos.broker_adapter_readiness.v1"
@@ -39,6 +42,7 @@ class BrokerAdapterReadinessService:
 
     def __init__(self, path: str | Path) -> None:
         self._path = Path(path)
+        self._evidence = BrokerAdapterEvidenceReader(self._path)
 
     def project(self) -> dict[str, Any]:
         """Return one fail-closed view from already persisted broker evidence."""
@@ -47,9 +51,9 @@ class BrokerAdapterReadinessService:
             return _empty_projection(evidence_store_status="not_configured")
 
         try:
-            if not self._table_exists("broker_adapter_release_manifests"):
+            if not self._evidence.table_exists("broker_adapter_release_manifests"):
                 return _empty_projection(evidence_store_status="not_configured")
-            manifests = self._manifest_rows()
+            manifests = self._evidence.list_release_manifests(limit=_MAX_RELEASES)
             collector_runs = BrokerOrderLifecycleCollectorRepository(
                 self._path,
                 ensure_schema=False,
@@ -58,7 +62,7 @@ class BrokerAdapterReadinessService:
                 self._release_projection(row, collector_runs=collector_runs)
                 for row in manifests
             ]
-        except (OSError, sqlite3.Error, ValueError, TypeError):
+        except (OSError, BrokerAdapterEvidenceReadError, ValueError, TypeError):
             return {
                 **_empty_projection(
                     evidence_store_status="blocked",
@@ -102,7 +106,7 @@ class BrokerAdapterReadinessService:
 
     def _release_projection(
         self,
-        row: sqlite3.Row,
+        row: Mapping[str, Any],
         *,
         collector_runs: list[dict[str, Any]],
     ) -> dict[str, Any]:
@@ -208,25 +212,6 @@ class BrokerAdapterReadinessService:
             "blockers": blockers,
             "does_not_authorize_provider_activation": True,
         }
-
-    def _manifest_rows(self) -> list[sqlite3.Row]:
-        with _connect_readonly(self._path) as conn:
-            conn.row_factory = sqlite3.Row
-            return conn.execute(
-                """
-                SELECT * FROM broker_adapter_release_manifests
-                ORDER BY id DESC LIMIT ?
-                """,
-                (_MAX_RELEASES,),
-            ).fetchall()
-
-    def _table_exists(self, table: str) -> bool:
-        with _connect_readonly(self._path) as conn:
-            row = conn.execute(
-                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
-                (table,),
-            ).fetchone()
-            return row is not None
 
 
 def _release_status(
@@ -352,10 +337,6 @@ def _safety_flags() -> dict[str, bool]:
         "does_not_mutate_capital_authority": True,
         "authorizes_execution": False,
     }
-
-
-def _connect_readonly(path: Path) -> sqlite3.Connection:
-    return sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
 
 
 def _json_object(value: Any) -> dict[str, Any]:
