@@ -10,7 +10,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import sqlite3
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,6 +25,9 @@ from account_truth.broker_adapter_release import (
     BrokerAdapterReleaseRejected,
     BrokerAdapterReleaseReviewRepository,
     preview_broker_adapter_release_manifest,
+)
+from server.persistence.signed_broker_adapter_reviews import (
+    SignedBrokerAdapterReviewReader,
 )
 from server.services.operator_approval import resolve_operator_approval_with_proof
 
@@ -68,6 +70,11 @@ class SignedBrokerAdapterReleaseReviewService:
     ) -> None:
         self._db = db
         self._path = _database_path(db)
+        self._evidence = (
+            SignedBrokerAdapterReviewReader(self._path)
+            if self._path is not None
+            else None
+        )
         self._trusted_operator_identities = tuple(trusted_operator_identities or ())
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
@@ -90,18 +97,11 @@ class SignedBrokerAdapterReleaseReviewService:
         if (
             self._path is None
             or not self._path.exists()
-            or not self._table_exists("broker_adapter_release_manifests")
+            or self._evidence is None
+            or not self._evidence.table_exists("broker_adapter_release_manifests")
         ):
             return []
-        with sqlite3.connect(self._path) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                """
-                SELECT * FROM broker_adapter_release_manifests
-                ORDER BY id DESC LIMIT ?
-                """,
-                (max(1, min(int(limit), 500)),),
-            ).fetchall()
+        rows = self._evidence.list_release_manifests(limit=max(1, min(int(limit), 500)))
         results: list[dict[str, Any]] = []
         for row in rows:
             manifest = _json_object(row["manifest_json"])
@@ -396,7 +396,8 @@ class SignedBrokerAdapterReleaseReviewService:
         if (
             self._path is None
             or not self._path.exists()
-            or not self._table_exists("broker_adapter_release_review_events")
+            or self._evidence is None
+            or not self._evidence.table_exists("broker_adapter_release_review_events")
         ):
             return {
                 "status": "not_configured",
@@ -404,15 +405,7 @@ class SignedBrokerAdapterReleaseReviewService:
                 "review_fingerprint": "",
                 "integrity_blockers": [],
             }
-        with sqlite3.connect(self._path) as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                """
-                SELECT * FROM broker_adapter_release_review_events
-                WHERE release_evidence_ref = ? ORDER BY id DESC LIMIT 1
-                """,
-                (release_ref,),
-            ).fetchone()
+        row = self._evidence.latest_review(release_evidence_ref=release_ref)
         if row is None:
             return {
                 "status": "not_found",
@@ -422,28 +415,21 @@ class SignedBrokerAdapterReleaseReviewService:
             }
         return self._review_row(row, reused=False)
 
-    def _existing_review(self, review_id: str) -> sqlite3.Row | None:
+    def _existing_review(self, review_id: str) -> dict[str, Any] | None:
         normalized = str(review_id or "").strip()
         if (
             self._path is None
             or not self._path.exists()
-            or not self._table_exists("broker_adapter_release_review_events")
+            or self._evidence is None
+            or not self._evidence.table_exists("broker_adapter_release_review_events")
         ):
             return None
-        with sqlite3.connect(self._path) as conn:
-            conn.row_factory = sqlite3.Row
-            return conn.execute(
-                """
-                SELECT * FROM broker_adapter_release_review_events
-                WHERE review_id = ? LIMIT 1
-                """,
-                (normalized,),
-            ).fetchone()
+        return self._evidence.review_by_id(review_id=normalized)
 
     def _resolve_exact_retry(
         self,
         *,
-        row: sqlite3.Row,
+        row: Mapping[str, Any],
         inputs: dict[str, Any],
         dossier_fingerprint: str,
         operator_label: str,
@@ -509,7 +495,7 @@ class SignedBrokerAdapterReleaseReviewService:
             **_safety_flags(),
         }
 
-    def _review_row(self, row: sqlite3.Row, *, reused: bool) -> dict[str, Any]:
+    def _review_row(self, row: Mapping[str, Any], *, reused: bool) -> dict[str, Any]:
         expected_fingerprint = _review_fingerprint(row)
         actual_fingerprint = str(row["review_fingerprint"])
         integrity_blockers = (
@@ -540,40 +526,9 @@ class SignedBrokerAdapterReleaseReviewService:
         }
 
     def _counts(self) -> tuple[int, int]:
-        if self._path is None or not self._path.exists():
+        if self._path is None or self._evidence is None or not self._path.exists():
             return 0, 0
-        with sqlite3.connect(self._path) as conn:
-            manifests = (
-                int(
-                    conn.execute(
-                        "SELECT COUNT(*) FROM broker_adapter_release_manifests"
-                    ).fetchone()[0]
-                )
-                if self._table_exists("broker_adapter_release_manifests")
-                else 0
-            )
-            reviews = (
-                int(
-                    conn.execute(
-                        "SELECT COUNT(*) FROM broker_adapter_release_review_events"
-                    ).fetchone()[0]
-                )
-                if self._table_exists("broker_adapter_release_review_events")
-                else 0
-            )
-        return manifests, reviews
-
-    def _table_exists(self, table: str) -> bool:
-        if self._path is None or not self._path.exists():
-            return False
-        with sqlite3.connect(self._path) as conn:
-            return (
-                conn.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
-                    (table,),
-                ).fetchone()
-                is not None
-            )
+        return self._evidence.counts()
 
     def _raise_rejected(
         self,
@@ -636,7 +591,7 @@ def _manifest_from_preview(value: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _review_fingerprint(row: sqlite3.Row) -> str:
+def _review_fingerprint(row: Mapping[str, Any]) -> str:
     return _fingerprint(
         {
             "review_id": str(row["review_id"]),
@@ -655,8 +610,8 @@ def _review_fingerprint(row: sqlite3.Row) -> str:
     )
 
 
-def _row_text(row: sqlite3.Row, field: str) -> str:
-    return str(row[field]) if field in row.keys() else ""
+def _row_text(row: Mapping[str, Any], field: str) -> str:
+    return str(row[field]) if field in row else ""
 
 
 def _normalized_timestamp(value: Any) -> str | None:
