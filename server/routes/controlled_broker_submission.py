@@ -7,6 +7,14 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
+from server.composition.controlled_execution_services import (
+    build_controlled_broker_cancellation_service,
+    build_controlled_broker_rejection_evidence_service,
+    build_controlled_broker_submission_service,
+    build_controlled_submission_clearance_service,
+    build_manual_broker_cancellation_service,
+    resolve_controlled_broker_release_evidence_provider,
+)
 from server.services.controlled_broker_cancellation import (
     CONTROLLED_BROKER_CANCELLATION_ACKNOWLEDGEMENT,
     CONTROLLED_BROKER_CANCELLATION_RECOVERY_ACKNOWLEDGEMENT,
@@ -27,7 +35,6 @@ from server.services.controlled_broker_submission import (
 )
 from server.services.controlled_submission_reconciliation_clearance import (
     CONTROLLED_SUBMISSION_CLEARANCE_ACKNOWLEDGEMENT,
-    CONTROLLED_SUBMISSION_CLEARANCE_MAX_ACCOUNT_TRUTH_AGE_SECONDS,
     ControlledSubmissionReconciliationClearanceRejected,
     ControlledSubmissionReconciliationClearanceService,
 )
@@ -455,91 +462,33 @@ def create_router() -> APIRouter:
 
 def _service() -> ControlledBrokerSubmissionService:
     from server.dependencies import get_app_state
-    from server.routes.per_order_confirmation import (
-        _service as per_order_confirmation_service,
-    )
 
-    state = get_app_state()
-    config = getattr(state, "config", None)
-    release_evidence_provider = _release_evidence_provider(state)
-    return ControlledBrokerSubmissionService(
-        db=state.db,
-        gateways=getattr(state, "execution_gateways", []) or [],
-        confirmation_provider=per_order_confirmation_service().resolve_confirmation,
-        release_evidence_provider=release_evidence_provider,
-        trusted_operator_identities=(
-            getattr(config, "trusted_operator_identities", []) or []
-        ),
-        trading_controls=getattr(state, "trading_controls", None),
-    )
+    return build_controlled_broker_submission_service(get_app_state())
 
 
 def _clearance_service() -> ControlledSubmissionReconciliationClearanceService:
-    from server.account_truth_gate import build_latest_account_truth_promotion_evidence
     from server.dependencies import get_app_state
 
-    state = get_app_state()
-    config = getattr(state, "config", None)
-    return ControlledSubmissionReconciliationClearanceService(
-        db=state.db,
-        account_truth_provider=(
-            lambda: build_latest_account_truth_promotion_evidence(
-                state,
-                max_age_seconds=(
-                    CONTROLLED_SUBMISSION_CLEARANCE_MAX_ACCOUNT_TRUTH_AGE_SECONDS
-                ),
-            )
-        ),
-        trusted_operator_identities=(
-            getattr(config, "trusted_operator_identities", []) or []
-        ),
-    )
+    return build_controlled_submission_clearance_service(get_app_state())
 
 
 def _manual_cancellation_service() -> ManualBrokerCancellationEvidenceService:
     from server.dependencies import get_app_state
 
-    return ManualBrokerCancellationEvidenceService(db=get_app_state().db)
+    return build_manual_broker_cancellation_service(get_app_state())
 
 
 def _controlled_cancellation_service() -> ControlledBrokerCancellationService:
     from server.dependencies import get_app_state
 
-    state = get_app_state()
-    config = getattr(state, "config", None)
-    release_evidence_provider = _release_evidence_provider(state)
-    return ControlledBrokerCancellationService(
-        db=state.db,
-        gateways=getattr(state, "execution_gateways", []) or [],
-        release_evidence_provider=release_evidence_provider,
-        trusted_operator_identities=(
-            getattr(config, "trusted_operator_identities", []) or []
-        ),
-    )
+    return build_controlled_broker_cancellation_service(get_app_state())
 
 
 def _release_evidence_provider(state: Any) -> Any | None:
-    injected = getattr(
-        state,
-        "controlled_broker_release_evidence_provider",
-        None,
-    )
-    if callable(injected):
-        return injected
-    try:
-        from server.routes.controlled_broker_write_release import (
-            build_controlled_broker_write_release_service,
-        )
-
-        persisted = build_controlled_broker_write_release_service(state)
-        if persisted.get_status().get("active_release_count", 0) > 0:
-            return persisted
-    except Exception:
-        return None
-    return None
+    return resolve_controlled_broker_release_evidence_provider(state)
 
 
 def _rejection_evidence_service() -> ControlledBrokerRejectionEvidenceService:
     from server.dependencies import get_app_state
 
-    return ControlledBrokerRejectionEvidenceService(db=get_app_state().db)
+    return build_controlled_broker_rejection_evidence_service(get_app_state())

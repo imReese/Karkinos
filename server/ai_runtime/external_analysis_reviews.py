@@ -1187,3 +1187,9 @@ def _decimal_text(value: Decimal) -> str:
     if "." in text:
         text = text.rstrip("0").rstrip(".")
     return text or "0"
+
+
+# Public review projections reused by the promoted-memory review contract.
+review_target = _review_target
+event_hash = _event_hash
+cost_evidence = _cost_evidence

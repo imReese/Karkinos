@@ -7,7 +7,9 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from server.account_truth_gate import build_latest_account_truth_promotion_evidence
+from server.composition.controlled_execution_services import (
+    build_broker_connector_soak_promotion_service,
+)
 from server.services.broker_connector_runtime import build_broker_connectors
 from server.services.broker_connector_soak import BrokerConnectorSoakService
 from server.services.broker_connector_soak_promotion import (
@@ -229,16 +231,4 @@ def _runbook_service() -> BrokerConnectorSoakRunbookService:
 def _promotion_service() -> BrokerConnectorSoakPromotionService:
     from server.dependencies import get_app_state
 
-    state = get_app_state()
-    config = getattr(state, "config", None)
-    connectors = build_broker_connectors(getattr(config, "broker_connectors", []) or [])
-    return BrokerConnectorSoakPromotionService(
-        db=state.db,
-        connectors=connectors,
-        trusted_operator_identities=(
-            getattr(config, "trusted_operator_identities", []) or []
-        ),
-        account_truth_evidence_provider=(
-            lambda: build_latest_account_truth_promotion_evidence(state)
-        ),
-    )
+    return build_broker_connector_soak_promotion_service(get_app_state())

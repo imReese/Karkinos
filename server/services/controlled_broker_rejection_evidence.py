@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable, NoReturn
 
-from server.services.per_order_confirmation import build_order_fingerprint
+from server.services.execution_identity import build_order_fingerprint
 
 CONTROLLED_BROKER_REJECTION_EVIDENCE_SCHEMA_VERSION = (
     "karkinos.controlled_broker_rejection_evidence.v1"

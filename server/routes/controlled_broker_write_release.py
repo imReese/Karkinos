@@ -7,6 +7,9 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
+from server.composition.controlled_execution_services import (
+    build_controlled_broker_write_release_service,
+)
 from server.services.controlled_broker_write_release import (
     CONTROLLED_BROKER_WRITE_RELEASE_ACKNOWLEDGEMENT,
     CONTROLLED_BROKER_WRITE_RELEASE_REVOCATION_ACKNOWLEDGEMENT,
@@ -150,23 +153,6 @@ def create_router() -> APIRouter:
             raise HTTPException(status_code=409, detail=exc.evidence) from exc
 
     return router
-
-
-def build_controlled_broker_write_release_service(
-    state: Any,
-) -> ControlledBrokerWriteReleaseService:
-    from server.routes.broker_connector_soak import _promotion_service
-
-    config = getattr(state, "config", None)
-    return ControlledBrokerWriteReleaseService(
-        db=state.db,
-        trusted_operator_identities=(
-            getattr(config, "trusted_operator_identities", []) or []
-        ),
-        soak_promotion_provider=(
-            lambda connector_id: _promotion_service().preview_dossier(connector_id)
-        ),
-    )
 
 
 def _service() -> ControlledBrokerWriteReleaseService:

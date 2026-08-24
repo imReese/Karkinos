@@ -20,16 +20,16 @@ from typing import Mapping
 
 from .contracts import JsonObject, canonical_json, content_fingerprint
 from .external_memory_informed_analysis import (
-    _STAGE_IDS,
     EXTERNAL_MEMORY_ANALYSIS_PROMPT_VERSION,
+    EXTERNAL_MEMORY_ANALYSIS_STAGE_IDS,
     ExternalMemoryAnalysisRecord,
     ExternalMemoryAnalysisResult,
     ExternalMemoryAnalysisStore,
     ExternalModelCallRecord,
     HumanExternalMemoryAnalysisRequest,
     HumanExternalMemoryAnalysisService,
-    _model_call_from_row,
-    _record_from_row,
+    model_call_from_row,
+    record_from_row,
 )
 from .external_reviewed_memory_retrieval import (
     EXTERNAL_REVIEWED_MEMORY_RETRIEVAL_CONTRACT_VERSION,
@@ -119,7 +119,7 @@ class ExternalPromotedMemoryAnalysisStore(ExternalMemoryAnalysisStore):
             if "no such table" not in str(exc):
                 raise
             row = None
-        return _record_from_row(row) if row is not None else None
+        return record_from_row(row) if row is not None else None
 
     def create_or_get(
         self,
@@ -155,7 +155,7 @@ class ExternalPromotedMemoryAnalysisStore(ExternalMemoryAnalysisStore):
                 (request.idempotency_key,),
             ).fetchone()
             if row is not None:
-                stored = _record_from_row(row)
+                stored = record_from_row(row)
                 if (
                     stored.request_fingerprint != request.fingerprint
                     or stored.stored_retrieval_id != request.retrieval_id
@@ -203,7 +203,7 @@ class ExternalPromotedMemoryAnalysisStore(ExternalMemoryAnalysisStore):
             ).fetchone()
         if row is None:
             raise RuntimeError("external promoted-memory analysis persistence failed")
-        return _record_from_row(row), False
+        return record_from_row(row), False
 
     def claim_run(self, analysis_id: str, *, claimed_at: str) -> bool:
         with self._connection() as conn:
@@ -231,7 +231,7 @@ class ExternalPromotedMemoryAnalysisStore(ExternalMemoryAnalysisStore):
             raise LookupError(
                 f"external promoted-memory analysis not found: {analysis_id}"
             )
-        return _record_from_row(row)
+        return record_from_row(row)
 
     def list(self, *, limit: int = 50) -> tuple[ExternalMemoryAnalysisRecord, ...]:
         if limit <= 0 or limit > 200:
@@ -247,7 +247,7 @@ class ExternalPromotedMemoryAnalysisStore(ExternalMemoryAnalysisStore):
             if "no such table" not in str(exc):
                 raise
             rows = []
-        return tuple(_record_from_row(row) for row in rows)
+        return tuple(record_from_row(row) for row in rows)
 
     def start_model_call(
         self,
@@ -342,13 +342,13 @@ class ExternalPromotedMemoryAnalysisStore(ExternalMemoryAnalysisStore):
             if "no such table" not in str(exc):
                 raise
             rows = []
-        records = [_model_call_from_row(row) for row in rows]
+        records = [model_call_from_row(row) for row in rows]
         records.sort(
             key=lambda item: (
                 (
-                    _STAGE_IDS.index(item.stage_id)
-                    if item.stage_id in _STAGE_IDS
-                    else len(_STAGE_IDS)
+                    EXTERNAL_MEMORY_ANALYSIS_STAGE_IDS.index(item.stage_id)
+                    if item.stage_id in EXTERNAL_MEMORY_ANALYSIS_STAGE_IDS
+                    else len(EXTERNAL_MEMORY_ANALYSIS_STAGE_IDS)
                 ),
                 item.started_at,
                 item.stage_id,

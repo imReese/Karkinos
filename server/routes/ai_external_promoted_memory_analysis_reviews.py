@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -17,17 +15,16 @@ from server.ai_runtime.external_analysis_reviews import (
 )
 from server.ai_runtime.external_promoted_memory_analysis_reviews import (
     ExternalPromotedMemoryAnalysisReviewRejected,
-    ExternalPromotedMemoryAnalysisReviewStore,
     HumanExternalPromotedMemoryAnalysisReviewRequest,
     HumanExternalPromotedMemoryAnalysisReviewService,
 )
 from server.ai_runtime.store import IdempotencyConflict
-from server.routes.ai_external_analysis_reviews import (
+from server.composition.ai_application_services import (
+    build_human_external_promoted_memory_analysis_review_service,
+)
+from server.contracts.http.ai_reviews import (
     ExternalAnalysisQualityRubricPayload,
     ProviderPricingSnapshotPayload,
-)
-from server.routes.ai_external_promoted_memory_analyses import (
-    build_human_external_promoted_memory_analysis_service,
 )
 
 
@@ -59,15 +56,6 @@ class HumanExternalPromotedMemoryAnalysisReviewPayload(BaseModel):
 
 def create_router() -> APIRouter:
     router = APIRouter(tags=["ai-research"])
-
-    # Phase 1.16 keeps memory promotion separate from human acceptance.  The
-    # nested router owns a new schema; it does not widen the Phase 1.12 memory
-    # contract or make accepted research automatically recallable.
-    from server.routes.ai_external_promoted_analysis_memory import (
-        create_router as create_external_promoted_analysis_memory_router,
-    )
-
-    router.include_router(create_external_promoted_analysis_memory_router())
 
     @router.post("/api/ai/external-promoted-memory-analyses/{analysis_id}/reviews")
     def review_external_promoted_memory_analysis(
@@ -149,27 +137,6 @@ def create_router() -> APIRouter:
     return router
 
 
-def build_human_external_promoted_memory_analysis_review_service(
-    state,
-    *,
-    initialize: bool,
-) -> HumanExternalPromotedMemoryAnalysisReviewService:
-    """Build a local review edge without loading provider credentials."""
-    db_path = _database_path(state.db)
-    analysis_service = build_human_external_promoted_memory_analysis_service(
-        state,
-        initialize=initialize,
-    )
-    review_store = ExternalPromotedMemoryAnalysisReviewStore(db_path)
-    if initialize:
-        review_store.init()
-    return HumanExternalPromotedMemoryAnalysisReviewService(
-        analysis_service=analysis_service,
-        review_store=review_store,
-        now=_utc_now,
-    )
-
-
 def _service(
     *,
     initialize: bool,
@@ -183,19 +150,6 @@ def _service(
         state,
         initialize=initialize,
     )
-
-
-def _database_path(db) -> Path:
-    path = getattr(db, "_path", None)
-    if path is None:
-        raise ExternalPromotedMemoryAnalysisReviewRejected(
-            "database path is unavailable"
-        )
-    return Path(path)
-
-
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _raise_domain_http_error(exc: Exception) -> None:

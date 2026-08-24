@@ -2,26 +2,20 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from server.ai_runtime.evidence import (
-    CanonicalEvidenceRepository,
-    EvidenceIdentityMismatch,
-)
+from server.ai_runtime.evidence import EvidenceIdentityMismatch
 from server.ai_runtime.external_promoted_analysis_memory_retrieval import (
     ExternalPromotedAnalysisMemoryRetrievalRejected,
-    ExternalPromotedAnalysisMemoryRetrievalStore,
     HumanExternalPromotedAnalysisMemoryRetrievalRequest,
     HumanExternalPromotedAnalysisMemoryRetrievalService,
 )
-from server.ai_runtime.store import AiAuditStore, IdempotencyConflict
-from server.routes.ai_reviewed_memory_retrievals import (
-    build_human_reviewed_memory_retrieval_service,
+from server.ai_runtime.store import IdempotencyConflict
+from server.composition.ai_application_services import (
+    build_human_external_promoted_analysis_memory_retrieval_service,
 )
 
 
@@ -112,42 +106,6 @@ def create_router() -> APIRouter:
     return router
 
 
-def build_human_external_promoted_analysis_memory_retrieval_service(
-    state,
-    *,
-    initialize: bool,
-) -> HumanExternalPromotedAnalysisMemoryRetrievalService:
-    """Build the local-only Phase 1.17 edge without loading credentials."""
-    # Imported here to avoid the parent/child route module cycle.
-    from server.routes.ai_external_promoted_analysis_memory import (
-        build_external_promoted_analysis_memory_promotion_service,
-    )
-
-    db_path = _database_path(state.db)
-    promotion_service = build_external_promoted_analysis_memory_promotion_service(
-        state,
-        initialize=initialize,
-    )
-    # Reuse only the established financial-context validator. The Phase 1.8
-    # and Phase 1.13 retrieval stores, request schemas, and fingerprints remain
-    # untouched.
-    legacy_retrieval_service = build_human_reviewed_memory_retrieval_service(
-        state,
-        initialize=False,
-    )
-    retrieval_store = ExternalPromotedAnalysisMemoryRetrievalStore(db_path)
-    if initialize:
-        retrieval_store.init()
-    return HumanExternalPromotedAnalysisMemoryRetrievalService(
-        promotion_service=promotion_service,
-        ai_store=AiAuditStore(db_path),
-        evidence_repository=CanonicalEvidenceRepository(db_path),
-        current_context_validator=(legacy_retrieval_service._validate_current_context),
-        retrieval_store=retrieval_store,
-        now=_utc_now,
-    )
-
-
 def _service(
     *,
     initialize: bool,
@@ -161,19 +119,6 @@ def _service(
         state,
         initialize=initialize,
     )
-
-
-def _database_path(db) -> Path:
-    path = getattr(db, "_path", None)
-    if path is None:
-        raise ExternalPromotedAnalysisMemoryRetrievalRejected(
-            "database path is unavailable"
-        )
-    return Path(path)
-
-
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _raise_domain_http_error(exc: Exception) -> None:

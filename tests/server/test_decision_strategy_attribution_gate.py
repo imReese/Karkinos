@@ -3,7 +3,9 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from server.db import AppDatabase
-from server.routes.decision import _strategy_attribution_gate_evidence
+from server.services.decision_application import (
+    strategy_attribution_gate_evidence as _strategy_attribution_gate_evidence,
+)
 
 
 def _database(tmp_path) -> AppDatabase:

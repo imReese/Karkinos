@@ -2,30 +2,21 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from server.ai_runtime.evidence import (
-    CanonicalEvidenceRepository,
-    EvidenceIdentityMismatch,
-)
+from server.ai_runtime.evidence import EvidenceIdentityMismatch
 from server.ai_runtime.memory_informed_analysis import (
     HumanMemoryInformedAnalysisRequest,
     HumanMemoryInformedFixtureAnalysisService,
     MemoryInformedAnalysisRejected,
-    MemoryInformedAnalysisStore,
 )
-from server.ai_runtime.store import AiAuditStore, IdempotencyConflict
-from server.routes.ai_external_memory_informed_analyses import (
-    create_router as create_external_memory_analysis_router,
-)
-from server.routes.ai_reviewed_memory_retrievals import (
-    build_human_reviewed_memory_retrieval_service,
+from server.ai_runtime.store import IdempotencyConflict
+from server.composition.ai_application_services import (
+    build_human_memory_informed_analysis_service,
 )
 
 
@@ -43,7 +34,6 @@ class HumanMemoryInformedAnalysisPayload(BaseModel):
 
 def create_router() -> APIRouter:
     router = APIRouter(tags=["ai-research"])
-    router.include_router(create_external_memory_analysis_router())
 
     @router.post("/api/ai/reviewed-memory-retrievals/{retrieval_id}/fixture-analyses")
     def start_memory_informed_fixture_analysis(
@@ -109,29 +99,6 @@ def create_router() -> APIRouter:
     return router
 
 
-def build_human_memory_informed_analysis_service(
-    state,
-    *,
-    initialize: bool,
-) -> HumanMemoryInformedFixtureAnalysisService:
-    """Build the fixture-only consumer of an already-reviewed retrieval."""
-    db_path = _database_path(state.db)
-    retrieval_service = build_human_reviewed_memory_retrieval_service(
-        state,
-        initialize=initialize,
-    )
-    store = MemoryInformedAnalysisStore(db_path)
-    if initialize:
-        store.init()
-    return HumanMemoryInformedFixtureAnalysisService(
-        retrieval_service=retrieval_service,
-        ai_store=AiAuditStore(db_path),
-        evidence_repository=CanonicalEvidenceRepository(db_path),
-        analysis_store=store,
-        now=_utc_now,
-    )
-
-
 def _service(*, initialize: bool) -> HumanMemoryInformedFixtureAnalysisService:
     from server.dependencies import get_app_state
 
@@ -142,17 +109,6 @@ def _service(*, initialize: bool) -> HumanMemoryInformedFixtureAnalysisService:
         state,
         initialize=initialize,
     )
-
-
-def _database_path(db) -> Path:
-    path = getattr(db, "_path", None)
-    if path is None:
-        raise MemoryInformedAnalysisRejected("database path is unavailable")
-    return Path(path)
-
-
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _raise_domain_http_error(exc: Exception) -> None:

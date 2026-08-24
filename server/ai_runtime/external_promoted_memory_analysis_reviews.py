@@ -26,10 +26,10 @@ from .external_analysis_reviews import (
     ExternalAnalysisReviewDecision,
     ExternalAnalysisReviewEffectiveStatus,
     ProviderPricingSnapshot,
-    _cost_evidence,
-    _event_hash,
-    _review_target,
 )
+from .external_analysis_reviews import cost_evidence as _build_cost_evidence
+from .external_analysis_reviews import event_hash as _build_event_hash
+from .external_analysis_reviews import review_target as _base_review_target
 from .external_promoted_memory_analysis import (
     EXTERNAL_PROMOTED_MEMORY_ANALYSIS_REQUEST_VERSION,
     ExternalPromotedMemoryAnalysisResult,
@@ -486,7 +486,7 @@ class ExternalPromotedMemoryAnalysisReviewStore:
             "analysis_target_fingerprint": target.fingerprint,
         }
         review_id = f"ai-external-promoted-review-{content_fingerprint(identity)[:24]}"
-        cost_evidence = _cost_evidence(request, target.quality_evidence)
+        cost_evidence = _build_cost_evidence(request, target.quality_evidence)
         with self._connection() as conn:
             conn.execute("BEGIN IMMEDIATE")
             existing = conn.execute(
@@ -673,7 +673,7 @@ class ExternalPromotedMemoryAnalysisReviewStore:
                 errors.append(
                     "external promoted-memory analysis review previous hash drifted"
                 )
-            expected_hash = _event_hash(
+            expected_hash = _build_event_hash(
                 review_id=review_id,
                 sequence=sequence,
                 event_type=str(row["event_type"]),
@@ -764,7 +764,7 @@ class ExternalPromotedMemoryAnalysisReviewStore:
         ).fetchone()
         sequence = int(previous["sequence"]) + 1 if previous is not None else 1
         previous_hash = str(previous["event_hash"]) if previous is not None else None
-        event_hash = _event_hash(
+        event_hash = _build_event_hash(
             review_id=review_id,
             sequence=sequence,
             event_type=event_type,
@@ -882,7 +882,7 @@ def _promoted_review_target(
     promoted: ExternalPromotedMemoryAnalysisResult,
 ) -> ExternalPromotedMemoryAnalysisReviewTarget:
     analysis = promoted.analysis
-    base = _review_target(analysis)
+    base = _base_review_target(analysis)
     errors = list(base.acceptance_errors)
     if analysis.record.request.schema_version != (
         EXTERNAL_PROMOTED_MEMORY_ANALYSIS_REQUEST_VERSION

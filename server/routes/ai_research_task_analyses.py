@@ -2,26 +2,21 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from server.ai_runtime.capture import ContextCaptureAuditStore
-from server.ai_runtime.evidence import (
-    CanonicalEvidenceRepository,
-    EvidenceIdentityMismatch,
-)
-from server.ai_runtime.store import AiAuditStore, IdempotencyConflict
+from server.ai_runtime.evidence import EvidenceIdentityMismatch
+from server.ai_runtime.store import IdempotencyConflict
 from server.ai_runtime.task_analysis import (
     HumanFixtureAnalysisRequest,
     HumanResearchTaskFixtureAnalysisService,
     ResearchTaskAnalysisRejected,
-    ResearchTaskAnalysisStore,
 )
-from server.ai_runtime.tasks import HumanResearchTaskService, ResearchTaskStore
+from server.composition.ai_application_services import (
+    build_human_fixture_analysis_service,
+)
 
 
 class HumanFixtureAnalysisPayload(BaseModel):
@@ -91,41 +86,6 @@ def create_router() -> APIRouter:
     return router
 
 
-def build_human_fixture_analysis_service(
-    state,
-    *,
-    initialize: bool,
-) -> HumanResearchTaskFixtureAnalysisService:
-    """Build the explicit, network-free fixture workflow boundary."""
-    db_path = _database_path(state.db)
-    evidence_repository = CanonicalEvidenceRepository(db_path)
-    ai_store = AiAuditStore(db_path)
-    capture_store = ContextCaptureAuditStore(db_path)
-    task_store = ResearchTaskStore(db_path)
-    analysis_store = ResearchTaskAnalysisStore(db_path)
-    if initialize:
-        evidence_repository.init()
-        ai_store.init()
-        capture_store.init()
-        task_store.init()
-        analysis_store.init()
-    task_service = HumanResearchTaskService(
-        evidence_repository=evidence_repository,
-        context_store=ai_store,
-        capture_store=capture_store,
-        task_store=task_store,
-        now=_utc_now,
-    )
-    return HumanResearchTaskFixtureAnalysisService(
-        ai_store=ai_store,
-        evidence_repository=evidence_repository,
-        task_store=task_store,
-        task_service=task_service,
-        analysis_store=analysis_store,
-        now=_utc_now,
-    )
-
-
 def _service(*, initialize: bool) -> HumanResearchTaskFixtureAnalysisService:
     from server.dependencies import get_app_state
 
@@ -133,17 +93,6 @@ def _service(*, initialize: bool) -> HumanResearchTaskFixtureAnalysisService:
     if state.db is None:
         raise HTTPException(status_code=503, detail="Database is not initialized")
     return build_human_fixture_analysis_service(state, initialize=initialize)
-
-
-def _database_path(db) -> Path:
-    path = getattr(db, "_path", None)
-    if path is None:
-        raise ResearchTaskAnalysisRejected("database path is unavailable")
-    return Path(path)
-
-
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _raise_domain_http_error(exc: Exception) -> None:

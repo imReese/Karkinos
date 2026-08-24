@@ -10,19 +10,14 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from server.ai_runtime.contracts import content_fingerprint
-from server.ai_runtime.evidence import CanonicalEvidenceRepository
 from server.ai_runtime.formula_dsl import (
     formula_operator_catalog,
 )
 from server.ai_runtime.provider_connectivity import (
     ConnectivityConfigurationError,
 )
-from server.ai_runtime.store import AiAuditStore, IdempotencyConflict
+from server.ai_runtime.store import IdempotencyConflict
 from server.ai_runtime.strategy_research import (
-    BACKTEST_CONFIRMATION,
-    CRITIQUE_EXPORT_CONFIRMATION,
-    HYPOTHESIS_EXPORT_CONFIRMATION,
-    REVIEW_CONFIRMATION,
     STRATEGY_RESEARCH_MAX_CANDIDATES,
     STRATEGY_RESEARCH_MAX_PROVIDER_CALLS,
     CritiqueRequest,
@@ -33,12 +28,14 @@ from server.ai_runtime.strategy_research import (
     StrategyResearchSelection,
     StrategyResearchService,
 )
-from server.routes.ai_research import build_human_context_capture_service
-from server.services.strategy_research_factory import (
+from server.composition.ai_application_services import (
+    build_shadow_research_read_service,
+    build_shadow_research_write_service,
+    build_strategy_research_read_service,
     build_strategy_research_write_service,
 )
 from server.services.strategy_research_factory import (
-    strategy_research_model_timeout_seconds as _strategy_research_model_timeout_seconds,
+    strategy_research_model_timeout_seconds as _model_timeout_seconds,
 )
 
 
@@ -590,53 +587,24 @@ def _build_write_service(state: Any, *, external: bool) -> StrategyResearchServi
     return build_strategy_research_write_service(
         state,
         external=external,
-        capture_service=build_human_context_capture_service(state),
     )
 
 
 def _build_read_service(state: Any) -> StrategyResearchService:
-    """Build without init, DataStore construction, config, provider, or secrets."""
-    db_path = _database_path(state.db)
-    return StrategyResearchService(
-        db=state.db,
-        db_path=db_path,
-        settings=None,
-        capture_service=None,  # type: ignore[arg-type]
-        evidence_repository=CanonicalEvidenceRepository(db_path),
-        ai_store=AiAuditStore(db_path),
-        research_store=StrategyResearchAuditStore(db_path),
-        data_store=None,  # type: ignore[arg-type]
-    )
+    return build_strategy_research_read_service(state)
 
 
 def _build_shadow_write_service(state: Any) -> Any:
-    if state.db is None:
-        raise ConnectivityConfigurationError("database is not initialized")
-    from server.services.ai_shadow_research_automation import (
-        build_ai_shadow_research_automation_service,
-    )
-
-    return build_ai_shadow_research_automation_service(
-        state,
-        research_service_builder=lambda external: _build_write_service(
-            state,
-            external=external,
-        ),
-    )
+    return build_shadow_research_write_service(state)
 
 
 def _build_shadow_read_service(state: Any) -> Any:
-    """Build a read projection without initializing tables or market storage."""
-    from server.services.ai_shadow_research_automation import (
-        AiShadowResearchAutomationService,
-        ShadowResearchStore,
-    )
+    return build_shadow_research_read_service(state)
 
-    return AiShadowResearchAutomationService(
-        state=state,
-        store=ShadowResearchStore(_database_path(state.db)),
-        data_store=None,  # type: ignore[arg-type]
-    )
+
+def _strategy_research_model_timeout_seconds(settings: Any | None) -> float:
+    """Compatibility export for the former route-level timeout helper."""
+    return _model_timeout_seconds(settings)
 
 
 def _database_path(db: Any) -> Path:

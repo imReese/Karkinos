@@ -148,7 +148,9 @@ def test_decision_uses_persisted_portfolio_and_current_deduplicated_batch(
 
 
 def test_decision_rejects_unparseable_quote_timestamp() -> None:
-    from server.routes.decision import _latest_quote_timestamp
+    from server.services.decision_application import (
+        latest_quote_timestamp as _latest_quote_timestamp,
+    )
 
     assert (
         _latest_quote_timestamp([{"quote_timestamp": "not-a-market-timestamp"}]) is None

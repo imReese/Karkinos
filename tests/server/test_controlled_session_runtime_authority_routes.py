@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import server.composition.controlled_execution_services as controlled_services
 import server.routes.controlled_session_runtime_authority as route_module
 from server.app import create_app
 from server.routes.controlled_session_runtime_authority import create_router
@@ -210,12 +211,14 @@ def test_route_service_wires_exact_evidence_providers_without_gateway(
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
-        "server.routes.controlled_session_budget_reservation._service",
-        lambda: fake_budget,
+        controlled_services,
+        "build_controlled_session_budget_reservation_service",
+        lambda *_args, **_kwargs: fake_budget,
     )
     monkeypatch.setattr(
-        "server.routes.controlled_session_envelope._service",
-        lambda: fake_envelope,
+        controlled_services,
+        "build_controlled_session_envelope_service",
+        lambda _: fake_envelope,
     )
 
     service = route_module._service()

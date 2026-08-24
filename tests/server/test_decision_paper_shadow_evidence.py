@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 
-from server.routes.decision import (
-    _paper_shadow_allows_manual_ticket,
-    _paper_shadow_evidence,
+from server.services.decision_application import (
+    paper_shadow_allows_manual_ticket as _paper_shadow_allows_manual_ticket,
+)
+from server.services.decision_application import (
+    paper_shadow_evidence as _paper_shadow_evidence,
 )
 
 

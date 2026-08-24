@@ -1,0 +1,1 @@
+"""Market HTTP endpoint registrations."""

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -14,34 +12,18 @@ from server.ai_runtime.external_analysis_reviews import (
     ExternalAnalysisQualityRubric,
     ExternalAnalysisReviewDecision,
     ExternalAnalysisReviewRejected,
-    ExternalAnalysisReviewStore,
     HumanExternalAnalysisReviewRequest,
     HumanExternalAnalysisReviewService,
     ProviderPricingSnapshot,
 )
 from server.ai_runtime.store import IdempotencyConflict
-
-
-class ExternalAnalysisQualityRubricPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    evidence_grounding: int = Field(ge=1, le=5)
-    contradiction_handling: int = Field(ge=1, le=5)
-    uncertainty_calibration: int = Field(ge=1, le=5)
-    decision_usefulness: int = Field(ge=1, le=5)
-
-
-class ProviderPricingSnapshotPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    currency: str = Field(min_length=3, max_length=3)
-    prompt_price_per_million_tokens: str = Field(min_length=1, max_length=64)
-    completion_price_per_million_tokens: str = Field(
-        min_length=1,
-        max_length=64,
-    )
-    source: str = Field(min_length=1, max_length=500)
-    effective_at: str = Field(min_length=1, max_length=128)
+from server.composition.ai_application_services import (
+    build_human_external_analysis_review_service,
+)
+from server.contracts.http.ai_reviews import (
+    ExternalAnalysisQualityRubricPayload,
+    ProviderPricingSnapshotPayload,
+)
 
 
 class HumanExternalAnalysisReviewPayload(BaseModel):
@@ -148,31 +130,6 @@ def create_router() -> APIRouter:
     return router
 
 
-def build_human_external_analysis_review_service(
-    state,
-    *,
-    initialize: bool,
-) -> HumanExternalAnalysisReviewService:
-    """Build the local review edge without loading provider credentials."""
-    from server.routes.ai_external_memory_informed_analyses import (
-        build_human_external_memory_analysis_service,
-    )
-
-    db_path = _database_path(state.db)
-    analysis_service = build_human_external_memory_analysis_service(
-        state,
-        initialize=initialize,
-    )
-    review_store = ExternalAnalysisReviewStore(db_path)
-    if initialize:
-        review_store.init()
-    return HumanExternalAnalysisReviewService(
-        analysis_service=analysis_service,
-        review_store=review_store,
-        now=_utc_now,
-    )
-
-
 def _service(*, initialize: bool) -> HumanExternalAnalysisReviewService:
     from server.dependencies import get_app_state
 
@@ -183,17 +140,6 @@ def _service(*, initialize: bool) -> HumanExternalAnalysisReviewService:
         state,
         initialize=initialize,
     )
-
-
-def _database_path(db) -> Path:
-    path = getattr(db, "_path", None)
-    if path is None:
-        raise ExternalAnalysisReviewRejected("database path is unavailable")
-    return Path(path)
-
-
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _raise_domain_http_error(exc: Exception) -> None:

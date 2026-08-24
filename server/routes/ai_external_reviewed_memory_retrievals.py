@@ -2,26 +2,20 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from server.ai_runtime.evidence import (
-    CanonicalEvidenceRepository,
-    EvidenceIdentityMismatch,
-)
+from server.ai_runtime.evidence import EvidenceIdentityMismatch
 from server.ai_runtime.external_reviewed_memory_retrieval import (
     ExternalReviewedMemoryRetrievalRejected,
-    ExternalReviewedMemoryRetrievalStore,
     HumanExternalReviewedMemoryRetrievalRequest,
     HumanExternalReviewedMemoryRetrievalService,
 )
-from server.ai_runtime.store import AiAuditStore, IdempotencyConflict
-from server.routes.ai_reviewed_memory_retrievals import (
-    build_human_reviewed_memory_retrieval_service,
+from server.ai_runtime.store import IdempotencyConflict
+from server.composition.ai_application_services import (
+    build_human_external_reviewed_memory_retrieval_service,
 )
 
 
@@ -41,15 +35,6 @@ class HumanExternalReviewedMemoryRetrievalPayload(BaseModel):
 
 def create_router() -> APIRouter:
     router = APIRouter(tags=["ai-research"])
-
-    # Phase 1.14 consumes this versioned retrieval through a separate,
-    # explicit external-analysis boundary. Import locally to keep the source
-    # retrieval usable without loading provider configuration or credentials.
-    from server.routes.ai_external_promoted_memory_analyses import (
-        create_router as create_external_promoted_memory_analysis_router,
-    )
-
-    router.include_router(create_external_promoted_memory_analysis_router())
 
     @router.post("/api/ai/external-reviewed-memory-retrievals")
     def start_external_reviewed_memory_retrieval(
@@ -116,42 +101,6 @@ def create_router() -> APIRouter:
     return router
 
 
-def build_human_external_reviewed_memory_retrieval_service(
-    state,
-    *,
-    initialize: bool,
-) -> HumanExternalReviewedMemoryRetrievalService:
-    """Build a versioned local retrieval edge without loading credentials."""
-    # Import here to avoid a module cycle: the promotion router includes this
-    # versioned sub-router only after its own module has finished loading.
-    from server.routes.ai_external_reviewed_memory import (
-        build_external_reviewed_memory_promotion_service,
-    )
-
-    db_path = _database_path(state.db)
-    promotion_service = build_external_reviewed_memory_promotion_service(
-        state,
-        initialize=initialize,
-    )
-    # Reuse only the already-established financial-context validator. The
-    # Phase 1.8 retrieval tables and request schema remain untouched.
-    legacy_retrieval_service = build_human_reviewed_memory_retrieval_service(
-        state,
-        initialize=False,
-    )
-    retrieval_store = ExternalReviewedMemoryRetrievalStore(db_path)
-    if initialize:
-        retrieval_store.init()
-    return HumanExternalReviewedMemoryRetrievalService(
-        promotion_service=promotion_service,
-        ai_store=AiAuditStore(db_path),
-        evidence_repository=CanonicalEvidenceRepository(db_path),
-        current_context_validator=(legacy_retrieval_service._validate_current_context),
-        retrieval_store=retrieval_store,
-        now=_utc_now,
-    )
-
-
 def _service(*, initialize: bool) -> HumanExternalReviewedMemoryRetrievalService:
     from server.dependencies import get_app_state
 
@@ -162,17 +111,6 @@ def _service(*, initialize: bool) -> HumanExternalReviewedMemoryRetrievalService
         state,
         initialize=initialize,
     )
-
-
-def _database_path(db) -> Path:
-    path = getattr(db, "_path", None)
-    if path is None:
-        raise ExternalReviewedMemoryRetrievalRejected("database path is unavailable")
-    return Path(path)
-
-
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _raise_domain_http_error(exc: Exception) -> None:

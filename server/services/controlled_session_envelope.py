@@ -24,8 +24,8 @@ from server.services.execution_gateway_verification_binding import (
     build_execution_gateway_order_contract,
     resolve_execution_gateway_verification_binding,
 )
+from server.services.execution_identity import build_order_fingerprint
 from server.services.operator_approval import resolve_operator_approval
-from server.services.per_order_confirmation import build_order_fingerprint
 from server.services.session_start_account_truth import (
     resolve_session_start_account_truth_binding,
 )

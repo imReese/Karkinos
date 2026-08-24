@@ -290,7 +290,7 @@ def test_fixture_cache_to_decision_api_dashboard_contract(
         ),
     )
     monkeypatch.setattr(
-        "server.routes.decision._account_truth_gate_evidence",
+        "server.services.decision_application._account_truth_gate_evidence",
         lambda state: {
             "gate_status": "pass",
             "data_freshness_status": "fresh",

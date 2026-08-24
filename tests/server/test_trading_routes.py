@@ -369,18 +369,18 @@ def test_current_manual_ticket_gate_rechecks_market_data_and_kill_switch(
         "manual_confirmation_status": "ready_for_manual_confirmation",
     }
     monkeypatch.setattr(
-        "server.routes.decision._account_truth_gate_evidence",
+        "server.services.decision_application._account_truth_gate_evidence",
         lambda state: _current_account_truth_fixture(),
     )
     monkeypatch.setattr(
-        "server.routes.decision._data_freshness_evidence",
+        "server.services.decision_application._data_freshness_evidence",
         lambda action, db, *, quotes, allow_direct_quote_fallback: {
             **_current_market_fixture(status=market_status),
             "reason": "fixture_market_status",
         },
     )
     monkeypatch.setattr(
-        "server.routes.decision._paper_shadow_evidence",
+        "server.services.decision_application._paper_shadow_evidence",
         lambda action, manual_status, *, db: {
             "status": "pass",
             "has_evidence": True,
@@ -416,17 +416,17 @@ def test_current_manual_ticket_gate_requires_trading_control_state(monkeypatch) 
         "manual_confirmation_status": "ready_for_manual_confirmation",
     }
     monkeypatch.setattr(
-        "server.routes.decision._account_truth_gate_evidence",
+        "server.services.decision_application._account_truth_gate_evidence",
         lambda state: _current_account_truth_fixture(),
     )
     monkeypatch.setattr(
-        "server.routes.decision._data_freshness_evidence",
+        "server.services.decision_application._data_freshness_evidence",
         lambda action, db, *, quotes, allow_direct_quote_fallback: (
             _current_market_fixture()
         ),
     )
     monkeypatch.setattr(
-        "server.routes.decision._paper_shadow_evidence",
+        "server.services.decision_application._paper_shadow_evidence",
         lambda action, manual_status, *, db: {
             "status": "pass",
             "has_evidence": True,
@@ -466,17 +466,17 @@ def test_current_manual_ticket_gate_binds_exact_simulated_order_terms(
     }
     state = SimpleNamespace(db=object(), trading_controls=TradingControlState())
     monkeypatch.setattr(
-        "server.routes.decision._account_truth_gate_evidence",
+        "server.services.decision_application._account_truth_gate_evidence",
         lambda state: _current_account_truth_fixture(),
     )
     monkeypatch.setattr(
-        "server.routes.decision._data_freshness_evidence",
+        "server.services.decision_application._data_freshness_evidence",
         lambda action, db, *, quotes, allow_direct_quote_fallback: (
             _current_market_fixture()
         ),
     )
     monkeypatch.setattr(
-        "server.routes.decision._paper_shadow_evidence",
+        "server.services.decision_application._paper_shadow_evidence",
         lambda action, manual_status, *, db: {
             "status": "pass",
             "has_evidence": True,
@@ -748,15 +748,15 @@ def test_daily_shadow_route_delegates_to_canonical_decision_plan_and_service(
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
-        "server.routes.decision._decision_portfolio_context",
+        "server.services.decision_application._decision_portfolio_context",
         lambda state: {"source": "persisted_account_truth"},
     )
     monkeypatch.setattr(
-        "server.routes.decision._today_decision_payload",
+        "server.services.decision_application._today_decision_payload",
         fake_today_decision,
     )
     monkeypatch.setattr(
-        "server.routes.decision._trading_plan_positions",
+        "server.services.decision_application._trading_plan_positions",
         lambda state, *, portfolio_context: {"600519": {"quantity": 100}},
     )
     monkeypatch.setattr(

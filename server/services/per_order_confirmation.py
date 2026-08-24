@@ -6,7 +6,6 @@ import hashlib
 import json
 import re
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
 from typing import Any, Callable
 
 from server.services.broker_adapter_readiness import (
@@ -26,6 +25,10 @@ from server.services.execution_gateway_binding import build_execution_gateway_bi
 from server.services.execution_gateway_verification_binding import (
     build_execution_gateway_order_contract,
     resolve_execution_gateway_verification_binding,
+)
+from server.services.execution_identity import build_order_contract as _order_contract
+from server.services.execution_identity import (
+    build_order_fingerprint,
 )
 from server.services.operator_approval import resolve_operator_approval
 from server.services.per_order_gateway_evidence import (
@@ -1045,31 +1048,6 @@ def _resolve_broker_adapter_release_binding(
     }, blockers
 
 
-def build_order_fingerprint(order: dict[str, Any]) -> str:
-    """Return the canonical fingerprint used by per-order capital evidence."""
-
-    return _fingerprint(_order_contract(order))
-
-
-def _order_contract(order: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "order_id": str(order.get("order_id") or ""),
-        "intent_key": str(order.get("intent_key") or ""),
-        "symbol": str(order.get("symbol") or ""),
-        "side": str(order.get("side") or "").lower(),
-        "asset_class": str(order.get("asset_class") or ""),
-        "quantity": _number_string(order.get("quantity")),
-        "order_type": str(order.get("order_type") or "").lower(),
-        "limit_price": (
-            _number_string(order.get("limit_price"))
-            if order.get("limit_price") is not None
-            else None
-        ),
-        "source": str(order.get("source") or ""),
-        "source_ref": str(order.get("source_ref") or ""),
-    }
-
-
 def _missing_capital_summary(input_fingerprint: str = "") -> dict[str, Any]:
     return {
         "status": "missing",
@@ -1274,16 +1252,6 @@ def _safety_flags() -> dict[str, bool]:
         "does_not_grant_or_expand_capital_authority": True,
         "does_not_auto_resume": True,
     }
-
-
-def _number_string(value: Any) -> str:
-    try:
-        number = Decimal(str(value))
-    except (InvalidOperation, TypeError, ValueError):
-        return str(value or "")
-    if number == 0:
-        return "0"
-    return format(number.normalize(), "f")
 
 
 def _parse_timestamp(value: Any) -> datetime | None:

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -12,14 +10,13 @@ from pydantic import BaseModel, ConfigDict, Field
 from server.ai_runtime.analysis_reviews import (
     AnalysisReviewDecision,
     AnalysisReviewRejected,
-    AnalysisReviewStore,
     HumanAnalysisReviewRequest,
     HumanAnalysisReviewService,
 )
 from server.ai_runtime.evidence import EvidenceIdentityMismatch
 from server.ai_runtime.store import IdempotencyConflict
-from server.routes.ai_research_task_analyses import (
-    build_human_fixture_analysis_service,
+from server.composition.ai_application_services import (
+    build_human_analysis_review_service,
 )
 
 
@@ -106,27 +103,6 @@ def create_router() -> APIRouter:
     return router
 
 
-def build_human_analysis_review_service(
-    state,
-    *,
-    initialize: bool,
-) -> HumanAnalysisReviewService:
-    """Build the non-authoritative, human-only analysis review boundary."""
-    db_path = _database_path(state.db)
-    analysis_service = build_human_fixture_analysis_service(
-        state,
-        initialize=initialize,
-    )
-    review_store = AnalysisReviewStore(db_path)
-    if initialize:
-        review_store.init()
-    return HumanAnalysisReviewService(
-        analysis_service=analysis_service,
-        review_store=review_store,
-        now=_utc_now,
-    )
-
-
 def _service(*, initialize: bool) -> HumanAnalysisReviewService:
     from server.dependencies import get_app_state
 
@@ -134,17 +110,6 @@ def _service(*, initialize: bool) -> HumanAnalysisReviewService:
     if state.db is None:
         raise HTTPException(status_code=503, detail="Database is not initialized")
     return build_human_analysis_review_service(state, initialize=initialize)
-
-
-def _database_path(db) -> Path:
-    path = getattr(db, "_path", None)
-    if path is None:
-        raise AnalysisReviewRejected("database path is unavailable")
-    return Path(path)
-
-
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _raise_domain_http_error(exc: Exception) -> None:

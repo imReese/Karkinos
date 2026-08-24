@@ -3,37 +3,22 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from server.ai_runtime.evidence import (
-    CanonicalEvidenceRepository,
-    EvidenceIdentityMismatch,
-)
+from server.ai_runtime.evidence import EvidenceIdentityMismatch
 from server.ai_runtime.external_memory_informed_analysis import (
     ExternalMemoryAnalysisRejected,
-    ExternalMemoryAnalysisStore,
     HumanExternalMemoryAnalysisRequest,
     HumanExternalMemoryAnalysisService,
 )
-from server.ai_runtime.provider_connectivity import (
-    ConnectivityConfigurationError,
-    load_provider_connectivity_settings,
-)
-from server.ai_runtime.store import AiAuditStore, IdempotencyConflict
-from server.routes.ai_external_analysis_reviews import (
-    create_router as create_external_analysis_review_router,
-)
-from server.routes.ai_external_reviewed_memory import (
-    create_router as create_external_reviewed_memory_router,
-)
-from server.routes.ai_reviewed_memory_retrievals import (
-    build_human_reviewed_memory_retrieval_service,
+from server.ai_runtime.provider_connectivity import ConnectivityConfigurationError
+from server.ai_runtime.store import IdempotencyConflict
+from server.composition.ai_application_services import (
+    build_human_external_memory_analysis_service,
 )
 
 
@@ -51,8 +36,6 @@ class HumanExternalMemoryAnalysisPayload(BaseModel):
 
 def create_router() -> APIRouter:
     router = APIRouter(tags=["ai-research"])
-    router.include_router(create_external_analysis_review_router())
-    router.include_router(create_external_reviewed_memory_router())
 
     @router.post("/api/ai/reviewed-memory-retrievals/{retrieval_id}/external-analyses")
     async def start_external_memory_analysis(
@@ -118,30 +101,6 @@ def create_router() -> APIRouter:
     return router
 
 
-def build_human_external_memory_analysis_service(
-    state,
-    *,
-    initialize: bool,
-) -> HumanExternalMemoryAnalysisService:
-    """Build an explicit external edge with lazy credential loading."""
-    db_path = _database_path(state.db)
-    retrieval_service = build_human_reviewed_memory_retrieval_service(
-        state,
-        initialize=initialize,
-    )
-    store = ExternalMemoryAnalysisStore(db_path)
-    if initialize:
-        store.init()
-    return HumanExternalMemoryAnalysisService(
-        settings_loader=lambda: load_provider_connectivity_settings(state.config),
-        retrieval_service=retrieval_service,
-        ai_store=AiAuditStore(db_path),
-        evidence_repository=CanonicalEvidenceRepository(db_path),
-        analysis_store=store,
-        now=_utc_now,
-    )
-
-
 def _service(*, initialize: bool) -> HumanExternalMemoryAnalysisService:
     from server.dependencies import get_app_state
 
@@ -152,17 +111,6 @@ def _service(*, initialize: bool) -> HumanExternalMemoryAnalysisService:
         state,
         initialize=initialize,
     )
-
-
-def _database_path(db) -> Path:
-    path = getattr(db, "_path", None)
-    if path is None:
-        raise ConnectivityConfigurationError("database path is unavailable")
-    return Path(path)
-
-
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _raise_domain_http_error(exc: Exception) -> None:

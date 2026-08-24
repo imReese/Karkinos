@@ -13,7 +13,7 @@ from typing import Any, Callable
 from account_truth.broker_order_lifecycle import (
     BrokerOrderLifecycleEvidenceRepository,
 )
-from server.services.per_order_confirmation import build_order_fingerprint
+from server.services.execution_identity import build_order_fingerprint
 
 MANUAL_BROKER_CANCELLATION_TICKET_SCHEMA_VERSION = (
     "karkinos.manual_broker_cancellation_ticket.v1"
