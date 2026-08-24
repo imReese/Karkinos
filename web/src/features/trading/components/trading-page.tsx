@@ -8,8 +8,11 @@ import {
   MetricStrip,
   StatusBadge as WorkbenchStatusBadge,
   WorkspaceHeader,
-} from '../../../app/components/workbench';
-import { usePreferences, type Locale } from '../../../app/preferences';
+} from '../../../shared/ui/workbench';
+import {
+  usePreferences,
+  type Locale,
+} from '../../../shared/preferences/context';
 import {
   formatCurrency,
   formatPrice,

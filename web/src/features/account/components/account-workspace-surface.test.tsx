@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { expect, test, vi } from 'vitest';
 
-import { PreferencesProvider } from '../../../app/preferences';
+import { PreferencesProvider } from '../../../app/providers/preferences-provider';
 import type { PortfolioSnapshot } from '../../portfolio/api';
 import type { AccountOverview } from '../api';
 import { OverviewCards } from './overview-cards';

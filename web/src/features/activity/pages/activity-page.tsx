@@ -2,10 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { createLazyRoute } from '@tanstack/react-router';
 
 import { useCopy, type AppCopy } from '../../../app/copy';
-import {
-  ToastStack,
-  type ToastItem,
-} from '../../../app/components/toast-stack';
+import { ToastStack, type ToastItem } from '../../../shared/ui/toast-stack';
 import {
   ControlledActionZone,
   EvidenceDrawer,
@@ -13,8 +10,8 @@ import {
   MetricStrip,
   StatusBadge,
   WorkspaceHeader,
-} from '../../../app/components/workbench';
-import { usePreferences } from '../../../app/preferences';
+} from '../../../shared/ui/workbench';
+import { usePreferences } from '../../../shared/preferences/context';
 import {
   useCreateAdjustmentMutation,
   useCreateCashFlowMutation,

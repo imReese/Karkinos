@@ -1,7 +1,7 @@
 import {
   MetricStrip,
   type MetricStripItem,
-} from '../../../app/components/workbench';
+} from '../../../shared/ui/workbench';
 import {
   formatAmount,
   formatCurrency,

@@ -12,8 +12,8 @@ import {
   MetricStrip,
   StatusBadge,
   WorkspaceHeader,
-} from '../../../app/components/workbench';
-import { usePreferences } from '../../../app/preferences';
+} from '../../../shared/ui/workbench';
+import { usePreferences } from '../../../shared/preferences/context';
 import {
   useHoldingStrategyAttributionQuery,
   type HoldingStrategyAttributionReport,
@@ -22,7 +22,7 @@ import {
   buildAttributionReadinessItems,
   type AttributionReadinessItem,
 } from '../../account-strategy/attribution-readiness';
-import { apiClient } from '../../../lib/api/client';
+import { apiClient } from '../../../shared/api/client';
 import { formatCurrency, formatPercent } from '../../../shared/format';
 import {
   formatInstrumentDisplayLabelsBySymbol,

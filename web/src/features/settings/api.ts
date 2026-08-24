@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { apiClient, postJson, putJson } from '../../lib/api/client';
+import { apiClient, postJson, putJson } from '../../shared/api/client';
 
 const LIVE_STATUS_REFETCH_MS = 10_000;
 

@@ -2,8 +2,11 @@ import { type ColumnDef } from '@tanstack/react-table';
 import { useMemo } from 'react';
 
 import { useCopy } from '../../../app/copy';
-import { DataTable } from '../../../app/components/workbench';
-import { usePreferences, type Locale } from '../../../app/preferences';
+import { DataTable } from '../../../shared/ui/workbench';
+import {
+  usePreferences,
+  type Locale,
+} from '../../../shared/preferences/context';
 import {
   formatCurrency,
   formatPrice,

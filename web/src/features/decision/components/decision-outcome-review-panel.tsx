@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 
 import { useCopy } from '../../../app/copy';
-import { EvidenceIdentityDisclosure } from '../../../app/components/workbench';
-import { usePreferences } from '../../../app/preferences';
+import { EvidenceIdentityDisclosure } from '../../../shared/ui/workbench';
+import { usePreferences } from '../../../shared/preferences/context';
 import { formatCurrency } from '../../../shared/format';
 import {
   formatPublicCode,

@@ -12,7 +12,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { AppShell } from './app-shell';
-import { PreferencesProvider } from '../preferences';
+import { PreferencesProvider } from '../providers/preferences-provider';
 import type { MarketDataHealthResponse } from '../../features/market/api';
 
 type MatchMediaMock = {

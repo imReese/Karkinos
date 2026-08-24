@@ -2,8 +2,8 @@ import {
   EvidenceState,
   GateMatrix,
   StatusBadge,
-} from '../../app/components/workbench';
-import type { Locale } from '../../app/preferences';
+} from '../../shared/ui/workbench';
+import type { Locale } from '../../shared/preferences/context';
 import { formatPublicStatus } from '../../shared/public-labels';
 import type { ControlledPerOrderPilotReadiness } from './api';
 

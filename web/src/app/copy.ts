@@ -1,4 +1,4 @@
-import { usePreferences, type Locale } from './preferences';
+import { usePreferences, type Locale } from '../shared/preferences/context';
 import { formatPublicCode, formatPublicStatus } from '../shared/public-labels';
 
 export const copy = {

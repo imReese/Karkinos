@@ -9,8 +9,8 @@ import {
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import { Link } from '@tanstack/react-router';
 
-import { KarkinosMark } from '../../../app/components/brand/karkinos-mark';
-import { usePreferences } from '../../../app/preferences';
+import { KarkinosMark } from '../../../shared/ui/brand/karkinos-mark';
+import { usePreferences } from '../../../shared/preferences/context';
 
 const publicHomeCopy = {
   en: {

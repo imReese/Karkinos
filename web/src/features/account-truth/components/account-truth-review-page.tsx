@@ -8,7 +8,10 @@ import {
   type ReactNode,
 } from 'react';
 
-import { usePreferences, type Locale } from '../../../app/preferences';
+import {
+  usePreferences,
+  type Locale,
+} from '../../../shared/preferences/context';
 import {
   ControlledActionZone,
   EvidenceIdentityDisclosure,
@@ -18,7 +21,7 @@ import {
   StatusBadge,
   WorkspaceHeader,
   type StatusTone,
-} from '../../../app/components/workbench';
+} from '../../../shared/ui/workbench';
 import {
   formatCurrency,
   formatDateTime,

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { apiClient, postJson } from '../../lib/api/client';
+import { apiClient, postJson } from '../../shared/api/client';
 
 const DECISION_REFETCH_MS = 15_000;
 

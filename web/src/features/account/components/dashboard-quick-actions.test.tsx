@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { PreferencesProvider } from '../../../app/preferences';
+import { PreferencesProvider } from '../../../app/providers/preferences-provider';
 import { DashboardQuickActions } from './dashboard-quick-actions';
 
 function renderWithProviders(ui: ReactElement) {

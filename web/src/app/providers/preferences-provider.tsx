@@ -1,33 +1,11 @@
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+
 import {
-  createContext,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from 'react';
-
-import type { Locale } from '../shared/locale';
-
-export type { Locale } from '../shared/locale';
-export type ThemePreference = 'system' | 'light' | 'dark';
-type ResolvedTheme = 'light' | 'dark';
-
-type PreferencesContextValue = {
-  locale: Locale;
-  setLocale: (locale: Locale) => void;
-  theme: ThemePreference;
-  setTheme: (theme: ThemePreference) => void;
-  resolvedTheme: ResolvedTheme;
-};
-
-const PreferencesContext = createContext<PreferencesContextValue>({
-  locale: 'en',
-  setLocale: () => undefined,
-  theme: 'system',
-  setTheme: () => undefined,
-  resolvedTheme: 'dark',
-});
+  PreferencesContext,
+  type Locale,
+  type ResolvedTheme,
+  type ThemePreference,
+} from '../../shared/preferences/context';
 
 const LOCALE_KEY = 'karkinos.locale';
 const THEME_KEY = 'karkinos.theme';
@@ -131,8 +109,4 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       {children}
     </PreferencesContext.Provider>
   );
-}
-
-export function usePreferences() {
-  return useContext(PreferencesContext);
 }

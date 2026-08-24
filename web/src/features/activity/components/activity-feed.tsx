@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 
 import { useCopy } from '../../../app/copy';
-import { usePreferences } from '../../../app/preferences';
+import { usePreferences } from '../../../shared/preferences/context';
 import { formatTimestamp } from '../../../shared/format';
 import { formatAssetClassLabel } from '../../../shared/asset-class';
 import type { LedgerEntry } from '../api';

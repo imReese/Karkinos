@@ -6,7 +6,7 @@ import {
   type ReactNode,
 } from 'react';
 
-import { usePreferences } from '../../../app/preferences';
+import { usePreferences } from '../../../shared/preferences/context';
 import { formatCurrency, formatPercent } from '../../../shared/format';
 import { useAccountStateQuery } from '../../account/api';
 import type { BacktestReport } from '../../backtest/api';

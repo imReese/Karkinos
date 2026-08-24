@@ -8,7 +8,7 @@ import {
 import userEvent from '@testing-library/user-event';
 import { expect, test, vi } from 'vitest';
 
-import { PreferencesProvider } from '../../../app/preferences';
+import { PreferencesProvider } from '../../../app/providers/preferences-provider';
 import { EquityCurveCard, EquityCurveSkeleton } from './equity-curve-card';
 import type { EquitySeriesPoint } from '../api';
 

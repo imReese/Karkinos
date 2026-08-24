@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { PreferencesProvider } from '../../../app/preferences';
+import { PreferencesProvider } from '../../../app/providers/preferences-provider';
 import { ShadowResearchPanel } from './shadow-research-panel';
 
 function jsonResponse(body: unknown, status = 200) {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { usePreferences } from '../../../app/preferences';
+import { usePreferences } from '../../../shared/preferences/context';
 import { formatCurrency, formatPercent } from '../../../shared/format';
 import {
   useApproveShadowResearchCandidateMutation,

@@ -12,14 +12,14 @@ import { Link, useRouterState } from '@tanstack/react-router';
 
 import { useAccountOverviewQuery } from '../../features/account/api';
 import { useMarketDataHealthQuery } from '../../features/market/api';
-import { KarkinosMark } from '../components/brand/karkinos-mark';
+import { KarkinosMark } from '../../shared/ui/brand/karkinos-mark';
 import { useCopy } from '../copy';
-import { useMotionPresence } from '../motion';
+import { useMotionPresence } from '../../shared/motion';
 import {
   usePreferences,
   type Locale,
   type ThemePreference,
-} from '../preferences';
+} from '../../shared/preferences/context';
 import { isUnconfirmedMarketDataStatus } from '../../shared/market-data-status';
 import { formatPublicStatus } from '../../shared/public-labels';
 

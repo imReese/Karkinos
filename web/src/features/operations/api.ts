@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { apiClient, postJson } from '../../lib/api/client';
+import { apiClient, postJson } from '../../shared/api/client';
 import type { DailyOperationsSummary } from '../account/api';
 import type { DailyTradingPlanBlockerSummary } from '../decision/api';
 

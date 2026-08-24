@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 import { useMotionPresence } from '../../motion';
-import { cn } from '../../../lib/utils/cn';
+import { cn } from '../../utils/cn';
 
 export function EvidenceDrawer({
   open,

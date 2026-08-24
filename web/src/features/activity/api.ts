@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { apiClient, postJson } from '../../lib/api/client';
-import { visiblePersistedProjectionRefetchInterval } from '../../lib/api/query-policy';
+import { apiClient, postJson } from '../../shared/api/client';
+import { visiblePersistedProjectionRefetchInterval } from '../../shared/api/query-policy';
 
 export type LedgerEntry = {
   id: number;

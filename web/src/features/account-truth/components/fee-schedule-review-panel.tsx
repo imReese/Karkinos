@@ -5,8 +5,8 @@ import {
   EvidenceState,
   StatusBadge,
   type StatusTone,
-} from '../../../app/components/workbench';
-import type { Locale } from '../../../app/preferences';
+} from '../../../shared/ui/workbench';
+import type { Locale } from '../../../shared/preferences/context';
 import { formatDateTime } from '../../../shared/format';
 import { formatPublicCode } from '../../../shared/public-labels';
 import {

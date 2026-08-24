@@ -2,7 +2,7 @@ import { LoaderCircle } from 'lucide-react';
 import { useState } from 'react';
 
 import { useCopy } from '../../../app/copy';
-import { usePreferences } from '../../../app/preferences';
+import { usePreferences } from '../../../shared/preferences/context';
 import { formatPublicStatus } from '../../../shared/public-labels';
 import { formatStaleReason } from '../../../shared/stale-reason';
 import {

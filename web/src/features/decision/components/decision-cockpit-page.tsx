@@ -11,9 +11,12 @@ import {
   WorkspaceHeader,
   type GateMatrixItem,
   type StatusTone,
-} from '../../../app/components/workbench';
+} from '../../../shared/ui/workbench';
 import { useCopy } from '../../../app/copy';
-import { usePreferences, type Locale } from '../../../app/preferences';
+import {
+  usePreferences,
+  type Locale,
+} from '../../../shared/preferences/context';
 import {
   formatCurrency,
   formatPercent,

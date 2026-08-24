@@ -1,5 +1,5 @@
 import { useCopy } from '../../../app/copy';
-import { usePreferences } from '../../../app/preferences';
+import { usePreferences } from '../../../shared/preferences/context';
 import { formatDateTime, formatTimestamp } from '../../../shared/format';
 import {
   formatPublicCode,

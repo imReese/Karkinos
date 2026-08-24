@@ -1,7 +1,7 @@
 import { ShieldCheck } from 'lucide-react';
 
 import { useCopy } from '../../../app/copy';
-import { EvidenceState } from '../../../app/components/workbench';
+import { EvidenceState } from '../../../shared/ui/workbench';
 import { formatAssetClassLabel } from '../../../shared/asset-class';
 import { formatTimestamp } from '../../../shared/format';
 import {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { ControlledActionZone } from '../../../app/components/workbench';
+import { ControlledActionZone } from '../../../shared/ui/workbench';
 import { useCopy } from '../../../app/copy';
 import {
   useKillSwitchQuery,
