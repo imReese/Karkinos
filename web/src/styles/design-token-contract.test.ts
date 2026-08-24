@@ -37,7 +37,6 @@ const HARDCODED_COLOR_BUDGETS = {
   'features/backtest/components/parameter-sweep-panel.tsx': 3,
   'features/backtest/components/strategy-metadata-snapshot-panel.tsx': 1,
   'features/backtest/components/validation-evidence-panel.tsx': 3,
-  'features/trading/components/trading-page.tsx': 1,
 } as const;
 
 const THEME_COLOR_TOKENS = [
