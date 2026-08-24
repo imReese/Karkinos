@@ -9,13 +9,34 @@ const source = (path: string) => readFileSync(resolve(SRC_ROOT, path), 'utf8');
 const OVERVIEW = source('features/overview/pages/overview-page.tsx');
 const ACTIVITY = source('features/activity/pages/activity-page.tsx');
 const MARKET = source('features/market/pages/market-page.tsx');
-const BACKTEST = source('features/backtest/components/backtest-page.tsx');
+const BACKTEST = [
+  source('features/backtest/components/backtest-page.tsx'),
+  source('features/backtest/components/use-backtest-page-controller.ts'),
+  source('features/backtest/components/backtest-page-layout.tsx'),
+  source('features/backtest/components/backtest-page-header.tsx'),
+  source('features/backtest/components/backtest-run-setup-panel.tsx'),
+  source('features/backtest/components/backtest-run-results-panel.tsx'),
+  source('features/backtest/components/backtest-page-primitives.tsx'),
+  source(
+    'features/backtest/components/single-instrument-loop-readiness-card.tsx',
+  ),
+  source('features/backtest/components/strategy-catalog-panel.tsx'),
+  source('features/backtest/components/strategy-metadata-panel.tsx'),
+].join('\n');
 const TRADING = source('features/trading/components/trading-page.tsx');
 const SETTINGS = source('features/settings/components/settings-page.tsx');
 const OPERATIONS = source('features/operations/components/operations-page.tsx');
-const ACCOUNT_TRUTH = source(
-  'features/account-truth/components/account-truth-review-page.tsx',
-);
+const ACCOUNT_TRUTH = [
+  source(
+    'features/account-truth/components/account-truth-review-workspace.tsx',
+  ),
+  source(
+    'features/account-truth/components/account-truth-reconciliation-workspace.tsx',
+  ),
+  source(
+    'features/account-truth/components/account-truth-reconciliation-review.tsx',
+  ),
+].join('\n');
 const ACTIVITY_FEED = source('features/activity/components/activity-feed.tsx');
 const PRICE_STRUCTURE_CHART = source(
   'features/market/components/price-structure-chart.tsx',
