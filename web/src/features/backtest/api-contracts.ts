@@ -1,0 +1,702 @@
+export type BacktestMetrics = {
+  initial_cash: number;
+  final_equity: number;
+  total_return: number;
+  annual_return: number;
+  sharpe: number;
+  sortino: number;
+  max_drawdown: number;
+  calmar?: number | string;
+  volatility?: number;
+  win_rate: number;
+  duration_days: number;
+  total_commission?: number;
+  total_slippage?: number;
+  total_trades?: number;
+  gross_turnover?: number;
+};
+
+export type CostSummary = {
+  total_commission?: number;
+  total_slippage?: number;
+  total_trades?: number;
+  gross_turnover?: number;
+};
+
+export type DatasetQualityIssue = {
+  code: string;
+  message?: string;
+  count?: number;
+  symbol?: string;
+};
+
+export type DatasetQuality = {
+  status: string;
+  issues: DatasetQualityIssue[];
+};
+
+export type DatasetSnapshotSymbol = {
+  symbol: string;
+  asset_class?: string | null;
+  frequency?: string | null;
+  row_count: number;
+  first_timestamp?: string | null;
+  last_timestamp?: string | null;
+  provider_name?: string | null;
+  data_source?: string | null;
+  adjustment_mode?: string | null;
+  source_dataset_id?: string | null;
+  data_quality?: DatasetQuality;
+};
+
+export type DatasetSnapshot = {
+  schema_version?: string;
+  snapshot_id: string;
+  provider: {
+    configured_source?: string | null;
+    available_sources?: string[];
+  };
+  cache: {
+    store_available: boolean;
+    metadata_available: boolean;
+  };
+  date_range: {
+    start: string;
+    end: string;
+  };
+  row_count: number;
+  adjustment_mode?: string | null;
+  data_quality: DatasetQuality;
+  symbol_universe: DatasetSnapshotSymbol[];
+};
+
+export type AfterCostEvidence = {
+  net_pnl?: number;
+  total_cost?: number;
+  gross_pnl_before_costs?: number;
+  net_return?: number;
+  gross_return_before_costs?: number;
+  cost_to_initial_cash?: number;
+  fill_count?: number;
+  gross_turnover?: number;
+  cost_assumptions?: string[];
+  slippage_assumptions?: string[];
+  assumptions?: string[];
+  limitations?: string[];
+};
+
+export type ValidationSegmentEvidence = {
+  start_timestamp?: string;
+  end_timestamp?: string;
+  initial_equity?: number;
+  final_equity?: number;
+  net_pnl?: number;
+  net_return?: number;
+  total_cost?: number;
+  gross_pnl_before_costs?: number;
+  gross_return_before_costs?: number;
+  fill_count?: number;
+};
+
+export type OutOfSampleValidation = {
+  strategy_id?: string;
+  benchmark_role?: string;
+  split_timestamp?: string;
+  in_sample?: ValidationSegmentEvidence;
+  out_of_sample?: ValidationSegmentEvidence;
+  benchmark_return?: number | null;
+  excess_return?: number | null;
+  passed_benchmark?: boolean | null;
+  validation_status?: string;
+  assumptions?: string[];
+  limitations?: string[];
+};
+
+export type BacktestEquityPoint = {
+  timestamp: string;
+  equity: number;
+};
+
+export type BacktestFill = {
+  fill_id?: string;
+  order_id?: string;
+  timestamp?: string;
+  symbol: string;
+  side: string;
+  fill_price: number;
+  fill_quantity: number;
+  commission: number;
+  slippage: number;
+};
+
+export type BacktestSummary = {
+  id: number;
+  created_at: string;
+  strategy: string;
+  total_return: number;
+  sharpe: number;
+  max_drawdown: number;
+};
+
+export type StrategyParameterSchema = {
+  name: string;
+  type: 'int' | 'float' | 'str' | 'bool' | 'dict' | string;
+  default: number | string | boolean | Record<string, unknown> | null;
+  required: boolean;
+  min?: number | null;
+  max?: number | null;
+  allowed_values?: Array<string | number | boolean> | null;
+  description: string;
+};
+
+export type BacktestStrategyInfo = {
+  strategy_id: string;
+  name: string;
+  display_name: string;
+  description: string;
+  params: StrategyParameterSchema[];
+  parameter_schema: StrategyParameterSchema[];
+  asset_universe?: string[];
+  supported_frequencies?: string[];
+  benchmark_role?: string | null;
+  benchmark_universe?: string[];
+  source_type?: string;
+  is_extension?: boolean;
+  requires_out_of_sample_validation?: boolean;
+  requires_after_cost_report?: boolean;
+  validation_notes?: string[];
+};
+
+export type StrategyMetadataSnapshot = {
+  schema_version: string;
+  strategy_id: string;
+  name?: string;
+  display_name?: string;
+  description?: string;
+  asset_universe?: string[];
+  supported_frequencies?: string[];
+  benchmark_role?: string | null;
+  benchmark_universe?: string[];
+  requires_out_of_sample_validation?: boolean;
+  requires_after_cost_report?: boolean;
+  validation_notes?: string[];
+  parameter_schema?: StrategyParameterSchema[];
+  params?: Record<string, number | string | boolean | null>;
+};
+
+export type BacktestRunRequest = {
+  start_date: string;
+  end_date: string;
+  initial_cash: number;
+  strategy: string;
+  short_period?: number;
+  long_period?: number;
+  params?: Record<string, number | string | boolean | null>;
+  assets?: Array<{ symbol: string; asset_class: string }>;
+};
+
+export type StrategySignalPreviewRequest = {
+  strategy: string;
+  symbol: string;
+  asset_class?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  params?: Record<string, number | string | boolean | null>;
+};
+
+export type StrategySignalPreviewOutput = {
+  output_id: string;
+  output_type: string;
+  record_kind: string;
+  action: string;
+  reason: string;
+  symbol: string;
+  target_weight?: string | null;
+  quantity?: number | string | null;
+  price?: string | null;
+  evidence: {
+    bar_count?: number;
+    dataset_snapshot_id?: string | null;
+    data_quality_status?: string | null;
+    signal_timestamp?: string | null;
+    reference_price?: string | null;
+    research_only?: boolean;
+    does_not_enable_execution?: boolean;
+  };
+  review_gates?: Array<{
+    key: string;
+    status: string;
+    severity?: string | null;
+    summary?: string | null;
+    required_action?: string | null;
+    evidence_ref?: string | null;
+  }>;
+  requires_risk_gate: boolean;
+  requires_account_truth_gate: boolean;
+  requires_paper_shadow_review: boolean;
+  requires_manual_review: boolean;
+  does_not_enable_execution: boolean;
+};
+
+export type StrategySignalPreviewResponse = {
+  schema_version: string;
+  strategy_id: string;
+  symbol: string;
+  params: Record<string, number | string | boolean | null>;
+  run_id: string;
+  dataset_snapshot_id?: string | null;
+  record_count: number;
+  outputs: StrategySignalPreviewOutput[];
+  limitations: string[];
+  does_not_enable_execution: boolean;
+};
+
+export type BacktestRiskPreviewRequest = {
+  strategy: string;
+  symbol: string;
+  asset_class: string;
+  action: string;
+  quantity: number;
+  reference_price: number;
+  target_weight?: string | number | null;
+  data_quality_status?: string | null;
+};
+
+export type BacktestRiskPreviewResponse = {
+  schema_version: string;
+  passed: boolean;
+  status: string;
+  severity: string;
+  reasons: string[];
+  manual_confirmation_required: boolean;
+  does_not_create_order: boolean;
+  does_not_persist_decision: boolean;
+  metadata?: Record<string, unknown>;
+};
+
+export type BacktestPaperShadowPreviewRequest = {
+  strategy: string;
+  symbol: string;
+  asset_class: string;
+  action: string;
+  quantity: number;
+  reference_price: number;
+  target_weight?: string | number | null;
+  signal_id?: string | null;
+  dataset_snapshot_id?: string | null;
+  risk_preview_passed: boolean;
+  risk_reasons: string[];
+};
+
+export type BacktestPaperShadowPreviewResponse = {
+  schema_version: string;
+  status: string;
+  execution_mode: string;
+  manual_confirmation_required: boolean;
+  does_not_create_order: boolean;
+  does_not_create_fill: boolean;
+  does_not_mutate_ledger: boolean;
+  risk_reasons: string[];
+  order: Record<string, unknown> | null;
+  fill: {
+    fill_price?: string | null;
+    fill_quantity?: string | null;
+    commission?: string | null;
+    fee_breakdown?: {
+      gross_amount?: string | null;
+      total_fee?: string | null;
+      fee_rule_id?: string | null;
+      limitations?: string[];
+    } | null;
+  } | null;
+  shadow_review?: {
+    candidate_count?: number;
+    supported_match_count?: number;
+    unsupported_real_movement_count?: number;
+  } | null;
+  limitations: string[];
+};
+
+export type BacktestAttributionPreviewRequest = {
+  strategy: string;
+  symbol: string;
+  asset_class: string;
+  signal_id?: string | null;
+  dataset_snapshot_id?: string | null;
+  risk_preview_passed: boolean;
+  risk_reasons: string[];
+  paper_shadow_status?: string | null;
+  paper_shadow_order?: Record<string, unknown> | null;
+  paper_shadow_fill?: Record<string, unknown> | null;
+};
+
+export type BacktestAttributionPreviewResponse = {
+  schema_version: string;
+  status: string;
+  strategy_id: string;
+  symbol: string;
+  asset_class: string;
+  attribution_status: string;
+  can_attribute_pnl: boolean;
+  does_not_create_order: boolean;
+  does_not_create_fill: boolean;
+  does_not_mutate_ledger: boolean;
+  risk_reasons: string[];
+  evidence_counts: {
+    signal_preview: number;
+    risk_preview: number;
+    paper_shadow_order: number;
+    paper_shadow_fill: number;
+    production_order: number;
+    production_fill: number;
+  };
+  evidence_refs: string[];
+  required_next_actions: string[];
+  review_linkage_candidate?: {
+    candidate_id: string;
+    strategy_id: string;
+    symbol: string;
+    asset_class: string;
+    signal_ref: string | null;
+    dataset_snapshot_ref: string | null;
+    risk_preview_ref: string | null;
+    paper_shadow_order_ref: string | null;
+    paper_shadow_fill_ref: string | null;
+    recommended_review_action: string;
+    manual_confirmation_required: boolean;
+    does_not_create_order: boolean;
+    does_not_create_fill: boolean;
+    does_not_mutate_ledger: boolean;
+    can_link_to_strategy_pnl: boolean;
+  } | null;
+  limitations: string[];
+};
+
+export type BacktestSweepRequest = {
+  start_date: string;
+  end_date: string;
+  initial_cash: number;
+  strategy: string;
+  params?: Record<string, number | string | boolean | null>;
+  param_grid: Record<string, Array<number | string | boolean | null>>;
+  assets?: Array<{ symbol: string; asset_class: string }>;
+  rank_by?: string;
+  max_combinations?: number;
+};
+
+export type BacktestSweepResult = {
+  rank: number;
+  result_id: number;
+  strategy: string;
+  params: Record<string, number | string | boolean | null>;
+  metrics: BacktestMetrics;
+  score: number;
+};
+
+export type BacktestSweepResponse = {
+  strategy: string;
+  rank_by: string;
+  tested_count: number;
+  results: BacktestSweepResult[];
+  warnings: string[];
+};
+
+export type BacktestCompareRunRequest = {
+  strategy: string;
+  params?: Record<string, number | string | boolean | null>;
+};
+
+export type BacktestCompareRequest = {
+  start_date: string;
+  end_date: string;
+  initial_cash: number;
+  strategies?: string[];
+  runs?: BacktestCompareRunRequest[];
+  assets?: Array<{ symbol: string; asset_class: string }>;
+};
+
+export type BacktestCompareResult = {
+  strategy: string;
+  description: string;
+  result_id?: number | null;
+  params: Record<string, number | string | boolean | null>;
+  dataset_snapshot_id?: string | null;
+  dataset_snapshot?: Partial<DatasetSnapshot>;
+  metrics: BacktestMetrics;
+  equity_curve: BacktestEquityPoint[];
+};
+
+export type BacktestCompareResponse = {
+  results: BacktestCompareResult[];
+  compared_count: number;
+  dataset_snapshot_id?: string | null;
+  dataset_snapshot?: Partial<DatasetSnapshot>;
+  warnings: string[];
+};
+
+export type BacktestReport = {
+  id: number;
+  created_at: string;
+  config: {
+    start_date: string;
+    end_date: string;
+    initial_cash: number;
+    strategy: string;
+    short_period?: number;
+    long_period?: number;
+    params?: Record<string, number | string | boolean | null>;
+    assets?: Array<{ symbol: string; asset_class: string }> | null;
+  };
+  metrics: BacktestMetrics;
+  metrics_json?: Partial<BacktestMetrics> & {
+    dataset_snapshot?: DatasetSnapshot;
+    evidence_bundle?: AfterCostEvidence;
+    oos_validation?: OutOfSampleValidation;
+    strategy_metadata?: StrategyMetadataSnapshot;
+    fee_component_evidence?: {
+      status?: string;
+      cost_model_reference?: string;
+      account_specific?: boolean;
+      broker_statement_reconciled?: boolean;
+    };
+    account_capital_constraint?: Record<string, unknown>;
+  };
+  cost_summary_json?: CostSummary;
+  evidence_json?: AfterCostEvidence;
+  fills?: BacktestFill[];
+  equity_curve: BacktestEquityPoint[];
+};
+
+export type StrategyValidationRow = {
+  strategy_id: string;
+  benchmark_role: string;
+  requires_out_of_sample_validation: boolean;
+  requires_after_cost_report: boolean;
+  has_out_of_sample_validation: boolean;
+  has_after_cost_report: boolean;
+  validation_status: string | null;
+  backtest_result_id: number | null;
+  missing_requirements: string[];
+  is_ready: boolean;
+};
+
+export type StrategyValidationMatrix = {
+  required_strategy_count: number;
+  ready_strategy_count: number;
+  is_complete: boolean;
+  rows: StrategyValidationRow[];
+  limitations: string[];
+};
+
+export type StrategyPromotionReadinessRow = {
+  strategy_id: string;
+  benchmark_role: string;
+  backtest_result_id: number | null;
+  has_after_cost_and_oos_evidence: boolean;
+  has_risk_block_evidence: boolean;
+  has_paper_shadow_evidence: boolean;
+  has_paper_shadow_divergence_review: boolean;
+  has_account_truth_evidence: boolean;
+  account_truth_gate_status: string;
+  account_truth_score: number | null;
+  has_strategy_attribution_evidence: boolean;
+  strategy_attribution_status: string;
+  missing_requirements: string[];
+  promotion_status: string;
+  is_promotable: boolean;
+};
+
+export type StrategyPromotionReadiness = {
+  required_strategy_count: number;
+  promotable_strategy_count: number;
+  is_complete: boolean;
+  rows: StrategyPromotionReadinessRow[];
+  limitations: string[];
+};
+
+export type AccountStrategyAssignment = {
+  strategy_id: string;
+  strategy_name: string;
+  status: string;
+  scope: string;
+  asset_class?: string | null;
+  symbol?: string | null;
+  effective_from?: string | null;
+  auto_trade_enabled: boolean;
+  attribution_status: string;
+  attributed_pnl?: number | null;
+  realized_pnl?: number | null;
+  unrealized_pnl?: number | null;
+  total_fees?: number | null;
+  notes?: string;
+  updated_at?: string | null;
+  limitations: string[];
+};
+
+export type AccountStrategyAttributionSummary = {
+  strategy_id: string;
+  attribution_status: string;
+  signal_count: number;
+  action_count: number;
+  risk_decision_count: number;
+  order_count: number;
+  fill_count: number;
+  unattributed_fill_count: number;
+  total_fees: number;
+  attributed_pnl?: number | null;
+  realized_pnl?: number | null;
+  unrealized_pnl?: number | null;
+  evidence_refs: string[];
+  limitations: string[];
+};
+
+export type AccountStrategyContributionReport = {
+  schema_version: string;
+  strategy_id: string;
+  contribution_status: string;
+  evidence_binding_status?: string;
+  next_manual_action?: string;
+  blockers?: string[];
+  strategy_health_status?: string;
+  strategy_health_reasons?: string[];
+  linked_fill_count: number;
+  ledger_posted_fill_count?: number;
+  unposted_linked_fill_count?: number;
+  unattributed_fill_count?: number;
+  gross_realized_pnl: number | null;
+  gross_unrealized_pnl: number | null;
+  total_commission: number | null;
+  total_slippage: number | null;
+  total_tax: number | null;
+  net_contribution: number | null;
+  unattributed_account_pnl?: number | null;
+  manual_unattributed_pnl?: number | null;
+  cash_flow_pnl?: number | null;
+  missing_valuation_symbols: string[];
+  valuation_snapshot_id?: string | null;
+  valuation_as_of?: string | null;
+  valuation_status?: string;
+  valuation_scope_status?: string;
+  ledger_cutoff_id?: number;
+  ledger_fingerprint?: string | null;
+  quote_set_fingerprint?: string | null;
+  contribution_fingerprint?: string | null;
+  evidence_refs: string[];
+  persisted_facts_only?: boolean;
+  provider_contacted?: boolean;
+  database_writes_performed?: boolean;
+  authorizes_execution?: boolean;
+  limitations: string[];
+};
+
+export type StrategyLearningResearchHandoff = {
+  schema_version: string;
+  kind: 'copy_only_human_started_research';
+  research_question: string;
+  review_id: string;
+  evidence_refs: string[];
+  historical_review_is_current_fact: false;
+  requires_human_started_capture: true;
+  requires_human_started_research_task: true;
+  invokes_ai: false;
+  creates_memory: false;
+  authorizes_strategy_change: false;
+  authorizes_execution: false;
+};
+
+export type StrategyLearningReviewItem = {
+  review_id: string;
+  signal_id: number;
+  strategy_id: string;
+  symbol: string;
+  reviewed_at: string;
+  user_decision: string;
+  outcome: string;
+  learning_status: string;
+  priority: 'critical' | 'high' | 'medium' | 'low' | 'none';
+  safe_next_action: string;
+  stored_target_fingerprint: string;
+  current_target_fingerprint: string;
+  target_binding_valid: boolean;
+  audit_integrity_valid: boolean;
+  valuation_snapshot_id: string | null;
+  ledger_cutoff_id: number;
+  contribution_fingerprint: string | null;
+  blockers: string[];
+  evidence_refs: string[];
+  research_handoff: StrategyLearningResearchHandoff | null;
+  item_fingerprint: string;
+  persisted_facts_only: true;
+  provider_contacted: false;
+  database_writes_performed: false;
+  financial_recalculation_performed: false;
+  ai_invoked: false;
+  memory_created: false;
+  strategy_changed: false;
+  authorizes_execution: false;
+  capital_authority_changed: false;
+};
+
+export type StrategyLearningReviewQueue = {
+  schema_version: string;
+  status: 'not_configured' | 'blocked' | 'review_required' | 'clear';
+  reviewed_signal_count: number;
+  action_item_count: number;
+  critical_item_count: number;
+  outcome_counts: Record<string, number>;
+  strategy_summaries: Array<{
+    strategy_id: string;
+    reviewed_signal_count: number;
+    action_item_count: number;
+    highest_priority: string;
+    outcome_counts: Record<string, number>;
+  }>;
+  items: StrategyLearningReviewItem[];
+  limitations: string[];
+  queue_fingerprint: string;
+  generated_at: string;
+  persisted_facts_only: true;
+  provider_contacted: false;
+  database_writes_performed: false;
+  financial_recalculation_performed: false;
+  ai_invoked: false;
+  memory_created: false;
+  strategy_changed: false;
+  authorizes_execution: false;
+  capital_authority_changed: false;
+};
+
+export type AccountStrategyAssignmentUpdate = {
+  strategy_id: string;
+  status?: string;
+  scope?: string;
+  asset_class?: string | null;
+  symbol?: string | null;
+  effective_from?: string | null;
+  notes?: string;
+};
+
+export type AcceptanceAuditCriterion = {
+  key: string;
+  checkbox_text: string;
+  evidence_paths: string[];
+  validation_commands: string[];
+  is_complete: boolean;
+};
+
+export type AcceptanceAuditSummary = {
+  key: string;
+  name: string;
+  required_count: number;
+  completed_count: number;
+  is_complete: boolean;
+  criteria: AcceptanceAuditCriterion[];
+  limitations: string[];
+};
+
+export type AcceptanceAuditExport = {
+  generated_at: string;
+  selected_audit: string;
+  audits: AcceptanceAuditSummary[];
+  overall_is_complete: boolean;
+};
