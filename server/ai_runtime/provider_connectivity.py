@@ -11,10 +11,8 @@ import asyncio
 import json
 import os
 import re
-import sqlite3
 import time
-from collections.abc import Callable, Iterator, Mapping
-from contextlib import contextmanager
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import StrEnum
@@ -34,6 +32,7 @@ from .contracts import (
     canonical_json,
     content_fingerprint,
 )
+from .persistence.provider_connectivity import ProviderConnectivitySqliteRepository
 from .registry import AiRuntimeRegistry
 from .store import AiAuditStore, IdempotencyConflict
 
@@ -446,57 +445,15 @@ class ConnectivityCheckResult:
         }
 
 
-_CONNECTIVITY_SCHEMA = """
-CREATE TABLE IF NOT EXISTS ai_provider_connectivity_checks (
-    check_id TEXT PRIMARY KEY,
-    idempotency_key TEXT NOT NULL UNIQUE,
-    request_fingerprint TEXT NOT NULL,
-    requested_by TEXT NOT NULL,
-    provider_id TEXT NOT NULL,
-    model_id TEXT NOT NULL,
-    model_name TEXT NOT NULL,
-    adapter_kind TEXT NOT NULL,
-    endpoint_origin TEXT NOT NULL,
-    status TEXT NOT NULL,
-    probe_version TEXT NOT NULL,
-    request_payload_fingerprint TEXT,
-    response_fingerprint TEXT,
-    response_model TEXT,
-    usage_json TEXT NOT NULL,
-    http_status INTEGER,
-    error_code TEXT,
-    credential_source TEXT NOT NULL,
-    started_at TEXT NOT NULL,
-    finished_at TEXT,
-    latency_ms INTEGER,
-    financial_context_sent INTEGER NOT NULL CHECK(financial_context_sent = 0),
-    tool_calls_allowed INTEGER NOT NULL CHECK(tool_calls_allowed = 0),
-    authority_effect TEXT NOT NULL CHECK(authority_effect = 'none')
-);
-"""
-
-
 class ProviderConnectivityAuditStore:
     """Append-oriented, secret-free audit storage for external probes."""
 
     def __init__(self, db_path: str | Path) -> None:
         self._path = Path(db_path)
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-
-    @contextmanager
-    def _connection(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self._path, timeout=2)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA busy_timeout=2000")
-        try:
-            with conn:
-                yield conn
-        finally:
-            conn.close()
+        self._repository = ProviderConnectivitySqliteRepository(self._path)
 
     def init(self) -> None:
-        with self._connection() as conn:
-            conn.executescript(_CONNECTIVITY_SCHEMA)
+        self._repository.init()
 
     def create_or_get(
         self,
@@ -507,53 +464,27 @@ class ProviderConnectivityAuditStore:
         started_at: str,
     ) -> tuple[ConnectivityCheckResult, bool]:
         check_id = f"ai-connectivity-{content_fingerprint({'idempotency_key': request.idempotency_key, 'request_fingerprint': request_fingerprint})[:24]}"
-        with self._connection() as conn:
-            conn.execute("BEGIN IMMEDIATE")
-            existing = conn.execute(
-                "SELECT * FROM ai_provider_connectivity_checks WHERE idempotency_key = ?",
-                (request.idempotency_key,),
-            ).fetchone()
-            if existing is not None:
-                if str(existing["request_fingerprint"]) != request_fingerprint:
-                    raise IdempotencyConflict(
-                        "connectivity idempotency key was reused with different input"
-                    )
-                return _result_from_row(existing), False
-            conn.execute(
-                """
-                INSERT INTO ai_provider_connectivity_checks (
-                    check_id, idempotency_key, request_fingerprint, requested_by,
-                    provider_id, model_id, model_name, adapter_kind,
-                    endpoint_origin, status, probe_version,
-                    request_payload_fingerprint, response_fingerprint,
-                    response_model, usage_json, http_status, error_code,
-                    credential_source, started_at, finished_at, latency_ms,
-                    financial_context_sent, tool_calls_allowed, authority_effect
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL,
-                          '{}', NULL, NULL, ?, ?, NULL, NULL, 0, 0, 'none')
-                """,
-                (
-                    check_id,
-                    request.idempotency_key,
-                    request_fingerprint,
-                    request.requested_by,
-                    settings.provider_id,
-                    settings.model_id,
-                    settings.model_name,
-                    settings.adapter_kind,
-                    settings.endpoint_origin,
-                    ConnectivityStatus.RUNNING.value,
-                    CONNECTIVITY_PROBE_VERSION,
-                    settings.credential_source,
-                    started_at,
-                ),
-            )
-            row = conn.execute(
-                "SELECT * FROM ai_provider_connectivity_checks WHERE check_id = ?",
-                (check_id,),
-            ).fetchone()
+        row, should_invoke = self._repository.create_or_get(
+            check_id=check_id,
+            idempotency_key=request.idempotency_key,
+            request_fingerprint=request_fingerprint,
+            requested_by=request.requested_by,
+            provider_id=settings.provider_id,
+            model_id=settings.model_id,
+            model_name=settings.model_name,
+            adapter_kind=settings.adapter_kind,
+            endpoint_origin=settings.endpoint_origin,
+            status=ConnectivityStatus.RUNNING.value,
+            probe_version=CONNECTIVITY_PROBE_VERSION,
+            credential_source=settings.credential_source,
+            started_at=started_at,
+        )
         assert row is not None
-        return _result_from_row(row), True
+        if str(row["request_fingerprint"]) != request_fingerprint:
+            raise IdempotencyConflict(
+                "connectivity idempotency key was reused with different input"
+            )
+        return _result_from_mapping(row), should_invoke
 
     def finalize(
         self,
@@ -567,40 +498,26 @@ class ProviderConnectivityAuditStore:
     ) -> ConnectivityCheckResult:
         if status not in {ConnectivityStatus.PASSED, ConnectivityStatus.FAILED}:
             raise ValueError("connectivity final status must be passed or failed")
-        with self._connection() as conn:
-            conn.execute(
-                """
-                UPDATE ai_provider_connectivity_checks
-                SET status = ?, request_payload_fingerprint = ?,
-                    response_fingerprint = ?, response_model = ?, usage_json = ?,
-                    http_status = ?, error_code = ?, finished_at = ?, latency_ms = ?
-                WHERE check_id = ? AND status = ?
-                """,
-                (
-                    status.value,
-                    probe.request_payload_fingerprint if probe else None,
-                    probe.response_fingerprint if probe else None,
-                    probe.response_model if probe else None,
-                    canonical_json(probe.usage if probe else {}),
-                    (
-                        probe.http_status
-                        if probe
-                        else (error.http_status if error else None)
-                    ),
-                    error.code if error else None,
-                    finished_at,
-                    latency_ms,
-                    check_id,
-                    ConnectivityStatus.RUNNING.value,
-                ),
-            )
-            row = conn.execute(
-                "SELECT * FROM ai_provider_connectivity_checks WHERE check_id = ?",
-                (check_id,),
-            ).fetchone()
+        row = self._repository.finalize(
+            check_id=check_id,
+            expected_status=ConnectivityStatus.RUNNING.value,
+            status=status.value,
+            request_payload_fingerprint=(
+                probe.request_payload_fingerprint if probe else None
+            ),
+            response_fingerprint=probe.response_fingerprint if probe else None,
+            response_model=probe.response_model if probe else None,
+            usage_json=canonical_json(probe.usage if probe else {}),
+            http_status=(
+                probe.http_status if probe else (error.http_status if error else None)
+            ),
+            error_code=error.code if error else None,
+            finished_at=finished_at,
+            latency_ms=latency_ms,
+        )
         if row is None:
             raise LookupError(f"AI provider connectivity check not found: {check_id}")
-        return _result_from_row(row)
+        return _result_from_mapping(row)
 
 
 class ProviderConnectivityService:
@@ -776,7 +693,7 @@ def _safe_usage(value: object) -> dict[str, int]:
     return result
 
 
-def _result_from_row(row: sqlite3.Row) -> ConnectivityCheckResult:
+def _result_from_mapping(row: Mapping[str, Any]) -> ConnectivityCheckResult:
     usage = json.loads(str(row["usage_json"]))
     return ConnectivityCheckResult(
         check_id=str(row["check_id"]),
