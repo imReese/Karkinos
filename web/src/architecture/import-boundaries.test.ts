@@ -1,6 +1,6 @@
 // @ts-nocheck -- Node built-ins are used only by this deterministic source audit.
 import { readFileSync, readdirSync } from 'node:fs';
-import { dirname, isAbsolute, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { expect, test } from 'vitest';
@@ -114,62 +114,6 @@ const LAZY_ROUTE_PAGES = [
   },
 ];
 
-// Temporary copy-only debt ratchet. This exact set may shrink but must never be
-// replaced or expanded. The copy decomposition slice removes this list.
-const LEGACY_FEATURE_TO_APP_EDGES = new Set([
-  'features/account/components/daily-operations-tower.tsx -> app/copy',
-  'features/account/components/dashboard-quick-actions.tsx -> app/copy',
-  'features/account/components/equity-curve-card.tsx -> app/copy',
-  'features/account/components/live-holdings-summary-card.tsx -> app/copy',
-  'features/account/components/overview-cards.tsx -> app/copy',
-  'features/account/components/performance-breakdown-card.tsx -> app/copy',
-  'features/account/components/portfolio-exposure-summary.tsx -> app/copy',
-  'features/account/components/return-calendar-card.tsx -> app/copy',
-  'features/account/components/risk-summary-card.tsx -> app/copy',
-  'features/account-strategy/components/strategy-contribution-gate-card.tsx -> app/copy',
-  'features/activity/components/activity-feed.tsx -> app/copy',
-  'features/activity/components/cash-flow-form.tsx -> app/copy',
-  'features/activity/components/dividend-form.tsx -> app/copy',
-  'features/activity/components/fund-batch-form.tsx -> app/copy',
-  'features/activity/components/manual-adjustment-form.tsx -> app/copy',
-  'features/activity/components/trade-form.tsx -> app/copy',
-  'features/activity/pages/activity-page.tsx -> app/copy',
-  'features/ai-research/components/ai-research-page.tsx -> app/copy',
-  'features/ai-research/components/research-task-panel.tsx -> app/copy',
-  'features/backtest/components/backtest-page.tsx -> app/copy',
-  'features/backtest/components/backtest-report-view.tsx -> app/copy',
-  'features/backtest/components/dataset-snapshot-panel.tsx -> app/copy',
-  'features/backtest/components/equity-drawdown-chart.tsx -> app/copy',
-  'features/backtest/components/fills-table.tsx -> app/copy',
-  'features/backtest/components/metrics-grid.tsx -> app/copy',
-  'features/backtest/components/parameter-compare-panel.tsx -> app/copy',
-  'features/backtest/components/parameter-sweep-panel.tsx -> app/copy',
-  'features/backtest/components/strategy-metadata-snapshot-panel.tsx -> app/copy',
-  'features/backtest/components/validation-evidence-panel.tsx -> app/copy',
-  'features/decision/components/decision-cockpit-page.tsx -> app/copy',
-  'features/decision/components/decision-outcome-review-panel.tsx -> app/copy',
-  'features/market/components/confirmed-fund-nav-refresh-button.tsx -> app/copy',
-  'features/market/components/current-holding-market-evidence-review-panel.tsx -> app/copy',
-  'features/market/components/market-instrument-workspace.tsx -> app/copy',
-  'features/market/components/market-refresh-button.tsx -> app/copy',
-  'features/market/pages/market-page.tsx -> app/copy',
-  'features/operations/components/operations-page.tsx -> app/copy',
-  'features/overview/pages/overview-page.tsx -> app/copy',
-  'features/overview/pages/overview-today-queue.tsx -> app/copy',
-  'features/portfolio/components/allocation-card.tsx -> app/copy',
-  'features/portfolio/components/allocation-groups-card.tsx -> app/copy',
-  'features/portfolio/components/holding-detail-page.tsx -> app/copy',
-  'features/portfolio/components/live-holdings-board.tsx -> app/copy',
-  'features/portfolio/components/positions-table.tsx -> app/copy',
-  'features/portfolio/components/workspace-toolbar.tsx -> app/copy',
-  'features/portfolio/pages/portfolio-page.tsx -> app/copy',
-  'features/risk/pages/risk-page.tsx -> app/copy',
-  'features/settings/components/settings-page.tsx -> app/copy',
-  'features/trading/components/kill-switch-panel.tsx -> app/copy',
-  'features/trading/components/order-approval-table.tsx -> app/copy',
-  'features/trading/components/trading-page.tsx -> app/copy',
-]);
-
 function sourceFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = resolve(directory, entry.name);
@@ -246,24 +190,54 @@ test('shared modules do not depend on legacy or higher application layers', () =
   expect(violations).toEqual([]);
 });
 
-test('feature modules have no app dependencies beyond shrinking copy debt', () => {
-  const actualEdges = new Set(
-    sourceFiles(FEATURES_ROOT)
-      .filter((path) => !/\.(?:test|spec)\.(?:ts|tsx)$/.test(path))
-      .flatMap((path) =>
-        relativeImportTargets(path)
-          .filter((target) => isInside(target, APP_ROOT))
-          .map((target) => describeImport(path, target)),
-      ),
-  );
-  const unexpectedEdges = Array.from(actualEdges)
-    .filter((edge) => !LEGACY_FEATURE_TO_APP_EDGES.has(edge))
+test('feature modules do not depend on the app layer', () => {
+  const violations = sourceFiles(FEATURES_ROOT)
+    .filter((path) => !/\.(?:test|spec)\.(?:ts|tsx)$/.test(path))
+    .flatMap((path) =>
+      relativeImportTargets(path)
+        .filter((target) => isInside(target, APP_ROOT))
+        .map((target) => describeImport(path, target)),
+    )
     .sort();
 
-  expect(unexpectedEdges).toEqual([]);
-  expect(Array.from(actualEdges).sort()).toEqual(
-    Array.from(LEGACY_FEATURE_TO_APP_EDGES).sort(),
-  );
+  expect(violations).toEqual([]);
+});
+
+test('localized copy modules stay bounded and feature-owned', () => {
+  const copyModules = sourceFiles(SRC_ROOT).filter((path) => {
+    const name = basename(path);
+    return (
+      name === 'copy.ts' ||
+      name === 'shell-copy.ts' ||
+      /^copy-.+\.ts$/.test(name)
+    );
+  });
+  const oversizedModules = copyModules
+    .map((path) => ({
+      path: relative(SRC_ROOT, path),
+      lines: readFileSync(path, 'utf8').split('\n').length,
+    }))
+    .filter(({ lines }) => lines > 800);
+  const misplacedFeatureDependencies = copyModules
+    .filter((path) => isInside(path, FEATURES_ROOT))
+    .flatMap((path) => {
+      const featureName = relative(FEATURES_ROOT, path).split(/[\\/]/)[0];
+      const featureRoot = resolve(FEATURES_ROOT, featureName);
+      return relativeImportTargets(path)
+        .filter(
+          (target) =>
+            isInside(target, APP_ROOT) ||
+            (isInside(target, FEATURES_ROOT) && !isInside(target, featureRoot)),
+        )
+        .map((target) => describeImport(path, target));
+    });
+
+  expect(copyModules).not.toEqual([]);
+  expect(oversizedModules).toEqual([]);
+  expect(misplacedFeatureDependencies).toEqual([]);
+  expect(
+    readFileSync(resolve(APP_ROOT, 'copy.ts'), 'utf8').split('\n').length,
+  ).toBeLessThanOrEqual(100);
 });
 
 test('browser preference effects stay in the app provider', () => {

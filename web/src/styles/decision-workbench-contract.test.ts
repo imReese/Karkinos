@@ -4,17 +4,25 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SRC_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const DECISION = readFileSync(
-  resolve(SRC_ROOT, 'features/decision/components/decision-cockpit-page.tsx'),
-  'utf8',
+function readDecisionModule(fileName: string) {
+  return readFileSync(
+    resolve(SRC_ROOT, 'features/decision/components', fileName),
+    'utf8',
+  );
+}
+
+const DECISION_CONTENT = readDecisionModule('decision-cockpit-content.tsx');
+const DECISION_WORKSPACE = readDecisionModule(
+  'use-decision-cockpit-workspace.ts',
 );
-const DECISION_CORE = DECISION.slice(
-  DECISION.indexOf('function DecisionSummaryCollapsedPanel'),
-);
-const DAILY_TRADING_PLAN = DECISION.slice(
-  DECISION.indexOf('function DailyTradingPlanPanel'),
-  DECISION.indexOf('const DECISION_GATE_IDS'),
-);
+const SIGNAL_QUEUE = readDecisionModule('decision-signal-queue-panel.tsx');
+const DECISION_CORE = [
+  readDecisionModule('decision-workflow-panels.tsx'),
+  SIGNAL_QUEUE,
+  readDecisionModule('decision-lane-panels.tsx'),
+].join('\n');
+const DAILY_TRADING_PLAN = readDecisionModule('daily-trading-plan-panel.tsx');
+const DECISION = `${DECISION_CONTENT}\n${DECISION_WORKSPACE}`;
 
 describe('decision workbench contract', () => {
   it('keeps the core human-review path flat and evidence-first', () => {
@@ -32,10 +40,7 @@ describe('decision workbench contract', () => {
   });
 
   it('keeps manual order preparation inside the controlled action primitive', () => {
-    const signalQueue = DECISION_CORE.slice(
-      DECISION_CORE.indexOf('function SignalQueuePanel'),
-      DECISION_CORE.indexOf('function SummaryTile'),
-    );
+    const signalQueue = SIGNAL_QUEUE;
     const controlledZone = signalQueue.indexOf('<ControlledActionZone');
     const quantityInput = signalQueue.indexOf('<input', controlledZone);
     const prepareButton = signalQueue.indexOf('<button', quantityInput);
