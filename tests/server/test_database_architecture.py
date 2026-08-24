@@ -99,6 +99,7 @@ def test_persistence_layer_does_not_depend_on_application_services() -> None:
 def test_unit_of_work_boundaries_remain_explicit() -> None:
     expected = {
         "controlled_broker_intents.py": 3,
+        "controlled_broker_rejection_reviews.py": 1,
         "controlled_clearance_uow.py": 1,
         "controlled_ledger_correction_uow.py": 1,
         "controlled_ledger_posting_uow.py": 1,
