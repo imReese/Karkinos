@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Callable
-from zoneinfo import ZoneInfo
 
 from account_truth.broker_evidence import (
     BrokerEvidenceRepository,
@@ -17,21 +15,40 @@ from account_truth.broker_evidence import (
 )
 from account_truth.manual_review import ManualReviewRepository
 from account_truth.reconciliation import (
-    KarkinosLedgerFact,
     KarkinosPositionFact,
     ReconciliationReport,
     build_reconciliation_report,
 )
 from account_truth.score import AccountTruthScore, build_account_truth_score
+from server.account_truth_gate_support import (
+    ACCOUNT_TRUTH_PROMOTION_EVIDENCE_SCHEMA_VERSION,
+    ACCOUNT_TRUTH_PROMOTION_MAX_AGE_SECONDS,
+)
+from server.account_truth_gate_support import (
+    account_truth_item_key as _account_truth_item_key,
+)
+from server.account_truth_gate_support import (
+    account_truth_snapshot_capture as _account_truth_snapshot_capture,
+)
+from server.account_truth_gate_support import aware_utc as _aware_utc
+from server.account_truth_gate_support import db_path_for_state as _db_path_for_state
+from server.account_truth_gate_support import fingerprint_json as _fingerprint_json
+from server.account_truth_gate_support import (
+    ledger_fact_from_entry as _ledger_fact_from_entry,
+)
+from server.account_truth_gate_support import (
+    missing_account_truth_promotion_evidence as _missing_account_truth_promotion_evidence,
+)
+from server.account_truth_gate_support import (
+    parse_aware_timestamp as _parse_aware_timestamp,
+)
+from server.account_truth_gate_support import (
+    parse_fact_timestamp as _parse_fact_timestamp,
+)
+from server.account_truth_gate_support import same_shanghai_date as _same_shanghai_date
 from server.ledger.models import LedgerEntry
 from server.projections.service import build_portfolio_projection_from_db
 from server.services.citic_source_follow_up import build_citic_source_follow_up
-
-ACCOUNT_TRUTH_PROMOTION_EVIDENCE_SCHEMA_VERSION = (
-    "karkinos.account_truth.promotion_evidence.v1"
-)
-ACCOUNT_TRUTH_PROMOTION_MAX_AGE_SECONDS = 86400
-_SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 
 
 def missing_account_truth_score_payload() -> dict[str, object]:
@@ -653,10 +670,7 @@ def _broker_evidence_covered_ledger_entry_ids(
             broker_at = _parse_fact_timestamp(event.occurred_at)
             if broker_at is None or broker_at > ledger_at:
                 continue
-            if (
-                broker_at.astimezone(_SHANGHAI_TZ).date()
-                != ledger_at.astimezone(_SHANGHAI_TZ).date()
-            ):
+            if not _same_shanghai_date(broker_at, ledger_at):
                 continue
             if str(event.symbol or "").strip() != ledger_fact.symbol.strip():
                 continue
@@ -715,267 +729,3 @@ def _freshness_with_ledger_coverage(
     if freshness_status == "fresh" and ledger_coverage.get("status") == "stale":
         return "stale"
     return freshness_status
-
-
-def _parse_fact_timestamp(value: object) -> datetime | None:
-    normalized = str(value or "").strip()
-    if not normalized:
-        return None
-    if normalized.endswith("Z"):
-        normalized = f"{normalized[:-1]}+00:00"
-    try:
-        parsed = datetime.fromisoformat(normalized)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        parsed = parsed.replace(tzinfo=_SHANGHAI_TZ)
-    return parsed.astimezone(timezone.utc)
-
-
-def _ledger_fact_from_entry(entry: LedgerEntry) -> KarkinosLedgerFact:
-    quantity = _decimal_or_zero(entry.quantity)
-    price = _decimal_or_zero(entry.price)
-    gross_amount = _optional_decimal(entry.gross_amount) or quantity * price
-    fee = _ledger_fee_component(entry)
-    tax = _ledger_tax_component(entry)
-    transfer_fee = _ledger_transfer_fee_component(entry)
-    return KarkinosLedgerFact(
-        event_type=entry.entry_type,
-        symbol=str(entry.symbol or ""),
-        quantity=quantity,
-        price=price,
-        gross_amount=gross_amount,
-        fee=fee,
-        tax=tax,
-        transfer_fee=transfer_fee,
-        net_amount=_ledger_net_cash_impact(
-            entry,
-            gross_amount=gross_amount,
-            fee=fee,
-            tax=tax,
-            transfer_fee=transfer_fee,
-        ),
-    )
-
-
-def _db_path_for_state(state: Any) -> Path | None:
-    raw_path = getattr(getattr(state, "db", None), "_path", None)
-    return Path(raw_path) if raw_path is not None else None
-
-
-def _missing_account_truth_promotion_evidence(
-    blockers: list[str],
-) -> dict[str, object]:
-    return {
-        "schema_version": ACCOUNT_TRUTH_PROMOTION_EVIDENCE_SCHEMA_VERSION,
-        "status": "blocked",
-        "source_fingerprint": "",
-        "import_run_id": "",
-        "file_fingerprint": "",
-        "source_type": "",
-        "captured_at": "",
-        "imported_at": "",
-        "snapshot_capture": {
-            "status": "missing",
-            "captured_at": "",
-            "latest_cash_snapshot_at": "",
-            "latest_position_snapshot_at": "",
-            "latest_non_snapshot_event_at": "",
-            "blockers": ["account_truth_snapshot_evidence_missing"],
-        },
-        "current_age_seconds": None,
-        "max_age_seconds": ACCOUNT_TRUTH_PROMOTION_MAX_AGE_SECONDS,
-        "data_freshness_status": "missing",
-        "reconciliation_status": "missing",
-        "score": 0,
-        "gate_status": "blocked",
-        "cash_status": "missing",
-        "position_status": "missing",
-        "fee_status": "missing",
-        "cost_basis_status": "missing",
-        "unresolved_mismatch_count": 0,
-        "resolved_review_count": 0,
-        "blockers": list(dict.fromkeys(blockers)),
-        "does_not_mutate_production_ledger": True,
-        "does_not_issue_execution_authority": True,
-        "broker_submission_enabled": False,
-    }
-
-
-def _account_truth_item_key(category: str, symbol: str) -> str:
-    return f"{category}:{symbol}" if symbol else category
-
-
-def _account_truth_snapshot_capture(
-    events: list[StoredBrokerEvidenceEvent],
-) -> dict[str, object]:
-    """Resolve the effective Account Truth capture from persisted snapshots."""
-
-    unique_events = [event for event in events if not event.is_row_duplicate]
-    cash_timestamps = [
-        parsed
-        for event in unique_events
-        if event.event_type == "cash_snapshot"
-        and (parsed := _parse_aware_timestamp(event.occurred_at)) is not None
-    ]
-    position_timestamps = [
-        parsed
-        for event in unique_events
-        if event.event_type == "position_snapshot"
-        and (parsed := _parse_aware_timestamp(event.occurred_at)) is not None
-    ]
-    non_snapshot_timestamps = [
-        parsed
-        for event in unique_events
-        if event.event_type not in {"cash_snapshot", "position_snapshot"}
-        and (parsed := _parse_aware_timestamp(event.occurred_at)) is not None
-    ]
-    latest_cash = max(cash_timestamps, default=None)
-    latest_position = max(position_timestamps, default=None)
-    latest_non_snapshot = max(non_snapshot_timestamps, default=None)
-    blockers: list[str] = []
-    if latest_cash is None:
-        blockers.append("account_truth_cash_snapshot_missing")
-    if latest_position is None:
-        blockers.append("account_truth_position_snapshot_missing")
-
-    captured_at = (
-        min(latest_cash, latest_position)
-        if latest_cash is not None and latest_position is not None
-        else None
-    )
-    if (
-        latest_cash is not None
-        and latest_position is not None
-        and latest_cash.astimezone(_SHANGHAI_TZ).date()
-        != latest_position.astimezone(_SHANGHAI_TZ).date()
-    ):
-        blockers.append("account_truth_snapshot_dates_mismatch")
-    if (
-        captured_at is not None
-        and latest_non_snapshot is not None
-        and latest_non_snapshot > captured_at
-    ):
-        blockers.append("account_truth_snapshot_predates_latest_event")
-
-    return {
-        "status": "clear" if not blockers else "blocked",
-        "captured_at": captured_at.isoformat() if captured_at is not None else "",
-        "latest_cash_snapshot_at": (
-            latest_cash.isoformat() if latest_cash is not None else ""
-        ),
-        "latest_position_snapshot_at": (
-            latest_position.isoformat() if latest_position is not None else ""
-        ),
-        "latest_non_snapshot_event_at": (
-            latest_non_snapshot.isoformat() if latest_non_snapshot is not None else ""
-        ),
-        "blockers": blockers,
-    }
-
-
-def _parse_aware_timestamp(value: object) -> datetime | None:
-    normalized = str(value or "").strip()
-    if not normalized:
-        return None
-    if normalized.endswith("Z"):
-        normalized = f"{normalized[:-1]}+00:00"
-    try:
-        parsed = datetime.fromisoformat(normalized)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        return None
-    return parsed.astimezone(timezone.utc)
-
-
-def _aware_utc(value: datetime) -> datetime:
-    if value.tzinfo is None or value.utcoffset() is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
-
-
-def _fingerprint_json(value: object) -> str:
-    payload = json.dumps(
-        value,
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def _decimal_or_zero(value: object | None) -> Decimal:
-    if value is None:
-        return Decimal("0")
-    return Decimal(str(value))
-
-
-def _optional_decimal(value: object | None) -> Decimal | None:
-    if value is None or value == "":
-        return None
-    return Decimal(str(value))
-
-
-def _ledger_fee_component(entry: LedgerEntry) -> Decimal:
-    breakdown = entry.fee_breakdown or {}
-    fee_keys = (
-        "commission",
-        "subscription_fee",
-        "redemption_fee",
-        "exchange_clearing_fee",
-        "surcharge_fee",
-        "other_fees",
-    )
-    total = sum(
-        (_breakdown_decimal(breakdown, key) or Decimal("0")) for key in fee_keys
-    )
-    if total != Decimal("0"):
-        return abs(total)
-    return abs(_decimal_or_zero(entry.commission))
-
-
-def _ledger_tax_component(entry: LedgerEntry) -> Decimal:
-    return abs(
-        _breakdown_decimal(entry.fee_breakdown or {}, "stamp_tax", "tax")
-        or Decimal("0")
-    )
-
-
-def _ledger_transfer_fee_component(entry: LedgerEntry) -> Decimal:
-    return abs(
-        _breakdown_decimal(entry.fee_breakdown or {}, "transfer_fee") or Decimal("0")
-    )
-
-
-def _breakdown_decimal(
-    breakdown: dict[str, object],
-    *keys: str,
-) -> Decimal | None:
-    for key in keys:
-        value = breakdown.get(key)
-        if value is not None and value != "":
-            return Decimal(str(value))
-    return None
-
-
-def _ledger_net_cash_impact(
-    entry: LedgerEntry,
-    *,
-    gross_amount: Decimal,
-    fee: Decimal,
-    tax: Decimal,
-    transfer_fee: Decimal,
-) -> Decimal:
-    if entry.net_cash_impact is not None:
-        return _decimal_or_zero(entry.net_cash_impact)
-
-    entry_type = entry.entry_type
-    total_cost = fee + tax + transfer_fee
-    if entry_type == "trade_buy":
-        return -(gross_amount + total_cost)
-    if entry_type == "trade_sell":
-        return gross_amount - total_cost
-    if entry_type in {"cash_withdraw", "cash_withdrawal", "withdraw", "fee"}:
-        return -abs(_decimal_or_zero(entry.amount))
-    return _decimal_or_zero(entry.amount)

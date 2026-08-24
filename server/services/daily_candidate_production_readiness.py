@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -13,6 +11,41 @@ from server.services.ai_shadow_research_automation import (
     SHADOW_RESEARCH_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_TOKEN_BUDGET_MODE_UNBOUNDED,
 )
+from server.services.daily_candidate_readiness_support import (
+    fingerprint as _fingerprint,
+)
+from server.services.daily_candidate_readiness_support import (
+    is_nonnegative_int as _is_nonnegative_int,
+)
+from server.services.daily_candidate_readiness_support import (
+    is_safe_code as _is_safe_code,
+)
+from server.services.daily_candidate_readiness_support import (
+    is_safe_code_list as _is_safe_code_list,
+)
+from server.services.daily_candidate_readiness_support import is_sha256 as _is_sha256
+from server.services.daily_candidate_readiness_support import mapping as _mapping
+from server.services.daily_candidate_readiness_support import (
+    matches_fingerprint as _matches_fingerprint,
+)
+from server.services.daily_candidate_readiness_support import (
+    non_authority_boundary_blockers as _non_authority_boundary_blockers,
+)
+from server.services.daily_candidate_readiness_support import (
+    nonnegative_int as _nonnegative_int,
+)
+from server.services.daily_candidate_readiness_support import (
+    research_policy_blockers as _research_policy_blockers,
+)
+from server.services.daily_candidate_readiness_support import safe_code as _safe_code
+from server.services.daily_candidate_readiness_support import (
+    safe_fingerprint as _safe_fingerprint,
+)
+from server.services.daily_candidate_readiness_support import (
+    schema_blockers as _schema_blockers,
+)
+from server.services.daily_candidate_readiness_support import strings as _strings
+from server.services.daily_candidate_readiness_support import unique as _unique
 
 DAILY_CANDIDATE_PRODUCTION_READINESS_SCHEMA_VERSION = (
     "karkinos.daily_candidate_production_readiness.v2"
@@ -51,6 +84,7 @@ def project_daily_candidate_production_readiness(
     policy = _mapping(research_status.get("policy"))
 
     source_contract_blockers = _schema_blockers(
+        _EXPECTED_SCHEMAS,
         cockpit=cockpit,
         preflight=preflight,
         runtime=runtime,
@@ -123,7 +157,13 @@ def project_daily_candidate_production_readiness(
     else:
         daily_operation_status = "standing_by_for_reviewed_window"
 
-    research_blockers = _research_policy_blockers(policy)
+    research_blockers = _research_policy_blockers(
+        policy,
+        max_candidates=SHADOW_RESEARCH_MAX_CANDIDATES,
+        max_provider_calls=SHADOW_RESEARCH_MAX_PROVIDER_CALLS,
+        unbounded_token_budget_mode=SHADOW_RESEARCH_TOKEN_BUDGET_MODE_UNBOUNDED,
+        policy_confirmation=SHADOW_RESEARCH_POLICY_CONFIRMATION,
+    )
     research_cycle_status = (
         "ready_for_five_sequential_iterations"
         if not research_blockers and not source_contract_blockers
@@ -404,14 +444,6 @@ def unavailable_daily_candidate_production_readiness(
         ],
     }
     return {**core, "readiness_fingerprint": _fingerprint(core)}
-
-
-def _schema_blockers(**payloads: dict[str, Any]) -> list[str]:
-    blockers = []
-    for name, expected in _EXPECTED_SCHEMAS.items():
-        if payloads[name].get("schema_version") != expected:
-            blockers.append(f"{name}_contract_invalid")
-    return blockers
 
 
 def _execution_evidence_contract_blockers(value: dict[str, Any]) -> list[str]:
@@ -765,160 +797,3 @@ def _unavailable_next_reviewed_window_projection(blocker: str) -> dict[str, Any]
         "authorizes_execution": False,
         "changes_capital_authority": False,
     }
-
-
-def _non_authority_boundary_blockers(
-    *,
-    cockpit: dict[str, Any],
-    preflight: dict[str, Any],
-    runtime: dict[str, Any],
-    trial: dict[str, Any],
-    research: dict[str, Any],
-) -> list[str]:
-    checks = {
-        "cockpit_broker_submission_enabled": cockpit.get("broker_submission_enabled"),
-        "preflight_provider_contact_performed": preflight.get(
-            "provider_contact_performed"
-        ),
-        "preflight_database_writes_performed": preflight.get(
-            "database_writes_performed"
-        ),
-        "preflight_broker_submission_enabled": preflight.get(
-            "broker_submission_enabled"
-        ),
-        "preflight_authorizes_execution": preflight.get("authorizes_execution"),
-        "preflight_changes_capital_authority": preflight.get(
-            "changes_capital_authority"
-        ),
-        "runtime_provider_contact_performed": runtime.get("provider_contact_performed"),
-        "runtime_database_writes_performed": runtime.get("database_writes_performed"),
-        "runtime_broker_submission_enabled": runtime.get("broker_submission_enabled"),
-        "runtime_authorizes_execution": runtime.get("authorizes_execution"),
-        "runtime_changes_capital_authority": runtime.get("changes_capital_authority"),
-        "trial_broker_submission_enabled": trial.get("broker_submission_enabled"),
-        "trial_authorizes_execution": trial.get("authorizes_execution"),
-        "trial_changes_capital_authority": trial.get("changes_capital_authority"),
-        "research_broker_submission_enabled": research.get("broker_submission_enabled"),
-        "research_production_strategy_mutation_enabled": research.get(
-            "production_strategy_mutation_enabled"
-        ),
-        "research_automatic_strategy_replacement_enabled": research.get(
-            "automatic_strategy_replacement_enabled"
-        ),
-    }
-    return [
-        f"{name}_boundary_invalid"
-        for name, value in checks.items()
-        if value is not False
-    ]
-
-
-def _research_policy_blockers(policy: dict[str, Any]) -> list[str]:
-    blockers = []
-    if policy.get("enabled") is not True:
-        blockers.append("five_sequential_iteration_policy_disabled")
-    if policy.get("max_candidates_per_run") != SHADOW_RESEARCH_MAX_CANDIDATES:
-        blockers.append("five_sequential_iteration_count_not_authorized")
-    if (
-        policy.get("max_provider_calls_per_market_date")
-        != SHADOW_RESEARCH_MAX_PROVIDER_CALLS
-    ):
-        blockers.append("ten_provider_call_limit_not_authorized")
-    if (
-        policy.get("daily_token_budget") is not None
-        or policy.get("token_budget_mode")
-        != SHADOW_RESEARCH_TOKEN_BUDGET_MODE_UNBOUNDED
-    ):
-        blockers.append("unbounded_daily_token_policy_not_authorized")
-    if policy.get("authorization") != SHADOW_RESEARCH_POLICY_CONFIRMATION:
-        blockers.append("five_sequential_iteration_authorization_missing")
-    if policy.get("require_complete_account_evidence") is not True:
-        blockers.append("complete_account_evidence_requirement_disabled")
-    return blockers
-
-
-def _mapping(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
-
-
-def _strings(value: Any) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return _unique([str(item) for item in value if str(item)])
-
-
-def _unique(values: list[str]) -> list[str]:
-    return list(dict.fromkeys(values))
-
-
-def _nonnegative_int(value: Any) -> int:
-    if isinstance(value, bool):
-        return 0
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        return 0
-    return max(parsed, 0)
-
-
-def _is_nonnegative_int(value: Any) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
-
-
-def _is_sha256(value: Any) -> bool:
-    normalized = str(value or "")
-    return len(normalized) == 64 and all(
-        character in "0123456789abcdef" for character in normalized
-    )
-
-
-def _matches_fingerprint(value: dict[str, Any], expected: Any) -> bool:
-    if not _is_sha256(expected):
-        return False
-    try:
-        return expected == _fingerprint(value)
-    except (TypeError, ValueError):
-        return False
-
-
-def _safe_fingerprint(value: Any) -> str | None:
-    normalized = str(value or "")
-    if len(normalized) == 64 and all(
-        character in "0123456789abcdef" for character in normalized
-    ):
-        return normalized
-    return None
-
-
-def _safe_code(value: Any) -> str:
-    normalized = str(value or "").strip().lower().replace(" ", "_")
-    if not normalized or len(normalized) > 120:
-        return "daily_candidate_production_readiness_unavailable"
-    if any(
-        character not in "abcdefghijklmnopqrstuvwxyz0123456789_:-."
-        for character in normalized
-    ):
-        return "daily_candidate_production_readiness_unavailable"
-    return normalized
-
-
-def _is_safe_code(value: Any) -> bool:
-    return isinstance(value, str) and value == _safe_code(value)
-
-
-def _is_safe_code_list(value: Any, *, allow_empty: bool = False) -> bool:
-    return bool(
-        isinstance(value, list)
-        and (value or allow_empty)
-        and all(_is_safe_code(item) for item in value)
-    )
-
-
-def _fingerprint(value: dict[str, Any]) -> str:
-    canonical = json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return hashlib.sha256(canonical).hexdigest()

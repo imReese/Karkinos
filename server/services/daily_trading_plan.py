@@ -5,11 +5,34 @@ from __future__ import annotations
 from math import floor
 from typing import Any
 
+from server.services.daily_trading_plan_support import (
+    account_truth_snapshot as _account_truth_snapshot,
+)
+from server.services.daily_trading_plan_support import blocker as _blocker
+from server.services.daily_trading_plan_support import (
+    blocker_reasons as _blocker_reasons,
+)
+from server.services.daily_trading_plan_support import (
+    blocker_summary as _blocker_summary,
+)
+from server.services.daily_trading_plan_support import bounded_ratio as _bounded_ratio
+from server.services.daily_trading_plan_support import (
+    candidate_blocking_reasons as _candidate_blocking_reasons,
+)
+from server.services.daily_trading_plan_support import (
+    candidate_status as _candidate_status,
+)
+from server.services.daily_trading_plan_support import evidence_refs as _evidence_refs
+from server.services.daily_trading_plan_support import first_float as _first_float
+from server.services.daily_trading_plan_support import float_value as _float
+from server.services.daily_trading_plan_support import int_value as _int
+from server.services.daily_trading_plan_support import mapping as _dict
+from server.services.daily_trading_plan_support import side as _side
+from server.services.daily_trading_plan_support import status as _status
 from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
 
 _READY_MANUAL_CONFIRMATION_STATUS = "ready_for_manual_confirmation"
 _PAPER_SHADOW_REVIEW_STATUS = "paper_shadow_review_required"
-_ORDERABLE_ACTIONS = {"buy", "sell", "rebalance"}
 _BOARD_LOT_ASSET_CLASSES = {"stock", "etf"}
 _BLOCKING_ACCOUNT_TRUTH_STATUSES = {"blocked", "missing"}
 _BLOCKING_MARKET_STATUSES = {"blocked", "error", "missing", "unavailable"}
@@ -757,232 +780,3 @@ def _conclusion(
     if any(item.get("target") == "market" for item in blockers):
         return "market_blocked", "market"
     return "no_manual_action", "decision"
-
-
-def _blocker_summary(blockers: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    grouped: dict[str, dict[str, Any]] = {}
-    for blocker in blockers:
-        category = _blocker_category(blocker)
-        bucket = grouped.setdefault(
-            category,
-            {
-                "category": category,
-                "target": blocker.get("target") or "decision",
-                "count": 0,
-                "reasons": [],
-                "sample_symbols": [],
-            },
-        )
-        bucket["count"] += 1
-        for reason in _blocker_reasons(blocker):
-            if reason and reason not in bucket["reasons"]:
-                bucket["reasons"].append(reason)
-        symbol = blocker.get("symbol")
-        if (
-            symbol
-            and symbol not in bucket["sample_symbols"]
-            and len(bucket["sample_symbols"]) < 5
-        ):
-            bucket["sample_symbols"].append(symbol)
-    return sorted(
-        grouped.values(),
-        key=lambda item: _BLOCKER_CATEGORY_ORDER.get(str(item["category"]), 99),
-    )
-
-
-def _account_truth_snapshot(
-    account_truth: dict[str, Any],
-    gate_status: str,
-) -> dict[str, Any]:
-    has_evidence_value = account_truth.get("has_evidence")
-    snapshot = {
-        "gate_status": gate_status,
-        "has_evidence": (
-            bool(account_truth)
-            if has_evidence_value is None
-            else bool(has_evidence_value)
-        ),
-        "blocking_reasons": [
-            str(reason) for reason in account_truth.get("blocking_reasons") or []
-        ],
-    }
-    for key in (
-        "status",
-        "source_type",
-        "score",
-        "cash_status",
-        "position_status",
-        "data_freshness_status",
-        "unresolved_mismatch_count",
-        "required_actions",
-        "limitations",
-    ):
-        if key in account_truth:
-            snapshot[key] = account_truth[key]
-    return snapshot
-
-
-_BLOCKER_CATEGORY_ORDER = {
-    "account_truth": 0,
-    "market_data": 1,
-    "portfolio": 2,
-    "risk": 3,
-    "evidence_not_ready": 4,
-    "other": 9,
-}
-
-
-def _blocker_category(blocker: dict[str, Any]) -> str:
-    target = str(blocker.get("target") or "").strip().lower()
-    reason = str(blocker.get("reason") or "").strip().lower()
-    if target == "account-truth" or reason == "account_truth_blocked":
-        return "account_truth"
-    if target == "market" or reason == "market_data_unavailable":
-        return "market_data"
-    if target == "portfolio" or reason in {
-        "insufficient_cash",
-        "cash_buffer_breached",
-        "concentration_limit_breached",
-    }:
-        return "portfolio"
-    if reason == "awaiting_risk_gate" or target == "decision":
-        return "evidence_not_ready"
-    if target == "risk":
-        return "risk"
-    return "other"
-
-
-def _side(candidate: dict[str, Any]) -> str | None:
-    action = _status(candidate.get("action") or candidate.get("direction"), "")
-    if action == "buy":
-        return "buy"
-    if action == "sell":
-        return "sell"
-    if action == "rebalance":
-        return "buy" if _float(candidate.get("target_weight"), 0.0) > 0 else "sell"
-    if action in _ORDERABLE_ACTIONS:
-        return action
-    return None
-
-
-def _blocker(candidate: dict[str, Any], reason: str, target: str) -> dict[str, Any]:
-    return {
-        "action_id": candidate.get("action_id"),
-        "symbol": candidate.get("symbol"),
-        "reason": reason,
-        "reasons": _candidate_blocking_reasons(candidate, fallback=reason),
-        "target": target,
-        "risk_gate_status": candidate.get("risk_gate_status"),
-        "manual_confirmation_status": candidate.get("manual_confirmation_status"),
-    }
-
-
-def _blocker_reasons(blocker: dict[str, Any]) -> list[str]:
-    reasons = blocker.get("reasons")
-    if isinstance(reasons, list):
-        values = [str(reason) for reason in reasons if reason]
-        if values:
-            return values
-    reason = blocker.get("reason")
-    return [str(reason)] if reason else []
-
-
-def _candidate_blocking_reasons(
-    candidate: dict[str, Any],
-    *,
-    fallback: str,
-) -> list[str]:
-    risk_reasons = candidate.get("risk_gate_reasons")
-    if fallback == "risk_gate_blocked" and isinstance(risk_reasons, list):
-        values = [str(reason) for reason in risk_reasons if reason]
-        if values:
-            return values
-    return [fallback]
-
-
-def _evidence_refs(candidate: dict[str, Any]) -> list[str]:
-    refs: list[str] = []
-    action_id = candidate.get("action_id")
-    if action_id is not None:
-        refs.append(f"decision_action:{action_id}")
-    evidence = _dict(candidate.get("evidence"))
-    signal = _dict(evidence.get("signal"))
-    signal_id = signal.get("signal_id") or signal.get("id")
-    if signal_id is not None:
-        refs.append(f"signal:{signal_id}")
-    strategy = _dict(evidence.get("strategy"))
-    strategy_id = strategy.get("strategy_id")
-    if strategy_id is not None:
-        refs.append(f"strategy:{strategy_id}")
-    order_generation_gate = _dict(strategy.get("order_generation_gate"))
-    promotion = _dict(order_generation_gate.get("promotion"))
-    advancement_fingerprint = promotion.get("strategy_advancement_gate_fingerprint")
-    if advancement_fingerprint:
-        refs.append(f"strategy_advancement:{advancement_fingerprint}")
-    fee_schedule_binding = _dict(promotion.get("fee_schedule_binding"))
-    fee_review_fingerprint = fee_schedule_binding.get("fee_schedule_review_fingerprint")
-    if fee_review_fingerprint:
-        refs.append(f"reviewed_fee_schedule:{fee_review_fingerprint}")
-    risk_gate = _dict(evidence.get("risk_gate"))
-    risk_decision_id = risk_gate.get("decision_id")
-    if risk_decision_id is not None:
-        refs.append(f"risk:{risk_decision_id}")
-    account_truth = _dict(evidence.get("account_truth"))
-    import_run_id = account_truth.get("import_run_id")
-    if import_run_id is not None:
-        refs.append(f"account_truth:{import_run_id}")
-    return refs
-
-
-def _candidate_status(
-    candidate: dict[str, Any],
-    *names: str,
-    nested: tuple[str, ...] = (),
-) -> str:
-    for name in names:
-        value = candidate.get(name)
-        if value is not None:
-            return _status(value, "unknown")
-    evidence = _dict(candidate.get("evidence"))
-    for nested_name in nested:
-        source = _dict(candidate.get(nested_name)) or _dict(evidence.get(nested_name))
-        for name in names:
-            value = source.get(name)
-            if value is not None:
-                return _status(value, "unknown")
-    return "unknown"
-
-
-def _dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
-def _status(value: Any, default: str = "unknown") -> str:
-    text = str(value if value is not None else default).strip().lower()
-    return text or default
-
-
-def _float(value: Any, fallback: float) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return fallback
-
-
-def _first_float(*values: Any, fallback: float) -> float:
-    for value in values:
-        if value is None:
-            continue
-        return _float(value, fallback)
-    return fallback
-
-
-def _bounded_ratio(value: float) -> float:
-    return min(max(value, 0.0), 1.0)
-
-
-def _int(value: Any, fallback: int) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return fallback
