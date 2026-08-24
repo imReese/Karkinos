@@ -67,8 +67,10 @@ from server.models import (
     TradeResponse,
 )
 from server.projections.portfolio_application import (
-    build_account_state_response,
-    build_portfolio_snapshot,
+    build_account_state_response as _build_account_state_response,
+)
+from server.projections.portfolio_application import (
+    build_portfolio_snapshot as _build_portfolio_snapshot,
 )
 from server.projections.portfolio_application import (
     collect_latest_quote_timestamps as _collect_latest_quote_timestamps,
@@ -418,6 +420,26 @@ _CASH_INCOME_LEDGER_TYPES = {"cash_interest", "dividend"}
 
 _CAPITAL_INFLOW_LEDGER_TYPES = {"cash_deposit", "deposit"}
 _CAPITAL_OUTFLOW_LEDGER_TYPES = {"cash_withdrawal", "cash_withdraw", "withdraw"}
+
+
+async def build_portfolio_snapshot(state) -> PortfolioSnapshot:
+    """Bind the route clock while delegating projection ownership."""
+
+    return await _build_portfolio_snapshot(state, now=get_shanghai_now())
+
+
+async def build_account_state_response(
+    state,
+    *,
+    snapshot: PortfolioSnapshot | None = None,
+) -> AccountStateResponse:
+    """Bind the route clock while delegating account-state composition."""
+
+    return await _build_account_state_response(
+        state,
+        snapshot=snapshot,
+        now=get_shanghai_now(),
+    )
 
 
 def create_router() -> APIRouter:
