@@ -1,12 +1,26 @@
 // @ts-nocheck -- Node built-ins are used only by this deterministic source audit.
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SRC_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const source = (path: string) => readFileSync(resolve(SRC_ROOT, path), 'utf8');
+const sourceTree = (directory: string): string =>
+  readdirSync(resolve(SRC_ROOT, directory), { withFileTypes: true })
+    .filter(
+      (entry) =>
+        entry.isDirectory() ||
+        (/\.(?:ts|tsx)$/.test(entry.name) &&
+          !/\.(?:test|spec)\.(?:ts|tsx)$/.test(entry.name)),
+    )
+    .map((entry) =>
+      entry.isDirectory()
+        ? sourceTree(`${directory}/${entry.name}`)
+        : source(`${directory}/${entry.name}`),
+    )
+    .join('\n');
 
-const OVERVIEW = source('features/overview/pages/overview-page.tsx');
+const OVERVIEW = sourceTree('features/overview');
 const ACTIVITY = source('features/activity/pages/activity-page.tsx');
 const MARKET = source('features/market/pages/market-page.tsx');
 const BACKTEST = [
@@ -63,7 +77,7 @@ const ACTIVITY_FORMS = [
   source('features/activity/components/manual-adjustment-form.tsx'),
   source('features/activity/components/fund-batch-form.tsx'),
 ];
-const APP_SHELL = source('app/layout/app-shell.tsx');
+const APP_SHELL = sourceTree('app/layout');
 const RESEARCH_TASK = source(
   'features/ai-research/components/research-task-panel.tsx',
 );

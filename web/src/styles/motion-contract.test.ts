@@ -90,7 +90,7 @@ describe('Karkinos brand motion contract', () => {
       });
 
     expect([...new Set(uses.map(({ file }) => file))].sort()).toEqual([
-      'app/layout/app-shell.tsx',
+      'app/layout/app-shell-status.tsx',
       'features/activity/components/activity-feed.tsx',
       'features/activity/pages/activity-page.tsx',
       'features/market/components/market-instrument-workspace.tsx',
@@ -167,10 +167,9 @@ describe('Karkinos brand motion contract', () => {
   });
 
   it('keeps overlays mounted through a semantic, non-interactive exit', () => {
-    const shell = readFileSync(
-      join(SRC_ROOT, 'app', 'layout', 'app-shell.tsx'),
-      'utf8',
-    );
+    const shell = sourceFiles(join(SRC_ROOT, 'app', 'layout'))
+      .map((path) => readFileSync(path, 'utf8'))
+      .join('\n');
     const drawer = readFileSync(
       join(SRC_ROOT, 'shared', 'ui', 'workbench', 'evidence-drawer.tsx'),
       'utf8',
