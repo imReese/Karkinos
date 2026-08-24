@@ -111,6 +111,7 @@ def test_unit_of_work_boundaries_remain_explicit() -> None:
         "controlled_session_revocation_uow.py": 1,
         "decision_outcome_reviews.py": 1,
         "decision_quality.py": 1,
+        "reviewed_fee_schedule_reviews.py": 1,
     }
     actual = {
         path.name: path.read_text(encoding="utf-8").count('"BEGIN IMMEDIATE"')

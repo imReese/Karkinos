@@ -12,11 +12,8 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import sqlite3
-import uuid
-from contextlib import contextmanager
-from dataclasses import asdict, dataclass, fields
-from datetime import UTC, date, datetime
+from dataclasses import dataclass, fields
+from datetime import date, datetime
 from decimal import (
     ROUND_DOWN,
     ROUND_HALF_EVEN,
@@ -27,7 +24,7 @@ from decimal import (
 )
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Callable, Iterator, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from account_truth.broker_evidence import (
     BrokerEvidenceReadRejected,
@@ -56,6 +53,17 @@ from execution.commission import (
     StockACommission,
 )
 from server.account_truth_gate import build_latest_account_truth_promotion_evidence
+from server.contracts.reviewed_fee_schedule import (
+    REVIEWED_FEE_SCHEDULE_APPROVAL_CONFIRMATION,
+    REVIEWED_FEE_SCHEDULE_REVIEW_SCHEMA_VERSION,
+    REVIEWED_FEE_SCHEDULE_REVOCATION_CONFIRMATION,
+    ReviewedFeeScheduleReadRejected,
+    ReviewedFeeScheduleRejected,
+    ReviewedFeeScheduleReview,
+)
+from server.persistence.reviewed_fee_schedule_reviews import (
+    ReviewedFeeScheduleReviewStore,
+)
 from server.services.account_truth_evidence_readiness import (
     build_account_truth_evidence_readiness,
 )
@@ -72,20 +80,10 @@ _SUPPORTED_REVIEWED_FEE_SCHEDULE_PREVIEW_SCHEMA_VERSIONS = frozenset(
         REVIEWED_FEE_SCHEDULE_PREVIEW_SCHEMA_VERSION,
     }
 )
-REVIEWED_FEE_SCHEDULE_REVIEW_SCHEMA_VERSION = (
-    "karkinos.account_truth.reviewed_fee_schedule_review.v1"
-)
 REVIEWED_FEE_SCHEDULE_RESOLUTION_SCHEMA_VERSION = (
     "karkinos.account_truth.reviewed_fee_schedule_resolution.v1"
 )
 REVIEWED_COST_MODEL_PREFIX = "karkinos.backtest.reviewed_account_fee_schedule.v1:"
-REVIEWED_FEE_SCHEDULE_APPROVAL_CONFIRMATION = (
-    "approve_reconciled_account_fee_schedule_for_research_only_without_execution_"
-    "or_capital_authority"
-)
-REVIEWED_FEE_SCHEDULE_REVOCATION_CONFIRMATION = (
-    "revoke_reconciled_account_fee_schedule_without_execution_or_capital_authority"
-)
 
 _SHA256 = re.compile(r"^sha256:[0-9a-f]{64}$")
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
@@ -117,40 +115,6 @@ _SCHEDULE_FIELDS = (
     "money_rounding_mode",
     "limitations",
 )
-_REVIEW_COLUMNS = (
-    "review_id",
-    "schema_version",
-    "decision",
-    "schedule_json",
-    "schedule_fingerprint",
-    "preview_json",
-    "preview_fingerprint",
-    "account_truth_import_run_id",
-    "account_truth_source_fingerprint",
-    "account_truth_scope_fingerprint",
-    "account_reference_hash",
-    "effective_start_date",
-    "effective_end_date",
-    "reviewer",
-    "review_fingerprint",
-    "created_at",
-)
-
-
-class ReviewedFeeScheduleRejected(ValueError):
-    """A stable fail-closed rejection for review or resolution."""
-
-    def __init__(self, code: str) -> None:
-        super().__init__(code)
-        self.code = code
-
-
-class ReviewedFeeScheduleReadRejected(RuntimeError):
-    """Persisted review state could not be read without guessing."""
-
-    def __init__(self, code: str) -> None:
-        super().__init__(code)
-        self.code = code
 
 
 class _RoundedCommissionCalculator(CommissionCalculator):
@@ -271,33 +235,6 @@ class _UncoveredAssetCommissionCalculator(CommissionCalculator):
 
 
 @dataclass(frozen=True)
-class ReviewedFeeScheduleReview:
-    review_id: str
-    schema_version: str
-    decision: str
-    schedule: dict[str, Any]
-    schedule_fingerprint: str
-    preview: dict[str, Any]
-    preview_fingerprint: str
-    account_truth_import_run_id: str
-    account_truth_source_fingerprint: str
-    account_truth_scope_fingerprint: str
-    account_reference_hash: str
-    effective_start_date: str
-    effective_end_date: str
-    reviewer: str
-    review_fingerprint: str
-    created_at: str
-    reused: bool = False
-
-    def to_json_dict(self) -> dict[str, Any]:
-        payload = asdict(self)
-        payload["schedule"] = dict(self.schedule)
-        payload["preview"] = dict(self.preview)
-        return payload
-
-
-@dataclass(frozen=True)
 class ReviewedFeeScheduleResolution:
     cost_model_reference: str
     commission_calc: MultiAssetCommission
@@ -336,7 +273,7 @@ class ReviewedFeeScheduleReviewRepository:
     """Append-only runtime reviews; all reads are SQLite query-only."""
 
     def __init__(self, db_path: str | Path) -> None:
-        self._path = Path(db_path)
+        self._store = ReviewedFeeScheduleReviewStore(db_path)
 
     def record_review(
         self,
@@ -407,22 +344,11 @@ class ReviewedFeeScheduleReviewRepository:
         )
 
     def get_latest_review(self) -> ReviewedFeeScheduleReview | None:
-        with self._read_connection() as conn:
-            if conn is None:
-                return None
-            row = conn.execute(
-                "SELECT * FROM reviewed_fee_schedule_reviews ORDER BY id DESC LIMIT 1"
-            ).fetchone()
+        row = self._store.get_latest_review()
         return _review_from_row(row) if row is not None else None
 
     def get_review(self, review_id: str) -> ReviewedFeeScheduleReview | None:
-        with self._read_connection() as conn:
-            if conn is None:
-                return None
-            row = conn.execute(
-                "SELECT * FROM reviewed_fee_schedule_reviews WHERE review_id=? LIMIT 1",
-                (str(review_id),),
-            ).fetchone()
+        row = self._store.get_review(review_id)
         return _review_from_row(row) if row is not None else None
 
     def _append(
@@ -432,7 +358,6 @@ class ReviewedFeeScheduleReviewRepository:
         preview: Mapping[str, Any],
         reviewer: str,
     ) -> ReviewedFeeScheduleReview:
-        self._ensure_schema()
         core = {
             "schema_version": REVIEWED_FEE_SCHEDULE_REVIEW_SCHEMA_VERSION,
             "decision": decision,
@@ -451,128 +376,23 @@ class ReviewedFeeScheduleReviewRepository:
             "reviewer": reviewer,
         }
         review_fingerprint = _fingerprint(core)
-        with sqlite3.connect(self._path) as conn:
-            conn.row_factory = sqlite3.Row
-            conn.execute("BEGIN IMMEDIATE")
-            latest = conn.execute(
-                "SELECT * FROM reviewed_fee_schedule_reviews ORDER BY id DESC LIMIT 1"
-            ).fetchone()
-            if latest is not None:
-                existing = _review_from_row(latest)
-                if existing.review_fingerprint == review_fingerprint:
-                    conn.rollback()
-                    return ReviewedFeeScheduleReview(
-                        **{
-                            field.name: getattr(existing, field.name)
-                            for field in fields(ReviewedFeeScheduleReview)
-                            if field.name != "reused"
-                        },
-                        reused=True,
-                    )
-            review_id = f"fee_review_{uuid.uuid4().hex}"
-            created_at = datetime.now(UTC).isoformat()
-            conn.execute(
-                """
-                INSERT INTO reviewed_fee_schedule_reviews (
-                    review_id, schema_version, decision, schedule_json,
-                    schedule_fingerprint, preview_json, preview_fingerprint,
-                    account_truth_import_run_id, account_truth_source_fingerprint,
-                    account_truth_scope_fingerprint, account_reference_hash,
-                    effective_start_date, effective_end_date, reviewer,
-                    review_fingerprint, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    review_id,
-                    REVIEWED_FEE_SCHEDULE_REVIEW_SCHEMA_VERSION,
-                    decision,
-                    _canonical_json(preview["schedule"]),
-                    preview["schedule_fingerprint"],
-                    _canonical_json(dict(preview)),
-                    preview["preview_fingerprint"],
-                    preview["account_truth_import_run_id"],
-                    preview["account_truth_source_fingerprint"],
-                    preview["account_truth_scope_fingerprint"],
-                    preview["account_reference_hash"],
-                    preview["effective_start_date"],
-                    preview["effective_end_date"],
-                    reviewer,
-                    review_fingerprint,
-                    created_at,
-                ),
-            )
-            row = conn.execute(
-                "SELECT * FROM reviewed_fee_schedule_reviews WHERE review_id=?",
-                (review_id,),
-            ).fetchone()
-            conn.commit()
-        if row is None:
-            raise RuntimeError("reviewed fee schedule review was not persisted")
-        return _review_from_row(row)
-
-    @contextmanager
-    def _read_connection(self) -> Iterator[sqlite3.Connection | None]:
-        if not self._path.is_file():
-            yield None
-            return
-        try:
-            uri = f"{self._path.resolve().as_uri()}?mode=ro"
-            with sqlite3.connect(uri, uri=True) as conn:
-                conn.row_factory = sqlite3.Row
-                conn.execute("PRAGMA query_only = ON")
-                row = conn.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-                    ("reviewed_fee_schedule_reviews",),
-                ).fetchone()
-                if row is None:
-                    yield None
-                    return
-                columns = {
-                    str(item["name"])
-                    for item in conn.execute(
-                        "PRAGMA table_info(reviewed_fee_schedule_reviews)"
-                    ).fetchall()
-                }
-                if not set(_REVIEW_COLUMNS).issubset(columns):
-                    raise ReviewedFeeScheduleReadRejected(
-                        "reviewed_fee_schedule_review_schema_incomplete"
-                    )
-                yield conn
-        except ReviewedFeeScheduleReadRejected:
-            raise
-        except sqlite3.Error as exc:
-            raise ReviewedFeeScheduleReadRejected(
-                "reviewed_fee_schedule_review_read_failed"
-            ) from exc
-
-    def _ensure_schema(self) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self._path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS reviewed_fee_schedule_reviews (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    review_id TEXT NOT NULL UNIQUE,
-                    schema_version TEXT NOT NULL,
-                    decision TEXT NOT NULL,
-                    schedule_json TEXT NOT NULL,
-                    schedule_fingerprint TEXT NOT NULL,
-                    preview_json TEXT NOT NULL,
-                    preview_fingerprint TEXT NOT NULL,
-                    account_truth_import_run_id TEXT NOT NULL,
-                    account_truth_source_fingerprint TEXT NOT NULL,
-                    account_truth_scope_fingerprint TEXT NOT NULL,
-                    account_reference_hash TEXT NOT NULL,
-                    effective_start_date TEXT NOT NULL,
-                    effective_end_date TEXT NOT NULL,
-                    reviewer TEXT NOT NULL,
-                    review_fingerprint TEXT NOT NULL,
-                    created_at TEXT NOT NULL
-                )
-                """)
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_reviewed_fee_schedule_created "
-                "ON reviewed_fee_schedule_reviews(id DESC)"
-            )
+        row, reused = self._store.append(
+            decision=decision,
+            preview=preview,
+            reviewer=reviewer,
+            review_fingerprint=review_fingerprint,
+        )
+        review = _review_from_row(row)
+        if not reused:
+            return review
+        return ReviewedFeeScheduleReview(
+            **{
+                field.name: getattr(review, field.name)
+                for field in fields(ReviewedFeeScheduleReview)
+                if field.name != "reused"
+            },
+            reused=True,
+        )
 
 
 def build_reviewed_fee_schedule_preview(
@@ -1767,7 +1587,7 @@ def _validated_preview(preview: Mapping[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def _review_from_row(row: sqlite3.Row) -> ReviewedFeeScheduleReview:
+def _review_from_row(row: Mapping[str, Any]) -> ReviewedFeeScheduleReview:
     try:
         schedule = json.loads(str(row["schedule_json"]))
         preview = json.loads(str(row["preview_json"]))
