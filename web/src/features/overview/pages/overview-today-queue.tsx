@@ -4,8 +4,11 @@ import { useCopy, type AppCopy } from '../../../app/copy';
 import {
   ExceptionList,
   type ExceptionItem,
-} from '../../../app/components/workbench';
-import { usePreferences, type Locale } from '../../../app/preferences';
+} from '../../../shared/ui/workbench';
+import {
+  usePreferences,
+  type Locale,
+} from '../../../shared/preferences/context';
 import type { AccountOverview } from '../../account/api';
 import type { QuoteDiagnosticItem } from '../../account/components/dashboard-quick-actions';
 import type { AccountStrategyContributionReport } from '../../account-strategy/api';

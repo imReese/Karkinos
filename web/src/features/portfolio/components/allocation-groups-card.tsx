@@ -1,5 +1,5 @@
 import { useCopy } from '../../../app/copy';
-import { MetricStrip } from '../../../app/components/workbench';
+import { MetricStrip } from '../../../shared/ui/workbench';
 import { formatAssetClassLabel } from '../../../shared/asset-class';
 import { formatCurrency, formatPercent } from '../../../shared/format';
 import type { AllocationGroup } from '../api';

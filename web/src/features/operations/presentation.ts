@@ -1,4 +1,4 @@
-import type { Locale } from '../../app/preferences';
+import type { Locale } from '../../shared/preferences/context';
 import { formatPublicStatus } from '../../shared/public-labels';
 
 export function operationsTargetHref(target: string | undefined) {

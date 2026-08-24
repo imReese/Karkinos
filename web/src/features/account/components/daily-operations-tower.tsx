@@ -1,5 +1,5 @@
 import { useCopy } from '../../../app/copy';
-import { usePreferences } from '../../../app/preferences';
+import { usePreferences } from '../../../shared/preferences/context';
 import type { DailyOperationsSummary } from '../api';
 
 type DashboardLabels = ReturnType<typeof useCopy>['overview']['dashboard'];

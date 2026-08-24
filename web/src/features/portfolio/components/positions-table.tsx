@@ -5,8 +5,8 @@ import {
   DataTable,
   EvidenceState,
   StatusBadge,
-} from '../../../app/components/workbench';
-import { usePreferences } from '../../../app/preferences';
+} from '../../../shared/ui/workbench';
+import { usePreferences } from '../../../shared/preferences/context';
 import { formatAssetClassLabel } from '../../../shared/asset-class';
 import {
   formatCurrency,

@@ -14,12 +14,12 @@ import {
   ControlledActionZone,
   MetricStrip,
   WorkspaceHeader,
-} from '../../../app/components/workbench';
+} from '../../../shared/ui/workbench';
 import {
   usePreferences,
   type Locale,
   type ThemePreference,
-} from '../../../app/preferences';
+} from '../../../shared/preferences/context';
 import { formatCurrency, formatTimestamp } from '../../../shared/format';
 import {
   formatPublicCode,

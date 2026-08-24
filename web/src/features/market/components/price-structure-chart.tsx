@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { EvidenceState } from '../../../app/components/workbench';
-import { cn } from '../../../lib/utils/cn';
+import { EvidenceState } from '../../../shared/ui/workbench';
+import { cn } from '../../../shared/utils/cn';
 import { formatCurrency } from '../../../shared/format';
 
 export type PriceStructureBar = {

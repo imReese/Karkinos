@@ -13,7 +13,7 @@ import {
   type RowData,
 } from '@tanstack/react-table';
 
-import { cn } from '../../../lib/utils/cn';
+import { cn } from '../../utils/cn';
 
 export function DataTable<TData extends RowData>({
   data,

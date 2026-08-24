@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { apiClient } from '../../lib/api/client';
+import { apiClient } from '../../shared/api/client';
 
 export type AccountTruthGateStatus = 'pass' | 'degraded' | 'blocked';
 export type ReconciliationStatus = 'pass' | 'warning' | 'mismatch' | 'blocked';

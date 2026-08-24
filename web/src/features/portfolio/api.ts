@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 
-import { apiClient } from '../../lib/api/client';
-import { visiblePersistedProjectionRefetchInterval } from '../../lib/api/query-policy';
+import { apiClient } from '../../shared/api/client';
+import { visiblePersistedProjectionRefetchInterval } from '../../shared/api/query-policy';
 
 export type Position = {
   symbol: string;

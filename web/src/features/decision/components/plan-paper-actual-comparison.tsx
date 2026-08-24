@@ -1,5 +1,5 @@
-import { StatusBadge } from '../../../app/components/workbench';
-import type { Locale } from '../../../app/preferences';
+import { StatusBadge } from '../../../shared/ui/workbench';
+import type { Locale } from '../../../shared/preferences/context';
 import {
   formatCurrency,
   formatPrice,

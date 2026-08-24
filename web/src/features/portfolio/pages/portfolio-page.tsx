@@ -12,8 +12,8 @@ import {
   ExceptionList,
   MetricStrip,
   WorkspaceHeader,
-} from '../../../app/components/workbench';
-import { usePreferences } from '../../../app/preferences';
+} from '../../../shared/ui/workbench';
+import { usePreferences } from '../../../shared/preferences/context';
 import { useAccountStrategyContributionQuery } from '../../account-strategy/api';
 import { StrategyContributionGateCard } from '../../account-strategy/components/strategy-contribution-gate-card';
 import {

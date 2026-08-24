@@ -7,7 +7,7 @@ import {
   FilterBar,
   MetricStrip,
   type MetricTone,
-} from '../../../app/components/workbench';
+} from '../../../shared/ui/workbench';
 import {
   formatAmount,
   formatPercent,

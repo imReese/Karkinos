@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { expect, test } from 'vitest';
 
-import { PreferencesProvider } from '../../app/preferences';
+import { PreferencesProvider } from '../../app/providers/preferences-provider';
 import { LiveHoldingsSummaryCard } from './components/live-holdings-summary-card';
 
 function renderCard(

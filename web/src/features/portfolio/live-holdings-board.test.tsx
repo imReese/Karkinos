@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import { expect, test } from 'vitest';
 
 import { getCopy } from '../../app/copy';
-import { PreferencesProvider } from '../../app/preferences';
+import { PreferencesProvider } from '../../app/providers/preferences-provider';
 import { LiveHoldingsBoard } from './components/live-holdings-board';
 
 function renderBoard(locale: 'en' | 'zh' = 'en') {

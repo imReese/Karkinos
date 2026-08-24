@@ -5,8 +5,8 @@ import {
   MetricStrip,
   StatusBadge,
   type ExceptionItem,
-} from '../../../app/components/workbench';
-import { usePreferences } from '../../../app/preferences';
+} from '../../../shared/ui/workbench';
+import { usePreferences } from '../../../shared/preferences/context';
 import { formatQuantity, formatTimestamp } from '../../../shared/format';
 import {
   formatPublicCode,

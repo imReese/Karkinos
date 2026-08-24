@@ -1,6 +1,9 @@
 import { useMemo } from 'react';
 
-import { usePreferences, type Locale } from '../../../app/preferences';
+import {
+  usePreferences,
+  type Locale,
+} from '../../../shared/preferences/context';
 import {
   useStrategyLearningReviewQuery,
   type StrategyLearningReviewItem,

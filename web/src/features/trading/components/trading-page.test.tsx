@@ -10,7 +10,7 @@ import {
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { PreferencesProvider } from '../../../app/preferences';
+import { PreferencesProvider } from '../../../app/providers/preferences-provider';
 import { TradingPage } from './trading-page';
 
 const pendingOrder = {

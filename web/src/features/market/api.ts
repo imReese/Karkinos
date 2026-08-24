@@ -1,7 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { apiClient, deleteJson, postJson, putJson } from '../../lib/api/client';
-import { visiblePersistedProjectionRefetchInterval } from '../../lib/api/query-policy';
+import {
+  apiClient,
+  deleteJson,
+  postJson,
+  putJson,
+} from '../../shared/api/client';
+import { visiblePersistedProjectionRefetchInterval } from '../../shared/api/query-policy';
 
 export type MarketHealthQuote = {
   symbol: string;

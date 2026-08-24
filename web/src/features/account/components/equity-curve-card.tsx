@@ -16,9 +16,12 @@ import {
 } from 'recharts';
 
 import { useCopy } from '../../../app/copy';
-import { EvidenceState } from '../../../app/components/workbench';
-import { APP_MOTION, useReducedMotion } from '../../../app/motion';
-import { usePreferences, type Locale } from '../../../app/preferences';
+import { EvidenceState } from '../../../shared/ui/workbench';
+import { APP_MOTION, useReducedMotion } from '../../../shared/motion';
+import {
+  usePreferences,
+  type Locale,
+} from '../../../shared/preferences/context';
 import {
   formatCompactNumber,
   formatCurrency,

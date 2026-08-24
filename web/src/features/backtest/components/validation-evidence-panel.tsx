@@ -1,7 +1,10 @@
 import type { ReactNode } from 'react';
 
 import { useCopy } from '../../../app/copy';
-import { usePreferences, type Locale } from '../../../app/preferences';
+import {
+  usePreferences,
+  type Locale,
+} from '../../../shared/preferences/context';
 import { formatCurrency, formatPercent } from '../../../shared/format';
 import { formatPublicNote } from '../../../shared/public-labels';
 import {

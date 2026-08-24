@@ -1,8 +1,5 @@
 import { useCopy } from '../../../app/copy';
-import {
-  MetricStrip,
-  WorkspaceHeader,
-} from '../../../app/components/workbench';
+import { MetricStrip, WorkspaceHeader } from '../../../shared/ui/workbench';
 import {
   useAccountStrategyAssignmentQuery,
   useBacktestResultsQuery,

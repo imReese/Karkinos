@@ -36,8 +36,8 @@ import {
   MetricStrip as WorkbenchMetricStrip,
   StatusBadge as WorkbenchStatusBadge,
   WorkspaceHeader as WorkbenchWorkspaceHeader,
-} from '../../../app/components/workbench';
-import { usePreferences } from '../../../app/preferences';
+} from '../../../shared/ui/workbench';
+import { usePreferences } from '../../../shared/preferences/context';
 import {
   formatCurrency,
   formatPercent,

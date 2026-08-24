@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 
-import { usePreferences } from '../../../app/preferences';
+import { usePreferences } from '../../../shared/preferences/context';
 import {
   formatPublicCode,
   formatPublicStatus,
