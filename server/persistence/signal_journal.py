@@ -89,6 +89,27 @@ class SignalJournalRepository(SQLiteRepository):
             conn.commit()
             return int(cursor.lastrowid)
 
+    def find_signal_id_sync(
+        self,
+        *,
+        timestamp: str,
+        strategy_id: str,
+        symbol: str,
+        direction: str,
+    ) -> int | None:
+        """Return the canonical persisted identity for one exact signal."""
+
+        with sqlite3.connect(self._path) as conn:
+            row = conn.execute(
+                """
+                SELECT id FROM signals
+                WHERE timestamp = ? AND strategy_id = ? AND symbol = ? AND direction = ?
+                ORDER BY id LIMIT 1
+                """,
+                (timestamp, strategy_id, symbol, direction),
+            ).fetchone()
+        return int(row[0]) if row is not None else None
+
     async def get_signals(
         self, limit: int = 50, offset: int = 0
     ) -> list[dict[str, Any]]:

@@ -27,6 +27,23 @@ class SignalAutomationDatabaseFacade(DatabaseRepositoryAccess):
             timestamp, strategy_id, symbol, direction, target_weight, price, asset_class
         )
 
+    def find_signal_id_sync(
+        self,
+        *,
+        timestamp: str,
+        strategy_id: str,
+        symbol: str,
+        direction: str,
+    ) -> int | None:
+        """Return the canonical persisted identity for one exact signal."""
+
+        return self._signal_journal.find_signal_id_sync(
+            timestamp=timestamp,
+            strategy_id=strategy_id,
+            symbol=symbol,
+            direction=direction,
+        )
+
     async def get_signals(
         self, limit: int = 50, offset: int = 0
     ) -> list[dict[str, Any]]:
