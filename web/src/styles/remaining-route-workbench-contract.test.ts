@@ -23,7 +23,15 @@ const BACKTEST = [
   source('features/backtest/components/strategy-catalog-panel.tsx'),
   source('features/backtest/components/strategy-metadata-panel.tsx'),
 ].join('\n');
-const TRADING = source('features/trading/components/trading-page.tsx');
+const TRADING = [
+  source('features/trading/components/trading-page.tsx'),
+  source('features/trading/components/trading-workspace.tsx'),
+  source('features/trading/components/trading-review-queue.tsx'),
+  source('features/trading/components/trading-safety-rail.tsx'),
+  source('features/trading/components/trading-history.tsx'),
+  source('features/trading/components/execution-audit-panel.tsx'),
+  source('features/trading/components/broker-readiness-panel.tsx'),
+].join('\n');
 const SETTINGS = source('features/settings/components/settings-page.tsx');
 const OPERATIONS = source('features/operations/components/operations-page.tsx');
 const ACCOUNT_TRUTH = [

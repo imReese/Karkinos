@@ -10,7 +10,7 @@ import {
 import { formatInstrumentDisplayLabel } from '../../../shared/instrument-display';
 import { formatPublicOperationalNote } from '../../../shared/public-labels';
 import { formatLedgerOrderSideLabel } from '../../../shared/ledger-format';
-import { usePositionsQuery } from '../../portfolio/api';
+import { usePositionsQuery } from '../portfolio-boundary';
 import {
   useConfirmManualOrderMutation,
   usePendingManualOrdersQuery,
