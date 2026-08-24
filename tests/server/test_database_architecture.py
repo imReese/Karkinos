@@ -98,8 +98,17 @@ def test_persistence_layer_does_not_depend_on_application_services() -> None:
 
 def test_controlled_unit_of_work_boundaries_remain_explicit() -> None:
     expected = {
-        "controlled_execution.py": 6,
-        "controlled_session.py": 7,
+        "controlled_broker_intents.py": 3,
+        "controlled_clearance_uow.py": 1,
+        "controlled_ledger_correction_uow.py": 1,
+        "controlled_ledger_posting_uow.py": 1,
+        "controlled_session_budgets.py": 1,
+        "controlled_session_gate_snapshots.py": 1,
+        "controlled_session_issuance_uow.py": 1,
+        "controlled_session_pause_uow.py": 1,
+        "controlled_session_rate_admission_uow.py": 1,
+        "controlled_session_replacement_uow.py": 1,
+        "controlled_session_revocation_uow.py": 1,
     }
     actual = {
         path.name: path.read_text(encoding="utf-8").count('"BEGIN IMMEDIATE"')
