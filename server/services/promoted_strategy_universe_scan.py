@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import math
-import sqlite3
 import threading
 from collections.abc import Callable, Mapping
 from datetime import date, datetime, time, timedelta, timezone
@@ -475,8 +474,7 @@ class PromotedStrategyUniverseScanService:
             timestamp = (
                 base + timedelta(microseconds=len(signals) - index)
             ).isoformat()
-            signal_id = _find_signal_id(
-                self._db,
+            signal_id = self._db.find_signal_id_sync(
                 timestamp=timestamp,
                 strategy_id=str(signal["strategy_id"]),
                 symbol=str(signal["symbol"]),
@@ -734,29 +732,6 @@ def _formula_history_rows(formula_ast: Mapping[str, Any]) -> int:
         expression_rows(formula_ast.get("entry")),
         expression_rows(formula_ast.get("exit")),
     )
-
-
-def _find_signal_id(
-    db: Any,
-    *,
-    timestamp: str,
-    strategy_id: str,
-    symbol: str,
-    direction: str,
-) -> int | None:
-    path = getattr(db, "_path", None)
-    if path is None:
-        return None
-    with sqlite3.connect(path) as conn:
-        row = conn.execute(
-            """
-            SELECT id FROM signals
-            WHERE timestamp = ? AND strategy_id = ? AND symbol = ? AND direction = ?
-            ORDER BY id LIMIT 1
-            """,
-            (timestamp, strategy_id, symbol, direction),
-        ).fetchone()
-    return int(row[0]) if row is not None else None
 
 
 def _truth_projection(strategy_id: str, truth: Mapping[str, Any]) -> dict[str, Any]:

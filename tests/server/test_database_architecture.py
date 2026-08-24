@@ -80,7 +80,7 @@ def test_database_compatibility_surface_is_partitioned_without_duplicates() -> N
             )
             method_owners[method.name] = path.name
 
-    assert len(method_owners) == 167
+    assert len(method_owners) == 168
 
 
 def test_persistence_layer_does_not_depend_on_application_services() -> None:
