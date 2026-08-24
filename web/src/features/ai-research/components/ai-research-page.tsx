@@ -3,7 +3,7 @@ import { MetricStrip, WorkspaceHeader } from '../../../shared/ui/workbench';
 import {
   useAccountStrategyAssignmentQuery,
   useBacktestResultsQuery,
-} from '../../backtest/api';
+} from '../ai-research-feature-boundary';
 import { ResearchTaskPanel } from './research-task-panel';
 import { ShadowResearchPanel } from './shadow-research-panel';
 

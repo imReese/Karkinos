@@ -10,7 +10,7 @@ import {
   formatPublicStatus,
 } from '../../../shared/public-labels';
 import { formatInstrumentDisplayLabel } from '../../../shared/instrument-display';
-import { type OperationsTodayResponse } from '../../operations/api';
+import { type OperationsTodayResponse } from '../decision-feature-boundary';
 import { type DecisionCandidate, type DailyTradingPlanResponse } from '../api';
 import {
   manualStatus,

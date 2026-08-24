@@ -13,7 +13,7 @@ import {
   formatPercent,
   formatTimestamp,
 } from '../../../shared/format';
-import { StrategyHypothesisPanel } from '../../ai-research/components/strategy-hypothesis-panel';
+import { StrategyHypothesisPanel } from '../backtest-feature-boundary';
 import { DatasetSnapshotPanel } from './dataset-snapshot-panel';
 import { EquityDrawdownChart } from './equity-drawdown-chart';
 import { FillsTable } from './fills-table';

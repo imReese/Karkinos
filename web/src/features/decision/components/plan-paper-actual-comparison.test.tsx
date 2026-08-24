@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { expect, test } from 'vitest';
 
-import type { ExecutionReconciliationItem } from '../../operations/api';
+import type { ExecutionReconciliationItem } from '../decision-feature-boundary';
 import { PlanPaperActualComparison } from './plan-paper-actual-comparison';
 
 function itemWithComparison(

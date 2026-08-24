@@ -5,7 +5,7 @@ import {
   type MetricStripItem,
 } from '../../../shared/ui/workbench';
 import { formatPercent } from '../../../shared/format';
-import type { PortfolioSnapshot } from '../../portfolio/api';
+import type { PortfolioSnapshot } from '../account-feature-boundary';
 
 function groupWeight(snapshot: PortfolioSnapshot, assetClass: string) {
   return (

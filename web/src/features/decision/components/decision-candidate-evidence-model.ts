@@ -6,7 +6,7 @@ import {
   formatPublicStatus,
 } from '../../../shared/public-labels';
 import { type StrategyNameMap } from '../../../shared/strategy-display';
-import { type PaperShadowDivergenceSummary } from '../../operations/api';
+import { type PaperShadowDivergenceSummary } from '../decision-feature-boundary';
 import {
   type DecisionCandidate,
   type StrategyAttributionGateEvidence,

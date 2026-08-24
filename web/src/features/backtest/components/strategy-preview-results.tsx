@@ -1,4 +1,4 @@
-import { useHoldingStrategyAttributionQuery } from '../../account-strategy/api';
+import { useHoldingStrategyAttributionQuery } from '../backtest-feature-boundary';
 import { formatCurrency } from '../../../shared/format';
 import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';

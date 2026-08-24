@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { expect, test, vi } from 'vitest';
 
 import { PreferencesProvider } from '../../../app/providers/preferences-provider';
-import type { PortfolioSnapshot } from '../../portfolio/api';
+import type { PortfolioSnapshot } from '../account-feature-boundary';
 import type { AccountOverview } from '../api';
 import { OverviewCards } from './overview-cards';
 import { PerformanceBreakdownCard } from './performance-breakdown-card';

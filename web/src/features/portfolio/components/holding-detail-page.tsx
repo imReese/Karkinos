@@ -1,17 +1,20 @@
 import { useMemo, useState } from 'react';
 
-import { useAccountOverviewQuery } from '../../account/api';
+import { useAccountOverviewQuery } from '../portfolio-feature-boundary';
 import {
   useAccountStrategyAssignmentQuery,
   useAccountStrategyAttributionQuery,
   useAccountStrategyContributionQuery,
   useHoldingStrategyAttributionQuery,
-} from '../../account-strategy/api';
+} from '../portfolio-feature-boundary';
 import {
   buildAttributionReadinessItems,
   type AttributionReadinessItem,
-} from '../../account-strategy/attribution-readiness';
-import { useLedgerEntriesQuery, type LedgerEntry } from '../../activity/api';
+} from '../portfolio-feature-boundary';
+import {
+  useLedgerEntriesQuery,
+  type LedgerEntry,
+} from '../portfolio-feature-boundary';
 import {
   formatLedgerActivitySummary,
   formatLedgerCostBasisMethodLabel,
@@ -22,11 +25,11 @@ import {
   useMarketDataHealthQuery,
   useKlineQuery,
   useRefreshMarketQuotesMutation,
-} from '../../market/api';
+} from '../portfolio-feature-boundary';
 import {
   PriceStructureChart,
   PriceStructureLoadingState,
-} from '../../market/components/price-structure-chart';
+} from '../portfolio-feature-boundary';
 import { useCopy } from '../../../shared/i18n/context';
 import {
   ControlledActionZone,

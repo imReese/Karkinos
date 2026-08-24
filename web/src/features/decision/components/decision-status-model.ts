@@ -13,7 +13,7 @@ import {
 import {
   type PaperShadowCostSummary,
   type PaperShadowDivergenceSummary,
-} from '../../operations/api';
+} from '../decision-feature-boundary';
 import {
   type AccountTruthGateEvidence,
   type DecisionCandidate,

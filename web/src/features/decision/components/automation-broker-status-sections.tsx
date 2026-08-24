@@ -3,7 +3,7 @@ import { formatPublicCode } from '../../../shared/public-labels';
 import {
   type BrokerConnectorHealthResponse,
   type BrokerGatewayStatusResponse,
-} from '../../operations/api';
+} from '../decision-feature-boundary';
 import {
   brokerConnectorStatusLabel,
   brokerGatewayBlockedReason,

@@ -5,7 +5,7 @@ import {
   formatPrice,
   formatQuantity,
 } from '../../../shared/format';
-import type { ExecutionReconciliationItem } from '../../operations/api';
+import type { ExecutionReconciliationItem } from '../decision-feature-boundary';
 
 type ComparisonRow = {
   key: 'quantity' | 'price' | 'cost';

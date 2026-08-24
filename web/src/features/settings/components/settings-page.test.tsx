@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import { PreferencesProvider } from '../../../app/providers/preferences-provider';
-import type { MarketDataHealthResponse } from '../../market/api';
+import type { MarketDataHealthResponse } from '../settings-feature-boundary';
 import type {
   AssetMetadataStatusResponse,
   DataSourceStatusResponse,

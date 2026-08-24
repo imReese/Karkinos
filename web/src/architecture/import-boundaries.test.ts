@@ -195,6 +195,25 @@ test('feature modules do not depend on the app layer', () => {
   expect(violations).toEqual([]);
 });
 
+test('cross-feature imports are declared only by explicit boundary modules', () => {
+  const violations = sourceFiles(FEATURES_ROOT)
+    .filter((path) => !/\.(?:test|spec)\.(?:ts|tsx)$/.test(path))
+    .filter((path) => !/(?:^|-)boundary\.(?:ts|tsx)$/.test(basename(path)))
+    .flatMap((path) => {
+      const featureName = relative(FEATURES_ROOT, path).split(/[\\/]/)[0];
+      const featureRoot = resolve(FEATURES_ROOT, featureName);
+      return relativeImportTargets(path)
+        .filter(
+          (target) =>
+            isInside(target, FEATURES_ROOT) && !isInside(target, featureRoot),
+        )
+        .map((target) => describeImport(path, target));
+    })
+    .sort();
+
+  expect(violations).toEqual([]);
+});
+
 test('localized copy modules stay bounded and feature-owned', () => {
   const copyModules = sourceFiles(SRC_ROOT).filter((path) => {
     const name = basename(path);

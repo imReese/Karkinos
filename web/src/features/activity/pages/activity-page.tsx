@@ -40,8 +40,8 @@ import {
   type ManualAdjustmentFormValues,
 } from '../components/manual-adjustment-form';
 import { TradeForm, type TradeFormValues } from '../components/trade-form';
-import { usePositionsQuery } from '../../portfolio/api';
-import { useSettingsQuery } from '../../settings/api';
+import { usePositionsQuery } from '../activity-feature-boundary';
+import { useSettingsQuery } from '../activity-feature-boundary';
 import { getErrorMessage } from '../../../shared/error-message';
 import { formatCurrency, formatTimestamp } from '../../../shared/format';
 import { formatPublicStatus } from '../../../shared/public-labels';

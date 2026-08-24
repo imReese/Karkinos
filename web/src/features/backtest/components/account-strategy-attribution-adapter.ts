@@ -1,9 +1,9 @@
 import { useCopy } from '../../../shared/i18n/context';
-import type { HoldingStrategyAttributionReport } from '../../account-strategy/api';
+import type { HoldingStrategyAttributionReport } from '../backtest-feature-boundary';
 import {
   buildAttributionReadinessItems,
   type AttributionReadinessItem,
-} from '../../account-strategy/attribution-readiness';
+} from '../backtest-feature-boundary';
 import type { BacktestAttributionPreviewResponse } from '../api';
 
 type BacktestAttributionNextAction = {

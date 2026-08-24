@@ -1,4 +1,4 @@
-import { ResearchTaskPanel } from '../../ai-research/components/research-task-panel';
+import { ResearchTaskPanel } from '../backtest-feature-boundary';
 import { AccountStrategyPanel } from './account-strategy-panel';
 import { BacktestReportView } from './backtest-report-view';
 import { useBacktestPage } from './backtest-page-context';

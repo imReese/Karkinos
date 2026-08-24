@@ -237,11 +237,10 @@ test('backtest imports stay out of app and at the reviewed feature boundary', ()
 
   expect(appImports).toEqual([]);
   expect(featureImports).toEqual([
-    'components/account-strategy-attribution-adapter.ts -> ../../account-strategy/api',
-    'components/account-strategy-attribution-adapter.ts -> ../../account-strategy/attribution-readiness',
-    'components/backtest-governance-panels.tsx -> ../../ai-research/components/research-task-panel',
-    'components/backtest-report-view.tsx -> ../../ai-research/components/strategy-hypothesis-panel',
-    'components/strategy-preview-results.tsx -> ../../account-strategy/api',
+    'backtest-feature-boundary.ts -> ../account-strategy/api',
+    'backtest-feature-boundary.ts -> ../account-strategy/attribution-readiness',
+    'backtest-feature-boundary.ts -> ../ai-research/components/research-task-panel',
+    'backtest-feature-boundary.ts -> ../ai-research/components/strategy-hypothesis-panel',
   ]);
 });
 

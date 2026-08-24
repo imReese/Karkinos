@@ -12,7 +12,7 @@ import {
   formatPublicCode,
   formatPublicStatus,
 } from '../../../shared/public-labels';
-import type { CurrentHoldingMarketEvidenceReview } from '../../portfolio/api';
+import type { CurrentHoldingMarketEvidenceReview } from '../market-feature-boundary';
 import { ConfirmedFundNavRefreshButton } from './confirmed-fund-nav-refresh-button';
 import { MarketRefreshButton } from './market-refresh-button';
 
