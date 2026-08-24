@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks, HTTPException
+
+from core.types import AssetClass, BarFrequency, Symbol
+from server.contracts.http.market_models import (
+    KlineBar,
+    MarketQuote,
+    WatchlistCreateRequest,
+    WatchlistItem,
+)
 
 
 def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
@@ -16,16 +25,6 @@ def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
             return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
         return value
 
-    AssetClass = dependency("AssetClass")
-    BackgroundTasks = dependency("BackgroundTasks")
-    BarFrequency = dependency("BarFrequency")
-    HTTPException = dependency("HTTPException")
-    KlineBar = dependency("KlineBar")
-    MarketQuote = dependency("MarketQuote")
-    Path = dependency("Path")
-    Symbol = dependency("Symbol")
-    WatchlistCreateRequest = dependency("WatchlistCreateRequest")
-    WatchlistItem = dependency("WatchlistItem")
     _ASSET_CLASS_MAP = dependency("_ASSET_CLASS_MAP")
     _DEFAULT_END_DATE = dependency("_DEFAULT_END_DATE")
     _extract_runtime_portfolio = dependency("_extract_runtime_portfolio")

@@ -4,7 +4,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+
+from server.contracts.http.ledger_models import EquityPoint
+from server.contracts.http.strategy_models import (
+    BacktestRequest,
+    BacktestResponse,
+    BacktestSummary,
+    CompareRequest,
+    CompareResponse,
+    StrategyCompareItem,
+)
 
 
 def create_router(facade: Any) -> APIRouter:
@@ -16,15 +26,6 @@ def create_router(facade: Any) -> APIRouter:
             return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
         return value
 
-    Any = dependency("Any")
-    BacktestRequest = dependency("BacktestRequest")
-    BacktestResponse = dependency("BacktestResponse")
-    BacktestSummary = dependency("BacktestSummary")
-    CompareRequest = dependency("CompareRequest")
-    CompareResponse = dependency("CompareResponse")
-    EquityPoint = dependency("EquityPoint")
-    HTTPException = dependency("HTTPException")
-    StrategyCompareItem = dependency("StrategyCompareItem")
     _COMPARE_WARNINGS = dependency("_COMPARE_WARNINGS")
     _backtest_metrics_from_payload = dependency("_backtest_metrics_from_payload")
     _backtest_report_metrics_json = dependency("_backtest_report_metrics_json")

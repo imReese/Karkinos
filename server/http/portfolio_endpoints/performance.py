@@ -6,6 +6,12 @@ from typing import Any
 
 from fastapi import APIRouter
 
+from server.contracts.http.ledger_models import (
+    ActivityItem,
+    EquityPoint,
+    EquitySeriesPoint,
+)
+
 
 def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
     r = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
@@ -16,9 +22,6 @@ def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
             return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
         return value
 
-    ActivityItem = dependency("ActivityItem")
-    EquityPoint = dependency("EquityPoint")
-    EquitySeriesPoint = dependency("EquitySeriesPoint")
     _append_current_equity_series_point = dependency(
         "_append_current_equity_series_point"
     )

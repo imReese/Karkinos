@@ -6,6 +6,16 @@ from typing import Any
 
 from fastapi import APIRouter
 
+from server.contracts.http.ledger_models import EquityPoint
+from server.contracts.http.strategy_models import (
+    BacktestFill,
+    BacktestRequest,
+    BacktestResponse,
+    BacktestSweepRequest,
+    BacktestSweepResponse,
+    BacktestSweepResult,
+)
+
 
 def create_router(facade: Any) -> APIRouter:
     r = APIRouter(prefix="/api/backtest", tags=["backtest"])
@@ -16,13 +26,6 @@ def create_router(facade: Any) -> APIRouter:
             return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
         return value
 
-    BacktestFill = dependency("BacktestFill")
-    BacktestRequest = dependency("BacktestRequest")
-    BacktestResponse = dependency("BacktestResponse")
-    BacktestSweepRequest = dependency("BacktestSweepRequest")
-    BacktestSweepResponse = dependency("BacktestSweepResponse")
-    BacktestSweepResult = dependency("BacktestSweepResult")
-    EquityPoint = dependency("EquityPoint")
     _SWEEP_RANK_DIRECTIONS = dependency("_SWEEP_RANK_DIRECTIONS")
     _SWEEP_WARNINGS = dependency("_SWEEP_WARNINGS")
     _backtest_evidence_from_payload = dependency("_backtest_evidence_from_payload")

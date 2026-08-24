@@ -4,7 +4,28 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+
+from account_truth.citic_history_xls_directory import CiticHistoryXlsDirectoryRejected
+from account_truth.citic_source_query_window_review import (
+    CiticSourceQueryWindowReviewReadRejected,
+    CiticSourceQueryWindowReviewRejected,
+)
+from account_truth.citic_source_scope_review import (
+    CiticSourceScopeReviewReadRejected,
+    CiticSourceScopeReviewRejected,
+)
+from server.contracts.http.account_truth import (
+    BrokerStatementPreviewCreate,
+    CiticHistoryXlsDirectoryIntakeCreate,
+    CiticHistoryXlsDirectoryQueryWindowReviewCreate,
+    CiticHistoryXlsIntakeCreate,
+    CiticHistoryXlsPreviewCreate,
+    CiticHistoryXlsQueryWindowReviewCreate,
+    CiticHistoryXlsQueryWindowReviewRevoke,
+    CiticHistoryXlsSourceScopeReviewCreate,
+    CiticHistoryXlsSourceScopeReviewRevoke,
+)
 
 
 def create_router(facade: Any) -> APIRouter:
@@ -16,39 +37,6 @@ def create_router(facade: Any) -> APIRouter:
             return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
         return value
 
-    BrokerStatementPreviewCreate = dependency("BrokerStatementPreviewCreate")
-    CiticHistoryXlsDirectoryIntakeCreate = dependency(
-        "CiticHistoryXlsDirectoryIntakeCreate"
-    )
-    CiticHistoryXlsDirectoryQueryWindowReviewCreate = dependency(
-        "CiticHistoryXlsDirectoryQueryWindowReviewCreate"
-    )
-    CiticHistoryXlsDirectoryRejected = dependency("CiticHistoryXlsDirectoryRejected")
-    CiticHistoryXlsIntakeCreate = dependency("CiticHistoryXlsIntakeCreate")
-    CiticHistoryXlsPreviewCreate = dependency("CiticHistoryXlsPreviewCreate")
-    CiticHistoryXlsQueryWindowReviewCreate = dependency(
-        "CiticHistoryXlsQueryWindowReviewCreate"
-    )
-    CiticHistoryXlsQueryWindowReviewRevoke = dependency(
-        "CiticHistoryXlsQueryWindowReviewRevoke"
-    )
-    CiticHistoryXlsSourceScopeReviewCreate = dependency(
-        "CiticHistoryXlsSourceScopeReviewCreate"
-    )
-    CiticHistoryXlsSourceScopeReviewRevoke = dependency(
-        "CiticHistoryXlsSourceScopeReviewRevoke"
-    )
-    CiticSourceQueryWindowReviewReadRejected = dependency(
-        "CiticSourceQueryWindowReviewReadRejected"
-    )
-    CiticSourceQueryWindowReviewRejected = dependency(
-        "CiticSourceQueryWindowReviewRejected"
-    )
-    CiticSourceScopeReviewReadRejected = dependency(
-        "CiticSourceScopeReviewReadRejected"
-    )
-    CiticSourceScopeReviewRejected = dependency("CiticSourceScopeReviewRejected")
-    HTTPException = dependency("HTTPException")
     _citic_history_xls_directory_config_for_state = dependency(
         "_citic_history_xls_directory_config_for_state"
     )

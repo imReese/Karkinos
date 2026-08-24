@@ -4,7 +4,22 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+
+from server.contracts.http.ledger_models import EquityPoint
+from server.contracts.http.portfolio_models import (
+    AccountOverview,
+    AccountStateResponse,
+    ActionCard,
+    AllocationItem,
+    CurrentHoldingMarketEvidenceReviewResponse,
+    LiveHoldingsResponse,
+    PortfolioCockpitPosition,
+    PortfolioCockpitResponse,
+    PortfolioSnapshot,
+    PositionResponse,
+    RiskSummaryItem,
+)
 
 
 def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
@@ -16,21 +31,6 @@ def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
             return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
         return value
 
-    AccountOverview = dependency("AccountOverview")
-    AccountStateResponse = dependency("AccountStateResponse")
-    ActionCard = dependency("ActionCard")
-    AllocationItem = dependency("AllocationItem")
-    CurrentHoldingMarketEvidenceReviewResponse = dependency(
-        "CurrentHoldingMarketEvidenceReviewResponse"
-    )
-    EquityPoint = dependency("EquityPoint")
-    HTTPException = dependency("HTTPException")
-    LiveHoldingsResponse = dependency("LiveHoldingsResponse")
-    PortfolioCockpitPosition = dependency("PortfolioCockpitPosition")
-    PortfolioCockpitResponse = dependency("PortfolioCockpitResponse")
-    PortfolioSnapshot = dependency("PortfolioSnapshot")
-    PositionResponse = dependency("PositionResponse")
-    RiskSummaryItem = dependency("RiskSummaryItem")
     _build_live_holdings_response = dependency("_build_live_holdings_response")
     _cash_flow_adjusted_equity_points_from_series = dependency(
         "_cash_flow_adjusted_equity_points_from_series"

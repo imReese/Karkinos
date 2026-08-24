@@ -6,6 +6,12 @@ from typing import Any
 
 from fastapi import APIRouter
 
+from server.contracts.http.backtest import (
+    BacktestAttributionPreviewRequest,
+    BacktestPaperShadowPreviewRequest,
+    BacktestRiskPreviewRequest,
+)
+
 
 def create_router(facade: Any) -> APIRouter:
     r = APIRouter(prefix="/api/backtest", tags=["backtest"])
@@ -16,9 +22,6 @@ def create_router(facade: Any) -> APIRouter:
             return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
         return value
 
-    BacktestAttributionPreviewRequest = dependency("BacktestAttributionPreviewRequest")
-    BacktestPaperShadowPreviewRequest = dependency("BacktestPaperShadowPreviewRequest")
-    BacktestRiskPreviewRequest = dependency("BacktestRiskPreviewRequest")
     _run_backtest_attribution_preview = dependency("_run_backtest_attribution_preview")
     _run_backtest_paper_shadow_preview = dependency(
         "_run_backtest_paper_shadow_preview"
