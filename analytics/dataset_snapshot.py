@@ -12,7 +12,7 @@ from typing import Any, Mapping
 
 import pandas as pd
 
-from data.store import _build_bar_diagnostics
+from data.store import build_bar_diagnostics
 
 logger = logging.getLogger(__name__)
 
@@ -209,7 +209,7 @@ def build_backtest_dataset_snapshot(
             source_diagnostics = {}
         frame = _handler_dataframe(handler)
         diagnostics = (
-            _build_bar_diagnostics(frame) if isinstance(frame, pd.DataFrame) else {}
+            build_bar_diagnostics(frame) if isinstance(frame, pd.DataFrame) else {}
         )
         row_count = _handler_row_count(handler)
         first_timestamp, last_timestamp = _handler_timestamp_bounds(handler)
