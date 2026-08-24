@@ -3,18 +3,10 @@
 from __future__ import annotations
 
 import os
-from abc import ABC, abstractmethod
 from collections.abc import Mapping
 
+from notification.base import Notifier
 from notification.contracts import SUPPORTED_NOTIFICATION_TYPES
-
-
-class Notifier(ABC):
-    """通知推送抽象基类。"""
-
-    @abstractmethod
-    def send(self, title: str, message: str) -> None:
-        """发送通知。"""
 
 
 def _notification_type(config: Mapping[str, object]) -> str:

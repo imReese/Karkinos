@@ -20,6 +20,8 @@ from data.market_daily_store import metadata_value as _metadata_value
 from data.market_daily_store import nullable_float as _nullable_float
 from data.market_daily_store import parse_diagnostics as _parse_diagnostics
 
+build_bar_diagnostics = _build_bar_diagnostics
+
 _BAR_META_AUDIT_COLUMNS = {
     "provider_name": "TEXT",
     "data_source": "TEXT",

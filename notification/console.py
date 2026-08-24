@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from notification.notifier import Notifier
+from notification.base import Notifier
 
 
 class ConsoleNotifier(Notifier):
