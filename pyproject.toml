@@ -37,7 +37,7 @@ server = [
     "uvicorn[standard]>=0.51.0",
     "python-dotenv>=1.2.3",
     "aiosqlite>=0.22.1",
-    "websockets>=16.1",
+    "websockets>=17.0.1",
     "pydantic>=2.13.4",
 ]
 
