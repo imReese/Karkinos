@@ -65,8 +65,13 @@ def test_scheduler_callback_binds_only_its_owning_application_state(
             return {"evaluated": True}
 
     monkeypatch.setattr(
-        "server.routes.controlled_session_automatic_pause._orchestrator_service",
-        lambda: Orchestrator(),
+        "server.composition.controlled_execution_services."
+        "build_controlled_session_automatic_pause_orchestrator_service",
+        lambda bound_state: (
+            Orchestrator()
+            if bound_state is state
+            else pytest.fail("scheduler bound an unrelated application state")
+        ),
     )
 
     assert _evaluate_controlled_session_pauses(state) == {"evaluated": True}
