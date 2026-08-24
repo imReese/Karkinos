@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
-import { useCopy } from '../../../app/copy';
+import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
 import { formatCurrency } from '../../../shared/format';
 import {

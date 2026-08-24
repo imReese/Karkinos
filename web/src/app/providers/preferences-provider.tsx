@@ -6,6 +6,8 @@ import {
   type ResolvedTheme,
   type ThemePreference,
 } from '../../shared/preferences/context';
+import { CopyContext } from '../../shared/i18n/context';
+import { copy } from '../copy';
 
 const LOCALE_KEY = 'karkinos.locale';
 const THEME_KEY = 'karkinos.theme';
@@ -106,7 +108,9 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 
   return (
     <PreferencesContext.Provider value={value}>
-      {children}
+      <CopyContext.Provider value={copy[locale]}>
+        {children}
+      </CopyContext.Provider>
     </PreferencesContext.Provider>
   );
 }

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { createLazyRoute, useNavigate } from '@tanstack/react-router';
 
-import { useCopy, type AppCopy } from '../../../app/copy';
+import { useCopy, type AppCopy } from '../../../shared/i18n/context';
 import {
   EvidenceState,
   MetricStrip,

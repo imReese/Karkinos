@@ -27,7 +27,7 @@ import {
   PriceStructureChart,
   PriceStructureLoadingState,
 } from '../../market/components/price-structure-chart';
-import { useCopy } from '../../../app/copy';
+import { useCopy } from '../../../shared/i18n/context';
 import {
   ControlledActionZone,
   EvidenceLoadingLayout as WorkbenchEvidenceLoadingLayout,

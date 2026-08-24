@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 
-import { useCopy } from '../../../app/copy';
+import { useCopy } from '../../../shared/i18n/context';
 import { EvidenceIdentityDisclosure } from '../../../shared/ui/workbench';
 import { usePreferences } from '../../../shared/preferences/context';
 import { formatCurrency } from '../../../shared/format';

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import { useCopy } from '../../../app/copy';
+import { useCopy } from '../../../shared/i18n/context';
 import { toDatetimeLocalInputValue } from '../datetime-local';
 
 export type FundBatchOrder = {

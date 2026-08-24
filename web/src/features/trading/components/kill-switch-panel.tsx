@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { ControlledActionZone } from '../../../shared/ui/workbench';
-import { useCopy } from '../../../app/copy';
+import { useCopy } from '../../../shared/i18n/context';
 import {
   useKillSwitchQuery,
   useSetKillSwitchMutation,

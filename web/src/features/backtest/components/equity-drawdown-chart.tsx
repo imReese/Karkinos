@@ -10,7 +10,7 @@ import {
   YAxis,
 } from 'recharts';
 
-import { useCopy } from '../../../app/copy';
+import { useCopy } from '../../../shared/i18n/context';
 import {
   EvidenceState,
   ResponsiveChartFrame,

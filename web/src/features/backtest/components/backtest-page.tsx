@@ -7,7 +7,7 @@ import {
 } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
-import { useCopy } from '../../../app/copy';
+import { useCopy } from '../../../shared/i18n/context';
 import {
   MetricStrip,
   StatusBadge,
