@@ -98,6 +98,7 @@ def test_persistence_layer_does_not_depend_on_application_services() -> None:
 
 def test_unit_of_work_boundaries_remain_explicit() -> None:
     expected = {
+        "ai_shadow_research_uow.py": 1,
         "broker_connector_soak.py": 1,
         "controlled_broker_cancellation_uow.py": 4,
         "controlled_broker_write_releases.py": 2,
@@ -117,6 +118,7 @@ def test_unit_of_work_boundaries_remain_explicit() -> None:
         "decision_quality.py": 1,
         "daily_strategy_artifacts.py": 1,
         "reviewed_fee_schedule_reviews.py": 1,
+        "strategy_research_uow.py": 1,
     }
     actual = {
         path.name: path.read_text(encoding="utf-8").count('"BEGIN IMMEDIATE"')
