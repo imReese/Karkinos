@@ -7,6 +7,9 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
+from server.composition.controlled_execution_services import (
+    build_controlled_session_budget_reservation_service,
+)
 from server.services.controlled_session_budget_reservation import (
     CONTROLLED_SESSION_BUDGET_RESERVATION_ACKNOWLEDGEMENT,
     ControlledSessionBudgetReservationRejected,
@@ -81,14 +84,5 @@ def create_router() -> APIRouter:
 
 def _service() -> ControlledSessionBudgetReservationService:
     from server.dependencies import get_app_state
-    from server.routes.controlled_session_envelope import (
-        _service as controlled_session_envelope_service,
-    )
 
-    state = get_app_state()
-    return ControlledSessionBudgetReservationService(
-        db=state.db,
-        attestation_provider=(
-            controlled_session_envelope_service().resolve_attestation
-        ),
-    )
+    return build_controlled_session_budget_reservation_service(get_app_state())

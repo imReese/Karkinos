@@ -80,8 +80,8 @@ from .external_research import (
     ExternalResearchNetworkError,
     ExternalResearchRateLimitedError,
     ExternalResearchTimeoutError,
-    _edge_request_options,
-    _message_text,
+    edge_request_options,
+    message_text,
 )
 from .formula_dsl import (
     CANONICAL_COST_MODEL_REFERENCE,
@@ -164,7 +164,7 @@ def _strategy_research_request_options(
     provider = settings.provider_id.strip().lower()
     if provider == "deepseek" or settings.endpoint_origin.endswith("deepseek.com"):
         return {"thinking": {"type": "disabled"}}
-    return _edge_request_options(settings)
+    return edge_request_options(settings)
 
 
 _CRITIQUE_CITATION_PATHS = (
@@ -2084,7 +2084,7 @@ class StrategyResearchModelProvider(ProviderAdapter):
             raise ExternalResearchInvalidResponseError("provider_message_missing")
         reasoning = message.get("reasoning_content")
         reasoning_chars = len(reasoning) if isinstance(reasoning, str) else 0
-        content = _message_text(message.get("content"))
+        content = message_text(message.get("content"))
         if not content:
             raise ExternalResearchInvalidResponseError("provider_content_missing")
         decoded = _decode_model_json(content)
@@ -4158,3 +4158,7 @@ def _failure_code(exc: Exception) -> str:
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+# Public sizing policy reused by the shadow-research application service.
+rolling_oos_parameters = _rolling_oos_parameters

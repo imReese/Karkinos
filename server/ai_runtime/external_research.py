@@ -1443,3 +1443,8 @@ def _record_from_row(row: sqlite3.Row) -> ExternalBacktestReportRecord:
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+# Public provider-response helpers shared by strategy-research orchestration.
+edge_request_options = _edge_request_options
+message_text = _message_text

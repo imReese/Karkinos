@@ -26,7 +26,7 @@ def _endpoint(path: str, method: str = "GET"):
 
 def _allow_paper_shadow_evaluation(monkeypatch) -> None:
     monkeypatch.setattr(
-        "server.routes.decision._account_truth_gate_evidence",
+        "server.services.decision_application._account_truth_gate_evidence",
         lambda state: {
             "gate_status": "pass",
             "data_freshness_status": "fresh",
@@ -35,7 +35,7 @@ def _allow_paper_shadow_evaluation(monkeypatch) -> None:
         },
     )
     monkeypatch.setattr(
-        "server.routes.decision.resolve_strategy_order_generation_gate",
+        "server.services.decision_application.resolve_strategy_order_generation_gate",
         lambda db, strategy_id, *, as_of_date=None: (
             {
                 "status": "pass",
@@ -379,7 +379,7 @@ def test_pilot_readiness_factory_failure_is_a_blocker(monkeypatch):
         raise RuntimeError("fixture source failure")
 
     monkeypatch.setattr(
-        "server.routes.controlled_broker_write_release."
+        "server.composition.controlled_execution_services."
         "build_controlled_broker_write_release_service",
         fail_write_release_factory,
     )

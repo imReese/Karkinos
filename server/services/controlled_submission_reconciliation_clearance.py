@@ -15,8 +15,8 @@ from account_truth.broker_order_lifecycle import (
     BrokerOrderLifecycleEvidenceRepository,
     broker_order_lifecycle_terminal_outcome,
 )
+from server.services.execution_identity import build_order_fingerprint
 from server.services.operator_approval import resolve_operator_approval_with_proof
-from server.services.per_order_confirmation import build_order_fingerprint
 
 CONTROLLED_SUBMISSION_CLEARANCE_SCHEMA_VERSION = (
     "karkinos.controlled_submission_reconciliation_clearance.v3"

@@ -184,12 +184,12 @@ def create_router() -> APIRouter:
         payload: ShadowRunRequest | None = None,
     ) -> dict:
         from server.dependencies import get_app_state
-        from server.routes.decision import (
-            _decision_portfolio_context,
-            _today_decision_payload,
-            _trading_plan_positions,
-        )
         from server.services.daily_trading_plan import build_daily_trading_plan
+        from server.services.decision_application import (
+            decision_portfolio_context,
+            today_decision_payload,
+            trading_plan_positions,
+        )
         from server.services.paper_shadow_run import run_paper_shadow_from_trading_plan
 
         state = get_app_state()
@@ -204,15 +204,15 @@ def create_router() -> APIRouter:
                     "canonical persisted Account Truth must own sizing"
                 ),
             )
-        portfolio_context = _decision_portfolio_context(state)
-        decision_payload = await _today_decision_payload(
+        portfolio_context = decision_portfolio_context(state)
+        decision_payload = await today_decision_payload(
             state,
             portfolio_context=portfolio_context,
         )
         trading_plan = build_daily_trading_plan(
             decision_payload=decision_payload,
             config=getattr(state, "config", None),
-            positions=_trading_plan_positions(
+            positions=trading_plan_positions(
                 state,
                 portfolio_context=portfolio_context,
             ),
@@ -389,20 +389,20 @@ def _current_action_manual_ticket_gate(
 ) -> dict[str, Any]:
     """Re-resolve current persisted gates immediately before ticket writes."""
 
-    from server.routes.decision import (
-        _account_truth_gate_evidence,
-        _action_trade_date,
-        _data_freshness_evidence,
-        _paper_shadow_allows_manual_ticket,
-        _paper_shadow_evidence,
+    from server.services.decision_application import (
+        account_truth_gate_evidence,
+        action_trade_date,
+        data_freshness_evidence,
+        paper_shadow_allows_manual_ticket,
+        paper_shadow_evidence,
     )
     from server.services.strategy_promotion_pipeline import (
         resolve_strategy_order_generation_gate,
     )
 
     db = getattr(state, "db", None)
-    account_truth = _account_truth_gate_evidence(state)
-    market_data = _data_freshness_evidence(
+    account_truth = account_truth_gate_evidence(state)
+    market_data = data_freshness_evidence(
         action,
         db,
         quotes={},
@@ -411,9 +411,9 @@ def _current_action_manual_ticket_gate(
     strategy_gate, strategy_blockers = resolve_strategy_order_generation_gate(
         db,
         str(action.get("strategy_id") or ""),
-        as_of_date=_action_trade_date(action),
+        as_of_date=action_trade_date(action),
     )
-    paper_shadow = _paper_shadow_evidence(
+    paper_shadow = paper_shadow_evidence(
         action,
         str(action.get("manual_confirmation_status") or ""),
         db=db,
@@ -447,7 +447,7 @@ def _current_action_manual_ticket_gate(
         blockers.append("current_account_truth_not_fresh")
     if not _is_sha256(account_truth.get("source_fingerprint")):
         blockers.append("current_account_truth_source_fingerprint_invalid")
-    if _shanghai_date(account_truth.get("captured_at")) != _action_trade_date(action):
+    if _shanghai_date(account_truth.get("captured_at")) != action_trade_date(action):
         blockers.append("current_account_truth_not_bound_to_action_date")
     ledger_coverage = account_truth.get("ledger_coverage")
     ledger_coverage = ledger_coverage if isinstance(ledger_coverage, dict) else {}
@@ -466,14 +466,14 @@ def _current_action_manual_ticket_gate(
         proposed_order.get("price"), current_quote_price
     ):
         blockers.append("proposed_order_price_not_bound_to_current_quote")
-    if _shanghai_date(market_data.get("quote_timestamp")) != _action_trade_date(action):
+    if _shanghai_date(market_data.get("quote_timestamp")) != action_trade_date(action):
         blockers.append("current_market_quote_not_bound_to_action_date")
     if not str(market_data.get("quote_source") or "").strip():
         blockers.append("current_market_quote_source_missing")
     if strategy_gate.get("status") != "pass":
         blockers.append("current_strategy_order_generation_not_passing")
     blockers.extend(f"strategy_advancement:{reason}" for reason in strategy_blockers)
-    if not _paper_shadow_allows_manual_ticket(paper_shadow):
+    if not paper_shadow_allows_manual_ticket(paper_shadow):
         blockers.append("current_paper_shadow_not_clear")
         blockers.extend(
             f"paper_shadow:{reason}"

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from fastapi.routing import APIRoute
 
 from server.routes import decision as decision_routes
+from server.services import decision_application
 
 
 def _endpoint(path: str, method: str = "GET"):
@@ -162,7 +163,7 @@ def test_decision_trading_plan_route_returns_read_only_order_intent(monkeypatch)
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
-        decision_routes,
+        decision_application,
         "_account_truth_gate_evidence",
         lambda state: {
             "gate_status": "pass",
@@ -172,7 +173,7 @@ def test_decision_trading_plan_route_returns_read_only_order_intent(monkeypatch)
         },
     )
     monkeypatch.setattr(
-        decision_routes,
+        decision_application,
         "resolve_strategy_order_generation_gate",
         lambda db, strategy_id, *, as_of_date=None: (
             {

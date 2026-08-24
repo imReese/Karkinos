@@ -14,6 +14,7 @@ from typing import Any, Callable
 from account_truth.broker_order_lifecycle import (
     resolve_broker_order_lifecycle_from_connection,
 )
+from server.services.execution_identity import build_order_fingerprint
 from server.services.manual_broker_cancellation_evidence import (
     ManualBrokerCancellationEvidenceService,
 )
@@ -21,7 +22,6 @@ from server.services.operator_approval import (
     resolve_operator_approval,
     resolve_operator_approval_with_proof,
 )
-from server.services.per_order_confirmation import build_order_fingerprint
 
 CONTROLLED_BROKER_CANCELLATION_SCHEMA_VERSION = (
     "karkinos.controlled_broker_cancellation.v1"

@@ -82,7 +82,9 @@ async def _forward_events(bridge: EventBusBridge, hub: ConnectionHub) -> None:
 def _confirm_pending_fund_orders_on_startup(state: AppState) -> None:
     """Confirm published fund subscriptions without blocking API startup."""
     try:
-        from server.routes.portfolio import confirm_pending_fund_orders
+        from server.projections.portfolio_application import (
+            confirm_pending_fund_orders,
+        )
 
         confirmed_count = confirm_pending_fund_orders(state)
         if confirmed_count:
@@ -95,15 +97,17 @@ def _confirm_pending_fund_orders_on_startup(state: AppState) -> None:
 
 def _evaluate_controlled_session_pauses(state: AppState) -> dict[str, Any]:
     """Build fresh persisted gates and pause enabled sessions if required."""
-    from server.routes.controlled_session_automatic_pause import (
-        _orchestrator_service,
+    from server.composition.controlled_execution_services import (
+        build_controlled_session_automatic_pause_orchestrator_service,
     )
 
     # The scheduler invokes this outside an HTTP request. Bind only the state
     # explicitly owned by its application while legacy route factories finish
     # migrating to constructor injection.
     with bind_app_state(state):
-        return _orchestrator_service().evaluate_all()
+        return build_controlled_session_automatic_pause_orchestrator_service(
+            state
+        ).evaluate_all()
 
 
 def _is_spa_fallback_path(path: str) -> bool:
@@ -148,11 +152,10 @@ async def lifespan(app: FastAPI):
     from core.event_bus import EventBus
     from notification.notifier import build_notifier
     from server.bootstrap import load_runtime_config
+    from server.composition.ai_application_services import (
+        build_strategy_research_write_service,
+    )
     from server.config import BrokerStatementCollectorConfig, ServerConfig
-    from server.routes.ai_strategy_research import _build_write_service
-    from server.routes.decision import run_batch_pre_trade_risk_for_state
-    from server.routes.market import _refresh_one_quote
-    from server.routes.operations import _current_decision_and_trading_plan
     from server.services.ai_shadow_research_automation import (
         run_ai_shadow_research_automation_loop,
     )
@@ -160,11 +163,18 @@ async def lifespan(app: FastAPI):
         DAILY_DECISION_EVIDENCE_AUTOMATION_TASK_NAME,
         run_daily_decision_evidence_automation_loop,
     )
+    from server.services.decision_application import (
+        run_batch_pre_trade_risk_for_state,
+    )
     from server.services.market_calendar_automation import (
         run_market_calendar_automation_loop,
     )
+    from server.services.market_refresh import refresh_one_quote
     from server.services.market_universe_automation import (
         run_market_universe_automation_loop,
+    )
+    from server.services.operations_projection import (
+        current_decision_and_trading_plan,
     )
 
     # create_app() loads the runtime config once and lifespan reuses the same
@@ -290,7 +300,7 @@ async def lifespan(app: FastAPI):
     shadow_research_task = asyncio.create_task(
         run_ai_shadow_research_automation_loop(
             state=state,
-            research_service_builder=lambda external: _build_write_service(
+            research_service_builder=lambda external: build_strategy_research_write_service(
                 state,
                 external=external,
             ),
@@ -309,9 +319,9 @@ async def lifespan(app: FastAPI):
             run_daily_decision_evidence_automation_loop(
                 state=state,
                 interval_seconds=config.live_poll_interval,
-                plan_reader=_current_decision_and_trading_plan,
+                plan_reader=current_decision_and_trading_plan,
                 risk_runner=run_batch_pre_trade_risk_for_state,
-                quote_refresher=_refresh_one_quote,
+                quote_refresher=refresh_one_quote,
             ),
             name=DAILY_DECISION_EVIDENCE_AUTOMATION_TASK_NAME,
         )
@@ -412,146 +422,9 @@ def create_app(
     )
     app.add_middleware(AppStateContextMiddleware, app_state=app_state)
 
-    # 注册路由
-    from server.routes.acceptance_audit import create_router as acceptance_audit_router
-    from server.routes.account_strategy import create_router as account_strategy_router
-    from server.routes.account_truth import create_router as account_truth_router
-    from server.routes.ai_external_research import (
-        create_router as ai_external_research_router,
-    )
-    from server.routes.ai_memory_informed_analyses import (
-        create_router as ai_memory_informed_analyses_router,
-    )
-    from server.routes.ai_provider_connectivity import (
-        create_router as ai_provider_connectivity_router,
-    )
-    from server.routes.ai_research import create_router as ai_research_router
-    from server.routes.ai_research_task_analyses import (
-        create_router as ai_research_task_analyses_router,
-    )
-    from server.routes.ai_research_task_analysis_reviews import (
-        create_router as ai_research_task_analysis_reviews_router,
-    )
-    from server.routes.ai_research_tasks import (
-        create_router as ai_research_tasks_router,
-    )
-    from server.routes.ai_reviewed_memory_retrievals import (
-        create_router as ai_reviewed_memory_retrievals_router,
-    )
-    from server.routes.automation import create_router as automation_router
-    from server.routes.backtest import create_router as backtest_router
-    from server.routes.broker_connector_soak import (
-        create_router as broker_connector_soak_router,
-    )
-    from server.routes.broker_gateway import create_router as broker_gateway_router
-    from server.routes.capital_authorization import (
-        create_router as capital_authorization_router,
-    )
-    from server.routes.capital_scaling_review import (
-        create_router as capital_scaling_review_router,
-    )
-    from server.routes.controlled_broker_submission import (
-        create_router as controlled_broker_submission_router,
-    )
-    from server.routes.controlled_broker_write_release import (
-        create_router as controlled_broker_write_release_router,
-    )
-    from server.routes.controlled_session_automatic_pause import (
-        create_router as controlled_session_automatic_pause_router,
-    )
-    from server.routes.controlled_session_budget_reservation import (
-        create_router as controlled_session_budget_reservation_router,
-    )
-    from server.routes.controlled_session_envelope import (
-        create_router as controlled_session_envelope_router,
-    )
-    from server.routes.controlled_session_runtime_authority import (
-        create_router as controlled_session_runtime_authority_router,
-    )
-    from server.routes.controlled_session_runtime_rate_limiter import (
-        create_router as controlled_session_runtime_rate_limiter_router,
-    )
-    from server.routes.controlled_submission_ledger_correction import (
-        create_router as controlled_submission_ledger_correction_router,
-    )
-    from server.routes.controlled_submission_ledger_posting import (
-        create_router as controlled_submission_ledger_posting_router,
-    )
-    from server.routes.decision import create_router as decision_router
-    from server.routes.execution_gateway_verification import (
-        create_router as execution_gateway_verification_router,
-    )
-    from server.routes.execution_reconciliation import (
-        create_router as execution_reconciliation_router,
-    )
-    from server.routes.ledger import create_router as ledger_router
-    from server.routes.market import create_router as market_router
-    from server.routes.operations import create_router as operations_router
-    from server.routes.per_order_confirmation import (
-        create_router as per_order_confirmation_router,
-    )
-    from server.routes.portfolio import create_router as portfolio_router
-    from server.routes.service_health import create_router as service_health_router
-    from server.routes.session_start_account_truth import (
-        create_router as session_start_account_truth_router,
-    )
-    from server.routes.settings import create_router as settings_router
-    from server.routes.signals import create_router as signals_router
-    from server.routes.signed_broker_adapter_release_review import (
-        create_router as signed_broker_adapter_release_review_router,
-    )
-    from server.routes.strategy_learning import (
-        create_router as strategy_learning_router,
-    )
-    from server.routes.strategy_promotion import (
-        create_router as strategy_promotion_router,
-    )
-    from server.routes.trading import create_router as trading_router
-    from server.ws.handlers import router as ws_router
+    from server.composition.router_registry import install_routers
 
-    app.include_router(service_health_router())
-    app.include_router(market_router())
-    app.include_router(acceptance_audit_router())
-    app.include_router(account_strategy_router())
-    app.include_router(account_truth_router())
-    app.include_router(ai_external_research_router())
-    app.include_router(ai_memory_informed_analyses_router())
-    app.include_router(ai_provider_connectivity_router())
-    app.include_router(ai_research_router())
-    app.include_router(ai_reviewed_memory_retrievals_router())
-    app.include_router(ai_research_task_analysis_reviews_router())
-    app.include_router(ai_research_task_analyses_router())
-    app.include_router(ai_research_tasks_router())
-    app.include_router(automation_router())
-    app.include_router(broker_gateway_router())
-    app.include_router(broker_connector_soak_router())
-    app.include_router(signed_broker_adapter_release_review_router())
-    app.include_router(capital_authorization_router())
-    app.include_router(capital_scaling_review_router())
-    app.include_router(controlled_broker_submission_router())
-    app.include_router(controlled_broker_write_release_router())
-    app.include_router(controlled_submission_ledger_posting_router())
-    app.include_router(controlled_submission_ledger_correction_router())
-    app.include_router(controlled_session_envelope_router())
-    app.include_router(controlled_session_budget_reservation_router())
-    app.include_router(controlled_session_runtime_authority_router())
-    app.include_router(controlled_session_runtime_rate_limiter_router())
-    app.include_router(controlled_session_automatic_pause_router())
-    app.include_router(execution_reconciliation_router())
-    app.include_router(execution_gateway_verification_router())
-    app.include_router(ledger_router())
-    app.include_router(operations_router())
-    app.include_router(per_order_confirmation_router())
-    app.include_router(session_start_account_truth_router())
-    app.include_router(portfolio_router())
-    app.include_router(signals_router())
-    app.include_router(decision_router())
-    app.include_router(strategy_learning_router())
-    app.include_router(strategy_promotion_router())
-    app.include_router(backtest_router())
-    app.include_router(settings_router())
-    app.include_router(trading_router())
-    app.include_router(ws_router)
+    install_routers(app)
 
     # 挂载前端静态文件（生产构建）
     dist_dir = Path("web/dist")

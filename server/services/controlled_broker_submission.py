@@ -11,11 +11,11 @@ from typing import Any, Callable
 from server.services.execution_gateway_verification_binding import (
     build_execution_gateway_order_contract,
 )
+from server.services.execution_identity import build_order_fingerprint
 from server.services.operator_approval import (
     resolve_operator_approval,
     resolve_operator_approval_with_proof,
 )
-from server.services.per_order_confirmation import build_order_fingerprint
 
 CONTROLLED_BROKER_SUBMISSION_SCHEMA_VERSION = "karkinos.controlled_broker_submission.v1"
 CONTROLLED_BROKER_SUBMISSION_STATUS_SCHEMA_VERSION = (

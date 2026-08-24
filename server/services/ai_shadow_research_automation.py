@@ -55,7 +55,7 @@ from server.ai_runtime.strategy_research import (
     HypothesisGenerationRequest,
     StrategyResearchRejected,
     StrategyResearchSelection,
-    _rolling_oos_parameters,
+    rolling_oos_parameters,
 )
 from server.bootstrap import build_strategy
 from server.config import BacktestConfig
@@ -5692,7 +5692,7 @@ class AiShadowResearchAutomationService:
             commission_calc=commission_calc,
             db=None,
         ).run()
-        min_train, test_window, step = _rolling_oos_parameters(len(result.equity_curve))
+        min_train, test_window, step = rolling_oos_parameters(len(result.equity_curve))
         request.oos_min_train_points = min_train
         request.oos_test_window_points = test_window
         request.oos_step_points = step

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -15,11 +13,10 @@ from server.ai_runtime.external_promoted_analysis_memory import (
     ExternalPromotedAnalysisMemoryPromotionService,
     ExternalPromotedAnalysisMemoryRejected,
     ExternalPromotedAnalysisMemoryRevocationRequest,
-    ExternalPromotedAnalysisMemoryStore,
 )
-from server.ai_runtime.store import AiAuditStore, IdempotencyConflict
-from server.routes.ai_external_promoted_memory_analysis_reviews import (
-    build_human_external_promoted_memory_analysis_review_service,
+from server.ai_runtime.store import IdempotencyConflict
+from server.composition.ai_application_services import (
+    build_external_promoted_analysis_memory_promotion_service,
 )
 
 
@@ -49,15 +46,6 @@ class ExternalPromotedAnalysisMemoryRevocationPayload(BaseModel):
 
 def create_router() -> APIRouter:
     router = APIRouter(tags=["ai-research"])
-
-    # Phase 1.17 retrieves this exact memory type through a new, isolated
-    # current-evidence rebinding contract. The child route is local-only and
-    # does not load provider configuration or credentials.
-    from server.routes.ai_external_promoted_analysis_memory_retrievals import (
-        create_router as create_external_promoted_analysis_memory_retrieval_router,
-    )
-
-    router.include_router(create_external_promoted_analysis_memory_retrieval_router())
 
     @router.post(
         "/api/ai/external-promoted-memory-analysis-reviews/{review_id}/"
@@ -154,28 +142,6 @@ def create_router() -> APIRouter:
     return router
 
 
-def build_external_promoted_analysis_memory_promotion_service(
-    state,
-    *,
-    initialize: bool,
-) -> ExternalPromotedAnalysisMemoryPromotionService:
-    """Build the local-only boundary without loading model credentials."""
-    db_path = _database_path(state.db)
-    review_service = build_human_external_promoted_memory_analysis_review_service(
-        state,
-        initialize=initialize,
-    )
-    promotion_store = ExternalPromotedAnalysisMemoryStore(db_path)
-    if initialize:
-        promotion_store.init()
-    return ExternalPromotedAnalysisMemoryPromotionService(
-        review_service=review_service,
-        ai_store=AiAuditStore(db_path),
-        promotion_store=promotion_store,
-        now=_utc_now,
-    )
-
-
 def _service(
     *,
     initialize: bool,
@@ -189,17 +155,6 @@ def _service(
         state,
         initialize=initialize,
     )
-
-
-def _database_path(db) -> Path:
-    path = getattr(db, "_path", None)
-    if path is None:
-        raise ExternalPromotedAnalysisMemoryRejected("database path is unavailable")
-    return Path(path)
-
-
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _raise_domain_http_error(exc: Exception) -> None:

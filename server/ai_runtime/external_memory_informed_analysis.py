@@ -2277,3 +2277,9 @@ def _model_call_from_row(row: sqlite3.Row) -> ExternalModelCallRecord:
             str(row["finished_at"]) if row["finished_at"] is not None else None
         ),
     )
+
+
+# Public row-projection contract shared by versioned promoted-memory storage.
+EXTERNAL_MEMORY_ANALYSIS_STAGE_IDS = _STAGE_IDS
+record_from_row = _record_from_row
+model_call_from_row = _model_call_from_row

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import server.composition.controlled_execution_services as controlled_services
 import server.routes.controlled_session_runtime_rate_limiter as route_module
 from server.app import create_app
 from server.routes.controlled_session_runtime_rate_limiter import create_router
@@ -80,12 +81,14 @@ def test_route_service_wires_persistent_authentication_but_keeps_api_read_only(
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
-        "server.routes.controlled_session_runtime_authority._service",
-        lambda: fake_authority,
+        controlled_services,
+        "build_controlled_session_runtime_authority_service",
+        lambda *_args, **_kwargs: fake_authority,
     )
     monkeypatch.setattr(
-        "server.routes.controlled_session_automatic_pause._live_gate_service",
-        lambda: fake_live_gates,
+        controlled_services,
+        "build_controlled_session_live_gate_service",
+        lambda *_args, **_kwargs: fake_live_gates,
     )
 
     service = route_module._service()

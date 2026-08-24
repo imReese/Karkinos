@@ -15,6 +15,9 @@ from fastapi import BackgroundTasks
 from fastapi.routing import APIRoute
 
 from core.types import Symbol
+from server.projections import portfolio_application
+from server.projections import quote_status as quote_status_projection
+from server.services import decision_application, market_refresh
 from tests.analytics.test_strategy_validation_matrix import REQUIRED_STRATEGY_IDS
 from tests.route_assertions import registered_app_routes
 
@@ -41,6 +44,215 @@ def _run_market_fetch_inline(monkeypatch, request):
         return func(*args)
 
     monkeypatch.setattr(market_routes, "_run_blocking_fetch", inline_fetch)
+
+
+@pytest.fixture(autouse=True)
+def _bind_extracted_application_dependencies(monkeypatch):
+    """Keep legacy route monkeypatches bound to their canonical owners."""
+    from server.projections.portfolio_views import (
+        explainability,
+        historical_series,
+        intraday_series,
+        live_holdings,
+        manual_trade,
+        overview,
+        synthetic_series,
+    )
+    from server.routes import market as market_routes
+    from server.routes import portfolio as portfolio_routes
+    from server.services.market_views import (
+        backfill,
+        confirmed_nav,
+        fetch_runs,
+        health_inputs,
+        health_projection,
+    )
+
+    for module in (
+        explainability,
+        historical_series,
+        intraday_series,
+        live_holdings,
+        manual_trade,
+        overview,
+        synthetic_series,
+    ):
+        for route_name, value in vars(module).items():
+            if (
+                not route_name.startswith("_")
+                and route_name not in module.__all__
+                and callable(value)
+                and not isinstance(value, type)
+                and hasattr(portfolio_routes, route_name)
+            ):
+
+                def imported_portfolio_route_proxy(
+                    *args, _route_name=route_name, **kwargs
+                ):
+                    return getattr(portfolio_routes, _route_name)(*args, **kwargs)
+
+                monkeypatch.setattr(module, route_name, imported_portfolio_route_proxy)
+                continue
+            if (
+                not route_name.startswith("_")
+                or route_name.startswith("__")
+                or not callable(value)
+                or not hasattr(portfolio_routes, route_name)
+            ):
+                continue
+
+            def private_route_proxy(*args, _route_name=route_name, **kwargs):
+                return getattr(portfolio_routes, _route_name)(*args, **kwargs)
+
+            monkeypatch.setattr(module, route_name, private_route_proxy)
+
+        for public_name in module.__all__:
+            route_name = f"_{public_name}"
+            if not hasattr(portfolio_routes, route_name):
+                continue
+
+            def route_proxy(*args, _route_name=route_name, **kwargs):
+                return getattr(portfolio_routes, _route_name)(*args, **kwargs)
+
+            monkeypatch.setattr(module, public_name, route_proxy)
+
+    for module in (
+        backfill,
+        confirmed_nav,
+        fetch_runs,
+        health_inputs,
+        health_projection,
+    ):
+        for route_name, value in vars(module).items():
+            if (
+                not route_name.startswith("_")
+                and route_name not in module.__all__
+                and callable(value)
+                and not isinstance(value, type)
+                and hasattr(market_routes, route_name)
+            ):
+
+                def imported_market_route_proxy(
+                    *args, _route_name=route_name, **kwargs
+                ):
+                    return getattr(market_routes, _route_name)(*args, **kwargs)
+
+                monkeypatch.setattr(module, route_name, imported_market_route_proxy)
+                continue
+            if (
+                not route_name.startswith("_")
+                or route_name.startswith("__")
+                or not callable(value)
+                or not hasattr(market_routes, route_name)
+            ):
+                continue
+
+            def private_market_route_proxy(*args, _route_name=route_name, **kwargs):
+                return getattr(market_routes, _route_name)(*args, **kwargs)
+
+            monkeypatch.setattr(module, route_name, private_market_route_proxy)
+
+        for public_name in module.__all__:
+            route_name = f"_{public_name}"
+            if not hasattr(market_routes, route_name):
+                continue
+
+            def market_route_proxy(*args, _route_name=route_name, **kwargs):
+                return getattr(market_routes, _route_name)(*args, **kwargs)
+
+            monkeypatch.setattr(module, public_name, market_route_proxy)
+
+    monkeypatch.setattr(
+        market_refresh,
+        "fetch_latest_snapshot",
+        lambda *args, **kwargs: market_routes._fetch_latest_snapshot(*args, **kwargs),
+    )
+    monkeypatch.setattr(
+        market_refresh,
+        "fetch_provider_latest_with_timeout",
+        lambda *args, **kwargs: market_routes._fetch_provider_latest_with_timeout(
+            *args, **kwargs
+        ),
+    )
+    monkeypatch.setattr(
+        market_refresh,
+        "is_cn_trading_session",
+        lambda *args, **kwargs: market_routes.is_cn_trading_session(*args, **kwargs),
+    )
+    monkeypatch.setattr(
+        market_refresh,
+        "load_latest_snapshot_from_provider",
+        lambda *args, **kwargs: market_routes._load_latest_snapshot_from_provider(
+            *args, **kwargs
+        ),
+    )
+
+    def resolve_quote_status(*args, **kwargs):
+        try:
+            return market_routes._resolve_quote_status(*args, **kwargs)
+        except TypeError:
+            kwargs.pop("now", None)
+            return market_routes._resolve_quote_status(*args, **kwargs)
+
+    monkeypatch.setattr(market_refresh, "resolve_quote_status", resolve_quote_status)
+    monkeypatch.setattr(
+        market_refresh,
+        "run_blocking_fetch",
+        lambda *args, **kwargs: market_routes._run_blocking_fetch(*args, **kwargs),
+    )
+
+    monkeypatch.setattr(
+        portfolio_application,
+        "current_valuation_snapshot",
+        lambda *args, **kwargs: portfolio_routes._current_valuation_snapshot(
+            *args, **kwargs
+        ),
+    )
+    monkeypatch.setattr(
+        portfolio_application,
+        "get_shanghai_now",
+        lambda *args, **kwargs: portfolio_routes.get_shanghai_now(*args, **kwargs),
+    )
+    monkeypatch.setattr(
+        portfolio_application,
+        "position_quote_presentation",
+        lambda *args, **kwargs: portfolio_routes._position_quote_presentation(
+            *args, **kwargs
+        ),
+    )
+    monkeypatch.setattr(
+        portfolio_application,
+        "read_daily_ledger_entries",
+        lambda *args, **kwargs: portfolio_routes._read_daily_ledger_entries(
+            *args, **kwargs
+        ),
+    )
+    monkeypatch.setattr(
+        portfolio_application,
+        "rebuild_portfolio_from_ledger",
+        lambda *args, **kwargs: portfolio_routes.rebuild_portfolio_from_ledger(
+            *args, **kwargs
+        ),
+    )
+    monkeypatch.setattr(
+        portfolio_application,
+        "resolve_position_today_change",
+        lambda *args, **kwargs: portfolio_routes._resolve_position_today_change(
+            *args, **kwargs
+        ),
+    )
+    monkeypatch.setattr(
+        portfolio_application,
+        "resolve_projection_sources",
+        lambda *args, **kwargs: portfolio_routes._resolve_projection_sources(
+            *args, **kwargs
+        ),
+    )
+    monkeypatch.setattr(
+        quote_status_projection,
+        "get_shanghai_now",
+        lambda *args, **kwargs: portfolio_routes.get_shanghai_now(*args, **kwargs),
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -1407,7 +1619,7 @@ def test_market_data_health_treats_live_fund_fallback_as_supported(monkeypatch):
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
-        "server.routes.portfolio.get_shanghai_now",
+        "server.routes.market._shanghai_now",
         lambda now=None: datetime.fromisoformat("2026-06-15T11:11:36+08:00"),
     )
     monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
@@ -2935,7 +3147,7 @@ def test_market_quote_refresh_times_out_without_blocking_request(monkeypatch):
     monkeypatch.setattr(
         market_routes, "_load_latest_snapshot_from_provider", slow_fetch
     )
-    monkeypatch.setattr(market_routes, "_MANUAL_REFRESH_TIMEOUT_SECONDS", 0.001)
+    monkeypatch.setattr(market_refresh, "MANUAL_REFRESH_TIMEOUT_SECONDS", 0.001)
 
     async def slow_blocking_fetch(func, *args):
         await asyncio.sleep(0.05)
@@ -3842,7 +4054,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_when_tushare_times_out(
                 "display_name": "示例能源",
             }
 
-    monkeypatch.setattr(market_routes, "_PROVIDER_REFRESH_TIMEOUT_SECONDS", 0.001)
+    monkeypatch.setattr(market_refresh, "PROVIDER_REFRESH_TIMEOUT_SECONDS", 0.001)
     monkeypatch.setattr(
         "data.manager.build_sources",
         lambda **kwargs: {
@@ -8410,7 +8622,7 @@ def test_decision_today_returns_candidate_with_evidence_bundle(monkeypatch):
 
     fake_state = SimpleNamespace(db=FakeDb())
     monkeypatch.setattr(
-        decision_routes,
+        decision_application,
         "_account_truth_gate_evidence",
         lambda state: _decision_account_truth_evidence(),
     )
@@ -8679,7 +8891,7 @@ def test_decision_today_degrades_when_account_truth_score_degrades(monkeypatch):
         lambda: SimpleNamespace(db=FakeDb()),
     )
     monkeypatch.setattr(
-        decision_routes,
+        decision_application,
         "_account_truth_gate_evidence",
         lambda state: _decision_account_truth_evidence(
             gate_status="blocked",
@@ -8760,7 +8972,7 @@ def test_decision_today_requires_review_when_candidate_quote_is_stale(monkeypatc
         lambda: SimpleNamespace(db=FakeDb()),
     )
     monkeypatch.setattr(
-        decision_routes,
+        decision_application,
         "_account_truth_gate_evidence",
         lambda state: _decision_account_truth_evidence(),
     )
@@ -8858,7 +9070,7 @@ def test_decision_today_requires_strategy_attribution_for_assigned_strategy(
         db=FakeDb(),
     )
     monkeypatch.setattr(
-        decision_routes,
+        decision_application,
         "_account_truth_gate_evidence",
         lambda state: _decision_account_truth_evidence(),
     )
@@ -9206,7 +9418,7 @@ def test_decision_intraday_returns_stock_and_etf_candidates_only(monkeypatch):
 
     fake_state = SimpleNamespace(db=FakeDb())
     monkeypatch.setattr(
-        decision_routes,
+        decision_application,
         "_account_truth_gate_evidence",
         lambda state: _decision_account_truth_evidence(),
     )

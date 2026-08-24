@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import server.composition.controlled_execution_services as controlled_services
 import server.routes.controlled_broker_submission as route_module
 from server.app import create_app
 from server.routes.controlled_broker_submission import create_router
@@ -642,8 +643,9 @@ def test_route_service_is_default_closed_without_injected_release_provider(
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
     monkeypatch.setattr(
-        "server.routes.per_order_confirmation._service",
-        lambda: per_order,
+        controlled_services,
+        "build_per_order_confirmation_service",
+        lambda _: per_order,
     )
 
     service = route_module._service()
