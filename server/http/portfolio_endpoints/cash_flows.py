@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter
+
+from server.contracts.http.ledger_models import (
+    CashFlowCreate,
+    CashFlowResponse,
+    TradeCreate,
+    TradePreviewResponse,
+)
 
 
 def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
@@ -16,11 +24,6 @@ def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
             return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
         return value
 
-    CashFlowCreate = dependency("CashFlowCreate")
-    CashFlowResponse = dependency("CashFlowResponse")
-    Decimal = dependency("Decimal")
-    TradeCreate = dependency("TradeCreate")
-    TradePreviewResponse = dependency("TradePreviewResponse")
     _manual_trade_preview_payload = dependency("_manual_trade_preview_payload")
 
     @r.post("/cash-flow", response_model=CashFlowResponse)

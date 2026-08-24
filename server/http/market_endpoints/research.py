@@ -4,7 +4,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+
+from server.contracts.http.market_models import (
+    ResearchBoardItem,
+    ResearchBoardResponse,
+    ResearchNoteCreate,
+    ResearchNoteListResponse,
+    ResearchNoteResponse,
+    ResearchNoteUpdate,
+)
 
 
 def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
@@ -16,13 +25,6 @@ def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
             return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
         return value
 
-    HTTPException = dependency("HTTPException")
-    ResearchBoardItem = dependency("ResearchBoardItem")
-    ResearchBoardResponse = dependency("ResearchBoardResponse")
-    ResearchNoteCreate = dependency("ResearchNoteCreate")
-    ResearchNoteListResponse = dependency("ResearchNoteListResponse")
-    ResearchNoteResponse = dependency("ResearchNoteResponse")
-    ResearchNoteUpdate = dependency("ResearchNoteUpdate")
     _build_market_data_health_response = dependency(
         "_build_market_data_health_response"
     )

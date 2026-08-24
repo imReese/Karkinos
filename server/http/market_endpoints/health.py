@@ -4,7 +4,20 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+
+from server.contracts.http.market import (
+    ConfirmedFundNavRefreshRequest,
+    ConfirmedFundNavRefreshResponse,
+    InstrumentMetadataBackfillRequest,
+    InstrumentMetadataBackfillResponse,
+    MarketBarsBackfillRequest,
+    MarketBarsBackfillResponse,
+)
+from server.contracts.http.market_models import (
+    MarketDataHealthResponse,
+    QuoteFetchRunResponse,
+)
 
 
 def create_router(facade: Any) -> APIRouter:
@@ -16,17 +29,6 @@ def create_router(facade: Any) -> APIRouter:
             return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
         return value
 
-    ConfirmedFundNavRefreshRequest = dependency("ConfirmedFundNavRefreshRequest")
-    ConfirmedFundNavRefreshResponse = dependency("ConfirmedFundNavRefreshResponse")
-    HTTPException = dependency("HTTPException")
-    InstrumentMetadataBackfillRequest = dependency("InstrumentMetadataBackfillRequest")
-    InstrumentMetadataBackfillResponse = dependency(
-        "InstrumentMetadataBackfillResponse"
-    )
-    MarketBarsBackfillRequest = dependency("MarketBarsBackfillRequest")
-    MarketBarsBackfillResponse = dependency("MarketBarsBackfillResponse")
-    MarketDataHealthResponse = dependency("MarketDataHealthResponse")
-    QuoteFetchRunResponse = dependency("QuoteFetchRunResponse")
     _backfill_instrument_metadata = dependency("_backfill_instrument_metadata")
     _backfill_market_bars = dependency("_backfill_market_bars")
     _build_market_data_health_response = dependency(
@@ -35,6 +37,8 @@ def create_router(facade: Any) -> APIRouter:
     _merged_watchlist_assets = dependency("_merged_watchlist_assets")
     _quote_fetch_run_response = dependency("_quote_fetch_run_response")
     _refresh_confirmed_fund_nav = dependency("_refresh_confirmed_fund_nav")
+    _run_blocking_fetch = dependency("_run_blocking_fetch")
+    _shanghai_now = dependency("_shanghai_now")
     _with_default_market_indices = dependency("_with_default_market_indices")
 
     @r.get("/data-health")
@@ -109,6 +113,11 @@ def create_router(facade: Any) -> APIRouter:
         from server.dependencies import get_app_state
 
         state = get_app_state()
-        return await _refresh_confirmed_fund_nav(state, request)
+        return await _refresh_confirmed_fund_nav(
+            state,
+            request,
+            run_blocking_fetch=_run_blocking_fetch,
+            shanghai_now=_shanghai_now,
+        )
 
     return r

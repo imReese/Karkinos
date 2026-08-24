@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+
+from server.contracts.http.market_models import (
+    MarketCalendarSnapshotResponse,
+    MarketCalendarSyncRequest,
+    MarketCalendarVerificationRequest,
+)
 
 
 def create_router(facade: Any) -> APIRouter:
@@ -16,10 +22,6 @@ def create_router(facade: Any) -> APIRouter:
             return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
         return value
 
-    HTTPException = dependency("HTTPException")
-    MarketCalendarSnapshotResponse = dependency("MarketCalendarSnapshotResponse")
-    MarketCalendarSyncRequest = dependency("MarketCalendarSyncRequest")
-    MarketCalendarVerificationRequest = dependency("MarketCalendarVerificationRequest")
     _market_calendar_snapshot_response = dependency(
         "_market_calendar_snapshot_response"
     )

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+
+from core.types import AssetClass
+from server.contracts.http.market import QuoteRefreshRequest, QuoteRefreshResponse
 
 
 def create_router(facade: Any) -> APIRouter:
@@ -16,10 +19,6 @@ def create_router(facade: Any) -> APIRouter:
             return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
         return value
 
-    AssetClass = dependency("AssetClass")
-    HTTPException = dependency("HTTPException")
-    QuoteRefreshRequest = dependency("QuoteRefreshRequest")
-    QuoteRefreshResponse = dependency("QuoteRefreshResponse")
     _ASSET_CLASS_MAP = dependency("_ASSET_CLASS_MAP")
     _create_manual_quote_fetch_run = dependency("_create_manual_quote_fetch_run")
     _default_refresh_symbols = dependency("_default_refresh_symbols")

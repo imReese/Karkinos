@@ -35,6 +35,9 @@ _ASSET_CLASS_MAP = {
 async def refresh_confirmed_fund_nav(
     state,
     request: ConfirmedFundNavRefreshRequest,
+    *,
+    run_blocking_fetch=_run_blocking_fetch,
+    shanghai_now=_shanghai_now,
 ) -> ConfirmedFundNavRefreshResponse:
     """Run an explicit, audited, confirmation-only fund NAV ingestion batch."""
     from server.services.fund_nav_sync import (
@@ -83,14 +86,14 @@ async def refresh_confirmed_fund_nav(
     _, _, _, latest_quotes = extract_runtime_portfolio(state)
     watchlist = [(Symbol(symbol), AssetClass.FUND) for symbol in requested_symbols]
     try:
-        result = await _run_blocking_fetch(
+        result = await run_blocking_fetch(
             partial(
                 refresh_fund_nav_quotes,
                 state.config,
                 db,
                 watchlist,
                 latest_quotes,
-                now=_shanghai_now(),
+                now=shanghai_now(),
                 ttl_seconds=0,
                 confirmation_only=True,
                 request_id=request.request_id,

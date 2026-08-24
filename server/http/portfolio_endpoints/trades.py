@@ -2,9 +2,20 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter
+
+from server.contracts.http.ledger_models import (
+    PendingFundOrderResponse,
+    TradeCreate,
+    TradeResponse,
+)
+from server.services.manual_trade_fees import (
+    MANUAL_FEE_INPUT_RULE_ID,
+    MANUAL_FEE_INPUT_RULE_VERSION,
+)
 
 
 def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
@@ -16,14 +27,6 @@ def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
             return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
         return value
 
-    Decimal = dependency("Decimal")
-    HTTPException = dependency("HTTPException")
-    MANUAL_FEE_INPUT_RULE_ID = dependency("MANUAL_FEE_INPUT_RULE_ID")
-    MANUAL_FEE_INPUT_RULE_VERSION = dependency("MANUAL_FEE_INPUT_RULE_VERSION")
-    PendingFundOrderResponse = dependency("PendingFundOrderResponse")
-    Symbol = dependency("Symbol")
-    TradeCreate = dependency("TradeCreate")
-    TradeResponse = dependency("TradeResponse")
     _ensure_asset_config = dependency("_ensure_asset_config")
     _fund_target_trade_date = dependency("_fund_target_trade_date")
     _manual_trade_fee_breakdown = dependency("_manual_trade_fee_breakdown")

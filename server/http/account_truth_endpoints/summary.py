@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+
+from account_truth.broker_evidence import BrokerEvidenceReadRejected
+from account_truth.evidence_scope_review import EvidenceScopeReviewReadRejected
+from account_truth.manual_review import ManualReviewReadRejected
+from account_truth.reconciliation import ReconciliationStatus
+from server.contracts.http.account_truth import BrokerStatementPreviewCreate
 
 
 def create_router(facade: Any) -> APIRouter:
@@ -16,12 +22,6 @@ def create_router(facade: Any) -> APIRouter:
             return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
         return value
 
-    BrokerEvidenceReadRejected = dependency("BrokerEvidenceReadRejected")
-    BrokerStatementPreviewCreate = dependency("BrokerStatementPreviewCreate")
-    EvidenceScopeReviewReadRejected = dependency("EvidenceScopeReviewReadRejected")
-    HTTPException = dependency("HTTPException")
-    ManualReviewReadRejected = dependency("ManualReviewReadRejected")
-    ReconciliationStatus = dependency("ReconciliationStatus")
     _account_truth_read_http_exception = dependency(
         "_account_truth_read_http_exception"
     )

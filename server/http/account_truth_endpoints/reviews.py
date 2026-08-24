@@ -6,6 +6,32 @@ from typing import Any
 
 from fastapi import APIRouter
 
+from account_truth.broker_evidence import BrokerEvidenceReadRejected
+from account_truth.citic_source_canonical_resolution import (
+    CiticSourceCanonicalResolutionReadRejected,
+    CiticSourceCanonicalResolutionRejected,
+)
+from account_truth.evidence_scope_review import (
+    EvidenceScopeReviewReadRejected,
+    EvidenceScopeReviewRejected,
+)
+from account_truth.manual_review import ManualReviewReadRejected
+from server.contracts.http.account_truth import (
+    CiticSourceCanonicalResolutionCreate,
+    CiticSourceCanonicalResolutionRevoke,
+    EvidenceScopeReviewCreate,
+    EvidenceScopeReviewRevoke,
+    ReviewedFeeSchedulePreviewCreate,
+    ReviewedFeeScheduleReviewCreate,
+    ReviewedFeeScheduleReviewRevoke,
+)
+from server.services.reviewed_fee_schedule import (
+    REVIEWED_FEE_SCHEDULE_APPROVAL_CONFIRMATION,
+    REVIEWED_FEE_SCHEDULE_REVOCATION_CONFIRMATION,
+    ReviewedFeeScheduleReadRejected,
+    ReviewedFeeScheduleRejected,
+)
+
 
 def create_router(facade: Any) -> APIRouter:
     r = APIRouter(prefix="/api/account-truth", tags=["account-truth"])
@@ -16,35 +42,6 @@ def create_router(facade: Any) -> APIRouter:
             return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
         return value
 
-    BrokerEvidenceReadRejected = dependency("BrokerEvidenceReadRejected")
-    CiticSourceCanonicalResolutionCreate = dependency(
-        "CiticSourceCanonicalResolutionCreate"
-    )
-    CiticSourceCanonicalResolutionReadRejected = dependency(
-        "CiticSourceCanonicalResolutionReadRejected"
-    )
-    CiticSourceCanonicalResolutionRejected = dependency(
-        "CiticSourceCanonicalResolutionRejected"
-    )
-    CiticSourceCanonicalResolutionRevoke = dependency(
-        "CiticSourceCanonicalResolutionRevoke"
-    )
-    EvidenceScopeReviewCreate = dependency("EvidenceScopeReviewCreate")
-    EvidenceScopeReviewReadRejected = dependency("EvidenceScopeReviewReadRejected")
-    EvidenceScopeReviewRejected = dependency("EvidenceScopeReviewRejected")
-    EvidenceScopeReviewRevoke = dependency("EvidenceScopeReviewRevoke")
-    ManualReviewReadRejected = dependency("ManualReviewReadRejected")
-    REVIEWED_FEE_SCHEDULE_APPROVAL_CONFIRMATION = dependency(
-        "REVIEWED_FEE_SCHEDULE_APPROVAL_CONFIRMATION"
-    )
-    REVIEWED_FEE_SCHEDULE_REVOCATION_CONFIRMATION = dependency(
-        "REVIEWED_FEE_SCHEDULE_REVOCATION_CONFIRMATION"
-    )
-    ReviewedFeeSchedulePreviewCreate = dependency("ReviewedFeeSchedulePreviewCreate")
-    ReviewedFeeScheduleReadRejected = dependency("ReviewedFeeScheduleReadRejected")
-    ReviewedFeeScheduleRejected = dependency("ReviewedFeeScheduleRejected")
-    ReviewedFeeScheduleReviewCreate = dependency("ReviewedFeeScheduleReviewCreate")
-    ReviewedFeeScheduleReviewRevoke = dependency("ReviewedFeeScheduleReviewRevoke")
     _account_truth_read_http_exception = dependency(
         "_account_truth_read_http_exception"
     )

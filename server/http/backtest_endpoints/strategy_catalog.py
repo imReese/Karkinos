@@ -6,6 +6,15 @@ from typing import Any
 
 from fastapi import APIRouter
 
+from server.config import BacktestConfig
+from server.contracts.http.backtest import (
+    StrategyInfoResponse,
+    StrategyPromotionReadinessResponse,
+    StrategySignalPreviewRequest,
+    StrategySignalPreviewResponse,
+    StrategyValidationMatrixResponse,
+)
+
 
 def create_router(facade: Any) -> APIRouter:
     r = APIRouter(prefix="/api/backtest", tags=["backtest"])
@@ -16,15 +25,6 @@ def create_router(facade: Any) -> APIRouter:
             return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
         return value
 
-    Any = dependency("Any")
-    BacktestConfig = dependency("BacktestConfig")
-    StrategyInfoResponse = dependency("StrategyInfoResponse")
-    StrategyPromotionReadinessResponse = dependency(
-        "StrategyPromotionReadinessResponse"
-    )
-    StrategySignalPreviewRequest = dependency("StrategySignalPreviewRequest")
-    StrategySignalPreviewResponse = dependency("StrategySignalPreviewResponse")
-    StrategyValidationMatrixResponse = dependency("StrategyValidationMatrixResponse")
     _run_strategy_signal_preview = dependency("_run_strategy_signal_preview")
     _validate_signal_preview_strategy_params = dependency(
         "_validate_signal_preview_strategy_params"
