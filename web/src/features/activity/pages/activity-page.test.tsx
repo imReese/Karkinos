@@ -1,9 +1,17 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { PreferencesProvider } from '../../../app/providers/preferences-provider';
 import { ActivityPage } from './activity-page';
+
+type FetchInput = RequestInfo | URL;
 
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -13,7 +21,7 @@ function jsonResponse(body: unknown) {
 }
 
 function installActivityFetchMock(extraLedgerEntries: unknown[] = []) {
-  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+  const fetchMock = vi.fn(async (input: FetchInput, _init?: RequestInit) => {
     const url =
       typeof input === 'string'
         ? input
@@ -119,7 +127,7 @@ function renderActivityPage(
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
   }));
-  installActivityFetchMock(extraLedgerEntries);
+  const fetchMock = installActivityFetchMock(extraLedgerEntries);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -131,6 +139,7 @@ function renderActivityPage(
       </QueryClientProvider>
     </PreferencesProvider>,
   );
+  return fetchMock;
 }
 
 afterEach(() => {
@@ -431,6 +440,158 @@ test('defers the portfolio positions projection until entry tools open', async (
       String(input).includes('/api/portfolio/positions'),
     ),
   ).toBe(true);
+});
+
+test('reuses an unknown cash-flow request identity and rotates it after success', async () => {
+  const fetchMock = renderActivityPage('zh');
+  await screen.findByText('最近流水');
+  const defaultFetch = fetchMock.getMockImplementation();
+  const mutationBodies: Array<Record<string, unknown>> = [];
+  fetchMock.mockImplementation(async (input, init) => {
+    const url = String(input);
+    if (url.includes('/api/ledger/cash-flows')) {
+      mutationBodies.push(JSON.parse(String(init?.body)));
+      if (mutationBodies.length === 1) {
+        throw new TypeError('network response lost');
+      }
+      return jsonResponse({ id: mutationBodies.length });
+    }
+    return (
+      defaultFetch?.(input, init) ?? new Response('Not found', { status: 404 })
+    );
+  });
+
+  fireEvent.click(screen.getByRole('button', { name: '新增流水' }));
+  const dialog = await screen.findByRole('dialog', { name: '新增流水' });
+  fireEvent.click(within(dialog).getByRole('button', { name: '资金流水' }));
+  const occurredAt = await screen.findByLabelText('资金流水发生时间');
+  const amount = screen.getByLabelText('金额');
+  const submit = screen.getByRole('button', { name: '保存资金流水' });
+  fireEvent.change(occurredAt, { target: { value: '2026-08-26T10:00' } });
+  fireEvent.change(amount, { target: { value: '100' } });
+
+  fireEvent.click(submit);
+  await waitFor(() => expect(mutationBodies).toHaveLength(1));
+  await waitFor(() => expect(submit.hasAttribute('disabled')).toBe(false));
+
+  fireEvent.click(submit);
+  await waitFor(() => expect(mutationBodies).toHaveLength(2));
+  expect(mutationBodies[1]?.request_id).toBe(mutationBodies[0]?.request_id);
+  expect(mutationBodies[1]?.operator_id).toBe(mutationBodies[0]?.operator_id);
+
+  await screen.findByText('资金流水已保存');
+  fireEvent.change(screen.getByLabelText('资金流水发生时间'), {
+    target: { value: '2026-08-26T10:00' },
+  });
+  fireEvent.change(screen.getByLabelText('金额'), {
+    target: { value: '100' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: '保存资金流水' }));
+
+  await waitFor(() => expect(mutationBodies).toHaveLength(3));
+  expect(mutationBodies[2]?.request_id).not.toBe(mutationBodies[1]?.request_id);
+});
+
+test('retains fund order identities independently after partial batch failure', async () => {
+  const fetchMock = renderActivityPage('zh');
+  await screen.findByText('最近流水');
+  const defaultFetch = fetchMock.getMockImplementation();
+  const mutationBodies: Array<Record<string, unknown>> = [];
+  let positionsFetchCount = 0;
+  fetchMock.mockImplementation(async (input, init) => {
+    const url = String(input);
+    if (url.includes('/api/portfolio/positions')) {
+      positionsFetchCount += 1;
+      const positions = [
+        { symbol: 'FUND-A', display_name: '基金 A', asset_class: 'fund' },
+        { symbol: 'FUND-B', display_name: '基金 B', asset_class: 'fund' },
+      ];
+      return jsonResponse(
+        positionsFetchCount === 1 ? positions : [...positions].reverse(),
+      );
+    }
+    if (url.includes('/api/portfolio/trade')) {
+      mutationBodies.push(JSON.parse(String(init?.body)));
+      if (mutationBodies.length === 2) {
+        throw new TypeError('network response lost');
+      }
+      if (mutationBodies.length === 3) {
+        return new Response(JSON.stringify({ detail: 'fund order failed' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return jsonResponse({ id: mutationBodies.length });
+    }
+    return (
+      defaultFetch?.(input, init) ?? new Response('Not found', { status: 404 })
+    );
+  });
+
+  fireEvent.click(screen.getByRole('button', { name: '新增流水' }));
+  const dialog = await screen.findByRole('dialog', { name: '新增流水' });
+  fireEvent.click(within(dialog).getByRole('button', { name: '批量基金加仓' }));
+  fireEvent.change(await screen.findByLabelText('FUND-A 申购金额'), {
+    target: { value: '100' },
+  });
+  fireEvent.change(screen.getByLabelText('FUND-B 申购金额'), {
+    target: { value: '200' },
+  });
+
+  fireEvent.click(screen.getByRole('button', { name: '保存批量加仓' }));
+  await waitFor(() => expect(mutationBodies).toHaveLength(2));
+  await waitFor(() =>
+    expect(
+      screen
+        .getByRole('button', { name: '保存批量加仓' })
+        .hasAttribute('disabled'),
+    ).toBe(false),
+  );
+
+  const firstFundA = mutationBodies[0];
+  const firstFundB = mutationBodies[1];
+  expect(firstFundA?.symbol).toBe('FUND-A');
+  expect(firstFundB?.symbol).toBe('FUND-B');
+  await waitFor(() =>
+    expect(
+      screen
+        .getAllByRole('spinbutton')
+        .map((input) => input.getAttribute('aria-label')),
+    ).toEqual(['FUND-B 申购金额', 'FUND-A 申购金额']),
+  );
+
+  fireEvent.change(screen.getByLabelText('FUND-A 申购金额'), {
+    target: { value: '150' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: '保存批量加仓' }));
+  expect(
+    await screen.findAllByText('Saved fund order changed: FUND-A'),
+  ).not.toHaveLength(0);
+  expect(mutationBodies).toHaveLength(2);
+
+  fireEvent.change(screen.getByLabelText('FUND-A 申购金额'), {
+    target: { value: '100' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: '保存批量加仓' }));
+  await waitFor(() => expect(mutationBodies).toHaveLength(3));
+  expect(mutationBodies[2]?.symbol).toBe('FUND-B');
+  expect(mutationBodies[2]?.command_id).toBe(firstFundB?.command_id);
+  expect(
+    mutationBodies.filter((body) => body.symbol === 'FUND-A'),
+  ).toHaveLength(1);
+
+  fireEvent.change(screen.getByLabelText('FUND-B 申购金额'), {
+    target: { value: '250' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: '保存批量加仓' }));
+  await waitFor(() => expect(mutationBodies).toHaveLength(4));
+  expect(mutationBodies[3]?.symbol).toBe('FUND-B');
+  expect(mutationBodies[3]?.amount).toBe(250);
+  expect(mutationBodies[3]?.command_id).not.toBe(firstFundB?.command_id);
+  expect(
+    mutationBodies.filter((body) => body.symbol === 'FUND-A'),
+  ).toHaveLength(1);
+  await screen.findByText('交易已保存');
 });
 
 test('keeps financial direction colors separate from system state colors', async () => {
