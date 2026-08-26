@@ -77,6 +77,7 @@ class AiShadowResearchCandidateWorkflowMixin:
             market_date=str(run["market_date"]),
             call_kind="hypothesis_iteration",
             call_limit=policy.max_provider_calls_per_market_date,
+            daily_token_budget=policy.daily_token_budget,
             now=self._utc_now(),
         )
         if call_reused:
@@ -196,6 +197,7 @@ class AiShadowResearchCandidateWorkflowMixin:
                 market_date=str(run["market_date"]),
                 call_kind="critique",
                 call_limit=policy.max_provider_calls_per_market_date,
+                daily_token_budget=policy.daily_token_budget,
                 now=self._utc_now(),
             )
             if call_reused:
