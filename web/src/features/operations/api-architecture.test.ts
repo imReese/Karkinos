@@ -201,6 +201,27 @@ function functionLineCounts(source: string) {
   });
 }
 
+function publicSymbolsFromModule(path: string) {
+  const source = readFileSync(path, 'utf8');
+  const declaredSymbols = Array.from(
+    source.matchAll(/^export (?:type|function) ([A-Za-z_$][\w$]*)/gm),
+    (match) => match[1],
+  );
+  const reexportedTypeSymbols = Array.from(
+    source.matchAll(
+      /^export\s+type\s*\{([\s\S]*?)\}\s*from\s*['"][^'"]+['"]\s*;/gm,
+    ),
+    (match) => match[1],
+  ).flatMap((exports) =>
+    exports
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .map((entry) => entry.split(/\s+as\s+/).at(-1)),
+  );
+  return declaredSymbols.concat(reexportedTypeSymbols);
+}
+
 test('operations API keeps its compatibility surface in one thin barrel', () => {
   const barrelSource = readFileSync(API_BARREL, 'utf8');
   const publicModules = Array.from(
@@ -211,14 +232,7 @@ test('operations API keeps its compatibility surface in one thin barrel', () => 
     .split('\n')
     .filter(Boolean)
     .filter((line) => !/^export \* from '[^']+';$/.test(line));
-  const publicSymbols = publicModules.flatMap((path) =>
-    Array.from(
-      readFileSync(path, 'utf8').matchAll(
-        /^export (?:type|function) ([A-Za-z_$][\w$]*)/gm,
-      ),
-      (match) => match[1],
-    ),
-  );
+  const publicSymbols = publicModules.flatMap(publicSymbolsFromModule);
 
   expect(nonBarrelLines).toEqual([]);
   expect(new Set(publicSymbols).size).toBe(publicSymbols.length);
