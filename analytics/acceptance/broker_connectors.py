@@ -76,7 +76,7 @@ def build_broker_connector_soak_foundation_acceptance_audit() -> AcceptanceAudit
                     "tests/test_broker_connector_soak.py",
                 ),
                 validation_commands=(
-                    "uv run pytest tests/test_broker_connector_soak.py -k 'market_calendar or twenty_healthy_days' -q",
+                    "uv run pytest tests/test_broker_connector_soak.py -k 'market_calendar or twenty_unsequenced_healthy_days or twenty_sequence_accepted_days' -q",
                 ),
             ),
             AcceptanceCriterion(
@@ -115,7 +115,7 @@ def build_broker_connector_soak_foundation_acceptance_audit() -> AcceptanceAudit
                     "docs/IMPLEMENTATION_LOG.md",
                 ),
                 validation_commands=(
-                    "uv run pytest tests/test_broker_connector_soak.py -k twenty_healthy_days -q",
+                    "uv run pytest tests/test_broker_connector_soak.py -k 'twenty_unsequenced_healthy_days or twenty_sequence_accepted_days' -q",
                 ),
             ),
             AcceptanceCriterion(

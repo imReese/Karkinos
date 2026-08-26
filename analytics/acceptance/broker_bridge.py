@@ -278,7 +278,7 @@ def _controlled_broker_bridge_foundation_criteria_part_2() -> (
                 "docs/README.en.md",
             ),
             validation_commands=(
-                "uv run pytest tests/test_strategy_promotion_pipeline.py tests/server/test_strategy_promotion_routes.py -k 'lifecycle or controlled_bridge or promotes_ready_strategy'",
+                "uv run pytest tests/test_strategy_promotion_pipeline.py tests/server/test_strategy_promotion_routes.py -k 'lifecycle or controlled_bridge or claimed_readiness or live_like_promotion'",
                 "npm --prefix web test -- decision-cockpit-page.test.tsx -t 'strategy promotion'",
             ),
         ),

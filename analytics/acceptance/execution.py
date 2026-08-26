@@ -77,7 +77,7 @@ def build_execution_batch_reconciliation_acceptance_audit() -> AcceptanceAudit:
                     "web/src/features/decision/components/decision-cockpit-page.test.tsx",
                 ),
                 validation_commands=(
-                    "uv run pytest tests/test_execution_batch_reconciliation.py tests/server/test_execution_reconciliation_routes.py -k 'plan_paper_actual or current_source' -q",
+                    "uv run pytest tests/test_execution_batch_reconciliation.py tests/server/test_execution_reconciliation_routes.py -k 'plan_paper_actual or rechecks_current_plan_paper_actual_sources' -q",
                     "npm --prefix web test -- plan-paper-actual-comparison decision-cockpit-page",
                 ),
             ),

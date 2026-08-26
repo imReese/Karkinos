@@ -172,7 +172,7 @@ def build_capital_scaling_evidence_resolution_acceptance_audit() -> AcceptanceAu
                     "tests/test_capital_scaling_evidence_resolution.py",
                 ),
                 validation_commands=(
-                    "uv run pytest tests/test_capital_scaling_evidence_resolution.py -k links_supported -q",
+                    "uv run pytest tests/test_capital_scaling_evidence_resolution.py -k resolver_links_direct_refs -q",
                 ),
             ),
             AcceptanceCriterion(
@@ -188,7 +188,7 @@ def build_capital_scaling_evidence_resolution_acceptance_audit() -> AcceptanceAu
                     "tests/test_capital_scaling_evidence_resolution.py",
                 ),
                 validation_commands=(
-                    "uv run pytest tests/test_capital_scaling_evidence_resolution.py -k 'non_clear or links_supported' -q",
+                    "uv run pytest tests/test_capital_scaling_evidence_resolution.py -k 'non_clear or resolver_links_direct_refs' -q",
                 ),
             ),
             AcceptanceCriterion(
@@ -460,7 +460,7 @@ def build_capital_scaling_operating_sample_acceptance_audit() -> AcceptanceAudit
                     "tests/test_capital_scaling_evidence_window.py",
                 ),
                 validation_commands=(
-                    "uv run pytest tests/test_capital_scaling_evidence_window.py -k terminal_outcome -q",
+                    "uv run pytest tests/test_capital_scaling_evidence_window.py -k rejected_partial_and_cancelled_outcomes -q",
                 ),
             ),
             AcceptanceCriterion(
@@ -492,7 +492,7 @@ def build_capital_scaling_operating_sample_acceptance_audit() -> AcceptanceAudit
                     "tests/test_capital_scaling_evidence_window.py",
                 ),
                 validation_commands=(
-                    "uv run pytest tests/test_capital_scaling_evidence_window.py -k 'clear_evidence_window or terminal_outcome' -q",
+                    "uv run pytest tests/test_capital_scaling_evidence_window.py -k 'clear_evidence_window or operating_sample_keeps_rejected_partial_and_cancelled_outcomes_distinct' -q",
                 ),
             ),
             AcceptanceCriterion(

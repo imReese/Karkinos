@@ -87,7 +87,7 @@ def build_controlled_broker_submission_acceptance_audit() -> AcceptanceAudit:
                     "tests/test_controlled_broker_submission.py",
                 ),
                 validation_commands=(
-                    "uv run pytest tests/test_controlled_broker_submission.py -k 'accepted or concurrent' -q",
+                    "uv run pytest tests/test_controlled_broker_submission.py -k 'signed_submit or concurrent' -q",
                 ),
             ),
             AcceptanceCriterion(
@@ -122,7 +122,7 @@ def build_controlled_broker_submission_acceptance_audit() -> AcceptanceAudit:
                     "tests/test_controlled_broker_submission.py",
                 ),
                 validation_commands=(
-                    "uv run pytest tests/test_controlled_broker_submission.py -k 'accepted or explicit_rejection or timeout' -q",
+                    "uv run pytest tests/test_controlled_broker_submission.py -k 'signed_submit or explicit_broker_rejection or unknown_submit' -q",
                 ),
             ),
             AcceptanceCriterion(
@@ -141,7 +141,7 @@ def build_controlled_broker_submission_acceptance_audit() -> AcceptanceAudit:
                     "tests/test_controlled_broker_submission.py",
                 ),
                 validation_commands=(
-                    "uv run pytest tests/test_controlled_broker_submission.py -k 'timeout or definitive_not_found' -q",
+                    "uv run pytest tests/test_controlled_broker_submission.py -k 'unknown_submit or definitive_not_found' -q",
                 ),
             ),
             AcceptanceCriterion(
