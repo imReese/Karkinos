@@ -21,78 +21,15 @@ import type {
   CiticHistoryXlsDirectoryStatus,
   CiticHistoryXlsDirectoryScan,
   BrokerStatementCollectorStatus,
-  ReviewedFeeSchedulePreview,
-  ReviewedFeeScheduleReviewStatus,
-  ReviewedFeeScheduleReviewCommand,
 } from './api-contracts';
-export function useReviewedFeeScheduleReviewQuery() {
-  return useQuery({
-    queryKey: ['account-truth-fee-schedule-review'],
-    queryFn: () =>
-      apiClient<ReviewedFeeScheduleReviewStatus>(
-        '/api/account-truth/fee-schedule/review',
-      ),
-    staleTime: 5_000,
-  });
-}
+import { postAccountTruthJson } from './api-request';
 
-export function useReviewedFeeSchedulePreviewMutation() {
-  return useMutation({
-    mutationFn: (payload: {
-      effective_start_date: string;
-      effective_end_date: string;
-      reviewed_asset_classes: ['stock'];
-    }) =>
-      postBrokerStatement<ReviewedFeeSchedulePreview>(
-        '/api/account-truth/fee-schedule/preview',
-        payload,
-      ),
-  });
-}
-
-export function useReviewedFeeScheduleApprovalMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: {
-      effective_start_date: string;
-      effective_end_date: string;
-      reviewed_asset_classes: ['stock'];
-      expected_preview_fingerprint: string;
-      reviewer: string;
-      confirmation: string;
-    }) =>
-      postBrokerStatement<ReviewedFeeScheduleReviewCommand>(
-        '/api/account-truth/fee-schedule/reviews',
-        payload,
-      ),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: ['account-truth-fee-schedule-review'],
-      });
-    },
-  });
-}
-
-export function useReviewedFeeScheduleRevocationMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: {
-      expected_review_id: string;
-      expected_review_fingerprint: string;
-      reviewer: string;
-      confirmation: string;
-    }) =>
-      postBrokerStatement<ReviewedFeeScheduleReviewCommand>(
-        '/api/account-truth/fee-schedule/reviews/revoke',
-        payload,
-      ),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: ['account-truth-fee-schedule-review'],
-      });
-    },
-  });
-}
+export {
+  useReviewedFeeScheduleApprovalMutation,
+  useReviewedFeeSchedulePreviewMutation,
+  useReviewedFeeScheduleReviewQuery,
+  useReviewedFeeScheduleRevocationMutation,
+} from './fee-schedule-api-hooks';
 
 export function useAccountTruthScoreQuery() {
   return useQuery({
@@ -330,26 +267,10 @@ export function useRecordReviewDecisionMutation() {
   });
 }
 
-async function postBrokerStatement<T>(path: string, payload: object) {
-  const response = await fetch(path, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(detail || `Request failed: ${response.status}`);
-  }
-  return (await response.json()) as T;
-}
-
 export function useBrokerStatementPreviewMutation() {
   return useMutation({
     mutationFn: (payload: { content: string; source_name: string }) =>
-      postBrokerStatement<BrokerStatementPreview>(
+      postAccountTruthJson<BrokerStatementPreview>(
         '/api/account-truth/broker-statement/preview',
         payload,
       ),
@@ -525,7 +446,7 @@ export function useCiticHistoryXlsQueryWindowReviewMutation() {
         content_base64: string;
       },
     ) =>
-      postBrokerStatement<CiticSourceQueryWindowReviewCommand>(
+      postAccountTruthJson<CiticSourceQueryWindowReviewCommand>(
         '/api/account-truth/citic-history-xls/query-window-reviews',
         payload,
       ),
@@ -537,7 +458,7 @@ export function useCiticHistoryXlsDirectoryQueryWindowReviewMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: CiticSourceQueryWindowReviewPayload) =>
-      postBrokerStatement<CiticSourceQueryWindowReviewCommand>(
+      postAccountTruthJson<CiticSourceQueryWindowReviewCommand>(
         '/api/account-truth/citic-history-xls/directory/query-window-reviews',
         payload,
       ),
@@ -553,7 +474,7 @@ export function useCiticHistoryXlsQueryWindowReviewRevokeMutation() {
       expected_active_review_id: string;
       expected_active_review_fingerprint: string;
     }) =>
-      postBrokerStatement<CiticSourceQueryWindowReviewCommand>(
+      postAccountTruthJson<CiticSourceQueryWindowReviewCommand>(
         '/api/account-truth/citic-history-xls/query-window-reviews/revoke',
         payload,
       ),
@@ -583,7 +504,7 @@ export function useCiticHistoryXlsSourceScopeReviewMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: CiticSourceScopeReviewPayload) =>
-      postBrokerStatement<CiticSourceScopeReviewCommand>(
+      postAccountTruthJson<CiticSourceScopeReviewCommand>(
         '/api/account-truth/citic-history-xls/source-scope-reviews',
         payload,
       ),
@@ -599,7 +520,7 @@ export function useCiticHistoryXlsSourceScopeReviewRevokeMutation() {
       expected_active_review_id: string;
       expected_active_review_fingerprint: string;
     }) =>
-      postBrokerStatement<CiticSourceScopeReviewCommand>(
+      postAccountTruthJson<CiticSourceScopeReviewCommand>(
         '/api/account-truth/citic-history-xls/source-scope-reviews/revoke',
         payload,
       ),
@@ -611,7 +532,7 @@ export function useBrokerStatementImportMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: { content: string; source_name: string }) =>
-      postBrokerStatement<BrokerStatementImportResult>(
+      postAccountTruthJson<BrokerStatementImportResult>(
         '/api/account-truth/broker-statement/import',
         payload,
       ),
