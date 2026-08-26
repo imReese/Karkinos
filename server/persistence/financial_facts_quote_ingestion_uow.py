@@ -7,7 +7,12 @@ import sqlite3
 from datetime import timezone
 from typing import Any
 
-from server.contracts.quote_ingestion import QuoteIngestionCommand
+from server.contracts.quote_ingestion import (
+    PUBLISHED_QUOTE_RUN_STATUSES,
+    QuoteIngestionCommand,
+    quote_authority_conflict_fields,
+    validate_quote_authority_time,
+)
 from server.persistence.database_normalization import stable_json_fingerprint
 from server.persistence.database_serialization import serialize_metadata_json
 from server.persistence.event_log import insert_event_sync
@@ -15,8 +20,6 @@ from server.persistence.financial_fact_event_payloads import (
     latest_quote_event_payload,
     quote_observation_rank,
 )
-
-PUBLISHED_QUOTE_RUN_STATUSES = frozenset({"success", "partial", "partial_success"})
 
 
 class QuoteIngestionUnitOfWorkMixin:
@@ -27,6 +30,10 @@ class QuoteIngestionUnitOfWorkMixin:
         command: QuoteIngestionCommand,
     ) -> dict[str, Any]:
         now = self._now(timezone.utc).isoformat()
+        validate_quote_authority_time(
+            quote_timestamp=command.quote_timestamp,
+            authority_timestamp=command.captured_at or now,
+        )
         with sqlite3.connect(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("BEGIN IMMEDIATE")
@@ -60,7 +67,7 @@ class QuoteIngestionUnitOfWorkMixin:
     ) -> dict[str, Any]:
         """Atomically materialize staged facts, valuation, and terminal run state."""
 
-        if status not in PUBLISHED_QUOTE_RUN_STATUSES:
+        if status not in PUBLISHED_QUOTE_RUN_STATUSES or failure_count != 0:
             raise ValueError("only publishable quote-run statuses may be materialized")
         now = self._now(timezone.utc).isoformat()
         with sqlite3.connect(self._path, timeout=2) as conn:
@@ -253,12 +260,16 @@ def _materialize_quote(
         if existing_latest is not None
         else None
     )
-    if (
-        existing_rank is not None
-        and existing_rank == candidate_rank
-        and _has_same_timestamp_financial_conflict(existing_latest, command)
-    ):
-        raise ValueError("quote financial facts conflict at the same timestamp")
+    if existing_rank is not None and existing_rank == candidate_rank:
+        conflict_fields = quote_authority_conflict_fields(
+            dict(existing_latest),
+            command.to_dict(),
+        )
+        if conflict_fields:
+            raise ValueError(
+                "quote authority facts conflict at the same timestamp: "
+                + ",".join(conflict_fields)
+            )
     if existing_rank is not None and existing_rank > candidate_rank:
         _materialize_daily_close(conn, command, materialized_at=materialized_at)
         return dict(existing_latest)
@@ -337,33 +348,6 @@ def _materialize_quote(
     return dict(latest)
 
 
-def _has_same_timestamp_financial_conflict(
-    existing: sqlite3.Row,
-    command: QuoteIngestionCommand,
-) -> bool:
-    for field in (
-        "price",
-        "previous_close",
-        "change",
-        "change_percent",
-        "volume",
-        "turnover",
-    ):
-        existing_value = existing[field]
-        candidate_value = getattr(command, field)
-        if (
-            existing_value is not None
-            and candidate_value is not None
-            and float(existing_value) != float(candidate_value)
-        ):
-            return True
-    return bool(
-        existing["nav_date"]
-        and command.nav_date
-        and str(existing["nav_date"]) != command.nav_date
-    )
-
-
 def _materialize_daily_close(
     conn: sqlite3.Connection,
     command: QuoteIngestionCommand,
@@ -374,14 +358,19 @@ def _materialize_daily_close(
         return
     existing = conn.execute(
         """
-        SELECT close_price FROM daily_close_snapshots
+        SELECT asset_class, close_price, source FROM daily_close_snapshots
         WHERE symbol = ? AND trade_date = ?
         LIMIT 1
         """,
         (command.symbol, command.daily_close_date),
     ).fetchone()
     if existing is not None:
-        if float(existing["close_price"]) != float(command.daily_close_price):
+        if (
+            float(existing["close_price"]) != float(command.daily_close_price)
+            or str(existing["asset_class"]) != command.asset_type
+            or str(existing["source"])
+            != (command.daily_close_source or "reported_previous_close")
+        ):
             raise ValueError("daily close evidence conflict")
         return
     conn.execute(

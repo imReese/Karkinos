@@ -3,9 +3,35 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from typing import Any
+from zoneinfo import ZoneInfo
+
+_SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
+_MIN_QUOTE_INSTANT = datetime.min.replace(tzinfo=timezone.utc)
+PUBLISHED_QUOTE_RUN_STATUSES = frozenset({"success"})
+_QUOTE_AUTHORITY_FIELDS: tuple[tuple[str, tuple[str, ...], bool], ...] = (
+    ("price", ("price", "value"), True),
+    ("previous_close", ("previous_close",), True),
+    ("change", ("change",), True),
+    ("change_percent", ("change_percent",), True),
+    ("volume", ("volume",), True),
+    ("turnover", ("turnover",), True),
+    ("quote_source", ("quote_source", "source"), False),
+    ("provider_name", ("provider_name",), False),
+    ("provider_status", ("provider_status",), False),
+    ("quote_status", ("quote_status", "status"), False),
+    ("stale_reason", ("stale_reason",), False),
+    ("error", ("error", "error_message"), False),
+    ("nav_date", ("nav_date",), False),
+    ("previous_close_date", ("previous_close_date",), False),
+    ("daily_close_price", ("daily_close_price",), True),
+    ("daily_close_date", ("daily_close_date",), False),
+    ("daily_close_source", ("daily_close_source",), False),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +75,10 @@ class QuoteIngestionCommand:
         _require_iso_datetime("quote_timestamp", self.quote_timestamp)
         if self.captured_at is not None:
             _require_iso_datetime("captured_at", self.captured_at)
+            validate_quote_authority_time(
+                quote_timestamp=self.quote_timestamp,
+                authority_timestamp=self.captured_at,
+            )
         if self.fetch_run_id is not None and not self.fetch_run_id.strip():
             raise ValueError("quote ingestion fetch_run_id must not be blank")
         if (self.daily_close_price is None) != (self.daily_close_date is None):
@@ -115,6 +145,80 @@ def _require_iso_datetime(name: str, value: str) -> None:
         raise ValueError(f"quote ingestion {name} must be an ISO datetime") from None
 
 
+def quote_timestamp_instant(value: Any) -> datetime:
+    """Normalize one quote timestamp to its canonical UTC instant."""
+
+    text = str(value or "").strip()
+    if not text:
+        return _MIN_QUOTE_INSTANT
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return _MIN_QUOTE_INSTANT
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=_SHANGHAI_TZ)
+    return parsed.astimezone(timezone.utc)
+
+
+def validate_quote_authority_time(
+    *,
+    quote_timestamp: str,
+    authority_timestamp: str,
+) -> None:
+    """Reject observations later than their explicit authoritative capture time."""
+
+    quote_instant = quote_timestamp_instant(quote_timestamp)
+    authority_instant = quote_timestamp_instant(authority_timestamp)
+    if quote_instant == _MIN_QUOTE_INSTANT:
+        raise ValueError("quote ingestion quote_timestamp must be an ISO datetime")
+    if authority_instant == _MIN_QUOTE_INSTANT:
+        raise ValueError("quote ingestion authority timestamp must be an ISO datetime")
+    if quote_instant > authority_instant:
+        raise ValueError(
+            "quote ingestion quote_timestamp must not be later than "
+            "the authoritative capture time"
+        )
+
+
+def quote_authority_conflict_fields(
+    left: Mapping[str, Any],
+    right: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """Return conflicting same-observation authority fields deterministically."""
+
+    conflicts: list[str] = []
+    for field_name, aliases, numeric in _QUOTE_AUTHORITY_FIELDS:
+        left_present, left_value = _authority_value(left, aliases)
+        right_present, right_value = _authority_value(right, aliases)
+        if not left_present or not right_present:
+            continue
+        if _normalized_authority_value(left_value, numeric=numeric) != (
+            _normalized_authority_value(right_value, numeric=numeric)
+        ):
+            conflicts.append(field_name)
+    return tuple(conflicts)
+
+
+def _authority_value(
+    row: Mapping[str, Any], aliases: tuple[str, ...]
+) -> tuple[bool, Any]:
+    for alias in aliases:
+        if alias in row:
+            return True, row[alias]
+    return False, None
+
+
+def _normalized_authority_value(value: Any, *, numeric: bool) -> Any:
+    if not numeric:
+        return None if value is None else str(value).strip()
+    if value is None:
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return str(value)
+
+
 def _require_positive_finite(name: str, value: float) -> None:
     _require_finite(name, value)
     if float(value) <= 0:
@@ -127,4 +231,10 @@ def _require_non_negative_finite(name: str, value: float) -> None:
         raise ValueError(f"quote ingestion {name} must be non-negative")
 
 
-__all__ = ["QuoteIngestionCommand"]
+__all__ = [
+    "PUBLISHED_QUOTE_RUN_STATUSES",
+    "QuoteIngestionCommand",
+    "quote_authority_conflict_fields",
+    "quote_timestamp_instant",
+    "validate_quote_authority_time",
+]

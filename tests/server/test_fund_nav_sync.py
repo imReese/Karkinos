@@ -191,7 +191,7 @@ def test_refresh_fund_nav_quotes_fetches_complete_batch_before_persisting(
     assert publication["status"] == "ready"
 
 
-def test_confirmation_only_supersedes_same_day_estimate_with_confirmed_nav(
+def test_confirmation_only_same_timestamp_authority_conflict_fails_closed(
     monkeypatch, tmp_path
 ):
     from server.services import fund_nav_sync
@@ -252,15 +252,20 @@ def test_confirmation_only_supersedes_same_day_estimate_with_confirmed_nav(
 
     latest = db.get_latest_quote_sync("019999", asset_type="fund")
     restored = {row["symbol"]: row for row in db.get_latest_quotes_sync()}["019999"]
-    assert result.refreshed == ["019999"]
-    assert result.failed == {}
+    assert result.refreshed == []
+    assert result.failed["__publication__"] == "quote_batch_publication_failed"
     assert confirmed_source.calls == [(Symbol("019999"), AssetClass.FUND)]
     assert estimate_source.calls == []
-    assert latest is not None
-    assert latest["quote_source"] == "tushare_fund_nav"
-    assert latest["nav_date"] == "2026-06-12"
-    assert latest["fetch_run_id"] == result.run_id
-    assert restored["quote_source"] == "tushare_fund_nav"
+    assert latest is None
+    assert restored["quote_source"] == "sina_fund_estimate"
+    assert restored["nav_date"] == "2026-06-11"
+    run = db.get_quote_fetch_run(result.run_id)
+    assert run is not None and run["status"] == "failed"
+    publication = db.get_runtime_control_sync("valuation_snapshot_publication")
+    assert publication is not None
+    assert publication["status"] == "failed"
+    assert publication["quote_fetch_run_id"] == result.run_id
+    assert publication["reason"] == "quote_batch_publication_failed"
 
 
 def test_confirmation_only_rejects_intraday_estimate(monkeypatch, tmp_path):

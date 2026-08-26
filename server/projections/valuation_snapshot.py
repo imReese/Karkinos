@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import hashlib
+import itertools
 import json
 from datetime import datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from data.market_data import is_fund_estimate_quote_source
+from server.contracts.quote_ingestion import (
+    quote_authority_conflict_fields,
+    quote_timestamp_instant,
+)
 
 VALUATION_POLICY_VERSION = "karkinos.persisted_valuation.v4"
 _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
@@ -56,19 +61,10 @@ def _quote_timestamp(row: dict[str, Any]) -> str:
 
 
 def _parse_timestamp(value: Any) -> datetime:
-    text = str(value or "").strip()
-    if not text:
-        return _MIN_TIMESTAMP
-    try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
-        return _MIN_TIMESTAMP
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=_SHANGHAI_TZ)
-    return parsed.astimezone(timezone.utc)
+    return quote_timestamp_instant(value)
 
 
-def _quote_rank(row: dict[str, Any]) -> tuple[datetime, int, datetime, int]:
+def _quote_rank(row: dict[str, Any]) -> tuple[datetime, int, datetime, int, str]:
     is_latest_projection = int(
         "asset_type" in row and "quote_timestamp" in row and "updated_at" in row
     )
@@ -79,6 +75,7 @@ def _quote_rank(row: dict[str, Any]) -> tuple[datetime, int, datetime, int]:
             row.get("captured_at") or row.get("updated_at") or row.get("created_at")
         ),
         int(row.get("id") or 0),
+        _canonical_json(row),
     )
 
 
@@ -86,14 +83,30 @@ def select_authoritative_quote_rows(
     rows: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Select one newest persisted observation for each instrument identity."""
-    selected: dict[tuple[str, str], dict[str, Any]] = {}
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for row in rows:
         identity = _quote_identity(row)
         if not identity[0]:
             continue
-        existing = selected.get(identity)
-        if existing is None or _quote_rank(row) > _quote_rank(existing):
-            selected[identity] = dict(row)
+        grouped.setdefault(identity, []).append(dict(row))
+
+    selected: dict[tuple[str, str], dict[str, Any]] = {}
+    for identity, observations in grouped.items():
+        by_instant: dict[datetime, list[dict[str, Any]]] = {}
+        for observation in observations:
+            by_instant.setdefault(
+                _parse_timestamp(_quote_timestamp(observation)), []
+            ).append(observation)
+        for instant, same_instant in by_instant.items():
+            for left, right in itertools.combinations(same_instant, 2):
+                conflict_fields = quote_authority_conflict_fields(left, right)
+                if conflict_fields:
+                    raise ValueError(
+                        "quote authority facts conflict at the same timestamp "
+                        f"for {identity[0]}/{identity[1]} at {instant.isoformat()}: "
+                        + ",".join(conflict_fields)
+                    )
+        selected[identity] = max(observations, key=_quote_rank)
     return [selected[key] for key in sorted(selected)]
 
 

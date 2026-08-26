@@ -18,6 +18,7 @@ from server.contracts.portfolio_trades import (
     PendingFundOrderWrite,
     PendingFundOrderWriteResult,
 )
+from server.contracts.quote_ingestion import PUBLISHED_QUOTE_RUN_STATUSES
 from server.persistence.event_log import insert_event_sync
 from server.persistence.financial_facts_ledger import (
     insert_ledger_entry_on_connection,
@@ -42,8 +43,6 @@ _CONFIRMED_FUND_NAV_SOURCES = {
     "eastmoney_fund_page",
     "tushare_fund_nav",
 }
-_PUBLISHED_QUOTE_RUN_STATUSES = {"success", "partial", "partial_success"}
-
 FailureInjector = Callable[[str], None]
 
 
@@ -365,7 +364,7 @@ def _load_confirmed_nav_evidence(
         raise RuntimeError("confirmed NAV run metadata is invalid")
     checks = {
         "run_status": str(evidence.get("run_status") or "")
-        in _PUBLISHED_QUOTE_RUN_STATUSES,
+        in PUBLISHED_QUOTE_RUN_STATUSES,
         "run_trigger": str(evidence.get("run_trigger") or "") == "fund_nav_sync",
         "confirmation_only": metadata.get("confirmation_only") is True,
         "manual_explicit_trigger": metadata.get("manual_explicit_trigger") is True,

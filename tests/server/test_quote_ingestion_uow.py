@@ -3,13 +3,17 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import replace
+from datetime import datetime
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
+from fastapi import HTTPException
 
 from server.contracts.quote_ingestion import QuoteIngestionCommand
 from server.db import AppDatabase
 from server.projections.portfolio_quotes import current_valuation_snapshot
+from server.projections.valuation_snapshot import select_authoritative_quote_rows
 from server.services.market_quote_ingestion import build_quote_ingestion_command
 
 pytestmark = pytest.mark.unit
@@ -63,6 +67,19 @@ def _table_count(path, table: str) -> int:
         return int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
 
 
+def _event_count(path, event_type: str, entity_id: str) -> int:
+    with sqlite3.connect(path) as conn:
+        return int(
+            conn.execute(
+                """
+                SELECT COUNT(*) FROM event_log
+                WHERE event_type = ? AND entity_id = ?
+                """,
+                (event_type, entity_id),
+            ).fetchone()[0]
+        )
+
+
 def _assert_published_snapshot_replays(db: AppDatabase) -> dict:
     publication = db.get_runtime_control_sync("valuation_snapshot_publication")
     assert publication is not None
@@ -111,6 +128,45 @@ def test_quote_ingestion_contract_rejects_invalid_timestamps(
         replace(_command(run_id=None), **changes)
 
 
+def test_quote_ingestion_contract_rejects_quote_after_captured_at() -> None:
+    with pytest.raises(ValueError, match="authoritative capture time"):
+        replace(
+            _command(run_id=None),
+            quote_timestamp="2026-08-26T10:00:02+08:00",
+            captured_at="2026-08-26T10:00:01+08:00",
+        )
+
+
+def test_quote_ingestion_uses_persisted_ingestion_time_when_capture_is_missing(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    authoritative_now = datetime(
+        2026,
+        8,
+        26,
+        10,
+        0,
+        1,
+        tzinfo=ZoneInfo("Asia/Shanghai"),
+    )
+    db._financial_facts._now = lambda tz=None: (
+        authoritative_now if tz is None else authoritative_now.astimezone(tz)
+    )
+    command = replace(
+        _command(run_id=None),
+        quote_timestamp="2026-08-26T10:00:02+08:00",
+        captured_at=None,
+    )
+
+    with pytest.raises(ValueError, match="authoritative capture time"):
+        db.persist_quote_ingestion_sync(command)
+
+    assert _table_count(db.path, "quote_snapshots") == 0
+    assert _table_count(db.path, "valuation_snapshots") == 0
+
+
 def test_provider_time_only_quote_binds_to_shanghai_capture_date() -> None:
     command = build_quote_ingestion_command(
         symbol="600001",
@@ -121,12 +177,12 @@ def test_provider_time_only_quote_binds_to_shanghai_capture_date() -> None:
         provider_status="live",
         quote_status="live",
         captured_reason="test",
-        captured_at="2026-08-26T00:30:00Z",
+        captured_at="2026-08-26T03:00:00Z",
         fetch_run_id=None,
     )
 
     assert command.quote_timestamp == "2026-08-26T10:30:00+08:00"
-    assert command.captured_at == "2026-08-26T00:30:00Z"
+    assert command.captured_at == "2026-08-26T03:00:00Z"
 
 
 def test_staged_quote_batch_is_invisible_until_atomic_publication(tmp_path) -> None:
@@ -178,6 +234,97 @@ def test_staged_quote_batch_is_invisible_until_atomic_publication(tmp_path) -> N
     assert current["quotes"][0]["previous_close_date"] == "2026-08-25"
 
 
+@pytest.mark.parametrize(
+    ("status", "stage_quote", "success_count", "failure_count"),
+    [
+        ("partial_success", True, 1, 1),
+        ("failed", False, 0, 1),
+    ],
+)
+def test_incomplete_quote_run_never_publishes_ready_valuation(
+    tmp_path,
+    status: str,
+    stage_quote: bool,
+    success_count: int,
+    failure_count: int,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    run_id = f"quote-run-{status}"
+    _create_run(db, run_id)
+    if stage_quote:
+        db.persist_quote_ingestion_sync(_command(run_id=run_id))
+
+    finished = db.finish_quote_fetch_run(
+        run_id=run_id,
+        finished_at="2026-08-26T10:00:02+08:00",
+        status=status,
+        success_count=success_count,
+        failure_count=failure_count,
+        metadata={"requested_symbols": ["600001", "600002"]},
+    )
+
+    assert finished is not None
+    assert finished["status"] == status
+    metadata = json.loads(finished["metadata_json"])
+    assert "valuation_snapshot_id" not in metadata
+    assert "valuation_snapshot_status" not in metadata
+    assert _table_count(db.path, "quote_snapshots") == 0
+    assert _table_count(db.path, "latest_quotes") == 0
+    assert _table_count(db.path, "valuation_snapshots") == 0
+    publication = db.get_runtime_control_sync("valuation_snapshot_publication")
+    assert publication == {
+        "status": "failed",
+        "quote_fetch_run_id": run_id,
+        "quote_fetch_run_status": status,
+        "reason": "quote_fetch_run_not_fully_successful",
+    }
+    with pytest.raises(HTTPException) as blocked:
+        current_valuation_snapshot(SimpleNamespace(db=db))
+    assert blocked.value.status_code == 503
+
+
+def test_identical_successful_quote_run_completion_retry_is_idempotent(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    run_id = "quote-run-success-retry"
+    command = _command(run_id=run_id)
+    _create_run(db, run_id)
+    db.persist_quote_ingestion_sync(command)
+    completion = {
+        "run_id": run_id,
+        "finished_at": "2026-08-26T10:00:02+08:00",
+        "status": "success",
+        "success_count": 1,
+        "failure_count": 0,
+        "cache_hit_count": 0,
+        "error_message": None,
+        "metadata": {"requested_symbols": [command.symbol]},
+    }
+
+    first = db.finish_quote_fetch_run(**completion)
+    publication = db.get_runtime_control_sync("valuation_snapshot_publication")
+    completed_events = _event_count(db.path, "task_run.completed", run_id)
+    retry = db.finish_quote_fetch_run(**completion)
+
+    assert retry == first
+    assert retry is not None and retry["status"] == "success"
+    assert db.get_runtime_control_sync("valuation_snapshot_publication") == publication
+    assert publication is not None and publication["status"] == "ready"
+    assert _event_count(db.path, "task_run.completed", run_id) == completed_events == 1
+    assert _table_count(db.path, "quote_snapshots") == 1
+    assert _table_count(db.path, "valuation_snapshots") == 1
+
+    with pytest.raises(ValueError, match="completion conflict"):
+        db.finish_quote_fetch_run(
+            **{**completion, "metadata": {"requested_symbols": ["DIFFERENT"]}}
+        )
+    assert db.get_quote_fetch_run(run_id)["status"] == "success"
+    assert db.get_runtime_control_sync("valuation_snapshot_publication") == publication
+
+
 def test_single_quote_publication_is_replayable_after_commit(tmp_path) -> None:
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -206,6 +353,71 @@ def test_same_timestamp_conflicting_financial_facts_fail_closed(tmp_path) -> Non
     assert publication == original_publication
     assert _table_count(db.path, "quote_snapshots") == 1
     _assert_published_snapshot_replays(db)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"price": 10.6},
+        {"quote_source": "other-source"},
+        {"provider_status": "partial"},
+        {"quote_status": "stale"},
+        {"stale_reason": "provider_error"},
+        {"nav_date": "2026-08-25"},
+    ],
+)
+def test_same_timestamp_authority_conflicts_are_rejected(
+    tmp_path,
+    changes: dict[str, object],
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    original = _command(run_id=None)
+    db.persist_quote_ingestion_sync(original)
+
+    with pytest.raises(ValueError, match="conflict at the same timestamp"):
+        db.persist_quote_ingestion_sync(replace(original, **changes))
+
+    latest = db.get_latest_quote_sync(original.symbol, original.asset_type)
+    assert latest is not None
+    assert latest["price"] == original.price
+    assert latest["quote_source"] == original.quote_source
+    assert latest["provider_status"] == original.provider_status
+    assert latest["quote_status"] == original.quote_status
+    assert _table_count(db.path, "quote_snapshots") == 1
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"price": 10.6},
+        {"quote_source": "other-source"},
+        {"provider_status": "partial"},
+        {"quote_status": "stale"},
+        {"stale_reason": "provider_error"},
+        {"error": "provider timeout"},
+    ],
+)
+def test_canonical_quote_selection_rejects_conflicts_independent_of_input_order(
+    changes: dict[str, object],
+) -> None:
+    original = {
+        "id": 1,
+        "symbol": "600001",
+        "asset_class": "stock",
+        "timestamp": "2026-08-26T10:00:00+08:00",
+        "price": 10.5,
+        "quote_source": "fixture",
+        "provider_status": "live",
+        "quote_status": "live",
+        "stale_reason": None,
+        "error": None,
+    }
+    conflicting = {**original, "id": 2, **changes}
+
+    for rows in ([original, conflicting], [conflicting, original]):
+        with pytest.raises(ValueError, match="conflict at the same timestamp"):
+            select_authoritative_quote_rows(rows)
 
 
 def test_quote_staging_rejects_conflicting_idempotency_replay(tmp_path) -> None:
@@ -276,7 +488,7 @@ def test_older_batch_observation_cannot_regress_latest_projection(tmp_path) -> N
     db.init_sync()
     newer = _command(
         price=12.0,
-        timestamp="2026-08-26T11:00:00+08:00",
+        timestamp="2026-08-26T10:00:00+08:00",
         run_id=None,
     )
     db.persist_quote_ingestion_sync(newer)
@@ -285,7 +497,7 @@ def test_older_batch_observation_cannot_regress_latest_projection(tmp_path) -> N
     db.persist_quote_ingestion_sync(
         _command(
             price=11.0,
-            timestamp="2026-08-26T10:00:00+08:00",
+            timestamp="2026-08-26T09:00:00+08:00",
             run_id=run_id,
         )
     )
