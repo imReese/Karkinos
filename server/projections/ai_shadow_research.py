@@ -5,6 +5,108 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+_CANDIDATE_STATUS_FIELDS = (
+    "candidate_id",
+    "run_id",
+    "session_id",
+    "draft_id",
+    "backtest_run_id",
+    "critique_id",
+    "baseline_result_id",
+    "candidate_result_id",
+    "status",
+    "recommendation",
+    "promotion_status",
+    "created_at",
+    "updated_at",
+    "automatic_strategy_replacement_enabled",
+    "production_strategy_mutation_enabled",
+    "broker_submission_enabled",
+    "human_paper_shadow_approval_required",
+)
+_COMPARISON_STATUS_FIELDS = (
+    "schema_version",
+    "failure_code",
+    "economic_hypothesis",
+    "risk_impact",
+    "failure_conditions",
+    "limitations",
+    "recommendation",
+)
+_BACKTEST_STATUS_FIELDS = (
+    "result_id",
+    "total_return",
+    "sharpe",
+    "max_drawdown",
+    "total_cost",
+    "total_commission",
+    "total_slippage",
+    "total_trades",
+    "gross_turnover",
+    "oos_fold_count",
+    "mean_oos_return",
+    "worst_oos_return",
+    "oos_validation_status",
+    "evidence_gate_status",
+    "dataset_snapshot_id",
+)
+_DELTA_STATUS_FIELDS = (
+    "total_return",
+    "sharpe",
+    "max_drawdown",
+    "total_cost",
+)
+_CRITIQUE_STATUS_FIELDS = (
+    "supported_claims",
+    "contradicted_claims",
+    "evidence_gaps",
+    "uncertainty",
+)
+_ITERATION_STATUS_FIELDS = (
+    "iteration_number",
+    "total_iterations",
+    "formula_fingerprint",
+    "parent_candidate_id",
+    "parent_draft_id",
+    "parent_formula_fingerprint",
+    "iteration_context_fingerprint",
+    "sequential_feedback_bound",
+)
+_PROMOTION_GATE_STATUS_FIELDS = ("status", "blockers")
+
+
+def project_shadow_research_candidate_status(
+    candidate: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return the bounded candidate view consumed by automation status pages.
+
+    Full comparison evidence remains persisted and available through the
+    repository's explicit candidate lookup.  In particular, this projection
+    excludes equity curves, drawdown series, rolling-OOS folds, robustness
+    payloads, and promotion-gate check evidence from the frequently polled
+    status response.
+    """
+
+    projected = _select_fields(candidate, _CANDIDATE_STATUS_FIELDS)
+    comparison = _mapping(candidate.get("comparison"))
+    comparison_status = _select_fields(comparison, _COMPARISON_STATUS_FIELDS)
+
+    nested_fields = (
+        ("baseline", _BACKTEST_STATUS_FIELDS),
+        ("candidate", _BACKTEST_STATUS_FIELDS),
+        ("deltas", _DELTA_STATUS_FIELDS),
+        ("deepseek_critique", _CRITIQUE_STATUS_FIELDS),
+        ("iteration_lineage", _ITERATION_STATUS_FIELDS),
+        ("promotion_gate", _PROMOTION_GATE_STATUS_FIELDS),
+    )
+    for key, fields in nested_fields:
+        value = comparison.get(key)
+        if isinstance(value, Mapping):
+            comparison_status[key] = _select_fields(value, fields)
+
+    projected["comparison"] = comparison_status
+    return projected
+
 
 def empty_shadow_research_usage(market_date: str | None) -> dict[str, Any]:
     """Return the fail-closed zero-usage projection for an unavailable store."""
@@ -187,3 +289,13 @@ def _integer(row: Mapping[str, Any] | None, key: str) -> int:
 def _optional_integer(row: Mapping[str, Any] | None, key: str) -> int | None:
     value = _value(row, key)
     return int(value) if value is not None else None
+
+
+def _mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _select_fields(
+    source: Mapping[str, Any], fields: tuple[str, ...]
+) -> dict[str, Any]:
+    return {field: source[field] for field in fields if field in source}

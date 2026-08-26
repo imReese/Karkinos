@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from server import __version__
+
 SERVICE_HEALTH_SCHEMA_VERSION = "karkinos.service_health.v1"
 
 
@@ -15,6 +17,7 @@ def create_router() -> APIRouter:
         return {
             "schema_version": SERVICE_HEALTH_SCHEMA_VERSION,
             "service": "karkinos",
+            "version": __version__,
             "status": "alive",
             "scope": "process_liveness_only",
             "financial_readiness_claimed": False,

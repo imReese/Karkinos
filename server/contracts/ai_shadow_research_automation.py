@@ -28,16 +28,24 @@ SHADOW_RESEARCH_REQUIRED_MARKET_UNIVERSE_TRUTH_SCHEMA = (
 )
 SHADOW_RESEARCH_REQUIRED_PANEL_SCHEMA = "karkinos.research_panel_snapshot.v2"
 SHADOW_RESEARCH_POLICY_CONFIRMATION = (
-    "authorize_five_sequentialis_after_shadow_research_close_deepseek_strategy_research_without_"
+    "authorize_five_sequential_after_close_deepseek_strategy_research_without_"
     "daily_token_budget_or_strategy_or_trade_authority"
 )
 SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION = (
-    "authorizeis_after_shadow_research_close_deepseek_strategy_research_without_strategy_or_trade_"
+    "authorize_after_close_deepseek_strategy_research_without_strategy_or_trade_"
     "authority"
 )
 SHADOW_RESEARCH_TOKEN_BUDGET_MODE_UNBOUNDED = "unbounded_daily"
 SHADOW_RESEARCH_TOKEN_BUDGET_MODE_LEGACY_BOUNDED = "legacy_bounded_daily"
-SHADOW_RESEARCH_PAUSE_CONFIRMATION = "pauseis_after_shadow_research_close_ai_strategy_research_without_changing_trading_authority"
+SHADOW_RESEARCH_PAUSE_CONFIRMATION = (
+    "pause_after_close_ai_strategy_research_without_changing_trading_authority"
+)
+_REFACTOR_BROKEN_POLICY_CONFIRMATIONS = {
+    "authorize_five_sequentialis_after_shadow_research_close_deepseek_strategy_research_without_"
+    "daily_token_budget_or_strategy_or_trade_authority": SHADOW_RESEARCH_POLICY_CONFIRMATION,
+    "authorizeis_after_shadow_research_close_deepseek_strategy_research_without_strategy_or_trade_"
+    "authority": SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION,
+}
 SHADOW_RESEARCH_PROMOTION_CONFIRMATION = "approve_evidence_bound_candidate_for_paper_shadow_only_without_production_or_trade_authority"
 SHADOW_RESEARCH_RETRY_CONFIRMATION = (
     "authorize_one_additional_complete_five_round_ten_call_strategy_research_"
@@ -200,6 +208,11 @@ class ShadowResearchPolicy:
     @classmethod
     def from_mapping(cls, raw: Mapping[str, Any] | None) -> "ShadowResearchPolicy":
         value = dict(raw or {})
+        authorization = str(value.get("authorization") or "")
+        authorization = _REFACTOR_BROKEN_POLICY_CONFIRMATIONS.get(
+            authorization,
+            authorization,
+        )
         raw_daily_token_budget = (
             value.get("daily_token_budget") if "daily_token_budget" in value else None
         )
@@ -239,7 +252,7 @@ class ShadowResearchPolicy:
                 value.get("research_question") or cls.research_question
             ),
             updated_by=str(value.get("updated_by") or "human:owner"),
-            authorization=str(value.get("authorization") or ""),
+            authorization=authorization,
         )
 
 
