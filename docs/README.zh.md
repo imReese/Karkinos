@@ -37,7 +37,7 @@ npm --prefix web run test
 
 - [产品目标](KARKINOS_GOAL.zh.md) — 产品北极星、长期承诺和不可跨越的边界。
 - [路线图](ROADMAP.zh.md) — 当前优先级、里程碑、验收标准和开发顺序。
-- [架构](ARCHITECTURE.zh.md) — 系统分层、核心流程、权限边界和失败语义。
+- [架构](ARCHITECTURE.zh.md) — 系统分层与权限边界；[AI 策略研究详细设计](AI_STRATEGY_RESEARCH_DESIGN.zh.md)承载拟议的完整协议。
 
 ### 操作指南
 
