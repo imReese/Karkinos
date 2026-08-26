@@ -446,3 +446,52 @@ def test_restricted_formula_adapter_calculates_with_exact_reviewed_fee_binding(
     assert fee_evidence["account_specific"] is True
     assert fee_evidence["fee_rule_version"] == cost_model_reference
     assert fee_evidence["fee_schedule_binding"] == fee_schedule_binding
+
+
+def test_restricted_formula_adapter_run_sealed_reaches_future_window(tmp_path) -> None:
+    store = DataStore(tmp_path / "market")
+    symbol = Symbol("600000")
+    start = datetime(2025, 1, 2)
+    closes = [10, 9, 8, 12, 13, 14, 7, 6, 11, 12, 13, 14, 15, 16, 17]
+    bars = pd.DataFrame(
+        {
+            "timestamp": [
+                start + timedelta(days=index) for index in range(len(closes))
+            ],
+            "open": closes,
+            "high": [value + 1 for value in closes],
+            "low": [value - 1 for value in closes],
+            "close": closes,
+            "volume": [100_000] * len(closes),
+        }
+    )
+    store.save_bars(
+        symbol,
+        BarFrequency.DAILY,
+        bars,
+        provider_name="deterministic_fixture",
+        data_source="deterministic_fixture",
+        adjustment_mode="none",
+    )
+    selection = StrategyResearchSelection(
+        saved_backtest_result_id=1,
+        universe=("600000",),
+        asset_classes=("stock",),
+        dataset_snapshot_id="sha256:" + "a" * 64,
+        start_date="2025-01-02",
+        end_date="2025-01-09",
+        frequency="1d",
+        initial_cash=100_000,
+        sealed_end_date="2025-01-16",
+    )
+    result = RestrictedFormulaBacktestAdapter(data_store=store).run_sealed(
+        selection=selection,
+        draft={"formula_ast": _formula()},
+        sealed_end_date="2025-01-16",
+    )
+    sealed_boundary = datetime(2025, 1, 10)
+    assert result.equity_curve[-1][0].date() >= sealed_boundary.date()
+    sealed_bars = [
+        ts for ts, _ in result.equity_curve if ts.date() >= sealed_boundary.date()
+    ]
+    assert sealed_bars
