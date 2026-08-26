@@ -78,10 +78,18 @@ def test_sealed_repository_finish_round_trips_evidence(tmp_path) -> None:
         evidence_fingerprint="sha256:" + "c" * 64,
         failure_code=None,
         updated_at="2026-01-21T00:01:00+00:00",
+        challenger_comparison={
+            "method": "challenger_comparison",
+            "champion_rank_percentile": 1.0,
+        },
     )
     loaded = store.get_sealed_test(row["sealed_test_id"])
     assert loaded["status"] == "completed"
     assert loaded["evidence"] == {"sealed_return": 0.02, "consumed_once": True}
+    assert loaded["challenger_comparison"] == {
+        "method": "challenger_comparison",
+        "champion_rank_percentile": 1.0,
+    }
     assert loaded["failure_code"] is None
     listed = store.list_sealed_tests("session-1")
     assert [item["sealed_test_id"] for item in listed] == [row["sealed_test_id"]]

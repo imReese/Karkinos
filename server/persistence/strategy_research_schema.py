@@ -108,6 +108,7 @@ class StrategyResearchSchemaMixin:
                     status TEXT NOT NULL,
                     evidence_json TEXT,
                     evidence_fingerprint TEXT,
+                    challenger_comparison_json TEXT,
                     failure_code TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL

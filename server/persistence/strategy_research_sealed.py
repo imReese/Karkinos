@@ -102,19 +102,27 @@ class StrategyResearchSealedRepositoryMixin:
         evidence_fingerprint: str | None,
         failure_code: str | None,
         updated_at: str,
+        challenger_comparison: JsonObject | None = None,
     ) -> None:
         evidence_json = canonical_json(evidence) if evidence is not None else None
+        challenger_json = (
+            canonical_json(challenger_comparison)
+            if challenger_comparison is not None
+            else None
+        )
         with self._connect(immediate=True) as conn:
             conn.execute(
                 """
                 UPDATE ai_strategy_sealed_tests
                 SET status=?, evidence_json=?, evidence_fingerprint=?,
-                    failure_code=?, updated_at=? WHERE sealed_test_id=?
+                    challenger_comparison_json=?, failure_code=?, updated_at=?
+                WHERE sealed_test_id=?
                 """,
                 (
                     status,
                     evidence_json,
                     evidence_fingerprint,
+                    challenger_json,
                     failure_code,
                     updated_at,
                     sealed_test_id,
@@ -139,10 +147,14 @@ class StrategyResearchSealedRepositoryMixin:
         if row is None:
             raise LookupError(f"sealed test not found: {sealed_test_id}")
         result = dict(row)
-        if result.get("evidence_json"):
-            result["evidence"] = json.loads(result["evidence_json"])
-        else:
-            result["evidence"] = None
+        result["evidence"] = (
+            json.loads(result["evidence_json"]) if result.get("evidence_json") else None
+        )
+        result["challenger_comparison"] = (
+            json.loads(result["challenger_comparison_json"])
+            if result.get("challenger_comparison_json")
+            else None
+        )
         return result
 
     def list_sealed_tests(self, session_id: str) -> list[dict[str, Any]]:
@@ -159,6 +171,11 @@ class StrategyResearchSealedRepositoryMixin:
                 **dict(row),
                 "evidence": (
                     json.loads(row["evidence_json"]) if row["evidence_json"] else None
+                ),
+                "challenger_comparison": (
+                    json.loads(row["challenger_comparison_json"])
+                    if row["challenger_comparison_json"]
+                    else None
                 ),
             }
             for row in rows

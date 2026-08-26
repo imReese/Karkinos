@@ -4,13 +4,19 @@ from __future__ import annotations
 
 import asyncio
 from decimal import Decimal
+from typing import Any
 
 from analytics.sealed_holdout import (
     build_consumption_receipt,
     build_sealed_holdout_evaluation,
     build_sealed_partition,
+    sealed_return_from_result,
 )
 from server.ai_runtime.contracts import JsonObject, content_fingerprint
+from server.ai_runtime.formula_challengers import (
+    build_challenger_comparison,
+    generate_deterministic_challenger_formulas,
+)
 from server.ai_runtime.strategy_research_backtest import (
     RestrictedFormulaBacktestAdapter,
 )
@@ -106,6 +112,14 @@ class StrategyResearchSealedMixin:
                 consumed_at=self._now(),
                 evaluator_code_revision="strategy_research_sealed.v1",
             )
+            challenger_comparison = await asyncio.to_thread(
+                self._run_challenger_comparison,
+                selection=selection,
+                partition=partition,
+                sealed_end_date=sealed_end_date,
+                reviewed_fee_schedule_resolution=reviewed_fee_schedule_resolution,
+                champion_return=evidence.sealed_return,
+            )
             evidence_payload = evidence.to_json_dict()
             self._research_store.finish_sealed_test(
                 sealed_test["sealed_test_id"],
@@ -114,6 +128,7 @@ class StrategyResearchSealedMixin:
                 evidence_fingerprint=evidence_payload["evidence_fingerprint"],
                 failure_code=None,
                 updated_at=self._now(),
+                challenger_comparison=challenger_comparison,
             )
             self._research_store.append_event(
                 sealed_test["sealed_test_id"],
@@ -136,6 +151,32 @@ class StrategyResearchSealedMixin:
             reused=False,
         )
 
+    def _run_challenger_comparison(
+        self,
+        *,
+        selection: Any,
+        partition: Any,
+        sealed_end_date: str,
+        reviewed_fee_schedule_resolution: Any,
+        champion_return: Any,
+    ) -> JsonObject:
+        adapter = RestrictedFormulaBacktestAdapter(data_store=self._data_store)
+        challenger_returns: list[float] = []
+        for challenger in generate_deterministic_challenger_formulas():
+            result = adapter.run_sealed(
+                selection=selection,
+                draft={"formula_ast": challenger["formula_ast"]},
+                sealed_end_date=sealed_end_date,
+                reviewed_fee_schedule_resolution=reviewed_fee_schedule_resolution,
+            )
+            challenger_returns.append(
+                float(sealed_return_from_result(result, partition))
+            )
+        return build_challenger_comparison(
+            champion_return=float(champion_return),
+            challenger_returns=challenger_returns,
+        )
+
     def _sealed_test_response(self, row: dict, *, reused: bool) -> JsonObject:
         return {
             "schema_version": STRATEGY_RESEARCH_API_CONTRACT,
@@ -149,6 +190,7 @@ class StrategyResearchSealedMixin:
             "status": row["status"],
             "failure_code": row.get("failure_code"),
             "evidence": row.get("evidence"),
+            "challenger_comparison": row.get("challenger_comparison"),
             "reused": reused,
             "non_authoritative": True,
             "non_executable": True,
