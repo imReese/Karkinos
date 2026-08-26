@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 
@@ -23,6 +24,7 @@ from server.ai_runtime.strategy_research import (
     CritiqueRequest,
     FormulaBacktestRequest,
     HypothesisGenerationRequest,
+    SealedTestRequest,
     StrategyResearchAuditStore,
     StrategyResearchRejected,
     StrategyResearchSelection,
@@ -51,6 +53,7 @@ class StrategyResearchSelectionPayload(BaseModel):
     dataset_snapshot_id: str = Field(min_length=8, max_length=200)
     start_date: str = Field(min_length=10, max_length=10)
     end_date: str = Field(min_length=10, max_length=10)
+    sealed_end_date: str | None = Field(default=None, min_length=10, max_length=10)
     frequency: Literal["1d"] = "1d"
     initial_cash: float = Field(gt=0, le=1_000_000_000)
     cost_model_reference: str = Field(
@@ -74,6 +77,7 @@ class StrategyResearchSelectionPayload(BaseModel):
             end_date=self.end_date,
             frequency=self.frequency,
             initial_cash=self.initial_cash,
+            sealed_end_date=self.sealed_end_date,
             cost_model_reference=self.cost_model_reference,
             valuation_snapshot_id=self.valuation_snapshot_id,
             ledger_cutoff_id=self.ledger_cutoff_id,
@@ -117,6 +121,20 @@ class CritiquePayload(BaseModel):
     confirmation: Literal[
         "send_selected_formula_and_canonical_backtest_evidence_to_configured_"
         "external_model_without_trade_authority"
+    ]
+
+
+class SealedTestPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    requested_by: str = Field(min_length=1, max_length=128)
+    session_id: str = Field(min_length=1, max_length=200)
+    draft_id: str = Field(min_length=1, max_length=200)
+    backtest_run_id: str = Field(min_length=1, max_length=200)
+    benchmark_return: float | None = None
+    confirmation: Literal[
+        "run_frozen_champion_sealed_holdout_evaluation_without_trade_authority"
     ]
 
 
@@ -281,6 +299,16 @@ def create_router() -> APIRouter:
         if state.db is None:
             raise HTTPException(status_code=503, detail="Database is not initialized")
         return _build_shadow_read_service(state).status()
+
+    @router.get("/shadow-automation/readiness")
+    async def get_shadow_research_readiness() -> dict[str, Any]:
+        """Bounded provider-free policy projection for loopback readiness checks."""
+        from server.dependencies import get_app_state
+
+        state = get_app_state()
+        if state.db is None:
+            raise HTTPException(status_code=503, detail="Database is not initialized")
+        return _build_shadow_read_service(state).readiness_status()
 
     @router.put("/shadow-automation/policy")
     async def update_shadow_research_policy(
@@ -514,6 +542,32 @@ def create_router() -> APIRouter:
                     draft_id=payload.draft_id,
                     backtest_run_id=payload.backtest_run_id,
                     confirmation=payload.confirmation,
+                )
+            )
+            return _status_response(result)
+        except Exception as exc:
+            _raise_http(exc)
+
+    @router.post("/sealed-tests")
+    async def run_sealed_holdout_test(payload: SealedTestPayload) -> JSONResponse:
+        from server.dependencies import get_app_state
+
+        state = get_app_state()
+        try:
+            service = _build_write_service(state, external=False)
+            result = await service.sealed_test(
+                SealedTestRequest(
+                    idempotency_key=payload.idempotency_key,
+                    requested_by=payload.requested_by,
+                    session_id=payload.session_id,
+                    draft_id=payload.draft_id,
+                    backtest_run_id=payload.backtest_run_id,
+                    confirmation=payload.confirmation,
+                    benchmark_return=(
+                        Decimal(str(payload.benchmark_return))
+                        if payload.benchmark_return is not None
+                        else None
+                    ),
                 )
             )
             return _status_response(result)

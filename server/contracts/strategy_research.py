@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from core.types import BarFrequency
@@ -36,6 +37,9 @@ CRITIQUE_EXPORT_CONFIRMATION = (
     "model_without_trade_authority"
 )
 REVIEW_CONFIRMATION = "record_human_strategy_research_review_without_trade_authority"
+SEALED_TEST_CONFIRMATION = (
+    "run_frozen_champion_sealed_holdout_evaluation_without_trade_authority"
+)
 STRATEGY_RESEARCH_MAX_INPUT_BYTES = 196_608
 STRATEGY_RESEARCH_MAX_OUTPUT_TOKENS = 12_288
 STRATEGY_RESEARCH_MAX_CITATION_PATHS = 512
@@ -265,6 +269,37 @@ class CritiqueRequest:
                 raise StrategyResearchRejected(f"{name}_required")
         if self.confirmation != CRITIQUE_EXPORT_CONFIRMATION:
             raise PermissionError("critique export requires exact human confirmation")
+
+
+@dataclass(frozen=True)
+class SealedTestRequest:
+    idempotency_key: str
+    requested_by: str
+    session_id: str
+    draft_id: str
+    backtest_run_id: str
+    confirmation: str
+    benchmark_return: Decimal | None = None
+
+    def __post_init__(self) -> None:
+        for name in (
+            "idempotency_key",
+            "requested_by",
+            "session_id",
+            "draft_id",
+            "backtest_run_id",
+        ):
+            if not str(getattr(self, name)).strip():
+                raise StrategyResearchRejected(f"{name}_required")
+        if self.confirmation != SEALED_TEST_CONFIRMATION:
+            raise PermissionError("sealed test requires exact human confirmation")
+        if self.benchmark_return is not None:
+            try:
+                normalized = Decimal(str(self.benchmark_return))
+            except (InvalidOperation, ValueError, TypeError) as exc:
+                raise StrategyResearchRejected("benchmark_return_invalid") from exc
+            if not normalized.is_finite():
+                raise StrategyResearchRejected("benchmark_return_invalid")
 
 
 def validate_iteration_context(value: JsonObject | None) -> None:

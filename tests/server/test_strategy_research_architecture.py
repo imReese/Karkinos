@@ -94,6 +94,7 @@ AI_RUNTIME_PATHS = {
     AI_RUNTIME_ROOT / "strategy_research_generation.py",
     AI_RUNTIME_ROOT / "strategy_research_model_contract.py",
     AI_RUNTIME_ROOT / "strategy_research_provider.py",
+    AI_RUNTIME_ROOT / "strategy_research_sealed.py",
     AI_RUNTIME_ROOT / "strategy_research_session.py",
     AI_RUNTIME_ROOT / "strategy_research_support.py",
     AI_RUNTIME_ROOT / "strategy_research_values.py",
@@ -105,6 +106,7 @@ PERSISTENCE_PATHS = {
     PERSISTENCE_ROOT / "strategy_research_errors.py",
     PERSISTENCE_ROOT / "strategy_research_events.py",
     PERSISTENCE_ROOT / "strategy_research_schema.py",
+    PERSISTENCE_ROOT / "strategy_research_sealed.py",
     PERSISTENCE_ROOT / "strategy_research_sessions.py",
     PERSISTENCE_ROOT / "strategy_research_uow.py",
 }

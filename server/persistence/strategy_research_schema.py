@@ -94,6 +94,24 @@ class StrategyResearchSchemaMixin:
                     event_hash TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS ai_strategy_sealed_tests (
+                    sealed_test_id TEXT PRIMARY KEY,
+                    idempotency_key TEXT UNIQUE NOT NULL,
+                    request_fingerprint TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    draft_id TEXT NOT NULL,
+                    backtest_run_id TEXT NOT NULL,
+                    research_family_id TEXT NOT NULL,
+                    partition_fingerprint TEXT NOT NULL,
+                    champion_formula_fingerprint TEXT NOT NULL,
+                    consumed_at TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    evidence_json TEXT,
+                    evidence_fingerprint TEXT,
+                    failure_code TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 CREATE INDEX IF NOT EXISTS idx_ai_strategy_drafts_session
                     ON ai_strategy_hypothesis_drafts(session_id, ordinal);
                 CREATE INDEX IF NOT EXISTS idx_ai_strategy_backtests_session
@@ -102,4 +120,8 @@ class StrategyResearchSchemaMixin:
                     ON ai_strategy_backtest_critiques(session_id, created_at);
                 CREATE INDEX IF NOT EXISTS idx_ai_strategy_events_entity
                     ON ai_strategy_research_events(entity_id, created_at, event_id);
+                CREATE INDEX IF NOT EXISTS idx_ai_strategy_sealed_partition
+                    ON ai_strategy_sealed_tests(partition_fingerprint);
+                CREATE INDEX IF NOT EXISTS idx_ai_strategy_sealed_session
+                    ON ai_strategy_sealed_tests(session_id, created_at);
                 """)
