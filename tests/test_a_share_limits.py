@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from execution.a_share_limits import (
+from analytics.a_share_limits import (
     GROWTH_BOARD_RATE,
     MAIN_BOARD_RATE,
     is_limit_down,

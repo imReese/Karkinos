@@ -566,40 +566,13 @@ def build_strategy_advancement_gate(
     )
 
     if num_trials is not None:
-        candidate_sharpe = _number(candidate.get("sharpe"))
-        equity_curve = _json_list(candidate.get("equity_curve"))
-        num_periods = len(equity_curve)
-        if candidate_sharpe is None or num_periods <= 1 or num_trials < 1:
-            record(
-                "multiple_testing_correction",
-                passed=False,
-                blocker="multiple_testing_correction_insufficient_evidence",
-                evidence={
-                    "candidate_sharpe": candidate_sharpe,
-                    "num_periods": num_periods,
-                    "num_trials": num_trials,
-                },
-            )
-        else:
-            correction = build_deflated_sharpe(
-                observed_sharpe=candidate_sharpe,
-                num_periods=num_periods,
-                num_trials=num_trials,
-            )
-            record(
-                "multiple_testing_correction",
-                passed=correction["significant_at_0.95"],
-                blocker="multiple_testing_correction_not_significant",
-                evidence={
-                    "method": "deflated_sharpe",
-                    "observed_sharpe": correction["observed_sharpe"],
-                    "num_periods": num_periods,
-                    "num_trials": num_trials,
-                    "expected_max_sharpe": correction["expected_max_sharpe"],
-                    "deflated_sharpe": correction["deflated_sharpe"],
-                    "threshold": 0.95,
-                },
-            )
+        check = _multiple_testing_check(candidate, num_trials)
+        record(
+            "multiple_testing_correction",
+            passed=check["passed"],
+            blocker=check["blocker"],
+            evidence=check["evidence"],
+        )
 
     unique_blockers = tuple(dict.fromkeys(blockers))
     return StrategyAdvancementGate(
@@ -607,3 +580,41 @@ def build_strategy_advancement_gate(
         blockers=unique_blockers,
         checks=tuple(checks),
     )
+
+
+def _multiple_testing_check(
+    candidate: Mapping[str, Any],
+    num_trials: int,
+) -> dict[str, Any]:
+    """Deflated-Sharpe evidence for the multiple-testing correction check."""
+
+    candidate_sharpe = _number(candidate.get("sharpe"))
+    num_periods = len(_json_list(candidate.get("equity_curve")))
+    if candidate_sharpe is None or num_periods <= 1 or num_trials < 1:
+        return {
+            "passed": False,
+            "blocker": "multiple_testing_correction_insufficient_evidence",
+            "evidence": {
+                "candidate_sharpe": candidate_sharpe,
+                "num_periods": num_periods,
+                "num_trials": num_trials,
+            },
+        }
+    correction = build_deflated_sharpe(
+        observed_sharpe=candidate_sharpe,
+        num_periods=num_periods,
+        num_trials=num_trials,
+    )
+    return {
+        "passed": correction["significant_at_0.95"],
+        "blocker": "multiple_testing_correction_not_significant",
+        "evidence": {
+            "method": "deflated_sharpe",
+            "observed_sharpe": correction["observed_sharpe"],
+            "num_periods": num_periods,
+            "num_trials": num_trials,
+            "expected_max_sharpe": correction["expected_max_sharpe"],
+            "deflated_sharpe": correction["deflated_sharpe"],
+            "threshold": 0.95,
+        },
+    }
