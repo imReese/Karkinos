@@ -10,6 +10,7 @@ from server.contracts.http.ledger_models import (
     PendingFundConfirmationRequest,
     PendingFundConfirmationResponse,
     PendingFundOrderResponse,
+    PendingFundTradeAcceptedResponse,
     PortfolioCorrectionRequest,
     PortfolioCorrectionResponse,
     TradeResponse,
@@ -27,8 +28,12 @@ def create_router(dependencies: PortfolioTradeDependencies) -> APIRouter:
 
     router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
-    @router.post("/trade", response_model=TradeResponse)
-    async def create_trade(body: ManualTradeCreate) -> TradeResponse:
+    @router.post(
+        "/trade",
+        response_model=TradeResponse,
+        responses={202: {"model": PendingFundTradeAcceptedResponse}},
+    )
+    async def create_trade(body: ManualTradeCreate) -> TradeResponse | JSONResponse:
         """Record one ledger-owned manual trade or pending fund intent."""
 
         service = dependencies.command_service_factory(dependencies.get_state())
@@ -54,21 +59,16 @@ def create_router(dependencies: PortfolioTradeDependencies) -> APIRouter:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         if isinstance(result, CreatedPendingFundOrder):
-            order = result.order
-            return JSONResponse(
-                status_code=202,
-                content={
-                    "status": order["status"],
-                    "id": order["id"],
-                    "symbol": order["symbol"],
-                    "display_name": order["display_name"],
-                    "amount": order["amount"],
-                    "commission": order["commission"],
-                    "asset_class": order["asset_class"],
-                    "target_trade_date": order["target_trade_date"],
+            response = PendingFundTradeAcceptedResponse.model_validate(
+                {
+                    **result.order,
                     "replayed": result.replayed,
                     "detail": result.detail,
-                },
+                }
+            )
+            return JSONResponse(
+                status_code=202,
+                content=response.model_dump(mode="json"),
             )
         return TradeResponse(**result.trade, replayed=result.replayed)
 

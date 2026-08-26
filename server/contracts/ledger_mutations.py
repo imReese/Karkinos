@@ -11,6 +11,13 @@ from server.contracts.content_identity import content_fingerprint
 
 LEDGER_APPEND_SCHEMA_VERSION = "karkinos.ledger.append.v1"
 LEDGER_SETTLEMENT_SCHEMA_VERSION = "karkinos.ledger.trade_settlement.v1"
+FEE_BREAKDOWN_COMPONENT_KEYS = (
+    "commission",
+    "stamp_tax",
+    "transfer_fee",
+    "other_fees",
+)
+FEE_BREAKDOWN_KEYS = frozenset((*FEE_BREAKDOWN_COMPONENT_KEYS, "total_fee"))
 _SUPPORTED_ENTRY_TYPES = {
     "cash_deposit",
     "cash_interest",
@@ -148,7 +155,7 @@ class LedgerTradeSettlementCommand:
         if commission < 0:
             raise ValueError("commission must not be negative")
         _decimal("net_cash_impact", self.net_cash_impact)
-        _validate_fee_breakdown(self.fee_breakdown_json, commission=commission)
+        validate_fee_breakdown(self.fee_breakdown_json, commission=commission)
 
     @property
     def fingerprint(self) -> str:
@@ -238,7 +245,7 @@ def validate_trade_settlement_economics(
         gross = _decimal("gross_amount", gross_value)
     if gross <= 0:
         raise ValueError("trade gross_amount must be positive")
-    fee_breakdown = _validate_fee_breakdown(
+    fee_breakdown = validate_fee_breakdown(
         command.fee_breakdown_json,
         commission=_decimal("commission", command.commission),
     )
@@ -390,7 +397,7 @@ def _validate_trade_entry(entry: LedgerEntryDraft, *, commission: Decimal) -> No
         raise ValueError("trade amount must equal gross_amount")
     total_fee = commission
     if entry.fee_breakdown_json is not None:
-        fee_breakdown = _validate_fee_breakdown(
+        fee_breakdown = validate_fee_breakdown(
             entry.fee_breakdown_json,
             commission=commission,
         )
@@ -415,7 +422,7 @@ def _validate_adjustment_entry(entry: LedgerEntryDraft) -> None:
         raise ValueError("quantity adjustment symbol must not be empty")
 
 
-def _validate_fee_breakdown(
+def validate_fee_breakdown(
     value: str,
     *,
     commission: Decimal,
@@ -428,7 +435,7 @@ def _validate_fee_breakdown(
         raise ValueError("fee_breakdown total_fee must not be negative")
     component_total = Decimal("0")
     component_found = False
-    for name in ("commission", "stamp_tax", "transfer_fee", "other_fees"):
+    for name in FEE_BREAKDOWN_COMPONENT_KEYS:
         if name not in payload:
             continue
         component = _decimal(f"fee_breakdown.{name}", payload[name])
@@ -475,6 +482,8 @@ def _nearly_equal(left: Decimal, right: Decimal) -> bool:
 
 
 __all__ = [
+    "FEE_BREAKDOWN_COMPONENT_KEYS",
+    "FEE_BREAKDOWN_KEYS",
     "LEDGER_APPEND_SCHEMA_VERSION",
     "LEDGER_SETTLEMENT_SCHEMA_VERSION",
     "LedgerAppendCommand",
@@ -483,5 +492,6 @@ __all__ = [
     "LedgerMutationResult",
     "LedgerTradeSettlementCommand",
     "ledger_entry_state_fingerprint",
+    "validate_fee_breakdown",
     "validate_trade_settlement_economics",
 ]
