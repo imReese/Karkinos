@@ -8,7 +8,7 @@ from datetime import datetime, time
 from decimal import Decimal
 from typing import Any, Callable
 
-from core.events import MarketEvent, OrderIntentEvent, SignalEvent
+from core.events import MarketEvent, SignalEvent
 from core.types import AssetClass, Symbol
 from domain.instrument import Instrument
 from domain.portfolio import Portfolio
@@ -27,7 +27,6 @@ from server.scheduler_contracts import (
 )
 from server.scheduler_values import (
     SchedulerQuoteEvidence,
-    configured_symbol_set,
     is_complete_quote_batch,
     optional_float,
     quote_fetch_metadata,
@@ -49,11 +48,6 @@ class SchedulerLoopDependencies:
     runtime_context_factory: Callable[[SchedulerConfig], SchedulerRuntimeContext]
     live_data_feed_factory: Callable[..., SchedulerFeed]
     portfolio_rebuilder: Callable[..., SchedulerPortfolioRebuild | None]
-    live_context_provider_factory: Callable[..., object]
-    pre_trade_risk_manager_factory: Callable[..., object]
-    pre_trade_policy_factory: Callable[..., object]
-    manual_confirm_gateway_factory: Callable[..., object]
-    paper_execution_connector_factory: Callable[..., object]
     strategy_factory: Callable[
         [SchedulerConfig, SchedulerStrategyPublisher], SchedulerStrategy
     ]
@@ -61,7 +55,6 @@ class SchedulerLoopDependencies:
     afternoon_close: time
     config: SchedulerConfig
     database: SchedulerDatabase | None
-    trading_controls: object
     bridge_rebinder: Callable[[SchedulerEventBus], None]
     warmup_strategy: Callable[[SchedulerDataManager, SchedulerStrategy], None]
     signal_handler: Callable[[SignalEvent], None]
@@ -105,16 +98,14 @@ class DiscardingEventPublisher:
 
 
 class BufferedStrategyEventPublisher:
-    """Stage strategy output until its complete market-input batch is durable."""
+    """Stage signal evidence until its complete market-input batch is durable."""
 
     def __init__(self) -> None:
-        self._events: list[SignalEvent | OrderIntentEvent] = []
+        self._events: list[SignalEvent] = []
 
     def publish(self, event: object) -> None:
-        if not isinstance(event, (SignalEvent, OrderIntentEvent)):
-            raise TypeError(
-                "scheduler strategies may publish only SignalEvent or OrderIntentEvent"
-            )
+        if not isinstance(event, SignalEvent):
+            raise TypeError("scheduler strategies may publish only SignalEvent")
         self._events.append(event)
 
     def discard(self) -> None:
@@ -360,31 +351,6 @@ class SchedulerLoop:
         state = self._state
         dependencies = self._dependencies
         event_bus = state.runtime_event_bus()
-        context_provider = dependencies.live_context_provider_factory(
-            portfolio_getter=lambda: state.portfolio,
-            controls=dependencies.trading_controls,
-            blacklist_getter=configured_symbol_set(
-                dependencies.config, "blacklist", "symbol_blacklist"
-            ),
-            st_symbols_getter=configured_symbol_set(
-                dependencies.config, "st_symbols", "st_blacklist"
-            ),
-        )
-        dependencies.pre_trade_risk_manager_factory(
-            event_bus,
-            context_provider,
-            dependencies.pre_trade_policy_factory(execution_mode="manual"),
-            db=dependencies.database,
-        )
-        dependencies.manual_confirm_gateway_factory(
-            event_bus,
-            db=dependencies.database,
-        )
-        dependencies.paper_execution_connector_factory(
-            event_bus=event_bus,
-            db=dependencies.database,
-        )
-
         strategy_events = BufferedStrategyEventPublisher()
         strategy = dependencies.strategy_factory(
             dependencies.config,

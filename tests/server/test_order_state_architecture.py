@@ -46,7 +46,7 @@ def test_trading_route_uses_only_atomic_manual_order_commands() -> None:
     )
 
 
-def test_scheduler_manual_gateway_uses_only_atomic_manual_order_commands() -> None:
+def test_manual_gateway_is_atomic_and_scheduler_does_not_wire_execution() -> None:
     gateway_path = ROOT / "execution/gateway.py"
     calls = _called_attributes(gateway_path)
     assert calls.isdisjoint(
@@ -68,11 +68,12 @@ def test_scheduler_manual_gateway_uses_only_atomic_manual_order_commands() -> No
     assert "ManualOrderTicketService" in adapter_source
     assert "ManualOrderTicketCommand" in adapter_source
     assert "ManualOrderStateCommand" in adapter_source
-    assert "manual_confirm_gateway_factory" in scheduler_source
-    assert (
-        "manual_confirm_gateway_factory=build_manual_confirm_gateway"
-        in composition_source
-    )
+    assert "pre_trade_risk_manager_factory" not in scheduler_source
+    assert "manual_confirm_gateway_factory" not in scheduler_source
+    assert "paper_execution_connector_factory" not in scheduler_source
+    assert "PreTradeRiskManager" not in composition_source
+    assert "build_manual_confirm_gateway" not in composition_source
+    assert "PaperExecutionConnector" not in composition_source
 
 
 def test_oms_service_uses_only_atomic_order_state_commands() -> None:

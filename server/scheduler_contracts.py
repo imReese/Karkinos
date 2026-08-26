@@ -124,7 +124,11 @@ class SchedulerDatabase(Protocol):
         command: QuoteIngestionCommand,
     ) -> dict[str, Any]: ...
 
-    def publish_current_valuation_snapshot_sync(self) -> dict[str, Any]: ...
+    def publish_current_valuation_snapshot_sync(
+        self,
+        *,
+        valuation_policy: str | None = None,
+    ) -> dict[str, Any]: ...
 
     def upsert_instrument_metadata_sync(
         self,
