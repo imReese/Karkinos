@@ -10,7 +10,10 @@ from fastapi.routing import APIRoute
 
 from server.contracts.quote_ingestion import QuoteIngestionCommand
 from server.db import AppDatabase
-from server.services.valuation_snapshot import build_current_valuation_snapshot
+from server.services.valuation_snapshot import (
+    VALUATION_POLICY_VERSION,
+    build_current_valuation_snapshot,
+)
 
 
 def test_valuation_snapshot_is_content_addressed_and_replayable(tmp_path):
@@ -30,6 +33,8 @@ def test_valuation_snapshot_is_content_addressed_and_replayable(tmp_path):
     )
 
     first = build_current_valuation_snapshot(db)
+    assert db.get_valuation_snapshot_sync(first["snapshot_id"]) is None
+    assert db.get_runtime_control_sync("valuation_snapshot_publication") is None
     second = build_current_valuation_snapshot(db, persist=True)
     stored = db.get_valuation_snapshot_sync(first["snapshot_id"])
     publication = db.get_runtime_control_sync("valuation_snapshot_publication")
@@ -50,6 +55,44 @@ def test_valuation_snapshot_is_content_addressed_and_replayable(tmp_path):
     assert publication["status"] == "ready"
     assert publication["snapshot_id"] == first["snapshot_id"]
     assert json.loads(stored["quotes_json"])[0]["symbol"] == "603659"
+
+
+def test_valuation_snapshot_publish_preserves_explicit_policy(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.save_quote_snapshot_sync(
+        symbol="603659",
+        asset_class="stock",
+        price=24.6,
+        volume=1000.0,
+        timestamp="2026-07-10T14:57:03+08:00",
+    )
+
+    projected = build_current_valuation_snapshot(
+        db,
+        valuation_policy="custom-policy.v1",
+    )
+    published = build_current_valuation_snapshot(
+        db,
+        valuation_policy="custom-policy.v1",
+        persist=True,
+    )
+    stored = db.get_valuation_snapshot_sync(published["snapshot_id"])
+
+    assert projected == published
+    assert published["valuation_policy"] == "custom-policy.v1"
+    assert stored is not None
+    assert stored["valuation_policy"] == "custom-policy.v1"
+
+
+def test_default_valuation_policy_preserves_no_argument_publisher_compatibility():
+    class LegacyPublisher:
+        def publish_current_valuation_snapshot_sync(self):
+            return {"status": "complete", "valuation_policy": VALUATION_POLICY_VERSION}
+
+    published = build_current_valuation_snapshot(LegacyPublisher(), persist=True)
+
+    assert published["valuation_policy"] == VALUATION_POLICY_VERSION
 
 
 def test_valuation_snapshot_changes_when_persisted_quote_changes(tmp_path):

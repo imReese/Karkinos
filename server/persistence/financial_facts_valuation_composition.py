@@ -113,6 +113,7 @@ def build_and_publish_transaction_valuation(
     *,
     candidate_ledger_rows: list[dict[str, Any]] | None = None,
     quote_fetch_run_id: str | None = None,
+    valuation_policy: str | None = None,
 ) -> dict[str, Any]:
     """Publish the valuation derived from candidate facts in the caller transaction."""
 
@@ -121,10 +122,15 @@ def build_and_publish_transaction_valuation(
         publish_valuation_control_on_connection,
     )
 
+    projection_options: dict[str, Any] = {
+        "persist": False,
+        "candidate_ledger_rows": candidate_ledger_rows,
+    }
+    if valuation_policy is not None:
+        projection_options["valuation_policy"] = valuation_policy
     snapshot = _build_current_valuation_snapshot(
         _TransactionValuationFacts(repository, conn),
-        persist=False,
-        candidate_ledger_rows=candidate_ledger_rows,
+        **projection_options,
     )
     now = datetime.now(timezone.utc).isoformat()
     insert_valuation_snapshot_on_connection(conn, snapshot, created_at=now)
