@@ -9,7 +9,7 @@ import {
   useReviewResearchTaskMutation,
   useStartFixtureAnalysisMutation,
   type HumanResearchTask,
-} from '../api';
+} from '../research-task-api';
 import {
   BoundaryBadge,
   LabeledInput,
@@ -140,70 +140,12 @@ export function ResearchTaskPanel({
       data-evidence-kind="cited-ai-research"
       data-testid="ai-research-task-panel"
     >
-      <div
-        className={`flex items-center justify-between gap-3 ${
-          routePrimary
-            ? 'app-ai-research-route-toolbar min-h-11 flex-wrap border-b border-[var(--app-divider)] pb-3'
-            : 'sm:items-start'
-        }`}
-      >
-        {routePrimary ? (
-          <>
-            <h2 className="sr-only" id="ai-research-task-title">
-              {copy.title}
-            </h2>
-            <div className="app-ai-research-boundary-badges flex min-w-0 flex-1 flex-wrap gap-2">
-              <BoundaryBadge label={copy.noModel} />
-              <BoundaryBadge label={copy.noAuthority} />
-            </div>
-          </>
-        ) : (
-          <div className="min-w-0">
-            <div className="app-kicker app-type-overline hidden sm:block">
-              {copy.kicker}
-            </div>
-            <h2
-              className="text-base font-semibold text-[var(--app-text)] sm:mt-2 sm:text-lg"
-              id="ai-research-task-title"
-            >
-              {copy.title}
-            </h2>
-            <p className="app-muted mt-2 hidden max-w-3xl text-sm leading-6 sm:block">
-              {open ? copy.detail : copy.closedDetail}
-            </p>
-          </div>
-        )}
-        <div className="flex shrink-0 items-center gap-2">
-          {!routePrimary ? (
-            <div className="hidden flex-wrap gap-2 sm:flex">
-              <BoundaryBadge label={copy.noModel} />
-              <BoundaryBadge label={copy.noAuthority} />
-            </div>
-          ) : null}
-          <button
-            aria-expanded={open}
-            aria-label={open ? copy.close : copy.open}
-            className="app-button-secondary min-h-11 px-3 py-2 text-xs font-semibold"
-            onClick={() => setOpen((current) => !current)}
-            type="button"
-          >
-            {routePrimary ? (
-              <>
-                <span className="sm:hidden">
-                  {open ? copy.closeCompact : copy.openCompact}
-                </span>
-                <span className="hidden sm:inline">
-                  {open ? copy.close : copy.open}
-                </span>
-              </>
-            ) : open ? (
-              copy.close
-            ) : (
-              copy.open
-            )}
-          </button>
-        </div>
-      </div>
+      <ResearchTaskPanelHeader
+        copy={copy}
+        onToggle={() => setOpen((current) => !current)}
+        open={open}
+        routePrimary={routePrimary}
+      />
 
       {open ? (
         <div
@@ -369,123 +311,254 @@ export function ResearchTaskPanel({
           </section>
 
           {composerOpen ? (
-            <form
-              aria-labelledby="ai-research-composer-title"
-              className="border-t border-[var(--app-divider)] bg-[var(--app-surface-raised)] p-4"
-              onSubmit={(event) => void submit(event)}
-            >
-              <div className="app-product-mark">{copy.formKicker}</div>
-              <h3
-                className="app-type-section-title mt-1.5 text-[var(--app-text)]"
-                id="ai-research-composer-title"
-              >
-                {copy.formTitle}
-              </h3>
-              <p className="app-muted mt-1 text-xs leading-5">
-                {copy.formDetail}
-              </p>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <LabeledInput
-                  label={copy.operator}
-                  onChange={setOperator}
-                  required
-                  value={operator}
-                />
-                <LabeledInput
-                  label={copy.account}
-                  onChange={setAccountAlias}
-                  required
-                  value={accountAlias}
-                />
-              </div>
-              <div className="mt-3">
-                <LabeledInput
-                  label={copy.taskTitle}
-                  onChange={setTitle}
-                  required
-                  value={title}
-                />
-              </div>
-              <label className="mt-3 block text-xs font-semibold text-[var(--app-muted)]">
-                {copy.question}
-                <textarea
-                  className="app-input mt-1 min-h-24 w-full resize-y px-3 py-2 text-sm text-[var(--app-text)]"
-                  onChange={(event) => setQuestion(event.target.value)}
-                  required
-                  value={question}
-                />
-              </label>
-              <label className="mt-3 flex items-start gap-2 text-sm text-[var(--app-text)]">
-                <input
-                  checked={includeBacktest}
-                  className="mt-1"
-                  disabled={backtestResultId === null}
-                  onChange={(event) => setIncludeBacktest(event.target.checked)}
-                  type="checkbox"
-                />
-                <span>
-                  {copy.includeBacktest}
-                  {backtestResultId === null ? (
-                    <span className="app-muted mt-1 block text-xs">
-                      {copy.noBacktest}
-                    </span>
-                  ) : (
-                    <span className="app-muted mt-1 block font-mono text-xs">
-                      backtest_result_id={backtestResultId}
-                    </span>
-                  )}
-                </span>
-              </label>
-              <label className="mt-3 flex items-start gap-2 text-sm text-[var(--app-text)]">
-                <input
-                  checked={includeContribution}
-                  className="mt-1"
-                  disabled={strategyId === null}
-                  onChange={(event) =>
-                    setIncludeContribution(event.target.checked)
-                  }
-                  type="checkbox"
-                />
-                <span>
-                  {copy.includeContribution}
-                  {strategyId === null ? (
-                    <span className="app-muted mt-1 block text-xs">
-                      {copy.noContribution}
-                    </span>
-                  ) : (
-                    <span className="app-muted mt-1 block font-mono text-xs">
-                      strategy_id={strategyId}
-                    </span>
-                  )}
-                </span>
-              </label>
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <button
-                  className="app-button-primary min-h-11 px-4 py-2 text-sm font-semibold"
-                  disabled={
-                    createTask.isPending ||
-                    (includeContribution && strategyId === null)
-                  }
-                  type="submit"
-                >
-                  {createTask.isPending ? copy.submitting : copy.submit}
-                </button>
-                <span className="text-xs text-[var(--app-muted)]">
-                  {copy.persistedOnly}
-                </span>
-              </div>
-              {createTask.isError ? (
-                <p
-                  className="mt-3 text-sm text-[var(--app-danger-text)]"
-                  role="alert"
-                >
-                  {createTask.error.message}
-                </p>
-              ) : null}
-            </form>
+            <ResearchTaskComposer
+              accountAlias={accountAlias}
+              backtestResultId={backtestResultId}
+              copy={copy}
+              createTask={createTask}
+              includeBacktest={includeBacktest}
+              includeContribution={includeContribution}
+              onSubmit={submit}
+              operator={operator}
+              question={question}
+              setAccountAlias={setAccountAlias}
+              setIncludeBacktest={setIncludeBacktest}
+              setIncludeContribution={setIncludeContribution}
+              setOperator={setOperator}
+              setQuestion={setQuestion}
+              setTitle={setTitle}
+              strategyId={strategyId}
+              title={title}
+            />
           ) : null}
         </div>
       ) : null}
     </section>
+  );
+}
+
+function ResearchTaskPanelHeader({
+  copy,
+  onToggle,
+  open,
+  routePrimary,
+}: {
+  copy: (typeof RESEARCH_TASK_COPY)[keyof typeof RESEARCH_TASK_COPY];
+  onToggle: () => void;
+  open: boolean;
+  routePrimary: boolean;
+}) {
+  return (
+    <div
+      className={`flex items-center justify-between gap-3 ${
+        routePrimary
+          ? 'app-ai-research-route-toolbar min-h-11 flex-wrap border-b border-[var(--app-divider)] pb-3'
+          : 'sm:items-start'
+      }`}
+    >
+      {routePrimary ? (
+        <>
+          <h2 className="sr-only" id="ai-research-task-title">
+            {copy.title}
+          </h2>
+          <div className="app-ai-research-boundary-badges flex min-w-0 flex-1 flex-wrap gap-2">
+            <BoundaryBadge label={copy.noModel} />
+            <BoundaryBadge label={copy.noAuthority} />
+          </div>
+        </>
+      ) : (
+        <div className="min-w-0">
+          <div className="app-kicker app-type-overline hidden sm:block">
+            {copy.kicker}
+          </div>
+          <h2
+            className="text-base font-semibold text-[var(--app-text)] sm:mt-2 sm:text-lg"
+            id="ai-research-task-title"
+          >
+            {copy.title}
+          </h2>
+          <p className="app-muted mt-2 hidden max-w-3xl text-sm leading-6 sm:block">
+            {open ? copy.detail : copy.closedDetail}
+          </p>
+        </div>
+      )}
+      <div className="flex shrink-0 items-center gap-2">
+        {!routePrimary ? (
+          <div className="hidden flex-wrap gap-2 sm:flex">
+            <BoundaryBadge label={copy.noModel} />
+            <BoundaryBadge label={copy.noAuthority} />
+          </div>
+        ) : null}
+        <button
+          aria-expanded={open}
+          aria-label={open ? copy.close : copy.open}
+          className="app-button-secondary min-h-11 px-3 py-2 text-xs font-semibold"
+          onClick={onToggle}
+          type="button"
+        >
+          {routePrimary ? (
+            <>
+              <span className="sm:hidden">
+                {open ? copy.closeCompact : copy.openCompact}
+              </span>
+              <span className="hidden sm:inline">
+                {open ? copy.close : copy.open}
+              </span>
+            </>
+          ) : open ? (
+            copy.close
+          ) : (
+            copy.open
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ResearchTaskComposer({
+  accountAlias,
+  backtestResultId,
+  copy,
+  createTask,
+  includeBacktest,
+  includeContribution,
+  onSubmit,
+  operator,
+  question,
+  setAccountAlias,
+  setIncludeBacktest,
+  setIncludeContribution,
+  setOperator,
+  setQuestion,
+  setTitle,
+  strategyId,
+  title,
+}: {
+  accountAlias: string;
+  backtestResultId: number | null;
+  copy: (typeof RESEARCH_TASK_COPY)[keyof typeof RESEARCH_TASK_COPY];
+  createTask: ReturnType<typeof useCreateHumanResearchTaskMutation>;
+  includeBacktest: boolean;
+  includeContribution: boolean;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  operator: string;
+  question: string;
+  setAccountAlias: (value: string) => void;
+  setIncludeBacktest: (value: boolean) => void;
+  setIncludeContribution: (value: boolean) => void;
+  setOperator: (value: string) => void;
+  setQuestion: (value: string) => void;
+  setTitle: (value: string) => void;
+  strategyId: string | null;
+  title: string;
+}) {
+  return (
+    <form
+      aria-labelledby="ai-research-composer-title"
+      className="border-t border-[var(--app-divider)] bg-[var(--app-surface-raised)] p-4"
+      onSubmit={(event) => void onSubmit(event)}
+    >
+      <div className="app-product-mark">{copy.formKicker}</div>
+      <h3
+        className="app-type-section-title mt-1.5 text-[var(--app-text)]"
+        id="ai-research-composer-title"
+      >
+        {copy.formTitle}
+      </h3>
+      <p className="app-muted mt-1 text-xs leading-5">{copy.formDetail}</p>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <LabeledInput
+          label={copy.operator}
+          onChange={setOperator}
+          required
+          value={operator}
+        />
+        <LabeledInput
+          label={copy.account}
+          onChange={setAccountAlias}
+          required
+          value={accountAlias}
+        />
+      </div>
+      <div className="mt-3">
+        <LabeledInput
+          label={copy.taskTitle}
+          onChange={setTitle}
+          required
+          value={title}
+        />
+      </div>
+      <label className="mt-3 block text-xs font-semibold text-[var(--app-muted)]">
+        {copy.question}
+        <textarea
+          className="app-input mt-1 min-h-24 w-full resize-y px-3 py-2 text-sm text-[var(--app-text)]"
+          onChange={(event) => setQuestion(event.target.value)}
+          required
+          value={question}
+        />
+      </label>
+      <label className="mt-3 flex items-start gap-2 text-sm text-[var(--app-text)]">
+        <input
+          checked={includeBacktest}
+          className="mt-1"
+          disabled={backtestResultId === null}
+          onChange={(event) => setIncludeBacktest(event.target.checked)}
+          type="checkbox"
+        />
+        <span>
+          {copy.includeBacktest}
+          {backtestResultId === null ? (
+            <span className="app-muted mt-1 block text-xs">
+              {copy.noBacktest}
+            </span>
+          ) : (
+            <span className="app-muted mt-1 block font-mono text-xs">
+              backtest_result_id={backtestResultId}
+            </span>
+          )}
+        </span>
+      </label>
+      <label className="mt-3 flex items-start gap-2 text-sm text-[var(--app-text)]">
+        <input
+          checked={includeContribution}
+          className="mt-1"
+          disabled={strategyId === null}
+          onChange={(event) => setIncludeContribution(event.target.checked)}
+          type="checkbox"
+        />
+        <span>
+          {copy.includeContribution}
+          {strategyId === null ? (
+            <span className="app-muted mt-1 block text-xs">
+              {copy.noContribution}
+            </span>
+          ) : (
+            <span className="app-muted mt-1 block font-mono text-xs">
+              strategy_id={strategyId}
+            </span>
+          )}
+        </span>
+      </label>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <button
+          className="app-button-primary min-h-11 px-4 py-2 text-sm font-semibold"
+          disabled={
+            createTask.isPending || (includeContribution && strategyId === null)
+          }
+          type="submit"
+        >
+          {createTask.isPending ? copy.submitting : copy.submit}
+        </button>
+        <span className="text-xs text-[var(--app-muted)]">
+          {copy.persistedOnly}
+        </span>
+      </div>
+      {createTask.isError ? (
+        <p className="mt-3 text-sm text-[var(--app-danger-text)]" role="alert">
+          {createTask.error.message}
+        </p>
+      ) : null}
+    </form>
   );
 }

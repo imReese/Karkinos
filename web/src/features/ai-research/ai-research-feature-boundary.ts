@@ -5,3 +5,5 @@ export {
   useBacktestResultsQuery,
   type BacktestReport,
 } from '../backtest/api';
+export { ResearchTaskPanel } from '../research-workflow/components/research-task-panel';
+export { StrategyHypothesisPanel } from '../research-workflow/components/strategy-hypothesis-panel';

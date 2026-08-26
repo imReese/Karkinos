@@ -1,3 +1,2 @@
-export * from './research-task-api';
+export * from './ai-research-api-boundary';
 export * from './shadow-research-api';
-export * from './strategy-research-api';

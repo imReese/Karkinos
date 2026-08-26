@@ -1,4 +1,4 @@
-import type { ResearchEvidenceType } from '../api';
+import type { ResearchEvidenceType } from '../research-task-api';
 
 export const BASE_EVIDENCE: ResearchEvidenceType[] = [
   'portfolio',

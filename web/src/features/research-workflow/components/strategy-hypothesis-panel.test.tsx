@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { PreferencesProvider } from '../../../app/providers/preferences-provider';
-import type { BacktestReport } from '../ai-research-feature-boundary';
+import type { BacktestReport } from '../../backtest/api';
 import { StrategyHypothesisPanel } from './strategy-hypothesis-panel';
 
 const report: BacktestReport = {
