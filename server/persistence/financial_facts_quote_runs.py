@@ -6,11 +6,14 @@ import logging
 import sqlite3
 from typing import Any
 
-from server.persistence.database_support import (
+from server.persistence.database_serialization import (
     metadata_payload_value,
     serialize_metadata_json,
 )
 from server.persistence.event_log import insert_event_sync
+from server.persistence.financial_facts_quote_ingestion_uow import (
+    PUBLISHED_QUOTE_RUN_STATUSES,
+)
 
 logger = logging.getLogger("server.persistence.financial_facts")
 
@@ -97,19 +100,30 @@ class QuoteFetchRunRepositoryMixin:
         metadata: dict[str, Any] | str | None = None,
     ) -> dict[str, Any] | None:
         """Mark a quote fetch run as finished and return the updated row."""
-        successful_statuses = {"success", "partial", "partial_success"}
-        if success_count > 0 and status in successful_statuses:
+        if success_count > 0 and status in PUBLISHED_QUOTE_RUN_STATUSES:
             try:
-                valuation_snapshot = self._valuation_publisher()
-                metadata_value = metadata_payload_value(metadata)
-                if isinstance(metadata_value, dict):
-                    metadata = {
-                        **metadata_value,
-                        "valuation_snapshot_id": valuation_snapshot["snapshot_id"],
-                    }
+                return self.publish_quote_fetch_run_sync(
+                    run_id=run_id,
+                    finished_at=finished_at,
+                    status=status,
+                    success_count=success_count,
+                    failure_count=failure_count,
+                    cache_hit_count=cache_hit_count,
+                    error_message=error_message,
+                    metadata=metadata,
+                )
             except Exception as exc:
                 logger.exception(
                     "Failed to publish valuation snapshot for quote run %s", run_id
+                )
+                self._runtime_controls.set_value(
+                    "valuation_snapshot_publication",
+                    {
+                        "status": "failed",
+                        "quote_fetch_run_id": run_id,
+                        "error_type": type(exc).__name__,
+                        "reason": "quote_batch_publication_failed",
+                    },
                 )
                 status = "failed"
                 error_message = (

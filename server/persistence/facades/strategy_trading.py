@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from server.contracts.order_state import (
+    ManualOrderStateCommand,
+    ManualOrderTicketCommand,
+)
+from server.contracts.paper_shadow import PaperShadowRunCommand
 from server.persistence.facades.base import DatabaseRepositoryAccess
 
 
@@ -152,35 +157,12 @@ class StrategyTradingDatabaseFacade(DatabaseRepositoryAccess):
 
     # ---------- Paper/Shadow Runs ----------
 
-    def upsert_paper_shadow_run_sync(
+    def record_paper_shadow_run_sync(
         self,
-        *,
-        run_id: str,
-        plan_date: str,
-        input_fingerprint: str,
-        status: str,
-        order_intent_count: int,
-        simulated_order_count: int,
-        simulated_fill_count: int,
-        divergence_status: str,
-        next_manual_review_step: str,
-        limitations: list[str] | None = None,
-        payload: dict[str, Any] | str | None = None,
+        command: PaperShadowRunCommand,
     ) -> dict[str, Any]:
-        """Persist or update one idempotent daily paper/shadow run record."""
-        return self._paper_trading.upsert_paper_shadow_run_sync(
-            run_id=run_id,
-            plan_date=plan_date,
-            input_fingerprint=input_fingerprint,
-            status=status,
-            order_intent_count=order_intent_count,
-            simulated_order_count=simulated_order_count,
-            simulated_fill_count=simulated_fill_count,
-            divergence_status=divergence_status,
-            next_manual_review_step=next_manual_review_step,
-            limitations=limitations,
-            payload=payload,
-        )
+        """Atomically record one immutable paper-shadow simulation aggregate."""
+        return self._paper_trading.record_paper_shadow_run_sync(command)
 
     def get_paper_shadow_run_sync(self, run_id: str) -> dict[str, Any] | None:
         """Read one persisted paper/shadow run by ID."""
@@ -295,37 +277,19 @@ class StrategyTradingDatabaseFacade(DatabaseRepositoryAccess):
 
     # ---------- Manual Orders ----------
 
-    def save_manual_order_sync(
+    def create_manual_order_ticket_sync(
         self,
-        *,
-        order_id: str,
-        timestamp: str,
-        symbol: str,
-        side: str,
-        order_type: str,
-        quantity: float,
-        price: float | None,
-        intent_id: str | None,
-        risk_decision_id: str | None,
-        execution_mode: str,
-        status: str,
-        payload: dict[str, Any],
-    ) -> int:
-        """Persist an order waiting for manual confirmation."""
-        return self._paper_trading.save_manual_order_sync(
-            order_id=order_id,
-            timestamp=timestamp,
-            symbol=symbol,
-            side=side,
-            order_type=order_type,
-            quantity=quantity,
-            price=price,
-            intent_id=intent_id,
-            risk_decision_id=risk_decision_id,
-            execution_mode=execution_mode,
-            status=status,
-            payload=payload,
-        )
+        command: ManualOrderTicketCommand,
+    ) -> dict[str, Any]:
+        """Atomically create both order projections and claim the action task."""
+        return self._paper_trading.create_manual_order_ticket_sync(command)
+
+    def transition_manual_order_sync(
+        self,
+        command: ManualOrderStateCommand,
+    ) -> dict[str, Any]:
+        """Atomically transition both order projections and their action task."""
+        return self._paper_trading.transition_manual_order_sync(command)
 
     def get_manual_order_sync(self, order_id: str) -> dict[str, Any] | None:
         """Read one manual order by ID."""
@@ -336,14 +300,6 @@ class StrategyTradingDatabaseFacade(DatabaseRepositoryAccess):
     ) -> list[dict[str, Any]]:
         """List manual orders, latest first."""
         return self._paper_trading.list_manual_orders_sync(status, limit, offset)
-
-    def update_manual_order_status_sync(
-        self, *, order_id: str, status: str, note: str = ""
-    ) -> dict[str, Any] | None:
-        """Update manual order status and return the updated row."""
-        return self._paper_trading.update_manual_order_status_sync(
-            order_id=order_id, status=status, note=note
-        )
 
     # ---------- Fills ----------
 

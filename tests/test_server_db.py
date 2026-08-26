@@ -6,8 +6,14 @@ import sqlite3
 from datetime import datetime
 from decimal import Decimal
 
+import pytest
+
 from core.events import OrderIntentEvent, RiskDecisionEvent
 from core.types import OrderSide, Symbol
+from server.contracts.order_state import (
+    ManualOrderStateCommand,
+    ManualOrderTicketCommand,
+)
 from server.db import AppDatabase
 
 
@@ -1248,12 +1254,14 @@ def test_app_database_ledger_entries_append_portfolio_events(tmp_path):
     assert events[0]["source"] == "ledger_entries"
     assert events[0]["source_ref"] == str(entry_id)
     assert json.loads(events[0]["payload_json"]) == {
-        "amount": None,
+        "amount": 1234.5,
         "asset_class": "stock",
         "commission": 1.23,
         "direction": "buy",
         "entry_id": entry_id,
         "entry_type": "trade_buy",
+        "gross_amount": 1234.5,
+        "net_cash_impact": -1235.73,
         "note": "unit test trade",
         "price": 123.45,
         "quantity": 10.0,
@@ -1267,69 +1275,81 @@ def test_app_database_ledger_entries_append_portfolio_events(tmp_path):
 def test_app_database_manual_orders_append_order_events(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
-
-    row_id = db.save_manual_order_sync(
-        order_id="ORD-1",
-        timestamp="2026-04-18T14:50:00",
+    db.save_signal_sync(
+        timestamp="2026-04-18T14:49:00",
+        strategy_id="fixture",
         symbol="600519",
-        side="buy",
-        order_type="market",
-        quantity=100.0,
+        direction="buy",
+        target_weight=0.1,
         price=123.45,
-        intent_id="INTENT-1",
-        risk_decision_id="RISK-1",
-        execution_mode="manual",
-        status="pending_confirm",
-        payload={"reason": "unit test"},
+        asset_class="stock",
     )
-    db.update_manual_order_status_sync(
-        order_id="ORD-1",
-        status="confirmed",
-        note="operator approved",
+    db.upsert_action_task_sync(
+        source_signal_id=1,
+        symbol="600519",
+        title="fixture action",
+        detail="manual order event fixture",
+        direction="buy",
+        urgency="normal",
+        target_weight=0.1,
+        price=123.45,
+        strategy_id="fixture",
+        timestamp="2026-04-18T14:49:00",
+        asset_class="stock",
+    )
+    action_id = int(db.get_action_tasks_sync(limit=1)[0]["id"])
+    created = db.create_manual_order_ticket_sync(
+        ManualOrderTicketCommand(
+            idempotency_key="manual-ticket:action:1",
+            action_id=action_id,
+            expected_action_status="pending",
+            order_id="ORD-1",
+            timestamp="2026-04-18T14:50:00",
+            symbol="600519",
+            side="buy",
+            order_type="market",
+            quantity=100.0,
+            price=123.45,
+            asset_class="stock",
+            intent_id="INTENT-1",
+            risk_decision_id="RISK-1",
+            source_ref=str(action_id),
+            payload={"reason": "unit test", "action_id": action_id},
+        )
+    )
+    db.transition_manual_order_sync(
+        ManualOrderStateCommand(
+            idempotency_key="manual-order:ORD-1:confirm",
+            order_id="ORD-1",
+            expected_from="pending_confirm",
+            to_status="confirmed",
+            note="operator approved",
+            action_id=action_id,
+            expected_action_status="pending_manual_confirmation",
+            action_to_status="acted",
+        )
     )
     events = db.list_events_sync(entity_type="order", entity_id="ORD-1")
 
-    assert [event["event_type"] for event in events] == [
-        "order.status_changed",
-        "order.submitted",
+    assert created["id"] > 0
+    assert [(event["event_type"], event["source"]) for event in events] == [
+        ("order.status_changed", "orders"),
+        ("order.status_changed", "manual_orders"),
+        ("order.recorded", "orders"),
+        ("order.submitted", "manual_orders"),
     ]
-    assert events[0]["source"] == "manual_orders"
-    assert events[0]["source_ref"] == "ORD-1"
-    assert json.loads(events[0]["payload_json"]) == {
-        "execution_mode": "manual",
-        "intent_id": "INTENT-1",
-        "note": "operator approved",
-        "order_id": "ORD-1",
-        "order_row_id": row_id,
-        "order_type": "market",
-        "payload": {"reason": "unit test"},
-        "price": 123.45,
-        "quantity": 100.0,
-        "risk_decision_id": "RISK-1",
-        "side": "buy",
-        "status": "confirmed",
-        "symbol": "600519",
-        "timestamp": "2026-04-18T14:50:00",
-    }
-    assert json.loads(events[1]["payload_json"]) == {
-        "execution_mode": "manual",
-        "intent_id": "INTENT-1",
-        "note": "",
-        "order_id": "ORD-1",
-        "order_row_id": row_id,
-        "order_type": "market",
-        "payload": {"reason": "unit test"},
-        "price": 123.45,
-        "quantity": 100.0,
-        "risk_decision_id": "RISK-1",
-        "side": "buy",
-        "status": "pending_confirm",
-        "symbol": "600519",
-        "timestamp": "2026-04-18T14:50:00",
-    }
+    manual_status_payload = json.loads(events[1]["payload_json"])
+    assert manual_status_payload["note"] == "operator approved"
+    assert manual_status_payload["status"] == "confirmed"
+    assert manual_status_payload["payload"]["reason"] == "unit test"
+    assert manual_status_payload["command_identity"]["command_type"] == (
+        "manual_order_ticket.transition"
+    )
+    assert db.get_order_sync("ORD-1")["status"] == "confirmed"
+    assert db.get_action_task_sync(action_id)["status"] == "acted"
 
 
-def test_app_database_records_order_and_appends_order_event(tmp_path):
+def test_app_database_exactly_replays_order_and_rejects_fact_drift(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
 
@@ -1352,39 +1372,54 @@ def test_app_database_records_order_and_appends_order_event(tmp_path):
     )
     updated_id = db.record_order_sync(
         order_id="ORD-1",
-        timestamp="2026-04-18T14:50:01",
+        timestamp="2026-04-18T14:50:00",
         symbol="600519",
         side="buy",
         order_type="market",
         quantity=100.0,
-        price=123.46,
+        price=123.45,
         asset_class="stock",
         intent_id="INTENT-1",
         risk_decision_id="RISK-1",
         execution_mode="manual",
-        status="submitted",
+        status="pending_confirm",
         source="manual_orders",
         source_ref="ORD-1",
-        payload={"reason": "resubmitted"},
+        payload={"reason": "unit test"},
     )
+    with pytest.raises(ValueError, match="fact payload changed"):
+        db.record_order_sync(
+            order_id="ORD-1",
+            timestamp="2026-04-18T14:50:01",
+            symbol="600519",
+            side="buy",
+            order_type="market",
+            quantity=100.0,
+            price=123.46,
+            asset_class="stock",
+            intent_id="INTENT-1",
+            risk_decision_id="RISK-1",
+            execution_mode="manual",
+            status="submitted",
+            source="manual_orders",
+            source_ref="ORD-1",
+            payload={"reason": "resubmitted"},
+        )
 
     order = db.get_order_sync("ORD-1")
-    orders = db.list_orders_sync(status="submitted")
+    orders = db.list_orders_sync(status="pending_confirm")
     events = db.list_events_sync(entity_type="order", entity_id="ORD-1")
 
     assert updated_id == row_id
     assert len(orders) == 1
     assert order == orders[0]
     assert order["order_id"] == "ORD-1"
-    assert order["status"] == "submitted"
-    assert order["price"] == 123.46
+    assert order["status"] == "pending_confirm"
+    assert order["price"] == 123.45
     assert order["source"] == "manual_orders"
     assert order["source_ref"] == "ORD-1"
-    assert json.loads(order["payload_json"]) == {"reason": "resubmitted"}
-    assert [event["event_type"] for event in events] == [
-        "order.recorded",
-        "order.recorded",
-    ]
+    assert json.loads(order["payload_json"]) == {"reason": "unit test"}
+    assert [event["event_type"] for event in events] == ["order.recorded"]
     assert json.loads(events[0]["payload_json"]) == {
         "asset_class": "stock",
         "execution_mode": "manual",
@@ -1392,16 +1427,16 @@ def test_app_database_records_order_and_appends_order_event(tmp_path):
         "order_id": "ORD-1",
         "order_row_id": row_id,
         "order_type": "market",
-        "payload": {"reason": "resubmitted"},
-        "price": 123.46,
+        "payload": {"reason": "unit test"},
+        "price": 123.45,
         "quantity": 100.0,
         "risk_decision_id": "RISK-1",
         "side": "buy",
         "source": "manual_orders",
         "source_ref": "ORD-1",
-        "status": "submitted",
+        "status": "pending_confirm",
         "symbol": "600519",
-        "timestamp": "2026-04-18T14:50:01",
+        "timestamp": "2026-04-18T14:50:00",
     }
 
 
@@ -1466,7 +1501,7 @@ def test_app_database_updates_order_status_and_appends_status_event(tmp_path):
     }
 
 
-def test_app_database_records_fill_and_appends_order_fill_event(tmp_path):
+def test_app_database_exactly_replays_fill_and_rejects_fact_drift(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
 
@@ -1491,21 +1526,40 @@ def test_app_database_records_fill_and_appends_order_fill_event(tmp_path):
     updated_id = db.record_fill_sync(
         fill_id="FILL-1",
         order_id="ORD-1",
-        timestamp="2026-04-18T14:50:04",
+        timestamp="2026-04-18T14:50:03",
         symbol="600519",
         side="buy",
-        fill_price=123.47,
+        fill_price=123.46,
         fill_quantity=100.0,
-        commission=5.1,
-        slippage=1.1,
+        commission=5.0,
+        slippage=1.0,
         asset_class="stock",
         execution_mode="paper",
         provider_name="simulated",
         broker_order_id="SIM-ORD-1",
         source="simulated_execution",
         source_ref="SIM-FILL-1",
-        metadata={"latency_ms": 14},
+        metadata={"latency_ms": 12},
     )
+    with pytest.raises(ValueError, match="numeric fact changed"):
+        db.record_fill_sync(
+            fill_id="FILL-1",
+            order_id="ORD-1",
+            timestamp="2026-04-18T14:50:03",
+            symbol="600519",
+            side="buy",
+            fill_price=123.47,
+            fill_quantity=100.0,
+            commission=5.0,
+            slippage=1.0,
+            asset_class="stock",
+            execution_mode="paper",
+            provider_name="simulated",
+            broker_order_id="SIM-ORD-1",
+            source="simulated_execution",
+            source_ref="SIM-FILL-1",
+            metadata={"latency_ms": 12},
+        )
 
     fill = db.get_fill_sync("FILL-1")
     fills = db.list_fills_sync(order_id="ORD-1")
@@ -1516,32 +1570,29 @@ def test_app_database_records_fill_and_appends_order_fill_event(tmp_path):
     assert fill == fills[0]
     assert fill["fill_id"] == "FILL-1"
     assert fill["order_id"] == "ORD-1"
-    assert fill["fill_price"] == 123.47
+    assert fill["fill_price"] == 123.46
     assert fill["source"] == "simulated_execution"
     assert fill["source_ref"] == "SIM-FILL-1"
-    assert json.loads(fill["metadata_json"]) == {"latency_ms": 14}
-    assert [event["event_type"] for event in events] == [
-        "order.fill.recorded",
-        "order.fill.recorded",
-    ]
+    assert json.loads(fill["metadata_json"]) == {"latency_ms": 12}
+    assert [event["event_type"] for event in events] == ["order.fill.recorded"]
     assert json.loads(events[0]["payload_json"]) == {
         "asset_class": "stock",
         "broker_order_id": "SIM-ORD-1",
-        "commission": 5.1,
+        "commission": 5.0,
         "execution_mode": "paper",
         "fill_id": "FILL-1",
-        "fill_price": 123.47,
+        "fill_price": 123.46,
         "fill_quantity": 100.0,
         "fill_row_id": row_id,
-        "metadata": {"latency_ms": 14},
+        "metadata": {"latency_ms": 12},
         "order_id": "ORD-1",
         "provider_name": "simulated",
         "side": "buy",
-        "slippage": 1.1,
+        "slippage": 1.0,
         "source": "simulated_execution",
         "source_ref": "SIM-FILL-1",
         "symbol": "600519",
-        "timestamp": "2026-04-18T14:50:04",
+        "timestamp": "2026-04-18T14:50:03",
     }
 
 

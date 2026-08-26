@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import sqlite3
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -58,6 +59,7 @@ from server.services.session_start_account_truth import (
     SessionStartAccountTruthService,
 )
 from server.services.trading_controls import TradingControlState
+from tests.order_state_fixtures import insert_historical_oms_order
 
 NOW = datetime(2026, 7, 10, 8, 5, tzinfo=timezone.utc)
 
@@ -239,28 +241,26 @@ def _ready_environment(tmp_path) -> dict:
     )
     prior_action = db.get_action_tasks_sync(limit=1)[0]
     prior_order_id = "prior-session-order-1"
-    db.upsert_oms_order_sync(
-        {
-            "order_id": prior_order_id,
-            "intent_key": prior_order_id,
-            "symbol": "510300.SH",
-            "side": "buy",
-            "asset_class": "fund",
-            "quantity": 100.0,
-            "order_type": "limit",
-            "limit_price": 4.0,
-            "status": "cancelled",
-            "broker_submission_enabled": False,
-            "source": "prior_session_batch_test",
-            "payload": {
-                "execution_mode": "manual",
-                "gateway_evidence": {
-                    "research_evidence": {
-                        "evidence_ref": f"decision_action:{prior_action['id']}"
-                    }
-                },
+    insert_historical_oms_order(
+        db,
+        order_id=prior_order_id,
+        intent_key=prior_order_id,
+        symbol="510300.SH",
+        side="buy",
+        asset_class="fund",
+        quantity=100.0,
+        order_type="limit",
+        limit_price=4.0,
+        status="cancelled",
+        source="prior_session_batch_test",
+        payload={
+            "execution_mode": "manual",
+            "gateway_evidence": {
+                "research_evidence": {
+                    "evidence_ref": f"decision_action:{prior_action['id']}"
+                }
             },
-        }
+        },
     )
     reconciliation_run_id = "execution-reconciliation:2026-07-10"
     db.upsert_execution_reconciliation_run_sync(
@@ -318,17 +318,7 @@ def _ready_environment(tmp_path) -> dict:
             limit_price=limit_price,
             source="daily_trading_plan",
             source_ref="paper-shadow:session-run-1",
-        )
-        order = db.upsert_oms_order_sync(
-            {
-                **order,
-                "payload": {
-                    "schema_version": "karkinos.oms_order.v1",
-                    "manual_confirmation_required": True,
-                    "does_not_submit_broker_order": True,
-                    "gateway_evidence": _gateway_evidence(),
-                },
-            }
+            payload={"gateway_evidence": _gateway_evidence()},
         )
         orders.append(order)
     gateway_verification_fingerprints = {
@@ -949,8 +939,11 @@ def test_session_window_duplicate_orders_and_naive_times_fail_closed(tmp_path) -
 def test_session_budget_blocks_oversized_order_and_turnover(tmp_path) -> None:
     env = _ready_environment(tmp_path)
     order_id = env["order_ids"][0]
-    order = env["db"].get_oms_order_sync(order_id)
-    env["db"].upsert_oms_order_sync({**order, "quantity": 3000})
+    with sqlite3.connect(env["db"].path) as conn:
+        conn.execute(
+            "UPDATE oms_orders SET quantity = 3000 WHERE order_id = ?",
+            (order_id,),
+        )
 
     envelope = _preview(env)
 
@@ -965,16 +958,16 @@ def test_market_order_missing_gateway_evidence_and_symbol_scope_fail_closed(
 ) -> None:
     env = _ready_environment(tmp_path)
     order_id = env["order_ids"][0]
-    order = env["db"].get_oms_order_sync(order_id)
-    env["db"].upsert_oms_order_sync(
-        {
-            **order,
-            "symbol": "600519.SH",
-            "order_type": "market",
-            "limit_price": None,
-            "payload": {"gateway_evidence": {}},
-        }
-    )
+    with sqlite3.connect(env["db"].path) as conn:
+        conn.execute(
+            """
+            UPDATE oms_orders
+            SET symbol = '600519.SH', order_type = 'market', limit_price = NULL,
+                payload_json = ?
+            WHERE order_id = ?
+            """,
+            (json.dumps({"gateway_evidence": {}}), order_id),
+        )
 
     envelope = _preview(env)
 

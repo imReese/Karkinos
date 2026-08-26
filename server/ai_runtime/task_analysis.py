@@ -7,12 +7,12 @@ has no OMS, ledger, risk, capital, kill-switch, or broker authority.
 
 from __future__ import annotations
 
-import sqlite3
 from collections.abc import Callable
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
+from typing import Any
+
+from server.persistence.task_analysis import ResearchTaskAnalysisPersistenceMixin
 
 from .contracts import (
     ArtifactKind,
@@ -21,7 +21,6 @@ from .contracts import (
     ResearchWorkflow,
     StoredArtifact,
     WorkflowStatus,
-    canonical_json,
     content_fingerprint,
 )
 from .evidence import (
@@ -200,149 +199,18 @@ class ResearchTaskAnalysisResult:
         }
 
 
-_ANALYSIS_SCHEMA = """
-CREATE TABLE IF NOT EXISTS ai_research_task_analyses (
-    analysis_id TEXT PRIMARY KEY,
-    task_id TEXT NOT NULL,
-    idempotency_key TEXT NOT NULL UNIQUE,
-    request_json TEXT NOT NULL,
-    request_fingerprint TEXT NOT NULL,
-    requested_by TEXT NOT NULL,
-    workflow_id TEXT NOT NULL UNIQUE,
-    context_snapshot_id TEXT NOT NULL,
-    context_fingerprint TEXT NOT NULL,
-    fixture_contract_version TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    FOREIGN KEY(task_id) REFERENCES ai_research_tasks(task_id),
-    FOREIGN KEY(workflow_id) REFERENCES ai_workflows(workflow_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_ai_research_task_analyses_task
-ON ai_research_task_analyses(task_id, created_at DESC);
-"""
-
-
-class ResearchTaskAnalysisStore:
+class ResearchTaskAnalysisStore(ResearchTaskAnalysisPersistenceMixin):
     """Task-to-workflow mappings for explicitly started local fixture runs."""
+
+    _fixture_contract_version = FIXTURE_CONTRACT_VERSION
 
     def __init__(self, db_path: str | Path) -> None:
         self._path = Path(db_path)
         self._path.parent.mkdir(parents=True, exist_ok=True)
 
-    @contextmanager
-    def _connection(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self._path, timeout=2)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys=ON")
-        conn.execute("PRAGMA busy_timeout=2000")
-        try:
-            with conn:
-                yield conn
-        finally:
-            conn.close()
-
-    def init(self) -> None:
-        with self._connection() as conn:
-            conn.executescript(_ANALYSIS_SCHEMA)
-
-    def create_or_get(
-        self,
-        request: HumanFixtureAnalysisRequest,
-        *,
-        workflow_id: str,
-        context_snapshot_id: str,
-        context_fingerprint: str,
-        created_at: str,
-    ) -> tuple[ResearchTaskAnalysisRecord, bool]:
-        analysis_identity = {
-            "request_fingerprint": request.fingerprint,
-            "workflow_id": workflow_id,
-            "context_fingerprint": context_fingerprint,
-        }
-        analysis_id = f"ai-task-analysis-{content_fingerprint(analysis_identity)[:24]}"
-        with self._connection() as conn:
-            existing = conn.execute(
-                "SELECT * FROM ai_research_task_analyses WHERE idempotency_key = ?",
-                (request.idempotency_key,),
-            ).fetchone()
-            if existing is not None:
-                if (
-                    str(existing["request_fingerprint"]) != request.fingerprint
-                    or str(existing["workflow_id"]) != workflow_id
-                ):
-                    raise IdempotencyConflict(
-                        "fixture analysis idempotency key was reused with different input"
-                    )
-                return _analysis_from_row(existing), True
-            conn.execute(
-                """
-                INSERT INTO ai_research_task_analyses (
-                    analysis_id, task_id, idempotency_key, request_json,
-                    request_fingerprint, requested_by, workflow_id,
-                    context_snapshot_id, context_fingerprint,
-                    fixture_contract_version, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    analysis_id,
-                    request.task_id,
-                    request.idempotency_key,
-                    canonical_json(request.to_dict()),
-                    request.fingerprint,
-                    request.requested_by,
-                    workflow_id,
-                    context_snapshot_id,
-                    context_fingerprint,
-                    FIXTURE_CONTRACT_VERSION,
-                    created_at,
-                ),
-            )
-            row = conn.execute(
-                "SELECT * FROM ai_research_task_analyses WHERE analysis_id = ?",
-                (analysis_id,),
-            ).fetchone()
-        if row is None:
-            raise RuntimeError("fixture analysis mapping persistence failed")
-        return _analysis_from_row(row), False
-
-    def get(self, analysis_id: str) -> ResearchTaskAnalysisRecord:
-        try:
-            with self._connection() as conn:
-                row = conn.execute(
-                    "SELECT * FROM ai_research_task_analyses WHERE analysis_id = ?",
-                    (analysis_id,),
-                ).fetchone()
-        except sqlite3.OperationalError as exc:
-            if "no such table" not in str(exc):
-                raise
-            row = None
-        if row is None:
-            raise LookupError(f"fixture analysis not found: {analysis_id}")
+    @staticmethod
+    def _analysis_from_row(row: Any) -> ResearchTaskAnalysisRecord:
         return _analysis_from_row(row)
-
-    def list(
-        self,
-        *,
-        task_id: str | None = None,
-        limit: int = 50,
-    ) -> tuple[ResearchTaskAnalysisRecord, ...]:
-        if limit <= 0 or limit > 200:
-            raise ValueError("analysis list limit must be between 1 and 200")
-        sql = "SELECT * FROM ai_research_task_analyses"
-        params: list[object] = []
-        if task_id is not None:
-            sql += " WHERE task_id = ?"
-            params.append(task_id)
-        sql += " ORDER BY created_at DESC, analysis_id DESC LIMIT ?"
-        params.append(limit)
-        try:
-            with self._connection() as conn:
-                rows = conn.execute(sql, params).fetchall()
-        except sqlite3.OperationalError as exc:
-            if "no such table" not in str(exc):
-                raise
-            rows = []
-        return tuple(_analysis_from_row(row) for row in rows)
 
 
 class HumanResearchTaskFixtureAnalysisService:
@@ -572,7 +440,7 @@ def _artifact_payload(artifact: StoredArtifact) -> JsonObject:
     }
 
 
-def _analysis_from_row(row: sqlite3.Row) -> ResearchTaskAnalysisRecord:
+def _analysis_from_row(row: Any) -> ResearchTaskAnalysisRecord:
     return ResearchTaskAnalysisRecord(
         analysis_id=str(row["analysis_id"]),
         task_id=str(row["task_id"]),

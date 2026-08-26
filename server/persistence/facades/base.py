@@ -14,6 +14,9 @@ from server.persistence.execution_reconciliation import (
 from server.persistence.financial_facts import FinancialFactsRepository
 from server.persistence.instrument_metadata import InstrumentMetadataRepository
 from server.persistence.market_calendar import MarketCalendarRepository
+from server.persistence.market_calendar_publication_uow import (
+    MarketCalendarPublicationUnitOfWork,
+)
 from server.persistence.oms import OmsRepository
 from server.persistence.paper_trading import PaperTradingRepository
 from server.persistence.research_notes import ResearchNotesRepository
@@ -36,6 +39,7 @@ class DatabaseRepositoryAccess:
     _financial_facts: FinancialFactsRepository
     _instrument_metadata: InstrumentMetadataRepository
     _market_calendar: MarketCalendarRepository
+    _market_calendar_publication: MarketCalendarPublicationUnitOfWork
     _oms: OmsRepository
     _paper_trading: PaperTradingRepository
     _research_notes: ResearchNotesRepository

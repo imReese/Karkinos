@@ -1,281 +1,162 @@
-"""Portfolio trades HTTP endpoints."""
+"""Portfolio trades HTTP delivery adapter."""
 
 from __future__ import annotations
 
-from decimal import Decimal
-from typing import Any
-
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 from server.contracts.http.ledger_models import (
+    ManualTradeCreate,
+    PendingFundConfirmationRequest,
+    PendingFundConfirmationResponse,
     PendingFundOrderResponse,
-    TradeCreate,
+    PortfolioCorrectionRequest,
+    PortfolioCorrectionResponse,
     TradeResponse,
 )
-from server.services.manual_trade_fees import (
-    MANUAL_FEE_INPUT_RULE_ID,
-    MANUAL_FEE_INPUT_RULE_VERSION,
+from server.contracts.portfolio_mutations import PortfolioMutationConflict
+from server.http.portfolio_endpoints.dependencies import PortfolioTradeDependencies
+from server.services.portfolio_trade_commands import (
+    CreatedPendingFundOrder,
+    ManualTradeRequest,
 )
 
 
-def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
-    r = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
+def create_router(dependencies: PortfolioTradeDependencies) -> APIRouter:
+    """Register thin HTTP mappings over the typed trade command service."""
 
-    def dependency(name: str):
-        value = getattr(facade, name)
-        if callable(value) and not isinstance(value, type):
-            return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
-        return value
+    router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
-    _ensure_asset_config = dependency("_ensure_asset_config")
-    _fund_target_trade_date = dependency("_fund_target_trade_date")
-    _manual_trade_fee_breakdown = dependency("_manual_trade_fee_breakdown")
-    _manual_trade_net_cash_impact = dependency("_manual_trade_net_cash_impact")
-    _resolve_display_name = dependency("_resolve_display_name")
-    _resolve_fund_buy_fill = dependency("_resolve_fund_buy_fill")
-    _resolve_fund_identity = dependency("_resolve_fund_identity")
-    json = dependency("json")
-    resolve_manual_trade_fee_breakdown = dependency(
-        "resolve_manual_trade_fee_breakdown"
-    )
+    @router.post("/trade", response_model=TradeResponse)
+    async def create_trade(body: ManualTradeCreate) -> TradeResponse:
+        """Record one ledger-owned manual trade or pending fund intent."""
 
-    @r.post("/trade", response_model=TradeResponse)
-    async def create_trade(body: TradeCreate) -> TradeResponse:
-        """记录手动交易，同步更新 Portfolio 持仓。"""
-        import uuid
-        from datetime import datetime as dt
-
-        from core.events import FillEvent
-        from core.types import OrderSide, Symbol
-        from server.dependencies import get_app_state
-
-        state = get_app_state()
-        db = state.db
-
-        symbol = body.symbol.strip()
-        quantity = body.quantity
-        price = body.price
-        note = body.note
-        commission = body.commission
-        configured_fee = None
-
-        if (
-            body.asset_class == "fund"
-            and body.direction == "buy"
-            and body.amount is not None
-        ):
-            try:
-                resolved = _resolve_fund_buy_fill(
-                    state,
-                    symbol=symbol,
+        service = dependencies.command_service_factory(dependencies.get_state())
+        try:
+            result = service.create(
+                ManualTradeRequest(
+                    command_id=body.command_id,
+                    operator_id=body.operator_id,
                     timestamp=body.timestamp,
-                    gross_amount=body.amount,
-                    commission=commission or 0.0,
-                )
-            except LookupError as exc:
-                from fastapi.responses import JSONResponse
-
-                identity = _resolve_fund_identity(state, symbol)
-                _ensure_asset_config(
-                    state,
-                    symbol=identity["symbol"],
-                    asset_class=body.asset_class,
-                    display_name=identity["display_name"],
-                )
-                pending_id = db.add_pending_fund_order_sync(
-                    submitted_at=body.timestamp,
-                    symbol=identity["symbol"],
-                    display_name=identity["display_name"],
+                    symbol=body.symbol,
+                    direction=body.direction,
+                    quantity=body.quantity,
+                    price=body.price,
                     amount=body.amount,
-                    commission=commission or 0.0,
+                    commission=body.commission,
                     asset_class=body.asset_class,
-                    target_trade_date=_fund_target_trade_date(body.timestamp),
                     note=body.note,
                 )
-                return JSONResponse(
-                    status_code=202,
-                    content={
-                        "status": "pending",
-                        "id": pending_id,
-                        "symbol": identity["symbol"],
-                        "display_name": identity["display_name"],
-                        "amount": body.amount,
-                        "commission": commission or 0.0,
-                        "asset_class": body.asset_class,
-                        "target_trade_date": _fund_target_trade_date(body.timestamp),
-                        "detail": str(exc),
-                    },
-                )
-            except ValueError as exc:
-                from fastapi import HTTPException
-
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-            symbol = resolved["symbol"]
-            quantity = resolved["quantity"]
-            price = resolved["price"]
-            fund_note_parts = [
-                body.note.strip() if body.note.strip() else "",
-                f"Auto-confirmed fund subscription: gross_amount={resolved['gross_amount']:.2f}",
-                f"confirmed_trade_date={resolved['confirmed_trade_date']}",
-                f"confirmed_nav={resolved['price']:.6f}",
-            ]
-            note = " | ".join(part for part in fund_note_parts if part)
-            _ensure_asset_config(
-                state,
-                symbol=symbol,
-                asset_class=body.asset_class,
-                display_name=resolved["display_name"],
             )
-        elif quantity is None or price is None:
-            from fastapi import HTTPException
+        except PortfolioMutationConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-            raise HTTPException(
-                status_code=400,
-                detail="quantity and price are required unless this is a fund buy with amount",
+        if isinstance(result, CreatedPendingFundOrder):
+            order = result.order
+            return JSONResponse(
+                status_code=202,
+                content={
+                    "status": order["status"],
+                    "id": order["id"],
+                    "symbol": order["symbol"],
+                    "display_name": order["display_name"],
+                    "amount": order["amount"],
+                    "commission": order["commission"],
+                    "asset_class": order["asset_class"],
+                    "target_trade_date": order["target_trade_date"],
+                    "replayed": result.replayed,
+                    "detail": result.detail,
+                },
             )
+        return TradeResponse(**result.trade, replayed=result.replayed)
 
-        _ensure_asset_config(
-            state,
-            symbol=symbol,
-            asset_class=body.asset_class,
-            display_name=_resolve_display_name(state, symbol, fallback=symbol),
-        )
-
-        if commission is None:
-            configured_fee = resolve_manual_trade_fee_breakdown(
-                state.config,
-                asset_class=body.asset_class,
-                direction=body.direction,
-                quantity=quantity,
-                price=price,
-                symbol=symbol,
-            )
-            if configured_fee is None:
-                commission = 0.0
-            else:
-                commission = configured_fee.commission
-                if not note.strip():
-                    note = configured_fee.note
-
-        gross_amount = float(quantity) * float(price)
-        total_fee = (
-            configured_fee.total_fee
-            if configured_fee is not None
-            else float(commission)
-        )
-        fee_breakdown_json = (
-            configured_fee.fee_breakdown_json
-            if configured_fee is not None
-            else _manual_trade_fee_breakdown(commission)
-        )
-        fee_rule_id = (
-            configured_fee.fee_rule_id
-            if configured_fee is not None
-            else MANUAL_FEE_INPUT_RULE_ID
-        )
-        fee_rule_version = (
-            configured_fee.fee_rule_version
-            if configured_fee is not None
-            else MANUAL_FEE_INPUT_RULE_VERSION
-        )
-
-        trade_id = await db.add_trade(
-            timestamp=body.timestamp,
-            symbol=symbol,
-            direction=body.direction,
-            quantity=quantity,
-            price=price,
-            commission=commission,
-            asset_class=body.asset_class,
-            note=note,
-        )
-        db.insert_ledger_entry_sync(
-            entry_type=f"trade_{body.direction}",
-            timestamp=body.timestamp,
-            amount=gross_amount,
-            symbol=symbol,
-            direction=body.direction,
-            quantity=float(quantity),
-            price=float(price),
-            commission=commission,
-            gross_amount=gross_amount,
-            net_cash_impact=_manual_trade_net_cash_impact(
-                direction=body.direction,
-                gross_amount=gross_amount,
-                total_fee=total_fee,
-            ),
-            fee_breakdown_json=json.dumps(
-                fee_breakdown_json,
-                ensure_ascii=False,
-                sort_keys=True,
-            ),
-            fee_rule_id=fee_rule_id,
-            fee_rule_version=fee_rule_version,
-            cost_basis_method="moving_average_buy_cost",
-            asset_class=body.asset_class,
-            note=note,
-            source="portfolio_trade",
-            source_ref=f"trade:{trade_id}",
-        )
-
-        # If live is running, synthesize FillEvent to update portfolio
-        scheduler = state.scheduler
-        if scheduler and scheduler.is_running:
-            with scheduler._lock:
-                portfolio = scheduler._portfolio
-                if portfolio is not None:
-                    side = OrderSide.BUY if body.direction == "buy" else OrderSide.SELL
-                    fill = FillEvent(
-                        timestamp=(
-                            dt.fromisoformat(body.timestamp)
-                            if isinstance(body.timestamp, str)
-                            else body.timestamp
-                        ),
-                        fill_id=f"MANUAL-{uuid.uuid4().hex[:8]}",
-                        order_id=f"MANUAL-ORD-{uuid.uuid4().hex[:8]}",
-                        symbol=Symbol(symbol),
-                        side=side,
-                        fill_price=Decimal(str(price)),
-                        fill_quantity=Decimal(str(quantity)),
-                        commission=Decimal(str(total_fee)),
-                        slippage=Decimal("0"),
-                        fee_breakdown=fee_breakdown_json,
-                        fee_rule_id=fee_rule_id,
-                        fee_rule_version=fee_rule_version,
-                    )
-                    portfolio.on_fill(fill)
-
-        trades = await db.get_trades(limit=1)
-        return TradeResponse(**trades[0])
-
-    @r.get("/trades", response_model=list[TradeResponse])
+    @router.get("/trades", response_model=list[TradeResponse])
     async def list_trades(limit: int = 50, offset: int = 0) -> list[TradeResponse]:
-        """列出交易记录。"""
-        from server.dependencies import get_app_state
+        """List ledger-validated compatibility projections."""
 
-        state = get_app_state()
+        state = dependencies.get_state()
+        if state.db is None:
+            raise HTTPException(status_code=503, detail="database unavailable")
         trades = await state.db.get_trades(limit, offset)
-        return [TradeResponse(**t) for t in trades]
+        return [TradeResponse(**trade) for trade in trades]
 
-    @r.get("/pending-fund-orders", response_model=list[PendingFundOrderResponse])
+    @router.get(
+        "/pending-fund-orders",
+        response_model=list[PendingFundOrderResponse],
+    )
     async def list_pending_fund_orders() -> list[PendingFundOrderResponse]:
-        """列出等待确认净值的基金申购。"""
-        from server.dependencies import get_app_state
+        """List persisted pending fund-subscription facts."""
 
-        state = get_app_state()
-        if state.db is None or not hasattr(state.db, "get_pending_fund_orders_sync"):
-            return []
+        state = dependencies.get_state()
+        if state.db is None:
+            raise HTTPException(status_code=503, detail="database unavailable")
         rows = state.db.get_pending_fund_orders_sync(status="pending")
         return [PendingFundOrderResponse(**row) for row in rows]
 
-    @r.delete("/trade/{trade_id}")
-    async def delete_trade(trade_id: int) -> dict:
-        """删除交易记录。"""
-        from server.dependencies import get_app_state
+    @router.post(
+        "/pending-fund-orders/{order_id}/confirm",
+        response_model=PendingFundConfirmationResponse,
+    )
+    async def confirm_pending_fund_order(
+        order_id: int,
+        body: PendingFundConfirmationRequest,
+    ) -> PendingFundConfirmationResponse:
+        """Apply a human-selected, already persisted confirmed-NAV run."""
 
-        state = get_app_state()
-        deleted = await state.db.delete_trade(trade_id)
-        return {"deleted": deleted}
+        service = dependencies.command_service_factory(dependencies.get_state())
+        try:
+            result = service.confirm_pending(
+                order_id=order_id,
+                command_id=body.command_id,
+                operator_id=body.operator_id,
+                evidence_fetch_run_id=body.evidence_fetch_run_id,
+                confirmation_note=body.confirmation_note,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except PortfolioMutationConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return PendingFundConfirmationResponse(
+            order=PendingFundOrderResponse(**result.order),
+            trade=TradeResponse(**result.trade),
+            ledger_entry_id=result.ledger_entry_id,
+            replayed=result.replayed,
+        )
 
-    return r
+    @router.post(
+        "/trade/{trade_id}/corrections",
+        response_model=PortfolioCorrectionResponse,
+    )
+    async def correct_trade(
+        trade_id: int,
+        body: PortfolioCorrectionRequest,
+    ) -> PortfolioCorrectionResponse:
+        """Append an exact correction while preserving immutable trade history."""
+
+        service = dependencies.command_service_factory(dependencies.get_state())
+        try:
+            result = service.correct(
+                trade_id=trade_id,
+                command_id=body.command_id,
+                operator_id=body.operator_id,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return PortfolioCorrectionResponse(
+            corrected=True,
+            replayed=result.replayed,
+            correction_ledger_entry_id=result.correction_ledger_entry_id,
+        )
+
+    return router
+
+
+__all__ = ["create_router"]

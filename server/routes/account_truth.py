@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 import binascii
-import sys
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -101,6 +100,12 @@ from server.contracts.http.account_truth import (
     ReviewedFeeSchedulePreviewCreate,
     ReviewedFeeScheduleReviewCreate,
     ReviewedFeeScheduleReviewRevoke,
+)
+from server.http.account_truth_endpoints.dependencies import (
+    IntakeEndpointDependencies,
+    ReportDetailEndpointDependencies,
+    ReviewEndpointDependencies,
+    SummaryEndpointDependencies,
 )
 from server.http.account_truth_endpoints.intake import (
     create_router as _create_intake_router,
@@ -264,10 +269,231 @@ CITIC_HISTORY_XLS_MAX_BASE64_CHARS = ((CITIC_HISTORY_XLS_MAX_BYTES + 2) // 3) * 
 
 
 def create_router() -> APIRouter:
-    facade = sys.modules[__name__]
     router = APIRouter()
-    router.routes.extend(_create_intake_router(facade).routes)
-    router.routes.extend(_create_summary_router(facade).routes)
-    router.routes.extend(_create_reviews_router(facade).routes)
-    router.routes.extend(_create_report_detail_router(facade).routes)
+    router.routes.extend(
+        _create_intake_router(
+            IntakeEndpointDependencies(
+                citic_history_xls_directory_config_for_state=(
+                    lambda *args, **kwargs: (
+                        _citic_history_xls_directory_config_for_state(*args, **kwargs)
+                    )
+                ),
+                citic_history_xls_directory_scan_response=(
+                    lambda *args, **kwargs: _citic_history_xls_directory_scan_response(
+                        *args, **kwargs
+                    )
+                ),
+                citic_history_xls_directory_status_response=(
+                    lambda *args, **kwargs: (
+                        _citic_history_xls_directory_status_response(*args, **kwargs)
+                    )
+                ),
+                citic_history_xls_preview_response=lambda *args, **kwargs: (
+                    _citic_history_xls_preview_response(*args, **kwargs)
+                ),
+                citic_query_window_review_http_exception=(
+                    lambda *args, **kwargs: _citic_query_window_review_http_exception(
+                        *args, **kwargs
+                    )
+                ),
+                citic_query_window_review_read_http_exception=(
+                    lambda *args, **kwargs: (
+                        _citic_query_window_review_read_http_exception(*args, **kwargs)
+                    )
+                ),
+                citic_source_intake_response=lambda *args, **kwargs: (
+                    _citic_source_intake_response(*args, **kwargs)
+                ),
+                citic_source_reviews_for_state=lambda *args, **kwargs: (
+                    _citic_source_reviews_for_state(*args, **kwargs)
+                ),
+                citic_source_scope_review_http_exception=(
+                    lambda *args, **kwargs: _citic_source_scope_review_http_exception(
+                        *args, **kwargs
+                    )
+                ),
+                citic_source_scope_review_read_http_exception=(
+                    lambda *args, **kwargs: (
+                        _citic_source_scope_review_read_http_exception(*args, **kwargs)
+                    )
+                ),
+                parse_citic_history_xls_transport=lambda *args, **kwargs: (
+                    _parse_citic_history_xls_transport(*args, **kwargs)
+                ),
+                preview_response=lambda *args, **kwargs: _preview_response(
+                    *args, **kwargs
+                ),
+                record_citic_source_intake=lambda *args, **kwargs: (
+                    _record_citic_source_intake(*args, **kwargs)
+                ),
+                build_citic_history_canonical_lineage_assessment=(
+                    lambda *args, **kwargs: (
+                        build_citic_history_canonical_lineage_assessment(
+                            *args, **kwargs
+                        )
+                    )
+                ),
+                find_citic_history_xls_directory_preview=(
+                    lambda *args, **kwargs: find_citic_history_xls_directory_preview(
+                        *args, **kwargs
+                    )
+                ),
+                parse_broker_statement_csv=lambda *args, **kwargs: (
+                    parse_broker_statement_csv(*args, **kwargs)
+                ),
+                parse_citic_history_xls=lambda *args, **kwargs: parse_citic_history_xls(
+                    *args, **kwargs
+                ),
+                record_citic_source_query_window_review=(
+                    lambda *args, **kwargs: record_citic_source_query_window_review(
+                        *args, **kwargs
+                    )
+                ),
+                record_citic_source_scope_review=lambda *args, **kwargs: (
+                    record_citic_source_scope_review(*args, **kwargs)
+                ),
+                revoke_citic_source_query_window_review=(
+                    lambda *args, **kwargs: revoke_citic_source_query_window_review(
+                        *args, **kwargs
+                    )
+                ),
+                revoke_citic_source_scope_review=lambda *args, **kwargs: (
+                    revoke_citic_source_scope_review(*args, **kwargs)
+                ),
+                scan_citic_history_xls_directory=lambda *args, **kwargs: (
+                    scan_citic_history_xls_directory(*args, **kwargs)
+                ),
+            )
+        ).routes
+    )
+    router.routes.extend(
+        _create_summary_router(
+            SummaryEndpointDependencies(
+                account_truth_read_http_exception=lambda *args, **kwargs: (
+                    _account_truth_read_http_exception(*args, **kwargs)
+                ),
+                build_report_for_import_run=lambda *args, **kwargs: (
+                    _build_report_for_import_run(*args, **kwargs)
+                ),
+                import_run_response=lambda *args, **kwargs: _import_run_response(
+                    *args, **kwargs
+                ),
+                latest_import_runs_by_fingerprint=lambda *args, **kwargs: (
+                    _latest_import_runs_by_fingerprint(*args, **kwargs)
+                ),
+                missing_score_response=lambda *args, **kwargs: _missing_score_response(
+                    *args, **kwargs
+                ),
+                preview_response=lambda *args, **kwargs: _preview_response(
+                    *args, **kwargs
+                ),
+                report_summary_response=lambda *args, **kwargs: (
+                    _report_summary_response(*args, **kwargs)
+                ),
+                repository_for_state=lambda *args, **kwargs: _repository_for_state(
+                    *args, **kwargs
+                ),
+                build_account_truth_evidence_readiness=lambda *args, **kwargs: (
+                    build_account_truth_evidence_readiness(*args, **kwargs)
+                ),
+                build_latest_account_truth_score_payload=lambda *args, **kwargs: (
+                    build_latest_account_truth_score_payload(*args, **kwargs)
+                ),
+                parse_broker_statement_csv=lambda *args, **kwargs: (
+                    parse_broker_statement_csv(*args, **kwargs)
+                ),
+            )
+        ).routes
+    )
+    router.routes.extend(
+        _create_reviews_router(
+            ReviewEndpointDependencies(
+                account_truth_read_http_exception=lambda *args, **kwargs: (
+                    _account_truth_read_http_exception(*args, **kwargs)
+                ),
+                citic_canonical_resolution_http_exception=(
+                    lambda *args, **kwargs: _citic_canonical_resolution_http_exception(
+                        *args, **kwargs
+                    )
+                ),
+                citic_canonical_resolution_read_http_exception=(
+                    lambda *args, **kwargs: (
+                        _citic_canonical_resolution_read_http_exception(*args, **kwargs)
+                    )
+                ),
+                evidence_scope_review_http_exception=lambda *args, **kwargs: (
+                    _evidence_scope_review_http_exception(*args, **kwargs)
+                ),
+                reviewed_fee_schedule_http_exception=lambda *args, **kwargs: (
+                    _reviewed_fee_schedule_http_exception(*args, **kwargs)
+                ),
+                reviewed_fee_schedule_read_http_exception=(
+                    lambda *args, **kwargs: _reviewed_fee_schedule_read_http_exception(
+                        *args, **kwargs
+                    )
+                ),
+                reviewed_fee_schedule_repository_for_state=(
+                    lambda *args, **kwargs: _reviewed_fee_schedule_repository_for_state(
+                        *args, **kwargs
+                    )
+                ),
+                build_reviewed_fee_schedule_preview=lambda *args, **kwargs: (
+                    build_reviewed_fee_schedule_preview(*args, **kwargs)
+                ),
+                build_reviewed_fee_schedule_review_status=(
+                    lambda *args, **kwargs: build_reviewed_fee_schedule_review_status(
+                        *args, **kwargs
+                    )
+                ),
+                record_account_truth_evidence_scope_review=(
+                    lambda *args, **kwargs: record_account_truth_evidence_scope_review(
+                        *args, **kwargs
+                    )
+                ),
+                record_citic_source_canonical_resolution=(
+                    lambda *args, **kwargs: record_citic_source_canonical_resolution(
+                        *args, **kwargs
+                    )
+                ),
+                revoke_account_truth_evidence_scope_review=(
+                    lambda *args, **kwargs: revoke_account_truth_evidence_scope_review(
+                        *args, **kwargs
+                    )
+                ),
+                revoke_citic_source_canonical_resolution=(
+                    lambda *args, **kwargs: revoke_citic_source_canonical_resolution(
+                        *args, **kwargs
+                    )
+                ),
+            )
+        ).routes
+    )
+    router.routes.extend(
+        _create_report_detail_router(
+            ReportDetailEndpointDependencies(
+                account_truth_read_http_exception=lambda *args, **kwargs: (
+                    _account_truth_read_http_exception(*args, **kwargs)
+                ),
+                build_report_for_import_run=lambda *args, **kwargs: (
+                    _build_report_for_import_run(*args, **kwargs)
+                ),
+                decision_response=lambda *args, **kwargs: _decision_response(
+                    *args, **kwargs
+                ),
+                item_key=lambda *args, **kwargs: _item_key(*args, **kwargs),
+                manual_review_repository_for_state=lambda *args, **kwargs: (
+                    _manual_review_repository_for_state(*args, **kwargs)
+                ),
+                report_detail_response=lambda *args, **kwargs: _report_detail_response(
+                    *args, **kwargs
+                ),
+                repository_for_state=lambda *args, **kwargs: _repository_for_state(
+                    *args, **kwargs
+                ),
+                reconciliation_item_fingerprint=lambda *args, **kwargs: (
+                    reconciliation_item_fingerprint(*args, **kwargs)
+                ),
+            )
+        ).routes
+    )
     return router

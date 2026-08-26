@@ -72,14 +72,13 @@ class DailyCandidateQuoteFreezeService:
             }
 
         run_fingerprint = content_fingerprint(base)
-        run_id = (
-            f"daily_candidate_quote_freeze:{decision_date}:" f"{run_fingerprint[:16]}"
-        )
+        run_id = f"daily_candidate_quote_freeze:{decision_date}:{run_fingerprint[:16]}"
         existing = self._db.get_quote_fetch_run(run_id)
         if existing is not None and str(existing.get("status") or "") == "success":
             verification = self._verify_persisted_quotes(
                 symbols=symbols,
                 decision_date=decision_date,
+                expected_run_id=run_id,
             )
             if not verification["blockers"]:
                 return {
@@ -124,11 +123,6 @@ class DailyCandidateQuoteFreezeService:
                     }
                 )
 
-        verification = self._verify_persisted_quotes(
-            symbols=symbols,
-            decision_date=decision_date,
-        )
-        blockers = list(verification["blockers"])
         failed_symbols = sorted(
             {
                 str(item.get("symbol") or "")
@@ -136,8 +130,9 @@ class DailyCandidateQuoteFreezeService:
                 if item.get("status") != "refreshed"
             }
         )
-        blockers.extend(
-            f"selected_quote_refresh_failed:{symbol}" for symbol in failed_symbols
+        blockers = _refresh_result_blockers(
+            raw_results=raw_results,
+            decision_date=decision_date,
         )
         blockers = list(dict.fromkeys(blockers))
         status = "success" if not blockers else "failed"
@@ -154,11 +149,17 @@ class DailyCandidateQuoteFreezeService:
                 **base,
                 "run_id": run_id,
                 "raw_results": raw_results,
-                "verification": verification,
+                "prepublication_blockers": blockers,
             },
         )
         if not isinstance(finished, Mapping) or finished.get("status") != "success":
             blockers.append("selected_quote_fetch_run_not_successful")
+        verification = self._verify_persisted_quotes(
+            symbols=symbols,
+            decision_date=decision_date,
+            expected_run_id=run_id,
+        )
+        blockers.extend(verification["blockers"])
         blockers = list(dict.fromkeys(blockers))
         return {
             **base,
@@ -175,6 +176,7 @@ class DailyCandidateQuoteFreezeService:
         *,
         symbols: list[str],
         decision_date: str,
+        expected_run_id: str,
     ) -> dict[str, Any]:
         blockers: list[str] = []
         quote_results: list[dict[str, Any]] = []
@@ -189,6 +191,8 @@ class DailyCandidateQuoteFreezeService:
                 blockers.append(f"selected_quote_date_mismatch:{symbol}")
             if status not in {"live", "confirmed"}:
                 blockers.append(f"selected_quote_not_trusted:{symbol}")
+            if str(row.get("fetch_run_id") or "") != expected_run_id:
+                blockers.append(f"selected_quote_run_mismatch:{symbol}")
             quote_results.append(
                 {
                     "symbol": symbol,
@@ -213,6 +217,23 @@ def _result_dict(value: Any, *, symbol: str) -> dict[str, Any]:
     if callable(dumper):
         return dict(dumper())
     return {"symbol": symbol, "status": "failed", "error": "invalid_result"}
+
+
+def _refresh_result_blockers(
+    *,
+    raw_results: list[dict[str, Any]],
+    decision_date: str,
+) -> list[str]:
+    blockers: list[str] = []
+    for item in raw_results:
+        symbol = str(item.get("symbol") or "")
+        if item.get("status") != "refreshed":
+            blockers.append(f"selected_quote_refresh_failed:{symbol}")
+            continue
+        timestamp = _quote_timestamp(item)
+        if timestamp is None or timestamp.date().isoformat() != decision_date:
+            blockers.append(f"selected_quote_date_mismatch:{symbol}")
+    return list(dict.fromkeys(blockers))
 
 
 def _quote_timestamp(row: Mapping[str, Any]) -> datetime | None:

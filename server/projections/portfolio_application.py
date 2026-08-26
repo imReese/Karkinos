@@ -16,11 +16,8 @@ from server.models import (
 )
 from server.projections.portfolio_assets import (
     build_grouped_allocation,
-    confirm_pending_fund_orders,
-    ensure_asset_config,
     normalize_asset_class,
     parse_fee_breakdown,
-    resolve_fund_buy_fill,
 )
 from server.projections.portfolio_positions import (
     has_position_ledger_entries,
@@ -171,6 +168,7 @@ async def build_portfolio_snapshot(
             symbol=symbol,
             asset_class=metadata.asset_class,
             quote=quote,
+            now=now,
         )
         cost_basis_fields = broker_cost_basis_fields(
             pos,
@@ -201,9 +199,9 @@ async def build_portfolio_snapshot(
             quote_timestamp=None if quote is None else quote.get("timestamp"),
             quote_status=quote_status,
             quote_source=quote_source(state, quote),
-            quote_age_seconds=quote_age_seconds(quote),
+            quote_age_seconds=quote_age_seconds(quote, now=now),
             stale_reason=stale_reason,
-            refresh_policy=refresh_policy(),
+            refresh_policy=refresh_policy(now),
             using_persistent_cache=using_persistent_cache(quote),
             nav_date=None if quote is None else quote.get("nav_date"),
         )
@@ -330,9 +328,7 @@ __all__ = (
     "can_refresh_quotes",
     "collect_latest_quote_timestamps",
     "collect_latest_quotes",
-    "confirm_pending_fund_orders",
     "current_valuation_snapshot",
-    "ensure_asset_config",
     "has_position_ledger_entries",
     "has_rows",
     "hydrate_missing_position_quotes",
@@ -355,7 +351,6 @@ __all__ = (
     "quotes_from_valuation_snapshot",
     "read_daily_ledger_entries",
     "refresh_policy",
-    "resolve_fund_buy_fill",
     "resolve_live_holding_baseline",
     "resolve_position_today_change",
     "resolve_projection_sources",

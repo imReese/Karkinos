@@ -82,13 +82,8 @@ def test_route_service_wires_persistent_authentication_but_keeps_api_read_only(
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         controlled_services,
-        "build_controlled_session_runtime_authority_service",
-        lambda *_args, **_kwargs: fake_authority,
-    )
-    monkeypatch.setattr(
-        controlled_services,
-        "build_controlled_session_live_gate_service",
-        lambda *_args, **_kwargs: fake_live_gates,
+        "_build_controlled_session_monitoring_dependencies",
+        lambda *_args, **_kwargs: (fake_authority, fake_live_gates),
     )
 
     service = route_module._service()

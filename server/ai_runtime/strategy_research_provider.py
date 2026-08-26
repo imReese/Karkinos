@@ -14,21 +14,21 @@ from server.ai_runtime.contracts import (
     canonical_json,
     content_fingerprint,
 )
-from server.ai_runtime.external_research import (
+from server.ai_runtime.external_research_errors import (
     ExternalResearchAuthenticationError,
     ExternalResearchHttpError,
     ExternalResearchInvalidResponseError,
     ExternalResearchNetworkError,
     ExternalResearchRateLimitedError,
     ExternalResearchTimeoutError,
-    message_text,
 )
+from server.ai_runtime.openai_compatibility import message_text
 from server.ai_runtime.provider import (
     ProviderAdapter,
     ProviderRequest,
     ProviderResponse,
 )
-from server.ai_runtime.provider_connectivity import (
+from server.ai_runtime.provider_connectivity_contracts import (
     JsonHttpTransport,
     ProviderConnectivitySettings,
     ProviderProbeError,

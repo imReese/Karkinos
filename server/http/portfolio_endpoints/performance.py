@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from dataclasses import dataclass
 
 from fastapi import APIRouter
 
@@ -11,60 +11,64 @@ from server.contracts.http.ledger_models import (
     EquityPoint,
     EquitySeriesPoint,
 )
+from server.http.portfolio_endpoints.dependencies import (
+    PortfolioPerformanceDependencies,
+    PortfolioPerformanceOperations,
+)
 
 
-def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
+@dataclass(frozen=True, slots=True)
+class PortfolioPerformanceEndpoints:
+    router: APIRouter
+    operations: PortfolioPerformanceOperations
+
+
+def create_router(
+    dependencies: PortfolioPerformanceDependencies,
+) -> PortfolioPerformanceEndpoints:
     r = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
-    def dependency(name: str):
-        value = getattr(facade, name)
-        if callable(value) and not isinstance(value, type):
-            return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
-        return value
-
-    _append_current_equity_series_point = dependency(
-        "_append_current_equity_series_point"
+    _append_current_equity_series_point = (
+        dependencies.append_current_equity_series_point
     )
-    _bind_current_equity_valuation = dependency("_bind_current_equity_valuation")
-    _bind_equity_series_valuation = dependency("_bind_equity_series_valuation")
-    _build_activity_items = dependency("_build_activity_items")
-    _build_intraday_equity_curve_series = dependency(
-        "_build_intraday_equity_curve_series"
+    _bind_current_equity_valuation = dependencies.bind_current_equity_valuation
+    _bind_equity_series_valuation = dependencies.bind_equity_series_valuation
+    _build_activity_items = dependencies.build_activity_items
+    _build_intraday_equity_curve_series = (
+        dependencies.build_intraday_equity_curve_series
     )
-    _collect_latest_quotes = dependency("_collect_latest_quotes")
-    _current_equity_series_point = dependency("_current_equity_series_point")
-    _current_valuation_snapshot = dependency("_current_valuation_snapshot")
-    _daily_equity_series_for_range = dependency("_daily_equity_series_for_range")
-    _daily_equity_series_from_ledger_history = dependency(
-        "_daily_equity_series_from_ledger_history"
+    _collect_latest_quotes = dependencies.collect_latest_quotes
+    _current_equity_series_point = dependencies.current_equity_series_point
+    _current_valuation_snapshot = dependencies.current_valuation_snapshot
+    _daily_equity_series_for_range = dependencies.daily_equity_series_for_range
+    _daily_equity_series_from_ledger_history = (
+        dependencies.daily_equity_series_from_ledger_history
     )
-    _flat_intraday_equity_series_from_current = dependency(
-        "_flat_intraday_equity_series_from_current"
+    _flat_intraday_equity_series_from_current = (
+        dependencies.flat_intraday_equity_series_from_current
     )
-    _has_rows = dependency("_has_rows")
-    _hydrate_missing_position_quotes = dependency("_hydrate_missing_position_quotes")
-    _parse_quote_timestamp = dependency("_parse_quote_timestamp")
-    _quotes_from_valuation_snapshot = dependency("_quotes_from_valuation_snapshot")
-    _resolve_projection_sources = dependency("_resolve_projection_sources")
-    _series_point_from_intraday = dependency("_series_point_from_intraday")
-    _should_fetch_intraday_equity_curve = dependency(
-        "_should_fetch_intraday_equity_curve"
+    _has_rows = dependencies.has_rows
+    _hydrate_missing_position_quotes = dependencies.hydrate_missing_position_quotes
+    _parse_quote_timestamp = dependencies.parse_quote_timestamp
+    _quotes_from_valuation_snapshot = dependencies.quotes_from_valuation_snapshot
+    _resolve_projection_sources = dependencies.resolve_projection_sources
+    _series_point_from_intraday = dependencies.series_point_from_intraday
+    _should_fetch_intraday_equity_curve = (
+        dependencies.should_fetch_intraday_equity_curve
     )
-    _synthetic_intraday_equity_series_from_current_quotes = dependency(
-        "_synthetic_intraday_equity_series_from_current_quotes"
+    _synthetic_intraday_equity_series_from_current_quotes = (
+        dependencies.synthetic_intraday_equity_series_from_current_quotes
     )
-    asyncio = dependency("asyncio")
-    build_equity_curve_from_db = dependency("build_equity_curve_from_db")
-    build_equity_series_from_db = dependency("build_equity_series_from_db")
-    get_shanghai_now = dependency("get_shanghai_now")
-    logger = dependency("logger")
+    build_equity_curve_from_db = dependencies.build_equity_curve_from_db
+    build_equity_series_from_db = dependencies.build_equity_series_from_db
+    get_shanghai_now = dependencies.get_shanghai_now
+    async_runtime = dependencies.async_runtime
+    logger = dependencies.logger
 
     @r.get("/equity-curve", response_model=list[EquityPoint])
     async def get_equity_curve() -> list[EquityPoint]:
         """获取权益曲线。"""
-        from server.dependencies import get_app_state
-
-        state = get_app_state()
+        state = dependencies.get_state()
         scheduler = state.scheduler
         portfolio = scheduler.portfolio if scheduler else None
 
@@ -72,29 +76,17 @@ def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
             if state.db is None:
                 return []
 
-            legacy_cash_flows = (
-                state.db.get_cash_flows_sync(limit=1, offset=0)
-                if hasattr(state.db, "get_cash_flows_sync")
-                else []
-            )
-            legacy_trades = (
-                state.db.get_trades_sync(limit=1, offset=0)
-                if hasattr(state.db, "get_trades_sync")
-                else []
-            )
             ledger_entries = (
                 state.db.get_ledger_entries_sync(limit=1, offset=0)
                 if hasattr(state.db, "get_ledger_entries_sync")
                 else []
             )
-            if (
-                _has_rows(legacy_cash_flows) or _has_rows(legacy_trades)
-            ) or not _has_rows(ledger_entries):
+            if not _has_rows(ledger_entries):
                 return []
 
             points = build_equity_curve_from_db(
                 state.db,
-                initial_cash=state.config.initial_cash,
+                initial_cash=0,
                 latest_quotes=_collect_latest_quotes(state),
             )
             return [
@@ -111,9 +103,7 @@ def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
     @r.get("/equity-curve/series", response_model=list[EquitySeriesPoint])
     async def get_equity_curve_series(range: str = "1m") -> list[EquitySeriesPoint]:
         """获取按资产类别拆分的权益曲线。"""
-        from server.dependencies import get_app_state
-
-        state = get_app_state()
+        state = dependencies.get_state()
         valuation_snapshot = _current_valuation_snapshot(state)
         latest_quotes = _quotes_from_valuation_snapshot(valuation_snapshot)
         selected_range = str(range).lower()
@@ -157,8 +147,8 @@ def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
                 getattr(state.config, "intraday_curve_timeout_seconds", 4.0) or 4.0
             )
             try:
-                intraday_points = await asyncio.wait_for(
-                    asyncio.to_thread(
+                intraday_points = await async_runtime.wait_for(
+                    async_runtime.to_thread(
                         _build_intraday_equity_curve_series,
                         state,
                         portfolio,
@@ -247,7 +237,7 @@ def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
 
         points = build_equity_series_from_db(
             state.db,
-            initial_cash=state.config.initial_cash,
+            initial_cash=0,
             latest_quotes=latest_quotes,
         )
         series_points = [
@@ -274,13 +264,18 @@ def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
     @r.get("/activity", response_model=list[ActivityItem])
     async def get_activity(limit: int = 10) -> list[ActivityItem]:
         """获取首页最近活动流。"""
-        from server.dependencies import get_app_state
-
-        state = get_app_state()
+        state = dependencies.get_state()
         trades = await state.db.get_trades(limit=limit, offset=0)
         flows = await state.db.get_cash_flows(limit=limit, offset=0)
         return _build_activity_items(trades, flows)[:limit]
 
-    endpoints["get_equity_curve"] = get_equity_curve
-    endpoints["get_equity_curve_series"] = get_equity_curve_series
-    return r
+    return PortfolioPerformanceEndpoints(
+        router=r,
+        operations=PortfolioPerformanceOperations(
+            get_equity_curve=get_equity_curve,
+            get_equity_curve_series=get_equity_curve_series,
+        ),
+    )
+
+
+__all__ = ["PortfolioPerformanceEndpoints", "create_router"]

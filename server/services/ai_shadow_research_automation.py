@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from data.store import DataStore
+from server.ai_runtime.strategy_research import StrategyResearchService
 from server.contracts.ai_shadow_research_automation import (
     CITATION_CONTRACT_RETRYABLE_FAILURE_CODES,
     CORRECTED_PANEL_CITATION_CANDIDATE_FAILURE_CODE,
@@ -49,6 +50,7 @@ from server.contracts.ai_shadow_research_automation import (
     build_shadow_research_iteration_context,
     build_shadow_research_iteration_lineage,
 )
+from server.dependencies import AppState
 from server.persistence.ai_shadow_research import ShadowResearchStore
 from server.services.ai_shadow_research_baseline import AiShadowResearchBaselineMixin
 from server.services.ai_shadow_research_candidate_workflow import (
@@ -109,23 +111,25 @@ class AiShadowResearchAutomationService(
     def __init__(
         self,
         *,
-        state: Any,
+        state: AppState,
         store: ShadowResearchStore,
         data_store: DataStore,
-        research_service_builder: Callable[[bool], Any] | None = None,
-        reviewed_fee_schedule_resolver: Callable[..., Any] | None = None,
+        research_service_builder: (
+            Callable[[bool], StrategyResearchService] | None
+        ) = None,
+        reviewed_fee_schedule_resolver: Callable[..., dict[str, Any]] | None = None,
         daily_artifact_store: DailyStrategyArtifactStore | None = None,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self._state = state
-        self._db = state.db
+        self._db = state.require_database()
         self._store = store
         self._data_store = data_store
         self._research_service_builder = research_service_builder
         self._reviewed_fee_schedule_resolver = reviewed_fee_schedule_resolver
         self._daily_artifacts = daily_artifact_store or DailyStrategyArtifactStore(
             db_path=Path(self._db.path),
-            backup_root=Path(store._path).parent / "strategy-research-backups",
+            backup_root=store.path.parent / "strategy-research-backups",
         )
         self._now = now or (lambda: datetime.now(timezone.utc))
 
@@ -147,9 +151,9 @@ class AiShadowResearchAutomationService(
 
 
 def build_ai_shadow_research_automation_service(
-    state: Any,
+    state: AppState,
     *,
-    research_service_builder: Callable[[bool], Any],
+    research_service_builder: Callable[[bool], StrategyResearchService],
 ) -> AiShadowResearchAutomationService:
     from server.composition.ai_shadow_research_automation import (
         compose_ai_shadow_research_automation_service,
@@ -164,8 +168,8 @@ def build_ai_shadow_research_automation_service(
 
 async def run_ai_shadow_research_automation_loop(
     *,
-    state: Any,
-    research_service_builder: Callable[[bool], Any],
+    state: AppState,
+    research_service_builder: Callable[[bool], StrategyResearchService],
     interval_seconds: float = 300.0,
 ) -> None:
     """Poll a read-mostly standing policy and run once per new evidence identity."""

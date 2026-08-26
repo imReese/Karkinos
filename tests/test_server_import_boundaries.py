@@ -251,9 +251,7 @@ def test_http_delivery_does_not_own_sqlite_connections() -> None:
     assert _violations(paths, forbidden_prefix="sqlite3") == []
 
 
-def test_http_delivery_modules_and_factories_stay_bounded() -> None:
-    paths = sorted((PROJECT_ROOT / "server/routes").rglob("*.py"))
-    paths.extend(sorted((PROJECT_ROOT / "server/http").rglob("*.py")))
+def _size_violations(paths: list[Path]) -> list[str]:
     violations: list[str] = []
     for path in paths:
         source = path.read_text(encoding="utf-8")
@@ -271,7 +269,31 @@ def test_http_delivery_modules_and_factories_stay_bounded() -> None:
                     f"{relative}:{node.lineno} {node.name} has {function_lines} lines"
                 )
 
-    assert violations == []
+    return violations
+
+
+def test_http_delivery_modules_and_factories_stay_bounded() -> None:
+    paths = sorted((PROJECT_ROOT / "server/routes").rglob("*.py"))
+    paths.extend(sorted((PROJECT_ROOT / "server/http").rglob("*.py")))
+
+    assert _size_violations(paths) == []
+
+
+def test_production_server_modules_and_named_functions_stay_bounded() -> None:
+    paths = sorted((PROJECT_ROOT / "server").rglob("*.py"))
+
+    assert _size_violations(paths) == []
+
+
+def test_application_and_ai_facades_do_not_own_sqlite_connections() -> None:
+    paths = sorted((PROJECT_ROOT / "server/services").rglob("*.py"))
+    paths.extend(
+        path
+        for path in sorted((PROJECT_ROOT / "server/ai_runtime").rglob("*.py"))
+        if not path.is_relative_to(PROJECT_ROOT / "server/ai_runtime/persistence")
+    )
+
+    assert _violations(paths, forbidden_prefix="sqlite3") == []
 
 
 def test_routes_and_app_have_zero_cross_module_private_imports() -> None:

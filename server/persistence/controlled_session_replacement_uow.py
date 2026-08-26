@@ -8,14 +8,239 @@ from typing import Any
 from server.persistence.controlled_session_access import (
     ControlledSessionRepositoryAccess,
 )
-from server.persistence.database_support import (
+from server.persistence.controlled_session_rejections import (
     controlled_session_authority_rejection,
-    json_dict,
-    json_list,
 )
+from server.persistence.database_normalization import json_dict, json_list
 from server.persistence.event_log import (
     serialize_event_payload_json as _serialize_event_payload_json,
 )
+
+
+def _replacement_validation_blockers(
+    conn: sqlite3.Connection,
+    requested: dict[str, Any],
+) -> tuple[int, list[str]]:
+    predecessor = conn.execute(
+        """
+            SELECT * FROM controlled_session_runtime_sessions
+            WHERE session_id = ?
+            LIMIT 1
+            """,
+        (requested["predecessor_session_id"],),
+    ).fetchone()
+    pause_state = conn.execute(
+        """
+            SELECT * FROM controlled_session_runtime_states
+            WHERE session_id = ?
+            LIMIT 1
+            """,
+        (requested["predecessor_session_id"],),
+    ).fetchone()
+    if predecessor is None or pause_state is None:
+        return 0, ["runtime_session_replacement_paused_predecessor_missing"]
+
+    predecessor_blockers: list[str] = []
+    if predecessor["status"] != "enabled":
+        predecessor_blockers.append(
+            "runtime_session_replacement_predecessor_not_enabled"
+        )
+    if (
+        predecessor["session_fingerprint"]
+        != requested["predecessor_session_fingerprint"]
+    ):
+        predecessor_blockers.append(
+            "runtime_session_replacement_predecessor_identity_mismatch"
+        )
+    if (
+        pause_state["status"] != "paused"
+        or pause_state["pause_event_id"] != requested["pause_event_id"]
+    ):
+        predecessor_blockers.append(
+            "runtime_session_replacement_pause_identity_mismatch"
+        )
+    if predecessor_blockers:
+        return 0, predecessor_blockers
+
+    existing_session = conn.execute(
+        """
+            SELECT * FROM controlled_session_runtime_sessions
+            WHERE session_id = ? OR reservation_id = ?
+            ORDER BY id ASC
+            LIMIT 1
+            """,
+        (requested["session_id"], requested["reservation_id"]),
+    ).fetchone()
+    if existing_session is not None:
+        return 0, ["runtime_session_replacement_target_conflict"]
+
+    old_reservation = conn.execute(
+        """
+            SELECT * FROM controlled_session_budget_reservations
+            WHERE reservation_id = ?
+            LIMIT 1
+            """,
+        (predecessor["reservation_id"],),
+    ).fetchone()
+    reservation = conn.execute(
+        """
+            SELECT * FROM controlled_session_budget_reservations
+            WHERE reservation_id = ?
+            LIMIT 1
+            """,
+        (requested["reservation_id"],),
+    ).fetchone()
+    if old_reservation is None or reservation is None:
+        return 0, ["runtime_session_replacement_reservation_missing"]
+
+    reservation_blockers: list[str] = []
+    for field in (
+        "attestation_id",
+        "envelope_fingerprint",
+        "authorization_id",
+        "account_alias",
+        "strategy_id",
+        "requested_start_at",
+        "requested_expires_at",
+    ):
+        if str(reservation[field] or "") != str(requested[field] or ""):
+            reservation_blockers.append(
+                f"runtime_session_replacement_reservation_{field}_mismatch"
+            )
+    if reservation["status"] != "reserved":
+        reservation_blockers.append(
+            "runtime_session_replacement_reservation_not_reserved"
+        )
+    for field in ("authorization_id", "account_alias", "strategy_id"):
+        if str(old_reservation[field] or "") != str(reservation[field] or ""):
+            reservation_blockers.append(
+                f"runtime_session_replacement_scope_widened:{field}"
+            )
+    for field in (
+        "reserved_gross_units",
+        "reserved_buy_units",
+        "reserved_turnover_units",
+        "reserved_order_count",
+    ):
+        if int(reservation[field]) > int(old_reservation[field]):
+            reservation_blockers.append(
+                f"runtime_session_replacement_budget_widened:{field}"
+            )
+    old_symbols = {
+        str(key): int(value)
+        for key, value in json_dict(old_reservation["reserved_by_symbol_json"]).items()
+    }
+    replacement_symbols = {
+        str(key): int(value)
+        for key, value in json_dict(reservation["reserved_by_symbol_json"]).items()
+    }
+    if not replacement_symbols or not set(replacement_symbols).issubset(old_symbols):
+        reservation_blockers.append("runtime_session_replacement_symbol_scope_widened")
+    elif any(
+        value > old_symbols[symbol] for symbol, value in replacement_symbols.items()
+    ):
+        reservation_blockers.append("runtime_session_replacement_symbol_budget_widened")
+    old_order_ids = set(json_list(predecessor["order_ids_json"]))
+    if not set(requested["order_ids"]).issubset(old_order_ids):
+        reservation_blockers.append("runtime_session_replacement_order_scope_widened")
+    if int(requested["max_order_rate_per_minute"]) > int(
+        predecessor["max_order_rate_per_minute"]
+    ):
+        reservation_blockers.append("runtime_session_replacement_rate_widened")
+    old_duration = int(predecessor["expires_at_epoch_ms"]) - int(
+        predecessor["effective_at_epoch_ms"]
+    )
+    new_duration = int(requested["expires_at_epoch_ms"]) - int(
+        requested["effective_at_epoch_ms"]
+    )
+    if new_duration <= 0 or new_duration > old_duration:
+        reservation_blockers.append("runtime_session_replacement_duration_widened")
+    if int(requested["effective_at_epoch_ms"]) < int(pause_state["paused_at_epoch_ms"]):
+        reservation_blockers.append("runtime_session_replacement_starts_before_pause")
+    now_epoch_ms = int(requested["reviewed_at_epoch_ms"])
+    if not (
+        int(requested["effective_at_epoch_ms"])
+        <= now_epoch_ms
+        < int(requested["expires_at_epoch_ms"])
+    ):
+        reservation_blockers.append("runtime_session_replacement_window_not_current")
+    if reservation_blockers:
+        return now_epoch_ms, reservation_blockers
+
+    snapshots = conn.execute(
+        """
+            SELECT * FROM controlled_session_gate_snapshots
+            WHERE snapshot_id IN (?, ?)
+            ORDER BY observed_at_epoch_ms ASC, id ASC
+            """,
+        tuple(requested["recovery_snapshot_ids"]),
+    ).fetchall()
+    snapshot_blockers: list[str] = []
+    if len(snapshots) != 2:
+        snapshot_blockers.append(
+            "runtime_session_replacement_recovery_snapshots_missing"
+        )
+    else:
+        for snapshot in snapshots:
+            if (
+                snapshot["session_id"] != requested["predecessor_session_id"]
+                or snapshot["status"] != "clear"
+                or json_list(snapshot["blockers_json"])
+            ):
+                snapshot_blockers.append(
+                    "runtime_session_replacement_recovery_snapshot_not_clear"
+                )
+        first_ms = int(snapshots[0]["observed_at_epoch_ms"])
+        last_ms = int(snapshots[-1]["observed_at_epoch_ms"])
+        latest_snapshot = conn.execute(
+            """
+                SELECT * FROM controlled_session_gate_snapshots
+                WHERE session_id = ? AND observed_at_epoch_ms > ?
+                ORDER BY observed_at_epoch_ms DESC, id DESC
+                LIMIT 1
+                """,
+            (
+                requested["predecessor_session_id"],
+                int(pause_state["paused_at_epoch_ms"]),
+            ),
+        ).fetchone()
+        if (
+            latest_snapshot is None
+            or latest_snapshot["snapshot_id"] != snapshots[-1]["snapshot_id"]
+        ):
+            snapshot_blockers.append(
+                "runtime_session_replacement_recovery_snapshot_superseded"
+            )
+        blocked_during_recovery = conn.execute(
+            """
+                SELECT COUNT(*) AS count
+                FROM controlled_session_gate_snapshots
+                WHERE session_id = ?
+                  AND observed_at_epoch_ms >= ?
+                  AND observed_at_epoch_ms <= ?
+                  AND status != 'clear'
+                """,
+            (
+                requested["predecessor_session_id"],
+                first_ms,
+                now_epoch_ms,
+            ),
+        ).fetchone()
+        if int(blocked_during_recovery["count"] or 0) > 0:
+            snapshot_blockers.append("runtime_session_replacement_recovery_interrupted")
+        if first_ms <= int(pause_state["paused_at_epoch_ms"]):
+            snapshot_blockers.append(
+                "runtime_session_replacement_recovery_not_post_pause"
+            )
+        if last_ms - first_ms < int(requested["minimum_recovery_stability_ms"]):
+            snapshot_blockers.append("runtime_session_replacement_recovery_not_stable")
+        if last_ms > now_epoch_ms or now_epoch_ms - last_ms > int(
+            requested["maximum_snapshot_age_ms"]
+        ):
+            snapshot_blockers.append(
+                "runtime_session_replacement_recovery_snapshot_stale"
+            )
+    return now_epoch_ms, snapshot_blockers
 
 
 class ControlledSessionReplacementUnitOfWorkMixin(ControlledSessionRepositoryAccess):
@@ -79,281 +304,15 @@ class ControlledSessionReplacementUnitOfWorkMixin(ControlledSessionRepositoryAcc
                         ["runtime_session_replacement_conflict"],
                     )
 
-                predecessor = conn.execute(
-                    """
-                        SELECT * FROM controlled_session_runtime_sessions
-                        WHERE session_id = ?
-                        LIMIT 1
-                        """,
-                    (requested["predecessor_session_id"],),
-                ).fetchone()
-                pause_state = conn.execute(
-                    """
-                        SELECT * FROM controlled_session_runtime_states
-                        WHERE session_id = ?
-                        LIMIT 1
-                        """,
-                    (requested["predecessor_session_id"],),
-                ).fetchone()
-                if predecessor is None or pause_state is None:
-                    conn.rollback()
-                    return controlled_session_authority_rejection(
-                        requested,
-                        ["runtime_session_replacement_paused_predecessor_missing"],
-                    )
-                predecessor_blockers: list[str] = []
-                if predecessor["status"] != "enabled":
-                    predecessor_blockers.append(
-                        "runtime_session_replacement_predecessor_not_enabled"
-                    )
-                if (
-                    predecessor["session_fingerprint"]
-                    != requested["predecessor_session_fingerprint"]
-                ):
-                    predecessor_blockers.append(
-                        "runtime_session_replacement_predecessor_identity_mismatch"
-                    )
-                if (
-                    pause_state["status"] != "paused"
-                    or pause_state["pause_event_id"] != requested["pause_event_id"]
-                ):
-                    predecessor_blockers.append(
-                        "runtime_session_replacement_pause_identity_mismatch"
-                    )
-                if predecessor_blockers:
-                    conn.rollback()
-                    return controlled_session_authority_rejection(
-                        requested,
-                        predecessor_blockers,
-                    )
-
-                existing_session = conn.execute(
-                    """
-                        SELECT * FROM controlled_session_runtime_sessions
-                        WHERE session_id = ? OR reservation_id = ?
-                        ORDER BY id ASC
-                        LIMIT 1
-                        """,
-                    (requested["session_id"], requested["reservation_id"]),
-                ).fetchone()
-                if existing_session is not None:
-                    conn.rollback()
-                    return controlled_session_authority_rejection(
-                        requested,
-                        ["runtime_session_replacement_target_conflict"],
-                    )
-
-                old_reservation = conn.execute(
-                    """
-                        SELECT * FROM controlled_session_budget_reservations
-                        WHERE reservation_id = ?
-                        LIMIT 1
-                        """,
-                    (predecessor["reservation_id"],),
-                ).fetchone()
-                reservation = conn.execute(
-                    """
-                        SELECT * FROM controlled_session_budget_reservations
-                        WHERE reservation_id = ?
-                        LIMIT 1
-                        """,
-                    (requested["reservation_id"],),
-                ).fetchone()
-                if old_reservation is None or reservation is None:
-                    conn.rollback()
-                    return controlled_session_authority_rejection(
-                        requested,
-                        ["runtime_session_replacement_reservation_missing"],
-                    )
-                reservation_blockers: list[str] = []
-                for field in (
-                    "attestation_id",
-                    "envelope_fingerprint",
-                    "authorization_id",
-                    "account_alias",
-                    "strategy_id",
-                    "requested_start_at",
-                    "requested_expires_at",
-                ):
-                    if str(reservation[field] or "") != str(requested[field] or ""):
-                        reservation_blockers.append(
-                            f"runtime_session_replacement_reservation_{field}_mismatch"
-                        )
-                if reservation["status"] != "reserved":
-                    reservation_blockers.append(
-                        "runtime_session_replacement_reservation_not_reserved"
-                    )
-                for field in ("authorization_id", "account_alias", "strategy_id"):
-                    if str(old_reservation[field] or "") != str(
-                        reservation[field] or ""
-                    ):
-                        reservation_blockers.append(
-                            f"runtime_session_replacement_scope_widened:{field}"
-                        )
-                for field in (
-                    "reserved_gross_units",
-                    "reserved_buy_units",
-                    "reserved_turnover_units",
-                    "reserved_order_count",
-                ):
-                    if int(reservation[field]) > int(old_reservation[field]):
-                        reservation_blockers.append(
-                            f"runtime_session_replacement_budget_widened:{field}"
-                        )
-                old_symbols = {
-                    str(key): int(value)
-                    for key, value in json_dict(
-                        old_reservation["reserved_by_symbol_json"]
-                    ).items()
-                }
-                replacement_symbols = {
-                    str(key): int(value)
-                    for key, value in json_dict(
-                        reservation["reserved_by_symbol_json"]
-                    ).items()
-                }
-                if not replacement_symbols or not set(replacement_symbols).issubset(
-                    old_symbols
-                ):
-                    reservation_blockers.append(
-                        "runtime_session_replacement_symbol_scope_widened"
-                    )
-                elif any(
-                    value > old_symbols[symbol]
-                    for symbol, value in replacement_symbols.items()
-                ):
-                    reservation_blockers.append(
-                        "runtime_session_replacement_symbol_budget_widened"
-                    )
-                old_order_ids = set(json_list(predecessor["order_ids_json"]))
-                if not set(requested["order_ids"]).issubset(old_order_ids):
-                    reservation_blockers.append(
-                        "runtime_session_replacement_order_scope_widened"
-                    )
-                if int(requested["max_order_rate_per_minute"]) > int(
-                    predecessor["max_order_rate_per_minute"]
-                ):
-                    reservation_blockers.append(
-                        "runtime_session_replacement_rate_widened"
-                    )
-                old_duration = int(predecessor["expires_at_epoch_ms"]) - int(
-                    predecessor["effective_at_epoch_ms"]
+                now_epoch_ms, validation_blockers = _replacement_validation_blockers(
+                    conn,
+                    requested,
                 )
-                new_duration = int(requested["expires_at_epoch_ms"]) - int(
-                    requested["effective_at_epoch_ms"]
-                )
-                if new_duration <= 0 or new_duration > old_duration:
-                    reservation_blockers.append(
-                        "runtime_session_replacement_duration_widened"
-                    )
-                if int(requested["effective_at_epoch_ms"]) < int(
-                    pause_state["paused_at_epoch_ms"]
-                ):
-                    reservation_blockers.append(
-                        "runtime_session_replacement_starts_before_pause"
-                    )
-                now_epoch_ms = int(requested["reviewed_at_epoch_ms"])
-                if not (
-                    int(requested["effective_at_epoch_ms"])
-                    <= now_epoch_ms
-                    < int(requested["expires_at_epoch_ms"])
-                ):
-                    reservation_blockers.append(
-                        "runtime_session_replacement_window_not_current"
-                    )
-                if reservation_blockers:
+                if validation_blockers:
                     conn.rollback()
                     return controlled_session_authority_rejection(
                         requested,
-                        reservation_blockers,
-                    )
-
-                snapshots = conn.execute(
-                    """
-                        SELECT * FROM controlled_session_gate_snapshots
-                        WHERE snapshot_id IN (?, ?)
-                        ORDER BY observed_at_epoch_ms ASC, id ASC
-                        """,
-                    tuple(requested["recovery_snapshot_ids"]),
-                ).fetchall()
-                snapshot_blockers: list[str] = []
-                if len(snapshots) != 2:
-                    snapshot_blockers.append(
-                        "runtime_session_replacement_recovery_snapshots_missing"
-                    )
-                else:
-                    for snapshot in snapshots:
-                        if (
-                            snapshot["session_id"]
-                            != requested["predecessor_session_id"]
-                            or snapshot["status"] != "clear"
-                            or json_list(snapshot["blockers_json"])
-                        ):
-                            snapshot_blockers.append(
-                                "runtime_session_replacement_recovery_snapshot_not_clear"
-                            )
-                    first_ms = int(snapshots[0]["observed_at_epoch_ms"])
-                    last_ms = int(snapshots[-1]["observed_at_epoch_ms"])
-                    latest_snapshot = conn.execute(
-                        """
-                            SELECT * FROM controlled_session_gate_snapshots
-                            WHERE session_id = ? AND observed_at_epoch_ms > ?
-                            ORDER BY observed_at_epoch_ms DESC, id DESC
-                            LIMIT 1
-                            """,
-                        (
-                            requested["predecessor_session_id"],
-                            int(pause_state["paused_at_epoch_ms"]),
-                        ),
-                    ).fetchone()
-                    if (
-                        latest_snapshot is None
-                        or latest_snapshot["snapshot_id"]
-                        != snapshots[-1]["snapshot_id"]
-                    ):
-                        snapshot_blockers.append(
-                            "runtime_session_replacement_recovery_snapshot_superseded"
-                        )
-                    blocked_during_recovery = conn.execute(
-                        """
-                            SELECT COUNT(*) AS count
-                            FROM controlled_session_gate_snapshots
-                            WHERE session_id = ?
-                              AND observed_at_epoch_ms >= ?
-                              AND observed_at_epoch_ms <= ?
-                              AND status != 'clear'
-                            """,
-                        (
-                            requested["predecessor_session_id"],
-                            first_ms,
-                            now_epoch_ms,
-                        ),
-                    ).fetchone()
-                    if int(blocked_during_recovery["count"] or 0) > 0:
-                        snapshot_blockers.append(
-                            "runtime_session_replacement_recovery_interrupted"
-                        )
-                    if first_ms <= int(pause_state["paused_at_epoch_ms"]):
-                        snapshot_blockers.append(
-                            "runtime_session_replacement_recovery_not_post_pause"
-                        )
-                    if last_ms - first_ms < int(
-                        requested["minimum_recovery_stability_ms"]
-                    ):
-                        snapshot_blockers.append(
-                            "runtime_session_replacement_recovery_not_stable"
-                        )
-                    if last_ms > now_epoch_ms or now_epoch_ms - last_ms > int(
-                        requested["maximum_snapshot_age_ms"]
-                    ):
-                        snapshot_blockers.append(
-                            "runtime_session_replacement_recovery_snapshot_stale"
-                        )
-                if snapshot_blockers:
-                    conn.rollback()
-                    return controlled_session_authority_rejection(
-                        requested,
-                        snapshot_blockers,
+                        validation_blockers,
                     )
 
                 conn.execute(

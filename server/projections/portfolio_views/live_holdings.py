@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 
 from core.types import Symbol
 from server.models import (
@@ -137,8 +137,12 @@ def has_same_day_sell(
 
 
 def build_live_holdings_response(
-    state, valuation_snapshot: dict | None = None
+    state,
+    valuation_snapshot: dict | None = None,
+    *,
+    now: datetime | None = None,
 ) -> LiveHoldingsResponse:
+    resolved_now = now or get_shanghai_now()
     valuation_snapshot = valuation_snapshot or _current_valuation_snapshot(state)
     latest_quotes = _quotes_from_valuation_snapshot(valuation_snapshot)
     portfolio, instruments = _resolve_projection_sources(
@@ -201,6 +205,7 @@ def build_live_holdings_response(
             latest_quote=latest_quote if latest_quote else None,
             latest_price_value=latest_price_value,
             ledger_entries=daily_ledger_entries,
+            now=resolved_now,
         )
         avg_cost = float(pos.avg_cost)
         market_value = (
@@ -216,6 +221,7 @@ def build_live_holdings_response(
             symbol=symbol,
             asset_class=metadata.asset_class,
             quote=latest_quote,
+            now=resolved_now,
         )
 
         groups[metadata.asset_class].append(
@@ -238,9 +244,9 @@ def build_live_holdings_response(
                 baseline_source=baseline_source,
                 quote_status=quote_status,
                 quote_source=_quote_source(state, latest_quote),
-                quote_age_seconds=_quote_age_seconds(latest_quote),
+                quote_age_seconds=_quote_age_seconds(latest_quote, now=resolved_now),
                 stale_reason=stale_reason,
-                refresh_policy=_refresh_policy(),
+                refresh_policy=_refresh_policy(resolved_now),
                 using_persistent_cache=_using_persistent_cache(latest_quote),
                 nav_date=latest_quote.get("nav_date"),
             )

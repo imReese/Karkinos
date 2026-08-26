@@ -40,6 +40,9 @@ from server.persistence.financial_facts import FinancialFactsRepository
 from server.persistence.initializer import initialize_database
 from server.persistence.instrument_metadata import InstrumentMetadataRepository
 from server.persistence.market_calendar import MarketCalendarRepository
+from server.persistence.market_calendar_publication_uow import (
+    MarketCalendarPublicationUnitOfWork,
+)
 from server.persistence.oms import OmsRepository
 from server.persistence.paper_trading import PaperTradingRepository
 from server.persistence.research_notes import ResearchNotesRepository
@@ -90,6 +93,10 @@ class AppDatabase(
         self._event_log = EventLogRepository(self._path)
         self._instrument_metadata = InstrumentMetadataRepository(self._path)
         self._market_calendar = MarketCalendarRepository(self._path)
+        self._market_calendar_publication = MarketCalendarPublicationUnitOfWork(
+            self._path,
+            now=lambda tz=None: datetime.now(tz),
+        )
         self._research_notes = ResearchNotesRepository(self._path)
         self._watchlist = WatchlistRepository(self._path)
         self._runtime_controls = RuntimeControlRepository(self._path)

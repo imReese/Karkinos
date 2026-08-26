@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from dataclasses import dataclass
 
 from fastapi import APIRouter, HTTPException
 
@@ -20,68 +20,64 @@ from server.contracts.http.portfolio_models import (
     PositionResponse,
     RiskSummaryItem,
 )
+from server.http.portfolio_endpoints.dependencies import (
+    PortfolioPerformanceOperations,
+    PortfolioSnapshotDependencies,
+    PortfolioSnapshotOperations,
+)
 
 
-def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
+@dataclass(frozen=True, slots=True)
+class PortfolioSnapshotEndpoints:
+    router: APIRouter
+    operations: PortfolioSnapshotOperations
+
+
+def create_router(
+    dependencies: PortfolioSnapshotDependencies,
+    performance: PortfolioPerformanceOperations,
+) -> PortfolioSnapshotEndpoints:
     r = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
-    def dependency(name: str):
-        value = getattr(facade, name)
-        if callable(value) and not isinstance(value, type):
-            return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
-        return value
-
-    _build_live_holdings_response = dependency("_build_live_holdings_response")
-    _cash_flow_adjusted_equity_points_from_series = dependency(
-        "_cash_flow_adjusted_equity_points_from_series"
+    _build_live_holdings_response = dependencies.build_live_holdings_response
+    _cash_flow_adjusted_equity_points_from_series = (
+        dependencies.cash_flow_adjusted_equity_points_from_series
     )
-    _collect_latest_quote_timestamps = dependency("_collect_latest_quote_timestamps")
-    _equity_series_matches_valuation = dependency("_equity_series_matches_valuation")
-    _overview_daily_operations_summary = dependency(
-        "_overview_daily_operations_summary"
+    _collect_latest_quote_timestamps = dependencies.collect_latest_quote_timestamps
+    _equity_series_matches_valuation = dependencies.equity_series_matches_valuation
+    _overview_daily_operations_summary = dependencies.overview_daily_operations_summary
+    _overview_today_pnl_update = dependencies.overview_today_pnl_update
+    _portfolio_account_truth_gate_status = (
+        dependencies.portfolio_account_truth_gate_status
     )
-    _overview_today_pnl_update = dependency("_overview_today_pnl_update")
-    _portfolio_account_truth_gate_status = dependency(
-        "_portfolio_account_truth_gate_status"
+    _portfolio_construction_recommendations = (
+        dependencies.portfolio_construction_recommendations
     )
-    _portfolio_construction_recommendations = dependency(
-        "_portfolio_construction_recommendations"
+    _with_overview_quote_metadata = dependencies.with_overview_quote_metadata
+    build_account_state_projection = dependencies.build_account_state_projection
+    build_account_state_response = dependencies.build_account_state_response
+    build_current_holding_market_evidence_review = (
+        dependencies.build_current_holding_market_evidence_review
     )
-    _with_overview_quote_metadata = dependency("_with_overview_quote_metadata")
-    build_account_state_projection = dependency("build_account_state_projection")
-    build_account_state_response = dependency("build_account_state_response")
-    build_current_holding_market_evidence_review = dependency(
-        "build_current_holding_market_evidence_review"
-    )
-    build_current_valuation_snapshot = dependency("build_current_valuation_snapshot")
-    build_portfolio_snapshot = dependency("build_portfolio_snapshot")
-    build_risk_summary = dependency("build_risk_summary")
-    build_risk_workspace = dependency("build_risk_workspace")
-    get_shanghai_now = dependency("get_shanghai_now")
-    valuation_snapshot_from_row = dependency("valuation_snapshot_from_row")
-
-    def get_equity_curve(*args, **kwargs):
-        return endpoints["get_equity_curve"](*args, **kwargs)
-
-    def get_equity_curve_series(*args, **kwargs):
-        return endpoints["get_equity_curve_series"](*args, **kwargs)
+    build_current_valuation_snapshot = dependencies.build_current_valuation_snapshot
+    build_portfolio_snapshot = dependencies.build_portfolio_snapshot
+    build_risk_summary = dependencies.build_risk_summary
+    build_risk_workspace = dependencies.build_risk_workspace
+    get_shanghai_now = dependencies.get_shanghai_now
+    valuation_snapshot_from_row = dependencies.valuation_snapshot_from_row
 
     @r.post("/valuation-snapshots")
     async def create_valuation_snapshot() -> dict:
         """Persist an immutable valuation identity from current database facts."""
-        from server.dependencies import get_app_state
-
-        state = get_app_state()
+        state = dependencies.get_state()
         if state.db is None:
             raise HTTPException(status_code=503, detail="database unavailable")
-        return build_current_valuation_snapshot(state.db)
+        return build_current_valuation_snapshot(state.db, persist=True)
 
     @r.get("/valuation-snapshots/{snapshot_id}")
     async def get_valuation_snapshot(snapshot_id: str) -> dict:
         """Read one persisted valuation snapshot without refreshing providers."""
-        from server.dependencies import get_app_state
-
-        state = get_app_state()
+        state = dependencies.get_state()
         if state.db is None or not hasattr(state.db, "get_valuation_snapshot_sync"):
             raise HTTPException(status_code=503, detail="database unavailable")
         row = state.db.get_valuation_snapshot_sync(snapshot_id)
@@ -92,9 +88,7 @@ def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
     @r.get("", response_model=PortfolioSnapshot)
     async def get_portfolio() -> PortfolioSnapshot:
         """获取当前持仓 + 现金 + 总权益 + 资产配置。"""
-        from server.dependencies import get_app_state
-
-        return await build_portfolio_snapshot(get_app_state())
+        return await build_portfolio_snapshot(dependencies.get_state())
 
     @r.get(
         "/market-evidence-review",
@@ -104,17 +98,13 @@ def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
         CurrentHoldingMarketEvidenceReviewResponse
     ):
         """Project current holding quote blockers from one persisted snapshot."""
-        from server.dependencies import get_app_state
-
-        snapshot = await build_portfolio_snapshot(get_app_state())
+        snapshot = await build_portfolio_snapshot(dependencies.get_state())
         return build_current_holding_market_evidence_review(snapshot)
 
     @r.get("/live-holdings", response_model=LiveHoldingsResponse)
     async def get_live_holdings() -> LiveHoldingsResponse:
         """按资产类别返回当前持仓的实时价格、累计收益和日内变化。"""
-        from server.dependencies import get_app_state
-
-        state = get_app_state()
+        state = dependencies.get_state()
         return _build_live_holdings_response(state)
 
     @r.get("/positions", response_model=list[PositionResponse])
@@ -132,9 +122,7 @@ def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
     @r.get("/overview", response_model=AccountOverview)
     async def get_overview() -> AccountOverview:
         """获取首页账户总览投影。"""
-        from server.dependencies import get_app_state
-
-        state = get_app_state()
+        state = dependencies.get_state()
         snapshot = await get_portfolio()
         projection = build_account_state_projection(
             snapshot,
@@ -142,7 +130,7 @@ def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
         )
         overview = _with_overview_quote_metadata(projection.summary, snapshot)
         live_holdings = _build_live_holdings_response(state)
-        equity_series = await get_equity_curve_series("all")
+        equity_series = await performance.get_equity_curve_series("all")
         equity_curve = _cash_flow_adjusted_equity_points_from_series(
             state,
             equity_series,
@@ -160,7 +148,7 @@ def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
                 )
             ]
         elif not equity_curve:
-            equity_curve = await get_equity_curve()
+            equity_curve = await performance.get_equity_curve()
         risk_workspace = build_risk_workspace(snapshot, equity_curve)
         valuation_consistent = (
             snapshot.valuation_snapshot_id == live_holdings.valuation_snapshot_id
@@ -196,16 +184,12 @@ def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
     @r.get("/state", response_model=AccountStateResponse)
     async def get_account_state() -> AccountStateResponse:
         """获取规范化账户状态投影。"""
-        from server.dependencies import get_app_state
-
-        return await build_account_state_response(get_app_state())
+        return await build_account_state_response(dependencies.get_state())
 
     @r.get("/cockpit", response_model=PortfolioCockpitResponse)
     async def get_portfolio_cockpit() -> PortfolioCockpitResponse:
         """Return portfolio weights, drift, action queue, and risk alerts."""
-        from server.dependencies import get_app_state
-
-        state = get_app_state()
+        state = dependencies.get_state()
         snapshot = await get_portfolio()
         risks = build_risk_summary(snapshot, _collect_latest_quote_timestamps(state))
         projection = build_account_state_projection(snapshot, risks)
@@ -256,11 +240,14 @@ def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
     @r.get("/risk-summary", response_model=list[RiskSummaryItem])
     async def get_risk_summary() -> list[RiskSummaryItem]:
         """获取首页风险摘要。"""
-        from server.dependencies import get_app_state
-
-        state = get_app_state()
+        state = dependencies.get_state()
         snapshot = await get_portfolio()
         return build_risk_summary(snapshot, _collect_latest_quote_timestamps(state))
 
-    endpoints["get_portfolio"] = get_portfolio
-    return r
+    return PortfolioSnapshotEndpoints(
+        router=r,
+        operations=PortfolioSnapshotOperations(get_portfolio=get_portfolio),
+    )
+
+
+__all__ = ["PortfolioSnapshotEndpoints", "create_router"]

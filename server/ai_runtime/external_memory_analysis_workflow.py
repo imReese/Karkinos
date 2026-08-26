@@ -23,7 +23,7 @@ from .contracts import (
     content_fingerprint,
 )
 from .evidence import CANONICAL_EVIDENCE_KINDS
-from .provider_connectivity import ProviderConnectivitySettings
+from .provider_connectivity_contracts import ProviderConnectivitySettings
 from .registry import AiRuntimeRegistry
 
 

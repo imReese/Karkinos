@@ -155,6 +155,8 @@ def market_calendar_snapshot_response(
             row.get("official_verification_status") or "unverified"
         ),
         official_source_url=row.get("official_source_url"),
+        verification_source_fingerprint=row.get("verification_source_fingerprint"),
+        official_source_fingerprint=row.get("official_source_fingerprint"),
         official_verified_at=row.get("official_verified_at"),
         official_verified_by=row.get("official_verified_by"),
         limitations=json_array(row.get("limitations_json")),
@@ -225,8 +227,7 @@ def extract_runtime_portfolio(state):
 
     if (
         db is not None
-        and hasattr(db, "get_trades_sync")
-        and hasattr(db, "get_cash_flows_sync")
+        and hasattr(db, "get_ledger_entries_sync")
         and hasattr(state.config, "initial_cash")
     ):
         rebuilt = rebuild_portfolio_from_ledger(

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import APIRouter, HTTPException
 
 from account_truth.citic_history_xls_directory import CiticHistoryXlsDirectoryRejected
@@ -26,65 +24,59 @@ from server.contracts.http.account_truth import (
     CiticHistoryXlsSourceScopeReviewCreate,
     CiticHistoryXlsSourceScopeReviewRevoke,
 )
+from server.http.account_truth_endpoints.dependencies import (
+    IntakeEndpointDependencies,
+)
 
 
-def create_router(facade: Any) -> APIRouter:
+def create_router(dependencies: IntakeEndpointDependencies) -> APIRouter:
     r = APIRouter(prefix="/api/account-truth", tags=["account-truth"])
-
-    def dependency(name: str):
-        value = getattr(facade, name)
-        if callable(value) and not isinstance(value, type):
-            return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
-        return value
-
-    _citic_history_xls_directory_config_for_state = dependency(
-        "_citic_history_xls_directory_config_for_state"
+    _citic_history_xls_directory_config_for_state = (
+        dependencies.citic_history_xls_directory_config_for_state
     )
-    _citic_history_xls_directory_scan_response = dependency(
-        "_citic_history_xls_directory_scan_response"
+    _citic_history_xls_directory_scan_response = (
+        dependencies.citic_history_xls_directory_scan_response
     )
-    _citic_history_xls_directory_status_response = dependency(
-        "_citic_history_xls_directory_status_response"
+    _citic_history_xls_directory_status_response = (
+        dependencies.citic_history_xls_directory_status_response
     )
-    _citic_history_xls_preview_response = dependency(
-        "_citic_history_xls_preview_response"
+    _citic_history_xls_preview_response = (
+        dependencies.citic_history_xls_preview_response
     )
-    _citic_query_window_review_http_exception = dependency(
-        "_citic_query_window_review_http_exception"
+    _citic_query_window_review_http_exception = (
+        dependencies.citic_query_window_review_http_exception
     )
-    _citic_query_window_review_read_http_exception = dependency(
-        "_citic_query_window_review_read_http_exception"
+    _citic_query_window_review_read_http_exception = (
+        dependencies.citic_query_window_review_read_http_exception
     )
-    _citic_source_intake_response = dependency("_citic_source_intake_response")
-    _citic_source_reviews_for_state = dependency("_citic_source_reviews_for_state")
-    _citic_source_scope_review_http_exception = dependency(
-        "_citic_source_scope_review_http_exception"
+    _citic_source_intake_response = dependencies.citic_source_intake_response
+    _citic_source_reviews_for_state = dependencies.citic_source_reviews_for_state
+    _citic_source_scope_review_http_exception = (
+        dependencies.citic_source_scope_review_http_exception
     )
-    _citic_source_scope_review_read_http_exception = dependency(
-        "_citic_source_scope_review_read_http_exception"
+    _citic_source_scope_review_read_http_exception = (
+        dependencies.citic_source_scope_review_read_http_exception
     )
-    _parse_citic_history_xls_transport = dependency(
-        "_parse_citic_history_xls_transport"
+    _parse_citic_history_xls_transport = dependencies.parse_citic_history_xls_transport
+    _preview_response = dependencies.preview_response
+    _record_citic_source_intake = dependencies.record_citic_source_intake
+    build_citic_history_canonical_lineage_assessment = (
+        dependencies.build_citic_history_canonical_lineage_assessment
     )
-    _preview_response = dependency("_preview_response")
-    _record_citic_source_intake = dependency("_record_citic_source_intake")
-    build_citic_history_canonical_lineage_assessment = dependency(
-        "build_citic_history_canonical_lineage_assessment"
+    find_citic_history_xls_directory_preview = (
+        dependencies.find_citic_history_xls_directory_preview
     )
-    find_citic_history_xls_directory_preview = dependency(
-        "find_citic_history_xls_directory_preview"
+    parse_broker_statement_csv = dependencies.parse_broker_statement_csv
+    parse_citic_history_xls = dependencies.parse_citic_history_xls
+    record_citic_source_query_window_review = (
+        dependencies.record_citic_source_query_window_review
     )
-    parse_broker_statement_csv = dependency("parse_broker_statement_csv")
-    parse_citic_history_xls = dependency("parse_citic_history_xls")
-    record_citic_source_query_window_review = dependency(
-        "record_citic_source_query_window_review"
+    record_citic_source_scope_review = dependencies.record_citic_source_scope_review
+    revoke_citic_source_query_window_review = (
+        dependencies.revoke_citic_source_query_window_review
     )
-    record_citic_source_scope_review = dependency("record_citic_source_scope_review")
-    revoke_citic_source_query_window_review = dependency(
-        "revoke_citic_source_query_window_review"
-    )
-    revoke_citic_source_scope_review = dependency("revoke_citic_source_scope_review")
-    scan_citic_history_xls_directory = dependency("scan_citic_history_xls_directory")
+    revoke_citic_source_scope_review = dependencies.revoke_citic_source_scope_review
+    scan_citic_history_xls_directory = dependencies.scan_citic_history_xls_directory
 
     @r.post("/broker-statement/preview")
     async def preview_broker_statement(

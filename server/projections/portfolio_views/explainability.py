@@ -26,12 +26,10 @@ from server.projections.portfolio_application import (
 from server.projections.portfolio_application import (
     parse_fee_breakdown as _parse_fee_breakdown,
 )
-from server.projections.portfolio_views.manual_trade import (
-    resolve_display_name,
-)
 from server.projections.quote_status import (
     parse_quote_timestamp as _parse_quote_timestamp,
 )
+from server.services.asset_metadata import resolve_asset_metadata
 from server.services.daily_performance import (
     calculate_account_daily_performance,
 )
@@ -101,11 +99,11 @@ def ledger_entry_display_label(state, entry: dict) -> str | None:
     if not symbol:
         return None
     symbol_text = str(symbol)
-    display_name = resolve_display_name(
+    display_name = resolve_asset_metadata(
         state,
         symbol_text,
-        fallback=entry.get("display_name") or symbol_text,
-    )
+        fallback_name=entry.get("display_name") or symbol_text,
+    ).display_name
     if display_name and display_name != symbol_text:
         return f"{display_name} {symbol_text}"
     return symbol_text

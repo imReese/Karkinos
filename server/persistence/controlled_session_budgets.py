@@ -8,10 +8,10 @@ from typing import Any
 from server.persistence.controlled_session_access import (
     ControlledSessionRepositoryAccess,
 )
-from server.persistence.database_support import (
+from server.persistence.controlled_session_rejections import (
     controlled_session_budget_rejection,
-    json_dict,
 )
+from server.persistence.database_normalization import json_dict
 from server.persistence.event_log import (
     serialize_event_payload_json as _serialize_event_payload_json,
 )

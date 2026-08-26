@@ -4,6 +4,7 @@ import asyncio
 import json
 import sqlite3
 import time
+from dataclasses import replace
 from datetime import date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
@@ -19,6 +20,7 @@ from server.projections import portfolio_application
 from server.projections import quote_status as quote_status_projection
 from server.services import decision_application, market_refresh
 from tests.analytics.test_strategy_validation_matrix import REQUIRED_STRATEGY_IDS
+from tests.portfolio_valuation_fakes import bind_published_valuation
 from tests.route_assertions import registered_app_routes
 
 
@@ -270,6 +272,43 @@ def _run_portfolio_curve_inline(monkeypatch, request):
         return func(*args, **kwargs)
 
     monkeypatch.setattr(portfolio_routes.asyncio, "to_thread", inline_thread)
+
+
+@pytest.fixture(autouse=True)
+def _bind_portfolio_endpoint_test_dependencies(monkeypatch):
+    """Give legacy state doubles an explicit read-only publication contract."""
+
+    from server.routes import portfolio as portfolio_routes
+
+    production_builder = portfolio_routes.build_portfolio_endpoint_dependencies
+
+    def build_test_dependencies():
+        dependencies = production_builder()
+        production_state_provider = dependencies.snapshot.get_state
+
+        def get_state():
+            state = production_state_provider()
+            database = state.db
+            if database is not None and not hasattr(
+                database, "get_runtime_control_sync"
+            ):
+                bind_published_valuation(database)
+            return state
+
+        return replace(
+            dependencies,
+            performance=replace(dependencies.performance, get_state=get_state),
+            snapshot=replace(dependencies.snapshot, get_state=get_state),
+            analysis=replace(dependencies.analysis, get_state=get_state),
+            cash_flows=replace(dependencies.cash_flows, get_state=get_state),
+            trades=replace(dependencies.trades, get_state=get_state),
+        )
+
+    monkeypatch.setattr(
+        portfolio_routes,
+        "build_portfolio_endpoint_dependencies",
+        build_test_dependencies,
+    )
 
 
 def _backtest_route(router, path: str, method: str = "GET"):
@@ -2002,7 +2041,8 @@ def test_market_data_health_falls_back_to_quote_snapshots(monkeypatch):
     assert response.latest_persistent_quote_timestamp == "2026-05-25T15:00:00+08:00"
 
 
-def test_market_quote_refresh_endpoint_returns_structured_result(monkeypatch):
+def test_market_quote_refresh_endpoint_returns_structured_result(monkeypatch, tmp_path):
+    from server.db import AppDatabase
     from server.routes import market as market_routes
 
     router = market_routes.create_router()
@@ -2013,7 +2053,16 @@ def test_market_quote_refresh_endpoint_returns_structured_result(monkeypatch):
     )
     endpoint = refresh_route.endpoint
 
-    fake_scheduler = SimpleNamespace(is_running=True, latest_quotes={})
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    runtime_quotes = {}
+    fake_scheduler = SimpleNamespace(
+        is_running=True,
+        latest_quotes=runtime_quotes,
+        publish_runtime_quote=lambda symbol, quote: runtime_quotes.__setitem__(
+            symbol, quote
+        ),
+    )
     fake_state = SimpleNamespace(
         config=SimpleNamespace(
             assets=[{"symbol": "600519", "asset_class": "stock"}],
@@ -2022,7 +2071,7 @@ def test_market_quote_refresh_endpoint_returns_structured_result(monkeypatch):
             live_poll_interval=60,
         ),
         scheduler=fake_scheduler,
-        db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
+        db=db,
     )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
@@ -2059,7 +2108,10 @@ def test_market_quote_refresh_endpoint_returns_structured_result(monkeypatch):
     assert fake_scheduler.latest_quotes["600519"]["price"] == 12.5
 
 
-def test_market_quote_refresh_without_symbols_includes_default_indices(monkeypatch):
+def test_market_quote_refresh_without_symbols_includes_default_indices(
+    monkeypatch, tmp_path
+):
+    from server.db import AppDatabase
     from server.routes import market as market_routes
 
     router = market_routes.create_router()
@@ -2069,7 +2121,16 @@ def test_market_quote_refresh_without_symbols_includes_default_indices(monkeypat
         if isinstance(route, APIRoute) and route.path == "/api/market/quotes/refresh"
     )
 
-    fake_scheduler = SimpleNamespace(is_running=True, latest_quotes={})
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    runtime_quotes = {}
+    fake_scheduler = SimpleNamespace(
+        is_running=True,
+        latest_quotes=runtime_quotes,
+        publish_runtime_quote=lambda symbol, quote: runtime_quotes.__setitem__(
+            symbol, quote
+        ),
+    )
     fake_state = SimpleNamespace(
         config=SimpleNamespace(
             assets=[],
@@ -2078,10 +2139,7 @@ def test_market_quote_refresh_without_symbols_includes_default_indices(monkeypat
             live_poll_interval=60,
         ),
         scheduler=fake_scheduler,
-        db=SimpleNamespace(
-            get_latest_quotes_sync=lambda: [],
-            list_latest_quotes_sync=lambda: [],
-        ),
+        db=db,
     )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
@@ -2996,7 +3054,8 @@ def test_market_quote_refresh_defaults_to_holding_symbols_and_market_indices(
     assert "示例基金" not in response.requested_symbols
 
 
-def test_market_quote_refresh_single_symbol_failure_does_not_500(monkeypatch):
+def test_market_quote_refresh_single_symbol_failure_does_not_500(monkeypatch, tmp_path):
+    from server.db import AppDatabase
     from server.routes import market as market_routes
 
     router = market_routes.create_router()
@@ -3007,6 +3066,8 @@ def test_market_quote_refresh_single_symbol_failure_does_not_500(monkeypatch):
     )
     endpoint = refresh_route.endpoint
 
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
     fake_state = SimpleNamespace(
         config=SimpleNamespace(
             assets=[
@@ -3018,7 +3079,7 @@ def test_market_quote_refresh_single_symbol_failure_does_not_500(monkeypatch):
             live_poll_interval=60,
         ),
         scheduler=SimpleNamespace(is_running=True, latest_quotes={}),
-        db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
+        db=db,
     )
 
     def fake_fetch(state, symbol, asset_class):
@@ -3858,6 +3919,14 @@ def test_market_quote_resolves_asset_class_from_auto_added_holdings(monkeypatch)
     assert response.price == 1.023
 
 
+def _quote_ingestion_spy(target: dict[str, object]):
+    def persist(command):
+        target.update(command.to_dict())
+        return command.to_dict()
+
+    return SimpleNamespace(persist_quote_ingestion_sync=persist)
+
+
 def test_fetch_latest_snapshot_falls_back_to_akshare_for_fund_when_tushare_returns_none(
     monkeypatch,
 ):
@@ -3870,9 +3939,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_for_fund_when_tushare_retur
             assets=[{"symbol": "019999", "asset_class": "fund"}],
             live_poll_interval=120,
         ),
-        db=SimpleNamespace(
-            save_quote_snapshot_sync=lambda **kwargs: None,
-        ),
+        db=_quote_ingestion_spy({}),
     )
 
     class NullSource:
@@ -3925,9 +3992,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_for_stock_when_tushare_retu
             assets=[{"symbol": "600001", "asset_class": "stock"}],
             live_poll_interval=120,
         ),
-        db=SimpleNamespace(
-            save_quote_snapshot_sync=lambda **kwargs: saved_quote.update(kwargs),
-        ),
+        db=_quote_ingestion_spy(saved_quote),
     )
 
     class NullSource:
@@ -3978,9 +4043,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_when_tushare_raises(
             assets=[{"symbol": "600001", "asset_class": "stock"}],
             live_poll_interval=120,
         ),
-        db=SimpleNamespace(
-            save_quote_snapshot_sync=lambda **kwargs: saved_quote.update(kwargs),
-        ),
+        db=_quote_ingestion_spy(saved_quote),
     )
 
     class RaisingTushareSource:
@@ -4031,9 +4094,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_when_tushare_times_out(
             assets=[{"symbol": "600001", "asset_class": "stock"}],
             live_poll_interval=120,
         ),
-        db=SimpleNamespace(
-            save_quote_snapshot_sync=lambda **kwargs: None,
-        ),
+        db=_quote_ingestion_spy({}),
     )
 
     class SlowTushareSource:
@@ -4093,12 +4154,7 @@ def test_fetch_latest_snapshot_persists_stock_change_fields(monkeypatch):
             assets=[{"symbol": "600001", "asset_class": "stock"}],
             live_poll_interval=120,
         ),
-        db=SimpleNamespace(
-            save_quote_snapshot_sync=lambda **kwargs: None,
-            upsert_latest_quote_sync=lambda **kwargs: saved_latest.update(kwargs),
-            upsert_instrument_metadata_sync=lambda **kwargs: None,
-            save_daily_close_snapshot_sync=lambda **kwargs: None,
-        ),
+        db=_quote_ingestion_spy(saved_latest),
     )
 
     class AkshareSource:
@@ -4133,8 +4189,7 @@ def test_fetch_latest_snapshot_persists_stock_change_fields(monkeypatch):
 def test_fetch_latest_snapshot_preserves_normalized_provider_identity(monkeypatch):
     from server.routes import market as market_routes
 
-    saved_latest: dict[str, object] = {}
-    saved_metadata: dict[str, object] = {}
+    saved_command: dict[str, object] = {}
 
     fake_state = SimpleNamespace(
         config=SimpleNamespace(
@@ -4143,13 +4198,7 @@ def test_fetch_latest_snapshot_preserves_normalized_provider_identity(monkeypatc
             assets=[{"symbol": "600001", "asset_class": "stock"}],
             live_poll_interval=120,
         ),
-        db=SimpleNamespace(
-            save_quote_snapshot_sync=lambda **kwargs: None,
-            upsert_latest_quote_sync=lambda **kwargs: saved_latest.update(kwargs),
-            upsert_instrument_metadata_sync=lambda **kwargs: saved_metadata.update(
-                kwargs
-            ),
-        ),
+        db=_quote_ingestion_spy(saved_command),
     )
 
     class AkshareSource:
@@ -4183,19 +4232,18 @@ def test_fetch_latest_snapshot_preserves_normalized_provider_identity(monkeypatc
     assert response["provider_symbol"] == "600001.SH"
     assert response["exchange"] == "SH"
     assert response["market"] == "CN"
-    assert saved_latest["quote_source"] == "akshare_stock_spot"
-    assert saved_latest["provider_name"] == "akshare"
-    assert saved_metadata["provider_symbol"] == "600001.SH"
-    assert saved_metadata["exchange"] == "SH"
-    assert saved_metadata["market"] == "CN"
-    assert saved_metadata["metadata"]["quote_source"] == "akshare_stock_spot"
+    assert saved_command["quote_source"] == "akshare_stock_spot"
+    assert saved_command["provider_name"] == "akshare"
+    assert saved_command["provider_symbol"] == "600001.SH"
+    assert saved_command["exchange"] == "SH"
+    assert saved_command["market"] == "CN"
+    assert saved_command["metadata"]["quote_source"] == "akshare_stock_spot"
 
 
 def test_fetch_latest_snapshot_persists_reported_previous_close(monkeypatch):
     from server.routes import market as market_routes
 
-    saved_quote: dict[str, object] = {}
-    saved_close: dict[str, object] = {}
+    saved_command: dict[str, object] = {}
 
     fake_state = SimpleNamespace(
         config=SimpleNamespace(
@@ -4204,10 +4252,7 @@ def test_fetch_latest_snapshot_persists_reported_previous_close(monkeypatch):
             assets=[{"symbol": "019999", "asset_class": "fund"}],
             live_poll_interval=120,
         ),
-        db=SimpleNamespace(
-            save_quote_snapshot_sync=lambda **kwargs: saved_quote.update(kwargs),
-            save_daily_close_snapshot_sync=lambda **kwargs: saved_close.update(kwargs),
-        ),
+        db=_quote_ingestion_spy(saved_command),
     )
 
     class AkshareSource:
@@ -4230,14 +4275,12 @@ def test_fetch_latest_snapshot_persists_reported_previous_close(monkeypatch):
     )
 
     assert response["price"] == 2.2503
-    assert saved_quote["timestamp"] == "2026-04-22"
-    assert saved_close == {
-        "symbol": "019999",
-        "asset_class": "fund",
-        "trade_date": "2026-04-21",
-        "close_price": 2.2606,
-        "source": "reported_previous_close",
-    }
+    assert saved_command["quote_timestamp"] == "2026-04-22"
+    assert saved_command["symbol"] == "019999"
+    assert saved_command["asset_type"] == "fund"
+    assert saved_command["daily_close_date"] == "2026-04-21"
+    assert saved_command["daily_close_price"] == 2.2606
+    assert saved_command["daily_close_source"] == "reported_previous_close"
 
 
 def test_portfolio_live_holdings_prefers_reported_previous_close_from_latest_quote(
@@ -5138,15 +5181,17 @@ def test_portfolio_overview_drawdown_ignores_external_cash_deposit(monkeypatch):
     monkeypatch.setattr(
         portfolio_routes,
         "_current_equity_series_point",
-        lambda state, portfolio, instruments, latest_quotes=None: portfolio_routes.EquitySeriesPoint(
-            timestamp="2026-06-26T15:00:00+08:00",
-            total=20000,
-            stocks=10000,
-            funds=0,
-            others=0,
-            cash=10000,
-            unrealized_pnl=0,
-            quote_status="live",
+        lambda state, portfolio, instruments, latest_quotes=None: (
+            portfolio_routes.EquitySeriesPoint(
+                timestamp="2026-06-26T15:00:00+08:00",
+                total=20000,
+                stocks=10000,
+                funds=0,
+                others=0,
+                cash=10000,
+                unrealized_pnl=0,
+                quote_status="live",
+            )
         ),
     )
     monkeypatch.setattr(
@@ -5258,15 +5303,17 @@ def test_portfolio_overview_drawdown_counts_already_applied_future_cash_deposit(
     monkeypatch.setattr(
         portfolio_routes,
         "_current_equity_series_point",
-        lambda state, portfolio, instruments, latest_quotes=None: portfolio_routes.EquitySeriesPoint(
-            timestamp="2026-06-26T15:00:00+08:00",
-            total=20000,
-            stocks=10000,
-            funds=0,
-            others=0,
-            cash=10000,
-            unrealized_pnl=0,
-            quote_status="live",
+        lambda state, portfolio, instruments, latest_quotes=None: (
+            portfolio_routes.EquitySeriesPoint(
+                timestamp="2026-06-26T15:00:00+08:00",
+                total=20000,
+                stocks=10000,
+                funds=0,
+                others=0,
+                cash=10000,
+                unrealized_pnl=0,
+                quote_status="live",
+            )
         ),
     )
     monkeypatch.setattr(
@@ -5545,10 +5592,32 @@ def test_portfolio_rebuild_uses_persisted_quotes_for_fund_pnl(monkeypatch):
     )
     endpoint = portfolio_route.endpoint
 
-    class FakeDb:
-        async def get_total_deposits(self):
-            return 0.0
+    ledger_rows = [
+        {
+            "id": 1,
+            "entry_type": "cash_deposit",
+            "timestamp": "2026-04-13T09:00:00+08:00",
+            "amount": 4000.0,
+            "asset_class": "cash",
+            "source": "manual",
+            "source_ref": "deposit-1",
+        },
+        {
+            "id": 2,
+            "entry_type": "trade_buy",
+            "timestamp": "2026-04-13T13:33:00+08:00",
+            "symbol": "示例成长混合C",
+            "direction": "buy",
+            "quantity": 1000.0,
+            "price": 1.0,
+            "commission": 0.0,
+            "asset_class": "fund",
+            "source": "manual",
+            "source_ref": "trade-1",
+        },
+    ]
 
+    class FakeDb:
         def get_latest_quotes_sync(self):
             return [
                 {
@@ -5560,22 +5629,8 @@ def test_portfolio_rebuild_uses_persisted_quotes_for_fund_pnl(monkeypatch):
                 }
             ]
 
-        def get_cash_flows_sync(self, limit=1000, offset=0):
-            return []
-
-        def get_trades_sync(self, limit=1000, offset=0):
-            return [
-                {
-                    "id": 1,
-                    "timestamp": "2026-04-13T13:33:00",
-                    "symbol": "示例成长混合C",
-                    "direction": "buy",
-                    "quantity": 1000.0,
-                    "price": 1.0,
-                    "commission": 0.0,
-                    "asset_class": "fund",
-                }
-            ]
+        def get_ledger_entries_sync(self, limit=500, offset=0):
+            return ledger_rows[offset : offset + limit]
 
     fake_state = SimpleNamespace(
         config=SimpleNamespace(
@@ -5781,6 +5836,8 @@ def test_portfolio_risk_summary_accepts_timezone_aware_quote_timestamps(monkeypa
     async def fake_get_total_deposits():
         return 1000.0
 
+    quote_timestamp = datetime.now(ZoneInfo("Asia/Shanghai")).isoformat()
+
     fake_state = SimpleNamespace(
         config=SimpleNamespace(initial_cash=1000),
         db=SimpleNamespace(
@@ -5788,7 +5845,7 @@ def test_portfolio_risk_summary_accepts_timezone_aware_quote_timestamps(monkeypa
             get_latest_quotes_sync=lambda: [
                 {
                     "symbol": "600519",
-                    "timestamp": datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(),
+                    "timestamp": quote_timestamp,
                 }
             ],
         ),
@@ -7596,36 +7653,46 @@ def test_portfolio_rebuilds_from_ledger_when_scheduler_not_running(monkeypatch):
     )
     endpoint = portfolio_route.endpoint
 
-    def fake_get_cash_flows_sync(limit=1000, offset=0):
-        return []
+    ledger_rows = [
+        {
+            "id": 1,
+            "entry_type": "cash_deposit",
+            "timestamp": "2026-04-13T09:00:00+08:00",
+            "amount": 4000.0,
+            "asset_class": "cash",
+            "source": "manual",
+            "source_ref": "deposit-1",
+        },
+        {
+            "id": 2,
+            "entry_type": "trade_buy",
+            "timestamp": "2026-04-13T13:33:00+08:00",
+            "symbol": "示例成长混合C",
+            "direction": "buy",
+            "quantity": 1000.0,
+            "price": 1.0,
+            "commission": 0.0,
+            "asset_class": "fund",
+            "source": "manual",
+            "source_ref": "trade-1",
+        },
+        {
+            "id": 3,
+            "entry_type": "trade_buy",
+            "timestamp": "2026-04-13T14:27:00+08:00",
+            "symbol": "示例科技混合C",
+            "direction": "buy",
+            "quantity": 500.0,
+            "price": 1.0,
+            "commission": 0.0,
+            "asset_class": "fund",
+            "source": "manual",
+            "source_ref": "trade-2",
+        },
+    ]
 
-    def fake_get_trades_sync(limit=1000, offset=0):
-        return [
-            {
-                "id": 1,
-                "timestamp": "2026-04-13T13:33:00",
-                "symbol": "示例成长混合C",
-                "direction": "buy",
-                "quantity": 1000.0,
-                "price": 1.0,
-                "commission": 0.0,
-                "asset_class": "fund",
-                "note": "",
-                "created_at": "2026-04-13T13:33:01",
-            },
-            {
-                "id": 2,
-                "timestamp": "2026-04-13T14:27:00",
-                "symbol": "示例科技混合C",
-                "direction": "buy",
-                "quantity": 500.0,
-                "price": 1.0,
-                "commission": 0.0,
-                "asset_class": "fund",
-                "note": "",
-                "created_at": "2026-04-13T14:27:01",
-            },
-        ]
+    def fake_get_ledger_entries_sync(limit=500, offset=0):
+        return ledger_rows[offset : offset + limit]
 
     fake_state = SimpleNamespace(
         config=SimpleNamespace(initial_cash=4000),
@@ -7633,9 +7700,7 @@ def test_portfolio_rebuilds_from_ledger_when_scheduler_not_running(monkeypatch):
             portfolio=None, latest_quotes={}, watchlist=[], instruments={}
         ),
         db=SimpleNamespace(
-            get_total_deposits=AsyncMock(return_value=0.0),
-            get_cash_flows_sync=fake_get_cash_flows_sync,
-            get_trades_sync=fake_get_trades_sync,
+            get_ledger_entries_sync=fake_get_ledger_entries_sync,
         ),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
@@ -7650,7 +7715,111 @@ def test_portfolio_rebuilds_from_ledger_when_scheduler_not_running(monkeypatch):
     } == {"fund"}
 
 
-def test_portfolio_trade_auto_confirms_fund_buy_from_amount(monkeypatch, tmp_path):
+class _TradeCommandFakeDb:
+    """Route-test double for the atomic portfolio trade command surface."""
+
+    def record_manual_trade_sync(self, command):
+        from server.contracts.portfolio_trades import ManualTradeWriteResult
+
+        trade_id = len(self.trades) + 1
+        trade = {
+            "id": trade_id,
+            "timestamp": command.timestamp,
+            "symbol": command.symbol,
+            "direction": command.direction,
+            "quantity": command.quantity,
+            "price": command.price,
+            "commission": command.commission,
+            "asset_class": command.asset_class,
+            "note": command.note,
+            "created_at": "2026-08-26T10:00:00+08:00",
+        }
+        self.trades.insert(0, trade)
+        ledger_entry = {
+            "entry_type": f"trade_{command.direction}",
+            "timestamp": command.timestamp,
+            "amount": command.gross_amount,
+            "symbol": command.symbol,
+            "direction": command.direction,
+            "quantity": command.quantity,
+            "price": command.price,
+            "commission": command.commission,
+            "gross_amount": command.gross_amount,
+            "net_cash_impact": command.net_cash_impact,
+            "fee_breakdown_json": command.fee_breakdown_json,
+            "fee_rule_id": command.fee_rule_id,
+            "fee_rule_version": command.fee_rule_version,
+            "cost_basis_method": command.cost_basis_method,
+            "asset_class": command.asset_class,
+            "note": command.note,
+            "source": "portfolio_trade",
+            "source_ref": f"trade:{trade_id}",
+        }
+        self.ledger_entries.append(ledger_entry)
+        if hasattr(self, "upsert_watchlist_asset_sync"):
+            self.upsert_watchlist_asset_sync(
+                symbol=command.symbol,
+                asset_class=command.asset_class,
+                display_name=command.display_name,
+                source="trade",
+            )
+        if hasattr(self, "upsert_instrument_metadata_sync"):
+            self.upsert_instrument_metadata_sync(
+                symbol=command.symbol,
+                asset_type=command.asset_class,
+                display_name=command.display_name,
+                provider_symbol=command.symbol,
+                source="trade",
+            )
+        return ManualTradeWriteResult(
+            trade=trade,
+            ledger_entry_id=len(self.ledger_entries),
+        )
+
+    def create_pending_fund_order_sync(self, command):
+        from server.contracts.portfolio_trades import PendingFundOrderWriteResult
+
+        order_id = len(self.pending_orders) + 1
+        order = {
+            "id": order_id,
+            "submitted_at": command.submitted_at,
+            "symbol": command.symbol,
+            "display_name": command.display_name,
+            "amount": command.amount,
+            "commission": command.commission,
+            "asset_class": command.asset_class,
+            "target_trade_date": command.target_trade_date,
+            "status": "pending",
+            "note": command.note,
+            "confirmed_nav": None,
+            "confirmed_quantity": None,
+            "confirmed_trade_date": None,
+            "trade_id": None,
+            "created_at": "2026-08-26T10:00:00+08:00",
+            "updated_at": "2026-08-26T10:00:00+08:00",
+        }
+        self.pending_orders.append(order)
+        if hasattr(self, "upsert_watchlist_asset_sync"):
+            self.upsert_watchlist_asset_sync(
+                symbol=command.symbol,
+                asset_class=command.asset_class,
+                display_name=command.display_name,
+                source="trade",
+            )
+        if hasattr(self, "upsert_instrument_metadata_sync"):
+            self.upsert_instrument_metadata_sync(
+                symbol=command.symbol,
+                asset_type=command.asset_class,
+                display_name=command.display_name,
+                provider_symbol=command.symbol,
+                source="trade",
+            )
+        return PendingFundOrderWriteResult(order=order)
+
+
+def test_portfolio_trade_never_auto_confirms_fund_buy_from_amount(
+    monkeypatch, tmp_path
+):
     from server.routes import portfolio as portfolio_routes
 
     router = portfolio_routes.create_router()
@@ -7660,27 +7829,13 @@ def test_portfolio_trade_auto_confirms_fund_buy_from_amount(monkeypatch, tmp_pat
         if isinstance(route, APIRoute) and route.path == "/api/portfolio/trade"
     )
 
-    class FakeDb:
+    class FakeDb(_TradeCommandFakeDb):
         def __init__(self):
             self.trades: list[dict] = []
             self.ledger_entries: list[dict] = []
+            self.pending_orders: list[dict] = []
             self.watchlist_assets: list[dict] = []
             self.instrument_metadata: list[dict] = []
-
-        async def add_trade(self, **payload):
-            trade_id = len(self.trades) + 1
-            self.trades.insert(
-                0,
-                {
-                    "id": trade_id,
-                    **payload,
-                    "created_at": "2026-04-22T14:46:01",
-                },
-            )
-            return trade_id
-
-        def insert_ledger_entry_sync(self, **payload):
-            self.ledger_entries.append(payload)
 
         async def get_trades(self, limit=50, offset=0):
             return self.trades[offset : offset + limit]
@@ -7714,31 +7869,16 @@ def test_portfolio_trade_auto_confirms_fund_buy_from_amount(monkeypatch, tmp_pat
         db=FakeDb(),
     )
 
-    class FakeAkshareSource:
-        def _resolve_open_end_fund_name(self, symbol):
-            return "示例稳健混合C"
-
-        def _resolve_open_end_fund_code(self, symbol):
-            return "012999"
-
-        def fetch_bars(self, symbol, start, end, frequency, asset_class):
-            import pandas as pd
-
-            return pd.DataFrame(
-                {
-                    "timestamp": pd.to_datetime(["2026-04-22", "2026-04-23"]),
-                    "close": [1.0107, 1.0200],
-                }
-            )
-
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
         "data.manager.build_sources",
-        lambda **kwargs: {"akshare": FakeAkshareSource()},
+        lambda **kwargs: pytest.fail("trade command must not fetch provider NAV"),
     )
     response = asyncio.run(
         trade_route.endpoint(
             portfolio_routes.TradeCreate(
+                command_id="route-fund-command-1",
+                operator_id="human-operator",
                 timestamp="2026-04-22T14:46:00",
                 symbol="012999",
                 direction="buy",
@@ -7748,13 +7888,17 @@ def test_portfolio_trade_auto_confirms_fund_buy_from_amount(monkeypatch, tmp_pat
         )
     )
 
-    assert response.symbol == "012999"
-    assert response.price == pytest.approx(1.0107)
-    assert response.quantity == pytest.approx(200 / 1.0107)
-    assert "confirmed_trade_date=2026-04-22" in response.note
+    payload = json.loads(response.body)
+    assert response.status_code == 202
+    assert payload["symbol"] == "012999"
+    assert payload["status"] == "pending"
+    assert payload["target_trade_date"] == "2026-04-22"
+    assert "persisted confirmed-NAV" in payload["detail"]
+    assert fake_state.db.trades == []
+    assert fake_state.db.ledger_entries == []
     assert fake_state.config.assets == []
-    assert fake_state.db.watchlist_assets[0]["display_name"] == "示例稳健混合C"
-    assert fake_state.db.instrument_metadata[0]["display_name"] == "示例稳健混合C"
+    assert fake_state.db.watchlist_assets[0]["display_name"] == "012999"
+    assert fake_state.db.instrument_metadata[0]["display_name"] == "012999"
 
 
 def test_portfolio_trade_uses_configured_account_commission_when_missing(
@@ -7769,49 +7913,20 @@ def test_portfolio_trade_uses_configured_account_commission_when_missing(
         if isinstance(route, APIRoute) and route.path == "/api/portfolio/trade"
     )
 
-    class FakeDb:
+    class FakeDb(_TradeCommandFakeDb):
         def __init__(self):
             self.trades: list[dict] = []
             self.ledger_entries: list[dict] = []
 
-        async def add_trade(self, **payload):
-            trade_id = len(self.trades) + 1
-            self.trades.insert(
-                0,
-                {
-                    "id": trade_id,
-                    **payload,
-                    "created_at": "2026-01-12T14:33:42",
-                },
-            )
-            return trade_id
-
-        def insert_ledger_entry_sync(self, **payload):
-            self.ledger_entries.append(payload)
-
         async def get_trades(self, limit=50, offset=0):
             return self.trades[offset : offset + limit]
-
-    class FakeLock:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, traceback):
-            return False
-
-    live_fills = []
-    live_portfolio = SimpleNamespace(on_fill=live_fills.append)
 
     fake_state = SimpleNamespace(
         config=SimpleNamespace(
             account_commission_rate=0.00025,
             account_min_commission=3.0,
         ),
-        scheduler=SimpleNamespace(
-            is_running=True,
-            _lock=FakeLock(),
-            _portfolio=live_portfolio,
-        ),
+        scheduler=SimpleNamespace(is_running=False),
         db=FakeDb(),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
@@ -7819,6 +7934,8 @@ def test_portfolio_trade_uses_configured_account_commission_when_missing(
     response = asyncio.run(
         trade_route.endpoint(
             portfolio_routes.TradeCreate(
+                command_id="route-buy-command-1",
+                operator_id="human-operator",
                 timestamp="2026-01-12T14:33:41",
                 symbol="600002",
                 direction="buy",
@@ -7846,9 +7963,6 @@ def test_portfolio_trade_uses_configured_account_commission_when_missing(
     assert ledger_entry["fee_rule_id"] == "manual_configured_commission"
     assert ledger_entry["fee_rule_version"] == "broker_fee_schedule"
     assert ledger_entry["cost_basis_method"] == "moving_average_buy_cost"
-    assert len(live_fills) == 1
-    assert live_fills[0].commission == Decimal("3.05764")
-    assert live_fills[0].fee_breakdown["total_fee"] == "3.057640"
 
 
 def test_portfolio_stock_trade_persists_refreshable_asset_identity(monkeypatch):
@@ -7861,27 +7975,12 @@ def test_portfolio_stock_trade_persists_refreshable_asset_identity(monkeypatch):
         if isinstance(route, APIRoute) and route.path == "/api/portfolio/trade"
     )
 
-    class FakeDb:
+    class FakeDb(_TradeCommandFakeDb):
         def __init__(self):
             self.trades: list[dict] = []
             self.ledger_entries: list[dict] = []
             self.watchlist_assets: list[dict] = []
             self.instrument_metadata: list[dict] = []
-
-        async def add_trade(self, **payload):
-            trade_id = len(self.trades) + 1
-            self.trades.insert(
-                0,
-                {
-                    "id": trade_id,
-                    **payload,
-                    "created_at": "2026-07-27T11:30:01+08:00",
-                },
-            )
-            return trade_id
-
-        def insert_ledger_entry_sync(self, **payload):
-            self.ledger_entries.append(payload)
 
         async def get_trades(self, limit=50, offset=0):
             return self.trades[offset : offset + limit]
@@ -7922,6 +8021,8 @@ def test_portfolio_stock_trade_persists_refreshable_asset_identity(monkeypatch):
     response = asyncio.run(
         trade_route.endpoint(
             portfolio_routes.TradeCreate(
+                command_id="route-identity-command-1",
+                operator_id="human-operator",
                 timestamp="2026-07-24T10:22:47+08:00",
                 symbol="600172",
                 direction="buy",
@@ -7951,13 +8052,6 @@ def test_portfolio_stock_trade_persists_refreshable_asset_identity(monkeypatch):
         }
     ]
 
-    portfolio_routes._ensure_asset_config(
-        fake_state,
-        symbol="600172",
-        asset_class="stock",
-        display_name="placeholder-must-not-overwrite",
-    )
-
     assert len(db.watchlist_assets) == 1
     assert len(db.instrument_metadata) == 1
 
@@ -7974,17 +8068,10 @@ def test_portfolio_trade_preview_uses_configured_fee_contract_without_writing(
         if isinstance(route, APIRoute) and route.path == "/api/portfolio/trade/preview"
     )
 
-    class FakeDb:
+    class FakeDb(_TradeCommandFakeDb):
         def __init__(self):
             self.trades: list[dict] = []
             self.ledger_entries: list[dict] = []
-
-        async def add_trade(self, **payload):
-            self.trades.append(payload)
-            return len(self.trades)
-
-        def insert_ledger_entry_sync(self, **payload):
-            self.ledger_entries.append(payload)
 
     fake_state = SimpleNamespace(
         config=SimpleNamespace(
@@ -7999,6 +8086,8 @@ def test_portfolio_trade_preview_uses_configured_fee_contract_without_writing(
     response = asyncio.run(
         preview_route.endpoint(
             portfolio_routes.TradeCreate(
+                command_id="route-sell-command-1",
+                operator_id="human-operator",
                 timestamp="2026-01-12T14:33:41",
                 symbol="600002",
                 direction="sell",
@@ -8038,25 +8127,10 @@ def test_portfolio_trade_sell_uses_structured_fee_model_components(monkeypatch):
         if isinstance(route, APIRoute) and route.path == "/api/portfolio/trade"
     )
 
-    class FakeDb:
+    class FakeDb(_TradeCommandFakeDb):
         def __init__(self):
             self.trades: list[dict] = []
             self.ledger_entries: list[dict] = []
-
-        async def add_trade(self, **payload):
-            trade_id = len(self.trades) + 1
-            self.trades.insert(
-                0,
-                {
-                    "id": trade_id,
-                    **payload,
-                    "created_at": "2026-01-12T14:33:42",
-                },
-            )
-            return trade_id
-
-        def insert_ledger_entry_sync(self, **payload):
-            self.ledger_entries.append(payload)
 
         async def get_trades(self, limit=50, offset=0):
             return self.trades[offset : offset + limit]
@@ -8074,6 +8148,8 @@ def test_portfolio_trade_sell_uses_structured_fee_model_components(monkeypatch):
     response = asyncio.run(
         trade_route.endpoint(
             portfolio_routes.TradeCreate(
+                command_id="route-manual-fee-command-1",
+                operator_id="human-operator",
                 timestamp="2026-01-12T14:33:41",
                 symbol="600002",
                 direction="sell",
@@ -8112,25 +8188,10 @@ def test_portfolio_trade_with_explicit_commission_keeps_manual_fee_marker(
         if isinstance(route, APIRoute) and route.path == "/api/portfolio/trade"
     )
 
-    class FakeDb:
+    class FakeDb(_TradeCommandFakeDb):
         def __init__(self):
             self.trades: list[dict] = []
             self.ledger_entries: list[dict] = []
-
-        async def add_trade(self, **payload):
-            trade_id = len(self.trades) + 1
-            self.trades.insert(
-                0,
-                {
-                    "id": trade_id,
-                    **payload,
-                    "created_at": "2026-01-12T14:33:42",
-                },
-            )
-            return trade_id
-
-        def insert_ledger_entry_sync(self, **payload):
-            self.ledger_entries.append(payload)
 
         async def get_trades(self, limit=50, offset=0):
             return self.trades[offset : offset + limit]
@@ -8186,16 +8247,11 @@ def test_portfolio_trade_returns_pending_when_fund_nav_not_published(
         if isinstance(route, APIRoute) and route.path == "/api/portfolio/trade"
     )
 
-    class FakeDb:
+    class FakeDb(_TradeCommandFakeDb):
         def __init__(self):
             self.pending_orders: list[dict] = []
             self.watchlist_assets: list[dict] = []
             self.instrument_metadata: list[dict] = []
-
-        def add_pending_fund_order_sync(self, **payload):
-            order_id = len(self.pending_orders) + 1
-            self.pending_orders.append({"id": order_id, **payload})
-            return order_id
 
         def upsert_watchlist_asset_sync(self, **payload):
             self.watchlist_assets.append(payload)
@@ -8251,6 +8307,8 @@ def test_portfolio_trade_returns_pending_when_fund_nav_not_published(
     response = asyncio.run(
         trade_route.endpoint(
             portfolio_routes.TradeCreate(
+                command_id="route-pending-command-1",
+                operator_id="human-operator",
                 timestamp="2026-04-23T14:46:00",
                 symbol="012999",
                 direction="buy",
@@ -8264,12 +8322,12 @@ def test_portfolio_trade_returns_pending_when_fund_nav_not_published(
     assert response.status_code == 202
     assert payload["status"] == "pending"
     assert payload["target_trade_date"] == "2026-04-23"
-    assert "2026-04-23" in payload["detail"]
+    assert "persisted confirmed-NAV" in payload["detail"]
     assert fake_state.config.assets == []
     assert fake_state.db.watchlist_assets[0]["symbol"] == "012999"
 
 
-def test_signal_actions_convert_latest_signals_into_action_cards(monkeypatch):
+def test_signal_actions_read_persisted_action_cards_without_sync_writes(monkeypatch):
     from server.routes import signals as signal_routes
 
     router = signal_routes.create_router()
@@ -8384,10 +8442,10 @@ def test_signal_actions_convert_latest_signals_into_action_cards(monkeypatch):
     assert response[1].urgency == "medium"
     assert response[1].risk_gate_status == "not_checked"
     assert response[1].manual_confirmation_status == "awaiting_risk_gate"
-    assert synced_rows == [1, 2]
+    assert synced_rows == []
 
 
-def test_signal_actions_return_pending_tasks_after_sync(monkeypatch):
+def test_signal_actions_return_pending_persisted_tasks_without_sync(monkeypatch):
     from server.routes import signals as signal_routes
 
     router = signal_routes.create_router()
@@ -8451,7 +8509,7 @@ def test_signal_actions_return_pending_tasks_after_sync(monkeypatch):
     assert len(response) == 1
     assert response[0].id == 9
     assert response[0].status == "pending"
-    assert ("upsert", 1) in calls
+    assert ("upsert", 1) not in calls
     assert ("get", ("pending", "deferred")) in calls
 
 
@@ -10826,7 +10884,33 @@ def test_portfolio_equity_curve_series_uses_intraday_mtm_for_1d(monkeypatch):
                     "source": "manual",
                     "source_ref": "deposit-1",
                     "created_at": "2026-04-18T09:00:01+00:00",
-                }
+                },
+                {
+                    "id": 2,
+                    "entry_type": "trade_buy",
+                    "timestamp": "2026-04-18T10:00:00+08:00",
+                    "symbol": "600519",
+                    "direction": "buy",
+                    "quantity": 10.0,
+                    "price": 1000.0,
+                    "commission": 0.0,
+                    "asset_class": "stock",
+                    "source": "manual",
+                    "source_ref": "trade-stock-1",
+                },
+                {
+                    "id": 3,
+                    "entry_type": "trade_buy",
+                    "timestamp": "2026-04-18T10:05:00+08:00",
+                    "symbol": "510300",
+                    "direction": "buy",
+                    "quantity": 1000.0,
+                    "price": 3.0,
+                    "commission": 0.0,
+                    "asset_class": "etf",
+                    "source": "manual",
+                    "source_ref": "trade-etf-1",
+                },
             ]
 
         def get_latest_quotes_sync(self):
@@ -10928,11 +11012,11 @@ def test_portfolio_equity_curve_series_uses_intraday_mtm_for_1d(monkeypatch):
     ]
     assert series[0].stocks == pytest.approx(10000.0)
     assert series[0].funds == pytest.approx(3000.0)
-    assert series[0].cash == pytest.approx(76000.0)
-    assert series[0].total == pytest.approx(89000.0)
-    assert series[1].total == pytest.approx(89150.0)
-    assert series[2].total == pytest.approx(89300.0)
-    assert series[-1].total == pytest.approx(89300.0)
+    assert series[0].cash == pytest.approx(87000.0)
+    assert series[0].total == pytest.approx(100000.0)
+    assert series[1].total == pytest.approx(100150.0)
+    assert series[2].total == pytest.approx(100300.0)
+    assert series[-1].total == pytest.approx(100300.0)
     assert series[-1].unrealized_pnl == pytest.approx(300.0)
     assert series[-1].stocks_daily_change == pytest.approx(100.0)
     assert series[-1].funds_daily_change == pytest.approx(200.0)
@@ -10975,7 +11059,20 @@ def test_portfolio_equity_curve_series_1d_falls_back_to_flat_previous_close(
                     "source": "manual",
                     "source_ref": "deposit-1",
                     "created_at": "2026-04-20T09:00:01+00:00",
-                }
+                },
+                {
+                    "id": 2,
+                    "entry_type": "trade_buy",
+                    "timestamp": "2026-04-17T10:00:00+08:00",
+                    "symbol": "600519",
+                    "direction": "buy",
+                    "quantity": 10.0,
+                    "price": 1000.0,
+                    "commission": 0.0,
+                    "asset_class": "stock",
+                    "source": "manual",
+                    "source_ref": "trade-stock-1",
+                },
             ]
 
         def get_latest_quotes_sync(self):
@@ -11041,7 +11138,7 @@ def test_portfolio_equity_curve_series_1d_falls_back_to_flat_previous_close(
 
     assert series[0].timestamp.startswith("2026-04-20T09:30:00")
     assert series[-1].timestamp.startswith("2026-04-20T15:00:00")
-    assert all(point.total == pytest.approx(60000.0) for point in series)
+    assert all(point.total == pytest.approx(100000.0) for point in series)
     assert all(point.unrealized_pnl == pytest.approx(0.0) for point in series)
 
 
@@ -11065,7 +11162,30 @@ def test_portfolio_equity_curve_series_1d_marks_current_quote_when_minute_bars_m
 
     class FakeDb:
         def get_ledger_entries_sync(self, limit=500, offset=0):
-            return []
+            return [
+                {
+                    "id": 1,
+                    "entry_type": "cash_deposit",
+                    "timestamp": "2026-04-17T09:00:00+08:00",
+                    "amount": 60000.0,
+                    "asset_class": "cash",
+                    "source": "manual",
+                    "source_ref": "deposit-1",
+                },
+                {
+                    "id": 2,
+                    "entry_type": "trade_buy",
+                    "timestamp": "2026-04-17T10:00:00+08:00",
+                    "symbol": "600519",
+                    "direction": "buy",
+                    "quantity": 10.0,
+                    "price": 1000.0,
+                    "commission": 0.0,
+                    "asset_class": "stock",
+                    "source": "manual",
+                    "source_ref": "trade-stock-1",
+                },
+            ]
 
         def get_latest_quotes_sync(self):
             return [
@@ -11155,7 +11275,30 @@ def test_portfolio_equity_curve_series_1d_does_not_fabricate_missing_quote_value
 
     class FakeDb:
         def get_ledger_entries_sync(self, limit=500, offset=0):
-            return []
+            return [
+                {
+                    "id": 1,
+                    "entry_type": "cash_deposit",
+                    "timestamp": "2026-04-17T09:00:00+08:00",
+                    "amount": 60000.0,
+                    "asset_class": "cash",
+                    "source": "manual",
+                    "source_ref": "deposit-1",
+                },
+                {
+                    "id": 2,
+                    "entry_type": "trade_buy",
+                    "timestamp": "2026-04-17T10:00:00+08:00",
+                    "symbol": "600519",
+                    "direction": "buy",
+                    "quantity": 10.0,
+                    "price": 1000.0,
+                    "commission": 0.0,
+                    "asset_class": "stock",
+                    "source": "manual",
+                    "source_ref": "trade-stock-1",
+                },
+            ]
 
         def get_latest_quotes_sync(self):
             return [
@@ -11251,7 +11394,30 @@ def test_portfolio_equity_curve_series_1d_uses_local_quote_snapshots(
 
     class FakeDb:
         def get_ledger_entries_sync(self, limit=500, offset=0):
-            return []
+            return [
+                {
+                    "id": 1,
+                    "entry_type": "cash_deposit",
+                    "timestamp": "2026-04-17T09:00:00+08:00",
+                    "amount": 60000.0,
+                    "asset_class": "cash",
+                    "source": "manual",
+                    "source_ref": "deposit-1",
+                },
+                {
+                    "id": 2,
+                    "entry_type": "trade_buy",
+                    "timestamp": "2026-04-17T10:00:00+08:00",
+                    "symbol": "600519",
+                    "direction": "buy",
+                    "quantity": 10.0,
+                    "price": 1000.0,
+                    "commission": 0.0,
+                    "asset_class": "stock",
+                    "source": "manual",
+                    "source_ref": "trade-stock-1",
+                },
+            ]
 
         def get_latest_quotes_sync(self):
             return [
@@ -12263,7 +12429,7 @@ def test_closed_same_day_sell_is_included_in_overview_daily_pnl(
         direction="sell",
         quantity=100,
         price=11.0,
-        commission=5.0,
+        commission=4.0,
         gross_amount=1100,
         net_cash_impact=1095,
         fee_breakdown_json=json.dumps(
@@ -13326,66 +13492,51 @@ def test_portfolio_snapshot_does_not_refresh_stale_quote_in_request(monkeypatch)
         if isinstance(route, APIRoute) and route.path == "/api/portfolio"
     )
 
-    stale_position = SimpleNamespace(
-        quantity=100.0,
-        available_qty=100.0,
-        frozen_qty=0.0,
-        avg_cost=10.0,
-        market_value=1000.0,
-        unrealized_pnl=0.0,
-        realized_pnl=0.0,
-        commission_paid=0.0,
-    )
-    refreshed_position = SimpleNamespace(
-        quantity=100.0,
-        available_qty=100.0,
-        frozen_qty=0.0,
-        avg_cost=10.0,
-        market_value=1250.0,
-        unrealized_pnl=250.0,
-        realized_pnl=0.0,
-        commission_paid=0.0,
-    )
     fake_instruments = {
         Symbol("600519"): SimpleNamespace(
             name="Kweichow Moutai",
             asset_class=SimpleNamespace(value="stock"),
         )
     }
+    ledger_rows = [
+        {
+            "id": 1,
+            "entry_type": "cash_deposit",
+            "timestamp": "2026-04-22T09:00:00+08:00",
+            "amount": 1000.0,
+            "asset_class": "cash",
+            "source": "manual",
+            "source_ref": "deposit-1",
+        },
+        {
+            "id": 2,
+            "entry_type": "trade_buy",
+            "timestamp": "2026-04-22T10:00:00+08:00",
+            "symbol": "600519",
+            "direction": "buy",
+            "quantity": 100.0,
+            "price": 10.0,
+            "commission": 0.0,
+            "asset_class": "stock",
+            "source": "manual",
+            "source_ref": "trade-1",
+        },
+    ]
 
     class FakeDb:
-        def __init__(self):
-            self.latest_price = 10.0
-
         def get_latest_quotes_sync(self):
             return [
                 {
                     "symbol": "600519",
                     "asset_class": "stock",
-                    "price": self.latest_price,
+                    "price": 10.0,
                     "volume": 1000.0,
-                    "timestamp": (
-                        "2026-04-22T15:00:00"
-                        if self.latest_price == 10.0
-                        else "2026-05-12T10:05:00+08:00"
-                    ),
+                    "timestamp": "2026-04-22T15:00:00",
                 }
             ]
 
-        def save_quote_snapshot_sync(self, **kwargs):
-            self.latest_price = float(kwargs["price"])
-
-        def get_cash_flows_sync(self, limit=1, offset=0):
-            return []
-
-        def get_trades_sync(self, limit=1, offset=0):
-            return []
-
-        def get_ledger_entries_sync(self, limit=1, offset=0):
-            return [{"id": 1}]
-
-        async def get_total_deposits(self):
-            return 0.0
+        def get_ledger_entries_sync(self, limit=500, offset=0):
+            return ledger_rows[offset : offset + limit]
 
     fake_db = FakeDb()
     fake_state = SimpleNamespace(
@@ -13398,7 +13549,7 @@ def test_portfolio_snapshot_does_not_refresh_stale_quote_in_request(monkeypatch)
         scheduler=SimpleNamespace(
             portfolio=SimpleNamespace(
                 cash=0.0,
-                positions={"600519": stale_position},
+                positions={},
             ),
             instruments=fake_instruments,
             watchlist=[("600519", SimpleNamespace(value="stock"))],
@@ -13406,25 +13557,6 @@ def test_portfolio_snapshot_does_not_refresh_stale_quote_in_request(monkeypatch)
         ),
         db=fake_db,
     )
-
-    class FakeSource:
-        def fetch_latest(self, symbol, asset_class):
-            return {
-                "price": 12.5,
-                "volume": 2000.0,
-                "timestamp": "2026-05-12T10:05:00+08:00",
-            }
-
-    def fake_rebuild_portfolio_from_ledger(config, db, latest_quotes):
-        assert latest_quotes["600519"]["price"] == 12.5
-        return SimpleNamespace(
-            portfolio=SimpleNamespace(
-                cash=0.0,
-                positions={"600519": refreshed_position},
-                total_deposits=0.0,
-            ),
-            instruments=fake_instruments,
-        )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
@@ -13437,13 +13569,10 @@ def test_portfolio_snapshot_does_not_refresh_stale_quote_in_request(monkeypatch)
         lambda now=None: True,
     )
     monkeypatch.setattr(
-        portfolio_routes,
-        "rebuild_portfolio_from_ledger",
-        fake_rebuild_portfolio_from_ledger,
-    )
-    monkeypatch.setattr(
         "data.manager.build_sources",
-        lambda **kwargs: {"akshare": FakeSource()},
+        lambda **kwargs: pytest.fail(
+            "portfolio snapshot must not construct provider sources"
+        ),
     )
 
     response = asyncio.run(snapshot_route.endpoint())

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
@@ -77,32 +77,46 @@ class _PersistingManager:
 
 def _verified_calendar(db: AppDatabase) -> None:
     trading_dates = pd.bdate_range(end="2026-08-21", periods=80)
+    trading_date_values = {
+        market_date.date().isoformat() for market_date in trading_dates
+    }
+    current = date(2026, 1, 1)
+    calendar_days = []
+    while current.year == 2026:
+        market_date = current.isoformat()
+        is_trading_day = market_date in trading_date_values
+        calendar_days.append(
+            {
+                "date": market_date,
+                "is_trading_day": is_trading_day,
+                "day_type": "trading" if is_trading_day else "closed",
+                "reason_code": (
+                    "scheduled_trading_day" if is_trading_day else "scheduled_closed"
+                ),
+            }
+        )
+        current += timedelta(days=1)
+    source_fingerprint = "c" * 64
     db.upsert_market_calendar_snapshot_sync(
         {
             "exchange": "SSE",
             "year": 2026,
             "provider": "unit_fixture",
             "status": "available",
-            "trading_day_count": len(trading_dates),
-            "closed_day_count": 0,
-            "source_fingerprint": "calendar-fixture",
-            "days": [
-                {
-                    "date": market_date.date().isoformat(),
-                    "is_trading_day": True,
-                    "day_type": "trading",
-                    "reason_code": "scheduled_trading_day",
-                }
-                for market_date in trading_dates
-            ],
+            "trading_day_count": len(trading_date_values),
+            "closed_day_count": len(calendar_days) - len(trading_date_values),
+            "source_fingerprint": source_fingerprint,
+            "days": calendar_days,
             "limitations": [],
         }
     )
     db.update_market_calendar_verification_sync(
         exchange="SSE",
         year=2026,
+        source_fingerprint=source_fingerprint,
         verification_status="verified",
         official_source_url="https://example.test/calendar",
+        official_source_fingerprint="d" * 64,
         verified_by="unit-test",
     )
 

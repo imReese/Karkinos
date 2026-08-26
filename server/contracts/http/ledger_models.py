@@ -9,8 +9,10 @@ from pydantic import BaseModel, Field
 
 
 class CashFlowCreate(BaseModel):
+    command_id: str = Field(min_length=1)
+    operator_id: str = Field(min_length=1)
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
-    amount: float
+    amount: float = Field(gt=0, allow_inf_nan=False)
     flow_type: str = "deposit"
     note: str = ""
 
@@ -22,18 +24,26 @@ class CashFlowResponse(BaseModel):
     flow_type: str
     note: str
     created_at: str
+    replayed: bool = False
 
 
 class TradeCreate(BaseModel):
+    command_id: str | None = None
+    operator_id: str | None = None
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
     symbol: str
     direction: str  # 'buy' / 'sell'
-    quantity: float | None = None
-    price: float | None = None
-    amount: float | None = None
-    commission: float | None = None
+    quantity: float | None = Field(default=None, allow_inf_nan=False)
+    price: float | None = Field(default=None, allow_inf_nan=False)
+    amount: float | None = Field(default=None, allow_inf_nan=False)
+    commission: float | None = Field(default=None, allow_inf_nan=False)
     asset_class: str = "stock"
     note: str = ""
+
+
+class ManualTradeCreate(TradeCreate):
+    command_id: str = Field(min_length=1)
+    operator_id: str = Field(min_length=1)
 
 
 class TradeResponse(BaseModel):
@@ -47,6 +57,18 @@ class TradeResponse(BaseModel):
     asset_class: str
     note: str
     created_at: str
+    replayed: bool = False
+
+
+class PortfolioCorrectionRequest(BaseModel):
+    command_id: str = Field(min_length=1)
+    operator_id: str = Field(min_length=1)
+
+
+class PortfolioCorrectionResponse(BaseModel):
+    corrected: bool
+    replayed: bool
+    correction_ledger_entry_id: int
 
 
 class TradePreviewResponse(BaseModel):
@@ -80,8 +102,26 @@ class PendingFundOrderResponse(BaseModel):
     confirmed_quantity: float | None = None
     confirmed_trade_date: str | None = None
     trade_id: int | None = None
+    confirmation_quote_snapshot_id: int | None = None
+    confirmation_fetch_run_id: str | None = None
+    confirmed_by: str | None = None
+    confirmation_note: str | None = None
     created_at: str
     updated_at: str
+
+
+class PendingFundConfirmationRequest(BaseModel):
+    command_id: str = Field(min_length=1)
+    operator_id: str = Field(min_length=1)
+    evidence_fetch_run_id: str = Field(min_length=1)
+    confirmation_note: str = ""
+
+
+class PendingFundConfirmationResponse(BaseModel):
+    order: PendingFundOrderResponse
+    trade: TradeResponse
+    ledger_entry_id: int
+    replayed: bool = False
 
 
 class EquityPoint(BaseModel):
@@ -125,6 +165,11 @@ class ActivityItem(BaseModel):
 class LedgerEntryCreatedResponse(BaseModel):
     id: int
     entry_type: str
+    request_id: str
+    replayed: bool
+    entry_fingerprint: str
+    valuation_snapshot_id: str
+    valuation_snapshot_status: str
     status: str = "ok"
 
 
@@ -161,28 +206,34 @@ class LedgerEntryResponse(BaseModel):
     source: str = "manual"
     source_ref: str | None = None
     created_at: str | None = None
+    entry_fingerprint: str
 
 
 class LedgerTradeCreate(BaseModel):
+    operator_id: str = Field(min_length=1, max_length=128)
+    request_id: str = Field(min_length=1, max_length=256)
     occurred_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     symbol: str
     asset_class: str = "stock"
     direction: str  # buy / sell
-    quantity: float
-    unit_price: float
-    fee: float = 0.0
+    quantity: float = Field(gt=0, allow_inf_nan=False)
+    unit_price: float = Field(gt=0, allow_inf_nan=False)
+    fee: float = Field(default=0.0, ge=0, allow_inf_nan=False)
     note: str = ""
     source: str = "manual"
     source_ref: str | None = None
 
 
 class LedgerTradeSettlementCreate(BaseModel):
+    operator_id: str = Field(min_length=1, max_length=128)
+    request_id: str = Field(min_length=1, max_length=256)
+    expected_entry_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     settled_at: str = Field(default_factory=lambda: datetime.now().isoformat())
-    commission: float = Field(ge=0)
-    stamp_tax: float = Field(default=0.0, ge=0)
-    transfer_fee: float = Field(default=0.0, ge=0)
-    other_fees: float = Field(default=0.0, ge=0)
-    net_cash_impact: float
+    commission: float = Field(ge=0, allow_inf_nan=False)
+    stamp_tax: float = Field(default=0.0, ge=0, allow_inf_nan=False)
+    transfer_fee: float = Field(default=0.0, ge=0, allow_inf_nan=False)
+    other_fees: float = Field(default=0.0, ge=0, allow_inf_nan=False)
+    net_cash_impact: float = Field(allow_inf_nan=False)
     source: str = Field(default="broker_statement", min_length=1)
     source_ref: str = Field(min_length=1)
     note: str = ""
@@ -196,13 +247,20 @@ class LedgerTradeSettlementResponse(BaseModel):
     settled_net_cash_impact: float
     cash_adjustment: float | None
     fee_breakdown: dict[str, Any]
+    request_id: str
+    replayed: bool
+    entry_fingerprint: str
+    valuation_snapshot_id: str
+    valuation_snapshot_status: str
     audit_event_type: str = "portfolio.trade_settlement.confirmed"
     does_not_submit_broker_order: bool = True
 
 
 class LedgerCashFlowCreate(BaseModel):
+    operator_id: str = Field(min_length=1, max_length=128)
+    request_id: str = Field(min_length=1, max_length=256)
     occurred_at: str = Field(default_factory=lambda: datetime.now().isoformat())
-    amount: float
+    amount: float = Field(gt=0, allow_inf_nan=False)
     flow_type: str = "deposit"  # deposit / withdrawal
     note: str = ""
     source: str = "manual"
@@ -210,22 +268,26 @@ class LedgerCashFlowCreate(BaseModel):
 
 
 class LedgerDividendCreate(BaseModel):
+    operator_id: str = Field(min_length=1, max_length=128)
+    request_id: str = Field(min_length=1, max_length=256)
     occurred_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     symbol: str
     asset_class: str = "stock"
-    amount: float
+    amount: float = Field(gt=0, allow_inf_nan=False)
     note: str = ""
     source: str = "manual"
     source_ref: str | None = None
 
 
 class LedgerAdjustmentCreate(BaseModel):
+    operator_id: str = Field(min_length=1, max_length=128)
+    request_id: str = Field(min_length=1, max_length=256)
     occurred_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     symbol: str | None = None
     asset_class: str = "stock"
-    amount: float | None = None
-    quantity: float | None = None
-    price: float | None = None
+    amount: float | None = Field(default=None, allow_inf_nan=False)
+    quantity: float | None = Field(default=None, allow_inf_nan=False)
+    price: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     note: str = ""
     source: str = "manual"
     source_ref: str | None = None

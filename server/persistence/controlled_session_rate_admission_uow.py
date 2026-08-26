@@ -8,7 +8,7 @@ from typing import Any
 from server.persistence.controlled_session_access import (
     ControlledSessionRepositoryAccess,
 )
-from server.persistence.database_support import (
+from server.persistence.controlled_session_rejections import (
     controlled_session_rate_admission_rejection,
 )
 from server.persistence.event_log import (

@@ -52,11 +52,11 @@ from .memory_retrieval import (
 )
 from .orchestrator import DeterministicWorkflowOrchestrator
 from .permissions import default_tool_permission_registry
-from .provider_connectivity import (
+from .provider_connectivity_contracts import (
     JsonHttpTransport,
     ProviderConnectivitySettings,
-    UrllibJsonTransport,
 )
+from .provider_connectivity_transport import UrllibJsonTransport
 from .registry import AiRuntimeRegistry
 from .store import AiAuditStore
 

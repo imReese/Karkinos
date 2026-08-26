@@ -15,34 +15,26 @@ from server.contracts.http.strategy_models import (
     CompareResponse,
     StrategyCompareItem,
 )
+from server.http.backtest_endpoints.dependencies import ResultEndpointDependencies
 
 
-def create_router(facade: Any) -> APIRouter:
+def create_router(dependencies: ResultEndpointDependencies) -> APIRouter:
     r = APIRouter(prefix="/api/backtest", tags=["backtest"])
-
-    def dependency(name: str):
-        value = getattr(facade, name)
-        if callable(value) and not isinstance(value, type):
-            return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
-        return value
-
-    _COMPARE_WARNINGS = dependency("_COMPARE_WARNINGS")
-    _backtest_metrics_from_payload = dependency("_backtest_metrics_from_payload")
-    _backtest_report_metrics_json = dependency("_backtest_report_metrics_json")
-    _dataset_snapshot_from_result = dependency("_dataset_snapshot_from_result")
-    _dataset_snapshot_id = dependency("_dataset_snapshot_id")
-    _json_object = dependency("_json_object")
-    _normalize_backtest_payload_from_equity_curve = dependency(
-        "_normalize_backtest_payload_from_equity_curve"
+    _COMPARE_WARNINGS = dependencies.compare_warnings
+    _backtest_metrics_from_payload = dependencies.backtest_metrics_from_payload
+    _backtest_report_metrics_json = dependencies.backtest_report_metrics_json
+    _dataset_snapshot_from_result = dependencies.dataset_snapshot_from_result
+    _dataset_snapshot_id = dependencies.dataset_snapshot_id
+    _json_object = dependencies.json_object
+    _normalize_backtest_payload_from_equity_curve = (
+        dependencies.normalize_backtest_payload_from_equity_curve
     )
-    _run_single_backtest = dependency("_run_single_backtest")
-    _validate_backtest_strategy_params = dependency(
-        "_validate_backtest_strategy_params"
-    )
-    _write_backtest_report_file = dependency("_write_backtest_report_file")
-    asyncio = dependency("asyncio")
-    json = dependency("json")
-    logger = dependency("logger")
+    _run_single_backtest = dependencies.run_single_backtest
+    _validate_backtest_strategy_params = dependencies.validate_backtest_strategy_params
+    _write_backtest_report_file = dependencies.write_backtest_report_file
+    asyncio = dependencies.asyncio_provider()
+    json = dependencies.json_provider()
+    logger = dependencies.logger_provider()
 
     @r.get("/results", response_model=list[BacktestSummary])
     async def list_backtest_results() -> list[BacktestSummary]:

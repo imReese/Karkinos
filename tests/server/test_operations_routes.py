@@ -11,6 +11,7 @@ from fastapi.routing import APIRoute
 from analytics.acceptance_audit_report import build_acceptance_audit_export
 from server.db import AppDatabase
 from server.routes import operations as operations_routes
+from tests.paper_shadow_fixtures import insert_paper_shadow_evidence
 
 
 def _endpoint(path: str, method: str = "GET"):
@@ -58,6 +59,8 @@ class FakeOperationsDb:
         self.ledger_writes: list[dict] = []
         self.automation_runs: list[dict] = []
         self.execution_reconciliation_open_items: list[dict] = []
+        self.ledger_entries: list[dict] = []
+        self.latest_quote_previous_close: float | None = None
 
     def get_action_tasks_sync(self, statuses=None, limit=50, offset=0):
         return [
@@ -104,7 +107,7 @@ class FakeOperationsDb:
         return None
 
     def get_latest_quote_sync(self, symbol, asset_type=None):
-        return {
+        row = {
             "symbol": symbol,
             "asset_type": asset_type or "stock",
             "price": 10.0,
@@ -112,6 +115,15 @@ class FakeOperationsDb:
             "quote_timestamp": "2026-07-01T09:45:00+08:00",
             "quote_source": "fixture",
         }
+        if self.latest_quote_previous_close is not None:
+            row.update(
+                {
+                    "previous_close": self.latest_quote_previous_close,
+                    "previous_close_date": "2026-06-30",
+                    "previous_close_source": "fixture_daily_close",
+                }
+            )
+        return row
 
     def list_latest_quotes_sync(self):
         return [self.get_latest_quote_sync("600519", asset_type="stock")]
@@ -135,7 +147,7 @@ class FakeOperationsDb:
         return self.execution_reconciliation_open_items[offset : offset + limit]
 
     def get_ledger_entries_sync(self, limit=50, offset=0):
-        return []
+        return self.ledger_entries[offset : offset + limit]
 
     def save_manual_order_sync(self, *args, **kwargs):
         raise AssertionError("operations route must not save manual orders")
@@ -205,7 +217,73 @@ class FakePaperShadowOperationsDb(FakeOperationsDb):
             rows = [row for row in rows if row.get("symbol") == symbol]
         return rows[offset : offset + limit]
 
-    def upsert_paper_shadow_run_sync(self, **kwargs):
+    def record_paper_shadow_run_sync(self, command):
+        existing = self.get_paper_shadow_run_sync(command.run_id)
+        if existing is not None:
+            return existing
+        for fact in command.orders:
+            self.recorded_orders.append(
+                {
+                    "id": len(self.recorded_orders) + 1,
+                    "order_id": fact.order_id,
+                    "timestamp": fact.timestamp,
+                    "symbol": fact.symbol,
+                    "side": fact.side,
+                    "order_type": fact.order_type,
+                    "quantity": fact.quantity,
+                    "price": fact.price,
+                    "asset_class": fact.asset_class,
+                    "intent_id": fact.intent_id,
+                    "risk_decision_id": fact.risk_decision_id,
+                    "execution_mode": fact.execution_mode,
+                    "status": fact.status,
+                    "source": fact.source,
+                    "source_ref": fact.source_ref,
+                    "payload": fact.payload,
+                }
+            )
+        for fact in command.fills:
+            self.recorded_fills.append(
+                {
+                    "id": len(self.recorded_fills) + 1,
+                    "fill_id": fact.fill_id,
+                    "order_id": fact.order_id,
+                    "timestamp": fact.timestamp,
+                    "symbol": fact.symbol,
+                    "side": fact.side,
+                    "fill_price": fact.fill_price,
+                    "fill_quantity": fact.fill_quantity,
+                    "commission": fact.commission,
+                    "slippage": fact.slippage,
+                    "asset_class": fact.asset_class,
+                    "execution_mode": fact.execution_mode,
+                    "provider_name": fact.provider_name,
+                    "broker_order_id": fact.broker_order_id,
+                    "source": fact.source,
+                    "source_ref": fact.source_ref,
+                    "metadata": fact.metadata,
+                }
+            )
+        row = {
+            "id": len(self.paper_shadow_runs) + 1,
+            "run_id": command.run_id,
+            "plan_date": command.plan_date,
+            "input_fingerprint": command.input_fingerprint,
+            "status": command.status,
+            "order_intent_count": command.order_intent_count,
+            "simulated_order_count": command.simulated_order_count,
+            "simulated_fill_count": command.simulated_fill_count,
+            "divergence_status": command.divergence_status,
+            "next_manual_review_step": command.next_manual_review_step,
+            "limitations_json": json.dumps(list(command.limitations)),
+            "payload_json": json.dumps(command.payload),
+            "created_at": "2026-07-02T09:35:00",
+            "updated_at": "2026-07-02T09:35:00",
+        }
+        self.paper_shadow_runs.append(row)
+        return row
+
+    def record_paper_shadow_evidence_sync(self, **kwargs):
         existing = next(
             (
                 run
@@ -282,9 +360,35 @@ class FakePaperShadowOperationsDb(FakeOperationsDb):
         return run
 
 
+def _seed_persisted_portfolio_facts(db: FakeOperationsDb) -> None:
+    db.latest_quote_previous_close = 9.5
+    db.ledger_entries = [
+        {
+            "id": 1,
+            "entry_type": "cash_deposit",
+            "timestamp": "2026-06-30T09:00:00+08:00",
+            "amount": 50_000.0,
+            "source": "operations_route_fixture",
+        },
+        {
+            "id": 2,
+            "entry_type": "trade_buy",
+            "timestamp": "2026-06-30T09:30:00+08:00",
+            "symbol": "600519",
+            "direction": "buy",
+            "quantity": 200.0,
+            "price": 8.0,
+            "commission": 0.0,
+            "asset_class": "stock",
+            "source": "operations_route_fixture",
+        },
+    ]
+
+
 def test_today_operations_route_returns_read_only_runbook(monkeypatch):
     _allow_paper_shadow_evaluation(monkeypatch)
     fake_db = FakeOperationsDb()
+    _seed_persisted_portfolio_facts(fake_db)
     fake_state = SimpleNamespace(
         db=fake_db,
         config=SimpleNamespace(
@@ -580,6 +684,7 @@ def test_today_operations_route_surfaces_scheduler_run_evidence(monkeypatch):
 def test_paper_shadow_run_route_creates_idempotent_simulation_evidence(monkeypatch):
     _allow_paper_shadow_evaluation(monkeypatch)
     fake_db = FakePaperShadowOperationsDb()
+    _seed_persisted_portfolio_facts(fake_db)
     fake_state = SimpleNamespace(
         db=fake_db,
         config=SimpleNamespace(
@@ -646,7 +751,7 @@ def test_paper_shadow_run_review_route_records_review_without_execution_mutation
     monkeypatch,
 ):
     fake_db = FakePaperShadowOperationsDb()
-    fake_db.upsert_paper_shadow_run_sync(
+    fake_db.record_paper_shadow_evidence_sync(
         run_id="shadow:2026-07-02:diverged",
         plan_date="2026-07-02",
         input_fingerprint="diverged",
@@ -694,7 +799,8 @@ def test_paper_shadow_run_review_route_rejects_failed_run_manual_handoff(
 ):
     db = AppDatabase(tmp_path / "operations.db")
     db.init_sync()
-    db.upsert_paper_shadow_run_sync(
+    insert_paper_shadow_evidence(
+        db,
         run_id="shadow:2026-07-02:failed",
         plan_date="2026-07-02",
         input_fingerprint="failed",

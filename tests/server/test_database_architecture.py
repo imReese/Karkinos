@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import ast
+import inspect
 from pathlib import Path
 
 import pytest
+
+from server.db import AppDatabase
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PERSISTENCE_ROOT = PROJECT_ROOT / "server/persistence"
@@ -80,7 +83,12 @@ def test_database_compatibility_surface_is_partitioned_without_duplicates() -> N
             )
             method_owners[method.name] = path.name
 
-    assert len(method_owners) == 168
+    database_methods = {
+        name
+        for name, value in inspect.getmembers(AppDatabase, predicate=inspect.isfunction)
+        if not name.startswith("_")
+    }
+    assert database_methods == {*method_owners, "init", "init_sync"}
 
 
 def test_persistence_layer_does_not_depend_on_application_services() -> None:
@@ -96,9 +104,38 @@ def test_persistence_layer_does_not_depend_on_application_services() -> None:
     assert {path: imports for path, imports in offenders.items() if imports} == {}
 
 
+def test_persistence_helpers_have_domain_owners_instead_of_a_catch_all() -> None:
+    forbidden_module = PERSISTENCE_ROOT / "database_support.py"
+    assert not forbidden_module.exists()
+
+    offenders: list[str] = []
+    for path in sorted((PROJECT_ROOT / "server").rglob("*.py")):
+        for imported in _module_imports(path):
+            if imported == "server.persistence.database_support":
+                offenders.append(path.relative_to(PROJECT_ROOT).as_posix())
+
+    assert offenders == []
+
+    owned_helpers = {
+        "controlled_clearance_lifecycle.py",
+        "controlled_execution_rejections.py",
+        "controlled_ledger_validation.py",
+        "controlled_session_rejections.py",
+        "database_normalization.py",
+        "database_serialization.py",
+        "financial_fact_event_payloads.py",
+        "signal_journal_projection.py",
+    }
+    assert all(
+        len((PERSISTENCE_ROOT / name).read_text(encoding="utf-8").splitlines()) <= 250
+        for name in owned_helpers
+    )
+
+
 def test_unit_of_work_boundaries_remain_explicit() -> None:
     expected = {
         "ai_shadow_research_uow.py": 1,
+        "analysis_reviews.py": 1,
         "broker_connector_soak.py": 1,
         "controlled_broker_cancellation_uow.py": 4,
         "controlled_broker_write_releases.py": 2,
@@ -117,7 +154,29 @@ def test_unit_of_work_boundaries_remain_explicit() -> None:
         "decision_outcome_reviews.py": 1,
         "decision_quality.py": 1,
         "daily_strategy_artifacts.py": 1,
+        "execution_fact_uow.py": 2,
+        "external_analysis_review_uow.py": 1,
         "external_memory_analysis.py": 1,
+        "external_promoted_memory_analysis.py": 1,
+        "external_promoted_analysis_memory_retrieval_uow.py": 1,
+        "external_promoted_analysis_memory_uow.py": 2,
+        "external_promoted_memory_analysis_review_uow.py": 1,
+        "external_research_uow.py": 1,
+        "external_reviewed_memory_retrieval_uow.py": 1,
+        "external_reviewed_memory_uow.py": 2,
+        "financial_facts_quote_ingestion_uow.py": 2,
+        "financial_facts_valuation.py": 1,
+        "ledger_mutation_uow.py": 2,
+        "manual_order_ticket_uow.py": 2,
+        "manual_trade_uow.py": 2,
+        "market_calendar.py": 2,
+        "market_calendar_publication_uow.py": 1,
+        "memory_informed_analysis_uow.py": 2,
+        "memory_retrieval_uow.py": 1,
+        "oms.py": 2,
+        "paper_shadow_run_uow.py": 1,
+        "pending_fund_confirmation_uow.py": 2,
+        "portfolio_cash_flow_uow.py": 2,
         "reviewed_fee_schedule_reviews.py": 1,
         "strategy_research_uow.py": 1,
     }

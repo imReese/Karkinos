@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import sys
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
@@ -32,6 +31,13 @@ from server.contracts.http.market import (
 )
 from server.http.market_endpoints.calendar import (
     create_router as _create_calendar_router,
+)
+from server.http.market_endpoints.dependencies import (
+    CalendarEndpointDependencies,
+    HealthEndpointDependencies,
+    RefreshEndpointDependencies,
+    ResearchEndpointDependencies,
+    WatchlistEndpointDependencies,
 )
 from server.http.market_endpoints.health import create_router as _create_health_router
 from server.http.market_endpoints.refresh import create_router as _create_refresh_router
@@ -100,6 +106,9 @@ from server.services.market_refresh import (
 )
 from server.services.market_refresh import (
     persist_latest_snapshot as _persist_latest_snapshot,
+)
+from server.services.market_refresh import (
+    publish_committed_runtime_quotes as _publish_committed_runtime_quotes,
 )
 from server.services.market_refresh import quote_metadata as _quote_metadata
 from server.services.market_refresh import refresh_one_quote as _refresh_one_quote
@@ -238,7 +247,6 @@ from server.services.market_views.health_projection import (
     refresh_quote_snapshot as _refresh_quote_snapshot,
 )
 from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
-from server.services.valuation_snapshot import build_current_valuation_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -262,14 +270,131 @@ _TUSHARE_FUND_NAV_PERMISSION_DENIED = "tushare_fund_nav_permission_denied"
 
 
 def create_router() -> APIRouter:
-    facade = sys.modules[__name__]
-    endpoints = {}
     router = APIRouter()
-    router.routes.extend(_create_calendar_router(facade).routes)
-    router.routes.extend(_create_watchlist_router(facade, endpoints).routes)
-    router.routes.extend(_create_health_router(facade).routes)
-    router.routes.extend(_create_refresh_router(facade).routes)
-    router.routes.extend(_create_research_router(facade, endpoints).routes)
+    router.routes.extend(
+        _create_calendar_router(
+            CalendarEndpointDependencies(
+                market_calendar_snapshot_response=(
+                    lambda *args, **kwargs: _market_calendar_snapshot_response(
+                        *args, **kwargs
+                    )
+                ),
+                build_market_calendar_provider=(
+                    lambda *args, **kwargs: build_market_calendar_provider(
+                        *args, **kwargs
+                    )
+                ),
+            )
+        ).routes
+    )
+    watchlist_router, get_watchlist = _create_watchlist_router(
+        WatchlistEndpointDependencies(
+            asset_class_map=_ASSET_CLASS_MAP,
+            default_end_date=_DEFAULT_END_DATE,
+            extract_runtime_portfolio=lambda *args, **kwargs: (
+                _extract_runtime_portfolio(*args, **kwargs)
+            ),
+            merged_watchlist_assets=lambda *args, **kwargs: _merged_watchlist_assets(
+                *args, **kwargs
+            ),
+            position_for_symbol=lambda *args, **kwargs: _position_for_symbol(
+                *args, **kwargs
+            ),
+            read_market_bars=lambda *args, **kwargs: _read_market_bars(*args, **kwargs),
+            datetime_provider=lambda: datetime,
+            timedelta_provider=lambda: timedelta,
+            logger_provider=lambda: logger,
+        )
+    )
+    router.routes.extend(watchlist_router.routes)
+    router.routes.extend(
+        _create_health_router(
+            HealthEndpointDependencies(
+                backfill_instrument_metadata=lambda *args, **kwargs: (
+                    _backfill_instrument_metadata(*args, **kwargs)
+                ),
+                backfill_market_bars=lambda *args, **kwargs: _backfill_market_bars(
+                    *args, **kwargs
+                ),
+                build_market_data_health_response=lambda *args, **kwargs: (
+                    _build_market_data_health_response(*args, **kwargs)
+                ),
+                merged_watchlist_assets=lambda *args, **kwargs: (
+                    _merged_watchlist_assets(*args, **kwargs)
+                ),
+                quote_fetch_run_response=lambda *args, **kwargs: (
+                    _quote_fetch_run_response(*args, **kwargs)
+                ),
+                refresh_confirmed_fund_nav=lambda *args, **kwargs: (
+                    _refresh_confirmed_fund_nav(*args, **kwargs)
+                ),
+                run_blocking_fetch=lambda *args, **kwargs: _run_blocking_fetch(
+                    *args, **kwargs
+                ),
+                shanghai_now=lambda *args, **kwargs: _shanghai_now(*args, **kwargs),
+                with_default_market_indices=lambda *args, **kwargs: (
+                    _with_default_market_indices(*args, **kwargs)
+                ),
+            )
+        ).routes
+    )
+    router.routes.extend(
+        _create_refresh_router(
+            RefreshEndpointDependencies(
+                asset_class_map=_ASSET_CLASS_MAP,
+                create_manual_quote_fetch_run=lambda *args, **kwargs: (
+                    _create_manual_quote_fetch_run(*args, **kwargs)
+                ),
+                default_refresh_symbols=lambda *args, **kwargs: (
+                    _default_refresh_symbols(*args, **kwargs)
+                ),
+                finish_manual_quote_fetch_run=lambda *args, **kwargs: (
+                    _finish_manual_quote_fetch_run(*args, **kwargs)
+                ),
+                merged_watchlist_assets=lambda *args, **kwargs: (
+                    _merged_watchlist_assets(*args, **kwargs)
+                ),
+                normalize_refresh_symbols=lambda *args, **kwargs: (
+                    _normalize_refresh_symbols(*args, **kwargs)
+                ),
+                publish_committed_runtime_quotes=lambda *args, **kwargs: (
+                    _publish_committed_runtime_quotes(*args, **kwargs)
+                ),
+                quote_fetch_run_asset_type=lambda *args, **kwargs: (
+                    _quote_fetch_run_asset_type(*args, **kwargs)
+                ),
+                quote_fetch_run_metadata=lambda *args, **kwargs: (
+                    _quote_fetch_run_metadata(*args, **kwargs)
+                ),
+                refresh_one_quote=lambda *args, **kwargs: _refresh_one_quote(
+                    *args, **kwargs
+                ),
+                with_default_market_indices=lambda *args, **kwargs: (
+                    _with_default_market_indices(*args, **kwargs)
+                ),
+                asyncio_provider=lambda: asyncio,
+                datetime_provider=lambda: datetime,
+                uuid_provider=lambda: uuid,
+                is_cn_trading_session=lambda: is_cn_trading_session(),
+            )
+        ).routes
+    )
+    router.routes.extend(
+        _create_research_router(
+            ResearchEndpointDependencies(
+                build_market_data_health_response=lambda *args, **kwargs: (
+                    _build_market_data_health_response(*args, **kwargs)
+                ),
+                build_research_note_stats=lambda *args, **kwargs: (
+                    _build_research_note_stats(*args, **kwargs)
+                ),
+                with_default_market_indices=lambda *args, **kwargs: (
+                    _with_default_market_indices(*args, **kwargs)
+                ),
+            ),
+            get_watchlist,
+        ).routes
+    )
     return router
 
 

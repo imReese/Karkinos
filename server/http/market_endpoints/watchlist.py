@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
@@ -14,26 +14,21 @@ from server.contracts.http.market_models import (
     WatchlistCreateRequest,
     WatchlistItem,
 )
+from server.http.market_endpoints.dependencies import WatchlistEndpointDependencies
+
+WatchlistLoader = Callable[[], Awaitable[list[WatchlistItem]]]
 
 
-def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
+def create_router(
+    dependencies: WatchlistEndpointDependencies,
+) -> tuple[APIRouter, WatchlistLoader]:
     r = APIRouter(prefix="/api/market", tags=["market"])
-
-    def dependency(name: str):
-        value = getattr(facade, name)
-        if callable(value) and not isinstance(value, type):
-            return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
-        return value
-
-    _ASSET_CLASS_MAP = dependency("_ASSET_CLASS_MAP")
-    _DEFAULT_END_DATE = dependency("_DEFAULT_END_DATE")
-    _extract_runtime_portfolio = dependency("_extract_runtime_portfolio")
-    _merged_watchlist_assets = dependency("_merged_watchlist_assets")
-    _position_for_symbol = dependency("_position_for_symbol")
-    datetime = dependency("datetime")
-    logger = dependency("logger")
-    _read_market_bars = dependency("_read_market_bars")
-    timedelta = dependency("timedelta")
+    _ASSET_CLASS_MAP = dependencies.asset_class_map
+    _DEFAULT_END_DATE = dependencies.default_end_date
+    _extract_runtime_portfolio = dependencies.extract_runtime_portfolio
+    _merged_watchlist_assets = dependencies.merged_watchlist_assets
+    _position_for_symbol = dependencies.position_for_symbol
+    _read_market_bars = dependencies.read_market_bars
 
     @r.get("/watchlist", response_model=list[WatchlistItem])
     async def get_watchlist() -> list[WatchlistItem]:
@@ -161,8 +156,10 @@ def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
                 "5m": BarFrequency.MIN_5,
                 "1d": BarFrequency.DAILY,
             }.get(interval, BarFrequency.DAILY)
-            start_at = datetime.strptime(start, "%Y-%m-%d")
-            end_exclusive = datetime.strptime(end, "%Y-%m-%d") + timedelta(days=1)
+            start_at = dependencies.datetime_provider().strptime(start, "%Y-%m-%d")
+            end_exclusive = dependencies.datetime_provider().strptime(
+                end, "%Y-%m-%d"
+            ) + dependencies.timedelta_provider()(days=1)
             store_path = Path(resolve_data_dir()) / "meta.db"
             rows = _read_market_bars(
                 store_path,
@@ -176,8 +173,9 @@ def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
         try:
             return _load_bars()
         except Exception:
-            logger.warning("Failed to fetch kline for %s", symbol, exc_info=True)
+            dependencies.logger_provider().warning(
+                "Failed to fetch kline for %s", symbol, exc_info=True
+            )
             return []
 
-    endpoints["get_watchlist"] = get_watchlist
-    return r
+    return r, get_watchlist

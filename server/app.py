@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -77,22 +76,6 @@ async def _forward_events(bridge: EventBusBridge, hub: ConnectionHub) -> None:
         except Exception:
             logger.exception("Error forwarding event")
             await asyncio.sleep(1)
-
-
-def _confirm_pending_fund_orders_on_startup(state: AppState) -> None:
-    """Confirm published fund subscriptions without blocking API startup."""
-    try:
-        from server.projections.portfolio_application import (
-            confirm_pending_fund_orders,
-        )
-
-        confirmed_count = confirm_pending_fund_orders(state)
-        if confirmed_count:
-            logger.info("Confirmed %d pending fund orders", confirmed_count)
-    except Exception:
-        logger.warning(
-            "Failed to confirm pending fund orders during startup", exc_info=True
-        )
 
 
 def _evaluate_controlled_session_pauses(state: AppState) -> dict[str, Any]:
@@ -286,14 +269,6 @@ async def lifespan(app: FastAPI):
             run_local_broker_statement_collector(broker_statement_collector),
             name="local-broker-statement-collector",
         )
-    pending_confirm_thread = threading.Thread(
-        target=_confirm_pending_fund_orders_on_startup,
-        args=(state,),
-        daemon=True,
-        name="pending-fund-confirm",
-    )
-    pending_confirm_thread.start()
-
     # This loop is inert until an owner-authorized research-only policy exists.
     # It remains independent of live monitoring because it reads persisted
     # after-close evidence and has no execution authority.

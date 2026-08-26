@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 from server.ai_runtime.analysis_reviews import (
     AnalysisReviewRejected,
@@ -90,6 +90,8 @@ from server.ai_runtime.tasks import (
     ResearchTaskRejected,
     ResearchTaskStore,
 )
+from server.dependencies import AppState
+from server.persistence.database_identity import require_database_path
 from server.projections import portfolio_application
 from server.services import account_strategy_projections, operations_projection
 from server.services.ai_context_capture_factory import (
@@ -98,6 +100,11 @@ from server.services.ai_context_capture_factory import (
 from server.services.strategy_research_factory import (
     build_strategy_research_write_service as _build_strategy_research_write_service,
 )
+
+if TYPE_CHECKING:
+    from server.services.ai_shadow_research_automation import (
+        AiShadowResearchAutomationService,
+    )
 
 
 def build_capture_projection_readers() -> CaptureProjectionReaders:
@@ -114,7 +121,7 @@ def build_capture_projection_readers() -> CaptureProjectionReaders:
 
 
 def build_human_context_capture_service(
-    state: Any,
+    state: AppState,
 ) -> HumanResearchContextCaptureService:
     """Build audit-only capture services on the application's SQLite database."""
     return _build_context_capture_service(
@@ -123,13 +130,13 @@ def build_human_context_capture_service(
     )
 
 
-def build_provider_connectivity_service(state: Any) -> ProviderConnectivityService:
+def build_provider_connectivity_service(state: AppState) -> ProviderConnectivityService:
     """Build the explicit network probe on AI-only audit tables."""
     db_path = _database_path(
         state.db,
         ConnectivityConfigurationError("database path is unavailable"),
     )
-    settings = load_provider_connectivity_settings(state.config)
+    settings = load_provider_connectivity_settings(state.require_config())
     ai_store = AiAuditStore(db_path)
     audit_store = ProviderConnectivityAuditStore(db_path)
     ai_store.init()
@@ -142,7 +149,7 @@ def build_provider_connectivity_service(state: Any) -> ProviderConnectivityServi
 
 
 def build_human_research_task_service(
-    state: Any,
+    state: AppState,
     *,
     initialize: bool,
 ) -> HumanResearchTaskService:
@@ -170,7 +177,7 @@ def build_human_research_task_service(
 
 
 def build_human_fixture_analysis_service(
-    state: Any,
+    state: AppState,
     *,
     initialize: bool,
 ) -> HumanResearchTaskFixtureAnalysisService:
@@ -208,7 +215,7 @@ def build_human_fixture_analysis_service(
 
 
 def build_human_analysis_review_service(
-    state: Any,
+    state: AppState,
     *,
     initialize: bool,
 ) -> HumanAnalysisReviewService:
@@ -232,7 +239,7 @@ def build_human_analysis_review_service(
 
 
 def build_human_reviewed_memory_retrieval_service(
-    state: Any,
+    state: AppState,
     *,
     initialize: bool,
 ) -> HumanReviewedMemoryRetrievalService:
@@ -266,7 +273,7 @@ def build_human_reviewed_memory_retrieval_service(
 
 
 def build_human_memory_informed_analysis_service(
-    state: Any,
+    state: AppState,
     *,
     initialize: bool,
 ) -> HumanMemoryInformedFixtureAnalysisService:
@@ -292,7 +299,7 @@ def build_human_memory_informed_analysis_service(
 
 
 def build_human_external_memory_analysis_service(
-    state: Any,
+    state: AppState,
     *,
     initialize: bool,
 ) -> HumanExternalMemoryAnalysisService:
@@ -309,7 +316,9 @@ def build_human_external_memory_analysis_service(
     if initialize:
         store.init()
     return HumanExternalMemoryAnalysisService(
-        settings_loader=lambda: load_provider_connectivity_settings(state.config),
+        settings_loader=lambda: load_provider_connectivity_settings(
+            state.require_config()
+        ),
         retrieval_service=retrieval_service,
         ai_store=AiAuditStore(db_path),
         evidence_repository=CanonicalEvidenceRepository(db_path),
@@ -319,7 +328,7 @@ def build_human_external_memory_analysis_service(
 
 
 def build_human_external_analysis_review_service(
-    state: Any,
+    state: AppState,
     *,
     initialize: bool,
 ) -> HumanExternalAnalysisReviewService:
@@ -343,7 +352,7 @@ def build_human_external_analysis_review_service(
 
 
 def build_external_reviewed_memory_promotion_service(
-    state: Any,
+    state: AppState,
     *,
     initialize: bool,
 ) -> ExternalReviewedMemoryPromotionService:
@@ -368,7 +377,7 @@ def build_external_reviewed_memory_promotion_service(
 
 
 def build_human_external_reviewed_memory_retrieval_service(
-    state: Any,
+    state: AppState,
     *,
     initialize: bool,
 ) -> HumanExternalReviewedMemoryRetrievalService:
@@ -399,7 +408,7 @@ def build_human_external_reviewed_memory_retrieval_service(
 
 
 def build_human_external_promoted_memory_analysis_service(
-    state: Any,
+    state: AppState,
     *,
     initialize: bool,
 ) -> HumanExternalPromotedMemoryAnalysisService:
@@ -416,7 +425,9 @@ def build_human_external_promoted_memory_analysis_service(
     if initialize:
         store.init()
     analysis_service = HumanExternalMemoryAnalysisService(
-        settings_loader=lambda: load_provider_connectivity_settings(state.config),
+        settings_loader=lambda: load_provider_connectivity_settings(
+            state.require_config()
+        ),
         retrieval_service=retrieval_service,
         ai_store=AiAuditStore(db_path),
         evidence_repository=CanonicalEvidenceRepository(db_path),
@@ -430,7 +441,7 @@ def build_human_external_promoted_memory_analysis_service(
 
 
 def build_human_external_promoted_memory_analysis_review_service(
-    state: Any,
+    state: AppState,
     *,
     initialize: bool,
 ) -> HumanExternalPromotedMemoryAnalysisReviewService:
@@ -454,7 +465,7 @@ def build_human_external_promoted_memory_analysis_review_service(
 
 
 def build_external_promoted_analysis_memory_promotion_service(
-    state: Any,
+    state: AppState,
     *,
     initialize: bool,
 ) -> ExternalPromotedAnalysisMemoryPromotionService:
@@ -479,7 +490,7 @@ def build_external_promoted_analysis_memory_promotion_service(
 
 
 def build_human_external_promoted_analysis_memory_retrieval_service(
-    state: Any,
+    state: AppState,
     *,
     initialize: bool,
 ) -> HumanExternalPromotedAnalysisMemoryRetrievalService:
@@ -510,7 +521,7 @@ def build_human_external_promoted_analysis_memory_retrieval_service(
 
 
 def build_external_backtest_report_service(
-    state: Any,
+    state: AppState,
 ) -> HumanExternalBacktestReportService:
     """Build the explicit external boundary on AI-only audit storage."""
     db_path = _database_path(
@@ -524,7 +535,7 @@ def build_external_backtest_report_service(
     ai_store.init()
     report_store.init()
     return HumanExternalBacktestReportService(
-        settings=load_provider_connectivity_settings(state.config),
+        settings=load_provider_connectivity_settings(state.require_config()),
         capture_service=build_human_context_capture_service(state),
         evidence_repository=evidence_repository,
         ai_store=ai_store,
@@ -533,7 +544,7 @@ def build_external_backtest_report_service(
 
 
 def build_strategy_research_write_service(
-    state: Any,
+    state: AppState,
     *,
     external: bool,
 ) -> StrategyResearchService:
@@ -544,7 +555,7 @@ def build_strategy_research_write_service(
     )
 
 
-def build_strategy_research_read_service(state: Any) -> StrategyResearchService:
+def build_strategy_research_read_service(state: AppState) -> StrategyResearchService:
     """Build without init, data storage, config, provider, or secrets."""
     db_path = _database_path(
         state.db,
@@ -562,7 +573,9 @@ def build_strategy_research_read_service(state: Any) -> StrategyResearchService:
     )
 
 
-def build_shadow_research_write_service(state: Any) -> Any:
+def build_shadow_research_write_service(
+    state: AppState,
+) -> AiShadowResearchAutomationService:
     if state.db is None:
         raise ConnectivityConfigurationError("database is not initialized")
     from server.services.ai_shadow_research_automation import (
@@ -578,7 +591,9 @@ def build_shadow_research_write_service(state: Any) -> Any:
     )
 
 
-def build_shadow_research_read_service(state: Any) -> Any:
+def build_shadow_research_read_service(
+    state: AppState,
+) -> AiShadowResearchAutomationService:
     """Build a read projection without initializing tables or market storage."""
     from server.services.ai_shadow_research_automation import (
         AiShadowResearchAutomationService,
@@ -597,15 +612,8 @@ def build_shadow_research_read_service(state: Any) -> Any:
     )
 
 
-def _database_path(db: Any, missing_error: Exception) -> Path:
-    path = getattr(db, "path", None)
-    if path is None:
-        # Compatibility for lightweight test doubles and legacy callers. The
-        # application database exposes the public ``path`` property.
-        path = getattr(db, "_path", None)
-    if path is None:
-        raise missing_error
-    return Path(path)
+def _database_path(db: object | None, missing_error: Exception) -> Path:
+    return require_database_path(db, missing_error)
 
 
 def _utc_now() -> str:

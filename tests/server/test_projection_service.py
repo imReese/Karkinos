@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from decimal import Decimal
 from types import SimpleNamespace
 
+import pytest
+from fastapi import HTTPException
 from fastapi.routing import APIRoute
 
 from server.ledger.models import LedgerEntry
 from server.projections.models import PortfolioProjection, ProjectedPosition
 from server.projections.service import build_portfolio_projection
+from tests.portfolio_valuation_fakes import PublishedValuationFakeDbMixin
 
 
 def test_build_portfolio_projection_handles_deposit_buy_and_sell():
@@ -75,6 +79,99 @@ def test_build_portfolio_projection_handles_deposit_buy_and_sell():
     assert position.commission_paid == 1.5
     assert position.market_value == 66.0
     assert position.unrealized_pnl == Decimal("5.40")
+
+
+def test_portfolio_router_consumes_explicit_injected_state_dependencies(
+    monkeypatch,
+) -> None:
+    from server.routes import portfolio as portfolio_routes
+
+    class FakeDb(PublishedValuationFakeDbMixin):
+        def get_ledger_entries_sync(self, limit=500, offset=0):
+            rows = [
+                {
+                    "id": 1,
+                    "entry_type": "cash_deposit",
+                    "timestamp": "2026-08-26T09:00:00+08:00",
+                    "amount": 321.0,
+                    "asset_class": "cash",
+                    "source": "manual",
+                    "source_ref": "deposit-1",
+                }
+            ]
+            return rows[offset : offset + limit]
+
+        def get_latest_quotes_sync(self):
+            return []
+
+    state = SimpleNamespace(
+        config=SimpleNamespace(initial_cash=999999, assets=[]),
+        scheduler=SimpleNamespace(
+            portfolio=None,
+            latest_quotes={},
+            watchlist=[],
+            instruments={},
+        ),
+        db=FakeDb(),
+    )
+    dependencies = portfolio_routes.build_portfolio_endpoint_dependencies()
+    injected = replace(
+        dependencies,
+        performance=replace(dependencies.performance, get_state=lambda: state),
+        snapshot=replace(dependencies.snapshot, get_state=lambda: state),
+        analysis=replace(dependencies.analysis, get_state=lambda: state),
+        cash_flows=replace(dependencies.cash_flows, get_state=lambda: state),
+        trades=replace(dependencies.trades, get_state=lambda: state),
+    )
+    monkeypatch.setattr(
+        "server.dependencies.get_app_state",
+        lambda: pytest.fail("explicit portfolio dependencies must own state access"),
+    )
+
+    router = portfolio_routes.create_router(injected)
+    endpoint = next(
+        route.endpoint
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/portfolio"
+    )
+    response = asyncio.run(endpoint())
+
+    assert response.cash == 321.0
+    assert response.total_equity == 321.0
+    assert response.total_deposits == 321.0
+
+
+def test_published_valuation_fake_contract_fails_closed_after_fact_drift() -> None:
+    from server.projections.portfolio_quotes import current_valuation_snapshot
+
+    class FakeDb(PublishedValuationFakeDbMixin):
+        def __init__(self) -> None:
+            self.price = 10.0
+
+        def get_ledger_entries_sync(self, limit=500, offset=0):
+            return []
+
+        def get_latest_quotes_sync(self):
+            return [
+                {
+                    "symbol": "600519",
+                    "asset_class": "stock",
+                    "price": self.price,
+                    "timestamp": "2026-08-26T10:00:00+08:00",
+                }
+            ]
+
+    database = FakeDb()
+    state = SimpleNamespace(db=database)
+
+    published = current_valuation_snapshot(state)
+    database.price = 11.0
+
+    with pytest.raises(HTTPException) as exc_info:
+        current_valuation_snapshot(state)
+
+    assert exc_info.value.status_code == 503
+    assert published["quotes"][0]["price"] == 10.0
 
 
 def test_portfolio_projection_tracks_close_reopen_and_reclose_timestamps():
@@ -286,7 +383,9 @@ def test_build_portfolio_projection_tracks_sell_side_net_proceeds_for_broker_cos
     assert position.broker_cost_basis_status == "projected_from_ledger"
 
 
-def test_portfolio_route_keeps_legacy_rebuild_when_ledger_is_empty(monkeypatch):
+def test_empty_canonical_ledger_does_not_seed_config_cash_or_use_legacy_trades(
+    monkeypatch,
+):
     from server.routes import portfolio as portfolio_routes
 
     router = portfolio_routes.create_router()
@@ -297,7 +396,7 @@ def test_portfolio_route_keeps_legacy_rebuild_when_ledger_is_empty(monkeypatch):
     )
     endpoint = portfolio_route.endpoint
 
-    class FakeDb:
+    class FakeDb(PublishedValuationFakeDbMixin):
         def get_ledger_entries_sync(self, limit=500, offset=0):
             return []
 
@@ -305,20 +404,7 @@ def test_portfolio_route_keeps_legacy_rebuild_when_ledger_is_empty(monkeypatch):
             return []
 
         def get_trades_sync(self, limit=1000, offset=0):
-            return [
-                {
-                    "id": 1,
-                    "timestamp": "2026-04-18T10:00:00",
-                    "symbol": "600519",
-                    "direction": "buy",
-                    "quantity": 10.0,
-                    "price": 10.0,
-                    "commission": 1.0,
-                    "asset_class": "stock",
-                    "note": "",
-                    "created_at": "2026-04-18T10:00:01",
-                }
-            ]
+            raise AssertionError("legacy trades must not drive portfolio state")
 
         async def get_total_deposits(self):
             return 1000.0
@@ -334,9 +420,10 @@ def test_portfolio_route_keeps_legacy_rebuild_when_ledger_is_empty(monkeypatch):
 
     response = asyncio.run(endpoint())
 
-    assert response.cash == 899.0
-    assert response.positions[0].symbol == "600519"
-    assert response.positions[0].quantity == 10.0
+    assert response.cash == 0.0
+    assert response.total_equity == 0.0
+    assert response.total_deposits == 0.0
+    assert response.positions == []
 
 
 def test_portfolio_route_prefers_ledger_rows_over_legacy_trade_rows(monkeypatch):
@@ -350,11 +437,21 @@ def test_portfolio_route_prefers_ledger_rows_over_legacy_trade_rows(monkeypatch)
     )
     endpoint = portfolio_route.endpoint
 
-    class FakeDb:
+    class FakeDb(PublishedValuationFakeDbMixin):
         def get_ledger_entries_sync(self, limit=500, offset=0):
             return [
                 {
                     "id": 1,
+                    "entry_type": "cash_deposit",
+                    "timestamp": "2026-04-18T09:00:00+00:00",
+                    "amount": 1000.0,
+                    "asset_class": "cash",
+                    "source": "manual",
+                    "source_ref": "deposit-1",
+                    "created_at": "2026-04-18T09:00:01+00:00",
+                },
+                {
+                    "id": 2,
                     "entry_type": "trade_buy",
                     "timestamp": "2026-04-18T10:00:00+00:00",
                     "symbol": "999999",
@@ -367,7 +464,7 @@ def test_portfolio_route_prefers_ledger_rows_over_legacy_trade_rows(monkeypatch)
                     "source": "manual",
                     "source_ref": "ledger-1",
                     "created_at": "2026-04-18T10:00:01+00:00",
-                }
+                },
             ]
 
         def get_cash_flows_sync(self, limit=1000, offset=0):
@@ -427,7 +524,7 @@ def test_portfolio_route_prefers_db_ledger_over_stale_scheduler_portfolio(monkey
         commission_paid=Decimal("5.01"),
     )
 
-    class FakeDb:
+    class FakeDb(PublishedValuationFakeDbMixin):
         def get_ledger_entries_sync(self, limit=500, offset=0):
             if offset:
                 return []
@@ -487,7 +584,7 @@ def test_live_holdings_groups_ledger_positions_by_metadata_asset_class(monkeypat
     )
     endpoint = live_holdings_route.endpoint
 
-    class FakeDb:
+    class FakeDb(PublishedValuationFakeDbMixin):
         def get_ledger_entries_sync(self, limit=500, offset=0):
             if offset:
                 return []

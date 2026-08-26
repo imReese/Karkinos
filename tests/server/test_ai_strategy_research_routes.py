@@ -14,6 +14,7 @@ from server.ai_runtime.strategy_research import (
 )
 from server.app import create_app
 from server.db import AppDatabase
+from server.dependencies import AppState
 from server.routes.ai_strategy_research import (
     ShadowResearchPolicyPayload,
     _strategy_research_model_timeout_seconds,
@@ -79,9 +80,11 @@ def _payload() -> dict:
 
 
 def _client(monkeypatch, service: FixtureService, db=object()) -> TestClient:
+    state = AppState()
+    state.db = db
     monkeypatch.setattr(
         "server.dependencies.get_app_state",
-        lambda: SimpleNamespace(db=db),
+        lambda: state,
     )
     monkeypatch.setattr(
         "server.routes.ai_strategy_research._build_write_service",
@@ -220,7 +223,7 @@ def test_session_get_does_not_create_missing_database(monkeypatch, tmp_path):
     client = _client(
         monkeypatch,
         FixtureService(),
-        db=SimpleNamespace(_path=db_path),
+        db=AppDatabase(db_path),
     )
 
     response = client.get("/api/ai/strategy-research/sessions/missing")

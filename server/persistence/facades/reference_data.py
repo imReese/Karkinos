@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from server.contracts.market_calendar import (
+    MarketCalendarAutomationPublication,
+    MarketCalendarVerificationCommand,
+)
 from server.persistence.facades.base import DatabaseRepositoryAccess
 
 
@@ -30,22 +34,36 @@ class ReferenceDataDatabaseFacade(DatabaseRepositoryAccess):
         *,
         exchange: str,
         year: int,
+        source_fingerprint: str,
         verification_status: str,
         official_source_url: str | None = None,
+        official_source_fingerprint: str | None = None,
         verified_by: str | None = None,
         review_notes: str | None = None,
         day_labels: dict[str, str] | None = None,
     ) -> dict[str, Any] | None:
         """Attach manual official-notice verification metadata to a snapshot."""
         return self._market_calendar.update_verification(
-            exchange=exchange,
-            year=year,
-            verification_status=verification_status,
-            official_source_url=official_source_url,
-            verified_by=verified_by,
-            review_notes=review_notes,
-            day_labels=day_labels,
+            MarketCalendarVerificationCommand(
+                exchange=exchange,
+                year=year,
+                source_fingerprint=source_fingerprint,
+                verification_status=verification_status,
+                official_source_url=official_source_url,
+                official_source_fingerprint=official_source_fingerprint,
+                verified_by=verified_by,
+                review_notes=review_notes,
+                day_labels=day_labels or {},
+            )
         )
+
+    def publish_market_calendar_automation_sync(
+        self,
+        command: MarketCalendarAutomationPublication,
+    ) -> dict[str, Any]:
+        """Atomically publish calendar evidence and its terminal audit run."""
+
+        return self._market_calendar_publication.publish_sync(command)
 
     # ---------- Watchlist Assets ----------
 

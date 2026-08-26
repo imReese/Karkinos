@@ -55,9 +55,9 @@ def test_ledger_repository_persists_structured_trade_cost_fields(tmp_path):
         quantity=200.0,
         price=16.25,
         amount=3250.0,
-        commission=5.0527,
+        commission=5.0,
         gross_amount=3250.0,
-        net_cash_impact=-3255.0527,
+        net_cash_impact=-3255.0325,
         fee_breakdown={
             "commission": "5",
             "stamp_tax": "0",
@@ -75,7 +75,7 @@ def test_ledger_repository_persists_structured_trade_cost_fields(tmp_path):
 
     saved = repository.list_entries()[0]
     assert saved.gross_amount == 3250.0
-    assert saved.net_cash_impact == -3255.0527
+    assert saved.net_cash_impact == -3255.0325
     assert saved.fee_breakdown == {
         "commission": "5",
         "stamp_tax": "0",
@@ -195,7 +195,7 @@ def test_ledger_repository_rejects_reused_broker_settlement_evidence(tmp_path):
                 price=28.96,
                 commission=5.0,
                 gross_amount=2896.0,
-                net_cash_impact=2889.52304,
+                net_cash_impact=2891.0,
                 source="manual",
                 source_ref=f"sell-{day}",
             )

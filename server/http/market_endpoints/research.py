@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import APIRouter, HTTPException
 
 from server.contracts.http.market_models import (
@@ -14,25 +12,15 @@ from server.contracts.http.market_models import (
     ResearchNoteResponse,
     ResearchNoteUpdate,
 )
+from server.http.market_endpoints.dependencies import ResearchEndpointDependencies
+from server.http.market_endpoints.watchlist import WatchlistLoader
 
 
-def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
+def create_router(
+    dependencies: ResearchEndpointDependencies,
+    get_watchlist: WatchlistLoader,
+) -> APIRouter:
     r = APIRouter(prefix="/api/market", tags=["market"])
-
-    def dependency(name: str):
-        value = getattr(facade, name)
-        if callable(value) and not isinstance(value, type):
-            return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
-        return value
-
-    _build_market_data_health_response = dependency(
-        "_build_market_data_health_response"
-    )
-    _build_research_note_stats = dependency("_build_research_note_stats")
-    _with_default_market_indices = dependency("_with_default_market_indices")
-
-    def get_watchlist(*args, **kwargs):
-        return endpoints["get_watchlist"](*args, **kwargs)
 
     @r.get("/research-board", response_model=ResearchBoardResponse)
     async def get_research_board() -> ResearchBoardResponse:
@@ -41,7 +29,7 @@ def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
 
         state = get_app_state()
         watchlist = await get_watchlist()
-        market_health_assets = _with_default_market_indices(
+        market_health_assets = dependencies.with_default_market_indices(
             [
                 {
                     "symbol": item.symbol,
@@ -51,9 +39,11 @@ def create_router(facade: Any, endpoints: dict[str, Any]) -> APIRouter:
                 for item in watchlist
             ]
         )
-        health = _build_market_data_health_response(state, market_health_assets)
+        health = dependencies.build_market_data_health_response(
+            state, market_health_assets
+        )
         note_stats = (
-            _build_research_note_stats(
+            dependencies.build_research_note_stats(
                 state.db.get_research_notes_sync(limit=500, offset=0)
             )
             if state.db is not None and hasattr(state.db, "get_research_notes_sync")

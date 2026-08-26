@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import APIRouter, HTTPException
 
 from server.contracts.http.market import (
@@ -18,28 +16,20 @@ from server.contracts.http.market_models import (
     MarketDataHealthResponse,
     QuoteFetchRunResponse,
 )
+from server.http.market_endpoints.dependencies import HealthEndpointDependencies
 
 
-def create_router(facade: Any) -> APIRouter:
+def create_router(dependencies: HealthEndpointDependencies) -> APIRouter:
     r = APIRouter(prefix="/api/market", tags=["market"])
-
-    def dependency(name: str):
-        value = getattr(facade, name)
-        if callable(value) and not isinstance(value, type):
-            return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
-        return value
-
-    _backfill_instrument_metadata = dependency("_backfill_instrument_metadata")
-    _backfill_market_bars = dependency("_backfill_market_bars")
-    _build_market_data_health_response = dependency(
-        "_build_market_data_health_response"
-    )
-    _merged_watchlist_assets = dependency("_merged_watchlist_assets")
-    _quote_fetch_run_response = dependency("_quote_fetch_run_response")
-    _refresh_confirmed_fund_nav = dependency("_refresh_confirmed_fund_nav")
-    _run_blocking_fetch = dependency("_run_blocking_fetch")
-    _shanghai_now = dependency("_shanghai_now")
-    _with_default_market_indices = dependency("_with_default_market_indices")
+    _backfill_instrument_metadata = dependencies.backfill_instrument_metadata
+    _backfill_market_bars = dependencies.backfill_market_bars
+    _build_market_data_health_response = dependencies.build_market_data_health_response
+    _merged_watchlist_assets = dependencies.merged_watchlist_assets
+    _quote_fetch_run_response = dependencies.quote_fetch_run_response
+    _refresh_confirmed_fund_nav = dependencies.refresh_confirmed_fund_nav
+    _run_blocking_fetch = dependencies.run_blocking_fetch
+    _shanghai_now = dependencies.shanghai_now
+    _with_default_market_indices = dependencies.with_default_market_indices
 
     @r.get("/data-health")
     async def get_data_health() -> MarketDataHealthResponse:

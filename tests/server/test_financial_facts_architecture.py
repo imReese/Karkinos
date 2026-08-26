@@ -43,12 +43,10 @@ CAPABILITY_METHODS = {
         "upsert_latest_quote_sync",
     },
     "financial_facts_portfolio.py": {
-        "add_cash_flow",
-        "add_pending_fund_order_sync",
-        "add_trade",
-        "add_trade_sync",
-        "delete_cash_flow",
-        "delete_trade",
+        "confirm_pending_fund_order_sync",
+        "correct_cash_flow_sync",
+        "correct_manual_trade_sync",
+        "create_pending_fund_order_sync",
         "get_cash_flows",
         "get_cash_flows_sync",
         "get_pending_fund_orders_sync",
@@ -56,14 +54,22 @@ CAPABILITY_METHODS = {
         "get_total_deposits_sync",
         "get_trades",
         "get_trades_sync",
-        "mark_pending_fund_order_confirmed_sync",
+        "record_cash_flow_sync",
+        "record_manual_trade_sync",
         "save_portfolio_snapshot_sync",
     },
     "financial_facts_ledger.py": {
+        "append_ledger_entry_sync",
         "confirm_ledger_trade_settlement_sync",
         "get_ledger_entries_sync",
         "get_ledger_entry_sync",
         "insert_ledger_entry_sync",
+        "settle_ledger_trade_sync",
+    },
+    "financial_facts_quote_ingestion_uow.py": {
+        "persist_quote_ingestion_sync",
+        "publish_quote_fetch_run_sync",
+        "staged_quote_ingestions_sync",
     },
 }
 PUBLIC_METHODS = set().union(*CAPABILITY_METHODS.values())
@@ -88,7 +94,7 @@ def _imports(path: Path) -> set[str]:
 def _public_methods(path: Path) -> set[str]:
     methods: set[str] = set()
     for node in _tree(path).body:
-        if not isinstance(node, ast.ClassDef):
+        if not isinstance(node, ast.ClassDef) or node.name.startswith("_"):
             continue
         methods.update(
             child.name
@@ -104,6 +110,7 @@ def test_financial_fact_modules_are_bounded_and_do_not_reverse_depend() -> None:
         "financial_facts.py",
         "financial_facts_ledger.py",
         "financial_facts_portfolio.py",
+        "financial_facts_quote_ingestion_uow.py",
         "financial_facts_quote_runs.py",
         "financial_facts_quotes.py",
         "financial_facts_valuation.py",

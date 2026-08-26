@@ -21,6 +21,8 @@ from data.store import DataStore
 from domain.instrument import make_etf
 from execution.slippage import PercentSlippage
 from risk.pre_trade import PreTradeContext, PreTradePolicy, PreTradeRiskManager
+from server.contracts.portfolio_cash_flows import CashFlowWrite
+from server.contracts.portfolio_trades import ManualTradeWrite
 from server.db import AppDatabase
 from server.services.trading_controls import TradingControlState
 from strategy.base import Strategy
@@ -164,10 +166,46 @@ def test_fixture_cache_to_decision_api_dashboard_contract(
         timestamp=signal.timestamp.isoformat(),
         asset_class="fund",
     )
+    quote_price = float(signal.price or Decimal("4.92"))
+    quantity = 4000.0
+    gross_amount = quote_price * quantity
+    db.record_cash_flow_sync(
+        CashFlowWrite(
+            command_id="decision-cockpit-fixture-deposit",
+            operator_id="decision-cockpit-test",
+            timestamp=signal.timestamp.isoformat(),
+            amount=100000.0,
+            flow_type="deposit",
+            note="deterministic decision cockpit capital",
+        )
+    )
+    db.record_manual_trade_sync(
+        ManualTradeWrite(
+            command_id="decision-cockpit-fixture-trade",
+            operator_id="decision-cockpit-test",
+            timestamp=signal.timestamp.isoformat(),
+            symbol=str(signal.symbol),
+            display_name="沪深300ETF",
+            direction="buy",
+            quantity=quantity,
+            price=quote_price,
+            commission=0.0,
+            gross_amount=gross_amount,
+            net_cash_impact=-gross_amount,
+            fee_breakdown_json=json.dumps(
+                {"commission": "0", "total_fee": "0"},
+                sort_keys=True,
+            ),
+            fee_rule_id="decision_fixture_zero_fee",
+            fee_rule_version="v1",
+            asset_class="fund",
+            note="deterministic decision cockpit holding",
+        )
+    )
     db.upsert_latest_quote_sync(
         symbol=str(signal.symbol),
         asset_type="fund",
-        price=float(signal.price or Decimal("4.92")),
+        price=quote_price,
         quote_timestamp=signal.timestamp.isoformat(),
         quote_source="deterministic_fixture",
         provider_name="fixture",
@@ -175,6 +213,7 @@ def test_fixture_cache_to_decision_api_dashboard_contract(
         quote_status="live",
         metadata={"dataset_id": meta["dataset_id"], "feature_columns": ["sma_3"]},
     )
+    db.publish_current_valuation_snapshot_sync()
 
     oos_validation = build_out_of_sample_validation(
         strategy_id=signal.strategy_id,

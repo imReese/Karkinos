@@ -14,22 +14,18 @@ from server.contracts.http.backtest import (
     StrategySignalPreviewResponse,
     StrategyValidationMatrixResponse,
 )
+from server.http.backtest_endpoints.dependencies import (
+    StrategyCatalogEndpointDependencies,
+)
 
 
-def create_router(facade: Any) -> APIRouter:
+def create_router(dependencies: StrategyCatalogEndpointDependencies) -> APIRouter:
     r = APIRouter(prefix="/api/backtest", tags=["backtest"])
-
-    def dependency(name: str):
-        value = getattr(facade, name)
-        if callable(value) and not isinstance(value, type):
-            return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
-        return value
-
-    _run_strategy_signal_preview = dependency("_run_strategy_signal_preview")
-    _validate_signal_preview_strategy_params = dependency(
-        "_validate_signal_preview_strategy_params"
+    _run_strategy_signal_preview = dependencies.run_strategy_signal_preview
+    _validate_signal_preview_strategy_params = (
+        dependencies.validate_signal_preview_strategy_params
     )
-    asyncio = dependency("asyncio")
+    asyncio = dependencies.asyncio_provider()
 
     @r.get("/strategies", response_model=list[StrategyInfoResponse])
     async def list_strategies() -> list[StrategyInfoResponse]:

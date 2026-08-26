@@ -8,7 +8,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 from server.ai_runtime.contracts import ArtifactKind, JsonObject, StoredArtifact
-from server.ai_runtime.external_research import ExternalResearchInvalidResponseError
+from server.ai_runtime.external_research_errors import (
+    ExternalResearchInvalidResponseError,
+)
 from server.ai_runtime.formula_dsl import FormulaValidationError
 from server.ai_runtime.store import AiAuditStore
 from server.contracts.strategy_research import (

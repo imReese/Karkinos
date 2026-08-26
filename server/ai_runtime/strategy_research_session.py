@@ -10,7 +10,9 @@ from analytics.research_account_capital_evidence import (
 )
 from server.ai_runtime.contracts import JsonObject
 from server.ai_runtime.formula_dsl import CANONICAL_COST_MODEL_REFERENCE
-from server.ai_runtime.provider_connectivity import ProviderConnectivitySettings
+from server.ai_runtime.provider_connectivity_contracts import (
+    ProviderConnectivitySettings,
+)
 from server.ai_runtime.strategy_research_backtest import (
     validated_fee_schedule_resolution,
 )

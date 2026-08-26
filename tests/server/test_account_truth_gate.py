@@ -17,6 +17,7 @@ from account_truth.citic_history_xls import (
 )
 from account_truth.citic_source_intake import CiticSourceIntakeRepository
 from server.account_truth_gate import (
+    _karkinos_account_facts,
     build_latest_account_truth_promotion_evidence,
     build_reconciliation_report_for_import_run,
 )
@@ -31,6 +32,21 @@ from server.services.valuation_snapshot import build_current_valuation_snapshot
 _INCOMPLETE_CITIC_SOURCE = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note,transfer_fee,cost_basis_method,broker_order_id,client_order_id
 private-buy,trade_buy,2026-01-05T09:35:00+08:00,2026-01-06,PRIVATE-SYMBOL,PRIVATE-NAME,stock,CNY,100,10,1000,0,0,-1005,,,,PRIVATE-NOTE,0,,PRIVATE-ORDER,
 """
+
+
+def test_account_truth_cash_is_zero_when_canonical_ledger_is_empty(tmp_path) -> None:
+    db = AppDatabase(tmp_path / "empty-account-truth.db")
+    db.init_sync()
+    state = SimpleNamespace(
+        db=db,
+        config=SimpleNamespace(initial_cash="999999"),
+    )
+
+    facts = _karkinos_account_facts(state)
+
+    assert facts["cash_balance"] == 0
+    assert facts["ledger_facts"] == []
+    assert facts["positions"] == []
 
 
 def _incomplete_citic_preview():
@@ -62,6 +78,13 @@ def test_account_truth_replay_is_historical_and_detects_source_or_ledger_drift(
         asset_class="cash",
         source_ref="deposit-replay-1",
     )
+    db.save_daily_close_snapshot_sync(
+        symbol="603659",
+        asset_class="stock",
+        trade_date="2026-07-09",
+        close_price=24.0,
+        source="test_previous_close",
+    )
     db.save_quote_snapshot_sync(
         symbol="603659",
         asset_class="stock",
@@ -77,7 +100,7 @@ cash-replay,cash_snapshot,2026-07-10T09:30:00+08:00,2026-07-10,,,,CNY,0,0,0.00,0
         parse_broker_statement_csv(statement),
         source_name="private-name-must-not-leak.csv",
     )
-    valuation = build_current_valuation_snapshot(db)
+    valuation = build_current_valuation_snapshot(db, persist=True)
 
     first = build_account_truth_replay_evidence(
         db,

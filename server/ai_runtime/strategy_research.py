@@ -22,10 +22,12 @@ from server.ai_runtime.formula_dsl import (
     CANONICAL_COST_MODEL_REFERENCE,
     FORMULA_AST_CONTRACT,
 )
-from server.ai_runtime.provider_connectivity import (
-    HttpxDeadlineJsonTransport,
+from server.ai_runtime.provider_connectivity_contracts import (
     JsonHttpTransport,
     ProviderConnectivitySettings,
+)
+from server.ai_runtime.provider_connectivity_transport import (
+    HttpxDeadlineJsonTransport,
 )
 from server.ai_runtime.store import AiAuditStore
 from server.ai_runtime.strategy_research_backtest import (

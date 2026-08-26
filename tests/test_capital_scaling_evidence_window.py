@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-import asyncio
 import json
+import sqlite3
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
 from account_truth.broker_connector import LOCAL_JSON_SNAPSHOT_SCHEMA_VERSION
+from server.contracts.portfolio_cash_flows import CashFlowWrite
 from server.db import AppDatabase
 from server.services.broker_connector_soak import (
     BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
@@ -27,6 +29,10 @@ from server.services.execution_batch_reconciliation import (
     EXECUTION_BATCH_RECONCILIATION_ACKNOWLEDGEMENT,
     ExecutionBatchReconciliationService,
 )
+from server.services.portfolio_cash_flow_commands import (
+    PortfolioCashFlowCommandService,
+)
+from tests.order_state_fixtures import insert_historical_oms_order
 
 START = datetime(2026, 7, 1, 0, 0, tzinfo=timezone.utc)
 END = datetime(2026, 8, 1, 0, 0, tzinfo=timezone.utc)
@@ -197,22 +203,20 @@ def _seed_operating_sample(
             },
         },
     )
-    db.upsert_oms_order_sync(
-        {
-            "order_id": "real-order-1",
-            "intent_key": "capital-scaling-real-order-1",
-            "symbol": "510300",
-            "side": "buy",
-            "asset_class": "etf",
-            "quantity": 100.0,
-            "order_type": "limit",
-            "limit_price": 6.0,
-            "status": "filled",
-            "broker_submission_enabled": False,
-            "source": "capital_scaling_test_evidence",
-            "source_ref": "manual-review-1",
-            "payload": {"execution_mode": "manual"},
-        }
+    insert_historical_oms_order(
+        db,
+        order_id="real-order-1",
+        intent_key="capital-scaling-real-order-1",
+        symbol="510300",
+        side="buy",
+        asset_class="etf",
+        quantity=100.0,
+        order_type="limit",
+        limit_price=6.0,
+        status="filled",
+        source="capital_scaling_test_evidence",
+        source_ref="manual-review-1",
+        payload={"execution_mode": "manual"},
     )
     if include_reconciliation:
         db.upsert_execution_reconciliation_run_sync(
@@ -438,23 +442,12 @@ def test_execution_scope_rechecks_exact_batch_source_drift(tmp_path) -> None:
     _seed_portfolio_boundaries(db)
     _seed_reconciled_real_fill(db)
     _seed_operating_sample(db)
-    db.upsert_oms_order_sync(
-        {
-            "order_id": "real-order-1",
-            "intent_key": "capital-scaling-real-order-1",
-            "symbol": "510300",
-            "side": "buy",
-            "asset_class": "etf",
-            "quantity": 100.0,
-            "order_type": "limit",
-            "limit_price": 6.0,
-            "status": "filled",
-            "broker_submission_enabled": False,
-            "source": "capital_scaling_test_evidence",
-            "source_ref": "changed-after-batch-recording",
-            "payload": {"execution_mode": "manual"},
-        }
-    )
+    with sqlite3.connect(db.path) as conn:
+        conn.execute("""
+            UPDATE oms_orders
+            SET source_ref = 'changed-after-batch-recording'
+            WHERE order_id = 'real-order-1'
+            """)
 
     result = service.preview_window(
         review_window_start=START,
@@ -673,33 +666,43 @@ def test_operating_sample_keeps_rejected_partial_and_cancelled_outcomes_distinct
         ("rejected-order", ("rejected", "reconciled")),
         ("partial-cancelled-order", ("partially_filled", "cancelled", "reconciled")),
     ):
-        db.upsert_oms_order_sync(
-            {
-                "order_id": order_id,
-                "intent_key": f"capital-scaling-{order_id}",
-                "symbol": "510300",
-                "side": "buy",
-                "asset_class": "etf",
-                "quantity": 100.0,
-                "order_type": "limit",
-                "limit_price": 6.0,
-                "status": "reconciled",
-                "broker_submission_enabled": False,
-                "source": "capital_scaling_test_evidence",
-                "source_ref": "manual-review-variants",
-                "payload": {"execution_mode": "manual"},
-            }
+        insert_historical_oms_order(
+            db,
+            order_id=order_id,
+            intent_key=f"capital-scaling-{order_id}",
+            symbol="510300",
+            side="buy",
+            asset_class="etf",
+            quantity=100.0,
+            order_type="limit",
+            limit_price=6.0,
+            status="reconciled",
+            source="capital_scaling_test_evidence",
+            source_ref="manual-review-variants",
+            payload={"execution_mode": "manual"},
         )
         previous = "accepted"
-        for status in status_path:
-            db.record_oms_transition_sync(
-                order_id=order_id,
-                from_status=previous,
-                to_status=status,
-                reason="deterministic terminal-outcome evidence",
-                actor="test-operator",
-            )
-            previous = status
+        with sqlite3.connect(db.path) as conn:
+            for status in status_path:
+                conn.execute(
+                    """
+                    INSERT INTO oms_transitions (
+                        order_id, from_status, to_status, reason, actor,
+                        payload_json, transitioned_at, created_at
+                    ) VALUES (?, ?, ?, ?, ?, '{}', ?, ?)
+                    """,
+                    (
+                        order_id,
+                        previous,
+                        status,
+                        "deterministic terminal-outcome evidence",
+                        "test-operator",
+                        START.isoformat(),
+                        START.isoformat(),
+                    ),
+                )
+                previous = status
+            conn.commit()
     db.record_fill_sync(
         fill_id="partial-real-fill",
         order_id="partial-cancelled-order",
@@ -748,7 +751,7 @@ def test_operating_sample_keeps_rejected_partial_and_cancelled_outcomes_distinct
     )
     observed_at = START + timedelta(days=9, hours=9)
     db.record_order_sync(
-        order_id="paper-shadow-order-1",
+        order_id="paper-shadow-order-diverged",
         timestamp=observed_at.isoformat(),
         symbol="510300",
         side="buy",
@@ -759,7 +762,7 @@ def test_operating_sample_keeps_rejected_partial_and_cancelled_outcomes_distinct
         execution_mode="paper_shadow",
         status="filled",
         source="paper_shadow_daily",
-        source_ref="paper-shadow-run-1",
+        source_ref="paper-shadow-run-diverged",
         payload={"divergence_status": "diverged"},
     )
 
@@ -799,12 +802,16 @@ def test_unitized_drawdown_removes_external_deposit_effect(tmp_path) -> None:
                 "total_equity": total_equity,
             },
         )
-    asyncio.run(
-        db.add_cash_flow(
-            (START + timedelta(days=1, hours=12)).isoformat(),
-            1000.0,
-            "deposit",
-            "deterministic unitization test",
+    PortfolioCashFlowCommandService(
+        SimpleNamespace(db=db, config=SimpleNamespace(), scheduler=None)
+    ).record(
+        CashFlowWrite(
+            command_id="capital-scaling-drawdown-deposit-1",
+            operator_id="capital-scaling-evidence-test",
+            timestamp=(START + timedelta(days=1, hours=12)).isoformat(),
+            amount=1000.0,
+            flow_type="deposit",
+            note="deterministic unitization test",
         )
     )
     service = CapitalScalingEvidenceWindowService(db=db, clock=lambda: END)

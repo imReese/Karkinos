@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from server.account_truth_gate import build_latest_account_truth_promotion_evidence
+from server.dependencies import AppState
 from server.services.broker_connector_runtime import build_broker_connectors
 from server.services.broker_connector_soak_promotion import (
     BrokerConnectorSoakPromotionService,
@@ -63,9 +64,9 @@ from server.services.session_start_account_truth import (
 
 
 def build_broker_connector_soak_promotion_service(
-    state: Any,
+    state: AppState,
 ) -> BrokerConnectorSoakPromotionService:
-    config = getattr(state, "config", None)
+    config = state.config
     return BrokerConnectorSoakPromotionService(
         db=state.db,
         connectors=build_broker_connectors(
@@ -80,8 +81,10 @@ def build_broker_connector_soak_promotion_service(
     )
 
 
-def build_per_order_confirmation_service(state: Any) -> PerOrderConfirmationService:
-    config = getattr(state, "config", None)
+def build_per_order_confirmation_service(
+    state: AppState,
+) -> PerOrderConfirmationService:
+    config = state.config
     connectors = build_broker_connectors(getattr(config, "broker_connectors", []) or [])
     trusted_operator_identities = (
         getattr(config, "trusted_operator_identities", []) or []
@@ -90,7 +93,7 @@ def build_per_order_confirmation_service(state: Any) -> PerOrderConfirmationServ
         db=state.db,
         connectors=connectors,
         trusted_operator_identities=trusted_operator_identities,
-        trading_controls=getattr(state, "trading_controls", None),
+        trading_controls=state.trading_controls,
         broker_soak_promotion_evidence_provider=(
             lambda connector_id: BrokerConnectorSoakPromotionService(
                 db=state.db,
@@ -104,7 +107,7 @@ def build_per_order_confirmation_service(state: Any) -> PerOrderConfirmationServ
         execution_gateway_verification_provider=(
             ExecutionGatewayVerificationService(
                 db=state.db,
-                gateways=getattr(state, "execution_gateways", []) or [],
+                gateways=state.execution_gateways,
             ).resolve
         ),
         account_truth_evidence_provider=(
@@ -118,9 +121,9 @@ def build_per_order_confirmation_service(state: Any) -> PerOrderConfirmationServ
 
 
 def build_controlled_broker_write_release_service(
-    state: Any,
+    state: AppState,
 ) -> ControlledBrokerWriteReleaseService:
-    config = getattr(state, "config", None)
+    config = state.config
     return ControlledBrokerWriteReleaseService(
         db=state.db,
         trusted_operator_identities=(
@@ -134,12 +137,10 @@ def build_controlled_broker_write_release_service(
     )
 
 
-def resolve_controlled_broker_release_evidence_provider(state: Any) -> Any | None:
-    injected = getattr(
-        state,
-        "controlled_broker_release_evidence_provider",
-        None,
-    )
+def resolve_controlled_broker_release_evidence_provider(
+    state: AppState,
+) -> Callable[[str], dict[str, Any]] | None:
+    injected = state.controlled_broker_release_evidence_provider
     if callable(injected):
         return injected
     try:
@@ -152,12 +153,12 @@ def resolve_controlled_broker_release_evidence_provider(state: Any) -> Any | Non
 
 
 def build_controlled_broker_submission_service(
-    state: Any,
+    state: AppState,
 ) -> ControlledBrokerSubmissionService:
-    config = getattr(state, "config", None)
+    config = state.config
     return ControlledBrokerSubmissionService(
         db=state.db,
-        gateways=getattr(state, "execution_gateways", []) or [],
+        gateways=state.execution_gateways,
         confirmation_provider=(
             build_per_order_confirmation_service(state).resolve_confirmation
         ),
@@ -167,17 +168,17 @@ def build_controlled_broker_submission_service(
         trusted_operator_identities=(
             getattr(config, "trusted_operator_identities", []) or []
         ),
-        trading_controls=getattr(state, "trading_controls", None),
+        trading_controls=state.trading_controls,
     )
 
 
 def build_controlled_broker_cancellation_service(
-    state: Any,
+    state: AppState,
 ) -> ControlledBrokerCancellationService:
-    config = getattr(state, "config", None)
+    config = state.config
     return ControlledBrokerCancellationService(
         db=state.db,
-        gateways=getattr(state, "execution_gateways", []) or [],
+        gateways=state.execution_gateways,
         release_evidence_provider=(
             resolve_controlled_broker_release_evidence_provider(state)
         ),
@@ -188,9 +189,9 @@ def build_controlled_broker_cancellation_service(
 
 
 def build_controlled_submission_clearance_service(
-    state: Any,
+    state: AppState,
 ) -> ControlledSubmissionReconciliationClearanceService:
-    config = getattr(state, "config", None)
+    config = state.config
     return ControlledSubmissionReconciliationClearanceService(
         db=state.db,
         account_truth_provider=(
@@ -208,21 +209,21 @@ def build_controlled_submission_clearance_service(
 
 
 def build_manual_broker_cancellation_service(
-    state: Any,
+    state: AppState,
 ) -> ManualBrokerCancellationEvidenceService:
     return ManualBrokerCancellationEvidenceService(db=state.db)
 
 
 def build_controlled_broker_rejection_evidence_service(
-    state: Any,
+    state: AppState,
 ) -> ControlledBrokerRejectionEvidenceService:
     return ControlledBrokerRejectionEvidenceService(db=state.db)
 
 
 def build_controlled_session_envelope_service(
-    state: Any,
+    state: AppState,
 ) -> ControlledSessionEnvelopeService:
-    config = getattr(state, "config", None)
+    config = state.config
     return ControlledSessionEnvelopeService(
         db=state.db,
         connectors=build_broker_connectors(
@@ -231,11 +232,11 @@ def build_controlled_session_envelope_service(
         trusted_operator_identities=(
             getattr(config, "trusted_operator_identities", []) or []
         ),
-        trading_controls=getattr(state, "trading_controls", None),
+        trading_controls=state.trading_controls,
         execution_gateway_verification_provider=(
             ExecutionGatewayVerificationService(
                 db=state.db,
-                gateways=getattr(state, "execution_gateways", []) or [],
+                gateways=state.execution_gateways,
             ).resolve
         ),
         session_start_account_truth_provider=(
@@ -253,7 +254,7 @@ def build_controlled_session_envelope_service(
 
 
 def build_controlled_session_budget_reservation_service(
-    state: Any,
+    state: AppState,
     *,
     attestation_provider: Callable[[str], dict[str, Any]] | None = None,
 ) -> ControlledSessionBudgetReservationService:
@@ -268,7 +269,7 @@ def build_controlled_session_budget_reservation_service(
 
 
 def build_controlled_session_runtime_authority_service(
-    state: Any,
+    state: AppState,
     *,
     reservation_provider: Callable[[str], dict[str, Any]] | None = None,
     attestation_provider: Callable[[str], dict[str, Any]] | None = None,
@@ -282,7 +283,7 @@ def build_controlled_session_runtime_authority_service(
             state,
             attestation_provider=attestation_provider,
         ).resolve
-    config = getattr(state, "config", None)
+    config = state.config
     return ControlledSessionRuntimeAuthorityService(
         db=state.db,
         reservation_provider=reservation_provider,
@@ -294,7 +295,7 @@ def build_controlled_session_runtime_authority_service(
 
 
 def build_controlled_session_live_gate_service(
-    state: Any,
+    state: AppState,
     *,
     authority: ControlledSessionRuntimeAuthorityService | None = None,
     reservation_provider: Callable[[str], dict[str, Any]] | None = None,
@@ -320,12 +321,12 @@ def build_controlled_session_live_gate_service(
         session_monitor_provider=authority.resolve_for_monitoring,
         reservation_provider=reservation_provider,
         attestation_provider=attestation_provider,
-        trading_controls=getattr(state, "trading_controls", None),
+        trading_controls=state.trading_controls,
     )
 
 
 def _build_controlled_session_monitoring_dependencies(
-    state: Any,
+    state: AppState,
 ) -> tuple[
     ControlledSessionRuntimeAuthorityService,
     ControlledSessionLiveGateSnapshotService,
@@ -350,7 +351,7 @@ def _build_controlled_session_monitoring_dependencies(
 
 
 def build_controlled_session_automatic_pause_service(
-    state: Any,
+    state: AppState,
 ) -> ControlledSessionAutomaticPauseService:
     authority, live_gates = _build_controlled_session_monitoring_dependencies(state)
     return ControlledSessionAutomaticPauseService(
@@ -361,7 +362,7 @@ def build_controlled_session_automatic_pause_service(
 
 
 def build_controlled_session_automatic_pause_orchestrator_service(
-    state: Any,
+    state: AppState,
 ) -> ControlledSessionAutomaticPauseOrchestratorService:
     authority, live_gates = _build_controlled_session_monitoring_dependencies(state)
     automatic_pause = ControlledSessionAutomaticPauseService(
@@ -377,7 +378,7 @@ def build_controlled_session_automatic_pause_orchestrator_service(
 
 
 def build_controlled_session_runtime_rate_limiter_service(
-    state: Any,
+    state: AppState,
 ) -> ControlledSessionRuntimeRateLimiterService:
     authority, live_gates = _build_controlled_session_monitoring_dependencies(state)
     return ControlledSessionRuntimeRateLimiterService(

@@ -108,10 +108,7 @@ def test_foundation_dependency_graph_is_explicit_and_acyclic() -> None:
             "server.ai_runtime.persistence.context_capture",
             "server.ai_runtime.store",
         },
-        "server.ai_runtime.provider_connectivity": {
-            "server.ai_runtime.persistence.provider_connectivity",
-            "server.ai_runtime.store",
-        },
+        "server.ai_runtime.provider_connectivity": set(),
         "server.ai_runtime.persistence.__init__": set(),
         "server.ai_runtime.persistence.ai_audit": {
             "server.ai_runtime.persistence.ai_audit_schema"

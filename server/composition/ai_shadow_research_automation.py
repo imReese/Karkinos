@@ -3,24 +3,33 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from pathlib import Path
-from typing import Any
+from typing import TypeVar
 
 from data.store import DataStore
+from server.ai_runtime.strategy_research import StrategyResearchService
 from server.bootstrap import resolve_data_dir
+from server.dependencies import AppState
 from server.persistence.ai_shadow_research import ShadowResearchStore
+from server.persistence.database_identity import require_database_path
 from server.services.reviewed_fee_schedule import resolve_reviewed_fee_schedule
+
+ServiceT = TypeVar("ServiceT")
 
 
 def compose_ai_shadow_research_automation_service(
-    state: Any,
+    state: AppState,
     *,
-    research_service_builder: Callable[[bool], Any],
-    service_type: Callable[..., Any],
-) -> Any:
+    research_service_builder: Callable[[bool], StrategyResearchService],
+    service_type: Callable[..., ServiceT],
+) -> ServiceT:
     """Initialize persistence and wire all explicit runtime dependencies."""
 
-    store = ShadowResearchStore(Path(getattr(state.db, "_path")))
+    store = ShadowResearchStore(
+        require_database_path(
+            state.require_database(),
+            RuntimeError("database is not initialized"),
+        )
+    )
     store.init()
     return service_type(
         state=state,

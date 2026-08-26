@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import APIRouter
 
 from server.contracts.http.ledger_models import EquityPoint
@@ -15,33 +13,25 @@ from server.contracts.http.strategy_models import (
     BacktestSweepResponse,
     BacktestSweepResult,
 )
+from server.http.backtest_endpoints.dependencies import ExecutionEndpointDependencies
 
 
-def create_router(facade: Any) -> APIRouter:
+def create_router(dependencies: ExecutionEndpointDependencies) -> APIRouter:
     r = APIRouter(prefix="/api/backtest", tags=["backtest"])
-
-    def dependency(name: str):
-        value = getattr(facade, name)
-        if callable(value) and not isinstance(value, type):
-            return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
-        return value
-
-    _SWEEP_RANK_DIRECTIONS = dependency("_SWEEP_RANK_DIRECTIONS")
-    _SWEEP_WARNINGS = dependency("_SWEEP_WARNINGS")
-    _backtest_evidence_from_payload = dependency("_backtest_evidence_from_payload")
-    _backtest_metrics_from_payload = dependency("_backtest_metrics_from_payload")
-    _backtest_report_metrics_json = dependency("_backtest_report_metrics_json")
-    _build_parameter_grid = dependency("_build_parameter_grid")
-    _json_object = dependency("_json_object")
-    _run_backtest = dependency("_run_backtest")
-    _sweep_score = dependency("_sweep_score")
-    _validate_backtest_strategy_params = dependency(
-        "_validate_backtest_strategy_params"
-    )
-    _write_backtest_report_file = dependency("_write_backtest_report_file")
-    asyncio = dependency("asyncio")
-    json = dependency("json")
-    logger = dependency("logger")
+    _SWEEP_RANK_DIRECTIONS = dependencies.sweep_rank_directions
+    _SWEEP_WARNINGS = dependencies.sweep_warnings
+    _backtest_evidence_from_payload = dependencies.backtest_evidence_from_payload
+    _backtest_metrics_from_payload = dependencies.backtest_metrics_from_payload
+    _backtest_report_metrics_json = dependencies.backtest_report_metrics_json
+    _build_parameter_grid = dependencies.build_parameter_grid
+    _json_object = dependencies.json_object
+    _run_backtest = dependencies.run_backtest
+    _sweep_score = dependencies.sweep_score
+    _validate_backtest_strategy_params = dependencies.validate_backtest_strategy_params
+    _write_backtest_report_file = dependencies.write_backtest_report_file
+    asyncio = dependencies.asyncio_provider()
+    json = dependencies.json_provider()
+    logger = dependencies.logger_provider()
 
     @r.post("/run", response_model=BacktestResponse)
     async def run_backtest(request: BacktestRequest) -> BacktestResponse:

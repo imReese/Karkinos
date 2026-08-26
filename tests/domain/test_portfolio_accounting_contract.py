@@ -99,7 +99,15 @@ def test_configured_total_fee_matches_live_rebuild_and_persisted_projection() ->
     position = Position(Symbol("600519"))
     live_portfolio = Portfolio(EventBus(), initial_cash=Decimal("5000"))
     risk_manager = RiskManager(EventBus())
-    projection_entries = []
+    projection_entries = [
+        LedgerEntry(
+            id=0,
+            entry_type="cash_deposit",
+            timestamp="2026-08-19T09:00:00+08:00",
+            amount=5000,
+            source="accounting_contract_fixture",
+        )
+    ]
     for row in rows:
         total_fee = Decimal(row["fee_breakdown"]["total_fee"])
         position.update_on_fill(
@@ -139,7 +147,7 @@ def test_configured_total_fee_matches_live_rebuild_and_persisted_projection() ->
 
     projection = build_portfolio_projection(
         projection_entries,
-        initial_cash=5000,
+        initial_cash=0,
     )
     rebuilt = rebuild_portfolio_from_ledger(
         config,
@@ -217,7 +225,7 @@ class _MatchedLedgerDb:
         ]
 
     def get_ledger_entries_sync(self, *, limit: int, offset: int) -> list[dict]:
-        return [
+        trade_entries = [
             {
                 **row,
                 "entry_type": f"trade_{row['direction']}",
@@ -225,4 +233,14 @@ class _MatchedLedgerDb:
                 "fee_breakdown_json": json.dumps(row["fee_breakdown"]),
             }
             for row in self._rows
+        ]
+        return [
+            {
+                "id": 0,
+                "entry_type": "cash_deposit",
+                "timestamp": "2026-08-19T09:00:00+08:00",
+                "amount": 5000,
+                "source": "accounting_contract_fixture",
+            },
+            *trade_entries,
         ]
