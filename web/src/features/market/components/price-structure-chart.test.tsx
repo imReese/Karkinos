@@ -136,6 +136,39 @@ test('renders an empty state when no bars are available', () => {
   expect(container.querySelector('.rounded-2xl')).toBeNull();
 });
 
+test('fails closed when persisted price or reference values are non-finite', () => {
+  const { rerender } = render(
+    <PriceStructureChart
+      titleLabel="Price range / K-line"
+      priceLabel="Price"
+      emptyLabel="No valid persisted chart"
+      bars={[{ timestamp: '2026-04-20', close: Number.NaN }]}
+      referenceLines={[
+        { value: Number.POSITIVE_INFINITY, label: 'Invalid reference' },
+      ]}
+    />,
+  );
+
+  expect(screen.getByText('No valid persisted chart')).toBeTruthy();
+  expect(screen.queryByTestId('kline-candle')).toBeNull();
+
+  rerender(
+    <PriceStructureChart
+      titleLabel="Price range / K-line"
+      priceLabel="Price"
+      emptyLabel="No valid persisted chart"
+      bars={[{ timestamp: '2026-04-20', close: 10 }]}
+      referenceLines={[
+        { value: Number.POSITIVE_INFINITY, label: 'Invalid reference' },
+      ]}
+    />,
+  );
+
+  expect(screen.getByTestId('kline-candle')).toBeTruthy();
+  expect(screen.queryByTestId('kline-reference-line')).toBeNull();
+  expect(screen.queryByText('Invalid reference')).toBeNull();
+});
+
 test('excludes out-of-range trade markers from the selected range axis', () => {
   render(
     <PriceStructureChart

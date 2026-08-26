@@ -20,10 +20,15 @@ const constructionRecommendationsSource = readFileSync(
   ),
   'utf8',
 );
-const positionsTableSource = readFileSync(
-  resolve(SRC_ROOT, 'features/portfolio/components/positions-table.tsx'),
-  'utf8',
-);
+const positionsTableSource = [
+  'features/portfolio/components/positions-table.tsx',
+  'features/portfolio/components/positions-table-model.ts',
+  'features/portfolio/components/positions-table-columns.tsx',
+  'features/portfolio/components/positions-table-mobile-list.tsx',
+  'features/portfolio/components/positions-table-view.tsx',
+]
+  .map((path) => readFileSync(resolve(SRC_ROOT, path), 'utf8'))
+  .join('\n');
 const liveHoldingsSource = readFileSync(
   resolve(SRC_ROOT, 'features/portfolio/components/live-holdings-board.tsx'),
   'utf8',
@@ -36,16 +41,20 @@ const globalStyles = readFileSync(
   resolve(SRC_ROOT, 'styles/globals.css'),
   'utf8',
 );
-const portfolioPageSource = readFileSync(
-  resolve(SRC_ROOT, 'features/portfolio/pages/portfolio-page.tsx'),
+const portfolioPageSource = [
+  'features/portfolio/pages/portfolio-page.tsx',
+  'features/portfolio/pages/portfolio-page-controller.tsx',
+  'features/portfolio/pages/portfolio-page-model.ts',
+  'features/portfolio/pages/portfolio-page-view.tsx',
+  'features/portfolio/pages/portfolio-page-sections.tsx',
+  'features/portfolio/pages/portfolio-page-loading-view.tsx',
+  'features/portfolio/pages/portfolio-evidence-review-panel.tsx',
+]
+  .map((path) => readFileSync(resolve(SRC_ROOT, path), 'utf8'))
+  .join('\n');
+const portfolioInitialLoadingSource = readFileSync(
+  resolve(SRC_ROOT, 'features/portfolio/pages/portfolio-page-loading-view.tsx'),
   'utf8',
-);
-const portfolioInitialLoadingSource = portfolioPageSource.slice(
-  portfolioPageSource.indexOf('if (isInitialPortfolioLoad)'),
-  portfolioPageSource.indexOf(
-    '\n  return (',
-    portfolioPageSource.indexOf('if (isInitialPortfolioLoad)'),
-  ),
 );
 
 test('portfolio strategy evidence uses flat standard workbench primitives', () => {
@@ -100,7 +109,9 @@ test('portfolio defers secondary read models until their visible perspective is 
   expect(portfolioPageSource).toContain(
     'const portfolioPositions = snapshot.data?.positions ?? []',
   );
-  expect(portfolioPageSource).toContain('const isInitialPortfolioLoad =');
+  expect(portfolioPageSource).toContain(
+    'isInitialPortfolioLoad: !snapshot.data && snapshot.isLoading',
+  );
   expect(portfolioInitialLoadingSource).toContain(
     'data-testid="portfolio-loading-summary"',
   );
@@ -139,7 +150,7 @@ test('portfolio defers secondary read models until their visible perspective is 
     'useAccountStrategyContributionQuery(\n    strategyAnalysisEnabled,',
   );
   expect(portfolioPageSource).toContain(
-    'description={portfolioPrimaryFailureDetail}',
+    'description={model.portfolioPrimaryFailureDetail}',
   );
   expect(portfolioPageSource).not.toContain(
     '!primaryPortfolioQueriesSettled || liveHoldings.isLoading',
