@@ -405,7 +405,19 @@ test('does not claim live interface availability when live status fails', async 
   expect(
     await screen.findByText('Failed to load settings state.'),
   ).toBeTruthy();
-  expect(await screen.findByText('Interface not running')).toBeTruthy();
+  expect((await screen.findAllByText('Status unknown')).length).toBeGreaterThan(
+    0,
+  );
+  expect(screen.queryByText('Interface status available')).toBeNull();
+});
+
+test('does not infer broker readiness from a running scheduler', async () => {
+  renderSettingsPage({ liveStatus: { running: true, market_open: true } });
+
+  expect(await screen.findByText('Scheduler running')).toBeTruthy();
+  expect((await screen.findAllByText('Status unknown')).length).toBeGreaterThan(
+    0,
+  );
   expect(screen.queryByText('Interface status available')).toBeNull();
 });
 
