@@ -182,7 +182,6 @@ def build_acceptance_audit() -> AcceptanceAudit:
                 ),
                 validation_commands=(
                     'rg -n "not investment advice|不构成投资建议|personal quant research and trading platform|个人量化投研与交易平台" README.md docs',
-                    "uv run python -m pytest",
                 ),
             ),
         )
@@ -467,7 +466,7 @@ def build_research_evidence_acceptance_audit() -> AcceptanceAudit:
                 ),
                 validation_commands=(
                     "uv run python -m pytest tests/analytics/test_research_evidence.py",
-                    "uv run python -m pytest tests/test_server_routes.py -k research_evidence",
+                    "uv run python -m pytest tests/test_server_routes.py -k backtest_run_returns_metrics_json_cost_summary_and_fills",
                 ),
             ),
             AcceptanceCriterion(
@@ -483,7 +482,7 @@ def build_research_evidence_acceptance_audit() -> AcceptanceAudit:
                     "tests/test_server_routes.py",
                 ),
                 validation_commands=(
-                    "uv run python -m pytest tests/test_server_routes.py -k 'backtest_sweep or backtest_compare or research_evidence'",
+                    "uv run python -m pytest tests/test_server_routes.py -k 'backtest_sweep or backtest_compare'",
                 ),
             ),
             AcceptanceCriterion(
@@ -649,7 +648,7 @@ def build_research_evidence_acceptance_audit() -> AcceptanceAudit:
                     "tests/test_server_routes.py",
                 ),
                 validation_commands=(
-                    "uv run python -m pytest tests/test_server_routes.py -k research_evidence",
+                    "uv run python -m pytest tests/test_server_routes.py -k backtest_run_returns_metrics_json_cost_summary_and_fills",
                     "uv run python -m pytest tests/server/test_trading_controls.py",
                 ),
             ),

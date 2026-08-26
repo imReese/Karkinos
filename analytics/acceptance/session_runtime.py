@@ -567,7 +567,7 @@ def build_controlled_session_live_gate_orchestration_acceptance_audit() -> (
                     "tests/test_controlled_session_live_gates.py",
                 ),
                 validation_commands=(
-                    "uv run pytest tests/test_controlled_session_live_gates.py -k 'clear_snapshot or stale_quote or rejection_spike' -q",
+                    "uv run pytest tests/test_controlled_session_live_gates.py -k 'clear_snapshot or stale_market or rejection_spike' -q",
                 ),
             ),
             AcceptanceCriterion(
@@ -640,7 +640,7 @@ def build_controlled_session_live_gate_orchestration_acceptance_audit() -> (
                     "tests/test_controlled_session_live_gates.py",
                 ),
                 validation_commands=(
-                    "uv run pytest tests/test_controlled_session_live_gates.py -k 'budget_exhaustion or stale_quote or rejection_spike' -q",
+                    "uv run pytest tests/test_controlled_session_live_gates.py -k 'budget_exhaustion or stale_market or rejection_spike' -q",
                 ),
             ),
             AcceptanceCriterion(
