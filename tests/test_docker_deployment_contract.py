@@ -72,22 +72,18 @@ def test_docker_context_is_deny_by_default_and_matches_copy_allowlist() -> None:
         "web/tsconfig.json",
         "web/vite.config.ts",
         "web/src/",
-        "web/src/**/",
         "web/src/**/*.ts",
         "web/src/**/*.tsx",
         "web/src/**/*.css",
         "strategy/extensions/__init__.py",
         *(f"{package}/" for package in RUNTIME_PACKAGE_DIRS),
-        *(f"{package}/**/" for package in RUNTIME_PACKAGE_DIRS),
         *(f"{package}/**/*.py" for package in RUNTIME_PACKAGE_DIRS),
     }
     assert allowed == expected_allowed
-    assert "data/store/" in lines
+    assert "data/store/**" in lines
     assert "strategy/extensions/**" in lines
     assert "strategy/extensions/__init__.py" in allowed
-    assert not any(
-        pattern.endswith("/**") for pattern in allowed if pattern != "web/src/**/"
-    )
+    assert not any(pattern.endswith("/**/") for pattern in allowed)
     assert "web/node_modules/" in lines
     assert "web/dist/" in lines
 
