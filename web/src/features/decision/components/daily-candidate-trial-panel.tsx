@@ -165,32 +165,7 @@ export function DailyCandidateTrialPanel({
         </div>
       ) : null}
 
-      <div className="mt-3 grid gap-2 sm:grid-cols-4">
-        <Metric
-          label={locale === 'zh' ? '合格交易日' : 'Qualifying days'}
-          value={`${trial.qualifying_trading_day_count}/${trial.target_qualifying_trading_days}`}
-        />
-        <Metric
-          label={locale === 'zh' ? '模拟订单' : 'Simulated orders'}
-          value={`${trial.simulated_order_count}/${trial.target_simulated_orders}`}
-        />
-        <Metric
-          label={locale === 'zh' ? '策略冻结绑定' : 'Frozen strategy bindings'}
-          value={String(trial.strategy_advancement_refs.length)}
-        />
-        <Metric
-          label={locale === 'zh' ? '当前试运行周期' : 'Current trial epoch'}
-          value={
-            trial.trial_epoch_start_date
-              ? `${trial.trial_epoch_start_date} · ${
-                  locale === 'zh' ? '已归档' : 'superseded'
-                } ${trial.superseded_qualifying_day_count}`
-              : locale === 'zh'
-                ? '尚未开始'
-                : 'Not started'
-          }
-        />
-      </div>
+      <TrialProgressMetrics locale={locale} trial={trial} />
 
       {trial.current_execution_evidence ? (
         <div
@@ -375,6 +350,43 @@ export function DailyCandidateTrialPanel({
         </div>
       ) : null}
     </section>
+  );
+}
+
+function TrialProgressMetrics({
+  locale,
+  trial,
+}: {
+  locale: string;
+  trial: DailyCandidateTrial;
+}) {
+  return (
+    <div className="mt-3 grid gap-2 sm:grid-cols-4">
+      <Metric
+        label={locale === 'zh' ? '合格交易日' : 'Qualifying days'}
+        value={`${trial.qualifying_trading_day_count}/${trial.target_qualifying_trading_days}`}
+      />
+      <Metric
+        label={locale === 'zh' ? '模拟订单' : 'Simulated orders'}
+        value={`${trial.simulated_order_count}/${trial.target_simulated_orders}`}
+      />
+      <Metric
+        label={locale === 'zh' ? '策略冻结绑定' : 'Frozen strategy bindings'}
+        value={String(trial.strategy_advancement_refs.length)}
+      />
+      <Metric
+        label={locale === 'zh' ? '当前试运行周期' : 'Current trial epoch'}
+        value={
+          trial.trial_epoch_start_date
+            ? `${trial.trial_epoch_start_date} · ${
+                locale === 'zh' ? '已归档' : 'superseded'
+              } ${trial.superseded_qualifying_day_count}`
+            : locale === 'zh'
+              ? '尚未开始'
+              : 'Not started'
+        }
+      />
+    </div>
   );
 }
 
