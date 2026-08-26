@@ -3,4 +3,7 @@ export {
   useRefreshMarketQuotesMutation,
   type MarketDataHealthResponse,
 } from '../market/api';
-export type { LiveHoldingGroup, PortfolioSnapshot } from '../portfolio/api';
+export type {
+  LiveHoldingGroup,
+  PortfolioSnapshot,
+} from '../../shared/portfolio-evidence/contracts';
