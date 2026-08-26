@@ -16,6 +16,7 @@ from analytics.backtest_capacity_evidence import (
 from analytics.backtest_drawdown_evidence import (
     is_valid_complete_backtest_drawdown_evidence,
 )
+from analytics.multiple_testing import build_deflated_sharpe
 from analytics.research_account_capital_evidence import (
     is_valid_passed_research_account_capital_evidence,
 )
@@ -70,6 +71,7 @@ STRATEGY_ADVANCEMENT_REQUIRED_CHECK_NAMES = (
     "after_tax_excess_return",
     "independent_critique",
 )
+STRATEGY_ADVANCEMENT_OPTIONAL_CHECK_NAMES = ("multiple_testing_correction",)
 
 
 @dataclass(frozen=True)
@@ -115,9 +117,15 @@ def is_valid_passed_strategy_advancement_gate(value: Any) -> bool:
         return False
     normalized_checks = [dict(check) for check in checks if isinstance(check, Mapping)]
     check_names = tuple(check.get("name") for check in normalized_checks)
+    required_names = STRATEGY_ADVANCEMENT_REQUIRED_CHECK_NAMES
+    optional_names = STRATEGY_ADVANCEMENT_OPTIONAL_CHECK_NAMES
+    names_valid = check_names in {
+        required_names,
+        required_names + optional_names,
+    }
     return (
         len(normalized_checks) == len(checks)
-        and check_names == STRATEGY_ADVANCEMENT_REQUIRED_CHECK_NAMES
+        and names_valid
         and all(
             check.get("status") == "pass"
             and check.get("blocker") is None
@@ -227,6 +235,7 @@ def build_strategy_advancement_gate(
     baseline: Mapping[str, Any],
     candidate: Mapping[str, Any],
     critique_evidence: Mapping[str, Any],
+    num_trials: int | None = None,
 ) -> StrategyAdvancementGate:
     """Evaluate the complete evidence needed for paper/shadow advancement."""
 
@@ -555,6 +564,42 @@ def build_strategy_advancement_gate(
             "artifact_fingerprint": critique.get("artifact_fingerprint"),
         },
     )
+
+    if num_trials is not None:
+        candidate_sharpe = _number(candidate.get("sharpe"))
+        equity_curve = _json_list(candidate.get("equity_curve"))
+        num_periods = len(equity_curve)
+        if candidate_sharpe is None or num_periods <= 1 or num_trials < 1:
+            record(
+                "multiple_testing_correction",
+                passed=False,
+                blocker="multiple_testing_correction_insufficient_evidence",
+                evidence={
+                    "candidate_sharpe": candidate_sharpe,
+                    "num_periods": num_periods,
+                    "num_trials": num_trials,
+                },
+            )
+        else:
+            correction = build_deflated_sharpe(
+                observed_sharpe=candidate_sharpe,
+                num_periods=num_periods,
+                num_trials=num_trials,
+            )
+            record(
+                "multiple_testing_correction",
+                passed=correction["significant_at_0.95"],
+                blocker="multiple_testing_correction_not_significant",
+                evidence={
+                    "method": "deflated_sharpe",
+                    "observed_sharpe": correction["observed_sharpe"],
+                    "num_periods": num_periods,
+                    "num_trials": num_trials,
+                    "expected_max_sharpe": correction["expected_max_sharpe"],
+                    "deflated_sharpe": correction["deflated_sharpe"],
+                    "threshold": 0.95,
+                },
+            )
 
     unique_blockers = tuple(dict.fromkeys(blockers))
     return StrategyAdvancementGate(
