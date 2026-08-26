@@ -59,6 +59,7 @@ from server.ai_runtime.strategy_research_model_contract import (
     strategy_research_system_prompt,
 )
 from server.ai_runtime.strategy_research_provider import StrategyResearchModelProvider
+from server.ai_runtime.strategy_research_sealed import StrategyResearchSealedMixin
 from server.ai_runtime.strategy_research_session import StrategyResearchSessionMixin
 from server.ai_runtime.strategy_research_support import (
     critique_response,
@@ -97,6 +98,7 @@ from server.contracts.strategy_research import (
     CRITIQUE_EXPORT_CONFIRMATION,
     HYPOTHESIS_EXPORT_CONFIRMATION,
     REVIEW_CONFIRMATION,
+    SEALED_TEST_CONFIRMATION,
     STRATEGY_BACKTEST_CRITIQUE_CONTRACT,
     STRATEGY_HYPOTHESIS_DRAFT_CONTRACT,
     STRATEGY_RESEARCH_API_CONTRACT,
@@ -112,6 +114,7 @@ from server.contracts.strategy_research import (
     CritiqueRequest,
     FormulaBacktestRequest,
     HypothesisGenerationRequest,
+    SealedTestRequest,
     StrategyResearchRejected,
     StrategyResearchSelection,
     reject_private_iteration_keys,
@@ -124,6 +127,7 @@ class StrategyResearchService(
     StrategyResearchGenerationMixin,
     StrategyResearchBacktestWorkflowMixin,
     StrategyResearchCritiqueMixin,
+    StrategyResearchSealedMixin,
     StrategyResearchSessionMixin,
 ):
     """Coordinate explicit hypothesis, backtest, critique, and review gates."""

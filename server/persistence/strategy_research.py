@@ -14,6 +14,9 @@ from server.persistence.strategy_research_events import (
     StrategyResearchEventRepositoryMixin,
 )
 from server.persistence.strategy_research_schema import StrategyResearchSchemaMixin
+from server.persistence.strategy_research_sealed import (
+    StrategyResearchSealedRepositoryMixin,
+)
 from server.persistence.strategy_research_sessions import (
     StrategyResearchSessionRepositoryMixin,
 )
@@ -25,6 +28,7 @@ class StrategyResearchAuditStore(
     StrategyResearchSessionRepositoryMixin,
     StrategyResearchBacktestRepositoryMixin,
     StrategyResearchCritiqueRepositoryMixin,
+    StrategyResearchSealedRepositoryMixin,
     StrategyResearchEventRepositoryMixin,
     StrategyResearchUnitOfWorkMixin,
 ):
