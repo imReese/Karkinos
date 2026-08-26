@@ -28,7 +28,7 @@ from core.types import AssetClass, BarFrequency, Symbol
 from data.handler import DataHandler
 from data.manager import DataManager
 from data.store import DataStore
-from execution.a_share_limits import (
+from analytics.a_share_limits import (
     is_limit_down,
     is_limit_up,
     is_suspended,

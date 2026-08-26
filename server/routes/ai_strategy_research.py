@@ -306,13 +306,7 @@ def create_router() -> APIRouter:
 
     @router.get("/shadow-automation/readiness")
     async def get_shadow_research_readiness() -> dict[str, Any]:
-        """Bounded provider-free policy projection for loopback readiness checks."""
-        from server.dependencies import get_app_state
-
-        state = get_app_state()
-        if state.db is None:
-            raise HTTPException(status_code=503, detail="Database is not initialized")
-        return _build_shadow_read_service(state).readiness_status()
+        return _read_shadow_research_readiness()
 
     @router.put("/shadow-automation/policy")
     async def update_shadow_research_policy(
@@ -554,29 +548,7 @@ def create_router() -> APIRouter:
 
     @router.post("/sealed-tests")
     async def run_sealed_holdout_test(payload: SealedTestPayload) -> JSONResponse:
-        from server.dependencies import get_app_state
-
-        state = get_app_state()
-        try:
-            service = _build_write_service(state, external=False)
-            result = await service.sealed_test(
-                SealedTestRequest(
-                    idempotency_key=payload.idempotency_key,
-                    requested_by=payload.requested_by,
-                    session_id=payload.session_id,
-                    draft_id=payload.draft_id,
-                    backtest_run_id=payload.backtest_run_id,
-                    confirmation=payload.confirmation,
-                    benchmark_return=(
-                        Decimal(str(payload.benchmark_return))
-                        if payload.benchmark_return is not None
-                        else None
-                    ),
-                )
-            )
-            return _status_response(result)
-        except Exception as exc:
-            _raise_http(exc)
+        return await _run_sealed_holdout_test(payload)
 
     @router.post("/sessions/{session_id}/reviews")
     async def record_strategy_research_review(
@@ -658,6 +630,42 @@ def _build_shadow_write_service(state: Any) -> Any:
 
 def _build_shadow_read_service(state: Any) -> Any:
     return build_shadow_research_read_service(state)
+
+
+def _read_shadow_research_readiness() -> dict[str, Any]:
+    """Bounded provider-free policy projection for loopback readiness checks."""
+    from server.dependencies import get_app_state
+
+    state = get_app_state()
+    if state.db is None:
+        raise HTTPException(status_code=503, detail="Database is not initialized")
+    return _build_shadow_read_service(state).readiness_status()
+
+
+async def _run_sealed_holdout_test(payload: SealedTestPayload) -> JSONResponse:
+    from server.dependencies import get_app_state
+
+    state = get_app_state()
+    try:
+        service = _build_write_service(state, external=False)
+        result = await service.sealed_test(
+            SealedTestRequest(
+                idempotency_key=payload.idempotency_key,
+                requested_by=payload.requested_by,
+                session_id=payload.session_id,
+                draft_id=payload.draft_id,
+                backtest_run_id=payload.backtest_run_id,
+                confirmation=payload.confirmation,
+                benchmark_return=(
+                    Decimal(str(payload.benchmark_return))
+                    if payload.benchmark_return is not None
+                    else None
+                ),
+            )
+        )
+        return _status_response(result)
+    except Exception as exc:
+        _raise_http(exc)
 
 
 def _strategy_research_model_timeout_seconds(settings: Any | None) -> float:
