@@ -49,6 +49,8 @@ test('omits auto-filled trade fee so backend configured fee contract is used', a
   >;
   expect(body).toEqual(
     expect.objectContaining({
+      command_id: expect.any(String),
+      operator_id: 'local-owner',
       symbol: '600002',
       quantity: 200,
       price: 28.82,
@@ -89,6 +91,8 @@ test('keeps explicitly edited trade fee as manual commission evidence', async ()
     unknown
   >;
   expect(body.commission).toBe(8.5);
+  expect(body.command_id).toEqual(expect.any(String));
+  expect(body.operator_id).toBe('local-owner');
 });
 
 test('requests manual trade preview with the same commission override contract', async () => {
@@ -140,4 +144,6 @@ test('requests manual trade preview with the same commission override contract',
       commission: 8.5,
     }),
   );
+  expect(body).not.toHaveProperty('command_id');
+  expect(body).not.toHaveProperty('operator_id');
 });

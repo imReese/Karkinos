@@ -47,6 +47,8 @@ export type PendingFundOrder = {
 };
 
 export type TradePayload = {
+  command_id?: string;
+  operator_id?: string;
   occurred_at: string;
   symbol: string;
   asset_class: string;
@@ -76,6 +78,8 @@ export type TradePreview = {
 };
 
 export type CashFlowPayload = {
+  operator_id?: string;
+  request_id?: string;
   occurred_at: string;
   amount: number;
   flow_type: string;
@@ -83,6 +87,8 @@ export type CashFlowPayload = {
 };
 
 export type DividendPayload = {
+  operator_id?: string;
+  request_id?: string;
   occurred_at: string;
   symbol: string;
   asset_class: string;
@@ -91,6 +97,8 @@ export type DividendPayload = {
 };
 
 export type AdjustmentPayload = {
+  operator_id?: string;
+  request_id?: string;
   occurred_at: string;
   symbol: string | null;
   asset_class: string;
@@ -142,7 +150,7 @@ function invalidatePortfolioQueries(
   ]);
 }
 
-function buildTradeRequestBody(payload: TradePayload) {
+function buildTradeRequestBody(payload: TradePayload, mutation = false) {
   const requestBody: Record<string, unknown> = {
     timestamp: payload.occurred_at,
     symbol: payload.symbol,
@@ -153,6 +161,11 @@ function buildTradeRequestBody(payload: TradePayload) {
     asset_class: payload.asset_class,
     note: payload.note,
   };
+  if (mutation) {
+    requestBody.command_id =
+      payload.command_id ?? globalThis.crypto.randomUUID();
+    requestBody.operator_id = payload.operator_id ?? 'local-owner';
+  }
   if (
     payload.fee_is_manual &&
     typeof payload.fee === 'number' &&
@@ -178,7 +191,7 @@ export function useCreateTradeMutation() {
 
   return useMutation({
     mutationFn: (payload: TradePayload) =>
-      postJson('/api/portfolio/trade', buildTradeRequestBody(payload)),
+      postJson('/api/portfolio/trade', buildTradeRequestBody(payload, true)),
     onSuccess: async () => {
       await invalidatePortfolioQueries(queryClient);
     },
@@ -190,7 +203,7 @@ export function useCreateCashFlowMutation() {
 
   return useMutation({
     mutationFn: (payload: CashFlowPayload) =>
-      postJson('/api/ledger/cash-flows', payload),
+      postJson('/api/ledger/cash-flows', withLedgerMutationIdentity(payload)),
     onSuccess: async () => {
       await invalidatePortfolioQueries(queryClient);
     },
@@ -202,7 +215,7 @@ export function useCreateDividendMutation() {
 
   return useMutation({
     mutationFn: (payload: DividendPayload) =>
-      postJson('/api/ledger/dividends', payload),
+      postJson('/api/ledger/dividends', withLedgerMutationIdentity(payload)),
     onSuccess: async () => {
       await invalidatePortfolioQueries(queryClient);
     },
@@ -214,9 +227,21 @@ export function useCreateAdjustmentMutation() {
 
   return useMutation({
     mutationFn: (payload: AdjustmentPayload) =>
-      postJson('/api/ledger/adjustments', payload),
+      postJson('/api/ledger/adjustments', withLedgerMutationIdentity(payload)),
     onSuccess: async () => {
       await invalidatePortfolioQueries(queryClient);
     },
   });
+}
+
+function withLedgerMutationIdentity<T extends object>(payload: T) {
+  const identified = payload as T & {
+    operator_id?: string;
+    request_id?: string;
+  };
+  return {
+    ...payload,
+    operator_id: identified.operator_id ?? 'local-owner',
+    request_id: identified.request_id ?? globalThis.crypto.randomUUID(),
+  };
 }
