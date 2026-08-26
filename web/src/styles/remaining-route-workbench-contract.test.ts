@@ -22,7 +22,14 @@ const sourceTree = (directory: string): string =>
 
 const OVERVIEW = sourceTree('features/overview');
 const ACTIVITY = source('features/activity/pages/activity-page.tsx');
-const MARKET = source('features/market/pages/market-page.tsx');
+const MARKET = [
+  source('features/market/pages/market-page.tsx'),
+  source('features/market/pages/market-page-view.tsx'),
+  source('features/market/pages/market-page-controller.ts'),
+  source('features/market/pages/market-data-evidence-workspace.tsx'),
+  source('features/market/pages/market-page-format.ts'),
+  source('features/market/pages/market-research-notes-workspace.tsx'),
+].join('\n');
 const BACKTEST = [
   source('features/backtest/components/backtest-page.tsx'),
   source('features/backtest/components/use-backtest-page-controller.ts'),
@@ -46,7 +53,16 @@ const TRADING = [
   source('features/trading/components/execution-audit-panel.tsx'),
   source('features/trading/components/broker-readiness-panel.tsx'),
 ].join('\n');
-const SETTINGS = source('features/settings/components/settings-page.tsx');
+const SETTINGS = [
+  source('features/settings/components/settings-page.tsx'),
+  source('features/settings/components/settings-page-controller.ts'),
+  source('features/settings/components/settings-page-model.ts'),
+  source('features/settings/components/settings-page-view.tsx'),
+  source('features/settings/components/settings-operations-workspace.tsx'),
+  source('features/settings/components/settings-persisted-configuration.tsx'),
+  source('features/settings/components/settings-preferences-workspace.tsx'),
+  source('features/settings/components/settings-view-primitives.tsx'),
+].join('\n');
 const OPERATIONS = source('features/operations/components/operations-page.tsx');
 const ACCOUNT_TRUTH = [
   source(
@@ -59,10 +75,19 @@ const ACCOUNT_TRUTH = [
     'features/account-truth/components/account-truth-reconciliation-review.tsx',
   ),
 ].join('\n');
-const ACTIVITY_FEED = source('features/activity/components/activity-feed.tsx');
-const PRICE_STRUCTURE_CHART = source(
-  'features/market/components/price-structure-chart.tsx',
-);
+const ACTIVITY_FEED = [
+  source('features/activity/components/activity-feed.tsx'),
+  source('features/activity/components/activity-feed-entry.tsx'),
+  source('features/activity/components/activity-feed-model.ts'),
+].join('\n');
+const PRICE_STRUCTURE_CHART = [
+  source('features/market/components/price-structure-chart.tsx'),
+  source('features/market/components/price-structure-chart-model.ts'),
+  source('features/market/components/price-structure-chart-sections.tsx'),
+  source('features/market/components/price-structure-chart-svg.tsx'),
+  source('features/market/components/price-structure-chart-view.tsx'),
+  source('features/market/components/price-structure-loading-state.tsx'),
+].join('\n');
 const MARKET_INSTRUMENT_WORKSPACE = source(
   'features/market/components/market-instrument-workspace.tsx',
 );
@@ -79,16 +104,22 @@ const ACTIVITY_FORMS = [
 ];
 const APP_SHELL = sourceTree('app/layout');
 const RESEARCH_TASK = source(
-  'features/ai-research/components/research-task-panel.tsx',
+  'features/research-workflow/components/research-task-panel.tsx',
 );
 const AI_RESEARCH = source(
   'features/ai-research/components/ai-research-page.tsx',
 );
-const HOLDING_DETAIL = source(
-  'features/portfolio/components/holding-detail-page.tsx',
-);
+const HOLDING_DETAIL = [
+  source('features/portfolio/components/holding-detail-page.tsx'),
+  source('features/portfolio/components/holding-detail-controller.tsx'),
+  source('features/portfolio/components/holding-detail-model.ts'),
+  source('features/portfolio/components/holding-detail-model-values.ts'),
+  source('features/portfolio/components/holding-detail-view.tsx'),
+  source('features/portfolio/components/holding-detail-panels.tsx'),
+  source('features/portfolio/components/holding-detail-primitives.tsx'),
+].join('\n');
 const STRATEGY_RESEARCH = source(
-  'features/ai-research/components/strategy-hypothesis-panel.tsx',
+  'features/research-workflow/components/strategy-hypothesis-panel.tsx',
 );
 const BACKTEST_REPORT = source(
   'features/backtest/components/backtest-report-view.tsx',
