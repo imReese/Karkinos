@@ -439,9 +439,17 @@ describe('application design token contract', () => {
       'features/account-strategy/components/strategy-contribution-gate-card.tsx',
       'features/backtest/components/metrics-grid.tsx',
       'features/market/components/price-structure-chart.tsx',
+      'features/market/components/price-structure-chart-sections.tsx',
+      'features/market/components/price-structure-chart-svg.tsx',
+      'features/market/components/price-structure-chart-view.tsx',
       'features/portfolio/components/holding-detail-page.tsx',
       'features/portfolio/components/positions-table.tsx',
+      'features/portfolio/components/positions-table-columns.tsx',
+      'features/portfolio/components/positions-table-mobile-list.tsx',
+      'features/portfolio/components/positions-table-view.tsx',
       'features/portfolio/components/live-holdings-board.tsx',
+      'features/portfolio/pages/portfolio-page-sections.tsx',
+      'features/portfolio/pages/portfolio-page-view.tsx',
     ];
     for (const sourcePath of financialFiles) {
       const source = readFileSync(resolve(SRC_ROOT, sourcePath), 'utf8');
