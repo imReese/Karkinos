@@ -28,6 +28,12 @@ from core.types import AssetClass, BarFrequency, Symbol
 from data.handler import DataHandler
 from data.manager import DataManager
 from data.store import DataStore
+from execution.a_share_limits import (
+    is_limit_down,
+    is_limit_up,
+    is_suspended,
+    limit_rate_for_symbol,
+)
 from server.ai_runtime.contracts import JsonObject, content_fingerprint
 from server.ai_runtime.formula_dsl import (
     CANONICAL_COST_MODEL_REFERENCE,
@@ -70,6 +76,8 @@ class _FormulaSignalStrategy(Strategy):
         self._entry_signal_count = 0
         self._exit_signal_count = 0
         self._entry_target_count = 0
+        self._limit_blocked_count = 0
+        self._suspension_blocked_count = 0
 
     def on_init(self, symbols: list[Symbol]) -> None:
         self._frames = {symbol: [] for symbol in symbols}
@@ -80,12 +88,13 @@ class _FormulaSignalStrategy(Strategy):
         self._last_timestamp = event.timestamp
         pending_target = self._pending_target[event.symbol]
         if pending_target is not None:
-            self.emit_signal(
-                event.symbol,
-                pending_target,
-                price=float(event.close),
-            )
-            self._active[event.symbol] = pending_target > 0.0
+            if self._is_tradeable(event, pending_target):
+                self.emit_signal(
+                    event.symbol,
+                    pending_target,
+                    price=float(event.close),
+                )
+                self._active[event.symbol] = pending_target > 0.0
             self._pending_target[event.symbol] = None
 
         rows = self._frames[event.symbol]
@@ -116,6 +125,26 @@ class _FormulaSignalStrategy(Strategy):
             self._entry_target_count += 1
             self._pending_target[event.symbol] = self._canonical_target_weight
 
+    def _is_tradeable(self, event: MarketEvent, target: float) -> bool:
+        """Apply A-share limit-up/down and suspension constraints to a fill."""
+
+        if is_suspended(Decimal(str(event.volume))):
+            self._suspension_blocked_count += 1
+            return False
+        frames = self._frames[event.symbol]
+        if not frames:
+            return True
+        prev_close = Decimal(str(frames[-1]["close"]))
+        rate = limit_rate_for_symbol(str(event.symbol))
+        close = Decimal(str(event.close))
+        if target > 0.0 and is_limit_up(close, prev_close, rate):
+            self._limit_blocked_count += 1
+            return False
+        if target <= 0.0 and is_limit_down(close, prev_close, rate):
+            self._limit_blocked_count += 1
+            return False
+        return True
+
     def execution_evidence(self, *, fill_count: int) -> JsonObject:
         """Return privacy-minimized signal-to-fill diagnostics for critique."""
         core = {
@@ -124,6 +153,8 @@ class _FormulaSignalStrategy(Strategy):
             "exit_signal_count": self._exit_signal_count,
             "entry_target_count": self._entry_target_count,
             "fill_count": int(fill_count),
+            "limit_blocked_count": self._limit_blocked_count,
+            "suspension_blocked_count": self._suspension_blocked_count,
             "zero_fill_after_entry_targets": bool(
                 self._entry_target_count and not fill_count
             ),

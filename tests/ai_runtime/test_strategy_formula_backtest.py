@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from analytics.dataset_snapshot import build_backtest_dataset_snapshot
+from core.events import MarketEvent
 from core.types import AssetClass, BarFrequency, CommissionType, Symbol
 from data.handler import DataHandler
 from data.store import DataStore
@@ -446,6 +447,59 @@ def test_restricted_formula_adapter_calculates_with_exact_reviewed_fee_binding(
     assert fee_evidence["account_specific"] is True
     assert fee_evidence["fee_rule_version"] == cost_model_reference
     assert fee_evidence["fee_schedule_binding"] == fee_schedule_binding
+
+
+def test_formula_signal_strategy_blocks_limit_up_and_suspension() -> None:
+    from server.ai_runtime.strategy_research_backtest import _FormulaSignalStrategy
+
+    strategy = _FormulaSignalStrategy(_formula(), universe_size=1, allocation_slots=1)
+    symbol = Symbol("600000")
+    strategy.on_init([symbol])
+    strategy._frames[symbol] = [
+        {
+            "timestamp": datetime(2025, 1, 2),
+            "open": 10.0,
+            "high": 10.0,
+            "low": 10.0,
+            "close": 10.0,
+            "volume": 100_000.0,
+        }
+    ]
+
+    limit_up = MarketEvent(
+        timestamp=datetime(2025, 1, 3),
+        symbol=symbol,
+        open=Decimal("11.0"),
+        high=Decimal("11.0"),
+        low=Decimal("11.0"),
+        close=Decimal("11.0"),
+        volume=Decimal("100000"),
+    )
+    assert strategy._is_tradeable(limit_up, target=1.0) is False
+    assert strategy._limit_blocked_count == 1
+
+    suspended = MarketEvent(
+        timestamp=datetime(2025, 1, 3),
+        symbol=symbol,
+        open=Decimal("10.0"),
+        high=Decimal("10.0"),
+        low=Decimal("10.0"),
+        close=Decimal("10.0"),
+        volume=Decimal("0"),
+    )
+    assert strategy._is_tradeable(suspended, target=1.0) is False
+    assert strategy._suspension_blocked_count == 1
+
+    normal = MarketEvent(
+        timestamp=datetime(2025, 1, 3),
+        symbol=symbol,
+        open=Decimal("10.5"),
+        high=Decimal("10.5"),
+        low=Decimal("10.5"),
+        close=Decimal("10.5"),
+        volume=Decimal("100000"),
+    )
+    assert strategy._is_tradeable(normal, target=1.0) is True
 
 
 def test_restricted_formula_adapter_run_sealed_reaches_future_window(tmp_path) -> None:
