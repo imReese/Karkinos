@@ -52,6 +52,18 @@ describe('appFeatureChunk', () => {
     ).toBe('feature-trading');
   });
 
+  it('keeps application-wide feature copy out of lazy workspace chunks', () => {
+    expect(appFeatureChunk('/repo/web/src/features/activity/copy.ts')).toBe(
+      undefined,
+    );
+    expect(appFeatureChunk('/repo/web/src/features/portfolio/copy.zh.ts')).toBe(
+      undefined,
+    );
+    expect(
+      appFeatureChunk('/repo/web/src/features/backtest/copy-details.ts'),
+    ).toBe(undefined);
+  });
+
   it('leaves vendor and shared app modules to the remaining chunk rules', () => {
     expect(appFeatureChunk('/repo/web/node_modules/react/index.js')).toBe(
       undefined,
