@@ -368,6 +368,78 @@ def test_scheduler_signal_persists_action_task_without_notifier(
     assert actions[0]["direction"] == "buy"
     assert actions[0]["title"] == "建议增持 600519"
     assert actions[0]["manual_confirmation_status"] == "awaiting_risk_gate"
+    assert db.get_risk_decisions_sync() == []
+    assert db.list_manual_orders_sync() == []
+    assert db.list_orders_sync() == []
+
+
+def test_scheduler_action_persistence_failure_leaves_no_execution_side_effects(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    failed_action_writes = []
+
+    def configure_database(db: AppDatabase) -> None:
+        db.insert_ledger_entry_sync(
+            entry_type="cash_deposit",
+            timestamp="2026-05-23T09:00:00+08:00",
+            amount=100000.0,
+            created_at="2026-05-23T09:00:01+08:00",
+        )
+
+    def fail_action_persistence(self, **kwargs) -> None:
+        failed_action_writes.append(dict(kwargs))
+        raise RuntimeError("injected action persistence failure")
+
+    def publish_parallel_events(scheduler) -> None:
+        event_bus = scheduler._event_bus
+        assert event_bus is not None
+        timestamp = datetime(2026, 5, 23, 10, 0)
+        event_bus.publish(
+            SignalEvent(
+                timestamp=timestamp,
+                strategy_id="action_write_failure",
+                symbol=Symbol("600519"),
+                target_weight=Decimal("0.20"),
+                price=Decimal("12.5"),
+            )
+        )
+        event_bus.publish(
+            OrderIntentEvent(
+                timestamp=timestamp,
+                intent_id="INTENT-ACTION-WRITE-FAILURE",
+                strategy_id="action_write_failure",
+                symbol=Symbol("600519"),
+                side=OrderSide.BUY,
+                target_weight=Decimal("0.20"),
+                quantity=Decimal("100"),
+                reference_price=Decimal("12.5"),
+                asset_class=AssetClass.STOCK,
+            )
+        )
+        event_bus.drain()
+
+    monkeypatch.setattr(
+        AppDatabase,
+        "upsert_action_task_sync",
+        fail_action_persistence,
+    )
+    db = _run_scheduler_once(
+        monkeypatch,
+        tmp_path,
+        events=[],
+        configure_database=configure_database,
+        observe_scheduler=publish_parallel_events,
+    )
+
+    signals = asyncio.run(db.get_latest_signals(limit=5))
+    assert len(failed_action_writes) == 1
+    assert len(signals) == 1
+    assert signals[0]["strategy_id"] == "action_write_failure"
+    assert db.get_action_tasks_sync() == []
+    assert db.get_risk_decisions_sync() == []
+    assert db.list_manual_orders_sync() == []
+    assert db.list_orders_sync() == []
 
 
 def test_scheduler_discards_strategy_output_created_during_warmup(
@@ -497,18 +569,10 @@ def test_scheduler_rejects_strategy_order_that_bypasses_pre_trade_gate(
     assert db.list_quote_fetch_runs()[0]["status"] == "success"
 
 
-def test_scheduler_routes_strategy_intent_through_risk_and_manual_confirmation(
+def test_scheduler_rejects_strategy_intent_outside_action_evidence_boundary(
     monkeypatch,
     tmp_path,
 ) -> None:
-    def configure_database(db: AppDatabase) -> None:
-        db.insert_ledger_entry_sync(
-            entry_type="cash_deposit",
-            timestamp="2026-05-23T09:00:00+08:00",
-            amount=100000.0,
-            created_at="2026-05-23T09:00:01+08:00",
-        )
-
     class IntentStrategy:
         def __init__(self, event_bus) -> None:
             self.event_bus = event_bus
@@ -536,17 +600,14 @@ def test_scheduler_routes_strategy_intent_through_risk_and_manual_confirmation(
         tmp_path,
         events=[_market_event("600519", price=Decimal("123.45"))],
         strategy_factory=IntentStrategy,
-        configure_database=configure_database,
     )
 
-    decisions = db.get_risk_decisions_sync()
-    pending = db.list_manual_orders_sync()
-    assert len(decisions) == 1
-    assert decisions[0]["intent_id"] == "INTENT-SCHED-GATED-1"
-    assert decisions[0]["passed"] == 1
-    assert len(pending) == 1
-    assert pending[0]["status"] == "pending_confirm"
-    assert db.list_fills_sync(order_id=pending[0]["order_id"]) == []
+    assert asyncio.run(db.get_latest_signals(limit=5)) == []
+    assert db.get_action_tasks_sync() == []
+    assert db.get_risk_decisions_sync() == []
+    assert db.list_manual_orders_sync() == []
+    assert db.list_orders_sync() == []
+    assert db.list_quote_fetch_runs()[0]["status"] == "success"
 
 
 def test_scheduler_poll_partial_success_records_quote_fetch_run(monkeypatch, tmp_path):

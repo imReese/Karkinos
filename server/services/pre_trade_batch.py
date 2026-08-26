@@ -188,6 +188,8 @@ def _intent_from_action_task(
         return {"status": "skipped", "reason": "estimated_quantity_not_positive"}
 
     timestamp = _timestamp(task.get("timestamp"))
+    if timestamp is None:
+        return {"status": "skipped", "reason": "invalid_action_timestamp"}
     asset_class = _asset_class(task.get("asset_class"))
     intent = OrderIntentEvent(
         timestamp=timestamp,
@@ -330,15 +332,15 @@ def _first_value(*values: Any) -> Any:
     return None
 
 
-def _timestamp(value: Any) -> datetime:
+def _timestamp(value: Any) -> datetime | None:
     if isinstance(value, datetime):
         return value
     if value:
         try:
             return datetime.fromisoformat(str(value))
         except ValueError:
-            pass
-    return datetime.now()
+            return None
+    return None
 
 
 def _skipped_result(task: dict[str, Any], reason: str) -> dict[str, Any]:

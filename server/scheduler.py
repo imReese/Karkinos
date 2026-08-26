@@ -13,9 +13,6 @@ from core.types import AssetClass, BarFrequency, Symbol
 from data.live import LiveDataFeed
 from domain.instrument import Instrument
 from domain.portfolio import Portfolio
-from execution.connector import PaperExecutionConnector
-from execution.gateway import ManualConfirmGateway
-from risk.pre_trade import PreTradePolicy, PreTradeRiskManager
 from server.bootstrap import build_strategy, create_runtime_context
 from server.bridge import EventBusBridge
 from server.scheduler_lifecycle import SchedulerLifecycleMixin
@@ -24,8 +21,6 @@ from server.scheduler_quote_runs import SchedulerQuoteRunMixin
 from server.scheduler_signals import handle_scheduler_signal
 from server.scheduler_values import optional_float
 from server.services.fund_nav_sync import refresh_fund_nav_quotes
-from server.services.live_context import LiveContextProvider
-from server.services.manual_order_tickets import RuntimeManualOrderTicketAdapter
 from server.services.market_hours import is_cn_trading_session
 from server.services.market_indices import default_market_index_assets
 from server.services.market_quote_ingestion import (
@@ -52,15 +47,6 @@ _SCHEDULER_STOP_TIMEOUT_SECONDS = 10.0
 
 def scheduler_now() -> datetime:
     return datetime.now()
-
-
-def build_manual_confirm_gateway(
-    event_bus: EventBus, *, db=None
-) -> ManualConfirmGateway:
-    ticket_port = (
-        None if db is None else RuntimeManualOrderTicketAdapter(persistence=db)
-    )
-    return ManualConfirmGateway(event_bus, ticket_port=ticket_port)
 
 
 class TradingScheduler(SchedulerLifecycleMixin, SchedulerQuoteRunMixin):
@@ -536,17 +522,11 @@ class TradingScheduler(SchedulerLifecycleMixin, SchedulerQuoteRunMixin):
                 runtime_context_factory=create_runtime_context,
                 live_data_feed_factory=LiveDataFeed,
                 portfolio_rebuilder=rebuild_portfolio_from_ledger,
-                live_context_provider_factory=LiveContextProvider,
-                pre_trade_risk_manager_factory=PreTradeRiskManager,
-                pre_trade_policy_factory=PreTradePolicy,
-                manual_confirm_gateway_factory=build_manual_confirm_gateway,
-                paper_execution_connector_factory=PaperExecutionConnector,
                 strategy_factory=build_strategy,
                 now=self._scheduler_clock,
                 afternoon_close=_AFTERNOON_CLOSE,
                 config=self._config,
                 database=self._db,
-                trading_controls=self._trading_controls,
                 bridge_rebinder=self._bridge.rebind,
                 warmup_strategy=self._warmup_strategy,
                 signal_handler=self._on_signal,
