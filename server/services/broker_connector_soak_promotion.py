@@ -2,25 +2,25 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import re
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-from server.services.broker_connector_soak import (
-    BROKER_CONNECTOR_SOAK_TARGET_TRADING_DAYS,
-    BrokerConnectorSoakService,
-    reviewed_broker_soak_sequence_is_accepted,
+from server.services.broker_connector_soak import BrokerConnectorSoakService
+from server.services.broker_connector_soak_promotion_evidence import (
+    BrokerConnectorSoakEvidenceProjector,
 )
-from server.services.broker_connector_soak_runbook import (
-    BROKER_CONNECTOR_SOAK_DRILL_ENTITY_TYPE,
-    BROKER_CONNECTOR_SOAK_DRILL_EVENT_TYPE,
-    BROKER_CONNECTOR_SOAK_DRILL_TYPES,
-    BROKER_CONNECTOR_SOAK_PHASES,
-    BROKER_CONNECTOR_SOAK_RUN_ENTITY_TYPE,
-    BROKER_CONNECTOR_SOAK_RUN_EVENT_TYPE,
-    BROKER_CONNECTOR_SOAK_RUNBOOK_EVENT_SOURCE,
+from server.services.broker_connector_soak_promotion_values import (
+    aware_utc,
+)
+from server.services.broker_connector_soak_promotion_values import (
+    connector_id as connector_identity,
+)
+from server.services.broker_connector_soak_promotion_values import (
+    event_response,
+    fingerprint,
+    safety_flags,
+    without_volatile_age,
 )
 from server.services.operator_approval import resolve_operator_approval
 
@@ -43,9 +43,6 @@ BROKER_SOAK_PROMOTION_ACKNOWLEDGEMENT = (
 )
 
 _CONNECTOR_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
-_FINGERPRINT_PATTERN = re.compile(r"^[a-f0-9]{64}$")
-_REQUIRED_PHASES = tuple(sorted(BROKER_CONNECTOR_SOAK_PHASES))
-_REQUIRED_DRILLS = tuple(sorted(BROKER_CONNECTOR_SOAK_DRILL_TYPES))
 
 
 class BrokerConnectorSoakPromotionRejected(ValueError):
@@ -71,16 +68,19 @@ class BrokerConnectorSoakPromotionService:
         self._db = db
         self._connectors = list(connectors or [])
         self._trusted_operator_identities = list(trusted_operator_identities or [])
-        self._account_truth_evidence_provider = account_truth_evidence_provider
         self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self._evidence = BrokerConnectorSoakEvidenceProjector(
+            db=db,
+            account_truth_evidence_provider=account_truth_evidence_provider,
+        )
 
     def get_status(self) -> dict[str, Any]:
         connector_ids = sorted(
             {
                 *(
-                    _connector_id(connector)
+                    connector_identity(connector)
                     for connector in self._connectors
-                    if _connector_id(connector)
+                    if connector_identity(connector)
                 ),
                 *(
                     str(item.get("connector_id") or "")
@@ -89,9 +89,7 @@ class BrokerConnectorSoakPromotionService:
                 ),
             }
         )
-        connectors = [
-            self.preview_dossier(connector_id) for connector_id in connector_ids
-        ]
+        connectors = [self.preview_dossier(item) for item in connector_ids]
         promotion_ready = bool(connectors) and all(
             bool(item.get("promotion_ready")) for item in connectors
         )
@@ -116,7 +114,7 @@ class BrokerConnectorSoakPromotionService:
             "runtime_execution_authority": "disabled",
             "broker_submission_enabled": False,
             "automatic_promotion_enabled": False,
-            "safety": _safety_flags(),
+            "safety": safety_flags(),
         }
 
     def preview_dossier(self, connector_id: str) -> dict[str, Any]:
@@ -124,8 +122,11 @@ class BrokerConnectorSoakPromotionService:
         request_blockers: list[str] = []
         if not _CONNECTOR_ID_PATTERN.fullmatch(normalized_connector_id):
             request_blockers.append("connector_id_invalid")
-        operational = self._operational_evidence(normalized_connector_id)
-        account_truth = self._account_truth_evidence()
+        operational = self._evidence.operational_evidence(
+            connector_id=normalized_connector_id,
+            observations=self._soak_service().list_observations(limit=500),
+        )
+        account_truth = self._evidence.account_truth_evidence()
         review_blockers = [
             *request_blockers,
             *[str(item) for item in operational.get("blockers") or []],
@@ -140,7 +141,7 @@ class BrokerConnectorSoakPromotionService:
             "account_alias": str(operational.get("account_alias") or ""),
             "account_ref_hash": str(operational.get("account_ref_hash") or ""),
             "operational_evidence": operational,
-            "account_truth_evidence": _without_volatile_age(account_truth),
+            "account_truth_evidence": without_volatile_age(account_truth),
             "required_owner_assertions": [
                 "the Account Truth import belongs to the same reviewed broker account alias",
                 "full process and broker-terminal restart recovery was performed outside this service",
@@ -148,7 +149,7 @@ class BrokerConnectorSoakPromotionService:
             ],
             "review_blockers": review_blockers,
         }
-        dossier_fingerprint = _fingerprint(dossier_core)
+        dossier_fingerprint = fingerprint(dossier_core)
         acceptance = self._latest_matching_acceptance(
             normalized_connector_id,
             dossier_fingerprint=dossier_fingerprint,
@@ -164,7 +165,7 @@ class BrokerConnectorSoakPromotionService:
             **dossier_core,
             "account_truth_evidence": account_truth,
             "dossier_fingerprint": dossier_fingerprint,
-            "generated_at": _aware_utc(self._clock()).isoformat(),
+            "generated_at": aware_utc(self._clock()).isoformat(),
             "review_status": (
                 "ready_for_signed_owner_acceptance"
                 if review_ready
@@ -179,7 +180,7 @@ class BrokerConnectorSoakPromotionService:
             "runtime_execution_authority": "disabled",
             "broker_submission_enabled": False,
             "authorizes_execution": False,
-            "safety": _safety_flags(),
+            "safety": safety_flags(),
         }
 
     def record_acceptance(
@@ -215,7 +216,6 @@ class BrokerConnectorSoakPromotionService:
             rejection_reasons.append("operator_approval_blocked")
         elif normalized_label != operator_approval["operator_id"]:
             rejection_reasons.append("operator_label_approval_mismatch")
-
         status = (
             "rejected" if rejection_reasons else "recorded_verified_owner_acceptance"
         )
@@ -248,7 +248,7 @@ class BrokerConnectorSoakPromotionService:
             source=BROKER_SOAK_PROMOTION_ACCEPTANCE_EVENT_SOURCE,
             limit=max(1, min(int(limit), 500)),
         )
-        results = [_event_response(row, reused=False) for row in rows]
+        results = [event_response(row, reused=False) for row in rows]
         normalized = str(connector_id or "").strip()
         if normalized:
             results = [
@@ -257,301 +257,6 @@ class BrokerConnectorSoakPromotionService:
                 if str(item.get("connector_id") or "") == normalized
             ]
         return results
-
-    def _operational_evidence(self, connector_id: str) -> dict[str, Any]:
-        observations = [
-            item
-            for item in self._soak_service().list_observations(limit=500)
-            if str(item.get("connector_id") or "") == connector_id
-        ]
-        observations.sort(
-            key=lambda item: (
-                str(item.get("recorded_at") or ""),
-                int(item.get("event_id") or 0),
-            )
-        )
-        blockers: list[str] = []
-        if not observations:
-            blockers.append("connector_observations_missing")
-        latest = observations[-1] if observations else {}
-        if observations and str(latest.get("soak_status") or "blocked") != "healthy":
-            blockers.append("latest_snapshot_not_healthy")
-        elif observations and not reviewed_broker_soak_sequence_is_accepted(latest):
-            blockers.append("latest_source_sequence_not_accepted")
-
-        latest_by_clear_day: dict[str, dict[str, Any]] = {}
-        for item in observations:
-            day = str(item.get("trading_day") or "")
-            reconciliation = item.get("execution_reconciliation") or {}
-            if (
-                day
-                and reviewed_broker_soak_sequence_is_accepted(item)
-                and str(reconciliation.get("status") or "") == "clear"
-                and int(reconciliation.get("open_item_count") or 0) == 0
-            ):
-                latest_by_clear_day[day] = item
-        selected_days = sorted(latest_by_clear_day)[
-            :BROKER_CONNECTOR_SOAK_TARGET_TRADING_DAYS
-        ]
-        selected = [latest_by_clear_day[day] for day in selected_days]
-        if len(selected) < BROKER_CONNECTOR_SOAK_TARGET_TRADING_DAYS:
-            blockers.append(
-                "clear_reconciled_soak_days_incomplete:"
-                f"{len(selected)}/{BROKER_CONNECTOR_SOAK_TARGET_TRADING_DAYS}"
-            )
-
-        account_alias = str(latest.get("account_alias") or "")
-        account_ref_hash = str(latest.get("account_ref_hash") or "")
-        if not account_alias:
-            blockers.append("connector_account_alias_missing")
-        if not account_ref_hash:
-            blockers.append("connector_account_ref_hash_missing")
-        if any(
-            str(item.get("account_alias") or "") != account_alias
-            or str(item.get("account_ref_hash") or "") != account_ref_hash
-            for item in selected
-        ):
-            blockers.append("connector_account_identity_changed_during_soak")
-
-        phase_coverage, phase_refs = self._phase_coverage(
-            connector_id=connector_id,
-            selected_observations=selected,
-        )
-        for phase in _REQUIRED_PHASES:
-            covered = phase_coverage.get(phase, [])
-            if covered != selected_days:
-                blockers.append(
-                    f"runbook_phase_coverage_incomplete:{phase}:"
-                    f"{len(covered)}/{len(selected_days)}"
-                )
-        drill_coverage, drill_refs = self._drill_coverage(
-            connector_id=connector_id,
-        )
-        for drill_type in _REQUIRED_DRILLS:
-            if not drill_coverage.get(drill_type):
-                blockers.append(f"recovery_drill_missing:{drill_type}")
-
-        selected_evidence = [
-            {
-                "event_id": item.get("event_id"),
-                "observation_id": str(item.get("observation_id") or ""),
-                "snapshot_fingerprint": str(item.get("snapshot_fingerprint") or ""),
-                "source_contract_fingerprint": _fingerprint(
-                    item.get("source_contract") or {}
-                ),
-                "source_sequence_fingerprint": _fingerprint(
-                    item.get("source_sequence") or {}
-                ),
-                "trading_day": str(item.get("trading_day") or ""),
-                "execution_reconciliation_ref": str(
-                    (item.get("execution_reconciliation") or {}).get("evidence_ref")
-                    or ""
-                ),
-            }
-            for item in selected
-        ]
-        source_core = {
-            "connector_id": connector_id,
-            "account_alias": account_alias,
-            "account_ref_hash": account_ref_hash,
-            "selected_observations": selected_evidence,
-            "phase_coverage": phase_coverage,
-            "phase_refs": phase_refs,
-            "drill_coverage": drill_coverage,
-            "drill_refs": drill_refs,
-            "latest_observation_id": str(latest.get("observation_id") or ""),
-        }
-        unique_blockers = list(dict.fromkeys(blockers))
-        return {
-            "status": "clear" if not unique_blockers else "blocked",
-            "source_fingerprint": _fingerprint(source_core),
-            "connector_id": connector_id,
-            "account_alias": account_alias,
-            "account_ref_hash": account_ref_hash,
-            "selected_trading_days": selected_days,
-            "selected_trading_day_count": len(selected_days),
-            "target_trading_day_count": BROKER_CONNECTOR_SOAK_TARGET_TRADING_DAYS,
-            "selected_observations": selected_evidence,
-            "phase_coverage": phase_coverage,
-            "phase_evidence_refs": phase_refs,
-            "drill_coverage": drill_coverage,
-            "drill_evidence_refs": drill_refs,
-            "latest_observation_id": str(latest.get("observation_id") or ""),
-            "latest_soak_status": str(latest.get("soak_status") or "not_observed"),
-            "karkinos_process_instance_recovery": (
-                "verified_by_karkinos_restart_drill"
-                if drill_coverage.get("karkinos_restart")
-                else "missing"
-            ),
-            "broker_terminal_and_adapter_recovery": ("requires_signed_owner_assertion"),
-            "blockers": unique_blockers,
-            "limitations": [
-                "Persisted restart_recovery proves new-service-instance replay only.",
-                "karkinos_restart proves a changed runtime-instance token and exact persisted replay; the operator must still confirm an actual process restart.",
-                "Broker-terminal and adapter restart recovery remain a signed owner assertion.",
-            ],
-        }
-
-    def _phase_coverage(
-        self,
-        *,
-        connector_id: str,
-        selected_observations: list[dict[str, Any]],
-    ) -> tuple[dict[str, list[str]], list[str]]:
-        rows = self._db.list_events_sync(
-            event_type=BROKER_CONNECTOR_SOAK_RUN_EVENT_TYPE,
-            entity_type=BROKER_CONNECTOR_SOAK_RUN_ENTITY_TYPE,
-            source=BROKER_CONNECTOR_SOAK_RUNBOOK_EVENT_SOURCE,
-            limit=500,
-        )
-        coverage: dict[str, set[str]] = {phase: set() for phase in _REQUIRED_PHASES}
-        refs: list[str] = []
-        selected_by_day = {
-            str(item.get("trading_day") or ""): item
-            for item in selected_observations
-            if str(item.get("trading_day") or "")
-        }
-        for row in rows:
-            payload = _json_object(row.get("payload_json"))
-            phase = str(payload.get("phase") or "")
-            if payload.get("run_status") != "passed" or phase not in coverage:
-                continue
-            matched = False
-            for observation in payload.get("observations") or []:
-                if not isinstance(observation, dict):
-                    continue
-                day = str(observation.get("trading_day") or "")
-                selected = selected_by_day.get(day)
-                if (
-                    str(observation.get("connector_id") or "") == connector_id
-                    and selected is not None
-                    and str(observation.get("soak_status") or "") == "healthy"
-                    and str(observation.get("observation_id") or "")
-                    == str(selected.get("observation_id") or "")
-                    and str(observation.get("snapshot_fingerprint") or "")
-                    == str(selected.get("snapshot_fingerprint") or "")
-                ):
-                    coverage[phase].add(day)
-                    matched = True
-            if matched:
-                refs.append(f"broker_soak_run:{payload.get('run_id') or row.get('id')}")
-        return {
-            phase: sorted(days) for phase, days in sorted(coverage.items())
-        }, sorted(set(refs))
-
-    def _drill_coverage(
-        self,
-        *,
-        connector_id: str,
-    ) -> tuple[dict[str, bool], list[str]]:
-        rows = self._db.list_events_sync(
-            event_type=BROKER_CONNECTOR_SOAK_DRILL_EVENT_TYPE,
-            entity_type=BROKER_CONNECTOR_SOAK_DRILL_ENTITY_TYPE,
-            source=BROKER_CONNECTOR_SOAK_RUNBOOK_EVENT_SOURCE,
-            limit=500,
-        )
-        coverage = {drill_type: False for drill_type in _REQUIRED_DRILLS}
-        resolved: set[str] = set()
-        refs: list[str] = []
-        for row in rows:
-            payload = _json_object(row.get("payload_json"))
-            drill_type = str(payload.get("drill_type") or "")
-            if drill_type not in coverage or drill_type in resolved:
-                continue
-            first_scope = _drill_connector_scope(
-                payload.get("first_observations"),
-            )
-            if first_scope != {connector_id}:
-                continue
-            passed = payload.get("drill_status") == "passed"
-            if drill_type in {
-                "duplicate_evidence",
-                "restart_recovery",
-                "karkinos_restart",
-            }:
-                second_scope = _drill_connector_scope(
-                    payload.get("second_observations"),
-                )
-                if passed and second_scope != {connector_id}:
-                    resolved.add(drill_type)
-                    continue
-            if drill_type == "karkinos_restart" and passed:
-                checkpoint_id = str(payload.get("restart_checkpoint_id") or "")
-                prepared_process = str(
-                    payload.get("prepared_process_instance_fingerprint") or ""
-                )
-                completed_process = str(
-                    payload.get("completed_process_instance_fingerprint") or ""
-                )
-                if (
-                    not _FINGERPRINT_PATTERN.fullmatch(checkpoint_id)
-                    or not _FINGERPRINT_PATTERN.fullmatch(prepared_process)
-                    or not _FINGERPRINT_PATTERN.fullmatch(completed_process)
-                    or prepared_process == completed_process
-                    or payload.get("process_instance_changed") is not True
-                ):
-                    resolved.add(drill_type)
-                    continue
-            resolved.add(drill_type)
-            if not passed:
-                continue
-            coverage[drill_type] = passed
-            refs.append(f"broker_soak_drill:{payload.get('drill_id') or row.get('id')}")
-        return coverage, sorted(set(refs))
-
-    def _account_truth_evidence(self) -> dict[str, Any]:
-        if self._account_truth_evidence_provider is None:
-            return _blocked_account_truth(["account_truth_provider_unavailable"])
-        try:
-            raw = self._account_truth_evidence_provider() or {}
-        except Exception as exc:
-            return _blocked_account_truth(
-                [f"account_truth_provider_failed:{type(exc).__name__}"]
-            )
-        allowed = {
-            "schema_version",
-            "status",
-            "source_fingerprint",
-            "import_run_id",
-            "file_fingerprint",
-            "source_type",
-            "captured_at",
-            "current_age_seconds",
-            "max_age_seconds",
-            "data_freshness_status",
-            "reconciliation_status",
-            "score",
-            "gate_status",
-            "cash_status",
-            "position_status",
-            "fee_status",
-            "cost_basis_status",
-            "unresolved_mismatch_count",
-            "resolved_review_count",
-            "blockers",
-            "does_not_mutate_production_ledger",
-            "does_not_issue_execution_authority",
-            "broker_submission_enabled",
-        }
-        evidence = {key: raw.get(key) for key in allowed if key in raw}
-        blockers = [str(item) for item in evidence.get("blockers") or []]
-        source_fingerprint = str(evidence.get("source_fingerprint") or "")
-        if evidence.get("status") != "clear":
-            blockers.append("account_truth_evidence_not_clear")
-        if not _FINGERPRINT_PATTERN.fullmatch(source_fingerprint):
-            blockers.append("account_truth_source_fingerprint_invalid")
-        if evidence.get("gate_status") != "pass":
-            blockers.append("account_truth_gate_not_pass")
-        if evidence.get("data_freshness_status") != "fresh":
-            blockers.append("account_truth_not_fresh")
-        if int(evidence.get("unresolved_mismatch_count") or 0) != 0:
-            blockers.append("account_truth_unresolved_mismatches")
-        evidence["status"] = "clear" if not blockers else "blocked"
-        evidence["blockers"] = list(dict.fromkeys(blockers))
-        evidence["broker_submission_enabled"] = False
-        evidence["does_not_issue_execution_authority"] = True
-        evidence["does_not_mutate_production_ledger"] = True
-        return evidence
 
     def _record_attempt(
         self,
@@ -580,7 +285,7 @@ class BrokerConnectorSoakPromotionService:
             "status": status,
             "rejection_reasons": list(rejection_reasons),
         }
-        acceptance_id = _fingerprint(identity)
+        acceptance_id = fingerprint(identity)
         payload = {
             "schema_version": BROKER_SOAK_PROMOTION_ACCEPTANCE_SCHEMA_VERSION,
             "acceptance_id": acceptance_id,
@@ -609,7 +314,7 @@ class BrokerConnectorSoakPromotionService:
             "runtime_execution_authority": "disabled",
             "broker_submission_enabled": False,
             "authorizes_execution": False,
-            "safety": _safety_flags(),
+            "safety": safety_flags(),
         }
         existing = self._db.list_events_sync(
             event_type=BROKER_SOAK_PROMOTION_ACCEPTANCE_EVENT_TYPE,
@@ -619,8 +324,8 @@ class BrokerConnectorSoakPromotionService:
             limit=1,
         )
         if existing:
-            return _event_response(existing[0], reused=True)
-        now = _aware_utc(self._clock())
+            return event_response(existing[0], reused=True)
+        now = aware_utc(self._clock())
         self._db.append_event_sync(
             event_type=BROKER_SOAK_PROMOTION_ACCEPTANCE_EVENT_TYPE,
             timestamp=now.isoformat(),
@@ -639,7 +344,7 @@ class BrokerConnectorSoakPromotionService:
         )
         if not saved:
             raise RuntimeError("broker soak promotion acceptance was not recorded")
-        return _event_response(saved[0], reused=False)
+        return event_response(saved[0], reused=False)
 
     def _latest_matching_acceptance(
         self,
@@ -676,93 +381,3 @@ class BrokerConnectorSoakPromotionService:
             connectors=self._connectors,
             clock=self._clock,
         )
-
-
-def _connector_id(connector: Any) -> str:
-    return str(
-        getattr(connector, "connector_id", "")
-        or getattr(getattr(connector, "snapshot", None), "connector_id", "")
-        or ""
-    ).strip()
-
-
-def _drill_connector_scope(value: Any) -> set[str]:
-    if not isinstance(value, list):
-        return set()
-    return {
-        str(item.get("connector_id") or "").strip()
-        for item in value
-        if isinstance(item, dict) and str(item.get("connector_id") or "").strip()
-    }
-
-
-def _blocked_account_truth(blockers: list[str]) -> dict[str, Any]:
-    return {
-        "status": "blocked",
-        "source_fingerprint": "",
-        "gate_status": "blocked",
-        "data_freshness_status": "missing",
-        "unresolved_mismatch_count": 0,
-        "blockers": list(dict.fromkeys(blockers)),
-        "does_not_mutate_production_ledger": True,
-        "does_not_issue_execution_authority": True,
-        "broker_submission_enabled": False,
-    }
-
-
-def _without_volatile_age(value: dict[str, Any]) -> dict[str, Any]:
-    return {key: item for key, item in value.items() if key != "current_age_seconds"}
-
-
-def _aware_utc(value: datetime) -> datetime:
-    if value.tzinfo is None or value.utcoffset() is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
-
-
-def _event_response(row: dict[str, Any], *, reused: bool) -> dict[str, Any]:
-    return {
-        "event_id": int(row["id"]),
-        "recorded_at": row["timestamp"],
-        "created_at": row["created_at"],
-        "persisted": True,
-        "reused": reused,
-        **_json_object(row.get("payload_json")),
-    }
-
-
-def _json_object(value: Any) -> dict[str, Any]:
-    if isinstance(value, dict):
-        return value
-    if not isinstance(value, str) or not value:
-        return {}
-    try:
-        parsed = json.loads(value)
-    except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
-
-
-def _fingerprint(value: Any) -> str:
-    payload = json.dumps(
-        value,
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def _safety_flags() -> dict[str, bool]:
-    return {
-        "stores_broker_credentials": False,
-        "does_not_grant_capital_authority": True,
-        "does_not_issue_or_resume_runtime_authority": True,
-        "does_not_contact_broker": True,
-        "does_not_submit_broker_order": True,
-        "does_not_cancel_broker_order": True,
-        "does_not_mutate_oms": True,
-        "does_not_mutate_production_ledger": True,
-        "does_not_reserve_or_consume_budget": True,
-        "automatic_promotion_enabled": False,
-    }

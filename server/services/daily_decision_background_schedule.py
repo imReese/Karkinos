@@ -15,9 +15,11 @@ from server.services.daily_decision_evidence_contracts import (
     DAILY_CANDIDATE_PREPARATION_WINDOW_START_MINUTE,
     DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE,
     SHANGHAI_TZ,
-    VERIFIED_CALENDAR_STATUSES,
 )
 from server.services.daily_decision_evidence_values import json_object_list
+from server.services.market_calendar_evidence import (
+    validate_verified_market_calendar,
+)
 
 
 def project_daily_candidate_background_schedule(
@@ -58,15 +60,14 @@ def project_daily_candidate_background_schedule(
             due=False,
             blockers=["market_calendar_snapshot_missing"],
         )
-    if str(calendar.get("official_verification_status") or "").lower() not in (
-        VERIFIED_CALENDAR_STATUSES
-    ):
+    calendar_validation = validate_verified_market_calendar(calendar)
+    if not calendar_validation.verified:
         return build_background_schedule_result(
             status="blocked_market_calendar_not_verified",
             evaluated_at=evaluated_at_text,
             run_date=run_date,
             due=False,
-            blockers=["market_calendar_not_officially_verified"],
+            blockers=list(calendar_validation.blockers),
         )
     days = json_object_list(calendar.get("days_json"))
     calendar_day = next(
@@ -265,8 +266,7 @@ def build_next_verified_trading_window(
         )
         if (
             isinstance(next_calendar, dict)
-            and str(next_calendar.get("official_verification_status") or "").lower()
-            in VERIFIED_CALENDAR_STATUSES
+            and validate_verified_market_calendar(next_calendar).verified
         ):
             candidate = next_trading_day(
                 days=json_object_list(next_calendar.get("days_json")),

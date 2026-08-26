@@ -59,7 +59,10 @@ BODY_OPERATIONS = {
     ("put", "/api/market/calendar/verification"),
     ("put", "/api/market/research-notes/{note_id}"),
     ("post", "/api/portfolio/cash-flow"),
+    ("post", "/api/portfolio/cash-flow/{flow_id}/corrections"),
+    ("post", "/api/portfolio/pending-fund-orders/{order_id}/confirm"),
     ("post", "/api/portfolio/trade"),
+    ("post", "/api/portfolio/trade/{trade_id}/corrections"),
     ("post", "/api/portfolio/trade/preview"),
 }
 

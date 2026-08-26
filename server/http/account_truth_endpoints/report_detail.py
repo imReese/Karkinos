@@ -2,36 +2,28 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import APIRouter, HTTPException
 
 from account_truth.broker_evidence import BrokerEvidenceReadRejected
 from account_truth.manual_review import ManualReviewReadRejected
 from server.contracts.http.account_truth import ReviewDecisionCreate
+from server.http.account_truth_endpoints.dependencies import (
+    ReportDetailEndpointDependencies,
+)
 
 
-def create_router(facade: Any) -> APIRouter:
+def create_router(dependencies: ReportDetailEndpointDependencies) -> APIRouter:
     r = APIRouter(prefix="/api/account-truth", tags=["account-truth"])
-
-    def dependency(name: str):
-        value = getattr(facade, name)
-        if callable(value) and not isinstance(value, type):
-            return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
-        return value
-
-    _account_truth_read_http_exception = dependency(
-        "_account_truth_read_http_exception"
+    _account_truth_read_http_exception = dependencies.account_truth_read_http_exception
+    _build_report_for_import_run = dependencies.build_report_for_import_run
+    _decision_response = dependencies.decision_response
+    _item_key = dependencies.item_key
+    _manual_review_repository_for_state = (
+        dependencies.manual_review_repository_for_state
     )
-    _build_report_for_import_run = dependency("_build_report_for_import_run")
-    _decision_response = dependency("_decision_response")
-    _item_key = dependency("_item_key")
-    _manual_review_repository_for_state = dependency(
-        "_manual_review_repository_for_state"
-    )
-    _report_detail_response = dependency("_report_detail_response")
-    _repository_for_state = dependency("_repository_for_state")
-    reconciliation_item_fingerprint = dependency("reconciliation_item_fingerprint")
+    _report_detail_response = dependencies.report_detail_response
+    _repository_for_state = dependencies.repository_for_state
+    reconciliation_item_fingerprint = dependencies.reconciliation_item_fingerprint
 
     @r.get("/reconciliation-reports/{import_run_id}")
     async def get_reconciliation_report(import_run_id: str) -> dict[str, object]:

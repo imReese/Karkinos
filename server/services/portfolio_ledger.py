@@ -1,19 +1,18 @@
-"""Rebuild portfolio state from persisted cash flows and manual trades."""
+"""Rebuild runtime portfolio state from the canonical persisted ledger."""
 
 from __future__ import annotations
 
-import json
-from datetime import datetime
 from decimal import Decimal
 from types import SimpleNamespace
-from uuid import uuid4
+from typing import Any
 
 from core.event_bus import EventBus
-from core.events import FillEvent
-from core.types import AssetClass, OrderSide, Symbol
+from core.types import AssetClass, Symbol
 from data.manager import DataManager
 from domain.portfolio import Portfolio
-from domain.portfolio_accounting import total_trade_fee
+from domain.position import Position
+from server.ledger.models import LedgerEntry
+from server.projections.service import build_portfolio_projection
 
 _ASSET_CLASS_MAP = {
     "stock": AssetClass.STOCK,
@@ -24,134 +23,94 @@ _ASSET_CLASS_MAP = {
 }
 
 
-def _sorted_rows(rows: list[dict]) -> list[dict]:
-    return sorted(
-        rows, key=lambda row: (row.get("timestamp") or "", row.get("id") or 0)
+def rebuild_portfolio_from_ledger(
+    config: Any,
+    db: Any,
+    latest_quotes: dict[str, dict[str, Any]] | None = None,
+) -> SimpleNamespace:
+    """Recreate runtime state exclusively from canonical ledger facts."""
+
+    ledger_entries = _load_ledger_entries(db)
+    projection = build_portfolio_projection(
+        ledger_entries,
+        initial_cash=Decimal("0"),
     )
 
-
-def _trade_rows_from_ledger(db) -> list[dict]:
-    trades = db.get_trades_sync(limit=1000, offset=0)
-    if not hasattr(db, "get_ledger_entries_sync"):
-        return _sorted_rows(trades)
-
-    trade_refs = {
-        f"trade:{row.get('id')}" for row in trades if row.get("id") is not None
-    }
-    ledger_backed_trade_refs: set[str] = set()
-    ledger_trades = []
-    for row in db.get_ledger_entries_sync(limit=1000, offset=0):
-        entry_type = row.get("entry_type")
-        if entry_type not in {"trade_buy", "trade_sell"}:
-            continue
-        if (
-            row.get("symbol") is None
-            or row.get("quantity") is None
-            or row.get("price") is None
-        ):
-            continue
-        source_ref = row.get("source_ref")
-        if source_ref in trade_refs:
-            ledger_backed_trade_refs.add(source_ref)
-        direction = row.get("direction") or (
-            "buy" if entry_type == "trade_buy" else "sell"
-        )
-        ledger_trades.append(
-            {
-                "id": row.get("id"),
-                "timestamp": row.get("timestamp"),
-                "symbol": row.get("symbol"),
-                "direction": direction,
-                "quantity": row.get("quantity"),
-                "price": row.get("price"),
-                "commission": row.get("commission") or 0.0,
-                "fee_breakdown": _fee_breakdown(row),
-                "fee_rule_id": row.get("fee_rule_id"),
-                "fee_rule_version": row.get("fee_rule_version"),
-                "asset_class": row.get("asset_class") or "stock",
-                "note": row.get("note") or "",
-            }
-        )
-    legacy_trades = [
-        row
-        for row in trades
-        if f"trade:{row.get('id')}" not in ledger_backed_trade_refs
-    ]
-    return _sorted_rows([*legacy_trades, *ledger_trades])
-
-
-def _fee_breakdown(row: dict) -> dict | None:
-    value = row.get("fee_breakdown") or row.get("fee_breakdown_json")
-    if isinstance(value, dict):
-        return value
-    if not isinstance(value, str) or not value.strip():
-        return None
-    parsed = json.loads(value)
-    return parsed if isinstance(parsed, dict) else None
-
-
-def rebuild_portfolio_from_ledger(
-    config,
-    db,
-    latest_quotes: dict[str, dict] | None = None,
-):
-    """Recreate the current portfolio state from config + persisted ledger rows."""
-    portfolio = Portfolio(EventBus(), initial_cash=Decimal(str(config.initial_cash)))
+    portfolio = Portfolio(
+        EventBus(),
+        initial_cash=Decimal("0"),
+    )
+    portfolio.cash = projection.cash
+    portfolio.total_deposits = projection.total_deposits
     instruments: dict[Symbol, object] = {}
 
-    def ensure_instrument(symbol: str, asset_class: str):
-        sym = Symbol(symbol)
-        if sym not in instruments:
-            ac = _ASSET_CLASS_MAP.get(asset_class, AssetClass.STOCK)
-            inst = DataManager.get_instrument(sym, ac)
-            instruments[sym] = inst
-            portfolio.add_instrument(inst)
-        return instruments[sym]
+    def ensure_instrument(symbol: str, asset_class: str) -> object:
+        symbol_value = Symbol(symbol)
+        if symbol_value not in instruments:
+            mapped = _ASSET_CLASS_MAP.get(asset_class, AssetClass.STOCK)
+            instrument = DataManager.get_instrument(symbol_value, mapped)
+            instruments[symbol_value] = instrument
+            portfolio.add_instrument(instrument)
+        return instruments[symbol_value]
 
     for asset in getattr(config, "assets", []):
         ensure_instrument(asset["symbol"], asset["asset_class"])
 
-    cash_flows = _sorted_rows(db.get_cash_flows_sync(limit=1000, offset=0))
-    for flow in cash_flows:
-        amount = Decimal(str(flow["amount"]))
-        if flow["flow_type"] == "deposit":
-            portfolio.deposit(amount)
-        else:
-            portfolio.withdraw(amount)
+    asset_class_by_symbol = _asset_class_by_symbol(ledger_entries)
+    for symbol, projected in projection.positions.items():
+        ensure_instrument(symbol, asset_class_by_symbol.get(symbol, "stock"))
+        position = Position(Symbol(symbol))
+        position.quantity = projected.quantity
+        position.frozen_qty = projected.frozen_qty
+        position.avg_cost = projected.avg_cost
+        position.realized_pnl = projected.realized_pnl
+        position.commission_paid = projected.commission_paid
+        position.market_value = projected.market_value
+        position.unrealized_pnl = projected.unrealized_pnl
+        position.closed_at = projected.closed_at
+        position.broker_displayed_cost_basis = projected.broker_displayed_cost_basis
+        position.broker_displayed_unit_cost = projected.broker_displayed_unit_cost
+        position.broker_cost_basis_difference = projected.broker_cost_basis_difference
+        position.broker_cost_basis_method = projected.broker_cost_basis_method
+        position.broker_cost_basis_status = projected.broker_cost_basis_status
+        portfolio.positions[Symbol(symbol)] = position
 
-    for trade in _trade_rows_from_ledger(db):
-        ensure_instrument(trade["symbol"], trade["asset_class"])
-        fee_breakdown = trade.get("fee_breakdown")
-        commission = total_trade_fee(
-            commission=Decimal(str(trade["commission"])),
-            fee_breakdown=fee_breakdown,
-        )
-        fill = FillEvent(
-            timestamp=datetime.fromisoformat(trade["timestamp"]),
-            fill_id=f"LEDGER-{uuid4().hex[:8]}",
-            order_id=f"LEDGER-ORD-{uuid4().hex[:8]}",
-            symbol=Symbol(trade["symbol"]),
-            side=OrderSide.BUY if trade["direction"] == "buy" else OrderSide.SELL,
-            fill_price=Decimal(str(trade["price"])),
-            fill_quantity=Decimal(str(trade["quantity"])),
-            commission=commission,
-            slippage=Decimal("0"),
-            fee_breakdown=fee_breakdown,
-            fee_rule_id=trade.get("fee_rule_id"),
-            fee_rule_version=trade.get("fee_rule_version"),
-        )
-        portfolio.on_fill(fill)
-
-    prices = {}
     latest_quotes = latest_quotes or {}
-    for sym, position in portfolio.positions.items():
-        quote_price = latest_quotes.get(str(sym), {}).get("price")
-        prices[sym] = (
+    prices = {
+        symbol: (
             Decimal(str(quote_price))
-            if quote_price not in {None, 0}
+            if (quote_price := latest_quotes.get(str(symbol), {}).get("price"))
+            not in {None, 0}
             else position.avg_cost
         )
+        for symbol, position in portfolio.positions.items()
+    }
     if prices:
         portfolio.mark_to_market(prices)
-
     return SimpleNamespace(portfolio=portfolio, instruments=instruments)
+
+
+def _load_ledger_entries(db: Any, *, batch_size: int = 500) -> list[LedgerEntry]:
+    reader = getattr(db, "get_ledger_entries_sync", None)
+    if not callable(reader):
+        raise RuntimeError("canonical ledger reader is unavailable")
+    entries: list[LedgerEntry] = []
+    offset = 0
+    while True:
+        rows = reader(limit=batch_size, offset=offset) or []
+        entries.extend(LedgerEntry.from_row(dict(row)) for row in rows)
+        if len(rows) < batch_size:
+            return entries
+        offset += batch_size
+
+
+def _asset_class_by_symbol(entries: list[LedgerEntry]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for entry in entries:
+        symbol = str(entry.symbol or "").strip()
+        if symbol:
+            result[symbol] = str(entry.asset_class or "stock")
+    return result
+
+
+__all__ = ["rebuild_portfolio_from_ledger"]

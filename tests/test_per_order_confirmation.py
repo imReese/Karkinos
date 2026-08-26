@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import sqlite3
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -78,6 +79,8 @@ from server.services.strategy_promotion_pipeline import (
 )
 from server.services.trading_controls import TradingControlState
 from tests.ai_shadow_strategy_fixtures import seed_approved_ai_shadow_strategy
+from tests.order_state_fixtures import insert_historical_oms_order
+from tests.paper_shadow_fixtures import insert_paper_shadow_evidence
 
 NOW = datetime(2026, 7, 10, 8, 5, tzinfo=timezone.utc)
 GATEWAY_VERIFICATION_FINGERPRINT = "e" * 64
@@ -168,7 +171,8 @@ def _record_gateway_source_evidence(
             },
         },
     )
-    db.upsert_paper_shadow_run_sync(
+    insert_paper_shadow_evidence(
+        db,
         run_id="run-1",
         plan_date=now.astimezone(timezone(timedelta(hours=8))).date().isoformat(),
         input_fingerprint="b" * 64,
@@ -535,37 +539,35 @@ def _ready_environment(
     ).capture()
     prior_order_id = "prior-manual-order-1"
     prior_action = db.get_action_tasks_sync(limit=1)[0]
-    db.upsert_oms_order_sync(
-        {
-            "order_id": prior_order_id,
-            "intent_key": "prior-manual-order-1",
-            "symbol": "510300.SH",
-            "side": "buy",
-            "asset_class": "fund",
-            "quantity": 100.0,
-            "order_type": "limit",
-            "limit_price": 4.0,
-            "status": "cancelled",
-            "broker_submission_enabled": False,
-            "source": "prior_manual_batch_test",
-            "payload": {
-                "execution_mode": "manual",
-                "gateway_evidence": {
-                    "account_truth": {
-                        "gate_status": "pass",
-                        "evidence_ref": "account_truth:import-run-1",
-                    },
-                    "research_evidence": {
-                        "evidence_ref": f"decision_action:{prior_action['id']}"
-                    },
-                    "risk": {
-                        "gate_status": "passed",
-                        "evidence_ref": "risk:decision-1",
-                    },
-                    "paper_shadow": {"evidence_ref": "paper_shadow:run-1"},
+    insert_historical_oms_order(
+        db,
+        order_id=prior_order_id,
+        intent_key="prior-manual-order-1",
+        symbol="510300.SH",
+        side="buy",
+        asset_class="fund",
+        quantity=100.0,
+        order_type="limit",
+        limit_price=4.0,
+        status="cancelled",
+        source="prior_manual_batch_test",
+        payload={
+            "execution_mode": "manual",
+            "gateway_evidence": {
+                "account_truth": {
+                    "gate_status": "pass",
+                    "evidence_ref": "account_truth:import-run-1",
                 },
+                "research_evidence": {
+                    "evidence_ref": f"decision_action:{prior_action['id']}"
+                },
+                "risk": {
+                    "gate_status": "passed",
+                    "evidence_ref": "risk:decision-1",
+                },
+                "paper_shadow": {"evidence_ref": "paper_shadow:run-1"},
             },
-        }
+        },
     )
     prior_order = db.get_oms_order_sync(prior_order_id)
     assert prior_order is not None
@@ -623,17 +625,12 @@ def _ready_environment(
         limit_price=4.0,
         source="daily_trading_plan",
         source_ref=f"paper-shadow:{shanghai_day}",
-    )
-    order = db.upsert_oms_order_sync(
-        {
-            **order,
-            "payload": {
-                "schema_version": "karkinos.oms_order.v1",
-                "manual_confirmation_required": True,
-                "does_not_submit_broker_order": True,
-                "gateway_evidence": _gateway_evidence(),
-            },
-        }
+        payload={
+            "schema_version": "karkinos.oms_order.v1",
+            "manual_confirmation_required": True,
+            "does_not_submit_broker_order": True,
+            "gateway_evidence": _gateway_evidence(),
+        },
     )
     order = oms.transition_order(
         order["order_id"],
@@ -936,7 +933,12 @@ def test_nonempty_spoofed_gateway_ref_fails_closed(tmp_path) -> None:
         "gate_status": "passed",
         "evidence_ref": "risk:forged-decision",
     }
-    env["db"].upsert_oms_order_sync({**order, "payload": payload})
+    with sqlite3.connect(env["db"].path) as conn:
+        conn.execute(
+            "UPDATE oms_orders SET payload_json = ? WHERE order_id = ?",
+            (json.dumps(payload, sort_keys=True), order["order_id"]),
+        )
+        conn.commit()
 
     dossier = env["service"].preview_dossier(
         env["order"]["order_id"],
@@ -975,19 +977,7 @@ def test_paper_shadow_order_scope_drift_invalidates_exact_dossier(tmp_path) -> N
     run = env["db"].get_paper_shadow_run_sync("run-1")
     payload = json.loads(run["payload_json"])
     payload["orders"][0]["order_intent"]["estimated_quantity"] = 200.0
-    env["db"].upsert_paper_shadow_run_sync(
-        run_id="run-1",
-        plan_date=run["plan_date"],
-        input_fingerprint=run["input_fingerprint"],
-        status=run["status"],
-        order_intent_count=run["order_intent_count"],
-        simulated_order_count=run["simulated_order_count"],
-        simulated_fill_count=run["simulated_fill_count"],
-        divergence_status=run["divergence_status"],
-        next_manual_review_step=run["next_manual_review_step"],
-        limitations=json.loads(run["limitations_json"]),
-        payload=payload,
-    )
+    _replace_paper_shadow_run_fixture(env["db"], run, payload=payload)
 
     drifted = env["service"].preview_dossier(env["order"]["order_id"], **kwargs)
 
@@ -1017,18 +1007,10 @@ def test_stale_paper_shadow_plan_date_invalidates_exact_dossier(tmp_path) -> Non
         .date()
         .isoformat()
     )
-    env["db"].upsert_paper_shadow_run_sync(
-        run_id="run-1",
+    _replace_paper_shadow_run_fixture(
+        env["db"],
+        run,
         plan_date=stale_plan_date,
-        input_fingerprint=run["input_fingerprint"],
-        status=run["status"],
-        order_intent_count=run["order_intent_count"],
-        simulated_order_count=run["simulated_order_count"],
-        simulated_fill_count=run["simulated_fill_count"],
-        divergence_status=run["divergence_status"],
-        next_manual_review_step=run["next_manual_review_step"],
-        limitations=json.loads(run["limitations_json"]),
-        payload=json.loads(run["payload_json"]),
     )
 
     stale = env["service"].preview_dossier(env["order"]["order_id"], **kwargs)
@@ -1077,19 +1059,7 @@ def test_paper_shadow_source_lineage_drift_invalidates_exact_dossier(
     run = env["db"].get_paper_shadow_run_sync("run-1")
     payload = json.loads(run["payload_json"])
     payload["orders"][0]["order_intent"][intent_field] = [drifted_ref]
-    env["db"].upsert_paper_shadow_run_sync(
-        run_id="run-1",
-        plan_date=run["plan_date"],
-        input_fingerprint=run["input_fingerprint"],
-        status=run["status"],
-        order_intent_count=run["order_intent_count"],
-        simulated_order_count=run["simulated_order_count"],
-        simulated_fill_count=run["simulated_fill_count"],
-        divergence_status=run["divergence_status"],
-        next_manual_review_step=run["next_manual_review_step"],
-        limitations=json.loads(run["limitations_json"]),
-        payload=payload,
-    )
+    _replace_paper_shadow_run_fixture(env["db"], run, payload=payload)
 
     drifted = env["service"].preview_dossier(env["order"]["order_id"], **kwargs)
 
@@ -1437,15 +1407,21 @@ def test_missing_capital_evaluation_and_gateway_evidence_fail_closed(
     env = _ready_environment(tmp_path)
     order_id = env["order"]["order_id"]
     order = env["db"].get_oms_order_sync(order_id)
-    env["db"].upsert_oms_order_sync(
-        {
-            **order,
-            "payload": {
-                "schema_version": "karkinos.oms_order.v1",
-                "gateway_evidence": {},
-            },
-        }
-    )
+    with sqlite3.connect(env["db"].path) as conn:
+        conn.execute(
+            "UPDATE oms_orders SET payload_json = ? WHERE order_id = ?",
+            (
+                json.dumps(
+                    {
+                        "schema_version": "karkinos.oms_order.v1",
+                        "gateway_evidence": {},
+                    },
+                    sort_keys=True,
+                ),
+                order["order_id"],
+            ),
+        )
+        conn.commit()
 
     dossier = env["service"].preview_dossier(order_id)
 
@@ -1492,7 +1468,12 @@ def test_order_term_drift_invalidates_recorded_capital_fingerprint(tmp_path) -> 
     env = _ready_environment(tmp_path)
     order_id = env["order"]["order_id"]
     order = env["db"].get_oms_order_sync(order_id)
-    env["db"].upsert_oms_order_sync({**order, "quantity": 200})
+    with sqlite3.connect(env["db"].path) as conn:
+        conn.execute(
+            "UPDATE oms_orders SET quantity = 200 WHERE order_id = ?",
+            (order["order_id"],),
+        )
+        conn.commit()
 
     dossier = env["service"].preview_dossier(
         order_id,
@@ -2402,3 +2383,29 @@ def test_recorded_runtime_verification_resolves_into_exact_per_order_dossier(
     assert dossier["authorizes_execution"] is False
     assert gateway.dry_run_calls >= 3
     assert gateway.submit_calls == 0
+
+
+def _replace_paper_shadow_run_fixture(
+    db,
+    row: dict,
+    *,
+    plan_date: str | None = None,
+    payload: dict | None = None,
+) -> None:
+    """Inject corrupted persisted evidence without using a production mutator."""
+
+    with sqlite3.connect(db._path) as conn:
+        conn.execute(
+            """
+            UPDATE paper_shadow_runs
+            SET plan_date = ?, payload_json = ?, updated_at = ?
+            WHERE run_id = ?
+            """,
+            (
+                plan_date or row["plan_date"],
+                json.dumps(payload or json.loads(row["payload_json"]), sort_keys=True),
+                datetime.now(timezone.utc).isoformat(),
+                row["run_id"],
+            ),
+        )
+        conn.commit()

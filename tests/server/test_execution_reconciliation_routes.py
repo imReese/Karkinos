@@ -12,6 +12,7 @@ from server.services.execution_batch_reconciliation import (
     EXECUTION_BATCH_RECONCILIATION_ACKNOWLEDGEMENT,
 )
 from server.services.oms import OmsService
+from tests.order_state_fixtures import insert_historical_oms_order
 
 
 def _client_for_db(monkeypatch, db: AppDatabase) -> TestClient:
@@ -132,21 +133,19 @@ def test_execution_batch_reconciliation_routes_preview_record_resolve_and_list(
 ) -> None:
     db = AppDatabase(tmp_path / "execution-reconciliation.db")
     db.init_sync()
-    db.upsert_oms_order_sync(
-        {
-            "order_id": "prior-order-1",
-            "intent_key": "intent-prior-order-1",
-            "symbol": "510300",
-            "side": "buy",
-            "asset_class": "etf",
-            "quantity": 100.0,
-            "order_type": "limit",
-            "limit_price": 6.0,
-            "status": "cancelled",
-            "broker_submission_enabled": False,
-            "source": "route-test",
-            "payload": {"execution_mode": "manual"},
-        }
+    insert_historical_oms_order(
+        db,
+        order_id="prior-order-1",
+        intent_key="intent-prior-order-1",
+        symbol="510300",
+        side="buy",
+        asset_class="etf",
+        quantity=100.0,
+        order_type="limit",
+        limit_price=6.0,
+        status="cancelled",
+        source="route-test",
+        payload={"execution_mode": "manual"},
     )
     run_id = "execution-reconciliation:2026-07-10"
     db.upsert_execution_reconciliation_run_sync(

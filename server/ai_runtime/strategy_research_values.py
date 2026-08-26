@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from server.ai_runtime.contracts import JsonObject, WorkflowStatus
-from server.ai_runtime.external_research import edge_request_options
-from server.ai_runtime.provider_connectivity import ProviderConnectivitySettings
+from server.ai_runtime.openai_compatibility import edge_request_options
+from server.ai_runtime.provider_connectivity_contracts import (
+    ProviderConnectivitySettings,
+)
 from server.contracts.strategy_research import (
     SANITIZED_ACCOUNT_EVIDENCE_CONTRACT,
     STRATEGY_RESEARCH_MAX_CANDIDATES,

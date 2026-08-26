@@ -8,16 +8,16 @@ or carry any financial or execution authority.
 from __future__ import annotations
 
 import json
-import sqlite3
-from collections.abc import Callable, Sequence
-from contextlib import contextmanager
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
+
+from server.persistence.tasks import ResearchTaskPersistenceMixin
 
 from .capture import CaptureRunStatus, ContextCaptureAuditStore
-from .contracts import JsonObject, canonical_json, content_fingerprint
+from .contracts import JsonObject, content_fingerprint
 from .evidence import (
     CanonicalEvidenceRecord,
     CanonicalEvidenceRepository,
@@ -25,7 +25,6 @@ from .evidence import (
     EvidenceIdentityMismatch,
 )
 from .store import AiAuditStore, IdempotencyConflict
-from .task_schema import TASK_SCHEMA as _TASK_SCHEMA
 
 TASK_CONFIRMATION = "record_human_research_task_without_model_execution"
 REVIEW_CONFIRMATION = "record_human_research_review_without_model_execution"
@@ -290,328 +289,36 @@ class ResearchTaskReplay:
         }
 
 
-class ResearchTaskStore:
+class ResearchTaskStore(ResearchTaskPersistenceMixin):
     """Durable tasks, reviews, and a deterministic per-task event chain."""
 
     def __init__(self, db_path: str | Path) -> None:
         self._path = Path(db_path)
         self._path.parent.mkdir(parents=True, exist_ok=True)
 
-    @contextmanager
-    def _connection(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self._path, timeout=2)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys=ON")
-        conn.execute("PRAGMA busy_timeout=2000")
-        try:
-            with conn:
-                yield conn
-        finally:
-            conn.close()
-
-    def init(self) -> None:
-        with self._connection() as conn:
-            conn.executescript(_TASK_SCHEMA)
-
-    def create_or_get(
-        self,
-        request: HumanResearchTaskRequest,
-        *,
-        context_snapshot_id: str,
-        context_fingerprint: str,
-        account_alias: str,
-        valuation_snapshot_id: str,
-        ledger_cutoff_id: int,
-        ledger_fingerprint: str,
-        evidence: Sequence[ResearchTaskEvidence],
-        blockers: Sequence[str],
-        created_at: str,
-    ) -> tuple[ResearchTask, bool]:
-        identity = {
-            "idempotency_key": request.idempotency_key,
-            "request_fingerprint": request.fingerprint,
-            "context_fingerprint": context_fingerprint,
-        }
-        task_id = f"ai-research-task-{content_fingerprint(identity)[:24]}"
-        status = (
-            ResearchTaskStatus.BLOCKED_BY_EVIDENCE
-            if blockers
-            else ResearchTaskStatus.AWAITING_HUMAN_REVIEW
-        )
-        with self._connection() as conn:
-            existing = conn.execute(
-                "SELECT * FROM ai_research_tasks WHERE idempotency_key = ?",
-                (request.idempotency_key,),
-            ).fetchone()
-            if existing is not None:
-                if str(existing["request_fingerprint"]) != request.fingerprint:
-                    raise IdempotencyConflict(
-                        "research task idempotency key was reused with different input"
-                    )
-                return _task_from_row(existing), True
-            conn.execute(
-                """
-                INSERT INTO ai_research_tasks (
-                    task_id, idempotency_key, request_json, request_fingerprint,
-                    capture_id, context_snapshot_id, context_fingerprint,
-                    account_alias, valuation_snapshot_id, ledger_cutoff_id,
-                    ledger_fingerprint, created_by, title, research_question,
-                    evidence_json, blockers_json, status, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    task_id,
-                    request.idempotency_key,
-                    canonical_json(request.to_dict()),
-                    request.fingerprint,
-                    request.capture_id,
-                    context_snapshot_id,
-                    context_fingerprint,
-                    account_alias,
-                    valuation_snapshot_id,
-                    ledger_cutoff_id,
-                    ledger_fingerprint,
-                    request.created_by,
-                    request.title,
-                    request.research_question,
-                    canonical_json([item.to_dict() for item in evidence]),
-                    canonical_json(list(blockers)),
-                    status.value,
-                    created_at,
-                    created_at,
-                ),
-            )
-            row = conn.execute(
-                "SELECT * FROM ai_research_tasks WHERE task_id = ?", (task_id,)
-            ).fetchone()
-            if row is None:
-                raise RuntimeError("research task persistence failed")
-            task = _task_from_row(row)
-            self._append_event(
-                conn,
-                task_id=task_id,
-                event_type="task_created",
-                payload={
-                    "request_fingerprint": request.fingerprint,
-                    "context_fingerprint": context_fingerprint,
-                    "status": status.value,
-                },
-                created_at=created_at,
-            )
-        return task, False
-
-    def get(self, task_id: str) -> ResearchTask:
-        try:
-            with self._connection() as conn:
-                row = conn.execute(
-                    "SELECT * FROM ai_research_tasks WHERE task_id = ?", (task_id,)
-                ).fetchone()
-        except sqlite3.OperationalError as exc:
-            if "no such table" not in str(exc):
-                raise
-            row = None
-        if row is None:
-            raise LookupError(f"research task not found: {task_id}")
+    @staticmethod
+    def _task_from_row(row: Any) -> ResearchTask:
         return _task_from_row(row)
 
-    def list(self, *, limit: int = 50) -> tuple[ResearchTask, ...]:
-        if limit <= 0 or limit > 200:
-            raise ValueError("task list limit must be between 1 and 200")
-        try:
-            with self._connection() as conn:
-                rows = conn.execute(
-                    "SELECT * FROM ai_research_tasks "
-                    "ORDER BY updated_at DESC, task_id DESC LIMIT ?",
-                    (limit,),
-                ).fetchall()
-        except sqlite3.OperationalError as exc:
-            if "no such table" not in str(exc):
-                raise
-            rows = []
-        return tuple(_task_from_row(row) for row in rows)
-
-    def record_review(
-        self,
-        task_id: str,
-        request: HumanResearchTaskReviewRequest,
-        *,
-        created_at: str,
-    ) -> tuple[ResearchTask, ResearchTaskReview, bool]:
-        next_status = ResearchTaskStatus(request.decision.value)
-        with self._connection() as conn:
-            task_row = conn.execute(
-                "SELECT * FROM ai_research_tasks WHERE task_id = ?", (task_id,)
-            ).fetchone()
-            if task_row is None:
-                raise LookupError(f"research task not found: {task_id}")
-            existing = conn.execute(
-                "SELECT * FROM ai_research_task_reviews WHERE idempotency_key = ?",
-                (request.idempotency_key,),
-            ).fetchone()
-            if existing is not None:
-                if (
-                    str(existing["request_fingerprint"]) != request.fingerprint
-                    or str(existing["task_id"]) != task_id
-                ):
-                    raise IdempotencyConflict(
-                        "research review idempotency key was reused with different input"
-                    )
-                return _task_from_row(task_row), _review_from_row(existing), True
-
-            current = _task_from_row(task_row)
-            if current.status in {
-                ResearchTaskStatus.CONTEXT_ACCEPTED,
-                ResearchTaskStatus.CONTEXT_REVISION_REQUESTED,
-                ResearchTaskStatus.CLOSED_WITHOUT_ANALYSIS,
-            }:
-                raise ResearchTaskRejected("research task review is already final")
-            if (
-                request.decision == ResearchTaskReviewDecision.CONTEXT_ACCEPTED
-                and not current.all_evidence_authoritative
-            ):
-                raise ResearchTaskRejected(
-                    "non-authoritative evidence cannot be accepted for analysis"
-                )
-            review_identity = {
-                "task_id": task_id,
-                "idempotency_key": request.idempotency_key,
-                "request_fingerprint": request.fingerprint,
-            }
-            review_id = (
-                f"ai-research-review-{content_fingerprint(review_identity)[:24]}"
-            )
-            conn.execute(
-                """
-                INSERT INTO ai_research_task_reviews (
-                    review_id, task_id, idempotency_key, request_json,
-                    request_fingerprint, reviewed_by, decision, note, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    review_id,
-                    task_id,
-                    request.idempotency_key,
-                    canonical_json(request.to_dict()),
-                    request.fingerprint,
-                    request.reviewed_by,
-                    request.decision.value,
-                    request.note,
-                    created_at,
-                ),
-            )
-            conn.execute(
-                "UPDATE ai_research_tasks SET status = ?, updated_at = ? "
-                "WHERE task_id = ?",
-                (next_status.value, created_at, task_id),
-            )
-            self._append_event(
-                conn,
-                task_id=task_id,
-                event_type="human_review_recorded",
-                payload={
-                    "review_id": review_id,
-                    "request_fingerprint": request.fingerprint,
-                    "decision": request.decision.value,
-                    "status": next_status.value,
-                },
-                created_at=created_at,
-            )
-            updated_row = conn.execute(
-                "SELECT * FROM ai_research_tasks WHERE task_id = ?", (task_id,)
-            ).fetchone()
-            review_row = conn.execute(
-                "SELECT * FROM ai_research_task_reviews WHERE review_id = ?",
-                (review_id,),
-            ).fetchone()
-        if updated_row is None or review_row is None:
-            raise RuntimeError("research task review persistence failed")
-        return _task_from_row(updated_row), _review_from_row(review_row), False
-
-    def replay(self, task_id: str) -> ResearchTaskReplay:
-        task = self.get(task_id)
-        with self._connection() as conn:
-            events = conn.execute(
-                "SELECT * FROM ai_research_task_events WHERE task_id = ? "
-                "ORDER BY sequence",
-                (task_id,),
-            ).fetchall()
-        if not events:
-            raise EvidenceIdentityMismatch("research task audit chain is missing")
-        previous_hash: str | None = None
-        replayed_status: ResearchTaskStatus | None = None
-        for expected_sequence, row in enumerate(events, start=1):
-            if int(row["sequence"]) != expected_sequence:
-                raise EvidenceIdentityMismatch("research task audit sequence drifted")
-            payload = json.loads(str(row["payload_json"]))
-            expected_hash = _event_hash(
-                task_id=task_id,
-                sequence=expected_sequence,
-                event_type=str(row["event_type"]),
-                payload=payload,
-                previous_hash=previous_hash,
-                created_at=str(row["created_at"]),
-            )
-            if str(row["previous_hash"] or "") != str(previous_hash or ""):
-                raise EvidenceIdentityMismatch(
-                    "research task audit previous hash drifted"
-                )
-            if str(row["event_hash"]) != expected_hash:
-                raise EvidenceIdentityMismatch("research task audit event hash drifted")
-            replayed_status = ResearchTaskStatus(str(payload["status"]))
-            previous_hash = expected_hash
-        if replayed_status != task.status:
-            raise EvidenceIdentityMismatch(
-                "research task status and audit replay drifted"
-            )
-        return ResearchTaskReplay(
-            task_id=task_id,
-            valid=True,
-            event_count=len(events),
-            final_event_hash=previous_hash,
-            replayed_status=replayed_status,
-        )
+    @staticmethod
+    def _review_from_row(row: Any) -> ResearchTaskReview:
+        return _review_from_row(row)
 
     @staticmethod
-    def _append_event(
-        conn: sqlite3.Connection,
-        *,
-        task_id: str,
-        event_type: str,
-        payload: JsonObject,
-        created_at: str,
-    ) -> None:
-        previous = conn.execute(
-            "SELECT sequence, event_hash FROM ai_research_task_events "
-            "WHERE task_id = ? ORDER BY sequence DESC LIMIT 1",
-            (task_id,),
-        ).fetchone()
-        sequence = int(previous["sequence"]) + 1 if previous is not None else 1
-        previous_hash = str(previous["event_hash"]) if previous is not None else None
-        event_hash = _event_hash(
-            task_id=task_id,
-            sequence=sequence,
-            event_type=event_type,
-            payload=payload,
-            previous_hash=previous_hash,
-            created_at=created_at,
-        )
-        conn.execute(
-            """
-            INSERT INTO ai_research_task_events (
-                task_id, sequence, event_type, payload_json,
-                previous_hash, event_hash, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                task_id,
-                sequence,
-                event_type,
-                canonical_json(payload),
-                previous_hash,
-                event_hash,
-                created_at,
-            ),
-        )
+    def _event_hash(**kwargs: object) -> str:
+        return _event_hash(**kwargs)  # type: ignore[arg-type]
+
+    @staticmethod
+    def _task_rejected(message: str) -> Exception:
+        return ResearchTaskRejected(message)
+
+    @staticmethod
+    def _task_status(value: str) -> ResearchTaskStatus:
+        return ResearchTaskStatus(value)
+
+    @staticmethod
+    def _task_replay(**kwargs: object) -> ResearchTaskReplay:
+        return ResearchTaskReplay(**kwargs)  # type: ignore[arg-type]
 
 
 class HumanResearchTaskService:
@@ -748,7 +455,7 @@ def _event_hash(
     )
 
 
-def _task_from_row(row: sqlite3.Row) -> ResearchTask:
+def _task_from_row(row: Any) -> ResearchTask:
     evidence_payload = json.loads(str(row["evidence_json"]))
     return ResearchTask(
         task_id=str(row["task_id"]),
@@ -782,7 +489,7 @@ def _task_from_row(row: sqlite3.Row) -> ResearchTask:
     )
 
 
-def _review_from_row(row: sqlite3.Row) -> ResearchTaskReview:
+def _review_from_row(row: Any) -> ResearchTaskReview:
     return ResearchTaskReview(
         review_id=str(row["review_id"]),
         task_id=str(row["task_id"]),

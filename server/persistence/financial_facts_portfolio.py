@@ -2,11 +2,41 @@
 
 from __future__ import annotations
 
+import asyncio
 import sqlite3
 from typing import Any
 
-from server.persistence.database_support import metadata_payload_value
+from server.contracts.portfolio_cash_flows import (
+    CashFlowCorrectionResult,
+    CashFlowCorrectionWrite,
+    CashFlowWrite,
+    CashFlowWriteResult,
+)
+from server.contracts.portfolio_trades import (
+    ManualTradeCorrectionResult,
+    ManualTradeCorrectionWrite,
+    ManualTradeWrite,
+    ManualTradeWriteResult,
+    PendingFundConfirmationResult,
+    PendingFundConfirmationWrite,
+    PendingFundOrderWrite,
+    PendingFundOrderWriteResult,
+)
+from server.persistence.database_serialization import metadata_payload_value
 from server.persistence.event_log import insert_event_sync
+from server.persistence.manual_trade_uow import ManualTradeUnitOfWork
+from server.persistence.pending_fund_confirmation_uow import (
+    PendingFundConfirmationUnitOfWork,
+)
+from server.persistence.portfolio_cash_flow_repository import (
+    load_cash_flow_ledger_entry,
+    validate_cash_flow_projection,
+)
+from server.persistence.portfolio_cash_flow_uow import PortfolioCashFlowUnitOfWork
+from server.persistence.portfolio_trade_repository import (
+    load_trade_ledger_entry,
+    validate_trade_projection,
+)
 
 
 class PortfolioFactsRepositoryMixin:
@@ -53,200 +83,116 @@ class PortfolioFactsRepositoryMixin:
             )
             conn.commit()
 
-    async def add_cash_flow(
-        self,
-        timestamp: str,
-        amount: float,
-        flow_type: str = "deposit",
-        note: str = "",
-    ) -> int:
-        """添加资金流水记录，返回 ID。"""
-        import aiosqlite
+    def record_cash_flow_sync(self, command: CashFlowWrite) -> CashFlowWriteResult:
+        """Commit one canonical cash flow and its compatibility projection."""
 
-        async with aiosqlite.connect(self._path) as db:
-            cursor = await db.execute(
-                """INSERT INTO cash_flows (timestamp, amount, flow_type, note, created_at)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (timestamp, amount, flow_type, note, self._now().isoformat()),
-            )
-            await db.commit()
-            return cursor.lastrowid or 0
+        return self._cash_flow_uow().record(command)
+
+    def correct_cash_flow_sync(
+        self, command: CashFlowCorrectionWrite
+    ) -> CashFlowCorrectionResult:
+        """Append one inverse ledger fact without deleting source history."""
+
+        return self._cash_flow_uow().correct(command)
 
     async def get_cash_flows(
         self, limit: int = 50, offset: int = 0
     ) -> list[dict[str, Any]]:
-        """列出资金流水，最新优先。"""
-        import aiosqlite
+        """List active, ledger-validated compatibility projections."""
 
-        async with aiosqlite.connect(self._path) as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute(
-                "SELECT * FROM cash_flows ORDER BY id DESC LIMIT ? OFFSET ?",
-                (limit, offset),
-            )
-            rows = await cursor.fetchall()
-            return [dict(row) for row in rows]
+        return await asyncio.to_thread(self.get_cash_flows_sync, limit, offset)
 
     def get_cash_flows_sync(
         self, limit: int = 50, offset: int = 0
     ) -> list[dict[str, Any]]:
-        """同步列出资金流水，最新优先。"""
+        """List active cash-flow projections and fail closed on drift."""
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT * FROM cash_flows ORDER BY id DESC LIMIT ? OFFSET ?",
+                """
+                SELECT flow.*
+                FROM cash_flows AS flow
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM ledger_entries AS correction
+                    WHERE correction.source = 'portfolio_cash_flow_correction'
+                      AND correction.source_ref = 'cash_flow:' || flow.id
+                )
+                ORDER BY flow.id DESC LIMIT ? OFFSET ?
+                """,
                 (limit, offset),
             ).fetchall()
-            return [dict(row) for row in rows]
+            result: list[dict[str, Any]] = []
+            for row in rows:
+                cash_flow = dict(row)
+                ledger = load_cash_flow_ledger_entry(conn, int(cash_flow["id"]))
+                if ledger is None:
+                    raise RuntimeError(
+                        "cash flow has no canonical ledger owner; migration required"
+                    )
+                validate_cash_flow_projection(cash_flow, ledger)
+                result.append(cash_flow)
+            return result
 
-    async def delete_cash_flow(self, flow_id: int) -> bool:
-        """删除资金流水记录。"""
-        import aiosqlite
-
-        async with aiosqlite.connect(self._path) as db:
-            cursor = await db.execute("DELETE FROM cash_flows WHERE id = ?", (flow_id,))
-            await db.commit()
-            return cursor.rowcount > 0
-
-    async def add_trade(
+    def record_manual_trade_sync(
         self,
-        timestamp: str,
-        symbol: str,
-        direction: str,
-        quantity: float,
-        price: float,
-        commission: float = 0.0,
-        asset_class: str = "stock",
-        note: str = "",
-    ) -> int:
-        """添加交易记录，返回 ID。"""
-        import aiosqlite
+        command: ManualTradeWrite,
+    ) -> ManualTradeWriteResult:
+        """Commit one canonical trade and its compatibility projection."""
 
-        async with aiosqlite.connect(self._path) as db:
-            cursor = await db.execute(
-                """INSERT INTO trades
-                   (timestamp, symbol, direction, quantity, price, commission, asset_class, note, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    timestamp,
-                    symbol,
-                    direction,
-                    quantity,
-                    price,
-                    commission,
-                    asset_class,
-                    note,
-                    self._now().isoformat(),
-                ),
-            )
-            await db.commit()
-            return cursor.lastrowid or 0
+        return self._manual_trade_uow().record(command)
 
-    def add_trade_sync(
+    def correct_manual_trade_sync(
         self,
-        *,
-        timestamp: str,
-        symbol: str,
-        direction: str,
-        quantity: float,
-        price: float,
-        commission: float = 0.0,
-        asset_class: str = "stock",
-        note: str = "",
-    ) -> int:
-        """同步添加交易记录，供后台确认任务使用。"""
-        with sqlite3.connect(self._path) as conn:
-            cursor = conn.execute(
-                """INSERT INTO trades
-                   (timestamp, symbol, direction, quantity, price, commission, asset_class, note, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    timestamp,
-                    symbol,
-                    direction,
-                    quantity,
-                    price,
-                    commission,
-                    asset_class,
-                    note,
-                    self._now().isoformat(),
-                ),
-            )
-            conn.commit()
-            return cursor.lastrowid or 0
+        command: ManualTradeCorrectionWrite,
+    ) -> ManualTradeCorrectionResult:
+        """Append a replay-derived correction without deleting history."""
+
+        return self._manual_trade_uow().correct(command)
 
     async def get_trades(
         self, limit: int = 50, offset: int = 0
     ) -> list[dict[str, Any]]:
-        """列出交易记录，最新优先。"""
-        import aiosqlite
+        """List compatibility projections only after canonical-ledger validation."""
 
-        async with aiosqlite.connect(self._path) as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute(
-                "SELECT * FROM trades ORDER BY id DESC LIMIT ? OFFSET ?",
-                (limit, offset),
-            )
-            rows = await cursor.fetchall()
-            return [dict(row) for row in rows]
+        return await asyncio.to_thread(self.get_trades_sync, limit, offset)
 
     def get_trades_sync(self, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
-        """同步列出交易记录，最新优先。"""
+        """List ledger-backed trade projections and fail closed on drift."""
+
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT * FROM trades ORDER BY id DESC LIMIT ? OFFSET ?",
+                """
+                SELECT trade.*
+                FROM trades AS trade
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM ledger_entries AS correction
+                    WHERE correction.source = 'manual_trade_correction'
+                      AND correction.source_ref = 'trade:' || trade.id
+                )
+                ORDER BY trade.id DESC LIMIT ? OFFSET ?
+                """,
                 (limit, offset),
             ).fetchall()
-            return [dict(row) for row in rows]
+            result: list[dict[str, Any]] = []
+            for row in rows:
+                trade = dict(row)
+                ledger = load_trade_ledger_entry(conn, int(trade["id"]))
+                if ledger is None:
+                    raise RuntimeError(
+                        "manual trade has no canonical ledger owner; migration required"
+                    )
+                validate_trade_projection(trade, ledger)
+                result.append(trade)
+            return result
 
-    async def delete_trade(self, trade_id: int) -> bool:
-        """删除交易记录。"""
-        import aiosqlite
-
-        async with aiosqlite.connect(self._path) as db:
-            cursor = await db.execute("DELETE FROM trades WHERE id = ?", (trade_id,))
-            await db.commit()
-            return cursor.rowcount > 0
-
-    def add_pending_fund_order_sync(
+    def create_pending_fund_order_sync(
         self,
-        *,
-        submitted_at: str,
-        symbol: str,
-        display_name: str,
-        amount: float,
-        commission: float = 0.0,
-        asset_class: str = "fund",
-        target_trade_date: str,
-        status: str = "pending",
-        note: str = "",
-    ) -> int:
-        """同步写入待确认基金申购，等待确认净值发布后转交易。"""
-        with sqlite3.connect(self._path) as conn:
-            cursor = conn.execute(
-                """
-                INSERT INTO pending_fund_orders
-                    (submitted_at, symbol, display_name, amount, commission, asset_class,
-                     target_trade_date, status, note, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    submitted_at,
-                    symbol,
-                    display_name,
-                    amount,
-                    commission,
-                    asset_class,
-                    target_trade_date,
-                    status,
-                    note,
-                    self._now().isoformat(),
-                    self._now().isoformat(),
-                ),
-            )
-            conn.commit()
-            return cursor.lastrowid or 0
+        command: PendingFundOrderWrite,
+    ) -> PendingFundOrderWriteResult:
+        """Create or replay one restart-stable pending fund subscription."""
+
+        return self._pending_fund_uow().create_pending(command)
 
     def get_pending_fund_orders_sync(
         self, status: str = "pending"
@@ -265,56 +211,55 @@ class PortfolioFactsRepositoryMixin:
             ).fetchall()
             return [dict(row) for row in rows]
 
-    def mark_pending_fund_order_confirmed_sync(
+    def confirm_pending_fund_order_sync(
         self,
-        *,
-        order_id: int,
-        trade_id: int,
-        confirmed_nav: float,
-        confirmed_quantity: float,
-        confirmed_trade_date: str,
-    ) -> None:
-        """标记待确认基金申购已转正式交易。"""
-        with sqlite3.connect(self._path) as conn:
-            conn.execute(
-                """
-                UPDATE pending_fund_orders
-                SET status = 'confirmed',
-                    confirmed_nav = ?,
-                    confirmed_quantity = ?,
-                    confirmed_trade_date = ?,
-                    trade_id = ?,
-                    updated_at = ?
-                WHERE id = ?
-                """,
-                (
-                    confirmed_nav,
-                    confirmed_quantity,
-                    confirmed_trade_date,
-                    trade_id,
-                    self._now().isoformat(),
-                    order_id,
-                ),
-            )
-            conn.commit()
+        command: PendingFundConfirmationWrite,
+    ) -> PendingFundConfirmationResult:
+        """Atomically publish one resolved pending fund subscription."""
+
+        return self._pending_fund_uow().confirm(command)
+
+    def _manual_trade_uow(self) -> ManualTradeUnitOfWork:
+        return ManualTradeUnitOfWork(
+            self._path,
+            now=lambda: self._now().isoformat(),
+            valuation_transaction_writer=self._valuation_transaction_writer,
+        )
+
+    def _pending_fund_uow(self) -> PendingFundConfirmationUnitOfWork:
+        return PendingFundConfirmationUnitOfWork(
+            self._path,
+            now=lambda: self._now().isoformat(),
+            valuation_transaction_writer=self._valuation_transaction_writer,
+        )
+
+    def _cash_flow_uow(self) -> PortfolioCashFlowUnitOfWork:
+        return PortfolioCashFlowUnitOfWork(
+            self._path,
+            now=lambda: self._now().isoformat(),
+            valuation_transaction_writer=self._valuation_transaction_writer,
+        )
 
     async def get_total_deposits(self) -> float:
-        """所有入金总额（deposit - withdraw）。"""
-        import aiosqlite
+        """Read canonical net external contributions."""
 
-        async with aiosqlite.connect(self._path) as db:
-            cursor = await db.execute(
-                "SELECT COALESCE(SUM(CASE WHEN flow_type='deposit' THEN amount ELSE -amount END), 0) FROM cash_flows"
-            )
-            row = await cursor.fetchone()
-            return float(row[0]) if row else 0.0
+        return await asyncio.to_thread(self.get_total_deposits_sync)
 
     def get_total_deposits_sync(self) -> float:
-        """同步版本，供后台线程调用。"""
+        """Read net deposits from canonical ledger facts only."""
         with sqlite3.connect(self._path) as conn:
-            cursor = conn.execute(
-                "SELECT COALESCE(SUM(CASE WHEN flow_type='deposit' THEN amount ELSE -amount END), 0) FROM cash_flows"
-            )
+            cursor = conn.execute("""
+                SELECT COALESCE(SUM(
+                    CASE
+                        WHEN entry_type IN ('cash_deposit', 'deposit') THEN amount
+                        WHEN entry_type IN (
+                            'cash_withdrawal', 'cash_withdraw', 'withdraw'
+                        ) THEN -amount
+                        ELSE 0
+                    END
+                ), 0)
+                FROM ledger_entries
+                """)
             row = cursor.fetchone()
             return float(row[0]) if row else 0.0
 

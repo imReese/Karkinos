@@ -1521,9 +1521,6 @@ def test_lifespan_reuses_cached_runtime_config(monkeypatch):
     monkeypatch.setattr(
         "notification.notifier.build_notifier", lambda notification: object()
     )
-    monkeypatch.setattr(
-        app_module, "_confirm_pending_fund_orders_on_startup", lambda state: None
-    )
 
     async def run_lifespan():
         async with app_module.lifespan(fake_app):
@@ -1605,9 +1602,6 @@ def test_lifespan_starts_daily_decision_evidence_automation_with_live_scheduler(
         "server.services.daily_decision_evidence_automation."
         "run_daily_decision_evidence_automation_loop",
         fake_decision_evidence_loop,
-    )
-    monkeypatch.setattr(
-        app_module, "_confirm_pending_fund_orders_on_startup", lambda state: None
     )
 
     async def run_lifespan():

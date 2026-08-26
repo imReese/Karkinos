@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from server.contracts.order_state import OmsOrderCommand, OmsTransitionCommand
 from server.persistence.facades.base import DatabaseRepositoryAccess
 
 
@@ -11,6 +12,17 @@ class ExecutionDatabaseFacade(DatabaseRepositoryAccess):
     """Delegate the legacy API to cohesive repositories."""
 
     # ---------- OMS Orders ----------
+
+    def create_oms_order_sync(self, command: OmsOrderCommand) -> dict[str, Any]:
+        """Atomically create an OMS order, transition, and audit event."""
+        return self._oms.create_oms_order_sync(command)
+
+    def transition_oms_order_sync(
+        self,
+        command: OmsTransitionCommand,
+    ) -> dict[str, Any]:
+        """Atomically compare-and-set an OMS transition and audit event."""
+        return self._oms.transition_oms_order_sync(command)
 
     def get_oms_order_sync(self, order_id: str) -> dict[str, Any] | None:
         """Read one OMS order by its stable order ID."""
@@ -21,36 +33,6 @@ class ExecutionDatabaseFacade(DatabaseRepositoryAccess):
     ) -> dict[str, Any] | None:
         """Read one OMS order by its idempotency key."""
         return self._oms.get_oms_order_by_intent_key_sync(intent_key)
-
-    def upsert_oms_order_sync(self, order: dict[str, Any]) -> dict[str, Any]:
-        """Persist or update an OMS order fact."""
-        return self._oms.upsert_oms_order_sync(order)
-
-    def update_oms_order_status_sync(
-        self, *, order_id: str, status: str
-    ) -> dict[str, Any]:
-        """Update one OMS order status."""
-        return self._oms.update_oms_order_status_sync(order_id=order_id, status=status)
-
-    def record_oms_transition_sync(
-        self,
-        *,
-        order_id: str,
-        from_status: str,
-        to_status: str,
-        reason: str,
-        actor: str | None = None,
-        payload: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Record one OMS state transition."""
-        return self._oms.record_oms_transition_sync(
-            order_id=order_id,
-            from_status=from_status,
-            to_status=to_status,
-            reason=reason,
-            actor=actor,
-            payload=payload,
-        )
 
     # ---------- Controlled Broker Submit Intents ----------
 

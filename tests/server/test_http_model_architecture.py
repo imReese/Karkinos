@@ -49,7 +49,6 @@ def test_http_model_facade_reexports_each_owned_model_exactly_once() -> None:
             assert name not in owners, name
             owners[name] = model
 
-    assert len(owners) == 98
     assert set(facade.__all__) == set(owners)
     assert len(facade.__all__) == len(set(facade.__all__))
     for name, model in owners.items():

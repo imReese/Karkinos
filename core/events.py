@@ -94,6 +94,7 @@ class OrderEvent(Event):
     intent_id: str | None = None
     risk_decision_id: str | None = None
     execution_mode: str = "paper"
+    asset_class: AssetClass | None = None
 
 
 @dataclass(frozen=True)

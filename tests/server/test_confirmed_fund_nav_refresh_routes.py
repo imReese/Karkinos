@@ -133,6 +133,7 @@ def test_confirmed_fund_nav_refresh_persists_audited_evidence_only(
     assert response.failed_symbols == {}
     assert response.run.trigger == "fund_nav_sync"
     assert response.run.metadata["confirmation_only"] is True
+    assert response.run.metadata["manual_explicit_trigger"] is True
     assert response.valuation_snapshot_id
     assert response.provider_contact_performed is True
     assert response.writes_market_data_only is True

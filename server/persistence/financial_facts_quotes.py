@@ -5,12 +5,12 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
-from server.persistence.database_support import (
+from server.persistence.database_serialization import serialize_metadata_json
+from server.persistence.event_log import insert_event_sync
+from server.persistence.financial_fact_event_payloads import (
     latest_quote_event_payload,
     quote_observation_rank,
-    serialize_metadata_json,
 )
-from server.persistence.event_log import insert_event_sync
 
 
 class QuoteFactsRepositoryMixin:

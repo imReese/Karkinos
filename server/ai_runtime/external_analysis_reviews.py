@@ -8,22 +8,36 @@ trading/capital authority.
 
 from __future__ import annotations
 
-import json
-import sqlite3
-from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from enum import StrEnum
 from pathlib import Path
+from typing import cast
 
-from .contracts import (
-    ArtifactKind,
-    JsonObject,
-    WorkflowStatus,
-    canonical_json,
-    content_fingerprint,
+from server.persistence.external_analysis_review_projection import (
+    ExternalAnalysisReviewProjectionMixin,
+)
+from server.persistence.external_analysis_review_repository import (
+    ExternalAnalysisReviewRepositoryMixin,
+)
+from server.persistence.external_analysis_review_schema import (
+    ExternalAnalysisReviewSchemaMixin,
+)
+from server.persistence.external_analysis_review_uow import (
+    ExternalAnalysisReviewUnitOfWorkMixin,
+)
+
+from .contracts import ArtifactKind, JsonObject, content_fingerprint
+from .external_analysis_review_target import (
+    build_external_analysis_review_target,
+)
+from .external_analysis_review_values import (
+    external_analysis_decimal_text,
+    external_analysis_non_negative_decimal,
+    external_analysis_review_cost_evidence,
+    external_analysis_review_event_hash,
 )
 from .external_memory_informed_analysis import (
     ExternalMemoryAnalysisResult,
@@ -421,89 +435,37 @@ class ExternalAnalysisReviewResult:
         }
 
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS ai_external_analysis_reviews (
-    review_id TEXT PRIMARY KEY,
-    analysis_id TEXT NOT NULL UNIQUE,
-    workflow_id TEXT NOT NULL,
-    idempotency_key TEXT NOT NULL UNIQUE,
-    request_json TEXT NOT NULL,
-    request_fingerprint TEXT NOT NULL,
-    analysis_target_fingerprint TEXT NOT NULL,
-    report_artifact_id TEXT,
-    provider_id TEXT NOT NULL,
-    model_id TEXT NOT NULL,
-    prompt_version TEXT NOT NULL,
-    quality_evidence_json TEXT NOT NULL,
-    cost_evidence_json TEXT NOT NULL,
-    reviewed_by TEXT NOT NULL,
-    decision TEXT NOT NULL CHECK(decision IN (
-        'accept_as_reviewed_research', 'request_revision', 'reject'
-    )),
-    note TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    FOREIGN KEY(analysis_id)
-        REFERENCES ai_external_memory_informed_analyses(analysis_id),
-    FOREIGN KEY(workflow_id) REFERENCES ai_workflows(workflow_id),
-    FOREIGN KEY(report_artifact_id) REFERENCES ai_artifacts(artifact_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_ai_external_analysis_reviews_created
-ON ai_external_analysis_reviews(created_at DESC, review_id DESC);
-
-CREATE TABLE IF NOT EXISTS ai_external_analysis_review_events (
-    review_id TEXT NOT NULL,
-    sequence INTEGER NOT NULL CHECK(sequence > 0),
-    event_type TEXT NOT NULL,
-    payload_json TEXT NOT NULL,
-    previous_hash TEXT,
-    event_hash TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    PRIMARY KEY(review_id, sequence),
-    FOREIGN KEY(review_id) REFERENCES ai_external_analysis_reviews(review_id)
-);
-"""
-
-
-class ExternalAnalysisReviewStore:
+class ExternalAnalysisReviewStore(
+    ExternalAnalysisReviewUnitOfWorkMixin,
+    ExternalAnalysisReviewRepositoryMixin,
+    ExternalAnalysisReviewSchemaMixin,
+    ExternalAnalysisReviewProjectionMixin,
+):
     """Append-only human reviews and their one-event audit chains."""
+
+    _request_type = HumanExternalAnalysisReviewRequest
+    _decision_type = ExternalAnalysisReviewDecision
+    _rubric_type = ExternalAnalysisQualityRubric
+    _pricing_type = ProviderPricingSnapshot
+    _stored_review_type = StoredExternalAnalysisReview
+    _audit_replay_type = ExternalAnalysisReviewAuditReplay
+    _rejected_type = ExternalAnalysisReviewRejected
 
     def __init__(self, db_path: str | Path) -> None:
         self._path = Path(db_path)
         self._path.parent.mkdir(parents=True, exist_ok=True)
 
-    @contextmanager
-    def _connection(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self._path, timeout=2)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys=ON")
-        conn.execute("PRAGMA busy_timeout=2000")
-        try:
-            with conn:
-                yield conn
-        finally:
-            conn.close()
-
     def init(self) -> None:
-        with self._connection() as conn:
-            conn.executescript(_SCHEMA)
+        self._init_schema()
 
     def get_by_idempotency_key(
         self,
         idempotency_key: str,
     ) -> StoredExternalAnalysisReview | None:
-        try:
-            with self._connection() as conn:
-                row = conn.execute(
-                    "SELECT * FROM ai_external_analysis_reviews "
-                    "WHERE idempotency_key = ?",
-                    (idempotency_key,),
-                ).fetchone()
-        except sqlite3.OperationalError as exc:
-            if "no such table" not in str(exc):
-                raise
-            row = None
-        return _review_from_row(row) if row is not None else None
+        return cast(
+            StoredExternalAnalysisReview | None,
+            self._get_by_idempotency_key(idempotency_key),
+        )
 
     def record(
         self,
@@ -512,116 +474,13 @@ class ExternalAnalysisReviewStore:
         request: HumanExternalAnalysisReviewRequest,
         created_at: str,
     ) -> tuple[StoredExternalAnalysisReview, bool]:
-        identity = {
-            "analysis_id": target.analysis_id,
-            "request_fingerprint": request.fingerprint,
-            "analysis_target_fingerprint": target.fingerprint,
-        }
-        review_id = f"ai-external-review-{content_fingerprint(identity)[:24]}"
-        cost_evidence = _cost_evidence(request, target.quality_evidence)
-        with self._connection() as conn:
-            conn.execute("BEGIN IMMEDIATE")
-            existing = conn.execute(
-                "SELECT * FROM ai_external_analysis_reviews "
-                "WHERE idempotency_key = ?",
-                (request.idempotency_key,),
-            ).fetchone()
-            if existing is not None:
-                stored = _review_from_row(existing)
-                if (
-                    stored.analysis_id != target.analysis_id
-                    or stored.request_fingerprint != request.fingerprint
-                ):
-                    raise IdempotencyConflict(
-                        "external analysis review idempotency key was reused "
-                        "with different input"
-                    )
-                return stored, True
-            final = conn.execute(
-                "SELECT review_id FROM ai_external_analysis_reviews "
-                "WHERE analysis_id = ?",
-                (target.analysis_id,),
-            ).fetchone()
-            if final is not None:
-                raise ExternalAnalysisReviewRejected(
-                    "external analysis review is already final"
-                )
-            conn.execute(
-                """
-                INSERT INTO ai_external_analysis_reviews (
-                    review_id, analysis_id, workflow_id, idempotency_key,
-                    request_json, request_fingerprint,
-                    analysis_target_fingerprint, report_artifact_id,
-                    provider_id, model_id, prompt_version,
-                    quality_evidence_json, cost_evidence_json, reviewed_by,
-                    decision, note, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    review_id,
-                    target.analysis_id,
-                    target.workflow_id,
-                    request.idempotency_key,
-                    canonical_json(request.to_dict()),
-                    request.fingerprint,
-                    target.fingerprint,
-                    target.report_artifact_id,
-                    target.provider_id,
-                    target.model_id,
-                    target.prompt_version,
-                    canonical_json(target.quality_evidence),
-                    canonical_json(cost_evidence),
-                    request.reviewed_by,
-                    request.decision.value,
-                    request.note,
-                    created_at,
-                ),
-            )
-            self._append_event(
-                conn,
-                review_id=review_id,
-                event_type="external_analysis_review_recorded",
-                payload={
-                    "analysis_id": target.analysis_id,
-                    "analysis_target_fingerprint": target.fingerprint,
-                    "decision": request.decision.value,
-                    "report_artifact_id": target.report_artifact_id,
-                    "provider_id": target.provider_id,
-                    "model_id": target.model_id,
-                    "prompt_version": target.prompt_version,
-                    "request_fingerprint": request.fingerprint,
-                    "quality_evidence_fingerprint": content_fingerprint(
-                        target.quality_evidence
-                    ),
-                    "cost_evidence_fingerprint": content_fingerprint(cost_evidence),
-                    "memory_recall_eligible": False,
-                    "provider_promotion_eligible": False,
-                    "authority_effect": "none",
-                },
-                created_at=created_at,
-            )
-            row = conn.execute(
-                "SELECT * FROM ai_external_analysis_reviews WHERE review_id = ?",
-                (review_id,),
-            ).fetchone()
-        if row is None:
-            raise RuntimeError("external analysis review persistence failed")
-        return _review_from_row(row), False
+        return cast(
+            tuple[StoredExternalAnalysisReview, bool],
+            self._record(target=target, request=request, created_at=created_at),
+        )
 
     def get(self, review_id: str) -> StoredExternalAnalysisReview:
-        try:
-            with self._connection() as conn:
-                row = conn.execute(
-                    "SELECT * FROM ai_external_analysis_reviews WHERE review_id = ?",
-                    (review_id,),
-                ).fetchone()
-        except sqlite3.OperationalError as exc:
-            if "no such table" not in str(exc):
-                raise
-            row = None
-        if row is None:
-            raise LookupError(f"external analysis review not found: {review_id}")
-        return _review_from_row(row)
+        return cast(StoredExternalAnalysisReview, self._get(review_id))
 
     def list(
         self,
@@ -629,125 +488,18 @@ class ExternalAnalysisReviewStore:
         analysis_id: str | None = None,
         limit: int = 50,
     ) -> tuple[StoredExternalAnalysisReview, ...]:
-        if limit <= 0 or limit > 200:
-            raise ValueError("external analysis review limit must be between 1 and 200")
-        sql = "SELECT * FROM ai_external_analysis_reviews"
-        params: list[object] = []
-        if analysis_id is not None:
-            sql += " WHERE analysis_id = ?"
-            params.append(analysis_id)
-        sql += " ORDER BY created_at DESC, review_id DESC LIMIT ?"
-        params.append(limit)
-        try:
-            with self._connection() as conn:
-                rows = conn.execute(sql, params).fetchall()
-        except sqlite3.OperationalError as exc:
-            if "no such table" not in str(exc):
-                raise
-            rows = []
-        return tuple(_review_from_row(row) for row in rows)
-
-    def verify_replay(self, review_id: str) -> ExternalAnalysisReviewAuditReplay:
-        review = self.get(review_id)
-        with self._connection() as conn:
-            rows = conn.execute(
-                "SELECT * FROM ai_external_analysis_review_events "
-                "WHERE review_id = ? ORDER BY sequence",
-                (review_id,),
-            ).fetchall()
-        errors: list[str] = []
-        previous_hash: str | None = None
-        for expected_sequence, row in enumerate(rows, start=1):
-            sequence = int(row["sequence"])
-            payload = json.loads(str(row["payload_json"]))
-            if sequence != expected_sequence:
-                errors.append("external analysis review sequence drifted")
-            if str(row["previous_hash"] or "") != str(previous_hash or ""):
-                errors.append("external analysis review previous hash drifted")
-            expected_hash = _event_hash(
-                review_id=review_id,
-                sequence=sequence,
-                event_type=str(row["event_type"]),
-                payload=payload,
-                previous_hash=previous_hash,
-                created_at=str(row["created_at"]),
-            )
-            if str(row["event_hash"]) != expected_hash:
-                errors.append("external analysis review event hash drifted")
-            expected = {
-                "analysis_id": review.analysis_id,
-                "analysis_target_fingerprint": review.analysis_target_fingerprint,
-                "decision": review.request.decision.value,
-                "report_artifact_id": review.report_artifact_id,
-                "provider_id": review.provider_id,
-                "model_id": review.model_id,
-                "prompt_version": review.prompt_version,
-                "request_fingerprint": review.request_fingerprint,
-                "quality_evidence_fingerprint": content_fingerprint(
-                    review.quality_evidence
-                ),
-                "cost_evidence_fingerprint": content_fingerprint(review.cost_evidence),
-            }
-            for key, value in expected.items():
-                if payload.get(key) != value:
-                    errors.append(f"external analysis review {key} drifted")
-            if payload.get("memory_recall_eligible") is not False:
-                errors.append("external analysis review memory boundary drifted")
-            if payload.get("provider_promotion_eligible") is not False:
-                errors.append("external analysis review provider boundary drifted")
-            if payload.get("authority_effect") != "none":
-                errors.append("external analysis review authority boundary drifted")
-            previous_hash = str(row["event_hash"])
-        if len(rows) != 1:
-            errors.append("external analysis review must contain exactly one event")
-        return ExternalAnalysisReviewAuditReplay(
-            review_id=review_id,
-            valid=not errors,
-            event_count=len(rows),
-            last_event_hash=previous_hash,
-            errors=tuple(dict.fromkeys(errors)),
+        return cast(
+            tuple[StoredExternalAnalysisReview, ...],
+            self._list(analysis_id=analysis_id, limit=limit),
         )
 
-    @staticmethod
-    def _append_event(
-        conn: sqlite3.Connection,
-        *,
+    def verify_replay(
+        self,
         review_id: str,
-        event_type: str,
-        payload: JsonObject,
-        created_at: str,
-    ) -> None:
-        previous = conn.execute(
-            "SELECT sequence, event_hash FROM ai_external_analysis_review_events "
-            "WHERE review_id = ? ORDER BY sequence DESC LIMIT 1",
-            (review_id,),
-        ).fetchone()
-        sequence = int(previous["sequence"]) + 1 if previous is not None else 1
-        previous_hash = str(previous["event_hash"]) if previous is not None else None
-        event_hash = _event_hash(
-            review_id=review_id,
-            sequence=sequence,
-            event_type=event_type,
-            payload=payload,
-            previous_hash=previous_hash,
-            created_at=created_at,
-        )
-        conn.execute(
-            """
-            INSERT INTO ai_external_analysis_review_events (
-                review_id, sequence, event_type, payload_json,
-                previous_hash, event_hash, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                review_id,
-                sequence,
-                event_type,
-                canonical_json(payload),
-                previous_hash,
-                event_hash,
-                created_at,
-            ),
+    ) -> ExternalAnalysisReviewAuditReplay:
+        return cast(
+            ExternalAnalysisReviewAuditReplay,
+            self._verify_replay(review_id),
         )
 
 
@@ -842,196 +594,14 @@ class HumanExternalAnalysisReviewService:
 def _review_target(
     analysis: ExternalMemoryAnalysisResult,
 ) -> ExternalAnalysisReviewTarget:
-    errors = list(analysis.binding_errors)
-    if analysis.workflow.status != WorkflowStatus.COMPLETED:
-        errors.append(
-            f"analysis_workflow_not_completed:{analysis.workflow.status.value}"
-        )
-    if analysis.workflow.partial_result:
-        errors.append("analysis_workflow_is_partial")
-    if not analysis.audit_valid:
-        errors.append("analysis_audit_invalid")
-    if not analysis.current_evidence_reads_complete:
-        errors.append("analysis_current_evidence_reads_incomplete")
-    if not analysis.replay_valid:
-        errors.append("analysis_replay_invalid")
-
-    artifact_evidence: list[JsonObject] = []
-    report_artifacts = []
-    citation_item_count = 0
-    cited_item_count = 0
-    latencies: list[int] = []
-    for artifact in analysis.artifacts:
-        actual_fingerprint = content_fingerprint(
-            {
-                "workflow_id": artifact.workflow_id,
-                "run_id": artifact.run_id,
-                "stage_id": artifact.stage_id,
-                "role_id": artifact.role_id,
-                "kind": artifact.kind.value,
-                "content": dict(artifact.content),
-                "evidence_reference_ids": list(artifact.evidence_reference_ids),
-            }
-        )
-        if actual_fingerprint != artifact.fingerprint:
-            errors.append(f"artifact_fingerprint_drift:{artifact.artifact_id}")
-        if artifact.content.get("authoritative") is not False:
-            errors.append(f"artifact_authority_flag_invalid:{artifact.artifact_id}")
-        if artifact.content.get("requires_human_review") is not True:
-            errors.append(f"artifact_human_review_flag_invalid:{artifact.artifact_id}")
-        if artifact.content.get("authority_effect") != "none":
-            errors.append(f"artifact_authority_effect_invalid:{artifact.artifact_id}")
-        allowed_ids = set(artifact.evidence_reference_ids)
-        for field_name in ("findings", "counterpoints"):
-            items = artifact.content.get(field_name)
-            if not isinstance(items, Sequence) or isinstance(items, (str, bytes)):
-                errors.append(f"artifact_{field_name}_invalid:{artifact.artifact_id}")
-                continue
-            for item in items:
-                citation_item_count += 1
-                references = (
-                    item.get("evidence_reference_ids")
-                    if isinstance(item, Mapping)
-                    else None
-                )
-                if (
-                    isinstance(references, Sequence)
-                    and not isinstance(references, (str, bytes))
-                    and references
-                    and all(str(reference) in allowed_ids for reference in references)
-                ):
-                    cited_item_count += 1
-                else:
-                    errors.append(f"artifact_citation_invalid:{artifact.artifact_id}")
-        provenance = artifact.content.get("provider_provenance")
-        latency = (
-            provenance.get("latency_ms") if isinstance(provenance, Mapping) else None
-        )
-        if isinstance(latency, int) and not isinstance(latency, bool) and latency >= 0:
-            latencies.append(latency)
-        artifact_evidence.append(
-            {
-                "artifact_id": artifact.artifact_id,
-                "kind": artifact.kind.value,
-                "stage_id": artifact.stage_id,
-                "stored_fingerprint": artifact.fingerprint,
-                "actual_fingerprint": actual_fingerprint,
-                "evidence_reference_ids": list(artifact.evidence_reference_ids),
-            }
-        )
-        if artifact.kind == ArtifactKind.REPORT:
-            report_artifacts.append(artifact)
-
-    if tuple(item.kind for item in analysis.artifacts) != _EXPECTED_ARTIFACT_KINDS:
-        errors.append("analysis_artifact_lifecycle_incomplete")
-    if len(report_artifacts) != 1:
-        errors.append("analysis_requires_exactly_one_report_artifact")
-    report_artifact_id = (
-        report_artifacts[0].artifact_id if len(report_artifacts) == 1 else None
-    )
-
-    model_call_evidence = [item.to_dict() for item in analysis.model_calls]
-    if len(analysis.model_calls) != _EXPECTED_STAGE_COUNT:
-        errors.append("analysis_model_call_lifecycle_incomplete")
-    if any(item.status != "completed" for item in analysis.model_calls):
-        errors.append("analysis_model_call_not_completed")
-    prompt_values = [item.usage.get("prompt_tokens") for item in analysis.model_calls]
-    completion_values = [
-        item.usage.get("completion_tokens") for item in analysis.model_calls
-    ]
-    usage_complete = (
-        len(prompt_values) == _EXPECTED_STAGE_COUNT
-        and all(isinstance(item, int) and item >= 0 for item in prompt_values)
-        and all(isinstance(item, int) and item >= 0 for item in completion_values)
-    )
-    prompt_tokens = sum(prompt_values) if usage_complete else None
-    completion_tokens = sum(completion_values) if usage_complete else None
-    total_tokens = (
-        int(prompt_tokens) + int(completion_tokens)
-        if prompt_tokens is not None and completion_tokens is not None
-        else None
-    )
-    latency_complete = (
-        len(latencies) == len(analysis.artifacts) == (_EXPECTED_STAGE_COUNT)
-    )
-    quality_evidence: JsonObject = {
-        "status": (
-            "complete"
-            if usage_complete
-            and latency_complete
-            and cited_item_count == citation_item_count
-            and len(analysis.artifacts) == _EXPECTED_STAGE_COUNT
-            else "partial"
+    return cast(
+        ExternalAnalysisReviewTarget,
+        build_external_analysis_review_target(
+            analysis,
+            target_type=ExternalAnalysisReviewTarget,
+            expected_artifact_kinds=_EXPECTED_ARTIFACT_KINDS,
+            expected_stage_count=_EXPECTED_STAGE_COUNT,
         ),
-        "model_call_count": len(analysis.model_calls),
-        "completed_model_call_count": sum(
-            item.status == "completed" for item in analysis.model_calls
-        ),
-        "prompt_tokens": prompt_tokens,
-        "completion_tokens": completion_tokens,
-        "total_tokens": total_tokens,
-        "usage_status": "complete" if usage_complete else "partial_or_missing",
-        "latency_status": ("complete" if latency_complete else "partial_or_missing"),
-        "total_latency_ms": sum(latencies) if latency_complete else None,
-        "maximum_stage_latency_ms": max(latencies) if latency_complete else None,
-        "reasoning_present_stage_count": sum(
-            item.reasoning_content_present for item in analysis.model_calls
-        ),
-        "reasoning_content_persisted": False,
-        "artifact_count": len(analysis.artifacts),
-        "citation_item_count": citation_item_count,
-        "cited_item_count": cited_item_count,
-        "citation_status": (
-            "complete"
-            if citation_item_count > 0 and cited_item_count == citation_item_count
-            else "incomplete"
-        ),
-        "current_evidence_read_count": sum(
-            item.get("status") == "completed" for item in analysis.tool_calls
-        ),
-        "current_evidence_reads_complete": (analysis.current_evidence_reads_complete),
-        "provider_reported_usage": usage_complete,
-        "provider_invoice": False,
-    }
-    target_payload = {
-        "analysis_id": analysis.record.analysis_id,
-        "workflow_id": analysis.record.workflow_id,
-        "workflow_status": analysis.workflow.status.value,
-        "workflow_failure_code": analysis.workflow.failure_code,
-        "partial_result": analysis.workflow.partial_result,
-        "context_snapshot_id": analysis.record.context_snapshot_id,
-        "context_fingerprint": analysis.record.context_fingerprint,
-        "retrieval_target_fingerprint": (analysis.record.retrieval_target_fingerprint),
-        "provider_id": analysis.record.provider_id,
-        "model_id": analysis.record.model_id,
-        "prompt_version": analysis.record.prompt_version,
-        "binding_validity": analysis.binding_validity,
-        "binding_errors": list(analysis.binding_errors),
-        "current_evidence_reads_complete": (analysis.current_evidence_reads_complete),
-        "artifacts": artifact_evidence,
-        "model_calls": model_call_evidence,
-        "tool_calls": [dict(item) for item in analysis.tool_calls],
-        "quality_evidence": quality_evidence,
-        "report_artifact_id": report_artifact_id,
-        "audit": {
-            "valid": analysis.audit_valid,
-            "event_count": analysis.audit_event_count,
-            "last_event_hash": analysis.audit_last_event_hash,
-            "errors": list(analysis.audit_errors),
-        },
-    }
-    return ExternalAnalysisReviewTarget(
-        analysis_id=analysis.record.analysis_id,
-        workflow_id=analysis.record.workflow_id,
-        context_snapshot_id=analysis.record.context_snapshot_id,
-        context_fingerprint=analysis.record.context_fingerprint,
-        provider_id=analysis.record.provider_id,
-        model_id=analysis.record.model_id,
-        prompt_version=analysis.record.prompt_version,
-        report_artifact_id=report_artifact_id,
-        quality_evidence=quality_evidence,
-        fingerprint=content_fingerprint(target_payload),
-        acceptance_errors=tuple(dict.fromkeys(errors)),
     )
 
 
@@ -1044,78 +614,21 @@ def _event_hash(
     previous_hash: str | None,
     created_at: str,
 ) -> str:
-    return content_fingerprint(
-        {
-            "review_id": review_id,
-            "sequence": sequence,
-            "event_type": event_type,
-            "payload": payload,
-            "previous_hash": previous_hash,
-            "created_at": created_at,
-        }
+    return external_analysis_review_event_hash(
+        review_id=review_id,
+        sequence=sequence,
+        event_type=event_type,
+        payload=payload,
+        previous_hash=previous_hash,
+        created_at=created_at,
     )
 
 
-def _review_from_row(row: sqlite3.Row) -> StoredExternalAnalysisReview:
-    payload = json.loads(str(row["request_json"]))
-    rubric_payload = payload["quality_rubric"]
-    pricing_payload = payload.get("pricing_snapshot")
-    request = HumanExternalAnalysisReviewRequest(
-        idempotency_key=str(payload["idempotency_key"]),
-        reviewed_by=str(payload["reviewed_by"]),
-        decision=ExternalAnalysisReviewDecision(str(payload["decision"])),
-        note=str(payload["note"]),
-        quality_rubric=ExternalAnalysisQualityRubric(
-            evidence_grounding=int(rubric_payload["evidence_grounding"]),
-            contradiction_handling=int(rubric_payload["contradiction_handling"]),
-            uncertainty_calibration=int(rubric_payload["uncertainty_calibration"]),
-            decision_usefulness=int(rubric_payload["decision_usefulness"]),
-        ),
-        factual_error_count=int(payload["factual_error_count"]),
-        unsupported_claim_count=int(payload["unsupported_claim_count"]),
-        pricing_snapshot=(
-            ProviderPricingSnapshot(
-                currency=str(pricing_payload["currency"]),
-                prompt_price_per_million_tokens=str(
-                    pricing_payload["prompt_price_per_million_tokens"]
-                ),
-                completion_price_per_million_tokens=str(
-                    pricing_payload["completion_price_per_million_tokens"]
-                ),
-                source=str(pricing_payload["source"]),
-                effective_at=str(pricing_payload["effective_at"]),
-                schema_version=str(pricing_payload["schema_version"]),
-            )
-            if isinstance(pricing_payload, Mapping)
-            else None
-        ),
-        pricing_unavailable_reason=(
-            str(payload["pricing_unavailable_reason"])
-            if payload.get("pricing_unavailable_reason") is not None
-            else None
-        ),
-        confirmation=str(payload["confirmation"]),
-        schema_version=str(payload["schema_version"]),
-    )
-    return StoredExternalAnalysisReview(
-        review_id=str(row["review_id"]),
-        analysis_id=str(row["analysis_id"]),
-        workflow_id=str(row["workflow_id"]),
-        idempotency_key=str(row["idempotency_key"]),
-        request=request,
-        request_fingerprint=str(row["request_fingerprint"]),
-        analysis_target_fingerprint=str(row["analysis_target_fingerprint"]),
-        report_artifact_id=(
-            str(row["report_artifact_id"])
-            if row["report_artifact_id"] is not None
-            else None
-        ),
-        provider_id=str(row["provider_id"]),
-        model_id=str(row["model_id"]),
-        prompt_version=str(row["prompt_version"]),
-        quality_evidence=dict(json.loads(str(row["quality_evidence_json"]))),
-        cost_evidence=dict(json.loads(str(row["cost_evidence_json"]))),
-        created_at=str(row["created_at"]),
+def _review_from_row(row: object) -> StoredExternalAnalysisReview:
+    store = object.__new__(ExternalAnalysisReviewStore)
+    return cast(
+        StoredExternalAnalysisReview,
+        ExternalAnalysisReviewProjectionMixin._review_from_row(store, row),  # type: ignore[arg-type]
     )
 
 
@@ -1123,70 +636,15 @@ def _cost_evidence(
     request: HumanExternalAnalysisReviewRequest,
     quality_evidence: Mapping[str, object],
 ) -> JsonObject:
-    pricing = request.pricing_snapshot
-    if pricing is None:
-        return {
-            "status": "unpriced",
-            "currency": None,
-            "estimated_cost": None,
-            "pricing_source": None,
-            "pricing_effective_at": None,
-            "pricing_unavailable_reason": request.pricing_unavailable_reason,
-            "calculation": "not_performed",
-            "provider_invoice": False,
-        }
-    prompt_tokens = quality_evidence.get("prompt_tokens")
-    completion_tokens = quality_evidence.get("completion_tokens")
-    if not isinstance(prompt_tokens, int) or not isinstance(completion_tokens, int):
-        return {
-            "status": "partial_usage",
-            "currency": pricing.currency,
-            "estimated_cost": None,
-            "pricing_source": pricing.source,
-            "pricing_effective_at": pricing.effective_at,
-            "pricing_unavailable_reason": None,
-            "calculation": "blocked_by_incomplete_provider_usage",
-            "provider_invoice": False,
-        }
-    prompt_cost = (
-        Decimal(prompt_tokens)
-        * Decimal(pricing.prompt_price_per_million_tokens)
-        / Decimal(1_000_000)
-    )
-    completion_cost = (
-        Decimal(completion_tokens)
-        * Decimal(pricing.completion_price_per_million_tokens)
-        / Decimal(1_000_000)
-    )
-    return {
-        "status": "priced_estimate",
-        "currency": pricing.currency,
-        "estimated_cost": _decimal_text(prompt_cost + completion_cost),
-        "prompt_cost": _decimal_text(prompt_cost),
-        "completion_cost": _decimal_text(completion_cost),
-        "pricing_source": pricing.source,
-        "pricing_effective_at": pricing.effective_at,
-        "pricing_unavailable_reason": None,
-        "calculation": "reviewer_pricing_x_provider_reported_tokens",
-        "provider_invoice": False,
-    }
+    return external_analysis_review_cost_evidence(request, quality_evidence)
 
 
 def _non_negative_decimal(value: object, field_name: str) -> Decimal:
-    try:
-        parsed = Decimal(str(value))
-    except (InvalidOperation, ValueError) as exc:
-        raise ValueError(f"{field_name} must be a decimal") from exc
-    if not parsed.is_finite() or parsed < 0:
-        raise ValueError(f"{field_name} must be a non-negative finite decimal")
-    return parsed
+    return external_analysis_non_negative_decimal(value, field_name)
 
 
 def _decimal_text(value: Decimal) -> str:
-    text = format(value, "f")
-    if "." in text:
-        text = text.rstrip("0").rstrip(".")
-    return text or "0"
+    return external_analysis_decimal_text(value)
 
 
 # Public review projections reused by the promoted-memory review contract.

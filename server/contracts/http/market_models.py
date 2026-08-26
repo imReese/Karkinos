@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -126,6 +126,8 @@ class MarketCalendarSnapshotResponse(BaseModel):
     source_fingerprint: str | None = None
     official_verification_status: str = "unverified"
     official_source_url: str | None = None
+    verification_source_fingerprint: str | None = None
+    official_source_fingerprint: str | None = None
     official_verified_at: str | None = None
     official_verified_by: str | None = None
     limitations: list[str] = Field(default_factory=list)
@@ -142,8 +144,10 @@ class MarketCalendarSyncRequest(BaseModel):
 class MarketCalendarVerificationRequest(BaseModel):
     exchange: str = "SSE"
     year: int = 2026
-    verification_status: str
+    expected_source_fingerprint: str
+    verification_status: Literal["unverified", "needs_review", "verified"]
     official_source_url: str | None = None
+    official_source_fingerprint: str | None = None
     verified_by: str | None = None
     review_notes: str | None = None
     day_labels: dict[str, str] = Field(default_factory=dict)

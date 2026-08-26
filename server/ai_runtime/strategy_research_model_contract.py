@@ -7,7 +7,9 @@ from collections.abc import Mapping
 from typing import Any, Literal
 
 from server.ai_runtime.contracts import JsonObject, canonical_json, content_fingerprint
-from server.ai_runtime.external_research import ExternalResearchInvalidResponseError
+from server.ai_runtime.external_research_errors import (
+    ExternalResearchInvalidResponseError,
+)
 from server.ai_runtime.formula_dsl import (
     FORMULA_AST_CONTRACT,
     FormulaBinding,

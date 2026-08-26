@@ -25,6 +25,7 @@ from server.ai_runtime.strategy_research import (
     StrategyResearchSelection,
 )
 from server.db import AppDatabase
+from server.dependencies import AppState
 from server.models import BacktestRequest
 from server.services.ai_shadow_research_automation import (
     SHADOW_RESEARCH_CITATION_CALL_EXTENSION_CONFIRMATION,
@@ -68,12 +69,22 @@ from tests.ai_shadow_strategy_fixtures import seed_ai_shadow_canonical_sources
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
-def _state(db: AppDatabase) -> SimpleNamespace:
-    return SimpleNamespace(
-        db=db,
-        trading_controls=TradingControlState(db=db),
-        notifier=None,
-    )
+def _state(db: AppDatabase) -> AppState:
+    state = AppState()
+    state.db = db
+    state.trading_controls = TradingControlState(db=db)
+    return state
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_service_requires_initialized_app_state_database(tmp_path) -> None:
+    with pytest.raises(RuntimeError, match="application database is not initialized"):
+        AiShadowResearchAutomationService(
+            state=AppState(),
+            store=ShadowResearchStore(tmp_path / "app.db"),
+            data_store=DataStore(tmp_path / "market"),
+        )
 
 
 def _policy_payload(*, enabled: bool) -> dict:
@@ -2214,8 +2225,10 @@ def test_daily_binding_failure_precedes_candidate_approval_write(tmp_path) -> No
             }
 
     store = TrackingStore()
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
     service = AiShadowResearchAutomationService(
-        state=SimpleNamespace(db=SimpleNamespace(_path=tmp_path / "app.db")),
+        state=_state(db),
         store=store,
         data_store=DataStore(tmp_path / "market"),
         daily_artifact_store=InvalidDailyArtifacts(),
@@ -3455,6 +3468,7 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
             adjustment_mode="none",
         )
     market_dates = [timestamp.date().isoformat() for timestamp in bars["timestamp"]]
+    calendar_source_fingerprint = "c" * 64
     db.upsert_market_calendar_snapshot_sync(
         {
             "exchange": "SSE",
@@ -3463,7 +3477,7 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
             "status": "available",
             "trading_day_count": len(market_dates),
             "closed_day_count": 0,
-            "source_fingerprint": "fixture-calendar",
+            "source_fingerprint": calendar_source_fingerprint,
             "days": [
                 {
                     "date": market_date,
@@ -3479,8 +3493,10 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
     db.update_market_calendar_verification_sync(
         exchange="SSE",
         year=2026,
+        source_fingerprint=calendar_source_fingerprint,
         verification_status="verified",
         official_source_url="https://example.test/calendar",
+        official_source_fingerprint="d" * 64,
         verified_by="unit-test",
     )
     for index, market_date in enumerate(market_dates):

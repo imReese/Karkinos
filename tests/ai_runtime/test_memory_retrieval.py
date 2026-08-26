@@ -212,6 +212,47 @@ async def test_retrieval_is_restart_idempotent_and_concurrent_safe(tmp_path):
 
 
 @pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_retrieval_event_failure_rolls_back_request_atomically(
+    tmp_path,
+    monkeypatch,
+):
+    db_path = tmp_path / "memory-retrieval-rollback.db"
+    capture, _, review = await _reviewed_memory(db_path)
+    service = _retrieval_service(db_path)
+    request = _retrieval_request(
+        review.review.review_id,
+        capture.context.snapshot_id,
+    )
+
+    def fail_event_hash(**_kwargs):
+        raise RuntimeError("retrieval event hash failed")
+
+    monkeypatch.setattr(
+        "server.ai_runtime.memory_retrieval._retrieval_event_hash",
+        fail_event_hash,
+    )
+
+    with pytest.raises(RuntimeError, match="retrieval event hash failed"):
+        service.start(request)
+
+    with closing(sqlite3.connect(db_path)) as conn:
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM ai_reviewed_memory_retrievals"
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM ai_reviewed_memory_retrieval_events"
+            ).fetchone()[0]
+            == 0
+        )
+
+
+@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_only_current_reviewed_memory_is_retrievable(tmp_path):
     db_path = tmp_path / "memory-retrieval-review-gate.db"

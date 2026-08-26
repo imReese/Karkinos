@@ -97,6 +97,7 @@ async def refresh_confirmed_fund_nav(
                 ttl_seconds=0,
                 confirmation_only=True,
                 request_id=request.request_id,
+                manual_explicit_trigger=True,
             )
         )
     except FundNavSyncIdempotencyConflict as exc:

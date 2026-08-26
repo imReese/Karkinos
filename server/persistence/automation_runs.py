@@ -2,59 +2,74 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import sqlite3
-from datetime import datetime, timezone
-from decimal import Decimal
-from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
-from server.persistence.connection import DateTimeNow, SQLiteRepository
-from server.persistence.database_support import (
-    account_truth_review_identity_from_connection,
-    action_task_event_payload,
-    apply_manual_confirmation_readiness,
-    controlled_broker_submit_rejection,
-    controlled_lifecycle_invalidated_clearance_rows,
-    controlled_session_authority_rejection,
-    controlled_session_budget_rejection,
-    controlled_session_gate_snapshot_rejection,
-    controlled_session_pause_rejection,
-    controlled_session_rate_admission_rejection,
-    controlled_submission_clearance_rejection,
-    controlled_submission_ledger_correction_rejection,
-    controlled_submission_ledger_posting_rejection,
-    decimal_values_equal,
-    event_log_response,
-    event_matches_signal_journal_entry,
-    fill_event_payload,
-    json_dict,
-    json_list,
-    latest_quote_event_payload,
-    latest_signal_journal_event,
-    manual_order_event_payload,
-    metadata_payload_value,
-    normalize_timestamp,
-    order_event_payload,
-    paper_shadow_run_review_next_step,
-    quote_observation_rank,
-    risk_decision_journal_response,
-    serialize_metadata_json,
-    stable_json_fingerprint,
-    validate_paper_shadow_run_review_transition,
-    verify_controlled_ledger_entry,
-)
-from server.persistence.event_log import (
-    insert_event_sync,
-)
-from server.persistence.event_log import (
-    serialize_event_payload_json as _serialize_event_payload_json,
-)
+from server.persistence.connection import SQLiteRepository
 
 logger = logging.getLogger(__name__)
+
+
+def upsert_automation_run_in_transaction(
+    conn: sqlite3.Connection,
+    run: dict[str, Any],
+    *,
+    now: str,
+) -> dict[str, Any]:
+    """Write one automation-run projection on a caller-owned transaction."""
+
+    payload_json = json.dumps(
+        dict(run.get("payload") or {}),
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    run_id = str(run["run_id"])
+    existing = conn.execute(
+        "SELECT created_at FROM automation_runs WHERE run_id = ? LIMIT 1",
+        (run_id,),
+    ).fetchone()
+    created_at = str(existing["created_at"]) if existing else now
+    conn.execute(
+        """
+        INSERT INTO automation_runs (
+            run_id, run_type, run_date, status, execution_mode,
+            started_at, finished_at, source_ref, payload_json,
+            created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(run_id) DO UPDATE SET
+            run_type = excluded.run_type,
+            run_date = excluded.run_date,
+            status = excluded.status,
+            execution_mode = excluded.execution_mode,
+            started_at = excluded.started_at,
+            finished_at = excluded.finished_at,
+            source_ref = excluded.source_ref,
+            payload_json = excluded.payload_json,
+            updated_at = excluded.updated_at
+        """,
+        (
+            run_id,
+            str(run["run_type"]),
+            str(run["run_date"]),
+            str(run["status"]),
+            str(run["execution_mode"]),
+            str(run.get("started_at") or now),
+            run.get("finished_at"),
+            run.get("source_ref"),
+            payload_json,
+            created_at,
+            now,
+        ),
+    )
+    row = conn.execute(
+        "SELECT * FROM automation_runs WHERE run_id = ?",
+        (run_id,),
+    ).fetchone()
+    if row is None:
+        raise RuntimeError("automation run was not persisted")
+    return dict(row)
 
 
 class AutomationRunRepository(SQLiteRepository):
@@ -127,59 +142,11 @@ class AutomationRunRepository(SQLiteRepository):
     def upsert_automation_run_sync(self, run: dict[str, Any]) -> dict[str, Any]:
         """Persist or update an automation run audit record."""
         now = self._now().isoformat()
-        payload = dict(run.get("payload") or {})
-        payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True)
-        run_id = str(run["run_id"])
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
-            existing = conn.execute(
-                """
-                SELECT created_at
-                FROM automation_runs
-                WHERE run_id = ?
-                LIMIT 1
-                """,
-                (run_id,),
-            ).fetchone()
-            created_at = str(existing["created_at"]) if existing else now
-            conn.execute(
-                """
-                INSERT INTO automation_runs (
-                    run_id, run_type, run_date, status, execution_mode,
-                    started_at, finished_at, source_ref, payload_json,
-                    created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(run_id) DO UPDATE SET
-                    run_type = excluded.run_type,
-                    run_date = excluded.run_date,
-                    status = excluded.status,
-                    execution_mode = excluded.execution_mode,
-                    started_at = excluded.started_at,
-                    finished_at = excluded.finished_at,
-                    source_ref = excluded.source_ref,
-                    payload_json = excluded.payload_json,
-                    updated_at = excluded.updated_at
-                """,
-                (
-                    run_id,
-                    str(run["run_type"]),
-                    str(run["run_date"]),
-                    str(run["status"]),
-                    str(run["execution_mode"]),
-                    str(run.get("started_at") or now),
-                    run.get("finished_at"),
-                    run.get("source_ref"),
-                    payload_json,
-                    created_at,
-                    now,
-                ),
-            )
-            row = conn.execute(
-                "SELECT * FROM automation_runs WHERE run_id = ?",
-                (run_id,),
-            ).fetchone()
+            row = upsert_automation_run_in_transaction(conn, run, now=now)
             conn.commit()
-            return dict(row)
+            return row
 
     def get_automation_run_sync(self, run_id: str) -> dict[str, Any] | None:
         """Read one automation run audit record."""

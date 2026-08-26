@@ -4,6 +4,28 @@ from __future__ import annotations
 
 from typing import Any
 
+from server.contracts.ledger_mutations import (
+    LedgerAppendCommand,
+    LedgerMutationResult,
+    LedgerTradeSettlementCommand,
+)
+from server.contracts.portfolio_cash_flows import (
+    CashFlowCorrectionResult,
+    CashFlowCorrectionWrite,
+    CashFlowWrite,
+    CashFlowWriteResult,
+)
+from server.contracts.portfolio_trades import (
+    ManualTradeCorrectionResult,
+    ManualTradeCorrectionWrite,
+    ManualTradeWrite,
+    ManualTradeWriteResult,
+    PendingFundConfirmationResult,
+    PendingFundConfirmationWrite,
+    PendingFundOrderWrite,
+    PendingFundOrderWriteResult,
+)
+from server.contracts.quote_ingestion import QuoteIngestionCommand
 from server.persistence.facades.base import DatabaseRepositoryAccess
 
 
@@ -11,6 +33,14 @@ class FinancialFactDatabaseFacade(DatabaseRepositoryAccess):
     """Delegate the legacy API to cohesive repositories."""
 
     # ---------- Latest Quotes ----------
+
+    def persist_quote_ingestion_sync(
+        self,
+        command: QuoteIngestionCommand,
+    ) -> dict[str, Any]:
+        """Stage or atomically publish one complete quote observation."""
+
+        return self._financial_facts.persist_quote_ingestion_sync(command)
 
     def upsert_latest_quote_sync(
         self,
@@ -187,13 +217,17 @@ class FinancialFactDatabaseFacade(DatabaseRepositoryAccess):
 
     # ---------- Cash Flows ----------
 
-    async def add_cash_flow(
-        self, timestamp: str, amount: float, flow_type: str = "deposit", note: str = ""
-    ) -> int:
-        """添加资金流水记录，返回 ID。"""
-        return await self._financial_facts.add_cash_flow(
-            timestamp, amount, flow_type, note
-        )
+    def record_cash_flow_sync(self, command: CashFlowWrite) -> CashFlowWriteResult:
+        """Commit one canonical cash-flow transaction."""
+
+        return self._financial_facts.record_cash_flow_sync(command)
+
+    def correct_cash_flow_sync(
+        self, command: CashFlowCorrectionWrite
+    ) -> CashFlowCorrectionResult:
+        """Append an inverse ledger fact without deleting history."""
+
+        return self._financial_facts.correct_cash_flow_sync(command)
 
     async def get_cash_flows(
         self, limit: int = 50, offset: int = 0
@@ -207,51 +241,23 @@ class FinancialFactDatabaseFacade(DatabaseRepositoryAccess):
         """同步列出资金流水，最新优先。"""
         return self._financial_facts.get_cash_flows_sync(limit, offset)
 
-    async def delete_cash_flow(self, flow_id: int) -> bool:
-        """删除资金流水记录。"""
-        return await self._financial_facts.delete_cash_flow(flow_id)
-
     # ---------- Trades ----------
 
-    async def add_trade(
+    def record_manual_trade_sync(
         self,
-        timestamp: str,
-        symbol: str,
-        direction: str,
-        quantity: float,
-        price: float,
-        commission: float = 0.0,
-        asset_class: str = "stock",
-        note: str = "",
-    ) -> int:
-        """添加交易记录，返回 ID。"""
-        return await self._financial_facts.add_trade(
-            timestamp, symbol, direction, quantity, price, commission, asset_class, note
-        )
+        command: ManualTradeWrite,
+    ) -> ManualTradeWriteResult:
+        """Commit one canonical manual trade transaction."""
 
-    def add_trade_sync(
+        return self._financial_facts.record_manual_trade_sync(command)
+
+    def correct_manual_trade_sync(
         self,
-        *,
-        timestamp: str,
-        symbol: str,
-        direction: str,
-        quantity: float,
-        price: float,
-        commission: float = 0.0,
-        asset_class: str = "stock",
-        note: str = "",
-    ) -> int:
-        """同步添加交易记录，供后台确认任务使用。"""
-        return self._financial_facts.add_trade_sync(
-            timestamp=timestamp,
-            symbol=symbol,
-            direction=direction,
-            quantity=quantity,
-            price=price,
-            commission=commission,
-            asset_class=asset_class,
-            note=note,
-        )
+        command: ManualTradeCorrectionWrite,
+    ) -> ManualTradeCorrectionResult:
+        """Append an exact correction while retaining original history."""
+
+        return self._financial_facts.correct_manual_trade_sync(command)
 
     async def get_trades(
         self, limit: int = 50, offset: int = 0
@@ -263,37 +269,15 @@ class FinancialFactDatabaseFacade(DatabaseRepositoryAccess):
         """同步列出交易记录，最新优先。"""
         return self._financial_facts.get_trades_sync(limit, offset)
 
-    async def delete_trade(self, trade_id: int) -> bool:
-        """删除交易记录。"""
-        return await self._financial_facts.delete_trade(trade_id)
-
     # ---------- Pending Fund Orders ----------
 
-    def add_pending_fund_order_sync(
+    def create_pending_fund_order_sync(
         self,
-        *,
-        submitted_at: str,
-        symbol: str,
-        display_name: str,
-        amount: float,
-        commission: float = 0.0,
-        asset_class: str = "fund",
-        target_trade_date: str,
-        status: str = "pending",
-        note: str = "",
-    ) -> int:
-        """同步写入待确认基金申购，等待确认净值发布后转交易。"""
-        return self._financial_facts.add_pending_fund_order_sync(
-            submitted_at=submitted_at,
-            symbol=symbol,
-            display_name=display_name,
-            amount=amount,
-            commission=commission,
-            asset_class=asset_class,
-            target_trade_date=target_trade_date,
-            status=status,
-            note=note,
-        )
+        command: PendingFundOrderWrite,
+    ) -> PendingFundOrderWriteResult:
+        """Create or replay one pending fund order."""
+
+        return self._financial_facts.create_pending_fund_order_sync(command)
 
     def get_pending_fund_orders_sync(
         self, status: str = "pending"
@@ -301,23 +285,13 @@ class FinancialFactDatabaseFacade(DatabaseRepositoryAccess):
         """同步读取待确认基金申购。"""
         return self._financial_facts.get_pending_fund_orders_sync(status)
 
-    def mark_pending_fund_order_confirmed_sync(
+    def confirm_pending_fund_order_sync(
         self,
-        *,
-        order_id: int,
-        trade_id: int,
-        confirmed_nav: float,
-        confirmed_quantity: float,
-        confirmed_trade_date: str,
-    ) -> None:
-        """标记待确认基金申购已转正式交易。"""
-        return self._financial_facts.mark_pending_fund_order_confirmed_sync(
-            order_id=order_id,
-            trade_id=trade_id,
-            confirmed_nav=confirmed_nav,
-            confirmed_quantity=confirmed_quantity,
-            confirmed_trade_date=confirmed_trade_date,
-        )
+        command: PendingFundConfirmationWrite,
+    ) -> PendingFundConfirmationResult:
+        """Atomically confirm one pending fund order."""
+
+        return self._financial_facts.confirm_pending_fund_order_sync(command)
 
     async def get_total_deposits(self) -> float:
         """所有入金总额（deposit - withdraw）。"""
@@ -328,6 +302,22 @@ class FinancialFactDatabaseFacade(DatabaseRepositoryAccess):
         return self._financial_facts.get_total_deposits_sync()
 
     # ---------- Ledger Entries ----------
+
+    def append_ledger_entry_sync(
+        self,
+        command: LedgerAppendCommand,
+    ) -> LedgerMutationResult:
+        """Append or replay one explicit operator ledger request atomically."""
+
+        return self._financial_facts.append_ledger_entry_sync(command)
+
+    def settle_ledger_trade_sync(
+        self,
+        command: LedgerTradeSettlementCommand,
+    ) -> LedgerMutationResult:
+        """CAS-confirm or replay one explicit operator settlement request."""
+
+        return self._financial_facts.settle_ledger_trade_sync(command)
 
     def insert_ledger_entry_sync(
         self,

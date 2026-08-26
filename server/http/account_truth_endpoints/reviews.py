@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import APIRouter
 
 from account_truth.broker_evidence import BrokerEvidenceReadRejected
@@ -25,6 +23,7 @@ from server.contracts.http.account_truth import (
     ReviewedFeeScheduleReviewCreate,
     ReviewedFeeScheduleReviewRevoke,
 )
+from server.http.account_truth_endpoints.dependencies import ReviewEndpointDependencies
 from server.services.reviewed_fee_schedule import (
     REVIEWED_FEE_SCHEDULE_APPROVAL_CONFIRMATION,
     REVIEWED_FEE_SCHEDULE_REVOCATION_CONFIRMATION,
@@ -33,53 +32,44 @@ from server.services.reviewed_fee_schedule import (
 )
 
 
-def create_router(facade: Any) -> APIRouter:
+def create_router(dependencies: ReviewEndpointDependencies) -> APIRouter:
     r = APIRouter(prefix="/api/account-truth", tags=["account-truth"])
-
-    def dependency(name: str):
-        value = getattr(facade, name)
-        if callable(value) and not isinstance(value, type):
-            return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
-        return value
-
-    _account_truth_read_http_exception = dependency(
-        "_account_truth_read_http_exception"
+    _account_truth_read_http_exception = dependencies.account_truth_read_http_exception
+    _citic_canonical_resolution_http_exception = (
+        dependencies.citic_canonical_resolution_http_exception
     )
-    _citic_canonical_resolution_http_exception = dependency(
-        "_citic_canonical_resolution_http_exception"
+    _citic_canonical_resolution_read_http_exception = (
+        dependencies.citic_canonical_resolution_read_http_exception
     )
-    _citic_canonical_resolution_read_http_exception = dependency(
-        "_citic_canonical_resolution_read_http_exception"
+    _evidence_scope_review_http_exception = (
+        dependencies.evidence_scope_review_http_exception
     )
-    _evidence_scope_review_http_exception = dependency(
-        "_evidence_scope_review_http_exception"
+    _reviewed_fee_schedule_http_exception = (
+        dependencies.reviewed_fee_schedule_http_exception
     )
-    _reviewed_fee_schedule_http_exception = dependency(
-        "_reviewed_fee_schedule_http_exception"
+    _reviewed_fee_schedule_read_http_exception = (
+        dependencies.reviewed_fee_schedule_read_http_exception
     )
-    _reviewed_fee_schedule_read_http_exception = dependency(
-        "_reviewed_fee_schedule_read_http_exception"
+    _reviewed_fee_schedule_repository_for_state = (
+        dependencies.reviewed_fee_schedule_repository_for_state
     )
-    _reviewed_fee_schedule_repository_for_state = dependency(
-        "_reviewed_fee_schedule_repository_for_state"
+    build_reviewed_fee_schedule_preview = (
+        dependencies.build_reviewed_fee_schedule_preview
     )
-    build_reviewed_fee_schedule_preview = dependency(
-        "build_reviewed_fee_schedule_preview"
+    build_reviewed_fee_schedule_review_status = (
+        dependencies.build_reviewed_fee_schedule_review_status
     )
-    build_reviewed_fee_schedule_review_status = dependency(
-        "build_reviewed_fee_schedule_review_status"
+    record_account_truth_evidence_scope_review = (
+        dependencies.record_account_truth_evidence_scope_review
     )
-    record_account_truth_evidence_scope_review = dependency(
-        "record_account_truth_evidence_scope_review"
+    record_citic_source_canonical_resolution = (
+        dependencies.record_citic_source_canonical_resolution
     )
-    record_citic_source_canonical_resolution = dependency(
-        "record_citic_source_canonical_resolution"
+    revoke_account_truth_evidence_scope_review = (
+        dependencies.revoke_account_truth_evidence_scope_review
     )
-    revoke_account_truth_evidence_scope_review = dependency(
-        "revoke_account_truth_evidence_scope_review"
-    )
-    revoke_citic_source_canonical_resolution = dependency(
-        "revoke_citic_source_canonical_resolution"
+    revoke_citic_source_canonical_resolution = (
+        dependencies.revoke_citic_source_canonical_resolution
     )
 
     @r.post("/fee-schedule/preview")

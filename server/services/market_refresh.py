@@ -21,6 +21,10 @@ from server.services.market_hours import is_cn_trading_session
 from server.services.market_indices import (
     market_index_display_name,
 )
+from server.services.market_quote_ingestion import (
+    build_quote_ingestion_command,
+    persist_quote_ingestion,
+)
 from server.services.market_refresh_errors import (
     TUSHARE_FUND_NAV_PERMISSION_DENIED as _TUSHARE_FUND_NAV_PERMISSION_DENIED,
 )
@@ -28,6 +32,7 @@ from server.services.market_refresh_errors import (
     provider_error_code,
     provider_error_reason,
 )
+from server.services.market_refresh_provider import load_provider_quote_payload
 
 logger = logging.getLogger(__name__)
 
@@ -264,12 +269,28 @@ def store_runtime_quote(state, symbol: str, quote: dict) -> None:
     scheduler = state.scheduler
     if scheduler is None:
         return
-    if hasattr(scheduler, "_latest_quotes"):
-        scheduler._latest_quotes[symbol] = quote
+    publish = getattr(scheduler, "publish_runtime_quote", None)
+    if not callable(publish):
         return
-    latest_quotes = getattr(scheduler, "latest_quotes", None)
-    if isinstance(latest_quotes, dict):
-        latest_quotes[symbol] = quote
+    publish(symbol, quote)
+
+
+def publish_committed_runtime_quotes(state, results) -> None:
+    """Expose only quotes from a database batch that has been published."""
+
+    database = getattr(state, "db", None)
+    if database is None or not hasattr(database, "get_latest_quote_sync"):
+        raise RuntimeError("published quote database is unavailable")
+    for result in results:
+        row = database.get_latest_quote_sync(result.symbol, result.asset_class)
+        if not isinstance(row, dict) or row.get("fetch_run_id") is None:
+            raise RuntimeError(f"published quote missing for {result.symbol}")
+        quote = {
+            **row,
+            "timestamp": row.get("quote_timestamp"),
+            "asset_class": row.get("asset_type") or result.asset_class,
+        }
+        store_runtime_quote(state, result.symbol, quote)
 
 
 def optional_float(value) -> float | None:
@@ -284,107 +305,6 @@ async def run_blocking_fetch(func, *args):
         _BLOCKING_FETCH_EXECUTOR,
         partial(func, *args),
     )
-
-
-def upsert_instrument_metadata_from_quote(
-    state,
-    *,
-    symbol: str,
-    asset_type: str,
-    snapshot: dict,
-    provider_name: str | None,
-    fetched_at: str | None = None,
-) -> None:
-    db = getattr(state, "db", None)
-    if db is None or not hasattr(db, "upsert_instrument_metadata_sync"):
-        return
-    display_name = str(
-        snapshot.get("display_name")
-        or snapshot.get("name")
-        or snapshot.get("asset_name")
-        or ""
-    ).strip()
-    if not display_name:
-        return
-    try:
-        db.upsert_instrument_metadata_sync(
-            symbol=symbol,
-            asset_type=asset_type,
-            display_name=display_name,
-            provider_symbol=snapshot.get("provider_symbol") or symbol,
-            exchange=snapshot.get("exchange"),
-            market=snapshot.get("market"),
-            provider_name=provider_name,
-            source="quote",
-            fetched_at=fetched_at,
-            metadata={
-                "source": snapshot.get("source"),
-                "quote_source": snapshot.get("quote_source"),
-            },
-        )
-    except Exception:
-        logger.warning(
-            "Failed to upsert instrument metadata for %s", symbol, exc_info=True
-        )
-
-
-def upsert_latest_quote_snapshot(
-    state,
-    *,
-    symbol: str,
-    asset_type: str,
-    snapshot: dict,
-    quote_source: str | None,
-    provider_name: str | None,
-    provider_status: str | None,
-    quote_status: str,
-    captured_reason: str,
-    nav_date: str | None = None,
-    fetch_run_id: str | None = None,
-) -> None:
-    db = getattr(state, "db", None)
-    if db is None or not hasattr(db, "upsert_latest_quote_sync"):
-        return
-    timestamp = snapshot.get("timestamp")
-    if not timestamp:
-        return
-    try:
-        db.upsert_latest_quote_sync(
-            symbol=symbol,
-            asset_type=asset_type,
-            price=float(snapshot["price"]),
-            previous_close=optional_float(snapshot.get("previous_close")),
-            change=optional_float(snapshot.get("change")),
-            change_percent=optional_float(
-                snapshot.get("change_percent") or snapshot.get("pct_chg")
-            ),
-            volume=optional_float(snapshot.get("volume")),
-            turnover=optional_float(snapshot.get("turnover") or snapshot.get("amount")),
-            quote_timestamp=str(timestamp),
-            quote_source=quote_source,
-            provider_name=provider_name,
-            provider_status=provider_status,
-            quote_status=quote_status,
-            stale_reason=snapshot.get("stale_reason"),
-            captured_at=datetime.now().isoformat(),
-            captured_reason=captured_reason,
-            nav_date=nav_date,
-            fetch_run_id=fetch_run_id,
-            metadata={
-                "source": snapshot.get("source"),
-                "display_name": snapshot.get("display_name") or snapshot.get("name"),
-            },
-        )
-        upsert_instrument_metadata_from_quote(
-            state,
-            symbol=symbol,
-            asset_type=asset_type,
-            snapshot=snapshot,
-            provider_name=provider_name,
-            fetched_at=str(timestamp),
-        )
-    except Exception:
-        logger.warning("Failed to upsert latest quote for %s", symbol, exc_info=True)
 
 
 def resolve_quote_status(
@@ -405,110 +325,14 @@ def resolve_quote_status(
 def load_latest_snapshot_from_provider(
     state, symbol: str, asset_class: AssetClass
 ) -> dict | None:
-    from data.manager import build_sources
-
-    data_source = getattr(state.config, "data_source", "akshare")
-    tushare_token = getattr(state.config, "tushare_token", "")
-    sources = build_sources(
-        data_source=data_source,
-        tushare_token=tushare_token,
+    return load_provider_quote_payload(
+        state,
+        symbol,
+        asset_class,
+        fetch_with_timeout=fetch_provider_latest_with_timeout,
+        provider_timeout_seconds=PROVIDER_REFRESH_TIMEOUT_SECONDS,
+        index_timeout_seconds=INDEX_PROVIDER_REFRESH_TIMEOUT_SECONDS,
     )
-    configured_source_name = data_source if data_source in sources else "akshare"
-    preferred = sources.get(configured_source_name, sources["akshare"])
-    source_chain = [(configured_source_name, preferred)]
-    if configured_source_name != "akshare":
-        akshare = sources.get("akshare")
-        if akshare is not None and akshare is not preferred:
-            source_chain.append(("akshare", akshare))
-
-    # TuShare's latest-quote adapter supports stocks and open-end funds only.
-    # Route unsupported asset classes directly to the registered AKShare edge
-    # source so one manual refresh does not spend its bounded time budget on a
-    # provider that cannot return the requested instrument type.
-    if configured_source_name == "tushare" and asset_class in {
-        AssetClass.INDEX,
-        AssetClass.GOLD,
-        AssetClass.BOND,
-    }:
-        akshare = sources.get("akshare")
-        source_chain = [("akshare", akshare)] if akshare is not None else []
-
-    snapshot = None
-    selected_source_name = data_source
-    last_error: Exception | None = None
-    fallback_reason_code: str | None = None
-    primary_source_name = source_chain[0][0]
-    for source_name, source in source_chain:
-        try:
-            snapshot = fetch_provider_latest_with_timeout(
-                source,
-                symbol,
-                asset_class,
-                timeout_seconds=(
-                    INDEX_PROVIDER_REFRESH_TIMEOUT_SECONDS
-                    if asset_class == AssetClass.INDEX
-                    else PROVIDER_REFRESH_TIMEOUT_SECONDS
-                ),
-            )
-            last_error = None
-        except Exception as exc:
-            logger.warning(
-                "Latest quote provider failed: %s %s (%s)",
-                source_name,
-                symbol,
-                asset_class.value,
-                exc_info=True,
-            )
-            last_error = exc
-            if source_name == primary_source_name:
-                fallback_reason_code = provider_error_code(exc)
-            snapshot = None
-        if snapshot:
-            selected_source_name = source_name
-            break
-    if not snapshot:
-        if last_error is not None:
-            raise last_error
-        return None
-    payload = {
-        "symbol": symbol,
-        "asset_class": asset_class.value,
-        "price": snapshot["price"],
-        "volume": snapshot.get("volume"),
-        "timestamp": snapshot.get("timestamp"),
-        "source": snapshot.get("source") or selected_source_name,
-        "quote_source": snapshot.get("quote_source")
-        or snapshot.get("source")
-        or selected_source_name,
-        "provider_name": snapshot.get("provider_name") or selected_source_name,
-        "provider_symbol": snapshot.get("provider_symbol") or symbol,
-        "exchange": snapshot.get("exchange"),
-        "market": snapshot.get("market"),
-        "quote_status": "live",
-        "provider_status": (
-            "fallback" if selected_source_name != configured_source_name else "live"
-        ),
-        "stale_reason": fallback_reason_code,
-        "nav_date": snapshot.get("nav_date")
-        or (snapshot.get("timestamp") if asset_class == AssetClass.FUND else None),
-    }
-    display_name = snapshot.get("display_name") or snapshot.get("name")
-    if display_name:
-        payload["display_name"] = str(display_name)
-        payload["name"] = str(display_name)
-    previous_close = snapshot.get("previous_close")
-    previous_close_date = snapshot.get("previous_close_date")
-    change = snapshot.get("change") or snapshot.get("day_change_value")
-    change_percent = (
-        snapshot.get("change_percent")
-        or snapshot.get("pct_chg")
-        or snapshot.get("day_change_pct")
-    )
-    payload["previous_close"] = previous_close
-    payload["previous_close_date"] = previous_close_date
-    payload["change"] = change
-    payload["change_percent"] = change_percent
-    return payload
 
 
 def fetch_provider_latest_with_timeout(
@@ -538,54 +362,22 @@ def persist_latest_snapshot(
     *,
     fetch_run_id: str | None = None,
 ) -> None:
-    if (
-        state.db is not None
-        and hasattr(state.db, "save_quote_snapshot_sync")
-        and payload.get("timestamp")
-    ):
-        captured_reason = "manual_or_route_refresh"
-        state.db.save_quote_snapshot_sync(
-            symbol=symbol,
-            asset_class=payload["asset_class"],
-            price=float(payload["price"]),
-            volume=None if payload["volume"] is None else float(payload["volume"]),
-            timestamp=str(payload["timestamp"]),
-            quote_source=payload["quote_source"],
-            provider_name=payload["provider_name"],
-            quote_status=payload["quote_status"],
-            provider_status=payload["provider_status"],
-            captured_reason=captured_reason,
-            nav_date=payload.get("nav_date"),
-            fetch_run_id=fetch_run_id,
-        )
-        snapshot_metadata = dict(payload)
-        upsert_latest_quote_snapshot(
-            state,
-            symbol=symbol,
-            asset_type=payload["asset_class"],
-            snapshot=snapshot_metadata,
-            quote_source=payload["quote_source"],
-            provider_name=payload["provider_name"],
-            provider_status=payload["provider_status"],
-            quote_status=payload["quote_status"],
-            captured_reason=captured_reason,
-            nav_date=payload.get("nav_date"),
-            fetch_run_id=fetch_run_id,
-        )
-        previous_close = payload.get("previous_close")
-        previous_close_date = payload.get("previous_close_date")
-        if (
-            previous_close not in {None, ""}
-            and previous_close_date not in {None, ""}
-            and hasattr(state.db, "save_daily_close_snapshot_sync")
-        ):
-            state.db.save_daily_close_snapshot_sync(
-                symbol=symbol,
-                asset_class=payload["asset_class"],
-                trade_date=str(previous_close_date),
-                close_price=float(previous_close),
-                source="reported_previous_close",
-            )
+    database = getattr(state, "db", None)
+    if database is None:
+        raise RuntimeError("quote persistence database is unavailable")
+    command = build_quote_ingestion_command(
+        symbol=symbol,
+        asset_type=str(payload["asset_class"]),
+        snapshot=payload,
+        quote_source=str(payload.get("quote_source") or "") or None,
+        provider_name=str(payload.get("provider_name") or "") or None,
+        provider_status=str(payload.get("provider_status") or "") or None,
+        quote_status=str(payload.get("quote_status") or "live"),
+        captured_reason="manual_or_route_refresh",
+        nav_date=(str(payload.get("nav_date")) if payload.get("nav_date") else None),
+        fetch_run_id=fetch_run_id,
+    )
+    persist_quote_ingestion(database, command)
 
 
 def fetch_latest_snapshot(state, symbol: str, asset_class: AssetClass) -> dict | None:
@@ -748,7 +540,8 @@ async def refresh_one_quote(
             last_refresh_error=error_message,
             using_persistent_cache=bool(latest_persistent_real_quote(state, symbol)),
         )
-    store_runtime_quote(state, symbol, snapshot)
+    if fetch_run_id is None:
+        store_runtime_quote(state, symbol, snapshot)
     quote_status = resolve_quote_status(state, snapshot)
     metadata = quote_metadata(
         state,
@@ -784,6 +577,7 @@ __all__ = (
     "optional_float",
     "parse_quote_timestamp",
     "persist_latest_snapshot",
+    "publish_committed_runtime_quotes",
     "provider_error_code",
     "provider_error_reason",
     "quote_age_seconds",
@@ -795,6 +589,4 @@ __all__ = (
     "shanghai_now",
     "stale_reason",
     "store_runtime_quote",
-    "upsert_instrument_metadata_from_quote",
-    "upsert_latest_quote_snapshot",
 )

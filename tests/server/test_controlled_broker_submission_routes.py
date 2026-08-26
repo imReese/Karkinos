@@ -640,6 +640,7 @@ def test_route_service_is_default_closed_without_injected_release_provider(
         config=SimpleNamespace(trusted_operator_identities=[]),
         execution_gateways=[gateway],
         trading_controls=object(),
+        controlled_broker_release_evidence_provider=None,
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
     monkeypatch.setattr(
@@ -666,6 +667,7 @@ def test_cancellation_route_service_is_default_closed_without_release_provider(
         db=object(),
         config=SimpleNamespace(trusted_operator_identities=[]),
         execution_gateways=[gateway],
+        controlled_broker_release_evidence_provider=None,
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
 

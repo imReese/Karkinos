@@ -120,7 +120,7 @@ def test_market_calendar_official_verification_updates_snapshot_metadata(
 ) -> None:
     db = AppDatabase(tmp_path / "market-calendar.db")
     db.init_sync()
-    db.upsert_market_calendar_snapshot_sync(
+    stored = db.upsert_market_calendar_snapshot_sync(
         build_static_market_calendar_snapshot(
             exchange="SSE",
             year=2026,
@@ -136,8 +136,10 @@ def test_market_calendar_official_verification_updates_snapshot_metadata(
         json={
             "exchange": "SSE",
             "year": 2026,
+            "expected_source_fingerprint": stored["source_fingerprint"],
             "verification_status": "verified",
             "official_source_url": "https://example.test/exchange-notice",
+            "official_source_fingerprint": "a" * 64,
             "verified_by": "manual-review",
             "review_notes": "Matched official exchange notice.",
             "day_labels": {"2026-01-01": "元旦休市"},
@@ -148,6 +150,8 @@ def test_market_calendar_official_verification_updates_snapshot_metadata(
     payload = response.json()
     assert payload["official_verification_status"] == "verified"
     assert payload["official_source_url"] == "https://example.test/exchange-notice"
+    assert payload["verification_source_fingerprint"] == stored["source_fingerprint"]
+    assert payload["official_source_fingerprint"] == "a" * 64
     assert payload["official_verified_by"] == "manual-review"
     assert "Matched official exchange notice." in payload["limitations"]
     by_date = {day["date"]: day for day in payload["days"]}
@@ -158,7 +162,7 @@ def test_market_calendar_official_verification_updates_snapshot_metadata(
 def test_market_calendar_resync_preserves_verified_holiday_labels(tmp_path) -> None:
     db = AppDatabase(tmp_path / "market-calendar.db")
     db.init_sync()
-    db.upsert_market_calendar_snapshot_sync(
+    stored = db.upsert_market_calendar_snapshot_sync(
         build_static_market_calendar_snapshot(
             exchange="SSE",
             year=2026,
@@ -170,8 +174,10 @@ def test_market_calendar_resync_preserves_verified_holiday_labels(tmp_path) -> N
     db.update_market_calendar_verification_sync(
         exchange="SSE",
         year=2026,
+        source_fingerprint=stored["source_fingerprint"],
         verification_status="verified",
         official_source_url="https://example.test/exchange-notice",
+        official_source_fingerprint="b" * 64,
         verified_by="manual-review",
         day_labels={"2026-06-19": "端午节休市"},
     )
@@ -180,7 +186,7 @@ def test_market_calendar_resync_preserves_verified_holiday_labels(tmp_path) -> N
         build_static_market_calendar_snapshot(
             exchange="SSE",
             year=2026,
-            provider="akshare",
+            provider="unit_fixture",
             open_dates={"2026-06-18", "2026-06-22"},
             fetched_at="2026-06-21T00:00:00+08:00",
         )

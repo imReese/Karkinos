@@ -14,6 +14,10 @@ from data.market_calendar import (
     build_market_calendar_provider,
     verify_official_market_calendar,
 )
+from server.contracts.market_calendar import (
+    MarketCalendarAutomationPublication,
+    MarketCalendarVerificationCommand,
+)
 from server.services.market_hours import get_shanghai_now
 
 logger = logging.getLogger(__name__)
@@ -86,12 +90,14 @@ class MarketCalendarAutomationService:
             verification = verify_official_market_calendar(snapshot, notice)
 
             if verification.verified:
-                self._db.upsert_market_calendar_snapshot_sync(snapshot)
-                self._db.update_market_calendar_verification_sync(
+                snapshot_payload = snapshot.to_payload()
+                verification_command = MarketCalendarVerificationCommand(
                     exchange="SSE",
                     year=year,
+                    source_fingerprint=snapshot.source_fingerprint,
                     verification_status="verified",
                     official_source_url=notice.source_url,
+                    official_source_fingerprint=notice.source_fingerprint,
                     verified_by="automatic-sse-cross-check",
                     day_labels=dict(notice.day_labels),
                 )
@@ -105,20 +111,23 @@ class MarketCalendarAutomationService:
                     exchange="SSE", year=year
                 )
                 if existing_snapshot is None:
-                    payload = snapshot.to_payload()
-                    payload.update(
-                        {
-                            "official_verification_status": "needs_review",
-                            "official_source_url": notice.source_url,
-                            "official_verified_at": None,
-                            "official_verified_by": None,
-                        }
+                    snapshot_payload = snapshot.to_payload()
+                    verification_command = MarketCalendarVerificationCommand(
+                        exchange="SSE",
+                        year=year,
+                        source_fingerprint=snapshot.source_fingerprint,
+                        verification_status="needs_review",
+                        official_source_url=notice.source_url,
+                        official_source_fingerprint=notice.source_fingerprint,
+                        review_notes="; ".join(verification.issues) or None,
                     )
-                    self._db.upsert_market_calendar_snapshot_sync(payload)
+                else:
+                    snapshot_payload = None
+                    verification_command = None
                 status = "needs_review"
                 persisted = existing_snapshot is None
 
-            return self._record_run(
+            run = self._run_record(
                 run_id=run_id,
                 run_date=run_date,
                 status=status,
@@ -133,6 +142,14 @@ class MarketCalendarAutomationService:
                     "persisted": persisted,
                 },
             )
+            publication = self._db.publish_market_calendar_automation_sync(
+                MarketCalendarAutomationPublication(
+                    run=run,
+                    snapshot=snapshot_payload,
+                    verification=verification_command,
+                )
+            )
+            return publication["run"]
         except Exception as exc:
             logger.warning(
                 "Automatic market calendar sync failed for SSE %d", year, exc_info=True
@@ -162,18 +179,37 @@ class MarketCalendarAutomationService:
         payload: dict[str, Any],
     ) -> dict[str, Any]:
         return self._db.upsert_automation_run_sync(
-            {
-                "run_id": run_id,
-                "run_type": MARKET_CALENDAR_AUTOMATION_RUN_TYPE,
-                "run_date": run_date,
-                "status": status,
-                "execution_mode": "market_data_ingestion",
-                "started_at": now.isoformat(),
-                "finished_at": now.isoformat(),
-                "source_ref": source_ref,
-                "payload": payload,
-            }
+            self._run_record(
+                run_id=run_id,
+                run_date=run_date,
+                status=status,
+                now=now,
+                source_ref=source_ref,
+                payload=payload,
+            )
         )
+
+    @staticmethod
+    def _run_record(
+        *,
+        run_id: str,
+        run_date: str,
+        status: str,
+        now: datetime,
+        source_ref: str | None,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "run_id": run_id,
+            "run_type": MARKET_CALENDAR_AUTOMATION_RUN_TYPE,
+            "run_date": run_date,
+            "status": status,
+            "execution_mode": "market_data_ingestion",
+            "started_at": now.isoformat(),
+            "finished_at": now.isoformat(),
+            "source_ref": source_ref,
+            "payload": payload,
+        }
 
 
 async def run_market_calendar_automation_loop(

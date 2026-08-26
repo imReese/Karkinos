@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from datetime import datetime
 from decimal import Decimal
@@ -42,14 +43,16 @@ class LiveDataFeed:
             max_workers=max(int(max_workers), 1),
             thread_name_prefix="karkinos-live-feed",
         )
+        self._lifecycle_lock = threading.Lock()
+        self._closed: bool = False
         self._last_prices: dict[tuple[Symbol, AssetClass], float] = {}
         self._last_snapshots: dict[tuple[Symbol, AssetClass], dict] = {}
 
     @staticmethod
-    def _snapshot_datetime(snapshot: dict) -> datetime:
+    def _snapshot_datetime(snapshot: dict) -> datetime | None:
         raw_timestamp = snapshot.get("timestamp")
         if raw_timestamp in {None, ""}:
-            return datetime.now()
+            return None
 
         timestamp = str(raw_timestamp).strip()
         try:
@@ -62,12 +65,44 @@ class LiveDataFeed:
                 )
             return datetime.fromisoformat(timestamp)
         except ValueError:
-            return datetime.now()
+            return None
+
+    def close(self) -> None:
+        """Reject new polls and cancel work that has not started yet."""
+
+        with self._lifecycle_lock:
+            if self._closed:
+                return
+            self._closed = True
+            executor = self._executor
+        executor.shutdown(wait=False, cancel_futures=True)
+
+    @property
+    def is_closed(self) -> bool:
+        with self._lifecycle_lock:
+            return self._closed
+
+    def _publish_if_open(
+        self,
+        event: MarketEvent,
+        snapshot: dict,
+        *,
+        price: float,
+    ) -> bool:
+        with self._lifecycle_lock:
+            if self._closed:
+                return False
+            self.event_bus.publish(event)
+            self._last_prices[(event.symbol, event.asset_class)] = price
+            self._last_snapshots[(event.symbol, event.asset_class)] = dict(snapshot)
+            return True
 
     def get_last_snapshot(
         self, symbol: Symbol, asset_class: AssetClass = AssetClass.STOCK
     ) -> dict | None:
-        return self._last_snapshots.get((symbol, asset_class))
+        with self._lifecycle_lock:
+            snapshot = self._last_snapshots.get((symbol, asset_class))
+            return None if snapshot is None else dict(snapshot)
 
     @staticmethod
     def _should_try_fallback_snapshot(
@@ -85,6 +120,8 @@ class LiveDataFeed:
         if quote_source != "tushare_daily":
             return False
         timestamp = LiveDataFeed._snapshot_datetime(snapshot)
+        if timestamp is None:
+            return True
         return timestamp.date() < datetime.now().date()
 
     def _fetch_fallback_latest(
@@ -127,6 +164,9 @@ class LiveDataFeed:
         asset_class: AssetClass = AssetClass.STOCK,
     ) -> MarketEvent | None:
         """拉取最新行情快照，发布 MarketEvent。"""
+        with self._lifecycle_lock:
+            if self._closed:
+                raise RuntimeError("live data feed is closed")
         prefer_fallback = (
             asset_class in self.prefer_fallback_asset_classes
             and self.fallback_source is not None
@@ -157,6 +197,13 @@ class LiveDataFeed:
             return None
 
         event_timestamp = self._snapshot_datetime(snapshot)
+        if event_timestamp is None:
+            logger.warning(
+                "行情时间戳缺失或无效，拒绝发布: %s (%s)",
+                symbol,
+                asset_class.value,
+            )
+            return None
 
         # 用当前价构造 OHLC（实时快照全部用最新价）
         event = MarketEvent(
@@ -171,9 +218,8 @@ class LiveDataFeed:
             asset_class=asset_class,
         )
 
-        self.event_bus.publish(event)
-        self._last_prices[(symbol, asset_class)] = price
-        self._last_snapshots[(symbol, asset_class)] = dict(snapshot)
+        if not self._publish_if_open(event, snapshot, price=price):
+            return None
         logger.info("实时行情: %s (%s) price=%.2f", symbol, asset_class.value, price)
         return event
 
@@ -182,13 +228,16 @@ class LiveDataFeed:
         if not watchlist:
             return []
 
-        futures: dict[Future, tuple[Symbol, AssetClass]] = {
-            self._executor.submit(self.poll_latest, symbol, asset_class): (
-                symbol,
-                asset_class,
-            )
-            for symbol, asset_class in watchlist
-        }
+        with self._lifecycle_lock:
+            if self._closed:
+                raise RuntimeError("live data feed is closed")
+            futures: dict[Future, tuple[Symbol, AssetClass]] = {
+                self._executor.submit(self.poll_latest, symbol, asset_class): (
+                    symbol,
+                    asset_class,
+                )
+                for symbol, asset_class in watchlist
+            }
         done, pending = wait(futures, timeout=self.poll_timeout_seconds)
 
         for future in pending:

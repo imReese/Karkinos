@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from unittest.mock import MagicMock
 
@@ -85,6 +86,28 @@ class SlowMixedSource(DataSource):
         return {"price": 8.76, "volume": 123456.0, "timestamp": "10:30:00"}
 
 
+class BlockingSource(DataSource):
+    def __init__(self) -> None:
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.finished = threading.Event()
+
+    def fetch_bars(self, symbol, start, end, frequency=None, asset_class=None):
+        return MagicMock()
+
+    def fetch_ticks(self, symbol, start, end):
+        raise NotImplementedError
+
+    def list_symbols(self):
+        return []
+
+    def fetch_latest(self, symbol, asset_class=AssetClass.STOCK):
+        self.started.set()
+        self.release.wait(timeout=1)
+        self.finished.set()
+        return {"price": 8.76, "volume": 100.0, "timestamp": "10:30:00"}
+
+
 class TestLiveDataFeed:
     """LiveDataFeed 测试。"""
 
@@ -116,6 +139,45 @@ class TestLiveDataFeed:
 
         result = feed.poll_latest(Symbol("600519"), AssetClass.STOCK)
         assert result is None
+
+    def test_poll_latest_rejects_snapshot_without_timestamp(self):
+        source = StubSource({"price": 100.0, "volume": 1000.0})
+        feed = LiveDataFeed(source, EventBus())
+
+        try:
+            assert feed.poll_latest(Symbol("600519"), AssetClass.STOCK) is None
+        finally:
+            feed.close()
+
+    def test_close_rejects_new_poll_work(self):
+        feed = LiveDataFeed(
+            StubSource({"price": 100.0, "volume": 1000.0, "timestamp": "10:30:00"}),
+            EventBus(),
+        )
+
+        feed.close()
+        feed.close()
+
+        assert feed.is_closed is True
+        with pytest.raises(RuntimeError, match="live data feed is closed"):
+            feed.poll_all([(Symbol("600519"), AssetClass.STOCK)])
+
+    def test_close_discards_provider_result_that_returns_after_poll_timeout(self):
+        source = BlockingSource()
+        bus = EventBus()
+        received = []
+        bus.subscribe(MarketEvent, received.append)
+        feed = LiveDataFeed(source, bus, poll_timeout_seconds=0.01)
+
+        assert feed.poll_all([(Symbol("600519"), AssetClass.STOCK)]) == []
+        assert source.started.is_set()
+        feed.close()
+        source.release.set()
+        assert source.finished.wait(timeout=1)
+
+        bus.drain()
+        assert received == []
+        assert feed.get_last_snapshot(Symbol("600519"), AssetClass.STOCK) is None
 
     def test_poll_all_returns_events(self):
         """poll_all 轮询多个标的。"""

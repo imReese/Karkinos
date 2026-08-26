@@ -20,6 +20,7 @@ from account_truth.broker_connector_evidence import (
 )
 from account_truth.broker_evidence import BrokerEvidenceRepository
 from analytics.benchmark_fixtures import build_benchmark_fixture_backtest_rows
+from server.contracts.quote_ingestion import QuoteIngestionCommand
 from server.db import AppDatabase
 from tests.analytics.test_strategy_validation_matrix import REQUIRED_STRATEGY_IDS
 
@@ -50,14 +51,19 @@ def test_decision_today_blocks_from_unresolved_connector_evidence(
 
     db.get_action_tasks_sync = get_action_tasks_sync
     db.list_signal_journal_sync = lambda limit=50, offset=0: []
-    db.get_latest_quote_sync = lambda symbol, asset_type=None: {
-        "symbol": symbol,
-        "asset_type": asset_type or "stock",
-        "price": 10.40,
-        "quote_status": "live",
-        "quote_timestamp": "2026-06-22T15:05:00+08:00",
-        "quote_source": "synthetic-fixture",
-    }
+    db.persist_quote_ingestion_sync(
+        QuoteIngestionCommand(
+            symbol="SYN001",
+            asset_type="stock",
+            price=10.40,
+            quote_timestamp="2026-06-22T15:05:00+08:00",
+            quote_source="synthetic-fixture",
+            provider_name="fixture",
+            provider_status="live",
+            quote_status="live",
+            captured_reason="broker-connector-gate-fixture",
+        )
+    )
     db.get_backtest_results = _empty_backtest_results
 
     monkeypatch.setattr(

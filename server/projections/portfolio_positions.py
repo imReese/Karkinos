@@ -19,7 +19,6 @@ from server.projections.portfolio_quotes import (
 from server.projections.quote_status import (
     parse_quote_timestamp as _parse_quote_timestamp,
 )
-from server.projections.service import build_portfolio_projection_from_db
 from server.services.daily_performance import (
     build_position_daily_context,
     mark_position_daily,
@@ -28,6 +27,12 @@ from server.services.market_hours import get_shanghai_now
 from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
 
 _SH_TZ = ZoneInfo("Asia/Shanghai")
+
+
+def has_rows(rows: list[dict]) -> bool:
+    """Compatibility predicate for read-only portfolio consumers."""
+
+    return bool(rows)
 
 
 def resolve_live_holding_baseline(
@@ -79,14 +84,6 @@ def resolve_live_holding_baseline(
     if state.db is not None and hasattr(state.db, "get_latest_quote_before_date_sync"):
         fallback_quote = state.db.get_latest_quote_before_date_sync(symbol, trade_date)
         if fallback_quote:
-            if hasattr(state.db, "save_daily_close_snapshot_sync"):
-                state.db.save_daily_close_snapshot_sync(
-                    symbol=symbol,
-                    asset_class=str(fallback_quote.get("asset_class") or "stock"),
-                    trade_date=str(fallback_quote["timestamp"]).split("T")[0],
-                    close_price=float(fallback_quote["price"]),
-                    source="quote_fallback",
-                )
             return (
                 float(fallback_quote["price"]),
                 fallback_quote.get("timestamp"),
@@ -322,10 +319,6 @@ def resolve_position_today_change(
     )
 
 
-def has_rows(rows: list[dict]) -> bool:
-    return len(rows) > 0
-
-
 def resolve_projection_sources(
     state,
     *,
@@ -341,35 +334,7 @@ def resolve_projection_sources(
     latest_quotes = (
         collect_latest_quotes(state) if latest_quotes is None else latest_quotes
     )
-    ledger_entries = (
-        state.db.get_ledger_entries_sync(limit=50, offset=0)
-        if hasattr(state.db, "get_ledger_entries_sync")
-        else []
-    )
-    if has_rows(ledger_entries) and (
-        portfolio is None or has_position_ledger_entries(ledger_entries)
-    ):
-        return (
-            build_portfolio_projection_from_db(
-                state.db,
-                initial_cash=state.config.initial_cash,
-                latest_quotes=latest_quotes,
-            ),
-            {},
-        )
-
-    legacy_cash_flows = (
-        state.db.get_cash_flows_sync(limit=1, offset=0)
-        if hasattr(state.db, "get_cash_flows_sync")
-        else []
-    )
-    legacy_trades = (
-        state.db.get_trades_sync(limit=1, offset=0)
-        if hasattr(state.db, "get_trades_sync")
-        else []
-    )
-
-    if has_rows(legacy_cash_flows) or has_rows(legacy_trades):
+    if hasattr(state.db, "get_ledger_entries_sync"):
         rebuilt = rebuild_portfolio_from_ledger(
             state.config,
             state.db,
@@ -423,15 +388,18 @@ def snapshot_uses_persistent_cache(snapshot: PortfolioSnapshot) -> bool:
 def with_overview_quote_metadata(
     overview: AccountOverview,
     snapshot: PortfolioSnapshot,
+    *,
+    now: datetime | None = None,
 ) -> AccountOverview:
+    resolved_now = now or get_shanghai_now()
     return overview.model_copy(
         update={
-            "valuation_timestamp": get_shanghai_now().isoformat(),
+            "valuation_timestamp": resolved_now.isoformat(),
             "quote_status": snapshot_quote_status(snapshot),
             "quote_age_seconds": snapshot_quote_age_seconds(snapshot),
             "quote_source": snapshot_quote_source(snapshot),
             "stale_reason": snapshot_stale_reason(snapshot),
-            "refresh_policy": refresh_policy(),
+            "refresh_policy": refresh_policy(resolved_now),
             "using_persistent_cache": snapshot_uses_persistent_cache(snapshot),
         }
     )

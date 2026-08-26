@@ -17,7 +17,14 @@ from execution.paper_broker import (
     PaperOrderEvidence,
     PaperOrderRequest,
 )
-from server.services.oms import OmsService
+from server.contracts.content_identity import content_fingerprint
+from server.contracts.order_state import OmsOrderCommand, OmsTransitionCommand
+from server.contracts.paper_shadow import (
+    PaperShadowFillFact,
+    PaperShadowOrderFact,
+    PaperShadowRunPersistence,
+)
+from server.services.oms import OMS_SCHEMA_VERSION, PAPER_SHADOW_INITIAL_STATUS
 from server.services.paper_shadow_contracts import (
     PAPER_SHADOW_EXECUTION_MODE,
     PAPER_SHADOW_RUN_SCHEMA_VERSION,
@@ -137,8 +144,7 @@ def _expire_order(request: PaperOrderRequest, *, reason: str) -> PaperBrokerResu
     )
 
 
-def _record_shadow_order(
-    db: Any,
+def _build_shadow_order(
     order: PaperOrderEvidence,
     *,
     run_id: str,
@@ -147,7 +153,7 @@ def _record_shadow_order(
     intent_ref: str,
     intent: dict[str, Any],
     divergence_status: str,
-) -> None:
+) -> PaperShadowOrderFact:
     payload = order.to_payload()
     payload.update(
         {
@@ -173,7 +179,21 @@ def _record_shadow_order(
             "does_not_mutate_production_ledger": True,
         }
     )
-    db.record_order_sync(
+    oms_create, oms_transitions = _shadow_oms_commands(
+        order_id=order.order_id,
+        run_id=run_id,
+        input_fingerprint=input_fingerprint,
+        intent_ref=intent_ref,
+        intent=intent,
+        symbol=str(order.symbol),
+        side=order.side.value,
+        asset_class=order.asset_class.value,
+        quantity=float(order.quantity),
+        order_type=order.order_type.value,
+        limit_price=float(order.price) if order.price is not None else None,
+        transitions=[transition.to_payload() for transition in order.oms_transitions],
+    )
+    return PaperShadowOrderFact(
         order_id=order.order_id,
         timestamp=order.timestamp.isoformat(),
         symbol=str(order.symbol),
@@ -189,14 +209,8 @@ def _record_shadow_order(
         source=PAPER_SHADOW_SOURCE,
         source_ref=run_id,
         payload=payload,
-    )
-    _record_shadow_oms_order(
-        db,
-        order,
-        run_id=run_id,
-        input_fingerprint=input_fingerprint,
-        intent_ref=intent_ref,
-        intent=intent,
+        oms_create=oms_create,
+        oms_transitions=oms_transitions,
     )
 
 
@@ -219,8 +233,7 @@ def _order_payload_oms_transition_refs(
     return refs
 
 
-def _record_shadow_fill(
-    db: Any,
+def _build_shadow_fill(
     fill: PaperFillEvidence,
     *,
     run_id: str,
@@ -228,7 +241,7 @@ def _record_shadow_fill(
     input_fingerprint: str,
     intent_ref: str,
     intent: dict[str, Any],
-) -> None:
+) -> PaperShadowFillFact:
     metadata = fill.to_payload()
     metadata.update(
         {
@@ -247,7 +260,7 @@ def _record_shadow_fill(
             "does_not_mutate_production_ledger": True,
         }
     )
-    db.record_fill_sync(
+    return PaperShadowFillFact(
         fill_id=fill.fill_id,
         order_id=fill.order_id,
         timestamp=fill.timestamp.isoformat(),
@@ -267,8 +280,7 @@ def _record_shadow_fill(
     )
 
 
-def _record_shadow_failed_order(
-    db: Any,
+def _build_shadow_failed_order(
     request: PaperOrderRequest,
     *,
     run_id: str,
@@ -277,14 +289,48 @@ def _record_shadow_failed_order(
     intent_ref: str,
     intent: dict[str, Any],
     error: Exception,
-) -> list[dict[str, Any]]:
-    oms_transitions = _record_shadow_failed_oms_order(
-        db,
-        request,
+) -> tuple[PaperShadowOrderFact, list[dict[str, Any]]]:
+    oms_transition_payloads = [
+        {
+            "sequence": 1,
+            "from_status": "created",
+            "to_status": "staged",
+            "source": PAPER_SHADOW_SOURCE,
+            "filled_quantity": "0",
+            "reason": "created from paper/shadow order intent",
+        },
+        {
+            "sequence": 2,
+            "from_status": "staged",
+            "to_status": "submitted",
+            "source": PAPER_SHADOW_SOURCE,
+            "filled_quantity": "0",
+            "reason": "paper shadow simulation started",
+        },
+        {
+            "sequence": 3,
+            "from_status": "submitted",
+            "to_status": "rejected",
+            "source": PAPER_SHADOW_SOURCE,
+            "filled_quantity": "0",
+            "reason": (
+                f"paper shadow simulation failed: {type(error).__name__}: {error}"
+            ),
+        },
+    ]
+    oms_create, oms_transitions = _shadow_oms_commands(
+        order_id=request.order_id,
         run_id=run_id,
         input_fingerprint=input_fingerprint,
         intent_ref=intent_ref,
         intent=intent,
+        symbol=str(request.symbol),
+        side=request.side.value,
+        asset_class=request.asset_class.value,
+        quantity=float(request.quantity),
+        order_type=request.order_type.value,
+        limit_price=float(request.price) if request.price is not None else None,
+        transitions=oms_transition_payloads,
         error=error,
     )
     oms_transition_refs = [
@@ -292,7 +338,7 @@ def _record_shadow_failed_order(
             f"oms_transition:{request.order_id}:"
             f"{transition['sequence']}:{transition['to_status']}"
         )
-        for transition in oms_transitions
+        for transition in oms_transition_payloads
         if transition.get("sequence") is not None and transition.get("to_status")
     ]
     payload = {
@@ -322,11 +368,11 @@ def _record_shadow_failed_order(
             + [f"paper_order:{request.order_id}"]
             + oms_transition_refs
         ),
-        "oms_transitions": oms_transitions,
+        "oms_transitions": oms_transition_payloads,
         "does_not_submit_broker_order": True,
         "does_not_mutate_production_ledger": True,
     }
-    db.record_order_sync(
+    fact = PaperShadowOrderFact(
         order_id=request.order_id,
         timestamp=request.timestamp.isoformat(),
         symbol=str(request.symbol),
@@ -342,143 +388,130 @@ def _record_shadow_failed_order(
         source=PAPER_SHADOW_SOURCE,
         source_ref=run_id,
         payload=payload,
+        oms_create=oms_create,
+        oms_transitions=oms_transitions,
     )
-    return oms_transitions
+    return fact, oms_transition_payloads
 
 
-def _record_shadow_oms_order(
-    db: Any,
-    order: PaperOrderEvidence,
+def _shadow_oms_commands(
     *,
+    order_id: str,
     run_id: str,
     input_fingerprint: str,
     intent_ref: str,
     intent: dict[str, Any],
-) -> None:
-    if not _db_supports_oms(db):
-        return
-    service = OmsService(db=db)
-    oms_order = service.create_paper_shadow_order(
-        intent_key=_paper_shadow_oms_intent_key(
-            run_id=run_id,
-            intent_ref=intent_ref,
-        ),
-        order_id=order.order_id,
+    symbol: str,
+    side: str,
+    asset_class: str,
+    quantity: float,
+    order_type: str,
+    limit_price: float | None,
+    transitions: list[dict[str, Any]],
+    error: Exception | None = None,
+) -> tuple[OmsOrderCommand, tuple[OmsTransitionCommand, ...]]:
+    if not transitions or transitions[0].get("to_status") != "staged":
+        raise ValueError("paper-shadow OMS history must begin in staged state")
+    intent_key = _paper_shadow_oms_intent_key(
         run_id=run_id,
-        symbol=str(order.symbol),
-        side=order.side.value,
-        asset_class=order.asset_class.value,
-        quantity=float(order.quantity),
-        order_type=order.order_type.value,
-        limit_price=float(order.price) if order.price is not None else None,
-        source_ref=intent_ref,
-        evidence_refs=_dedupe_refs(
-            [intent_ref]
-            + [str(item) for item in intent.get("evidence_refs") or []]
-            + [f"paper_order:{order.order_id}"]
-        ),
-        source=PAPER_SHADOW_SOURCE,
+        intent_ref=intent_ref,
     )
-    _replay_shadow_oms_transitions(
-        service,
-        order_id=order.order_id,
-        current_status=str(oms_order["status"]),
-        transitions=[transition.to_payload() for transition in order.oms_transitions],
-        evidence={
-            "paper_order_id": order.order_id,
-            "run_id": run_id,
-            "input_fingerprint": input_fingerprint,
-            "order_intent_ref": intent_ref,
+    evidence_refs = _dedupe_refs(
+        [intent_ref]
+        + [str(item) for item in intent.get("evidence_refs") or []]
+        + [f"paper_order:{order_id}"]
+    )
+    oms_payload = {
+        "schema_version": OMS_SCHEMA_VERSION,
+        "execution_mode": PAPER_SHADOW_EXECUTION_MODE,
+        "run_id": run_id,
+        "source_ref": intent_ref,
+        "evidence_refs": evidence_refs,
+        "manual_confirmation_required": False,
+        "broker_submission_enabled": False,
+        "does_not_submit_broker_order": True,
+        "does_not_mutate_production_ledger": True,
+    }
+    create = OmsOrderCommand(
+        idempotency_key=intent_key,
+        order_id=order_id,
+        symbol=symbol,
+        side=side,
+        asset_class=asset_class,
+        quantity=quantity,
+        order_type=order_type,
+        limit_price=limit_price,
+        initial_status=PAPER_SHADOW_INITIAL_STATUS,
+        broker_submission_enabled=False,
+        source=PAPER_SHADOW_SOURCE,
+        source_ref=run_id,
+        payload=oms_payload,
+        transition_reason="created from paper/shadow order intent",
+        transition_payload={
+            **oms_payload,
+            "intent_key": intent_key,
+            "source": PAPER_SHADOW_SOURCE,
         },
     )
+    commands: list[OmsTransitionCommand] = []
+    for transition in transitions[1:]:
+        expected_from = str(transition.get("from_status") or "")
+        to_status = str(transition.get("to_status") or "")
+        reason = str(transition.get("reason") or f"paper shadow {to_status}")
+        payload = {
+            "broker_submission_enabled": False,
+            "execution_mode": PAPER_SHADOW_EXECUTION_MODE,
+            "run_id": run_id,
+            "does_not_submit_broker_order": True,
+            "does_not_mutate_production_ledger": True,
+            "source": PAPER_SHADOW_SOURCE,
+            "paper_order_id": order_id,
+            "input_fingerprint": input_fingerprint,
+            "order_intent_ref": intent_ref,
+            "filled_quantity": transition.get("filled_quantity"),
+        }
+        if error is not None and to_status == "rejected":
+            payload.update(
+                {
+                    "error_type": type(error).__name__,
+                    "error": str(error),
+                }
+            )
+        command_key = _oms_transition_idempotency_key(
+            order_id=order_id,
+            from_status=expected_from,
+            to_status=to_status,
+            reason=reason,
+            actor="paper-shadow",
+            payload=payload,
+        )
+        commands.append(
+            OmsTransitionCommand(
+                idempotency_key=command_key,
+                order_id=order_id,
+                expected_from=expected_from,
+                to_status=to_status,
+                reason=reason,
+                actor="paper-shadow",
+                payload=payload,
+            )
+        )
+    return create, tuple(commands)
 
 
-def _record_shadow_failed_oms_order(
-    db: Any,
-    request: PaperOrderRequest,
+def _oms_transition_idempotency_key(
     *,
-    run_id: str,
-    input_fingerprint: str,
-    intent_ref: str,
-    intent: dict[str, Any],
-    error: Exception,
-) -> list[dict[str, Any]]:
-    if not _db_supports_oms(db):
-        return []
-    service = OmsService(db=db)
-    oms_order = service.create_paper_shadow_order(
-        intent_key=_paper_shadow_oms_intent_key(
-            run_id=run_id,
-            intent_ref=intent_ref,
-        ),
-        order_id=request.order_id,
-        run_id=run_id,
-        symbol=str(request.symbol),
-        side=request.side.value,
-        asset_class=request.asset_class.value,
-        quantity=float(request.quantity),
-        order_type=request.order_type.value,
-        limit_price=float(request.price) if request.price is not None else None,
-        source_ref=intent_ref,
-        evidence_refs=_dedupe_refs(
-            [intent_ref]
-            + [str(item) for item in intent.get("evidence_refs") or []]
-            + [f"paper_order:{request.order_id}"]
-        ),
-        source=PAPER_SHADOW_SOURCE,
+    order_id: str,
+    from_status: str,
+    to_status: str,
+    reason: str,
+    actor: str,
+    payload: dict[str, Any],
+) -> str:
+    fingerprint = content_fingerprint(
+        {"reason": reason, "actor": actor, "payload": payload}
     )
-    if str(oms_order["status"]) != "staged":
-        return _oms_transition_rows_to_payloads(
-            service.list_transitions(request.order_id)
-        )
-    service.transition_order(
-        request.order_id,
-        to_status="submitted",
-        reason="paper shadow simulation started",
-        actor="paper-shadow",
-        source=PAPER_SHADOW_SOURCE,
-        evidence={
-            "paper_order_id": request.order_id,
-            "run_id": run_id,
-            "input_fingerprint": input_fingerprint,
-            "order_intent_ref": intent_ref,
-        },
-    )
-    service.transition_order(
-        request.order_id,
-        to_status="rejected",
-        reason=f"paper shadow simulation failed: {type(error).__name__}: {error}",
-        actor="paper-shadow",
-        source=PAPER_SHADOW_SOURCE,
-        evidence={
-            "paper_order_id": request.order_id,
-            "run_id": run_id,
-            "input_fingerprint": input_fingerprint,
-            "order_intent_ref": intent_ref,
-            "error_type": type(error).__name__,
-            "error": str(error),
-        },
-    )
-    return _oms_transition_rows_to_payloads(service.list_transitions(request.order_id))
-
-
-def _oms_transition_rows_to_payloads(
-    rows: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    payloads: list[dict[str, Any]] = []
-    for sequence, row in enumerate(rows, start=1):
-        payload = _json_dict(row.get("payload_json"))
-        payloads.append(
-            {
-                "sequence": sequence,
-                "from_status": row.get("from_status"),
-                "to_status": row.get("to_status"),
-                "source": payload.get("source") or PAPER_SHADOW_SOURCE,
-                "reason": row.get("reason") or "",
-                "filled_quantity": str(payload.get("filled_quantity") or "0"),
-            }
-        )
-    return payloads
+    return f"oms-transition:{order_id}:{from_status}:{to_status}:{fingerprint}"
 
 
 def _json_dict(value: Any) -> dict[str, Any]:
@@ -494,15 +527,14 @@ def _json_dict(value: Any) -> dict[str, Any]:
 
 
 def _matching_latest_run(
-    db: Any,
+    db: PaperShadowRunPersistence,
     *,
     plan_date: str,
     input_fingerprint: str,
 ) -> dict[str, Any] | None:
     """Reuse an exact persisted simulation across workflow-only status changes."""
 
-    reader = getattr(db, "latest_paper_shadow_run_sync", None)
-    row = reader(plan_date=plan_date) if callable(reader) else None
+    row = db.latest_paper_shadow_run_sync(plan_date=plan_date)
     if not isinstance(row, dict) or row.get("input_fingerprint") != input_fingerprint:
         return None
     payload = _json_dict(row.get("payload_json"))
@@ -541,37 +573,6 @@ def _json_list(value: Any) -> list[Any]:
     return parsed if isinstance(parsed, list) else []
 
 
-def _replay_shadow_oms_transitions(
-    service: OmsService,
-    *,
-    order_id: str,
-    current_status: str,
-    transitions: list[dict[str, Any]],
-    evidence: dict[str, Any],
-) -> None:
-    statuses = [str(item.get("to_status") or "") for item in transitions]
-    if current_status in statuses:
-        start = statuses.index(current_status) + 1
-    else:
-        start = 0
-    for transition in transitions[start:]:
-        to_status = str(transition.get("to_status") or "")
-        if not to_status or to_status == current_status:
-            continue
-        service.transition_order(
-            order_id,
-            to_status=to_status,
-            reason=str(transition.get("reason") or f"paper shadow {to_status}"),
-            actor="paper-shadow",
-            source=PAPER_SHADOW_SOURCE,
-            evidence={
-                **evidence,
-                "filled_quantity": transition.get("filled_quantity"),
-            },
-        )
-        current_status = to_status
-
-
 def _paper_shadow_oms_intent_key(
     *,
     run_id: str,
@@ -580,32 +581,15 @@ def _paper_shadow_oms_intent_key(
     return f"paper-shadow:{run_id}:{intent_ref}"
 
 
-def _db_supports_oms(db: Any) -> bool:
-    return all(
-        callable(getattr(db, name, None))
-        for name in (
-            "get_oms_order_by_intent_key_sync",
-            "upsert_oms_order_sync",
-            "record_oms_transition_sync",
-            "get_oms_order_sync",
-            "update_oms_order_status_sync",
-        )
-    )
-
-
 paper_order_request = _paper_order_request
 simulate_outcome = _simulate_outcome
 expire_order = _expire_order
-record_shadow_order = _record_shadow_order
+build_shadow_order = _build_shadow_order
 order_payload_oms_transition_refs = _order_payload_oms_transition_refs
-record_shadow_fill = _record_shadow_fill
-record_shadow_failed_order = _record_shadow_failed_order
-record_shadow_oms_order = _record_shadow_oms_order
-record_shadow_failed_oms_order = _record_shadow_failed_oms_order
-oms_transition_rows_to_payloads = _oms_transition_rows_to_payloads
+build_shadow_fill = _build_shadow_fill
+build_shadow_failed_order = _build_shadow_failed_order
+shadow_oms_commands = _shadow_oms_commands
 json_dict = _json_dict
 matching_latest_run = _matching_latest_run
 json_list = _json_list
-replay_shadow_oms_transitions = _replay_shadow_oms_transitions
 paper_shadow_oms_intent_key = _paper_shadow_oms_intent_key
-db_supports_oms = _db_supports_oms

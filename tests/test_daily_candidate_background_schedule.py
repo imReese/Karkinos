@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -23,6 +23,24 @@ PREPARATION_TIME = datetime(2026, 7, 1, 0, 45, tzinfo=timezone.utc)
 
 
 def _seed_calendar(db: AppDatabase, *, is_trading_day: bool = True) -> None:
+    trading_dates = {"2026-07-02"}
+    if is_trading_day:
+        trading_dates.add(RUN_DATE)
+    current = date(2026, 1, 1)
+    calendar_days = []
+    while current.year == 2026:
+        market_date = current.isoformat()
+        trading = market_date in trading_dates
+        calendar_days.append(
+            {
+                "date": market_date,
+                "is_trading_day": trading,
+                "day_type": "trading_day" if trading else "closed",
+                "reason_code": "trading_day" if trading else "closed",
+            }
+        )
+        current += timedelta(days=1)
+    source_fingerprint = "a" * 64
     db.upsert_market_calendar_snapshot_sync(
         {
             "exchange": "SSE",
@@ -30,25 +48,20 @@ def _seed_calendar(db: AppDatabase, *, is_trading_day: bool = True) -> None:
             "provider": "fixture",
             "schema_version": "karkinos.market_calendar.v1",
             "status": "available",
-            "trading_day_count": 2 if is_trading_day else 1,
-            "closed_day_count": 363 if is_trading_day else 364,
-            "source_fingerprint": "calendar-fingerprint",
-            "official_verification_status": "verified",
-            "days": [
-                {
-                    "date": RUN_DATE,
-                    "is_trading_day": is_trading_day,
-                    "day_type": "trading_day" if is_trading_day else "closed",
-                    "reason_code": "trading_day" if is_trading_day else "closed",
-                },
-                {
-                    "date": "2026-07-02",
-                    "is_trading_day": True,
-                    "day_type": "trading_day",
-                    "reason_code": "trading_day",
-                },
-            ],
+            "trading_day_count": len(trading_dates),
+            "closed_day_count": len(calendar_days) - len(trading_dates),
+            "source_fingerprint": source_fingerprint,
+            "days": calendar_days,
         }
+    )
+    db.update_market_calendar_verification_sync(
+        exchange="SSE",
+        year=2026,
+        source_fingerprint=source_fingerprint,
+        verification_status="verified",
+        official_source_url="https://example.test/calendar",
+        official_source_fingerprint="b" * 64,
+        verified_by="fixture",
     )
 
 
@@ -506,32 +519,33 @@ def test_background_schedule_resolves_next_year_only_from_verified_calendar(
 ) -> None:
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
-    for year, verified, days in (
+    source_fingerprints: dict[int, str] = {}
+    for year, open_dates in (
         (
             2026,
-            True,
-            [
-                {
-                    "date": "2026-12-31",
-                    "is_trading_day": True,
-                    "day_type": "trading_day",
-                    "reason_code": "trading_day",
-                }
-            ],
+            {"2026-12-31"},
         ),
         (
             2027,
-            True,
-            [
-                {
-                    "date": "2027-01-04",
-                    "is_trading_day": True,
-                    "day_type": "trading_day",
-                    "reason_code": "trading_day",
-                }
-            ],
+            {"2027-01-04"},
         ),
     ):
+        current = date(year, 1, 1)
+        days = []
+        while current.year == year:
+            market_date = current.isoformat()
+            is_trading_day = market_date in open_dates
+            days.append(
+                {
+                    "date": market_date,
+                    "is_trading_day": is_trading_day,
+                    "day_type": "trading_day" if is_trading_day else "closed",
+                    "reason_code": "trading_day" if is_trading_day else "closed",
+                }
+            )
+            current += timedelta(days=1)
+        source_fingerprint = ("a" if year == 2026 else "c") * 64
+        source_fingerprints[year] = source_fingerprint
         db.upsert_market_calendar_snapshot_sync(
             {
                 "exchange": "SSE",
@@ -539,14 +553,20 @@ def test_background_schedule_resolves_next_year_only_from_verified_calendar(
                 "provider": "fixture",
                 "schema_version": "karkinos.market_calendar.v1",
                 "status": "available",
-                "trading_day_count": len(days),
-                "closed_day_count": 365 - len(days),
-                "source_fingerprint": f"calendar-{year}",
-                "official_verification_status": (
-                    "verified" if verified else "needs_review"
-                ),
+                "trading_day_count": len(open_dates),
+                "closed_day_count": len(days) - len(open_dates),
+                "source_fingerprint": source_fingerprint,
                 "days": days,
             }
+        )
+        db.update_market_calendar_verification_sync(
+            exchange="SSE",
+            year=year,
+            source_fingerprint=source_fingerprint,
+            verification_status="verified",
+            official_source_url="https://example.test/calendar",
+            official_source_fingerprint="b" * 64,
+            verified_by="fixture",
         )
 
     result = project_daily_candidate_background_schedule(
@@ -576,6 +596,7 @@ def test_background_schedule_resolves_next_year_only_from_verified_calendar(
     db.update_market_calendar_verification_sync(
         exchange="SSE",
         year=2027,
+        source_fingerprint=source_fingerprints[2027],
         verification_status="needs_review",
         official_source_url="https://example.invalid",
         verified_by="fixture",

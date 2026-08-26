@@ -24,3 +24,9 @@ class SQLiteRepository:
     ) -> None:
         self._path = Path(database_path)
         self._now = now or _system_now
+
+    @property
+    def path(self) -> Path:
+        """Expose the repository's immutable SQLite identity to composition code."""
+
+        return self._path

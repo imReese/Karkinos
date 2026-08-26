@@ -57,7 +57,9 @@ def _build_drawdown_summary(
             peak_equity = point.equity
             peak_timestamp = point.timestamp
 
-        drawdown = 0.0 if peak_equity <= 0 else (peak_equity - point.equity) / peak_equity
+        drawdown = (
+            0.0 if peak_equity <= 0 else (peak_equity - point.equity) / peak_equity
+        )
         if drawdown >= max_drawdown:
             max_drawdown = drawdown
             trough_timestamp = point.timestamp
@@ -72,7 +74,9 @@ def _build_drawdown_summary(
         )
 
     latest_equity = equity_curve[-1].equity
-    current_drawdown = 0.0 if peak_equity <= 0 else (peak_equity - latest_equity) / peak_equity
+    current_drawdown = (
+        0.0 if peak_equity <= 0 else (peak_equity - latest_equity) / peak_equity
+    )
     return (
         RiskDrawdownSummary(
             current_drawdown=current_drawdown,
@@ -93,7 +97,9 @@ def build_risk_workspace(
     drawdown_summary, drawdown_series = _build_drawdown_summary(equity_curve)
 
     total_equity = snapshot.total_equity or 0.0
-    gross_exposure = 0.0 if total_equity <= 0 else (total_equity - snapshot.cash) / total_equity
+    gross_exposure = (
+        0.0 if total_equity <= 0 else (total_equity - snapshot.cash) / total_equity
+    )
     cash_ratio = 0.0 if total_equity <= 0 else snapshot.cash / total_equity
     largest_weight = max(
         (item.weight for item in snapshot.allocation if item.asset_class != "cash"),

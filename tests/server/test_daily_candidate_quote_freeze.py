@@ -61,7 +61,11 @@ def test_quote_freeze_refreshes_only_selected_buys_and_reuses_audit() -> None:
             "provider_name": "fixture",
             "fetch_run_id": fetch_run_id,
         }
-        return {"symbol": symbol, "status": "refreshed"}
+        return {
+            "symbol": symbol,
+            "status": "refreshed",
+            "quote_timestamp": "2026-08-24T09:36:00+08:00",
+        }
 
     service = DailyCandidateQuoteFreezeService(
         db=db,
@@ -98,7 +102,11 @@ def test_quote_freeze_fails_closed_on_wrong_day_quote() -> None:
             "provider_name": "fixture",
             "fetch_run_id": fetch_run_id,
         }
-        return {"symbol": symbol, "status": "refreshed"}
+        return {
+            "symbol": symbol,
+            "status": "refreshed",
+            "quote_timestamp": "2026-08-21T15:00:00+08:00",
+        }
 
     service = DailyCandidateQuoteFreezeService(
         db=db,

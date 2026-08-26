@@ -48,7 +48,7 @@ from .external_memory_analysis_workflow import (
 )
 from .memory_informed_analysis import MemoryInformedInputs
 from .provider import ProviderAdapter, ProviderRequest, ProviderResponse
-from .provider_connectivity import (
+from .provider_connectivity_contracts import (
     JsonHttpTransport,
     ProviderConnectivitySettings,
     ProviderProbeError,

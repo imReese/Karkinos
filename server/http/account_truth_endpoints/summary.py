@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import APIRouter, HTTPException
 
 from account_truth.broker_evidence import BrokerEvidenceReadRejected
@@ -11,36 +9,28 @@ from account_truth.evidence_scope_review import EvidenceScopeReviewReadRejected
 from account_truth.manual_review import ManualReviewReadRejected
 from account_truth.reconciliation import ReconciliationStatus
 from server.contracts.http.account_truth import BrokerStatementPreviewCreate
+from server.http.account_truth_endpoints.dependencies import (
+    SummaryEndpointDependencies,
+)
 
 
-def create_router(facade: Any) -> APIRouter:
+def create_router(dependencies: SummaryEndpointDependencies) -> APIRouter:
     r = APIRouter(prefix="/api/account-truth", tags=["account-truth"])
-
-    def dependency(name: str):
-        value = getattr(facade, name)
-        if callable(value) and not isinstance(value, type):
-            return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
-        return value
-
-    _account_truth_read_http_exception = dependency(
-        "_account_truth_read_http_exception"
+    _account_truth_read_http_exception = dependencies.account_truth_read_http_exception
+    _build_report_for_import_run = dependencies.build_report_for_import_run
+    _import_run_response = dependencies.import_run_response
+    _latest_import_runs_by_fingerprint = dependencies.latest_import_runs_by_fingerprint
+    _missing_score_response = dependencies.missing_score_response
+    _preview_response = dependencies.preview_response
+    _report_summary_response = dependencies.report_summary_response
+    _repository_for_state = dependencies.repository_for_state
+    build_account_truth_evidence_readiness = (
+        dependencies.build_account_truth_evidence_readiness
     )
-    _build_report_for_import_run = dependency("_build_report_for_import_run")
-    _import_run_response = dependency("_import_run_response")
-    _latest_import_runs_by_fingerprint = dependency(
-        "_latest_import_runs_by_fingerprint"
+    build_latest_account_truth_score_payload = (
+        dependencies.build_latest_account_truth_score_payload
     )
-    _missing_score_response = dependency("_missing_score_response")
-    _preview_response = dependency("_preview_response")
-    _report_summary_response = dependency("_report_summary_response")
-    _repository_for_state = dependency("_repository_for_state")
-    build_account_truth_evidence_readiness = dependency(
-        "build_account_truth_evidence_readiness"
-    )
-    build_latest_account_truth_score_payload = dependency(
-        "build_latest_account_truth_score_payload"
-    )
-    parse_broker_statement_csv = dependency("parse_broker_statement_csv")
+    parse_broker_statement_csv = dependencies.parse_broker_statement_csv
 
     @r.post("/broker-statement/import")
     async def import_broker_statement(

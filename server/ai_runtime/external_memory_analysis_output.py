@@ -18,7 +18,7 @@ from server.contracts.external_memory_analysis import (
 )
 
 from .contracts import JsonObject, canonical_json
-from .provider_connectivity import ProviderConnectivitySettings
+from .provider_connectivity_contracts import ProviderConnectivitySettings
 
 EXTERNAL_MEMORY_MAX_PROVIDER_INPUT_BYTES = 524_288
 EXTERNAL_MEMORY_MAX_PROVIDER_OUTPUT_CHARS = 262_144

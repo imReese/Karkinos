@@ -57,7 +57,7 @@ def _post_fill(db: AppDatabase, fill: dict[str, Any]) -> int:
         commission=fill["commission"],
         gross_amount=abs(float(fill["fill_price"]) * float(fill["fill_quantity"])),
         net_cash_impact=-462 if fill["side"] == "buy" else 452,
-        fee_breakdown_json='{"commission":"5","stamp_tax":"0"}',
+        fee_breakdown_json=('{"commission":"5","stamp_tax":"0","total_fee":"5"}'),
         asset_class=fill["asset_class"],
         note="strategy contribution fixture",
         source="controlled_submission_ledger_posting",
@@ -224,7 +224,7 @@ def test_ready_projection_is_read_only_and_provider_free(tmp_path, monkeypatch) 
     assert report.authorizes_execution is False
 
 
-def test_partial_fee_breakdown_does_not_drop_posted_commission(tmp_path) -> None:
+def test_structured_fee_breakdown_preserves_posted_commission(tmp_path) -> None:
     db = _database(tmp_path)
     fill = _fill()
     db.insert_ledger_entry_sync(
@@ -238,9 +238,9 @@ def test_partial_fee_breakdown_does_not_drop_posted_commission(tmp_path) -> None
         commission=fill["commission"],
         gross_amount=457,
         net_cash_impact=-464,
-        fee_breakdown_json='{"stamp_tax":"2"}',
+        fee_breakdown_json=('{"commission":"5","stamp_tax":"2","total_fee":"7"}'),
         asset_class=fill["asset_class"],
-        note="partial fee fixture",
+        note="structured fee fixture",
         source="controlled_submission_ledger_posting",
         source_ref=fill["fill_id"],
     )

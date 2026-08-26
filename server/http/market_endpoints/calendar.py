@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import APIRouter, HTTPException
 
 from server.contracts.http.market_models import (
@@ -11,21 +9,11 @@ from server.contracts.http.market_models import (
     MarketCalendarSyncRequest,
     MarketCalendarVerificationRequest,
 )
+from server.http.market_endpoints.dependencies import CalendarEndpointDependencies
 
 
-def create_router(facade: Any) -> APIRouter:
+def create_router(dependencies: CalendarEndpointDependencies) -> APIRouter:
     r = APIRouter(prefix="/api/market", tags=["market"])
-
-    def dependency(name: str):
-        value = getattr(facade, name)
-        if callable(value) and not isinstance(value, type):
-            return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
-        return value
-
-    _market_calendar_snapshot_response = dependency(
-        "_market_calendar_snapshot_response"
-    )
-    build_market_calendar_provider = dependency("build_market_calendar_provider")
 
     @r.get("/calendar", response_model=MarketCalendarSnapshotResponse)
     async def get_market_calendar(
@@ -43,7 +31,9 @@ def create_router(facade: Any) -> APIRouter:
                 status_code=503, detail="market calendar storage unavailable"
             )
         row = getter(exchange=exchange, year=year)
-        return _market_calendar_snapshot_response(row, exchange=exchange, year=year)
+        return dependencies.market_calendar_snapshot_response(
+            row, exchange=exchange, year=year
+        )
 
     @r.post("/calendar/sync", response_model=MarketCalendarSnapshotResponse)
     async def sync_market_calendar(
@@ -65,7 +55,7 @@ def create_router(facade: Any) -> APIRouter:
             or "akshare"
         ).lower()
         try:
-            provider = build_market_calendar_provider(
+            provider = dependencies.build_market_calendar_provider(
                 provider_name,
                 tushare_token=getattr(state.config, "tushare_token", ""),
             )
@@ -82,7 +72,7 @@ def create_router(facade: Any) -> APIRouter:
             ) from exc
 
         row = upsert(snapshot)
-        return _market_calendar_snapshot_response(
+        return dependencies.market_calendar_snapshot_response(
             row,
             exchange=request.exchange,
             year=request.year,
@@ -102,20 +92,25 @@ def create_router(facade: Any) -> APIRouter:
             raise HTTPException(
                 status_code=503, detail="market calendar storage unavailable"
             )
-        row = updater(
-            exchange=request.exchange,
-            year=request.year,
-            verification_status=request.verification_status,
-            official_source_url=request.official_source_url,
-            verified_by=request.verified_by,
-            review_notes=request.review_notes,
-            day_labels=request.day_labels,
-        )
+        try:
+            row = updater(
+                exchange=request.exchange,
+                year=request.year,
+                source_fingerprint=request.expected_source_fingerprint,
+                verification_status=request.verification_status,
+                official_source_url=request.official_source_url,
+                official_source_fingerprint=(request.official_source_fingerprint),
+                verified_by=request.verified_by,
+                review_notes=request.review_notes,
+                day_labels=request.day_labels,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         if row is None:
             raise HTTPException(
                 status_code=404, detail="market calendar snapshot not found"
             )
-        return _market_calendar_snapshot_response(
+        return dependencies.market_calendar_snapshot_response(
             row,
             exchange=request.exchange,
             year=request.year,

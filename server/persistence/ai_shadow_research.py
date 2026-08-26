@@ -53,6 +53,12 @@ class ShadowResearchStore(
         self._path = Path(path)
         self._uow = ShadowResearchUnitOfWork(self._path)
 
+    @property
+    def path(self) -> Path:
+        """Return the public SQLite identity used by backup orchestration."""
+
+        return self._path
+
     def _connect(self, *, immediate: bool = False):
         return self._uow.write() if immediate else self._uow.connect()
 

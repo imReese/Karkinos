@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from threading import Barrier, Event, Lock
@@ -117,6 +118,7 @@ def test_refresh_fund_nav_quotes_persists_only_fund_symbols(monkeypatch, tmp_pat
     run = db.list_quote_fetch_runs(trigger="fund_nav_sync")[0]
     assert run["run_id"] == result.run_id
     assert run["status"] == "success"
+    assert json.loads(run["metadata_json"])["manual_explicit_trigger"] is False
     assert stock_latest is None
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 from datetime import datetime
 from decimal import Decimal
 from types import SimpleNamespace
@@ -133,6 +134,37 @@ def _seed_live_quote(
     )
 
 
+def _insert_legacy_manual_order(
+    db: AppDatabase,
+    *,
+    order_id: str,
+    timestamp: str,
+    intent_id: str,
+    risk_decision_id: str,
+) -> None:
+    with sqlite3.connect(db.path) as conn:
+        conn.execute(
+            """
+            INSERT INTO manual_orders (
+                order_id, timestamp, symbol, side, order_type, quantity, price,
+                intent_id, risk_decision_id, execution_mode, status, payload_json,
+                note, created_at, updated_at
+            ) VALUES (?, ?, '600519', 'buy', 'market', 100, 123.45,
+                      ?, ?, 'manual', 'pending_confirm', ?, '', ?, ?)
+            """,
+            (
+                order_id,
+                timestamp,
+                intent_id,
+                risk_decision_id,
+                json.dumps({"order_id": order_id}),
+                timestamp,
+                timestamp,
+            ),
+        )
+        conn.commit()
+
+
 def test_kill_switch_routes_read_and_update_state(monkeypatch) -> None:
     controls = TradingControlState()
     hub = SimpleNamespace(broadcast=lambda data: None)
@@ -180,19 +212,12 @@ def test_manual_order_confirmation_blocks_unlinked_legacy_order_but_rejects_safe
         source_ref="ORD-CONFIRM",
         payload={"order_id": "ORD-CONFIRM"},
     )
-    db.save_manual_order_sync(
+    _insert_legacy_manual_order(
+        db,
         order_id="ORD-CONFIRM",
         timestamp="2026-04-18T14:50:00",
-        symbol="600519",
-        side="buy",
-        order_type="market",
-        quantity=100.0,
-        price=123.45,
         intent_id="INTENT-1",
         risk_decision_id="RISK-1",
-        execution_mode="manual",
-        status="pending_confirm",
-        payload={"order_id": "ORD-CONFIRM"},
     )
     db.record_order_sync(
         order_id="ORD-REJECT",
@@ -210,19 +235,12 @@ def test_manual_order_confirmation_blocks_unlinked_legacy_order_but_rejects_safe
         source_ref="ORD-REJECT",
         payload={"order_id": "ORD-REJECT"},
     )
-    db.save_manual_order_sync(
+    _insert_legacy_manual_order(
+        db,
         order_id="ORD-REJECT",
         timestamp="2026-04-18T14:51:00",
-        symbol="600519",
-        side="buy",
-        order_type="market",
-        quantity=100.0,
-        price=123.45,
         intent_id="INTENT-2",
         risk_decision_id="RISK-2",
-        execution_mode="manual",
-        status="pending_confirm",
-        payload={"order_id": "ORD-REJECT"},
     )
     fake_state = SimpleNamespace(
         db=db,
@@ -342,6 +360,26 @@ def test_create_manual_order_writes_only_after_current_gate_passes(
     assert order_payload["current_action_manual_ticket_gate"]["status"] == "pass"
     assert action["id"] == action_id
     assert broadcasts[-1]["event_type"] == "ManualOrderPrepared"
+
+    replayed = asyncio.run(
+        endpoint(
+            action_id,
+            trading_routes.ActionManualOrderRequest(quantity=1000),
+        )
+    )
+    assert replayed["order_id"] == created["order_id"]
+    assert len(db.list_manual_orders_sync()) == 1
+    assert len(db.list_orders_sync()) == 1
+
+    with pytest.raises(HTTPException) as conflict:
+        asyncio.run(
+            endpoint(
+                action_id,
+                trading_routes.ActionManualOrderRequest(quantity=2000),
+            )
+        )
+    assert conflict.value.status_code == 409
+    assert "payload fingerprint changed" in conflict.value.detail
 
 
 @pytest.mark.parametrize(

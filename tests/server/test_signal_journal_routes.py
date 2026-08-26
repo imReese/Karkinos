@@ -138,7 +138,7 @@ def _seed_bound_contribution_chain(db: AppDatabase) -> dict:
         commission=5,
         gross_amount=457,
         net_cash_impact=-462,
-        fee_breakdown_json='{"commission":"5","stamp_tax":"0"}',
+        fee_breakdown_json=('{"commission":"5","stamp_tax":"0","total_fee":"5"}'),
         asset_class="fund",
         note="posted decision review fixture",
         source="controlled_submission_ledger_posting",

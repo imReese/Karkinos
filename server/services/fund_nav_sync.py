@@ -12,7 +12,10 @@ from typing import Any
 
 from core.types import AssetClass, Symbol
 from data.manager import build_sources
-from server.services.valuation_snapshot import build_current_valuation_snapshot
+from server.services.market_quote_ingestion import (
+    build_quote_ingestion_command,
+    persist_quote_ingestion,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +76,7 @@ def _replay_fund_nav_result(
     request_id: str,
     expected_symbols: list[str],
     confirmation_only: bool,
+    manual_explicit_trigger: bool,
 ) -> FundNavSyncResult:
     metadata = _run_metadata(row)
     persisted_symbols = _string_list(
@@ -81,6 +85,7 @@ def _replay_fund_nav_result(
     if (
         persisted_symbols != expected_symbols
         or bool(metadata.get("confirmation_only")) is not confirmation_only
+        or bool(metadata.get("manual_explicit_trigger")) is not manual_explicit_trigger
     ):
         raise FundNavSyncIdempotencyConflict(
             "fund NAV ingestion request id was reused with a different payload"
@@ -240,57 +245,20 @@ def _persist_fund_quote(
     now: datetime,
     fetch_run_id: str,
 ) -> None:
-    if hasattr(db, "save_quote_snapshot_sync"):
-        db.save_quote_snapshot_sync(
-            symbol=quote["symbol"],
-            asset_class=AssetClass.FUND.value,
-            price=quote["price"],
-            volume=quote["volume"],
-            timestamp=quote["timestamp"],
-            quote_source=quote["quote_source"],
-            provider_name=quote["provider_name"],
-            quote_status=quote["quote_status"],
-            provider_status=quote["provider_status"],
-            captured_reason=quote["captured_reason"],
-            nav_date=quote["nav_date"],
-            fetch_run_id=fetch_run_id,
-        )
-    if hasattr(db, "upsert_latest_quote_sync"):
-        db.upsert_latest_quote_sync(
-            symbol=quote["symbol"],
-            asset_type=AssetClass.FUND.value,
-            price=quote["price"],
-            volume=quote["volume"],
-            quote_timestamp=quote["timestamp"],
-            quote_source=quote["quote_source"],
-            provider_name=quote["provider_name"],
-            provider_status=quote["provider_status"],
-            quote_status=quote["quote_status"],
-            captured_at=now.isoformat(),
-            captured_reason=quote["captured_reason"],
-            nav_date=quote["nav_date"],
-            fetch_run_id=fetch_run_id,
-            metadata={
-                "source": quote["source"],
-                "quote_source": quote["quote_source"],
-                "nav_date": quote["nav_date"],
-            },
-        )
-    display_name = str(quote.get("display_name") or "").strip()
-    if display_name and hasattr(db, "upsert_instrument_metadata_sync"):
-        db.upsert_instrument_metadata_sync(
-            symbol=quote["symbol"],
-            asset_type=AssetClass.FUND.value,
-            display_name=display_name,
-            provider_symbol=str(quote.get("provider_symbol") or quote["symbol"]),
-            provider_name=quote["provider_name"],
-            source="fund_nav_sync",
-            fetched_at=quote["timestamp"],
-            metadata={
-                "source": quote["source"],
-                "quote_source": quote["quote_source"],
-            },
-        )
+    command = build_quote_ingestion_command(
+        symbol=str(quote["symbol"]),
+        asset_type=AssetClass.FUND.value,
+        snapshot=quote,
+        quote_source=str(quote["quote_source"]),
+        provider_name=str(quote["provider_name"]),
+        provider_status=str(quote["provider_status"]),
+        quote_status=str(quote["quote_status"]),
+        captured_reason=str(quote["captured_reason"]),
+        captured_at=now.isoformat(),
+        nav_date=str(quote["nav_date"]) if quote.get("nav_date") else None,
+        fetch_run_id=fetch_run_id,
+    )
+    persist_quote_ingestion(db, command)
 
 
 def refresh_fund_nav_quotes(
@@ -303,6 +271,7 @@ def refresh_fund_nav_quotes(
     ttl_seconds: int = FUND_NAV_SYNC_TTL_SECONDS,
     confirmation_only: bool = False,
     request_id: str | None = None,
+    manual_explicit_trigger: bool = False,
 ) -> FundNavSyncResult:
     """Refresh open-end fund NAV/estimate quotes and materialize latest prices."""
     current = now or datetime.now()
@@ -327,6 +296,7 @@ def refresh_fund_nav_quotes(
                 request_id=normalized_request_id or "",
                 expected_symbols=fund_symbols,
                 confirmation_only=confirmation_only,
+                manual_explicit_trigger=manual_explicit_trigger,
             )
 
     due_symbols = []
@@ -364,6 +334,7 @@ def refresh_fund_nav_quotes(
                     "request_scope_symbols": fund_symbols,
                     "requested_symbols": due_symbols,
                     "confirmation_only": confirmation_only,
+                    "manual_explicit_trigger": manual_explicit_trigger,
                 },
             )
         except Exception:
@@ -374,6 +345,7 @@ def refresh_fund_nav_quotes(
                     request_id=normalized_request_id,
                     expected_symbols=fund_symbols,
                     confirmation_only=confirmation_only,
+                    manual_explicit_trigger=manual_explicit_trigger,
                 )
             raise
 
@@ -397,6 +369,7 @@ def refresh_fund_nav_quotes(
                     "failed_symbols": sorted(result.failed),
                     "failed_details": result.failed,
                     "confirmation_only": confirmation_only,
+                    "manual_explicit_trigger": manual_explicit_trigger,
                 },
             )
         return result
@@ -458,6 +431,7 @@ def refresh_fund_nav_quotes(
     # External provider I/O completes before any account valuation input is
     # changed. This keeps a slow or partially fetched batch from exposing a
     # long-lived, unpublished quote set to financial reads.
+    staged_quotes: dict[str, dict[str, Any]] = {}
     for symbol, quote in pending_quotes.items():
         try:
             if db is not None:
@@ -467,72 +441,75 @@ def refresh_fund_nav_quotes(
                     now=current,
                     fetch_run_id=run_id,
                 )
-            cached_quote = {
-                "price": quote["price"],
-                "volume": quote["volume"],
-                "timestamp": quote["timestamp"],
-                "asset_class": quote["asset_class"],
-                "quote_source": quote["quote_source"],
-                "provider_name": quote["provider_name"],
-                "quote_status": quote["quote_status"],
-                "provider_status": quote["provider_status"],
-                "captured_reason": quote["captured_reason"],
-                "nav_date": quote["nav_date"],
-            }
-            latest_quotes[symbol] = cached_quote
-            result.quotes[symbol] = cached_quote
+            staged_quotes[symbol] = quote
             result.refreshed.append(symbol)
         except Exception as exc:
             result.failed[symbol] = str(exc)
             logger.exception("Failed to persist fund NAV quote for %s", symbol)
 
-    valuation_snapshot_id: str | None = None
     publication_error: str | None = None
-    try:
-        publish_snapshot = getattr(db, "publish_current_valuation_snapshot_sync", None)
-        valuation_snapshot = (
-            publish_snapshot()
-            if callable(publish_snapshot)
-            else build_current_valuation_snapshot(db, persist=True)
-        )
-        valuation_snapshot_id = str(valuation_snapshot["snapshot_id"])
-    except Exception as exc:
-        publication_error = "valuation_snapshot_persistence_failed"
-        result.failed["__valuation_snapshot__"] = publication_error
-        logger.exception("Failed to publish valuation snapshot after fund NAV sync")
-
+    finished: dict[str, Any] | None = None
     if callable(finish_run):
         success_count = len(result.refreshed)
         symbol_failure_count = sum(
             1 for symbol in due_symbols if symbol in result.failed
         )
-        failure_count = symbol_failure_count + (1 if publication_error else 0)
-        if publication_error or (failure_count and not success_count):
+        failure_count = symbol_failure_count
+        if failure_count and not success_count:
             status = "failed"
         elif failure_count:
             status = "partial_success"
         else:
             status = "success"
-        finish_run(
-            run_id=run_id,
-            finished_at=datetime.now().isoformat(),
-            status=status,
-            success_count=success_count,
-            failure_count=failure_count,
-            error_message=publication_error,
-            metadata={
-                "request_id": normalized_request_id,
-                "request_scope_symbols": fund_symbols,
-                "requested_symbols": due_symbols,
-                "refreshed_symbols": result.refreshed,
-                "skipped_symbols": result.skipped,
-                "failed_symbols": sorted(
-                    symbol for symbol in result.failed if not symbol.startswith("__")
-                ),
-                "failed_details": result.failed,
-                "valuation_snapshot_id": valuation_snapshot_id,
-                "facts_persisted_only": True,
-                "confirmation_only": confirmation_only,
-            },
-        )
+        try:
+            finished = finish_run(
+                run_id=run_id,
+                finished_at=datetime.now().isoformat(),
+                status=status,
+                success_count=success_count,
+                failure_count=failure_count,
+                error_message=None,
+                metadata={
+                    "request_id": normalized_request_id,
+                    "request_scope_symbols": fund_symbols,
+                    "requested_symbols": due_symbols,
+                    "refreshed_symbols": result.refreshed,
+                    "skipped_symbols": result.skipped,
+                    "failed_symbols": sorted(
+                        symbol
+                        for symbol in result.failed
+                        if not symbol.startswith("__")
+                    ),
+                    "failed_details": result.failed,
+                    "confirmation_only": confirmation_only,
+                    "manual_explicit_trigger": manual_explicit_trigger,
+                },
+            )
+        except Exception:
+            logger.exception("Failed to publish staged fund NAV quote batch")
+    published = bool(
+        isinstance(finished, dict)
+        and finished.get("status") in {"success", "partial", "partial_success"}
+        and "valuation_snapshot_id" in _run_metadata(finished)
+    )
+    if not published and staged_quotes:
+        publication_error = "quote_batch_publication_failed"
+        result.failed["__publication__"] = publication_error
+        result.refreshed.clear()
+        return result
+    for symbol, quote in staged_quotes.items():
+        cached_quote = {
+            "price": quote["price"],
+            "volume": quote["volume"],
+            "timestamp": quote["timestamp"],
+            "asset_class": quote["asset_class"],
+            "quote_source": quote["quote_source"],
+            "provider_name": quote["provider_name"],
+            "quote_status": quote["quote_status"],
+            "provider_status": quote["provider_status"],
+            "captured_reason": quote["captured_reason"],
+            "nav_date": quote["nav_date"],
+        }
+        latest_quotes[symbol] = cached_quote
+        result.quotes[symbol] = cached_quote
     return result

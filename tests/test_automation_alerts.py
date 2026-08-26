@@ -58,6 +58,14 @@ def _confirmed_order(
     gateway_evidence: bool = False,
 ) -> dict:
     oms = OmsService(db=db)
+    payload = None
+    if gateway_evidence:
+        payload = {
+            "schema_version": "karkinos.oms_order.v1",
+            "manual_confirmation_required": True,
+            "does_not_submit_broker_order": True,
+            "gateway_evidence": _required_gateway_evidence(),
+        }
     order = oms.create_order_intent(
         intent_key="daily:2026-07-02:600519:buy",
         symbol="600519",
@@ -68,19 +76,8 @@ def _confirmed_order(
         limit_price=1688.0,
         source="daily_trading_plan",
         source_ref="shadow:2026-07-02:abc",
+        payload=payload,
     )
-    if gateway_evidence:
-        order = db.upsert_oms_order_sync(
-            {
-                **order,
-                "payload": {
-                    "schema_version": "karkinos.oms_order.v1",
-                    "manual_confirmation_required": True,
-                    "does_not_submit_broker_order": True,
-                    "gateway_evidence": _required_gateway_evidence(),
-                },
-            }
-        )
     return oms.transition_order(
         order["order_id"],
         to_status="manually_confirmed",

@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from data.store import DataStore
 from server.ai_runtime.capture import HumanResearchContextCaptureService
 from server.ai_runtime.evidence import CanonicalEvidenceRepository
 from server.ai_runtime.provider_connectivity import (
     ConnectivityConfigurationError,
+    ProviderConnectivitySettings,
     load_provider_connectivity_settings,
 )
 from server.ai_runtime.store import AiAuditStore
@@ -18,13 +18,16 @@ from server.ai_runtime.strategy_research import (
     StrategyResearchService,
 )
 from server.bootstrap import resolve_data_dir
+from server.db import AppDatabase
+from server.dependencies import AppState
+from server.persistence.database_identity import require_database_path
 
 DEFAULT_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS = 180.0
 DEEPSEEK_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS = 600.0
 
 
 def build_strategy_research_write_service(
-    state: Any,
+    state: AppState,
     *,
     external: bool,
     capture_service: HumanResearchContextCaptureService,
@@ -39,7 +42,11 @@ def build_strategy_research_write_service(
     evidence_repository.init()
     ai_store.init()
     research_store.init()
-    settings = load_provider_connectivity_settings(state.config) if external else None
+    settings = (
+        load_provider_connectivity_settings(state.require_config())
+        if external
+        else None
+    )
     from server.services.reviewed_fee_schedule import resolve_reviewed_fee_schedule
 
     return StrategyResearchService(
@@ -59,15 +66,17 @@ def build_strategy_research_write_service(
     )
 
 
-def strategy_research_model_timeout_seconds(settings: Any | None) -> float:
+def strategy_research_model_timeout_seconds(
+    settings: ProviderConnectivitySettings | None,
+) -> float:
     """Allow the configured DeepSeek research call up to ten minutes."""
     if settings is not None and settings.provider_id.strip().casefold() == "deepseek":
         return DEEPSEEK_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS
     return DEFAULT_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS
 
 
-def database_path(db: Any) -> Path:
-    path = getattr(db, "path", None)
-    if path is None:
-        raise ConnectivityConfigurationError("database path is unavailable")
-    return Path(path)
+def database_path(db: AppDatabase | None) -> Path:
+    return require_database_path(
+        db,
+        ConnectivityConfigurationError("database path is unavailable"),
+    )

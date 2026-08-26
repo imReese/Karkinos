@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import APIRouter
 
 from server.contracts.http.backtest import (
@@ -11,22 +9,14 @@ from server.contracts.http.backtest import (
     BacktestPaperShadowPreviewRequest,
     BacktestRiskPreviewRequest,
 )
+from server.http.backtest_endpoints.dependencies import PreviewEndpointDependencies
 
 
-def create_router(facade: Any) -> APIRouter:
+def create_router(dependencies: PreviewEndpointDependencies) -> APIRouter:
     r = APIRouter(prefix="/api/backtest", tags=["backtest"])
-
-    def dependency(name: str):
-        value = getattr(facade, name)
-        if callable(value) and not isinstance(value, type):
-            return lambda *args, **kwargs: getattr(facade, name)(*args, **kwargs)
-        return value
-
-    _run_backtest_attribution_preview = dependency("_run_backtest_attribution_preview")
-    _run_backtest_paper_shadow_preview = dependency(
-        "_run_backtest_paper_shadow_preview"
-    )
-    _run_backtest_risk_preview = dependency("_run_backtest_risk_preview")
+    _run_backtest_attribution_preview = dependencies.run_backtest_attribution_preview
+    _run_backtest_paper_shadow_preview = dependencies.run_backtest_paper_shadow_preview
+    _run_backtest_risk_preview = dependencies.run_backtest_risk_preview
 
     @r.post("/risk-preview")
     async def preview_backtest_risk(request: BacktestRiskPreviewRequest) -> dict:

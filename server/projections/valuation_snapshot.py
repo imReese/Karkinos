@@ -68,10 +68,16 @@ def _parse_timestamp(value: Any) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
-def _quote_rank(row: dict[str, Any]) -> tuple[datetime, datetime, int]:
+def _quote_rank(row: dict[str, Any]) -> tuple[datetime, int, datetime, int]:
+    is_latest_projection = int(
+        "asset_type" in row and "quote_timestamp" in row and "updated_at" in row
+    )
     return (
         _parse_timestamp(_quote_timestamp(row)),
-        _parse_timestamp(row.get("captured_at") or row.get("created_at")),
+        is_latest_projection,
+        _parse_timestamp(
+            row.get("captured_at") or row.get("updated_at") or row.get("created_at")
+        ),
         int(row.get("id") or 0),
     )
 
@@ -114,6 +120,10 @@ def _freeze_previous_close_evidence(
         quote = dict(raw)
         symbol = str(quote.get("symbol") or "")
         quote_timestamp = _parse_timestamp(_quote_timestamp(quote))
+        if quote_timestamp == _MIN_TIMESTAMP:
+            quote["quote_status"] = "error"
+            quote["stale_reason"] = "invalid_quote_timestamp"
+            quote["valuation_evidence_status"] = "invalid_timestamp"
         trade_date = (
             None
             if quote_timestamp == _MIN_TIMESTAMP
@@ -216,7 +226,12 @@ def _mark_unconfirmed_fund_estimate(quote: dict[str, Any]) -> None:
     quote["valuation_evidence_status"] = "unconfirmed_estimate"
 
 
-def _load_ledger_rows(db: Any, batch_size: int = 500) -> list[dict[str, Any]]:
+def _load_ledger_rows(
+    db: Any,
+    batch_size: int = 500,
+    *,
+    candidate_rows: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     if db is None or not hasattr(db, "get_ledger_entries_sync"):
         return []
     rows: list[dict[str, Any]] = []
@@ -227,6 +242,18 @@ def _load_ledger_rows(db: Any, batch_size: int = 500) -> list[dict[str, Any]]:
         if len(batch) < batch_size:
             break
         offset += batch_size
+    if candidate_rows:
+        identified = {
+            int(row["id"]): dict(row) for row in rows if row.get("id") is not None
+        }
+        unidentified = [dict(row) for row in rows if row.get("id") is None]
+        for candidate in candidate_rows:
+            row = dict(candidate)
+            if row.get("id") is None:
+                unidentified.append(row)
+            else:
+                identified[int(row["id"])] = row
+        rows = [*identified.values(), *unidentified]
     return ledger_identity_from_rows(rows)["rows"]
 
 
@@ -260,6 +287,8 @@ def _snapshot_status(quotes: list[dict[str, Any]]) -> str:
         return "missing"
     if statuses & {"stale", "estimated", "confirmed_nav_missing"}:
         return "degraded"
+    if any(row.get("valuation_baseline_status") == "missing" for row in quotes):
+        return "degraded"
     return "complete"
 
 
@@ -270,16 +299,21 @@ def _snapshot_as_of(
         *(_quote_timestamp(row) for row in quotes),
         *(str(row.get("timestamp") or "") for row in ledger_rows),
     ]
-    parsed_candidates = [_parse_timestamp(value) for value in candidates if value]
+    parsed_candidates = [
+        parsed
+        for value in candidates
+        if value and (parsed := _parse_timestamp(value)) != _MIN_TIMESTAMP
+    ]
     effective = max(parsed_candidates, default=_parse_timestamp("1970-01-01T00:00:00Z"))
     return effective.astimezone(_SHANGHAI_TZ).isoformat()
 
 
 def _snapshot_trade_date(quotes: list[dict[str, Any]], as_of: str) -> str:
     quote_timestamps = [
-        _parse_timestamp(_quote_timestamp(row))
+        parsed
         for row in quotes
         if _quote_timestamp(row)
+        and (parsed := _parse_timestamp(_quote_timestamp(row))) != _MIN_TIMESTAMP
     ]
     effective = max(quote_timestamps, default=_parse_timestamp(as_of))
     return effective.astimezone(_SHANGHAI_TZ).date().isoformat()
@@ -289,16 +323,20 @@ def build_current_valuation_snapshot(
     db: Any,
     *,
     valuation_policy: str = VALUATION_POLICY_VERSION,
-    persist: bool = True,
+    persist: bool = False,
+    candidate_ledger_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Build and persist an immutable valuation identity from database facts."""
+    """Build an immutable valuation identity, persisting only when requested."""
+    persisted_quote_rows = load_persisted_quote_rows(db)
     quotes = _freeze_previous_close_evidence(
         db,
         select_authoritative_quote_rows(
-            _account_valuation_quote_rows(load_persisted_quote_rows(db))
+            _account_valuation_quote_rows(persisted_quote_rows)
         ),
     )
-    ledger_identity = ledger_identity_from_rows(_load_ledger_rows(db))
+    ledger_identity = ledger_identity_from_rows(
+        _load_ledger_rows(db, candidate_rows=candidate_ledger_rows)
+    )
     ledger_rows = ledger_identity["rows"]
     quote_set_fingerprint = _fingerprint(quotes)
     ledger_fingerprint = ledger_identity["ledger_fingerprint"]
@@ -333,8 +371,10 @@ def build_current_valuation_snapshot(
             ),
         },
     }
-    if persist and db is not None and hasattr(db, "save_valuation_snapshot_sync"):
-        db.save_valuation_snapshot_sync(payload)
+    if persist:
+        raise RuntimeError(
+            "valuation projections are read-only; publish through the service boundary"
+        )
     return payload
 
 

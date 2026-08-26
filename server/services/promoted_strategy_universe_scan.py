@@ -2,23 +2,16 @@
 
 from __future__ import annotations
 
-import json
-import math
-import threading
 from collections.abc import Callable, Mapping
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import pandas as pd
 
 from data.store import DataStore
 from server.ai_runtime.contracts import content_fingerprint
-from server.ai_runtime.formula_dsl import (
-    evaluate_formula,
-    validate_formula_ast,
-)
+from server.ai_runtime.formula_dsl import validate_formula_ast
 from server.bootstrap import resolve_data_dir
 from server.services.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactStore,
@@ -28,7 +21,21 @@ from server.services.market_universe_truth import (
     MarketUniversePolicy,
     build_full_market_universe_truth,
 )
-from server.services.recommendation_flow import build_recommendation_cycle
+from server.services.promoted_strategy_universe_scan_persistence import (
+    persist_recommendation_tasks,
+)
+from server.services.promoted_strategy_universe_scan_support import (
+    automation_safety_blockers,
+    decision_window_blockers,
+    evaluate_strategy_signals,
+    formula_history_rows,
+    history_start,
+    json_object,
+    positive_float,
+    prior_verified_trading_date,
+    select_ranked_signals,
+    truth_projection,
+)
 from server.services.strategy_promotion_pipeline import (
     AI_SHADOW_STRATEGY_PREFIX,
     resolve_strategy_order_generation_gate,
@@ -38,11 +45,6 @@ PROMOTED_STRATEGY_UNIVERSE_SCAN_SCHEMA_VERSION = (
     "karkinos.promoted_strategy_universe_scan.v1"
 )
 PROMOTED_STRATEGY_UNIVERSE_SCAN_RUN_TYPE = "promoted_strategy_universe_scan"
-_SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
-_DECISION_START = time(9, 35)
-_DECISION_END = time(9, 45)
-_WRITE_LOCK = threading.Lock()
-
 StrategyGateResolver = Callable[..., tuple[dict[str, Any], list[str]]]
 StrategyLoader = Callable[..., dict[str, Any]]
 SafetyGateReader = Callable[[], Mapping[str, Any]]
@@ -84,148 +86,233 @@ class PromotedStrategyUniverseScanService:
         additional_blockers: list[str] | None = None,
     ) -> dict[str, Any]:
         """Scan once for the exact decision date using only prior closed bars."""
-
         started_at = self._clock()
         safety_gate = self._read_safety_gate()
-        blockers = _decision_window_blockers(
+        blockers = decision_window_blockers(
             db=self._db,
             decision_date=decision_date,
             now=started_at,
         )
-        blockers.extend(_automation_safety_blockers(safety_gate))
+        blockers.extend(automation_safety_blockers(safety_gate))
         blockers.extend(str(item) for item in additional_blockers or [] if str(item))
         promoted, strategy_blockers = self._resolve_promoted_strategies(decision_date)
         blockers.extend(strategy_blockers)
-        market_date = _prior_verified_trading_date(self._db, decision_date)
+        market_date = prior_verified_trading_date(self._db, decision_date)
         if market_date is None:
             blockers.append("prior_verified_market_date_unavailable")
+        portfolio, portfolio_blockers = self._portfolio_context(portfolio_summary)
+        blockers.extend(portfolio_blockers)
+        market, market_blockers = self._load_market_evidence(
+            market_date=market_date,
+            promoted=promoted,
+            portfolio_symbols=portfolio["symbols"],
+        )
+        blockers.extend(market_blockers)
+        if blockers:
+            truths, raw_signals, truth_blockers = {}, [], []
+        else:
+            truths, raw_signals, truth_blockers = self._evaluate_promoted_strategies(
+                promoted=promoted,
+                market_date=market_date,
+                market=market,
+                total_equity=portfolio["total_equity"],
+            )
+        blockers.extend(truth_blockers)
+        return self._complete_run(
+            decision_date=decision_date,
+            started_at=started_at,
+            safety_gate=safety_gate,
+            promoted=promoted,
+            market_date=market_date,
+            portfolio=portfolio,
+            market=market,
+            truth_by_strategy=truths,
+            raw_signals=raw_signals,
+            blockers=blockers,
+            persist_actions=persist_actions,
+            expected_signal_selection_fingerprint=(
+                expected_signal_selection_fingerprint
+            ),
+        )
 
-        total_equity = _positive_float(portfolio_summary.get("total_equity"))
+    def _portfolio_context(
+        self,
+        portfolio_summary: Mapping[str, Any],
+    ) -> tuple[dict[str, Any], list[str]]:
+        blockers: list[str] = []
+        total_equity = positive_float(portfolio_summary.get("total_equity"))
         if total_equity is None:
             blockers.append("portfolio_total_equity_invalid")
             total_equity = 0.0
-        portfolio_symbols = sorted(
-            {
-                str(symbol)
-                for symbol in portfolio_summary.get("symbols") or []
-                if str(symbol)
-            }
-        )
-        held_symbols: list[str] = []
         valuation_snapshot_id = str(
             portfolio_summary.get("valuation_snapshot_id") or ""
         )
         if not valuation_snapshot_id:
             blockers.append("valuation_snapshot_identity_missing")
+        return {
+            "total_equity": total_equity,
+            "valuation_snapshot_id": valuation_snapshot_id,
+            "symbols": sorted(
+                {
+                    str(symbol)
+                    for symbol in portfolio_summary.get("symbols") or []
+                    if str(symbol)
+                }
+            ),
+        }, blockers
 
-        provider_name = str(getattr(self._config, "data_source", "") or "")
-        snapshot: dict[str, Any] = {}
+    def _load_market_evidence(
+        self,
+        *,
+        market_date: str | None,
+        promoted: list[dict[str, Any]],
+        portfolio_symbols: list[str],
+    ) -> tuple[dict[str, Any], list[str]]:
+        evidence: dict[str, Any] = {
+            "snapshot": {},
+            "receipts": [],
+            "frames": {},
+            "trading_dates": [],
+            "history_start": None,
+            "held_symbols": [],
+        }
+        blockers: list[str] = []
+        if market_date is None or not promoted:
+            return evidence, blockers
+        snapshot = dict(
+            self._data_store.get_market_universe_snapshot(trade_date=market_date) or {}
+        )
+        if not snapshot:
+            blockers.append("full_market_universe_snapshot_missing")
+        start_date = history_start(self._config, market_date)
+        trading_dates = verified_trading_dates(
+            self._db,
+            start_date=start_date,
+            end_date=market_date,
+        )
+        if not trading_dates:
+            blockers.append("verified_market_history_window_incomplete")
         receipts: list[dict[str, Any]] = []
+        try:
+            receipts = [
+                dict(item)
+                for item in self._data_store.list_market_daily_ingestion_receipts(
+                    start_date=start_date,
+                    end_date=market_date,
+                    provider_name=str(getattr(self._config, "data_source", "") or ""),
+                )
+            ]
+        except (OSError, ValueError):
+            blockers.append("full_market_daily_receipt_replay_failed")
+        held_symbols: list[str] = []
         frames: dict[str, pd.DataFrame] = {}
-        trading_dates: list[str] = []
-        history_start = None
-        if market_date is not None and promoted:
-            snapshot_value = self._data_store.get_market_universe_snapshot(
-                trade_date=market_date
-            )
-            snapshot = dict(snapshot_value or {})
-            if not snapshot:
-                blockers.append("full_market_universe_snapshot_missing")
-            history_start = _history_start(self._config, market_date)
-            trading_dates = verified_trading_dates(
-                self._db,
-                start_date=history_start,
+        if snapshot:
+            members = [
+                str(member.get("symbol") or "")
+                for member in snapshot.get("members") or []
+                if isinstance(member, Mapping)
+            ]
+            held_symbols = sorted(set(portfolio_symbols) & set(members))
+            frames = self._data_store.load_market_bar_windows(
+                symbols=members,
+                start_date=start_date,
                 end_date=market_date,
             )
-            if not trading_dates:
-                blockers.append("verified_market_history_window_incomplete")
-            try:
-                receipts = [
-                    dict(item)
-                    for item in self._data_store.list_market_daily_ingestion_receipts(
-                        start_date=history_start,
-                        end_date=market_date,
-                        provider_name=provider_name,
-                    )
-                ]
-            except (OSError, ValueError):
-                blockers.append("full_market_daily_receipt_replay_failed")
-            if snapshot:
-                member_symbols = [
-                    str(member.get("symbol") or "")
-                    for member in snapshot.get("members") or []
-                    if isinstance(member, Mapping)
-                ]
-                member_set = set(member_symbols)
-                held_symbols = sorted(set(portfolio_symbols) & member_set)
-                frames = self._data_store.load_market_bar_windows(
-                    symbols=member_symbols,
-                    start_date=history_start,
-                    end_date=market_date,
-                )
+        return {
+            "snapshot": snapshot,
+            "receipts": receipts,
+            "frames": frames,
+            "trading_dates": trading_dates,
+            "history_start": start_date,
+            "held_symbols": held_symbols,
+        }, blockers
 
-        truth_by_strategy: dict[str, dict[str, Any]] = {}
+    def _evaluate_promoted_strategies(
+        self,
+        *,
+        promoted: list[dict[str, Any]],
+        market_date: str | None,
+        market: Mapping[str, Any],
+        total_equity: float,
+    ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]], list[str]]:
+        truths: dict[str, dict[str, Any]] = {}
         raw_signals: list[dict[str, Any]] = []
-        if not blockers and market_date is not None and history_start is not None:
-            for promoted_strategy in promoted:
-                strategy_id = str(promoted_strategy["strategy_id"])
-                strategy = dict(promoted_strategy["strategy"])
-                formula_ast = strategy.get("formula_ast")
-                selected_universe = tuple(
-                    str(symbol) for symbol in strategy.get("selected_universe") or []
-                )
-                try:
-                    validate_formula_ast(
-                        formula_ast,
-                        universe_size=len(selected_universe),
-                    )
-                    target_weight = 1.0 / self._policy.allocation_slots
-                    minimum_rows = max(
+        blockers: list[str] = []
+        start_date = market.get("history_start")
+        if market_date is None or not isinstance(start_date, str):
+            return truths, raw_signals, blockers
+        for promoted_strategy in promoted:
+            strategy_id = str(promoted_strategy["strategy_id"])
+            strategy = dict(promoted_strategy["strategy"])
+            formula_ast = strategy.get("formula_ast")
+            selected_universe = tuple(
+                str(symbol) for symbol in strategy.get("selected_universe") or []
+            )
+            try:
+                validate_formula_ast(formula_ast, universe_size=len(selected_universe))
+                target_weight = 1.0 / self._policy.allocation_slots
+                truth = build_full_market_universe_truth(
+                    snapshot=market["snapshot"],
+                    frames=market["frames"],
+                    receipts=market["receipts"],
+                    required_trading_dates=market["trading_dates"],
+                    start_date=start_date,
+                    end_date=market_date,
+                    initial_cash=total_equity,
+                    target_weight=target_weight,
+                    held_symbols=market["held_symbols"],
+                    minimum_history_rows=max(
                         self._policy.minimum_history_rows,
-                        _formula_history_rows(formula_ast),
-                    )
-                    truth = build_full_market_universe_truth(
-                        snapshot=snapshot,
-                        frames=frames,
-                        receipts=receipts,
-                        required_trading_dates=trading_dates,
-                        start_date=history_start,
-                        end_date=market_date,
-                        initial_cash=total_equity,
-                        target_weight=target_weight,
-                        held_symbols=held_symbols,
-                        minimum_history_rows=minimum_rows,
-                        policy=self._policy,
-                    )
-                except Exception as exc:
-                    blockers.append(
-                        f"strategy_full_market_truth_failed:{strategy_id}:"
-                        f"{type(exc).__name__}:{exc}"
-                    )
-                    continue
-                truth_by_strategy[strategy_id] = truth
-                if truth.get("status") != "complete":
-                    blockers.extend(
-                        f"strategy_full_market_truth:{strategy_id}:{item}"
-                        for item in truth.get("blockers") or []
-                    )
-                    continue
-                raw_signals.extend(
-                    _evaluate_strategy_signals(
-                        strategy_id=strategy_id,
-                        formula_ast=formula_ast,
-                        universe_size=len(selected_universe),
-                        target_weight=target_weight,
-                        frames=frames,
-                        eligible_symbols=list(truth["eligible_symbols"]),
-                        maintenance_symbols=list(truth["maintenance_symbols"]),
-                        held_symbols=set(held_symbols),
-                        market_date=market_date,
-                    )
+                        formula_history_rows(formula_ast),
+                    ),
+                    policy=self._policy,
                 )
+            except Exception as exc:
+                blockers.append(
+                    f"strategy_full_market_truth_failed:{strategy_id}:"
+                    f"{type(exc).__name__}:{exc}"
+                )
+                continue
+            truths[strategy_id] = truth
+            if truth.get("status") != "complete":
+                blockers.extend(
+                    f"strategy_full_market_truth:{strategy_id}:{item}"
+                    for item in truth.get("blockers") or []
+                )
+                continue
+            raw_signals.extend(
+                evaluate_strategy_signals(
+                    strategy_id=strategy_id,
+                    formula_ast=formula_ast,
+                    universe_size=len(selected_universe),
+                    target_weight=target_weight,
+                    frames=market["frames"],
+                    eligible_symbols=list(truth["eligible_symbols"]),
+                    maintenance_symbols=list(truth["maintenance_symbols"]),
+                    held_symbols=set(market["held_symbols"]),
+                    market_date=market_date,
+                )
+            )
+        return truths, raw_signals, blockers
 
+    def _complete_run(
+        self,
+        *,
+        decision_date: str,
+        started_at: datetime,
+        safety_gate: Mapping[str, Any],
+        promoted: list[dict[str, Any]],
+        market_date: str | None,
+        portfolio: Mapping[str, Any],
+        market: Mapping[str, Any],
+        truth_by_strategy: Mapping[str, dict[str, Any]],
+        raw_signals: list[dict[str, Any]],
+        blockers: list[str],
+        persist_actions: bool,
+        expected_signal_selection_fingerprint: str | None,
+    ) -> dict[str, Any]:
         blockers = list(dict.fromkeys(blockers))
-        selected_signals = _select_ranked_signals(
+        selected_signals = select_ranked_signals(
             raw_signals,
             allocation_slots=self._policy.allocation_slots,
         )
@@ -246,9 +333,9 @@ class PromotedStrategyUniverseScanService:
             "schema_version": PROMOTED_STRATEGY_UNIVERSE_SCAN_SCHEMA_VERSION,
             "decision_date": decision_date,
             "market_date": market_date,
-            "market_universe_snapshot_id": snapshot.get("snapshot_id"),
+            "market_universe_snapshot_id": market["snapshot"].get("snapshot_id"),
             "receipt_fingerprints": [
-                item.get("receipt_fingerprint") for item in receipts
+                item.get("receipt_fingerprint") for item in market["receipts"]
             ],
             "strategy_bindings": [
                 {
@@ -266,15 +353,15 @@ class PromotedStrategyUniverseScanService:
                 for item in promoted
             ],
             "portfolio_binding": {
-                "valuation_snapshot_id": valuation_snapshot_id or None,
+                "valuation_snapshot_id": portfolio["valuation_snapshot_id"] or None,
                 "held_symbol_fingerprint": "sha256:"
-                + content_fingerprint(held_symbols),
-                "held_stock_count": len(held_symbols),
+                + content_fingerprint(market["held_symbols"]),
+                "held_stock_count": len(market["held_symbols"]),
                 "capital_constraint_fingerprint": "sha256:"
                 + content_fingerprint(
                     {
-                        "valuation_snapshot_id": valuation_snapshot_id,
-                        "total_equity": total_equity,
+                        "valuation_snapshot_id": portfolio["valuation_snapshot_id"],
+                        "total_equity": portfolio["total_equity"],
                     }
                 ),
             },
@@ -295,7 +382,7 @@ class PromotedStrategyUniverseScanService:
                 "completed",
                 "completed_no_signal",
             }:
-                payload = _json_object(existing.get("payload_json"))
+                payload = json_object(existing.get("payload_json"))
                 return {**payload, "run_id": run_id, "reused": True}
 
         action_tasks: list[dict[str, Any]] = []
@@ -312,11 +399,11 @@ class PromotedStrategyUniverseScanService:
                 else ("prepared" if selected_signals else "prepared_no_signal")
             )
         if persist_actions and not blockers and selected_signals:
-            with _WRITE_LOCK:
-                action_tasks = self._persist_signals(
-                    decision_date=decision_date,
-                    signals=selected_signals,
-                )
+            action_tasks = persist_recommendation_tasks(
+                db=self._db,
+                decision_date=decision_date,
+                signals=selected_signals,
+            )
         payload_core = {
             **input_core,
             "status": status,
@@ -327,7 +414,7 @@ class PromotedStrategyUniverseScanService:
             "selected_signals": selected_signals,
             "action_tasks": action_tasks,
             "full_market_truths": [
-                _truth_projection(strategy_id, truth)
+                truth_projection(strategy_id, truth)
                 for strategy_id, truth in sorted(truth_by_strategy.items())
             ],
             "normal_no_signal": status == "completed_no_signal",
@@ -352,7 +439,7 @@ class PromotedStrategyUniverseScanService:
                     "execution_mode": "paper_shadow_recommendation_only",
                     "started_at": started_at.isoformat(),
                     "finished_at": payload["finished_at"],
-                    "source_ref": snapshot.get("snapshot_id"),
+                    "source_ref": market["snapshot"].get("snapshot_id"),
                     "payload": payload,
                 }
             )
@@ -448,7 +535,7 @@ class PromotedStrategyUniverseScanService:
         return resolved, blockers
 
     def _load_strategy(self, *, candidate_id: str, run_id: str) -> dict[str, Any]:
-        database_path = Path(getattr(self._db, "_path"))
+        database_path = Path(self._db.path)
         store = DailyStrategyArtifactStore(
             database_path,
             database_path.parent / "strategy-research-backups",
@@ -457,314 +544,3 @@ class PromotedStrategyUniverseScanService:
             candidate_id=candidate_id,
             run_id=run_id,
         )
-
-    def _persist_signals(
-        self,
-        *,
-        decision_date: str,
-        signals: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-        base = datetime.combine(
-            date.fromisoformat(decision_date),
-            _DECISION_START,
-            tzinfo=_SHANGHAI_TZ,
-        )
-        persisted: list[dict[str, Any]] = []
-        for index, signal in enumerate(signals):
-            timestamp = (
-                base + timedelta(microseconds=len(signals) - index)
-            ).isoformat()
-            signal_id = self._db.find_signal_id_sync(
-                timestamp=timestamp,
-                strategy_id=str(signal["strategy_id"]),
-                symbol=str(signal["symbol"]),
-                direction=str(signal["direction"]),
-            )
-            if signal_id is None:
-                signal_id = self._db.save_signal_sync(
-                    timestamp=timestamp,
-                    strategy_id=str(signal["strategy_id"]),
-                    symbol=str(signal["symbol"]),
-                    direction=str(signal["direction"]),
-                    target_weight=float(signal["target_weight"]),
-                    price=float(signal["frozen_close"]),
-                    asset_class="stock",
-                )
-            cycle = build_recommendation_cycle(
-                signals=[
-                    {
-                        "id": signal_id,
-                        "timestamp": timestamp,
-                        "strategy_id": signal["strategy_id"],
-                        "symbol": signal["symbol"],
-                        "direction": signal["direction"],
-                        "target_weight": signal["target_weight"],
-                        "price": signal["frozen_close"],
-                        "asset_class": "stock",
-                    }
-                ],
-                available_cash=0,
-                existing_positions={},
-            )
-            task = cycle.tasks[0]
-            self._db.upsert_action_task_sync(
-                source_signal_id=task.source_signal_id,
-                symbol=task.symbol,
-                title=task.title,
-                detail=task.detail,
-                direction=task.direction,
-                urgency="high" if task.direction == "sell" else "medium",
-                target_weight=task.target_weight,
-                price=task.price,
-                strategy_id=task.strategy_id,
-                timestamp=task.timestamp,
-                asset_class=task.asset_class,
-            )
-            persisted.append(
-                {
-                    "source_signal_id": signal_id,
-                    "symbol": task.symbol,
-                    "direction": task.direction,
-                    "timestamp": timestamp,
-                }
-            )
-        return persisted
-
-
-def _evaluate_strategy_signals(
-    *,
-    strategy_id: str,
-    formula_ast: Mapping[str, Any],
-    universe_size: int,
-    target_weight: float,
-    frames: Mapping[str, pd.DataFrame],
-    eligible_symbols: list[str],
-    maintenance_symbols: list[str],
-    held_symbols: set[str],
-    market_date: str,
-) -> list[dict[str, Any]]:
-    signals: list[dict[str, Any]] = []
-    candidates = sorted(set(eligible_symbols) | set(maintenance_symbols))
-    for symbol in candidates:
-        frame = frames.get(symbol)
-        if frame is None or frame.empty:
-            continue
-        entry, exit_signal, _provider_sizing_ignored = evaluate_formula(
-            formula_ast,
-            frame,
-            universe_size=universe_size,
-        )
-        latest = frame.sort_values("timestamp").iloc[-1]
-        latest_date = pd.Timestamp(latest["timestamp"]).date().isoformat()
-        if latest_date != market_date:
-            raise ValueError(f"formula_market_date_missing:{symbol}")
-        is_held = symbol in held_symbols
-        exit_now = bool(exit_signal.iloc[-1])
-        entry_now = bool(entry.iloc[-1])
-        if is_held and exit_now:
-            direction = "sell"
-            signal_weight = 0.0
-        elif not is_held and entry_now and not exit_now:
-            direction = "buy"
-            signal_weight = target_weight
-        else:
-            continue
-        amount = pd.to_numeric(
-            frame.get("amount", frame["close"] * frame["volume"]),
-            errors="coerce",
-        ).tail(20)
-        liquidity = float(amount.median()) if not amount.empty else 0.0
-        signals.append(
-            {
-                "strategy_id": strategy_id,
-                "symbol": symbol,
-                "direction": direction,
-                "target_weight": float(signal_weight),
-                "frozen_close": float(latest["close"]),
-                "frozen_market_date": market_date,
-                "ranking_liquidity": liquidity if math.isfinite(liquidity) else 0.0,
-            }
-        )
-    return signals
-
-
-def _select_ranked_signals(
-    signals: list[dict[str, Any]],
-    *,
-    allocation_slots: int,
-) -> list[dict[str, Any]]:
-    exits = sorted(
-        (item for item in signals if item["direction"] == "sell"),
-        key=lambda item: (str(item["symbol"]), str(item["strategy_id"])),
-    )
-    buys = sorted(
-        (item for item in signals if item["direction"] == "buy"),
-        key=lambda item: (
-            -float(item["ranking_liquidity"]),
-            str(item["symbol"]),
-            str(item["strategy_id"]),
-        ),
-    )
-    selected_buys: list[dict[str, Any]] = []
-    seen_symbols: set[str] = set()
-    for item in buys:
-        symbol = str(item["symbol"])
-        if symbol in seen_symbols:
-            continue
-        seen_symbols.add(symbol)
-        selected_buys.append(item)
-        if len(selected_buys) == allocation_slots:
-            break
-    return [*exits, *selected_buys]
-
-
-def _decision_window_blockers(
-    *,
-    db: Any,
-    decision_date: str,
-    now: datetime,
-) -> list[str]:
-    try:
-        parsed = date.fromisoformat(decision_date)
-    except ValueError:
-        return ["strategy_scan_decision_date_invalid"]
-    current = now if now.tzinfo is not None else now.replace(tzinfo=timezone.utc)
-    shanghai = current.astimezone(_SHANGHAI_TZ)
-    blockers: list[str] = []
-    if shanghai.date() != parsed:
-        blockers.append("strategy_scan_not_current_decision_date")
-    if not (_DECISION_START <= shanghai.time().replace(tzinfo=None) < _DECISION_END):
-        blockers.append("strategy_scan_outside_reviewed_decision_window")
-    dates = verified_trading_dates(
-        db,
-        start_date=decision_date,
-        end_date=decision_date,
-    )
-    if dates != [decision_date]:
-        blockers.append("strategy_scan_decision_date_not_verified_trading_day")
-    return blockers
-
-
-def _prior_verified_trading_date(db: Any, decision_date: str) -> str | None:
-    parsed = date.fromisoformat(decision_date)
-    start = (parsed - timedelta(days=45)).isoformat()
-    dates = verified_trading_dates(
-        db,
-        start_date=start,
-        end_date=(parsed - timedelta(days=1)).isoformat(),
-    )
-    return dates[-1] if dates else None
-
-
-def _automation_safety_blockers(status: Mapping[str, Any]) -> list[str]:
-    if status.get("status") == "unavailable":
-        return ["strategy_scan_automation_safety_evidence_unavailable"]
-    blockers: list[str] = []
-    if status.get("kill_switch_enabled") is not False:
-        blockers.append("strategy_scan_kill_switch_not_clear")
-    if status.get("broker_submission_enabled") is not False:
-        blockers.append("strategy_scan_broker_submission_must_remain_disabled")
-    if status.get("manual_confirmation_required") is not True:
-        blockers.append("strategy_scan_manual_confirmation_not_required")
-    if str(status.get("default_execution_mode") or "") not in {
-        "manual_confirmation",
-        "paper_shadow",
-        "dry_run",
-    }:
-        blockers.append("strategy_scan_execution_mode_not_safe")
-    return blockers
-
-
-def _history_start(config: Any, market_date: str) -> str:
-    end = date.fromisoformat(market_date)
-    start = end - timedelta(days=540)
-    configured = str(getattr(config, "start_date", "") or "").strip()
-    if configured:
-        try:
-            start = min(start, date.fromisoformat(configured))
-        except ValueError:
-            pass
-    return start.isoformat()
-
-
-def _formula_history_rows(formula_ast: Mapping[str, Any]) -> int:
-    def expression_rows(expression: Any) -> int:
-        if not isinstance(expression, Mapping):
-            return 1
-        op = str(expression.get("op") or "")
-        if op in {"field", "constant"}:
-            return 1
-        if op in {"lag", "delta", "return"}:
-            return expression_rows(expression.get("input")) + int(
-                expression.get("period") or 0
-            )
-        if op in {"rolling_mean", "rolling_std", "zscore", "ema", "rsi"}:
-            return expression_rows(expression.get("input")) + max(
-                int(expression.get("window") or 1) - 1,
-                0,
-            )
-        if op == "atr":
-            return int(expression.get("window") or 1)
-        if op in {
-            "add",
-            "subtract",
-            "multiply",
-            "divide",
-            "gt",
-            "gte",
-            "lt",
-            "lte",
-            "equal",
-            "and",
-            "or",
-            "cross",
-        }:
-            rows = max(
-                expression_rows(expression.get("left")),
-                expression_rows(expression.get("right")),
-            )
-            return rows + (1 if op == "cross" else 0)
-        if op == "not":
-            return expression_rows(expression.get("input"))
-        return 1
-
-    return max(
-        expression_rows(formula_ast.get("entry")),
-        expression_rows(formula_ast.get("exit")),
-    )
-
-
-def _truth_projection(strategy_id: str, truth: Mapping[str, Any]) -> dict[str, Any]:
-    return {
-        "strategy_id": strategy_id,
-        "status": truth.get("status"),
-        "trade_date": truth.get("trade_date"),
-        "market_universe_snapshot_id": truth.get("market_universe_snapshot_id"),
-        "active_stock_member_count": truth.get("active_stock_member_count"),
-        "eligible_stock_count": truth.get("eligible_stock_count"),
-        "maintenance_symbols": list(truth.get("maintenance_symbols") or []),
-        "excluded_reason_counts": dict(truth.get("excluded_reason_counts") or {}),
-        "minimum_history_rows": truth.get("minimum_history_rows"),
-        "evidence_fingerprint": truth.get("evidence_fingerprint"),
-        "blockers": list(truth.get("blockers") or []),
-    }
-
-
-def _json_object(value: Any) -> dict[str, Any]:
-    if isinstance(value, dict):
-        return dict(value)
-    if not value:
-        return {}
-    try:
-        parsed = json.loads(str(value))
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return {}
-    return dict(parsed) if isinstance(parsed, dict) else {}
-
-
-def _positive_float(value: Any) -> float | None:
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError):
-        return None
-    return parsed if math.isfinite(parsed) and parsed > 0 else None

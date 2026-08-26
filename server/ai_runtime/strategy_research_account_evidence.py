@@ -8,7 +8,9 @@ from collections.abc import Mapping
 from typing import Any
 
 from server.ai_runtime.contracts import JsonObject, canonical_json
-from server.ai_runtime.external_research import ExternalResearchInvalidResponseError
+from server.ai_runtime.external_research_errors import (
+    ExternalResearchInvalidResponseError,
+)
 from server.ai_runtime.strategy_research_values import (
     SANITIZED_ACCOUNT_EVIDENCE_CONTRACT,
 )

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.routing import APIRoute
 
+from server.contracts.ledger_mutations import ledger_entry_state_fingerprint
 from server.db import AppDatabase
 
 
@@ -75,6 +76,8 @@ def test_post_trade_and_read_positions_uses_ledger_projection(tmp_path, monkeypa
     create_response = asyncio.run(
         create_trade(
             ledger_routes.LedgerTradeCreate(
+                operator_id="local-owner",
+                request_id="ledger-trade-create-1",
                 symbol="600519",
                 asset_class="stock",
                 direction="buy",
@@ -131,6 +134,8 @@ def test_ledger_trade_route_preserves_structured_sell_cost_fields(
     asyncio.run(
         create_trade(
             ledger_routes.LedgerTradeCreate(
+                operator_id="local-owner",
+                request_id="ledger-trade-sell-1",
                 symbol="600519",
                 asset_class="stock",
                 direction="sell",
@@ -201,6 +206,8 @@ def test_ledger_trade_route_uses_configured_fee_contract_when_fee_is_omitted(
     asyncio.run(
         create_trade(
             ledger_routes.LedgerTradeCreate(
+                operator_id="local-owner",
+                request_id="ledger-trade-configured-fee-1",
                 symbol="SYN001",
                 asset_class="stock",
                 direction="sell",
@@ -275,6 +282,8 @@ def test_ledger_trade_route_uses_symbol_exchange_transfer_fee_split(
     asyncio.run(
         create_trade(
             ledger_routes.LedgerTradeCreate(
+                operator_id="local-owner",
+                request_id="ledger-trade-shenzhen-fee-1",
                 symbol="000001",
                 asset_class="stock",
                 direction="sell",
@@ -331,6 +340,8 @@ def test_ledger_trade_route_preserves_broker_fee_schedule_version(
     asyncio.run(
         create_trade(
             ledger_routes.LedgerTradeCreate(
+                operator_id="local-owner",
+                request_id="ledger-trade-fee-version-1",
                 symbol="600000",
                 asset_class="stock",
                 direction="buy",
@@ -384,6 +395,8 @@ def test_ledger_trade_route_uses_configured_convertible_bond_fee_contract(
     asyncio.run(
         create_trade(
             ledger_routes.LedgerTradeCreate(
+                operator_id="local-owner",
+                request_id="ledger-trade-bond-fee-1",
                 symbol="113001",
                 asset_class="convertible_bond",
                 direction="sell",
@@ -438,6 +451,9 @@ def test_ledger_trade_settlement_route_confirms_broker_values(tmp_path, monkeypa
         fee_rule_version="broker_fee_schedule",
         source_ref="sell-stock-600066-20260703",
     )
+    expected_entry_fingerprint = ledger_entry_state_fingerprint(
+        db.get_ledger_entry_sync(entry_id) or {}
+    )
     monkeypatch.setattr(
         "server.dependencies.get_app_state",
         lambda: SimpleNamespace(db=db),
@@ -460,6 +476,9 @@ def test_ledger_trade_settlement_route_confirms_broker_values(tmp_path, monkeypa
         confirm_settlement(
             entry_id,
             ledger_routes.LedgerTradeSettlementCreate(
+                operator_id="local-owner",
+                request_id="ledger-settlement-600066-1",
+                expected_entry_fingerprint=expected_entry_fingerprint,
                 settled_at="2026-07-03T14:08:29+08:00",
                 commission=5.0,
                 stamp_tax=1.45,
@@ -500,8 +519,11 @@ def test_ledger_trade_settlement_route_rejects_inconsistent_net_cash(
         price=28.96,
         commission=5.0,
         gross_amount=2896.0,
-        net_cash_impact=2889.52304,
+        net_cash_impact=2891.0,
         source_ref="sell-stock-600066-20260703",
+    )
+    expected_entry_fingerprint = ledger_entry_state_fingerprint(
+        db.get_ledger_entry_sync(entry_id) or {}
     )
     monkeypatch.setattr(
         "server.dependencies.get_app_state",
@@ -520,6 +542,9 @@ def test_ledger_trade_settlement_route_rejects_inconsistent_net_cash(
             confirm_settlement(
                 entry_id,
                 ledger_routes.LedgerTradeSettlementCreate(
+                    operator_id="local-owner",
+                    request_id="ledger-settlement-invalid-net-1",
+                    expected_entry_fingerprint=expected_entry_fingerprint,
                     commission=5.0,
                     stamp_tax=1.45,
                     transfer_fee=0.03,

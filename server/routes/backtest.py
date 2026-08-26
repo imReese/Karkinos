@@ -7,7 +7,6 @@ import itertools
 import json
 import logging
 import os
-import sys
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -32,6 +31,12 @@ from server.contracts.http.backtest import (
     StrategySignalPreviewResponse,
     StrategyValidationMatrixResponse,
     StrategyValidationRowResponse,
+)
+from server.http.backtest_endpoints.dependencies import (
+    ExecutionEndpointDependencies,
+    PreviewEndpointDependencies,
+    ResultEndpointDependencies,
+    StrategyCatalogEndpointDependencies,
 )
 from server.http.backtest_endpoints.execution import (
     create_router as _create_execution_router,
@@ -180,10 +185,100 @@ _run_backtest = _run_single_backtest
 
 
 def create_router() -> APIRouter:
-    facade = sys.modules[__name__]
     router = APIRouter()
-    router.routes.extend(_create_strategy_catalog_router(facade).routes)
-    router.routes.extend(_create_previews_router(facade).routes)
-    router.routes.extend(_create_execution_router(facade).routes)
-    router.routes.extend(_create_results_router(facade).routes)
+    router.routes.extend(
+        _create_strategy_catalog_router(
+            StrategyCatalogEndpointDependencies(
+                run_strategy_signal_preview=lambda *args, **kwargs: (
+                    _run_strategy_signal_preview(*args, **kwargs)
+                ),
+                validate_signal_preview_strategy_params=lambda *args, **kwargs: (
+                    _validate_signal_preview_strategy_params(*args, **kwargs)
+                ),
+                asyncio_provider=lambda: asyncio,
+            )
+        ).routes
+    )
+    router.routes.extend(
+        _create_previews_router(
+            PreviewEndpointDependencies(
+                run_backtest_attribution_preview=lambda *args, **kwargs: (
+                    _run_backtest_attribution_preview(*args, **kwargs)
+                ),
+                run_backtest_paper_shadow_preview=lambda *args, **kwargs: (
+                    _run_backtest_paper_shadow_preview(*args, **kwargs)
+                ),
+                run_backtest_risk_preview=lambda *args, **kwargs: (
+                    _run_backtest_risk_preview(*args, **kwargs)
+                ),
+            )
+        ).routes
+    )
+    router.routes.extend(
+        _create_execution_router(
+            ExecutionEndpointDependencies(
+                sweep_rank_directions=_SWEEP_RANK_DIRECTIONS,
+                sweep_warnings=_SWEEP_WARNINGS,
+                backtest_evidence_from_payload=lambda *args, **kwargs: (
+                    _backtest_evidence_from_payload(*args, **kwargs)
+                ),
+                backtest_metrics_from_payload=lambda *args, **kwargs: (
+                    _backtest_metrics_from_payload(*args, **kwargs)
+                ),
+                backtest_report_metrics_json=lambda *args, **kwargs: (
+                    _backtest_report_metrics_json(*args, **kwargs)
+                ),
+                build_parameter_grid=lambda *args, **kwargs: _build_parameter_grid(
+                    *args, **kwargs
+                ),
+                json_object=lambda *args, **kwargs: _json_object(*args, **kwargs),
+                run_backtest=lambda *args, **kwargs: _run_backtest(*args, **kwargs),
+                sweep_score=lambda *args, **kwargs: _sweep_score(*args, **kwargs),
+                validate_backtest_strategy_params=lambda *args, **kwargs: (
+                    _validate_backtest_strategy_params(*args, **kwargs)
+                ),
+                write_backtest_report_file=lambda *args, **kwargs: (
+                    _write_backtest_report_file(*args, **kwargs)
+                ),
+                asyncio_provider=lambda: asyncio,
+                json_provider=lambda: json,
+                logger_provider=lambda: logger,
+            )
+        ).routes
+    )
+    router.routes.extend(
+        _create_results_router(
+            ResultEndpointDependencies(
+                compare_warnings=_COMPARE_WARNINGS,
+                backtest_metrics_from_payload=lambda *args, **kwargs: (
+                    _backtest_metrics_from_payload(*args, **kwargs)
+                ),
+                backtest_report_metrics_json=lambda *args, **kwargs: (
+                    _backtest_report_metrics_json(*args, **kwargs)
+                ),
+                dataset_snapshot_from_result=lambda *args, **kwargs: (
+                    _dataset_snapshot_from_result(*args, **kwargs)
+                ),
+                dataset_snapshot_id=lambda *args, **kwargs: _dataset_snapshot_id(
+                    *args, **kwargs
+                ),
+                json_object=lambda *args, **kwargs: _json_object(*args, **kwargs),
+                normalize_backtest_payload_from_equity_curve=lambda *args, **kwargs: (
+                    _normalize_backtest_payload_from_equity_curve(*args, **kwargs)
+                ),
+                run_single_backtest=lambda *args, **kwargs: _run_single_backtest(
+                    *args, **kwargs
+                ),
+                validate_backtest_strategy_params=lambda *args, **kwargs: (
+                    _validate_backtest_strategy_params(*args, **kwargs)
+                ),
+                write_backtest_report_file=lambda *args, **kwargs: (
+                    _write_backtest_report_file(*args, **kwargs)
+                ),
+                asyncio_provider=lambda: asyncio,
+                json_provider=lambda: json,
+                logger_provider=lambda: logger,
+            )
+        ).routes
+    )
     return router

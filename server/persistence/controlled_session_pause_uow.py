@@ -8,7 +8,9 @@ from typing import Any
 from server.persistence.controlled_session_access import (
     ControlledSessionRepositoryAccess,
 )
-from server.persistence.database_support import controlled_session_pause_rejection
+from server.persistence.controlled_session_rejections import (
+    controlled_session_pause_rejection,
+)
 from server.persistence.event_log import (
     serialize_event_payload_json as _serialize_event_payload_json,
 )

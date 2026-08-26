@@ -104,11 +104,10 @@ def finish_manual_quote_fetch_run(
     refresh_policy: str,
     market_open: bool,
     last_refresh_error: str | None,
-    valuation_snapshot_id: str | None = None,
-) -> None:
+) -> dict | None:
     db = getattr(state, "db", None)
     if db is None or not hasattr(db, "finish_quote_fetch_run"):
-        return
+        return None
     success_count = len(refreshed)
     failure_count = len(failed)
     cache_hit_count = sum(
@@ -135,9 +134,8 @@ def finish_manual_quote_fetch_run(
         "refreshed_symbols": [result.symbol for result in refreshed],
         "failed_symbols": [result.symbol for result in failed],
         "skipped_symbols": [result.symbol for result in skipped],
-        "valuation_snapshot_id": valuation_snapshot_id,
     }
-    db.finish_quote_fetch_run(
+    return db.finish_quote_fetch_run(
         run_id=run_id,
         finished_at=finished_at,
         status=status,

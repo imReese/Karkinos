@@ -6,7 +6,9 @@ from collections.abc import Mapping
 from typing import Any
 
 from server.ai_runtime.contracts import JsonObject, canonical_json, content_fingerprint
-from server.ai_runtime.external_research import ExternalResearchInvalidResponseError
+from server.ai_runtime.external_research_errors import (
+    ExternalResearchInvalidResponseError,
+)
 from server.ai_runtime.strategy_research_values import CRITIQUE_CITATION_PATHS
 from server.contracts.strategy_research import (
     STRATEGY_RESEARCH_MAX_CITATION_CATALOG_BYTES,
