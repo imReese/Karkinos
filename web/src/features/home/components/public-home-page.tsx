@@ -16,6 +16,8 @@ const docsUrl = 'https://github.com/imReese/Karkinos/tree/main/docs';
 const sourceUrl = 'https://github.com/imReese/Karkinos';
 
 type PublicHomePanel = 'home' | 'product' | 'principles' | 'workflow';
+type PublicHomeCopy = (typeof publicHomeCopy)[keyof typeof publicHomeCopy];
+type PublicHomePreferences = ReturnType<typeof usePreferences>;
 
 function initialPublicHomePanel(): PublicHomePanel {
   const panel = window.location.hash.slice(1);
@@ -71,92 +73,15 @@ export function PublicHomePage() {
         {copy.skip}
       </a>
 
-      <header className="app-public-header">
-        <div className="app-public-container app-public-header-inner">
-          <Link
-            to="/"
-            className="app-public-brand"
-            aria-label={copy.brandLabel}
-            onClick={() => setActivePanel('home')}
-          >
-            <span
-              className="app-brand-glyph app-public-brand-glyph"
-              aria-hidden="true"
-            >
-              <KarkinosMark />
-            </span>
-            <span className="app-product-mark app-public-product-mark">
-              Karkinos
-            </span>
-          </Link>
-
-          <nav className="app-public-nav" aria-label={copy.navLabel}>
-            <a
-              href="#product"
-              aria-current={activePanel === 'product' ? 'location' : undefined}
-              onClick={() => setActivePanel('product')}
-            >
-              {copy.nav.product}
-            </a>
-            <a
-              href="#principles"
-              aria-current={
-                activePanel === 'principles' ? 'location' : undefined
-              }
-              onClick={() => setActivePanel('principles')}
-            >
-              {copy.nav.principles}
-            </a>
-            <a
-              href="#workflow"
-              aria-current={activePanel === 'workflow' ? 'location' : undefined}
-              onClick={() => setActivePanel('workflow')}
-            >
-              {copy.nav.workflow}
-            </a>
-            <a href={docsUrl} target="_blank" rel="noreferrer">
-              {copy.nav.docs}
-            </a>
-          </nav>
-
-          <div className="app-public-actions">
-            <button
-              type="button"
-              className="app-public-icon-button"
-              aria-label={copy.language}
-              onClick={() => setLocale(locale === 'zh' ? 'en' : 'zh')}
-            >
-              <Languages aria-hidden="true" />
-              <span aria-hidden="true">{locale === 'zh' ? 'EN' : '中'}</span>
-            </button>
-            <button
-              type="button"
-              className="app-public-icon-button app-public-theme-button"
-              aria-label={
-                nextTheme === 'light' ? copy.lightTheme : copy.darkTheme
-              }
-              onClick={() => setTheme(nextTheme)}
-            >
-              {nextTheme === 'light' ? (
-                <Sun aria-hidden="true" />
-              ) : (
-                <Moon aria-hidden="true" />
-              )}
-            </button>
-            <Link
-              to="/overview"
-              className="app-button-primary app-public-header-cta"
-              aria-label={copy.enter}
-            >
-              <span className="app-public-header-cta-long">{copy.enter}</span>
-              <span className="app-public-header-cta-short" aria-hidden="true">
-                {copy.enterShort}
-              </span>
-              <ArrowRight aria-hidden="true" />
-            </Link>
-          </div>
-        </div>
-      </header>
+      <PublicHomeHeader
+        activePanel={activePanel}
+        copy={copy}
+        locale={locale}
+        nextTheme={nextTheme}
+        setActivePanel={setActivePanel}
+        setLocale={setLocale}
+        setTheme={setTheme}
+      />
 
       <main className="app-public-main" id="public-home-main">
         <section
@@ -198,34 +123,11 @@ export function PublicHomePage() {
             </div>
           </div>
 
-          <nav
-            className="app-public-section-index"
-            aria-label={copy.sectionNavLabel}
-          >
-            <a
-              href="#product"
-              aria-current={activePanel === 'product' ? 'location' : undefined}
-              onClick={() => setActivePanel('product')}
-            >
-              {copy.nav.product}
-            </a>
-            <a
-              href="#principles"
-              aria-current={
-                activePanel === 'principles' ? 'location' : undefined
-              }
-              onClick={() => setActivePanel('principles')}
-            >
-              {copy.nav.principles}
-            </a>
-            <a
-              href="#workflow"
-              aria-current={activePanel === 'workflow' ? 'location' : undefined}
-              onClick={() => setActivePanel('workflow')}
-            >
-              {copy.nav.workflow}
-            </a>
-          </nav>
+          <PublicHomeSectionIndex
+            activePanel={activePanel}
+            copy={copy}
+            setActivePanel={setActivePanel}
+          />
 
           <figure
             className="app-public-evidence-frame"
@@ -453,61 +355,214 @@ export function PublicHomePage() {
         </div>
       </main>
 
-      <footer className="app-public-footer">
-        <div className="app-public-container app-public-footer-grid">
-          <div className="app-public-footer-brand">
-            <div className="app-public-brand">
-              <span
-                className="app-brand-glyph app-public-brand-glyph"
-                aria-hidden="true"
-              >
-                <KarkinosMark />
-              </span>
-              <span className="app-product-mark app-public-product-mark">
-                Karkinos
-              </span>
-            </div>
-            <p>{copy.footer.tagline}</p>
-          </div>
-          <div>
-            <h2>{copy.footer.product}</h2>
-            <Link to="/overview">{copy.footer.overview}</Link>
-            <a href="#principles" onClick={() => setActivePanel('principles')}>
-              {copy.footer.evidence}
-            </a>
-            <a href="#workflow" onClick={() => setActivePanel('workflow')}>
-              {copy.footer.workflow}
-            </a>
-          </div>
-          <div>
-            <h2>{copy.footer.resources}</h2>
-            <a href={docsUrl} target="_blank" rel="noreferrer">
-              {copy.footer.docs}
-            </a>
-            <a href={sourceUrl} target="_blank" rel="noreferrer">
-              {copy.footer.source}
-            </a>
-          </div>
-          <div>
-            <h2>{copy.footer.principles}</h2>
-            <span>{copy.footer.persisted}</span>
-            <span>{copy.footer.human}</span>
-            <span>{copy.footer.closed}</span>
-          </div>
-        </div>
-        <div className="app-public-container app-public-footer-note">
-          <span>Karkinos</span>
-          <span>{copy.footer.note}</span>
-          <span className="app-public-footer-links">
-            <a href={docsUrl} target="_blank" rel="noreferrer">
-              {copy.footer.docs}
-            </a>
-            <a href={sourceUrl} target="_blank" rel="noreferrer">
-              {copy.footer.source}
-            </a>
-          </span>
-        </div>
-      </footer>
+      <PublicHomeFooter copy={copy} setActivePanel={setActivePanel} />
     </div>
+  );
+}
+
+function PublicHomeSectionIndex({
+  activePanel,
+  copy,
+  setActivePanel,
+}: {
+  activePanel: PublicHomePanel;
+  copy: PublicHomeCopy;
+  setActivePanel: (panel: PublicHomePanel) => void;
+}) {
+  return (
+    <nav className="app-public-section-index" aria-label={copy.sectionNavLabel}>
+      <a
+        href="#product"
+        aria-current={activePanel === 'product' ? 'location' : undefined}
+        onClick={() => setActivePanel('product')}
+      >
+        {copy.nav.product}
+      </a>
+      <a
+        href="#principles"
+        aria-current={activePanel === 'principles' ? 'location' : undefined}
+        onClick={() => setActivePanel('principles')}
+      >
+        {copy.nav.principles}
+      </a>
+      <a
+        href="#workflow"
+        aria-current={activePanel === 'workflow' ? 'location' : undefined}
+        onClick={() => setActivePanel('workflow')}
+      >
+        {copy.nav.workflow}
+      </a>
+    </nav>
+  );
+}
+
+function PublicHomeHeader({
+  activePanel,
+  copy,
+  locale,
+  nextTheme,
+  setActivePanel,
+  setLocale,
+  setTheme,
+}: {
+  activePanel: PublicHomePanel;
+  copy: PublicHomeCopy;
+  locale: PublicHomePreferences['locale'];
+  nextTheme: 'light' | 'dark';
+  setActivePanel: (panel: PublicHomePanel) => void;
+  setLocale: PublicHomePreferences['setLocale'];
+  setTheme: PublicHomePreferences['setTheme'];
+}) {
+  return (
+    <header className="app-public-header">
+      <div className="app-public-container app-public-header-inner">
+        <Link
+          to="/"
+          className="app-public-brand"
+          aria-label={copy.brandLabel}
+          onClick={() => setActivePanel('home')}
+        >
+          <span
+            className="app-brand-glyph app-public-brand-glyph"
+            aria-hidden="true"
+          >
+            <KarkinosMark />
+          </span>
+          <span className="app-product-mark app-public-product-mark">
+            Karkinos
+          </span>
+        </Link>
+
+        <nav className="app-public-nav" aria-label={copy.navLabel}>
+          <a
+            href="#product"
+            aria-current={activePanel === 'product' ? 'location' : undefined}
+            onClick={() => setActivePanel('product')}
+          >
+            {copy.nav.product}
+          </a>
+          <a
+            href="#principles"
+            aria-current={activePanel === 'principles' ? 'location' : undefined}
+            onClick={() => setActivePanel('principles')}
+          >
+            {copy.nav.principles}
+          </a>
+          <a
+            href="#workflow"
+            aria-current={activePanel === 'workflow' ? 'location' : undefined}
+            onClick={() => setActivePanel('workflow')}
+          >
+            {copy.nav.workflow}
+          </a>
+          <a href={docsUrl} target="_blank" rel="noreferrer">
+            {copy.nav.docs}
+          </a>
+        </nav>
+
+        <div className="app-public-actions">
+          <button
+            type="button"
+            className="app-public-icon-button"
+            aria-label={copy.language}
+            onClick={() => setLocale(locale === 'zh' ? 'en' : 'zh')}
+          >
+            <Languages aria-hidden="true" />
+            <span aria-hidden="true">{locale === 'zh' ? 'EN' : '中'}</span>
+          </button>
+          <button
+            type="button"
+            className="app-public-icon-button app-public-theme-button"
+            aria-label={
+              nextTheme === 'light' ? copy.lightTheme : copy.darkTheme
+            }
+            onClick={() => setTheme(nextTheme)}
+          >
+            {nextTheme === 'light' ? (
+              <Sun aria-hidden="true" />
+            ) : (
+              <Moon aria-hidden="true" />
+            )}
+          </button>
+          <Link
+            to="/overview"
+            className="app-button-primary app-public-header-cta"
+            aria-label={copy.enter}
+          >
+            <span className="app-public-header-cta-long">{copy.enter}</span>
+            <span className="app-public-header-cta-short" aria-hidden="true">
+              {copy.enterShort}
+            </span>
+            <ArrowRight aria-hidden="true" />
+          </Link>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function PublicHomeFooter({
+  copy,
+  setActivePanel,
+}: {
+  copy: PublicHomeCopy;
+  setActivePanel: (panel: PublicHomePanel) => void;
+}) {
+  return (
+    <footer className="app-public-footer">
+      <div className="app-public-container app-public-footer-grid">
+        <div className="app-public-footer-brand">
+          <div className="app-public-brand">
+            <span
+              className="app-brand-glyph app-public-brand-glyph"
+              aria-hidden="true"
+            >
+              <KarkinosMark />
+            </span>
+            <span className="app-product-mark app-public-product-mark">
+              Karkinos
+            </span>
+          </div>
+          <p>{copy.footer.tagline}</p>
+        </div>
+        <div>
+          <h2>{copy.footer.product}</h2>
+          <Link to="/overview">{copy.footer.overview}</Link>
+          <a href="#principles" onClick={() => setActivePanel('principles')}>
+            {copy.footer.evidence}
+          </a>
+          <a href="#workflow" onClick={() => setActivePanel('workflow')}>
+            {copy.footer.workflow}
+          </a>
+        </div>
+        <div>
+          <h2>{copy.footer.resources}</h2>
+          <a href={docsUrl} target="_blank" rel="noreferrer">
+            {copy.footer.docs}
+          </a>
+          <a href={sourceUrl} target="_blank" rel="noreferrer">
+            {copy.footer.source}
+          </a>
+        </div>
+        <div>
+          <h2>{copy.footer.principles}</h2>
+          <span>{copy.footer.persisted}</span>
+          <span>{copy.footer.human}</span>
+          <span>{copy.footer.closed}</span>
+        </div>
+      </div>
+      <div className="app-public-container app-public-footer-note">
+        <span>Karkinos</span>
+        <span>{copy.footer.note}</span>
+        <span className="app-public-footer-links">
+          <a href={docsUrl} target="_blank" rel="noreferrer">
+            {copy.footer.docs}
+          </a>
+          <a href={sourceUrl} target="_blank" rel="noreferrer">
+            {copy.footer.source}
+          </a>
+        </span>
+      </div>
+    </footer>
   );
 }
