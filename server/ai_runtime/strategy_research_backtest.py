@@ -22,6 +22,7 @@ from analytics.research_account_capital_evidence import (
 )
 from analytics.sweep_robustness import build_sweep_robustness_evidence
 from backtest.engine import BacktestEngine
+from backtest.result import BacktestResult
 from core.events import MarketEvent
 from core.types import AssetClass, BarFrequency, Symbol
 from data.handler import DataHandler
@@ -389,6 +390,50 @@ class RestrictedFormulaBacktestAdapter:
         )
         return snapshot
 
+    def run_sealed(
+        self,
+        *,
+        selection: StrategyResearchSelection,
+        draft: JsonObject,
+        sealed_end_date: str,
+        reviewed_fee_schedule_resolution: Any | None = None,
+    ) -> BacktestResult:
+        """Run the frozen champion on [start, sealed_end] for one-time holdout.
+
+        Unlike :meth:`run`, this does not enforce the operator-frozen research
+        snapshot identity: the full window reaches past the research end into
+        unseen future data, so the snapshot is derived and recorded by the
+        caller rather than compared against the research-window snapshot.
+        """
+        formula_ast = draft.get("formula_ast")
+        if not isinstance(formula_ast, dict):
+            raise StrategyResearchRejected("validated_formula_missing")
+        handlers, instruments, _ = _load_bound_inputs(
+            self._data_store,
+            selection,
+            end_date=sealed_end_date,
+            verify_snapshot=False,
+        )
+        commission_calc, _ = validated_fee_schedule_resolution(
+            selection,
+            reviewed_fee_schedule_resolution,
+        )
+        allocation_slots = min(4, len(selection.universe))
+        formula_strategy = _FormulaSignalStrategy(
+            formula_ast,
+            len(selection.universe),
+            allocation_slots=allocation_slots,
+        )
+        engine = BacktestEngine(
+            strategy=formula_strategy,
+            instruments=instruments,
+            data_handlers=handlers,
+            initial_cash=Decimal(str(selection.initial_cash)),
+            commission_calc=commission_calc,
+            db=None,
+        )
+        return engine.run()
+
 
 def _formula_parameter_robustness(
     *,
@@ -600,7 +645,10 @@ def _load_bound_inputs(
     selection: StrategyResearchSelection,
     *,
     expected_dataset_snapshot: Mapping[str, Any] | None = None,
+    end_date: str | None = None,
+    verify_snapshot: bool = True,
 ) -> tuple[dict[Symbol, DataHandler], dict[Symbol, Any], JsonObject]:
+    effective_end = end_date or selection.end_date
     handlers: dict[Symbol, DataHandler] = {}
     instruments: dict[Symbol, Any] = {}
     for symbol_text, asset_class_text in zip(
@@ -618,7 +666,7 @@ def _load_bound_inputs(
         frame = data_store.load_bars(symbol, BarFrequency.DAILY)
         if frame is None:
             raise StrategyResearchRejected(f"persisted_bars_missing:{symbol_text}")
-        sliced = _slice_frame(frame, selection.start_date, selection.end_date)
+        sliced = _slice_frame(frame, selection.start_date, effective_end)
         if sliced.empty:
             raise StrategyResearchRejected(f"persisted_window_empty:{symbol_text}")
         handlers[symbol] = DataHandler(
@@ -653,13 +701,13 @@ def _load_bound_inputs(
         source_names = list(available_sources)
     snapshot = build_backtest_dataset_snapshot(
         start_date=selection.start_date,
-        end_date=selection.end_date,
+        end_date=effective_end,
         configured_source=configured_source,
         data_handlers=handlers,
         store=data_store,
         source_names=source_names,
     )
-    if snapshot.get("snapshot_id") != selection.dataset_snapshot_id:
+    if verify_snapshot and snapshot.get("snapshot_id") != selection.dataset_snapshot_id:
         raise StrategyResearchRejected("dataset_snapshot_drift")
     if snapshot.get("data_quality", {}).get("status") != "ok":
         raise StrategyResearchRejected("dataset_quality_not_complete")
