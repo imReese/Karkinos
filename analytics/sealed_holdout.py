@@ -107,6 +107,24 @@ def split_sealed_holdout(
     )
 
 
+def sealed_return_from_result(
+    result: BacktestResult,
+    partition: SealedHoldoutPartition,
+) -> Decimal:
+    """Extract the sealed-tail net return from a full-window backtest result."""
+
+    sealed_start = datetime.combine(partition.sealed_start, datetime.min.time())
+    boundary = [equity for ts, equity in result.equity_curve if ts < sealed_start]
+    sealed = [equity for ts, equity in result.equity_curve if ts >= sealed_start]
+    if not boundary or not sealed:
+        raise ValueError("sealed_evaluation_insufficient_sealed_bars")
+    initial_equity = boundary[-1]
+    final_equity = sealed[-1]
+    if initial_equity == Decimal("0"):
+        return Decimal("0")
+    return (final_equity - initial_equity) / initial_equity
+
+
 def build_sealed_partition(
     *,
     research_start: str,
@@ -531,6 +549,7 @@ __all__ = [
     "SealedHoldoutEvaluationEvidence",
     "split_sealed_holdout",
     "build_sealed_partition",
+    "sealed_return_from_result",
     "build_consumption_receipt",
     "is_partition_consumed",
     "build_sealed_holdout_evaluation",

@@ -13,6 +13,7 @@ from analytics.sealed_holdout import (
     build_sealed_partition,
     is_partition_consumed,
     is_valid_sealed_holdout_evaluation,
+    sealed_return_from_result,
     split_sealed_holdout,
 )
 from backtest.result import BacktestResult
@@ -177,6 +178,15 @@ def test_validator_rejects_tampered_fingerprint_and_status():
     bad_fingerprint = dict(payload)
     bad_fingerprint["evidence_fingerprint"] = "f" * 64
     assert is_valid_sealed_holdout_evaluation(bad_fingerprint) is False
+
+
+def test_sealed_return_from_result_extracts_tail():
+    result = _result()
+    partition = _partition()
+    # sealed tail runs from 2026-01-17 boundary equity 103000 to final 106000
+    assert sealed_return_from_result(result, partition) == pytest.approx(
+        Decimal("3000") / Decimal("103000")
+    )
 
 
 def test_build_sealed_partition_from_explicit_end():
