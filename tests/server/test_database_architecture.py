@@ -165,6 +165,7 @@ def test_unit_of_work_boundaries_remain_explicit() -> None:
         "external_reviewed_memory_retrieval_uow.py": 1,
         "external_reviewed_memory_uow.py": 2,
         "financial_facts_quote_ingestion_uow.py": 2,
+        "financial_facts_quote_runs.py": 1,
         "financial_facts_valuation.py": 1,
         "ledger_mutation_uow.py": 2,
         "manual_order_ticket_uow.py": 2,

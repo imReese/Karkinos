@@ -3,27 +3,17 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
 from typing import Any
-from zoneinfo import ZoneInfo
 
+from server.contracts.quote_ingestion import quote_timestamp_instant
 from server.persistence.database_serialization import metadata_payload_value
 
-_SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
-_MIN_QUOTE_TIMESTAMP = datetime.min.replace(tzinfo=timezone.utc)
 
-
-def quote_observation_rank(row: dict[str, Any]) -> tuple[datetime, int]:
+def quote_observation_rank(row: dict[str, Any]) -> tuple[Any, int]:
     """Order quote observations by instant, never by ISO string spelling."""
 
     raw = str(row.get("timestamp") or row.get("quote_timestamp") or "").strip()
-    try:
-        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except ValueError:
-        parsed = _MIN_QUOTE_TIMESTAMP
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=_SHANGHAI_TZ)
-    return parsed.astimezone(timezone.utc), int(row.get("id") or 0)
+    return quote_timestamp_instant(raw), int(row.get("id") or 0)
 
 
 def order_event_payload(row: sqlite3.Row) -> dict[str, Any]:

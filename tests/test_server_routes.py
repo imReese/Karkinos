@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock
 from zoneinfo import ZoneInfo
 
 import pytest
-from fastapi import BackgroundTasks
+from fastapi import BackgroundTasks, HTTPException
 from fastapi.routing import APIRoute
 
 from core.types import Symbol
@@ -3054,7 +3054,7 @@ def test_market_quote_refresh_defaults_to_holding_symbols_and_market_indices(
     assert "示例基金" not in response.requested_symbols
 
 
-def test_market_quote_refresh_single_symbol_failure_does_not_500(monkeypatch, tmp_path):
+def test_market_quote_refresh_partial_batch_fails_closed(monkeypatch, tmp_path):
     from server.db import AppDatabase
     from server.routes import market as market_routes
 
@@ -3102,16 +3102,21 @@ def test_market_quote_refresh_single_symbol_failure_does_not_500(monkeypatch, tm
         market_routes, "_load_latest_snapshot_from_provider", fake_fetch
     )
 
-    response = asyncio.run(
-        endpoint(market_routes.QuoteRefreshRequest(symbols=["600519", "000001"]))
-    )
+    with pytest.raises(HTTPException) as blocked:
+        asyncio.run(
+            endpoint(market_routes.QuoteRefreshRequest(symbols=["600519", "000001"]))
+        )
 
-    assert response.quote_status == "partial"
-    assert [item.symbol for item in response.refreshed] == ["600519"]
-    assert [item.symbol for item in response.failed] == ["000001"]
-    assert response.failed[0].reason == "行情源刷新失败，暂无真实行情数据"
-    assert response.failed[0].last_refresh_error == "provider unavailable"
-    assert response.last_refresh_error == "provider unavailable"
+    assert blocked.value.status_code == 503
+    assert blocked.value.detail == "行情批次未能原子发布，已拒绝暴露本批数据"
+    assert fake_state.scheduler.latest_quotes == {}
+    assert db.get_latest_quote_sync("600519", asset_type="stock") is None
+    run = db.list_quote_fetch_runs(limit=1)[0]
+    assert run["status"] == "partial_success"
+    publication = db.get_runtime_control_sync("valuation_snapshot_publication")
+    assert publication is not None
+    assert publication["status"] == "failed"
+    assert publication["quote_fetch_run_id"] == run["run_id"]
 
 
 def test_market_quote_refresh_cache_only_returns_stale_without_fresh_claim(
