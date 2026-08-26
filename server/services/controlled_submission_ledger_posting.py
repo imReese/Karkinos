@@ -106,6 +106,7 @@ class ControlledSubmissionLedgerPostingService:
             "automatic_posting_enabled": False,
             "broker_submission_enabled": False,
             "broker_cancel_enabled": False,
+            "valuation_publication_recovery_mode": "exact_idempotent_posting_replay",
             "acknowledgement": (CONTROLLED_SUBMISSION_LEDGER_POSTING_ACKNOWLEDGEMENT),
             "safety": _safety_flags(),
         }
@@ -655,6 +656,7 @@ class ControlledSubmissionLedgerPostingService:
         except Exception:
             post_valuation = {}
             valuation_status = "publication_failed"
+        publication_recovery_required = valuation_status != "published"
         raw_account_truth: dict[str, Any] = {}
         if callable(self._account_truth_provider):
             try:
@@ -673,9 +675,14 @@ class ControlledSubmissionLedgerPostingService:
         return {
             **response,
             "post_apply_status": (
-                "reconciled" if reconciled else "post_apply_review_required"
+                "valuation_publication_recovery_required"
+                if publication_recovery_required
+                else ("reconciled" if reconciled else "post_apply_review_required")
             ),
             "post_valuation_publication_status": valuation_status,
+            "post_valuation_publication_recovery_required": (
+                publication_recovery_required
+            ),
             "post_valuation_snapshot_id": str(post_valuation.get("snapshot_id") or ""),
             "post_ledger_cutoff_id": int(
                 post_valuation.get("ledger_cutoff_id")
