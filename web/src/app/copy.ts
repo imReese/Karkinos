@@ -61,5 +61,5 @@ export type AppCopy = ApplicationCopy;
 export { useCopy };
 
 export function getCopy(locale: Locale): ApplicationCopy {
-  return resolveLocalizedCatalog(copy, locale);
+  return resolveLocalizedCatalog<ApplicationCopy>(copy, locale);
 }
