@@ -1,19 +1,114 @@
 // @ts-nocheck -- Node built-ins are used only by this deterministic source audit.
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SRC_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const HOLDING_DETAIL = readFileSync(
-  resolve(SRC_ROOT, 'features/portfolio/components/holding-detail-page.tsx'),
-  'utf8',
+const HOLDING_DETAIL_ROOT = resolve(SRC_ROOT, 'features/portfolio/components');
+const HOLDING_DETAIL_FILES = readdirSync(HOLDING_DETAIL_ROOT)
+  .filter(
+    (name) =>
+      name.startsWith('holding-detail-') &&
+      /\.tsx?$/.test(name) &&
+      !name.includes('.test.'),
+  )
+  .sort();
+const REQUIRED_HOLDING_DETAIL_FILES = [
+  'holding-detail-controller.tsx',
+  'holding-detail-metrics-model.ts',
+  'holding-detail-model-contracts.ts',
+  'holding-detail-model-values.ts',
+  'holding-detail-model.ts',
+  'holding-detail-page.tsx',
+  'holding-detail-panels.tsx',
+  'holding-detail-primitives.tsx',
+  'holding-detail-view.tsx',
+];
+const HOLDING_DETAIL_SOURCES = new Map(
+  HOLDING_DETAIL_FILES.map((name) => [
+    name,
+    readFileSync(resolve(HOLDING_DETAIL_ROOT, name), 'utf8'),
+  ]),
 );
-const PRICE_STRUCTURE = readFileSync(
-  resolve(SRC_ROOT, 'features/market/components/price-structure-chart.tsx'),
-  'utf8',
-);
+const HOLDING_DETAIL = [...HOLDING_DETAIL_SOURCES.values()].join('\n');
+const PRICE_STRUCTURE = [
+  'price-structure-chart.tsx',
+  'price-structure-chart-model.ts',
+  'price-structure-chart-sections.tsx',
+  'price-structure-chart-svg.tsx',
+  'price-structure-chart-view.tsx',
+  'price-structure-loading-state.tsx',
+]
+  .map((name) =>
+    readFileSync(resolve(SRC_ROOT, 'features/market/components', name), 'utf8'),
+  )
+  .join('\n');
 
 describe('holding detail workbench contract', () => {
+  it('keeps a bounded, explicit controller-model-view component family', () => {
+    expect(HOLDING_DETAIL_FILES).toEqual(
+      expect.arrayContaining(REQUIRED_HOLDING_DETAIL_FILES),
+    );
+    expect(new Set(HOLDING_DETAIL_FILES).size).toBe(
+      HOLDING_DETAIL_FILES.length,
+    );
+    expect(HOLDING_DETAIL_FILES.length).toBeLessThanOrEqual(12);
+    expect(HOLDING_DETAIL_SOURCES.get('holding-detail-page.tsx')).toContain(
+      '<HoldingDetailController',
+    );
+    expect(
+      HOLDING_DETAIL_SOURCES.get('holding-detail-controller.tsx'),
+    ).toContain('buildHoldingDetailModel');
+    expect(HOLDING_DETAIL_SOURCES.get('holding-detail-model.ts')).toContain(
+      "from './holding-detail-model-contracts'",
+    );
+    expect(HOLDING_DETAIL_SOURCES.get('holding-detail-model.ts')).toContain(
+      'buildHoldingMetricsModel',
+    );
+    expect(
+      HOLDING_DETAIL_SOURCES.get('holding-detail-metrics-model.ts'),
+    ).toContain('export function buildHoldingMetricsModel');
+    expect(
+      HOLDING_DETAIL_SOURCES.get('holding-detail-model-contracts.ts'),
+    ).toContain('export type HoldingDetailModelSource');
+    expect(HOLDING_DETAIL_SOURCES.get('holding-detail-view.tsx')).toContain(
+      '<HoldingEvidencePanel',
+    );
+    expect(HOLDING_DETAIL_SOURCES.get('holding-detail-panels.tsx')).toContain(
+      '<ControlledActionZone',
+    );
+    expect(
+      HOLDING_DETAIL_SOURCES.get('holding-detail-primitives.tsx'),
+    ).toContain('nextHoldingDetailTab');
+  });
+
+  it('keeps every production module and top-level named function bounded', () => {
+    const violations: string[] = [];
+    for (const [name, source] of HOLDING_DETAIL_SOURCES) {
+      const sourceLines = source.split(/\r?\n/);
+      const lineCount = sourceLines.length;
+      if (lineCount > 800) {
+        violations.push(`${name}:module:${lineCount}`);
+      }
+
+      for (let start = 0; start < sourceLines.length; start += 1) {
+        const declaration = sourceLines[start].match(
+          /^(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\b/,
+        );
+        if (!declaration) continue;
+        const endOffset = sourceLines
+          .slice(start + 1)
+          .findIndex((line) => line === '}');
+        if (endOffset < 0) continue;
+        const functionLines = endOffset + 2;
+        if (functionLines > 350) {
+          violations.push(`${name}:${declaration[1]}:${functionLines}`);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
   it('keeps evidence views explicit, flat, and based on shared primitives', () => {
     expect(HOLDING_DETAIL).toContain('role="tablist"');
     expect(HOLDING_DETAIL).toContain('role="tabpanel"');
@@ -31,10 +126,13 @@ describe('holding detail workbench contract', () => {
   });
 
   it('isolates explicit quote ingestion without changing its command shape', () => {
+    const controller = HOLDING_DETAIL_SOURCES.get(
+      'holding-detail-controller.tsx',
+    );
     expect(HOLDING_DETAIL).toContain('<ControlledActionZone');
-    expect(HOLDING_DETAIL).toContain('refreshQuote.mutate({');
-    expect(HOLDING_DETAIL).toContain('symbols: [position.symbol]');
-    expect(HOLDING_DETAIL).toContain('force: true');
+    expect(controller).toContain('refreshQuote.mutate({');
+    expect(controller).toContain('symbols: [position.symbol]');
+    expect(controller).toContain('force: true');
   });
 
   it('keeps the overview single-axis on tablet and distinguishes missing price evidence', () => {
