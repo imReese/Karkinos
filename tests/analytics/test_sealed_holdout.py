@@ -10,6 +10,7 @@ from analytics.sealed_holdout import (
     SealedHoldoutPartition,
     build_consumption_receipt,
     build_sealed_holdout_evaluation,
+    build_sealed_partition,
     is_partition_consumed,
     is_valid_sealed_holdout_evaluation,
     split_sealed_holdout,
@@ -176,3 +177,30 @@ def test_validator_rejects_tampered_fingerprint_and_status():
     bad_fingerprint = dict(payload)
     bad_fingerprint["evidence_fingerprint"] = "f" * 64
     assert is_valid_sealed_holdout_evaluation(bad_fingerprint) is False
+
+
+def test_build_sealed_partition_from_explicit_end():
+    partition = build_sealed_partition(
+        research_start="2026-01-01",
+        research_end="2026-01-16",
+        sealed_end="2026-01-20",
+    )
+    assert partition.research_start.isoformat() == "2026-01-01"
+    assert partition.research_end.isoformat() == "2026-01-16"
+    assert partition.sealed_start.isoformat() == "2026-01-17"
+    assert partition.sealed_end.isoformat() == "2026-01-20"
+    assert (
+        partition.partition_fingerprint
+        == build_sealed_partition(
+            research_start="2026-01-01",
+            research_end="2026-01-16",
+            sealed_end="2026-01-20",
+        ).partition_fingerprint
+    )
+
+    with pytest.raises(ValueError):
+        build_sealed_partition(
+            research_start="2026-01-01",
+            research_end="2026-01-20",
+            sealed_end="2026-01-20",
+        )

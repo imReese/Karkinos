@@ -60,6 +60,11 @@ def selection_from_session(session: Mapping[str, Any]) -> StrategyResearchSelect
             if selection.get("ledger_cutoff_id") is not None
             else None
         ),
+        sealed_end_date=(
+            str(selection["sealed_end_date"])
+            if selection.get("sealed_end_date") is not None
+            else None
+        ),
     )
 
 
