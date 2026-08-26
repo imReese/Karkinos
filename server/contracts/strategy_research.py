@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from core.types import BarFrequency
@@ -63,6 +63,7 @@ class StrategyResearchSelection:
     end_date: str
     frequency: str
     initial_cash: float
+    sealed_end_date: str | None = None
     cost_model_reference: str = CANONICAL_COST_MODEL_REFERENCE
     account_truth_freshness_as_of: str | None = None
     valuation_snapshot_id: str | None = None
@@ -84,6 +85,13 @@ class StrategyResearchSelection:
             raise StrategyResearchRejected("dataset_snapshot_identity_invalid")
         if self.start_date > self.end_date:
             raise StrategyResearchRejected("selected_window_invalid")
+        if self.sealed_end_date is not None:
+            try:
+                date.fromisoformat(self.sealed_end_date)
+            except ValueError as exc:
+                raise StrategyResearchRejected("sealed_end_date_invalid") from exc
+            if self.sealed_end_date <= self.end_date:
+                raise StrategyResearchRejected("sealed_end_date_not_future")
         if self.initial_cash <= 0:
             raise StrategyResearchRejected("initial_cash_invalid")
         if self.account_truth_freshness_as_of is not None:
@@ -119,6 +127,18 @@ class StrategyResearchSelection:
         )
 
     @property
+    def has_sealed_holdout(self) -> bool:
+        return self.sealed_end_date is not None
+
+    @property
+    def sealed_start_date(self) -> str | None:
+        """First date of the sealed holdout, immediately after the research end."""
+        if self.sealed_end_date is None:
+            return None
+        research_end = date.fromisoformat(self.end_date)
+        return (research_end + timedelta(days=1)).isoformat()
+
+    @property
     def account_truth_freshness_datetime(self) -> datetime:
         value = self.account_truth_freshness_as_of
         if value is None:
@@ -149,6 +169,8 @@ class StrategyResearchSelection:
             payload["account_truth_freshness_as_of"] = (
                 self.account_truth_freshness_as_of
             )
+        if self.sealed_end_date is not None:
+            payload["sealed_end_date"] = self.sealed_end_date
         return payload
 
     def to_external_dict(self) -> JsonObject:
@@ -156,6 +178,7 @@ class StrategyResearchSelection:
         payload = self.to_dict()
         payload.pop("valuation_snapshot_id", None)
         payload.pop("ledger_cutoff_id", None)
+        payload.pop("sealed_end_date", None)
         payload["account_fact_binding"] = (
             "present_but_identifiers_redacted"
             if self.has_account_binding

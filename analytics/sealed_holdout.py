@@ -107,6 +107,38 @@ def split_sealed_holdout(
     )
 
 
+def build_sealed_partition(
+    *,
+    research_start: str,
+    research_end: str,
+    sealed_end: str,
+) -> SealedHoldoutPartition:
+    """Build a sealed partition from an explicit research window and holdout end.
+
+    The sealed tail is the future window ``[research_end + 1 day, sealed_end]``;
+    the research window is ``[research_start, research_end]``.  The holdout
+    fraction is derived from the explicit dates and must still satisfy the
+    partition's meaningful-holdout bounds.
+    """
+
+    rs = _date(research_start, "research_start")
+    re_ = _date(research_end, "research_end")
+    se = _date(sealed_end, "sealed_end")
+    if re_ >= se:
+        raise ValueError("sealed_end_must_follow_research_end")
+    sealed_start = re_ + timedelta(days=1)
+    total_days = (se - rs).days + 1
+    sealed_days = (se - sealed_start).days + 1
+    fraction = Decimal(sealed_days) / Decimal(total_days)
+    return SealedHoldoutPartition(
+        research_start=rs,
+        research_end=re_,
+        sealed_start=sealed_start,
+        sealed_end=se,
+        holdout_fraction=fraction,
+    )
+
+
 @dataclass(frozen=True)
 class SealedPartitionConsumptionReceipt:
     """A durable, one-time record that a sealed partition was consumed."""
@@ -498,6 +530,7 @@ __all__ = [
     "SealedPartitionConsumptionReceipt",
     "SealedHoldoutEvaluationEvidence",
     "split_sealed_holdout",
+    "build_sealed_partition",
     "build_consumption_receipt",
     "is_partition_consumed",
     "build_sealed_holdout_evaluation",

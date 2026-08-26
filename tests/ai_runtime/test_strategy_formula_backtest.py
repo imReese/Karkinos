@@ -114,6 +114,67 @@ def test_strategy_selection_binds_or_compatibly_derives_account_truth_clock() ->
         )
 
 
+def test_strategy_selection_sealed_holdout_is_hidden_from_external_view() -> None:
+    sealed = StrategyResearchSelection(
+        saved_backtest_result_id=1,
+        universe=("600000",),
+        asset_classes=("stock",),
+        dataset_snapshot_id="sha256:" + "d" * 64,
+        start_date="2026-01-02",
+        end_date="2026-08-21",
+        frequency="1d",
+        initial_cash=100_000,
+        sealed_end_date="2026-12-31",
+    )
+    assert sealed.has_sealed_holdout is True
+    assert sealed.sealed_start_date == "2026-08-22"
+    assert sealed.to_dict()["sealed_end_date"] == "2026-12-31"
+    # The external (model-visible) selection must not leak the holdout boundary.
+    assert "sealed_end_date" not in sealed.to_external_dict()
+    assert sealed.to_external_dict()["end_date"] == "2026-08-21"
+
+    plain = StrategyResearchSelection(
+        saved_backtest_result_id=1,
+        universe=("600000",),
+        asset_classes=("stock",),
+        dataset_snapshot_id="sha256:" + "e" * 64,
+        start_date="2026-01-02",
+        end_date="2026-08-21",
+        frequency="1d",
+        initial_cash=100_000,
+    )
+    assert plain.has_sealed_holdout is False
+    assert plain.sealed_start_date is None
+    assert "sealed_end_date" not in plain.to_dict()
+
+
+def test_strategy_selection_rejects_invalid_sealed_holdout() -> None:
+    with pytest.raises(StrategyResearchRejected, match="sealed_end_date_not_future"):
+        StrategyResearchSelection(
+            saved_backtest_result_id=1,
+            universe=("600000",),
+            asset_classes=("stock",),
+            dataset_snapshot_id="sha256:" + "f" * 64,
+            start_date="2026-01-02",
+            end_date="2026-08-21",
+            frequency="1d",
+            initial_cash=100_000,
+            sealed_end_date="2026-08-21",
+        )
+    with pytest.raises(StrategyResearchRejected, match="sealed_end_date_invalid"):
+        StrategyResearchSelection(
+            saved_backtest_result_id=1,
+            universe=("600000",),
+            asset_classes=("stock",),
+            dataset_snapshot_id="sha256:" + "0" * 64,
+            start_date="2026-01-02",
+            end_date="2026-08-21",
+            frequency="1d",
+            initial_cash=100_000,
+            sealed_end_date="not-a-date",
+        )
+
+
 def test_restricted_formula_adapter_uses_canonical_after_cost_engine_without_db_sink(
     tmp_path,
 ) -> None:
