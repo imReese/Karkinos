@@ -110,6 +110,19 @@ class PendingFundOrderResponse(BaseModel):
     updated_at: str
 
 
+class PendingFundTradeAcceptedResponse(BaseModel):
+    status: str
+    id: int
+    symbol: str
+    display_name: str
+    amount: float
+    commission: float
+    asset_class: str
+    target_trade_date: str
+    replayed: bool = False
+    detail: str
+
+
 class PendingFundConfirmationRequest(BaseModel):
     command_id: str = Field(min_length=1)
     operator_id: str = Field(min_length=1)

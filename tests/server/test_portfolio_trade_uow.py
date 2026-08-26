@@ -183,6 +183,7 @@ def _persist_nav_evidence(
     metadata: object | None = None,
     price: float = 10.0,
     nav_date: str = "2026-08-26",
+    status: str = "success",
 ) -> None:
     run_metadata = (
         {
@@ -200,9 +201,9 @@ def _persist_nav_evidence(
                 symbol_count, success_count, failure_count, cache_hit_count,
                 status, metadata_json
             ) VALUES (?, ?, ?, 'fund_nav_sync', 'fixture', 'fund', 1, 1, 0, 0,
-                      'success', ?)
+                      ?, ?)
             """,
-            (run_id, NOW, NOW, json.dumps(run_metadata, sort_keys=True)),
+            (run_id, NOW, NOW, status, json.dumps(run_metadata, sort_keys=True)),
         )
         conn.execute(
             """
@@ -255,6 +256,101 @@ def test_manual_trade_rejects_non_finite_financial_values_before_write(
     )
 
     with pytest.raises(ValueError, match="financial values must be finite"):
+        ManualTradeUnitOfWork(
+            path,
+            now=lambda: NOW,
+            valuation_transaction_writer=_valuation_writer([]),
+        ).record(command)
+
+    assert _count(path, "trades") == 0
+    assert _count(path, "ledger_entries") == 0
+
+
+def test_manual_trade_rejects_fee_components_that_do_not_sum_before_write(
+    tmp_path,
+) -> None:
+    path = tmp_path / "manual-inconsistent-fees.db"
+    initialize_database(path)
+    command = replace(
+        _manual_trade(),
+        commission=5.0,
+        net_cash_impact=-107.0,
+        fee_breakdown_json=json.dumps(
+            {
+                "commission": "5",
+                "stamp_tax": "200",
+                "transfer_fee": "0",
+                "other_fees": "0",
+                "total_fee": "7",
+            },
+            sort_keys=True,
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="fee_breakdown components do not sum to total_fee",
+    ):
+        ManualTradeUnitOfWork(
+            path,
+            now=lambda: NOW,
+            valuation_transaction_writer=_valuation_writer([]),
+        ).record(command)
+
+    assert _count(path, "trades") == 0
+    assert _count(path, "ledger_entries") == 0
+
+
+def test_manual_trade_rejects_fee_breakdown_without_commission_before_write(
+    tmp_path,
+) -> None:
+    path = tmp_path / "manual-missing-commission.db"
+    initialize_database(path)
+    command = replace(
+        _manual_trade(),
+        net_cash_impact=-102.0,
+        fee_breakdown_json=json.dumps(
+            {
+                "other_fees": "2",
+                "total_fee": "2",
+            },
+            sort_keys=True,
+        ),
+    )
+
+    with pytest.raises(ValueError, match="fee breakdown must include commission"):
+        ManualTradeUnitOfWork(
+            path,
+            now=lambda: NOW,
+            valuation_transaction_writer=_valuation_writer([]),
+        ).record(command)
+
+    assert _count(path, "trades") == 0
+    assert _count(path, "ledger_entries") == 0
+
+
+def test_manual_trade_rejects_unknown_fee_component_before_write(tmp_path) -> None:
+    path = tmp_path / "manual-unknown-fee-component.db"
+    initialize_database(path)
+    command = replace(
+        _manual_trade(),
+        fee_breakdown_json=json.dumps(
+            {
+                "commission": "1",
+                "stamp_tax": "0",
+                "transfer_fee": "0",
+                "other_fees": "0",
+                "regulatory_fee": "9",
+                "total_fee": "1",
+            },
+            sort_keys=True,
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="fee breakdown contains unsupported components: regulatory_fee",
+    ):
         ManualTradeUnitOfWork(
             path,
             now=lambda: NOW,
@@ -809,6 +905,33 @@ def test_pending_confirmation_rejects_scheduled_or_invalid_run_metadata(
         invalid_uow.confirm(_confirmation())
     assert _count(invalid_path, "trades") == 0
     assert _count(invalid_path, "ledger_entries") == 0
+
+
+@pytest.mark.parametrize("run_status", ["partial", "partial_success"])
+def test_pending_confirmation_rejects_partial_quote_run_evidence(
+    tmp_path,
+    run_status: str,
+) -> None:
+    path = tmp_path / f"partial-evidence-{run_status}.db"
+    initialize_database(path)
+    uow = PendingFundConfirmationUnitOfWork(
+        path,
+        now=lambda: NOW,
+        valuation_transaction_writer=_valuation_writer([]),
+    )
+    uow.create_pending(_pending_order())
+    _persist_nav_evidence(path, status=run_status)
+
+    with pytest.raises(RuntimeError, match="run_status"):
+        uow.confirm(_confirmation())
+
+    assert _count(path, "trades") == 0
+    assert _count(path, "ledger_entries") == 0
+    with sqlite3.connect(path) as conn:
+        status = conn.execute(
+            "SELECT status FROM pending_fund_orders WHERE id = 1"
+        ).fetchone()[0]
+    assert status == "pending"
 
 
 def test_pending_confirmation_valuation_failure_rolls_back_every_financial_fact(

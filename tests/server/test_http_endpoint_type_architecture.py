@@ -226,3 +226,17 @@ def test_endpoint_request_models_remain_openapi_request_bodies() -> None:
             assert query_names.isdisjoint({"body", "request"}), (method, path)
 
     assert actual_body_operations == BODY_OPERATIONS
+
+
+def test_portfolio_trade_openapi_declares_manual_and_pending_fund_responses() -> None:
+    app = FastAPI()
+    app.include_router(create_portfolio_router())
+
+    responses = app.openapi()["paths"]["/api/portfolio/trade"]["post"]["responses"]
+
+    assert responses["200"]["content"]["application/json"]["schema"]["$ref"].endswith(
+        "/TradeResponse"
+    )
+    assert responses["202"]["content"]["application/json"]["schema"]["$ref"].endswith(
+        "/PendingFundTradeAcceptedResponse"
+    )

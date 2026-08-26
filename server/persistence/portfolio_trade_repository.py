@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-import json
 import sqlite3
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from server.contracts.ledger_mutations import (
+    FEE_BREAKDOWN_KEYS,
+    validate_fee_breakdown,
+)
 from server.contracts.portfolio_trades import ManualTradeWrite
 from server.persistence.database_serialization import normalize_timestamp
 
@@ -130,18 +133,27 @@ def validate_manual_trade_write(command: ManualTradeWrite) -> None:
         raise ValueError("cost_basis_method is required")
 
     try:
-        fee_breakdown = json.loads(command.fee_breakdown_json)
-        if not isinstance(fee_breakdown, dict):
-            raise TypeError
-        total_fee = Decimal(str(fee_breakdown["total_fee"]))
-        recorded_commission = Decimal(str(fee_breakdown["commission"]))
         quantity = Decimal(str(command.quantity))
         price = Decimal(str(command.price))
         gross_amount = Decimal(str(command.gross_amount))
         net_cash_impact = Decimal(str(command.net_cash_impact))
         commission = Decimal(str(command.commission))
-    except (InvalidOperation, KeyError, TypeError, ValueError, json.JSONDecodeError):
+    except (InvalidOperation, ValueError):
         raise ValueError("fee breakdown must contain valid financial values") from None
+    fee_breakdown = validate_fee_breakdown(
+        command.fee_breakdown_json,
+        commission=commission,
+    )
+    unexpected_fee_keys = set(fee_breakdown) - FEE_BREAKDOWN_KEYS
+    if unexpected_fee_keys:
+        raise ValueError(
+            "fee breakdown contains unsupported components: "
+            + ",".join(sorted(unexpected_fee_keys))
+        )
+    if "commission" not in fee_breakdown:
+        raise ValueError("fee breakdown must include commission")
+    total_fee = Decimal(str(fee_breakdown["total_fee"]))
+    recorded_commission = Decimal(str(fee_breakdown["commission"]))
     financial_values = (
         total_fee,
         recorded_commission,
