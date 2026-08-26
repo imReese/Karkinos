@@ -69,6 +69,60 @@ from tests.ai_shadow_strategy_fixtures import seed_ai_shadow_canonical_sources
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_shadow_policy_confirmation_literals_match_the_operator_contract() -> None:
+    assert SHADOW_RESEARCH_POLICY_CONFIRMATION == (
+        "authorize_five_sequential_after_close_deepseek_strategy_research_without_"
+        "daily_token_budget_or_strategy_or_trade_authority"
+    )
+    assert SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION == (
+        "authorize_after_close_deepseek_strategy_research_without_strategy_or_trade_"
+        "authority"
+    )
+    assert SHADOW_RESEARCH_PAUSE_CONFIRMATION == (
+        "pause_after_close_ai_strategy_research_without_changing_trading_authority"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.parametrize(
+    ("daily_token_budget", "authorization", "expected_authorization"),
+    [
+        (
+            None,
+            "authorize_five_sequentialis_after_shadow_research_close_deepseek_strategy_research_without_"
+            "daily_token_budget_or_strategy_or_trade_authority",
+            SHADOW_RESEARCH_POLICY_CONFIRMATION,
+        ),
+        (
+            SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION * 10,
+            "authorizeis_after_shadow_research_close_deepseek_strategy_research_without_strategy_or_trade_"
+            "authority",
+            SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION,
+        ),
+    ],
+)
+def test_shadow_policy_reads_refactor_era_authorization_without_weakening_new_writes(
+    daily_token_budget: int | None,
+    authorization: str,
+    expected_authorization: str,
+) -> None:
+    policy = ShadowResearchPolicy.from_mapping(
+        {
+            "enabled": True,
+            "daily_token_budget": daily_token_budget,
+            "max_provider_calls_per_market_date": 10,
+            "max_candidates_per_run": 5,
+            "authorization": authorization,
+        }
+    )
+
+    assert policy.authorization == expected_authorization
+    assert policy.to_dict()["authorization"] == expected_authorization
+
+
 def _state(db: AppDatabase) -> AppState:
     state = AppState()
     state.db = db
@@ -809,10 +863,7 @@ def test_shadow_policy_defaults_disabled_and_requires_exact_standing_authorizati
                 "confirmation": SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION,
             }
         )
-    with pytest.raises(
-        ShadowResearchRejected,
-        match="enabled_shadow_research_requires_unbounded_daily_token_policy",
-    ):
+    with pytest.raises(PermissionError, match="exact legacy authorization"):
         service.update_policy(
             {
                 **_policy_payload(enabled=True),
@@ -821,6 +872,20 @@ def test_shadow_policy_defaults_disabled_and_requires_exact_standing_authorizati
             }
         )
 
+    bounded = service.update_policy(
+        {
+            **_policy_payload(enabled=True),
+            "daily_token_budget": SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION * 10,
+            "token_budget_mode": "legacy_bounded_daily",
+            "confirmation": SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION,
+        }
+    )
+    assert bounded["enabled"] is True
+    assert (
+        bounded["daily_token_budget"] == SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION * 10
+    )
+    assert bounded["token_budget_mode"] == "legacy_bounded_daily"
+
     enabled = service.update_policy(_policy_payload(enabled=True))
     assert enabled["enabled"] is True
     assert enabled["authorization_recorded"] is True
@@ -828,6 +893,91 @@ def test_shadow_policy_defaults_disabled_and_requires_exact_standing_authorizati
     paused = service.update_policy(_policy_payload(enabled=False))
     assert paused["enabled"] is False
     assert paused["authorization_recorded"] is False
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_shadow_status_projects_candidate_without_full_backtest_evidence(
+    tmp_path,
+) -> None:
+    service = _service(tmp_path)
+    evidence_marker = "internal-full-backtest-evidence-must-not-reach-status"
+    metric_summary = {
+        "result_id": 1,
+        "total_return": 0.01,
+        "sharpe": 0.8,
+        "max_drawdown": -0.03,
+        "total_cost": 12.5,
+        "total_commission": 10.0,
+        "total_slippage": 2.5,
+        "total_trades": 4,
+        "gross_turnover": 4000.0,
+        "oos_fold_count": 3,
+        "mean_oos_return": 0.004,
+        "worst_oos_return": -0.001,
+        "oos_validation_status": "pass",
+        "evidence_gate_status": "pass",
+        "dataset_snapshot_id": "sha256:" + "a" * 64,
+    }
+    candidate_summary = {**metric_summary, "result_id": 2, "total_return": 0.02}
+    large_series = [evidence_marker] * 512
+    full_comparison = {
+        "schema_version": "karkinos.ai.shadow_research_comparison.v1",
+        "economic_hypothesis": "A bounded status projection fixture.",
+        "baseline": {
+            **metric_summary,
+            "equity_curve": large_series,
+            "drawdown_evidence": {"underwater_curve": large_series},
+        },
+        "candidate": {
+            **candidate_summary,
+            "oos_validation": {"folds": large_series},
+        },
+        "deepseek_critique": {
+            "evidence_gaps": ["More regimes are needed."],
+            "citation_evidence": large_series,
+        },
+        "promotion_gate": {
+            "status": "blocked",
+            "blockers": ["fixture_blocker"],
+            "checks": large_series,
+        },
+    }
+    candidate = service._store.save_candidate(
+        run_id="run-status-summary",
+        session_id="session-status-summary",
+        draft_id="draft-status-summary",
+        backtest_run_id="backtest-status-summary",
+        critique_id="critique-status-summary",
+        baseline_result_id=1,
+        candidate_result_id=2,
+        status="research_blocked",
+        recommendation="keep_researching",
+        comparison=full_comparison,
+        now="2026-08-26T08:00:00+00:00",
+    )
+
+    summary = service.status()["candidates"][0]
+    persisted = service._store.get_candidate(candidate["candidate_id"])
+    serialized_summary = canonical_json(summary)
+
+    assert set(summary) == set(persisted)
+    assert summary["comparison"]["baseline"] == metric_summary
+    assert summary["comparison"]["candidate"] == candidate_summary
+    assert summary["comparison"]["promotion_gate"] == {
+        "status": "blocked",
+        "blockers": ["fixture_blocker"],
+    }
+    assert evidence_marker not in serialized_summary
+    assert "equity_curve" not in summary["comparison"]["baseline"]
+    assert "drawdown_evidence" not in summary["comparison"]["baseline"]
+    assert "oos_validation" not in summary["comparison"]["candidate"]
+    assert len(serialized_summary) < 10_000
+    assert persisted["comparison"]["baseline"]["equity_curve"] == large_series
+    assert persisted["comparison"]["candidate"]["oos_validation"]["folds"] == (
+        large_series
+    )
+    assert persisted["comparison"]["promotion_gate"]["checks"] == large_series
 
 
 @pytest.mark.unit
@@ -919,6 +1069,40 @@ def test_provider_call_claim_is_atomic_capped_and_token_unbounded(tmp_path) -> N
     assert usage["provider_calls"] == 3
     assert usage["reserved_tokens"] == SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION * 3
     assert usage["actual_tokens"] == SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION * 20
+
+
+@pytest.mark.unit
+def test_provider_call_claim_enforces_daily_token_budget(tmp_path) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = ShadowResearchStore(tmp_path / "app.db")
+    store.init()
+
+    reservation = SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION
+    budget = reservation * 2
+    for ordinal in range(2):
+        call, reused = store.claim_provider_call(
+            call_id=f"budget-call-{ordinal}",
+            run_id="run-1",
+            market_date="2026-08-11",
+            call_kind="hypothesis",
+            call_limit=10,
+            daily_token_budget=budget,
+            now="2026-08-11T08:00:00+00:00",
+        )
+        assert reused is False
+        assert call["status"] == "reserved"
+
+    with pytest.raises(ShadowResearchRejected, match="daily_token_budget_exceeded"):
+        store.claim_provider_call(
+            call_id="budget-call-3",
+            run_id="run-1",
+            market_date="2026-08-11",
+            call_kind="critique",
+            call_limit=10,
+            daily_token_budget=budget,
+            now="2026-08-11T08:00:00+00:00",
+        )
 
 
 @pytest.mark.unit
@@ -1979,7 +2163,7 @@ def test_runtime_role_conflict_has_provider_free_failure_code() -> None:
 @pytest.mark.unit
 @pytest.mark.trading_safety
 @pytest.mark.asyncio
-async def test_enabled_legacy_bounded_policy_is_audited_but_cannot_run(
+async def test_enabled_legacy_bounded_policy_is_authorized_to_run(
     tmp_path, monkeypatch
 ) -> None:
     service = _service(tmp_path)
@@ -1996,15 +2180,20 @@ async def test_enabled_legacy_bounded_policy_is_audited_but_cannot_run(
         updated_by="human:owner",
     )
 
+    called = []
+
     def unexpected_baseline(policy):
-        raise AssertionError("legacy bounded policy must not prepare evidence")
+        called.append(policy.daily_token_budget)
+        raise RuntimeError("baseline fixture unavailable")
 
     monkeypatch.setattr(service, "_prepare_baseline", unexpected_baseline)
 
     result = await service.run_once()
 
-    assert result["run_status"] == "blocked_by_policy"
-    assert result["failure_code"] == "unbounded_daily_token_policy_not_authorized"
+    # The bounded policy is now authorized: preflight lets it proceed to baseline
+    # preparation (which fails with a market-evidence block, not a policy block).
+    assert called == [SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION * 10]
+    assert result["run_status"] == "blocked_by_market_evidence"
     assert result["policy"]["token_budget_mode"] == "legacy_bounded_daily"
 
 
@@ -2045,6 +2234,79 @@ def test_export_requires_deepseek_identity_and_deepseek_endpoint(
         ),
     )
     service._require_deepseek_provider()
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_candidate_approval_reads_full_evidence_after_status_projection(
+    tmp_path, monkeypatch
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = ShadowResearchStore(tmp_path / "app.db")
+    store.init()
+    canonical_sources = seed_ai_shadow_canonical_sources(
+        db,
+        baseline_result_id=1,
+        candidate_result_id=2,
+        backtest_run_id="backtest-1",
+        critique_id="critique-1",
+    )
+    approval_evidence = {
+        "equity_curve": [
+            {"timestamp": index, "equity": 100_000 + index} for index in range(64)
+        ]
+    }
+    candidate = store.save_candidate(
+        run_id="run-1",
+        session_id="session-1",
+        draft_id="draft-1",
+        backtest_run_id="backtest-1",
+        critique_id="critique-1",
+        baseline_result_id=1,
+        candidate_result_id=2,
+        status="awaiting_human_approval",
+        recommendation="paper_shadow_review",
+        comparison={
+            **canonical_sources,
+            "approval_full_evidence": approval_evidence,
+        },
+        now="2026-08-11T08:00:00+00:00",
+    )
+    service = AiShadowResearchAutomationService(
+        state=_state(db),
+        store=store,
+        data_store=DataStore(tmp_path / "market"),
+    )
+
+    status_candidate = service.status()["candidates"][0]
+    persisted_get_candidate = store.get_candidate
+    approval_reads: list[dict] = []
+
+    def observed_get_candidate(candidate_id: str) -> dict:
+        full_candidate = persisted_get_candidate(candidate_id)
+        approval_reads.append(full_candidate["comparison"]["approval_full_evidence"])
+        return full_candidate
+
+    assert "approval_full_evidence" not in status_candidate["comparison"]
+    assert (
+        persisted_get_candidate(candidate["candidate_id"])["comparison"][
+            "approval_full_evidence"
+        ]
+        == approval_evidence
+    )
+    monkeypatch.setattr(store, "get_candidate", observed_get_candidate)
+
+    promotion = store.approve_candidate(
+        candidate["candidate_id"],
+        approved_by="human:owner",
+        notes="Reviewed the complete persisted comparison evidence.",
+        confirmation=SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
+        now="2026-08-11T08:05:00+00:00",
+    )
+
+    assert promotion["target_stage"] == "paper_shadow"
+    assert approval_reads == [approval_evidence]
 
 
 @pytest.mark.unit

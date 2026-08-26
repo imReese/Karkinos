@@ -28,6 +28,7 @@ class ShadowResearchProviderCallRepositoryMixin:
         call_kind: str,
         call_limit: int,
         now: str,
+        daily_token_budget: int | None = None,
     ) -> tuple[dict[str, Any], bool]:
         with self._connect(immediate=True) as conn:
             existing = conn.execute(
@@ -45,6 +46,14 @@ class ShadowResearchProviderCallRepositoryMixin:
             )
             if provider_calls >= effective_call_limit:
                 raise ShadowResearchRejected("daily_provider_call_limit_reached")
+            if daily_token_budget is not None:
+                totals = self._provider_call_usage_totals(conn, market_date)
+                reserved_so_far = int(totals["reserved"])
+                if (
+                    reserved_so_far + SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION
+                    > daily_token_budget
+                ):
+                    raise ShadowResearchRejected("daily_token_budget_exceeded")
             conn.execute(
                 """
                 INSERT INTO ai_shadow_research_provider_calls

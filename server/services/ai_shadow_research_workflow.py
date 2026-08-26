@@ -14,6 +14,7 @@ from server.ai_runtime.strategy_research import StrategyResearchSelection
 from server.contracts.ai_shadow_research_automation import (
     CORRECTED_PANEL_CITATION_RESUME_ITERATION,
     CORRECTED_PANEL_CITATION_RESUME_STAGE,
+    SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_MAX_CANDIDATES,
     SHADOW_RESEARCH_MAX_PROVIDER_CALLS,
     SHADOW_RESEARCH_RUNTIME_CONTRACT,
@@ -390,6 +391,12 @@ class AiShadowResearchWorkflowMixin:
             and policy.max_provider_calls_per_market_date
             == SHADOW_RESEARCH_MAX_PROVIDER_CALLS
             and policy.daily_token_budget is None
+        ):
+            return None
+        if (
+            policy.daily_token_budget is not None
+            and policy.authorization
+            == SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION
         ):
             return None
         return self._record_preflight(

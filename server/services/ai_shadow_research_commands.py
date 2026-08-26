@@ -9,6 +9,7 @@ from typing import Any
 from server.ai_runtime.contracts import content_fingerprint
 from server.contracts.ai_shadow_research_automation import (
     SHADOW_RESEARCH_API_SCHEMA,
+    SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_MAX_CANDIDATES,
     SHADOW_RESEARCH_MAX_PROVIDER_CALLS,
     SHADOW_RESEARCH_PAUSE_CONFIRMATION,
@@ -18,6 +19,9 @@ from server.contracts.ai_shadow_research_automation import (
     SHADOW_RESEARCH_TOKEN_BUDGET_MODE_UNBOUNDED,
     ShadowResearchPolicy,
     ShadowResearchRejected,
+)
+from server.projections.ai_shadow_research import (
+    project_shadow_research_candidate_status,
 )
 from server.services.ai_shadow_research_daily_artifacts import (
     build_daily_strategy_promotion_binding,
@@ -41,14 +45,19 @@ class AiShadowResearchCommandsMixin:
         confirmation = str(merged.pop("confirmation", "") or "")
         if enabled:
             if merged.get("daily_token_budget") is not None:
-                raise ShadowResearchRejected(
-                    "enabled_shadow_research_requires_unbounded_daily_token_policy"
+                if confirmation != SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION:
+                    raise PermissionError(
+                        "bounded daily token policy requires exact legacy authorization"
+                    )
+                merged["authorization"] = (
+                    SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION
                 )
-            if confirmation != SHADOW_RESEARCH_POLICY_CONFIRMATION:
-                raise PermissionError(
-                    "standing shadow research requires exact owner authorization"
-                )
-            merged["authorization"] = SHADOW_RESEARCH_POLICY_CONFIRMATION
+            else:
+                if confirmation != SHADOW_RESEARCH_POLICY_CONFIRMATION:
+                    raise PermissionError(
+                        "standing shadow research requires exact owner authorization"
+                    )
+                merged["authorization"] = SHADOW_RESEARCH_POLICY_CONFIRMATION
         else:
             if confirmation != SHADOW_RESEARCH_PAUSE_CONFIRMATION:
                 raise PermissionError(
@@ -70,7 +79,10 @@ class AiShadowResearchCommandsMixin:
     def status(self) -> dict[str, Any]:
         policy = self.get_policy()
         runs = self._store.list_runs(limit=20)
-        candidates = self._store.list_candidates(limit=50)
+        candidates = [
+            project_shadow_research_candidate_status(candidate)
+            for candidate in self._store.list_candidates(limit=50)
+        ]
         daily_selections = self._daily_artifacts.list_selections(limit=20)
         daily_backups = self._daily_artifacts.list_backups(limit=20)
         superseded_daily_selections = self._daily_artifacts.list_superseded_selections(
@@ -121,6 +133,18 @@ class AiShadowResearchCommandsMixin:
             "daily_new_candidate_winner_id": daily_winner_candidate_id,
             "daily_winner_candidate_id": daily_winner_candidate_id,
             "research_outcome": research_outcome,
+            "automatic_strategy_replacement_enabled": False,
+            "production_strategy_mutation_enabled": False,
+            "broker_submission_enabled": False,
+            "human_paper_shadow_approval_required": True,
+            "authority_effect": "research_only",
+        }
+
+    def readiness_status(self) -> dict[str, Any]:
+        """Return the bounded policy projection used by local readiness checks."""
+        return {
+            "schema_version": SHADOW_RESEARCH_API_SCHEMA,
+            "policy": self.get_policy().to_dict(),
             "automatic_strategy_replacement_enabled": False,
             "production_strategy_mutation_enabled": False,
             "broker_submission_enabled": False,

@@ -162,7 +162,9 @@ class ShadowResearchPolicyPayload(BaseModel):
         le=STRATEGY_RESEARCH_MAX_PROVIDER_CALLS,
     )
     daily_token_budget: int | None = None
-    token_budget_mode: Literal["unbounded_daily"] = "unbounded_daily"
+    token_budget_mode: Literal["unbounded_daily", "legacy_bounded_daily"] = (
+        "unbounded_daily"
+    )
     max_candidates_per_run: int = Field(
         default=STRATEGY_RESEARCH_MAX_CANDIDATES,
         ge=1,
@@ -185,10 +187,12 @@ class ShadowResearchPolicyPayload(BaseModel):
                 "and one critique per sequential iteration"
             )
         if self.daily_token_budget is not None:
-            raise ValueError(
-                "daily_token_budget must be null; five sequential iterations have "
-                "no Karkinos daily aggregate token budget"
-            )
+            if self.token_budget_mode != "legacy_bounded_daily":
+                raise ValueError(
+                    "daily_token_budget requires legacy_bounded_daily token mode"
+                )
+        elif self.token_budget_mode != "unbounded_daily":
+            raise ValueError("token_budget_mode requires a daily_token_budget")
         return self
 
 
