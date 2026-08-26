@@ -116,13 +116,20 @@ class ValuationFactsRepositoryMixin:
             conn.commit()
             return row
 
-    def publish_current_valuation_snapshot_sync(self) -> dict[str, Any]:
+    def publish_current_valuation_snapshot_sync(
+        self,
+        *,
+        valuation_policy: str | None = None,
+    ) -> dict[str, Any]:
         """Atomically publish the immutable snapshot for committed facts."""
         try:
             with sqlite3.connect(self._path, timeout=2) as conn:
                 conn.row_factory = sqlite3.Row
                 conn.execute("BEGIN IMMEDIATE")
-                snapshot = self._valuation_transaction_writer(conn)
+                snapshot = self._valuation_transaction_writer(
+                    conn,
+                    valuation_policy=valuation_policy,
+                )
                 conn.commit()
         except Exception as exc:
             self._runtime_controls.set_value(

@@ -23,7 +23,7 @@ def build_current_valuation_snapshot(
     db: Any,
     *,
     valuation_policy: str = VALUATION_POLICY_VERSION,
-    persist: bool = True,
+    persist: bool = False,
 ) -> dict[str, Any]:
     """Build a projection or atomically publish it with an explicit choice."""
 
@@ -31,7 +31,9 @@ def build_current_valuation_snapshot(
         publisher = getattr(db, "publish_current_valuation_snapshot_sync", None)
         if not callable(publisher):
             raise RuntimeError("valuation snapshot publication is unavailable")
-        return publisher()
+        if valuation_policy == VALUATION_POLICY_VERSION:
+            return publisher()
+        return publisher(valuation_policy=valuation_policy)
 
     payload = _build_current_valuation_snapshot(
         db,

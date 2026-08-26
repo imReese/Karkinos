@@ -59,9 +59,15 @@ class ArtifactDatabaseFacade(DatabaseRepositoryAccess):
         """Persist one immutable, content-addressed valuation snapshot."""
         return self._financial_facts.save_valuation_snapshot_sync(payload)
 
-    def publish_current_valuation_snapshot_sync(self) -> dict[str, Any]:
+    def publish_current_valuation_snapshot_sync(
+        self,
+        *,
+        valuation_policy: str | None = None,
+    ) -> dict[str, Any]:
         """Build and persist the immutable snapshot for committed facts."""
-        return self._financial_facts.publish_current_valuation_snapshot_sync()
+        return self._financial_facts.publish_current_valuation_snapshot_sync(
+            valuation_policy=valuation_policy,
+        )
 
     def get_valuation_snapshot_sync(self, snapshot_id: str) -> dict[str, Any] | None:
         """Read one immutable valuation snapshot by content id."""
