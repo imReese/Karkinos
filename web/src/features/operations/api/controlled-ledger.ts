@@ -70,6 +70,13 @@ export type ControlledLedgerPostingResult = {
   pre_ledger_cutoff_id: number;
   post_ledger_cutoff_id: number;
   applied_at: string;
+  post_apply_status:
+    | 'reconciled'
+    | 'post_apply_review_required'
+    | 'valuation_publication_recovery_required';
+  post_valuation_publication_status: 'published' | 'publication_failed';
+  post_valuation_publication_recovery_required: boolean;
+  post_valuation_snapshot_id: string;
   persisted: true;
   reused: boolean;
   production_ledger_mutated: boolean;
@@ -78,6 +85,18 @@ export type ControlledLedgerPostingResult = {
   broker_cancel_enabled: false;
   capital_authority_changed: false;
 };
+
+function isControlledLedgerPostingValuationPublished(
+  result: ControlledLedgerPostingResult | undefined,
+) {
+  return Boolean(
+    result &&
+    result.post_apply_status !== 'valuation_publication_recovery_required' &&
+    result.post_valuation_publication_status === 'published' &&
+    !result.post_valuation_publication_recovery_required &&
+    result.post_valuation_snapshot_id,
+  );
+}
 
 export type ControlledLedgerCorrectionReason =
   | 'broker_evidence_superseded'
@@ -230,7 +249,10 @@ export function useControlledLedgerPostingApplyMutation() {
         body,
       );
     },
-    onSuccess: async () => {
+    onSuccess: async (result) => {
+      if (!isControlledLedgerPostingValuationPublished(result)) {
+        return;
+      }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['automation', 'cockpit'] }),
         queryClient.invalidateQueries({ queryKey: ['operations', 'today'] }),

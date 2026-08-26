@@ -4,6 +4,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 
 import type {
   ControlledLedgerPostingPreview,
+  ControlledLedgerPostingResult,
   ControlledOrderJourney,
   OperatorApprovalStatus,
 } from './api';
@@ -162,6 +163,38 @@ const postingPreview: ControlledLedgerPostingPreview = {
   production_ledger_mutated: false,
 };
 
+const publishedPostingResult: ControlledLedgerPostingResult = {
+  posting_id: '5'.repeat(64),
+  posting_fingerprint: postingFingerprint,
+  clearance_id: clearanceId,
+  order_id: journey.order_id,
+  status: 'applied',
+  ledger_entry_count: 1,
+  ledger_entry_ids: [42],
+  pre_ledger_cutoff_id: 41,
+  post_ledger_cutoff_id: 42,
+  applied_at: '2026-07-16T08:01:00+00:00',
+  post_apply_status: 'reconciled',
+  post_valuation_publication_status: 'published',
+  post_valuation_publication_recovery_required: false,
+  post_valuation_snapshot_id: 'valuation-post-fixture-1',
+  persisted: true,
+  reused: false,
+  production_ledger_mutated: true,
+  automatic_posting_enabled: false,
+  broker_submission_enabled: false,
+  broker_cancel_enabled: false,
+  capital_authority_changed: false,
+};
+
+const recoveryRequiredPostingResult: ControlledLedgerPostingResult = {
+  ...publishedPostingResult,
+  post_apply_status: 'valuation_publication_recovery_required',
+  post_valuation_publication_status: 'publication_failed',
+  post_valuation_publication_recovery_required: true,
+  post_valuation_snapshot_id: '',
+};
+
 type RecordedRequest = {
   url: string;
   method: string;
@@ -172,12 +205,15 @@ function renderPanel({
   currentJourney = journey,
   previewResponse = postingPreview,
   statusResponse = approvalStatus,
+  postingResponses = [publishedPostingResult],
 }: {
   currentJourney?: ControlledOrderJourney;
   previewResponse?: typeof postingPreview;
   statusResponse?: typeof approvalStatus;
+  postingResponses?: ControlledLedgerPostingResult[];
 } = {}) {
   const requests: RecordedRequest[] = [];
+  let postingResponseIndex = 0;
   const fetchMock = vi.fn(
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -225,25 +261,12 @@ function renderPanel({
         });
       }
       if (url.endsWith(`/clearances/${clearanceId}/postings`)) {
-        return jsonResponse({
-          posting_id: '5'.repeat(64),
-          posting_fingerprint: postingFingerprint,
-          clearance_id: clearanceId,
-          order_id: journey.order_id,
-          status: 'applied',
-          ledger_entry_count: 1,
-          ledger_entry_ids: [42],
-          pre_ledger_cutoff_id: 41,
-          post_ledger_cutoff_id: 42,
-          applied_at: '2026-07-16T08:01:00+00:00',
-          persisted: true,
-          reused: false,
-          production_ledger_mutated: true,
-          automatic_posting_enabled: false,
-          broker_submission_enabled: false,
-          broker_cancel_enabled: false,
-          capital_authority_changed: false,
-        });
+        const response =
+          postingResponses[
+            Math.min(postingResponseIndex, postingResponses.length - 1)
+          ] ?? publishedPostingResult;
+        postingResponseIndex += 1;
+        return jsonResponse(response);
       }
       return jsonResponse(
         { detail: `unexpected request: ${url}` },
@@ -266,7 +289,7 @@ function renderPanel({
       />
     </QueryClientProvider>,
   );
-  return { fetchMock, requests };
+  return { fetchMock, queryClient, requests };
 }
 
 afterEach(() => {
@@ -339,6 +362,7 @@ test('completes preview, offline proof verification, and exactly-once apply with
       'Posting recorded at ledger cutoff #42; review Account Truth next.',
     ),
   ).toBeTruthy();
+  expect(applyButton.hasAttribute('disabled')).toBe(true);
 
   const postRequests = requests.filter((request) => request.method === 'POST');
   expect(postRequests.map((request) => request.url)).toEqual([
@@ -375,6 +399,73 @@ test('completes preview, offline proof verification, and exactly-once apply with
   expect(requests.some((request) => request.url.includes('/cancel'))).toBe(
     false,
   );
+});
+
+test('keeps exact valuation-publication replay available without reposting the ledger', async () => {
+  const recoveredResult: ControlledLedgerPostingResult = {
+    ...publishedPostingResult,
+    reused: true,
+  };
+  const { queryClient, requests } = renderPanel({
+    postingResponses: [recoveryRequiredPostingResult, recoveredResult],
+  });
+  const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
+
+  fireEvent.click(screen.getByText('Review signed ledger posting'));
+  fireEvent.click(screen.getByText('Generate read-only posting preview'));
+  await screen.findByText('Deterministic delta preview');
+  fireEvent.click(screen.getByText('Create 3-minute signing challenge'));
+  await screen.findByLabelText('Payload to sign Base64');
+  fireEvent.change(screen.getByLabelText('Detached signature Base64'), {
+    target: { value: signature },
+  });
+  fireEvent.click(screen.getByText('Verify signature'));
+  await screen.findByText('Final apply confirmation');
+  fireEvent.click(
+    screen.getByRole('checkbox', {
+      name: 'I confirm applying only the 1 previewed reconciled ledger event(s), once.',
+    }),
+  );
+  fireEvent.click(screen.getByText('Apply exact reconciled posting'));
+
+  expect(
+    await screen.findByText(
+      'Ledger posting is recorded at cutoff #42, but valuation publication failed. Manually replay the exact posting with the same verified signature and posting fingerprint; only valuation publication is retried and ledger entries are not posted again.',
+    ),
+  ).toBeTruthy();
+  expect(invalidateQueries).not.toHaveBeenCalled();
+  expect(
+    screen.queryByText(
+      'Posting recorded at ledger cutoff #42; review Account Truth next.',
+    ),
+  ).toBeNull();
+
+  const replayButton = screen.getByText(
+    'Exact replay to retry valuation publication',
+  );
+  expect(replayButton.hasAttribute('disabled')).toBe(false);
+  fireEvent.click(replayButton);
+
+  expect(
+    await screen.findByText(
+      'Posting recorded at ledger cutoff #42; review Account Truth next.',
+    ),
+  ).toBeTruthy();
+  await waitFor(() => expect(invalidateQueries).toHaveBeenCalledTimes(2));
+  expect(
+    screen.getByText('Apply exact reconciled posting').hasAttribute('disabled'),
+  ).toBe(true);
+  const postingRequests = requests.filter((request) =>
+    request.url.endsWith(`/clearances/${clearanceId}/postings`),
+  );
+  expect(postingRequests).toHaveLength(2);
+  expect(postingRequests[1]?.body).toEqual(postingRequests[0]?.body);
+  expect(postingRequests[1]?.body).toEqual({
+    posting_fingerprint: postingFingerprint,
+    operator_approval_id: challengeId,
+    operator_proof_signature_base64: signature,
+    acknowledgement: 'apply_exact_reconciled_ledger_posting_once',
+  });
 });
 
 test('shows canonical preview blockers and never creates an approval challenge', async () => {

@@ -382,8 +382,15 @@ function PostingSignature({ controller }: PostingViewProps) {
 }
 
 function PostingFinalConfirmation({ controller }: PostingViewProps) {
-  const { locale, verification, acknowledged, preview, applyPosting } =
-    controller;
+  const {
+    locale,
+    verification,
+    acknowledged,
+    preview,
+    applyPosting,
+    valuationPublicationPublished,
+    valuationPublicationRecoveryRequired,
+  } = controller;
   if (!verification.data) {
     return null;
   }
@@ -414,7 +421,9 @@ function PostingFinalConfirmation({ controller }: PostingViewProps) {
         type="button"
         className="app-button-secondary mt-3 inline-flex min-h-9 items-center justify-center rounded-xl border-[var(--app-danger)] px-3 py-2 text-xs font-semibold text-[var(--app-danger)] disabled:cursor-not-allowed disabled:opacity-50"
         disabled={
-          !acknowledged || applyPosting.isPending || applyPosting.isSuccess
+          !acknowledged ||
+          applyPosting.isPending ||
+          valuationPublicationPublished
         }
         onClick={controller.apply}
       >
@@ -422,9 +431,13 @@ function PostingFinalConfirmation({ controller }: PostingViewProps) {
           ? locale === 'zh'
             ? '事务核验并应用中'
             : 'Rechecking and applying'
-          : locale === 'zh'
-            ? '应用精确已对账入账'
-            : 'Apply exact reconciled posting'}
+          : valuationPublicationRecoveryRequired
+            ? locale === 'zh'
+              ? '精确重放并重试估值发布'
+              : 'Exact replay to retry valuation publication'
+            : locale === 'zh'
+              ? '应用精确已对账入账'
+              : 'Apply exact reconciled posting'}
       </button>
       {applyPosting.isError ? (
         <div
@@ -434,7 +447,16 @@ function PostingFinalConfirmation({ controller }: PostingViewProps) {
           {mutationError(applyPosting.error)}
         </div>
       ) : null}
-      {applyPosting.data ? (
+      {valuationPublicationRecoveryRequired && applyPosting.data ? (
+        <div
+          role="alert"
+          className="mt-3 break-words text-xs font-semibold text-[var(--app-warning)]"
+        >
+          {locale === 'zh'
+            ? `账本已记录至 ledger cutoff #${applyPosting.data.post_ledger_cutoff_id}，但估值发布失败。请使用同一已验证签名与 posting fingerprint 手工精确重放；只会重试估值发布，不会重复入账。`
+            : `Ledger posting is recorded at cutoff #${applyPosting.data.post_ledger_cutoff_id}, but valuation publication failed. Manually replay the exact posting with the same verified signature and posting fingerprint; only valuation publication is retried and ledger entries are not posted again.`}
+        </div>
+      ) : applyPosting.data ? (
         <div
           role="status"
           className="mt-3 break-words text-xs font-semibold text-[var(--app-success)]"

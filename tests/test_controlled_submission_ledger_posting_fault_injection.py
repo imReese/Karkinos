@@ -215,3 +215,112 @@ def test_posting_fault_rolls_back_every_financial_fact_and_restart_retries_once(
         )
         == 1
     )
+
+
+def test_committed_posting_recovers_valuation_publication_after_restart_without_repost(
+    tmp_path: Path,
+) -> None:
+    env = _environment(tmp_path)
+    clearance_preview = _preview(env)
+    clearance = _record(
+        env,
+        clearance_preview,
+        _approval(env, clearance_preview["clearance_fingerprint"]),
+    )
+    service = _restart_service(env)
+    assert service.get_status()["valuation_publication_recovery_mode"] == (
+        "exact_idempotent_posting_replay"
+    )
+    preview = service.preview(clearance_id=clearance["clearance_id"])
+    approval = _ledger_posting_approval(env, preview["posting_fingerprint"])
+
+    order_before = env["db"].get_oms_order_sync(preview["order_id"])
+    oms_transitions_before = env["db"].list_oms_transitions_sync(preview["order_id"])
+    intent_before = env["db"].get_controlled_broker_submit_intent_sync(
+        preview["submit_intent_id"]
+    )
+
+    def fail_valuation_publication(*_args, **_kwargs):
+        raise RuntimeError("injected post-commit valuation publication failure")
+
+    service._db._financial_facts._valuation_transaction_writer = (
+        fail_valuation_publication
+    )
+    posted = service.apply(
+        clearance_id=preview["clearance_id"],
+        posting_fingerprint=preview["posting_fingerprint"],
+        operator_approval_id=approval["approval_id"],
+        operator_proof_signature_base64=approval["proof_signature_base64"],
+        acknowledgement=CONTROLLED_SUBMISSION_LEDGER_POSTING_ACKNOWLEDGEMENT,
+    )
+
+    assert posted["status"] == "applied"
+    assert posted["reused"] is False
+    assert posted["post_apply_status"] == "valuation_publication_recovery_required"
+    assert posted["post_valuation_publication_status"] == "publication_failed"
+    assert posted["post_valuation_publication_recovery_required"] is True
+    assert posted["post_valuation_snapshot_id"] == ""
+    publication = env["db"].get_runtime_control_sync("valuation_snapshot_publication")
+    assert publication is not None
+    assert publication["status"] == "failed"
+    ledger_after_commit = env["db"].get_ledger_entries_sync()
+    postings_after_commit = env["db"].list_controlled_submission_ledger_postings_sync()
+    ledger_events_after_commit = env["db"].list_events_sync(
+        event_type="portfolio.ledger_entry.recorded",
+        limit=10,
+    )
+    posting_events_after_commit = env["db"].list_events_sync(
+        event_type="controlled_broker.ledger_posted",
+        limit=10,
+    )
+    assert len(ledger_after_commit) == 2
+    assert len(postings_after_commit) == 1
+    assert len(ledger_events_after_commit) == 2
+    assert len(posting_events_after_commit) == 1
+
+    recovered = _restart_service(env).apply(
+        clearance_id=preview["clearance_id"],
+        posting_fingerprint=preview["posting_fingerprint"],
+        operator_approval_id=approval["approval_id"],
+        operator_proof_signature_base64=approval["proof_signature_base64"],
+        acknowledgement=CONTROLLED_SUBMISSION_LEDGER_POSTING_ACKNOWLEDGEMENT,
+    )
+
+    assert recovered["status"] == "applied"
+    assert recovered["reused"] is True
+    assert recovered["post_valuation_publication_status"] == "published"
+    assert recovered["post_valuation_publication_recovery_required"] is False
+    assert recovered["post_valuation_snapshot_id"]
+    assert recovered["post_ledger_cutoff_id"] == posted["post_ledger_cutoff_id"]
+    publication = env["db"].get_runtime_control_sync("valuation_snapshot_publication")
+    assert publication is not None
+    assert publication["status"] == "ready"
+    assert publication["snapshot_id"] == recovered["post_valuation_snapshot_id"]
+    assert env["db"].get_ledger_entries_sync() == ledger_after_commit
+    assert (
+        env["db"].list_controlled_submission_ledger_postings_sync()
+        == postings_after_commit
+    )
+    assert (
+        env["db"].list_events_sync(
+            event_type="portfolio.ledger_entry.recorded",
+            limit=10,
+        )
+        == ledger_events_after_commit
+    )
+    assert (
+        env["db"].list_events_sync(
+            event_type="controlled_broker.ledger_posted",
+            limit=10,
+        )
+        == posting_events_after_commit
+    )
+    assert env["db"].get_oms_order_sync(preview["order_id"]) == order_before
+    assert (
+        env["db"].list_oms_transitions_sync(preview["order_id"])
+        == oms_transitions_before
+    )
+    assert (
+        env["db"].get_controlled_broker_submit_intent_sync(preview["submit_intent_id"])
+        == intent_before
+    )

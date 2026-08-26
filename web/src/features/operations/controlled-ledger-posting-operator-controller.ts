@@ -27,6 +27,16 @@ export function useControlledLedgerPostingOperatorController({
   const challenge = useOperatorApprovalChallengeMutation();
   const verification = useOperatorApprovalVerificationMutation();
   const applyPosting = useControlledLedgerPostingApplyMutation();
+  const valuationPublicationPublished = Boolean(
+    applyPosting.data &&
+    applyPosting.data.post_apply_status !==
+      'valuation_publication_recovery_required' &&
+    applyPosting.data.post_valuation_publication_status === 'published' &&
+    !applyPosting.data.post_valuation_publication_recovery_required &&
+    applyPosting.data.post_valuation_snapshot_id,
+  );
+  const valuationPublicationRecoveryRequired =
+    Boolean(applyPosting.data) && !valuationPublicationPublished;
   const eligibleIdentities = useMemo(
     () =>
       (approvalStatus.data?.trusted_identities ?? []).filter(
@@ -93,7 +103,13 @@ export function useControlledLedgerPostingOperatorController({
   };
 
   const apply = () => {
-    if (!preview.data || !verification.data || !acknowledged) {
+    if (
+      !preview.data ||
+      !verification.data ||
+      !acknowledged ||
+      applyPosting.isPending ||
+      valuationPublicationPublished
+    ) {
       return;
     }
     applyPosting.mutate({
@@ -130,6 +146,8 @@ export function useControlledLedgerPostingOperatorController({
     challenge,
     verification,
     applyPosting,
+    valuationPublicationPublished,
+    valuationPublicationRecoveryRequired,
     eligibleIdentities,
     effectiveKeyId,
     selectedIdentity,
