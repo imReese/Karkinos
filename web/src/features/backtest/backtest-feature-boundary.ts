@@ -7,5 +7,5 @@ export {
   buildAttributionReadinessItems,
   type AttributionReadinessItem,
 } from '../account-strategy/attribution-readiness';
-export { ResearchTaskPanel } from '../ai-research/components/research-task-panel';
-export { StrategyHypothesisPanel } from '../ai-research/components/strategy-hypothesis-panel';
+export { ResearchTaskPanel } from '../research-workflow/components/research-task-panel';
+export { StrategyHypothesisPanel } from '../research-workflow/components/strategy-hypothesis-panel';

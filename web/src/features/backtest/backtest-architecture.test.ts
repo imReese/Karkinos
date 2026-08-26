@@ -10,6 +10,10 @@ const FEATURES_ROOT = resolve(BACKTEST_ROOT, '..');
 const APP_ROOT = resolve(BACKTEST_ROOT, '../../app');
 const API_FACADE = resolve(BACKTEST_ROOT, 'api.ts');
 const API_CONTRACTS = resolve(BACKTEST_ROOT, 'api-contracts.ts');
+const API_GOVERNANCE_CONTRACTS = resolve(
+  BACKTEST_ROOT,
+  'api-governance-contracts.ts',
+);
 const API_HOOKS = resolve(BACKTEST_ROOT, 'api-hooks.ts');
 
 function productionFiles(directory: string): string[] {
@@ -239,8 +243,8 @@ test('backtest imports stay out of app and at the reviewed feature boundary', ()
   expect(featureImports).toEqual([
     'backtest-feature-boundary.ts -> ../account-strategy/api',
     'backtest-feature-boundary.ts -> ../account-strategy/attribution-readiness',
-    'backtest-feature-boundary.ts -> ../ai-research/components/research-task-panel',
-    'backtest-feature-boundary.ts -> ../ai-research/components/strategy-hypothesis-panel',
+    'backtest-feature-boundary.ts -> ../research-workflow/components/research-task-panel',
+    'backtest-feature-boundary.ts -> ../research-workflow/components/strategy-hypothesis-panel',
   ]);
 });
 
@@ -268,7 +272,7 @@ test('backtest API facade preserves its public export surface', () => {
     "export * from './api-hooks';",
   ]);
   const exportPattern = /^export (?:type|function) ([A-Za-z0-9_]+)/gm;
-  const actualExports = [API_CONTRACTS, API_HOOKS]
+  const actualExports = [API_CONTRACTS, API_GOVERNANCE_CONTRACTS, API_HOOKS]
     .flatMap((path) =>
       Array.from(
         readFileSync(path, 'utf8').matchAll(exportPattern),

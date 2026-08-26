@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-import type { StrategyHypothesisDraft } from '../api';
+import type { StrategyHypothesisDraft } from '../strategy-research-api';
 import type { StrategyHypothesisCopy } from './strategy-hypothesis-copy';
 
 export function DraftCard({

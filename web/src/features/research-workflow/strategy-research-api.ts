@@ -1,3 +1,4 @@
+/** Evidence-bound strategy research data access shared by research surfaces. */
 import { useMutation } from '@tanstack/react-query';
 
 import { postJson } from '../../shared/api/client';

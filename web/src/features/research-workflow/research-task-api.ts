@@ -1,3 +1,4 @@
+/** Persisted, authority-neutral research task data access. */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiClient, postJson } from '../../shared/api/client';

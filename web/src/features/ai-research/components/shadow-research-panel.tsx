@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 
 import { usePreferences } from '../../../shared/preferences/context';
 import {
@@ -175,29 +175,7 @@ export function ShadowResearchPanel() {
       data-evidence-kind="persisted-ai-shadow-research"
       data-testid="shadow-research-panel"
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 max-w-4xl">
-          <div className="app-kicker">{copy.kicker}</div>
-          <h2
-            className="mt-2 text-lg font-semibold text-[var(--app-text)]"
-            id="shadow-research-title"
-          >
-            {copy.title}
-          </h2>
-          <p className="app-muted mt-2 text-sm leading-6">{copy.detail}</p>
-        </div>
-        <div className="flex flex-wrap gap-2 text-xs font-semibold">
-          <span className="rounded-full border border-[var(--app-divider)] px-2.5 py-1">
-            {status?.policy.enabled ? copy.enabled : copy.disabled}
-          </span>
-          <span className="rounded-full border border-[var(--app-divider)] px-2.5 py-1">
-            {copy.killSwitch}:{' '}
-            {status?.kill_switch.enabled
-              ? status.kill_switch.reason || 'ON'
-              : copy.clear}
-          </span>
-        </div>
-      </div>
+      <ShadowResearchHeader copy={copy} status={status} />
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <StatusMetric
@@ -390,63 +368,155 @@ export function ShadowResearchPanel() {
         </p>
       )}
 
-      <div className="mt-6 grid gap-4">
-        {status?.candidates.length ? (
-          status.candidates.map((candidate) => (
-            <CandidateCard
-              approvals={approvals}
-              candidate={candidate}
-              copy={copy}
-              isDailyWinner={verifiedWinnerCandidateIds.has(
-                candidate.candidate_id,
-              )}
-              key={candidate.candidate_id}
-              notes={notes}
-              onPause={() => void pauseCandidate(candidate)}
-              onPauseConfirmationChange={(checked) =>
-                setPauseConfirmations((current) => ({
-                  ...current,
-                  [candidate.candidate_id]: checked,
-                }))
-              }
-              onPauseNoteChange={(value) =>
-                setPauseNotes((current) => ({
-                  ...current,
-                  [candidate.candidate_id]: value,
-                }))
-              }
-              onApprovalChange={(checked) =>
-                setApprovals((current) => ({
-                  ...current,
-                  [candidate.candidate_id]: checked,
-                }))
-              }
-              onApprove={() => void approveCandidate(candidate)}
-              onNoteChange={(value) =>
-                setNotes((current) => ({
-                  ...current,
-                  [candidate.candidate_id]: value,
-                }))
-              }
-              pauseConfirmations={pauseConfirmations}
-              pauseNotes={pauseNotes}
-              pending={approve.isPending || pause.isPending}
-              promotionStage={
-                promotionStates.data?.find(
-                  (state) =>
-                    state.strategy_id ===
-                    `ai_formula_shadow:${candidate.candidate_id}`,
-                )?.stage
-              }
-              promotionStateLoaded={promotionStates.isSuccess}
-            />
-          ))
-        ) : (
-          <div className="rounded-[var(--app-radius-surface)] border border-dashed border-[var(--app-divider)] p-5 text-sm text-[var(--app-muted)]">
-            {query.isLoading ? copy.running : copy.noCandidates}
-          </div>
-        )}
-      </div>
+      <ShadowCandidateList
+        approvals={approvals}
+        candidates={status?.candidates ?? []}
+        copy={copy}
+        loading={query.isLoading}
+        notes={notes}
+        onApprovalChange={setApprovals}
+        onApprove={approveCandidate}
+        onNoteChange={setNotes}
+        onPause={pauseCandidate}
+        onPauseConfirmationChange={setPauseConfirmations}
+        onPauseNoteChange={setPauseNotes}
+        pauseConfirmations={pauseConfirmations}
+        pauseNotes={pauseNotes}
+        pending={approve.isPending || pause.isPending}
+        promotionStates={promotionStates}
+        verifiedWinnerCandidateIds={verifiedWinnerCandidateIds}
+      />
     </section>
+  );
+}
+
+function ShadowResearchHeader({
+  copy,
+  status,
+}: {
+  copy: (typeof SHADOW_RESEARCH_COPY)[keyof typeof SHADOW_RESEARCH_COPY];
+  status: ReturnType<typeof useShadowResearchAutomationQuery>['data'];
+}) {
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0 max-w-4xl">
+        <div className="app-kicker">{copy.kicker}</div>
+        <h2
+          className="mt-2 text-lg font-semibold text-[var(--app-text)]"
+          id="shadow-research-title"
+        >
+          {copy.title}
+        </h2>
+        <p className="app-muted mt-2 text-sm leading-6">{copy.detail}</p>
+      </div>
+      <div className="flex flex-wrap gap-2 text-xs font-semibold">
+        <span className="rounded-full border border-[var(--app-divider)] px-2.5 py-1">
+          {status?.policy.enabled ? copy.enabled : copy.disabled}
+        </span>
+        <span className="rounded-full border border-[var(--app-divider)] px-2.5 py-1">
+          {copy.killSwitch}:{' '}
+          {status?.kill_switch.enabled
+            ? status.kill_switch.reason || 'ON'
+            : copy.clear}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function ShadowCandidateList({
+  approvals,
+  candidates,
+  copy,
+  loading,
+  notes,
+  onApprovalChange,
+  onApprove,
+  onNoteChange,
+  onPause,
+  onPauseConfirmationChange,
+  onPauseNoteChange,
+  pauseConfirmations,
+  pauseNotes,
+  pending,
+  promotionStates,
+  verifiedWinnerCandidateIds,
+}: {
+  approvals: Record<string, boolean>;
+  candidates: ShadowResearchCandidate[];
+  copy: (typeof SHADOW_RESEARCH_COPY)[keyof typeof SHADOW_RESEARCH_COPY];
+  loading: boolean;
+  notes: Record<string, string>;
+  onApprovalChange: Dispatch<SetStateAction<Record<string, boolean>>>;
+  onApprove: (candidate: ShadowResearchCandidate) => Promise<void>;
+  onNoteChange: Dispatch<SetStateAction<Record<string, string>>>;
+  onPause: (candidate: ShadowResearchCandidate) => Promise<void>;
+  onPauseConfirmationChange: Dispatch<SetStateAction<Record<string, boolean>>>;
+  onPauseNoteChange: Dispatch<SetStateAction<Record<string, string>>>;
+  pauseConfirmations: Record<string, boolean>;
+  pauseNotes: Record<string, string>;
+  pending: boolean;
+  promotionStates: ReturnType<typeof useStrategyPromotionStatesQuery>;
+  verifiedWinnerCandidateIds: Set<string>;
+}) {
+  if (candidates.length === 0) {
+    return (
+      <div className="mt-6 grid gap-4">
+        <div className="rounded-[var(--app-radius-surface)] border border-dashed border-[var(--app-divider)] p-5 text-sm text-[var(--app-muted)]">
+          {loading ? copy.running : copy.noCandidates}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="mt-6 grid gap-4">
+      {candidates.map((candidate) => (
+        <CandidateCard
+          approvals={approvals}
+          candidate={candidate}
+          copy={copy}
+          isDailyWinner={verifiedWinnerCandidateIds.has(candidate.candidate_id)}
+          key={candidate.candidate_id}
+          notes={notes}
+          onPause={() => void onPause(candidate)}
+          onPauseConfirmationChange={(checked) =>
+            onPauseConfirmationChange((current) => ({
+              ...current,
+              [candidate.candidate_id]: checked,
+            }))
+          }
+          onPauseNoteChange={(value) =>
+            onPauseNoteChange((current) => ({
+              ...current,
+              [candidate.candidate_id]: value,
+            }))
+          }
+          onApprovalChange={(checked) =>
+            onApprovalChange((current) => ({
+              ...current,
+              [candidate.candidate_id]: checked,
+            }))
+          }
+          onApprove={() => void onApprove(candidate)}
+          onNoteChange={(value) =>
+            onNoteChange((current) => ({
+              ...current,
+              [candidate.candidate_id]: value,
+            }))
+          }
+          pauseConfirmations={pauseConfirmations}
+          pauseNotes={pauseNotes}
+          pending={pending}
+          promotionStage={
+            promotionStates.data?.find(
+              (state) =>
+                state.strategy_id ===
+                `ai_formula_shadow:${candidate.candidate_id}`,
+            )?.stage
+          }
+          promotionStateLoaded={promotionStates.isSuccess}
+        />
+      ))}
+    </div>
   );
 }

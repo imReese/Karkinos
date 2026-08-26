@@ -12,7 +12,7 @@ import {
   type HumanResearchTask,
   type ResearchTaskAnalysisReview,
   type ResearchTaskFixtureAnalysis,
-} from '../api';
+} from '../research-task-api';
 import type { ResearchTaskPanelCopy } from './research-task-copy';
 import { newAuditKey } from './research-task-values';
 
