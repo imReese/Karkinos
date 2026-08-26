@@ -430,7 +430,7 @@ GET 投影与 replay 不联系 provider、也不写数据库。Capture 只写审
 财务事实，或修改 risk、OMS、订单、成交、账本、Account Truth、kill switch、broker
 submit/cancel、memory 与资本权限。该分数衡量决策过程证据，不衡量投资收益，也不构成建议或权限。
 
-### AI 研究
+### AI 研究（[策略研究详细设计](AI_STRATEGY_RESEARCH_DESIGN.zh.md)）
 
 ```text
 显式证据捕获

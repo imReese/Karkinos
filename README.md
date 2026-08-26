@@ -133,6 +133,8 @@ session; this does not grant broker or order authority.
 - [Roadmap](docs/ROADMAP.md) — milestones, priorities, and release gates.
 - [Architecture](docs/ARCHITECTURE.md) — canonical ownership and failure
   semantics.
+- [AI 策略研究详细设计](docs/AI_STRATEGY_RESEARCH_DESIGN.zh.md) — DeepSeek
+  研究协议、锁定式验证与生产隔离。
 - [Codebase guide](docs/CODEBASE.md) — source layout and dependency rules.
 - [English documentation](docs/README.en.md) / [中文文档](docs/README.zh.md) —
   setup, workflows, configuration, and operator guides.
