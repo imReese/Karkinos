@@ -169,10 +169,10 @@ def test_live_readiness_cli_reads_only_expected_loopback_endpoints() -> None:
 
     assert exit_code == 2
     assert urls == [
-        ("http://localhost:8000/api/automation/cockpit", 10.0),
+        ("http://localhost:8000/api/automation/cockpit", 30.0),
         (
-            "http://localhost:8000/api/ai/strategy-research/shadow-automation",
-            10.0,
+            "http://localhost:8000/api/ai/strategy-research/shadow-automation/readiness",
+            30.0,
         ),
     ]
     assert payload["status"] == "no_action_not_production_ready"

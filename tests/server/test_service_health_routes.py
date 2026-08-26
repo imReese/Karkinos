@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from server import __version__
 from server.app import create_app
 from server.routes.service_health import (
     SERVICE_HEALTH_SCHEMA_VERSION,
@@ -20,6 +21,7 @@ def test_service_health_is_process_liveness_only_and_non_authorizing() -> None:
     assert response.json() == {
         "schema_version": SERVICE_HEALTH_SCHEMA_VERSION,
         "service": "karkinos",
+        "version": __version__,
         "status": "alive",
         "scope": "process_liveness_only",
         "financial_readiness_claimed": False,

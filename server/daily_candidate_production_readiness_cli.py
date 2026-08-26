@@ -34,7 +34,7 @@ def main(
         fetch = fetch_json or _fetch_json
         cockpit = fetch(f"{base_url}/api/automation/cockpit", args.timeout)
         research = fetch(
-            f"{base_url}/api/ai/strategy-research/shadow-automation",
+            f"{base_url}/api/ai/strategy-research/shadow-automation/readiness",
             args.timeout,
         )
         report = project_daily_candidate_production_readiness(
@@ -75,8 +75,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--timeout",
         type=float,
-        default=10.0,
-        help="Per-request timeout in seconds, greater than 0 and at most 10.",
+        default=30.0,
+        help="Per-request timeout in seconds, greater than 0 and at most 60.",
     )
     parser.add_argument("--pretty", action="store_true", help="Pretty-print JSON.")
     return parser
@@ -102,8 +102,8 @@ def _loopback_base_url(value: str) -> str:
 
 
 def _fetch_json(url: str, timeout: float) -> dict[str, Any]:
-    if timeout <= 0 or timeout > 10:
-        raise ValueError("timeout must be greater than 0 and at most 10")
+    if timeout <= 0 or timeout > 60:
+        raise ValueError("timeout must be greater than 0 and at most 60")
     request = Request(url, headers={"Accept": "application/json"}, method="GET")
     opener = build_opener(ProxyHandler({}))
     with opener.open(  # noqa: S310 - validated loopback URL with proxies disabled
