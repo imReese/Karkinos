@@ -7,6 +7,7 @@ from server.ai_runtime.openai_compatibility import edge_request_options
 from server.ai_runtime.provider_connectivity_contracts import (
     ProviderConnectivitySettings,
 )
+from server.ai_runtime.reasoning_roi import strategy_research_reasoning_policy
 from server.contracts.strategy_research import (
     SANITIZED_ACCOUNT_EVIDENCE_CONTRACT,
     STRATEGY_RESEARCH_MAX_CANDIDATES,
@@ -35,7 +36,7 @@ def strategy_research_request_options(
     """Reserve the response budget for the bounded final JSON contract."""
     provider = settings.provider_id.strip().lower()
     if provider == "deepseek" or settings.endpoint_origin.endswith("deepseek.com"):
-        return {"thinking": {"type": "disabled"}}
+        return strategy_research_reasoning_policy()
     return edge_request_options(settings)
 
 
