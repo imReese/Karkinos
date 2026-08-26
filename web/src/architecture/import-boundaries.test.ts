@@ -1,5 +1,5 @@
 // @ts-nocheck -- Node built-ins are used only by this deterministic source audit.
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, dirname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -163,6 +163,139 @@ function describeImport(importer: string, target: string) {
   return `${relative(SRC_ROOT, importer)} -> ${relative(SRC_ROOT, target)}`;
 }
 
+function resolveSourceModule(target: string, modules: Set<string>) {
+  const extensionlessTarget = target.replace(/\.(?:[cm]?js|jsx)$/, '');
+  const candidates = [
+    target,
+    extensionlessTarget,
+    `${extensionlessTarget}.ts`,
+    `${extensionlessTarget}.tsx`,
+    resolve(extensionlessTarget, 'index.ts'),
+    resolve(extensionlessTarget, 'index.tsx'),
+  ];
+  return candidates.find(
+    (candidate) => modules.has(candidate) && existsSync(candidate),
+  );
+}
+
+function featureOwnershipComponents(paths: string[]) {
+  const modules = new Set(paths);
+  const featureNames = new Set(
+    paths
+      .filter((path) => isInside(path, FEATURES_ROOT))
+      .map((path) => relative(FEATURES_ROOT, path).split(/[\\/]/)[0]),
+  );
+  const graph = new Map(
+    Array.from(featureNames, (featureName) => [featureName, new Set<string>()]),
+  );
+
+  for (const path of paths.filter((candidate) =>
+    isInside(candidate, FEATURES_ROOT),
+  )) {
+    const owner = relative(FEATURES_ROOT, path).split(/[\\/]/)[0];
+    for (const target of relativeImportTargets(path)) {
+      const resolvedTarget = resolveSourceModule(target, modules);
+      if (!resolvedTarget || !isInside(resolvedTarget, FEATURES_ROOT)) continue;
+      const dependency = relative(FEATURES_ROOT, resolvedTarget).split(
+        /[\\/]/,
+      )[0];
+      if (dependency !== owner) graph.get(owner)?.add(dependency);
+    }
+  }
+
+  let nextIndex = 0;
+  const indices = new Map<string, number>();
+  const lowLinks = new Map<string, number>();
+  const active = new Set<string>();
+  const stack: string[] = [];
+  const components: string[][] = [];
+
+  function visit(featureName: string) {
+    const index = nextIndex;
+    nextIndex += 1;
+    indices.set(featureName, index);
+    lowLinks.set(featureName, index);
+    stack.push(featureName);
+    active.add(featureName);
+
+    for (const dependency of graph.get(featureName) ?? []) {
+      if (!indices.has(dependency)) {
+        visit(dependency);
+        lowLinks.set(
+          featureName,
+          Math.min(
+            lowLinks.get(featureName) ?? index,
+            lowLinks.get(dependency) ?? index,
+          ),
+        );
+      } else if (active.has(dependency)) {
+        lowLinks.set(
+          featureName,
+          Math.min(
+            lowLinks.get(featureName) ?? index,
+            indices.get(dependency) ?? index,
+          ),
+        );
+      }
+    }
+
+    if (lowLinks.get(featureName) !== indices.get(featureName)) return;
+    const component: string[] = [];
+    let member: string | undefined;
+    do {
+      member = stack.pop();
+      if (!member) break;
+      active.delete(member);
+      component.push(member);
+    } while (member !== featureName);
+    if (component.length > 1) components.push(component.sort());
+  }
+
+  for (const featureName of featureNames) {
+    if (!indices.has(featureName)) visit(featureName);
+  }
+  return components.sort((left, right) =>
+    left.join().localeCompare(right.join()),
+  );
+}
+
+function relativeImportCycles(paths: string[]) {
+  const modules = new Set(paths);
+  const graph = new Map(
+    paths.map((path) => [
+      path,
+      relativeImportTargets(path)
+        .map((target) => resolveSourceModule(target, modules))
+        .filter((target): target is string => Boolean(target)),
+    ]),
+  );
+  const active = new Set<string>();
+  const visited = new Set<string>();
+  const stack: string[] = [];
+  const cycles = new Set<string>();
+
+  function visit(path: string) {
+    if (active.has(path)) {
+      const start = stack.indexOf(path);
+      const cycle = [...stack.slice(start), path]
+        .map((item) => relative(SRC_ROOT, item))
+        .join(' -> ');
+      cycles.add(cycle);
+      return;
+    }
+    if (visited.has(path)) return;
+    active.add(path);
+    stack.push(path);
+    for (const dependency of graph.get(path) ?? []) visit(dependency);
+    stack.pop();
+    active.delete(path);
+    visited.add(path);
+  }
+
+  for (const path of paths) visit(path);
+  return Array.from(cycles).sort();
+}
+
 test('shared modules do not depend on legacy or higher application layers', () => {
   const forbiddenRoots = [
     LEGACY_LIB_ROOT,
@@ -249,6 +382,72 @@ test('localized copy modules stay bounded and feature-owned', () => {
   expect(
     readFileSync(resolve(APP_ROOT, 'copy.ts'), 'utf8').split('\n').length,
   ).toBeLessThanOrEqual(100);
+});
+
+test('production frontend modules and named functions stay bounded', () => {
+  const productionModules = sourceFiles(SRC_ROOT).filter(
+    (path) => !/\.(?:test|spec)\.(?:ts|tsx)$/.test(path),
+  );
+  const violations: string[] = [];
+
+  for (const path of productionModules) {
+    const source = readFileSync(path, 'utf8');
+    const relativePath = relative(SRC_ROOT, path);
+    const lines = source.split('\n').length;
+    if (lines > 800) {
+      violations.push(`${relativePath}: module has ${lines} lines`);
+    }
+
+    const sourceLines = source.split('\n');
+    for (let start = 0; start < sourceLines.length; start += 1) {
+      const declaration = sourceLines[start].match(
+        /^(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\b/,
+      );
+      if (!declaration) continue;
+      const endOffset = sourceLines
+        .slice(start + 1)
+        .findIndex((line) => line === '}');
+      if (endOffset < 0) continue;
+      const functionLines = endOffset + 2;
+      if (functionLines > 350) {
+        violations.push(
+          `${relativePath}:${start + 1} ${declaration[1]} has ${functionLines} lines`,
+        );
+      }
+    }
+  }
+
+  expect(violations).toEqual([]);
+});
+
+test('production frontend relative imports have zero dependency cycles', () => {
+  const productionModules = sourceFiles(SRC_ROOT).filter(
+    (path) => !/\.(?:test|spec)\.(?:ts|tsx)$/.test(path),
+  );
+
+  expect(relativeImportCycles(productionModules)).toEqual([]);
+});
+
+test('dependency audit resolves emitted JavaScript specifiers to TypeScript', () => {
+  const modules = new Set(sourceFiles(SRC_ROOT));
+
+  expect(
+    resolveSourceModule(resolve(FEATURES_ROOT, 'account/api.js'), modules),
+  ).toBe(resolve(FEATURES_ROOT, 'account/api.ts'));
+  expect(
+    resolveSourceModule(
+      resolve(FEATURES_ROOT, 'ai-research/pages/ai-research-page.jsx'),
+      modules,
+    ),
+  ).toBe(resolve(FEATURES_ROOT, 'ai-research/pages/ai-research-page.tsx'));
+});
+
+test('production feature ownership is a directed acyclic graph', () => {
+  const productionModules = sourceFiles(SRC_ROOT).filter(
+    (path) => !/\.(?:test|spec)\.(?:ts|tsx)$/.test(path),
+  );
+
+  expect(featureOwnershipComponents(productionModules)).toEqual([]);
 });
 
 test('browser preference effects stay in the app provider', () => {
