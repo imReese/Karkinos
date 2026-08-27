@@ -8,6 +8,12 @@ from typing import Any
 
 import pandas as pd
 
+from analytics.a_share_limits import (
+    is_limit_down,
+    is_limit_up,
+    is_suspended,
+    limit_rate_for_symbol,
+)
 from analytics.backtest_capacity_evidence import build_backtest_capacity_evidence
 from analytics.backtest_drawdown_evidence import build_backtest_drawdown_evidence
 from analytics.backtest_fee_tax_evidence import build_backtest_fee_tax_evidence
@@ -28,12 +34,6 @@ from core.types import AssetClass, BarFrequency, Symbol
 from data.handler import DataHandler
 from data.manager import DataManager
 from data.store import DataStore
-from analytics.a_share_limits import (
-    is_limit_down,
-    is_limit_up,
-    is_suspended,
-    limit_rate_for_symbol,
-)
 from server.ai_runtime.contracts import JsonObject, content_fingerprint
 from server.ai_runtime.formula_dsl import (
     CANONICAL_COST_MODEL_REFERENCE,
