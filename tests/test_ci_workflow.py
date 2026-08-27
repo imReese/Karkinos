@@ -71,3 +71,16 @@ def test_ci_repository_hygiene_blocks_runtime_and_generated_artifacts() -> None:
     assert "screenshots/" in workflow
     assert "reports/" in workflow
     assert ".*\\.(db|sqlite|duckdb)" in workflow
+
+
+def test_ci_publishes_release_image_on_semver_tag() -> None:
+    workflow = Path(".github/workflows/ci.yml").read_text()
+
+    assert 'tags:\n      - "v*"' in workflow
+    assert "name: Publish release image" in workflow
+    assert "python tools/release_image_plan.py" in workflow
+    assert "docker/setup-buildx-action" in workflow
+    assert "docker/login-action" in workflow
+    assert "docker/build-push-action" in workflow
+    assert "registry: ghcr.io" in workflow
+    assert "platforms: linux/amd64,linux/arm64" in workflow
