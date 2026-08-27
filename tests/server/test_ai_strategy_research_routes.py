@@ -271,6 +271,25 @@ def test_shadow_status_get_is_provider_free_and_does_not_initialize_shadow_table
 
 
 @pytest.mark.unit
+def test_shadow_readiness_get_is_provider_free_and_bounded(monkeypatch, tmp_path):
+    db_path = tmp_path / "app.db"
+    db = AppDatabase(db_path)
+    db.init_sync()
+    client = _client(monkeypatch, FixtureService(), db=db)
+
+    response = client.get("/api/ai/strategy-research/shadow-automation/readiness")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["policy"]["enabled"] is False
+    assert body["automatic_strategy_replacement_enabled"] is False
+    assert body["production_strategy_mutation_enabled"] is False
+    assert body["broker_submission_enabled"] is False
+    assert body["human_paper_shadow_approval_required"] is True
+    assert body["authority_effect"] == "research_only"
+
+
+@pytest.mark.unit
 def test_shadow_policy_accepts_five_sequential_iterations_without_daily_budget():
     payload = {
         "enabled": True,

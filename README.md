@@ -63,20 +63,19 @@ guarantee.
 
 ## Project status
 
-The latest tagged release is
-[v0.2.3](https://github.com/imReese/Karkinos/releases/tag/v0.2.3). It remains
-the stable release baseline. `main` contains the untagged v0.3.0 candidate and
-must complete production acceptance before a new release tag is created.
-The Code CI gate is required repository evidence; it does not replace the real-
-provider adapter, broker soak, or controlled-pilot acceptance required before
-tagging.
-Roadmap labels such as `v1.8` are product milestones, separate from SemVer
-software tags.
+The current software version is `0.3.0`. v0.3.0 is a broker-provider-free
+software release: it packages research/backtesting, persisted financial
+evidence, daily planning, paper/shadow, OMS/reconciliation, and the provider-
+neutral controlled-execution foundation. It does not select, register, contact,
+or require a real broker adapter and does not claim real-money readiness.
 
-Research, backtesting, portfolio evidence, daily planning, paper/shadow, OMS,
-reconciliation, and the provider-neutral controlled-execution foundation are
-implemented. Selecting, accepting, and deploying a real broker adapter remains
-an explicit owner decision.
+The exact tag commit must pass the complete Code CI gate and repository
+acceptance audit. These establish software-release evidence only. Real-adapter
+selection/deployment, the 20-trading-day soak, recovery drills, and the
+`manual_each_order` pilot remain unchanged v1.8 product-milestone gates.
+Each official SemVer tag publishes a multi-architecture image at
+`ghcr.io/imreese/karkinos:<tag>` plus its immutable `sha-<commit>` tag.
+Roadmap labels such as `v1.8` remain separate from SemVer software tags.
 
 See the [Roadmap](docs/ROADMAP.md) for active priorities and the
 [Implementation Log](docs/IMPLEMENTATION_LOG.md) for completed evidence. Those
