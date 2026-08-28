@@ -407,6 +407,20 @@ def _block_valuation_publication(
     updated_at: str,
     publication_failure: Exception | None,
 ) -> None:
+    current = conn.execute(
+        "SELECT value_json FROM runtime_controls WHERE key = ? LIMIT 1",
+        ("valuation_snapshot_publication",),
+    ).fetchone()
+    current_value = (
+        metadata_payload_value(current["value_json"]) if current is not None else None
+    )
+    if (
+        publication_failure is None
+        and isinstance(current_value, dict)
+        and current_value.get("status") == "ready"
+    ):
+        return
+
     reason = (
         "quote_batch_publication_failed"
         if publication_failure is not None

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from server.contracts.automatic_trading import AUTOMATIC_TRADING_CONTROL_KEY
 from server.persistence.facades.base import DatabaseRepositoryAccess
 
 
@@ -184,11 +185,29 @@ class SignalAutomationDatabaseFacade(DatabaseRepositoryAccess):
 
     def set_runtime_control_sync(self, key: str, value: dict[str, Any]) -> None:
         """Persist runtime control state such as kill switch."""
+        if key == AUTOMATIC_TRADING_CONTROL_KEY:
+            raise ValueError(
+                "automatic trading control requires the dedicated audited CAS"
+            )
         self._runtime_controls.set_value(key, value)
 
     def get_runtime_control_sync(self, key: str) -> dict[str, Any] | None:
         """Read persisted runtime control state."""
         return self._runtime_controls.get_value(key)
+
+    def compare_and_set_automatic_trading_control_sync(
+        self,
+        *,
+        expected_revision: int,
+        value: dict[str, Any],
+        acknowledgement: str,
+    ) -> dict[str, Any]:
+        """Atomically update the automatic-trading gate and its audit event."""
+        return self._runtime_controls.compare_and_set_automatic_trading(
+            expected_revision=expected_revision,
+            value=value,
+            acknowledgement=acknowledgement,
+        )
 
     # ---------- Automation Control ----------
 

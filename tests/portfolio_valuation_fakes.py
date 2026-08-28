@@ -7,6 +7,16 @@ from typing import Any
 from server.services.valuation_snapshot import build_current_valuation_snapshot
 
 
+def _current_quote_rows(db: Any) -> list[dict[str, Any]]:
+    """Adapt legacy fixture readers to the persisted-current quote contract."""
+
+    for reader_name in ("list_latest_quotes_sync", "get_latest_quotes_sync"):
+        reader = getattr(db, reader_name, None)
+        if callable(reader):
+            return [dict(row) for row in (reader() or [])]
+    return []
+
+
 def publish_current_valuation(db: Any) -> dict[str, Any]:
     """Freeze one explicit publication marker for a fake database's facts."""
 
@@ -34,6 +44,11 @@ def published_valuation_control(db: Any, key: str) -> dict[str, Any] | None:
 class PublishedValuationFakeDbMixin:
     """Make a fake DB explicitly assert that its current facts are published."""
 
+    def list_quote_selection_candidates_sync(self) -> list[dict[str, Any]]:
+        """Expose fixture facts through the production persisted-current port."""
+
+        return _current_quote_rows(self)
+
     def get_runtime_control_sync(self, key: str) -> dict[str, Any] | None:
         if not hasattr(self, "_published_valuation_marker"):
             publish_current_valuation(self)
@@ -43,6 +58,8 @@ class PublishedValuationFakeDbMixin:
 def bind_published_valuation(db: Any) -> Any:
     """Attach the explicit marker contract to a mutable namespace fake."""
 
+    if not callable(getattr(db, "list_quote_selection_candidates_sync", None)):
+        db.list_quote_selection_candidates_sync = lambda: _current_quote_rows(db)
     publish_current_valuation(db)
     db.get_runtime_control_sync = lambda key: published_valuation_control(db, key)
     return db

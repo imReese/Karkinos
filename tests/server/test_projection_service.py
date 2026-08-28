@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from dataclasses import replace
 from decimal import Decimal
 from types import SimpleNamespace
@@ -13,6 +14,73 @@ from server.ledger.models import LedgerEntry
 from server.projections.models import PortfolioProjection, ProjectedPosition
 from server.projections.service import build_portfolio_projection
 from tests.portfolio_valuation_fakes import PublishedValuationFakeDbMixin
+
+
+@pytest.mark.asyncio
+async def test_portfolio_projection_offloads_persisted_fact_reads(monkeypatch):
+    from server.projections import portfolio_application
+    from server.projections.portfolio_snapshot_projection import (
+        PortfolioSnapshotBuildResult,
+    )
+
+    entered = threading.Event()
+    release = threading.Event()
+    worker_thread_ids: list[int] = []
+    expected = object()
+
+    def blocking_projection(*_args, **_kwargs):
+        worker_thread_ids.append(threading.get_ident())
+        entered.set()
+        release.wait(timeout=2)
+        return PortfolioSnapshotBuildResult(snapshot=expected)
+
+    monkeypatch.setattr(
+        portfolio_application,
+        "_build_portfolio_snapshot_sync",
+        blocking_projection,
+    )
+    state = SimpleNamespace(
+        db=SimpleNamespace(get_total_deposits_sync=lambda: 0.0),
+    )
+    loop_thread_id = threading.get_ident()
+    task = asyncio.create_task(portfolio_application.build_portfolio_snapshot(state))
+    try:
+        assert await asyncio.to_thread(entered.wait, 1)
+        await asyncio.sleep(0)
+        assert not task.done()
+        assert worker_thread_ids != [loop_thread_id]
+    finally:
+        release.set()
+
+    assert await asyncio.wait_for(task, timeout=1) is expected
+
+
+@pytest.mark.asyncio
+async def test_portfolio_projection_skips_unused_async_deposit_reader(monkeypatch):
+    from server.projections import portfolio_application
+    from server.projections.portfolio_snapshot_projection import (
+        PortfolioSnapshotBuildResult,
+    )
+
+    expected = object()
+    deposit_reads = 0
+
+    async def read_total_deposits():
+        nonlocal deposit_reads
+        deposit_reads += 1
+        return 100.0
+
+    monkeypatch.setattr(
+        portfolio_application,
+        "_build_portfolio_snapshot_sync",
+        lambda *_args, **_kwargs: PortfolioSnapshotBuildResult(snapshot=expected),
+    )
+    state = SimpleNamespace(
+        db=SimpleNamespace(get_total_deposits=read_total_deposits),
+    )
+
+    assert await portfolio_application.build_portfolio_snapshot(state) is expected
+    assert deposit_reads == 0
 
 
 def test_build_portfolio_projection_handles_deposit_buy_and_sell():

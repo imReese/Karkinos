@@ -256,7 +256,9 @@ def test_confirmation_only_same_timestamp_authority_conflict_fails_closed(
     assert result.failed["__publication__"] == "quote_batch_publication_failed"
     assert confirmed_source.calls == [(Symbol("019999"), AssetClass.FUND)]
     assert estimate_source.calls == []
-    assert latest is None
+    assert latest is not None
+    assert latest["quote_source"] == "sina_fund_estimate"
+    assert latest["nav_date"] == "2026-06-11"
     assert restored["quote_source"] == "sina_fund_estimate"
     assert restored["nav_date"] == "2026-06-11"
     run = db.get_quote_fetch_run(result.run_id)

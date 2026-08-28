@@ -205,20 +205,23 @@ def _persist_nav_evidence(
             """,
             (run_id, NOW, NOW, status, json.dumps(run_metadata, sort_keys=True)),
         )
-        conn.execute(
-            """
-            INSERT INTO quote_snapshots (
-                symbol, asset_class, price, timestamp, created_at, quote_source,
-                provider_name, quote_status, provider_status, captured_reason,
-                nav_date, fetch_run_id
-            ) VALUES (
-                '012999', 'fund', ?, ?, ?, 'eastmoney_fund_page', 'fixture',
-                'live', 'live', 'fund_nav_sync', ?, ?
-            )
-            """,
-            (price, f"{nav_date}T15:00:00+08:00", NOW, nav_date, run_id),
-        )
         conn.commit()
+    from server.db import AppDatabase
+
+    AppDatabase(path).save_quote_snapshot_sync(
+        symbol="012999",
+        asset_class="fund",
+        price=price,
+        volume=None,
+        timestamp=f"{nav_date}T15:00:00+08:00",
+        quote_source="eastmoney_fund_page",
+        provider_name="fixture",
+        quote_status="live",
+        provider_status="live",
+        captured_reason="fund_nav_sync",
+        nav_date=nav_date,
+        fetch_run_id=run_id,
+    )
 
 
 def test_manual_trade_commits_canonical_ledger_projection_and_valuation(
@@ -769,7 +772,7 @@ def test_pending_confirmation_stage_failure_rolls_back_and_retry_has_no_duplicat
     assert status == "pending"
     assert _count(path, "trades") == 0
     assert _count(path, "ledger_entries") == 0
-    assert _count(path, "event_log") == 1
+    assert _count(path, "event_log") == 3
     assert _count(path, "valuation_snapshots") == 0
     assert _valuation_count(path) == 0
     assert _count(path, "portfolio_mutation_claims") == 1
@@ -782,7 +785,7 @@ def test_pending_confirmation_stage_failure_rolls_back_and_retry_has_no_duplicat
     assert result.replayed is False
     assert _count(path, "trades") == 1
     assert _count(path, "ledger_entries") == 1
-    assert _count(path, "event_log") == 3
+    assert _count(path, "event_log") == 5
     assert _valuation_count(path) == 1
     assert _count(path, "portfolio_mutation_claims") == 2
 
@@ -817,7 +820,7 @@ def test_pending_confirmation_restart_replay_binds_exact_persisted_evidence(
     assert replay.ledger_entry_id == first.ledger_entry_id
     assert _count(path, "trades") == 1
     assert _count(path, "ledger_entries") == 1
-    assert _count(path, "event_log") == 3
+    assert _count(path, "event_log") == 5
     assert _valuation_count(path) == 1
     assert len(calls) == 1
     with pytest.raises(ValueError, match="already confirmed"):
@@ -961,7 +964,7 @@ def test_pending_confirmation_valuation_failure_rolls_back_every_financial_fact(
     assert order == ("pending", None, None)
     assert _count(path, "trades") == 0
     assert _count(path, "ledger_entries") == 0
-    assert _count(path, "event_log") == 1
+    assert _count(path, "event_log") == 3
     assert _count(path, "valuation_snapshots") == 0
     assert _valuation_count(path) == 0
     assert _count(path, "portfolio_mutation_claims") == 1

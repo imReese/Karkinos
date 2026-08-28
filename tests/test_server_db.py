@@ -15,6 +15,7 @@ from server.contracts.order_state import (
     ManualOrderTicketCommand,
 )
 from server.db import AppDatabase
+from server.persistence.financial_fact_event_payloads import quote_instant_storage_key
 
 
 def test_app_database_initializes_quote_fetch_runs_table(tmp_path):
@@ -717,7 +718,7 @@ def test_app_database_selects_latest_quote_by_normalized_instant(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     observations = [
-        (100.0, "2026-04-18T01:40:00Z"),
+        (100.0, "2026-04-18T01:38:00Z"),
         (101.0, "2026-04-18T09:39:00+08:00"),
         (102.0, "2026-04-18T09:40:00+08:00"),
         (103.0, "not-a-timestamp"),
@@ -745,6 +746,32 @@ def test_app_database_selects_latest_quote_by_normalized_instant(tmp_path):
     assert "quote_rank" not in latest[1]
 
 
+def test_app_database_rejects_latest_quote_conflict_at_write_boundary(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.save_quote_snapshot_sync(
+        symbol="600519",
+        asset_class="stock",
+        price=102.0,
+        volume=1000.0,
+        timestamp="2026-04-18T09:40:00+08:00",
+    )
+
+    with pytest.raises(ValueError, match="conflict at the same timestamp"):
+        db.save_quote_snapshot_sync(
+            symbol="600519",
+            asset_class="stock",
+            price=103.0,
+            volume=1000.0,
+            timestamp="2026-04-18T01:40:00Z",
+        )
+
+    recent = db.get_recent_quote_snapshots_sync("600519", limit=10)
+    latest = db.get_latest_quote_sync("600519", asset_type="stock")
+    assert len(recent) == 1
+    assert latest is not None and latest["price"] == 102.0
+
+
 def test_app_database_quote_snapshots_remain_append_only_with_latest_quote(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -762,15 +789,6 @@ def test_app_database_quote_snapshots_remain_append_only_with_latest_quote(tmp_p
             provider_status="live",
             captured_reason="test_refresh",
         )
-        db.upsert_latest_quote_sync(
-            symbol="600519",
-            asset_type="stock",
-            price=price,
-            quote_timestamp=f"2026-05-23T09:{minute}:00+08:00",
-            captured_at=f"2026-05-23T09:{minute}:01+08:00",
-            quote_source="akshare",
-            provider_name="akshare",
-        )
 
     recent = db.get_recent_quote_snapshots_sync("600519", limit=10)
     latest = db.list_latest_quotes_sync()
@@ -778,6 +796,208 @@ def test_app_database_quote_snapshots_remain_append_only_with_latest_quote(tmp_p
     assert len(recent) == 2
     assert len(latest) == 1
     assert latest[0]["price"] == 124.0
+
+
+def test_current_quote_readers_ignore_large_superseded_history(
+    monkeypatch,
+    tmp_path,
+):
+    from server.persistence import financial_facts_quotes as quote_facts
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.upsert_latest_quote_sync(
+        symbol="600519",
+        asset_type="stock",
+        price=99.0,
+        quote_timestamp="2026-08-28T15:00:00+08:00",
+        captured_at="2026-08-28T15:00:01+08:00",
+        quote_source="materialized_test",
+    )
+    old_timestamp = "2026-06-16T15:00:00+08:00"
+    with sqlite3.connect(db.path) as conn:
+        conn.executemany(
+            """
+            INSERT INTO quote_snapshots (
+                symbol, asset_class, price, volume, timestamp, created_at,
+                quote_instant_utc
+            ) VALUES ('600519', 'stock', ?, NULL, ?, ?, ?)
+            """,
+            (
+                (
+                    10.0 + observation_id / 1000,
+                    old_timestamp,
+                    old_timestamp,
+                    quote_instant_storage_key(old_timestamp),
+                )
+                for observation_id in range(2_000)
+            ),
+        )
+        conn.commit()
+    db.init_sync()
+
+    statements: list[str] = []
+    connect = sqlite3.connect
+
+    def traced_connect(*args, **kwargs):
+        connection = connect(*args, **kwargs)
+        connection.set_trace_callback(statements.append)
+        return connection
+
+    monkeypatch.setattr(quote_facts.sqlite3, "connect", traced_connect)
+
+    current = db.get_latest_quote_sync("600519", asset_type="stock")
+    current_rows = db.list_latest_quotes_sync()
+    startup_rows = db.get_latest_quotes_sync()
+    async_current = asyncio.run(db.get_latest_quote("600519"))
+
+    assert current is not None and current["price"] == 99.0
+    assert [row["price"] for row in current_rows] == [99.0]
+    assert [row["price"] for row in startup_rows] == [99.0]
+    assert async_current is not None
+    assert async_current["price"] == 99.0
+    assert async_current["asset_class"] == "stock"
+    assert async_current["timestamp"] == "2026-08-28T15:00:00+08:00"
+    history_selects = [
+        " ".join(statement.lower().split())
+        for statement in statements
+        if "from quote_snapshots" in statement.lower()
+    ]
+    assert history_selects
+    assert set(history_selects) == {"select coalesce(max(id), 0) from quote_snapshots"}
+
+
+def test_recent_quote_history_is_limited_in_canonical_sql_order(
+    monkeypatch,
+    tmp_path,
+):
+    from server.persistence import financial_facts_quotes as quote_facts
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    rows = (
+        (10.0, "2026-08-28T07:00:00Z"),
+        (9.0, "2026-08-28T14:59:00+08:00"),
+        (10.0, "2026-08-28T15:00:00+08:00"),
+        (8.0, "2026-06-16T15:00:00+08:00"),
+    )
+    with sqlite3.connect(db.path) as conn:
+        conn.executemany(
+            """
+            INSERT INTO quote_snapshots (
+                symbol, asset_class, price, volume, timestamp, created_at,
+                quote_instant_utc
+            ) VALUES ('600519', 'stock', ?, NULL, ?, ?, ?)
+            """,
+            (
+                (
+                    price,
+                    timestamp,
+                    timestamp,
+                    quote_instant_storage_key(timestamp),
+                )
+                for price, timestamp in rows
+            ),
+        )
+        conn.commit()
+
+    statements: list[str] = []
+    connect = sqlite3.connect
+
+    def traced_connect(*args, **kwargs):
+        connection = connect(*args, **kwargs)
+        connection.set_trace_callback(statements.append)
+        return connection
+
+    monkeypatch.setattr(quote_facts.sqlite3, "connect", traced_connect)
+
+    recent = db.get_recent_quote_snapshots_sync("600519", limit=2)
+
+    assert [row["id"] for row in recent] == [3, 1]
+    assert [row["timestamp"] for row in recent] == [
+        "2026-08-28T15:00:00+08:00",
+        "2026-08-28T07:00:00Z",
+    ]
+    history_selects = [
+        " ".join(statement.lower().split())
+        for statement in statements
+        if "from quote_snapshots" in statement.lower()
+    ]
+    assert len(history_selects) == 1
+    assert "order by quote_instant_utc desc, id desc" in history_selects[0]
+    assert "limit 2" in history_selects[0]
+
+
+def test_startup_quote_reconciliation_rejects_latest_instant_conflict(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    with sqlite3.connect(db.path) as conn:
+        conn.executemany(
+            """
+            INSERT INTO quote_snapshots (
+                symbol, asset_class, price, volume, timestamp, created_at,
+                quote_instant_utc
+            ) VALUES ('600519', 'stock', ?, NULL, ?, ?, ?)
+            """,
+            (
+                (
+                    10.0,
+                    "2026-08-28T15:00:00+08:00",
+                    "2026-08-28T15:00:01+08:00",
+                    quote_instant_storage_key("2026-08-28T15:00:00+08:00"),
+                ),
+                (
+                    10.1,
+                    "2026-08-28T07:00:00Z",
+                    "2026-08-28T15:00:02+08:00",
+                    quote_instant_storage_key("2026-08-28T07:00:00Z"),
+                ),
+            ),
+        )
+        conn.commit()
+
+    with pytest.raises(ValueError, match="conflict at the newest timestamp"):
+        db.init_sync()
+    with pytest.raises(RuntimeError, match="checkpoint does not cover audit history"):
+        db.get_latest_quote_sync("600519", asset_type="stock")
+    with sqlite3.connect(db.path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM latest_quotes").fetchone()[0] == 0
+
+
+def test_startup_quote_reconciliation_ignores_superseded_conflict(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    with sqlite3.connect(db.path) as conn:
+        rows = (
+            (10.0, "2026-06-16T15:00:00+08:00"),
+            (10.1, "2026-06-16T07:00:00Z"),
+            (11.0, "2026-08-28T15:00:00+08:00"),
+        )
+        conn.executemany(
+            """
+            INSERT INTO quote_snapshots (
+                symbol, asset_class, price, volume, timestamp, created_at,
+                quote_instant_utc
+            ) VALUES ('600519', 'stock', ?, NULL, ?, ?, ?)
+            """,
+            (
+                (
+                    price,
+                    timestamp,
+                    timestamp,
+                    quote_instant_storage_key(timestamp),
+                )
+                for price, timestamp in rows
+            ),
+        )
+        conn.commit()
+
+    db.init_sync()
+    restored = db.get_latest_quotes_sync()
+    materialized = db.get_latest_quote_sync("600519", asset_type="stock")
+
+    assert [row["price"] for row in restored] == [11.0]
+    assert materialized is not None and materialized["price"] == 11.0
 
 
 def test_app_database_portfolio_snapshots_append_portfolio_events(tmp_path):

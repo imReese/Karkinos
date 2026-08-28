@@ -165,6 +165,105 @@ def test_database_initialization_records_idempotent_schema_versions(
     ]
 
 
+def test_quote_instant_index_migration_backfills_legacy_snapshots(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    database = AppDatabase(tmp_path / "app.db")
+    registered = migrations._MIGRATIONS
+    monkeypatch.setattr(
+        migrations,
+        "_MIGRATIONS",
+        tuple(migration for migration in registered if migration.version < 9),
+    )
+    database.init_sync()
+    with sqlite3.connect(database.path) as conn:
+        conn.execute(
+            """
+            INSERT INTO quote_snapshots (
+                symbol, asset_class, price, volume, timestamp, created_at
+            ) VALUES (?, 'stock', 10.5, NULL, ?, ?)
+            """,
+            (
+                "600001",
+                "2026-08-27T15:00:00+08:00",
+                "2026-08-27T15:00:01+08:00",
+            ),
+        )
+        conn.commit()
+
+    monkeypatch.setattr(migrations, "_MIGRATIONS", registered)
+    database.init_sync()
+
+    with sqlite3.connect(database.path) as conn:
+        quote_instant = conn.execute(
+            "SELECT quote_instant_utc FROM quote_snapshots"
+        ).fetchone()[0]
+        indexes = {row[0] for row in conn.execute("""
+                SELECT name FROM sqlite_master
+                WHERE type = 'index' AND tbl_name = 'quote_snapshots'
+                """).fetchall()}
+    assert quote_instant == "2026-08-27T07:00:00.000000+00:00"
+    assert "idx_quote_snapshots_identity_instant" in indexes
+    assert "idx_quote_snapshots_missing_instant" in indexes
+
+
+def test_quote_materialization_migration_rejects_duplicate_fetch_identity(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    database = AppDatabase(tmp_path / "app.db")
+    registered = migrations._MIGRATIONS
+    monkeypatch.setattr(
+        migrations,
+        "_MIGRATIONS",
+        tuple(migration for migration in registered if migration.version < 10),
+    )
+    database.init_sync()
+    with sqlite3.connect(database.path) as conn:
+        conn.executemany(
+            """
+            INSERT INTO quote_snapshots (
+                symbol, asset_class, price, volume, timestamp, created_at,
+                fetch_run_id, quote_instant_utc
+            ) VALUES ('600001', 'stock', ?, NULL, ?, ?, 'duplicate-run', ?)
+            """,
+            (
+                (
+                    10.5,
+                    "2026-08-27T15:00:00+08:00",
+                    "2026-08-27T15:00:01+08:00",
+                    "2026-08-27T07:00:00.000000+00:00",
+                ),
+                (
+                    10.6,
+                    "2026-08-27T15:01:00+08:00",
+                    "2026-08-27T15:01:01+08:00",
+                    "2026-08-27T07:01:00.000000+00:00",
+                ),
+            ),
+        )
+        conn.commit()
+
+    monkeypatch.setattr(migrations, "_MIGRATIONS", registered)
+    with pytest.raises(
+        RuntimeError,
+        match="quote snapshot fetch-run identity is not unique",
+    ):
+        database.init_sync()
+
+    with sqlite3.connect(database.path) as conn:
+        versions = conn.execute(
+            "SELECT version FROM schema_migrations ORDER BY version"
+        ).fetchall()
+        state_table = conn.execute("""
+            SELECT 1 FROM sqlite_master
+            WHERE type = 'table' AND name = 'quote_current_materialization_state'
+            """).fetchone()
+    assert versions == [(migration.version,) for migration in registered[:-1]]
+    assert state_table is None
+
+
 def test_legacy_database_without_ledger_upgrades_and_preserves_data(tmp_path) -> None:
     database = AppDatabase(tmp_path / "app.db")
     with sqlite3.connect(database.path) as conn:

@@ -15,6 +15,10 @@ from fastapi.routing import APIRoute
 from core.events import OrderIntentEvent, RiskDecisionEvent
 from core.types import OrderSide, Symbol
 from server.db import AppDatabase
+from server.persistence.signal_journal_projection import (
+    index_signal_journal_events,
+    latest_signal_journal_event,
+)
 from server.routes import signals as signal_routes
 
 
@@ -27,6 +31,155 @@ def _endpoint(path: str, method: str = "GET"):
         and route.path == path
         and method in route.methods
     )
+
+
+def test_indexed_signal_journal_event_selection_matches_priority_order() -> None:
+    events = [
+        {
+            "source": "orders",
+            "source_ref": "order-1",
+            "event_type": "order.status_changed",
+            "payload": {"source_signal_id": 1},
+        },
+        {
+            "source": "manual_orders",
+            "source_ref": "manual-1",
+            "event_type": "order.status_changed",
+            "payload": {"payload": {"action_id": 10}},
+        },
+        {
+            "source": "signal_reviews",
+            "source_ref": "1",
+            "event_type": "signal.reviewed",
+            "payload": {},
+        },
+        {
+            "source": "decision_outcome_reviews",
+            "source_ref": "review-1",
+            "event_type": "decision.reviewed",
+            "payload": {"signal_id": 1},
+        },
+        {
+            "source": "orders",
+            "source_ref": "order-2",
+            "event_type": "order.status_changed",
+            "payload": {"source_signal_id": 2},
+        },
+        {
+            "source": "manual_orders",
+            "source_ref": "manual-2",
+            "event_type": "order.status_changed",
+            "payload": {"payload": {"action_id": 20}},
+        },
+        {
+            "source": "other",
+            "source_ref": "generic-3",
+            "event_type": "other.event",
+            "payload": {"source_signal_id": 3},
+        },
+        {
+            "source": "risk_decisions",
+            "source_ref": "risk-3",
+            "event_type": "risk.decided",
+            "payload": {},
+        },
+    ]
+    event_index = index_signal_journal_events(events)
+    cases = (
+        (1, {"id": 10}, {"decision_id": "risk-1"}, "review-1"),
+        (2, {"id": 20}, {"decision_id": "risk-2"}, "manual-2"),
+        (3, {"id": 30}, {"decision_id": "risk-3"}, "generic-3"),
+    )
+
+    for signal_id, action, risk, expected_ref in cases:
+        linear = latest_signal_journal_event(
+            signal_id=signal_id,
+            action_task=action,
+            risk_decision=risk,
+            events=events,
+        )
+        indexed = latest_signal_journal_event(
+            signal_id=signal_id,
+            action_task=action,
+            risk_decision=risk,
+            events=events,
+            event_index=event_index,
+        )
+        assert indexed == linear
+        assert indexed is not None and indexed["source_ref"] == expected_ref
+
+
+def test_indexed_signal_journal_lookup_scans_event_batch_once() -> None:
+    class CountingEvents(list[dict[str, object]]):
+        def __init__(self, values: list[dict[str, object]]) -> None:
+            super().__init__(values)
+            self.iteration_count = 0
+
+        def __iter__(self):
+            self.iteration_count += 1
+            return super().__iter__()
+
+    events = CountingEvents(
+        [
+            {
+                "source": "orders",
+                "source_ref": f"order-{signal_id}",
+                "event_type": "order.status_changed",
+                "payload": {"source_signal_id": signal_id},
+            }
+            for signal_id in range(1, 101)
+        ]
+    )
+
+    event_index = index_signal_journal_events(events)
+
+    assert events.iteration_count == 1
+    for signal_id in range(1, 101):
+        selected = latest_signal_journal_event(
+            signal_id=signal_id,
+            action_task=None,
+            risk_decision=None,
+            events=events,
+            event_index=event_index,
+        )
+        assert selected is not None
+        assert selected["source_ref"] == f"order-{signal_id}"
+    assert events.iteration_count == 1
+
+
+@pytest.mark.parametrize("source", ("risk_decisions", "action_tasks"))
+def test_indexed_signal_journal_preserves_null_source_ref_fallback(source: str) -> None:
+    events = [
+        {
+            "source": source,
+            "source_ref": None,
+            "event_type": "legacy.event",
+            "payload": {},
+        },
+        {
+            "source": "orders",
+            "source_ref": "older-fallback",
+            "event_type": "order.created",
+            "payload": {"source_signal_id": 1},
+        },
+    ]
+
+    linear = latest_signal_journal_event(
+        signal_id=1,
+        action_task=None,
+        risk_decision=None,
+        events=events,
+    )
+    indexed = latest_signal_journal_event(
+        signal_id=1,
+        action_task=None,
+        risk_decision=None,
+        events=events,
+        event_index=index_signal_journal_events(events),
+    )
+
+    assert indexed == linear
+    assert indexed is not None and indexed["source"] == source
 
 
 def _seed_signal_chain(db: AppDatabase) -> None:

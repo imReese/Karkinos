@@ -37,6 +37,7 @@ CAPABILITY_METHODS = {
         "get_market_bar_on_date_sync",
         "get_recent_quote_snapshots_sync",
         "list_latest_quotes_sync",
+        "list_quote_selection_candidates_sync",
         "list_quote_snapshots_sync",
         "save_daily_close_snapshot_sync",
         "save_quote_snapshot_sync",

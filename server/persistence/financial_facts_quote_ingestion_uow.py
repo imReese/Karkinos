@@ -18,7 +18,11 @@ from server.persistence.database_serialization import serialize_metadata_json
 from server.persistence.event_log import insert_event_sync
 from server.persistence.financial_fact_event_payloads import (
     latest_quote_event_payload,
+    quote_instant_storage_key,
     quote_observation_rank,
+)
+from server.persistence.quote_current_materialization import (
+    advance_quote_snapshot_checkpoint_on_connection,
 )
 
 
@@ -195,6 +199,7 @@ def _materialize_quote(
     materialized_at: str,
 ) -> dict[str, Any]:
     existing_snapshot = None
+    inserted_snapshot_id: int | None = None
     if command.fetch_run_id:
         existing_snapshot = conn.execute(
             """
@@ -210,8 +215,9 @@ def _materialize_quote(
             INSERT INTO quote_snapshots (
                 symbol, asset_class, price, volume, timestamp, created_at,
                 quote_source, provider_name, quote_status, stale_reason,
-                provider_status, captured_reason, nav_date, fetch_run_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                provider_status, captured_reason, nav_date, fetch_run_id,
+                quote_instant_utc
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 command.symbol,
@@ -228,9 +234,11 @@ def _materialize_quote(
                 command.captured_reason,
                 command.nav_date,
                 command.fetch_run_id,
+                quote_instant_storage_key(command.quote_timestamp),
             ),
         )
         snapshot_id = int(cursor.lastrowid or 0)
+        inserted_snapshot_id = snapshot_id
         insert_event_sync(
             conn,
             event_type="market.quote.snapshot.recorded",
@@ -271,6 +279,13 @@ def _materialize_quote(
                 + ",".join(conflict_fields)
             )
     if existing_rank is not None and existing_rank > candidate_rank:
+        if inserted_snapshot_id is not None:
+            advance_quote_snapshot_checkpoint_on_connection(
+                conn,
+                snapshot_id=inserted_snapshot_id,
+                current_changed=False,
+                updated_at=materialized_at,
+            )
         _materialize_daily_close(conn, command, materialized_at=materialized_at)
         return dict(existing_latest)
 
@@ -343,6 +358,13 @@ def _materialize_quote(
         source_ref=str(latest["id"]),
         payload=latest_quote_event_payload(latest),
     )
+    if inserted_snapshot_id is not None:
+        advance_quote_snapshot_checkpoint_on_connection(
+            conn,
+            snapshot_id=inserted_snapshot_id,
+            current_changed=command.asset_type.strip().lower() != "index",
+            updated_at=materialized_at,
+        )
     _materialize_daily_close(conn, command, materialized_at=materialized_at)
     _materialize_instrument_metadata(conn, command, materialized_at=materialized_at)
     return dict(latest)

@@ -5,12 +5,132 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from server.contracts.quote_ingestion import quote_authority_conflict_fields
 from server.persistence.database_serialization import serialize_metadata_json
 from server.persistence.event_log import insert_event_sync
 from server.persistence.financial_fact_event_payloads import (
     latest_quote_event_payload,
+    quote_instant_storage_key,
     quote_observation_rank,
 )
+from server.persistence.quote_current_materialization import (
+    advance_quote_snapshot_checkpoint_on_connection,
+    assert_quote_current_materialization_on_connection,
+    increment_quote_current_revision_on_connection,
+)
+
+
+def _quote_snapshot_row(row: sqlite3.Row) -> dict[str, Any]:
+    value = dict(row)
+    value.pop("quote_instant_utc", None)
+    return value
+
+
+def list_quote_selection_candidates_on_connection(
+    conn: sqlite3.Connection,
+) -> list[dict[str, Any]]:
+    """Read the write-maintained quote frontier, never append-only history."""
+
+    assert_quote_current_materialization_on_connection(conn)
+    latest_rows = conn.execute("""
+        SELECT * FROM latest_quotes
+        ORDER BY quote_timestamp DESC, updated_at DESC, id DESC
+        """).fetchall()
+    return [dict(row) for row in latest_rows]
+
+
+def _advance_latest_quote_from_snapshot_on_connection(
+    conn: sqlite3.Connection,
+    snapshot: sqlite3.Row,
+    *,
+    materialized_at: str,
+) -> bool:
+    """Advance the current quote row for one newly appended audit observation."""
+
+    candidate = _quote_snapshot_row(snapshot)
+    existing = conn.execute(
+        "SELECT * FROM latest_quotes WHERE symbol = ? AND asset_type = ?",
+        (snapshot["symbol"], snapshot["asset_class"]),
+    ).fetchone()
+    candidate_instant = quote_observation_rank(candidate)[0]
+    existing_instant = (
+        quote_observation_rank(dict(existing))[0] if existing is not None else None
+    )
+    if existing_instant is not None and existing_instant == candidate_instant:
+        conflict_fields = quote_authority_conflict_fields(dict(existing), candidate)
+        if conflict_fields:
+            raise ValueError(
+                "quote authority facts conflict at the same timestamp: "
+                + ",".join(conflict_fields)
+            )
+        return False
+    if existing_instant is not None and existing_instant > candidate_instant:
+        return False
+
+    conn.execute(
+        """
+        INSERT INTO latest_quotes (
+            symbol, asset_type, price, volume, quote_timestamp,
+            quote_source, provider_name, provider_status, quote_status,
+            stale_reason, captured_at, captured_reason, nav_date,
+            fetch_run_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(symbol, asset_type) DO UPDATE SET
+            price = excluded.price,
+            previous_close = NULL,
+            change = NULL,
+            change_percent = NULL,
+            volume = excluded.volume,
+            turnover = NULL,
+            quote_timestamp = excluded.quote_timestamp,
+            quote_source = excluded.quote_source,
+            provider_name = excluded.provider_name,
+            provider_status = excluded.provider_status,
+            quote_status = excluded.quote_status,
+            stale_reason = excluded.stale_reason,
+            captured_at = excluded.captured_at,
+            captured_reason = excluded.captured_reason,
+            nav_date = excluded.nav_date,
+            fetch_run_id = excluded.fetch_run_id,
+            metadata_json = NULL,
+            updated_at = excluded.updated_at
+        """,
+        (
+            snapshot["symbol"],
+            snapshot["asset_class"],
+            snapshot["price"],
+            snapshot["volume"],
+            snapshot["timestamp"],
+            snapshot["quote_source"],
+            snapshot["provider_name"],
+            snapshot["provider_status"],
+            snapshot["quote_status"] or "live",
+            snapshot["stale_reason"],
+            snapshot["created_at"],
+            snapshot["captured_reason"],
+            snapshot["nav_date"],
+            snapshot["fetch_run_id"],
+            materialized_at,
+            materialized_at,
+        ),
+    )
+    latest = conn.execute(
+        "SELECT * FROM latest_quotes WHERE symbol = ? AND asset_type = ?",
+        (snapshot["symbol"], snapshot["asset_class"]),
+    ).fetchone()
+    if latest is None:
+        raise RuntimeError("latest quote materialization failed")
+    insert_event_sync(
+        conn,
+        event_type="market.quote.refreshed",
+        timestamp=str(snapshot["timestamp"]),
+        entity_type="instrument",
+        entity_id=str(snapshot["symbol"]),
+        source="latest_quotes",
+        source_ref=str(latest["id"]),
+        payload=latest_quote_event_payload(latest),
+    )
+    return True
 
 
 class QuoteFactsRepositoryMixin:
@@ -43,6 +163,44 @@ class QuoteFactsRepositoryMixin:
         metadata_json = serialize_metadata_json(metadata)
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
+            existing = conn.execute(
+                "SELECT * FROM latest_quotes WHERE symbol = ? AND asset_type = ?",
+                (symbol, asset_type),
+            ).fetchone()
+            candidate = {
+                "symbol": symbol,
+                "asset_type": asset_type,
+                "price": price,
+                "previous_close": previous_close,
+                "change": change,
+                "change_percent": change_percent,
+                "volume": volume,
+                "turnover": turnover,
+                "quote_timestamp": quote_timestamp,
+                "quote_source": quote_source,
+                "provider_name": provider_name,
+                "provider_status": provider_status,
+                "quote_status": quote_status,
+                "stale_reason": stale_reason,
+                "nav_date": nav_date,
+            }
+            candidate_instant = quote_observation_rank(candidate)[0]
+            existing_instant = (
+                quote_observation_rank(dict(existing))[0]
+                if existing is not None
+                else None
+            )
+            if existing_instant is not None and existing_instant == candidate_instant:
+                conflict_fields = quote_authority_conflict_fields(
+                    dict(existing), candidate
+                )
+                if conflict_fields:
+                    raise ValueError(
+                        "quote authority facts conflict at the same timestamp: "
+                        + ",".join(conflict_fields)
+                    )
+            if existing_instant is not None and existing_instant > candidate_instant:
+                return dict(existing)
             conn.execute(
                 """
                 INSERT INTO latest_quotes (
@@ -115,6 +273,11 @@ class QuoteFactsRepositoryMixin:
                     source_ref=str(row["id"]),
                     payload=latest_quote_event_payload(row),
                 )
+                if asset_type.strip().lower() != "index":
+                    increment_quote_current_revision_on_connection(
+                        conn,
+                        updated_at=now,
+                    )
             conn.commit()
             return dict(row) if row else None
 
@@ -124,6 +287,7 @@ class QuoteFactsRepositoryMixin:
         """Read the materialized latest quote for one symbol."""
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
+            assert_quote_current_materialization_on_connection(conn)
             if asset_type is None:
                 row = conn.execute(
                     """
@@ -151,6 +315,7 @@ class QuoteFactsRepositoryMixin:
         """List materialized latest quotes newest first."""
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
+            assert_quote_current_materialization_on_connection(conn)
             rows = conn.execute("""
                 SELECT *
                 FROM latest_quotes
@@ -174,23 +339,26 @@ class QuoteFactsRepositoryMixin:
         nav_date: str | None = None,
         fetch_run_id: str | None = None,
     ) -> None:
-        """同步写入实时行情快照（后台线程调用）。"""
+        """Append audit history and atomically advance current quote state."""
+        now = self._now().isoformat()
         with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
             cursor = conn.execute(
                 """INSERT INTO quote_snapshots
                    (
                        symbol, asset_class, price, volume, timestamp, created_at,
                        quote_source, provider_name, quote_status, stale_reason,
-                       provider_status, captured_reason, nav_date, fetch_run_id
+                       provider_status, captured_reason, nav_date, fetch_run_id,
+                       quote_instant_utc
                    )
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     symbol,
                     asset_class,
                     price,
                     volume,
                     timestamp,
-                    self._now().isoformat(),
+                    now,
                     quote_source,
                     provider_name,
                     quote_status,
@@ -199,6 +367,7 @@ class QuoteFactsRepositoryMixin:
                     captured_reason,
                     nav_date,
                     fetch_run_id,
+                    quote_instant_storage_key(timestamp),
                 ),
             )
             snapshot_id = cursor.lastrowid or 0
@@ -227,76 +396,87 @@ class QuoteFactsRepositoryMixin:
                     "fetch_run_id": fetch_run_id,
                 },
             )
+            snapshot = conn.execute(
+                "SELECT * FROM quote_snapshots WHERE id = ?",
+                (snapshot_id,),
+            ).fetchone()
+            if snapshot is None:
+                raise RuntimeError("quote snapshot persistence failed")
+            current_changed = _advance_latest_quote_from_snapshot_on_connection(
+                conn,
+                snapshot,
+                materialized_at=now,
+            )
+            advance_quote_snapshot_checkpoint_on_connection(
+                conn,
+                snapshot_id=int(snapshot_id),
+                current_changed=(
+                    current_changed and asset_class.strip().lower() != "index"
+                ),
+                updated_at=now,
+            )
             conn.commit()
 
     async def get_latest_quote(self, symbol: str) -> dict[str, Any] | None:
-        """获取单个标的最新行情快照。"""
-        import aiosqlite
+        """Read one symbol from the persisted current-quote materialization."""
+        import asyncio
 
-        async with aiosqlite.connect(self._path) as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute(
-                """SELECT
-                        id, symbol, asset_class, price, volume, timestamp,
-                        quote_source, provider_name, quote_status, stale_reason,
-                        provider_status, captured_reason, nav_date, fetch_run_id
-                   FROM quote_snapshots
-                   WHERE symbol = ?
-                   ORDER BY id DESC""",
-                (symbol,),
-            )
-            rows = [dict(row) for row in await cursor.fetchall()]
-            return max(rows, key=quote_observation_rank) if rows else None
+        row = await asyncio.to_thread(self.get_latest_quote_sync, symbol)
+        if row is None:
+            return None
+        return {
+            **row,
+            "asset_class": row.get("asset_type"),
+            "timestamp": row.get("quote_timestamp"),
+        }
 
     def get_latest_quotes_sync(self) -> list[dict[str, Any]]:
-        """同步获取各标的最新行情快照，供启动恢复使用。"""
+        """Read current quotes without replaying append-only quote history."""
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
-            conn.create_function(
-                "karkinos_quote_instant",
-                1,
-                lambda value: quote_observation_rank({"timestamp": value})[0].isoformat(
-                    timespec="microseconds"
-                ),
-                deterministic=True,
-            )
+            assert_quote_current_materialization_on_connection(conn)
             rows = conn.execute("""
-                WITH ranked_quotes AS (
-                    SELECT
-                        id, symbol, asset_class, price, volume, timestamp,
-                        quote_source, provider_name, quote_status, stale_reason,
-                        provider_status, captured_reason, nav_date, fetch_run_id,
-                        created_at,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY symbol
-                            ORDER BY
-                                karkinos_quote_instant(timestamp) DESC,
-                                id DESC
-                        ) AS quote_rank
-                    FROM quote_snapshots
-                )
                 SELECT
-                    id, symbol, asset_class, price, volume, timestamp,
+                    id, symbol, asset_type AS asset_class, price, volume,
+                    quote_timestamp AS timestamp,
                     quote_source, provider_name, quote_status, stale_reason,
                     provider_status, captured_reason, nav_date, fetch_run_id,
-                    created_at
-                FROM ranked_quotes
-                WHERE quote_rank = 1
-                ORDER BY symbol
+                    previous_close, change, change_percent, turnover,
+                    captured_at, created_at, updated_at
+                FROM latest_quotes
+                ORDER BY symbol, asset_type
                 """).fetchall()
             return [dict(row) for row in rows]
 
-    def list_quote_snapshots_sync(self) -> list[dict[str, Any]]:
-        """List append-only quote observations for canonical snapshot selection."""
+    def list_quote_selection_candidates_sync(self) -> list[dict[str, Any]]:
+        """List the bounded persisted frontier used by canonical valuation."""
+
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute("SELECT * FROM quote_snapshots ORDER BY id").fetchall()
-            return [dict(row) for row in rows]
+            return list_quote_selection_candidates_on_connection(conn)
+
+    def list_quote_snapshots_sync(
+        self,
+        limit: int = 500,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Page append-only quote history for explicit audit workflows."""
+        if limit <= 0 or limit > 5000 or offset < 0:
+            raise ValueError("quote history pagination is invalid")
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM quote_snapshots ORDER BY id DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            ).fetchall()
+            return [_quote_snapshot_row(row) for row in rows]
 
     def get_recent_quote_snapshots_sync(
         self, symbol: str, limit: int = 2
     ) -> list[dict[str, Any]]:
-        """同步获取单个标的最近的行情快照序列。"""
+        """Read a bounded canonical-time page from append-only quote history."""
+        if limit <= 0 or limit > 500:
+            raise ValueError("recent quote snapshot limit is invalid")
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
@@ -307,17 +487,13 @@ class QuoteFactsRepositoryMixin:
                     provider_status, captured_reason, nav_date, fetch_run_id,
                     created_at
                 FROM quote_snapshots
-                WHERE symbol = ?
-                ORDER BY id DESC
+                WHERE symbol = ? AND quote_instant_utc IS NOT NULL
+                ORDER BY quote_instant_utc DESC, id DESC
+                LIMIT ?
                 """,
-                (symbol,),
+                (symbol, limit),
             ).fetchall()
-            ordered = sorted(
-                (dict(row) for row in rows),
-                key=quote_observation_rank,
-                reverse=True,
-            )
-            return ordered[:limit]
+            return [dict(row) for row in rows]
 
     def save_daily_close_snapshot_sync(
         self,
@@ -438,6 +614,7 @@ class QuoteFactsRepositoryMixin:
         self, symbol: str, trade_date: str
     ) -> dict[str, Any] | None:
         """获取某日之前最近一个交易日的最后一条报价快照。"""
+        instant_upper_bound = quote_instant_storage_key(f"{trade_date}T00:00:00+08:00")
         with sqlite3.connect(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
@@ -447,13 +624,16 @@ class QuoteFactsRepositoryMixin:
                     quote_source, provider_name, quote_status, stale_reason,
                     provider_status, captured_reason, nav_date
                 FROM quote_snapshots
-                WHERE symbol = ? AND substr(timestamp, 1, 10) < ?
-                ORDER BY timestamp DESC, id DESC
+                WHERE symbol = ? AND quote_instant_utc < ?
+                ORDER BY quote_instant_utc DESC, id DESC
                 LIMIT 1
                 """,
-                (symbol, trade_date),
+                (symbol, instant_upper_bound),
             ).fetchone()
             return dict(row) if row else None
 
 
-__all__ = ["QuoteFactsRepositoryMixin"]
+__all__ = [
+    "QuoteFactsRepositoryMixin",
+    "list_quote_selection_candidates_on_connection",
+]

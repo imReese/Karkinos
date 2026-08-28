@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import server.persistence.migration_schema_contracts as _schema_contracts
+from server.persistence.quote_schema_migrations import build_quote_schema_migrations
 
 
 @dataclass(frozen=True)
@@ -436,6 +437,7 @@ _MIGRATIONS = (
             """,
         ),
     ),
+    *build_quote_schema_migrations(SchemaMigration),
 )
 
 CURRENT_SCHEMA_VERSION = _MIGRATIONS[-1].version
