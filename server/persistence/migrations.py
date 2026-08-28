@@ -9,13 +9,14 @@ be appended here rather than added as untracked startup mutations.
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
+
+import server.persistence.migration_schema_contracts as _schema_contracts
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,15 @@ class SchemaMigration:
 V1_BASELINE_SCHEMA_CONTRACT_CHECKSUM = (
     "06667c9d72bfa7fcbe263ee8c41a95948f839bf3a460fdb5ecb9bb45eb862f31"
 )
+
+# A pre-release v0.3.0 build recorded this v1 row after initializing an older
+# controlled-ledger-posting table. Keep the checksum as provenance: the narrow
+# repair below recognizes it but never rewrites the historical ledger row.
+_LEGACY_V1_MIGRATION_CHECKSUM = (
+    "01efbdc71a58a8e0952553ec947b270a69f2d7bb789e6b34b27764da9ac97b74"
+)
+_LEGACY_V1_REPAIR_TABLE = _schema_contracts.LEGACY_V1_REPAIR_TABLE
+_LEGACY_V1_REPAIR_COLUMN = _schema_contracts.LEGACY_V1_REPAIR_COLUMN
 
 _MIGRATIONS = (
     SchemaMigration(
@@ -447,13 +457,36 @@ _EXPECTED_MIGRATION_COLUMNS = (
 )
 
 
-def apply_schema_migrations(conn: sqlite3.Connection) -> None:
+def apply_schema_migrations(
+    conn: sqlite3.Connection,
+    *,
+    baseline_initializer: Callable[[sqlite3.Connection], None] | None = None,
+) -> None:
     """Apply pending migrations and fail closed on unknown or changed history."""
     _validate_registry()
+    table_exists = conn.execute("""
+        SELECT 1 FROM sqlite_master
+        WHERE type = 'table' AND name = 'schema_migrations'
+        """).fetchone()
+    if table_exists is None:
+        if baseline_initializer is None:
+            raise RuntimeError("v1 schema contract initializer is required")
+        expected = _build_v1_baseline_contract(baseline_initializer)
+        _assert_required_schema_contract(conn, expected)
     conn.execute(_MIGRATION_TABLE_SQL)
     _assert_migration_table_structure(conn)
     applied = _read_applied_migrations(conn)
     _validate_applied_migrations(applied)
+    if _uses_legacy_v1_provenance(applied):
+        if baseline_initializer is None:
+            raise RuntimeError("v1 schema contract initializer is required")
+        expected = _build_v1_baseline_contract(baseline_initializer)
+        _repair_known_legacy_v1_schema(
+            conn,
+            expected,
+            applied,
+            baseline_initializer=baseline_initializer,
+        )
 
     for migration in _MIGRATIONS:
         if migration.version in applied:
@@ -484,6 +517,16 @@ def apply_schema_migrations(conn: sqlite3.Connection) -> None:
             conn.execute(f"RELEASE SAVEPOINT {savepoint}")
             raise
 
+    if baseline_initializer is not None:
+        applied = _read_applied_migrations(conn)
+        _validate_applied_migrations(applied)
+        _assert_no_unapplied_versioned_artifacts(conn, applied)
+        _assert_applied_schema_contract(
+            conn,
+            baseline_initializer=baseline_initializer,
+            applied=applied,
+        )
+
 
 def assert_schema_compatible(
     conn: sqlite3.Connection,
@@ -509,174 +552,128 @@ def assert_schema_compatible(
     _validate_applied_migrations(applied)
     if 1 not in applied:
         raise RuntimeError("schema_migrations history is unexpectedly empty")
+    _assert_no_unapplied_versioned_artifacts(conn, applied)
     if baseline_initializer is None:
         raise RuntimeError("v1 schema contract initializer is required")
-    expected = _build_v1_baseline_contract(baseline_initializer)
-    _assert_required_schema_contract(conn, expected)
+    if _uses_legacy_v1_provenance(applied):
+        expected = _build_v1_baseline_contract(baseline_initializer)
+        _assert_known_legacy_v1_schema(conn, expected, applied)
+        if _has_legacy_v1_repair_column(conn):
+            _assert_applied_schema_contract(
+                conn,
+                baseline_initializer=baseline_initializer,
+                applied=applied,
+            )
+    else:
+        _assert_applied_schema_contract(
+            conn,
+            baseline_initializer=baseline_initializer,
+            applied=applied,
+        )
 
 
-def _versioned_schema_artifacts_without_ledger(
+def _uses_legacy_v1_provenance(
+    applied: dict[int, tuple[str, str]],
+) -> bool:
+    return applied.get(1) == (
+        _MIGRATIONS[0].name,
+        _LEGACY_V1_MIGRATION_CHECKSUM,
+    )
+
+
+def _repair_known_legacy_v1_schema(
     conn: sqlite3.Connection,
-) -> list[str]:
-    """Detect a deleted migration ledger without mistaking a true v1 database."""
+    expected: dict[str, Any],
+    applied: dict[int, tuple[str, str]],
+    *,
+    baseline_initializer: Callable[[sqlite3.Connection], None],
+) -> None:
+    """Add the one missing legacy column without rewriting migration history."""
 
-    artifacts: list[str] = []
-    tables = {
-        str(row[0])
-        for row in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table'"
-        ).fetchall()
-    }
-    for table in (
-        "ledger_mutation_claims",
-        "order_state_command_claims",
-        "portfolio_mutation_claims",
-        "quote_ingestion_items",
-    ):
-        if table in tables:
-            artifacts.append(f"table:{table}")
-    if "pending_fund_orders" in tables:
-        columns = {
-            str(row[1])
-            for row in conn.execute("PRAGMA table_info(pending_fund_orders)").fetchall()
-        }
-        for column in (
-            "confirmation_quote_snapshot_id",
-            "confirmation_fetch_run_id",
-            "confirmed_by",
-            "confirmation_note",
-        ):
-            if column in columns:
-                artifacts.append(f"column:pending_fund_orders.{column}")
-    return artifacts
+    if _has_legacy_v1_repair_column(conn):
+        _assert_applied_schema_contract(
+            conn,
+            baseline_initializer=baseline_initializer,
+            applied=applied,
+        )
+        return
+
+    if conn.in_transaction:
+        raise RuntimeError("legacy v1 schema repair requires its own write transaction")
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        # Revalidate after acquiring the write lock so an older process cannot
+        # insert a posting or correction between the empty check and ALTER.
+        _assert_known_legacy_v1_schema(conn, expected, applied)
+        if not _has_legacy_v1_repair_column(conn):
+            conn.execute(
+                f"ALTER TABLE {_LEGACY_V1_REPAIR_TABLE} "
+                f"ADD COLUMN {_LEGACY_V1_REPAIR_COLUMN} TEXT NOT NULL"
+            )
+        _assert_applied_schema_contract(
+            conn,
+            baseline_initializer=baseline_initializer,
+            applied=applied,
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def _build_v1_baseline_contract(
     initializer: Callable[[sqlite3.Connection], None],
 ) -> dict[str, Any]:
-    with sqlite3.connect(":memory:") as expected_conn:
-        initializer(expected_conn)
-        contract = _read_schema_contract(expected_conn)
-    checksum = _schema_contract_checksum(contract)
-    if checksum != V1_BASELINE_SCHEMA_CONTRACT_CHECKSUM:
-        raise RuntimeError(
-            "v1 baseline schema initializer diverges from its frozen contract"
-        )
-    return contract
+    return _schema_contracts.build_v1_baseline_contract(
+        initializer,
+        baseline_checksum=V1_BASELINE_SCHEMA_CONTRACT_CHECKSUM,
+    )
 
 
-def _read_schema_contract(conn: sqlite3.Connection) -> dict[str, Any]:
-    table_names = tuple(str(row[0]) for row in conn.execute("""
-            SELECT name FROM sqlite_master
-            WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
-            ORDER BY name
-            """).fetchall())
-    tables: dict[str, tuple[tuple[Any, ...], ...]] = {}
-    indexes: dict[str, tuple[Any, ...]] = {}
-    unique_constraints: dict[str, tuple[tuple[tuple[str | None, int], ...], ...]] = {}
-    for table_name in table_names:
-        tables[table_name] = tuple(
-            (
-                str(row[1]),
-                " ".join(str(row[2] or "").upper().split()),
-                int(row[3]),
-                _normalize_default(row[4]),
-                int(row[5]),
-                int(row[6]),
-            )
-            for row in conn.execute(
-                "SELECT * FROM pragma_table_xinfo(?) ORDER BY cid", (table_name,)
-            ).fetchall()
-        )
-        table_unique_constraints: list[tuple[tuple[str | None, int], ...]] = []
-        for row in conn.execute(
-            "SELECT * FROM pragma_index_list(?) ORDER BY name", (table_name,)
-        ).fetchall():
-            index_name = str(row[1])
-            ordered_columns = tuple(
-                (None if item[2] is None else str(item[2]), int(item[3]))
-                for item in conn.execute(
-                    "SELECT * FROM pragma_index_xinfo(?) WHERE key = 1 ORDER BY seqno",
-                    (index_name,),
-                ).fetchall()
-            )
-            origin = str(row[3])
-            if origin == "c":
-                indexes[index_name] = (
-                    table_name,
-                    int(row[2]),
-                    int(row[4]),
-                    ordered_columns,
-                )
-            elif origin == "u":
-                table_unique_constraints.append(ordered_columns)
-        if table_unique_constraints:
-            unique_constraints[table_name] = tuple(sorted(table_unique_constraints))
-    return {
-        "tables": tables,
-        "indexes": indexes,
-        "unique_constraints": unique_constraints,
-    }
-
-
-def _normalize_default(value: Any) -> str | None:
-    if value is None:
-        return None
-    return " ".join(str(value).split())
-
-
-def _schema_contract_checksum(contract: dict[str, Any]) -> str:
-    payload = json.dumps(
-        contract,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest()
-
-
-def _assert_required_schema_contract(
-    conn: sqlite3.Connection, expected: dict[str, Any]
+def _assert_applied_schema_contract(
+    conn: sqlite3.Connection,
+    *,
+    baseline_initializer: Callable[[sqlite3.Connection], None],
+    applied: dict[int, tuple[str, str]],
 ) -> None:
-    try:
-        actual = _read_schema_contract(conn)
-    except sqlite3.DatabaseError as exc:
-        raise RuntimeError("database schema contract could not be verified") from exc
+    _schema_contracts.assert_applied_schema_contract(
+        conn,
+        baseline_initializer=baseline_initializer,
+        applied=applied,
+        migrations=_MIGRATIONS,
+        baseline_checksum=V1_BASELINE_SCHEMA_CONTRACT_CHECKSUM,
+    )
 
-    actual_tables = actual["tables"]
-    for table_name, expected_columns in expected["tables"].items():
-        actual_columns = {
-            column[0]: column for column in actual_tables.get(table_name, ())
-        }
-        if table_name not in actual_tables:
-            raise RuntimeError(
-                f"database schema contract mismatch: missing table {table_name}"
-            )
-        for expected_column in expected_columns:
-            column_name = expected_column[0]
-            if actual_columns.get(column_name) != expected_column:
-                raise RuntimeError(
-                    "database schema contract mismatch: "
-                    f"column {table_name}.{column_name}"
-                )
 
-    actual_indexes = actual["indexes"]
-    for index_name, expected_index in expected["indexes"].items():
-        if actual_indexes.get(index_name) != expected_index:
-            raise RuntimeError(f"database schema contract mismatch: index {index_name}")
+def _build_schema_contract_through_version(
+    initializer: Callable[[sqlite3.Connection], None],
+    *,
+    through_version: int,
+) -> tuple[dict[str, Any], dict[tuple[str, str], str]]:
+    return _schema_contracts.build_schema_contract_through_version(
+        initializer,
+        through_version=through_version,
+        migrations=_MIGRATIONS,
+        baseline_checksum=V1_BASELINE_SCHEMA_CONTRACT_CHECKSUM,
+    )
 
-    actual_unique_constraints = actual["unique_constraints"]
-    for table_name, expected_constraints in expected["unique_constraints"].items():
-        actual_constraints = set(actual_unique_constraints.get(table_name, ()))
-        for expected_constraint in expected_constraints:
-            if expected_constraint not in actual_constraints:
-                columns = ",".join(
-                    column or "<expression>" for column, _ in expected_constraint
-                )
-                raise RuntimeError(
-                    "database schema contract mismatch: "
-                    f"unique constraint {table_name}({columns})"
-                )
+
+_has_legacy_v1_repair_column = _schema_contracts.has_legacy_v1_repair_column
+_assert_known_legacy_v1_schema = _schema_contracts.assert_known_legacy_v1_schema
+_legacy_v1_schema_contract = _schema_contracts.legacy_v1_schema_contract
+_assert_no_unapplied_versioned_artifacts = (
+    _schema_contracts.assert_no_unapplied_versioned_artifacts
+)
+_versioned_schema_artifacts_without_ledger = (
+    _schema_contracts.versioned_schema_artifacts_without_ledger
+)
+_versioned_schema_artifacts = _schema_contracts.versioned_schema_artifacts
+_read_versioned_object_contracts = _schema_contracts.read_versioned_object_contracts
+_normalize_schema_sql = _schema_contracts.normalize_schema_sql
+_read_schema_contract = _schema_contracts.read_schema_contract
+_normalize_default = _schema_contracts.normalize_default
+_schema_contract_checksum = _schema_contracts.schema_contract_checksum
+_assert_required_schema_contract = _schema_contracts.assert_required_schema_contract
 
 
 def _assert_migration_table_structure(conn: sqlite3.Connection) -> None:
@@ -757,6 +754,11 @@ def _validate_applied_migrations(applied: dict[int, tuple[str, str]]) -> None:
 
     for version, (name, checksum) in applied.items():
         migration = registered[version]
+        if version == 1 and (name, checksum) == (
+            migration.name,
+            _LEGACY_V1_MIGRATION_CHECKSUM,
+        ):
+            continue
         if name != migration.name or checksum != migration.checksum:
             raise RuntimeError(
                 f"schema migration history mismatch at version {version}"

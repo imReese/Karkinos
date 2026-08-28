@@ -174,6 +174,7 @@ def test_unit_of_work_boundaries_remain_explicit() -> None:
         "market_calendar_publication_uow.py": 1,
         "memory_informed_analysis_uow.py": 2,
         "memory_retrieval_uow.py": 1,
+        "migrations.py": 1,
         "oms.py": 2,
         "paper_shadow_run_uow.py": 1,
         "pending_fund_confirmation_uow.py": 2,

@@ -20,6 +20,12 @@ FROZEN_V1_MIGRATION_NAME = "v0.3.0_legacy_schema_baseline"
 FROZEN_V1_MIGRATION_CHECKSUM = (
     "0fc8b607a73a51af5822a76a6f9e3e91630287316617450ce6ccb25a0b674ef4"
 )
+FROZEN_LEGACY_V1_MIGRATION_CHECKSUM = (
+    "01efbdc71a58a8e0952553ec947b270a69f2d7bb789e6b34b27764da9ac97b74"
+)
+FROZEN_LEGACY_V1_SCHEMA_CONTRACT_CHECKSUM = (
+    "6303b923017e88941dff596eecc30c5dd9b9c76ca2e82f7ee35ebb6193430a7a"
+)
 FROZEN_MIGRATION_MANIFEST = (
     (1, "v0.3.0_legacy_schema_baseline", FROZEN_V1_MIGRATION_CHECKSUM),
     (
@@ -76,6 +82,68 @@ def _create_frozen_v1_database(database: AppDatabase) -> None:
             ),
         )
         conn.commit()
+
+
+def _create_known_legacy_v1_database(database: AppDatabase) -> None:
+    with sqlite3.connect(database.path) as conn:
+        db_module._initialize_v1_baseline_schema(conn)
+        conn.execute(
+            "ALTER TABLE controlled_submission_ledger_postings "
+            "DROP COLUMN account_truth_review_fingerprint"
+        )
+        contract = migrations._read_schema_contract(conn)
+        assert migrations._schema_contract_checksum(contract) == (
+            FROZEN_LEGACY_V1_SCHEMA_CONTRACT_CHECKSUM
+        )
+        conn.execute(migrations._MIGRATION_TABLE_SQL)
+        conn.execute(
+            """
+            INSERT INTO schema_migrations (version, name, checksum, applied_at)
+            VALUES (1, ?, ?, ?)
+            """,
+            (
+                FROZEN_V1_MIGRATION_NAME,
+                FROZEN_LEGACY_V1_MIGRATION_CHECKSUM,
+                "2026-08-23T09:51:38.483167+00:00",
+            ),
+        )
+        conn.commit()
+
+
+def _insert_required_placeholder_row(
+    conn: sqlite3.Connection,
+    table_name: str,
+) -> None:
+    overrides: dict[str, object] = {
+        "terminal_status": "filled",
+        "status": "applied",
+        "reason_code": "broker_evidence_superseded",
+        "pre_ledger_cutoff_id": 1,
+        "post_ledger_cutoff_id": 1,
+        "correction_ledger_entry_id": 1,
+    }
+    columns: list[str] = []
+    values: list[object] = []
+    for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall():
+        column_name = str(row[1])
+        column_type = str(row[2]).upper()
+        not_null = bool(row[3])
+        default = row[4]
+        primary_key = bool(row[5])
+        if primary_key or not not_null or default is not None:
+            continue
+        columns.append(column_name)
+        values.append(
+            overrides.get(
+                column_name,
+                0 if "INT" in column_type else f"{table_name}:{column_name}",
+            )
+        )
+    placeholders = ", ".join("?" for _ in columns)
+    conn.execute(
+        f"INSERT INTO {table_name} ({', '.join(columns)}) VALUES ({placeholders})",
+        values,
+    )
 
 
 def test_database_initialization_records_idempotent_schema_versions(
@@ -189,6 +257,422 @@ def test_frozen_v1_ledger_upgrades_through_quote_ingestion_migration(
     )
     assert quote_table == (1,)
     assert quote_index == (1,)
+
+
+def test_known_legacy_v1_ledger_repairs_and_upgrades_without_rewriting_provenance(
+    tmp_path,
+) -> None:
+    database = AppDatabase(tmp_path / "app.db")
+    _create_known_legacy_v1_database(database)
+    with sqlite3.connect(database.path) as conn:
+        conn.execute("""
+            INSERT INTO watchlist_assets (
+                symbol, asset_class, display_name, source, created_at, updated_at
+            ) VALUES ('600000.SH', 'stock', '浦发银行', 'manual', 'before', 'before')
+            """)
+        conn.commit()
+
+    database.init_sync()
+    database.init_sync()
+
+    with sqlite3.connect(database.path) as conn:
+        asset = conn.execute(
+            "SELECT symbol, display_name FROM watchlist_assets"
+        ).fetchone()
+        applied = conn.execute("""
+            SELECT version, name, checksum, applied_at
+            FROM schema_migrations ORDER BY version
+            """).fetchall()
+        repaired_column = next(
+            row
+            for row in conn.execute(
+                "PRAGMA table_xinfo(controlled_submission_ledger_postings)"
+            )
+            if row[1] == "account_truth_review_fingerprint"
+        )
+        integrity = conn.execute("PRAGMA quick_check").fetchone()
+
+    assert asset == ("600000.SH", "浦发银行")
+    assert [(row[0], row[1], row[2]) for row in applied] == [
+        (
+            1,
+            FROZEN_V1_MIGRATION_NAME,
+            FROZEN_LEGACY_V1_MIGRATION_CHECKSUM,
+        ),
+        *[
+            (migration.version, migration.name, migration.checksum)
+            for migration in migrations._MIGRATIONS[1:]
+        ],
+    ]
+    assert applied[0][3] == "2026-08-23T09:51:38.483167+00:00"
+    assert repaired_column[2:6] == ("TEXT", 1, None, 0)
+    assert integrity == ("ok",)
+
+
+@pytest.mark.parametrize(
+    "table_name",
+    [
+        "controlled_submission_ledger_postings",
+        "controlled_submission_ledger_corrections",
+    ],
+)
+def test_known_legacy_v1_repair_rejects_nonempty_controlled_ledger_tables(
+    tmp_path,
+    table_name: str,
+) -> None:
+    database = AppDatabase(tmp_path / "app.db")
+    _create_known_legacy_v1_database(database)
+    with sqlite3.connect(database.path) as conn:
+        _insert_required_placeholder_row(conn, table_name)
+        conn.commit()
+
+    with pytest.raises(
+        RuntimeError,
+        match=rf"legacy v1 schema repair requires an empty table: {table_name}",
+    ):
+        database.init_sync()
+
+    with sqlite3.connect(database.path) as conn:
+        columns = {
+            str(row[1])
+            for row in conn.execute(
+                "PRAGMA table_info(controlled_submission_ledger_postings)"
+            ).fetchall()
+        }
+        versions = conn.execute(
+            "SELECT version FROM schema_migrations ORDER BY version"
+        ).fetchall()
+    assert "account_truth_review_fingerprint" not in columns
+    assert versions == [(1,)]
+
+
+@pytest.mark.parametrize(
+    "artifact_sql",
+    [
+        """
+        ALTER TABLE pending_fund_orders
+        ADD COLUMN confirmation_quote_snapshot_id INTEGER
+        """,
+        """
+        ALTER TABLE market_calendar_snapshots
+        ADD COLUMN verification_source_fingerprint TEXT
+        """,
+        "CREATE TABLE quote_ingestion_items (id INTEGER PRIMARY KEY)",
+    ],
+)
+def test_known_legacy_v1_repair_rejects_unrecorded_versioned_artifacts(
+    tmp_path,
+    artifact_sql: str,
+) -> None:
+    database = AppDatabase(tmp_path / "app.db")
+    _create_known_legacy_v1_database(database)
+    with sqlite3.connect(database.path) as conn:
+        conn.execute(artifact_sql)
+        conn.commit()
+
+    with pytest.raises(
+        RuntimeError,
+        match="versioned artifacts missing from migration history",
+    ):
+        database.init_sync()
+
+    with sqlite3.connect(database.path) as conn:
+        columns = {
+            str(row[1])
+            for row in conn.execute(
+                "PRAGMA table_info(controlled_submission_ledger_postings)"
+            ).fetchall()
+        }
+        versions = conn.execute(
+            "SELECT version FROM schema_migrations ORDER BY version"
+        ).fetchall()
+    assert "account_truth_review_fingerprint" not in columns
+    assert versions == [(1,)]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("name", "tampered_v1_name"),
+        ("checksum", "tampered_v1_checksum"),
+    ],
+)
+def test_known_legacy_v1_repair_rejects_ledger_tampering(
+    tmp_path,
+    field: str,
+    value: str,
+) -> None:
+    database = AppDatabase(tmp_path / "app.db")
+    _create_known_legacy_v1_database(database)
+    with sqlite3.connect(database.path) as conn:
+        conn.execute(
+            f"UPDATE schema_migrations SET {field} = ? WHERE version = 1",
+            (value,),
+        )
+        conn.commit()
+
+    with pytest.raises(RuntimeError, match="history mismatch at version 1"):
+        database.init_sync()
+
+    with sqlite3.connect(database.path) as conn:
+        columns = {
+            str(row[1])
+            for row in conn.execute(
+                "PRAGMA table_info(controlled_submission_ledger_postings)"
+            ).fetchall()
+        }
+    assert "account_truth_review_fingerprint" not in columns
+
+
+def test_known_legacy_v1_repair_rejects_additional_schema_drift(tmp_path) -> None:
+    database = AppDatabase(tmp_path / "app.db")
+    _create_known_legacy_v1_database(database)
+    with sqlite3.connect(database.path) as conn:
+        conn.execute(
+            "ALTER TABLE controlled_submission_ledger_postings "
+            "ADD COLUMN unexpected_legacy_column TEXT"
+        )
+        conn.commit()
+
+    with pytest.raises(
+        RuntimeError,
+        match="legacy v1 schema contract mismatch: table",
+    ):
+        database.init_sync()
+
+    with sqlite3.connect(database.path) as conn:
+        columns = {
+            str(row[1])
+            for row in conn.execute(
+                "PRAGMA table_info(controlled_submission_ledger_postings)"
+            ).fetchall()
+        }
+    assert "account_truth_review_fingerprint" not in columns
+
+
+def test_known_legacy_v1_repair_revalidates_under_write_transaction(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    database = AppDatabase(tmp_path / "app.db")
+    _create_known_legacy_v1_database(database)
+    transaction_states: list[bool] = []
+    original = migrations._assert_known_legacy_v1_schema
+
+    def record_transaction_state(*args, **kwargs) -> None:
+        transaction_states.append(bool(args[0].in_transaction))
+        original(*args, **kwargs)
+
+    monkeypatch.setattr(
+        migrations,
+        "_assert_known_legacy_v1_schema",
+        record_transaction_state,
+    )
+
+    database.init_sync()
+
+    assert transaction_states == [False, True]
+
+
+def test_known_legacy_v1_repair_rolls_back_when_post_contract_check_fails(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    database = AppDatabase(tmp_path / "app.db")
+    _create_known_legacy_v1_database(database)
+    original = migrations._assert_applied_schema_contract
+
+    def fail_after_contract_check(*args, **kwargs) -> None:
+        original(*args, **kwargs)
+        raise RuntimeError("injected post-repair contract failure")
+
+    monkeypatch.setattr(
+        migrations,
+        "_assert_applied_schema_contract",
+        fail_after_contract_check,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="injected post-repair contract failure",
+    ):
+        database.init_sync()
+
+    with sqlite3.connect(database.path) as conn:
+        columns = {
+            str(row[1])
+            for row in conn.execute(
+                "PRAGMA table_info(controlled_submission_ledger_postings)"
+            ).fetchall()
+        }
+        migration = conn.execute(
+            "SELECT version, name, checksum FROM schema_migrations"
+        ).fetchone()
+    assert "account_truth_review_fingerprint" not in columns
+    assert migration == (
+        1,
+        FROZEN_V1_MIGRATION_NAME,
+        FROZEN_LEGACY_V1_MIGRATION_CHECKSUM,
+    )
+
+
+def test_known_legacy_v1_repair_commits_before_later_migration_blocker(
+    tmp_path,
+) -> None:
+    database = AppDatabase(tmp_path / "app.db")
+    _create_known_legacy_v1_database(database)
+    with sqlite3.connect(database.path) as conn:
+        conn.execute(
+            """
+            INSERT INTO trades (
+                timestamp, symbol, direction, quantity, price, commission,
+                asset_class, note, created_at
+            ) VALUES (?, '600000.SH', 'buy', ?, 1, 0, 'stock', '', ?)
+            """,
+            (
+                "2026-08-26T10:00:00+08:00",
+                float("inf"),
+                "2026-08-26T10:00:00+08:00",
+            ),
+        )
+        conn.commit()
+
+    with pytest.raises(
+        RuntimeError,
+        match="legacy portfolio trade cannot be canonicalized safely",
+    ):
+        database.init_sync()
+
+    with sqlite3.connect(database.path) as conn:
+        repaired_column = next(
+            row
+            for row in conn.execute(
+                "PRAGMA table_xinfo(controlled_submission_ledger_postings)"
+            )
+            if row[1] == "account_truth_review_fingerprint"
+        )
+        migrations_applied = conn.execute(
+            "SELECT version, name, checksum FROM schema_migrations ORDER BY version"
+        ).fetchall()
+    assert repaired_column[2:6] == ("TEXT", 1, None, 0)
+    assert migrations_applied == [
+        (
+            1,
+            FROZEN_V1_MIGRATION_NAME,
+            FROZEN_LEGACY_V1_MIGRATION_CHECKSUM,
+        )
+    ]
+
+
+def test_ledgerless_legacy_schema_cannot_claim_current_v1_checksum(tmp_path) -> None:
+    database = AppDatabase(tmp_path / "app.db")
+    with sqlite3.connect(database.path) as conn:
+        db_module._initialize_v1_baseline_schema(conn)
+        conn.execute(
+            "ALTER TABLE controlled_submission_ledger_postings "
+            "DROP COLUMN account_truth_review_fingerprint"
+        )
+        conn.commit()
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "database schema contract mismatch: column "
+            "controlled_submission_ledger_postings.account_truth_review_fingerprint"
+        ),
+    ):
+        database.init_sync()
+
+    with sqlite3.connect(database.path) as conn:
+        migration_table = conn.execute("""
+            SELECT 1 FROM sqlite_master
+            WHERE type = 'table' AND name = 'schema_migrations'
+            """).fetchone()
+        columns = {
+            str(row[1])
+            for row in conn.execute(
+                "PRAGMA table_info(controlled_submission_ledger_postings)"
+            ).fetchall()
+        }
+    assert migration_table is None
+    assert "account_truth_review_fingerprint" not in columns
+
+
+@pytest.mark.parametrize(
+    ("damage_sql", "error_pattern"),
+    [
+        (
+            "ALTER TABLE pending_fund_orders DROP COLUMN confirmation_note",
+            r"column pending_fund_orders\.confirmation_note",
+        ),
+        (
+            "ALTER TABLE ledger_mutation_claims ADD COLUMN unexpected TEXT",
+            "table ledger_mutation_claims",
+        ),
+        (
+            "DROP TABLE order_state_command_claims",
+            "missing table order_state_command_claims",
+        ),
+        (
+            "DROP INDEX idx_portfolio_mutation_claims_kind",
+            "index idx_portfolio_mutation_claims_kind",
+        ),
+        (
+            """
+            DROP TRIGGER market_calendar_verified_insert_guard;
+            CREATE TRIGGER market_calendar_verified_insert_guard
+            BEFORE INSERT ON market_calendar_snapshots
+            BEGIN
+                SELECT 1;
+            END;
+            """,
+            "trigger market_calendar_verified_insert_guard",
+        ),
+        (
+            "DROP TABLE quote_ingestion_items",
+            "missing table quote_ingestion_items",
+        ),
+    ],
+)
+def test_applied_migration_artifact_contract_rejects_missing_or_malformed_shape(
+    tmp_path,
+    damage_sql: str,
+    error_pattern: str,
+) -> None:
+    database = AppDatabase(tmp_path / "app.db")
+    database.init_sync()
+    with sqlite3.connect(database.path) as conn:
+        conn.executescript(damage_sql)
+        conn.commit()
+
+    with pytest.raises(RuntimeError, match=error_pattern):
+        database.init_sync()
+
+    with sqlite3.connect(database.path) as conn:
+        versions = conn.execute(
+            "SELECT version FROM schema_migrations ORDER BY version"
+        ).fetchall()
+    assert versions == [(migration.version,) for migration in migrations._MIGRATIONS]
+
+
+def test_migration_history_prefix_rejects_later_schema_artifacts(tmp_path) -> None:
+    database = AppDatabase(tmp_path / "app.db")
+    database.init_sync()
+    with sqlite3.connect(database.path) as conn:
+        conn.execute("DELETE FROM schema_migrations WHERE version >= 4")
+        conn.commit()
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"versioned artifacts missing from migration history:.*ledger_mutation",
+    ):
+        database.init_sync()
+
+    with sqlite3.connect(database.path) as conn:
+        versions = conn.execute(
+            "SELECT version FROM schema_migrations ORDER BY version"
+        ).fetchall()
+    assert versions == [(1,), (2,), (3,)]
 
 
 def test_migration_rejects_legacy_positive_infinity_cash_flow(tmp_path) -> None:
