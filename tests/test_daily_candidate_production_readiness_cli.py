@@ -145,7 +145,7 @@ def test_live_readiness_cli_reads_only_expected_loopback_endpoints() -> None:
         return {
             "schema_version": "karkinos.ai.shadow_research_automation.v1",
             "policy": {
-                "schema_version": "karkinos.ai.shadow_research_policy.v2",
+                "schema_version": "karkinos.ai.shadow_research_policy.v3",
                 "enabled": False,
                 "max_candidates_per_run": 1,
                 "max_provider_calls_per_market_date": 2,
