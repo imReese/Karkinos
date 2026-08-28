@@ -147,7 +147,7 @@ def _inputs() -> tuple[dict, dict]:
     research = {
         "schema_version": "karkinos.ai.shadow_research_automation.v1",
         "policy": {
-            "schema_version": "karkinos.ai.shadow_research_policy.v2",
+            "schema_version": "karkinos.ai.shadow_research_policy.v3",
             "enabled": True,
             "max_candidates_per_run": 5,
             "max_provider_calls_per_market_date": 10,
