@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -68,6 +68,11 @@ from server.ai_runtime.memory_retrieval import (
     HumanReviewedMemoryRetrievalService,
     ReviewedMemoryRetrievalRejected,
     ReviewedMemoryRetrievalStore,
+)
+from server.ai_runtime.provider_call_window import (
+    DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
+    PROVIDER_CALL_COMPLETION_GUARD_SECONDS,
+    provider_send_admission_for,
 )
 from server.ai_runtime.provider_connectivity import (
     ConnectivityConfigurationError,
@@ -145,6 +150,14 @@ def build_provider_connectivity_service(state: AppState) -> ProviderConnectivity
         settings=settings,
         audit_store=audit_store,
         ai_store=ai_store,
+        provider_send_admission=provider_send_admission_for(
+            settings.provider_id,
+            minimum_runway=timedelta(
+                seconds=(
+                    settings.timeout_seconds + PROVIDER_CALL_COMPLETION_GUARD_SECONDS
+                )
+            ),
+        ),
     )
 
 
@@ -324,6 +337,12 @@ def build_human_external_memory_analysis_service(
         evidence_repository=CanonicalEvidenceRepository(db_path),
         analysis_store=store,
         now=_utc_now,
+        provider_send_admission_factory=lambda provider_id: provider_send_admission_for(
+            provider_id,
+            minimum_runway=timedelta(
+                seconds=(180 + PROVIDER_CALL_COMPLETION_GUARD_SECONDS)
+            ),
+        ),
     )
 
 
@@ -433,6 +452,12 @@ def build_human_external_promoted_memory_analysis_service(
         evidence_repository=CanonicalEvidenceRepository(db_path),
         analysis_store=store,
         now=_utc_now,
+        provider_send_admission_factory=lambda provider_id: provider_send_admission_for(
+            provider_id,
+            minimum_runway=timedelta(
+                seconds=(180 + PROVIDER_CALL_COMPLETION_GUARD_SECONDS)
+            ),
+        ),
     )
     return HumanExternalPromotedMemoryAnalysisService(
         analysis_service=analysis_service,
@@ -534,12 +559,19 @@ def build_external_backtest_report_service(
     evidence_repository.init()
     ai_store.init()
     report_store.init()
+    settings = load_provider_connectivity_settings(state.require_config())
     return HumanExternalBacktestReportService(
-        settings=load_provider_connectivity_settings(state.require_config()),
+        settings=settings,
         capture_service=build_human_context_capture_service(state),
         evidence_repository=evidence_repository,
         ai_store=ai_store,
         report_store=report_store,
+        provider_send_admission=provider_send_admission_for(
+            settings.provider_id,
+            minimum_runway=timedelta(
+                seconds=(180 + PROVIDER_CALL_COMPLETION_GUARD_SECONDS)
+            ),
+        ),
     )
 
 
@@ -609,6 +641,7 @@ def build_shadow_research_read_service(
             )
         ),
         data_store=None,  # type: ignore[arg-type]
+        provider_call_window_policy=DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
     )
 
 

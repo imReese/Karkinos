@@ -48,6 +48,7 @@ from .external_memory_analysis_workflow import (
 )
 from .memory_informed_analysis import MemoryInformedInputs
 from .provider import ProviderAdapter, ProviderRequest, ProviderResponse
+from .provider_call_window import ProviderSendAdmission
 from .provider_connectivity_contracts import (
     JsonHttpTransport,
     ProviderConnectivitySettings,
@@ -73,6 +74,7 @@ class OpenAICompatibleMemoryInformedProvider(ProviderAdapter):
         now: Callable[[], str],
         monotonic: Callable[[], float],
         timeout_seconds: float,
+        send_admission: ProviderSendAdmission | None = None,
     ) -> None:
         self._provider_id = provider_id
         self._model_id = model_id
@@ -85,6 +87,7 @@ class OpenAICompatibleMemoryInformedProvider(ProviderAdapter):
         self._now = now
         self._monotonic = monotonic
         self._timeout_seconds = timeout_seconds
+        self._send_admission = send_admission
 
     @property
     def provider_id(self) -> str:
@@ -352,6 +355,8 @@ class OpenAICompatibleMemoryInformedProvider(ProviderAdapter):
         }
         payload.update(external_edge_request_options(self._settings))
         request_payload_fingerprint = content_fingerprint(payload)
+        if self._send_admission is not None:
+            self._send_admission.require_allowed()
         started_at = self._now()
         if not self._analysis_store.start_model_call(
             workflow_id=request.workflow_id,

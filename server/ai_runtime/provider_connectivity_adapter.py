@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .contracts import content_fingerprint
 from .openai_compatibility import safe_usage
+from .provider_call_window import ProviderSendAdmission
 from .provider_connectivity_contracts import (
     CONNECTIVITY_PROBE_TOKEN,
     JsonHttpTransport,
@@ -20,9 +21,12 @@ class OpenAICompatibleConnectivityAdapter:
         self,
         settings: ProviderConnectivitySettings,
         transport: JsonHttpTransport,
+        *,
+        send_admission: ProviderSendAdmission | None = None,
     ) -> None:
         self._settings = settings
         self._transport = transport
+        self._send_admission = send_admission
 
     def probe(self) -> ProviderProbeResponse:
         payload = {
@@ -44,6 +48,8 @@ class OpenAICompatibleConnectivityAdapter:
             "temperature": 0,
             "stream": False,
         }
+        if self._send_admission is not None:
+            self._send_admission.require_allowed()
         response = self._transport.post_json(
             url=self._settings.endpoint_url,
             headers={

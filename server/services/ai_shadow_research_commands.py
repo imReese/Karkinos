@@ -119,6 +119,7 @@ class AiShadowResearchCommandsMixin:
             "daily_trading_decision_status": "not_evaluated",
             "implies_daily_trading_no_action": False,
         }
+        provider_call_window = self._provider_call_window_status()
         return {
             "schema_version": SHADOW_RESEARCH_API_SCHEMA,
             "policy": policy.to_dict(),
@@ -138,10 +139,16 @@ class AiShadowResearchCommandsMixin:
             "broker_submission_enabled": False,
             "human_paper_shadow_approval_required": True,
             "authority_effect": "research_only",
+            **(
+                {"provider_call_window": provider_call_window}
+                if provider_call_window is not None
+                else {}
+            ),
         }
 
     def readiness_status(self) -> dict[str, Any]:
         """Return the bounded policy projection used by local readiness checks."""
+        provider_call_window = self._provider_call_window_status()
         return {
             "schema_version": SHADOW_RESEARCH_API_SCHEMA,
             "policy": self.get_policy().to_dict(),
@@ -150,6 +157,11 @@ class AiShadowResearchCommandsMixin:
             "broker_submission_enabled": False,
             "human_paper_shadow_approval_required": True,
             "authority_effect": "research_only",
+            **(
+                {"provider_call_window": provider_call_window}
+                if provider_call_window is not None
+                else {}
+            ),
         }
 
     def authorize_retry(

@@ -12,6 +12,7 @@ from server.ai_runtime.external_research_errors import (
     ExternalResearchInvalidResponseError,
 )
 from server.ai_runtime.formula_dsl import FormulaValidationError
+from server.ai_runtime.provider_call_window import ProviderCallDeferred
 from server.ai_runtime.store import AiAuditStore
 from server.contracts.strategy_research import (
     STRATEGY_RESEARCH_API_CONTRACT,
@@ -140,6 +141,8 @@ def decode_model_json(content: str) -> JsonObject:
 
 
 def strategy_research_failure_code(exc: Exception) -> str:
+    if isinstance(exc, ProviderCallDeferred):
+        return str(exc)
     if isinstance(exc, FormulaValidationError):
         return f"formula_validation:{exc.code}"
     name = exc.__class__.__name__.replace("Error", "").strip("_")

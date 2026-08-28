@@ -47,6 +47,12 @@ class AiShadowResearchWorkflowMixin:
         if preflight is not None:
             return preflight
 
+        provider_window_preflight, batch_deadline_at = (
+            self._provider_batch_window_admission()
+        )
+        if provider_window_preflight is not None:
+            return provider_window_preflight
+
         try:
             prepared = await asyncio.to_thread(self._prepare_baseline, policy)
         except asyncio.CancelledError:
@@ -61,6 +67,9 @@ class AiShadowResearchWorkflowMixin:
                 status="blocked_by_market_evidence",
                 failure_code=shadow_research_failure_code(exc),
             )
+        deadline_preflight = self._provider_batch_deadline_preflight(batch_deadline_at)
+        if deadline_preflight is not None:
+            return deadline_preflight
         now_dt = self._now().astimezone(SHADOW_RESEARCH_TIMEZONE)
         if not is_after_shadow_research_close(
             prepared.market_date, now_dt, policy.after_close_time
@@ -81,6 +90,9 @@ class AiShadowResearchWorkflowMixin:
                 failure_code=shadow_research_failure_code(exc),
                 market_date=prepared.market_date,
             )
+        deadline_preflight = self._provider_batch_deadline_preflight(batch_deadline_at)
+        if deadline_preflight is not None:
+            return deadline_preflight
         if (
             policy.require_complete_account_evidence
             and valuation.get("status") != "complete"
@@ -101,6 +113,16 @@ class AiShadowResearchWorkflowMixin:
             {
                 "runtime_contract": SHADOW_RESEARCH_RUNTIME_CONTRACT,
                 "policy": policy.to_dict(),
+                "provider_call_window_policy": (
+                    self._provider_call_window_policy.to_dict()
+                    if self._provider_call_window_policy is not None
+                    else None
+                ),
+                "provider_batch_deadline_at": (
+                    batch_deadline_at.isoformat()
+                    if batch_deadline_at is not None
+                    else None
+                ),
                 "baseline_fingerprint": prepared.fingerprint,
                 "valuation_snapshot_id": valuation["snapshot_id"],
                 "ledger_cutoff_id": valuation["ledger_cutoff_id"],
@@ -243,6 +265,7 @@ class AiShadowResearchWorkflowMixin:
             for iteration_number in range(
                 resume_iteration, policy.max_candidates_per_run + 1
             ):
+                self._require_provider_batch_deadline(batch_deadline_at)
                 iteration_context = build_shadow_research_iteration_context(
                     iteration_number=iteration_number,
                     total_iterations=policy.max_candidates_per_run,
@@ -315,6 +338,8 @@ class AiShadowResearchWorkflowMixin:
                     "draft": draft,
                     "candidate": candidate,
                 }
+                self._require_provider_batch_deadline(batch_deadline_at)
+            self._require_provider_batch_deadline(batch_deadline_at)
             terminal_status = (
                 "completed"
                 if candidates

@@ -18,6 +18,10 @@ from server.ai_runtime.external_promoted_memory_analysis import (
     EXTERNAL_PROMOTED_MEMORY_ANALYSIS_REQUEST_VERSION,
     HumanExternalPromotedMemoryAnalysisService,
 )
+from server.ai_runtime.provider_call_window import (
+    ProviderCallDeferred,
+    provider_call_deferred_payload,
+)
 from server.ai_runtime.provider_connectivity import ConnectivityConfigurationError
 from server.ai_runtime.store import IdempotencyConflict
 from server.composition.ai_application_services import (
@@ -59,6 +63,11 @@ def create_router() -> APIRouter:
                     confirmation=payload.confirmation,
                     schema_version=(EXTERNAL_PROMOTED_MEMORY_ANALYSIS_REQUEST_VERSION),
                 ),
+            )
+        except ProviderCallDeferred as exc:
+            return JSONResponse(
+                status_code=202,
+                content=provider_call_deferred_payload(exc.decision),
             )
         except Exception as exc:
             _raise_domain_http_error(exc)

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import datetime, timezone
 
 from server.contracts.idempotency import IdempotencyConflict
 
 from .contracts import ModelRegistration, ProviderRegistration, content_fingerprint
+from .provider_call_window import ProviderCallDeferred, ProviderSendAdmission
 from .provider_connectivity_adapter import OpenAICompatibleConnectivityAdapter
 from .provider_connectivity_audit import ProviderConnectivityAuditStore
 from .provider_connectivity_contracts import (
@@ -37,6 +39,7 @@ class ProviderConnectivityService:
         transport: JsonHttpTransport | None = None,
         now: Callable[[], str] | None = None,
         monotonic: Callable[[], float] | None = None,
+        provider_send_admission: ProviderSendAdmission | None = None,
     ) -> None:
         self._settings = settings
         self._audit_store = audit_store
@@ -44,6 +47,7 @@ class ProviderConnectivityService:
         self._transport = transport or UrllibJsonTransport()
         self._now = now or utc_now
         self._monotonic = monotonic or time.monotonic
+        self._provider_send_admission = provider_send_admission
 
     def run(self, request: ConnectivityCheckRequest) -> ConnectivityCheckResult:
         request_fingerprint = content_fingerprint(
@@ -74,11 +78,25 @@ class ProviderConnectivityService:
 
         started = self._monotonic()
         try:
+            if self._provider_send_admission is not None:
+                self._provider_send_admission.require_allowed()
             self._register_runtime_identity()
             probe = OpenAICompatibleConnectivityAdapter(
                 self._settings,
                 self._transport,
+                send_admission=self._provider_send_admission,
             ).probe()
+        except ProviderCallDeferred as error:
+            return replace(
+                self._audit_store.finalize(
+                    result.check_id,
+                    status=ConnectivityStatus.DEFERRED,
+                    finished_at=self._now(),
+                    latency_ms=max(0, round((self._monotonic() - started) * 1000)),
+                    error=ProviderProbeError(str(error)),
+                ),
+                provider_call_window=error.decision.to_dict(),
+            )
         except ProviderProbeError as error:
             return self._audit_store.finalize(
                 result.check_id,

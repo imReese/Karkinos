@@ -17,6 +17,7 @@ CONNECTIVITY_PROBE_TOKEN = "KARKINOS_AI_CONNECTIVITY_OK"
 
 class ConnectivityStatus(StrEnum):
     RUNNING = "running"
+    DEFERRED = "deferred"
     PASSED = "passed"
     FAILED = "failed"
 
@@ -157,9 +158,10 @@ class ConnectivityCheckResult:
     started_at: str
     finished_at: str | None
     latency_ms: int | None
+    provider_call_window: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "schema_version": "karkinos.ai.provider_connectivity_result.v1",
             "check_id": self.check_id,
             "idempotency_key": self.idempotency_key,
@@ -197,6 +199,13 @@ class ConnectivityCheckResult:
             "capital_authority_write_count": 0,
             "broker_action_count": 0,
         }
+        if self.provider_call_window is not None:
+            payload["provider_call_window"] = dict(self.provider_call_window)
+            payload["next_eligible_at"] = self.provider_call_window.get(
+                "next_eligible_at"
+            )
+            payload["provider_call_performed"] = False
+        return payload
 
 
 __all__ = [

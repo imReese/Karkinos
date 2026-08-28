@@ -5,12 +5,16 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Mapping
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse
 
 from core.types import AssetClass
 from server.ai_runtime.contracts import content_fingerprint
+from server.ai_runtime.provider_call_window import (
+    ProviderCallDeferred,
+    ProviderCallWindowDecision,
+)
 from server.contracts.ai_shadow_research_automation import (
     SHADOW_RESEARCH_API_SCHEMA,
     SHADOW_RESEARCH_RUN_TYPE,
@@ -26,6 +30,76 @@ logger = logging.getLogger(__name__)
 
 
 class AiShadowResearchSupportMixin:
+    def _provider_call_window_decision(
+        self, *, require_full_batch_runway: bool
+    ) -> ProviderCallWindowDecision | None:
+        if self._provider_call_window_policy is None:
+            return None
+        runway = timedelta(
+            seconds=(
+                self._provider_runway_seconds
+                if require_full_batch_runway
+                else self._provider_call_runway_seconds
+            )
+        )
+        return self._provider_call_window_policy.evaluate(
+            self._now(), minimum_runway=runway
+        )
+
+    def _require_provider_call_window(self) -> None:
+        decision = self._provider_call_window_decision(require_full_batch_runway=False)
+        if decision is not None and not decision.allowed:
+            raise ProviderCallDeferred(decision)
+
+    def _provider_call_window_status(self) -> dict[str, Any] | None:
+        decision = self._provider_call_window_decision(require_full_batch_runway=True)
+        return decision.to_dict() if decision is not None else None
+
+    def _provider_batch_window_admission(
+        self,
+    ) -> tuple[dict[str, Any] | None, datetime | None]:
+        if self._provider_call_window_policy is None:
+            return None, None
+        observed_at = self._now()
+        decision = self._provider_call_window_policy.evaluate(
+            observed_at,
+            minimum_runway=timedelta(seconds=self._provider_runway_seconds),
+        )
+        if not decision.allowed:
+            return (
+                self._record_preflight(
+                    status="deferred_for_provider_off_peak",
+                    failure_code=str(decision.failure_code),
+                    evidence=decision.to_dict(),
+                ),
+                None,
+            )
+        return None, self._provider_call_window_policy.eligible_until(observed_at)
+
+    def _provider_batch_deadline_preflight(
+        self, deadline_at: datetime | None
+    ) -> dict[str, Any] | None:
+        if deadline_at is None or self._now() < deadline_at:
+            return None
+        decision = self._provider_call_window_decision(require_full_batch_runway=True)
+        if decision is None:
+            return None
+        return self._record_preflight(
+            status="deferred_for_provider_off_peak",
+            failure_code=str(
+                decision.failure_code or "shadow_research_batch_deadline_elapsed"
+            ),
+            evidence={
+                **decision.to_dict(),
+                "batch_deadline_at": deadline_at.isoformat(),
+                "batch_deadline_missed": True,
+            },
+        )
+
+    def _require_provider_batch_deadline(self, deadline_at: datetime | None) -> None:
+        if deadline_at is not None and self._now() >= deadline_at:
+            raise ShadowResearchRejected("shadow_research_batch_deadline_elapsed")
+
     def _resolve_reviewed_fee_schedule(self, **kwargs: Any) -> Any:
         if self._reviewed_fee_schedule_resolver is None:
             raise ReviewedFeeScheduleRejected("reviewed_fee_schedule_resolver_missing")
@@ -85,17 +159,24 @@ class AiShadowResearchSupportMixin:
         status: str,
         failure_code: str,
         market_date: str | None = None,
+        evidence: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         effective_date = (
             market_date
             or self._now().astimezone(SHADOW_RESEARCH_TIMEZONE).date().isoformat()
         )
         now = self._utc_now()
+        stable_evidence = {
+            key: value
+            for key, value in dict(evidence or {}).items()
+            if key != "evaluated_at"
+        }
         fingerprint = content_fingerprint(
             {
                 "market_date": effective_date,
                 "status": status,
                 "failure_code": failure_code,
+                "evidence": stable_evidence,
             }
         )
         row = self._db.upsert_automation_run_sync(
@@ -111,6 +192,7 @@ class AiShadowResearchSupportMixin:
                 "payload": {
                     "schema_version": SHADOW_RESEARCH_API_SCHEMA,
                     "failure_code": failure_code,
+                    **({"provider_call_window": dict(evidence)} if evidence else {}),
                     "provider_call_performed": False,
                     "automatic_strategy_replacement_enabled": False,
                     "broker_submission_enabled": False,
@@ -123,6 +205,12 @@ class AiShadowResearchSupportMixin:
             "run_status": status,
             "failure_code": failure_code,
             "preflight_run_id": row["run_id"],
+            **({"provider_call_window": dict(evidence)} if evidence else {}),
+            **(
+                {"next_eligible_at": evidence.get("next_eligible_at")}
+                if evidence and evidence.get("next_eligible_at")
+                else {}
+            ),
         }
 
     async def _notify(

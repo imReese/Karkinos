@@ -71,6 +71,7 @@ class AiShadowResearchCandidateWorkflowMixin:
                     :12
                 ]
             )
+        self._require_provider_call_window()
         _, call_reused = self._store.claim_provider_call(
             call_id=call_id,
             run_id=str(run["run_id"]),
@@ -191,6 +192,7 @@ class AiShadowResearchCandidateWorkflowMixin:
                         {"extension_id": critique_resume_extension_id}
                     )[:12]
                 )
+            self._require_provider_call_window()
             _, call_reused = self._store.claim_provider_call(
                 call_id=call_id,
                 run_id=str(run["run_id"]),

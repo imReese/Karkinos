@@ -54,6 +54,7 @@ class StrategyResearchGenerationMixin:
             "running",
         }:
             return self.get_session(session["session_id"], reused=True)
+        self._require_provider_send_window()
 
         evidence_types = (CaptureEvidenceType.RESEARCH_EVIDENCE,)
         if request.selection.has_account_binding:
@@ -133,6 +134,7 @@ class StrategyResearchGenerationMixin:
             transport=self._transport,
             monotonic=self._monotonic,
             timeout_seconds=self._model_timeout_seconds,
+            send_admission=self._provider_send_admission,
         )
         orchestrator = build_strategy_research_orchestrator(
             ai_store=self._ai_store,

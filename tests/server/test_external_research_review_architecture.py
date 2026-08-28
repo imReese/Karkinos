@@ -307,6 +307,7 @@ def test_public_constructor_and_method_parameters_remain_compatible() -> None:
         "transport",
         "monotonic",
         "timeout_seconds",
+        "send_admission",
     )
     assert _parameter_names(external_research.HumanExternalBacktestReportService) == (
         "settings",
@@ -318,6 +319,7 @@ def test_public_constructor_and_method_parameters_remain_compatible() -> None:
         "now",
         "monotonic",
         "model_timeout_seconds",
+        "provider_send_admission",
     )
     assert _parameter_names(external_analysis_reviews.ExternalAnalysisReviewStore) == (
         "db_path",

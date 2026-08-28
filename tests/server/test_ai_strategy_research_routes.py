@@ -1,14 +1,21 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+from server.ai_runtime.provider_call_window import (
+    DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
+    ProviderCallDeferred,
+)
 from server.ai_runtime.strategy_research import (
+    CRITIQUE_EXPORT_CONFIRMATION,
     HYPOTHESIS_EXPORT_CONFIRMATION,
     STRATEGY_RESEARCH_PROVIDER_TOKEN_RESERVATION,
 )
@@ -33,11 +40,20 @@ from tests.route_assertions import registered_app_routes
 
 
 class FixtureService:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        error: Exception | None = None,
+        run_result: dict | None = None,
+    ) -> None:
         self.requests = []
+        self.error = error
+        self.run_result = run_result
 
     async def generate_hypotheses(self, request):
         self.requests.append(request)
+        if self.error is not None:
+            raise self.error
         return {
             "schema_version": "karkinos.ai.strategy_research_api.v1",
             "session_id": "session-route-001",
@@ -51,6 +67,17 @@ class FixtureService:
             "trade_plan_created": False,
             "authority_effect": "none",
         }
+
+    async def critique(self, request):
+        self.requests.append(request)
+        if self.error is not None:
+            raise self.error
+        return {"status": "completed", "failure_code": None}
+
+    async def run_once(self):
+        if self.error is not None:
+            raise self.error
+        return self.run_result or {"run_status": "completed"}
 
 
 def _payload() -> dict:
@@ -77,6 +104,14 @@ def _payload() -> dict:
         },
         "confirmation": HYPOTHESIS_EXPORT_CONFIRMATION,
     }
+
+
+def _peak_deferred() -> ProviderCallDeferred:
+    return ProviderCallDeferred(
+        DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY.evaluate(
+            datetime(2026, 8, 31, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+        )
+    )
 
 
 def _client(monkeypatch, service: FixtureService, db=object()) -> TestClient:
@@ -201,6 +236,76 @@ def test_hypothesis_route_returns_non_executable_no_authority_contract(monkeypat
     assert body["trade_plan_created"] is False
     assert body["authority_effect"] == "none"
     assert len(service.requests) == 1
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("endpoint", ["hypotheses", "critiques"])
+def test_external_strategy_routes_return_non_authorizing_provider_defer(
+    monkeypatch,
+    endpoint,
+):
+    client = _client(monkeypatch, FixtureService(error=_peak_deferred()))
+    payload = _payload()
+    if endpoint == "critiques":
+        payload = {
+            "idempotency_key": "critique-route-deferred",
+            "requested_by": "human:owner",
+            "session_id": "session-route-001",
+            "draft_id": "draft-route-001",
+            "backtest_run_id": "backtest-route-001",
+            "confirmation": CRITIQUE_EXPORT_CONFIRMATION,
+        }
+
+    response = client.post(f"/api/ai/strategy-research/{endpoint}", json=payload)
+
+    assert response.status_code == 202
+    assert response.json()["failure_code"] == "deepseek_peak_pricing_window"
+    assert response.json()["provider_call_performed"] is False
+    assert response.json()["authority_effect"] == "none"
+
+
+@pytest.mark.unit
+def test_shadow_run_route_returns_non_authorizing_provider_defer(monkeypatch):
+    service = FixtureService(error=_peak_deferred())
+    client = _client(monkeypatch, FixtureService())
+    monkeypatch.setattr(
+        "server.routes.ai_strategy_research._build_shadow_write_service",
+        lambda state: service,
+    )
+
+    response = client.post(
+        "/api/ai/strategy-research/shadow-automation/run",
+    )
+
+    assert response.status_code == 202
+    assert response.json()["next_eligible_at"] == "2026-08-31T18:00:00+08:00"
+    assert response.json()["provider_call_performed"] is False
+    assert response.json()["authority_effect"] == "none"
+
+
+@pytest.mark.unit
+def test_shadow_run_route_maps_preflight_defer_result_to_accepted(monkeypatch):
+    service = FixtureService(
+        run_result={
+            "run_status": "deferred_for_provider_off_peak",
+            "failure_code": "deepseek_peak_pricing_window",
+            "next_eligible_at": "2026-08-31T18:00:00+08:00",
+            "provider_call_performed": False,
+            "authority_effect": "none",
+        }
+    )
+    client = _client(monkeypatch, FixtureService())
+    monkeypatch.setattr(
+        "server.routes.ai_strategy_research._build_shadow_write_service",
+        lambda state: service,
+    )
+
+    response = client.post(
+        "/api/ai/strategy-research/shadow-automation/run",
+    )
+
+    assert response.status_code == 202
+    assert response.json() == service.run_result
 
 
 @pytest.mark.unit

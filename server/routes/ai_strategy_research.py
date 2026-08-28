@@ -14,6 +14,10 @@ from server.ai_runtime.contracts import content_fingerprint
 from server.ai_runtime.formula_dsl import (
     formula_operator_catalog,
 )
+from server.ai_runtime.provider_call_window import (
+    ProviderCallDeferred,
+    provider_call_deferred_payload,
+)
 from server.ai_runtime.provider_connectivity import (
     ConnectivityConfigurationError,
 )
@@ -327,7 +331,12 @@ def create_router() -> APIRouter:
         from server.dependencies import get_app_state
 
         try:
-            return await _build_shadow_write_service(get_app_state()).run_once()
+            result = await _build_shadow_write_service(get_app_state()).run_once()
+            if result.get("run_status") == "deferred_for_provider_off_peak":
+                return JSONResponse(status_code=202, content=result)
+            return result
+        except ProviderCallDeferred as exc:
+            return _provider_call_deferred_response(exc)
         except Exception as exc:
             _raise_http(exc)
 
@@ -500,6 +509,8 @@ def create_router() -> APIRouter:
                 )
             )
             return _status_response(result)
+        except ProviderCallDeferred as exc:
+            return _provider_call_deferred_response(exc)
         except Exception as exc:
             _raise_http(exc)
 
@@ -543,6 +554,8 @@ def create_router() -> APIRouter:
                 )
             )
             return _status_response(result)
+        except ProviderCallDeferred as exc:
+            return _provider_call_deferred_response(exc)
         except Exception as exc:
             _raise_http(exc)
 
@@ -691,6 +704,13 @@ def _status_response(result: dict[str, Any]) -> JSONResponse:
         "failed": 502,
     }.get(status, 500)
     return JSONResponse(status_code=status_code, content=result)
+
+
+def _provider_call_deferred_response(exc: ProviderCallDeferred) -> JSONResponse:
+    return JSONResponse(
+        status_code=202,
+        content=provider_call_deferred_payload(exc.decision),
+    )
 
 
 def _raise_http(exc: Exception) -> None:

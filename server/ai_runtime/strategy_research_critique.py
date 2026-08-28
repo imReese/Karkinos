@@ -87,6 +87,7 @@ class StrategyResearchCritiqueMixin:
             "running",
         }:
             return critique_response(critique, reused=True)
+        self._require_provider_send_window()
 
         context = self._ai_store.get_context(session["context_snapshot_id"])
         evidence_reference_id = str(session["evidence_reference_id"])
@@ -192,6 +193,7 @@ class StrategyResearchCritiqueMixin:
             transport=self._transport,
             monotonic=self._monotonic,
             timeout_seconds=self._model_timeout_seconds,
+            send_admission=self._provider_send_admission,
         )
         orchestrator = build_strategy_research_orchestrator(
             ai_store=self._ai_store,

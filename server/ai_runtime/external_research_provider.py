@@ -43,6 +43,7 @@ from .external_research_output import (
 )
 from .openai_compatibility import edge_request_options, message_text, safe_usage
 from .provider import ProviderAdapter, ProviderRequest, ProviderResponse
+from .provider_call_window import ProviderSendAdmission
 from .provider_connectivity_contracts import (
     JsonHttpTransport,
     ProviderConnectivitySettings,
@@ -64,6 +65,7 @@ class OpenAICompatibleBacktestReportProvider(ProviderAdapter):
         transport: JsonHttpTransport,
         monotonic: Callable[[], float],
         timeout_seconds: float,
+        send_admission: ProviderSendAdmission | None = None,
     ) -> None:
         self._provider_id = provider_id
         self._settings = settings
@@ -73,6 +75,7 @@ class OpenAICompatibleBacktestReportProvider(ProviderAdapter):
         self._transport = transport
         self._monotonic = monotonic
         self._timeout_seconds = timeout_seconds
+        self._send_admission = send_admission
 
     @property
     def provider_id(self) -> str:
@@ -212,6 +215,8 @@ class OpenAICompatibleBacktestReportProvider(ProviderAdapter):
         payload.update(edge_request_options(self._settings))
         started = self._monotonic()
         try:
+            if self._send_admission is not None:
+                self._send_admission.require_allowed()
             response = self._transport.post_json(
                 url=self._settings.endpoint_url,
                 headers={

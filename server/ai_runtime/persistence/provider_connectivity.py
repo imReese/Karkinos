@@ -84,6 +84,24 @@ class ProviderConnectivitySqliteRepository:
                 (idempotency_key,),
             ).fetchone()
             if existing is not None:
+                if (
+                    existing["status"] == "deferred"
+                    and existing["request_fingerprint"] == request_fingerprint
+                ):
+                    conn.execute(
+                        """
+                        UPDATE ai_provider_connectivity_checks
+                        SET status=?, started_at=?, finished_at=NULL, latency_ms=NULL,
+                            error_code=NULL
+                        WHERE check_id=? AND status='deferred'
+                        """,
+                        (status, started_at, existing["check_id"]),
+                    )
+                    reopened = conn.execute(
+                        "SELECT * FROM ai_provider_connectivity_checks WHERE check_id=?",
+                        (existing["check_id"],),
+                    ).fetchone()
+                    return (dict(reopened) if reopened is not None else None), True
                 return dict(existing), False
             conn.execute(
                 """
