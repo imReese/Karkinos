@@ -76,7 +76,7 @@ class AiShadowResearchSupportMixin:
             )
         return None, self._provider_call_window_policy.eligible_until(observed_at)
 
-    def _provider_batch_deadline_preflight(
+    def _batch_deadline_preflight(
         self, deadline_at: datetime | None
     ) -> dict[str, Any] | None:
         if deadline_at is None or self._now() < deadline_at:
@@ -99,6 +99,20 @@ class AiShadowResearchSupportMixin:
     def _require_provider_batch_deadline(self, deadline_at: datetime | None) -> None:
         if deadline_at is not None and self._now() >= deadline_at:
             raise ShadowResearchRejected("shadow_research_batch_deadline_elapsed")
+
+    def _provider_window_input_evidence(
+        self, deadline_at: datetime | None
+    ) -> dict[str, Any]:
+        return {
+            "provider_call_window_policy": (
+                self._provider_call_window_policy.to_dict()
+                if self._provider_call_window_policy is not None
+                else None
+            ),
+            "provider_batch_deadline_at": (
+                deadline_at.isoformat() if deadline_at is not None else None
+            ),
+        }
 
     def _resolve_reviewed_fee_schedule(self, **kwargs: Any) -> Any:
         if self._reviewed_fee_schedule_resolver is None:
