@@ -112,6 +112,7 @@ export type ShadowResearchDailyBackup = {
 
 export type ShadowResearchAutomationStatus = {
   schema_version: string;
+  runtime_contract?: string;
   policy: {
     schema_version: 'karkinos.ai.shadow_research_policy.v3';
     policy_id: 'ai_shadow_research';
