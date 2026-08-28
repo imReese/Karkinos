@@ -41,7 +41,7 @@ Karkinos 是面向中国市场的个人量化投研与交易平台，目标是�
 | AI 原生 Phase 1-1.18 + shadow 研究/结果/复盘/质量桥接 | 已实现 | provider-neutral、证据绑定的研究、记忆、Formula DSL/回测/rolling-OOS/批判，具备原子 capped 调用 claim、记录但每日不设累计上限的 Token 用量、owner 授权收盘后候选自动化与仅人工 paper/shadow 晋级，以及 canonical 策略贡献、人工决策后复盘、persisted-only 策略学习队列和 Decision Quality 捕获；不具备生产策略替换或交易权限 |
 | v0.2.4 Daily Data Flywheel | 已实现 | 物质连续的 Account Truth 历史会在每日状态刷新与按时间追加流水时自动继承已复核账户范围；匹配原规则的新股票成交自动复验费用，但不扩大原复核金额包络。当前对账/估值/ledger 门禁保持强制，策略晋级、订单与资本变化继续仅由人工决定 |
 
-SemVer `v0.3.0` 是「不依赖券商提供方」的软件发布：它以精确 tag commit 上成功的 Code CI 与
+SemVer `v0.3.1` 是「不依赖券商提供方」的软件发布：它以精确 tag commit 上成功的 Code CI 与
 仓库验收审计作为门禁，但不要求真实适配器证据。v1.8 仍单独保留，其门禁在任何真实提供方就绪
 声明前保持强制。只读学习仍是非授权，不启动 Phase 1.19；进一步 AI 与记忆扩展继续延后。
 

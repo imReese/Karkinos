@@ -63,11 +63,13 @@ guarantee.
 
 ## Project status
 
-The current software version is `0.3.0`. v0.3.0 is a broker-provider-free
-software release: it packages research/backtesting, persisted financial
+The current software version is `0.3.1`. v0.3.1 is a broker-provider-free
+hotfix release: it packages research/backtesting, persisted financial
 evidence, daily planning, paper/shadow, OMS/reconciliation, and the provider-
-neutral controlled-execution foundation. It does not select, register, contact,
-or require a real broker adapter and does not claim real-money readiness.
+neutral controlled-execution foundation, repairs the exact known legacy v0.3.0
+database upgrade state, and prevents immutable release-image tags from being
+reused. It does not select, register, contact, or require a real broker adapter
+and does not claim real-money readiness.
 
 The exact tag commit must pass the complete Code CI gate and repository
 acceptance audit. These establish software-release evidence only. Real-adapter
