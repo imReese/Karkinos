@@ -33,7 +33,7 @@ v1 suite 的场景集合与期望结果不可自行修改：
 Preview 会执行 suite，但不会创建目标 evidence 数据库：
 
 ```bash
-uv run python scripts/run_broker_adapter_conformance.py \
+uv run python scripts/broker/run_broker_adapter_conformance.py \
   --file /path/to/adapter-release.json \
   --db data/store/karkinos.db \
   --run-id conformance-2026-001
@@ -42,7 +42,7 @@ uv run python scripts/run_broker_adapter_conformance.py \
 持久化是另一个显式动作：
 
 ```bash
-uv run python scripts/run_broker_adapter_conformance.py \
+uv run python scripts/broker/run_broker_adapter_conformance.py \
   --file /path/to/adapter-release.json \
   --db data/store/karkinos.db \
   --run-id conformance-2026-001 \

@@ -14,7 +14,7 @@ from account_truth.broker_adapter_release import (
     BrokerAdapterReleaseReviewRepository,
     preview_broker_adapter_release_manifest,
 )
-from scripts.review_broker_adapter_release import main
+from scripts.broker.review_broker_adapter_release import main
 from tests.account_truth.test_broker_adapter_release import (
     collector_binding,
     release_manifest,

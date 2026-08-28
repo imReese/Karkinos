@@ -97,19 +97,23 @@ cp config.example.json config.json
 cp .env.example .env
 uv sync --extra server --extra dev --frozen
 npm ci --prefix web
-npm --prefix web run build
 uv run python -m server --check-config
-uv run python -m server --no-live
+./scripts/start_server.sh
 ```
 
-Open `http://127.0.0.1:8000`. The `--no-live` startup is intentionally safe: it
-does not enable the background live scheduler.
-
-For local development:
+Open `http://127.0.0.1:5173` for the development UI. Stop both frontend and
+backend services with:
 
 ```bash
-./scripts/start_server.sh dev --host 127.0.0.1 --port 8000
+./scripts/stop_server.sh
 ```
+
+The live scheduler is part of the service lifecycle and starts automatically.
+Automatic trading is a separate, default-off runtime gate on the Trading page;
+it can be changed without restarting the service and never grants capital
+authority by itself. Automatic broker submission is not implemented yet.
+See [scripts/README.md](scripts/README.md) for production mode and specialized
+maintenance commands.
 
 Use fake or sanitized development data. Keep `config.json`, `.env`, runtime
 databases, and private account evidence local.
@@ -129,9 +133,9 @@ Docker runtime:
 docker compose up --build
 ```
 
-Docker Compose keeps the live market-data scheduler disabled by default. Set
-`KARKINOS_LIVE_AUTO_START=true` only for an explicit owner-supervised ingestion
-session; this does not grant broker or order authority.
+Docker Compose also starts the live market-data scheduler. Provider failures
+remain fail-closed, and scheduler liveness grants no broker, execution, or
+capital authority.
 
 ## Documentation map
 

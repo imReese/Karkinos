@@ -103,7 +103,7 @@ unreproducible evidence produces `no_action`.
 7. After any manually entered broker order, import exact broker evidence and
    complete plan → paper → actual reconciliation before the next batch.
 
-When live monitoring is owner-enabled, the background loop reads the persisted,
+The always-on live scheduler's background loop reads the persisted,
 officially verified SSE calendar and may call the same service only from 09:35
 through 09:44 Asia/Shanghai. It skips closed or unverified days and atomically
 claims one background attempt for the market date before invoking the service.
@@ -135,7 +135,7 @@ officially verified; otherwise the next window remains explicitly unavailable.
 Use this date only to prepare Account Truth, fees, strategy review, and market
 ingestion before the window.
 
-From 08:45 through 09:34 Asia/Shanghai, the owner-enabled monitor may atomically
+From 08:45 through 09:34 Asia/Shanghai, the always-on monitor may atomically
 claim one `karkinos.daily_candidate_preparation_check.v1` record for the verified
 market date. The check reads only durable gates that should be ready before the
 decision window: safe paper/shadow policy, same-date Account Truth, the active
@@ -157,11 +157,10 @@ The attempt records alert/notification status; delivery or alert-store failure c
 order, contact a broker, mutate the ledger, or change capital authority.
 
 Decision → Automation also shows `karkinos.daily_candidate_runtime_status.v1`.
-It separately proves whether owner configuration enabled the background monitor
-and whether the exact in-process monitor task is still running. A disabled,
-missing, completed, cancelled, or failed task is an operational blocker for the
-automatic attempt even when the decision window itself is open. The manual
-window remains a separate fact. Runtime-task liveness never claims that Account
+It proves whether the exact in-process monitor task is still running. The
+monitor is not configurable: a missing, completed, cancelled, or failed task is
+a service failure and blocks the automatic attempt even when the decision
+window itself is open. The manual window remains a separate fact. Runtime-task liveness never claims that Account
 Truth, market, strategy, fees, risk, or reconciliation are financially ready,
 and the status read performs no provider call, database write, broker action,
 or authority change.
@@ -199,7 +198,7 @@ repair, evidence write, strategy approval, ticket creation, execution grant, or
 capital change. When every gate passes, it still points only to one canonical
 paper/shadow attempt.
 
-Run `uv run python scripts/audit_daily_candidate_production.py --pretty` from
+Run `uv run python scripts/service/audit_daily_candidate_production.py --pretty` from
 the repository root to verify the current machine rather than only the code
 manifest. The command accepts only an explicit loopback HTTP base URL and reads
 the live Automation Cockpit plus shadow-research status. It returns a sanitized,
@@ -221,13 +220,13 @@ change, or profitability claim.
 
 On an owner-operated Mac, a terminal background process is not durable service
 evidence. Before relying on the next decision window, first inspect the local
-user-level definition with `./scripts/manage_launch_agent.sh print-plist`, then
-explicitly install it with `./scripts/manage_launch_agent.sh install`. Verify
-`./scripts/manage_launch_agent.sh status` reports both a loaded LaunchAgent and
-process liveness. The service binds only `127.0.0.1`, restarts after any
-process exit while loaded, and is fully reversible with `uninstall`. Installation does
-not edit `config.json` or `.env`, enable `live_auto_start`, contact a provider,
-or establish financial readiness. If another listener owns the backend port,
+user-level definition with `./scripts/service/manage_launch_agent.sh print-plist`, then
+explicitly install it with `./scripts/service/manage_launch_agent.sh install`. Verify
+`./scripts/service/manage_launch_agent.sh status` reports a loaded LaunchAgent,
+process liveness, and a running live scheduler. The service binds only `127.0.0.1`, restarts after any
+process exit while loaded, and is fully reversible with `uninstall`. The live
+scheduler starts with the service and may contact the configured market-data
+provider; this does not establish financial readiness or broker authority. If another listener owns the backend port,
 installation fails without stopping it. The operator must resolve that exact
 process explicitly; never run two daily-candidate services against one local
 runtime database.
@@ -335,8 +334,8 @@ and requires a new review.
 | Stored daily input identity cannot be replayed | Trial date excluded | Preserve the record, investigate source drift or tampering, and continue on a later clean date |
 | Background alert or notification fails | Candidate result remains unchanged and no retry occurs | Inspect the attempt's sanitized `operator_alert` / `notification` status before the next window |
 | Pre-window preparation record is blocked, invalid, interrupted, or missing | Formal attempt remains untouched; no retry or backfill is granted | Review the sanitized first gate before a later clean window; never treat preparation as a trading result |
-| Background monitor is disabled, missing, completed, cancelled, or failed | No automatic attempt; runtime status fails closed | Keep the process stopped or restart only after explicit owner enablement, then verify `background_monitor_running=true` before the next window |
-| macOS LaunchAgent is unloaded or process liveness is unavailable | No durable automatic-monitor claim | Explicitly inspect or reinstall the exact user-level service; do not infer financial readiness from launchd state |
+| Background monitor is missing, completed, cancelled, or failed | No automatic attempt; runtime status fails closed | Restart the service, investigate the task failure, and verify `background_monitor_running=true` before the next window |
+| macOS LaunchAgent is unloaded or service readiness is unavailable | No durable automatic-monitor claim | Explicitly inspect or reinstall the exact user-level service; do not infer financial readiness from launchd state |
 | Background window passes without a record | `missed_decision_window`; no backfill | Prepare current evidence before the next verified trading-day window |
 | Strategy, reviewed-fee, or strategy-operating-constraint fingerprint changes | New trial epoch starts | Keep old samples as superseded evidence; do not merge them |
 | Kill Switch unavailable or active | `no_action` | Restore or explicitly review trading controls |

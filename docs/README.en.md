@@ -13,11 +13,15 @@ Requirements: Python 3.12+, Node.js 24.x, `uv`, and optionally Docker.
 ```bash
 uv sync --extra server --extra dev --frozen
 npm ci --prefix web
-npm --prefix web run build
-uv run python -m server --no-live
+cp config.example.json config.json
+cp .env.example .env
+uv run python -m server --check-config
+./scripts/start_server.sh
 ```
 
-The default product entry point is `http://127.0.0.1:8000`.
+Open `http://127.0.0.1:5173` for the development UI. Run
+`./scripts/stop_server.sh` to stop both frontend and backend services. The live scheduler starts with the service.
+Automatic trading is a separate default-off runtime gate that changes without restart and grants no capital authority; automatic broker submission remains unimplemented. See [`scripts/README.md`](../scripts/README.md) for specialized commands.
 
 Primary checks:
 

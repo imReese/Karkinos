@@ -7,7 +7,7 @@ from account_truth.broker_order_lifecycle import (
     BROKER_ORDER_LIFECYCLE_RECORD_ACKNOWLEDGEMENT,
     BrokerOrderLifecycleEvidenceRepository,
 )
-from scripts.import_broker_order_lifecycle import main
+from scripts.broker.import_broker_order_lifecycle import main
 
 
 def _payload() -> dict:

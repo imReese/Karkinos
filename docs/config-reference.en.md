@@ -33,7 +33,7 @@ CLI arguments > existing process environment > .env > config.json > program defa
 | Program defaults | Safe and development defaults | Maintained in code |
 | `config.json` | Local runtime settings, fee model, sanitized connectors | No |
 | Environment / `.env` | Secrets, container paths, deployment overrides | No |
-| CLI | One-start `--host`, `--port`, and `--no-live` overrides | Not persisted |
+| CLI | One-start `--host` and `--port` overrides | Not persisted |
 | SQLite | Account facts, watchlists, authority, evidence, sessions, orders | Runtime data |
 
 `KARKINOS_CONFIG_PATH` selects the file to load. `KARKINOS_DATA_DIR` selects the runtime data directory. Neither is a field inside `config.json`.
@@ -44,13 +44,13 @@ The recommended configuration has five groups. See the repository-root [`config.
 
 | Group | Purpose |
 | --- | --- |
-| `server` | Web server, CORS, scheduler, and notification |
+| `server` | Web server, CORS, market-calendar sync, and notification |
 | `data_source` | Market-data provider and polling; credentials are environment-only |
 | `account_truth` | Explicitly enabled local read-only account-evidence collection |
 | `broker_fee` | Broker fee modeling |
 | `ai` | External-model connection settings; credentials default to environment variables |
 
-Unknown top-level fields, unknown group fields, wrong field types, and fields supplied in both grouped and legacy-flat forms stop startup. Misspellings and invalid values are not silently ignored. The file is parsed only at startup; routes reuse the same typed configuration object instead of rereading JSON during a request.
+Unknown top-level fields, unknown group fields, wrong field types, and fields supplied in both grouped and legacy-flat forms stop startup. The removed legacy `live_auto_start` field is the upgrade-compatibility exception: it is ignored and cannot disable the scheduler. The file is parsed only at startup; routes reuse the same typed configuration object instead of rereading JSON during a request.
 
 ### server
 
@@ -58,8 +58,7 @@ Unknown top-level fields, unknown group fields, wrong field types, and fields su
 | --- | --- | --- | --- |
 | `host` | string | `0.0.0.0` | API bind address; local development may use `127.0.0.1`. |
 | `port` | integer | `8000` | API bind port. |
-| `live_auto_start` | boolean | `false` | Starts the built-in market scheduler only when explicitly enabled. The scheduler may contact configured market-data providers and persist ingestion runs, but grants no order authority. |
-| `market_calendar_auto_sync` | boolean | `true` | With live startup enabled, automatically ingests the current SSE calendar, verifies it against the official annual closure notice, and starts ingesting next year in December. |
+| `market_calendar_auto_sync` | boolean | `true` | At service startup, automatically ingests the current SSE calendar, verifies it against the official annual closure notice, and starts ingesting next year in December. |
 | `cors_allowed_origins` | string[] | local frontend origins | Browser origins allowed to call the API. |
 | `notification` | object | `{"type":"console"}` | Notification channel type only: `console`, `telegram`, or `wechat`. Credential and destination fields are rejected. |
 
@@ -74,8 +73,8 @@ Unknown top-level fields, unknown group fields, wrong field types, and fields su
 The interactive setup script preserves the grouped shape:
 
 ```bash
-uv run python scripts/configure_data_source.py --provider akshare
-uv run python scripts/configure_data_source.py --provider tushare
+uv run python scripts/data/configure_data_source.py --provider akshare
+uv run python scripts/data/configure_data_source.py --provider tushare
 ```
 
 The TuShare token is read through a hidden prompt and is never accepted as a CLI argument. The script preserves `provider_config.tushare_token_env`, writes only credential-free provider/polling metadata to the Git-ignored `config.json`, and writes the token to that named variable in a mode-`0600` `.env` file (or the file selected by `--env-file` / `KARKINOS_ENV_FILE`). Switching to AkShare preserves an existing environment credential; credential removal must be explicit. The Settings API and Web page never accept credentials; they expose configuration status only. A top-level or grouped `tushare_token` in `config.json` stops startup and is also rejected by the setup script; there is no automatic credential migration.
@@ -192,7 +191,6 @@ AI credentials resolve in this order:
 | `KARKINOS_ENV_FILE` | environment file used by `python -m server`; `--env-file` also selects it |
 | `KARKINOS_HOST` | `server.host` |
 | `KARKINOS_PORT` | `server.port` |
-| `KARKINOS_LIVE_AUTO_START` | `server.live_auto_start` |
 | `KARKINOS_CORS_ALLOWED_ORIGINS` | comma-separated `server.cors_allowed_origins` |
 | `KARKINOS_DATA_SOURCE` | `data_source.provider` |
 | `KARKINOS_LIVE_POLL_INTERVAL` | `data_source.live_poll_interval` |

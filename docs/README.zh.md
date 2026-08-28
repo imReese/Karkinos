@@ -11,14 +11,14 @@ Karkinos 是面向中国市场的个人量化投研与交易平台。本页是�
 ```bash
 uv sync --extra server --extra dev --frozen
 npm ci --prefix web
-npm --prefix web run build
 cp config.example.json config.json
 cp .env.example .env
 uv run python -m server --check-config
-uv run python -m server --no-live
+./scripts/start_server.sh
 ```
 
-默认产品入口为 `http://127.0.0.1:8000`。
+开发界面入口为 `http://127.0.0.1:5173`；使用完后运行 `./scripts/stop_server.sh` 即可停止前后端服务；live scheduler 随服务自动启动。
+自动化交易使用另一个默认关闭、无需重启的运行时门禁；它不授予资本权限，当前也未实现自动向券商提交订单。生产模式和专项维护命令见 [`scripts/README.md`](../scripts/README.md)。
 
 主要检查：
 
@@ -71,7 +71,7 @@ npm --prefix web run test
 
 Decision 与 Daily Trading Plan 汇总组合、行情、策略、信号、风险、Account Truth 和 paper/shadow 证据，输出 buy、sell、hold、rebalance、no-action 或 review-required。晋级后先生成 `paper_shadow_required` 计划意图；只有同日持久化 run 精确绑定 action、输入 fingerprint、模拟订单且无偏差才进入人工确认。出票写边重查 Account Truth、行情、风控、Kill Switch、晋级、费用及 shadow；任一异常均 no-action。
 
-生产每日候选运行不接受调用方提供的账户或交易事实：它按“当前 Decision/计划 → 批量风控 → 精确 paper/shadow → 当前计划重放”只输出 `manual_order_ticket_candidate` 或 `no_action`。v3 记录绑定估值快照、ledger cutoff、同市场日 Account Truth 晋级源、同日可信报价、账户专属费用、风险决策、策略晋级、模拟身份和前序真实执行闭环，并生成带指纹的只读人工票据候选。Owner 启用的后台运行只在已复核上交所交易日的上海时间 09:35–09:45 窗口内触发，并在读取计划前原子认领当日唯一 fail-closed 尝试；计划陈旧、失败、中断或重启都不会打开自动重试。Automation Cockpit v4 除了准确展示 owner 配置和后台 task 存活状态，还提供 `karkinos.daily_candidate_financial_preflight.v1`：它以只读、零写入、不联系 provider 的方式汇总当前 Decision/计划、同日 Account Truth 与持久化行情、冻结策略重放、有效费用复核、安全自动化策略及前序执行闭环。预检通过也只允许进入 canonical 风控与 paper/shadow 尝试，绝不创建人工票据、提交订单、修改 OMS/账本、扩大资本授权或证明盈利；最终票据仍只能由模拟后的生产门禁判定。前瞻试运行读取完整持久化历史，只累计最新一轮冻结策略与费用周期中已复核交易日历、单一输入 fingerprint 且模拟无偏差的日期；旧周期保留为已归档证据，绝不并入后来周期。达到 20 个合格交易日和 50 笔模拟订单后，也只允许人工记录 GO/继续/NO-GO，不会创建订单、授予权限、扩大资本或证明未来盈利。详见[每日候选交易生产运行手册](DAILY_CANDIDATE_PRODUCTION_RUNBOOK.zh.md)。最终 Decision 与计划生成时间也必须处于该窗口，每个汇总及逐意图行情在决策时不得超过 300 秒；页面会在窗口外禁用人工运行，直接调用也只能形成不计入前瞻样本的可审计 `no_action`。系统还会逐意图重验最终 Decision 的 canonical 订单生成门禁，并让 snapshot 与带指纹票据共享同一组策略晋级、已复核费用、比较、人工批准、冻结基准/候选数据集和 persisted-only 重放身份；只要最新一次运行被排除，即使旧计数达到门槛也不能开放 GO 复核。
+生产每日候选运行不接受调用方提供的账户或交易事实：它按“当前 Decision/计划 → 批量风控 → 精确 paper/shadow → 当前计划重放”只输出 `manual_order_ticket_candidate` 或 `no_action`。v3 记录绑定估值快照、ledger cutoff、同市场日 Account Truth 晋级源、同日可信报价、账户专属费用、风险决策、策略晋级、模拟身份和前序真实执行闭环，并生成带指纹的只读人工票据候选。随服务始终运行的后台调度器只在已复核上交所交易日的上海时间 09:35–09:45 窗口内触发，并在读取计划前原子认领当日唯一 fail-closed 尝试；计划陈旧、失败、中断或重启都不会打开自动重试。Automation Cockpit v4 除了准确展示后台 task 存活状态，还提供 `karkinos.daily_candidate_financial_preflight.v1`：它以只读、零写入、不联系 provider 的方式汇总当前 Decision/计划、同日 Account Truth 与持久化行情、冻结策略重放、有效费用复核、安全自动化策略及前序执行闭环。预检通过也只允许进入 canonical 风控与 paper/shadow 尝试，绝不创建人工票据、提交订单、修改 OMS/账本、扩大资本授权或证明盈利；最终票据仍只能由模拟后的生产门禁判定。前瞻试运行读取完整持久化历史，只累计最新一轮冻结策略与费用周期中已复核交易日历、单一输入 fingerprint 且模拟无偏差的日期；旧周期保留为已归档证据，绝不并入后来周期。达到 20 个合格交易日和 50 笔模拟订单后，也只允许人工记录 GO/继续/NO-GO，不会创建订单、授予权限、扩大资本或证明未来盈利。详见[每日候选交易生产运行手册](DAILY_CANDIDATE_PRODUCTION_RUNBOOK.zh.md)。最终 Decision 与计划生成时间也必须处于该窗口，每个汇总及逐意图行情在决策时不得超过 300 秒；页面会在窗口外禁用人工运行，直接调用也只能形成不计入前瞻样本的可审计 `no_action`。系统还会逐意图重验最终 Decision 的 canonical 订单生成门禁，并让 snapshot 与带指纹票据共享同一组策略晋级、已复核费用、比较、人工批准、冻结基准/候选数据集和 persisted-only 重放身份；只要最新一次运行被排除，即使旧计数达到门槛也不能开放 GO 复核。
 
 Account Truth 绑定额外只保存导入事件、人工复核、不可变估值和 cutoff 内历史账本的脱敏内容 fingerprint；trial 按原 cutoff 重算，允许之后追加账本行，但任一历史来源、复核、估值或账本漂移都会排除该日。
 

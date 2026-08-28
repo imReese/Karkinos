@@ -276,7 +276,7 @@ jobs:
       - name: Verify non-root fail-closed runtime
         run: |
           test "$(docker inspect --format '{{.Config.User}}' karkinos-ci)" = "karkinos"
-          python scripts/verify_docker_runtime.py --timeout-seconds 90
+          python scripts/ci/verify_docker_runtime.py --timeout-seconds 90
 
       - name: Capture runtime logs
         if: always()
@@ -368,7 +368,7 @@ jobs:
 
       - name: Run repository acceptance audit report
         run: |
-          uv run python scripts/export_acceptance_audit.py --audit all \
+          uv run python scripts/ci/export_acceptance_audit.py --audit all \
             --verify-evidence \
             --backend-junit reports/ci/backend-junit.xml \
             --frontend-junit reports/ci/frontend-junit.xml \
@@ -413,7 +413,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Check documentation health
-        run: python scripts/check_docs_health.py
+        run: python scripts/ci/check_docs_health.py
 
       - name: Check tracked private artifacts
         shell: bash

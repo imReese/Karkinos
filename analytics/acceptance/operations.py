@@ -454,7 +454,7 @@ def _operations_runbook_criteria_part_3() -> tuple[AcceptanceCriterion, ...]:
                 "paper/shadow, and current prior-"
                 "execution reconciliation before emitting only a "
                 "fingerprinted read-only manual-ticket candidate or named "
-                "no-action result; its owner-enabled background caller "
+                "no-action result; its always-running background caller "
                 "uses a verified SSE decision window and one atomic "
                 "fail-closed attempt per market date; final Decision/plan "
                 "times and every quote are replayed against that window "
@@ -589,7 +589,7 @@ def _operations_runbook_criteria_part_3() -> tuple[AcceptanceCriterion, ...]:
             evidence_paths=(
                 "server/services/daily_candidate_production_readiness.py",
                 "server/daily_candidate_production_readiness_cli.py",
-                "scripts/audit_daily_candidate_production.py",
+                "scripts/service/audit_daily_candidate_production.py",
                 "tests/test_daily_candidate_production_readiness.py",
                 "tests/test_daily_candidate_production_readiness_cli.py",
                 "scripts/README.md",

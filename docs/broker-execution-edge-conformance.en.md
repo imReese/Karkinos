@@ -66,7 +66,7 @@ keeps execution command semantics separate from lifecycle ingestion facts.
 Previewing creates no database:
 
 ```bash
-uv run python scripts/run_broker_execution_edge_conformance.py \
+uv run python scripts/broker/run_broker_execution_edge_conformance.py \
   --file /path/to/execution-edge-manifest.json \
   --db data/karkinos.db \
   --run-id local-execution-edge-v1
@@ -75,7 +75,7 @@ uv run python scripts/run_broker_execution_edge_conformance.py \
 Recording is a separate explicit act:
 
 ```bash
-uv run python scripts/run_broker_execution_edge_conformance.py \
+uv run python scripts/broker/run_broker_execution_edge_conformance.py \
   --file /path/to/execution-edge-manifest.json \
   --db data/karkinos.db \
   --run-id local-execution-edge-v1 \

@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from account_truth.broker_order_lifecycle_collector import (
     BROKER_ORDER_LIFECYCLE_COLLECTOR_RECORD_ACKNOWLEDGEMENT,
 )
-from scripts.ingest_broker_order_lifecycle_collector_batch import main
+from scripts.broker.ingest_broker_order_lifecycle_collector_batch import main
 
 
 def _payload() -> dict:

@@ -36,7 +36,7 @@ canonical broker statement CSV 的只读导入预览，以及 staged broker evid
 - 等价的命令行入口是：
 
 ```bash
-uv run python scripts/preview_citic_history_xls.py \
+uv run python scripts/broker/preview_citic_history_xls.py \
   --path /absolute/private/directory
 ```
 

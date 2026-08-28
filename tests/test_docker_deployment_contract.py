@@ -126,16 +126,22 @@ def test_docker_runtime_uses_the_python_and_uv_release_baseline() -> None:
     assert 'pip install --no-cache-dir "uv==${UV_VERSION}"' in dockerfile
 
 
-def test_deployment_examples_default_to_no_live_scheduler() -> None:
+def test_deployment_examples_keep_scheduler_always_on_and_authority_fail_closed() -> (
+    None
+):
     environment_template = Path(".env.example").read_text(encoding="utf-8")
     compose = Path("docker-compose.yml").read_text(encoding="utf-8")
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
-    assert "KARKINOS_LIVE_AUTO_START=false" in environment_template
-    assert "KARKINOS_LIVE_AUTO_START=true" not in environment_template
-    assert "KARKINOS_LIVE_AUTO_START=${KARKINOS_LIVE_AUTO_START:-false}" in compose
+    assert "KARKINOS_LIVE_AUTO_START" not in environment_template
+    assert "KARKINOS_LIVE_AUTO_START" not in compose
+    assert "/api/settings/live/status" in compose
+    assert "['running'] is True" in compose
     assert "Start runtime with fail-closed defaults" in workflow
     assert "karkinos:ci python -m server --no-live" not in workflow
-    assert '"live scheduler auto-start"' in Path(
-        "scripts/verify_docker_runtime.py"
+    assert '"live scheduler running"' in Path(
+        "scripts/ci/verify_docker_runtime.py"
+    ).read_text(encoding="utf-8")
+    assert '"automatic trading disabled"' in Path(
+        "scripts/ci/verify_docker_runtime.py"
     ).read_text(encoding="utf-8")

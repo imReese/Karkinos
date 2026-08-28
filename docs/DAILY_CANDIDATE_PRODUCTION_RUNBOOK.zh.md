@@ -33,23 +33,23 @@
 6. 若结果为 `manual_order_ticket_candidate`，人工检查模拟订单、当前报价、费用、风控/约束、证据指纹、偏差、失效条件和当前 Kill Switch。返回产物只读且不会创建 OMS 订单；之后也只能进入现有逐单人工确认流程。
 7. 若人工在券商端执行，必须导入精确成交并完成 plan → paper → actual 对账，才能进入下一批。
 
-Owner 启用实时监控后，后台循环先读取持久化且已官方复核的上交所日历，只能在上海时间 09:35 至 09:44 调用同一服务。调用前会原子认领当日唯一后台尝试，并把认领日期绑定到证据链每次 Decision/计划读取；任一阶段的两个持久化日期不等于认领日期时，会在认领日写入可审计 `NO-ACTION`，停止下一步风控或 paper/shadow，且不通知、不关联旧日结果。调用方还会再次核对返回日期，任何契约回归都记录为脱敏 `failed_closed`。即使当前计划日期陈旧、运行失败、任务中断或应用重启，该认领也保持 fail-closed，不会用更晚信息自动重试。休市或日历未复核时不会写入；09:45 后没有认领则报告错过窗口，不使用更晚信息回填。完全相同的人工输入仍幂等复用；`karkinos.daily_candidate_input_identity.v2` 只忽略底层事实和门禁结论未变时自然增长的当前年龄计数，同时绑定生产阻断、脱敏风控错误指纹、冻结策略重放、准确 paper/shadow 结果和前序执行闭环。同一市场日任何来源或结果发生变化都会保留为不同 input fingerprint，该日期不计入试运行，而不是覆盖早先记录。
+随服务始终运行的 live scheduler 后台循环先读取持久化且已官方复核的上交所日历，只能在上海时间 09:35 至 09:44 调用同一服务。调用前会原子认领当日唯一后台尝试，并把认领日期绑定到证据链每次 Decision/计划读取；任一阶段的两个持久化日期不等于认领日期时，会在认领日写入可审计 `NO-ACTION`，停止下一步风控或 paper/shadow，且不通知、不关联旧日结果。调用方还会再次核对返回日期，任何契约回归都记录为脱敏 `failed_closed`。即使当前计划日期陈旧、运行失败、任务中断或应用重启，该认领也保持 fail-closed，不会用更晚信息自动重试。休市或日历未复核时不会写入；09:45 后没有认领则报告错过窗口，不使用更晚信息回填。完全相同的人工输入仍幂等复用；`karkinos.daily_candidate_input_identity.v2` 只忽略底层事实和门禁结论未变时自然增长的当前年龄计数，同时绑定生产阻断、脱敏风控错误指纹、冻结策略重放、准确 paper/shadow 结果和前序执行闭环。同一市场日任何来源或结果发生变化都会保留为不同 input fingerprint，该日期不计入试运行，而不是覆盖早先记录。
 
 `karkinos.daily_candidate_background_schedule.v3` 还会从同一份已持久化且经官方复核的 SSE 日历投影当前或下一个 `karkinos.daily_candidate_next_reviewed_window.v1`，包含准确的上海时区开始/结束时间。该投影只读、不联系 provider、不写数据库，不能重新开放已尝试日期、允许重试或回填，也不能改变尝试资格、执行或资本权限。跨年时必须存在下一年度单独持久化且经官方复核的日历，否则下一窗口明确显示不可用。该日期只用于提前准备 Account Truth、费用、策略人工复核和行情采集。
 
-上海时间 08:45 至 09:34，owner 已启用的 monitor 可以为已验证市场日期原子认领一次 `karkinos.daily_candidate_preparation_check.v1`。该检查只读取应在决策窗口前就绪的持久化门禁：安全的 paper/shadow 策略、同日 Account Truth、当前账户级费用复核、仍可精确重放的人工晋级策略，以及前序 plan → paper → actual 闭环；当前行情、最终 Decision/计划和运行窗口明确延后处理。阻断时只持久化并通知脱敏阻断码与第一项安全动作；通过也只表示下一步可以准备窗口内证据。该认领每天最多一次，不重试、不回填、不占用正式每日尝试或前瞻样本资格，也不联系 provider/券商、不运行风控或 paper/shadow、不创建 OMS 订单、不修改账本、不改变资金额度，且不构成盈利结论。
+上海时间 08:45 至 09:34，始终运行的 monitor 可以为已验证市场日期原子认领一次 `karkinos.daily_candidate_preparation_check.v1`。该检查只读取应在决策窗口前就绪的持久化门禁：安全的 paper/shadow 策略、同日 Account Truth、当前账户级费用复核、仍可精确重放的人工晋级策略，以及前序 plan → paper → actual 闭环；当前行情、最终 Decision/计划和运行窗口明确延后处理。阻断时只持久化并通知脱敏阻断码与第一项安全动作；通过也只表示下一步可以准备窗口内证据。该认领每天最多一次，不重试、不回填、不占用正式每日尝试或前瞻样本资格，也不联系 provider/券商、不运行风控或 paper/shadow、不创建 OMS 订单、不修改账本、不改变资金额度，且不构成盈利结论。
 
 每个已原子认领的后台尝试都会为 `no_action`、只读票据待复核、中断或 fail-closed 失败持久化一条隐私最小化 Operations 告警。若配置了通知，`no_action` 消息只包含市场日期和最多八个具名阻断项，发送最长等待十秒。attempt 会记录告警/通知状态；告警存储、超时或发送失败不能触发重试、创建 OMS 订单、联系券商、修改账本或改变资金额度。
 
-“决策 → 自动化”还会展示 `karkinos.daily_candidate_runtime_status.v1`，分别证明 owner 配置是否启用了后台监控，以及当前进程内的准确监控 task 是否仍在运行。即使决策窗口已打开，task 被禁用、缺失、已结束、被取消或失败时，自动尝试也必须按运营阻断处理；人工运行窗口是另一项独立事实。task 存活绝不代表 Account Truth、行情、策略、费用、风控或对账已达到财务就绪，读取该状态也不联系 provider、不写数据库、不执行券商动作或改变权限。
+“决策 → 自动化”还会展示 `karkinos.daily_candidate_runtime_status.v1`，证明当前进程内的准确监控 task 是否仍在运行。后台监控不可配置关闭；即使决策窗口已打开，task 缺失、已结束、被取消或失败时也属于服务故障，自动尝试必须按运营阻断处理；人工运行窗口是另一项独立事实。task 存活绝不代表 Account Truth、行情、策略、费用、风控或对账已达到财务就绪，读取该状态也不联系 provider、不写数据库、不执行券商动作或改变权限。
 
 Automation Cockpit v4 还会展示 `karkinos.daily_candidate_financial_preflight.v1`。该只读投影从持久化事实重建当前 Decision 与计划，并逐项检查同日 Account Truth 采集时间、可信持久化行情、精确晋级策略与冻结数据集重放、当前费用复核及日期覆盖、安全自动化策略和前序执行闭环。绿色预检只表示可以在已复核窗口内启动一次 canonical 风控加 paper/shadow 尝试；它不会执行风控、模拟订单、创建票据、修改 OMS 或生产账本、联系 provider/券商、扩大资本或证明盈利。模拟后的生产门禁仍是只读人工票据候选的唯一判定者；任何来源缺失或漂移都会显示为具名 `NO-ACTION` 原因。
 
 预检同时按依赖顺序返回只读 `operator_checklist`：先处理 Account Truth、账户费用和策略人工复核，再处理前序执行闭环、当前行情、Decision/计划及运行窗口。每一步都携带准确阻断项、`karkinos.daily_candidate_operator_evidence.v1` 所需证据、逐项完成标准和对应复核入口。Account Truth 清单明确要求同一当前上海市场日的现金/持仓快照、逐笔 `quantity/price/gross_amount/fee/tax/transfer_fee/net_amount`、来源哈希/窗口/范围/完整返回复核、最新账本截止点覆盖，以及现金/持仓/费用/成本基础零未解决差异；原始 XLS 行和私有账户标识不需要写入，所有者口述也不被当作财务事实。策略清单明确要求 5 轮前后依赖的顺序迭代和 10 次调用，而非 5 次并发；保存策略必须为 `unbounded_daily`，即 Karkinos 不设每日累计 Token 上限，但仍记录用量并受 provider 单次请求和上下文窗口限制。该清单不会自动执行修复、写入证据、批准策略、创建票据或改变执行/资本权限；全部门禁已通过时也只指向一次 canonical paper/shadow 尝试。
 
-在仓库根目录运行 `uv run python scripts/audit_daily_candidate_production.py --pretty`，可检查“当前机器”而不只是静态代码清单。命令只接受显式 loopback HTTP 地址，只读访问正在运行的 Automation Cockpit 与 shadow research 状态，生成脱敏且带指纹的 `karkinos.daily_candidate_production_readiness.v2`：同时汇总当前财务预检、准确 monitor task 存活、5 轮顺序且每日 Token 不设累计上限的研究策略，以及 20 日 / 50 单前瞻试运行进度。报告还保留 canonical 依赖顺序的 operator checklist：按阻断代码合并重复候选项并给出出现次数、受影响候选数、首个门禁、安全动作、所需持久化证据及完成标准；清单缺失、非法、包含授权动作或不是 canonical evidence 时会直接 fail-closed，不能充当操作指引。退出码 `0` 只表示当前服务可以继续有界 paper/shadow 证据收集，不表示已达到 20 日 / 50 单，也不表示 GO；退出码 `2` 表示 fail-closed 非就绪，服务未运行同样如此。仓库测试或静态 acceptance manifest 不能替代这份实时报告。输出不包含 XLS 行、账户标识、券商动作、数据库写入、执行/资本权限或盈利声明。
+在仓库根目录运行 `uv run python scripts/service/audit_daily_candidate_production.py --pretty`，可检查“当前机器”而不只是静态代码清单。命令只接受显式 loopback HTTP 地址，只读访问正在运行的 Automation Cockpit 与 shadow research 状态，生成脱敏且带指纹的 `karkinos.daily_candidate_production_readiness.v2`：同时汇总当前财务预检、准确 monitor task 存活、5 轮顺序且每日 Token 不设累计上限的研究策略，以及 20 日 / 50 单前瞻试运行进度。报告还保留 canonical 依赖顺序的 operator checklist：按阻断代码合并重复候选项并给出出现次数、受影响候选数、首个门禁、安全动作、所需持久化证据及完成标准；清单缺失、非法、包含授权动作或不是 canonical evidence 时会直接 fail-closed，不能充当操作指引。退出码 `0` 只表示当前服务可以继续有界 paper/shadow 证据收集，不表示已达到 20 日 / 50 单，也不表示 GO；退出码 `2` 表示 fail-closed 非就绪，服务未运行同样如此。仓库测试或静态 acceptance manifest 不能替代这份实时报告。输出不包含 XLS 行、账户标识、券商动作、数据库写入、执行/资本权限或盈利声明。
 
-在 owner 自行运行的 Mac 上，终端后台子进程不构成持久服务证据。准备下一个决策窗口前，先运行 `./scripts/manage_launch_agent.sh print-plist` 检查本地用户级定义，再显式执行 `./scripts/manage_launch_agent.sh install`；随后必须由 `./scripts/manage_launch_agent.sh status` 同时确认 LaunchAgent 已加载且进程存活。该服务只监听 `127.0.0.1`，只要仍处于加载状态，进程任何退出都会由 launchd 重新拉起，并可通过 `uninstall` 完整撤销。安装不会修改 `config.json` 或 `.env`，不会自行开启 `live_auto_start`，不会联系 provider，也不证明财务就绪。若后端端口已有 listener，安装会保持原进程不动并失败；operator 必须明确处理该准确进程，禁止两个每日候选服务共用一个本地运行数据库。
+在 owner 自行运行的 Mac 上，终端后台子进程不构成持久服务证据。准备下一个决策窗口前，先运行 `./scripts/service/manage_launch_agent.sh print-plist` 检查本地用户级定义，再显式执行 `./scripts/service/manage_launch_agent.sh install`；随后必须由 `./scripts/service/manage_launch_agent.sh status` 同时确认 LaunchAgent 已加载、进程存活且 live scheduler 正在运行。该服务只监听 `127.0.0.1`，只要仍处于加载状态，进程任何退出都会由 launchd 重新拉起，并可通过 `uninstall` 完整撤销。live scheduler 会随服务启动并可能联系已配置行情 provider，但不会修改 `config.json` 或 `.env`，也不证明财务就绪或授予券商权限。若后端端口已有 listener，安装会保持原进程不动并失败；operator 必须明确处理该准确进程，禁止两个每日候选服务共用一个本地运行数据库。
 
 ## 前瞻运营试运行
 
@@ -105,8 +105,8 @@ Automation Cockpit v4 还会展示 `karkinos.daily_candidate_financial_preflight
 | 持久化 daily input identity 无法重放 | 日期不计入 | 保留原记录，调查来源漂移或篡改，等待后续干净交易日 |
 | 后台告警或通知失败 | 候选结论保持不变且不得重试 | 在下个窗口前检查 attempt 中脱敏的 `operator_alert` / `notification` 状态 |
 | 盘前准备记录阻断、契约无效、中断或缺失 | 正式尝试不受影响，且不获得重试或回填资格 | 在后续干净窗口前复核脱敏第一门禁；不得把盘前准备当作交易结果 |
-| 后台监控被禁用、缺失、已结束、被取消或失败 | 不执行自动尝试，runtime 状态 fail closed | 保持停止，或仅在 owner 明确启用后重启，并在下个窗口前确认 `background_monitor_running=true` |
-| macOS LaunchAgent 未加载或进程存活不可用 | 不形成持久自动 monitor 结论 | 显式检查或重装该准确用户级服务；不得从 launchd 状态推断财务就绪 |
+| 后台监控缺失、已结束、被取消或失败 | 不执行自动尝试，runtime 状态 fail closed | 重启服务并排查 task 故障，在下个窗口前确认 `background_monitor_running=true` |
+| macOS LaunchAgent 未加载或服务就绪状态不可用 | 不形成持久自动 monitor 结论 | 显式检查或重装该准确用户级服务；不得从 launchd 状态推断财务就绪 |
 | 后台窗口结束仍无当日记录 | `missed_decision_window`，不回填 | 在下一个已验证交易日窗口前准备好当前证据 |
 | 策略、已复核费用或策略运行约束 fingerprint 变化 | 开始新试运行周期 | 旧样本保留为已归档证据，不并入新周期 |
 | Kill Switch 不可用或已开启 | `no_action` | 恢复并复核交易控制证据 |

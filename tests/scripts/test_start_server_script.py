@@ -21,18 +21,21 @@ def test_start_server_guides_local_data_source_configuration():
     script = Path("scripts/start_server.sh").read_text()
 
     assert "guide_data_source_configuration" in script
-    assert "scripts/configure_data_source.py" in script
+    assert "scripts/data/configure_data_source.py" in script
     assert script.index("guide_data_source_configuration") < script.index(
         "Starting Karkinos Web service"
     )
 
 
-def test_start_server_does_not_force_live_mode():
+def test_start_server_documents_scheduler_as_a_service_invariant():
     script = Path("scripts/start_server.sh").read_text()
 
-    assert "it does not enable live monitoring" in script
+    assert "The live scheduler starts with the backend" in script
+    assert "cannot be disabled independently" in script
+    assert "--no-live" not in script
+    assert "live_auto_start" not in script
+    assert "KARKINOS_LIVE_AUTO_START" not in script
     assert "ENV_PREFIX" not in script
-    assert "KARKINOS_LIVE_AUTO_START=true uv" not in script
     assert (
         'env "${NO_PROXY_ENV[@]}" UV_CACHE_DIR="${UV_CACHE_DIR:-.uv-cache}"' in script
     )
@@ -49,7 +52,7 @@ def test_start_server_limits_reload_scope_and_archives_large_logs():
     assert 'rm -f "${log_file}"' not in script
 
 
-def test_start_server_requires_bounded_process_liveness_before_success():
+def test_start_server_requires_bounded_service_readiness_before_success():
     script = Path("scripts/start_server.sh").read_text()
 
     assert "KARKINOS_STARTUP_HEALTH_TIMEOUT_SECONDS:-60" in script
@@ -57,6 +60,8 @@ def test_start_server_requires_bounded_process_liveness_before_success():
     assert script.index("wait_for_backend_readiness") < script.index(
         'echo "Karkinos Web service started'
     )
+    assert "/api/settings/live/status" in script
+    assert '"running":true' in script
     assert "financial_readiness" not in script
 
 
@@ -71,6 +76,7 @@ def _preflight_repo(
     health_response: str,
     curl_exit: int,
     frontend_curl_exit: int = 0,
+    live_response: str = '{"running":true,"market_open":false}',
     listener_pids: str = "4242",
     resident_service_loaded: bool = False,
 ) -> Path:
@@ -112,6 +118,10 @@ def _preflight_repo(
         "#!/usr/bin/env bash\n"
         'if [[ "$*" == *":5173/"* ]]; then\n'
         f"  exit {frontend_curl_exit}\n"
+        "fi\n"
+        'if [[ "$*" == *"/api/settings/live/status"* ]]; then\n'
+        f"  printf '%s' '{live_response}'\n"
+        f"  exit {curl_exit}\n"
         "fi\n"
         f"printf '%s' '{health_response}'\n"
         f"exit {curl_exit}\n",
@@ -223,6 +233,39 @@ def test_start_server_fails_closed_for_unhealthy_resident_backend(tmp_path: Path
     assert not (tmp_path / "uv-launch-called").exists()
 
 
+def test_start_server_fails_closed_when_resident_scheduler_is_stopped(
+    tmp_path: Path,
+):
+    repo = _preflight_repo(
+        tmp_path,
+        health_response=(
+            '{"schema_version":"karkinos.service_health.v1","status":"alive"}'
+        ),
+        live_response='{"running":false,"market_open":false}',
+        curl_exit=0,
+        listener_pids="",
+        resident_service_loaded=True,
+    )
+
+    result = subprocess.run(
+        ["bash", "scripts/start_server.sh", "prod"],
+        cwd=repo,
+        env={
+            **os.environ,
+            "HOME": str(tmp_path / "home"),
+            "PATH": f"{tmp_path / 'bin'}:{os.environ['PATH']}",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "service readiness is unavailable" in result.stderr
+    assert "No fallback backend was launched" in result.stderr
+    assert not (tmp_path / "uv-launch-called").exists()
+
+
 def test_start_server_cleans_up_when_frontend_readiness_times_out(tmp_path: Path):
     repo = _preflight_repo(
         tmp_path,
@@ -300,7 +343,7 @@ def test_start_server_reports_unresponsive_listener_without_killing(tmp_path: Pa
 
     assert result.returncode == 1
     assert "port 8000 is occupied" in result.stderr
-    assert "liveness did not respond" in result.stderr
+    assert "service readiness did not respond" in result.stderr
     assert "Listener PID(s): 4242" in result.stderr
     assert "No process was terminated." in result.stderr
     assert not (tmp_path / "uv-launch-called").exists()
@@ -343,7 +386,7 @@ def test_start_server_prod_without_extra_args_handles_empty_server_args(
                 pass
 
 
-def test_start_server_cleans_up_launch_when_process_liveness_times_out(
+def test_start_server_cleans_up_launch_when_service_readiness_times_out(
     tmp_path: Path,
 ):
     repo = _preflight_repo(
@@ -367,12 +410,12 @@ def test_start_server_cleans_up_launch_when_process_liveness_times_out(
     )
 
     assert result.returncode == 1
-    assert "process liveness did not become ready within 1s" in result.stderr
+    assert "service readiness did not become ready within 1s" in result.stderr
     assert (tmp_path / "uv-launch-called").is_file()
     assert not (repo / ".run" / "server.pid").exists()
 
 
-def test_start_server_rejects_invalid_process_liveness_timeout_before_launch(
+def test_start_server_rejects_invalid_service_readiness_timeout_before_launch(
     tmp_path: Path,
 ):
     repo = _preflight_repo(

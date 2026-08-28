@@ -1,4 +1,4 @@
-"""Verify a built Karkinos container starts with fail-closed authority defaults."""
+"""Verify a built Karkinos container starts with its runtime safety invariants."""
 
 from __future__ import annotations
 
@@ -23,6 +23,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     statuses = {
         "settings": settings,
+        "live_status": _fetch_json(
+            f"{args.base_url.rstrip('/')}/api/settings/live/status"
+        ),
+        "automatic_trading": _fetch_json(
+            f"{args.base_url.rstrip('/')}/api/trading/automatic-trading"
+        ),
         "capital_authority": _fetch_json(
             f"{args.base_url.rstrip('/')}/api/automation/capital-authority/status"
         ),
@@ -61,13 +67,19 @@ def _fetch_json(url: str) -> dict[str, Any]:
 
 
 def _assert_fail_closed_defaults(statuses: Mapping[str, Mapping[str, Any]]) -> None:
-    settings = statuses["settings"]
+    live_status = statuses["live_status"]
+    automatic_trading = statuses["automatic_trading"]
     capital = statuses["capital_authority"]
     bridge = statuses["controlled_bridge"]
     submission = statuses["controlled_submission"]
 
     expected = {
-        "live scheduler auto-start": settings.get("live_auto_start") is False,
+        "live scheduler running": live_status.get("running") is True,
+        "automatic trading disabled": (
+            automatic_trading.get("enabled") is False
+            and automatic_trading.get("configured_enabled") is False
+            and automatic_trading.get("status") == "disabled"
+        ),
         "capital runtime authority": capital.get("runtime_authority_status")
         == "disabled",
         "capital execution authority": capital.get("execution_authority_enabled")
@@ -92,7 +104,7 @@ def _assert_fail_closed_defaults(statuses: Mapping[str, Mapping[str, Any]]) -> N
     failures = [name for name, passed in expected.items() if not passed]
     if failures:
         raise AssertionError(
-            "container authority defaults are not fail-closed: " + ", ".join(failures)
+            "container runtime invariants failed: " + ", ".join(failures)
         )
 
 

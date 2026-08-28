@@ -57,7 +57,7 @@ adapter、联系券商、提交或撤销真实订单，也不会修改 OMS、Led
 Preview 不创建数据库：
 
 ```bash
-uv run python scripts/run_broker_execution_edge_conformance.py \
+uv run python scripts/broker/run_broker_execution_edge_conformance.py \
   --file /path/to/execution-edge-manifest.json \
   --db data/karkinos.db \
   --run-id local-execution-edge-v1
@@ -66,7 +66,7 @@ uv run python scripts/run_broker_execution_edge_conformance.py \
 记录报告必须单独显式确认：
 
 ```bash
-uv run python scripts/run_broker_execution_edge_conformance.py \
+uv run python scripts/broker/run_broker_execution_edge_conformance.py \
   --file /path/to/execution-edge-manifest.json \
   --db data/karkinos.db \
   --run-id local-execution-edge-v1 \

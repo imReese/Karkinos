@@ -3,12 +3,12 @@
 `karkinos.qmt_order_lifecycle_export.v1` 已退役，不再是 Karkinos 的 canonical
 contract。Karkinos 不依赖 QMT SDK，不注册 QMT runtime，也不据此宣称支持 QMT。
 
-正常导入命令 `scripts/import_broker_order_lifecycle.py` 会拒绝旧 schema。确需保留
+正常导入命令 `scripts/broker/import_broker_order_lifecycle.py` 会拒绝旧 schema。确需保留
 历史离线 JSON 时，只能通过显式迁移入口转换为
 `karkinos.broker_order_lifecycle_export.v1`：
 
 ```bash
-python scripts/migrate_legacy_qmt_order_lifecycle.py \
+python scripts/broker/migrate_legacy_qmt_order_lifecycle.py \
   --file /path/to/legacy-qmt-order.json \
   --db data/store/karkinos.db
 ```
@@ -16,7 +16,7 @@ python scripts/migrate_legacy_qmt_order_lifecycle.py \
 该命令默认仅 preview。持久化仍需同时提供 `--record` 与 canonical 的非授权确认：
 
 ```bash
-python scripts/migrate_legacy_qmt_order_lifecycle.py \
+python scripts/broker/migrate_legacy_qmt_order_lifecycle.py \
   --file /path/to/legacy-qmt-order.json \
   --db data/store/karkinos.db \
   --record \

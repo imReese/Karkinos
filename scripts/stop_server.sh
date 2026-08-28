@@ -10,6 +10,7 @@ BACKEND_PORT="${KARKINOS_BACKEND_PORT:-8000}"
 FRONTEND_PORT="${KARKINOS_FRONTEND_PORT:-5173}"
 LAUNCH_AGENT_LABEL="com.karkinos.daily-candidate"
 LAUNCH_AGENT_TARGET="gui/$(id -u)/${LAUNCH_AGENT_LABEL}"
+LAUNCH_AGENT_MANAGER="${REPO_ROOT}/scripts/service/manage_launch_agent.sh"
 
 is_number() {
 	[[ "${1:-}" =~ ^[0-9]+$ ]]
@@ -77,6 +78,11 @@ stop_pid_file() {
 		rm -f "${pid_file}"
 		return 1
 	fi
+	if ! is_number "${pid}"; then
+		echo "Error: invalid ${label} PID '${pid}'." >&2
+		rm -f "${pid_file}"
+		return 1
+	fi
 
 	if ! kill -0 "${pid}" >/dev/null 2>&1; then
 		echo "${label} is not running, cleaning stale PID file."
@@ -129,18 +135,31 @@ cleanup_orphans_by_port() {
 	done <<<"${pids}"
 }
 
-stop_pid_file "${WEB_PID_FILE}" "Karkinos Web frontend"
-cleanup_orphans_by_command "${REPO_ROOT}/web/node_modules/.bin/vite --host .* --port ${FRONTEND_PORT}" "Karkinos Web frontend"
-cleanup_orphans_by_port "${FRONTEND_PORT}" "Karkinos Web frontend"
+EXIT_STATUS=0
+stop_pid_file "${WEB_PID_FILE}" "Karkinos Web frontend" || EXIT_STATUS=1
+cleanup_orphans_by_command "${REPO_ROOT}/web/node_modules/.bin/vite --host .* --port ${FRONTEND_PORT}" "Karkinos Web frontend" || EXIT_STATUS=1
+cleanup_orphans_by_port "${FRONTEND_PORT}" "Karkinos Web frontend" || EXIT_STATUS=1
 
 if resident_service_is_loaded; then
-	echo "Karkinos resident Web service remains running under ${LAUNCH_AGENT_TARGET}."
-	echo "Remove it only with: ./scripts/manage_launch_agent.sh uninstall"
-	echo "Karkinos manual Web processes stopped; resident service preserved."
+	if [[ ! -x "${LAUNCH_AGENT_MANAGER}" ]]; then
+		echo "Error: LaunchAgent manager is unavailable at ${LAUNCH_AGENT_MANAGER}." >&2
+		EXIT_STATUS=1
+	elif ! "${LAUNCH_AGENT_MANAGER}" uninstall; then
+		echo "Error: failed to stop ${LAUNCH_AGENT_TARGET}." >&2
+		EXIT_STATUS=1
+	else
+		echo "Karkinos resident Web service stopped."
+	fi
 else
-	stop_pid_file "${PID_FILE}" "Karkinos Web service"
-	cleanup_orphans_by_command "${REPO_ROOT}/.venv/bin/python.* -m server" "Karkinos Web service"
-	cleanup_orphans_by_command "uv run python -m server" "Karkinos Web service"
-	cleanup_orphans_by_port "${BACKEND_PORT}" "Karkinos Web service"
-	echo "Karkinos Web processes stopped."
+	stop_pid_file "${PID_FILE}" "Karkinos Web service" || EXIT_STATUS=1
+	cleanup_orphans_by_command "${REPO_ROOT}/.venv/bin/python.* -m server" "Karkinos Web service" || EXIT_STATUS=1
+	cleanup_orphans_by_command "uv run python -m server" "Karkinos Web service" || EXIT_STATUS=1
+	cleanup_orphans_by_port "${BACKEND_PORT}" "Karkinos Web service" || EXIT_STATUS=1
 fi
+
+if ((EXIT_STATUS != 0)); then
+	echo "Error: one or more Karkinos processes could not be stopped cleanly." >&2
+	exit "${EXIT_STATUS}"
+fi
+
+echo "Karkinos Web processes stopped."

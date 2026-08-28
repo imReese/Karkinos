@@ -532,8 +532,8 @@ export function ControlledSessionRevocationOperatorPanel({
                     {challenge.data.expires_at}
                     <br />
                     {locale === 'zh'
-                      ? '使用 scripts/operator_signer.py，expected action 为 revoke_controlled_session，artifact type 为 controlled_session_revocation。只粘贴 payload，私钥不得进入 Karkinos。'
-                      : 'Use scripts/operator_signer.py with expected action revoke_controlled_session and artifact type controlled_session_revocation. Paste only the payload; the private key must never enter Karkinos.'}
+                      ? '使用 scripts/broker/operator_signer.py，expected action 为 revoke_controlled_session，artifact type 为 controlled_session_revocation。只粘贴 payload，私钥不得进入 Karkinos。'
+                      : 'Use scripts/broker/operator_signer.py with expected action revoke_controlled_session and artifact type controlled_session_revocation. Paste only the payload; the private key must never enter Karkinos.'}
                   </div>
                   <label className="block min-w-0 text-xs text-[var(--app-text)]">
                     <span className="app-muted block pb-1">

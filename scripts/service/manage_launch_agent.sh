@@ -3,7 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 LABEL="com.karkinos.daily-candidate"
 USER_ID="$(id -u)"
 DOMAIN="gui/${USER_ID}"
@@ -21,21 +21,21 @@ UNLOAD_TIMEOUT_SECONDS="${KARKINOS_LAUNCH_AGENT_UNLOAD_TIMEOUT_SECONDS:-10}"
 usage() {
 	cat <<'EOF'
 Usage:
-  ./scripts/manage_launch_agent.sh print-plist
-  ./scripts/manage_launch_agent.sh install
-  ./scripts/manage_launch_agent.sh status
-  ./scripts/manage_launch_agent.sh uninstall
+  ./scripts/service/manage_launch_agent.sh print-plist
+  ./scripts/service/manage_launch_agent.sh install
+  ./scripts/service/manage_launch_agent.sh status
+  ./scripts/service/manage_launch_agent.sh uninstall
 
 Commands:
   print-plist  Render the local LaunchAgent definition to stdout without writing.
   install      Install and start the current user's supervised Karkinos service.
-  status       Report launchd state and process liveness only.
+  status       Report launchd state and service readiness.
   uninstall    Stop and remove only this exact user-level LaunchAgent.
 
 Safety boundary:
-  - This script does not edit config.json or .env and does not enable live monitoring.
-  - server.live_auto_start or KARKINOS_LIVE_AUTO_START remains an explicit owner setting.
-  - Process liveness does not establish financial readiness.
+  - This script does not edit config.json or .env.
+  - The live scheduler is part of the Karkinos service lifecycle and starts automatically.
+  - Scheduler readiness does not establish financial readiness.
   - No command submits broker orders or changes capital authority.
 EOF
 }
@@ -143,7 +143,7 @@ service_is_loaded() {
 	launchctl print "${SERVICE_TARGET}" >/dev/null 2>&1
 }
 
-karkinos_process_is_alive() {
+karkinos_service_is_ready() {
 	if ! command -v curl >/dev/null 2>&1; then
 		return 1
 	fi
@@ -156,7 +156,13 @@ karkinos_process_is_alive() {
 		"${response}" == *'"status":"alive"'* && \
 		"${response}" == *'"financial_readiness_claimed":false'* && \
 		"${response}" == *'"broker_submission_enabled":false'* && \
-		"${response}" == *'"capital_authority_changed":false'* ]]
+		"${response}" == *'"capital_authority_changed":false'* ]] || return 1
+	local live_response
+	live_response="$(
+		curl --noproxy '*' --fail --silent --show-error --max-time 2 \
+			"http://${BACKEND_HOST}:${BACKEND_PORT}/api/settings/live/status" 2>/dev/null
+	)" || return 1
+	[[ "${live_response}" == *'"running":true'* ]]
 }
 
 listener_pids() {
@@ -174,13 +180,13 @@ print_compact_status() {
 	echo "LaunchAgent: loaded (${SERVICE_TARGET})"
 	launchctl print "${SERVICE_TARGET}" | awk \
 		'/state =|runs =|pid =|last exit code|last terminating signal/'
-	if karkinos_process_is_alive; then
-		echo "Process liveness: alive at http://${BACKEND_HOST}:${BACKEND_PORT}"
+	if karkinos_service_is_ready; then
+		echo "Service readiness: process alive, live scheduler running at http://${BACKEND_HOST}:${BACKEND_PORT}"
 		echo "Financial readiness: not claimed"
 		echo "Broker submission: disabled"
 		return 0
 	fi
-	echo "Process liveness: unavailable" >&2
+	echo "Service readiness: unavailable" >&2
 	echo "Financial readiness: not claimed" >&2
 	return 1
 }
@@ -225,7 +231,7 @@ install_agent() {
 	local pids
 	pids="$(listener_pids)"
 	if [[ -n "${pids}" ]]; then
-		if karkinos_process_is_alive; then
+		if karkinos_service_is_ready; then
 			echo "Error: another Karkinos process already owns port ${BACKEND_PORT}." >&2
 		else
 			echo "Error: port ${BACKEND_PORT} is occupied by a non-responsive listener." >&2
@@ -259,7 +265,7 @@ install_agent() {
 		if ! service_is_loaded; then
 			break
 		fi
-		if karkinos_process_is_alive; then
+		if karkinos_service_is_ready; then
 			echo "Installed ${SERVICE_TARGET}."
 			print_compact_status
 			return
@@ -269,7 +275,7 @@ install_agent() {
 
 	launchctl bootout "${SERVICE_TARGET}" >/dev/null 2>&1 || true
 	rm -f "${PLIST_PATH}"
-	echo "Error: Karkinos process liveness did not become ready within ${HEALTH_TIMEOUT_SECONDS}s." >&2
+	echo "Error: Karkinos service readiness did not become ready within ${HEALTH_TIMEOUT_SECONDS}s." >&2
 	echo "The failed LaunchAgent was unloaded and its plist was removed." >&2
 	echo "Inspect ${LOG_FILE}." >&2
 	exit 1

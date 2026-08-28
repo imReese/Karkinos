@@ -409,8 +409,8 @@ export function ControlledBrokerRecoveryOperatorPanel({
                   </label>
                   <div className="app-muted break-words text-xs leading-5">
                     {locale === 'zh'
-                      ? '使用 scripts/operator_signer.py；expected action 为 query_unknown_controlled_broker_submission，artifact type 为 controlled_broker_submission_recovery。只粘贴 payload，不要把私钥放进浏览器。'
-                      : 'Use scripts/operator_signer.py with expected action query_unknown_controlled_broker_submission and artifact type controlled_broker_submission_recovery. Paste only the payload; never put the private key in the browser.'}
+                      ? '使用 scripts/broker/operator_signer.py；expected action 为 query_unknown_controlled_broker_submission，artifact type 为 controlled_broker_submission_recovery。只粘贴 payload，不要把私钥放进浏览器。'
+                      : 'Use scripts/broker/operator_signer.py with expected action query_unknown_controlled_broker_submission and artifact type controlled_broker_submission_recovery. Paste only the payload; never put the private key in the browser.'}
                   </div>
                   <label className="block min-w-0 text-xs text-[var(--app-text)]">
                     <span className="app-muted block pb-1">

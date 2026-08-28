@@ -323,10 +323,10 @@ async function completeSignedDecision() {
   );
   expect(await screen.findByDisplayValue('c2lnbi10aGlz')).toBeTruthy();
   const signingCommand = screen.getByText((content) =>
-    content.includes('scripts/operator_signer.py sign'),
+    content.includes('scripts/broker/operator_signer.py sign'),
   );
   expect(signingCommand.textContent).toContain(
-    "printf '%s' 'c2lnbi10aGlz' | uv run python scripts/operator_signer.py sign",
+    "printf '%s' 'c2lnbi10aGlz' | uv run python scripts/broker/operator_signer.py sign",
   );
   expect(signingCommand.textContent).toContain(
     "--operator-id 'local-owner' --key-id 'adapter-review-key-1'",

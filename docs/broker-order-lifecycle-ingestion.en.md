@@ -78,11 +78,11 @@ conflict, and identity/contract drift all fail closed.
 Preview and explicit record:
 
 ```bash
-python scripts/import_broker_order_lifecycle.py \
+python scripts/broker/import_broker_order_lifecycle.py \
   --file /path/to/lifecycle.json \
   --db data/store/karkinos.db
 
-python scripts/import_broker_order_lifecycle.py \
+python scripts/broker/import_broker_order_lifecycle.py \
   --file /path/to/lifecycle.json \
   --db data/store/karkinos.db \
   --record \
@@ -127,11 +127,11 @@ cursor advancement until the exact evidence is reviewed again.
 provider contact. Explicit local execution:
 
 ```bash
-python scripts/ingest_broker_order_lifecycle_collector_batch.py \
+python scripts/broker/ingest_broker_order_lifecycle_collector_batch.py \
   --file /path/to/collector-batch.json \
   --db data/store/karkinos.db
 
-python scripts/ingest_broker_order_lifecycle_collector_batch.py \
+python scripts/broker/ingest_broker_order_lifecycle_collector_batch.py \
   --file /path/to/collector-batch.json \
   --db data/store/karkinos.db \
   --record \
