@@ -67,8 +67,7 @@ class AiShadowResearchWorkflowMixin:
                 status="blocked_by_market_evidence",
                 failure_code=shadow_research_failure_code(exc),
             )
-        deadline_preflight = self._provider_batch_deadline_preflight(batch_deadline_at)
-        if deadline_preflight is not None:
+        if deadline_preflight := self._batch_deadline_preflight(batch_deadline_at):
             return deadline_preflight
         now_dt = self._now().astimezone(SHADOW_RESEARCH_TIMEZONE)
         if not is_after_shadow_research_close(
@@ -90,8 +89,7 @@ class AiShadowResearchWorkflowMixin:
                 failure_code=shadow_research_failure_code(exc),
                 market_date=prepared.market_date,
             )
-        deadline_preflight = self._provider_batch_deadline_preflight(batch_deadline_at)
-        if deadline_preflight is not None:
+        if deadline_preflight := self._batch_deadline_preflight(batch_deadline_at):
             return deadline_preflight
         if (
             policy.require_complete_account_evidence
@@ -113,16 +111,7 @@ class AiShadowResearchWorkflowMixin:
             {
                 "runtime_contract": SHADOW_RESEARCH_RUNTIME_CONTRACT,
                 "policy": policy.to_dict(),
-                "provider_call_window_policy": (
-                    self._provider_call_window_policy.to_dict()
-                    if self._provider_call_window_policy is not None
-                    else None
-                ),
-                "provider_batch_deadline_at": (
-                    batch_deadline_at.isoformat()
-                    if batch_deadline_at is not None
-                    else None
-                ),
+                **self._provider_window_input_evidence(batch_deadline_at),
                 "baseline_fingerprint": prepared.fingerprint,
                 "valuation_snapshot_id": valuation["snapshot_id"],
                 "ledger_cutoff_id": valuation["ledger_cutoff_id"],

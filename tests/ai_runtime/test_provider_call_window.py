@@ -92,6 +92,37 @@ def test_batch_runway_must_finish_before_the_next_0900_peak() -> None:
 
 
 @pytest.mark.unit
+def test_off_peak_segment_exposes_the_real_next_peak_deadline() -> None:
+    monday_deadline = DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY.eligible_until(
+        datetime(2026, 8, 31, 18, 0, tzinfo=SHANGHAI)
+    )
+    friday_deadline = DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY.eligible_until(
+        datetime(2026, 9, 4, 18, 0, tzinfo=SHANGHAI)
+    )
+
+    assert monday_deadline == datetime(2026, 9, 1, 9, 0, tzinfo=SHANGHAI)
+    assert friday_deadline == datetime(2026, 9, 7, 9, 0, tzinfo=SHANGHAI)
+
+
+@pytest.mark.unit
+def test_single_call_runway_covers_timeout_and_completion_guard() -> None:
+    runway = timedelta(seconds=605)
+
+    safe = DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY.evaluate(
+        datetime(2026, 8, 31, 8, 49, 54, tzinfo=SHANGHAI),
+        minimum_runway=runway,
+    )
+    too_late = DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY.evaluate(
+        datetime(2026, 8, 31, 8, 49, 55, tzinfo=SHANGHAI),
+        minimum_runway=runway,
+    )
+
+    assert safe.allowed is True
+    assert too_late.allowed is False
+    assert too_late.next_eligible_at == "2026-08-31T12:00:00+08:00"
+
+
+@pytest.mark.unit
 def test_full_batch_does_not_use_the_two_hour_lunch_window() -> None:
     decision = DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY.evaluate(
         datetime(2026, 8, 31, 12, 0, tzinfo=SHANGHAI),

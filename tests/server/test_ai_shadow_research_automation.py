@@ -132,6 +132,55 @@ async def test_peak_pricing_window_defers_before_any_research_or_provider_claim(
 
 @pytest.mark.unit
 @pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_batch_deadline_is_rechecked_after_baseline_before_any_run_claim(
+    tmp_path, monkeypatch
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = ShadowResearchStore(tmp_path / "app.db")
+    store.init()
+    current = {
+        "value": datetime(2026, 8, 31, 6, 54, tzinfo=SHANGHAI),
+    }
+    service = AiShadowResearchAutomationService(
+        state=_state(db),
+        store=store,
+        data_store=DataStore(tmp_path / "market"),
+        provider_call_window_policy=DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
+        now=lambda: current["value"],
+    )
+    service.update_policy(_policy_payload(enabled=True))
+
+    def baseline_crossing_deadline(policy: ShadowResearchPolicy) -> object:
+        current["value"] = datetime(2026, 8, 31, 9, 0, tzinfo=SHANGHAI)
+        return object()
+
+    monkeypatch.setattr(service, "_prepare_baseline", baseline_crossing_deadline)
+
+    result = await service.run_once()
+
+    assert result["run_status"] == "deferred_for_provider_off_peak"
+    assert result["next_eligible_at"] == "2026-08-31T18:00:00+08:00"
+    assert result["provider_call_window"]["batch_deadline_at"] == (
+        "2026-08-31T09:00:00+08:00"
+    )
+    assert result["provider_call_window"]["batch_deadline_missed"] is True
+    with sqlite3.connect(tmp_path / "app.db") as conn:
+        assert (
+            conn.execute("SELECT COUNT(*) FROM ai_shadow_research_runs").fetchone()[0]
+            == 0
+        )
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM ai_shadow_research_provider_calls"
+            ).fetchone()[0]
+            == 0
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
 def test_shadow_policy_confirmation_literals_match_the_operator_contract() -> None:
     assert SHADOW_RESEARCH_POLICY_CONFIRMATION == (
         "authorize_five_sequential_after_close_deepseek_strategy_research_without_"

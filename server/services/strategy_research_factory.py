@@ -70,8 +70,7 @@ def build_strategy_research_write_service(
                 settings.provider_id,
                 minimum_runway=timedelta(
                     seconds=(
-                        model_timeout_seconds
-                        + PROVIDER_CALL_COMPLETION_GUARD_SECONDS
+                        model_timeout_seconds + PROVIDER_CALL_COMPLETION_GUARD_SECONDS
                     )
                 ),
             )
