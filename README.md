@@ -71,12 +71,17 @@ database upgrade state, and prevents immutable release-image tags from being
 reused. It does not select, register, contact, or require a real broker adapter
 and does not claim real-money readiness.
 
-The exact tag commit must pass the complete Code CI gate and repository
-acceptance audit. These establish software-release evidence only. Real-adapter
+The exact tag commit must already have passed the complete `main` Code CI gate
+and repository acceptance audit; the tag release workflow verifies and reuses
+that exact-SHA evidence instead of rerunning it. These establish software-
+release evidence only. Real-adapter
 selection/deployment, the 20-trading-day soak, recovery drills, and the
 `manual_each_order` pilot remain unchanged v1.8 product-milestone gates.
 Each official SemVer tag publishes a multi-architecture image at
 `ghcr.io/imreese/karkinos:<tag>` plus its immutable `sha-<commit>` tag.
+Only the newest stable tag advances the mutable `latest`, `v<major>`, and
+`v<major>.<minor>` aliases, so queued out-of-order releases cannot roll them
+backward.
 Roadmap labels such as `v1.8` remain separate from SemVer software tags.
 
 See the [Roadmap](docs/ROADMAP.md) for active priorities and the

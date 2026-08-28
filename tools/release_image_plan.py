@@ -54,19 +54,22 @@ def build_release_image_plan(
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
         raise ValueError("release_repository_identity_invalid")
 
-    previous_keys = [
-        _semver_key(existing)
-        for existing in existing_tags
-        if existing != tag and _SEMVER_TAG.fullmatch(existing)
-    ]
-    if previous_keys and current_key <= max(previous_keys):
-        raise ValueError("release_tag_must_be_strictly_newer_than_existing_semver_tags")
+    previous_stable_keys = []
+    for existing in existing_tags:
+        if existing == tag or _SEMVER_TAG.fullmatch(existing) is None:
+            continue
+        existing_key = _semver_key(existing)
+        if existing_key[3] == _PHASE_ORDER[None]:
+            previous_stable_keys.append(existing_key)
 
     image = f"ghcr.io/{repository.lower()}"
     immutable_image_tags = (f"{image}:{tag}", f"{image}:sha-{commit_sha}")
     image_tags = list(immutable_image_tags)
     is_prerelease = current_key[3] != _PHASE_ORDER[None]
-    if not is_prerelease:
+    is_newest_stable = not previous_stable_keys or current_key > max(
+        previous_stable_keys
+    )
+    if not is_prerelease and is_newest_stable:
         major, minor, _patch = current_key[:3]
         image_tags.extend(
             (f"{image}:latest", f"{image}:v{major}", f"{image}:v{major}.{minor}")
