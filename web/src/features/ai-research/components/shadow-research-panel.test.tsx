@@ -171,6 +171,21 @@ const status = {
     daily_trading_decision_status: 'not_evaluated',
     implies_daily_trading_no_action: false,
   },
+  provider_call_window: {
+    schema_version: 'karkinos.ai.provider_call_window.v1',
+    policy_id: 'deepseek.beijing_weekday_peak.v1',
+    policy_fingerprint: `sha256:${'f'.repeat(64)}`,
+    provider_id: 'deepseek',
+    timezone: 'Asia/Shanghai',
+    status: 'eligible_off_peak',
+    pricing_period: 'off_peak',
+    failure_code: null,
+    evaluated_at: '2026-08-11T18:00:00+08:00',
+    next_eligible_at: null,
+    minimum_runway_seconds: 7500,
+    provider_call_performed: false,
+    authority_effect: 'none',
+  },
   automatic_strategy_replacement_enabled: false,
   production_strategy_mutation_enabled: false,
   broker_submission_enabled: false,
@@ -181,6 +196,58 @@ const status = {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+test('shows the next off-peak window and disables manual run during peak', async () => {
+  window.matchMedia = vi.fn().mockReturnValue({
+    matches: false,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  });
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith('/api/ai/strategy-research/shadow-automation')) {
+      return jsonResponse({
+        ...status,
+        provider_call_window: {
+          ...status.provider_call_window,
+          status: 'deferred_for_provider_off_peak',
+          pricing_period: 'peak',
+          failure_code: 'deepseek_peak_pricing_window',
+          evaluated_at: '2026-08-11T16:00:00+08:00',
+          next_eligible_at: '2026-08-11T18:00:00+08:00',
+        },
+      });
+    }
+    if (url.endsWith('/api/strategy-promotion/states')) {
+      return jsonResponse([]);
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+
+  render(
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>
+        <ShadowResearchPanel />
+      </QueryClientProvider>
+    </PreferencesProvider>,
+  );
+
+  expect(await screen.findByText('Deferred to off-peak')).toBeTruthy();
+  expect(
+    screen.getByText('Next eligible: 2026-08-11T18:00:00+08:00'),
+  ).toBeTruthy();
+  expect(
+    (
+      screen.getByRole('button', {
+        name: 'Check and run now',
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
 });
 
 test('shows old/new OOS evidence and records only an explicit paper-shadow approval', async () => {

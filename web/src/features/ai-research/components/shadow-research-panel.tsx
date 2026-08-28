@@ -8,6 +8,7 @@ import {
   useShadowResearchAutomationQuery,
   useStrategyPromotionStatesQuery,
   useUpdateShadowResearchPolicyMutation,
+  type ShadowResearchAutomationStatus,
   type ShadowResearchCandidate,
   type ShadowResearchPolicyInput,
 } from '../api';
@@ -150,6 +151,9 @@ export function ShadowResearchPanel() {
     ? isFiveRoundPolicy(status.policy)
     : false;
   const latestRun = status?.runs[0];
+  const providerWindow = status?.provider_call_window;
+  const providerWindowEligible =
+    providerWindow?.status !== 'deferred_for_provider_off_peak';
   const latestSelection = status?.daily_selections?.[0];
   const latestBackup = status?.daily_backups?.[0];
   const verifiedWinnerCandidateIds = new Set(
@@ -202,12 +206,13 @@ export function ShadowResearchPanel() {
         />
       </div>
 
-      <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-3">
+      <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatusMetric
           label={copy.calls}
           value={`${status?.usage.provider_calls ?? 0} / ${status?.policy.max_provider_calls_per_market_date ?? policy.max_provider_calls_per_market_date}`}
           detail={status?.usage.market_date ?? '—'}
         />
+        <ProviderCallWindowMetric copy={copy} providerWindow={providerWindow} />
         <StatusMetric
           label={copy.tokens}
           value={String(status?.usage.actual_tokens ?? 0)}
@@ -343,7 +348,10 @@ export function ShadowResearchPanel() {
         <button
           className="app-button-secondary min-h-11 px-4 py-2 text-sm font-semibold"
           disabled={
-            run.isPending || !status?.policy.enabled || !persistedPolicyReady
+            run.isPending ||
+            !status?.policy.enabled ||
+            !persistedPolicyReady ||
+            !providerWindowEligible
           }
           onClick={() => run.mutate()}
           type="button"
@@ -387,6 +395,32 @@ export function ShadowResearchPanel() {
         verifiedWinnerCandidateIds={verifiedWinnerCandidateIds}
       />
     </section>
+  );
+}
+
+function ProviderCallWindowMetric({
+  copy,
+  providerWindow,
+}: {
+  copy: (typeof SHADOW_RESEARCH_COPY)[keyof typeof SHADOW_RESEARCH_COPY];
+  providerWindow: ShadowResearchAutomationStatus['provider_call_window'];
+}) {
+  return (
+    <StatusMetric
+      label={copy.providerWindow}
+      value={
+        providerWindow?.status === 'eligible_off_peak'
+          ? copy.offPeakEligible
+          : providerWindow
+            ? copy.offPeakDeferred
+            : '—'
+      }
+      detail={
+        providerWindow?.next_eligible_at
+          ? `${copy.nextEligible}: ${providerWindow.next_eligible_at}`
+          : copy.offPeakSchedule
+      }
+    />
   );
 }
 
