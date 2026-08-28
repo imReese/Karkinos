@@ -24,5 +24,8 @@ def initialize_database(database_path: str | Path) -> None:
         if journal_mode and str(journal_mode[0]).lower() != "wal":
             conn.execute("PRAGMA journal_mode=WAL")
         initialize_v1_baseline_schema(conn)
-        apply_schema_migrations(conn)
+        apply_schema_migrations(
+            conn,
+            baseline_initializer=initialize_v1_baseline_schema,
+        )
         conn.commit()
