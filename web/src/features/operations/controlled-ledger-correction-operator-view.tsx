@@ -336,8 +336,8 @@ function CorrectionSignature({ controller }: ViewProps) {
       </div>
       <div className="app-muted mt-1 text-xs leading-5">
         {locale === 'zh'
-          ? '使用 scripts/operator_signer.py，expected action 为 reverse_controlled_submission_ledger_posting，artifact type 为 controlled_submission_ledger_correction。只粘贴 detached signature，绝不粘贴私钥。'
-          : 'Use scripts/operator_signer.py with expected action reverse_controlled_submission_ledger_posting and artifact type controlled_submission_ledger_correction. Paste only the detached signature, never the private key.'}
+          ? '使用 scripts/broker/operator_signer.py，expected action 为 reverse_controlled_submission_ledger_posting，artifact type 为 controlled_submission_ledger_correction。只粘贴 detached signature，绝不粘贴私钥。'
+          : 'Use scripts/broker/operator_signer.py with expected action reverse_controlled_submission_ledger_posting and artifact type controlled_submission_ledger_correction. Paste only the detached signature, never the private key.'}
       </div>
       <button
         type="button"

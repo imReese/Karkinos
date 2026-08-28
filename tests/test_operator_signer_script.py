@@ -14,7 +14,7 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-from scripts.operator_signer import generate_identity, sign_payload
+from scripts.broker.operator_signer import generate_identity, sign_payload
 
 _NOW = datetime(2026, 7, 16, 8, 1, tzinfo=timezone.utc)
 
@@ -22,7 +22,7 @@ _NOW = datetime(2026, 7, 16, 8, 1, tzinfo=timezone.utc)
 def test_script_entrypoint_resolves_repository_packages() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     result = subprocess.run(
-        [sys.executable, "scripts/operator_signer.py", "sign", "--help"],
+        [sys.executable, "scripts/broker/operator_signer.py", "sign", "--help"],
         cwd=repo_root,
         check=False,
         capture_output=True,

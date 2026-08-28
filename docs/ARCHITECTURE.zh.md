@@ -135,7 +135,7 @@ DeepSeek 只能提出信号逻辑；其仓位输出被丢弃并由本地固定�
 -> 买入 / 卖出 / 持有 / 再平衡 / 不行动 / 需要复核
 ```
 
-每个公开操作都包含证据与阻断项。不行动是一等结果，不是错误或空响应。`karkinos.strategy_order_generation_gate.v1` 把订单生成拆成两步：当前证据自有晋级与有效费用复核只允许 `paper_shadow_required`；人工票据还必须由同日持久化 run 精确绑定 action、fingerprint、模拟订单和 `within_expectations`。写边重查 Account Truth、行情、风控、Kill Switch 及策略/shadow；旧策略缺晋级事实时无隐式豁免。
+每个公开操作都包含证据与阻断项。不行动是一等结果，不是错误或空响应。`karkinos.strategy_order_generation_gate.v1` 把订单生成拆成两步：当前证据自有晋级与有效费用复核只允许 `paper_shadow_required`；人工票据还必须由同日持久化 run 精确绑定 action、fingerprint、模拟订单和 `within_expectations`。写边重查 Account Truth、行情、风控、Kill Switch 及策略/shadow；旧策略缺晋级事实时无隐式豁免。 Live scheduler 随服务无条件运行；独立的 `karkinos.automatic_trading_control.v1` 运行时总闸默认关闭、最长开启 12 小时，状态 compare-and-set 与审计事件在同一事务持久化。会话签发、替换和逐单准入精确绑定 revision、fingerprint 与关闭谱系；Kill Switch 优先级更高，`manual_each_order` 不受影响，该总闸不授予资本权限，也不代表已实现自动券商提交。
 
 ### Paper/shadow 运营
 

@@ -337,8 +337,8 @@ function TerminalClearanceSignature({
             {challenge.data.expires_at}
             <br />
             {locale === 'zh'
-              ? '使用 scripts/operator_signer.py，expected action 为 clear_controlled_submission_reconciliation，artifact type 为 controlled_submission_reconciliation_clearance。只粘贴 payload，不要粘贴私钥。'
-              : 'Use scripts/operator_signer.py with expected action clear_controlled_submission_reconciliation and artifact type controlled_submission_reconciliation_clearance. Paste only the payload, never the private key.'}
+              ? '使用 scripts/broker/operator_signer.py，expected action 为 clear_controlled_submission_reconciliation，artifact type 为 controlled_submission_reconciliation_clearance。只粘贴 payload，不要粘贴私钥。'
+              : 'Use scripts/broker/operator_signer.py with expected action clear_controlled_submission_reconciliation and artifact type controlled_submission_reconciliation_clearance. Paste only the payload, never the private key.'}
           </div>
           <label className="block min-w-0 text-xs text-[var(--app-text)]">
             <span className="app-muted block pb-1">

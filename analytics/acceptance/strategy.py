@@ -234,13 +234,13 @@ def build_strategy_assignment_acceptance_audit() -> AcceptanceAudit:
                 ),
                 evidence_paths=(
                     "analytics/acceptance_audit.py",
-                    "scripts/export_acceptance_audit.py",
+                    "scripts/ci/export_acceptance_audit.py",
                     "tests/test_acceptance_audit.py",
                     "tests/test_acceptance_audit_cli.py",
                 ),
                 validation_commands=(
                     "uv run python -m pytest tests/test_acceptance_audit.py tests/test_acceptance_audit_cli.py",
-                    "uv run python scripts/export_acceptance_audit.py --audit strategy_assignment",
+                    "uv run python scripts/ci/export_acceptance_audit.py --audit strategy_assignment",
                 ),
             ),
         )
@@ -463,7 +463,7 @@ def build_market_data_reliability_acceptance_audit() -> AcceptanceAudit:
                 ),
                 evidence_paths=(
                     "analytics/acceptance_audit.py",
-                    "scripts/export_acceptance_audit.py",
+                    "scripts/ci/export_acceptance_audit.py",
                     "tests/test_acceptance_audit.py",
                     "tests/test_acceptance_audit_cli.py",
                     "docs/ROADMAP.md",
@@ -471,7 +471,7 @@ def build_market_data_reliability_acceptance_audit() -> AcceptanceAudit:
                 validation_commands=(
                     "uv run python -m pytest tests/test_acceptance_audit.py",
                     "uv run python -m pytest tests/test_acceptance_audit_cli.py",
-                    "uv run python scripts/export_acceptance_audit.py --audit market_data_reliability",
+                    "uv run python scripts/ci/export_acceptance_audit.py --audit market_data_reliability",
                 ),
             ),
         )
@@ -658,7 +658,7 @@ def build_single_instrument_strategy_loop_acceptance_audit() -> AcceptanceAudit:
                 validation_commands=(
                     "npm --prefix web test -- backtest-page -t 'previews paper shadow simulation after a passed risk preview|summarizes attribution preview evidence'",
                     "uv run python -m pytest tests/test_acceptance_audit.py -k single_instrument_strategy_loop",
-                    "uv run python scripts/export_acceptance_audit.py --audit single_instrument_strategy_loop",
+                    "uv run python scripts/ci/export_acceptance_audit.py --audit single_instrument_strategy_loop",
                 ),
             ),
             AcceptanceCriterion(

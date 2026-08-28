@@ -42,19 +42,20 @@ Examples:
 
 Notes:
   - This script starts the Web service via \`python -m server\` in the background.
-  - \`dev\` defaults to \`--reload\`; it does not enable live monitoring.
+  - The live scheduler starts with the backend and cannot be disabled independently.
+  - Scheduler liveness does not grant broker, execution, or capital authority.
+  - \`dev\` defaults to \`--reload\`.
   - \`dev\` also starts the Vite frontend on ${FRONTEND_HOST}:${FRONTEND_PORT}.
   - If the supervised LaunchAgent is healthy, \`dev\` reuses that resident backend and starts only Vite.
   - \`prod\` treats a healthy supervised LaunchAgent as an already-running success.
-  - \`prod\` starts without hot reload and does not enable live monitoring.
-  - Enable live monitoring explicitly with server.live_auto_start=true or KARKINOS_LIVE_AUTO_START=true.
+  - \`prod\` starts without hot reload.
   - Output is redirected to \`logs/server.log\` and \`logs/web.log\`.
   - Logs larger than KARKINOS_LOG_MAX_BYTES (default 20 MiB) are archived before startup.
-  - Startup succeeds only after /api/health reports process liveness within the bounded timeout.
+  - Startup succeeds only after process liveness and the always-on scheduler are both ready.
   - Vite startup succeeds only after its HTTP endpoint responds within the bounded frontend timeout.
   - PIDs are written to \`.run/server.pid\` and \`.run/web.pid\` in \`dev\` mode.
   - It installs missing frontend dependencies before building.
-  - Run \`uv run python scripts/configure_data_source.py\` to configure local market data.
+  - Run \`uv run python scripts/data/configure_data_source.py\` to configure local market data.
 EOF
 }
 
@@ -86,7 +87,7 @@ guide_data_source_configuration() {
 	cat <<EOF
 Data source: defaulting to AKShare.
 Configure local market data with:
-  uv run python scripts/configure_data_source.py
+  uv run python scripts/data/configure_data_source.py
 EOF
 }
 
@@ -196,7 +197,7 @@ resident_service_is_loaded() {
 	launchctl print "${LAUNCH_AGENT_TARGET}" >/dev/null 2>&1
 }
 
-karkinos_backend_is_alive() {
+karkinos_backend_is_ready() {
 	if ! command -v curl >/dev/null 2>&1; then
 		return 1
 	fi
@@ -207,7 +208,14 @@ karkinos_backend_is_alive() {
 			2>/dev/null
 	)" || return 1
 	[[ "${health_response}" == *'"schema_version":"karkinos.service_health.v1"'* && \
-		"${health_response}" == *'"status":"alive"'* ]]
+		"${health_response}" == *'"status":"alive"'* ]] || return 1
+	local live_response
+	live_response="$(
+		env "${NO_PROXY_ENV[@]}" curl --noproxy '*' --fail --silent --show-error \
+			--max-time 2 "http://$(backend_probe_host):${BACKEND_PORT}/api/settings/live/status" \
+			2>/dev/null
+	)" || return 1
+	[[ "${live_response}" == *'"running":true'* ]]
 }
 
 vite_frontend_is_ready() {
@@ -226,7 +234,7 @@ validate_startup_health_timeout() {
 		exit 1
 	fi
 	if ! command -v curl >/dev/null 2>&1; then
-		echo "Error: curl is required to verify the Karkinos process-liveness endpoint." >&2
+		echo "Error: curl is required to verify Karkinos service readiness." >&2
 		exit 1
 	fi
 	if [[ "${MODE}" == "dev" ]] && [[ -z "${FRONTEND_STARTUP_TIMEOUT_SECONDS}" || \
@@ -253,11 +261,11 @@ wait_for_backend_readiness() {
 	local deadline=$((SECONDS + STARTUP_HEALTH_TIMEOUT_SECONDS))
 	while ((SECONDS < deadline)); do
 		if ! kill -0 "${TRACKED_PID}" >/dev/null 2>&1; then
-			echo "Error: Karkinos Web service exited before process liveness was ready. Check ${LOG_FILE}" >&2
+			echo "Error: Karkinos Web service exited before service readiness was established. Check ${LOG_FILE}" >&2
 			cleanup_failed_backend_launch
 			return 1
 		fi
-		if karkinos_backend_is_alive; then
+		if karkinos_backend_is_ready; then
 			return 0
 		fi
 		if ((SECONDS < deadline)); then
@@ -265,7 +273,7 @@ wait_for_backend_readiness() {
 		fi
 	done
 
-	echo "Error: Karkinos process liveness did not become ready within ${STARTUP_HEALTH_TIMEOUT_SECONDS}s. Check ${LOG_FILE}" >&2
+	echo "Error: Karkinos service readiness did not become ready within ${STARTUP_HEALTH_TIMEOUT_SECONDS}s. Check ${LOG_FILE}" >&2
 	cleanup_failed_backend_launch
 	return 1
 }
@@ -304,13 +312,13 @@ wait_for_frontend_readiness() {
 
 preflight_backend_port() {
 	if resident_service_is_loaded; then
-		if karkinos_backend_is_alive; then
+		if karkinos_backend_is_ready; then
 			REUSE_RESIDENT_BACKEND=true
 			return
 		fi
-		echo "Error: the resident Karkinos LaunchAgent is loaded, but process liveness is unavailable at ${PRODUCT_ENTRY_URL}." >&2
+		echo "Error: the resident Karkinos LaunchAgent is loaded, but service readiness is unavailable at ${PRODUCT_ENTRY_URL}." >&2
 		echo "No fallback backend was launched. Inspect it with:" >&2
-		echo "  ./scripts/manage_launch_agent.sh status" >&2
+		echo "  ./scripts/service/manage_launch_agent.sh status" >&2
 		exit 1
 	fi
 
@@ -320,10 +328,10 @@ preflight_backend_port() {
 		return
 	fi
 
-	if karkinos_backend_is_alive; then
+	if karkinos_backend_is_ready; then
 		echo "Error: a Karkinos service is already responding at ${PRODUCT_ENTRY_URL}." >&2
 	else
-		echo "Error: backend port ${BACKEND_PORT} is occupied, but Karkinos liveness did not respond." >&2
+		echo "Error: backend port ${BACKEND_PORT} is occupied, but Karkinos service readiness did not respond." >&2
 	fi
 	echo "Listener PID(s): ${listener_pids//$'\n'/ }" >&2
 	echo "No process was terminated." >&2
@@ -381,10 +389,10 @@ if [[ -f "${PID_FILE}" ]]; then
 	EXISTING_PID="$(cat "${PID_FILE}")"
 	if [[ -n "${EXISTING_PID}" ]] && kill -0 "${EXISTING_PID}" >/dev/null 2>&1; then
 		echo "Error: Karkinos Web service is already running with PID ${EXISTING_PID}." >&2
-		if karkinos_backend_is_alive; then
-			echo "The process-liveness endpoint is responding at ${PRODUCT_ENTRY_URL}." >&2
+		if karkinos_backend_is_ready; then
+			echo "Process liveness and the live scheduler are ready at ${PRODUCT_ENTRY_URL}." >&2
 		else
-			echo "The tracked process exists, but its process-liveness endpoint is unavailable." >&2
+			echo "The tracked process exists, but service readiness is unavailable." >&2
 		fi
 		echo "No process was terminated. Stop it explicitly with ./scripts/stop_server.sh" >&2
 		exit 1
@@ -507,5 +515,5 @@ Backend:  http://${BACKEND_HOST}:${BACKEND_PORT}
 Frontend: http://${FRONTEND_HOST}:${FRONTEND_PORT}
 
 Use ./scripts/stop_server.sh to stop Vite and any manually started backend.
-The resident LaunchAgent remains running until ./scripts/manage_launch_agent.sh uninstall is called explicitly.
+The resident LaunchAgent remains running until ./scripts/stop_server.sh is called.
 EOF

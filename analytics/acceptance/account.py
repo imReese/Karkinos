@@ -256,13 +256,13 @@ def build_account_truth_acceptance_audit() -> AcceptanceAudit:
                 ),
                 evidence_paths=(
                     "analytics/acceptance_audit.py",
-                    "scripts/export_acceptance_audit.py",
+                    "scripts/ci/export_acceptance_audit.py",
                     "tests/test_acceptance_audit.py",
                     "tests/test_acceptance_audit_cli.py",
                 ),
                 validation_commands=(
                     "uv run python -m pytest tests/test_acceptance_audit.py tests/test_acceptance_audit_cli.py",
-                    "uv run python scripts/export_acceptance_audit.py --audit account_truth",
+                    "uv run python scripts/ci/export_acceptance_audit.py --audit account_truth",
                 ),
             ),
         )
@@ -512,13 +512,13 @@ def build_account_truth_review_acceptance_audit() -> AcceptanceAudit:
                 ),
                 evidence_paths=(
                     "analytics/acceptance_audit.py",
-                    "scripts/export_acceptance_audit.py",
+                    "scripts/ci/export_acceptance_audit.py",
                     "tests/test_acceptance_audit.py",
                     "tests/test_acceptance_audit_cli.py",
                 ),
                 validation_commands=(
                     "uv run python -m pytest tests/test_acceptance_audit.py tests/test_acceptance_audit_cli.py",
-                    "uv run python scripts/export_acceptance_audit.py --audit account_truth_review",
+                    "uv run python scripts/ci/export_acceptance_audit.py --audit account_truth_review",
                 ),
             ),
         )

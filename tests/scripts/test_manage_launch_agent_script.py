@@ -7,7 +7,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-SCRIPT = Path("scripts/manage_launch_agent.sh")
+SCRIPT = Path("scripts/service/manage_launch_agent.sh")
 HEALTH_RESPONSE = (
     '{"schema_version":"karkinos.service_health.v1","status":"alive",'
     '"financial_readiness_claimed":false,"broker_submission_enabled":false,'
@@ -22,7 +22,7 @@ def _write_executable(path: Path, content: str) -> None:
 
 def _fake_launch_agent_repo(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     repo = tmp_path / "repo"
-    scripts = repo / "scripts"
+    scripts = repo / "scripts" / "service"
     fake_bin = tmp_path / "bin"
     state_file = tmp_path / "launchd-loaded"
     scripts.mkdir(parents=True)
@@ -40,7 +40,13 @@ def _fake_launch_agent_repo(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     )
     _write_executable(
         fake_bin / "curl",
-        f"#!/usr/bin/env bash\nprintf '%s' '{HEALTH_RESPONSE}'\n",
+        "#!/usr/bin/env bash\n"
+        'if [[ "$*" == *"/api/settings/live/status"* ]]; then\n'
+        '  printf \'{"running":%s,"market_open":false}\' '
+        '"${KARKINOS_TEST_LIVE_RUNNING:-true}"\n'
+        "else\n"
+        f"  printf '%s' '{HEALTH_RESPONSE}'\n"
+        "fi\n",
     )
     _write_executable(
         fake_bin / "launchctl",
@@ -79,11 +85,13 @@ def _fake_launch_agent_repo(tmp_path: Path) -> tuple[Path, dict[str, str]]:
 def test_launch_agent_script_keeps_financial_and_authority_boundaries_explicit():
     script = SCRIPT.read_text(encoding="utf-8")
 
-    assert "does not enable live monitoring" in script
+    assert "live scheduler is part of the Karkinos service lifecycle" in script
+    assert "starts automatically" in script
     assert "Financial readiness: not claimed" in script
     assert "Broker submission: disabled" in script
     assert "No command submits broker orders or changes capital authority" in script
-    assert "KARKINOS_LIVE_AUTO_START=true" not in script
+    assert "KARKINOS_LIVE_AUTO_START" not in script
+    assert "--no-live" not in script
     assert "config.json" in script
     assert ".env" in script
 
@@ -111,7 +119,7 @@ def test_launch_agent_script_is_user_scoped_reversible_and_direct_exec():
 
 def test_print_plist_is_write_free_and_escapes_local_paths(tmp_path: Path):
     repo = tmp_path / "repo & evidence"
-    scripts = repo / "scripts"
+    scripts = repo / "scripts" / "service"
     fake_bin = tmp_path / "bin"
     scripts.mkdir(parents=True)
     fake_bin.mkdir()
@@ -163,7 +171,7 @@ def test_install_and_uninstall_are_explicit_user_scoped_and_reversible(
     tmp_path: Path,
 ):
     repo, env = _fake_launch_agent_repo(tmp_path)
-    command = ["bash", "scripts/manage_launch_agent.sh"]
+    command = ["bash", "scripts/service/manage_launch_agent.sh"]
 
     installed = subprocess.run(
         [*command, "install"],
@@ -183,7 +191,9 @@ def test_install_and_uninstall_are_explicit_user_scoped_and_reversible(
     assert installed.returncode == 0, installed.stderr
     assert plist.is_file()
     assert Path(env["KARKINOS_TEST_LAUNCHD_STATE"]).is_file()
-    assert "Process liveness: alive" in installed.stdout
+    assert (
+        "Service readiness: process alive, live scheduler running" in installed.stdout
+    )
     assert "Financial readiness: not claimed" in installed.stdout
 
     env["KARKINOS_TEST_BOOTOUT_DELAY_SECONDS"] = "1"
@@ -202,12 +212,37 @@ def test_install_and_uninstall_are_explicit_user_scoped_and_reversible(
     assert "Runtime data and logs were not deleted" in uninstalled.stdout
 
 
+def test_install_fails_closed_when_scheduler_does_not_start(tmp_path: Path):
+    repo, env = _fake_launch_agent_repo(tmp_path)
+    env["KARKINOS_TEST_LIVE_RUNNING"] = "false"
+
+    result = subprocess.run(
+        ["bash", "scripts/service/manage_launch_agent.sh", "install"],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    plist = (
+        Path(env["HOME"])
+        / "Library"
+        / "LaunchAgents"
+        / "com.karkinos.daily-candidate.plist"
+    )
+    assert result.returncode == 1
+    assert "service readiness did not become ready" in result.stderr
+    assert not plist.exists()
+    assert not Path(env["KARKINOS_TEST_LAUNCHD_STATE"]).exists()
+
+
 def test_install_preserves_an_existing_listener_without_bootstrap(tmp_path: Path):
     repo, env = _fake_launch_agent_repo(tmp_path)
     env["KARKINOS_TEST_LISTENER_PIDS"] = "4242"
 
     result = subprocess.run(
-        ["bash", "scripts/manage_launch_agent.sh", "install"],
+        ["bash", "scripts/service/manage_launch_agent.sh", "install"],
         cwd=repo,
         env=env,
         capture_output=True,

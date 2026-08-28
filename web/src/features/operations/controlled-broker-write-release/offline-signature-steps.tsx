@@ -105,8 +105,8 @@ export function OfflineSignatureSteps({
         <div className="mt-3 min-w-0">
           <div className="app-muted text-xs leading-5">
             {locale === 'zh'
-              ? `使用 scripts/operator_signer.py，expected action 为 ${action}，artifact type 为 ${artifactType}。只粘贴 payload；私钥不得进入 Karkinos。`
-              : `Use scripts/operator_signer.py with expected action ${action} and artifact type ${artifactType}. Paste only the payload; the private key must never enter Karkinos.`}
+              ? `使用 scripts/broker/operator_signer.py，expected action 为 ${action}，artifact type 为 ${artifactType}。只粘贴 payload；私钥不得进入 Karkinos。`
+              : `Use scripts/broker/operator_signer.py with expected action ${action} and artifact type ${artifactType}. Paste only the payload; the private key must never enter Karkinos.`}
           </div>
           <textarea
             aria-label={

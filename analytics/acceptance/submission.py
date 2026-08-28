@@ -178,7 +178,7 @@ def build_controlled_broker_submission_acceptance_audit() -> AcceptanceAudit:
                 evidence_paths=(
                     "account_truth/broker_execution_edge_conformance.py",
                     "account_truth/broker_execution_edge_conformance_fixtures.py",
-                    "scripts/run_broker_execution_edge_conformance.py",
+                    "scripts/broker/run_broker_execution_edge_conformance.py",
                     "tests/account_truth/test_broker_execution_edge_conformance.py",
                     "tests/scripts/test_run_broker_execution_edge_conformance.py",
                     "docs/broker-execution-edge-conformance.en.md",

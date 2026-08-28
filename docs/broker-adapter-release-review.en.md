@@ -68,7 +68,7 @@ The explicit CLI remains available for controlled administrative use. Its
 preview is read-only and does not create the database:
 
 ```bash
-uv run python scripts/review_broker_adapter_release.py \
+uv run python scripts/broker/review_broker_adapter_release.py \
   --file /path/to/adapter-release.json \
   --db data/store/karkinos.db
 ```
@@ -77,7 +77,7 @@ An operator records an append-only decision with an external reviewer/reason
 reference:
 
 ```bash
-uv run python scripts/review_broker_adapter_release.py \
+uv run python scripts/broker/review_broker_adapter_release.py \
   --file /path/to/adapter-release.json \
   --db data/store/karkinos.db \
   --record \

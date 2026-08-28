@@ -16,7 +16,7 @@ _SUPPORTED_COMMAND_BASES = (
     "rg -n",
     "uv run pytest",
     "uv run python -m pytest",
-    "uv run python scripts/export_acceptance_audit.py",
+    "uv run python scripts/ci/export_acceptance_audit.py",
 )
 
 

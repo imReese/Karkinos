@@ -67,6 +67,25 @@ kill switch and operational health
 expiry, symbols, limits, gates, and pause state. A replacement requires new
 evidence and a new equal-or-narrower signature.
 
+### Automatic-trading runtime gate
+
+The live scheduler is always part of the service and has no enable/disable
+control. Automatic trading has a separate default-off runtime master gate. The
+operator can open it for at most 12 hours or close it immediately without a
+service restart; every change binds the observed revision, operator, reason,
+acknowledgement, expiry, fingerprint, and append-only audit event.
+
+This gate applies only to `session_bounded` issuance and order admission. Each
+new or replacement session is transactionally bound to the exact enabled gate
+revision and fingerprint. Closing the gate invalidates further admission
+immediately; reopening creates a new gate generation and cannot make an older
+session admissible again. It does not cancel or resolve an open order.
+`manual_each_order`, query, cancellation, reconciliation, and ledger recovery
+remain independent. The global Kill Switch still has higher priority. Opening
+the gate grants no capital or execution authority and cannot replace a newly
+signed bounded session or any fresh risk, budget, gateway, and reconciliation
+gate. Automatic session-to-broker submission is not implemented yet.
+
 ## Delivery Gates
 
 ### Gate 0 — Contracts and Default Closure
