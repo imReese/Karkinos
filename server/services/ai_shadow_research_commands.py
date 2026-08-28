@@ -15,6 +15,7 @@ from server.contracts.ai_shadow_research_automation import (
     SHADOW_RESEARCH_PAUSE_CONFIRMATION,
     SHADOW_RESEARCH_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_POLICY_ID,
+    SHADOW_RESEARCH_RUNTIME_CONTRACT,
     SHADOW_RESEARCH_TOKEN_BUDGET_MODE_LEGACY_BOUNDED,
     SHADOW_RESEARCH_TOKEN_BUDGET_MODE_UNBOUNDED,
     ShadowResearchPolicy,
@@ -122,6 +123,7 @@ class AiShadowResearchCommandsMixin:
         provider_call_window = self._provider_call_window_status()
         return {
             "schema_version": SHADOW_RESEARCH_API_SCHEMA,
+            "runtime_contract": SHADOW_RESEARCH_RUNTIME_CONTRACT,
             "policy": policy.to_dict(),
             "kill_switch": kill_switch,
             "usage": self._store.usage_for_market_date(latest_market_date),
@@ -151,6 +153,7 @@ class AiShadowResearchCommandsMixin:
         provider_call_window = self._provider_call_window_status()
         return {
             "schema_version": SHADOW_RESEARCH_API_SCHEMA,
+            "runtime_contract": SHADOW_RESEARCH_RUNTIME_CONTRACT,
             "policy": self.get_policy().to_dict(),
             "automatic_strategy_replacement_enabled": False,
             "production_strategy_mutation_enabled": False,
