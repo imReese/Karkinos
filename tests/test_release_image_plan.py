@@ -63,9 +63,23 @@ def test_non_semver_release_tags_fail_closed(tag: str) -> None:
         _plan(tag)
 
 
-def test_out_of_order_release_cannot_move_stable_aliases_backwards() -> None:
-    with pytest.raises(ValueError, match="strictly_newer"):
-        _plan("v0.3.1", existing_tags=("v0.2.3", "v0.4.0"))
+def test_out_of_order_release_only_emits_immutable_tags() -> None:
+    plan = _plan("v0.3.1", existing_tags=("v0.2.3", "v0.4.0"))
+
+    assert plan.image_tags == plan.immutable_image_tags
+
+
+def test_higher_prerelease_does_not_block_newest_stable_aliases() -> None:
+    plan = _plan(
+        "v0.3.1",
+        existing_tags=("v0.2.3", "v0.4.0-rc.1"),
+    )
+
+    assert plan.image_tags[-3:] == (
+        "ghcr.io/imreese/karkinos:latest",
+        "ghcr.io/imreese/karkinos:v0",
+        "ghcr.io/imreese/karkinos:v0.3",
+    )
 
 
 def test_release_versions_must_match_exactly() -> None:

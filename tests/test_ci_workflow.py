@@ -27,7 +27,9 @@ def test_ci_runs_backend_frontend_and_profit_discipline_smoke_path() -> None:
 
 
 def test_ci_uses_node24_compatible_github_actions() -> None:
-    workflow = Path(".github/workflows/ci.yml").read_text()
+    workflow = "\n".join(
+        path.read_text() for path in sorted(Path(".github/workflows").glob("*.yml"))
+    )
     dockerfile = Path("Dockerfile").read_text()
     package = json.loads(Path("web/package.json").read_text())
     nvmrc = Path(".nvmrc").read_text().strip()
@@ -76,22 +78,57 @@ def test_ci_repository_hygiene_blocks_runtime_and_generated_artifacts() -> None:
     assert ".*\\.(db|sqlite|duckdb)" in workflow
 
 
-def test_ci_publishes_release_image_on_semver_tag() -> None:
-    workflow = Path(".github/workflows/ci.yml").read_text()
+def test_release_reuses_exact_successful_main_ci_before_publishing() -> None:
+    ci_workflow = Path(".github/workflows/ci.yml").read_text()
+    release_workflow = Path(".github/workflows/release.yml").read_text()
 
-    assert 'tags:\n      - "v*"' in workflow
-    assert "name: Publish release image" in workflow
-    assert "python tools/release_image_plan.py" in workflow
-    assert "docker/setup-buildx-action" in workflow
-    assert "docker/login-action" in workflow
-    assert "docker/build-push-action" in workflow
-    assert "registry: ghcr.io" in workflow
-    assert "platforms: linux/amd64,linux/arm64" in workflow
-    assert "group: release-image-${{ github.repository }}" in workflow
-    assert "cancel-in-progress: false" in workflow
-    assert "--verify-immutable-image-tags-absent" in workflow
+    assert 'tags:\n      - "v*"' not in ci_workflow
+    assert "name: Publish release image" not in ci_workflow
     assert (
-        workflow.index("Log in to GitHub Container Registry")
-        < workflow.index("Compute release image plan and verify immutable tags")
-        < workflow.index("Build and push multi-architecture image")
+        "github.event_name == 'pull_request' && github.ref || github.sha" in ci_workflow
+    )
+    assert (
+        "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in ci_workflow
+    )
+
+    assert 'tags:\n      - "v*"' in release_workflow
+    assert "name: Verify exact main Code CI" in release_workflow
+    assert "actions: read" in release_workflow
+    assert "python tools/verify_release_source_ci.py" in release_workflow
+    assert '--required-job "Code CI gate"' in release_workflow
+    assert '--required-job "Repository acceptance audit"' in release_workflow
+    assert 'test "${commit_sha}" = "${GITHUB_SHA}"' in release_workflow
+    assert 'tag_object_sha="$(git rev-parse "${GITHUB_REF}")"' in release_workflow
+    assert (
+        'test "${remote_tag_object_sha}" = "${VERIFIED_TAG_OBJECT_SHA}"'
+        in release_workflow
+    )
+    assert "git merge-base --is-ancestor" in release_workflow
+    assert "needs: [verify_main_code_ci]" in release_workflow
+    assert "name: Publish release image" in release_workflow
+    assert "python tools/release_image_plan.py" in release_workflow
+    assert "docker/setup-buildx-action" in release_workflow
+    assert "docker/login-action" in release_workflow
+    assert "docker/build-push-action" in release_workflow
+    assert "registry: ghcr.io" in release_workflow
+    assert "platforms: linux/amd64,linux/arm64" in release_workflow
+    assert "group: release-image-${{ github.repository }}" in release_workflow
+    assert "queue: max" in release_workflow
+    assert "cancel-in-progress: false" in release_workflow
+    assert "--verify-immutable-image-tags-absent" in release_workflow
+    assert "packages: write" in release_workflow
+    verifier_job, publisher_job = release_workflow.split("  release:\n", 1)
+    assert "packages: write" not in verifier_job
+    assert "actions: read" not in publisher_job
+    assert '--commit-sha "${GITHUB_SHA}"' not in release_workflow
+    assert "org.opencontainers.image.revision=${{ github.sha }}" not in release_workflow
+    assert (
+        "org.opencontainers.image.revision=${{ needs.verify_main_code_ci.outputs.commit_sha }}"
+        in release_workflow
+    )
+    assert (
+        release_workflow.index("Log in to GitHub Container Registry")
+        < release_workflow.index("Compute release image plan and verify immutable tags")
+        < release_workflow.index("Reverify remote tag and main ancestry")
+        < release_workflow.index("Build and push multi-architecture image")
     )
