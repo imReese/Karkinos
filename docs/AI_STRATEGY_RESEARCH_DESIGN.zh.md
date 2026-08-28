@@ -1271,6 +1271,22 @@ DSH 使用独立 CPU/内存/文件描述符/进程数限制；DSH 卡死、生�
 禁止启动或恢复模型调用、universe preparation 和本地研究回测。Daily Decision 使用独立
 绝对 deadline，超时结果不能写入当日 authoritative outcome。
 
+DeepSeek 计费时段由独立、版本化的 provider call-window policy 负责，不得混入 HTTP transport、
+业务 route 或 `after_close_time`。北京时间周一至周五 `[09:00,12:00)`、`[14:00,18:00)`
+为禁止发送窗口，12:00 与 18:00 边界可发送，周末全天为低谷。所有 DeepSeek 出站调用——包括
+策略 hypothesis/critique、外部回测报告、外部记忆分析和连通性 canary——在 service admission
+与 provider send edge 使用同一 policy；手工 API 不提供 force bypass。
+
+完整策略迭代还必须满足收盘后、下次 09:00 前完成的 overnight 约束。编排器在加载 universe、
+运行基线或 claim research run 前，为十次串行调用预留 125 分钟连续低谷余量；因此正常工作日
+从 18:00 起跑，午间两小时不启动完整批次，早晨余量不足时延期到当日 18:00。单次 provider
+send 在调用额度 claim 前及实际发送前再次检查当前窗口。整批尚未 claim 时的窗口延期是
+`deferred`，不得计为失败、不得占 provider call/token/retry budget，并必须返回
+`next_eligible_at` 与 policy fingerprint；已运行批次若异常跨界，后续调用仍须在 claim/send 前
+fail closed，且 proven-not-sent 记录不得消耗实际调用预算。
+standing research policy 必须持久化 call-window schema、policy ID 与 fingerprint；run 输入也绑定
+同一版本，provider 调价时创建新 policy revision，不能原地改写旧运行的计费语义。
+
 每日路径只读取已晋级 artifact 与当前 canonical facts。provider 故障、模型缓慢、研究进程
 崩溃或调用预算耗尽，都不能延迟每日 ticket/NO-ACTION。
 
@@ -1593,6 +1609,8 @@ running --runtime proven_not_sent, allowance exhausted--> failed_terminal
 | provider soft SLA / hard deadline | 90 秒 / 600 秒 | soft 只告警；hard 或全局剩余时间先到即终止 |
 | DSH collect grace cap | 60 秒 | claim 冻结 absolute collect deadline；restart/collector 不得重新计时 |
 | total run deadline | 45 分钟 | 超时保存 checkpoint，不发布 candidate |
+| DeepSeek provider peak window | 工作日 09:00–12:00、14:00–18:00（Asia/Shanghai） | 所有 AI 出站调用延期；route 不得绕过 provider send admission |
+| complete-batch off-peak runway | 125 分钟，且须在 09:00 前完成 | 余量不足不加载 universe、不跑基线、不 claim run/call；下次默认 18:00 |
 | research blackout | Asia/Shanghai 08:30–10:00 | 禁止启动或恢复 provider 与本地研究 stage |
 
 所有 DSH purpose 使用同一守恒公式：`fresh_process_start_ceiling = physical_request_ceiling +

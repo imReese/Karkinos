@@ -24,6 +24,7 @@ from .contracts import (
 )
 from .permissions import ToolEffect, ToolPermissionRegistry
 from .provider import ProviderAdapter, ProviderRequest, ProviderResponse
+from .provider_call_window import ProviderCallDeferred
 from .registry import AiRuntimeRegistry
 from .store import AiAuditStore
 
@@ -620,6 +621,8 @@ class DeterministicWorkflowOrchestrator:
 
 
 def _failure_code(exc: Exception) -> str:
+    if isinstance(exc, ProviderCallDeferred):
+        return str(exc)
     if type(exc).__name__ in {
         "ExternalResearchAuthenticationError",
         "ExternalResearchRateLimitedError",

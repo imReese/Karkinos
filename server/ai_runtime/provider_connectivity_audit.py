@@ -81,8 +81,14 @@ class ProviderConnectivityAuditStore:
         probe: ProviderProbeResponse | None = None,
         error: ProviderProbeError | None = None,
     ) -> ConnectivityCheckResult:
-        if status not in {ConnectivityStatus.PASSED, ConnectivityStatus.FAILED}:
-            raise ValueError("connectivity final status must be passed or failed")
+        if status not in {
+            ConnectivityStatus.DEFERRED,
+            ConnectivityStatus.PASSED,
+            ConnectivityStatus.FAILED,
+        }:
+            raise ValueError(
+                "connectivity final status must be deferred, passed, or failed"
+            )
         row = self._repository.finalize(
             check_id=check_id,
             expected_status=ConnectivityStatus.RUNNING.value,

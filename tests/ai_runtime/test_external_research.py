@@ -4,6 +4,8 @@ import asyncio
 import json
 import sqlite3
 import threading
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -27,6 +29,11 @@ from server.ai_runtime.external_research import (
     _edge_request_options,
 )
 from server.ai_runtime.karkinos_source import _research_evidence_projection
+from server.ai_runtime.provider_call_window import (
+    DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
+    ProviderCallDeferred,
+    ProviderSendAdmission,
+)
 from server.ai_runtime.provider_connectivity import (
     HttpJsonResponse,
     ProviderConnectivitySettings,
@@ -221,6 +228,7 @@ def _service(
     *,
     status: str = "complete",
     analysis_ready: bool = True,
+    provider_send_admission: ProviderSendAdmission | None = None,
 ):
     evidence = CanonicalEvidenceRepository(db_path)
     ai_store = AiAuditStore(db_path)
@@ -255,8 +263,32 @@ def _service(
         transport=transport,
         now=lambda: NOW,
         monotonic=lambda: next(ticks),
+        provider_send_admission=provider_send_admission,
     )
     return service, source
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_external_report_peak_window_defers_before_capture_and_transport(
+    tmp_path,
+) -> None:
+    transport = FixtureTransport(_successful_response())
+    service, source = _service(
+        tmp_path / "app.db",
+        transport,
+        provider_send_admission=ProviderSendAdmission(
+            policy=DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
+            now=lambda: datetime(2026, 8, 31, 14, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        ),
+    )
+
+    with pytest.raises(ProviderCallDeferred, match="deepseek_peak_pricing_window"):
+        await service.run(_request())
+
+    assert source.calls == 0
+    assert transport.calls == []
 
 
 @pytest.mark.unit

@@ -22,6 +22,7 @@ from server.ai_runtime.formula_dsl import (
     CANONICAL_COST_MODEL_REFERENCE,
     FORMULA_AST_CONTRACT,
 )
+from server.ai_runtime.provider_call_window import ProviderSendAdmission
 from server.ai_runtime.provider_connectivity_contracts import (
     JsonHttpTransport,
     ProviderConnectivitySettings,
@@ -148,6 +149,7 @@ class StrategyResearchService(
         monotonic: Callable[[], float] | None = None,
         model_timeout_seconds: float = 180.0,
         reviewed_fee_schedule_resolver: Callable[..., Any] | None = None,
+        provider_send_admission: ProviderSendAdmission | None = None,
     ) -> None:
         self._db = db
         self._db_path = db_path
@@ -162,6 +164,11 @@ class StrategyResearchService(
         self._monotonic = monotonic or time.monotonic
         self._model_timeout_seconds = model_timeout_seconds
         self._reviewed_fee_schedule_resolver = reviewed_fee_schedule_resolver
+        self._provider_send_admission = provider_send_admission
+
+    def _require_provider_send_window(self) -> None:
+        if self._provider_send_admission is not None:
+            self._provider_send_admission.require_allowed()
 
 
 # Compatibility aliases for existing direct tests and callers. Concrete

@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from pathlib import Path
 
 from data.store import DataStore
 from server.ai_runtime.capture import HumanResearchContextCaptureService
 from server.ai_runtime.evidence import CanonicalEvidenceRepository
+from server.ai_runtime.provider_call_window import (
+    PROVIDER_CALL_COMPLETION_GUARD_SECONDS,
+    provider_send_admission_for,
+)
 from server.ai_runtime.provider_connectivity import (
     ConnectivityConfigurationError,
     ProviderConnectivitySettings,
@@ -49,6 +54,7 @@ def build_strategy_research_write_service(
     )
     from server.services.reviewed_fee_schedule import resolve_reviewed_fee_schedule
 
+    model_timeout_seconds = strategy_research_model_timeout_seconds(settings)
     return StrategyResearchService(
         db=state.db,
         db_path=db_path,
@@ -58,7 +64,20 @@ def build_strategy_research_write_service(
         ai_store=ai_store,
         research_store=research_store,
         data_store=DataStore(resolve_data_dir()),
-        model_timeout_seconds=strategy_research_model_timeout_seconds(settings),
+        model_timeout_seconds=model_timeout_seconds,
+        provider_send_admission=(
+            provider_send_admission_for(
+                settings.provider_id,
+                minimum_runway=timedelta(
+                    seconds=(
+                        model_timeout_seconds
+                        + PROVIDER_CALL_COMPLETION_GUARD_SECONDS
+                    )
+                ),
+            )
+            if settings is not None
+            else None
+        ),
         reviewed_fee_schedule_resolver=lambda **kwargs: resolve_reviewed_fee_schedule(
             state,
             **kwargs,

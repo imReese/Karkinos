@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from server.ai_runtime.provider_call_window import DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY
 from server.ai_runtime.provider_connectivity import (
     CONNECTIVITY_CONFIRMATION,
     ConnectivityCheckResult,
@@ -142,6 +145,29 @@ def test_connectivity_route_reports_inflight_duplicate_as_accepted(monkeypatch):
     assert response.status_code == 202
     assert response.json()["status"] == "running"
     assert response.json()["probe_verified"] is False
+
+
+@pytest.mark.unit
+def test_connectivity_route_reports_peak_window_defer_as_accepted(monkeypatch):
+    decision = DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY.evaluate(
+        datetime(2026, 8, 31, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    )
+    deferred = replace(
+        _result(),
+        status=ConnectivityStatus.DEFERRED,
+        http_status=None,
+        error_code="deepseek_peak_pricing_window",
+        provider_call_window=decision.to_dict(),
+    )
+    client = _client(monkeypatch, FixtureService(result=deferred))
+
+    response = client.post("/api/ai/provider-connectivity/checks", json=_payload())
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "deferred"
+    assert response.json()["next_eligible_at"] == "2026-08-31T18:00:00+08:00"
+    assert response.json()["provider_call_performed"] is False
+    assert response.json()["authority_effect"] == "none"
 
 
 @pytest.mark.unit

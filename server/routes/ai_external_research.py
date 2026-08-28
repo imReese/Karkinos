@@ -14,6 +14,10 @@ from server.ai_runtime.external_research import (
     ExternalBacktestReportRejected,
     HumanExternalBacktestReportRequest,
 )
+from server.ai_runtime.provider_call_window import (
+    ProviderCallDeferred,
+    provider_call_deferred_payload,
+)
 from server.ai_runtime.provider_connectivity import ConnectivityConfigurationError
 from server.ai_runtime.store import IdempotencyConflict
 from server.composition.ai_application_services import (
@@ -62,6 +66,11 @@ def create_router() -> APIRouter:
                     backtest_result_id=payload.backtest_result_id,
                     confirmation=payload.confirmation,
                 )
+            )
+        except ProviderCallDeferred as exc:
+            return JSONResponse(
+                status_code=202,
+                content=provider_call_deferred_payload(exc.decision),
             )
         except (IdempotencyConflict, EvidenceIdentityMismatch) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc

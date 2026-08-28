@@ -5,6 +5,8 @@ import sqlite3
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -16,6 +18,11 @@ from server.ai_runtime.external_memory_informed_analysis import (
     HumanExternalMemoryAnalysisRequest,
     HumanExternalMemoryAnalysisService,
     _decode_stage_output,
+)
+from server.ai_runtime.provider_call_window import (
+    DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
+    ProviderCallDeferred,
+    ProviderSendAdmission,
 )
 from server.ai_runtime.provider_connectivity import (
     HttpJsonResponse,
@@ -141,7 +148,14 @@ def _request(retrieval_id: str, **overrides) -> HumanExternalMemoryAnalysisReque
     return HumanExternalMemoryAnalysisRequest(**values)
 
 
-def _service(db_path, transport, *, settings_loader=_settings, initialize=True):
+def _service(
+    db_path,
+    transport,
+    *,
+    settings_loader=_settings,
+    initialize=True,
+    provider_send_admission_factory=None,
+):
     store = ExternalMemoryAnalysisStore(db_path)
     if initialize:
         store.init()
@@ -155,7 +169,39 @@ def _service(db_path, transport, *, settings_loader=_settings, initialize=True):
         transport=transport,
         now=lambda: NOW,
         monotonic=lambda: next(ticks),
+        provider_send_admission_factory=provider_send_admission_factory,
     )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_external_memory_peak_window_defers_before_model_call(tmp_path) -> None:
+    db_path = tmp_path / "external-memory.db"
+    retrieval, _, _ = await _prepared_retrieval(db_path)
+    transport = EvidenceAwareTransport()
+    admission = ProviderSendAdmission(
+        policy=DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
+        now=lambda: datetime(2026, 8, 31, 9, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+    service = _service(
+        db_path,
+        transport,
+        settings_loader=_deepseek_settings,
+        provider_send_admission_factory=lambda provider_id: admission,
+    )
+
+    with pytest.raises(ProviderCallDeferred, match="deepseek_peak_pricing_window"):
+        service.start(_request(retrieval.stored.retrieval_id))
+
+    assert transport.calls == []
+    with closing(sqlite3.connect(db_path)) as conn:
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM ai_external_memory_model_calls"
+            ).fetchone()[0]
+            == 0
+        )
 
 
 @pytest.mark.unit

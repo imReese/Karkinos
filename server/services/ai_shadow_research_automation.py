@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from data.store import DataStore
+from server.ai_runtime.provider_call_window import ProviderCallWindowPolicy
 from server.ai_runtime.strategy_research import StrategyResearchService
 from server.contracts.ai_shadow_research_automation import (
     CITATION_CONTRACT_RETRYABLE_FAILURE_CODES,
@@ -27,6 +28,8 @@ from server.contracts.ai_shadow_research_automation import (
     SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_MAX_CANDIDATES,
     SHADOW_RESEARCH_MAX_PROVIDER_CALLS,
+    SHADOW_RESEARCH_MINIMUM_OFF_PEAK_RUNWAY_SECONDS,
+    SHADOW_RESEARCH_SINGLE_PROVIDER_CALL_RUNWAY_SECONDS,
     SHADOW_RESEARCH_OUTPUT_TRUNCATION_CALL_EXTENSION_CONFIRMATION,
     SHADOW_RESEARCH_PAUSE_CONFIRMATION,
     SHADOW_RESEARCH_POLICY_CONFIRMATION,
@@ -120,6 +123,13 @@ class AiShadowResearchAutomationService(
         reviewed_fee_schedule_resolver: Callable[..., dict[str, Any]] | None = None,
         daily_artifact_store: DailyStrategyArtifactStore | None = None,
         now: Callable[[], datetime] | None = None,
+        provider_call_window_policy: ProviderCallWindowPolicy | None = None,
+        provider_runway_seconds: int = (
+            SHADOW_RESEARCH_MINIMUM_OFF_PEAK_RUNWAY_SECONDS
+        ),
+        provider_call_runway_seconds: int = (
+            SHADOW_RESEARCH_SINGLE_PROVIDER_CALL_RUNWAY_SECONDS
+        ),
     ) -> None:
         self._state = state
         self._db = state.require_database()
@@ -132,6 +142,9 @@ class AiShadowResearchAutomationService(
             backup_root=store.path.parent / "strategy-research-backups",
         )
         self._now = now or (lambda: datetime.now(timezone.utc))
+        self._provider_call_window_policy = provider_call_window_policy
+        self._provider_runway_seconds = provider_runway_seconds
+        self._provider_call_runway_seconds = provider_call_runway_seconds
 
     def _build_corrected_panel_rearm_evidence(
         self, prepared: PreparedBaseline

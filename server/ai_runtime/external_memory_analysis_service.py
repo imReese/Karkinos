@@ -52,6 +52,7 @@ from .memory_retrieval import (
 )
 from .orchestrator import DeterministicWorkflowOrchestrator
 from .permissions import default_tool_permission_registry
+from .provider_call_window import ProviderSendAdmission
 from .provider_connectivity_contracts import (
     JsonHttpTransport,
     ProviderConnectivitySettings,
@@ -76,6 +77,9 @@ class HumanExternalMemoryAnalysisService:
         now: Callable[[], str] | None = None,
         monotonic: Callable[[], float] | None = None,
         model_timeout_seconds: float = 180.0,
+        provider_send_admission_factory: (
+            Callable[[str], ProviderSendAdmission | None] | None
+        ) = None,
     ) -> None:
         if model_timeout_seconds <= 0 or model_timeout_seconds > 300:
             raise ValueError("model_timeout_seconds must be within (0, 300]")
@@ -88,6 +92,7 @@ class HumanExternalMemoryAnalysisService:
         self._now = now or utc_now
         self._monotonic = monotonic or time.monotonic
         self._model_timeout_seconds = model_timeout_seconds
+        self._provider_send_admission_factory = provider_send_admission_factory
 
     def start(
         self,
@@ -122,6 +127,13 @@ class HumanExternalMemoryAnalysisService:
             retrieval_id=request.retrieval_id,
         )
         settings = self._settings_loader()
+        send_admission = (
+            self._provider_send_admission_factory(settings.provider_id)
+            if self._provider_send_admission_factory is not None
+            else None
+        )
+        if send_admission is not None:
+            send_admission.require_allowed()
         provider_id, model_id = external_memory_runtime_ids(settings)
         registry = AiRuntimeRegistry(self._ai_store)
         register_external_memory_runtime(
@@ -142,6 +154,7 @@ class HumanExternalMemoryAnalysisService:
             now=self._now,
             monotonic=self._monotonic,
             timeout_seconds=self._model_timeout_seconds,
+            send_admission=send_admission,
         )
         orchestrator = DeterministicWorkflowOrchestrator(
             store=self._ai_store,

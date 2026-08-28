@@ -65,6 +65,7 @@ def create_router() -> APIRouter:
         status_code = {
             ConnectivityStatus.PASSED: 200,
             ConnectivityStatus.RUNNING: 202,
+            ConnectivityStatus.DEFERRED: 202,
             ConnectivityStatus.FAILED: 502,
         }[result.status]
         return JSONResponse(status_code=status_code, content=result.to_dict())

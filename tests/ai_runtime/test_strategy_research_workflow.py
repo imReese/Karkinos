@@ -30,6 +30,11 @@ from server.ai_runtime.formula_dsl import (
     FORMULA_AST_CONTRACT,
 )
 from server.ai_runtime.orchestrator import _failure_code as _workflow_failure_code
+from server.ai_runtime.provider_call_window import (
+    DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
+    ProviderCallDeferred,
+    ProviderSendAdmission,
+)
 from server.ai_runtime.provider_connectivity import (
     HttpJsonResponse,
     ProviderConnectivitySettings,
@@ -418,7 +423,12 @@ def _iteration_context(*, iteration_number: int, total_iterations: int = 5) -> d
     return {**core, "context_fingerprint": "sha256:" + content_fingerprint(core)}
 
 
-def _service(tmp_path, *, bind_account: bool = True):
+def _service(
+    tmp_path,
+    *,
+    bind_account: bool = True,
+    provider_send_admission: ProviderSendAdmission | None = None,
+):
     market = DataStore(tmp_path / "market")
     symbol = Symbol("600000")
     bars = _bars()
@@ -652,8 +662,51 @@ def _service(tmp_path, *, bind_account: bool = True):
         now=lambda: NOW,
         monotonic=lambda: 10.0,
         reviewed_fee_schedule_resolver=lambda **_: _reviewed_fee_resolution(),
+        provider_send_admission=provider_send_admission,
     )
     return service, selection, transport, db_path
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_strategy_hypothesis_peak_window_defers_before_transport(
+    tmp_path,
+) -> None:
+    service, selection, transport, _ = _service(
+        tmp_path,
+        provider_send_admission=ProviderSendAdmission(
+            policy=DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
+            now=lambda: datetime.fromisoformat(NOW),
+        ),
+    )
+
+    with pytest.raises(ProviderCallDeferred, match="deepseek_peak_pricing_window"):
+        await service.generate_hypotheses(
+            HypothesisGenerationRequest(
+                idempotency_key="peak-defer",
+                requested_by="human:reese",
+                account_alias="synthetic-research-only",
+                research_question="Generate one bounded formula hypothesis.",
+                selection=selection,
+                confirmation=HYPOTHESIS_EXPORT_CONFIRMATION,
+            )
+        )
+
+    assert transport.calls == []
+
+
+@pytest.mark.unit
+def test_send_edge_defer_preserves_provider_free_failure_code() -> None:
+    admission = ProviderSendAdmission(
+        policy=DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
+        now=lambda: datetime.fromisoformat(NOW),
+    )
+
+    with pytest.raises(ProviderCallDeferred) as caught:
+        admission.require_allowed()
+
+    assert _workflow_failure_code(caught.value) == "deepseek_peak_pricing_window"
 
 
 @pytest.mark.unit

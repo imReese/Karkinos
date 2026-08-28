@@ -19,6 +19,9 @@ from core.types import BarFrequency, CommissionType, Symbol
 from data.store import DataStore
 from execution.commission import MultiAssetCommission, StockACommission
 from server.ai_runtime.contracts import canonical_json, content_fingerprint
+from server.ai_runtime.provider_call_window import (
+    DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
+)
 from server.ai_runtime.store import AiAuditStore
 from server.ai_runtime.strategy_research import (
     StrategyResearchAuditStore,
@@ -71,6 +74,64 @@ SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 @pytest.mark.unit
 @pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_peak_pricing_window_defers_before_any_research_or_provider_claim(
+    tmp_path, monkeypatch
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = ShadowResearchStore(tmp_path / "app.db")
+    store.init()
+    service = AiShadowResearchAutomationService(
+        state=_state(db),
+        store=store,
+        data_store=DataStore(tmp_path / "market"),
+        provider_call_window_policy=DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
+        now=lambda: datetime(2026, 8, 31, 16, 0, tzinfo=SHANGHAI),
+    )
+    service.update_policy(_policy_payload(enabled=True))
+    persisted_policy = db.get_automation_policy_sync("ai_shadow_research")
+    assert persisted_policy["provider_call_window_policy_id"] == (
+        "deepseek.beijing_weekday_peak.v1"
+    )
+    assert len(persisted_policy["provider_call_window_policy_fingerprint"]) == 64
+
+    def unexpected_baseline(policy: ShadowResearchPolicy) -> PreparedBaseline:
+        raise AssertionError("pricing admission must run before baseline preparation")
+
+    monkeypatch.setattr(service, "_prepare_baseline", unexpected_baseline)
+
+    result = await service.run_once()
+
+    assert result["run_status"] == "deferred_for_provider_off_peak"
+    assert result["failure_code"] == "deepseek_peak_pricing_window"
+    assert result["next_eligible_at"] == "2026-08-31T18:00:00+08:00"
+    assert result["provider_call_window"]["provider_call_performed"] is False
+    with sqlite3.connect(tmp_path / "app.db") as conn:
+        assert (
+            conn.execute("SELECT COUNT(*) FROM ai_shadow_research_runs").fetchone()[0]
+            == 0
+        )
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM ai_shadow_research_provider_calls"
+            ).fetchone()[0]
+            == 0
+        )
+        payload = json.loads(
+            conn.execute(
+                "SELECT payload_json FROM automation_runs WHERE run_id=?",
+                (result["preflight_run_id"],),
+            ).fetchone()[0]
+        )
+    assert payload["provider_call_performed"] is False
+    assert payload["provider_call_window"]["next_eligible_at"] == (
+        "2026-08-31T18:00:00+08:00"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
 def test_shadow_policy_confirmation_literals_match_the_operator_contract() -> None:
     assert SHADOW_RESEARCH_POLICY_CONFIRMATION == (
         "authorize_five_sequential_after_close_deepseek_strategy_research_without_"
@@ -83,6 +144,30 @@ def test_shadow_policy_confirmation_literals_match_the_operator_contract() -> No
     assert SHADOW_RESEARCH_PAUSE_CONFIRMATION == (
         "pause_after_close_ai_strategy_research_without_changing_trading_authority"
     )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_shadow_policy_persists_exact_provider_window_revision_and_rejects_drift() -> (
+    None
+):
+    payload = ShadowResearchPolicy().to_dict()
+
+    assert payload["schema_version"] == "karkinos.ai.shadow_research_policy.v3"
+    assert payload["provider_call_window_schema"] == (
+        "karkinos.ai.provider_call_window.v1"
+    )
+    assert payload["provider_call_window_policy_id"] == (
+        "deepseek.beijing_weekday_peak.v1"
+    )
+    assert len(payload["provider_call_window_policy_fingerprint"]) == 64
+
+    with pytest.raises(
+        ShadowResearchRejected, match="provider_call_window_policy_drift"
+    ):
+        ShadowResearchPolicy.from_mapping(
+            {**payload, "provider_call_window_policy_id": "deepseek.unknown.v2"}
+        )
 
 
 @pytest.mark.unit

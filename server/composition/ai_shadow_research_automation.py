@@ -6,6 +6,9 @@ from collections.abc import Callable
 from typing import TypeVar
 
 from data.store import DataStore
+from server.ai_runtime.provider_call_window import (
+    DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
+)
 from server.ai_runtime.strategy_research import StrategyResearchService
 from server.bootstrap import resolve_data_dir
 from server.dependencies import AppState
@@ -39,4 +42,5 @@ def compose_ai_shadow_research_automation_service(
         reviewed_fee_schedule_resolver=lambda **kwargs: resolve_reviewed_fee_schedule(
             state, **kwargs
         ),
+        provider_call_window_policy=DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
     )

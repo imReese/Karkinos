@@ -28,6 +28,7 @@ from server.ai_runtime.provider import (
     ProviderRequest,
     ProviderResponse,
 )
+from server.ai_runtime.provider_call_window import ProviderSendAdmission
 from server.ai_runtime.provider_connectivity_contracts import (
     JsonHttpTransport,
     ProviderConnectivitySettings,
@@ -88,6 +89,7 @@ class StrategyResearchModelProvider(ProviderAdapter):
         monotonic: Callable[[], float],
         timeout_seconds: float,
         account_evidence_reference_id: str | None = None,
+        send_admission: ProviderSendAdmission | None = None,
     ) -> None:
         self._provider_id = provider_id
         self._settings = settings
@@ -101,6 +103,7 @@ class StrategyResearchModelProvider(ProviderAdapter):
         self._transport = transport
         self._monotonic = monotonic
         self._timeout_seconds = timeout_seconds
+        self._send_admission = send_admission
 
     @property
     def provider_id(self) -> str:
@@ -273,6 +276,8 @@ class StrategyResearchModelProvider(ProviderAdapter):
         payload.update(strategy_research_request_options(self._settings))
         started = self._monotonic()
         try:
+            if self._send_admission is not None:
+                self._send_admission.require_allowed()
             response = self._transport.post_json(
                 url=self._settings.endpoint_url,
                 headers={

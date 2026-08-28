@@ -41,6 +41,7 @@ from .external_research_workflow import (
 )
 from .orchestrator import DeterministicWorkflowOrchestrator, ToolExecutor
 from .permissions import default_tool_permission_registry
+from .provider_call_window import ProviderSendAdmission
 from .provider_connectivity_contracts import (
     JsonHttpTransport,
     ProviderConnectivitySettings,
@@ -65,6 +66,7 @@ class HumanExternalBacktestReportService:
         now: Callable[[], str] | None = None,
         monotonic: Callable[[], float] | None = None,
         model_timeout_seconds: float = 180.0,
+        provider_send_admission: ProviderSendAdmission | None = None,
     ) -> None:
         self._settings = settings
         self._capture_service = capture_service
@@ -74,6 +76,7 @@ class HumanExternalBacktestReportService:
         self._transport = transport or HttpxDeadlineJsonTransport()
         self._now = now or utc_now
         self._monotonic = monotonic or time.monotonic
+        self._provider_send_admission = provider_send_admission
         if model_timeout_seconds <= 0 or model_timeout_seconds > 300:
             raise ValueError("model_timeout_seconds must be within (0, 300]")
         self._model_timeout_seconds = model_timeout_seconds
@@ -82,6 +85,8 @@ class HumanExternalBacktestReportService:
         self,
         request: HumanExternalBacktestReportRequest,
     ) -> ExternalBacktestReportResult:
+        if self._provider_send_admission is not None:
+            self._provider_send_admission.require_allowed()
         capture = await self._capture_service.capture(
             HumanContextCaptureRequest(
                 idempotency_key=f"external-report:{request.idempotency_key}",
@@ -138,6 +143,7 @@ class HumanExternalBacktestReportService:
             transport=self._transport,
             monotonic=self._monotonic,
             timeout_seconds=self._model_timeout_seconds,
+            send_admission=self._provider_send_admission,
         )
         orchestrator = DeterministicWorkflowOrchestrator(
             store=self._ai_store,

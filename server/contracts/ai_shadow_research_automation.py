@@ -10,6 +10,10 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from server.ai_runtime.contracts import content_fingerprint
+from server.ai_runtime.provider_call_window import (
+    DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
+    PROVIDER_CALL_WINDOW_SCHEMA,
+)
 from server.ai_runtime.strategy_research import (
     STRATEGY_RESEARCH_ITERATION_CONTEXT_CONTRACT,
     STRATEGY_RESEARCH_MAX_CANDIDATES,
@@ -19,10 +23,10 @@ from server.ai_runtime.strategy_research import (
 from server.models import BacktestRequest
 
 SHADOW_RESEARCH_POLICY_ID = "ai_shadow_research"
-SHADOW_RESEARCH_POLICY_SCHEMA = "karkinos.ai.shadow_research_policy.v2"
+SHADOW_RESEARCH_POLICY_SCHEMA = "karkinos.ai.shadow_research_policy.v3"
 SHADOW_RESEARCH_API_SCHEMA = "karkinos.ai.shadow_research_automation.v1"
 SHADOW_RESEARCH_RUN_TYPE = "ai_shadow_research"
-SHADOW_RESEARCH_RUNTIME_CONTRACT = "karkinos.ai.shadow_research_runtime.v10"
+SHADOW_RESEARCH_RUNTIME_CONTRACT = "karkinos.ai.shadow_research_runtime.v12"
 SHADOW_RESEARCH_REQUIRED_MARKET_UNIVERSE_TRUTH_SCHEMA = (
     "karkinos.market_universe_truth.v2"
 )
@@ -86,6 +90,11 @@ SHADOW_RESEARCH_PROVIDER_TOKEN_RESERVATION = (
 )
 SHADOW_RESEARCH_MAX_PROVIDER_CALLS = STRATEGY_RESEARCH_MAX_PROVIDER_CALLS
 SHADOW_RESEARCH_MAX_CANDIDATES = STRATEGY_RESEARCH_MAX_CANDIDATES
+# Ten sequential DeepSeek calls may each take up to 600 seconds.  The extra
+# 25-minute runway covers deterministic backtests and persistence so a batch
+# admitted before 09:00 is expected to finish before the peak boundary.
+SHADOW_RESEARCH_MINIMUM_OFF_PEAK_RUNWAY_SECONDS = 7_500
+SHADOW_RESEARCH_SINGLE_PROVIDER_CALL_RUNWAY_SECONDS = 605
 PROVIDER_FREE_RETRYABLE_FAILURE_CODES = (
     "account_evidence_binding_mismatch",
     "ai_runtime_role_identity_conflict",
@@ -98,6 +107,8 @@ PROVIDER_FREE_RETRYABLE_FAILURE_CODES = (
     "research_initial_cash_exceeds_current_account_equity",
     "research_initial_cash_invalid",
     "reviewed_fee_schedule_current_reconciliation_blocked",
+    "deepseek_peak_pricing_window",
+    "deepseek_off_peak_runway_insufficient",
 )
 LOCAL_PROVIDER_FREE_PARTIAL_FAILURE_CODES = (
     "strategy_research_citation_catalog_too_large",
@@ -189,6 +200,13 @@ class ShadowResearchPolicy:
             "enabled": self.enabled,
             "after_close_time": self.after_close_time,
             "timezone": "Asia/Shanghai",
+            "provider_call_window_schema": PROVIDER_CALL_WINDOW_SCHEMA,
+            "provider_call_window_policy_id": (
+                DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY.policy_id
+            ),
+            "provider_call_window_policy_fingerprint": (
+                DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY.fingerprint
+            ),
             "max_provider_calls_per_market_date": self.max_provider_calls_per_market_date,
             "daily_token_budget": self.daily_token_budget,
             "token_budget_mode": self.token_budget_mode,
@@ -229,6 +247,20 @@ class ShadowResearchPolicy:
             expected_token_budget_mode,
         ):
             raise ShadowResearchRejected("token_budget_mode_conflicts_with_policy")
+        expected_window_identity = {
+            "provider_call_window_schema": PROVIDER_CALL_WINDOW_SCHEMA,
+            "provider_call_window_policy_id": (
+                DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY.policy_id
+            ),
+            "provider_call_window_policy_fingerprint": (
+                DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY.fingerprint
+            ),
+        }
+        if any(
+            value.get(key) not in (None, expected)
+            for key, expected in expected_window_identity.items()
+        ):
+            raise ShadowResearchRejected("provider_call_window_policy_drift")
         return cls(
             enabled=bool(value.get("enabled", False)),
             after_close_time=str(value.get("after_close_time") or "15:30"),
