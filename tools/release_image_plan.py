@@ -16,6 +16,10 @@ _SEMVER_TAG = re.compile(
     r"(?:-(alpha|beta|rc)\.(0|[1-9][0-9]*))?$"
 )
 _PHASE_ORDER = {"alpha": 0, "beta": 1, "rc": 2, None: 3}
+_MISSING_MANIFEST_MARKERS = (
+    "manifest unknown",
+    "no such manifest",
+)
 
 
 @dataclass(frozen=True)
@@ -23,6 +27,7 @@ class ReleaseImagePlan:
     tag: str
     version: str
     image: str
+    immutable_image_tags: tuple[str, ...]
     image_tags: tuple[str, ...]
     is_prerelease: bool
 
@@ -58,7 +63,8 @@ def build_release_image_plan(
         raise ValueError("release_tag_must_be_strictly_newer_than_existing_semver_tags")
 
     image = f"ghcr.io/{repository.lower()}"
-    image_tags = [f"{image}:{tag}", f"{image}:sha-{commit_sha}"]
+    immutable_image_tags = (f"{image}:{tag}", f"{image}:sha-{commit_sha}")
+    image_tags = list(immutable_image_tags)
     is_prerelease = current_key[3] != _PHASE_ORDER[None]
     if not is_prerelease:
         major, minor, _patch = current_key[:3]
@@ -69,9 +75,39 @@ def build_release_image_plan(
         tag=tag,
         version=version,
         image=image,
+        immutable_image_tags=immutable_image_tags,
         image_tags=tuple(image_tags),
         is_prerelease=is_prerelease,
     )
+
+
+def assert_immutable_image_tags_absent(plan: ReleaseImagePlan) -> None:
+    """Reject a release when either immutable registry tag may already exist."""
+
+    for image_tag in plan.immutable_image_tags:
+        try:
+            result = subprocess.run(
+                ["docker", "buildx", "imagetools", "inspect", "--raw", image_tag],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise RuntimeError(
+                f"immutable_release_image_tag_preflight_inconclusive:{image_tag}"
+            ) from exc
+        if result.returncode == 0:
+            raise ValueError(f"immutable_release_image_tag_already_exists:{image_tag}")
+
+        failure = f"{result.stdout}\n{result.stderr}".lower()
+        image_not_found = f"{image_tag.lower()}: not found" in failure
+        if not image_not_found and not any(
+            marker in failure for marker in _MISSING_MANIFEST_MARKERS
+        ):
+            raise RuntimeError(
+                f"immutable_release_image_tag_preflight_inconclusive:{image_tag}"
+            )
 
 
 def _semver_key(tag: str) -> tuple[int, int, int, int, int]:
@@ -136,6 +172,10 @@ def main() -> int:
     parser.add_argument("--commit-sha", required=True)
     parser.add_argument("--repo-root", type=Path, default=Path("."))
     parser.add_argument("--github-output", type=Path)
+    parser.add_argument(
+        "--verify-immutable-image-tags-absent",
+        action="store_true",
+    )
     args = parser.parse_args()
     repo_root = args.repo_root.resolve()
     plan = build_release_image_plan(
@@ -147,6 +187,8 @@ def main() -> int:
         lock_version=_read_json_version(repo_root / "web/package-lock.json"),
         existing_tags=_git_tags(repo_root),
     )
+    if args.verify_immutable_image_tags_absent:
+        assert_immutable_image_tags_absent(plan)
     if args.github_output is not None:
         _append_github_outputs(args.github_output, plan)
     else:

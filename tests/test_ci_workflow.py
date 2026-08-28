@@ -84,3 +84,11 @@ def test_ci_publishes_release_image_on_semver_tag() -> None:
     assert "docker/build-push-action" in workflow
     assert "registry: ghcr.io" in workflow
     assert "platforms: linux/amd64,linux/arm64" in workflow
+    assert "group: release-image-${{ github.repository }}" in workflow
+    assert "cancel-in-progress: false" in workflow
+    assert "--verify-immutable-image-tags-absent" in workflow
+    assert (
+        workflow.index("Log in to GitHub Container Registry")
+        < workflow.index("Compute release image plan and verify immutable tags")
+        < workflow.index("Build and push multi-architecture image")
+    )
