@@ -65,7 +65,6 @@ class ServerConfig(BacktestConfig):
 
     host: str = "0.0.0.0"
     port: int = 8000
-    live_auto_start: bool = False
     market_calendar_auto_sync: bool = True
     cors_allowed_origins: list[str] = field(
         default_factory=lambda: [

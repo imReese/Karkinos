@@ -4,6 +4,7 @@ import asyncio
 import json
 import threading
 import time
+from dataclasses import replace
 from datetime import datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
@@ -164,6 +165,7 @@ def _run_scheduler_once(
     sources: dict | None = None,
     warmup_strategy=None,
     now: datetime | None = None,
+    clock=None,
     configure_database=None,
     observe_scheduler=None,
 ) -> AppDatabase:
@@ -253,6 +255,8 @@ def _run_scheduler_once(
     )
 
     scheduler = scheduler_module.TradingScheduler(config, FakeBridge(), db=db)
+    if clock is not None:
+        scheduler._scheduler_clock = clock
     holder["scheduler"] = scheduler
     scheduler.wait_for_scheduler_stop = lambda timeout: scheduler._running.clear()
     scheduler._running.set()
@@ -316,6 +320,31 @@ def test_scheduler_poll_success_records_quote_fetch_run(monkeypatch, tmp_path):
     assert instrument["provider_name"] == "akshare"
     assert observed_runtime_quotes["600519"]["quote_status"] == "live"
     assert observed_runtime_quotes["600519"]["quote_source"] == "akshare"
+
+
+def test_scheduler_captures_quote_batch_after_provider_poll(monkeypatch, tmp_path):
+    iteration_started_at = datetime(2026, 5, 23, 10, 0, 0)
+    event = replace(
+        _market_event("600519"),
+        timestamp=iteration_started_at + timedelta(seconds=10),
+    )
+    captured_at = iteration_started_at + timedelta(seconds=20)
+    clock_values = iter(
+        [iteration_started_at, iteration_started_at, captured_at, captured_at]
+    )
+
+    db = _run_scheduler_once(
+        monkeypatch,
+        tmp_path,
+        events=[event],
+        clock=lambda: next(clock_values, captured_at),
+    )
+
+    run = db.list_quote_fetch_runs()[0]
+    latest = db.get_latest_quote_sync("600519", asset_type="stock")
+    assert run["status"] == "success"
+    assert latest is not None
+    assert latest["captured_at"] == captured_at.isoformat()
 
 
 def test_scheduler_signal_persists_action_task_without_notifier(
@@ -1435,6 +1464,7 @@ def test_scheduler_worker_failure_clears_reported_liveness(monkeypatch) -> None:
 def test_scheduler_fails_closed_when_persisted_watchlist_cannot_be_read(
     monkeypatch,
     tmp_path,
+    caplog,
 ) -> None:
     from server import scheduler as scheduler_module
 
@@ -1459,19 +1489,19 @@ def test_scheduler_fails_closed_when_persisted_watchlist_cannot_be_read(
         db=db,
     )
     scheduler._running.set()
+    scheduler.wait_for_scheduler_stop = lambda timeout: scheduler._running.clear()
 
-    with pytest.raises(
-        RuntimeError,
-        match="persisted scheduler watchlist could not be restored",
-    ):
-        scheduler._run_loop()
+    scheduler._run_loop()
 
     assert scheduler.watchlist == []
+    assert "Trading scheduler initialization failed; retrying" in caplog.text
+    assert "persisted scheduler watchlist could not be restored" in caplog.text
 
 
 def test_scheduler_fails_closed_on_unknown_persisted_asset_class(
     monkeypatch,
     tmp_path,
+    caplog,
 ) -> None:
     from server import scheduler as scheduler_module
 
@@ -1499,14 +1529,15 @@ def test_scheduler_fails_closed_on_unknown_persisted_asset_class(
         db=db,
     )
     scheduler._running.set()
+    scheduler.wait_for_scheduler_stop = lambda timeout: scheduler._running.clear()
 
-    with pytest.raises(
-        RuntimeError,
-        match="persisted scheduler watchlist contains unsupported asset class",
-    ):
-        scheduler._run_loop()
+    scheduler._run_loop()
 
     assert scheduler.watchlist == []
+    assert "Trading scheduler initialization failed; retrying" in caplog.text
+    assert (
+        "persisted scheduler watchlist contains unsupported asset class" in caplog.text
+    )
 
 
 def test_scheduler_prefers_persistent_watchlist_over_config_assets(

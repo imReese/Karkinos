@@ -72,7 +72,21 @@ def test_runtime_rate_limit_routes_are_read_only(monkeypatch) -> None:
 def test_route_service_wires_persistent_authentication_but_keeps_api_read_only(
     monkeypatch,
 ) -> None:
-    fake_state = SimpleNamespace(db=object())
+    fake_trading_controls = SimpleNamespace(
+        automatic_trading_snapshot=lambda now=None: {
+            "status": "enabled",
+            "configured_enabled": True,
+            "enabled": True,
+            "revision": 1,
+            "control_fingerprint": "a" * 64,
+            "expires_at": "2026-07-12T10:00:00+00:00",
+            "blockers": [],
+        }
+    )
+    fake_state = SimpleNamespace(
+        db=object(),
+        trading_controls=fake_trading_controls,
+    )
     fake_authority = SimpleNamespace(
         authenticate=lambda session_id, session_token: {"session_id": session_id}
     )
@@ -91,6 +105,7 @@ def test_route_service_wires_persistent_authentication_but_keeps_api_read_only(
     assert service._db is fake_state.db
     assert service._session_provider == fake_authority.authenticate
     assert service._gate_snapshot_provider == fake_live_gates.latest
+    assert service._trading_controls is fake_trading_controls
     assert service.get_status()["runtime_admission_enabled"] is True
     assert service.get_status()["public_admission_endpoint_exposed"] is False
 

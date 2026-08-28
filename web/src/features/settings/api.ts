@@ -22,7 +22,6 @@ export type LiveStatusResponse = {
 export type SettingsResponse = {
   host: string;
   port: number;
-  live_auto_start: boolean;
   initial_cash: number;
   start_date: string;
   end_date: string;
@@ -165,30 +164,6 @@ export function useUpdateSettingsMutation() {
       putJson<SettingsResponse>('/api/settings', payload),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['settings'] });
-    },
-  });
-}
-
-export function useStartLiveMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () => postJson<LiveStatusResponse>('/api/settings/live/start'),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: ['settings-live-status'],
-      });
-    },
-  });
-}
-
-export function useStopLiveMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () => postJson<LiveStatusResponse>('/api/settings/live/stop'),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: ['settings-live-status'],
-      });
     },
   });
 }

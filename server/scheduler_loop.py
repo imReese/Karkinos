@@ -130,24 +130,53 @@ class SchedulerLoop:
         self._dependencies = dependencies
 
     def run(self) -> None:
-        runtime = self._initialize_runtime()
-        if runtime is None:
-            return
+        while self._state.scheduler_should_continue():
+            try:
+                runtime = self._initialize_runtime()
+            except Exception:
+                logger.exception("Trading scheduler initialization failed; retrying")
+                self._wait_before_retry()
+                continue
 
-        try:
-            logger.info(
-                "Trading loop started, watching %d symbols, interval=%ds",
-                len(self._state.watchlist),
-                self._dependencies.config.live_poll_interval,
-            )
-            while self._state.scheduler_should_continue():
-                if not self._run_iteration(runtime):
-                    continue
-                self._state.wait_for_scheduler_stop(
-                    timeout=self._dependencies.config.live_poll_interval
+            if runtime is None:
+                self._wait_before_retry()
+                continue
+
+            try:
+                logger.info(
+                    "Trading loop started, watching %d symbols, interval=%ds",
+                    len(self._state.watchlist),
+                    self._dependencies.config.live_poll_interval,
                 )
-        finally:
-            runtime.feed.close()
+                while self._state.scheduler_should_continue():
+                    try:
+                        should_wait = self._run_iteration(runtime)
+                    except Exception:
+                        logger.exception(
+                            "Trading scheduler runtime failed; reinitializing"
+                        )
+                        break
+                    if should_wait:
+                        self._state.wait_for_scheduler_stop(
+                            timeout=self._dependencies.config.live_poll_interval
+                        )
+            finally:
+                self._close_feed(runtime.feed)
+
+            self._wait_before_retry()
+
+    def _wait_before_retry(self) -> None:
+        if self._state.scheduler_should_continue():
+            self._state.wait_for_scheduler_stop(
+                timeout=self._dependencies.config.live_poll_interval
+            )
+
+    @staticmethod
+    def _close_feed(feed: SchedulerFeed) -> None:
+        try:
+            feed.close()
+        except Exception:
+            logger.exception("Trading scheduler feed close failed")
 
     def _initialize_runtime(self) -> SchedulerRuntime | None:
         state = self._state
@@ -176,15 +205,16 @@ class SchedulerLoop:
             self._restore_quotes()
             self._restore_portfolio()
             if not state.watchlist:
-                logger.warning("No watchlist configured, stopping scheduler")
-                state.request_scheduler_stop()
-                feed.close()
+                logger.warning(
+                    "No watchlist configured; scheduler will retry initialization"
+                )
+                self._close_feed(feed)
                 return None
             strategy, strategy_events = self._wire_event_processing(
                 runtime.data_manager
             )
         except Exception:
-            feed.close()
+            self._close_feed(feed)
             raise
         return SchedulerRuntime(
             source=source,
@@ -381,7 +411,12 @@ class SchedulerLoop:
                     runtime.data_manager,
                     now=current,
                 )
-            state.wait_for_scheduler_stop(timeout=30)
+            state.wait_for_scheduler_stop(
+                timeout=min(
+                    30,
+                    self._dependencies.config.live_poll_interval,
+                )
+            )
             return False
 
         dependencies.sync_fund_nav_quotes()
@@ -406,6 +441,7 @@ class SchedulerLoop:
             events, quote_fetch_run_id = dependencies.poll_watchlist_quotes(
                 runtime.feed
             )
+            capture_time = dependencies.now()
             for market_event in events:
                 snapshot = (
                     runtime.feed.get_last_snapshot(
@@ -419,7 +455,7 @@ class SchedulerLoop:
                         market_event=market_event,
                         snapshot=snapshot,
                         quote_fetch_run_id=quote_fetch_run_id,
-                        now=now,
+                        now=capture_time,
                     )
                 )
             completed = dependencies.finish_persisted_quote_fetch_run(

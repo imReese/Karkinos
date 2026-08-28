@@ -385,4 +385,5 @@ def build_controlled_session_runtime_rate_limiter_service(
         db=state.db,
         session_provider=authority.authenticate,
         gate_snapshot_provider=live_gates.latest,
+        trading_controls=state.trading_controls,
     )

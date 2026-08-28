@@ -2,7 +2,6 @@
     "server": {
         "host": "127.0.0.1",
         "port": 8000,
-        "live_auto_start": false,
         "market_calendar_auto_sync": true,
         "cors_allowed_origins": [
             "http://localhost:5173",

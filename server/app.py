@@ -283,29 +283,29 @@ async def lifespan(app: FastAPI):
         name="ai-shadow-research-automation",
     )
 
-    # 自动启动实时监控
-    if config.live_auto_start:
-        scheduler.start()
-        market_universe_task = asyncio.create_task(
-            run_market_universe_automation_loop(db=db, config=config),
-            name="market-universe-automation",
+    # Live monitoring is a core server invariant. Financial and execution
+    # authority remain bounded by their independent fail-closed gates.
+    scheduler.start()
+    market_universe_task = asyncio.create_task(
+        run_market_universe_automation_loop(db=db, config=config),
+        name="market-universe-automation",
+    )
+    decision_evidence_task = asyncio.create_task(
+        run_daily_decision_evidence_automation_loop(
+            state=state,
+            interval_seconds=config.live_poll_interval,
+            plan_reader=current_decision_and_trading_plan,
+            risk_runner=run_batch_pre_trade_risk_for_state,
+            quote_refresher=refresh_one_quote,
+        ),
+        name=DAILY_DECISION_EVIDENCE_AUTOMATION_TASK_NAME,
+    )
+    state.daily_decision_evidence_task = decision_evidence_task
+    if config.market_calendar_auto_sync:
+        market_calendar_task = asyncio.create_task(
+            run_market_calendar_automation_loop(db=db, config=config),
+            name="market-calendar-automation",
         )
-        decision_evidence_task = asyncio.create_task(
-            run_daily_decision_evidence_automation_loop(
-                state=state,
-                interval_seconds=config.live_poll_interval,
-                plan_reader=current_decision_and_trading_plan,
-                risk_runner=run_batch_pre_trade_risk_for_state,
-                quote_refresher=refresh_one_quote,
-            ),
-            name=DAILY_DECISION_EVIDENCE_AUTOMATION_TASK_NAME,
-        )
-        state.daily_decision_evidence_task = decision_evidence_task
-        if config.market_calendar_auto_sync:
-            market_calendar_task = asyncio.create_task(
-                run_market_calendar_automation_loop(db=db, config=config),
-                name="market-calendar-automation",
-            )
 
     logger.info("Karkinos Server started")
 
@@ -362,6 +362,9 @@ def create_app(
 ) -> FastAPI:
     """创建 FastAPI 应用实例。"""
     effective_overrides = dict(config_overrides or {})
+    # Older callers used this test/deployment override to disable monitoring.
+    # Keep upgrades non-breaking while enforcing the always-on invariant.
+    effective_overrides.pop("live_auto_start", None)
     if runtime_config is None:
         from server.bootstrap import load_runtime_config
         from server.config import ServerConfig

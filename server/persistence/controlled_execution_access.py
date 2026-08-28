@@ -11,9 +11,7 @@ from server.persistence.connection import SQLiteRepository
 class ValuationFacts(Protocol):
     """Persisted-fact reads required to revalidate a correction in-transaction."""
 
-    def list_latest_quotes_sync(self) -> list[dict[str, Any]]: ...
-
-    def list_quote_snapshots_sync(self) -> list[dict[str, Any]]: ...
+    def list_quote_selection_candidates_sync(self) -> list[dict[str, Any]]: ...
 
     def get_market_bar_on_date_sync(
         self, symbol: str, trade_date: str

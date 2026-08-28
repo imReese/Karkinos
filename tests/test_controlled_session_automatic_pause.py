@@ -56,6 +56,12 @@ def _gates(**updates) -> dict:
         "budget_status": "current_reserved_non_executing",
         "rate_limit_status": "clear",
         "kill_switch_enabled": False,
+        "automatic_trading_status": "enabled",
+        "automatic_trading_configured_enabled": True,
+        "automatic_trading_enabled": True,
+        "automatic_trading_revision": 1,
+        "automatic_trading_control_fingerprint": "d" * 64,
+        "automatic_trading_blockers": [],
         "budget_exhausted": False,
         "daily_loss_limit_reached": False,
         "drawdown_limit_reached": False,
@@ -134,6 +140,17 @@ def test_clear_gates_are_deterministic_sanitized_and_side_effect_free(tmp_path) 
         ({"budget_status": "unknown"}, "budget_not_current"),
         ({"rate_limit_status": "blocked"}, "rate_limit_not_clear"),
         ({"kill_switch_enabled": True}, "kill_switch_enabled"),
+        (
+            {
+                "automatic_trading_status": "disabled",
+                "automatic_trading_configured_enabled": False,
+                "automatic_trading_enabled": False,
+                "automatic_trading_revision": 2,
+                "automatic_trading_control_fingerprint": "e" * 64,
+                "automatic_trading_blockers": ["automatic_trading_disabled"],
+            },
+            "automatic_trading_disabled",
+        ),
         ({"budget_exhausted": True}, "budget_exhausted"),
         ({"daily_loss_limit_reached": True}, "daily_loss_limit_reached"),
         ({"drawdown_limit_reached": True}, "drawdown_limit_reached"),
@@ -181,6 +198,36 @@ def test_pause_is_idempotent_concurrent_and_never_auto_resumes(tmp_path) -> None
     assert after_clear["reasons"] == ["kill_switch_enabled"]
     assert service.get_state("session-a")["status"] == "paused"
     assert len(db.list_controlled_session_pause_events_sync()) == 1
+
+
+def test_automatic_trading_disable_pauses_durably_after_gate_is_reenabled(
+    tmp_path,
+) -> None:
+    disabled = _gates(
+        automatic_trading_status="disabled",
+        automatic_trading_configured_enabled=False,
+        automatic_trading_enabled=False,
+        automatic_trading_revision=2,
+        automatic_trading_control_fingerprint="e" * 64,
+        automatic_trading_blockers=["automatic_trading_disabled"],
+    )
+    db, service = _service(tmp_path, gates=disabled)
+
+    paused = service.evaluate(session_id="session-a")
+    service._gate_provider = lambda session_id: _gates(
+        automatic_trading_revision=3,
+        automatic_trading_control_fingerprint="f" * 64,
+    )
+    after_reenable = service.evaluate(session_id="session-a")
+
+    assert paused["pause_applied"] is True
+    assert "automatic_trading_disabled" in paused["reasons"]
+    assert after_reenable["status"] == "paused"
+    assert after_reenable["reused"] is True
+    assert after_reenable["reasons"] == ["automatic_trading_disabled"]
+    assert db.get_controlled_session_runtime_state_sync("session-a")["status"] == (
+        "paused"
+    )
 
 
 def test_paused_state_rejects_identity_drift_and_runtime_admission(tmp_path) -> None:

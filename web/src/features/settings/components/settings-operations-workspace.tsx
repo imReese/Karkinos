@@ -4,12 +4,10 @@ import { MarketRefreshButton } from '../settings-feature-boundary';
 import type { SettingsPageController } from './settings-page-controller';
 import {
   CapabilityRow,
-  getErrorMessage,
   ManualTaskRow,
   RegisterRow,
   SettingsDisclosure,
   StatusMetric,
-  InlineNotice,
 } from './settings-view-primitives';
 
 export function SettingsOperationsWorkspace({
@@ -153,7 +151,7 @@ function SettingsLiveServices({
 }: {
   controller: SettingsPageController;
 }) {
-  const { boundaryRows, copy, liveStatus, startLive, stopLive } = controller;
+  const { boundaryRows, copy } = controller;
   return (
     <div className="order-4 min-w-0 xl:col-start-2 xl:row-start-3">
       <SettingsDisclosure
@@ -172,46 +170,6 @@ function SettingsLiveServices({
             />
           ))}
         </div>
-
-        <ControlledActionZone
-          title={copy.settings.scheduler}
-          description={copy.settings.schedulerBoundaryDetail}
-          evidence={copy.settings.noAutoTrading}
-        >
-          <button
-            type="button"
-            className="app-button-primary rounded-[var(--app-radius-control)] px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={startLive.isPending || liveStatus.data?.running}
-            aria-busy={startLive.isPending}
-            onClick={() => void startLive.mutateAsync()}
-          >
-            {startLive.isPending
-              ? copy.settings.updatingScheduler
-              : copy.settings.startScheduler}
-          </button>
-          <button
-            type="button"
-            className="app-button-secondary rounded-[var(--app-radius-control)] px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={stopLive.isPending || !liveStatus.data?.running}
-            aria-busy={stopLive.isPending}
-            onClick={() => void stopLive.mutateAsync()}
-          >
-            {stopLive.isPending
-              ? copy.settings.updatingScheduler
-              : copy.settings.stopScheduler}
-          </button>
-        </ControlledActionZone>
-
-        {startLive.isError || stopLive.isError ? (
-          <InlineNotice
-            tone="danger"
-            title={copy.settings.schedulerUpdateFailed}
-            detail={getErrorMessage(
-              startLive.error ?? stopLive.error,
-              copy.settings.schedulerUpdateFailed,
-            )}
-          />
-        ) : null}
       </SettingsDisclosure>
     </div>
   );

@@ -33,14 +33,12 @@ from server.config import (
     TrustedOperatorIdentityConfig,
 )
 from server.dependencies import AppState
-from server.models import SettingsResponse
 
 
 def test_runtime_config_defaults_do_not_seed_real_cash():
     assert BacktestConfig().initial_cash == Decimal("0")
     assert ServerConfig().initial_cash == Decimal("0")
-    assert ServerConfig().live_auto_start is False
-    assert SettingsResponse().live_auto_start is False
+    assert not hasattr(ServerConfig(), "live_auto_start")
 
 
 def test_load_runtime_config_prefers_json_file(tmp_path, monkeypatch):
@@ -89,7 +87,7 @@ def test_server_config_loads_grouped_runtime_sections(tmp_path):
 
     assert config.host == "127.0.0.1"
     assert config.port == 9000
-    assert config.live_auto_start is False
+    assert not hasattr(config, "live_auto_start")
     assert config.market_calendar_auto_sync is False
     assert config.data_source == "tushare"
     assert config.tushare_token == ""
@@ -321,7 +319,6 @@ def test_server_config_rejects_credentials_in_json(tmp_path, payload, message):
     ("payload", "message"),
     [
         ({"server": {"port": "8000"}}, "server.port"),
-        ({"server": {"live_auto_start": "true"}}, "live_auto_start"),
         (
             {"server": {"market_calendar_auto_sync": "true"}},
             "market_calendar_auto_sync",
@@ -533,7 +530,7 @@ def test_runtime_environment_overrides_file_and_explicit_values_win(
 
     assert config.host == "cli-host"
     assert config.port == 9000
-    assert config.live_auto_start is False
+    assert not hasattr(config, "live_auto_start")
     assert config.cors_allowed_origins == [
         "https://one.example",
         "https://two.example",
@@ -572,11 +569,12 @@ def test_runtime_environment_uses_configured_tushare_credential_name(
     assert config.tushare_token == "configured-token"
 
 
-def test_runtime_environment_rejects_invalid_values(monkeypatch):
+def test_runtime_environment_ignores_removed_live_auto_start(monkeypatch):
     monkeypatch.setenv("KARKINOS_LIVE_AUTO_START", "treu")
 
-    with pytest.raises(ValueError, match="KARKINOS_LIVE_AUTO_START"):
-        load_runtime_config(ServerConfig)
+    config = load_runtime_config(ServerConfig)
+
+    assert not hasattr(config, "live_auto_start")
 
 
 def test_build_watchlist_maps_asset_classes():
@@ -719,14 +717,27 @@ def test_backtest_tool_uses_loaded_runtime_config_from_json(tmp_path, monkeypatc
     assert captured["initial_cash"] == Decimal("200000")
 
 
-def test_load_runtime_config_allows_live_auto_start_override(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"live_auto_start": True},
+        {"server": {"live_auto_start": False}},
+        {
+            "live_auto_start": False,
+            "server": {"live_auto_start": True},
+        },
+    ],
+)
+def test_load_runtime_config_ignores_legacy_live_auto_start(
+    tmp_path, monkeypatch, payload
+):
     config_path = tmp_path / "config.json"
-    config_path.write_text('{"live_auto_start": true}')
+    config_path.write_text(json.dumps(payload))
     monkeypatch.chdir(tmp_path)
 
     config = load_runtime_config(ServerConfig, live_auto_start=False)
 
-    assert config.live_auto_start is False
+    assert not hasattr(config, "live_auto_start")
 
 
 def test_load_runtime_config_supports_env_config_path(tmp_path, monkeypatch):
@@ -1254,7 +1265,6 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
     assert example["server"] == {
         "host": "127.0.0.1",
         "port": 8000,
-        "live_auto_start": False,
         "market_calendar_auto_sync": True,
         "cors_allowed_origins": [
             "http://localhost:5173",
@@ -1311,7 +1321,6 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
         "KARKINOS_TUSHARE_TOKEN",
         "KARKINOS_HOST",
         "KARKINOS_PORT",
-        "KARKINOS_LIVE_AUTO_START",
         "KARKINOS_CORS_ALLOWED_ORIGINS",
         "KARKINOS_CONFIG_PATH",
         "KARKINOS_DATA_DIR",
@@ -1335,7 +1344,6 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
         "KARKINOS_TUSHARE_TOKEN",
         "KARKINOS_HOST",
         "KARKINOS_PORT",
-        "KARKINOS_LIVE_AUTO_START",
         "KARKINOS_CORS_ALLOWED_ORIGINS",
         "KARKINOS_DATA_SOURCE",
         "KARKINOS_LIVE_POLL_INTERVAL",
@@ -1353,7 +1361,7 @@ def test_example_broker_connector_config_contains_no_credentials() -> None:
         assert f"{env_name}=" in compose
 
 
-def test_server_main_preserves_live_auto_start_env_for_reload(monkeypatch):
+def test_server_main_reload_does_not_forward_removed_live_override(monkeypatch):
     from server import __main__ as server_main
 
     captured = {}
@@ -1361,7 +1369,7 @@ def test_server_main_preserves_live_auto_start_env_for_reload(monkeypatch):
     def fake_run(*args, **kwargs):
         captured["args"] = args
         captured["kwargs"] = kwargs
-        captured["live_auto_start"] = __import__("os").environ.get(
+        captured["legacy_live_auto_start"] = __import__("os").environ.get(
             "KARKINOS_LIVE_AUTO_START"
         )
 
@@ -1381,7 +1389,7 @@ def test_server_main_preserves_live_auto_start_env_for_reload(monkeypatch):
             "8000",
         ],
     )
-    monkeypatch.setenv("KARKINOS_LIVE_AUTO_START", "true")
+    monkeypatch.delenv("KARKINOS_LIVE_AUTO_START", raising=False)
     monkeypatch.setattr("uvicorn.run", fake_run)
 
     server_main.main()
@@ -1389,7 +1397,16 @@ def test_server_main_preserves_live_auto_start_env_for_reload(monkeypatch):
     assert captured["args"] == ("server.app:create_app",)
     assert captured["kwargs"]["reload"] is True
     assert captured["kwargs"]["reload_excludes"] == ["tests/**", "web/**"]
-    assert captured["live_auto_start"] == "true"
+    assert captured["legacy_live_auto_start"] is None
+
+
+def test_server_main_rejects_removed_no_live_flag(monkeypatch):
+    from server import __main__ as server_main
+
+    monkeypatch.setattr(sys, "argv", ["python -m server", "--no-live"])
+
+    with pytest.raises(SystemExit):
+        server_main.main()
 
 
 def _contains_sensitive_key(value) -> bool:
@@ -1437,17 +1454,16 @@ def test_create_runtime_context_supports_env_data_dir(monkeypatch):
 def test_create_app_accepts_config_overrides():
     from server.app import create_app
 
-    app = create_app({"live_auto_start": False})
+    app = create_app({"host": "127.0.0.1", "live_auto_start": False})
 
-    assert app.state.config_overrides == {"live_auto_start": False}
+    assert app.state.config_overrides == {"host": "127.0.0.1"}
+    assert not hasattr(app.state.runtime_config, "live_auto_start")
 
 
 def test_create_app_caches_startup_runtime_config(monkeypatch):
     from server.app import create_app
 
-    monkeypatch.delenv("KARKINOS_LIVE_AUTO_START", raising=False)
     runtime_config = ServerConfig(
-        live_auto_start=False,
         cors_allowed_origins=["https://karkinos.example.com"],
     )
     calls = []
@@ -1460,9 +1476,9 @@ def test_create_app_caches_startup_runtime_config(monkeypatch):
         "server.bootstrap.load_runtime_config", fake_load_runtime_config
     )
 
-    app = create_app({"live_auto_start": False})
+    app = create_app({"host": "127.0.0.1", "live_auto_start": False})
 
-    assert calls == [(ServerConfig, {"live_auto_start": False})]
+    assert calls == [(ServerConfig, {"host": "127.0.0.1"})]
     assert app.state.runtime_config is runtime_config
     assert _cors_middleware_options(app)["allow_origins"] == [
         "https://karkinos.example.com"
@@ -1472,7 +1488,7 @@ def test_create_app_caches_startup_runtime_config(monkeypatch):
 def test_lifespan_reuses_cached_runtime_config(monkeypatch):
     from server import app as app_module
 
-    runtime_config = ServerConfig(live_auto_start=False)
+    runtime_config = ServerConfig(market_calendar_auto_sync=False)
     schedulers = []
     application_state = AppState()
     fake_app = SimpleNamespace(
@@ -1508,6 +1524,9 @@ def test_lifespan_reuses_cached_runtime_config(monkeypatch):
         def stop(self):
             pass
 
+    async def inert_automation_loop(*args, **kwargs):
+        await asyncio.Event().wait()
+
     monkeypatch.setattr(
         "server.bootstrap.load_runtime_config",
         lambda *args, **kwargs: pytest.fail("config should already be cached"),
@@ -1521,6 +1540,16 @@ def test_lifespan_reuses_cached_runtime_config(monkeypatch):
     monkeypatch.setattr(
         "notification.notifier.build_notifier", lambda notification: object()
     )
+    monkeypatch.setattr(
+        "server.services.market_universe_automation."
+        "run_market_universe_automation_loop",
+        inert_automation_loop,
+    )
+    monkeypatch.setattr(
+        "server.services.daily_decision_evidence_automation."
+        "run_daily_decision_evidence_automation_loop",
+        inert_automation_loop,
+    )
 
     async def run_lifespan():
         async with app_module.lifespan(fake_app):
@@ -1528,7 +1557,7 @@ def test_lifespan_reuses_cached_runtime_config(monkeypatch):
             assert application_state.config is runtime_config
             assert fake_app.state.config is runtime_config
             assert len(schedulers) == 1
-            assert schedulers[0].started is False
+            assert schedulers[0].started is True
 
     asyncio.run(run_lifespan())
 
@@ -1539,7 +1568,6 @@ def test_lifespan_starts_daily_decision_evidence_automation_with_live_scheduler(
     from server import app as app_module
 
     runtime_config = ServerConfig(
-        live_auto_start=True,
         market_calendar_auto_sync=False,
         live_poll_interval=73,
     )
@@ -1552,7 +1580,9 @@ def test_lifespan_starts_daily_decision_evidence_automation_with_live_scheduler(
         )
     )
     scheduler_started = False
+    scheduler_stopped = False
     automation_started = asyncio.Event()
+    universe_automation_started = asyncio.Event()
     automation_arguments = {}
 
     class FakeDB:
@@ -1578,7 +1608,8 @@ def test_lifespan_starts_daily_decision_evidence_automation_with_live_scheduler(
             scheduler_started = True
 
         def stop(self):
-            pass
+            nonlocal scheduler_stopped
+            scheduler_stopped = True
 
     async def fake_decision_evidence_loop(*, state, interval_seconds, **adapters):
         assert set(adapters) == {"plan_reader", "risk_runner", "quote_refresher"}
@@ -1587,6 +1618,12 @@ def test_lifespan_starts_daily_decision_evidence_automation_with_live_scheduler(
             {"state": state, "interval_seconds": interval_seconds}
         )
         automation_started.set()
+        await asyncio.Event().wait()
+
+    async def fake_market_universe_loop(*, db, config):
+        assert db is not None
+        assert config is runtime_config
+        universe_automation_started.set()
         await asyncio.Event().wait()
 
     monkeypatch.setattr(app_module, "AppDatabase", FakeDB)
@@ -1603,10 +1640,16 @@ def test_lifespan_starts_daily_decision_evidence_automation_with_live_scheduler(
         "run_daily_decision_evidence_automation_loop",
         fake_decision_evidence_loop,
     )
+    monkeypatch.setattr(
+        "server.services.market_universe_automation."
+        "run_market_universe_automation_loop",
+        fake_market_universe_loop,
+    )
 
     async def run_lifespan():
         async with app_module.lifespan(fake_app):
             await asyncio.wait_for(automation_started.wait(), timeout=1)
+            await asyncio.wait_for(universe_automation_started.wait(), timeout=1)
             assert scheduler_started is True
             assert automation_arguments == {
                 "state": application_state,
@@ -1614,6 +1657,7 @@ def test_lifespan_starts_daily_decision_evidence_automation_with_live_scheduler(
             }
 
     asyncio.run(run_lifespan())
+    assert scheduler_stopped is True
 
 
 def _cors_middleware_options(app):

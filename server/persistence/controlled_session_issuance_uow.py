@@ -5,6 +5,12 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from server.contracts.automatic_trading import timestamp_epoch_ms
+from server.persistence.automatic_trading_session_binding import (
+    AutomaticTradingSessionBindingUnavailable,
+    automatic_trading_session_reuse_blockers,
+    bind_session_payload_to_automatic_trading_control,
+)
 from server.persistence.controlled_session_access import (
     ControlledSessionRepositoryAccess,
 )
@@ -49,6 +55,26 @@ class ControlledSessionIssuanceUnitOfWorkMixin(ControlledSessionRepositoryAccess
                         == requested["issuance_fingerprint"]
                         and existing["reservation_id"] == requested["reservation_id"]
                     ):
+                        created_at_epoch_ms = timestamp_epoch_ms(
+                            requested.get("created_at")
+                        )
+                        if created_at_epoch_ms is None:
+                            conn.rollback()
+                            return controlled_session_authority_rejection(
+                                requested,
+                                ["runtime_session_created_at_invalid"],
+                            )
+                        reuse_blockers = automatic_trading_session_reuse_blockers(
+                            conn,
+                            session_payload=existing["payload_json"],
+                            observed_at_epoch_ms=created_at_epoch_ms,
+                        )
+                        if reuse_blockers:
+                            conn.rollback()
+                            return controlled_session_authority_rejection(
+                                requested,
+                                reuse_blockers,
+                            )
                         conn.commit()
                         return {
                             "status": str(existing["status"]),
@@ -100,6 +126,25 @@ class ControlledSessionIssuanceUnitOfWorkMixin(ControlledSessionRepositoryAccess
                         requested,
                         reservation_blockers,
                     )
+                created_at_epoch_ms = timestamp_epoch_ms(requested.get("created_at"))
+                if created_at_epoch_ms is None:
+                    conn.rollback()
+                    return controlled_session_authority_rejection(
+                        requested,
+                        ["runtime_session_created_at_invalid"],
+                    )
+                try:
+                    session_payload = bind_session_payload_to_automatic_trading_control(
+                        conn,
+                        payload=dict(requested["payload"]),
+                        observed_at_epoch_ms=created_at_epoch_ms,
+                    )
+                except AutomaticTradingSessionBindingUnavailable:
+                    conn.rollback()
+                    return controlled_session_authority_rejection(
+                        requested,
+                        ["runtime_session_automatic_trading_not_enabled"],
+                    )
 
                 conn.execute(
                     """
@@ -135,7 +180,7 @@ class ControlledSessionIssuanceUnitOfWorkMixin(ControlledSessionRepositoryAccess
                         requested["token_salt"],
                         requested["token_hash"],
                         "enabled",
-                        _serialize_event_payload_json(requested["payload"]),
+                        _serialize_event_payload_json(session_payload),
                         requested["created_at"],
                         requested["created_at"],
                     ),

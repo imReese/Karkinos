@@ -28,6 +28,10 @@ const KILL_SWITCH = readFileSync(
   resolve(SRC_ROOT, 'features/trading/components/kill-switch-panel.tsx'),
   'utf8',
 );
+const AUTOMATIC_TRADING = readFileSync(
+  resolve(SRC_ROOT, 'features/trading/components/automatic-trading-panel.tsx'),
+  'utf8',
+);
 
 describe('trading workbench contract', () => {
   it('keeps the default review path flat and mobile filters task-first', () => {
@@ -102,6 +106,21 @@ describe('trading workbench contract', () => {
     expect(KILL_SWITCH).toContain('{pageLabels.expandOnDemand}');
     expect(KILL_SWITCH).not.toContain('var(--app-success-bg)');
     expect(KILL_SWITCH).not.toContain('var(--app-success-text)');
+  });
+
+  it('keeps the bounded automatic gate distinct from and beside the kill switch', () => {
+    expect(TRADING_SAFETY_RAIL).toContain('<AutomaticTradingPanel />');
+    expect(TRADING_SAFETY_RAIL).toContain('<KillSwitchPanel />');
+    expect(AUTOMATIC_TRADING).toContain(
+      'data-testid="automatic-trading-panel"',
+    );
+    expect(AUTOMATIC_TRADING).toContain('<ControlledActionZone');
+    expect(AUTOMATIC_TRADING).toContain('labels.noRestart');
+    expect(AUTOMATIC_TRADING).toContain(
+      'enable_bounded_automatic_trading_gate_without_capital_authority',
+    );
+    expect(AUTOMATIC_TRADING).not.toContain('KillSwitch');
+    expect(AUTOMATIC_TRADING).not.toMatch(/rounded-(?:2xl|3xl)/);
   });
 
   it('presents broker adapter and soak readiness as flat, read-only evidence', () => {

@@ -308,7 +308,9 @@ describe('remaining route workbench contract', () => {
     expect(TRADING).not.toContain('function StatusTile');
     expect(
       SETTINGS.match(/<ControlledActionZone/g)?.length ?? 0,
-    ).toBeGreaterThanOrEqual(2);
+    ).toBeGreaterThanOrEqual(1);
+    expect(SETTINGS).not.toContain('startLive');
+    expect(SETTINGS).not.toContain('stopLive');
   });
 
   it('keeps routine route structure flat and balances the settings rail', () => {

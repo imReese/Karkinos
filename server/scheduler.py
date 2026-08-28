@@ -128,10 +128,6 @@ class TradingScheduler(SchedulerLifecycleMixin, SchedulerQuoteRunMixin):
     def scheduler_should_continue(self) -> bool:
         return self._running.is_set()
 
-    def request_scheduler_stop(self) -> None:
-        self._stop_requested.set()
-        self._running.clear()
-
     def wait_for_scheduler_stop(self, timeout: float) -> bool:
         return self._stop_requested.wait(timeout=timeout)
 

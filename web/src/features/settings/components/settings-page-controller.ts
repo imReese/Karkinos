@@ -11,8 +11,6 @@ import {
   useDataSourceStatusQuery,
   useLiveStatusQuery,
   useSettingsQuery,
-  useStartLiveMutation,
-  useStopLiveMutation,
   useTestNotificationMutation,
   useUpdateDataSourceSettingsMutation,
   useUpdateSettingsMutation,
@@ -37,8 +35,6 @@ export function useSettingsPageController() {
   const overview = useAccountOverviewQuery();
   const updateDataSource = useUpdateDataSourceSettingsMutation();
   const updateSettings = useUpdateSettingsMutation();
-  const startLive = useStartLiveMutation();
-  const stopLive = useStopLiveMutation();
   const testNotification = useTestNotificationMutation();
   const { locale, setLocale, theme, setTheme } = usePreferences();
   const fundNavCapabilityLabel =
@@ -148,8 +144,6 @@ export function useSettingsPageController() {
     overview,
     updateDataSource,
     updateSettings,
-    startLive,
-    stopLive,
     testNotification,
     locale,
     setLocale,
