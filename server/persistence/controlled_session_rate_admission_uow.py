@@ -5,6 +5,14 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from server.contracts.automatic_trading import (
+    resolve_persisted_automatic_trading_control,
+    timestamp_epoch_ms,
+)
+from server.persistence.automatic_trading_session_binding import (
+    automatic_trading_binding_from_session_payload,
+    read_automatic_trading_control_in_transaction,
+)
 from server.persistence.controlled_session_access import (
     ControlledSessionRepositoryAccess,
 )
@@ -32,6 +40,10 @@ class ControlledSessionRateAdmissionUnitOfWorkMixin(ControlledSessionRepositoryA
             gate_snapshot_max_age_ms = (
                 int(requested["gate_snapshot_max_age_seconds"]) * 1000
             )
+            automatic_trading_revision = int(requested["automatic_trading_revision"])
+            automatic_trading_control_fingerprint = str(
+                requested["automatic_trading_control_fingerprint"]
+            )
         except (KeyError, TypeError, ValueError):
             return controlled_session_rate_admission_rejection(
                 requested,
@@ -42,6 +54,8 @@ class ControlledSessionRateAdmissionUnitOfWorkMixin(ControlledSessionRepositoryA
             or requested_rate <= 0
             or gate_snapshot_max_age_ms <= 0
             or gate_snapshot_max_age_ms > 60_000
+            or automatic_trading_revision <= 0
+            or len(automatic_trading_control_fingerprint) != 64
         ):
             return controlled_session_rate_admission_rejection(
                 requested,
@@ -145,6 +159,91 @@ class ControlledSessionRateAdmissionUnitOfWorkMixin(ControlledSessionRepositoryA
                     return controlled_session_rate_admission_rejection(
                         requested,
                         gate_blockers,
+                    )
+                automatic_control_value, _ = (
+                    read_automatic_trading_control_in_transaction(
+                        conn,
+                        now_epoch_ms=now_epoch_ms,
+                    )
+                )
+                automatic_trading = resolve_persisted_automatic_trading_control(
+                    automatic_control_value,
+                    now_epoch_ms=now_epoch_ms,
+                    expected_revision=automatic_trading_revision,
+                    expected_fingerprint=automatic_trading_control_fingerprint,
+                )
+                automatic_blockers = [
+                    str(item) for item in automatic_trading.get("blockers") or []
+                ]
+                if (
+                    automatic_trading.get("status") != "enabled"
+                    or automatic_trading.get("enabled") is not True
+                ):
+                    if not automatic_blockers:
+                        automatic_blockers.append(
+                            "runtime_automatic_trading_not_enabled"
+                        )
+                session_binding = automatic_trading_binding_from_session_payload(
+                    runtime_session["payload_json"]
+                )
+                if session_binding is None:
+                    automatic_blockers.append(
+                        "runtime_automatic_trading_session_binding_missing"
+                    )
+                else:
+                    if session_binding["revision"] != automatic_trading.get("revision"):
+                        automatic_blockers.append(
+                            "runtime_automatic_trading_session_binding_revision_mismatch"
+                        )
+                    if session_binding["control_fingerprint"] != automatic_trading.get(
+                        "control_fingerprint"
+                    ):
+                        automatic_blockers.append(
+                            "runtime_automatic_trading_session_binding_fingerprint_mismatch"
+                        )
+                    if session_binding["status"] != "enabled":
+                        automatic_blockers.append(
+                            "runtime_automatic_trading_session_binding_not_enabled"
+                        )
+                    if any(
+                        session_binding[field] != automatic_trading.get(field)
+                        for field in (
+                            "last_disabled_at_epoch_ms",
+                            "last_disabled_revision",
+                            "last_disabled_control_identity",
+                        )
+                    ):
+                        automatic_blockers.append(
+                            "runtime_automatic_trading_session_binding_lineage_mismatch"
+                        )
+                last_disabled_revision = automatic_trading.get("last_disabled_revision")
+                last_disabled_at_epoch_ms = automatic_trading.get(
+                    "last_disabled_at_epoch_ms"
+                )
+                if last_disabled_revision is not None:
+                    session_created_at_epoch_ms = timestamp_epoch_ms(
+                        runtime_session["created_at"]
+                    )
+                    if session_created_at_epoch_ms is None:
+                        automatic_blockers.append(
+                            "runtime_session_created_at_invalid_for_automatic_trading"
+                        )
+                    elif session_created_at_epoch_ms <= last_disabled_at_epoch_ms:
+                        automatic_blockers.append(
+                            "runtime_automatic_trading_session_predates_last_disable"
+                        )
+                    if (
+                        session_binding is not None
+                        and session_binding["revision"] <= last_disabled_revision
+                    ):
+                        automatic_blockers.append(
+                            "runtime_automatic_trading_session_predates_last_disable"
+                        )
+                if automatic_blockers:
+                    conn.rollback()
+                    return controlled_session_rate_admission_rejection(
+                        requested,
+                        automatic_blockers,
                     )
                 existing = conn.execute(
                     """

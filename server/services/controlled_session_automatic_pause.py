@@ -9,10 +9,10 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 CONTROLLED_SESSION_AUTOMATIC_PAUSE_SCHEMA_VERSION = (
-    "karkinos.controlled_session_automatic_pause.v1"
+    "karkinos.controlled_session_automatic_pause.v2"
 )
 CONTROLLED_SESSION_AUTOMATIC_PAUSE_STATUS_SCHEMA_VERSION = (
-    "karkinos.controlled_session_automatic_pause_status.v1"
+    "karkinos.controlled_session_automatic_pause_status.v2"
 )
 CONTROLLED_SESSION_PAUSE_REJECTION_EVENT_TYPE = (
     "controlled_session.automatic_pause_evaluation_rejected"
@@ -361,6 +361,24 @@ def _pause_reasons(
         reasons.append("rate_limit_not_clear")
     if gates.get("kill_switch_enabled") is not False:
         reasons.append("kill_switch_enabled")
+    automatic_trading_clear = (
+        gates.get("automatic_trading_status") == "enabled"
+        and gates.get("automatic_trading_configured_enabled") is True
+        and gates.get("automatic_trading_enabled") is True
+    )
+    if not automatic_trading_clear:
+        automatic_blockers = gates.get("automatic_trading_blockers") or []
+        reasons.extend(str(item) for item in automatic_blockers if str(item).strip())
+        if not automatic_blockers:
+            reasons.append("automatic_trading_not_enabled")
+    if (
+        type(gates.get("automatic_trading_revision")) is not int
+        or int(gates.get("automatic_trading_revision") or 0) <= 0
+        or not _FINGERPRINT_PATTERN.fullmatch(
+            str(gates.get("automatic_trading_control_fingerprint") or "")
+        )
+    ):
+        reasons.append("automatic_trading_control_identity_invalid")
     for field, reason in (
         ("budget_exhausted", "budget_exhausted"),
         ("daily_loss_limit_reached", "daily_loss_limit_reached"),
@@ -411,6 +429,20 @@ def _sanitize_gates(value: dict[str, Any]) -> dict[str, Any]:
         "budget_status": str(value.get("budget_status") or "").lower(),
         "rate_limit_status": str(value.get("rate_limit_status") or "").lower(),
         "kill_switch_enabled": value.get("kill_switch_enabled"),
+        "automatic_trading_status": str(
+            value.get("automatic_trading_status") or ""
+        ).lower(),
+        "automatic_trading_configured_enabled": value.get(
+            "automatic_trading_configured_enabled"
+        ),
+        "automatic_trading_enabled": value.get("automatic_trading_enabled"),
+        "automatic_trading_revision": value.get("automatic_trading_revision"),
+        "automatic_trading_control_fingerprint": str(
+            value.get("automatic_trading_control_fingerprint") or ""
+        ),
+        "automatic_trading_blockers": [
+            str(item) for item in value.get("automatic_trading_blockers") or []
+        ],
         "budget_exhausted": value.get("budget_exhausted"),
         "daily_loss_limit_reached": value.get("daily_loss_limit_reached"),
         "drawdown_limit_reached": value.get("drawdown_limit_reached"),

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -17,7 +17,11 @@ from core.events import OrderIntentEvent, RiskDecisionEvent
 from core.types import OrderSide, Symbol
 from server.db import AppDatabase
 from server.routes import trading as trading_routes
-from server.services.trading_controls import TradingControlState
+from server.services.trading_controls import (
+    AUTOMATIC_TRADING_DISABLE_ACKNOWLEDGEMENT,
+    AUTOMATIC_TRADING_ENABLE_ACKNOWLEDGEMENT,
+    TradingControlState,
+)
 
 
 def _endpoint(path: str, method: str = "GET"):
@@ -188,6 +192,198 @@ def test_kill_switch_routes_read_and_update_state(monkeypatch) -> None:
 
     assert updated.kill_switch_enabled is True
     assert updated.reason == "operator stop"
+
+
+def test_automatic_trading_routes_toggle_without_restart_and_broadcast(
+    monkeypatch,
+) -> None:
+    controls = TradingControlState(
+        clock=lambda: datetime(2026, 8, 28, 9, 0, tzinfo=timezone.utc)
+    )
+    broadcasts: list[dict] = []
+    hub = SimpleNamespace(broadcast=broadcasts.append)
+    fake_state = SimpleNamespace(trading_controls=controls, hub=hub)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
+    get_endpoint = _endpoint("/api/trading/automatic-trading")
+    put_endpoint = _endpoint(
+        "/api/trading/automatic-trading",
+        method="PUT",
+    )
+
+    initial = asyncio.run(get_endpoint())
+    assert initial["status"] == "disabled"
+    assert initial["enabled"] is False
+    enabled = asyncio.run(
+        put_endpoint(
+            trading_routes.AutomaticTradingRequest(
+                enabled=True,
+                reason="operator-supervised window",
+                operator_id="operator-1",
+                expected_revision=0,
+                ttl_seconds=300,
+                acknowledgement=AUTOMATIC_TRADING_ENABLE_ACKNOWLEDGEMENT,
+            )
+        )
+    )
+    assert enabled["enabled"] is True
+    assert enabled["revision"] == 1
+    assert asyncio.run(get_endpoint())["enabled"] is True
+
+    disabled = asyncio.run(
+        put_endpoint(
+            trading_routes.AutomaticTradingRequest(
+                enabled=False,
+                reason="operator stop",
+                operator_id="operator-1",
+                expected_revision=1,
+                acknowledgement=AUTOMATIC_TRADING_DISABLE_ACKNOWLEDGEMENT,
+            )
+        )
+    )
+    assert disabled["enabled"] is False
+    assert disabled["revision"] == 2
+    assert [item["control"] for item in broadcasts] == [
+        "automatic_trading",
+        "automatic_trading",
+    ]
+    assert all(item["event_type"] == "TradingControlEvent" for item in broadcasts)
+
+
+def test_automatic_trading_route_rejects_bad_ttl_ack_and_stale_revision(
+    monkeypatch,
+) -> None:
+    controls = TradingControlState(
+        clock=lambda: datetime(2026, 8, 28, 9, 0, tzinfo=timezone.utc)
+    )
+    fake_state = SimpleNamespace(trading_controls=controls, hub=None)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
+    put_endpoint = _endpoint(
+        "/api/trading/automatic-trading",
+        method="PUT",
+    )
+
+    with pytest.raises(HTTPException) as bad_ttl:
+        asyncio.run(
+            put_endpoint(
+                trading_routes.AutomaticTradingRequest(
+                    enabled=True,
+                    reason="too short",
+                    operator_id="operator-1",
+                    expected_revision=0,
+                    ttl_seconds=59,
+                    acknowledgement=AUTOMATIC_TRADING_ENABLE_ACKNOWLEDGEMENT,
+                )
+            )
+        )
+    assert bad_ttl.value.status_code == 400
+
+    with pytest.raises(HTTPException) as bad_ack:
+        asyncio.run(
+            put_endpoint(
+                trading_routes.AutomaticTradingRequest(
+                    enabled=False,
+                    reason="operator stop",
+                    operator_id="operator-1",
+                    expected_revision=0,
+                    acknowledgement=AUTOMATIC_TRADING_ENABLE_ACKNOWLEDGEMENT,
+                )
+            )
+        )
+    assert bad_ack.value.status_code == 400
+
+    asyncio.run(
+        put_endpoint(
+            trading_routes.AutomaticTradingRequest(
+                enabled=True,
+                reason="bounded window",
+                operator_id="operator-1",
+                expected_revision=0,
+                ttl_seconds=60,
+                acknowledgement=AUTOMATIC_TRADING_ENABLE_ACKNOWLEDGEMENT,
+            )
+        )
+    )
+    with pytest.raises(HTTPException) as stale:
+        asyncio.run(
+            put_endpoint(
+                trading_routes.AutomaticTradingRequest(
+                    enabled=False,
+                    reason="stale stop",
+                    operator_id="operator-2",
+                    expected_revision=0,
+                    acknowledgement=AUTOMATIC_TRADING_DISABLE_ACKNOWLEDGEMENT,
+                )
+            )
+        )
+    assert stale.value.status_code == 409
+    assert stale.value.detail["current_revision"] == 1
+
+
+@pytest.mark.parametrize(
+    "raw_value",
+    [
+        "{malformed-json",
+        "[]",
+        '{"revision":"invalid"}',
+    ],
+    ids=["malformed-json", "non-object", "invalid-revision"],
+)
+def test_automatic_trading_route_cannot_overwrite_present_invalid_control(
+    monkeypatch,
+    tmp_path,
+    raw_value: str,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    with sqlite3.connect(db.path) as conn:
+        conn.execute(
+            """
+            INSERT INTO runtime_controls (key, value_json, updated_at)
+            VALUES ('automatic_trading', ?, '2026-08-28T09:00:00+00:00')
+            """,
+            (raw_value,),
+        )
+        conn.commit()
+
+    broadcasts: list[dict] = []
+    controls = TradingControlState(
+        db=db,
+        clock=lambda: datetime(2026, 8, 28, 9, 1, tzinfo=timezone.utc),
+    )
+    fake_state = SimpleNamespace(
+        trading_controls=controls,
+        hub=SimpleNamespace(broadcast=broadcasts.append),
+    )
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
+    get_endpoint = _endpoint("/api/trading/automatic-trading")
+    put_endpoint = _endpoint("/api/trading/automatic-trading", method="PUT")
+
+    assert asyncio.run(get_endpoint())["status"] == "unavailable"
+    with pytest.raises(HTTPException) as rejected:
+        asyncio.run(
+            put_endpoint(
+                trading_routes.AutomaticTradingRequest(
+                    enabled=True,
+                    reason="must not replace damaged evidence",
+                    operator_id="operator-1",
+                    expected_revision=0,
+                    ttl_seconds=300,
+                    acknowledgement=AUTOMATIC_TRADING_ENABLE_ACKNOWLEDGEMENT,
+                )
+            )
+        )
+    assert rejected.value.status_code == 503
+
+    with sqlite3.connect(db.path) as conn:
+        stored = conn.execute(
+            "SELECT value_json FROM runtime_controls WHERE key = 'automatic_trading'"
+        ).fetchone()[0]
+        event_count = conn.execute(
+            "SELECT COUNT(*) FROM event_log WHERE source = 'trading_controls'"
+        ).fetchone()[0]
+    assert stored == raw_value
+    assert event_count == 0
+    assert broadcasts == []
 
 
 def test_manual_order_confirmation_blocks_unlinked_legacy_order_but_rejects_safely(

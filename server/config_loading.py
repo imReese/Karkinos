@@ -63,12 +63,12 @@ _SERVER_CONFIG_GROUP_FIELDS = frozenset(
     {
         "host",
         "port",
-        "live_auto_start",
         "market_calendar_auto_sync",
         "cors_allowed_origins",
         "notification",
     }
 )
+_IGNORED_LEGACY_CONFIG_FIELDS = frozenset({"live_auto_start"})
 _DATA_SOURCE_CONFIG_GROUP_FIELDS = frozenset(
     {"provider", "live_poll_interval", "provider_config"}
 )
@@ -113,11 +113,16 @@ def _normalize_grouped_config_payload(raw: object) -> dict:
     if not isinstance(raw, dict):
         raise ValueError("config.json root must be an object")
     data = dict(raw)
+    for field in _IGNORED_LEGACY_CONFIG_FIELDS:
+        data.pop(field, None)
 
     server = data.pop("server", None)
     if server is not None:
         if not isinstance(server, dict):
             raise ValueError("server config group must be an object")
+        server = dict(server)
+        for field in _IGNORED_LEGACY_CONFIG_FIELDS:
+            server.pop(field, None)
         unknown = sorted(set(server) - _SERVER_CONFIG_GROUP_FIELDS)
         if unknown:
             raise ValueError(
@@ -416,8 +421,6 @@ def _validate_core_runtime_values(data: dict) -> None:
         or data["port"] > 65_535
     ):
         raise ValueError("server.port must be an integer within [1, 65535]")
-    if "live_auto_start" in data and not isinstance(data["live_auto_start"], bool):
-        raise ValueError("server.live_auto_start must be boolean")
     if "market_calendar_auto_sync" in data and not isinstance(
         data["market_calendar_auto_sync"], bool
     ):

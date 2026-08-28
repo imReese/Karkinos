@@ -30,6 +30,11 @@ from server.services.controlled_session_runtime_rate_limiter import (
     ControlledSessionRuntimeRateLimiterService,
 )
 from server.services.operator_approval import OperatorApprovalService
+from server.services.trading_controls import (
+    AUTOMATIC_TRADING_DISABLE_ACKNOWLEDGEMENT,
+    AUTOMATIC_TRADING_ENABLE_ACKNOWLEDGEMENT,
+    TradingControlState,
+)
 
 NOW = datetime(2026, 7, 12, 9, 0, tzinfo=timezone.utc)
 TOKEN = "runtime-session-token-000000000000000000000001"
@@ -102,6 +107,15 @@ def _environment(tmp_path, *, current_time=None, capacity: str = "1000"):
     clock = current_time or [NOW]
     db = AppDatabase(tmp_path / "controlled-session-runtime-authority.db")
     db.init_sync()
+    controls = TradingControlState(db=db, clock=lambda: clock[0])
+    controls.set_automatic_trading(
+        enabled=True,
+        reason="bounded runtime authority test",
+        operator_id="test-owner",
+        expected_revision=0,
+        ttl_seconds=600,
+        acknowledgement=AUTOMATIC_TRADING_ENABLE_ACKNOWLEDGEMENT,
+    )
     private_key = Ed25519PrivateKey.generate()
     identity = _identity(private_key)
     initial_attestation = _attestation()
@@ -165,6 +179,7 @@ def _environment(tmp_path, *, current_time=None, capacity: str = "1000"):
         "reservation": reservation,
         "authority": authority,
         "approvals": approvals,
+        "controls": controls,
     }
 
 
@@ -204,6 +219,27 @@ def _issue(env: dict) -> dict:
         operator_proof_signature_base64=approval["proof_signature_base64"],
         acknowledgement=CONTROLLED_SESSION_ISSUANCE_ACKNOWLEDGEMENT,
     )
+
+
+def _close_automatic_trading_gate(env: dict, *, reopen: bool) -> None:
+    env["clock"][0] += timedelta(seconds=1)
+    env["controls"].set_automatic_trading(
+        enabled=False,
+        reason="close before idempotent replay",
+        operator_id="test-owner",
+        expected_revision=1,
+        acknowledgement=AUTOMATIC_TRADING_DISABLE_ACKNOWLEDGEMENT,
+    )
+    if reopen:
+        env["clock"][0] += timedelta(seconds=1)
+        env["controls"].set_automatic_trading(
+            enabled=True,
+            reason="new gate generation after close",
+            operator_id="test-owner",
+            expected_revision=2,
+            ttl_seconds=600,
+            acknowledgement=AUTOMATIC_TRADING_ENABLE_ACKNOWLEDGEMENT,
+        )
 
 
 def _replacement_reservation(
@@ -258,6 +294,7 @@ def _replacement_reservation(
 
 
 def _pause(env: dict, issued: dict) -> dict:
+    automatic_trading = env["controls"].automatic_trading_snapshot(now=env["clock"][0])
     gates = {
         "source_fingerprint": "8" * 64,
         "account_truth_status": "pass",
@@ -269,6 +306,14 @@ def _pause(env: dict, issued: dict) -> dict:
         "budget_status": "current_reserved_non_executing",
         "rate_limit_status": "clear",
         "kill_switch_enabled": True,
+        "automatic_trading_status": automatic_trading["status"],
+        "automatic_trading_configured_enabled": automatic_trading["configured_enabled"],
+        "automatic_trading_enabled": automatic_trading["enabled"],
+        "automatic_trading_revision": automatic_trading["revision"],
+        "automatic_trading_control_fingerprint": automatic_trading[
+            "control_fingerprint"
+        ],
+        "automatic_trading_blockers": automatic_trading["blockers"],
         "budget_exhausted": False,
         "daily_loss_limit_reached": False,
         "drawdown_limit_reached": False,
@@ -294,6 +339,18 @@ def _record_recovery_snapshot(
     status: str = "clear",
 ) -> dict:
     observed_at = env["clock"][0]
+    automatic_trading = env["controls"].automatic_trading_snapshot(now=observed_at)
+    gate_values = {
+        "all_hard_gates_clear": True,
+        "automatic_trading_status": automatic_trading["status"],
+        "automatic_trading_configured_enabled": automatic_trading["configured_enabled"],
+        "automatic_trading_enabled": automatic_trading["enabled"],
+        "automatic_trading_revision": automatic_trading["revision"],
+        "automatic_trading_control_fingerprint": automatic_trading[
+            "control_fingerprint"
+        ],
+        "automatic_trading_blockers": automatic_trading["blockers"],
+    }
     snapshot_id = marker * 64
     snapshot_fingerprint = chr(ord(marker) + 2) * 64
     payload = {
@@ -302,6 +359,7 @@ def _record_recovery_snapshot(
         "session_id": issued["session_id"],
         "session_fingerprint": issued["session_fingerprint"],
         "status": status,
+        "gate_snapshot": gate_values,
         "blockers": [] if status == "clear" else ["test_gate_blocked"],
         "observed_at": observed_at.isoformat(),
         "broker_submission_enabled": False,
@@ -316,7 +374,7 @@ def _record_recovery_snapshot(
             "observed_at_epoch_ms": int(observed_at.timestamp() * 1000),
             "observed_at": observed_at.isoformat(),
             "status": status,
-            "gate_snapshot": {"all_hard_gates_clear": True},
+            "gate_snapshot": gate_values,
             "source_evidence": {"source_fingerprint": "9" * 64},
             "blockers": [] if status == "clear" else ["test_gate_blocked"],
             "payload": payload,
@@ -346,6 +404,27 @@ def test_issuance_preview_is_deterministic_and_requires_separate_signature(
     }
     assert first["runtime_session_issued"] is False
     assert first["broker_submission_enabled"] is False
+    assert env["db"].list_controlled_session_runtime_sessions_sync() == []
+
+
+def test_session_issuance_transaction_requires_enabled_automatic_trading_gate(
+    tmp_path,
+) -> None:
+    env = _environment(tmp_path)
+    env["controls"].set_automatic_trading(
+        enabled=False,
+        reason="operator closed automatic admission",
+        operator_id="test-owner",
+        expected_revision=1,
+        acknowledgement=AUTOMATIC_TRADING_DISABLE_ACKNOWLEDGEMENT,
+    )
+
+    with pytest.raises(ControlledSessionRuntimeAuthorityRejected) as exc_info:
+        _issue(env)
+
+    assert "runtime_session_automatic_trading_not_enabled" in (
+        exc_info.value.evidence["transaction_blockers"]
+    )
     assert env["db"].list_controlled_session_runtime_sessions_sync() == []
 
 
@@ -392,6 +471,49 @@ def test_issue_returns_token_once_stores_only_hash_and_authenticates(tmp_path) -
     )
     assert blocked["blockers"] == ["runtime_session_authentication_failed"]
     assert TOKEN not in str(env["authority"].list_sessions())
+
+
+@pytest.mark.parametrize(
+    ("reopen", "expected_blocker"),
+    [
+        (False, "runtime_session_automatic_trading_not_enabled"),
+        (True, "runtime_session_automatic_trading_binding_mismatch"),
+    ],
+    ids=["closed", "closed-and-reopened"],
+)
+def test_idempotent_issuance_rechecks_current_automatic_trading_gate(
+    tmp_path,
+    reopen: bool,
+    expected_blocker: str,
+) -> None:
+    env = _environment(tmp_path)
+    issued = _issue(env)
+    before = env["db"].get_controlled_session_runtime_session_sync(issued["session_id"])
+    _close_automatic_trading_gate(env, reopen=reopen)
+    preview = env["authority"].preview_issuance(
+        reservation_id=env["reservation"]["reservation_id"]
+    )
+    approval = _approval(
+        env,
+        action="issue_controlled_session",
+        artifact_type="controlled_session_issuance",
+        fingerprint=preview["issuance_fingerprint"],
+    )
+
+    with pytest.raises(ControlledSessionRuntimeAuthorityRejected) as exc_info:
+        env["authority"].issue(
+            reservation_id=env["reservation"]["reservation_id"],
+            issuance_fingerprint=preview["issuance_fingerprint"],
+            operator_approval_id=approval["approval_id"],
+            operator_proof_signature_base64=approval["proof_signature_base64"],
+            acknowledgement=CONTROLLED_SESSION_ISSUANCE_ACKNOWLEDGEMENT,
+        )
+
+    assert expected_blocker in exc_info.value.evidence["transaction_blockers"]
+    assert (
+        env["db"].get_controlled_session_runtime_session_sync(issued["session_id"])
+        == before
+    )
 
 
 def test_wrong_action_approval_and_source_drift_fail_closed_and_are_audited(
@@ -607,6 +729,18 @@ def test_atomic_admission_rechecks_revocation_against_stale_authenticated_provid
     issued = _issue(env)
     stale_authenticated = env["authority"].authenticate(issued["session_id"], TOKEN)
     assert stale_authenticated["status"] == "current_enabled_bounded_session"
+    automatic_trading = env["controls"].automatic_trading_snapshot(now=NOW)
+    gate_values = {
+        "fixture_gate_status": "clear",
+        "automatic_trading_status": automatic_trading["status"],
+        "automatic_trading_configured_enabled": automatic_trading["configured_enabled"],
+        "automatic_trading_enabled": automatic_trading["enabled"],
+        "automatic_trading_revision": automatic_trading["revision"],
+        "automatic_trading_control_fingerprint": automatic_trading[
+            "control_fingerprint"
+        ],
+        "automatic_trading_blockers": automatic_trading["blockers"],
+    }
     gate_transaction = env["db"].record_controlled_session_gate_snapshot_sync(
         snapshot={
             "snapshot_id": "7" * 64,
@@ -617,10 +751,14 @@ def test_atomic_admission_rechecks_revocation_against_stale_authenticated_provid
             "observed_at_epoch_ms": int(NOW.timestamp() * 1000),
             "observed_at": NOW.isoformat(),
             "status": "clear",
-            "gate_snapshot": {"fixture_gate_status": "clear"},
+            "gate_snapshot": gate_values,
             "source_evidence": {"fixture": True},
             "blockers": [],
-            "payload": {"status": "clear", "broker_submission_enabled": False},
+            "payload": {
+                "status": "clear",
+                "gate_snapshot": gate_values,
+                "broker_submission_enabled": False,
+            },
             "created_at": NOW.isoformat(),
         }
     )
@@ -653,6 +791,7 @@ def test_atomic_admission_rechecks_revocation_against_stale_authenticated_provid
         db=env["db"],
         session_provider=lambda session_id, session_token: stale_authenticated,
         gate_snapshot_provider=lambda session_id: stale_gate_snapshot,
+        trading_controls=env["controls"],
         clock=lambda: NOW,
     )
     with pytest.raises(ControlledSessionRateAdmissionRejected) as exc_info:
@@ -674,6 +813,7 @@ def test_persisted_session_identity_drives_pause_and_blocks_token_authentication
 ) -> None:
     env = _environment(tmp_path)
     issued = _issue(env)
+    automatic_trading = env["controls"].automatic_trading_snapshot(now=NOW)
     gates = {
         "source_fingerprint": "8" * 64,
         "account_truth_status": "pass",
@@ -685,6 +825,14 @@ def test_persisted_session_identity_drives_pause_and_blocks_token_authentication
         "budget_status": "current_reserved_non_executing",
         "rate_limit_status": "clear",
         "kill_switch_enabled": True,
+        "automatic_trading_status": automatic_trading["status"],
+        "automatic_trading_configured_enabled": automatic_trading["configured_enabled"],
+        "automatic_trading_enabled": automatic_trading["enabled"],
+        "automatic_trading_revision": automatic_trading["revision"],
+        "automatic_trading_control_fingerprint": automatic_trading[
+            "control_fingerprint"
+        ],
+        "automatic_trading_blockers": automatic_trading["blockers"],
         "budget_exhausted": False,
         "daily_loss_limit_reached": False,
         "drawdown_limit_reached": False,
@@ -802,6 +950,65 @@ def test_signed_replacement_atomically_retires_paused_session_and_returns_token_
     assert REPLACEMENT_TOKEN not in str(env["authority"].list_replacements())
     assert env["db"].list_oms_orders_sync() == []
     assert env["db"].list_fills_sync() == []
+
+
+@pytest.mark.parametrize(
+    ("reopen", "expected_blocker"),
+    [
+        (False, "runtime_session_automatic_trading_not_enabled"),
+        (True, "runtime_session_automatic_trading_binding_mismatch"),
+    ],
+    ids=["closed", "closed-and-reopened"],
+)
+def test_idempotent_replacement_rechecks_current_automatic_trading_gate(
+    tmp_path,
+    reopen: bool,
+    expected_blocker: str,
+) -> None:
+    env = _environment(tmp_path)
+    issued = _issue(env)
+    _pause(env, issued)
+    env["clock"][0] = NOW + timedelta(seconds=1)
+    _record_recovery_snapshot(env, issued, marker="1")
+    env["clock"][0] = NOW + timedelta(seconds=61)
+    _record_recovery_snapshot(env, issued, marker="2")
+    reservation = _replacement_reservation(env)
+    preview = env["authority"].preview_replacement(
+        predecessor_session_id=issued["session_id"],
+        reservation_id=reservation["reservation_id"],
+    )
+    approval = _approval(
+        env,
+        action="replace_paused_controlled_session",
+        artifact_type="controlled_session_replacement",
+        fingerprint=preview["replacement_fingerprint"],
+    )
+    replaced = env["authority"].replace_paused(
+        predecessor_session_id=issued["session_id"],
+        reservation_id=reservation["reservation_id"],
+        replacement_fingerprint=preview["replacement_fingerprint"],
+        operator_approval_id=approval["approval_id"],
+        operator_proof_signature_base64=approval["proof_signature_base64"],
+        acknowledgement=CONTROLLED_SESSION_REPLACEMENT_ACKNOWLEDGEMENT,
+    )
+    sessions_before = env["db"].list_controlled_session_runtime_sessions_sync()
+    replacements_before = env["authority"].list_replacements()
+    _close_automatic_trading_gate(env, reopen=reopen)
+
+    with pytest.raises(ControlledSessionRuntimeAuthorityRejected) as exc_info:
+        env["authority"].replace_paused(
+            predecessor_session_id=issued["session_id"],
+            reservation_id=reservation["reservation_id"],
+            replacement_fingerprint=preview["replacement_fingerprint"],
+            operator_approval_id=approval["approval_id"],
+            operator_proof_signature_base64=approval["proof_signature_base64"],
+            acknowledgement=CONTROLLED_SESSION_REPLACEMENT_ACKNOWLEDGEMENT,
+        )
+
+    assert expected_blocker in exc_info.value.evidence["transaction_blockers"]
+    assert replaced["status"] == "enabled"
+    assert env["db"].list_controlled_session_runtime_sessions_sync() == sessions_before
+    assert env["authority"].list_replacements() == replacements_before
 
 
 def test_replacement_requires_stable_fresh_post_pause_clear_evidence(

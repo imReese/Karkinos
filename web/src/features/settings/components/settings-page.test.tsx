@@ -14,7 +14,6 @@ import { SettingsPage } from './settings-page';
 const defaultSettings = {
   host: '0.0.0.0',
   port: 8000,
-  live_auto_start: true,
   initial_cash: 100000,
   start_date: '2025-01-02',
   end_date: '2026-05-16',
@@ -175,12 +174,6 @@ function installFetchMock({
     }
     if (url.includes('/api/settings/asset-metadata')) {
       return jsonResponse(assetMetadataStatus);
-    }
-    if (url.includes('/api/settings/live/start')) {
-      return jsonResponse({ running: true, market_open: true });
-    }
-    if (url.includes('/api/settings/live/stop')) {
-      return jsonResponse({ running: false, market_open: false });
     }
     if (url.includes('/api/settings/notification/test')) {
       return jsonResponse({ status: 'ok', message: 'sent' });
@@ -419,6 +412,25 @@ test('does not infer broker readiness from a running scheduler', async () => {
     0,
   );
   expect(screen.queryByText('Interface status available')).toBeNull();
+});
+
+test('renders the scheduler as a read-only always-on invariant', async () => {
+  renderSettingsPage();
+
+  expect(await screen.findByText('Scheduler running')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Start scheduler' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Stop scheduler' })).toBeNull();
+});
+
+test('treats a stopped scheduler as unavailable', async () => {
+  renderSettingsPage({ liveStatus: { running: false, market_open: false } });
+
+  const schedulerRow = await screen.findByLabelText(
+    'Boundary item: Scheduler Scheduler unavailable',
+  );
+  expect(
+    schedulerRow.querySelector('[aria-hidden="true"]')?.className,
+  ).toContain('var(--app-danger-border)');
 });
 
 test('updates local theme and language preferences', async () => {

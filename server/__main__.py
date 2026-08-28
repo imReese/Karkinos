@@ -23,9 +23,6 @@ def main() -> None:
         help="热重载排除的 glob；可重复传入",
     )
     parser.add_argument(
-        "--no-live", action="store_true", help="启动时不自动开启实时监控"
-    )
-    parser.add_argument(
         "--env-file",
         default=None,
         help="环境变量文件（默认读取 KARKINOS_ENV_FILE 或 ./.env）",
@@ -51,9 +48,6 @@ def main() -> None:
         config_overrides["host"] = args.host
     if args.port is not None:
         config_overrides["port"] = args.port
-    if args.no_live:
-        config_overrides["live_auto_start"] = False
-
     # 优先级：CLI > 已有进程环境 > .env > config.json > 默认值。
     # 配置错误直接阻止启动。
     config = load_runtime_config(ServerConfig, **config_overrides)
@@ -75,8 +69,6 @@ def main() -> None:
             forwarded["KARKINOS_HOST"] = args.host
         if args.port is not None:
             forwarded["KARKINOS_PORT"] = str(args.port)
-        if args.no_live:
-            forwarded["KARKINOS_LIVE_AUTO_START"] = "false"
         previous = {name: os.environ.get(name) for name in forwarded}
         os.environ.update(forwarded)
         try:

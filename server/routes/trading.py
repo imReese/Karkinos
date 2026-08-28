@@ -11,14 +11,18 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 
 from server.contracts.order_state import (
     ManualOrderStateCommand,
     ManualOrderTicketCommand,
 )
 from server.services.manual_order_tickets import ManualOrderTicketService
-from server.services.trading_controls import TradingControlSnapshot
+from server.services.trading_controls import (
+    AutomaticTradingControlRevisionConflict,
+    TradingControlSnapshot,
+    resolve_automatic_trading_evidence,
+)
 
 _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 
@@ -26,6 +30,17 @@ _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 class KillSwitchRequest(BaseModel):
     enabled: bool
     reason: str = ""
+
+
+class AutomaticTradingRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: StrictBool
+    reason: str = Field(min_length=1, max_length=500)
+    operator_id: str = Field(min_length=1, max_length=128)
+    expected_revision: StrictInt = Field(ge=0)
+    ttl_seconds: StrictInt | None = None
+    acknowledgement: str = Field(min_length=1, max_length=256)
 
 
 class OrderRejectRequest(BaseModel):
@@ -51,8 +66,59 @@ class ShadowDivergenceReviewRequest(BaseModel):
     reviewer: str | None = None
 
 
+def _register_automatic_trading_routes(router: APIRouter) -> None:
+    @router.get("/automatic-trading")
+    async def get_automatic_trading() -> dict[str, Any]:
+        from server.dependencies import get_app_state
+
+        return resolve_automatic_trading_evidence(get_app_state().trading_controls)
+
+    @router.put("/automatic-trading")
+    async def set_automatic_trading(
+        payload: AutomaticTradingRequest,
+    ) -> dict[str, Any]:
+        from server.dependencies import get_app_state
+
+        state = get_app_state()
+        try:
+            snapshot = state.trading_controls.set_automatic_trading(
+                enabled=payload.enabled,
+                reason=payload.reason,
+                operator_id=payload.operator_id,
+                expected_revision=payload.expected_revision,
+                ttl_seconds=payload.ttl_seconds,
+                acknowledgement=payload.acknowledgement,
+            )
+        except AutomaticTradingControlRevisionConflict as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "automatic_trading_revision_conflict",
+                    "expected_revision": exc.expected_revision,
+                    "current_revision": exc.current_revision,
+                    "current_state": exc.current_state,
+                },
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        if state.hub is not None:
+            result = state.hub.broadcast(
+                {
+                    "event_type": "TradingControlEvent",
+                    "control": "automatic_trading",
+                    "payload": snapshot,
+                }
+            )
+            if isawaitable(result):
+                await result
+        return snapshot
+
+
 def create_router() -> APIRouter:
     r = APIRouter(prefix="/api/trading", tags=["trading"])
+    _register_automatic_trading_routes(r)
 
     @r.get("/kill-switch", response_model=TradingControlSnapshot)
     async def get_kill_switch() -> TradingControlSnapshot:

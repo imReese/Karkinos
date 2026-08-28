@@ -39,7 +39,7 @@ def test_request_context_keeps_application_states_isolated() -> None:
 def test_create_app_owns_a_fresh_state_instance() -> None:
     from server.app import create_app
 
-    runtime_config = ServerConfig(live_auto_start=False)
+    runtime_config = ServerConfig()
     first_app = create_app(runtime_config=runtime_config)
     second_app = create_app(runtime_config=runtime_config)
 

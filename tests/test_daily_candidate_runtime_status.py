@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 from server.services.daily_candidate_runtime_status import (
     build_daily_candidate_runtime_status,
 )
@@ -43,7 +41,7 @@ def _schedule(*, due: bool = False, blockers: list[str] | None = None):
 
 def test_runtime_status_proves_only_running_monitor_liveness() -> None:
     result = build_daily_candidate_runtime_status(
-        config=SimpleNamespace(live_auto_start=True),
+        config=None,
         monitor_task=_Task(),
         background_schedule=_schedule(due=True),
     )
@@ -61,26 +59,25 @@ def test_runtime_status_proves_only_running_monitor_liveness() -> None:
     assert result["changes_capital_authority"] is False
 
 
-def test_runtime_status_distinguishes_disabled_monitor_from_open_window() -> None:
+def test_runtime_status_cannot_be_disabled_by_legacy_config() -> None:
     result = build_daily_candidate_runtime_status(
-        config=SimpleNamespace(live_auto_start=False),
-        monitor_task=None,
+        config={"live_auto_start": False},
+        monitor_task=_Task(),
         background_schedule=_schedule(due=True),
     )
 
-    assert result["status"] == "monitor_disabled"
-    assert result["background_monitor_running"] is False
-    assert result["background_attempt_due"] is False
-    assert result["background_attempt_writes_permitted"] is False
+    assert result["status"] == "monitor_running_due"
+    assert result["background_monitor_configured"] is True
+    assert result["background_monitor_running"] is True
+    assert result["background_attempt_due"] is True
+    assert result["background_attempt_writes_permitted"] is True
     assert result["manual_run_window_open"] is True
-    assert result["operational_blockers"] == [
-        "daily_candidate_background_monitor_disabled"
-    ]
+    assert result["operational_blockers"] == []
 
 
 def test_runtime_status_fails_closed_when_enabled_task_has_failed() -> None:
     result = build_daily_candidate_runtime_status(
-        config=SimpleNamespace(live_auto_start=True),
+        config=None,
         monitor_task=_Task(done=True, failure=RuntimeError("private detail")),
         background_schedule=_schedule(),
     )
@@ -99,7 +96,7 @@ def test_runtime_status_rejects_unsafe_or_malformed_schedule() -> None:
     schedule["authorizes_execution"] = True
 
     result = build_daily_candidate_runtime_status(
-        config=SimpleNamespace(live_auto_start=True),
+        config=None,
         monitor_task=_Task(),
         background_schedule=schedule,
     )

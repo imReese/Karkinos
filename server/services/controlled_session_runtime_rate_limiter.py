@@ -11,12 +11,13 @@ from typing import Any, Callable
 from server.services.controlled_session_gate_contract import (
     CONTROLLED_SESSION_LIVE_GATE_MAX_AGE_SECONDS,
 )
+from server.services.trading_controls import resolve_automatic_trading_evidence
 
 CONTROLLED_SESSION_RATE_ADMISSION_SCHEMA_VERSION = (
-    "karkinos.controlled_session_rate_admission.v2"
+    "karkinos.controlled_session_rate_admission.v3"
 )
 CONTROLLED_SESSION_RATE_LIMITER_STATUS_SCHEMA_VERSION = (
-    "karkinos.controlled_session_rate_limiter_status.v2"
+    "karkinos.controlled_session_rate_limiter_status.v3"
 )
 CONTROLLED_SESSION_RATE_REJECTION_EVENT_TYPE = (
     "controlled_session.runtime_rate_admission_rejected"
@@ -50,29 +51,58 @@ class ControlledSessionRuntimeRateLimiterService:
         db: Any,
         session_provider: Callable[[str, str], dict[str, Any]] | None = None,
         gate_snapshot_provider: Callable[[str], dict[str, Any]] | None = None,
+        trading_controls: Any | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._db = db
         self._session_provider = session_provider
         self._gate_snapshot_provider = gate_snapshot_provider
+        self._trading_controls = trading_controls
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def get_status(self) -> dict[str, Any]:
         session_provider_configured = callable(self._session_provider)
         gate_snapshot_provider_configured = callable(self._gate_snapshot_provider)
-        providers_configured = (
-            session_provider_configured and gate_snapshot_provider_configured
+        automatic_trading = resolve_automatic_trading_evidence(
+            self._trading_controls,
+            now=_aware_utc(self._clock()),
+        )
+        automatic_trading_provider_configured = callable(
+            getattr(self._trading_controls, "automatic_trading_snapshot", None)
+        )
+        providers_configured = all(
+            (
+                session_provider_configured,
+                gate_snapshot_provider_configured,
+                automatic_trading_provider_configured,
+            )
         )
         return {
             "schema_version": CONTROLLED_SESSION_RATE_LIMITER_STATUS_SCHEMA_VERSION,
             "contract_status": (
                 "runtime_admission_ready_with_fresh_live_gate_binding_internal_only"
                 if providers_configured
-                else "disabled_waiting_for_authenticated_session_and_live_gate_sources"
+                and automatic_trading.get("status") == "enabled"
+                and automatic_trading.get("enabled") is True
+                else (
+                    "disabled_waiting_for_authenticated_session_and_live_gate_sources"
+                    if not providers_configured
+                    else "blocked_by_automatic_trading_control"
+                )
             ),
             "session_provider_configured": session_provider_configured,
             "gate_snapshot_provider_configured": gate_snapshot_provider_configured,
-            "runtime_admission_enabled": providers_configured,
+            "automatic_trading_provider_configured": (
+                automatic_trading_provider_configured
+            ),
+            "automatic_trading_gate": _automatic_trading_gate_evidence(
+                automatic_trading
+            ),
+            "runtime_admission_enabled": (
+                providers_configured
+                and automatic_trading.get("status") == "enabled"
+                and automatic_trading.get("enabled") is True
+            ),
             "public_admission_endpoint_exposed": False,
             "window_seconds": CONTROLLED_SESSION_RATE_WINDOW_SECONDS,
             "gate_snapshot_max_age_seconds": (
@@ -84,6 +114,8 @@ class ControlledSessionRuntimeRateLimiterService:
             "runtime_session_issuance_enabled": session_provider_configured,
             "runtime_session_token_required": True,
             "fresh_clear_live_gate_snapshot_required": True,
+            "automatic_trading_revision_binding_required": True,
+            "atomic_persisted_automatic_trading_recheck_required": True,
             "broker_submission_enabled": False,
             "safety": _safety_flags(),
         }
@@ -228,6 +260,35 @@ class ControlledSessionRuntimeRateLimiterService:
             blockers.append("runtime_live_gate_snapshot_id_invalid")
         if not _FINGERPRINT_PATTERN.fullmatch(gate_snapshot_fingerprint):
             blockers.append("runtime_live_gate_snapshot_evidence_fingerprint_invalid")
+        automatic_trading_status = str(
+            gate_snapshot.get("automatic_trading_status") or ""
+        )
+        automatic_trading_configured_enabled = gate_snapshot.get(
+            "automatic_trading_configured_enabled"
+        )
+        automatic_trading_enabled = gate_snapshot.get("automatic_trading_enabled")
+        automatic_trading_revision = gate_snapshot.get("automatic_trading_revision")
+        automatic_trading_control_fingerprint = str(
+            gate_snapshot.get("automatic_trading_control_fingerprint") or ""
+        )
+        if (
+            automatic_trading_status != "enabled"
+            or automatic_trading_configured_enabled is not True
+            or automatic_trading_enabled is not True
+        ):
+            automatic_blockers = gate_snapshot.get("automatic_trading_blockers") or []
+            blockers.extend(
+                str(item) for item in automatic_blockers if str(item).strip()
+            )
+            if not automatic_blockers:
+                blockers.append("runtime_automatic_trading_not_enabled")
+        if (
+            type(automatic_trading_revision) is not int
+            or automatic_trading_revision <= 0
+        ):
+            blockers.append("runtime_automatic_trading_revision_invalid")
+        if not _FINGERPRINT_PATTERN.fullmatch(automatic_trading_control_fingerprint):
+            blockers.append("runtime_automatic_trading_fingerprint_invalid")
         gate_snapshot_observed_at = _parse_timestamp(gate_snapshot.get("observed_at"))
         if gate_snapshot_observed_at is None:
             blockers.append("runtime_live_gate_snapshot_observed_at_invalid")
@@ -257,6 +318,15 @@ class ControlledSessionRuntimeRateLimiterService:
             ),
             "gate_snapshot_max_age_seconds": (
                 CONTROLLED_SESSION_LIVE_GATE_MAX_AGE_SECONDS
+            ),
+            "automatic_trading_status": automatic_trading_status,
+            "automatic_trading_configured_enabled": (
+                automatic_trading_configured_enabled
+            ),
+            "automatic_trading_enabled": automatic_trading_enabled,
+            "automatic_trading_revision": automatic_trading_revision,
+            "automatic_trading_control_fingerprint": (
+                automatic_trading_control_fingerprint
             ),
             "max_order_rate_per_minute": max_rate,
             "effective_at": start_at.isoformat() if start_at else "",
@@ -322,6 +392,11 @@ class ControlledSessionRuntimeRateLimiterService:
                     "gate_snapshot_fingerprint",
                     "gate_snapshot_observed_at",
                     "gate_snapshot_max_age_seconds",
+                    "automatic_trading_status",
+                    "automatic_trading_configured_enabled",
+                    "automatic_trading_enabled",
+                    "automatic_trading_revision",
+                    "automatic_trading_control_fingerprint",
                     "max_order_rate_per_minute",
                     "effective_at",
                     "expires_at",
@@ -353,6 +428,8 @@ class ControlledSessionRuntimeRateLimiterService:
                         "gate_snapshot_fingerprint",
                         "gate_snapshot_observed_at",
                         "gate_snapshot_max_age_seconds",
+                        "automatic_trading_revision",
+                        "automatic_trading_control_fingerprint",
                         "max_order_rate_per_minute",
                     )
                 },
@@ -406,6 +483,10 @@ class ControlledSessionRuntimeRateLimiterService:
             "gate_snapshot_id": str(preview.get("gate_snapshot_id") or ""),
             "gate_snapshot_fingerprint": str(
                 preview.get("gate_snapshot_fingerprint") or ""
+            ),
+            "automatic_trading_revision": preview.get("automatic_trading_revision"),
+            "automatic_trading_control_fingerprint": str(
+                preview.get("automatic_trading_control_fingerprint") or ""
             ),
             "review_blockers": [str(item) for item in preview.get("blockers") or []],
             "transaction_blockers": list(dict.fromkeys(transaction_blockers)),
@@ -470,6 +551,9 @@ def _sanitize_session(value: dict[str, Any]) -> dict[str, Any]:
 
 
 def _sanitize_gate_snapshot(value: dict[str, Any]) -> dict[str, Any]:
+    gates = _json_object(
+        value.get("gate_snapshot_json") or value.get("gate_snapshot") or {}
+    )
     return {
         "resolution_status": str(value.get("resolution_status") or ""),
         "status": str(value.get("status") or ""),
@@ -478,6 +562,20 @@ def _sanitize_gate_snapshot(value: dict[str, Any]) -> dict[str, Any]:
         "session_id": str(value.get("session_id") or ""),
         "session_fingerprint": str(value.get("session_fingerprint") or ""),
         "observed_at": str(value.get("observed_at") or ""),
+        "automatic_trading_status": str(
+            gates.get("automatic_trading_status") or ""
+        ).lower(),
+        "automatic_trading_configured_enabled": gates.get(
+            "automatic_trading_configured_enabled"
+        ),
+        "automatic_trading_enabled": gates.get("automatic_trading_enabled"),
+        "automatic_trading_revision": gates.get("automatic_trading_revision"),
+        "automatic_trading_control_fingerprint": str(
+            gates.get("automatic_trading_control_fingerprint") or ""
+        ),
+        "automatic_trading_blockers": [
+            str(item) for item in gates.get("automatic_trading_blockers") or []
+        ],
     }
 
 
@@ -551,4 +649,16 @@ def _safety_flags() -> dict[str, bool]:
         "does_not_mutate_oms": True,
         "does_not_mutate_production_ledger": True,
         "does_not_grant_or_scale_capital_authority": True,
+    }
+
+
+def _automatic_trading_gate_evidence(value: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": str(value.get("status") or "unavailable"),
+        "configured_enabled": value.get("configured_enabled"),
+        "enabled": value.get("enabled"),
+        "revision": value.get("revision"),
+        "control_fingerprint": str(value.get("control_fingerprint") or ""),
+        "expires_at": str(value.get("expires_at") or ""),
+        "blockers": [str(item) for item in value.get("blockers") or []],
     }

@@ -288,7 +288,6 @@ export type DailyCandidateTrial = {
 export type DailyCandidateRuntimeStatus = {
   schema_version: 'karkinos.daily_candidate_runtime_status.v1';
   status:
-    | 'monitor_disabled'
     | 'monitor_failed_closed'
     | 'monitor_running_schedule_blocked'
     | 'monitor_running_due'

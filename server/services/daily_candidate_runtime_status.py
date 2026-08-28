@@ -21,6 +21,10 @@ def build_daily_candidate_runtime_status(
 ) -> dict[str, Any]:
     """Project monitor liveness without claiming financial readiness."""
 
+    # ``config`` remains in the call shape for compatibility with the cockpit
+    # reader adapter. Monitor enablement is no longer configurable.
+    del config
+
     schedule = (
         dict(background_schedule) if isinstance(background_schedule, dict) else {}
     )
@@ -37,29 +41,17 @@ def build_daily_candidate_runtime_status(
         else []
     )
 
-    configured = getattr(config, "live_auto_start", None)
-    task_state, task_failure_type = _monitor_task_state(
-        monitor_task if configured is True else None
-    )
+    task_state, task_failure_type = _monitor_task_state(monitor_task)
     blockers: list[str] = []
-    if configured is False:
-        task_state = "disabled"
-        blockers.append("daily_candidate_background_monitor_disabled")
-    elif configured is not True:
-        task_state = "unavailable"
-        blockers.append("daily_candidate_background_monitor_configuration_unavailable")
-    elif task_state != "running":
+    if task_state != "running":
         blockers.append(f"daily_candidate_background_monitor_task_{task_state}")
     if not schedule_valid:
         blockers.append("daily_candidate_background_schedule_invalid")
     blockers.extend(schedule_blockers)
     blockers = list(dict.fromkeys(blockers))
 
-    monitor_running = configured is True and task_state == "running"
-    if configured is False:
-        status = "monitor_disabled"
-        next_safe_action = "restart_with_owner_enabled_live_monitoring_if_approved"
-    elif not monitor_running:
+    monitor_running = task_state == "running"
+    if not monitor_running:
         status = "monitor_failed_closed"
         next_safe_action = "restart_and_verify_daily_candidate_monitor"
     elif not schedule_valid or schedule_blockers:
@@ -75,7 +67,7 @@ def build_daily_candidate_runtime_status(
     return {
         "schema_version": DAILY_CANDIDATE_RUNTIME_STATUS_SCHEMA_VERSION,
         "status": status,
-        "background_monitor_configured": configured is True,
+        "background_monitor_configured": True,
         "background_monitor_running": monitor_running,
         "monitor_task_state": task_state,
         "monitor_task_failure_type": task_failure_type,

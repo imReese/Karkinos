@@ -6,6 +6,7 @@ import {
   CurrentPerOrderDossierOperatorPanel,
   SignedBrokerAdapterReleaseReviewOperatorPanel,
 } from '../operations-boundary';
+import { AutomaticTradingPanel } from './automatic-trading-panel';
 import { BrokerAdapterReadinessPanel } from './broker-readiness-panel';
 import { KillSwitchPanel } from './kill-switch-panel';
 import type { TradingPageController } from './use-trading-page-controller';
@@ -52,6 +53,7 @@ export function TradingSafetyRail({
         ]}
       />
       <KillSwitchPanel />
+      <AutomaticTradingPanel />
 
       <details
         className="min-w-0 border-y border-[var(--app-divider)] sm:col-span-2"

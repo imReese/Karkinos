@@ -90,7 +90,6 @@ function installActivityFetchMock(extraLedgerEntries: unknown[] = []) {
       return jsonResponse({
         host: '127.0.0.1',
         port: 8000,
-        live_auto_start: false,
         initial_cash: 10000,
         start_date: '2026-01-01',
         end_date: '2026-06-22',

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
 
 import pytest
 
@@ -22,6 +22,11 @@ from server.services.controlled_session_runtime_authority import (
 from server.services.controlled_session_runtime_rate_limiter import (
     CONTROLLED_SESSION_RATE_REJECTION_EVENT_TYPE,
 )
+from server.services.trading_controls import (
+    AUTOMATIC_TRADING_DISABLE_ACKNOWLEDGEMENT,
+    AUTOMATIC_TRADING_ENABLE_ACKNOWLEDGEMENT,
+    TradingControlState,
+)
 
 NOW = datetime(2026, 7, 12, 9, 30, tzinfo=timezone.utc)
 SESSION_ID = "a" * 64
@@ -31,18 +36,6 @@ ATTESTATION_ID = "d" * 64
 ENVELOPE_FINGERPRINT = "e" * 64
 TOKEN = "live-gate-token-00000000000000000000000000001"
 SALT = "ab" * 16
-
-
-class FakeTradingControls:
-    def __init__(self) -> None:
-        self.enabled = False
-        self.reason = ""
-
-    def snapshot(self):
-        return SimpleNamespace(
-            kill_switch_enabled=self.enabled,
-            reason=self.reason,
-        )
 
 
 def _attestation() -> dict:
@@ -169,10 +162,9 @@ def _persist_session(db: AppDatabase) -> None:
     )
 
 
-def _environment(tmp_path):
+def _environment(tmp_path, *, automatic_ttl_seconds: int = 600):
     db = AppDatabase(tmp_path / "controlled-session-live-gates.db")
     db.init_sync()
-    _persist_session(db)
     current_time = [NOW]
     attestations = {ATTESTATION_ID: _attestation()}
     reservations = {
@@ -186,7 +178,20 @@ def _environment(tmp_path):
             "strategy_id": "strategy-1",
         }
     }
-    controls = FakeTradingControls()
+    controls = TradingControlState(
+        db=db,
+        clock=lambda: current_time[0] - timedelta(seconds=1),
+    )
+    automatic_trading = controls.set_automatic_trading(
+        enabled=True,
+        reason="bounded session test",
+        operator_id="test-owner",
+        expected_revision=0,
+        ttl_seconds=automatic_ttl_seconds,
+        acknowledgement=AUTOMATIC_TRADING_ENABLE_ACKNOWLEDGEMENT,
+    )
+    assert automatic_trading["status"] == "enabled"
+    _persist_session(db)
     authority = ControlledSessionRuntimeAuthorityService(
         db=db,
         reservation_provider=lambda value: reservations.get(value, {}),
@@ -229,6 +234,7 @@ def _record_admission(db: AppDatabase, index: int) -> None:
     observed = NOW - timedelta(milliseconds=2 - index)
     gate_snapshot = db.latest_controlled_session_gate_snapshot_sync(SESSION_ID)
     assert gate_snapshot is not None
+    gate_values = json.loads(gate_snapshot["gate_snapshot_json"])
     result = db.admit_controlled_session_order_sync(
         admission={
             "admission_id": str(index + 7) * 64,
@@ -244,6 +250,10 @@ def _record_admission(db: AppDatabase, index: int) -> None:
             "gate_snapshot_fingerprint": gate_snapshot["snapshot_fingerprint"],
             "gate_snapshot_observed_at": gate_snapshot["observed_at"],
             "gate_snapshot_max_age_seconds": 30,
+            "automatic_trading_revision": gate_values["automatic_trading_revision"],
+            "automatic_trading_control_fingerprint": gate_values[
+                "automatic_trading_control_fingerprint"
+            ],
             "max_order_rate_per_minute": 2,
             "admitted_at_epoch_ms": int(observed.timestamp() * 1000),
             "admitted_at": observed.isoformat(),
@@ -263,11 +273,17 @@ def test_clear_snapshot_is_persisted_sanitized_and_idempotent(tmp_path) -> None:
     assert first["status"] == "clear"
     assert first["gate_snapshot"]["market_data_status"] == "current"
     assert first["gate_snapshot"]["kill_switch_enabled"] is False
+    assert first["gate_snapshot"]["automatic_trading_enabled"] is True
+    assert first["gate_snapshot"]["automatic_trading_revision"] == 1
     assert first["gate_snapshot"]["budget_exhausted"] is False
     assert retry["database_id"] == first["database_id"]
     assert retry["reused"] is True
     assert "token" not in str(first).lower()
     assert len(env["db"].list_controlled_session_gate_snapshots_sync()) == 1
+    status = env["live_gates"].get_status()
+    assert status["automatic_trading_provider_configured"] is True
+    assert status["automatic_trading_effective_enabled"] is True
+    assert status["automatic_trading_gate"]["status"] == "enabled"
     evaluation = env["orchestrator"].evaluate(session_id=SESSION_ID)
     assert evaluation["status"] == "clear_no_pause"
     assert env["db"].get_controlled_session_runtime_state_sync(SESSION_ID) is None
@@ -299,8 +315,7 @@ def test_stale_market_or_kill_switch_triggers_durable_pause(
     if failure == "stale_market":
         env["clock"][0] = NOW + timedelta(seconds=121)
     else:
-        env["controls"].enabled = True
-        env["controls"].reason = "operator emergency stop"
+        env["controls"].set_kill_switch(True, "operator emergency stop")
 
     result = env["orchestrator"].evaluate(session_id=SESSION_ID)
 
@@ -314,11 +329,103 @@ def test_stale_market_or_kill_switch_triggers_durable_pause(
     assert result["broker_submission_enabled"] is False
 
 
+def test_automatic_trading_disable_blocks_and_durably_pauses_session(
+    tmp_path,
+) -> None:
+    env = _environment(tmp_path)
+    disabled = env["controls"].set_automatic_trading(
+        enabled=False,
+        reason="operator disabled unattended admission",
+        operator_id="test-owner",
+        expected_revision=1,
+        acknowledgement=AUTOMATIC_TRADING_DISABLE_ACKNOWLEDGEMENT,
+    )
+
+    result = env["orchestrator"].evaluate(session_id=SESSION_ID)
+
+    assert disabled["status"] == "disabled"
+    assert result["gate_snapshot"]["status"] == "blocked"
+    assert "automatic_trading_disabled" in result["gate_snapshot"]["blockers"]
+    assert "automatic_trading_disabled" in result["pause_evaluation"]["reasons"]
+    assert result["pause_evaluation"]["pause_applied"] is True
+    assert env["live_gates"].get_status()["contract_status"] == (
+        "blocked_by_automatic_trading_control"
+    )
+
+    reenabled = env["controls"].set_automatic_trading(
+        enabled=True,
+        reason="new operator review",
+        operator_id="test-owner",
+        expected_revision=2,
+        ttl_seconds=600,
+        acknowledgement=AUTOMATIC_TRADING_ENABLE_ACKNOWLEDGEMENT,
+    )
+    after_reenable = env["orchestrator"].evaluate(session_id=SESSION_ID)
+
+    assert reenabled["status"] == "enabled"
+    assert after_reenable["status"] == "paused"
+    assert after_reenable["pause_evaluation"]["reused"] is True
+    assert env["automatic_pause"].get_state(SESSION_ID)["status"] == "paused"
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_status", "expected_blocker"),
+    [
+        (
+            "expired",
+            "expired",
+            "automatic_trading_control_expired",
+        ),
+        (
+            "unavailable",
+            "unavailable",
+            "automatic_trading_status_unavailable",
+        ),
+    ],
+)
+def test_expired_or_unavailable_automatic_trading_gate_blocks_and_pauses(
+    tmp_path,
+    failure: str,
+    expected_status: str,
+    expected_blocker: str,
+) -> None:
+    env = _environment(
+        tmp_path,
+        automatic_ttl_seconds=60 if failure == "expired" else 600,
+    )
+    if failure == "expired":
+        env["clock"][0] = NOW + timedelta(seconds=60)
+    else:
+        env["live_gates"]._trading_controls = object()
+
+    result = env["orchestrator"].evaluate(session_id=SESSION_ID)
+
+    gates = result["gate_snapshot"]["gate_snapshot"]
+    assert result["gate_snapshot"]["status"] == "blocked"
+    assert gates["automatic_trading_status"] == expected_status
+    assert expected_blocker in result["gate_snapshot"]["blockers"]
+    assert expected_blocker in result["pause_evaluation"]["reasons"]
+    assert result["pause_evaluation"]["pause_applied"] is True
+    assert result["broker_submission_enabled"] is False
+
+
 def test_rate_and_order_budget_exhaustion_pause_before_another_admission(
     tmp_path,
 ) -> None:
     env = _environment(tmp_path)
     gate_observed_at = NOW - timedelta(milliseconds=3)
+    automatic_trading = env["controls"].automatic_trading_snapshot(now=NOW)
+    gate_values = {
+        "fixture_gate_status": "clear",
+        "automatic_trading_status": automatic_trading["status"],
+        "automatic_trading_configured_enabled": automatic_trading["configured_enabled"],
+        "automatic_trading_enabled": automatic_trading["enabled"],
+        "automatic_trading_revision": automatic_trading["revision"],
+        "automatic_trading_control_fingerprint": automatic_trading[
+            "control_fingerprint"
+        ],
+        "automatic_trading_blockers": automatic_trading["blockers"],
+    }
     first_gate = env["db"].record_controlled_session_gate_snapshot_sync(
         snapshot={
             "snapshot_id": "7" * 64,
@@ -329,10 +436,14 @@ def test_rate_and_order_budget_exhaustion_pause_before_another_admission(
             "observed_at_epoch_ms": int(gate_observed_at.timestamp() * 1000),
             "observed_at": gate_observed_at.isoformat(),
             "status": "clear",
-            "gate_snapshot": {"fixture_gate_status": "clear"},
+            "gate_snapshot": gate_values,
             "source_evidence": {"fixture": True},
             "blockers": [],
-            "payload": {"status": "clear", "broker_submission_enabled": False},
+            "payload": {
+                "status": "clear",
+                "gate_snapshot": gate_values,
+                "broker_submission_enabled": False,
+            },
             "created_at": gate_observed_at.isoformat(),
         }
     )

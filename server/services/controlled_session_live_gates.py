@@ -9,6 +9,11 @@ from typing import Any, Callable
 from server.services.controlled_session_automatic_pause import (
     ControlledSessionAutomaticPauseService,
 )
+from server.services.controlled_session_automatic_trading_gate import (
+    automatic_trading_gate_blockers,
+    automatic_trading_gate_evidence,
+    automatic_trading_gate_values,
+)
 from server.services.controlled_session_gate_contract import (
     CONTROLLED_SESSION_LIVE_GATE_MAX_AGE_SECONDS,
 )
@@ -39,12 +44,13 @@ from server.services.controlled_session_live_gate_values import (
 from server.services.controlled_session_runtime_rate_limiter import (
     CONTROLLED_SESSION_RATE_REJECTION_EVENT_TYPE,
 )
+from server.services.trading_controls import resolve_automatic_trading_evidence
 
 CONTROLLED_SESSION_LIVE_GATE_SCHEMA_VERSION = (
-    "karkinos.controlled_session_live_gate_snapshot.v1"
+    "karkinos.controlled_session_live_gate_snapshot.v2"
 )
 CONTROLLED_SESSION_LIVE_GATE_STATUS_SCHEMA_VERSION = (
-    "karkinos.controlled_session_live_gate_status.v1"
+    "karkinos.controlled_session_live_gate_status.v2"
 )
 CONTROLLED_SESSION_LIVE_GATE_REJECTION_EVENT_TYPE = (
     "controlled_session.live_gate_snapshot_rejected"
@@ -89,6 +95,10 @@ class ControlledSessionLiveGateSnapshotService:
         self._market_data_max_age_seconds = max(1, int(market_data_max_age_seconds))
 
     def get_status(self) -> dict[str, Any]:
+        automatic_trading = resolve_automatic_trading_evidence(
+            self._trading_controls,
+            now=_aware_utc(self._clock()),
+        )
         providers_configured = all(
             callable(provider)
             for provider in (
@@ -100,9 +110,14 @@ class ControlledSessionLiveGateSnapshotService:
         return {
             "schema_version": CONTROLLED_SESSION_LIVE_GATE_STATUS_SCHEMA_VERSION,
             "contract_status": (
-                "persisted_live_gate_snapshot_ready"
-                if providers_configured and self._trading_controls is not None
-                else "disabled_waiting_for_live_gate_sources"
+                "disabled_waiting_for_live_gate_sources"
+                if not providers_configured or self._trading_controls is None
+                else (
+                    "persisted_live_gate_snapshot_ready"
+                    if automatic_trading.get("status") == "enabled"
+                    and automatic_trading.get("enabled") is True
+                    else "blocked_by_automatic_trading_control"
+                )
             ),
             "session_monitor_provider_configured": callable(
                 self._session_monitor_provider
@@ -110,6 +125,15 @@ class ControlledSessionLiveGateSnapshotService:
             "reservation_provider_configured": callable(self._reservation_provider),
             "attestation_provider_configured": callable(self._attestation_provider),
             "kill_switch_provider_configured": self._trading_controls is not None,
+            "automatic_trading_provider_configured": callable(
+                getattr(self._trading_controls, "automatic_trading_snapshot", None)
+            ),
+            "automatic_trading_gate": automatic_trading_gate_evidence(
+                automatic_trading
+            ),
+            "automatic_trading_effective_enabled": (
+                automatic_trading.get("enabled") is True
+            ),
             "snapshot_max_age_seconds": CONTROLLED_SESSION_LIVE_GATE_MAX_AGE_SECONDS,
             "market_data_max_age_seconds": self._market_data_max_age_seconds,
             "rejection_window_seconds": CONTROLLED_SESSION_REJECTION_WINDOW_SECONDS,
@@ -218,6 +242,13 @@ class ControlledSessionLiveGateSnapshotService:
         kill_switch = self._kill_switch_evidence()
         if kill_switch["enabled"] is None:
             provider_blockers.append("live_gate_kill_switch_unavailable")
+        automatic_trading = resolve_automatic_trading_evidence(
+            self._trading_controls,
+            now=now,
+        )
+        provider_blockers.extend(
+            str(item) for item in automatic_trading.get("blockers") or []
+        )
 
         daily_loss_remaining = _decimal(remaining_budget.get("daily_loss"))
         drawdown_remaining = _decimal(remaining_budget.get("drawdown_pct"))
@@ -241,6 +272,7 @@ class ControlledSessionLiveGateSnapshotService:
             ),
             "rate_limit_status": metrics["rate_limit_status"],
             "kill_switch_enabled": kill_switch["enabled"],
+            **automatic_trading_gate_values(automatic_trading),
             "budget_exhausted": metrics["budget_exhausted"],
             "daily_loss_limit_reached": (
                 None
@@ -280,6 +312,7 @@ class ControlledSessionLiveGateSnapshotService:
             "market_data": market_data,
             "runtime_metrics": metrics,
             "kill_switch": kill_switch,
+            "automatic_trading": automatic_trading_gate_evidence(automatic_trading),
             "provider_blockers": list(dict.fromkeys(provider_blockers)),
         }
         source_fingerprint = _fingerprint(source_evidence)
@@ -299,7 +332,7 @@ class ControlledSessionLiveGateSnapshotService:
         snapshot_fingerprint = _fingerprint(snapshot_core)
         snapshot_id = _fingerprint(
             {
-                "domain": "karkinos.controlled_session.live_gate_snapshot.v1",
+                "domain": "karkinos.controlled_session.live_gate_snapshot.v2",
                 "snapshot_fingerprint": snapshot_fingerprint,
                 "observed_at_epoch_ms": int(now.timestamp() * 1000),
             }
@@ -699,6 +732,7 @@ def _gate_blockers(gates: dict[str, Any]) -> list[str]:
             blockers.append(f"live_gate_not_clear:{field}")
     if gates.get("kill_switch_enabled") is not False:
         blockers.append("live_gate_kill_switch_not_clear")
+    blockers.extend(automatic_trading_gate_blockers(gates))
     for field in (
         "budget_exhausted",
         "daily_loss_limit_reached",
@@ -733,6 +767,12 @@ def _missing_gate_values() -> dict[str, Any]:
         "budget_status": "missing",
         "rate_limit_status": "missing",
         "kill_switch_enabled": None,
+        "automatic_trading_status": "unavailable",
+        "automatic_trading_configured_enabled": None,
+        "automatic_trading_enabled": False,
+        "automatic_trading_revision": None,
+        "automatic_trading_control_fingerprint": "",
+        "automatic_trading_blockers": ["automatic_trading_control_missing"],
         "budget_exhausted": None,
         "daily_loss_limit_reached": None,
         "drawdown_limit_reached": None,

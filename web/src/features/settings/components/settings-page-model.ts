@@ -376,9 +376,16 @@ export function buildSettingsOperationsModel(
   }>;
   const schedulerState = liveStatus.isLoading
     ? copy.shell.checking
+    : liveStatus.isError
+      ? copy.shell.statusUnknown
+      : liveStatus.data?.running
+        ? copy.settings.schedulerRunning
+        : copy.settings.schedulerUnavailable;
+  const schedulerTone = liveStatus.isLoading
+    ? 'neutral'
     : liveStatus.data?.running
-      ? copy.settings.schedulerRunning
-      : copy.settings.schedulerStopped;
+      ? 'success'
+      : 'danger';
   const brokerState = liveStatus.isLoading
     ? copy.shell.checking
     : copy.shell.statusUnknown;
@@ -386,7 +393,7 @@ export function buildSettingsOperationsModel(
     {
       label: copy.settings.scheduler,
       value: schedulerState,
-      tone: liveStatus.data?.running ? 'success' : 'neutral',
+      tone: schedulerTone,
     },
     {
       label: copy.settings.brokerInterface,

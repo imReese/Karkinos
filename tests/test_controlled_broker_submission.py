@@ -24,7 +24,10 @@ from server.services.controlled_broker_submission import (
 from server.services.oms import OmsService
 from server.services.operator_approval import OperatorApprovalService
 from server.services.per_order_confirmation import build_order_fingerprint
-from server.services.trading_controls import TradingControlState
+from server.services.trading_controls import (
+    TradingControlState,
+    resolve_automatic_trading_evidence,
+)
 
 NOW = datetime(2026, 7, 13, 2, 0, tzinfo=timezone.utc)
 CONFIRMATION_ID = "c" * 64
@@ -151,6 +154,15 @@ class SequencedTradingControls:
         )
 
 
+class ManualOnlyTradingControls:
+    def snapshot(self):
+        return SimpleNamespace(
+            kill_switch_enabled=False,
+            reason="",
+            updated_at=NOW.isoformat(),
+        )
+
+
 def _environment(tmp_path, *, controls=None) -> dict:
     clock = [NOW]
     db = AppDatabase(tmp_path / "controlled-broker-submission.db")
@@ -255,6 +267,7 @@ def _environment(tmp_path, *, controls=None) -> dict:
         "gateway": gateway,
         "release": release,
         "service": service,
+        "trading_controls": trading_controls,
     }
 
 
@@ -404,6 +417,9 @@ def test_signed_submit_calls_gateway_once_and_exact_retry_only_reads_result(
     tmp_path,
 ) -> None:
     env = _environment(tmp_path)
+    assert env["trading_controls"].automatic_trading_snapshot(now=NOW)["status"] == (
+        "disabled"
+    )
     preview = _preview(env)
     approval = _approval(env, preview["submit_fingerprint"])
 
@@ -430,6 +446,24 @@ def test_signed_submit_calls_gateway_once_and_exact_retry_only_reads_result(
     assert "credential_echo" not in str(submitted)
     assert "must-not-leak" not in str(submitted)
     assert env["db"].get_ledger_entries_sync() == []
+
+
+def test_unavailable_automatic_gate_does_not_control_manual_each_order(
+    tmp_path,
+) -> None:
+    controls = ManualOnlyTradingControls()
+    assert resolve_automatic_trading_evidence(controls, now=NOW)["status"] == (
+        "unavailable"
+    )
+    env = _environment(tmp_path, controls=controls)
+    preview = _preview(env)
+    approval = _approval(env, preview["submit_fingerprint"])
+
+    submitted = _submit(env, preview, approval)
+
+    assert submitted["status"] == "submitted"
+    assert submitted["submitted_to_broker"] is True
+    assert env["gateway"].submit_calls == 1
 
 
 def test_explicit_broker_rejection_is_terminal_and_not_retried(tmp_path) -> None:
