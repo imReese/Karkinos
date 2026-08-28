@@ -7,7 +7,7 @@ commit 和 pull request。
 
 ## 当前基线
 
-截至 2026-08-23，v0.2.3 是最新带 tag 的稳定基线。v0.2.4 至 v0.3.0 因属于增量开发快照而非功能完整发布，相关 tags 已撤回。`main` 当前承载未打 tag 的 v0.3.0 candidate；只有生产验收证据完整后才会成为正式发布。
+截至 2026-08-28，v0.3.1 是当前不依赖券商提供方的软件基线。它在不改写迁移 provenance 的前提下修复精确已知的 v0.3.0 旧数据库升级状态，并将 SemVer 与 `sha-*` 容器标签设为不可复用，同时允许 `latest` 等发布别名向前移动。
 v1.8 control-plane 基础以及截至 Phase 1.18 的 AI-native research 基础已经实现。当前产品
 里程碑是[路线图](ROADMAP.zh.md)中的券商连接、逐单受控 pilot。
 
