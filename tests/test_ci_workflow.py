@@ -7,10 +7,13 @@ from pathlib import Path
 
 def test_ci_runs_backend_frontend_and_profit_discipline_smoke_path() -> None:
     workflow = Path(".github/workflows/ci.yml").read_text()
+    pyproject = Path("pyproject.toml").read_text()
     package = json.loads(Path("web/package.json").read_text())
 
     assert "Run backend test suite" in workflow
     assert "uv run python -m pytest" in workflow
+    assert "-n 4 --dist loadfile --max-worker-restart=0" in workflow
+    assert '"pytest-xdist>=3.8.0"' in pyproject
     assert "Run deterministic Profit Discipline smoke path" in workflow
     assert "uv run python -m pytest tests/test_profit_discipline_smoke.py" in workflow
     assert "Run repository acceptance audit report" in workflow
