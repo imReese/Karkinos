@@ -113,9 +113,14 @@ export type ShadowResearchDailyBackup = {
 export type ShadowResearchAutomationStatus = {
   schema_version: string;
   policy: {
+    schema_version: 'karkinos.ai.shadow_research_policy.v3';
+    policy_id: 'ai_shadow_research';
     enabled: boolean;
     after_close_time: string;
     timezone: 'Asia/Shanghai';
+    provider_call_window_schema: 'karkinos.ai.provider_call_window.v1';
+    provider_call_window_policy_id: string;
+    provider_call_window_policy_fingerprint: string;
     max_provider_calls_per_market_date: number;
     daily_token_budget: number | null;
     token_budget_mode: 'unbounded_daily' | 'legacy_bounded_daily';
@@ -159,6 +164,21 @@ export type ShadowResearchAutomationStatus = {
     incumbent_strategy_state_changed: false;
     daily_trading_decision_status: 'not_evaluated';
     implies_daily_trading_no_action: false;
+  };
+  provider_call_window?: {
+    schema_version: 'karkinos.ai.provider_call_window.v1';
+    policy_id: string;
+    policy_fingerprint: string;
+    provider_id: string;
+    timezone: 'Asia/Shanghai';
+    status: 'eligible_off_peak' | 'deferred_for_provider_off_peak';
+    pricing_period: 'peak' | 'off_peak';
+    failure_code: string | null;
+    evaluated_at: string;
+    next_eligible_at: string | null;
+    minimum_runway_seconds: number;
+    provider_call_performed: false;
+    authority_effect: 'none';
   };
   automatic_strategy_replacement_enabled: false;
   production_strategy_mutation_enabled: false;
