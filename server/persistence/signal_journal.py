@@ -16,6 +16,7 @@ from server.persistence.financial_fact_event_payloads import action_task_event_p
 from server.persistence.signal_journal_projection import (
     apply_manual_confirmation_readiness,
     event_log_response,
+    index_signal_journal_events,
     latest_signal_journal_event,
     risk_decision_journal_response,
 )
@@ -168,6 +169,7 @@ class SignalJournalRepository(SQLiteRepository):
                 risks_by_signal[signal_id] = risk
 
         latest_events = [event_log_response(row) for row in event_rows]
+        latest_event_index = index_signal_journal_events(latest_events)
         reviews_by_signal: dict[int, dict[str, Any]] = {}
         for event in latest_events:
             if event["source"] != "decision_outcome_reviews":
@@ -211,6 +213,7 @@ class SignalJournalRepository(SQLiteRepository):
                         action_task=action,
                         risk_decision=risk,
                         events=latest_events,
+                        event_index=latest_event_index,
                     ),
                 }
             )

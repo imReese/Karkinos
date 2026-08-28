@@ -106,21 +106,21 @@ def create_router() -> APIRouter:
     @router.get("/trading-plan")
     async def get_daily_trading_plan() -> dict[str, Any]:
         from server.dependencies import get_app_state
-        from server.services.daily_trading_plan import build_daily_trading_plan
 
         state = get_app_state()
-        portfolio_context = _decision_portfolio_context(state)
+        portfolio_context = await asyncio.to_thread(
+            _decision_portfolio_context,
+            state,
+        )
         decision_payload = await _today_decision_payload(
             state,
             portfolio_context=portfolio_context,
         )
-        return build_daily_trading_plan(
-            decision_payload=decision_payload,
-            config=getattr(state, "config", None),
-            positions=_trading_plan_positions(
-                state,
-                portfolio_context=portfolio_context,
-            ),
+        return await asyncio.to_thread(
+            _build_daily_trading_plan_for_state,
+            state,
+            decision_payload,
+            portfolio_context,
         )
 
     @router.post("/pre-trade-risk/batch")
@@ -146,6 +146,23 @@ def _decision_quality_service(state: Any) -> DecisionQualityService:
     return DecisionQualityService(
         store=DecisionQualityStore(Path(path)),
         now=lambda: datetime.now(timezone.utc).isoformat(),
+    )
+
+
+def _build_daily_trading_plan_for_state(
+    state: Any,
+    decision_payload: dict[str, Any],
+    portfolio_context: dict[str, Any],
+) -> dict[str, Any]:
+    from server.services.daily_trading_plan import build_daily_trading_plan
+
+    return build_daily_trading_plan(
+        decision_payload=decision_payload,
+        config=getattr(state, "config", None),
+        positions=_trading_plan_positions(
+            state,
+            portfolio_context=portfolio_context,
+        ),
     )
 
 

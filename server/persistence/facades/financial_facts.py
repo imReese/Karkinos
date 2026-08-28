@@ -141,9 +141,17 @@ class FinancialFactDatabaseFacade(DatabaseRepositoryAccess):
         """同步获取各标的最新行情快照，供启动恢复使用。"""
         return self._financial_facts.get_latest_quotes_sync()
 
-    def list_quote_snapshots_sync(self) -> list[dict[str, Any]]:
-        """List append-only quote observations for canonical snapshot selection."""
-        return self._financial_facts.list_quote_snapshots_sync()
+    def list_quote_snapshots_sync(
+        self,
+        limit: int = 500,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Page append-only quote observations for explicit audit workflows."""
+        return self._financial_facts.list_quote_snapshots_sync(limit, offset)
+
+    def list_quote_selection_candidates_sync(self) -> list[dict[str, Any]]:
+        """List the bounded persisted frontier used by canonical valuation."""
+        return self._financial_facts.list_quote_selection_candidates_sync()
 
     def get_recent_quote_snapshots_sync(
         self, symbol: str, limit: int = 2

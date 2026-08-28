@@ -65,6 +65,74 @@ def create_router(
     async_runtime = dependencies.async_runtime
     logger = dependencies.logger
 
+    def _build_historical_equity_curve_series(
+        state,
+        selected_range: str,
+    ) -> list[EquitySeriesPoint]:
+        """Build the persisted historical curve in one worker-thread stage."""
+
+        valuation_snapshot = _current_valuation_snapshot(state)
+        latest_quotes = _quotes_from_valuation_snapshot(valuation_snapshot)
+        if state.db is None or not hasattr(state.db, "get_ledger_entries_sync"):
+            return []
+
+        sample_entries = state.db.get_ledger_entries_sync(limit=1, offset=0)
+        if not _has_rows(sample_entries):
+            return []
+
+        portfolio, instruments = _resolve_projection_sources(
+            state,
+            latest_quotes=latest_quotes,
+        )
+        portfolio, instruments, _ = _hydrate_missing_position_quotes(
+            state,
+            portfolio,
+            instruments,
+        )
+        current_point = _current_equity_series_point(
+            state,
+            portfolio,
+            instruments,
+            latest_quotes,
+        )
+        current_point = _bind_current_equity_valuation(
+            current_point,
+            valuation_snapshot,
+        )
+        daily_points = _daily_equity_series_from_ledger_history(
+            state,
+            selected_range=selected_range,
+            current_point=current_point,
+        )
+        if daily_points:
+            return _append_current_equity_series_point(daily_points, current_point)
+
+        points = build_equity_series_from_db(
+            state.db,
+            initial_cash=0,
+            latest_quotes=latest_quotes,
+        )
+        series_points = [
+            EquitySeriesPoint(
+                timestamp=str(point["timestamp"].isoformat()),
+                total=float(point["total"]),
+                stocks=float(point["stocks"]),
+                funds=float(point["funds"]),
+                others=float(point["others"]),
+                cash=float(point["cash"]),
+                unrealized_pnl=None,
+                quote_status="live",
+            )
+            for point in points
+        ]
+        return _daily_equity_series_for_range(
+            _append_current_equity_series_point(
+                series_points,
+                current_point,
+            ),
+            selected_range,
+        )
+
     @r.get("/equity-curve", response_model=list[EquityPoint])
     async def get_equity_curve() -> list[EquityPoint]:
         """获取权益曲线。"""
@@ -104,10 +172,10 @@ def create_router(
     async def get_equity_curve_series(range: str = "1m") -> list[EquitySeriesPoint]:
         """获取按资产类别拆分的权益曲线。"""
         state = dependencies.get_state()
-        valuation_snapshot = _current_valuation_snapshot(state)
-        latest_quotes = _quotes_from_valuation_snapshot(valuation_snapshot)
         selected_range = str(range).lower()
         if selected_range == "1d":
+            valuation_snapshot = _current_valuation_snapshot(state)
+            latest_quotes = _quotes_from_valuation_snapshot(valuation_snapshot)
             portfolio, instruments = _resolve_projection_sources(
                 state,
                 latest_quotes=latest_quotes,
@@ -201,63 +269,9 @@ def create_router(
                 valuation_snapshot,
             )
 
-        if state.db is None or not hasattr(state.db, "get_ledger_entries_sync"):
-            return []
-
-        sample_entries = state.db.get_ledger_entries_sync(limit=1, offset=0)
-        if not _has_rows(sample_entries):
-            return []
-
-        portfolio, instruments = _resolve_projection_sources(
+        return await async_runtime.to_thread(
+            _build_historical_equity_curve_series,
             state,
-            latest_quotes=latest_quotes,
-        )
-        portfolio, instruments, _ = _hydrate_missing_position_quotes(
-            state,
-            portfolio,
-            instruments,
-        )
-        current_point = _current_equity_series_point(
-            state,
-            portfolio,
-            instruments,
-            latest_quotes,
-        )
-        current_point = _bind_current_equity_valuation(
-            current_point,
-            valuation_snapshot,
-        )
-        daily_points = _daily_equity_series_from_ledger_history(
-            state,
-            selected_range=selected_range,
-            current_point=current_point,
-        )
-        if daily_points:
-            return _append_current_equity_series_point(daily_points, current_point)
-
-        points = build_equity_series_from_db(
-            state.db,
-            initial_cash=0,
-            latest_quotes=latest_quotes,
-        )
-        series_points = [
-            EquitySeriesPoint(
-                timestamp=str(point["timestamp"].isoformat()),
-                total=float(point["total"]),
-                stocks=float(point["stocks"]),
-                funds=float(point["funds"]),
-                others=float(point["others"]),
-                cash=float(point["cash"]),
-                unrealized_pnl=None,
-                quote_status="live",
-            )
-            for point in points
-        ]
-        return _daily_equity_series_for_range(
-            _append_current_equity_series_point(
-                series_points,
-                current_point,
-            ),
             selected_range,
         )
 

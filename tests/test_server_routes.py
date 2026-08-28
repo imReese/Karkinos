@@ -2401,7 +2401,9 @@ def test_market_quote_refresh_records_cache_fallback_fetch_run(monkeypatch, tmp_
     runs = db.list_quote_fetch_runs()
     latest = db.list_latest_quotes_sync()
     assert response.failed[0].using_persistent_cache is True
-    assert latest == []
+    assert len(latest) == 1
+    assert latest[0]["symbol"] == "600519"
+    assert latest[0]["price"] == pytest.approx(10.0)
     assert len(runs) == 1
     assert runs[0]["status"] == "cache_only"
     assert runs[0]["success_count"] == 0
@@ -4732,7 +4734,6 @@ def test_update_settings_persists_account_commission_without_credentials(
             settings_routes.SettingsResponse(
                 host="0.0.0.0",
                 port=8000,
-                live_auto_start=False,
                 initial_cash=4000,
                 start_date="2025-01-02",
                 end_date="2026-04-18",
@@ -4864,7 +4865,10 @@ def test_portfolio_overview_summarizes_account_state(monkeypatch):
     async def fake_get_total_deposits():
         return 2000.0
 
-    fake_db = SimpleNamespace(get_total_deposits=fake_get_total_deposits)
+    fake_db = SimpleNamespace(
+        get_total_deposits=fake_get_total_deposits,
+        list_quote_selection_candidates_sync=lambda: [],
+    )
     fake_state = SimpleNamespace(
         config=SimpleNamespace(initial_cash=1000),
         db=fake_db,
@@ -5623,7 +5627,7 @@ def test_portfolio_rebuild_uses_persisted_quotes_for_fund_pnl(monkeypatch):
     ]
 
     class FakeDb:
-        def get_latest_quotes_sync(self):
+        def list_latest_quotes_sync(self):
             return [
                 {
                     "symbol": "示例成长混合C",
@@ -6942,7 +6946,7 @@ def test_current_equity_series_point_marks_confirmed_nav_missing_fund_estimate(
     from server.routes import portfolio as portfolio_routes
 
     class FakeDb:
-        def get_latest_quotes_sync(self):
+        def list_latest_quotes_sync(self):
             return [
                 {
                     "symbol": "029999",
@@ -10680,6 +10684,38 @@ def test_portfolio_equity_curve_uses_ledger_projection_when_scheduler_missing(
     assert curve[-1].equity > curve[0].equity
 
 
+def test_portfolio_equity_curve_series_validates_publication_before_empty_result(
+    monkeypatch,
+):
+    from server.routes import portfolio as portfolio_routes
+
+    def unpublished_valuation(_state):
+        raise HTTPException(
+            status_code=503,
+            detail="valuation publication unavailable",
+        )
+
+    monkeypatch.setattr(
+        portfolio_routes,
+        "_current_valuation_snapshot",
+        unpublished_valuation,
+    )
+    monkeypatch.setattr(
+        "server.dependencies.get_app_state",
+        lambda: SimpleNamespace(db=None),
+    )
+    router = portfolio_routes.create_router()
+    endpoint = next(
+        route.endpoint
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/portfolio/equity-curve/series"
+    )
+
+    with pytest.raises(HTTPException, match="valuation publication unavailable"):
+        asyncio.run(endpoint("all"))
+
+
 def test_portfolio_equity_curve_series_groups_asset_buckets(monkeypatch):
     from server.routes import portfolio as portfolio_routes
 
@@ -12844,9 +12880,6 @@ def test_portfolio_live_holdings_prefers_local_daily_close_over_quote_previous_c
 
     class FakeDb:
         def list_latest_quotes_sync(self):
-            return []
-
-        def get_latest_quotes_sync(self):
             return [
                 {
                     "symbol": "600003",
@@ -12858,6 +12891,9 @@ def test_portfolio_live_holdings_prefers_local_daily_close_over_quote_previous_c
                     "previous_close_date": "2026-01-15",
                 }
             ]
+
+        def get_latest_quotes_sync(self):
+            return []
 
         def get_latest_market_bar_before_date_sync(
             self,
@@ -12947,9 +12983,6 @@ def test_portfolio_live_holdings_uses_same_day_market_bar_close_after_session(
 
     class FakeDb:
         def list_latest_quotes_sync(self):
-            return []
-
-        def get_latest_quotes_sync(self):
             return [
                 {
                     "symbol": "600001",
@@ -12961,6 +12994,9 @@ def test_portfolio_live_holdings_uses_same_day_market_bar_close_after_session(
                     "previous_close_date": "2026-01-15",
                 }
             ]
+
+        def get_latest_quotes_sync(self):
+            return []
 
         def get_latest_market_bar_before_date_sync(
             self,
@@ -13066,9 +13102,6 @@ def test_portfolio_live_holdings_fund_uses_confirmed_same_day_nav_after_session(
 
     class FakeDb:
         def list_latest_quotes_sync(self):
-            return []
-
-        def get_latest_quotes_sync(self):
             return [
                 {
                     "symbol": "012999",
@@ -13078,6 +13111,9 @@ def test_portfolio_live_holdings_fund_uses_confirmed_same_day_nav_after_session(
                     "quote_source": "eastmoney_fund_estimate",
                 }
             ]
+
+        def get_latest_quotes_sync(self):
+            return []
 
         def get_latest_market_bar_before_date_sync(
             self,
@@ -13180,9 +13216,6 @@ def test_portfolio_live_holdings_marks_unconfirmed_fund_estimate_after_session(
 
     class FakeDb:
         def list_latest_quotes_sync(self):
-            return []
-
-        def get_latest_quotes_sync(self):
             return [
                 {
                     "symbol": "029999",
@@ -13194,6 +13227,9 @@ def test_portfolio_live_holdings_marks_unconfirmed_fund_estimate_after_session(
                     "quote_status": "live",
                 }
             ]
+
+        def get_latest_quotes_sync(self):
+            return []
 
         def get_latest_market_bar_before_date_sync(
             self,

@@ -6,6 +6,11 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any
 
+from server.persistence.financial_fact_event_payloads import quote_instant_storage_key
+from server.persistence.financial_facts_quotes import (
+    list_quote_selection_candidates_on_connection,
+)
+
 
 class _TransactionValuationFacts:
     """Read app-database facts through the transaction that will publish them."""
@@ -17,18 +22,8 @@ class _TransactionValuationFacts:
     def __getattr__(self, name: str) -> Any:
         return getattr(self._repository, name)
 
-    def list_latest_quotes_sync(self) -> list[dict[str, Any]]:
-        rows = self._conn.execute("""
-            SELECT * FROM latest_quotes
-            ORDER BY quote_timestamp DESC, updated_at DESC, id DESC
-            """).fetchall()
-        return [dict(row) for row in rows]
-
-    def list_quote_snapshots_sync(self) -> list[dict[str, Any]]:
-        rows = self._conn.execute(
-            "SELECT * FROM quote_snapshots ORDER BY id"
-        ).fetchall()
-        return [dict(row) for row in rows]
+    def list_quote_selection_candidates_sync(self) -> list[dict[str, Any]]:
+        return list_quote_selection_candidates_on_connection(self._conn)
 
     def get_latest_daily_close_before_sync(
         self,
@@ -52,6 +47,7 @@ class _TransactionValuationFacts:
         symbol: str,
         trade_date: str,
     ) -> dict[str, Any] | None:
+        instant_upper_bound = quote_instant_storage_key(f"{trade_date}T00:00:00+08:00")
         row = self._conn.execute(
             """
             SELECT
@@ -59,11 +55,11 @@ class _TransactionValuationFacts:
                 quote_source, provider_name, quote_status, stale_reason,
                 provider_status, captured_reason, nav_date
             FROM quote_snapshots
-            WHERE symbol = ? AND substr(timestamp, 1, 10) < ?
-            ORDER BY timestamp DESC, id DESC
+            WHERE symbol = ? AND quote_instant_utc < ?
+            ORDER BY quote_instant_utc DESC, id DESC
             LIMIT 1
             """,
-            (symbol, trade_date),
+            (symbol, instant_upper_bound),
         ).fetchone()
         return dict(row) if row is not None else None
 

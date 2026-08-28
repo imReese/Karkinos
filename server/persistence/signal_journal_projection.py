@@ -6,6 +6,11 @@ import sqlite3
 from typing import Any
 
 from server.persistence.database_normalization import json_dict, json_list
+from server.persistence.signal_journal_event_index import (
+    SignalJournalEventIndex,
+    index_signal_journal_events,
+    latest_indexed_signal_journal_event,
+)
 
 
 def apply_manual_confirmation_readiness(
@@ -60,9 +65,17 @@ def latest_signal_journal_event(
     action_task: dict[str, Any] | None,
     risk_decision: dict[str, Any] | None,
     events: list[dict[str, Any]],
+    event_index: SignalJournalEventIndex | None = None,
 ) -> dict[str, Any] | None:
     action_ref = str(action_task["id"]) if action_task is not None else None
     risk_ref = str(risk_decision["decision_id"]) if risk_decision is not None else None
+    if event_index is not None:
+        return latest_indexed_signal_journal_event(
+            signal_id=signal_id,
+            action_ref=action_ref,
+            risk_ref=risk_ref,
+            event_index=event_index,
+        )
     for event in events:
         if (
             event["source"] == "decision_outcome_reviews"
@@ -125,6 +138,7 @@ __all__ = [
     "apply_manual_confirmation_readiness",
     "event_log_response",
     "event_matches_signal_journal_entry",
+    "index_signal_journal_events",
     "latest_signal_journal_event",
     "risk_decision_journal_response",
 ]

@@ -9,6 +9,12 @@ from server.contracts.quote_ingestion import quote_timestamp_instant
 from server.persistence.database_serialization import metadata_payload_value
 
 
+def quote_instant_storage_key(value: Any) -> str:
+    """Return the canonical sortable instant persisted beside quote facts."""
+
+    return quote_timestamp_instant(value).isoformat(timespec="microseconds")
+
+
 def quote_observation_rank(row: dict[str, Any]) -> tuple[Any, int]:
     """Order quote observations by instant, never by ISO string spelling."""
 
@@ -127,5 +133,6 @@ __all__ = [
     "latest_quote_event_payload",
     "manual_order_event_payload",
     "order_event_payload",
+    "quote_instant_storage_key",
     "quote_observation_rank",
 ]

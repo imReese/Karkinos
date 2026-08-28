@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from typing import Any
 
@@ -397,6 +398,20 @@ def build_contribution_report(
     return _build_contribution_report(db, assignment)
 
 
+def _account_strategy_contribution_for_state(
+    state: Any,
+) -> AccountStrategyContributionReport:
+    db = getattr(state, "db", None)
+    reader = getattr(db, "get_runtime_control_sync", None)
+    payload = reader(_CONTROL_KEY) if callable(reader) else None
+    assignment = (
+        _assignment_from_payload(payload, fallback_config=state.config)
+        if isinstance(payload, dict)
+        else _default_assignment(state.config)
+    )
+    return _build_contribution_report(db, assignment)
+
+
 def create_router() -> APIRouter:
     r = APIRouter(prefix="/api/account-strategy", tags=["account-strategy"])
 
@@ -449,15 +464,10 @@ def create_router() -> APIRouter:
         from server.dependencies import get_app_state
 
         state = get_app_state()
-        db = getattr(state, "db", None)
-        reader = getattr(db, "get_runtime_control_sync", None)
-        payload = reader(_CONTROL_KEY) if callable(reader) else None
-        assignment = (
-            _assignment_from_payload(payload, fallback_config=state.config)
-            if isinstance(payload, dict)
-            else _default_assignment(state.config)
+        return await asyncio.to_thread(
+            _account_strategy_contribution_for_state,
+            state,
         )
-        return _build_contribution_report(db, assignment)
 
     @r.get(
         "/holdings/{symbol}/attribution",

@@ -10,6 +10,7 @@ from fastapi.routing import APIRoute
 
 from server.contracts.quote_ingestion import QuoteIngestionCommand
 from server.db import AppDatabase
+from server.projections.valuation_snapshot import load_persisted_quote_rows
 from server.services.valuation_snapshot import (
     VALUATION_POLICY_VERSION,
     build_current_valuation_snapshot,
@@ -224,6 +225,22 @@ def test_valuation_snapshot_freezes_confirmed_same_day_close():
     assert first["quotes"][0]["valuation_price_source"] == "market_bar_close"
     assert first["as_of"] == "2026-07-10T15:00:00+08:00"
     assert first["snapshot_id"] != second["snapshot_id"]
+
+
+def test_valuation_loader_prefers_bounded_quote_selection_candidates() -> None:
+    class CandidateDb:
+        def list_quote_selection_candidates_sync(self):
+            return [{"symbol": "603659", "price": 24.6}]
+
+        def list_latest_quotes_sync(self):
+            raise AssertionError("materialized quotes must not be loaded separately")
+
+        def list_quote_snapshots_sync(self):
+            raise AssertionError("the append-only quote history must not be scanned")
+
+    assert load_persisted_quote_rows(CandidateDb()) == [
+        {"symbol": "603659", "price": 24.6}
+    ]
 
 
 def test_valuation_snapshot_keeps_unconfirmed_fund_estimate_non_authoritative(

@@ -36,17 +36,16 @@ def _fingerprint(value: Any) -> str:
 
 
 def load_persisted_quote_rows(db: Any) -> list[dict[str, Any]]:
-    """Load persisted quote facts without consulting runtime caches."""
+    """Load only the persisted current-quote materialization."""
     if db is None:
         return []
-    rows: list[dict[str, Any]] = []
-    if hasattr(db, "list_latest_quotes_sync"):
-        rows.extend(dict(row) for row in (db.list_latest_quotes_sync() or []))
-    if hasattr(db, "list_quote_snapshots_sync"):
-        rows.extend(dict(row) for row in (db.list_quote_snapshots_sync() or []))
-    elif hasattr(db, "get_latest_quotes_sync"):
-        rows.extend(dict(row) for row in (db.get_latest_quotes_sync() or []))
-    return rows
+    candidate_reader = getattr(db, "list_quote_selection_candidates_sync", None)
+    if callable(candidate_reader):
+        return [dict(row) for row in (candidate_reader() or [])]
+    current_reader = getattr(db, "list_latest_quotes_sync", None)
+    if callable(current_reader):
+        return [dict(row) for row in (current_reader() or [])]
+    raise RuntimeError("persisted current quote materialization is unavailable")
 
 
 def _quote_identity(row: dict[str, Any]) -> tuple[str, str]:
@@ -97,16 +96,17 @@ def select_authoritative_quote_rows(
             by_instant.setdefault(
                 _parse_timestamp(_quote_timestamp(observation)), []
             ).append(observation)
-        for instant, same_instant in by_instant.items():
-            for left, right in itertools.combinations(same_instant, 2):
-                conflict_fields = quote_authority_conflict_fields(left, right)
-                if conflict_fields:
-                    raise ValueError(
-                        "quote authority facts conflict at the same timestamp "
-                        f"for {identity[0]}/{identity[1]} at {instant.isoformat()}: "
-                        + ",".join(conflict_fields)
-                    )
-        selected[identity] = max(observations, key=_quote_rank)
+        newest_instant = max(by_instant)
+        newest_observations = by_instant[newest_instant]
+        for left, right in itertools.combinations(newest_observations, 2):
+            conflict_fields = quote_authority_conflict_fields(left, right)
+            if conflict_fields:
+                raise ValueError(
+                    "quote authority facts conflict at the same timestamp "
+                    f"for {identity[0]}/{identity[1]} at "
+                    f"{newest_instant.isoformat()}: " + ",".join(conflict_fields)
+                )
+        selected[identity] = max(newest_observations, key=_quote_rank)
     return [selected[key] for key in sorted(selected)]
 
 

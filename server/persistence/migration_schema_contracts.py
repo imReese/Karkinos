@@ -30,6 +30,11 @@ _VERSIONED_SCHEMA_OBJECTS = (
     (7, "trigger", "market_calendar_verified_update_guard"),
     (8, "table", "quote_ingestion_items"),
     (8, "index", "idx_quote_ingestion_items_run"),
+    (9, "index", "idx_quote_snapshots_identity_instant"),
+    (9, "index", "idx_quote_snapshots_missing_instant"),
+    (10, "table", "quote_current_materialization_state"),
+    (10, "index", "idx_quote_snapshots_symbol_instant"),
+    (10, "index", "uq_quote_snapshots_fetch_run_identity"),
 )
 
 
@@ -181,11 +186,18 @@ def versioned_schema_artifacts(
         ):
             if column in columns:
                 artifacts.append((7, f"column:market_calendar_snapshots.{column}"))
+    if "quote_snapshots" in tables:
+        columns = {
+            str(row[1])
+            for row in conn.execute("PRAGMA table_info(quote_snapshots)").fetchall()
+        }
+        if "quote_instant_utc" in columns:
+            artifacts.append((9, "column:quote_snapshots.quote_instant_utc"))
 
     objects = {
         (str(row[0]), str(row[1]))
         for row in conn.execute(
-            "SELECT type, name FROM sqlite_master " "WHERE type IN ('index', 'trigger')"
+            "SELECT type, name FROM sqlite_master WHERE type IN ('index', 'trigger')"
         ).fetchall()
     }
     for version, object_type, name in _VERSIONED_SCHEMA_OBJECTS:

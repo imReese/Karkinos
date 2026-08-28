@@ -12,8 +12,12 @@ from fastapi import HTTPException
 
 from server.contracts.quote_ingestion import QuoteIngestionCommand
 from server.db import AppDatabase
+from server.persistence.financial_fact_event_payloads import quote_instant_storage_key
 from server.projections.portfolio_quotes import current_valuation_snapshot
-from server.projections.valuation_snapshot import select_authoritative_quote_rows
+from server.projections.valuation_snapshot import (
+    build_current_valuation_snapshot,
+    select_authoritative_quote_rows,
+)
 from server.services.market_quote_ingestion import build_quote_ingestion_command
 
 pytestmark = pytest.mark.unit
@@ -78,6 +82,31 @@ def _event_count(path, event_type: str, entity_id: str) -> int:
                 (event_type, entity_id),
             ).fetchone()[0]
         )
+
+
+def _insert_legacy_quote_snapshots(
+    db: AppDatabase,
+    observations: tuple[tuple[float, str], ...],
+) -> None:
+    with sqlite3.connect(db.path) as conn:
+        conn.executemany(
+            """
+            INSERT INTO quote_snapshots (
+                symbol, asset_class, price, volume, timestamp, created_at,
+                quote_status, quote_instant_utc
+            ) VALUES ('600001', 'stock', ?, NULL, ?, ?, 'live', ?)
+            """,
+            (
+                (
+                    price,
+                    timestamp,
+                    timestamp,
+                    quote_instant_storage_key(timestamp),
+                )
+                for price, timestamp in observations
+            ),
+        )
+        conn.commit()
 
 
 def _assert_published_snapshot_replays(db: AppDatabase) -> dict:
@@ -284,6 +313,41 @@ def test_incomplete_quote_run_never_publishes_ready_valuation(
     assert blocked.value.status_code == 503
 
 
+def test_incomplete_quote_run_preserves_existing_ready_valuation(tmp_path) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.persist_quote_ingestion_sync(_command(run_id=None))
+    publication_before = db.get_runtime_control_sync("valuation_snapshot_publication")
+    current_before = current_valuation_snapshot(SimpleNamespace(db=db))
+
+    run_id = "quote-run-partial-after-ready"
+    _create_run(db, run_id)
+    db.persist_quote_ingestion_sync(_command(symbol="600002", run_id=run_id))
+    finished = db.finish_quote_fetch_run(
+        run_id=run_id,
+        finished_at="2026-08-26T10:00:02+08:00",
+        status="partial_success",
+        success_count=1,
+        failure_count=1,
+        metadata={"requested_symbols": ["600001", "600002"]},
+    )
+
+    assert finished is not None
+    assert finished["status"] == "partial_success"
+    metadata = json.loads(finished["metadata_json"])
+    assert "valuation_snapshot_id" not in metadata
+    assert "valuation_snapshot_status" not in metadata
+    assert _table_count(db.path, "quote_ingestion_items") == 1
+    assert db.get_latest_quote_sync("600002", asset_type="stock") is None
+    assert _table_count(db.path, "quote_snapshots") == 1
+    assert _table_count(db.path, "valuation_snapshots") == 1
+    assert db.get_runtime_control_sync("valuation_snapshot_publication") == (
+        publication_before
+    )
+    current_after = current_valuation_snapshot(SimpleNamespace(db=db))
+    assert current_after["snapshot_id"] == current_before["snapshot_id"]
+
+
 def test_identical_successful_quote_run_completion_retry_is_idempotent(
     tmp_path,
 ) -> None:
@@ -418,6 +482,94 @@ def test_canonical_quote_selection_rejects_conflicts_independent_of_input_order(
     for rows in ([original, conflicting], [conflicting, original]):
         with pytest.raises(ValueError, match="conflict at the same timestamp"):
             select_authoritative_quote_rows(rows)
+
+
+def test_canonical_quote_selection_ignores_superseded_legacy_conflict() -> None:
+    original = {
+        "id": 1,
+        "symbol": "600001",
+        "asset_class": "stock",
+        "timestamp": "2026-06-16",
+        "price": 10.5,
+        "volume": 1000.0,
+    }
+    conflicting = {
+        **original,
+        "id": 2,
+        "price": 10.6,
+        "volume": 1200.0,
+    }
+    newest = {
+        **original,
+        "id": 3,
+        "timestamp": "2026-08-27T15:00:00+08:00",
+        "price": 11.0,
+        "volume": 1500.0,
+    }
+
+    for rows in (
+        [original, conflicting, newest],
+        [newest, conflicting, original],
+    ):
+        assert select_authoritative_quote_rows(rows) == [newest]
+
+
+def test_canonical_quote_selection_rejects_latest_conflict_across_timezones() -> None:
+    original = {
+        "id": 1,
+        "symbol": "600001",
+        "asset_class": "stock",
+        "timestamp": "2026-08-27T15:00:00+08:00",
+        "price": 11.0,
+    }
+    conflicting = {
+        **original,
+        "id": 2,
+        "timestamp": "2026-08-27T07:00:00Z",
+        "price": 11.1,
+    }
+
+    with pytest.raises(ValueError, match="conflict at the same timestamp"):
+        select_authoritative_quote_rows([original, conflicting])
+
+
+def test_startup_quote_reconciliation_keeps_latest_timezone_conflict_blocking(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _insert_legacy_quote_snapshots(
+        db,
+        (
+            (11.0, "2026-08-27T15:00:00+08:00"),
+            (11.1, "2026-08-27T07:00:00Z"),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="conflict at the newest timestamp"):
+        db.init_sync()
+    with pytest.raises(RuntimeError, match="checkpoint does not cover audit history"):
+        build_current_valuation_snapshot(db, persist=False)
+
+
+def test_startup_quote_reconciliation_ignores_superseded_conflict_for_valuation(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _insert_legacy_quote_snapshots(
+        db,
+        (
+            (10.5, "2026-06-16T15:00:00+08:00"),
+            (10.6, "2026-06-16T07:00:00Z"),
+            (11.0, "2026-08-27T15:00:00+08:00"),
+        ),
+    )
+    db.init_sync()
+
+    snapshot = build_current_valuation_snapshot(db, persist=False)
+
+    assert snapshot["quotes"][0]["price"] == 11.0
 
 
 def test_quote_staging_rejects_conflicting_idempotency_replay(tmp_path) -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastapi import HTTPException
@@ -44,6 +45,21 @@ async def build_today_operations_payload(state: Any) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail="Database is not initialized")
 
     decision_payload, trading_plan = await _current_decision_and_trading_plan(state)
+    return await asyncio.to_thread(
+        _build_today_operations_from_facts,
+        state,
+        decision_payload,
+        trading_plan,
+    )
+
+
+def _build_today_operations_from_facts(
+    state: Any,
+    decision_payload: dict[str, Any],
+    trading_plan: dict[str, Any],
+) -> dict[str, Any]:
+    """Compose non-Decision Operations facts in one worker-thread stage."""
+
     daily_candidate_schedule = project_daily_candidate_background_schedule(db=state.db)
     pending_manual_orders = _call_list(
         state.db,
@@ -132,12 +148,29 @@ async def build_today_operations_payload(state: Any) -> dict[str, Any]:
 async def _current_decision_and_trading_plan(
     state: Any,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    portfolio_context = _decision_portfolio_context(state)
+    portfolio_context = await asyncio.to_thread(
+        _decision_portfolio_context,
+        state,
+    )
     decision_payload = await _today_decision_payload(
         state,
         portfolio_context=portfolio_context,
     )
-    trading_plan = build_daily_trading_plan(
+    trading_plan = await asyncio.to_thread(
+        _build_trading_plan_from_decision,
+        state,
+        decision_payload,
+        portfolio_context,
+    )
+    return decision_payload, trading_plan
+
+
+def _build_trading_plan_from_decision(
+    state: Any,
+    decision_payload: dict[str, Any],
+    portfolio_context: dict[str, Any],
+) -> dict[str, Any]:
+    return build_daily_trading_plan(
         decision_payload=decision_payload,
         config=state.config,
         positions=_trading_plan_positions(
@@ -145,7 +178,6 @@ async def _current_decision_and_trading_plan(
             portfolio_context=portfolio_context,
         ),
     )
-    return decision_payload, trading_plan
 
 
 def _call_list(db: Any, name: str, **kwargs: Any) -> list[dict[str, Any]]:
