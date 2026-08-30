@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -76,6 +77,49 @@ def _make_bond_df(n=10):
             "close": [100.55 + i * 0.01 for i in range(n)],
         }
     )
+
+
+def test_akshare_stock_master_preserves_names_with_symbols(monkeypatch, source):
+    calls = []
+
+    def stock_zh_a_spot_em():
+        calls.append("stock_master")
+        return pd.DataFrame(
+            {
+                "代码": ["600001", "000001"],
+                "名称": ["示例能源", "示例银行"],
+            }
+        )
+
+    monkeypatch.setitem(
+        sys.modules,
+        "akshare",
+        SimpleNamespace(stock_zh_a_spot_em=stock_zh_a_spot_em),
+    )
+
+    rows = source.list_symbol_metadata()
+
+    assert calls == ["stock_master"]
+    assert rows == [
+        {
+            "symbol": "600001",
+            "asset_class": "stock",
+            "display_name": "示例能源",
+            "provider_symbol": "600001",
+            "provider_name": "akshare",
+            "market": "cn",
+            "source": "stock_master",
+        },
+        {
+            "symbol": "000001",
+            "asset_class": "stock",
+            "display_name": "示例银行",
+            "provider_symbol": "000001",
+            "provider_name": "akshare",
+            "market": "cn",
+            "source": "stock_master",
+        },
+    ]
 
 
 class TestAKShareMultiAsset:

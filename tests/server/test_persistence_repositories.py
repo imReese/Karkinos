@@ -313,6 +313,66 @@ def test_instrument_metadata_repository_preserves_storage_contract(tmp_path) -> 
     assert repository.upsert_metadata(symbol="600002", display_name=" ") is None
 
 
+def test_instrument_metadata_batch_is_atomic_and_read_is_bounded(tmp_path) -> None:
+    database = AppDatabase(tmp_path / "app.db")
+    database.init_sync()
+
+    written = database.upsert_instrument_metadata_batch_sync(
+        [
+            {
+                "symbol": "600001",
+                "asset_type": "stock",
+                "display_name": "示例能源",
+                "provider_symbol": "600001.SH",
+                "provider_name": "fixture",
+                "fetched_at": "2026-08-23T09:30:00+08:00",
+            },
+            {
+                "symbol": "000001",
+                "asset_class": "stock",
+                "display_name": "示例银行",
+                "provider_symbol": "000001.SZ",
+                "provider_name": "fixture",
+                "fetched_at": "2026-08-23T09:30:00+08:00",
+            },
+        ]
+    )
+
+    assert written == 2
+    assert [
+        row["display_name"]
+        for row in database.get_instrument_metadata_batch_sync(
+            ["600001", "000001", "600001"], "stock"
+        )
+    ] == ["示例银行", "示例能源"]
+    with pytest.raises(ValueError, match="instrument_metadata_batch_read_too_large"):
+        database.get_instrument_metadata_batch_sync(
+            [f"{index:06d}" for index in range(41)], "stock"
+        )
+
+    with sqlite3.connect(database.path) as connection:
+        connection.execute("""
+            CREATE TRIGGER reject_instrument_metadata_fixture
+            BEFORE INSERT ON instrument_metadata
+            WHEN NEW.symbol = '600004'
+            BEGIN
+                SELECT RAISE(ABORT, 'fixture rejected');
+            END
+            """)
+        connection.commit()
+
+    with pytest.raises(sqlite3.IntegrityError, match="fixture rejected"):
+        database.upsert_instrument_metadata_batch_sync(
+            [
+                {"symbol": "600003", "display_name": "事务前项"},
+                {"symbol": "600004", "display_name": "事务拒绝项"},
+            ]
+        )
+
+    assert database.get_instrument_metadata_sync("600003", "stock") is None
+    assert database.get_instrument_metadata_sync("600004", "stock") is None
+
+
 def test_event_log_repository_preserves_payload_and_query_contract(tmp_path) -> None:
     database = AppDatabase(tmp_path / "app.db")
     database.init_sync()

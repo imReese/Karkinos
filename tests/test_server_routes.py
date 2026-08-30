@@ -2688,6 +2688,100 @@ def test_market_instrument_metadata_backfill_updates_watchlist_and_holdings(
     assert fund["display_name"] == "示例成长混合C"
 
 
+def test_market_instrument_metadata_backfill_batches_stock_master_names(
+    monkeypatch,
+    tmp_path,
+):
+    from server.db import AppDatabase
+    from server.routes import market as market_routes
+
+    router = market_routes.create_router()
+    route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/api/market/instrument-metadata/backfill"
+    )
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(
+            assets=[],
+            data_source="tushare",
+            tushare_token="fixture-token",
+        ),
+        scheduler=SimpleNamespace(portfolio=None, latest_quotes={}),
+        db=db,
+    )
+
+    class FakeStockMaster:
+        def __init__(self):
+            self.stock_master_calls = 0
+
+        def list_symbol_metadata(self):
+            self.stock_master_calls += 1
+            return [
+                {
+                    "symbol": "600001",
+                    "display_name": "示例能源",
+                    "provider_symbol": "600001.SH",
+                    "exchange": "SSE",
+                    "market": "cn",
+                    "source": "stock_master",
+                },
+                {
+                    "symbol": "000001",
+                    "display_name": "示例银行",
+                    "provider_symbol": "000001.SZ",
+                    "exchange": "SZSE",
+                    "market": "cn",
+                    "source": "stock_master",
+                },
+            ]
+
+    class FakeQuoteSource:
+        def __init__(self):
+            self.quote_calls = []
+
+        def fetch_latest(self, symbol, asset_class):
+            self.quote_calls.append((str(symbol), asset_class))
+            raise AssertionError("stock-master names must avoid quote requests")
+
+    stock_master_source = FakeStockMaster()
+    quote_source = FakeQuoteSource()
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        "data.manager.build_sources",
+        lambda **kwargs: {
+            "akshare": quote_source,
+            "tushare": stock_master_source,
+        },
+    )
+
+    response = asyncio.run(
+        route.endpoint(
+            market_routes.InstrumentMetadataBackfillRequest(
+                symbols=["600001", "000001"]
+            )
+        )
+    )
+
+    assert stock_master_source.stock_master_calls == 1
+    assert quote_source.quote_calls == []
+    assert response.provider == "tushare"
+    assert response.updated_count == 2
+    assert response.failed_count == 0
+    assert [(item.symbol, item.display_name) for item in response.items] == [
+        ("600001", "示例能源"),
+        ("000001", "示例银行"),
+    ]
+    rows = db.get_instrument_metadata_batch_sync(["600001", "000001"])
+    assert [row["display_name"] for row in rows] == ["示例银行", "示例能源"]
+    assert all(row["source"] == "backfill_stock_master" for row in rows)
+    assert all(row["provider_name"] == "tushare" for row in rows)
+
+
 def test_market_instrument_metadata_backfill_preserves_provider_quote_identity(
     monkeypatch,
     tmp_path,

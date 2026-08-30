@@ -19,6 +19,38 @@ def test_tushare_bars_capability_is_stock_daily_only():
     assert source.supports_bars(AssetClass.STOCK, BarFrequency.MIN_1) is False
 
 
+def test_tushare_stock_master_preserves_names_with_symbols(monkeypatch):
+    calls: list[tuple[str, str]] = []
+
+    class FakePro:
+        def stock_basic(self, *, exchange, list_status):
+            calls.append((exchange, list_status))
+            return pd.DataFrame(
+                {
+                    "ts_code": ["600001.SH", "000001.SZ", "920001.BJ"],
+                    "name": ["示例能源", "示例银行", "示例北交所"],
+                    "exchange": ["SSE", "SZSE", "BSE"],
+                }
+            )
+
+    monkeypatch.setattr(TushareSource, "_get_pro", lambda self: FakePro())
+
+    rows = TushareSource(token="token-1234").list_symbol_metadata()
+
+    assert calls == [("", "L")]
+    assert [(row["symbol"], row["display_name"]) for row in rows] == [
+        ("600001", "示例能源"),
+        ("000001", "示例银行"),
+        ("920001", "示例北交所"),
+    ]
+    assert [row["provider_symbol"] for row in rows] == [
+        "600001.SH",
+        "000001.SZ",
+        "920001.BJ",
+    ]
+    assert [row["exchange"] for row in rows] == ["SSE", "SZSE", "BSE"]
+
+
 def test_tushare_fetches_one_full_market_daily_cross_section(monkeypatch):
     calls: dict[str, object] = {}
 

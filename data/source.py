@@ -194,6 +194,17 @@ class DataSource(ABC):
     def list_symbols(self) -> list[Symbol]:
         """列出可用的标的代码。"""
 
+    def list_symbol_metadata(self) -> list[dict[str, Any]] | None:
+        """Optionally list active symbol identities from one stock-master read.
+
+        Implementations that expose a stock master should return normalized
+        rows containing at least ``symbol`` and, when available,
+        ``display_name``. ``None`` means that the provider does not support
+        this richer capability, so ingestion callers may fall back to
+        :meth:`list_symbols`.
+        """
+        return None
+
     def fetch_latest(
         self,
         symbol: Symbol,

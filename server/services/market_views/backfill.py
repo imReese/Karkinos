@@ -266,28 +266,107 @@ async def backfill_instrument_metadata(
 
     from data.manager import build_sources
 
-    provider_name = "akshare"
+    quote_provider_name = "akshare"
     sources = build_sources(
-        data_source=getattr(state.config, "data_source", provider_name),
+        data_source=getattr(state.config, "data_source", quote_provider_name),
         tushare_token=getattr(state.config, "tushare_token", ""),
     )
-    source = sources.get(provider_name)
-    if source is None or not hasattr(source, "fetch_latest"):
+    quote_source = sources.get(quote_provider_name)
+    if quote_source is None or not hasattr(quote_source, "fetch_latest"):
         raise HTTPException(status_code=503, detail="akshare source is unavailable")
+    configured_provider_name = str(
+        getattr(state.config, "data_source", quote_provider_name)
+        or quote_provider_name
+    ).strip()
+    stock_master_provider_name = (
+        configured_provider_name
+        if callable(
+            getattr(sources.get(configured_provider_name), "list_symbol_metadata", None)
+        )
+        else quote_provider_name
+    )
+    stock_master_source = sources.get(stock_master_provider_name) or quote_source
 
     items: list[InstrumentMetadataBackfillItem] = []
     timeout = float(
         getattr(state.config, "metadata_backfill_timeout_seconds", 8.0) or 8.0
     )
-
-    for target in instrument_metadata_targets(state, request.symbols):
+    targets = instrument_metadata_targets(state, request.symbols)
+    existing_by_target: dict[tuple[str, str], dict | None] = {}
+    for target in targets:
         symbol = target["symbol"]
         asset_class = target["asset_class"]
-        existing = (
+        existing_by_target[(symbol, asset_class)] = (
             db.get_instrument_metadata_sync(symbol, asset_class)
             if hasattr(db, "get_instrument_metadata_sync")
             else None
         )
+
+    stock_master_updates: dict[str, dict] = {}
+    pending_stock_symbols = {
+        target["symbol"]
+        for target in targets
+        if target["asset_class"] == AssetClass.STOCK.value
+        and (
+            request.force
+            or not metadata_name_is_useful(
+                existing_by_target[(target["symbol"], target["asset_class"])],
+                target["symbol"],
+            )
+        )
+    }
+    metadata_lister = getattr(stock_master_source, "list_symbol_metadata", None)
+    batch_upsert = getattr(db, "upsert_instrument_metadata_batch_sync", None)
+    if pending_stock_symbols and callable(metadata_lister) and callable(batch_upsert):
+        try:
+            stock_master_rows = await asyncio.wait_for(
+                _run_blocking_fetch(metadata_lister),
+                timeout=timeout,
+            )
+            fetched_at = datetime.now().isoformat()
+            by_symbol: dict[str, dict] = {}
+            for row in stock_master_rows or []:
+                if not isinstance(row, dict):
+                    continue
+                symbol = str(row.get("symbol") or "").strip().split(".", 1)[0]
+                display_name = extract_provider_display_name(row)
+                if symbol not in pending_stock_symbols or not metadata_name_is_useful(
+                    {"display_name": display_name}, symbol
+                ):
+                    continue
+                by_symbol[symbol] = {
+                    "symbol": symbol,
+                    "asset_type": AssetClass.STOCK.value,
+                    "display_name": display_name,
+                    "provider_symbol": str(row.get("provider_symbol") or symbol),
+                    "exchange": row.get("exchange"),
+                    "market": row.get("market"),
+                    "provider_name": stock_master_provider_name,
+                    "source": "backfill_stock_master",
+                    "fetched_at": fetched_at,
+                    "metadata": {
+                        "stock_master_source": row.get("source")
+                        or stock_master_provider_name,
+                        "payload_keys": sorted(str(key) for key in row),
+                    },
+                }
+            if by_symbol:
+                written = int(batch_upsert(list(by_symbol.values())))
+                if written != len(by_symbol):
+                    raise RuntimeError(
+                        "instrument_metadata_batch_persistence_incomplete"
+                    )
+                stock_master_updates = by_symbol
+        except Exception:
+            logger.warning(
+                "Stock-master metadata backfill failed; falling back to quotes",
+                exc_info=True,
+            )
+
+    for target in targets:
+        symbol = target["symbol"]
+        asset_class = target["asset_class"]
+        existing = existing_by_target[(symbol, asset_class)]
         if metadata_name_is_useful(existing, symbol) and not request.force:
             items.append(
                 InstrumentMetadataBackfillItem(
@@ -300,10 +379,23 @@ async def backfill_instrument_metadata(
             )
             continue
 
+        stock_master_item = stock_master_updates.get(symbol)
+        if asset_class == AssetClass.STOCK.value and stock_master_item is not None:
+            items.append(
+                InstrumentMetadataBackfillItem(
+                    symbol=symbol,
+                    asset_class=asset_class,
+                    status="updated",
+                    display_name=stock_master_item["display_name"],
+                    provider=stock_master_provider_name,
+                )
+            )
+            continue
+
         try:
             payload = await asyncio.wait_for(
                 _run_blocking_fetch(
-                    source.fetch_latest,
+                    quote_source.fetch_latest,
                     Symbol(symbol),
                     provider_asset_class(asset_class),
                 ),
@@ -315,7 +407,7 @@ async def backfill_instrument_metadata(
                     symbol=symbol,
                     asset_class=asset_class,
                     status="failed",
-                    provider=provider_name,
+                    provider=quote_provider_name,
                     error="provider_timeout",
                 )
             )
@@ -329,7 +421,7 @@ async def backfill_instrument_metadata(
                     symbol=symbol,
                     asset_class=asset_class,
                     status="failed",
-                    provider=provider_name,
+                    provider=quote_provider_name,
                     error=str(exc),
                 )
             )
@@ -342,7 +434,7 @@ async def backfill_instrument_metadata(
                     symbol=symbol,
                     asset_class=asset_class,
                     status="failed",
-                    provider=provider_name,
+                    provider=quote_provider_name,
                     error="metadata_not_available",
                 )
             )
@@ -356,14 +448,14 @@ async def backfill_instrument_metadata(
             provider_symbol=str(payload.get("provider_symbol") or symbol),
             exchange=payload.get("exchange"),
             market=payload.get("market"),
-            provider_name=provider_name,
+            provider_name=quote_provider_name,
             source="backfill",
             fetched_at=fetched_at,
             metadata={
                 "quote_timestamp": payload.get("timestamp"),
                 "quote_source": payload.get("quote_source")
                 or payload.get("source")
-                or provider_name,
+                or quote_provider_name,
                 "payload_keys": sorted(str(key) for key in payload.keys()),
             },
         )
@@ -373,12 +465,16 @@ async def backfill_instrument_metadata(
                 asset_class=asset_class,
                 status="updated",
                 display_name=display_name,
-                provider=provider_name,
+                provider=quote_provider_name,
             )
         )
 
     return InstrumentMetadataBackfillResponse(
-        provider=provider_name,
+        provider=(
+            stock_master_provider_name
+            if stock_master_updates
+            else quote_provider_name
+        ),
         requested_count=len(items),
         updated_count=sum(1 for item in items if item.status == "updated"),
         skipped_count=sum(1 for item in items if item.status == "skipped"),
