@@ -242,6 +242,7 @@ export type ReviewDecision = {
 export type ReconciliationItem = {
   item_key: string;
   category: string;
+  asset_class?: string | null;
   status: ReconciliationStatus;
   severity: string;
   symbol: string;
@@ -259,8 +260,19 @@ export type ReconciliationItem = {
   latest_review: ReviewDecision | null;
 };
 
+export type AssetReconciliationLane = {
+  status: ReconciliationStatus | 'not_evaluated';
+  unresolved_count: number;
+};
+
 export type ReconciliationReportDetail = ReconciliationReportSummary & {
   items: ReconciliationItem[];
+  asset_reconciliation?: {
+    stock: AssetReconciliationLane;
+    fund: AssetReconciliationLane;
+    cash: AssetReconciliationLane;
+    account: AssetReconciliationLane;
+  };
 };
 
 export type BrokerStatementPreviewEvent = {

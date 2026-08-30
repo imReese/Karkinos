@@ -233,6 +233,16 @@ class LedgerFactsRepositoryMixin:
             ).fetchall()
             return [dict(row) for row in rows]
 
+    def get_all_ledger_entries_sync(self) -> list[dict[str, Any]]:
+        """Read one complete ledger snapshot in a single SQLite statement."""
+
+        with sqlite3.connect(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("""SELECT *
+                   FROM ledger_entries
+                   ORDER BY timestamp DESC, id DESC""").fetchall()
+            return [dict(row) for row in rows]
+
     def get_ledger_entry_sync(self, entry_id: int) -> dict[str, Any] | None:
         """Read one ledger event by id."""
         with sqlite3.connect(self._path) as conn:

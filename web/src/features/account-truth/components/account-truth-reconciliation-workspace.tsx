@@ -16,6 +16,7 @@ import {
   ReconciliationItemList,
   ReviewItemCard,
 } from './account-truth-reconciliation-review';
+import { AccountTruthReconciliationLanes } from './account-truth-reconciliation-lanes';
 import {
   reportFilters,
   type AccountTruthReviewState,
@@ -140,6 +141,15 @@ export function AccountTruthReconciliationWorkspace({
                   {formatDateTime(selectedReport.created_at)}
                 </div>
               </div>
+
+              <AccountTruthReconciliationLanes
+                locale={locale}
+                report={
+                  detail.data?.import_run_id === selectedReport.import_run_id
+                    ? detail.data
+                    : null
+                }
+              />
 
               {reportHistory.length > 0 ? (
                 <details

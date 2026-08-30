@@ -21,6 +21,7 @@ const REVIEW_MODULES = [
   'account-truth-citic-types.ts',
   'account-truth-evidence-readiness.tsx',
   'account-truth-evidence-sections.tsx',
+  'account-truth-reconciliation-lanes.tsx',
   'account-truth-reconciliation-workspace.tsx',
   'account-truth-review-format.ts',
   'account-truth-review-labels.en.ts',

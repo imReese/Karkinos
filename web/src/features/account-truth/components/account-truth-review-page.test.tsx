@@ -1429,6 +1429,7 @@ test('renders Account Truth score, import runs, reconciliation detail, and revie
   expect(screen.queryByText('Tax difference 2.50')).toBeNull();
   expect(screen.queryByText(/cash Δ/)).toBeNull();
   expect(screen.queryByText(/fee Δ/)).toBeNull();
+  expect(screen.queryByTestId('account-truth-reconciliation-lanes')).toBeNull();
   expect(await screen.findByText('Rows 3 · duplicates 0')).toBeTruthy();
 
   await userEvent.click(screen.getByRole('button', { name: 'Mismatch' }));
@@ -1491,6 +1492,61 @@ test('renders Account Truth score, import runs, reconciliation detail, and revie
     await screen.findByText('Review saved: Known difference'),
   ).toBeTruthy();
   expect(screen.queryByText('Review saved: known_difference')).toBeNull();
+});
+
+test('separates stock, fund, shared cash, and aggregate reconciliation lanes', async () => {
+  const { fetchMock } = renderAccountTruthReviewPage({
+    reportDetailResponse: {
+      ...reportDetail,
+      asset_reconciliation: {
+        stock: { status: 'pass', unresolved_count: 0 },
+        fund: { status: 'mismatch', unresolved_count: 1 },
+        cash: { status: 'warning', unresolved_count: 1 },
+        account: { status: 'blocked', unresolved_count: 2 },
+      },
+      items: reportDetail.items.map((item) => ({
+        ...item,
+        asset_class: 'fund',
+      })),
+    },
+  });
+
+  const lanes = await screen.findByTestId('account-truth-reconciliation-lanes');
+  const stockLane = within(lanes).getByTestId(
+    'account-truth-reconciliation-lane-stock',
+  );
+  expect(within(stockLane).getByText('Stock lane')).toBeTruthy();
+  expect(within(stockLane).getByText('Pass')).toBeTruthy();
+  expect(within(stockLane).getByText('0 unresolved items')).toBeTruthy();
+
+  const fundLane = within(lanes).getByTestId(
+    'account-truth-reconciliation-lane-fund',
+  );
+  expect(within(fundLane).getByText('Fund lane')).toBeTruthy();
+  expect(within(fundLane).getByText('Mismatch')).toBeTruthy();
+  expect(within(fundLane).getByText('1 unresolved item')).toBeTruthy();
+
+  const cashLane = within(lanes).getByTestId(
+    'account-truth-reconciliation-lane-cash',
+  );
+  expect(within(cashLane).getByText('Shared cash lane')).toBeTruthy();
+  expect(cashLane.textContent).toContain(
+    'Cash is shared across stock and fund holdings.',
+  );
+
+  const accountLane = within(lanes).getByTestId(
+    'account-truth-reconciliation-lane-account',
+  );
+  expect(within(accountLane).getByText('Blocked')).toBeTruthy();
+  expect(accountLane.textContent).toContain(
+    'Aggregate execution remains blocked until every required lane passes.',
+  );
+
+  const item = await screen.findByTestId('account-truth-item-position:SYN001');
+  expect(item.textContent).toContain('Fund · Position');
+  expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(
+    false,
+  );
 });
 
 test('keeps missing readiness evidence and its safe next step together', async () => {

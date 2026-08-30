@@ -379,6 +379,11 @@ class FinancialFactDatabaseFacade(DatabaseRepositoryAccess):
         """同步列出账本事件，最新优先。"""
         return self._financial_facts.get_ledger_entries_sync(limit, offset)
 
+    def get_all_ledger_entries_sync(self) -> list[dict[str, Any]]:
+        """Read one complete ledger snapshot for a bounded evaluation."""
+
+        return self._financial_facts.get_all_ledger_entries_sync()
+
     def get_ledger_entry_sync(self, entry_id: int) -> dict[str, Any] | None:
         """Read one ledger event by id."""
         return self._financial_facts.get_ledger_entry_sync(entry_id)

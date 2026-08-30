@@ -128,6 +128,9 @@ export function ReconciliationItemList({
                   {itemTitle}
                 </span>
                 <span className="app-type-micro mt-0.5 block truncate text-[var(--app-text-secondary)]">
+                  {item.asset_class
+                    ? `${formatCode(item.asset_class, locale, 'code')} · `
+                    : ''}
                   {formatCode(item.category, locale, 'code')} ·{' '}
                   {text.difference}{' '}
                   {formatReconciliationValue(
@@ -313,6 +316,9 @@ export function ReviewItemCard({
               {itemTitle}
             </span>
             <span className="text-xs font-medium text-[var(--app-text-tertiary)]">
+              {item.asset_class
+                ? `${formatCode(item.asset_class, locale, 'code')} · `
+                : ''}
               {formatCode(item.category, locale, 'code')}
             </span>
           </div>

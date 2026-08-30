@@ -19,6 +19,25 @@ export const accountTruthReviewLabelsEn = {
   reviewWorkspace: 'Current reconciliation',
   reviewWorkspaceDetail:
     'Start with unresolved or stale review evidence. Matched rows stay quiet until requested.',
+  reconciliationLanes: 'Asset reconciliation lanes',
+  reconciliationLanesDetail:
+    'Stock and fund evidence stays separate. Cash is shared, while execution still follows one aggregate account gate.',
+  reconciliationStockLane: 'Stock lane',
+  reconciliationStockLaneDetail:
+    'Stock reconciliation can pass independently of fund evidence.',
+  reconciliationFundLane: 'Fund lane',
+  reconciliationFundLaneDetail:
+    'Fund differences remain visible and do not invalidate a stock-only pass.',
+  reconciliationCashLane: 'Shared cash lane',
+  reconciliationCashLaneDetail:
+    'Cash is shared across stock and fund holdings.',
+  reconciliationAccountLane: 'Aggregate account gate',
+  reconciliationAccountBlockedDetail:
+    'Aggregate execution remains blocked until every required lane passes.',
+  reconciliationAccountPassDetail:
+    'The aggregate account gate passes, but does not itself grant execution authority.',
+  reconciliationLaneUnresolved: (count: number) =>
+    `${count} unresolved ${count === 1 ? 'item' : 'items'}`,
   detail: 'Report detail',
   reportHistory: 'Earlier reconciliation reports',
   reportHistoryCount: (count: number) =>

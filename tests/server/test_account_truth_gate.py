@@ -19,6 +19,7 @@ from account_truth.citic_source_intake import CiticSourceIntakeRepository
 from server.account_truth_gate import (
     _karkinos_account_facts,
     build_latest_account_truth_promotion_evidence,
+    build_latest_account_truth_score_payload,
     build_reconciliation_report_for_import_run,
 )
 from server.db import AppDatabase
@@ -47,6 +48,60 @@ def test_account_truth_cash_is_zero_when_canonical_ledger_is_empty(tmp_path) -> 
     assert facts["cash_balance"] == 0
     assert facts["ledger_facts"] == []
     assert facts["positions"] == []
+
+
+def test_latest_account_truth_score_reuses_one_ledger_scan(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    db = AppDatabase(tmp_path / "single-ledger-scan.db")
+    db.init_sync()
+    BrokerEvidenceRepository(db._path).save_preview(
+        parse_broker_statement_csv(
+            """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note
+cash-only,cash_snapshot,2026-08-30T08:45:00+08:00,2026-08-30,,,,CNY,0,0,0,0,0,0,0,,,single scan
+"""
+        ),
+        source_name="single-scan.csv",
+    )
+    original_reader = db.get_all_ledger_entries_sync
+    calls = 0
+
+    def counted_reader():
+        nonlocal calls
+        calls += 1
+        return original_reader()
+
+    monkeypatch.setattr(db, "get_all_ledger_entries_sync", counted_reader)
+
+    payload = build_latest_account_truth_score_payload(SimpleNamespace(db=db))
+
+    assert payload["status"] == "available"
+    assert calls == 1
+
+
+def test_latest_account_truth_score_blocks_when_ledger_reader_is_missing(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "missing-ledger-reader.db")
+    db.init_sync()
+    BrokerEvidenceRepository(db._path).save_preview(
+        parse_broker_statement_csv(
+            """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note
+cash-zero,cash_snapshot,2026-08-30T08:45:00+08:00,2026-08-30,,,,CNY,0,0,0,0,0,0,0,,,coverage guard
+position-zero,position_snapshot,2026-08-30T08:45:00+08:00,2026-08-30,SYN001,合成股票,stock,CNY,0,0,0,0,0,0,,0,0,coverage guard
+"""
+        ),
+        source_name="missing-ledger-reader.csv",
+    )
+    state = SimpleNamespace(db=SimpleNamespace(_path=db._path))
+
+    payload = build_latest_account_truth_score_payload(state)
+
+    assert payload["ledger_coverage"]["status"] == "unknown"
+    assert payload["gate_status"] == "blocked"
+    assert payload["data_freshness_status"] == "stale"
+    assert "account_truth_ledger_coverage_not_proven" in payload["blocking_reasons"]
 
 
 def _incomplete_citic_preview():

@@ -18,6 +18,21 @@ export const accountTruthReviewLabelsZh = {
   reviewWorkspace: '当前对账复核',
   reviewWorkspaceDetail:
     '优先查看未解决差异与已失效复核；匹配明细默认保持安静。',
+  reconciliationLanes: '分资产对账通道',
+  reconciliationLanesDetail:
+    '股票与基金证据分别呈现，现金由两类资产共享；执行仍只服从一个账户总门禁。',
+  reconciliationStockLane: '股票通道',
+  reconciliationStockLaneDetail: '股票对账可独立通过，不被基金差异混淆。',
+  reconciliationFundLane: '基金通道',
+  reconciliationFundLaneDetail:
+    '基金差异保持可见，不会抹去股票通道的通过状态。',
+  reconciliationCashLane: '共享现金通道',
+  reconciliationCashLaneDetail: '现金由股票和基金持仓共同使用。',
+  reconciliationAccountLane: '账户总门禁',
+  reconciliationAccountBlockedDetail:
+    '所有必需通道通过前，账户总执行门禁继续阻断。',
+  reconciliationAccountPassDetail: '账户总门禁已通过，但这本身不授予执行权限。',
+  reconciliationLaneUnresolved: (count: number) => `${count} 条未解决明细`,
   detail: '报告明细',
   reportHistory: '历史对账报告',
   reportHistoryCount: (count: number) => `${count} 份较早报告`,

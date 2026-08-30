@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -17,7 +18,10 @@ from account_truth.broker_evidence import (
 )
 from account_truth.reconciliation import KarkinosLedgerFact, KarkinosPositionFact
 from server.ledger.models import LedgerEntry
-from server.projections.service import build_portfolio_projection_from_db
+from server.projections.legacy_fund_trade_duplicate_correction import (
+    resolve_legacy_fund_trade_duplicate_exclusions,
+)
+from server.projections.service import build_portfolio_projection
 
 ACCOUNT_TRUTH_PROMOTION_EVIDENCE_SCHEMA_VERSION = (
     "karkinos.account_truth.promotion_evidence.v1"
@@ -55,6 +59,7 @@ def ledger_fact_from_entry(entry: LedgerEntry) -> KarkinosLedgerFact:
     return KarkinosLedgerFact(
         event_type=entry.entry_type,
         symbol=str(entry.symbol or ""),
+        asset_class=str(entry.asset_class or ""),
         quantity=quantity,
         price=price,
         gross_amount=gross_amount,
@@ -240,7 +245,10 @@ def ledger_fee_component(entry: LedgerEntry) -> Decimal:
         "surcharge_fee",
         "other_fees",
     )
-    total = sum((breakdown_decimal(breakdown, key) or Decimal("0")) for key in fee_keys)
+    total = sum(
+        (breakdown_decimal(breakdown, key) or Decimal("0") for key in fee_keys),
+        start=Decimal("0"),
+    )
     if total != Decimal("0"):
         return abs(total)
     return abs(decimal_or_zero(entry.commission))
@@ -313,19 +321,94 @@ def latest_reconcilable_import_run(
     return None
 
 
-def karkinos_account_facts(state: Any) -> dict[str, object]:
+def load_canonical_ledger_rows(
+    db: Any,
+    *,
+    batch_size: int = 500,
+) -> list[dict[str, Any]]:
+    """Read one shared ledger snapshot for all consumers in an evaluation."""
+
+    snapshot_reader = getattr(db, "get_all_ledger_entries_sync", None)
+    if callable(snapshot_reader):
+        rows = [dict(row) for row in (snapshot_reader() or [])]
+        _assert_unique_ledger_ids(rows)
+        return rows
+    reader = getattr(db, "get_ledger_entries_sync", None)
+    if not callable(reader):
+        return []
+    batch = list(reader(limit=batch_size, offset=0) or [])
+    if len(batch) >= batch_size:
+        raise RuntimeError(
+            "A single-statement canonical ledger snapshot reader is required"
+        )
+    rows = [dict(row) for row in batch]
+    _assert_unique_ledger_ids(rows)
+    return rows
+
+
+def _assert_unique_ledger_ids(rows: Sequence[dict[str, Any]]) -> None:
+    ids: list[int] = []
+    for row in rows:
+        try:
+            entry_id = int(row.get("id") or 0)
+        except (TypeError, ValueError):
+            raise RuntimeError(
+                "Canonical ledger snapshot identity is invalid"
+            ) from None
+        if entry_id <= 0:
+            raise RuntimeError("Canonical ledger snapshot identity is invalid")
+        ids.append(entry_id)
+    if len(ids) != len(set(ids)):
+        raise RuntimeError("Canonical ledger snapshot contains duplicate identities")
+
+
+def legacy_fund_duplicate_roll_forward_guardrail(
+    ledger_entries: Sequence[dict[str, Any]],
+) -> tuple[frozenset[int], str | None]:
+    """Resolve server-owned correction evidence for the pure roll-forward writer."""
+
+    rows = [dict(row) for row in ledger_entries]
+    resolution = resolve_legacy_fund_trade_duplicate_exclusions(rows)
+    if not resolution.valid:
+        return (
+            frozenset(),
+            "daily_snapshot_roll_forward_legacy_fund_correction_invalid",
+        )
+    if not resolution.correction_entry_ids:
+        return frozenset(), None
+    try:
+        build_portfolio_projection([LedgerEntry.from_row(row) for row in rows])
+    except (ArithmeticError, KeyError, TypeError, ValueError):
+        return (
+            frozenset(),
+            "daily_snapshot_roll_forward_legacy_fund_correction_projection_invalid",
+        )
+    return frozenset(resolution.correction_entry_ids), None
+
+
+def karkinos_account_facts(
+    state: Any,
+    *,
+    ledger_rows: list[dict[str, Any]] | None = None,
+) -> dict[str, object]:
     """Project account facts only from canonical ledger and persisted quotes."""
 
     db = getattr(state, "db", None)
+    rows = load_canonical_ledger_rows(db) if ledger_rows is None else ledger_rows
+    correction_resolution = resolve_legacy_fund_trade_duplicate_exclusions(rows)
+    if not correction_resolution.valid:
+        raise RuntimeError(
+            "Account Truth legacy fund correction evidence is invalid: "
+            + ",".join(correction_resolution.blockers)
+        )
     latest_quotes = latest_quotes_by_symbol(db)
-    projection = build_portfolio_projection_from_db(
-        db,
+    projection = build_portfolio_projection(
+        [LedgerEntry.from_row(row) for row in rows],
         initial_cash=Decimal("0"),
         latest_quotes=latest_quotes,
     )
-    ledger_rows = db.get_ledger_entries_sync(limit=1000, offset=0)
     asset_classes_by_symbol: dict[str, str] = {}
-    for row in ledger_rows:
+    for row in rows:
         symbol = str(row.get("symbol") or "").strip()
         if not symbol or symbol in asset_classes_by_symbol:
             continue
@@ -333,7 +416,10 @@ def karkinos_account_facts(state: Any) -> dict[str, object]:
             str(row.get("asset_class") or "stock").strip().lower() or "stock"
         )
     ledger_facts = [
-        ledger_fact_from_entry(LedgerEntry.from_row(row)) for row in ledger_rows
+        ledger_fact_from_entry(LedgerEntry.from_row(row))
+        for row in rows
+        if int(row.get("id") or 0)
+        not in correction_resolution.excluded_manual_entry_ids
     ]
     positions = [
         KarkinosPositionFact(
@@ -372,22 +458,32 @@ def latest_quotes_by_symbol(db: Any) -> dict[str, dict[str, object]]:
 def ledger_coverage_for_import(
     state: Any,
     import_run: BrokerImportRun,
+    *,
+    ledger_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, object]:
     """Prove whether staged broker evidence covers the current ledger."""
 
     db = getattr(state, "db", None)
     reader = getattr(db, "get_ledger_entries_sync", None)
+    snapshot_reader = getattr(db, "get_all_ledger_entries_sync", None)
     import_timestamp = parse_aware_timestamp(import_run.created_at)
-    if not callable(reader):
+    if not callable(reader) and not callable(snapshot_reader):
         return {
             "status": "unknown",
+            "reasons": ["ledger_reader_unavailable"],
             "import_created_at": import_run.created_at,
             "latest_ledger_created_at": None,
         }
-    rows = list(reader(limit=1000, offset=0) or [])
+    rows = (
+        load_canonical_ledger_rows(db)
+        if ledger_rows is None
+        else [dict(row) for row in ledger_rows]
+    )
+    correction_resolution = resolve_legacy_fund_trade_duplicate_exclusions(rows)
     posting_covered_entry_ids = posting_covered_ledger_entry_ids(
         db,
         import_run_id=import_run.import_run_id,
+        ledger_rows=rows,
     )
     ledger_created_timestamps = [
         parse_fact_timestamp(row.get("created_at"))
@@ -425,7 +521,11 @@ def ledger_coverage_for_import(
         broker_events,
     )
     covered_entry_ids = posting_covered_entry_ids | broker_evidence_covered_entry_ids
+    if correction_resolution.valid:
+        covered_entry_ids.update(correction_resolution.correction_entry_ids)
     stale_reasons: list[str] = []
+    if not correction_resolution.valid:
+        stale_reasons.extend(correction_resolution.blockers)
     uncovered_created_after_import = any(
         (created_at := parse_fact_timestamp(row.get("created_at"))) is not None
         and import_timestamp is not None
@@ -471,11 +571,14 @@ def ledger_coverage_for_import(
         ),
         "controlled_posting_lineage_entry_count": len(posting_covered_entry_ids),
         "broker_evidence_lineage_entry_count": len(broker_evidence_covered_entry_ids),
+        "legacy_fund_duplicate_correction_entry_count": len(
+            correction_resolution.correction_entry_ids
+        ),
     }
 
 
 def broker_evidence_covered_ledger_entry_ids(
-    rows: list[object],
+    rows: list[dict[str, Any]],
     broker_events: list[StoredBrokerEvidenceEvent],
 ) -> set[int]:
     """Match later local dividend capture to exact earlier broker evidence."""
@@ -496,7 +599,7 @@ def broker_evidence_covered_ledger_entry_ids(
     ]
     covered: set[int] = set()
     for row in sorted(
-        (row for row in rows if isinstance(row, dict)),
+        rows,
         key=lambda row: int(row.get("id") or 0),
     ):
         entry_id = int(row.get("id") or 0)
@@ -528,6 +631,7 @@ def posting_covered_ledger_entry_ids(
     db: Any,
     *,
     import_run_id: str,
+    ledger_rows: list[dict[str, Any]] | None = None,
 ) -> set[int]:
     """Return immutable ledger rows proven to originate from one broker import."""
 
@@ -553,10 +657,10 @@ def posting_covered_ledger_entry_ids(
             for entry_id in entry_ids
             if isinstance(entry_id, int) and entry_id > 0
         )
-    ledger_reader = getattr(db, "get_ledger_entries_sync")
+    rows = load_canonical_ledger_rows(db) if ledger_rows is None else ledger_rows
     return {
         int(row.get("id") or 0)
-        for row in (ledger_reader(limit=1000, offset=0) or [])
+        for row in rows
         if isinstance(row, dict)
         and int(row.get("id") or 0) in covered
         and str(row.get("source") or "") == "controlled_submission_ledger_posting"
@@ -567,6 +671,6 @@ def freshness_with_ledger_coverage(
     freshness_status: str,
     ledger_coverage: dict[str, object],
 ) -> str:
-    if freshness_status == "fresh" and ledger_coverage.get("status") == "stale":
+    if freshness_status == "fresh" and ledger_coverage.get("status") != "covered":
         return "stale"
     return freshness_status
