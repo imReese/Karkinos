@@ -2,9 +2,24 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter  # pyright: ignore[reportMissingImports]
 
 from server import __version__
+
+
+def _release_identity() -> dict[str, str]:
+    """Expose only non-sensitive immutable release identity for probes."""
+    import os
+
+    identity: dict[str, str] = {}
+    release_sha = os.environ.get("KARKINOS_RELEASE_SHA", "").strip()
+    artifact_fingerprint = os.environ.get("KARKINOS_ARTIFACT_FINGERPRINT", "").strip()
+    if release_sha:
+        identity["release_sha"] = release_sha
+    if artifact_fingerprint:
+        identity["artifact_fingerprint"] = artifact_fingerprint
+    return identity
+
 
 SERVICE_HEALTH_SCHEMA_VERSION = "karkinos.service_health.v1"
 
@@ -18,6 +33,7 @@ def create_router() -> APIRouter:
             "schema_version": SERVICE_HEALTH_SCHEMA_VERSION,
             "service": "karkinos",
             "version": __version__,
+            **_release_identity(),
             "status": "alive",
             "scope": "process_liveness_only",
             "financial_readiness_claimed": False,

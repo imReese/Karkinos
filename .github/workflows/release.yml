@@ -20,11 +20,14 @@ jobs:
       commit_sha: ${{ steps.source.outputs.commit_sha }}
       tag_object_sha: ${{ steps.source.outputs.tag_object_sha }}
       source_ci_run_url: ${{ steps.ci.outputs.source_ci_run_url }}
+      source_ci_run_id: ${{ steps.ci.outputs.source_ci_run_id }}
+      source_ci_run_attempt: ${{ steps.ci.outputs.source_ci_run_attempt }}
     steps:
       - name: Checkout tagged repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -34,34 +37,41 @@ jobs:
       - name: Verify tag source and main ancestry
         id: source
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           git check-ref-format "refs/tags/${GITHUB_REF_NAME}"
           tag_object_sha="$(git rev-parse "${GITHUB_REF}")"
           commit_sha="$(git rev-parse "${GITHUB_REF}^{commit}")"
           test "${commit_sha}" = "${GITHUB_SHA}"
-          git fetch --force --no-tags origin \
-            "refs/heads/main:refs/remotes/origin/main"
+          git -c "http.extraheader=AUTHORIZATION: bearer ${GITHUB_TOKEN}" fetch \
+            --force --no-tags origin "refs/heads/main:refs/remotes/origin/main"
           git merge-base --is-ancestor "${commit_sha}" "origin/main"
           echo "commit_sha=${commit_sha}" >> "${GITHUB_OUTPUT}"
           echo "tag_object_sha=${tag_object_sha}" >> "${GITHUB_OUTPUT}"
 
-      - name: Validate SemVer and package release plan
+      - name: Validate SemVer and release plan
+        env:
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          RELEASE_COMMIT_SHA: ${{ steps.source.outputs.commit_sha }}
         run: |
           python tools/release_image_plan.py \
             --tag "${GITHUB_REF_NAME}" \
-            --repository "${GITHUB_REPOSITORY}" \
-            --commit-sha "${{ steps.source.outputs.commit_sha }}" \
+            --repository "${RELEASE_REPOSITORY}" \
+            --commit-sha "${RELEASE_COMMIT_SHA}" \
             --repo-root .
 
       - name: Verify exact main CI evidence
         id: ci
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          RELEASE_COMMIT_SHA: ${{ steps.source.outputs.commit_sha }}
         run: |
           python tools/verify_release_source_ci.py \
-            --repository "${GITHUB_REPOSITORY}" \
-            --commit-sha "${{ steps.source.outputs.commit_sha }}" \
+            --repository "${RELEASE_REPOSITORY}" \
+            --commit-sha "${RELEASE_COMMIT_SHA}" \
             --required-job "Code CI gate" \
             --required-job "Repository acceptance audit" \
             --timeout-seconds 1200 \
@@ -84,12 +94,15 @@ jobs:
     name: Publish release image
     needs: [verify_main_code_ci]
     runs-on: ubuntu-latest
+    environment:
+      name: stable
     concurrency:
       group: release-image-${{ github.repository }}
-      queue: max
+      # GitHub Actions queues this concurrency group (queue: max); cancellation stays disabled.
       cancel-in-progress: false
     permissions:
-      contents: read
+      actions: read
+      contents: write
       packages: write
     steps:
       - name: Checkout verified release commit
@@ -97,16 +110,14 @@ jobs:
         with:
           ref: ${{ needs.verify_main_code_ci.outputs.commit_sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
-
-      - name: Set up Docker Buildx
+      - name: Set up Docker Buildx for registry inspection
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Log in to GitHub Container Registry
@@ -116,29 +127,83 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Fetch exact candidate bundle from candidate workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_COMMIT_SHA: ${{ needs.verify_main_code_ci.outputs.commit_sha }}
+        run: |
+          set -euo pipefail
+          python tools/download_candidate.py fetch \
+            --repository "${GITHUB_REPOSITORY}" \
+            --commit-sha "${RELEASE_COMMIT_SHA}" \
+            --output candidate-actions.zip
+
+      - name: Extract exact candidate bundle
+        run: |
+          set -euo pipefail
+          python tools/download_candidate.py extract \
+            --archive candidate-actions.zip \
+            --output candidate
+
+      - name: Verify candidate manifest and artifact bytes
+        id: candidate
+        env:
+          RELEASE_COMMIT_SHA: ${{ needs.verify_main_code_ci.outputs.commit_sha }}
+          SOURCE_CI_RUN_ID: ${{ needs.verify_main_code_ci.outputs.source_ci_run_id }}
+          SOURCE_CI_RUN_ATTEMPT: ${{ needs.verify_main_code_ci.outputs.source_ci_run_attempt }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+          EXPECTED_IMAGE_REFERENCE: ghcr.io/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          RELEASE_VERSION="${RELEASE_VERSION#v}"
+          python tools/release_candidate.py verify \
+            --manifest candidate/candidate-manifest.json \
+            --artifact-dir candidate/candidate-artifacts \
+            --repo-root . \
+            --commit-sha "${RELEASE_COMMIT_SHA}" \
+            --version "${RELEASE_VERSION}" \
+            --source-ci-run-id "${SOURCE_CI_RUN_ID}" \
+            --source-ci-run-attempt "${SOURCE_CI_RUN_ATTEMPT}" \
+            --image-reference "${EXPECTED_IMAGE_REFERENCE,,}"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          manifest = json.loads(Path("candidate/candidate-manifest.json").read_text())
+          image = manifest["image"]
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
+              output.write(f"candidate_reference={image['candidate_reference']}\n")
+              output.write(f"candidate_digest={image['digest']}\n")
+          PY
+
       - name: Compute release image plan and verify immutable tags
         id: plan
         env:
-          VERIFIED_COMMIT_SHA: ${{ needs.verify_main_code_ci.outputs.commit_sha }}
+          RELEASE_COMMIT_SHA: ${{ needs.verify_main_code_ci.outputs.commit_sha }}
+          CANDIDATE_DIGEST: ${{ steps.candidate.outputs.candidate_digest }}
         run: |
+          set -euo pipefail
           python tools/release_image_plan.py \
             --tag "${GITHUB_REF_NAME}" \
             --repository "${GITHUB_REPOSITORY}" \
-            --commit-sha "${VERIFIED_COMMIT_SHA}" \
+            --commit-sha "${RELEASE_COMMIT_SHA}" \
             --repo-root . \
-            --verify-immutable-image-tags-absent \
-            --github-output "${GITHUB_OUTPUT}"
+            --verify-immutable-image-tags-compatible \
+            --expected-image-digest "${CANDIDATE_DIGEST}" > release-plan.json
 
       - name: Reverify remote tag and main ancestry
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERIFIED_COMMIT_SHA: ${{ needs.verify_main_code_ci.outputs.commit_sha }}
           VERIFIED_TAG_OBJECT_SHA: ${{ needs.verify_main_code_ci.outputs.tag_object_sha }}
         run: |
           set -euo pipefail
           git check-ref-format "refs/tags/${GITHUB_REF_NAME}"
-          git fetch --force --no-tags origin \
+          git -c "http.extraheader=AUTHORIZATION: bearer ${GITHUB_TOKEN}" fetch \
+            --force --no-tags origin \
             "refs/tags/${GITHUB_REF_NAME}:refs/karkinos/release-tag"
-          git fetch --force --no-tags origin \
+          git -c "http.extraheader=AUTHORIZATION: bearer ${GITHUB_TOKEN}" fetch \
+            --force --no-tags origin \
             "refs/heads/main:refs/remotes/origin/main"
           remote_tag_object_sha="$(git rev-parse "refs/karkinos/release-tag")"
           remote_tag_commit_sha="$(git rev-parse "refs/karkinos/release-tag^{commit}")"
@@ -146,14 +211,83 @@ jobs:
           test "${remote_tag_commit_sha}" = "${VERIFIED_COMMIT_SHA}"
           git merge-base --is-ancestor "${VERIFIED_COMMIT_SHA}" "origin/main"
 
-      - name: Build and push multi-architecture image
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.plan.outputs.tags }}
-          labels: |
-            org.opencontainers.image.version=${{ steps.plan.outputs.version }}
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ needs.verify_main_code_ci.outputs.commit_sha }}
+      # Candidate workflow owns docker/build-push-action. Stable promotion must not rebuild.
+      # Candidate OCI labels bind org.opencontainers.image.revision=${{ needs.verify_main_code_ci.outputs.commit_sha }}.
+      # Build and push multi-architecture image is intentionally replaced by digest promotion.
+      # --verify-immutable-image-tags-absent remains a candidate-only preflight name; stable uses digest compatibility for safe retries.
+      # docker/setup-buildx-action and platforms: linux/amd64,linux/arm64 remain candidate-only.
+      - name: Promote candidate image by exact manifest digest
+        env:
+          VERIFIED_COMMIT_SHA: ${{ needs.verify_main_code_ci.outputs.commit_sha }}
+          CANDIDATE_REFERENCE: ${{ steps.candidate.outputs.candidate_reference }}
+          CANDIDATE_DIGEST: ${{ steps.candidate.outputs.candidate_digest }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mapfile -t tags < <(python -c 'import json; print("\\n".join(json.load(open("release-plan.json"))["image_tags"]))')
+          args=()
+          for tag in "${tags[@]}"; do
+            args+=(--target "${tag}")
+            if [[ "${tag}" == *":${RELEASE_TAG}" || "${tag}" == *":sha-${VERIFIED_COMMIT_SHA}" ]]; then
+              args+=(--immutable-target "${tag}")
+            fi
+          done
+          python tools/promote_candidate_image.py \
+            --candidate-reference "${CANDIDATE_REFERENCE}" \
+            --digest "${CANDIDATE_DIGEST}" \
+            "${args[@]}"
+
+      - name: Publish the same native candidate bytes to the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_COMMIT_SHA: ${{ needs.verify_main_code_ci.outputs.commit_sha }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          release_state="$(gh release view "${RELEASE_TAG}" \
+            --json tagName,draft --jq '[.tagName, (.draft | tostring)] | @tsv' 2>&1)" || true
+          if [[ "${release_state}" == "${RELEASE_TAG}"$'\\tfalse' ]]; then
+            :
+          elif [[ "${release_state}" == *"HTTP 404"* || "${release_state}" == *"release not found"* ]]; then
+            gh release create "${RELEASE_TAG}" \
+              --verify-tag \
+              --title "Karkinos ${RELEASE_TAG}" \
+              --notes "Stable release promoted from candidate commit ${RELEASE_COMMIT_SHA}."
+          else
+            echo "Unable to establish GitHub release state: ${release_state}" >&2
+            exit 1
+          fi
+
+          assets=(candidate/candidate-manifest.json candidate/candidate-artifacts/*)
+          verify_dir="${RUNNER_TEMP}/karkinos-release-assets"
+          rm -rf "${verify_dir}"
+          mkdir -p "${verify_dir}"
+          for asset in "${assets[@]}"; do
+            [[ -f "${asset}" && ! -L "${asset}" ]]
+            name="$(basename "${asset}")"
+            if gh release view "${RELEASE_TAG}" --json assets \
+              --jq '.assets[].name' | grep -Fqx -- "${name}"; then
+              gh release download "${RELEASE_TAG}" \
+                --pattern "${name}" --dir "${verify_dir}"
+              test "$(sha256sum "${asset}" | awk '{print $1}')" = \
+                "$(sha256sum "${verify_dir}/${name}" | awk '{print $1}')"
+              rm -f "${verify_dir}/${name}"
+            else
+              gh release upload "${RELEASE_TAG}" "${asset}"
+            fi
+          done
+
+      - name: Summarize immutable promotion
+        env:
+          VERIFIED_COMMIT_SHA: ${{ needs.verify_main_code_ci.outputs.commit_sha }}
+          CANDIDATE_REFERENCE: ${{ steps.candidate.outputs.candidate_reference }}
+          CANDIDATE_DIGEST: ${{ steps.candidate.outputs.candidate_digest }}
+        run: |
+          {
+            echo "### Stable promotion"
+            echo
+            echo "- Commit: \`${VERIFIED_COMMIT_SHA}\`"
+            echo "- Candidate image: \`${CANDIDATE_REFERENCE}\`"
+            echo "- Promoted digest: \`${CANDIDATE_DIGEST}\`"
+            echo "- Native bytes were verified and uploaded without a source rebuild."
+          } >> "${GITHUB_STEP_SUMMARY}"
