@@ -17,6 +17,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 import server.persistence.migration_schema_contracts as _schema_contracts
+from server.persistence.legacy_trade_migration_preflight import (
+    run_pending_legacy_trade_migration_preflight,
+)
 from server.persistence.quote_schema_migrations import build_quote_schema_migrations
 
 
@@ -499,6 +502,11 @@ def apply_schema_migrations(
             for query, blocker in migration.blockers:
                 if conn.execute(query).fetchone() is not None:
                     raise RuntimeError(blocker)
+            run_pending_legacy_trade_migration_preflight(
+                conn,
+                version=migration.version,
+                name=migration.name,
+            )
             for statement in migration.statements:
                 conn.execute(statement)
             conn.execute(

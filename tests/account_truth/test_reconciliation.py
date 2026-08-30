@@ -555,3 +555,92 @@ def test_reconciliation_cost_basis_method_mismatch_remains_strict(tmp_path) -> N
     assert item.status == "mismatch"
     assert item.difference == "0.000037875"
     assert item.detail_context["comparison_precision"] == ("decimal_string_no_rounding")
+
+
+def test_reconciliation_projects_stock_fund_and_shared_cash_lanes(tmp_path) -> None:
+    statement = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note
+stock-position,position_snapshot,2026-01-15T08:45:00+08:00,2026-01-15,STK001,合成股票,stock,CNY,0,10,0,0,0,0,,100,10,
+fund-position,position_snapshot,2026-01-15T08:45:00+08:00,2026-01-15,FND001,合成基金,fund,CNY,0,1,0,0,0,0,,100,1,
+cash-snapshot,cash_snapshot,2026-01-15T08:45:00+08:00,2026-01-15,,,,CNY,0,0,0,0,0,0,1000,,,
+"""
+    repository = BrokerEvidenceRepository(tmp_path / "account-truth.db")
+    preview = parse_broker_statement_csv(statement)
+    import_run = repository.save_preview(preview, source_name="asset-lanes.csv")
+
+    report = build_reconciliation_report(
+        import_run_id=import_run.import_run_id,
+        broker_events=repository.list_events(import_run.import_run_id),
+        ledger_facts=[],
+        cash_balance=Decimal("900"),
+        positions=[
+            KarkinosPositionFact(
+                symbol="STK001",
+                quantity=Decimal("100"),
+                cost_basis=Decimal("10"),
+                asset_class="stock",
+            ),
+            KarkinosPositionFact(
+                symbol="FND001",
+                quantity=Decimal("200"),
+                cost_basis=Decimal("1"),
+                asset_class="fund",
+            ),
+        ],
+    )
+
+    assert report.status == "mismatch"
+    assert report.asset_reconciliation == {
+        "stock": {"status": "pass", "item_count": 2, "unresolved_count": 0},
+        "fund": {"status": "mismatch", "item_count": 2, "unresolved_count": 1},
+        "cash": {"status": "mismatch", "item_count": 1, "unresolved_count": 1},
+        "account": {"status": "mismatch", "item_count": 7, "unresolved_count": 2},
+    }
+    by_symbol = {item.symbol: item for item in report.items if item.symbol}
+    assert by_symbol["STK001"].asset_class == "stock"
+    assert by_symbol["FND001"].asset_class == "fund"
+
+
+def test_uncovered_fund_snapshot_scope_blocks_the_fund_lane(tmp_path) -> None:
+    statement = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note
+stock-position,position_snapshot,2026-01-15T08:45:00+08:00,2026-01-15,STK001,合成股票,stock,CNY,0,10,0,0,0,0,,100,10,
+cash-snapshot,cash_snapshot,2026-01-15T08:45:00+08:00,2026-01-15,,,,CNY,0,0,0,0,0,0,1000,,,
+"""
+    repository = BrokerEvidenceRepository(tmp_path / "account-truth.db")
+    import_run = repository.save_preview(
+        parse_broker_statement_csv(statement),
+        source_name="fund-scope-missing.csv",
+    )
+
+    report = build_reconciliation_report(
+        import_run_id=import_run.import_run_id,
+        broker_events=repository.list_events(import_run.import_run_id),
+        ledger_facts=[],
+        cash_balance=Decimal("1000"),
+        positions=[
+            KarkinosPositionFact(
+                symbol="STK001",
+                quantity=Decimal("100"),
+                cost_basis=Decimal("10"),
+                asset_class="stock",
+            ),
+            KarkinosPositionFact(
+                symbol="FND001",
+                quantity=Decimal("100"),
+                cost_basis=Decimal("1"),
+                asset_class="fund",
+            ),
+        ],
+    )
+
+    assert report.asset_reconciliation["stock"]["status"] == "pass"
+    assert report.asset_reconciliation["fund"] == {
+        "status": "warning",
+        "item_count": 1,
+        "unresolved_count": 1,
+    }
+    warning = next(
+        item
+        for item in report.items
+        if item.detail_code == "account_truth.position_snapshot_scope_incomplete"
+    )
+    assert warning.asset_class == "fund"

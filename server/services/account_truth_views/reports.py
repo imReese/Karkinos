@@ -85,6 +85,9 @@ def report_summary_response(
         "fee_difference": str(report.fee_difference),
         "tax_difference": str(report.tax_difference),
         "suggested_review_actions": list(report.suggested_review_actions),
+        "asset_reconciliation": {
+            lane: dict(summary) for lane, summary in report.asset_reconciliation.items()
+        },
         "limitations": list(import_run.limitations),
     }
 
@@ -120,6 +123,7 @@ def item_response(
         "status": item.status,
         "severity": item.status,
         "symbol": item.symbol,
+        "asset_class": item.asset_class,
         "display_name": display_name_for_item(item, events),
         "broker_value": item.broker_value,
         "karkinos_value": item.karkinos_value,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -12,6 +12,11 @@ from domain.portfolio_accounting import (
     realized_pnl_after_sell,
 )
 from server.ledger.models import LedgerEntry
+from server.projections.legacy_fund_trade_duplicate_contract import (
+    LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_ENTRY_TYPE,
+    LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_PLAN_SCHEMA_VERSION,
+    LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_SOURCE,
+)
 from server.projections.models import ZERO, PortfolioProjection, ProjectedPosition
 from server.projections.portfolio_projection_values import (
     apply_valuations as _apply_valuations,
@@ -45,6 +50,11 @@ _PROJECTION_CORRECTION_CONTRACTS = {
         "manual_trade_correction",
         "karkinos.manual_trade_correction_plan.v1",
         "Manual trade correction",
+    ),
+    LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_ENTRY_TYPE: (
+        LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_SOURCE,
+        LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_PLAN_SCHEMA_VERSION,
+        "Legacy fund trade duplicate correction",
     ),
 }
 
@@ -234,7 +244,20 @@ def _equity_bucket(asset_class: str | None) -> str | None:
 
 
 def _sorted_entries(entries: Sequence[LedgerEntry]) -> list[LedgerEntry]:
-    return sorted(entries, key=lambda entry: (entry.timestamp, entry.id or 0))
+    return sorted(entries, key=_entry_sort_key)
+
+
+def _entry_sort_key(entry: LedgerEntry) -> tuple[datetime, int]:
+    text = str(entry.timestamp or "").strip().replace("Z", "+00:00")
+    if not text:
+        raise ValueError("Ledger entry timestamp is missing")
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        raise ValueError("Ledger entry timestamp is invalid") from None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc), entry.id or 0
 
 
 def _apply_ledger_entry(projection: PortfolioProjection, entry: LedgerEntry) -> None:
@@ -488,7 +511,19 @@ def _apply_projection_correction(
     ):
         raise ValueError(f"{label} position evidence drifted for {symbol}")
 
-    projection.cash += _as_decimal(payload.get("cash_delta", "0"))
+    cash_delta = _as_decimal(payload.get("cash_delta", "0"))
+    if entry_type == LEGACY_FUND_TRADE_DUPLICATE_CORRECTION_ENTRY_TYPE:
+        cash_before = _as_decimal(payload.get("cash_before"))
+        cash_after = _as_decimal(payload.get("cash_after"))
+        if payload.get("cash_allocation") != "ordered_batch_absolute_cash_state_v1":
+            raise ValueError(f"{label} cash allocation is invalid")
+        if projection.cash != cash_before:
+            raise ValueError(f"{label} cash evidence drifted")
+        if cash_after - cash_before != cash_delta:
+            raise ValueError(f"{label} cash delta is invalid")
+        projection.cash = cash_after
+    else:
+        projection.cash += cash_delta
     deposits_delta = _as_decimal(payload.get("total_deposits_delta", "0"))
     if deposits_delta != ZERO:
         raise ValueError(f"{label} cannot change deposits")

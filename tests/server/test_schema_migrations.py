@@ -26,12 +26,15 @@ FROZEN_LEGACY_V1_MIGRATION_CHECKSUM = (
 FROZEN_LEGACY_V1_SCHEMA_CONTRACT_CHECKSUM = (
     "6303b923017e88941dff596eecc30c5dd9b9c76ca2e82f7ee35ebb6193430a7a"
 )
+FROZEN_V2_MIGRATION_CHECKSUM = (
+    "375e7439dfe4517a361e5831eb8dc4472884861c17b78bb3f1e886f209edf462"
+)
 FROZEN_MIGRATION_MANIFEST = (
     (1, "v0.3.0_legacy_schema_baseline", FROZEN_V1_MIGRATION_CHECKSUM),
     (
         2,
         "canonicalize_legacy_portfolio_trades",
-        "375e7439dfe4517a361e5831eb8dc4472884861c17b78bb3f1e886f209edf462",
+        FROZEN_V2_MIGRATION_CHECKSUM,
     ),
     (
         3,
@@ -108,6 +111,69 @@ def _create_known_legacy_v1_database(database: AppDatabase) -> None:
             ),
         )
         conn.commit()
+
+
+def _insert_legacy_fund_trade_with_ledger_duplicate(
+    conn: sqlite3.Connection,
+    *,
+    legacy_timestamp: str = "2026-08-20T15:00:00+08:00",
+    ledger_overrides: dict[str, object | None] | None = None,
+) -> tuple[int, int]:
+    created_at = "2026-08-20T15:01:00+08:00"
+    trade_id = int(
+        conn.execute(
+            """
+            INSERT INTO trades (
+                timestamp, symbol, direction, quantity, price, commission,
+                asset_class, note, created_at
+            ) VALUES (?, '012710', 'buy', 100, 1.25, 0.5, 'fund', '', ?)
+            """,
+            (legacy_timestamp, created_at),
+        ).lastrowid
+        or 0
+    )
+    ledger = {
+        "entry_type": "trade_buy",
+        "timestamp": legacy_timestamp,
+        "amount": 125.0,
+        "symbol": "012710",
+        "direction": "buy",
+        "quantity": 100.0,
+        "price": 1.25,
+        "commission": 0.5,
+        "gross_amount": 125.0,
+        "net_cash_impact": -125.5,
+        "asset_class": "fund",
+    }
+    ledger.update(ledger_overrides or {})
+    ledger_id = int(
+        conn.execute(
+            """
+            INSERT INTO ledger_entries (
+                entry_type, timestamp, amount, symbol, direction, quantity,
+                price, commission, gross_amount, net_cash_impact, asset_class,
+                note, source, source_ref, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', 'manual', ?, ?)
+            """,
+            (
+                ledger["entry_type"],
+                ledger["timestamp"],
+                ledger["amount"],
+                ledger["symbol"],
+                ledger["direction"],
+                ledger["quantity"],
+                ledger["price"],
+                ledger["commission"],
+                ledger["gross_amount"],
+                ledger["net_cash_impact"],
+                ledger["asset_class"],
+                f"pre-v2-ledger:{trade_id}",
+                created_at,
+            ),
+        ).lastrowid
+        or 0
+    )
+    return trade_id, ledger_id
 
 
 def _insert_required_placeholder_row(
@@ -310,6 +376,15 @@ def test_published_migration_manifest_is_append_only() -> None:
     )
 
     assert actual == FROZEN_MIGRATION_MANIFEST
+
+
+def test_v2_registered_migration_checksum_remains_frozen() -> None:
+    migration = next(
+        migration for migration in migrations._MIGRATIONS if migration.version == 2
+    )
+
+    assert migration.name == "canonicalize_legacy_portfolio_trades"
+    assert migration.checksum == FROZEN_V2_MIGRATION_CHECKSUM
 
 
 def test_frozen_v1_ledger_upgrades_through_quote_ingestion_migration(
@@ -772,6 +847,201 @@ def test_migration_history_prefix_rejects_later_schema_artifacts(tmp_path) -> No
             "SELECT version FROM schema_migrations ORDER BY version"
         ).fetchall()
     assert versions == [(1,), (2,), (3,)]
+
+
+def test_pending_v2_rejects_existing_semantic_fund_trade_duplicate(
+    tmp_path,
+) -> None:
+    database = AppDatabase(tmp_path / "app.db")
+    _create_frozen_v1_database(database)
+    with sqlite3.connect(database.path) as conn:
+        trade_id, ledger_id = _insert_legacy_fund_trade_with_ledger_duplicate(conn)
+        conn.commit()
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            rf"legacy portfolio trade duplicates an existing ledger entry: "
+            rf"trade_id={trade_id}, ledger_entry_id={ledger_id}"
+        ),
+    ):
+        database.init_sync()
+
+    with sqlite3.connect(database.path) as conn:
+        versions = conn.execute(
+            "SELECT version FROM schema_migrations ORDER BY version"
+        ).fetchall()
+        ledger_rows = conn.execute(
+            "SELECT source, source_ref FROM ledger_entries ORDER BY id"
+        ).fetchall()
+    assert versions == [(1,)]
+    assert ledger_rows == [("manual", f"pre-v2-ledger:{trade_id}")]
+
+
+def test_pending_v2_rejects_timezone_equivalent_ledger_duplicate(tmp_path) -> None:
+    database = AppDatabase(tmp_path / "app.db")
+    _create_frozen_v1_database(database)
+    with sqlite3.connect(database.path) as conn:
+        trade_id, ledger_id = _insert_legacy_fund_trade_with_ledger_duplicate(
+            conn,
+            ledger_overrides={"timestamp": "2026-08-20T07:00:00Z"},
+        )
+        conn.commit()
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            rf"legacy portfolio trade duplicates an existing ledger entry: "
+            rf"trade_id={trade_id}, ledger_entry_id={ledger_id}"
+        ),
+    ):
+        database.init_sync()
+
+    with sqlite3.connect(database.path) as conn:
+        versions = conn.execute(
+            "SELECT version FROM schema_migrations ORDER BY version"
+        ).fetchall()
+    assert versions == [(1,)]
+
+
+def test_pending_v2_treats_naive_legacy_timestamp_as_shanghai_time(tmp_path) -> None:
+    database = AppDatabase(tmp_path / "app.db")
+    _create_frozen_v1_database(database)
+    with sqlite3.connect(database.path) as conn:
+        trade_id, ledger_id = _insert_legacy_fund_trade_with_ledger_duplicate(
+            conn,
+            legacy_timestamp="2026-08-20T15:00:00",
+            ledger_overrides={"timestamp": "2026-08-20T15:00:00+08:00"},
+        )
+        conn.commit()
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            rf"legacy portfolio trade duplicates an existing ledger entry: "
+            rf"trade_id={trade_id}, ledger_entry_id={ledger_id}"
+        ),
+    ):
+        database.init_sync()
+
+
+def test_pending_v2_rejects_duplicate_with_optional_gross_and_net_missing(
+    tmp_path,
+) -> None:
+    database = AppDatabase(tmp_path / "app.db")
+    _create_frozen_v1_database(database)
+    with sqlite3.connect(database.path) as conn:
+        trade_id, ledger_id = _insert_legacy_fund_trade_with_ledger_duplicate(
+            conn,
+            ledger_overrides={"gross_amount": None, "net_cash_impact": None},
+        )
+        conn.commit()
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            rf"legacy portfolio trade duplicates an existing ledger entry: "
+            rf"trade_id={trade_id}, ledger_entry_id={ledger_id}"
+        ),
+    ):
+        database.init_sync()
+
+
+def test_pending_v2_normalizes_symbol_and_asset_class_formatting(tmp_path) -> None:
+    database = AppDatabase(tmp_path / "app.db")
+    _create_frozen_v1_database(database)
+    with sqlite3.connect(database.path) as conn:
+        trade_id, ledger_id = _insert_legacy_fund_trade_with_ledger_duplicate(
+            conn,
+            ledger_overrides={"symbol": " 012710 ", "asset_class": " FUND "},
+        )
+        conn.commit()
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            rf"legacy portfolio trade duplicates an existing ledger entry: "
+            rf"trade_id={trade_id}, ledger_entry_id={ledger_id}"
+        ),
+    ):
+        database.init_sync()
+
+
+@pytest.mark.parametrize(
+    "ledger_overrides",
+    [
+        pytest.param(
+            {"timestamp": "2026-08-20T15:00:01+08:00"},
+            id="timestamp",
+        ),
+        pytest.param({"symbol": "012711"}, id="symbol"),
+        pytest.param({"direction": "sell"}, id="side"),
+        pytest.param({"quantity": 101.0}, id="quantity"),
+        pytest.param({"price": 1.5}, id="price"),
+        pytest.param({"commission": 0.75}, id="commission"),
+        pytest.param({"gross_amount": 126.0}, id="gross-amount"),
+        pytest.param({"gross_amount": 125.000000001}, id="gross-amount-tiny"),
+        pytest.param({"net_cash_impact": -126.0}, id="net-cash-impact"),
+        pytest.param(
+            {"net_cash_impact": -125.500000001},
+            id="net-cash-impact-tiny",
+        ),
+        pytest.param({"asset_class": "stock"}, id="asset-class"),
+    ],
+)
+def test_pending_v2_allows_migration_when_ledger_trade_field_drifts(
+    tmp_path,
+    ledger_overrides: dict[str, object],
+) -> None:
+    database = AppDatabase(tmp_path / "app.db")
+    _create_frozen_v1_database(database)
+    with sqlite3.connect(database.path) as conn:
+        trade_id, _ = _insert_legacy_fund_trade_with_ledger_duplicate(
+            conn,
+            ledger_overrides=ledger_overrides,
+        )
+        conn.commit()
+
+    database.init_sync()
+
+    with sqlite3.connect(database.path) as conn:
+        v2 = conn.execute(
+            "SELECT name, checksum FROM schema_migrations WHERE version = 2"
+        ).fetchone()
+        ledger_rows = conn.execute(
+            "SELECT source, source_ref FROM ledger_entries ORDER BY id"
+        ).fetchall()
+    assert v2 == (
+        "canonicalize_legacy_portfolio_trades",
+        FROZEN_V2_MIGRATION_CHECKSUM,
+    )
+    assert ledger_rows == [
+        ("manual", f"pre-v2-ledger:{trade_id}"),
+        ("portfolio_trade", f"trade:{trade_id}"),
+    ]
+
+
+def test_applied_v2_is_unaffected_by_semantic_duplicate_preflight(tmp_path) -> None:
+    database = AppDatabase(tmp_path / "app.db")
+    database.init_sync()
+    with sqlite3.connect(database.path) as conn:
+        trade_id, _ = _insert_legacy_fund_trade_with_ledger_duplicate(conn)
+        conn.commit()
+
+    database.init_sync()
+
+    with sqlite3.connect(database.path) as conn:
+        v2 = conn.execute(
+            "SELECT name, checksum FROM schema_migrations WHERE version = 2"
+        ).fetchone()
+        ledger_rows = conn.execute(
+            "SELECT source, source_ref FROM ledger_entries ORDER BY id"
+        ).fetchall()
+    assert v2 == (
+        "canonicalize_legacy_portfolio_trades",
+        FROZEN_V2_MIGRATION_CHECKSUM,
+    )
+    assert ledger_rows == [("manual", f"pre-v2-ledger:{trade_id}")]
 
 
 def test_migration_rejects_legacy_positive_infinity_cash_flow(tmp_path) -> None:

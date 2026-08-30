@@ -48,6 +48,9 @@ from server.account_truth_gate_support import (
     ledger_fact_from_entry as _ledger_fact_from_entry,
 )
 from server.account_truth_gate_support import (
+    load_canonical_ledger_rows as _load_canonical_ledger_rows,
+)
+from server.account_truth_gate_support import (
     missing_account_truth_promotion_evidence as _missing_account_truth_promotion_evidence,
 )
 from server.account_truth_gate_support import (
@@ -99,16 +102,19 @@ def build_latest_account_truth_score_payload(
     if import_run is None:
         return {}
 
-    ledger_coverage = _ledger_coverage_for_import(state, import_run)
-    effective_freshness = _freshness_with_ledger_coverage(
-        data_freshness_status,
-        ledger_coverage,
+    ledger_rows = _load_canonical_ledger_rows(state.db)
+    ledger_coverage = _ledger_coverage_for_import(
+        state,
+        import_run,
+        ledger_rows=ledger_rows,
     )
     score = build_account_truth_score_for_import_run(
         state,
         repository=repository,
         import_run=import_run,
-        data_freshness_status=effective_freshness,
+        data_freshness_status=data_freshness_status,
+        ledger_rows=ledger_rows,
+        ledger_coverage=ledger_coverage,
     )
     payload = {
         **score.to_json_dict(),
@@ -119,13 +125,18 @@ def build_latest_account_truth_score_payload(
         "created_at": import_run.created_at,
         "ledger_coverage": ledger_coverage,
     }
-    if ledger_coverage["status"] == "stale":
+    if ledger_coverage["status"] != "covered":
+        coverage_is_stale = ledger_coverage["status"] == "stale"
         payload["gate_status"] = "blocked"
         payload["blocking_reasons"] = list(
             dict.fromkeys(
                 [
                     *list(payload.get("blocking_reasons") or []),
-                    "account_truth_evidence_predates_latest_ledger",
+                    (
+                        "account_truth_evidence_predates_latest_ledger"
+                        if coverage_is_stale
+                        else "account_truth_ledger_coverage_not_proven"
+                    ),
                 ]
             )
         )
@@ -133,7 +144,11 @@ def build_latest_account_truth_score_payload(
             dict.fromkeys(
                 [
                     *list(payload.get("required_actions") or []),
-                    "reimport_broker_statement_after_latest_ledger_fact",
+                    (
+                        "reimport_broker_statement_after_latest_ledger_fact"
+                        if coverage_is_stale
+                        else "restore_canonical_ledger_reader"
+                    ),
                 ]
             )
         )
@@ -141,7 +156,12 @@ def build_latest_account_truth_score_payload(
             dict.fromkeys(
                 [
                     *list(payload.get("limitations") or []),
-                    "The latest broker evidence does not cover the latest local ledger fact.",
+                    (
+                        "The latest broker evidence does not cover the latest "
+                        "local ledger fact."
+                        if coverage_is_stale
+                        else "Canonical ledger coverage could not be proven."
+                    ),
                 ]
             )
         )
@@ -204,18 +224,28 @@ def build_latest_account_truth_promotion_evidence(
     ):
         blockers.append("account_truth_snapshot_captured_after_import")
 
-    ledger_coverage = _ledger_coverage_for_import(state, import_run)
+    ledger_rows = _load_canonical_ledger_rows(state.db)
+    ledger_coverage = _ledger_coverage_for_import(
+        state,
+        import_run,
+        ledger_rows=ledger_rows,
+    )
     freshness_status = _freshness_with_ledger_coverage(
         freshness_status,
         ledger_coverage,
     )
-    if ledger_coverage["status"] == "stale":
-        blockers.append("account_truth_evidence_predates_latest_ledger")
+    if ledger_coverage["status"] != "covered":
+        blockers.append(
+            "account_truth_evidence_predates_latest_ledger"
+            if ledger_coverage["status"] == "stale"
+            else "account_truth_ledger_coverage_not_proven"
+        )
 
     report = build_reconciliation_report_for_import_run(
         state,
         repository=repository,
         import_run=import_run,
+        ledger_rows=ledger_rows,
     )
     review_decisions = ManualReviewRepository(db_path).list_decisions(
         import_run.import_run_id
@@ -414,6 +444,8 @@ def build_account_truth_score_for_import_run(
     repository: BrokerEvidenceRepository,
     import_run: BrokerImportRun,
     data_freshness_status: str = "fresh",
+    ledger_rows: list[dict[str, Any]] | None = None,
+    ledger_coverage: dict[str, object] | None = None,
 ) -> AccountTruthScore:
     """Reconcile one import run and build its account-truth score."""
 
@@ -421,6 +453,7 @@ def build_account_truth_score_for_import_run(
         state,
         repository=repository,
         import_run=import_run,
+        ledger_rows=ledger_rows,
     )
     db_path = _db_path_for_state(state)
     review_decisions = (
@@ -430,7 +463,12 @@ def build_account_truth_score_for_import_run(
     )
     effective_freshness = _freshness_with_ledger_coverage(
         data_freshness_status,
-        _ledger_coverage_for_import(state, import_run),
+        ledger_coverage
+        or _ledger_coverage_for_import(
+            state,
+            import_run,
+            ledger_rows=ledger_rows,
+        ),
     )
     return build_account_truth_score(
         report=report,
@@ -444,11 +482,12 @@ def build_reconciliation_report_for_import_run(
     *,
     repository: BrokerEvidenceRepository,
     import_run: BrokerImportRun,
+    ledger_rows: list[dict[str, Any]] | None = None,
 ) -> ReconciliationReport:
     """Build a reconciliation report for one staged broker evidence run."""
 
     return build_reconciliation_report(
         import_run_id=import_run.import_run_id,
         broker_events=broker_events_for_import_run(repository, import_run),
-        **_karkinos_account_facts(state),
+        **_karkinos_account_facts(state, ledger_rows=ledger_rows),
     )
