@@ -3,6 +3,7 @@ export type {
   AccountTruthGateEvidence,
   ActionCard,
   BatchPreTradeRiskResult,
+  DailyResearchOperationPreview,
   DailyTradingPlanBlocker,
   DailyTradingPlanConstraintCheck,
   DailyTradingPlanOrderIntent,

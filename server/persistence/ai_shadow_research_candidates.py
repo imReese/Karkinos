@@ -11,11 +11,15 @@ from analytics.strategy_advancement_gate import (
 )
 from server.ai_runtime.contracts import canonical_json, content_fingerprint
 from server.contracts.ai_shadow_research_automation import (
+    SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+    SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
     SHADOW_RESEARCH_API_SCHEMA,
     SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
     ShadowResearchRejected,
 )
 from server.persistence.ai_shadow_research_records import (
+    SHADOW_RESEARCH_CAPITAL_MODE_LEGACY_UNKNOWN,
+    normalize_shadow_research_run_context,
     shadow_research_candidate_row,
 )
 
@@ -40,12 +44,34 @@ class ShadowResearchCandidateRepositoryMixin:
             "ai-shadow-candidate-"
             + content_fingerprint({"run_id": run_id, "draft_id": draft_id})[:24]
         )
-        promotion_status = (
-            "awaiting_human_approval"
-            if status == "awaiting_human_approval"
-            else "blocked_by_evidence"
-        )
         with self._connect(immediate=True) as conn:
+            run_row = conn.execute(
+                "SELECT * FROM ai_shadow_research_runs WHERE run_id=?",
+                (run_id,),
+            ).fetchone()
+            if run_row is None:
+                raise ShadowResearchRejected("candidate_research_run_context_missing")
+            run_context = normalize_shadow_research_run_context(
+                research_capital_mode=str(run_row["research_capital_mode"] or ""),
+                research_context_id=run_row["research_context_id"],
+                valuation_snapshot_id=run_row["valuation_snapshot_id"],
+                ledger_cutoff_id=run_row["ledger_cutoff_id"],
+            )
+            _require_candidate_contract_matches_run_context(
+                run_context=run_context,
+                status=status,
+                recommendation=recommendation,
+                comparison=comparison,
+            )
+            promotion_status = (
+                "awaiting_human_approval"
+                if status == "awaiting_human_approval"
+                else (
+                    "account_qualification_required"
+                    if status == "evaluated_research_only"
+                    else "blocked_by_evidence"
+                )
+            )
             conn.execute(
                 """
                 INSERT INTO ai_shadow_research_candidates
@@ -115,6 +141,11 @@ class ShadowResearchCandidateRepositoryMixin:
             raise ShadowResearchRejected("approver_and_notes_required")
         candidate = self.get_candidate(candidate_id)
         comparison = candidate["comparison"]
+        if (
+            comparison.get("research_capital_mode") == "normalized_notional"
+            or comparison.get("account_qualification_status") == "not_evaluated"
+        ):
+            raise ShadowResearchRejected("candidate_account_qualification_required")
         promotion_gate = comparison.get("promotion_gate")
         if (
             candidate["status"] != "awaiting_human_approval"
@@ -140,6 +171,27 @@ class ShadowResearchCandidateRepositoryMixin:
             )[:24]
         )
         with self._connect(immediate=True) as conn:
+            run_row = conn.execute(
+                "SELECT * FROM ai_shadow_research_runs WHERE run_id=?",
+                (candidate["run_id"],),
+            ).fetchone()
+            if run_row is None:
+                raise ShadowResearchRejected(
+                    "candidate_research_context_not_account_bound"
+                )
+            run_context = normalize_shadow_research_run_context(
+                research_capital_mode=str(run_row["research_capital_mode"] or ""),
+                research_context_id=run_row["research_context_id"],
+                valuation_snapshot_id=run_row["valuation_snapshot_id"],
+                ledger_cutoff_id=run_row["ledger_cutoff_id"],
+            )
+            if (
+                run_context["research_capital_mode"]
+                != SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND
+            ):
+                raise ShadowResearchRejected(
+                    "candidate_research_context_not_account_bound"
+                )
             existing = conn.execute(
                 "SELECT * FROM ai_shadow_research_promotions WHERE candidate_id=?",
                 (candidate_id,),
@@ -231,3 +283,38 @@ class ShadowResearchCandidateRepositoryMixin:
         except sqlite3.OperationalError:
             return []
         return [shadow_research_candidate_row(row) for row in rows]
+
+
+def _require_candidate_contract_matches_run_context(
+    *,
+    run_context: Mapping[str, Any],
+    status: str,
+    recommendation: str,
+    comparison: Mapping[str, Any],
+) -> None:
+    run_mode = run_context["research_capital_mode"]
+    comparison_mode = str(comparison.get("research_capital_mode") or "")
+    account_qualification = str(comparison.get("account_qualification_status") or "")
+    candidate_contract = (status, recommendation)
+
+    if run_mode == SHADOW_RESEARCH_CAPITAL_MODE_LEGACY_UNKNOWN:
+        raise ShadowResearchRejected("legacy_candidate_research_context_unclassified")
+    if run_mode == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL:
+        if (
+            comparison_mode != SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+            or account_qualification != "not_evaluated"
+            or candidate_contract
+            not in {
+                ("evaluated_research_only", "formula_research_candidate"),
+                ("failed_closed", "reject"),
+            }
+        ):
+            raise ShadowResearchRejected("normalized_candidate_contract_invalid")
+        return
+    if run_mode == SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND and (
+        comparison_mode == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+        or account_qualification == "not_evaluated"
+        or status == "evaluated_research_only"
+        or recommendation == "formula_research_candidate"
+    ):
+        raise ShadowResearchRejected("account_bound_candidate_contract_invalid")

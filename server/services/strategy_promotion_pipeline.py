@@ -13,6 +13,9 @@ from analytics.strategy_advancement_gate import (
     strategy_advancement_backtest_view,
 )
 from server.ai_runtime.contracts import content_fingerprint
+from server.contracts.ai_shadow_research_automation import (
+    SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+)
 from server.services.reviewed_fee_schedule import active_review_matches_fee_evidence
 from server.services.strategy_promotion_support import (
     AI_SHADOW_STRATEGY_PREFIX,
@@ -609,6 +612,18 @@ def _ai_shadow_readiness_binding_blockers(
         or binding.get("research_run_session_id") != binding.get("session_id")
     ):
         blockers.append("ai_shadow_research_run_binding_drift")
+    research_context_id = str(binding.get("research_run_context_id") or "").strip()
+    research_valuation_id = str(
+        binding.get("research_run_valuation_snapshot_id") or ""
+    ).strip()
+    if (
+        binding.get("research_run_capital_mode")
+        != SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND
+        or not research_context_id
+        or research_context_id != research_valuation_id
+        or int(binding.get("research_run_ledger_cutoff_id") or 0) <= 0
+    ):
+        blockers.append("ai_shadow_research_context_not_account_bound")
     candidate_capital_evidence = _json_object(
         candidate_metrics.get("account_capital_constraint")
     )

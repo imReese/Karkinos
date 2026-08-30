@@ -23,6 +23,7 @@ from server.ai_runtime.strategy_research import (
     StrategyResearchRejected,
     StrategyResearchSelection,
 )
+from server.ai_runtime.strategy_research_privacy import NORMALIZED_RESEARCH_NOTIONAL
 
 
 def _bars() -> pd.DataFrame:
@@ -37,7 +38,7 @@ def _bars() -> pd.DataFrame:
             "high": [value + 1 for value in closes],
             "low": [value - 1 for value in closes],
             "close": closes,
-            "volume": [100_000] * len(closes),
+            "volume": [1_000_000] * len(closes),
         }
     )
 
@@ -73,7 +74,7 @@ def test_strategy_selection_binds_or_compatibly_derives_account_truth_clock() ->
         start_date="2026-01-02",
         end_date="2026-08-21",
         frequency="1d",
-        initial_cash=100_000,
+        initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
         account_truth_freshness_as_of="2026-08-21T15:45:00+08:00",
     )
     assert bound.account_truth_freshness_datetime.isoformat() == (
@@ -91,7 +92,7 @@ def test_strategy_selection_binds_or_compatibly_derives_account_truth_clock() ->
         start_date="2026-01-02",
         end_date="2026-08-21",
         frequency="1d",
-        initial_cash=100_000,
+        initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
     )
     assert legacy.account_truth_freshness_datetime.isoformat() == (
         "2026-08-21T15:30:00+08:00"
@@ -110,7 +111,7 @@ def test_strategy_selection_binds_or_compatibly_derives_account_truth_clock() ->
             start_date="2026-01-02",
             end_date="2026-08-21",
             frequency="1d",
-            initial_cash=100_000,
+            initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
             account_truth_freshness_as_of="2026-08-22T15:30:00+08:00",
         )
 
@@ -124,7 +125,7 @@ def test_strategy_selection_sealed_holdout_is_hidden_from_external_view() -> Non
         start_date="2026-01-02",
         end_date="2026-08-21",
         frequency="1d",
-        initial_cash=100_000,
+        initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
         sealed_end_date="2026-12-31",
     )
     assert sealed.has_sealed_holdout is True
@@ -142,7 +143,7 @@ def test_strategy_selection_sealed_holdout_is_hidden_from_external_view() -> Non
         start_date="2026-01-02",
         end_date="2026-08-21",
         frequency="1d",
-        initial_cash=100_000,
+        initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
     )
     assert plain.has_sealed_holdout is False
     assert plain.sealed_start_date is None
@@ -159,7 +160,7 @@ def test_strategy_selection_rejects_invalid_sealed_holdout() -> None:
             start_date="2026-01-02",
             end_date="2026-08-21",
             frequency="1d",
-            initial_cash=100_000,
+            initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
             sealed_end_date="2026-08-21",
         )
     with pytest.raises(StrategyResearchRejected, match="sealed_end_date_invalid"):
@@ -171,7 +172,7 @@ def test_strategy_selection_rejects_invalid_sealed_holdout() -> None:
             start_date="2026-01-02",
             end_date="2026-08-21",
             frequency="1d",
-            initial_cash=100_000,
+            initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
             sealed_end_date="not-a-date",
         )
 
@@ -207,7 +208,7 @@ def test_restricted_formula_adapter_uses_canonical_after_cost_engine_without_db_
         start_date="2025-01-02",
         end_date="2025-01-09",
         frequency="1d",
-        initial_cash=100_000,
+        initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
     )
     assumptions = (
         "Signals use completed daily bars and never use a future timestamp.",
@@ -279,7 +280,7 @@ def test_restricted_formula_adapter_uses_canonical_after_cost_engine_without_db_
     drawdown = result["metrics_json"]["drawdown_evidence"]
     assert drawdown["status"] == "complete"
     assert drawdown["point_count"] == len(result["equity_curve"])
-    assert float(drawdown["max_drawdown_pct"]) == result["max_drawdown"]
+    assert float(drawdown["max_drawdown_pct"]) == pytest.approx(result["max_drawdown"])
     assert len(drawdown["evidence_fingerprint"]) == 64
     parameter = result["metrics_json"]["parameter_robustness"]
     assert parameter["tested_count"] == 3
@@ -363,6 +364,8 @@ def test_restricted_formula_adapter_calculates_with_exact_reviewed_fee_binding(
         frequency="1d",
         initial_cash=100_000,
         cost_model_reference=cost_model_reference,
+        valuation_snapshot_id="valuation-reviewed-fee-fixture",
+        ledger_cutoff_id=117,
     )
     assumptions = (
         "Signals use completed daily bars and never use a future timestamp.",
@@ -535,7 +538,7 @@ def test_restricted_formula_adapter_run_sealed_reaches_future_window(tmp_path) -
         start_date="2025-01-02",
         end_date="2025-01-09",
         frequency="1d",
-        initial_cash=100_000,
+        initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
         sealed_end_date="2025-01-16",
     )
     result = RestrictedFormulaBacktestAdapter(data_store=store).run_sealed(

@@ -23,15 +23,19 @@ from server.ai_runtime.strategy_research import (
 from server.models import BacktestRequest
 
 SHADOW_RESEARCH_POLICY_ID = "ai_shadow_research"
-SHADOW_RESEARCH_POLICY_SCHEMA = "karkinos.ai.shadow_research_policy.v3"
+SHADOW_RESEARCH_POLICY_SCHEMA = "karkinos.ai.shadow_research_policy.v4"
 SHADOW_RESEARCH_API_SCHEMA = "karkinos.ai.shadow_research_automation.v1"
 SHADOW_RESEARCH_RUN_TYPE = "ai_shadow_research"
-SHADOW_RESEARCH_RUNTIME_CONTRACT = "karkinos.ai.shadow_research_runtime.v12"
+SHADOW_RESEARCH_RUNTIME_CONTRACT = "karkinos.ai.shadow_research_runtime.v13"
 SHADOW_RESEARCH_REQUIRED_MARKET_UNIVERSE_TRUTH_SCHEMA = (
     "karkinos.market_universe_truth.v2"
 )
 SHADOW_RESEARCH_REQUIRED_PANEL_SCHEMA = "karkinos.research_panel_snapshot.v2"
 SHADOW_RESEARCH_POLICY_CONFIRMATION = (
+    "authorize_five_sequential_after_close_deepseek_normalized_notional_"
+    "strategy_research_without_account_strategy_trade_or_capital_authority"
+)
+SHADOW_RESEARCH_ACCOUNT_BOUND_POLICY_CONFIRMATION = (
     "authorize_five_sequential_after_close_deepseek_strategy_research_without_"
     "daily_token_budget_or_strategy_or_trade_authority"
 )
@@ -46,10 +50,12 @@ SHADOW_RESEARCH_PAUSE_CONFIRMATION = (
 )
 _REFACTOR_BROKEN_POLICY_CONFIRMATIONS = {
     "authorize_five_sequentialis_after_shadow_research_close_deepseek_strategy_research_without_"
-    "daily_token_budget_or_strategy_or_trade_authority": SHADOW_RESEARCH_POLICY_CONFIRMATION,
+    "daily_token_budget_or_strategy_or_trade_authority": SHADOW_RESEARCH_ACCOUNT_BOUND_POLICY_CONFIRMATION,
     "authorizeis_after_shadow_research_close_deepseek_strategy_research_without_strategy_or_trade_"
     "authority": SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION,
 }
+SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL = "normalized_notional"
+SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND = "account_bound"
 SHADOW_RESEARCH_PROMOTION_CONFIRMATION = "approve_evidence_bound_candidate_for_paper_shadow_only_without_production_or_trade_authority"
 SHADOW_RESEARCH_RETRY_CONFIRMATION = (
     "authorize_one_additional_complete_five_round_ten_call_strategy_research_"
@@ -127,9 +133,10 @@ class ShadowResearchPolicy:
     daily_token_budget: int | None = None
     max_candidates_per_run: int = SHADOW_RESEARCH_MAX_CANDIDATES
     baseline_backtest_result_id: int | None = None
-    require_complete_account_evidence: bool = True
+    research_capital_mode: str = SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+    require_complete_account_evidence: bool = False
     research_question: str = (
-        "基于冻结的最新持久化行情、账户证据与基线回测，提出可证伪、低换手、"
+        "基于冻结的最新持久化行情、归一化名义资金与基线回测，提出可证伪、低换手、"
         "包含明确风险退出条件的 Formula DSL 策略改进假设。"
     )
     updated_by: str = "human:owner"
@@ -174,11 +181,34 @@ class ShadowResearchPolicy:
             raise ShadowResearchRejected("research_question_required")
         if not self.updated_by.strip():
             raise ShadowResearchRejected("updated_by_required")
+        if self.research_capital_mode not in {
+            SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
+            SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+        }:
+            raise ShadowResearchRejected("research_capital_mode_invalid")
+        if self.require_complete_account_evidence != (
+            self.research_capital_mode == SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND
+        ):
+            raise ShadowResearchRejected(
+                "research_capital_mode_account_evidence_conflict"
+            )
+        if (
+            self.daily_token_budget is not None
+            and self.research_capital_mode != SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND
+        ):
+            raise ShadowResearchRejected(
+                "legacy_bounded_token_policy_requires_account_bound_mode"
+            )
         if self.enabled:
             required_authorization = (
-                SHADOW_RESEARCH_POLICY_CONFIRMATION
-                if self.daily_token_budget is None
-                else SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION
+                SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION
+                if self.daily_token_budget is not None
+                else (
+                    SHADOW_RESEARCH_ACCOUNT_BOUND_POLICY_CONFIRMATION
+                    if self.research_capital_mode
+                    == SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND
+                    else SHADOW_RESEARCH_POLICY_CONFIRMATION
+                )
             )
             if self.authorization != required_authorization:
                 raise PermissionError(
@@ -212,7 +242,9 @@ class ShadowResearchPolicy:
             "token_budget_mode": self.token_budget_mode,
             "max_candidates_per_run": self.max_candidates_per_run,
             "baseline_backtest_result_id": self.baseline_backtest_result_id,
+            "research_capital_mode": self.research_capital_mode,
             "require_complete_account_evidence": self.require_complete_account_evidence,
+            "promotion_requires_complete_account_evidence": True,
             "research_question": self.research_question,
             "updated_by": self.updated_by,
             "authorization_recorded": self.enabled,
@@ -261,6 +293,28 @@ class ShadowResearchPolicy:
             for key, expected in expected_window_identity.items()
         ):
             raise ShadowResearchRejected("provider_call_window_policy_drift")
+        legacy_account_bound_authorization = authorization in {
+            SHADOW_RESEARCH_ACCOUNT_BOUND_POLICY_CONFIRMATION,
+            SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION,
+        }
+        if value.get("research_capital_mode"):
+            research_capital_mode = str(value["research_capital_mode"])
+            require_complete_account_evidence = bool(
+                value.get(
+                    "require_complete_account_evidence",
+                    research_capital_mode == SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
+                )
+            )
+        else:
+            research_capital_mode = (
+                SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND
+                if legacy_account_bound_authorization
+                or bool(value.get("require_complete_account_evidence", False))
+                else SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+            )
+            require_complete_account_evidence = (
+                research_capital_mode == SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND
+            )
         return cls(
             enabled=bool(value.get("enabled", False)),
             after_close_time=str(value.get("after_close_time") or "15:30"),
@@ -277,9 +331,8 @@ class ShadowResearchPolicy:
                 if value.get("baseline_backtest_result_id") is not None
                 else None
             ),
-            require_complete_account_evidence=bool(
-                value.get("require_complete_account_evidence", True)
-            ),
+            research_capital_mode=research_capital_mode,
+            require_complete_account_evidence=require_complete_account_evidence,
             research_question=str(
                 value.get("research_question") or cls.research_question
             ),

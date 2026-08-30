@@ -19,6 +19,7 @@ from server.contracts.external_memory_analysis import (
 
 from .contracts import JsonObject, canonical_json
 from .provider_connectivity_contracts import ProviderConnectivitySettings
+from .provider_call_window import is_deepseek_provider_endpoint
 
 EXTERNAL_MEMORY_MAX_PROVIDER_INPUT_BYTES = 524_288
 EXTERNAL_MEMORY_MAX_PROVIDER_OUTPUT_CHARS = 262_144
@@ -219,8 +220,10 @@ def build_system_instructions(
 def external_edge_request_options(
     settings: ProviderConnectivitySettings,
 ) -> JsonObject:
-    provider = settings.provider_id.strip().lower()
-    if provider == "deepseek" or settings.endpoint_origin.endswith("deepseek.com"):
+    if is_deepseek_provider_endpoint(
+        settings.provider_id,
+        settings.endpoint_origin,
+    ):
         return {
             "thinking": {"type": "enabled"},
             "reasoning_effort": "high",

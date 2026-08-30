@@ -11,6 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 from server.ai_runtime.contracts import content_fingerprint
@@ -20,6 +21,26 @@ DEEPSEEK_CALL_WINDOW_POLICY_ID = "deepseek.beijing_weekday_peak.v1"
 DEEPSEEK_PEAK_WINDOW_FAILURE_CODE = "deepseek_peak_pricing_window"
 DEEPSEEK_RUNWAY_FAILURE_CODE = "deepseek_off_peak_runway_insufficient"
 PROVIDER_CALL_COMPLETION_GUARD_SECONDS = 5
+
+
+def is_deepseek_endpoint(endpoint_origin: str | None) -> bool:
+    """Return whether an HTTPS origin belongs to DeepSeek's public domain."""
+
+    if not endpoint_origin:
+        return False
+    host = (urlparse(endpoint_origin).hostname or "").casefold().rstrip(".")
+    return host == "deepseek.com" or host.endswith(".deepseek.com")
+
+
+def is_deepseek_provider_endpoint(
+    provider_id: str,
+    endpoint_origin: str | None = None,
+) -> bool:
+    """Classify DeepSeek consistently from either reviewed identity signal."""
+
+    return provider_id.strip().casefold() == "deepseek" or is_deepseek_endpoint(
+        endpoint_origin
+    )
 
 
 class ProviderCallWindowConfigurationError(ValueError):
@@ -301,10 +322,11 @@ DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY = ProviderCallWindowPolicy(
 def provider_send_admission_for(
     provider_id: str,
     *,
+    endpoint_origin: str | None = None,
     now: Callable[[], datetime] | None = None,
     minimum_runway: timedelta = timedelta(0),
 ) -> ProviderSendAdmission | None:
-    if provider_id.strip().casefold() != "deepseek":
+    if not is_deepseek_provider_endpoint(provider_id, endpoint_origin):
         return None
     return ProviderSendAdmission(
         policy=DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,

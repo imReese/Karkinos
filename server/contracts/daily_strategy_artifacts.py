@@ -12,7 +12,9 @@ DAILY_STRATEGY_OPERATING_CONSTRAINTS_SCHEMA = (
     "karkinos.ai.strategy_operating_constraints.v1"
 )
 
-COMPLETE_CANDIDATE_STATUSES = frozenset({"awaiting_human_approval", "research_blocked"})
+COMPLETE_CANDIDATE_STATUSES = frozenset(
+    {"awaiting_human_approval", "evaluated_research_only", "research_blocked"}
+)
 DRAFT_BACKUP_FIELDS = (
     "draft_id",
     "economic_hypothesis",

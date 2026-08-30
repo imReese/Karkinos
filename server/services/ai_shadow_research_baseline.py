@@ -23,8 +23,13 @@ from core.types import BarFrequency, Symbol
 from data.handler import DataHandler
 from data.manager import DataManager
 from server.ai_runtime.strategy_research import rolling_oos_parameters
+from server.ai_runtime.formula_dsl import CANONICAL_COST_MODEL_REFERENCE
+from server.ai_runtime.strategy_research_privacy import (
+    NORMALIZED_RESEARCH_NOTIONAL,
+)
 from server.bootstrap import build_strategy
 from server.contracts.ai_shadow_research_automation import (
+    SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
     PreparedBaseline,
     ShadowResearchPolicy,
     ShadowResearchRejected,
@@ -88,8 +93,14 @@ class AiShadowResearchBaselineMixin:
         start_date = str(config.get("start_date") or "")
         if not start_date:
             raise ShadowResearchRejected("baseline_start_date_missing")
-        initial_cash = float(
+        seed_initial_cash = float(
             config.get("initial_cash") or seed.get("initial_cash") or 0
+        )
+        initial_cash = (
+            NORMALIZED_RESEARCH_NOTIONAL
+            if policy.research_capital_mode
+            == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+            else seed_initial_cash
         )
         market_universe_snapshot = self._data_store.get_market_universe_snapshot()
         market_date = str((market_universe_snapshot or {}).get("trade_date") or "")
@@ -205,30 +216,48 @@ class AiShadowResearchBaselineMixin:
             assets=normalized_assets,
             oos_mode="rolling",
         )
-        fee_resolution = self._resolve_reviewed_fee_schedule(
-            start_date=start_date,
-            end_date=market_date,
-            universe=tuple(asset["symbol"] for asset in normalized_assets),
-            asset_classes=tuple(asset["asset_class"] for asset in normalized_assets),
-            account_truth_as_of=shadow_research_market_close_as_of(
-                market_date,
-                policy.after_close_time,
-            ),
-        )
-        commission_calc = getattr(fee_resolution, "commission_calc", None)
-        fee_schedule_evidence = getattr(fee_resolution, "fee_evidence", None)
-        cost_model_reference = str(
-            getattr(fee_resolution, "cost_model_reference", "") or ""
-        )
         if (
-            commission_calc is None
-            or not isinstance(fee_schedule_evidence, Mapping)
-            or not cost_model_reference
+            policy.research_capital_mode
+            == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
         ):
-            raise ReviewedFeeScheduleRejected(
-                "reviewed_fee_schedule_resolution_invalid"
+            commission_calc = None
+            cost_model_reference = CANONICAL_COST_MODEL_REFERENCE
+            fee_schedule_evidence = {
+                "schema_version": "karkinos.ai.normalized_notional_cost.v1",
+                "cost_model_reference": cost_model_reference,
+                "fee_schedule_source": "canonical_default_estimate",
+                "account_specific": False,
+                "broker_statement_reconciled": False,
+                "authorizes_promotion": False,
+                "authorizes_execution": False,
+            }
+        else:
+            fee_resolution = self._resolve_reviewed_fee_schedule(
+                start_date=start_date,
+                end_date=market_date,
+                universe=tuple(asset["symbol"] for asset in normalized_assets),
+                asset_classes=tuple(
+                    asset["asset_class"] for asset in normalized_assets
+                ),
+                account_truth_as_of=shadow_research_market_close_as_of(
+                    market_date,
+                    policy.after_close_time,
+                ),
             )
-        fee_schedule_evidence = dict(fee_schedule_evidence)
+            commission_calc = getattr(fee_resolution, "commission_calc", None)
+            fee_schedule_evidence = getattr(fee_resolution, "fee_evidence", None)
+            cost_model_reference = str(
+                getattr(fee_resolution, "cost_model_reference", "") or ""
+            )
+            if (
+                commission_calc is None
+                or not isinstance(fee_schedule_evidence, Mapping)
+                or not cost_model_reference
+            ):
+                raise ReviewedFeeScheduleRejected(
+                    "reviewed_fee_schedule_resolution_invalid"
+                )
+            fee_schedule_evidence = dict(fee_schedule_evidence)
         strategy = build_strategy(
             SimpleNamespace(
                 strategy=request.strategy,
@@ -270,7 +299,9 @@ class AiShadowResearchBaselineMixin:
                 "fee_component_evidence": build_backtest_fee_tax_evidence(
                     fills=result.fills,
                     cost_model_reference=cost_model_reference,
-                    account_specific=True,
+                    account_specific=bool(
+                        fee_schedule_evidence.get("account_specific", False)
+                    ),
                     fee_schedule_source=str(
                         fee_schedule_evidence.get("fee_schedule_source") or ""
                     ),

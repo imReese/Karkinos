@@ -78,7 +78,7 @@ class HumanExternalMemoryAnalysisService:
         monotonic: Callable[[], float] | None = None,
         model_timeout_seconds: float = 180.0,
         provider_send_admission_factory: (
-            Callable[[str], ProviderSendAdmission | None] | None
+            Callable[[str, str], ProviderSendAdmission | None] | None
         ) = None,
     ) -> None:
         if model_timeout_seconds <= 0 or model_timeout_seconds > 300:
@@ -128,7 +128,10 @@ class HumanExternalMemoryAnalysisService:
         )
         settings = self._settings_loader()
         send_admission = (
-            self._provider_send_admission_factory(settings.provider_id)
+            self._provider_send_admission_factory(
+                settings.provider_id,
+                settings.endpoint_origin,
+            )
             if self._provider_send_admission_factory is not None
             else None
         )

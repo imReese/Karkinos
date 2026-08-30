@@ -121,6 +121,18 @@ export const overviewCopyZh = {
     strategyDecisionUnavailable: '策略候选信号暂不可用',
     strategyCandidateEmptyDetail:
       '当前没有买入、卖出、持有或再平衡信号进入队列。',
+    researchOperationCandidate:
+      '研究型量化操作候选（不可执行，账户资格未评估）',
+    researchOperationDetail: (summary: string) =>
+      `冻结收盘 Formula 条件：${summary}。仅供下一交易日继续研究。`,
+    researchOperationMeta: (
+      count: number,
+      marketDate: string,
+      targetMarketDate: string,
+    ) =>
+      `${marketDate} 冻结收盘 → ${targetMarketDate} 下一已验证交易日 · ${count} 个研究候选 · 不可执行`,
+    researchOperationResolution:
+      '仅在 AI 策略研究页复核公式证据；不得据此创建订单或人工下单。',
     tradingPlanUnavailable: '今日交易计划暂不可用',
     tradingPlanLoading: '正在加载今日交易计划',
     tradingPlanNeedsReview: '今日交易计划需要复核',
@@ -154,6 +166,7 @@ export const overviewCopyZh = {
     viewOperations: '查看运行证据',
     viewTrading: '复核交易队列',
     viewStrategy: '查看策略证据',
+    viewAiResearch: '查看 AI 策略研究',
     candidateCount: (count: number) => `${count} 个候选信号`,
     decisionActionLabels: {
       buy: '买入候选',

@@ -203,6 +203,26 @@ def test_decision_trading_plan_route_returns_read_only_order_intent(monkeypatch)
     assert response["order_intent_count"] == 1
     assert response["default_execution_mode"] == "manual_confirmation"
     assert response["broker_bridge_status"] == "disabled"
+    assert response["research_operation_preview"]["status"] == "unavailable"
+    assert response["research_operation_preview"]["operations"] == []
+    assert response["research_operation_preview"]["authorizes_order_creation"] is (
+        False
+    )
+    assert response["research_operation_instruments"] == {
+        "schema_version": "karkinos.decision.research_operation_instruments.v1",
+        "requested_count": 0,
+        "lookup_count": 0,
+        "resolved_count": 0,
+        "items": [],
+        "missing_symbols": [],
+        "lookup_truncated": False,
+        "metadata_source": "persisted_instrument_metadata",
+        "provider_contacted": False,
+        "database_writes_performed": False,
+        "read_only": True,
+        "research_only": True,
+        "authority_effect": "none",
+    }
 
     intent = response["order_intents"][0]
     assert intent["action_id"] == 7

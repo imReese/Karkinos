@@ -140,6 +140,18 @@ export const overviewCopyEn = {
     strategyDecisionUnavailable: 'Strategy candidate signals are unavailable',
     strategyCandidateEmptyDetail:
       'No buy, sell, hold, or rebalance signals have entered the queue.',
+    researchOperationCandidate:
+      'Quant research operation candidates (non-executable; account qualification not evaluated)',
+    researchOperationDetail: (summary: string) =>
+      `Frozen-close Formula conditions: ${summary}. For next-session research only.`,
+    researchOperationMeta: (
+      count: number,
+      marketDate: string,
+      targetMarketDate: string,
+    ) =>
+      `${marketDate} frozen close → ${targetMarketDate} next verified session · ${count} research candidates · non-executable`,
+    researchOperationResolution:
+      'Review Formula evidence in AI Research only; do not create an order or place a manual trade from this preview.',
     tradingPlanUnavailable: 'Daily trading plan is unavailable',
     tradingPlanLoading: 'Loading daily trading plan',
     tradingPlanNeedsReview: 'Daily trading plan needs review',
@@ -180,6 +192,7 @@ export const overviewCopyEn = {
     viewOperations: 'Review operations evidence',
     viewTrading: 'Review trading queue',
     viewStrategy: 'Review strategy evidence',
+    viewAiResearch: 'Review AI strategy research',
     candidateCount: (count: number) =>
       `${count} candidate signal${count === 1 ? '' : 's'}`,
     decisionActionLabels: {

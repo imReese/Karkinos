@@ -133,6 +133,8 @@ class StrategyPromotionRepository(SQLiteRepository):
                         promotion.created_at AS approved_at,
                         research_run.status AS research_run_status,
                         research_run.baseline_result_id AS research_run_baseline_result_id,
+                        research_run.research_capital_mode AS research_run_capital_mode,
+                        research_run.research_context_id AS research_run_context_id,
                         research_run.valuation_snapshot_id AS research_run_valuation_snapshot_id,
                         research_run.ledger_cutoff_id AS research_run_ledger_cutoff_id,
                         research_run.session_id AS research_run_session_id,

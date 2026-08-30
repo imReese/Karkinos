@@ -8,12 +8,18 @@ from analytics.research_account_capital_evidence import (
     is_valid_passed_research_account_capital_evidence,
 )
 from server.ai_runtime.contracts import JsonObject, WorkflowStatus, content_fingerprint
+from server.ai_runtime.provider_call_window import ProviderCallDeferred
 from server.ai_runtime.registry import AiRuntimeRegistry
 from server.ai_runtime.strategy_research_backtest import (
     RestrictedFormulaBacktestAdapter,
     validate_persisted_fee_schedule_binding,
 )
 from server.ai_runtime.strategy_research_provider import StrategyResearchModelProvider
+from server.ai_runtime.strategy_research_privacy import (
+    build_normalized_lot_feasibility_evidence,
+    build_normalized_research_pack,
+    build_normalized_signal_execution_evidence,
+)
 from server.ai_runtime.strategy_research_support import (
     critique_response,
     report_artifact,
@@ -107,14 +113,20 @@ class StrategyResearchCritiqueMixin:
             reviewed_fee_schedule_resolution=reviewed_fee_schedule_resolution,
         )
         persisted_account_capital = metrics.get("account_capital_constraint")
-        if not is_valid_passed_research_account_capital_evidence(
-            persisted_account_capital,
-            expected_initial_cash=selection.initial_cash,
-            expected_valuation_snapshot_id=selection.valuation_snapshot_id,
-            expected_ledger_cutoff_id=selection.ledger_cutoff_id,
-        ) or content_fingerprint(persisted_account_capital) != content_fingerprint(
-            account_capital_evidence
-        ):
+        account_binding_valid = (
+            is_valid_passed_research_account_capital_evidence(
+                persisted_account_capital,
+                expected_initial_cash=selection.initial_cash,
+                expected_valuation_snapshot_id=selection.valuation_snapshot_id,
+                expected_ledger_cutoff_id=selection.ledger_cutoff_id,
+            )
+            if selection.has_account_binding
+            else isinstance(persisted_account_capital, dict)
+            and persisted_account_capital == account_capital_evidence
+        )
+        if not account_binding_valid or content_fingerprint(
+            persisted_account_capital
+        ) != content_fingerprint(account_capital_evidence):
             raise StrategyResearchRejected(
                 "persisted_research_account_capital_binding_drift"
             )
@@ -126,6 +138,15 @@ class StrategyResearchCritiqueMixin:
             expected_dataset_snapshot=dataset_snapshot,
             reviewed_fee_schedule_resolution=reviewed_fee_schedule_resolution,
         )
+        normalized_pack = build_normalized_research_pack(
+            performance=saved,
+            after_cost_evidence=after_cost_evidence,
+            cost_summary=cost_summary,
+            research_evidence_bundle=evidence,
+            oos_validation=oos_validation,
+        )
+        normalized_performance = normalized_pack["performance_summary"]
+        normalized_cost = normalized_pack["cost_summary"]
         required_binding_echo = {
             "canonical_backtest_result_id": int(
                 backtest["canonical_backtest_result_id"]
@@ -133,23 +154,11 @@ class StrategyResearchCritiqueMixin:
             "formula_fingerprint": backtest["formula_fingerprint"],
             "dataset_snapshot_id": backtest["dataset_snapshot_id"],
             "cost_model_reference": backtest["cost_model_reference"],
-            "initial_cash": saved.get("initial_cash"),
-            "final_equity": saved.get("final_equity"),
-            "total_return": saved.get("total_return"),
-            "annual_return": saved.get("annual_return"),
-            "sharpe": saved.get("sharpe"),
-            "sortino": saved.get("sortino"),
-            "max_drawdown": saved.get("max_drawdown"),
-            "win_rate": saved.get("win_rate"),
-            "duration_days": saved.get("duration_days"),
-            "net_pnl": after_cost_evidence.get("net_pnl"),
-            "gross_pnl_before_costs": after_cost_evidence.get("gross_pnl_before_costs"),
-            "total_cost": after_cost_evidence.get("total_cost"),
-            "total_commission": cost_summary.get("total_commission"),
-            "total_slippage": cost_summary.get("total_slippage"),
-            "total_trades": cost_summary.get("total_trades"),
-            "gross_turnover": cost_summary.get("gross_turnover"),
+            "notional_policy_id": normalized_pack["notional_policy_id"],
+            **normalized_performance,
+            **normalized_cost,
             "oos_validation_fingerprint": content_fingerprint(oos_validation),
+            "research_evidence_fingerprint": content_fingerprint(evidence),
         }
         registry = AiRuntimeRegistry(self._ai_store)
         register_strategy_research_runtime(
@@ -173,19 +182,28 @@ class StrategyResearchCritiqueMixin:
                 "canonical_backtest": {
                     **required_binding_echo,
                     "result_id": int(backtest["canonical_backtest_result_id"]),
-                    "after_cost_evidence": after_cost_evidence,
-                    "cost_summary": cost_summary,
-                    "oos_validation": oos_validation,
-                    "research_evidence_bundle": evidence,
-                    "signal_execution_evidence": strategy_research_json_object(
-                        metrics.get("signal_execution_evidence")
+                    "performance_summary": normalized_performance,
+                    "after_cost_evidence": normalized_pack["after_cost_summary"],
+                    "cost_summary": normalized_cost,
+                    "oos_validation": normalized_pack["oos_validation"],
+                    "research_evidence_bundle": normalized_pack[
+                        "research_evidence_bundle"
+                    ],
+                    "signal_execution_evidence": (
+                        build_normalized_signal_execution_evidence(
+                            metrics.get("signal_execution_evidence")
+                        )
                     ),
-                    "lot_feasibility_evidence": strategy_research_json_object(
-                        metrics.get("lot_feasibility_evidence")
+                    "lot_feasibility_evidence": (
+                        build_normalized_lot_feasibility_evidence(
+                            metrics.get("lot_feasibility_evidence")
+                        )
                     ),
                 },
                 "required_binding_echo": required_binding_echo,
-                "canonical_research_evidence": evidence,
+                "canonical_research_evidence": normalized_pack[
+                    "research_evidence_bundle"
+                ],
                 "formula_fingerprint": backtest["formula_fingerprint"],
                 "dataset_snapshot_id": backtest["dataset_snapshot_id"],
                 "cost_model_reference": backtest["cost_model_reference"],
@@ -213,16 +231,26 @@ class StrategyResearchCritiqueMixin:
             workflow_id=workflow.workflow_id,
             claimed_at=self._now(),
         )
-        if claimed and workflow.status not in TERMINAL_WORKFLOW_STATUSES:
-            workflow = await asyncio.to_thread(
-                orchestrator.run,
-                workflow.workflow_id,
-                current_context=context,
+        try:
+            if claimed and workflow.status not in TERMINAL_WORKFLOW_STATUSES:
+                workflow = await asyncio.to_thread(
+                    orchestrator.run,
+                    workflow.workflow_id,
+                    current_context=context,
+                )
+            else:
+                workflow = self._ai_store.getstrategy_research_workflow_definition(
+                    workflow.workflow_id
+                )
+        except ProviderCallDeferred as exc:
+            self._research_store.finish_critique(
+                critique["critique_id"],
+                status="blocked",
+                artifact=None,
+                failure_code=str(exc),
+                updated_at=self._now(),
             )
-        else:
-            workflow = self._ai_store.getstrategy_research_workflow_definition(
-                workflow.workflow_id
-            )
+            raise
         artifact_payload = None
         if workflow.status == WorkflowStatus.COMPLETED:
             artifact_payload = report_artifact(

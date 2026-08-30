@@ -173,15 +173,18 @@ def seed_ai_shadow_canonical_sources(
             INSERT INTO ai_shadow_research_runs
             (run_id, market_date, input_fingerprint, status,
              baseline_seed_result_id, baseline_result_id,
+             research_capital_mode, research_context_id,
              valuation_snapshot_id, ledger_cutoff_id, session_id,
              failure_code, candidate_count, created_at, updated_at)
-            VALUES (?, '2026-08-12', ?, 'completed', ?, ?, ?, ?, ?, NULL, 1, ?, ?)
+            VALUES (?, '2026-08-12', ?, 'completed', ?, ?,
+                    'account_bound', ?, ?, ?, ?, NULL, 1, ?, ?)
             """,
             (
                 run_id,
                 content_fingerprint({"run_id": run_id}),
                 baseline_result_id,
                 baseline_result_id,
+                "valuation-fixture",
                 "valuation-fixture",
                 42,
                 session_id,
@@ -246,6 +249,8 @@ def seed_ai_shadow_canonical_sources(
     ).to_json_dict()
     assert promotion_gate["status"] == "pass"
     return {
+        "research_capital_mode": "account_bound",
+        "account_qualification_status": "passed",
         "baseline_source_fingerprint": _backtest_source_fingerprint(rows[0]),
         "candidate_source_fingerprint": _backtest_source_fingerprint(rows[1]),
         "deepseek_critique": critique,

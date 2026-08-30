@@ -35,7 +35,7 @@ class StrategyResearchBacktestWorkflowMixin:
             self._resolve_reviewed_fee_schedule,
             selection,
         )
-        account_capital_evidence = self._account_capital_evidence_for_session(
+        research_capital_evidence = self._account_capital_evidence_for_session(
             session=session,
             selection=selection,
             reviewed_fee_schedule_resolution=reviewed_fee_schedule_resolution,
@@ -56,7 +56,9 @@ class StrategyResearchBacktestWorkflowMixin:
                 draft=draft,
                 expected_dataset_snapshot=expected_dataset_snapshot,
                 reviewed_fee_schedule_resolution=reviewed_fee_schedule_resolution,
-                account_capital_evidence=account_capital_evidence,
+                account_capital_evidence=(
+                    research_capital_evidence if selection.has_account_binding else None
+                ),
             )
             result_id = await self._db.save_backtest_result(
                 config_json=bt_request.model_dump_json(),

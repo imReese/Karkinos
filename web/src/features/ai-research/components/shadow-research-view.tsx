@@ -22,6 +22,7 @@ export function CandidateCard({
   promotionStage,
   promotionStateLoaded,
   isDailyWinner,
+  isResearchWinner,
   pending,
 }: {
   candidate: ShadowResearchCandidate;
@@ -39,6 +40,7 @@ export function CandidateCard({
   promotionStage: string | undefined;
   promotionStateLoaded: boolean;
   isDailyWinner: boolean;
+  isResearchWinner: boolean;
   pending: boolean;
 }) {
   const comparison = candidate.comparison;
@@ -79,6 +81,11 @@ export function CandidateCard({
         {isDailyWinner ? (
           <span className="rounded-full border border-[var(--app-success-border)] bg-[var(--app-success-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--app-success-text)]">
             {copy.winnerBadge}
+          </span>
+        ) : null}
+        {isResearchWinner ? (
+          <span className="rounded-full border border-[var(--app-divider)] bg-[var(--app-surface-overlay)] px-2.5 py-1 text-xs font-semibold text-[var(--app-text)]">
+            {copy.researchWinnerBadge}
           </span>
         ) : null}
         {candidate.comparison.iteration_lineage ? (

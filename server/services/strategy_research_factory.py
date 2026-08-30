@@ -10,6 +10,7 @@ from server.ai_runtime.capture import HumanResearchContextCaptureService
 from server.ai_runtime.evidence import CanonicalEvidenceRepository
 from server.ai_runtime.provider_call_window import (
     PROVIDER_CALL_COMPLETION_GUARD_SECONDS,
+    is_deepseek_provider_endpoint,
     provider_send_admission_for,
 )
 from server.ai_runtime.provider_connectivity import (
@@ -68,6 +69,7 @@ def build_strategy_research_write_service(
         provider_send_admission=(
             provider_send_admission_for(
                 settings.provider_id,
+                endpoint_origin=settings.endpoint_origin,
                 minimum_runway=timedelta(
                     seconds=(
                         model_timeout_seconds + PROVIDER_CALL_COMPLETION_GUARD_SECONDS
@@ -88,7 +90,10 @@ def strategy_research_model_timeout_seconds(
     settings: ProviderConnectivitySettings | None,
 ) -> float:
     """Allow the configured DeepSeek research call up to ten minutes."""
-    if settings is not None and settings.provider_id.strip().casefold() == "deepseek":
+    if settings is not None and is_deepseek_provider_endpoint(
+        settings.provider_id,
+        settings.endpoint_origin,
+    ):
         return DEEPSEEK_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS
     return DEFAULT_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS
 

@@ -10,6 +10,7 @@ from server.ai_runtime.capture import (
     HumanContextCaptureRequest,
 )
 from server.ai_runtime.contracts import JsonObject, WorkflowStatus
+from server.ai_runtime.provider_call_window import ProviderCallDeferred
 from server.ai_runtime.registry import AiRuntimeRegistry
 from server.ai_runtime.strategy_research_model_contract import bind_and_validate_drafts
 from server.ai_runtime.strategy_research_provider import StrategyResearchModelProvider
@@ -36,8 +37,6 @@ class StrategyResearchGenerationMixin:
         self, request: HypothesisGenerationRequest
     ) -> JsonObject:
         settings = self._require_settings()
-        if not request.selection.has_account_binding:
-            raise StrategyResearchRejected("research_account_binding_required")
         await self._validate_saved_selection(request.selection)
         reviewed_fee_schedule_resolution = await asyncio.to_thread(
             self._resolve_reviewed_fee_schedule,
@@ -95,25 +94,26 @@ class StrategyResearchGenerationMixin:
             account_evidence = records_by_tool.get(ACCOUNT_STATE_TOOL)
             if account_evidence is None or not account_evidence.authoritative:
                 raise StrategyResearchRejected("account_evidence_not_authoritative")
-        account_capital_evidence = self._build_account_capital_evidence(
-            selection=request.selection,
-            account_evidence=account_evidence,
-            reviewed_fee_schedule_resolution=reviewed_fee_schedule_resolution,
-        )
-        if account_capital_evidence.get("status") != "pass":
-            failure_code = str(
-                next(
-                    iter(account_capital_evidence.get("issues") or []),
-                    "research_account_capital_evidence_not_passing",
+        if request.selection.has_account_binding:
+            account_capital_evidence = self._build_account_capital_evidence(
+                selection=request.selection,
+                account_evidence=account_evidence,
+                reviewed_fee_schedule_resolution=reviewed_fee_schedule_resolution,
+            )
+            if account_capital_evidence.get("status") != "pass":
+                failure_code = str(
+                    next(
+                        iter(account_capital_evidence.get("issues") or []),
+                        "research_account_capital_evidence_not_passing",
+                    )
                 )
-            )
-            self._research_store.finish_session(
-                session["session_id"],
-                status="blocked",
-                failure_code=failure_code,
-                updated_at=self._now(),
-            )
-            raise StrategyResearchRejected(failure_code)
+                self._research_store.finish_session(
+                    session["session_id"],
+                    status="blocked",
+                    failure_code=failure_code,
+                    updated_at=self._now(),
+                )
+                raise StrategyResearchRejected(failure_code)
         provider_id, model_id = strategy_research_runtime_ids(settings, "hypothesis")
         registry = AiRuntimeRegistry(self._ai_store)
         register_strategy_research_runtime(
@@ -161,16 +161,25 @@ class StrategyResearchGenerationMixin:
             model_id=model_id,
             claimed_at=self._now(),
         )
-        if claimed and workflow.status not in TERMINAL_WORKFLOW_STATUSES:
-            workflow = await asyncio.to_thread(
-                orchestrator.run,
-                workflow.workflow_id,
-                current_context=capture.context,
+        try:
+            if claimed and workflow.status not in TERMINAL_WORKFLOW_STATUSES:
+                workflow = await asyncio.to_thread(
+                    orchestrator.run,
+                    workflow.workflow_id,
+                    current_context=capture.context,
+                )
+            else:
+                workflow = self._ai_store.getstrategy_research_workflow_definition(
+                    workflow.workflow_id
+                )
+        except ProviderCallDeferred as exc:
+            self._research_store.finish_session(
+                session["session_id"],
+                status="blocked",
+                failure_code=str(exc),
+                updated_at=self._now(),
             )
-        else:
-            workflow = self._ai_store.getstrategy_research_workflow_definition(
-                workflow.workflow_id
-            )
+            raise
         status = workflow.status.value
         if workflow.status == WorkflowStatus.COMPLETED:
             artifact = report_artifact(self._ai_store, workflow.workflow_id)

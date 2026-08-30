@@ -1,6 +1,8 @@
 import type { DailyTradingPlanBlockerSummary } from '../../shared/contracts/daily-operations';
+import type { DailyResearchOperationPreview } from './research-operation-preview-contract';
 
 export type { DailyTradingPlanBlockerSummary } from '../../shared/contracts/daily-operations';
+export type { DailyResearchOperationPreview } from './research-operation-preview-contract';
 
 export type DecisionAction =
   'buy' | 'sell' | 'hold' | 'rebalance' | 'no_action' | 'review_required';
@@ -263,6 +265,28 @@ export type DailyTradingPlanBlocker = {
   manual_confirmation_status?: string | null;
 };
 
+export type ResearchOperationInstruments = {
+  schema_version: 'karkinos.decision.research_operation_instruments.v1';
+  requested_count: number;
+  lookup_count: number;
+  resolved_count: number;
+  items: Array<{
+    symbol: string;
+    display_name: string;
+    asset_class: 'stock';
+    source: string;
+    fetched_at: string | null;
+  }>;
+  missing_symbols: string[];
+  lookup_truncated: boolean;
+  metadata_source: 'persisted_instrument_metadata';
+  provider_contacted: false;
+  database_writes_performed: false;
+  read_only: true;
+  research_only: true;
+  authority_effect: 'none';
+};
+
 export type DailyTradingPlanResponse = {
   schema_version: string;
   plan_date: string | null;
@@ -288,6 +312,8 @@ export type DailyTradingPlanResponse = {
   broker_bridge_status: string;
   order_intents: DailyTradingPlanOrderIntent[];
   blockers: DailyTradingPlanBlocker[];
+  research_operation_preview?: DailyResearchOperationPreview;
+  research_operation_instruments?: ResearchOperationInstruments;
   limitations: string[];
 };
 

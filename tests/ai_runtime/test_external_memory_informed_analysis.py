@@ -188,7 +188,7 @@ async def test_external_memory_peak_window_defers_before_model_call(tmp_path) ->
         db_path,
         transport,
         settings_loader=_deepseek_settings,
-        provider_send_admission_factory=lambda provider_id: admission,
+        provider_send_admission_factory=lambda provider_id, endpoint_origin: admission,
     )
 
     with pytest.raises(ProviderCallDeferred, match="deepseek_peak_pricing_window"):

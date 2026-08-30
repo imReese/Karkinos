@@ -123,6 +123,47 @@ class DailyStrategyArtifactStore:
             )
         ]
 
+    def load_latest_verified_research_artifacts(self) -> dict[str, Any]:
+        """Read the latest selection and exact backup without requiring promotion."""
+
+        records = self._repository.list_selection_records(limit=1)
+        if not records:
+            raise DailyStrategyArtifactRejected("daily_research_selection_missing")
+        run_id = str(records[0].get("run_id") or "")
+        selection_record, backup_record = self._repository.current_pair(run_id=run_id)
+        if selection_record is None or backup_record is None:
+            raise DailyStrategyArtifactRejected(
+                "daily_research_selection_or_backup_missing"
+            )
+        selection = selection_from_record(selection_record)
+        if selection.get("integrity_status") != "verified":
+            raise DailyStrategyArtifactRejected(
+                "daily_research_selection_fingerprint_mismatch"
+            )
+        backup = self._backups.project_receipt(backup_record)
+        if backup.get("verification_status") != "verified":
+            raise DailyStrategyArtifactRejected("daily_research_backup_not_verified")
+        payload = self._load_verified_payload(
+            backup_record,
+            unreadable_error="daily_research_backup_unreadable",
+            mismatch_error="daily_research_backup_mismatch",
+        )
+        payload_selection = payload.get("selection")
+        expected_selection = dict(selection)
+        expected_selection.pop("integrity_status", None)
+        if (
+            not isinstance(payload_selection, Mapping)
+            or dict(payload_selection) != expected_selection
+        ):
+            raise DailyStrategyArtifactRejected(
+                "daily_research_selection_backup_binding_mismatch"
+            )
+        return {
+            "selection": selection,
+            "backup": backup,
+            "payload": dict(payload),
+        }
+
     def require_verified_winner(
         self, *, candidate_id: str, run_id: str
     ) -> dict[str, Any]:

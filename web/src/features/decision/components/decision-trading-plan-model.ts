@@ -42,6 +42,9 @@ export function tradingPlanConclusionLabel(
   if (status === 'cash_shortfall') {
     return labels.tradingPlanCashShortfall;
   }
+  if (status === 'no_strategy_candidate') {
+    return labels.tradingPlanNoStrategyCandidate;
+  }
   return labels.tradingPlanNoManualAction;
 }
 

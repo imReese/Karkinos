@@ -4,6 +4,10 @@ import { afterEach, expect, test, vi } from 'vitest';
 
 import { PreferencesProvider } from '../../../app/providers/preferences-provider';
 import type { BacktestReport } from '../../backtest/api';
+import {
+  CANONICAL_COST_MODEL_REFERENCE,
+  NORMALIZED_RESEARCH_NOTIONAL,
+} from '../strategy-research-api';
 import { StrategyHypothesisPanel } from './strategy-hypothesis-panel';
 
 const report: BacktestReport = {
@@ -12,13 +16,13 @@ const report: BacktestReport = {
   config: {
     start_date: '2025-01-02',
     end_date: '2025-01-09',
-    initial_cash: 100_000,
+    initial_cash: NORMALIZED_RESEARCH_NOTIONAL,
     strategy: 'dual_ma',
     assets: [{ symbol: '600000', asset_class: 'stock' }],
   },
   metrics: {
-    initial_cash: 100_000,
-    final_equity: 99_500,
+    initial_cash: NORMALIZED_RESEARCH_NOTIONAL,
+    final_equity: 995_000,
     total_return: -0.005,
     annual_return: -0.1,
     sharpe: -0.1,
@@ -48,10 +52,9 @@ const report: BacktestReport = {
     },
     fee_component_evidence: {
       status: 'complete',
-      cost_model_reference:
-        'karkinos.backtest.reviewed_account_fee_schedule.v1:fee_review_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-      account_specific: true,
-      broker_statement_reconciled: true,
+      cost_model_reference: CANONICAL_COST_MODEL_REFERENCE,
+      account_specific: false,
+      broker_statement_reconciled: false,
     },
   },
   cost_summary_json: { total_commission: 10, total_trades: 2 },
@@ -114,8 +117,7 @@ const draft = {
   exit_conditions: 'Close below the rolling mean.',
   position_sizing_hypothesis: 'Equal weight.',
   portfolio_constraints: { max_weight: 1 },
-  cost_model_reference:
-    'karkinos.backtest.reviewed_account_fee_schedule.v1:fee_review_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+  cost_model_reference: CANONICAL_COST_MODEL_REFERENCE,
   required_evidence: ['Canonical after-cost result.'],
   anti_lookahead_assumptions: ['Only completed bars are used.'],
   proposed_deterministic_tests: ['Replay the exact snapshot.'],
@@ -160,32 +162,6 @@ function renderPanel(selectedReport: BacktestReport | null = report) {
       const body = init?.body
         ? (JSON.parse(String(init.body)) as Record<string, unknown>)
         : {};
-      if (url.includes('/api/portfolio/state')) {
-        return jsonResponse({
-          summary: {
-            total_equity: 100_000,
-            available_cash: 25_000,
-            total_deposits: 100_000,
-            positions_count: 1,
-            unrealized_pnl: 0,
-            realized_pnl: 0,
-            cash_ratio: 0.25,
-            valuation_status: 'complete',
-            valuation_snapshot_id: 'valuation-current-001',
-            ledger_cutoff_id: 88,
-          },
-          snapshot: {
-            cash: 25_000,
-            total_equity: 100_000,
-            total_deposits: 100_000,
-            positions: [],
-            allocation: [],
-            allocation_grouped: [],
-          },
-          risks: [],
-          next_step: 'Review only',
-        });
-      }
       requests.push({ url, method, body });
       if (url.endsWith('/hypotheses')) {
         return jsonResponse({
@@ -224,12 +200,11 @@ function renderPanel(selectedReport: BacktestReport | null = report) {
           draft_id: 'draft-001',
           formula_fingerprint: 'sha256:formula-001',
           dataset_snapshot_id: 'sha256:dataset-001',
-          cost_model_reference:
-            'karkinos.backtest.reviewed_account_fee_schedule.v1:fee_review_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          cost_model_reference: CANONICAL_COST_MODEL_REFERENCE,
           canonical_backtest: {
             result_id: 18,
-            initial_cash: 100_000,
-            final_equity: 98_000,
+            initial_cash: NORMALIZED_RESEARCH_NOTIONAL,
+            final_equity: 980_000,
             total_return: -0.02,
             sharpe: -0.2,
             max_drawdown: 0.05,
@@ -323,7 +298,10 @@ test('requires separate export, backtest, critique, and review confirmations', a
   fireEvent.click(
     screen.getByRole('button', { name: 'Open AI strategy research' }),
   );
-  expect(await screen.findByText(/valuation-current-001/)).toBeTruthy();
+  expect(
+    await screen.findByText('Not applicable — strategy-only research'),
+  ).toBeTruthy();
+  expect(screen.getByText('Research only · non-executable')).toBeTruthy();
 
   const generate = screen.getByRole('button', {
     name: 'Generate hypothesis drafts',
@@ -380,6 +358,12 @@ test('requires separate export, backtest, critique, and review confirmations', a
   expect(requests[0].body.confirmation).toContain(
     'sanitized_strategy_research',
   );
+  expect(requests[0].body.selection).toMatchObject({
+    initial_cash: NORMALIZED_RESEARCH_NOTIONAL,
+    cost_model_reference: CANONICAL_COST_MODEL_REFERENCE,
+    valuation_snapshot_id: null,
+    ledger_cutoff_id: null,
+  });
   expect(requests[1].body.confirmation).toContain('canonical_backtest');
   expect(requests[2].body.confirmation).toContain(
     'canonical_backtest_evidence',
@@ -399,7 +383,9 @@ test('shows a locally blocked formula and never enables its backtest', async () 
   fireEvent.click(
     screen.getByRole('button', { name: 'Open AI strategy research' }),
   );
-  expect(await screen.findByText(/valuation-current-001/)).toBeTruthy();
+  expect(
+    await screen.findByText('Not applicable — strategy-only research'),
+  ).toBeTruthy();
   vi.mocked(fetch).mockImplementationOnce(async () =>
     jsonResponse({
       schema_version: 'karkinos.ai.strategy_research_api.v1',
@@ -453,7 +439,9 @@ test('shows drift as historical and blocks follow-on actions', async () => {
   fireEvent.click(
     screen.getByRole('button', { name: 'Open AI strategy research' }),
   );
-  expect(await screen.findByText(/valuation-current-001/)).toBeTruthy();
+  expect(
+    await screen.findByText('Not applicable — strategy-only research'),
+  ).toBeTruthy();
   vi.mocked(fetch).mockImplementationOnce(async () =>
     jsonResponse({
       schema_version: 'karkinos.ai.strategy_research_api.v1',
@@ -521,16 +509,22 @@ test('blocks export when the saved dataset snapshot is incomplete', () => {
   ).toBe(false);
 });
 
-test('blocks export when research capital exceeds the current account', async () => {
-  const oversizedReport = structuredClone(report);
-  oversizedReport.config.initial_cash = 100_001;
-  renderPanel(oversizedReport);
+test('blocks export when the saved cost evidence is account-specific', () => {
+  const accountBoundReport = structuredClone(report);
+  accountBoundReport.metrics_json!.fee_component_evidence = {
+    status: 'complete',
+    cost_model_reference:
+      'karkinos.backtest.reviewed_account_fee_schedule.v1:fee_review_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    account_specific: true,
+    broker_statement_reconciled: true,
+  };
+  renderPanel(accountBoundReport);
   fireEvent.click(
     screen.getByRole('button', { name: 'Open AI strategy research' }),
   );
 
-  expect((await screen.findByRole('alert')).textContent).toContain(
-    'research capital is required',
+  expect(screen.getByRole('alert').textContent).toContain(
+    'non-account-specific canonical estimated cost evidence',
   );
   expect(
     screen.getByRole('button', { name: 'Generate hypothesis drafts' }),
@@ -540,4 +534,49 @@ test('blocks export when research capital exceeds the current account', async ()
       .mocked(fetch)
       .mock.calls.some(([input]) => String(input).endsWith('/hypotheses')),
   ).toBe(false);
+});
+
+test('does not query Account Truth for normalized-notional research', async () => {
+  const differentlySizedReport = structuredClone(report);
+  differentlySizedReport.config.initial_cash = NORMALIZED_RESEARCH_NOTIONAL;
+  const { requests } = renderPanel(differentlySizedReport);
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Open AI strategy research' }),
+  );
+  fireEvent.change(screen.getByLabelText('Research question'), {
+    target: { value: 'Can this formula generalize?' },
+  });
+  fireEvent.click(
+    screen.getByLabelText(/I authorize sending only the displayed sanitized/),
+  );
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Generate hypothesis drafts' }),
+  );
+
+  await waitFor(() => expect(requests).toHaveLength(1));
+  expect(requests[0].url).toBe('/api/ai/strategy-research/hypotheses');
+  expect(requests[0].body.selection).toMatchObject({
+    initial_cash: NORMALIZED_RESEARCH_NOTIONAL,
+    valuation_snapshot_id: null,
+    ledger_cutoff_id: null,
+  });
+  expect(
+    requests.some((request) => request.url.includes('/api/portfolio/state')),
+  ).toBe(false);
+});
+
+test('blocks a saved backtest that was not run at the normalized notional', () => {
+  const wrongNotionalReport = structuredClone(report);
+  wrongNotionalReport.config.initial_cash = 100_000;
+  renderPanel(wrongNotionalReport);
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Open AI strategy research' }),
+  );
+
+  expect(screen.getByRole('alert').textContent).toContain(
+    'CNY 1,000,000 normalized notional',
+  );
+  expect(
+    screen.getByRole('button', { name: 'Generate hypothesis drafts' }),
+  ).toHaveProperty('disabled', true);
 });

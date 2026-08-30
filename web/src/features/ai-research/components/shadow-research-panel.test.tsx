@@ -15,6 +15,8 @@ function jsonResponse(body: unknown, status = 200) {
 const status = {
   schema_version: 'karkinos.ai.shadow_research_automation.v1',
   policy: {
+    schema_version: 'karkinos.ai.shadow_research_policy.v4',
+    policy_id: 'ai_shadow_research',
     enabled: true,
     after_close_time: '15:30',
     timezone: 'Asia/Shanghai',
@@ -23,7 +25,9 @@ const status = {
     token_budget_mode: 'unbounded_daily',
     max_candidates_per_run: 5,
     baseline_backtest_result_id: null,
-    require_complete_account_evidence: true,
+    research_capital_mode: 'normalized_notional',
+    require_complete_account_evidence: false,
+    promotion_requires_complete_account_evidence: true,
     research_question:
       'Improve the persisted baseline without increasing risk.',
     updated_by: 'human:owner',
@@ -292,7 +296,9 @@ test('shows old/new OOS evidence and records only an explicit paper-shadow appro
   expect(await screen.findByText('Current baseline')).toBeTruthy();
   expect(screen.getByText('New candidate')).toBeTruthy();
   expect(screen.getByText('A slower trend filter reduces churn.')).toBeTruthy();
-  expect(screen.getByText('New-candidate winner')).toBeTruthy();
+  expect(
+    screen.getAllByText('Account-qualified promotion winner'),
+  ).toHaveLength(2);
   expect(screen.getByText('Sequential round 1/5')).toBeTruthy();
   expect(screen.getByText('Verified')).toBeTruthy();
   expect(screen.getByText('More regimes are needed.')).toBeTruthy();
@@ -377,7 +383,7 @@ test('records the exact five-round unbounded-daily-token authorization', async (
   fireEvent.click(screen.getByLabelText('Paused'));
   fireEvent.click(
     await screen.findByText(
-      /I authorize five strictly sequential research rounds and ten provider calls/,
+      /I authorize five strictly sequential normalized-notional research rounds and ten provider calls/,
     ),
   );
   fireEvent.click(screen.getByRole('button', { name: 'Save standing policy' }));
@@ -396,8 +402,10 @@ test('records the exact five-round unbounded-daily-token authorization', async (
     expect(body.max_provider_calls_per_market_date).toBe(10);
     expect(body.daily_token_budget).toBeNull();
     expect(body.token_budget_mode).toBe('unbounded_daily');
+    expect(body.research_capital_mode).toBe('normalized_notional');
+    expect(body.require_complete_account_evidence).toBe(false);
     expect(body.confirmation).toBe(
-      'authorize_five_sequential_after_close_deepseek_strategy_research_without_daily_token_budget_or_strategy_or_trade_authority',
+      'authorize_five_sequential_after_close_deepseek_normalized_notional_strategy_research_without_account_strategy_trade_or_capital_authority',
     );
   });
 });
@@ -539,6 +547,83 @@ test('blocks an enabled legacy partial policy until five sequential rounds are s
   expect(runButton.disabled).toBe(true);
 });
 
+test('requires explicit normalized-notional reauthorization for an account-bound policy', async () => {
+  window.matchMedia = vi.fn().mockReturnValue({
+    matches: false,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  });
+  const accountBoundStatus = {
+    ...status,
+    policy: {
+      ...status.policy,
+      schema_version: 'karkinos.ai.shadow_research_policy.v3',
+      research_capital_mode: 'account_bound',
+      require_complete_account_evidence: true,
+    },
+  };
+  const fetchMock = vi.fn(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (
+        url.endsWith('/api/ai/strategy-research/shadow-automation/policy') &&
+        init?.method === 'PUT'
+      ) {
+        return jsonResponse(status.policy);
+      }
+      if (url.endsWith('/api/ai/strategy-research/shadow-automation')) {
+        return jsonResponse(accountBoundStatus);
+      }
+      if (url.endsWith('/api/strategy-promotion/states')) {
+        return jsonResponse([]);
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    },
+  );
+  vi.stubGlobal('fetch', fetchMock);
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+
+  render(
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>
+        <ShadowResearchPanel />
+      </QueryClientProvider>
+    </PreferencesProvider>,
+  );
+
+  expect(
+    await screen.findByText(/persisted policy is legacy account-bound/),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole('button', { name: 'Check and run now' }),
+  ).toHaveProperty('disabled', true);
+
+  fireEvent.click(
+    screen.getByText(
+      /I authorize five strictly sequential normalized-notional research rounds/,
+    ),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Save standing policy' }));
+
+  await vi.waitFor(() => {
+    const policyCall = fetchMock.mock.calls.find(
+      ([input, init]) =>
+        String(input).endsWith(
+          '/api/ai/strategy-research/shadow-automation/policy',
+        ) && init?.method === 'PUT',
+    );
+    expect(policyCall).toBeTruthy();
+    const body = JSON.parse(String(policyCall?.[1]?.body));
+    expect(body.research_capital_mode).toBe('normalized_notional');
+    expect(body.require_complete_account_evidence).toBe(false);
+    expect(body.confirmation).toBe(
+      'authorize_five_sequential_after_close_deepseek_normalized_notional_strategy_research_without_account_strategy_trade_or_capital_authority',
+    );
+  });
+});
+
 test('keeps the current strategy while blocking promotion without a verified new winner', async () => {
   window.matchMedia = vi.fn().mockReturnValue({
     matches: false,
@@ -594,7 +679,7 @@ test('keeps the current strategy while blocking promotion without a verified new
     await screen.findByText('A slower trend filter reduces churn.'),
   ).toBeTruthy();
   expect(
-    screen.getByText('No new winner · current strategy unchanged'),
+    screen.getByText('No complete normalized research recommendation'),
   ).toBeTruthy();
   expect(screen.getByText(/No new winner means no new promotion/)).toBeTruthy();
   expect(

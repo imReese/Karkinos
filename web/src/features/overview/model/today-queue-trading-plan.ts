@@ -133,6 +133,109 @@ function tradingPlanBlockedDetailText(
   return `Resolve ${primary.count} ${primaryLabel.toLowerCase()} items first, then regenerate today's trading plan.`;
 }
 
+function visibleResearchOperationPreview(
+  tradingPlan: DailyTradingPlanResponse | null | undefined,
+) {
+  const preview = tradingPlan?.research_operation_preview;
+  if (
+    !tradingPlan ||
+    tradingPlan.candidate_pool_count !== 0 ||
+    tradingPlan.blocked_count !== 0 ||
+    tradingPlan.order_intent_count !== 0 ||
+    preview?.schema_version !==
+      'karkinos.decision.research_operation_preview.v1' ||
+    preview.status !== 'available' ||
+    preview.operations.length === 0 ||
+    !preview.target_market_date ||
+    preview.market_calendar_evidence_refs.length === 0 ||
+    !preview.dataset_snapshot_id ||
+    !preview.formula_fingerprint ||
+    preview.account_qualification_status !== 'not_evaluated' ||
+    preview.account_positions_evaluated !== false ||
+    preview.research_only !== true ||
+    preview.executable !== false ||
+    preview.authorizes_order_creation !== false ||
+    preview.authorizes_execution !== false ||
+    preview.authority_effect !== 'none'
+  ) {
+    return null;
+  }
+  return preview;
+}
+
+function researchOperationSummary(
+  preview: NonNullable<DailyTradingPlanResponse['research_operation_preview']>,
+  tradingPlan: DailyTradingPlanResponse,
+  candidates: DecisionCandidate[],
+  quoteDiagnostics: QuoteDiagnosticItem[],
+  locale: Locale,
+) {
+  const formatter = new Intl.NumberFormat(locale === 'zh' ? 'zh-CN' : 'en-US', {
+    style: 'percent',
+    maximumFractionDigits: 1,
+  });
+  const buyCandidates = preview.operations.filter(
+    (operation) => operation.operation === 'buy_candidate',
+  );
+  const exitCandidateCount = preview.operations.filter(
+    (operation) => operation.operation === 'exit_if_held_candidate',
+  ).length;
+  const instrumentProjection = tradingPlan.research_operation_instruments;
+  const persistedNames =
+    instrumentProjection?.schema_version ===
+      'karkinos.decision.research_operation_instruments.v1' &&
+    instrumentProjection.provider_contacted === false &&
+    instrumentProjection.database_writes_performed === false &&
+    instrumentProjection.read_only === true &&
+    instrumentProjection.research_only === true &&
+    instrumentProjection.authority_effect === 'none'
+      ? new Map(
+          instrumentProjection.items.map((item) => [
+            item.symbol,
+            item.display_name,
+          ]),
+        )
+      : new Map<string, string>();
+  const instrumentLabel = (symbol: string) => {
+    const quote = quoteDiagnostics.find((item) => item.symbol === symbol);
+    const candidate = candidates.find((item) => item.symbol === symbol);
+    const displayName =
+      persistedNames.get(symbol) ??
+      quote?.display_name ??
+      quote?.name ??
+      (candidate ? decisionCandidateDisplayName(candidate) : null);
+    if (!displayName || displayName === symbol) {
+      return locale === 'zh'
+        ? `名称待补全（${symbol}）`
+        : `name unavailable (${symbol})`;
+    }
+    return `${displayName}（${symbol}）`;
+  };
+  const summaries = buyCandidates
+    .slice(0, 3)
+    .map((operation) =>
+      locale === 'zh'
+        ? `买入研究候选 ${instrumentLabel(operation.symbol)} · 目标权重 ${formatter.format(operation.target_weight)}`
+        : `buy research candidate ${instrumentLabel(operation.symbol)} (target weight ${formatter.format(operation.target_weight)})`,
+    );
+  const remainingBuys = buyCandidates.length - summaries.length;
+  if (remainingBuys > 0) {
+    summaries.push(
+      locale === 'zh'
+        ? `另 ${remainingBuys} 个买入研究候选`
+        : `${remainingBuys} more buy research candidates`,
+    );
+  }
+  if (exitCandidateCount > 0) {
+    summaries.push(
+      locale === 'zh'
+        ? `${exitCandidateCount} 个若持有则退出候选（账户持仓未评估）`
+        : `${exitCandidateCount} exit-if-held candidates (account positions not evaluated)`,
+    );
+  }
+  return summaries.join(locale === 'zh' ? '；' : '; ');
+}
+
 export function buildDecisionQueueItem({
   todayDecision,
   todayDecisionLoading,
@@ -158,6 +261,7 @@ export function buildDecisionQueueItem({
 }): TodayQueueItem {
   const labels = copy.overview.dashboard;
   const candidates = todayDecision?.candidates ?? [];
+  const researchPreview = visibleResearchOperationPreview(tradingPlan);
   const leadingCandidate = candidates[0];
   const decisionActionLabel = leadingCandidate
     ? (labels.decisionActionLabels[leadingCandidate.action] ??
@@ -180,7 +284,9 @@ export function buildDecisionQueueItem({
           ? labels.tradingPlanNeedsReview
           : (tradingPlan?.candidate_pool_count ?? candidates.length) > 0
             ? labels.strategyCandidateAction
-            : labels.strategyCandidateClear;
+            : researchPreview
+              ? labels.researchOperationCandidate
+              : labels.strategyCandidateClear;
   const detail = tradingPlanError
     ? labels.tradingPlanUnavailable
     : tradingPlanLoading
@@ -209,6 +315,17 @@ export function buildDecisionQueueItem({
                 ),
               )
             : candidateDetail;
+  const resolvedDetail = researchPreview
+    ? labels.researchOperationDetail(
+        researchOperationSummary(
+          researchPreview,
+          tradingPlan!,
+          candidates,
+          instrumentDiagnostics,
+          locale,
+        ),
+      )
+    : detail;
   const blockerSummary = tradingPlanBlockerSummaryText(tradingPlan, locale);
   const meta = tradingPlanLoading
     ? copy.states.loading
@@ -225,13 +342,22 @@ export function buildDecisionQueueItem({
             tradingPlan.blocked_count,
           )
       : labels.candidateCount(candidates.length);
+  const resolvedMeta = researchPreview
+    ? labels.researchOperationMeta(
+        researchPreview.operations.length,
+        researchPreview.market_date ?? '--',
+        researchPreview.target_market_date ?? '--',
+      )
+    : meta;
   const tone = tradingPlanError
     ? 'danger'
     : (tradingPlan?.manual_ready_count ?? 0) > 0 ||
         (tradingPlan?.blocked_count ?? 0) > 0 ||
         candidates.length > 0
       ? 'warning'
-      : 'success';
+      : researchPreview
+        ? 'neutral'
+        : 'success';
   const priority =
     tradingPlanError ||
     tradingPlan?.conclusion_status === 'cash_shortfall' ||
@@ -239,21 +365,30 @@ export function buildDecisionQueueItem({
       ? 'first'
       : (tradingPlan?.blocked_count ?? 0) > 0 || candidates.length > 0
         ? 'watch'
-        : 'normal';
+        : researchPreview
+          ? 'watch'
+          : 'normal';
   return {
     key: 'decision',
     title: todayDecisionError ? labels.strategyDecisionUnavailable : title,
     detail:
       todayDecisionLoading || tradingPlanLoading
         ? labels.strategyCandidateLoading
-        : detail,
+        : resolvedDetail,
     meta:
-      todayDecisionLoading || tradingPlanLoading ? copy.states.loading : meta,
-    href: '/decision',
-    actionLabel: labels.viewDecision,
+      todayDecisionLoading || tradingPlanLoading
+        ? copy.states.loading
+        : resolvedMeta,
+    href: researchPreview ? '/ai-research' : '/decision',
+    actionLabel: researchPreview ? labels.viewAiResearch : labels.viewDecision,
     tone: todayDecisionError ? 'danger' : tone,
     priority: todayDecisionError ? 'watch' : priority,
+    alwaysVisible: researchPreview !== null,
     resolution:
-      todayDecisionLoading || tradingPlanLoading ? undefined : resolution,
+      todayDecisionLoading || tradingPlanLoading
+        ? undefined
+        : researchPreview
+          ? labels.researchOperationResolution
+          : resolution,
   };
 }

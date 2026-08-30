@@ -8,7 +8,9 @@ from typing import Any
 
 from server.ai_runtime.contracts import content_fingerprint
 from server.contracts.ai_shadow_research_automation import (
+    SHADOW_RESEARCH_ACCOUNT_BOUND_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_API_SCHEMA,
+    SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
     SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_MAX_CANDIDATES,
     SHADOW_RESEARCH_MAX_PROVIDER_CALLS,
@@ -23,6 +25,9 @@ from server.contracts.ai_shadow_research_automation import (
 )
 from server.projections.ai_shadow_research import (
     project_shadow_research_candidate_status,
+)
+from server.projections.normalized_research_recommendation import (
+    is_valid_normalized_research_recommendation,
 )
 from server.services.ai_shadow_research_daily_artifacts import (
     build_daily_strategy_promotion_binding,
@@ -54,11 +59,17 @@ class AiShadowResearchCommandsMixin:
                     SHADOW_RESEARCH_LEGACY_BOUNDED_POLICY_CONFIRMATION
                 )
             else:
-                if confirmation != SHADOW_RESEARCH_POLICY_CONFIRMATION:
+                expected_confirmation = (
+                    SHADOW_RESEARCH_ACCOUNT_BOUND_POLICY_CONFIRMATION
+                    if merged.get("research_capital_mode")
+                    == SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND
+                    else SHADOW_RESEARCH_POLICY_CONFIRMATION
+                )
+                if confirmation != expected_confirmation:
                     raise PermissionError(
                         "standing shadow research requires exact owner authorization"
                     )
-                merged["authorization"] = SHADOW_RESEARCH_POLICY_CONFIRMATION
+                merged["authorization"] = expected_confirmation
         else:
             if confirmation != SHADOW_RESEARCH_PAUSE_CONFIRMATION:
                 raise PermissionError(
@@ -97,6 +108,7 @@ class AiShadowResearchCommandsMixin:
         latest_selection = daily_selections[0] if daily_selections else None
         latest_backup = daily_backups[0] if daily_backups else None
         daily_winner_candidate_id = None
+        daily_research_winner_candidate_id = None
         if (
             latest_selection
             and latest_backup
@@ -106,13 +118,43 @@ class AiShadowResearchCommandsMixin:
             and latest_backup.get("run_id") == latest_selection.get("run_id")
         ):
             daily_winner_candidate_id = latest_selection.get("winner_candidate_id")
+        if (
+            latest_selection
+            and latest_backup
+            and latest_selection.get("integrity_status") == "verified"
+            and latest_backup.get("verification_status") == "verified"
+            and latest_backup.get("run_id") == latest_selection.get("run_id")
+        ):
+            research_recommendation = latest_selection.get("research_recommendation")
+            if (
+                isinstance(research_recommendation, Mapping)
+                and is_valid_normalized_research_recommendation(research_recommendation)
+                and research_recommendation.get("status")
+                == "best_available_for_further_research"
+                and research_recommendation.get("account_qualified") is False
+                and research_recommendation.get("promotion_eligible") is False
+                and research_recommendation.get("authority_effect") == "none"
+            ):
+                daily_research_winner_candidate_id = research_recommendation.get(
+                    "research_winner_candidate_id"
+                )
         research_outcome = {
             "status": (
                 "new_candidate_available_for_human_review"
                 if daily_winner_candidate_id
-                else "no_new_candidate_current_strategy_unchanged"
+                else (
+                    "best_available_formula_for_further_research"
+                    if daily_research_winner_candidate_id
+                    else "no_new_candidate_current_strategy_unchanged"
+                )
             ),
             "new_candidate_winner_id": daily_winner_candidate_id,
+            "research_winner_candidate_id": daily_research_winner_candidate_id,
+            "account_qualification_status": (
+                "not_evaluated"
+                if daily_research_winner_candidate_id
+                else "not_applicable"
+            ),
             "incumbent_strategy_policy": (
                 "leave_current_human_approved_strategy_unchanged"
             ),
@@ -135,6 +177,7 @@ class AiShadowResearchCommandsMixin:
             "superseded_daily_backups": superseded_daily_backups,
             "daily_new_candidate_winner_id": daily_winner_candidate_id,
             "daily_winner_candidate_id": daily_winner_candidate_id,
+            "daily_research_winner_candidate_id": (daily_research_winner_candidate_id),
             "research_outcome": research_outcome,
             "automatic_strategy_replacement_enabled": False,
             "production_strategy_mutation_enabled": False,

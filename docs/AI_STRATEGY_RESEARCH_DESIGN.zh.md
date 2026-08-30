@@ -178,9 +178,13 @@ production、订单或资本权限。
 兼容：必须创建新 experiment、冻结新 `workflow_descriptor` 并取得新外发授权。旧 workflow
 的中间产物、未用调用 slot、provider receipt 与授权不得自动迁移。
 
-Formula discovery 使用归一化研究名义资金，本身不要求同日 Account Truth。当前 Account
-Truth 只作为本地账户容量评估、shadow 准入和 Daily Decision 的前置条件，不能为了让模型
-提出更“贴账户”的假设而外发。
+Formula discovery 当前固定使用 1,000,000 CNY 归一化研究名义资金，并以版本化策略
+`karkinos.ai.normalized_research_notional.cny_1m.v1` 绑定该金额；成本使用 canonical 预估模型。
+它不要求同日 Account Truth，也不读取 broker provider。生成的 candidate 必须保持
+research-only；由于没有账户专属、已对账成本和容量证据，现有 promotion、shadow 准入、
+Daily Decision 和 execution 门禁继续 fail closed。当前尚未实现对既有 normalized candidate
+独立补录 Account Truth、以账户专属成本重算并产生可晋级证据的 qualification/replay service；
+不得把现有 fail-closed 门禁表述为该服务已上线，也不得为此向模型外发账户证据。
 
 ## Dataset 与 Universe Truth
 
@@ -1263,13 +1267,16 @@ canary executor 依据独立 authorization 启动。两者是仅有的 launch au
 DSH 使用独立 CPU/内存/文件描述符/进程数限制；DSH 卡死、生成后代进程或耗尽资源时只能使
 当前 research stage/canary 失败，不能挤占 Daily Decision 的 executor、连接池或绝对 deadline。
 
-准入必须在加载 universe 或运行基线前完成廉价检查：交易日历、收盘后窗口、policy、已复核
-费用、既有 run/lease 和不可变研究输入可用性。Account Truth 只在 charter 明确进入本地账户
+准入必须在加载 universe 或运行基线前完成廉价检查：交易日历、收盘后窗口、policy、与 capital mode 匹配的
+成本模型（normalized-notional discovery 使用 canonical 预估；未来 account-bound qualification 才需已复核费用）、
+既有 run/lease 和不可变研究输入可用性。Account Truth 只在 charter 明确进入本地账户
 容量或 shadow 准入 stage 时检查，不得阻断归一化名义资金下的 Formula discovery。
 
-积压补跑只能发生在显式收盘后维护窗口。默认 Asia/Shanghai 08:30–10:00 为研究 blackout：
-禁止启动或恢复模型调用、universe preparation 和本地研究回测。Daily Decision 使用独立
-绝对 deadline，超时结果不能写入当日 authoritative outcome。
+积压补跑只能发生在显式收盘后维护窗口。默认 Asia/Shanghai 09:00–10:00 为 Daily Decision
+隔离 blackout：禁止启动或恢复 universe preparation 和本地研究回测；DeepSeek 模型发送还受
+下述更宽的计费窗口约束。08:30–09:00 仍可用于收口已准入的 overnight research，但完整批次
+必须在 09:00 前完成，越过该 deadline 的结果不能写入 completed research artifact 或当日
+authoritative outcome。Daily Decision 继续使用独立绝对 deadline。
 
 DeepSeek 计费时段由独立、版本化的 provider call-window policy 负责，不得混入 HTTP transport、
 业务 route 或 `after_close_time`。北京时间周一至周五 `[09:00,12:00)`、`[14:00,18:00)`
@@ -1277,11 +1284,11 @@ DeepSeek 计费时段由独立、版本化的 provider call-window policy 负责
 策略 hypothesis/critique、外部回测报告、外部记忆分析和连通性 canary——在 service admission
 与 provider send edge 使用同一 policy；手工 API 不提供 force bypass。
 
-完整策略迭代还必须满足收盘后、下次 09:00 前完成的 overnight 约束。编排器在加载 universe、
+完整策略迭代还必须满足收盘后、下一工作日 09:00 前完成的 overnight 约束。编排器在加载 universe、
 运行基线或 claim research run 前，为十次串行调用预留 125 分钟连续低谷余量；因此正常工作日
 从 18:00 起跑，午间两小时不启动完整批次，早晨余量不足时延期到当日 18:00。单次 provider
 send 在调用额度 claim 前及实际发送前再次检查当前窗口，并至少保留 600 秒 hard timeout 加
-5 秒收口余量。批次准入时冻结当前低谷段的下一高峰左边界为 attempt deadline；基线、估值、
+5 秒收口余量。批次准入时冻结当前低谷段的下一高峰左边界为 attempt deadline；基线、
 每轮候选以及最终 artifact 发布后均复核该 deadline，09:00 后完成的批次不得发布为 completed。
 整批尚未 claim 时的窗口延期是
 `deferred`，不得计为失败、不得占 provider call/token/retry budget，并必须返回
@@ -1615,7 +1622,7 @@ running --runtime proven_not_sent, allowance exhausted--> failed_terminal
 | DeepSeek provider peak window | 工作日 09:00–12:00、14:00–18:00（Asia/Shanghai） | 所有 AI 出站调用延期；route 不得绕过 provider send admission |
 | complete-batch off-peak runway | 125 分钟，且须在 09:00 前完成 | 余量不足不加载 universe、不跑基线、不 claim run/call；下次默认 18:00 |
 | single-call completion runway | provider hard timeout + 5 秒 | 余量不足不 claim/send；DeepSeek 策略调用当前为 605 秒 |
-| research blackout | Asia/Shanghai 08:30–10:00 | 禁止启动或恢复 provider 与本地研究 stage |
+| Daily Decision isolation blackout | Asia/Shanghai 09:00–10:00 | 禁止启动或恢复 universe preparation 与本地研究 stage；08:30–09:00 只允许收口已准入批次，09:00 后不得发布 completed research artifact |
 
 所有 DSH purpose 使用同一守恒公式：`fresh_process_start_ceiling = physical_request_ceiling +
 local_launch_retry_ceiling`，`collector_process_start_ceiling = physical_request_ceiling`，

@@ -22,6 +22,11 @@ from server.contracts.ai_shadow_research_automation import (
     require_corrected_panel_rearm_evidence,
     shadow_research_json_object,
 )
+from server.persistence.ai_shadow_research_records import (
+    SHADOW_RESEARCH_CAPITAL_MODE_LEGACY_UNKNOWN,
+    normalize_shadow_research_run_context,
+    shadow_research_run_context_matches,
+)
 
 
 class ShadowResearchRunClaimRepositoryMixin:
@@ -33,12 +38,20 @@ class ShadowResearchRunClaimRepositoryMixin:
         market_date: str,
         input_fingerprint: str,
         baseline_seed_result_id: int,
-        valuation_snapshot_id: str,
-        ledger_cutoff_id: int,
+        valuation_snapshot_id: str | None,
+        ledger_cutoff_id: int | None,
         now: str,
+        research_capital_mode: str = SHADOW_RESEARCH_CAPITAL_MODE_LEGACY_UNKNOWN,
+        research_context_id: str | None = None,
         timeout_resume_input_evidence: Mapping[str, Any] | None = None,
         corrected_panel_rearm_evidence: Mapping[str, Any] | None = None,
     ) -> tuple[dict[str, Any], bool]:
+        run_context = normalize_shadow_research_run_context(
+            research_capital_mode=research_capital_mode,
+            research_context_id=research_context_id,
+            valuation_snapshot_id=valuation_snapshot_id,
+            ledger_cutoff_id=ledger_cutoff_id,
+        )
         with self._connect(immediate=True) as conn:
             existing = conn.execute(
                 """
@@ -54,8 +67,7 @@ class ShadowResearchRunClaimRepositoryMixin:
                     market_date=market_date,
                     input_fingerprint=input_fingerprint,
                     baseline_seed_result_id=baseline_seed_result_id,
-                    valuation_snapshot_id=valuation_snapshot_id,
-                    ledger_cutoff_id=ledger_cutoff_id,
+                    run_context=run_context,
                     now=now,
                     timeout_resume_input_evidence=timeout_resume_input_evidence,
                     corrected_panel_rearm_evidence=corrected_panel_rearm_evidence,
@@ -65,23 +77,29 @@ class ShadowResearchRunClaimRepositoryMixin:
                 (input_fingerprint,),
             ).fetchone()
             if duplicate_input is not None:
-                return dict(duplicate_input), True
+                duplicate_run = dict(duplicate_input)
+                if not shadow_research_run_context_matches(duplicate_run, run_context):
+                    raise ShadowResearchRejected("research_run_context_binding_drift")
+                return duplicate_run, True
             run_id = f"ai-shadow-research:{market_date}:{input_fingerprint[:16]}"
             conn.execute(
                 """
                 INSERT INTO ai_shadow_research_runs
                 (run_id, market_date, input_fingerprint, status,
-                 baseline_seed_result_id, valuation_snapshot_id, ledger_cutoff_id,
+                 baseline_seed_result_id, research_capital_mode,
+                 research_context_id, valuation_snapshot_id, ledger_cutoff_id,
                  created_at, updated_at)
-                VALUES (?, ?, ?, 'running', ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
                     market_date,
                     input_fingerprint,
                     baseline_seed_result_id,
-                    valuation_snapshot_id,
-                    ledger_cutoff_id,
+                    run_context["research_capital_mode"],
+                    run_context["research_context_id"],
+                    run_context["valuation_snapshot_id"],
+                    run_context["ledger_cutoff_id"],
                     now,
                     now,
                 ),
@@ -96,12 +114,15 @@ class ShadowResearchRunClaimRepositoryMixin:
         market_date: str,
         input_fingerprint: str,
         baseline_seed_result_id: int,
-        valuation_snapshot_id: str,
-        ledger_cutoff_id: int,
+        run_context: Mapping[str, Any],
         now: str,
         timeout_resume_input_evidence: Mapping[str, Any] | None,
         corrected_panel_rearm_evidence: Mapping[str, Any] | None,
     ) -> tuple[dict[str, Any], bool]:
+        if input_fingerprint == existing_run[
+            "input_fingerprint"
+        ] and not shadow_research_run_context_matches(existing_run, run_context):
+            raise ShadowResearchRejected("research_run_context_binding_drift")
         provider_free_partial_resume = (
             self._provider_free_partial_resume_evidence(conn, existing_run)
             if input_fingerprint != existing_run["input_fingerprint"]
@@ -115,8 +136,7 @@ class ShadowResearchRunClaimRepositoryMixin:
                 market_date=market_date,
                 input_fingerprint=input_fingerprint,
                 baseline_seed_result_id=baseline_seed_result_id,
-                valuation_snapshot_id=valuation_snapshot_id,
-                ledger_cutoff_id=ledger_cutoff_id,
+                run_context=run_context,
                 now=now,
             )
         citation_resume = self._unconsumed_corrected_panel_citation_resume_extension(
@@ -130,8 +150,7 @@ class ShadowResearchRunClaimRepositoryMixin:
                 market_date=market_date,
                 input_fingerprint=input_fingerprint,
                 baseline_seed_result_id=baseline_seed_result_id,
-                valuation_snapshot_id=valuation_snapshot_id,
-                ledger_cutoff_id=ledger_cutoff_id,
+                run_context=run_context,
                 corrected_panel_rearm_evidence=corrected_panel_rearm_evidence,
                 now=now,
             )
@@ -145,8 +164,7 @@ class ShadowResearchRunClaimRepositoryMixin:
                 extension=timeout_resume,
                 input_fingerprint=input_fingerprint,
                 baseline_seed_result_id=baseline_seed_result_id,
-                valuation_snapshot_id=valuation_snapshot_id,
-                ledger_cutoff_id=ledger_cutoff_id,
+                run_context=run_context,
                 input_evidence=timeout_resume_input_evidence,
                 now=now,
             )
@@ -156,8 +174,7 @@ class ShadowResearchRunClaimRepositoryMixin:
             market_date=market_date,
             input_fingerprint=input_fingerprint,
             baseline_seed_result_id=baseline_seed_result_id,
-            valuation_snapshot_id=valuation_snapshot_id,
-            ledger_cutoff_id=ledger_cutoff_id,
+            run_context=run_context,
             corrected_panel_rearm_evidence=corrected_panel_rearm_evidence,
             now=now,
         )
@@ -171,15 +188,12 @@ class ShadowResearchRunClaimRepositoryMixin:
         market_date: str,
         input_fingerprint: str,
         baseline_seed_result_id: int,
-        valuation_snapshot_id: str,
-        ledger_cutoff_id: int,
+        run_context: Mapping[str, Any],
         now: str,
     ) -> tuple[dict[str, Any], bool]:
-        if (
-            int(run["baseline_seed_result_id"]) != int(baseline_seed_result_id)
-            or run["valuation_snapshot_id"] != valuation_snapshot_id
-            or int(run["ledger_cutoff_id"]) != int(ledger_cutoff_id)
-        ):
+        if int(run["baseline_seed_result_id"]) != int(
+            baseline_seed_result_id
+        ) or not shadow_research_run_context_matches(run, run_context):
             raise ShadowResearchRejected("provider_free_partial_resume_input_drift")
         resume_iteration = int(resume["resume_iteration"])
         completed_iteration_count = int(resume["completed_iteration_count"])
@@ -290,8 +304,7 @@ class ShadowResearchRunClaimRepositoryMixin:
         market_date: str,
         input_fingerprint: str,
         baseline_seed_result_id: int,
-        valuation_snapshot_id: str,
-        ledger_cutoff_id: int,
+        run_context: Mapping[str, Any],
         corrected_panel_rearm_evidence: Mapping[str, Any] | None,
         now: str,
     ) -> tuple[dict[str, Any], bool]:
@@ -313,8 +326,7 @@ class ShadowResearchRunClaimRepositoryMixin:
             or normalized["evidence_fingerprint"]
             != rearm_binding["expected_rearm_evidence_fingerprint"]
             or int(run["baseline_seed_result_id"]) != int(baseline_seed_result_id)
-            or run["valuation_snapshot_id"] != valuation_snapshot_id
-            or int(run["ledger_cutoff_id"]) != int(ledger_cutoff_id)
+            or not shadow_research_run_context_matches(run, run_context)
         ):
             raise ShadowResearchRejected("corrected_panel_citation_resume_input_drift")
         checkpoint = self._first_critique_resume_checkpoint(conn, run)
@@ -370,8 +382,7 @@ class ShadowResearchRunClaimRepositoryMixin:
         extension: Mapping[str, Any],
         input_fingerprint: str,
         baseline_seed_result_id: int,
-        valuation_snapshot_id: str,
-        ledger_cutoff_id: int,
+        run_context: Mapping[str, Any],
         input_evidence: Mapping[str, Any] | None,
         now: str,
     ) -> tuple[dict[str, Any], bool]:
@@ -380,8 +391,7 @@ class ShadowResearchRunClaimRepositoryMixin:
                 conn,
                 run=run,
                 baseline_seed_result_id=baseline_seed_result_id,
-                valuation_snapshot_id=valuation_snapshot_id,
-                ledger_cutoff_id=ledger_cutoff_id,
+                run_context=run_context,
                 evidence=input_evidence,
             )
         elif input_fingerprint != run["input_fingerprint"]:
@@ -435,18 +445,15 @@ class ShadowResearchRunClaimRepositoryMixin:
         *,
         run: Mapping[str, Any],
         baseline_seed_result_id: int,
-        valuation_snapshot_id: str,
-        ledger_cutoff_id: int,
+        run_context: Mapping[str, Any],
         evidence: Mapping[str, Any],
     ) -> None:
         selection_components = evidence.get("selection_components")
         if not isinstance(selection_components, Mapping):
             raise ShadowResearchRejected("timeout_resume_input_evidence_invalid")
-        if (
-            int(run.get("baseline_seed_result_id") or 0) != int(baseline_seed_result_id)
-            or str(run.get("valuation_snapshot_id") or "") != str(valuation_snapshot_id)
-            or int(run.get("ledger_cutoff_id") or 0) != int(ledger_cutoff_id)
-        ):
+        if int(run.get("baseline_seed_result_id") or 0) != int(
+            baseline_seed_result_id
+        ) or not shadow_research_run_context_matches(run, run_context):
             raise ShadowResearchRejected("timeout_resume_input_evidence_drift")
 
         baseline_result_id = int(run.get("baseline_result_id") or 0)

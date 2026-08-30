@@ -7,16 +7,17 @@ import logging
 from collections.abc import Mapping
 from datetime import datetime, time, timedelta, timezone
 from typing import Any
-from urllib.parse import urlparse
 
 from core.types import AssetClass
 from server.ai_runtime.contracts import content_fingerprint
 from server.ai_runtime.provider_call_window import (
     ProviderCallDeferred,
     ProviderCallWindowDecision,
+    is_deepseek_endpoint,
 )
 from server.contracts.ai_shadow_research_automation import (
     SHADOW_RESEARCH_API_SCHEMA,
+    SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
     SHADOW_RESEARCH_RUN_TYPE,
     SHADOW_RESEARCH_TIMEZONE,
     ShadowResearchPolicy,
@@ -30,6 +31,25 @@ logger = logging.getLogger(__name__)
 
 
 class AiShadowResearchSupportMixin:
+    @staticmethod
+    def _nominal_research_binding(prepared: Any) -> dict[str, Any]:
+        core = {
+            "schema_version": "karkinos.ai.normalized_notional_research_context.v1",
+            "research_capital_mode": SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
+            "market_date": prepared.market_date,
+            "dataset_snapshot_id": str(prepared.snapshot["snapshot_id"]),
+            "initial_cash": prepared.request.initial_cash,
+            "cost_model_reference": prepared.cost_model_reference,
+            "account_fact_binding_present": False,
+            "provider_contact_performed": False,
+            "authority_effect": "research_only",
+        }
+        return {
+            **core,
+            "context_id": f"nominal-research:{content_fingerprint(core)}",
+            "ledger_cutoff_id": 0,
+        }
+
     def _provider_call_window_decision(
         self, *, require_full_batch_runway: bool
     ) -> ProviderCallWindowDecision | None:
@@ -126,16 +146,25 @@ class AiShadowResearchSupportMixin:
 
     def _require_deepseek_provider(self) -> None:
         """Fail closed before export unless the configured edge is DeepSeek."""
-        if self._research_service_builder is not None:
-            return
-        from server.ai_runtime.provider_connectivity import (
-            load_provider_connectivity_settings,
-        )
+        config = self._state.require_config()
+        ai_config = getattr(config, "ai", None)
+        if ai_config is not None:
+            provider_enabled = getattr(ai_config, "enabled", False) is True
+            provider_id = str(getattr(ai_config, "provider", ""))
+            endpoint_origin = str(getattr(ai_config, "base_url", ""))
+        else:
+            from server.ai_runtime.provider_connectivity import (
+                load_provider_connectivity_settings,
+            )
 
-        settings = load_provider_connectivity_settings(self._state.config)
-        host = (urlparse(settings.endpoint_origin).hostname or "").casefold()
-        if settings.provider_id.strip().casefold() != "deepseek" or not (
-            host == "deepseek.com" or host.endswith(".deepseek.com")
+            settings = load_provider_connectivity_settings(config)
+            provider_enabled = settings.enabled
+            provider_id = settings.provider_id
+            endpoint_origin = settings.endpoint_origin
+        if (
+            not provider_enabled
+            or provider_id.strip().casefold() != "deepseek"
+            or not is_deepseek_endpoint(endpoint_origin)
         ):
             raise ShadowResearchRejected("deepseek_provider_not_configured")
 
@@ -144,6 +173,15 @@ class AiShadowResearchSupportMixin:
             call_id,
             status="failed",
             actual_tokens=None,
+            failure_code=failure_code,
+            now=self._utc_now(),
+        )
+
+    def _defer_provider_call(self, call_id: str, failure_code: str) -> None:
+        self._store.finish_provider_call(
+            call_id,
+            status="deferred",
+            actual_tokens=0,
             failure_code=failure_code,
             now=self._utc_now(),
         )
@@ -251,12 +289,19 @@ class AiShadowResearchSupportMixin:
             and isinstance(daily_artifacts.get("backup"), Mapping)
             else {}
         )
-        winner = selection.get("winner_candidate_id") or "无新优胜者"
+        winner = selection.get("winner_candidate_id") or "无账户资格晋级优胜者"
+        research_recommendation = selection.get("research_recommendation")
+        research_winner = (
+            research_recommendation.get("research_winner_candidate_id")
+            if isinstance(research_recommendation, Mapping)
+            else None
+        ) or "无研究优胜者"
         message = (
             f"DeepSeek 收盘后策略研究已完成（{market_date}）。\n"
             f"已完成串行迭代轮次: {len(candidates)}\n"
             f"建议进入人工 paper/shadow 复核: {eligible}\n"
             f"确定性新候选优胜者: {winner}\n"
+            f"仅供继续研究的归一化优胜者: {research_winner}\n"
             f"策略备份校验: {backup.get('verification_status') or 'missing'}\n"
             "无新优胜者只表示本批次不提出新晋级；当前已人工批准策略保持不变，"
             "当天是否交易仍由独立的 Decision、Account Truth、行情、费用与风险门决定。\n"

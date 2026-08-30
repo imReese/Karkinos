@@ -152,6 +152,7 @@ def build_provider_connectivity_service(state: AppState) -> ProviderConnectivity
         ai_store=ai_store,
         provider_send_admission=provider_send_admission_for(
             settings.provider_id,
+            endpoint_origin=settings.endpoint_origin,
             minimum_runway=timedelta(
                 seconds=(
                     settings.timeout_seconds + PROVIDER_CALL_COMPLETION_GUARD_SECONDS
@@ -337,8 +338,9 @@ def build_human_external_memory_analysis_service(
         evidence_repository=CanonicalEvidenceRepository(db_path),
         analysis_store=store,
         now=_utc_now,
-        provider_send_admission_factory=lambda provider_id: provider_send_admission_for(
+        provider_send_admission_factory=lambda provider_id, endpoint_origin: provider_send_admission_for(
             provider_id,
+            endpoint_origin=endpoint_origin,
             minimum_runway=timedelta(
                 seconds=(180 + PROVIDER_CALL_COMPLETION_GUARD_SECONDS)
             ),
@@ -452,8 +454,9 @@ def build_human_external_promoted_memory_analysis_service(
         evidence_repository=CanonicalEvidenceRepository(db_path),
         analysis_store=store,
         now=_utc_now,
-        provider_send_admission_factory=lambda provider_id: provider_send_admission_for(
+        provider_send_admission_factory=lambda provider_id, endpoint_origin: provider_send_admission_for(
             provider_id,
+            endpoint_origin=endpoint_origin,
             minimum_runway=timedelta(
                 seconds=(180 + PROVIDER_CALL_COMPLETION_GUARD_SECONDS)
             ),
@@ -568,6 +571,7 @@ def build_external_backtest_report_service(
         report_store=report_store,
         provider_send_admission=provider_send_admission_for(
             settings.provider_id,
+            endpoint_origin=settings.endpoint_origin,
             minimum_runway=timedelta(
                 seconds=(180 + PROVIDER_CALL_COMPLETION_GUARD_SECONDS)
             ),

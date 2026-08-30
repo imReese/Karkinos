@@ -23,6 +23,7 @@ export type TodayQueueItem = {
   actionLabel: string;
   tone: TodayQueueTone;
   priority: TodayQueuePriority;
+  alwaysVisible?: boolean;
   resolution?: string;
 };
 

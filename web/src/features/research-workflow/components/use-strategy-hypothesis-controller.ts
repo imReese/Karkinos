@@ -1,20 +1,16 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 
 import { usePreferences } from '../../../shared/preferences/context';
+import type { StrategyHypothesisBacktestEvidence } from '../research-workflow-feature-boundary';
 import {
-  useAccountStateQuery,
-  type StrategyHypothesisBacktestEvidence,
-} from '../research-workflow-feature-boundary';
-import {
+  CANONICAL_COST_MODEL_REFERENCE,
+  NORMALIZED_RESEARCH_NOTIONAL,
   useCritiqueStrategyBacktestMutation,
   useGenerateStrategyHypothesesMutation,
   useReviewStrategyResearchMutation,
   useRunStrategyFormulaBacktestMutation,
 } from '../strategy-research-api';
 import { STRATEGY_HYPOTHESIS_COPY } from './strategy-hypothesis-copy';
-
-const REVIEWED_COST_MODEL_PREFIX =
-  'karkinos.backtest.reviewed_account_fee_schedule.v1:';
 
 export type ReviewDisposition =
   'accepted_for_more_research' | 'needs_revision' | 'rejected';
@@ -30,13 +26,11 @@ function selectionBlockerFor(
   copy: (typeof STRATEGY_HYPOTHESIS_COPY)[keyof typeof STRATEGY_HYPOTHESIS_COPY],
   reportReady: boolean,
   datasetReady: boolean,
-  reviewedCostsReady: boolean,
-  accountReady: boolean,
+  canonicalCostsReady: boolean,
 ) {
   if (!reportReady) return copy.missingReport;
   if (!datasetReady) return copy.missingSnapshot;
-  if (!reviewedCostsReady) return copy.missingReviewedCosts;
-  if (!accountReady) return copy.missingAccount;
+  if (!canonicalCostsReady) return copy.missingCanonicalCosts;
   return '';
 }
 
@@ -138,39 +132,30 @@ export function useStrategyHypothesisController(
   const runBacktest = useRunStrategyFormulaBacktestMutation();
   const critique = useCritiqueStrategyBacktestMutation();
   const review = useReviewStrategyResearchMutation();
-  const accountState = useAccountStateQuery();
   const snapshot = report?.metrics_json?.dataset_snapshot;
   const feeEvidence = report?.metrics_json?.fee_component_evidence;
   const costModelReference = feeEvidence?.cost_model_reference ?? '';
-  const accountSummary = accountState.data?.summary;
   const assets = report?.config.assets ?? [];
   const datasetReady = Boolean(
     snapshot?.snapshot_id &&
     snapshot.data_quality?.status === 'ok' &&
     assets.length > 0,
   );
-  const reviewedCostsReady = Boolean(
-    costModelReference.startsWith(REVIEWED_COST_MODEL_PREFIX) &&
+  const canonicalCostsReady = Boolean(
+    costModelReference === CANONICAL_COST_MODEL_REFERENCE &&
     feeEvidence?.status === 'complete' &&
-    feeEvidence.account_specific === true &&
-    feeEvidence.broker_statement_reconciled === true,
+    feeEvidence.account_specific === false,
   );
-  const accountReady = Boolean(
-    accountSummary?.valuation_status === 'complete' &&
-    accountSummary.valuation_snapshot_id &&
-    accountSummary.ledger_cutoff_id !== undefined &&
-    report &&
-    report.config.initial_cash <= accountSummary.total_equity,
-  );
+  const normalizedNotionalReady =
+    report?.config.initial_cash === NORMALIZED_RESEARCH_NOTIONAL;
   const selectionReady = Boolean(
-    report && datasetReady && reviewedCostsReady && accountReady,
+    report && datasetReady && canonicalCostsReady && normalizedNotionalReady,
   );
   const selectionBlocker = selectionBlockerFor(
     copy,
     Boolean(report),
     datasetReady,
-    reviewedCostsReady,
-    accountReady,
+    canonicalCostsReady && normalizedNotionalReady,
   );
   const selectedDraft = useMemo(
     () =>
@@ -194,13 +179,7 @@ export function useStrategyHypothesisController(
 
   const submitHypothesis = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (
-      !report ||
-      !snapshot ||
-      !accountSummary ||
-      !selectionReady ||
-      !form.exportConfirmed
-    )
+    if (!report || !snapshot || !selectionReady || !form.exportConfirmed)
       return;
     try {
       const session = await generate.mutateAsync({
@@ -216,10 +195,10 @@ export function useStrategyHypothesisController(
           start_date: report.config.start_date,
           end_date: report.config.end_date,
           frequency: '1d',
-          initial_cash: report.config.initial_cash,
-          cost_model_reference: costModelReference,
-          valuation_snapshot_id: accountSummary.valuation_snapshot_id ?? '',
-          ledger_cutoff_id: accountSummary.ledger_cutoff_id ?? 0,
+          initial_cash: NORMALIZED_RESEARCH_NOTIONAL,
+          cost_model_reference: CANONICAL_COST_MODEL_REFERENCE,
+          valuation_snapshot_id: null,
+          ledger_cutoff_id: null,
         },
       });
       const firstValid = session.drafts.find(
@@ -302,8 +281,6 @@ export function useStrategyHypothesisController(
 
   return {
     ...form,
-    accountReady,
-    accountSummary,
     assets,
     canonical: runBacktest.data?.canonical_backtest,
     copy,

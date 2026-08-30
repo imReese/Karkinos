@@ -11,6 +11,7 @@ from analytics.strategy_advancement_gate import (
     strategy_advancement_backtest_view,
 )
 from server.ai_runtime.contracts import content_fingerprint
+from server.ai_runtime.provider_call_window import ProviderCallDeferred
 from server.ai_runtime.strategy_research import (
     BACKTEST_CONFIRMATION,
     CRITIQUE_EXPORT_CONFIRMATION,
@@ -20,11 +21,16 @@ from server.ai_runtime.strategy_research import (
     HypothesisGenerationRequest,
     StrategyResearchSelection,
 )
+from server.ai_runtime.strategy_research_support import strategy_research_json_object
 from server.contracts.ai_shadow_research_automation import (
+    SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
     TIMEOUT_RESUME_ITERATION,
     ShadowResearchPolicy,
     ShadowResearchRejected,
     build_shadow_research_iteration_lineage,
+)
+from server.projections.normalized_research_operation_preview import (
+    project_normalized_research_operation_preview,
 )
 from server.services.ai_shadow_research_support import (
     shadow_research_backtest_source_fingerprint,
@@ -97,6 +103,9 @@ class AiShadowResearchCandidateWorkflowMixin:
                     iteration_context=dict(iteration_context),
                 )
             )
+        except ProviderCallDeferred as exc:
+            self._defer_provider_call(call_id, str(exc))
+            raise
         except asyncio.CancelledError:
             self._fail_provider_call(call_id, "provider_call_cancelled_uncertain")
             raise
@@ -215,6 +224,9 @@ class AiShadowResearchCandidateWorkflowMixin:
                         confirmation=CRITIQUE_EXPORT_CONFIRMATION,
                     )
                 )
+            except ProviderCallDeferred as exc:
+                self._defer_provider_call(call_id, str(exc))
+                raise
             except asyncio.CancelledError:
                 self._fail_provider_call(call_id, "provider_call_cancelled_uncertain")
                 raise
@@ -244,8 +256,17 @@ class AiShadowResearchCandidateWorkflowMixin:
                 draft=draft,
                 critique=critique,
                 iteration_context=iteration_context,
+                research_capital_mode=policy.research_capital_mode,
             )
-            recommendation = str(comparison["recommendation"])
+            normalized_research = (
+                policy.research_capital_mode
+                == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+            )
+            recommendation = (
+                "formula_research_candidate"
+                if normalized_research
+                else str(comparison["recommendation"])
+            )
             return self._store.save_candidate(
                 run_id=str(run["run_id"]),
                 session_id=str(hypotheses["session_id"]),
@@ -255,14 +276,20 @@ class AiShadowResearchCandidateWorkflowMixin:
                 baseline_result_id=baseline_result_id,
                 candidate_result_id=candidate_result_id,
                 status=(
-                    "awaiting_human_approval"
-                    if recommendation == "paper_shadow_review"
-                    else "research_blocked"
+                    "evaluated_research_only"
+                    if normalized_research
+                    else (
+                        "awaiting_human_approval"
+                        if recommendation == "paper_shadow_review"
+                        else "research_blocked"
+                    )
                 ),
                 recommendation=recommendation,
                 comparison=comparison,
                 now=self._utc_now(),
             )
+        except ProviderCallDeferred:
+            raise
         except Exception as exc:
             return self._store.save_candidate(
                 run_id=str(run["run_id"]),
@@ -277,6 +304,13 @@ class AiShadowResearchCandidateWorkflowMixin:
                 comparison={
                     "schema_version": "karkinos.ai.shadow_research_comparison.v1",
                     "failure_code": shadow_research_failure_code(exc),
+                    "research_capital_mode": policy.research_capital_mode,
+                    "account_qualification_status": (
+                        "not_evaluated"
+                        if policy.research_capital_mode
+                        == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+                        else "failed_closed"
+                    ),
                     "iteration_lineage": build_shadow_research_iteration_lineage(
                         iteration_context,
                         current_formula_fingerprint=draft.get("formula_fingerprint"),
@@ -299,6 +333,7 @@ class AiShadowResearchCandidateWorkflowMixin:
         draft: Mapping[str, Any],
         critique: Mapping[str, Any],
         iteration_context: Mapping[str, Any],
+        research_capital_mode: str,
     ) -> dict[str, Any]:
         baseline = await self._db.get_backtest_result(baseline_result_id)
         candidate = await self._db.get_backtest_result(candidate_result_id)
@@ -306,6 +341,19 @@ class AiShadowResearchCandidateWorkflowMixin:
             raise ShadowResearchRejected("comparison_backtest_missing")
         baseline_view = strategy_advancement_backtest_view(baseline)
         candidate_view = strategy_advancement_backtest_view(candidate)
+        candidate_metrics = strategy_research_json_object(
+            candidate.get("metrics") or candidate.get("metrics_json")
+        )
+        operation_preview = project_normalized_research_operation_preview(
+            candidate_metrics.get("normalized_research_operation_preview")
+        )
+        if operation_preview is not None and (
+            operation_preview.get("formula_fingerprint")
+            != draft.get("formula_fingerprint")
+            or operation_preview.get("dataset_snapshot_id")
+            != candidate_view.get("dataset_snapshot_id")
+        ):
+            operation_preview = None
         critique_artifact = (
             critique.get("artifact")
             if isinstance(critique.get("artifact"), Mapping)
@@ -359,6 +407,20 @@ class AiShadowResearchCandidateWorkflowMixin:
             },
             "improvements": improvements,
             "deepseek_critique": critique_artifact,
+            "research_capital_mode": research_capital_mode,
+            "account_qualification_status": (
+                "not_evaluated"
+                if research_capital_mode
+                == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+                else ("passed" if advancement_gate.passed else "blocked")
+            ),
+            **(
+                {"normalized_research_operation_preview": operation_preview}
+                if research_capital_mode
+                == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+                and operation_preview is not None
+                else {}
+            ),
             "iteration_lineage": build_shadow_research_iteration_lineage(
                 iteration_context,
                 current_formula_fingerprint=draft.get("formula_fingerprint"),

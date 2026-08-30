@@ -145,14 +145,16 @@ def test_live_readiness_cli_reads_only_expected_loopback_endpoints() -> None:
         return {
             "schema_version": "karkinos.ai.shadow_research_automation.v1",
             "policy": {
-                "schema_version": "karkinos.ai.shadow_research_policy.v3",
+                "schema_version": "karkinos.ai.shadow_research_policy.v4",
                 "enabled": False,
                 "max_candidates_per_run": 1,
                 "max_provider_calls_per_market_date": 2,
                 "daily_token_budget": 451000,
                 "token_budget_mode": "legacy_bounded_daily",
                 "authorization": "",
+                "research_capital_mode": "account_bound",
                 "require_complete_account_evidence": True,
+                "promotion_requires_complete_account_evidence": True,
             },
             "automatic_strategy_replacement_enabled": False,
             "production_strategy_mutation_enabled": False,

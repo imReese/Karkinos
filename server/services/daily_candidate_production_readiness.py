@@ -83,7 +83,7 @@ _EXPECTED_SCHEMAS = {
     "runtime": "karkinos.daily_candidate_runtime_status.v1",
     "trial": "karkinos.daily_candidate_trial.v2",
     "research": "karkinos.ai.shadow_research_automation.v1",
-    "research_policy": "karkinos.ai.shadow_research_policy.v3",
+    "research_policy": "karkinos.ai.shadow_research_policy.v4",
 }
 _NON_FATAL_SCHEDULE_REASONS = {
     "daily_candidate_attempt_already_recorded",

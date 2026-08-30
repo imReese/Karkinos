@@ -31,6 +31,7 @@ class WorkflowStatus(StrEnum):
 
 class AgentRunStatus(StrEnum):
     RUNNING = "running"
+    BLOCKED = "blocked"
     FAILED = "failed"
     PARTIAL = "partial"
     COMPLETED = "completed"

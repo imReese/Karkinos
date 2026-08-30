@@ -3734,3 +3734,203 @@ test('keeps the last identity-bound curve visible after a transient refetch erro
     ),
   ).toBeTruthy();
 });
+
+test('shows account-independent research operations without presenting an order path', async () => {
+  window.localStorage.setItem('karkinos.locale', 'zh');
+  const researchOperation = (
+    symbol: string,
+    operation: 'buy_candidate' | 'exit_if_held_candidate',
+  ) => ({
+    symbol,
+    signal_date: '2026-02-10',
+    signal_type: operation === 'buy_candidate' ? 'entry' : 'exit',
+    operation,
+    target_weight: operation === 'buy_candidate' ? 0.25 : 0,
+    account_position_status: 'not_evaluated',
+    next_session_only: true,
+    research_only: true,
+    executable: false,
+  });
+  const fetchMock = installOverviewFetchMock(
+    {},
+    {
+      tradingPlan: {
+        schema_version: 'karkinos.daily_trading_plan.v1',
+        plan_date: '2026-02-10',
+        generated_at: '2026-02-10T18:30:00+08:00',
+        source_decision: 'no_action',
+        conclusion_status: 'account_truth_blocked',
+        primary_target: 'account-truth',
+        candidate_pool_count: 0,
+        manual_ready_count: 0,
+        order_intent_count: 0,
+        blocked_count: 0,
+        available_cash: 0,
+        total_equity: 0,
+        default_execution_mode: 'manual_confirmation',
+        broker_bridge_status: 'disabled',
+        order_intents: [],
+        blockers: [],
+        research_operation_preview: {
+          schema_version: 'karkinos.decision.research_operation_preview.v1',
+          status: 'available',
+          market_date: '2026-02-10',
+          target_market_date: '2026-02-11',
+          market_calendar_evidence_refs: [
+            'market_calendar:SSE:2026:fixture:official-fixture',
+          ],
+          run_id: 'run-research-fixture',
+          selection_id: 'selection-research-fixture',
+          selection_fingerprint: 'selection-fingerprint-fixture',
+          backup_artifact_fingerprint: 'backup-fingerprint-fixture',
+          research_winner_candidate_id: 'candidate-research-fixture',
+          source_preview_fingerprint: 'preview-fingerprint-fixture',
+          dataset_snapshot_id: `sha256:${'d'.repeat(64)}`,
+          formula_fingerprint: `sha256:${'f'.repeat(64)}`,
+          research_window_end_date: '2026-02-10',
+          signal_observed_at: '2026-02-10T15:00:00+08:00',
+          execution_timing: 'next_verified_market_session',
+          allocation_slots: 4,
+          canonical_target_weight: 0.25,
+          operations: [
+            researchOperation('600001', 'exit_if_held_candidate'),
+            researchOperation('600002', 'exit_if_held_candidate'),
+            researchOperation('600003', 'exit_if_held_candidate'),
+            researchOperation('600004', 'exit_if_held_candidate'),
+            researchOperation('000155', 'buy_candidate'),
+            researchOperation('301136', 'buy_candidate'),
+            researchOperation('600597', 'buy_candidate'),
+          ],
+          blockers: [],
+          account_qualification_status: 'not_evaluated',
+          account_positions_evaluated: false,
+          provider_contacted: false,
+          database_writes_performed: false,
+          read_only: true,
+          research_only: true,
+          executable: false,
+          authorizes_order_creation: false,
+          authorizes_execution: false,
+          authority_effect: 'none',
+          evidence_fingerprint: 'research-operation-fingerprint-fixture',
+        },
+        research_operation_instruments: {
+          schema_version: 'karkinos.decision.research_operation_instruments.v1',
+          requested_count: 7,
+          lookup_count: 7,
+          resolved_count: 3,
+          items: [
+            {
+              symbol: '000155',
+              display_name: '川能动力',
+              asset_class: 'stock',
+              source: 'stock_master',
+              fetched_at: '2026-02-10T16:00:00+08:00',
+            },
+            {
+              symbol: '301136',
+              display_name: '招标股份',
+              asset_class: 'stock',
+              source: 'stock_master',
+              fetched_at: '2026-02-10T16:00:00+08:00',
+            },
+            {
+              symbol: '600597',
+              display_name: '光明乳业',
+              asset_class: 'stock',
+              source: 'stock_master',
+              fetched_at: '2026-02-10T16:00:00+08:00',
+            },
+          ],
+          missing_symbols: ['600001', '600002', '600003', '600004'],
+          lookup_truncated: false,
+          metadata_source: 'persisted_instrument_metadata',
+          provider_contacted: false,
+          database_writes_performed: false,
+          read_only: true,
+          research_only: true,
+          authority_effect: 'none',
+        },
+        limitations: [],
+      },
+      operationsToday: {
+        schema_version: 'karkinos.operations_today.v1',
+        operations_date: '2026-02-10',
+        generated_at: '2026-02-10T18:30:00+08:00',
+        conclusion_status: 'blocked',
+        primary_target: 'account-truth',
+        health: {
+          total: 8,
+          pass: 5,
+          degraded: 0,
+          blocked: 1,
+          manual_action_required: 0,
+          skipped: 2,
+        },
+        subsystems: [
+          {
+            id: 'account_truth',
+            status: 'blocked',
+            tone: 'danger',
+            target: 'account-truth',
+            last_run_at: '2026-02-10T18:30:00+08:00',
+            next_action: 'review_account_truth',
+            limitations: [],
+            detail_status: 'blocked',
+          },
+        ],
+        daily_plan: {
+          candidate_pool_count: 0,
+          manual_ready_count: 0,
+          blocked_count: 0,
+          order_intent_count: 0,
+          conclusion_status: 'account_truth_blocked',
+        },
+        paper_shadow: {
+          status: 'not_required',
+          run_id: null,
+          order_intent_count: 0,
+          simulated_order_count: 0,
+          simulated_fill_count: 0,
+          divergence_reviewed_count: 0,
+          divergence_status: 'not_required',
+          next_manual_review_step: 'none',
+          last_run_at: null,
+          orders: [],
+        },
+        limitations: [],
+      },
+    },
+  );
+
+  renderOverviewPage({ installFetch: false });
+
+  const queue = await screen.findByTestId('overview-today-queue');
+  const researchTitle = await within(queue).findByText(
+    '研究型量化操作候选（不可执行，账户资格未评估）',
+  );
+  expect(researchTitle.closest('details')).toBeNull();
+  expect(
+    within(queue).getByText(
+      '冻结收盘 Formula 条件：买入研究候选 川能动力（000155） · 目标权重 25%；买入研究候选 招标股份（301136） · 目标权重 25%；买入研究候选 光明乳业（600597） · 目标权重 25%；4 个若持有则退出候选（账户持仓未评估）。仅供下一交易日继续研究。',
+    ),
+  ).toBeTruthy();
+  expect(
+    within(queue).getByText(
+      '2026-02-10 冻结收盘 → 2026-02-11 下一已验证交易日 · 7 个研究候选 · 不可执行',
+    ),
+  ).toBeTruthy();
+  expect(
+    within(queue)
+      .getByRole('link', { name: '查看 AI 策略研究' })
+      .getAttribute('href'),
+  ).toBe('/ai-research');
+  expect(queue.textContent).toContain('不得据此创建订单或人工下单');
+  expect(queue.textContent).not.toContain('个交易计划意图待复核');
+  expect(within(queue).queryByTestId('overview-today-queue-more')).toBeNull();
+  expect(
+    fetchMock.mock.calls.some(([input]) =>
+      String(input).includes('/api/market/instrument-metadata/backfill'),
+    ),
+  ).toBe(false);
+});
